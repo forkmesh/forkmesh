@@ -88,7 +88,9 @@ Everything is in `desktop/`.
   to join when its window first opens; it never joins a default relay on its
   own. Turning offline mode off does not require an instance: the project goes
   online for everything else, while the relay connection, node presence and
-  relay probe stay off until an instance is chosen. Project settings is a page
+  relay probe stay off until an instance is chosen. Choosing an instance for a
+  project with no logo saves the instance's logo as `logo.png`: the `logo`
+  path from `GET /api/instance`, else its favicon. Project settings is a page
   of the main window.
 - **Project menu.** The instance, account and repository live as rows in the
   project picker's menu rather than in the top bar. When no account is signed

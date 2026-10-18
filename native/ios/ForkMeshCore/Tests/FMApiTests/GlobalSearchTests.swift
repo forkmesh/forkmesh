@@ -121,14 +121,14 @@ final class GlobalSearchTests: XCTestCase {
 
     @MainActor func testModelBucketsScopesAndFailures() async {
         let repoList: @Sendable (String) async -> [RepoRef] = { _ in [RepoRef(owner: "forkmesh", name: "app")] }
-        let items = (1...8).map { SearchableItem(number: $0, title: "router \($0)", isPull: false) }
+        let items = (1...8).map { SearchableItem(number: $0, title: "zephyr \($0)", isPull: false) }
         let sources: [GlobalSearchSource] = [
             DestinationsSearchSource(),
             IssuesSearchSource(pulls: false, repos: repoList) { _ in items },
             FailingSource(),
         ]
         let model = GlobalSearchModel(sources: sources, saved: SavedSearchStore(store: InMemoryKeyValueStore()))
-        model.query = "router"
+        model.query = "zephyr"
         await model.run()
         XCTAssertEqual(model.buckets.map(\.kind), [.issues])
         XCTAssertEqual(model.buckets.first?.hits.count, GlobalSearchModel.bucketLimit)

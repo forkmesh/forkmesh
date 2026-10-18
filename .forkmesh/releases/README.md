@@ -105,8 +105,9 @@ compatibility shim for the older unit name). For the newest candidate held
 back only for host-built assets it:
 
 1. builds and signs each missing asset at the release's build commit: the APK
-   with versionCode `MAJOR*10000 + MINOR*100 + PATCH` (v1.2.4 is 10204) so it
-   installs over the previous release, signed with the v3 direct-distribution
+   with versionCode `(MAJOR*10000 + MINOR*100 + PATCH) * 100 + BUILD` (v1.2.9
+   build 1 is 1020901; releases up to v1.2.8 used the code without the build,
+   v1.2.8 is 10208) so it installs over the previous build, signed with the v3 direct-distribution
    key `android-direct-distribution-v3.jks` in the same release folder (since
    v1.2.3; phones on a v2-signed APK reinstall once), and the Windows installer by
    cross-compiling the desktop client with MinGW-w64 and an official Qt
@@ -139,6 +140,30 @@ accepted as well as raw multi-line PEM (importing the variables JSON keeps the
 newlines). The job verifies the key can produce a 64-byte Ed25519 signature
 **before** starting the build, so a missing or wrong key fails in seconds
 instead of after the whole client has compiled.
+
+### Per-platform builds
+
+A platform can ship a new build of the current version without a new tag.
+`tools/forkmesh-release-host.py --deploy-build android|linux|windows|macos`
+rebuilds that platform from `main`, publishes it into the version's candidate
+and promotes it to `latest`; the `Deploy <platform> build` shortcuts run it.
+
+- Build numbers start at 1 for every version. `builds.json` in this folder
+  records the number each platform is on (`{"tag", "builds"}`), and
+  `--reset-builds` sets all of them back to 1 for a new tag.
+- A rebuilt asset carries `"build": N` and `"commit": "<sha>"` in its
+  `release.json` entry (`--build` / `--asset-commit` on the publisher). The
+  manifest's `build_commit` stays the release commit; the other assets keep
+  their own entries. Assets without `build` are build 1 at `build_commit`.
+- The next number is one above both `builds.json` and the highest `build` in
+  the signed manifest, so a reset never hands out a number again and the
+  Android versionCode only grows. Build 99 is the last of a version.
+- The first build of a new version is the ordinary completion at the
+  release's build commit; promotion still waits for every asset `latest`
+  offers.
+- A macOS rebuild needs the office Mac: Codemagic builds only the tag.
+- A commit-pinned install (`FORKMESH_EXPECTED_BUILD_COMMIT`) checks the
+  asset's own `commit` when it has one.
 
 ### Refreshing a same-version binary
 

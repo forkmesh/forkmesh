@@ -110,6 +110,12 @@ struct ShortcutsScreen: View {
                     if !entry.description.isEmpty {
                         Text(entry.description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
+                    if let steps = entry.stepsText {
+                        Label(steps, systemImage: "list.number")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .labelStyle(ShortcutStepsHintStyle())
+                    }
                     let status = store.status(repo: repo, entry: entry)
                     ShortcutLastOutput(status: status)
                     ShortcutTiming(status: status)
@@ -312,6 +318,10 @@ struct ShortcutDetailScreen: View {
                     .buttonStyle(.plain)
                     Divider()
                 }
+                if !entry.steps.isEmpty {
+                    ShortcutStepsTimeline(store: store, repo: repo, entry: entry)
+                    Divider()
+                }
                 Text(text)
                     .font(.system(.caption, design: .monospaced))
                     .textSelection(.enabled)
@@ -374,6 +384,113 @@ struct ShortcutDetailScreen: View {
             error = ""
         } catch {
             self.error = TeamErrorText.describe(error)
+        }
+    }
+}
+
+struct ShortcutStepsHintStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 4) {
+            configuration.icon.imageScale(.small)
+            configuration.title
+        }
+    }
+}
+
+struct ShortcutStepsTimeline: View {
+    let store: ShortcutsStore
+    let repo: String
+    let entry: ShortcutEntry
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Steps")
+                .font(.headline)
+                .accessibilityAddTraits(.isHeader)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(entry.steps) { step in
+                    row(step)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func row(_ step: ShortcutStep) -> some View {
+        let total = entry.steps.count
+        let last = step.number == total
+        if let target = store.catalog?.linked(step, from: entry) {
+            NavigationLink {
+                ShortcutDetailScreen(store: store, repo: repo, entry: target)
+                    .shellPageClearance()
+            } label: {
+                ShortcutStepRow(step: step, target: target, last: last)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(step.accessibilityLabel(of: total, opens: true))
+            .accessibilityIdentifier("shortcut-step-\(step.number)")
+        } else {
+            ShortcutStepRow(step: step, target: nil, last: last)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(step.accessibilityLabel(of: total, opens: false))
+        }
+    }
+}
+
+struct ShortcutStepRow: View {
+    @Environment(\.fmPalette) private var fm
+    @ScaledMetric(relativeTo: .caption) private var dot: CGFloat = 24
+
+    let step: ShortcutStep
+    let target: ShortcutEntry?
+    let last: Bool
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("\(step.number)")
+                .font(.caption.weight(.semibold).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .foregroundStyle(target == nil ? Color.secondary : fm.accent)
+                .frame(width: dot, height: dot)
+                .background(Circle().fill(target == nil ? Color.secondary.opacity(0.12) : fm.accentSubtle))
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(step.name)
+                        .font(.subheadline)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let target {
+                        Label(target.file, systemImage: "link")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(fm.accent)
+                            .labelStyle(ShortcutStepsHintStyle())
+                    } else if !step.shortcut.isEmpty {
+                        Text(step.shortcut)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if target != nil {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(fm.accent)
+                }
+            }
+            .padding(.bottom, last ? 0 : 16)
+        }
+        .background(alignment: .topLeading) {
+            if !last {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.3))
+                    .frame(width: 2)
+                    .padding(.top, dot + 3)
+                    .padding(.bottom, 3)
+                    .padding(.leading, dot / 2 - 1)
+            }
         }
     }
 }

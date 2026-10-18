@@ -40,12 +40,17 @@ public struct RelayProbeResult: Equatable, Sendable {
     /// What the relay said it supports, when it said anything.
     public let features: RelayFeatureSet
     public let knownAs: RelayProfile?
+    public let instanceName: String
+    public let logoUrl: String
 
     public init(
         status: RelayProbeStatus, profile: RelayProfile? = nil, rev: String = "", version: String = "",
-        statusCode: Int = 0, features: RelayFeatureSet = .undeclared(), knownAs: RelayProfile? = nil
+        statusCode: Int = 0, features: RelayFeatureSet = .undeclared(), knownAs: RelayProfile? = nil,
+        instanceName: String = "", logoUrl: String = ""
     ) {
         self.knownAs = knownAs
+        self.instanceName = instanceName
+        self.logoUrl = logoUrl
         self.status = status
         self.profile = profile
         self.rev = rev
@@ -66,7 +71,8 @@ public struct RelayProbeResult: Equatable, Sendable {
     public var message: String {
         switch status {
         case .ok:
-            return version.isEmpty ? "Connected. This is a ForkMesh relay." : "Connected to ForkMesh \(version)."
+            let name = instanceName.isEmpty ? "ForkMesh" : instanceName
+            return version.isEmpty ? "Connected to \(name)." : "Connected to \(name) \(version)."
         case .invalidUrl:
             return "That does not look like a host. Enter something like “relay.example.com” or “192.168.1.20:8787”."
         case .duplicate:
@@ -220,13 +226,29 @@ public struct RelayProbe: Sendable {
         }
 
         let rev = RelayProbe.dartText(body["rev"])
+        let instance = await describe(candidate)
         return RelayProbeResult(
             status: .ok,
             profile: candidate.copyWith(verifiedAt: clock.nowMillis, verifiedRev: rev, features: features),
             rev: rev,
             version: RelayProbe.dartText(body["version"]),
             statusCode: response.status,
-            features: features)
+            features: features,
+            instanceName: RelayProbe.dartText(instance["name"]).trimmingCharacters(in: .whitespacesAndNewlines),
+            logoUrl: RelayProbe.logoUrl(candidate, RelayProbe.dartText(instance["logo"])))
+    }
+
+    private func describe(_ candidate: RelayProfile) async -> JSONValue {
+        guard let url = URL(string: "\(candidate.httpOrigin)/api/instance"),
+            case .success(let response) = await send(url, follow: true), response.status == 200
+        else { return .null }
+        return .object(response.jsonObject)
+    }
+
+    static func logoUrl(_ candidate: RelayProfile, _ logo: String) -> String {
+        let path = logo.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard path.hasPrefix("/"), !path.hasPrefix("//") else { return "" }
+        return candidate.httpOrigin + path
     }
 
     /// A missing or null value is "", anything else its `text`.

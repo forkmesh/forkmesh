@@ -207,7 +207,7 @@ class ProjectsTest {
         val probe = ProjectProbe(HttpTransport { request -> requested.add(request.url); reply }, clock = { 9 })
         val ok = probe.check("relay.example.com")
         assertEq(ProbeStatus.ok, ok.status)
-        assertEq("https://relay.example.com/api/version", requested.single())
+        assertEq(listOf("https://relay.example.com/api/version", "https://relay.example.com/api/instance"), requested)
         assertEq("r1", ok.project!!.verifiedRev)
         assertEq("Connected to ForkMesh 1.2.4.", ok.message)
         assertEq(ProbeStatus.notHttps, probe.check("http://relay.example.com").status)
@@ -225,6 +225,22 @@ class ProjectsTest {
         assertEq(ProbeStatus.timeout, failing.check("relay.example.com").status)
         val refused = ProjectProbe(HttpTransport { throw java.net.ConnectException() })
         assertEq(ProbeStatus.unreachable, refused.check("relay.example.com").status)
+    }
+
+    fun testProbeNamesTheInstanceAndFindsItsLogo() {
+        val version = response(200, "{\"ok\":true,\"rev\":\"r1\",\"worker\":\"w\",\"version\":\"1.2.4\"}")
+        var instance = response(200, "{\"ok\":true,\"name\":\"Acme Code\",\"logo\":\"/instance-logo.png\"}")
+        val probe = ProjectProbe(HttpTransport { request -> if (request.url.endsWith("/api/instance")) instance else version })
+        val named = probe.check("relay.example.com")
+        assertEq("Connected to Acme Code 1.2.4.", named.message)
+        assertEq("https://relay.example.com/instance-logo.png", named.logoUrl)
+        instance = response(200, "{\"ok\":true,\"name\":\"Acme Code\",\"logo\":\"//evil.example.com/x.png\"}")
+        assertEq("", probe.check("relay.example.com").logoUrl)
+        instance = response(404, "")
+        val older = probe.check("relay.example.com")
+        assertEq(ProbeStatus.ok, older.status)
+        assertEq("Connected to ForkMesh 1.2.4.", older.message)
+        assertEq("", older.logoUrl)
     }
 
     private class RecordingDriver(override val directory: ProjectDirectory) : ProjectSwitchDriver {

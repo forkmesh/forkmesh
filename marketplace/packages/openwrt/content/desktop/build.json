@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "OpenWrtModel.h",
+    "OpenWrtModel.cpp",
+    "OpenWrtClient.h",
+    "OpenWrtClient.cpp",
+    "OpenWrtFeature.h",
+    "OpenWrtFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_openwrt.cpp",
+    "OpenWrtModel.h",
+    "OpenWrtModel.cpp",
+    "OpenWrtClient.h",
+    "OpenWrtClient.cpp",
+    "OpenWrtFeature.h",
+    "OpenWrtFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Network",
+    "Qt6::Widgets"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp"
+  ]
+}

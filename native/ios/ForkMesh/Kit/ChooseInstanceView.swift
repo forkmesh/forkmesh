@@ -52,7 +52,7 @@ struct ChooseInstanceView: View {
                     if let verified = model.verified {
                         FmFilledButton(
                             "Connect to \(verified.host)", fillWidth: true,
-                            onPressed: model.checking ? nil : { Task { if await model.attach() { onClose() } } })
+                            onPressed: model.checking ? nil : { Task { await connect() } })
                     } else {
                         FmFilledButton(
                             model.checkLabel, fillWidth: true,
@@ -68,5 +68,12 @@ struct ChooseInstanceView: View {
         }
         .background(fm.canvas.ignoresSafeArea())
         .accessibilityIdentifier("choose-instance")
+    }
+
+    private func connect() async {
+        let logoUrl: String = model.result?.logoUrl ?? ""
+        guard await model.attach() else { return }
+        await ProjectImages.shared.adoptInstanceLogo(project.id, logoUrl: logoUrl)
+        onClose()
     }
 }

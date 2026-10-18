@@ -64,6 +64,7 @@ object Features {
         com.forkmesh.nativeapp.feature.planning.PlanningFeature.install(app)
         com.forkmesh.nativeapp.feature.glasses.GlassesFeature.install(app)
         com.forkmesh.nativeapp.feature.phonesecurity.PhoneSecurityFeature.install()
+        com.forkmesh.nativeapp.feature.openwrt.OpenWrtFeature.install()
         com.forkmesh.nativeapp.feature.appstorestatus.AppStoreStatusFeature.install()
         com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)
         com.forkmesh.nativeapp.feature.securedrive.SecureDriveFeature.install(app)

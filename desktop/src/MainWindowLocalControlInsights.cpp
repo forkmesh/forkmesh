@@ -293,7 +293,7 @@ void MainWindow::handleLocalControlInsightsRequest(int connectionId, int request
                         elapsedMs = session->totalRunMs(nowMs);
                 }
                 const bool running = live != nullptr || elapsedMs >= 0;
-                entries.append(QJsonObject{
+                QJsonObject entry{
                     {QStringLiteral("file"), info.fileName()},
                     {QStringLiteral("scope"), scope},
                     {QStringLiteral("name"),
@@ -318,7 +318,13 @@ void MainWindow::handleLocalControlInsightsRequest(int connectionId, int request
                     {QStringLiteral("lastRunAtMs"), double(stats.lastRunAtMs)},
                     {QStringLiteral("lastMs"), double(stats.lastMs)},
                     {QStringLiteral("elapsedMs"), double(running ? qMax<qint64>(0, elapsedMs) : -1)},
-                    {QStringLiteral("expectedMs"), double(expectedMs)}});
+                    {QStringLiteral("expectedMs"), double(expectedMs)}};
+                const QList<insightctl::ShortcutStep> steps =
+                    kind == QLatin1String("script") ? insightctl::parseShortcutSteps(text)
+                                                    : QList<insightctl::ShortcutStep>();
+                if (!steps.isEmpty())
+                    entry.insert(QStringLiteral("steps"), insightctl::shortcutStepRows(steps));
+                entries.append(entry);
             }
         }
         server->respond(connectionId, requestId,

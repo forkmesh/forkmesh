@@ -87,6 +87,14 @@
             .wf-node-kicker { font-size: 11px; font-weight: 500; color: var(--wf-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .wf-node-title { font-size: .82rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
             .wf-node-sub { font-size: .7rem; color: var(--wf-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .wf-node-subline { display: flex; align-items: center; gap: .35rem; min-width: 0; }
+            .wf-node-subline .wf-node-sub { flex: 1 1 auto; min-width: 0; }
+            .wf-node-link { position: relative; display: inline-flex; flex: none; align-items: center; gap: .15rem; height: 1rem; padding: 0 .25rem 0 .1rem; border-radius: .25rem; font-size: .7rem; font-weight: 600; color: var(--wf-accent); cursor: pointer; }
+            .wf-node-link::after { content: ""; position: absolute; inset: -.3rem -.2rem; }
+            .wf-node-link svg.lucide { width: .75rem !important; height: .75rem !important; color: var(--wf-muted); }
+            .wf-node-link:hover { background: var(--wf-hover); }
+            .wf-node-link:hover span { text-decoration: underline; }
+            .wf-node-link:focus-visible { outline: 2px solid var(--wf-accent); outline-offset: 1px; }
             .wf-node-status { position: absolute; right: .45rem; top: -.55rem; padding: 0 .4rem; border-radius: 999px; font-size: .65rem; font-weight: 600; line-height: 1.1rem; color: #fff; }
             .wf-node-status[data-status="success"] { background: rgb(var(--dashboard-success-rgb)); }
             .wf-node-status[data-status="error"] { background: rgb(var(--dashboard-destructive-rgb)); }
@@ -152,7 +160,7 @@
             .wf-signed-out { display: grid; place-items: center; flex: 1; padding: 2rem; text-align: center; }
             .wf-only-small { display: none !important; }
             .wf-scrim { display: none; }
-            @media (pointer: coarse) { [data-view="workflows"] { --wf-port: 1.25rem; } .wf-add-after { display: grid; width: 1.8rem; height: 1.8rem; right: -2.9rem; top: calc(50% - .9rem); } .wf-icon-btn { width: 2.5rem; height: 2.5rem; } }
+            @media (pointer: coarse) { [data-view="workflows"] { --wf-port: 1.25rem; } .wf-node-link::after { inset: -.7rem -.45rem; } .wf-add-after { display: grid; width: 1.8rem; height: 1.8rem; right: -2.9rem; top: calc(50% - .9rem); } .wf-icon-btn { width: 2.5rem; height: 2.5rem; } }
             @media (hover: none) { .wf-add-after { display: grid; } }
             @media (max-width: 1023px) {
               .wf-app { grid-template-columns: minmax(0, 1fr); }

@@ -273,7 +273,7 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
         "ledger": "ledger", "vault": "vault", "calories": "calories", "notes": "notes", "tasks": "tasks",
         "calendar": "calendar", "timers": "timers", "steps": "steps", "water": "water", "sleep": "sleep",
         "sugar-break": "sugarBreak", "stretch": "stretch", "food-guide": "foodGuide", "speech": "speech", "status-page": "status", "tour": "tour", "aquarium": "aquarium",
-        "glasses-alert": "glassesAlert", "phone-security": "phoneSecurity", "face-changer": "faceChanger", "video-mix-dj-studio": "videoMixDjStudio", "app-store-status": "appStoreStatus", "rss-reader": "rssReader", "secure-drive": "secureDrive", "people": "people", "docs": "docs", "design-system": "designSystem",
+        "glasses-alert": "glassesAlert", "phone-security": "phoneSecurity", "openwrt": "openWrtRouter", "face-changer": "faceChanger", "video-mix-dj-studio": "videoMixDjStudio", "app-store-status": "appStoreStatus", "rss-reader": "rssReader", "secure-drive": "secureDrive", "people": "people", "docs": "docs", "design-system": "designSystem",
         "agents": "Agents", "inbox": "Inbox", "chat": "Chat", "code": "currentRepo", "bug-reports": "reportBug",
         "issues": "repo-issues", "commits": "repo-commits", "branches": "repo-branches", "pull-requests": "repo-pulls",
         "releases": "repo-releases", "actions": "repo-actions", "discussions": "repo-discussions",

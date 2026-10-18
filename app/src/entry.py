@@ -1731,6 +1731,10 @@ PASSWORD_RESET_REQUESTER_WINDOW_LIMIT = 10
 # fresh per-address budgets for free and the requester limit would only ever
 # bind on IPv4 (issue #624).
 PASSWORD_RESET_REQUESTER_V6_PREFIX = 64
+PASSWORD_RESET_BACKUP_RATE_KEY = "password-reset-backup-v1"
+PASSWORD_RESET_BACKUP_MAX_PER_IP = 10
+PASSWORD_RESET_BACKUP_MAX_PER_WINDOW = 60
+PASSWORD_RESET_BACKUP_CDATA_TTL_MS = 30 * 60 * 1000
 # Users-vs-nodes linking (adhoc #53). A website claim's confirmation code (shown
 # on the node, typed into the site) lives this long; an installer link code
 # (shown by install.sh, typed into the installing desktop app) lives longer
@@ -31244,6 +31248,13 @@ def instance_logo_path(env):
         r"/instance-logo\.(?:png|jpg|webp|svg)", path) else ""
 
 
+def instance_logo_url(env):
+    path = instance_logo_path(env)
+    if path:
+        return "/" + path
+    return "" if instance_branded(env) else "/assets/logo-96.png"
+
+
 def _instance_brand_email(env, text, html):
     if not instance_branded(env):
         return text, html
@@ -33113,6 +33124,8 @@ _password_reset = _LazyModule("password_reset")
 
 _account_forgot_password = _password_reset.export(
     "_account_forgot_password")
+_account_forgot_password_challenge = _password_reset.export(
+    "_account_forgot_password_challenge")
 # The signed-in counterpart of that emailed flow: change the password from
 # Settings, with no sign-out and no email round trip (issue #648).
 _account_change_password = _password_reset.export(
@@ -34030,6 +34043,9 @@ async def accounts_handler(env, request):
         return await _account_rotate(env, request)
     if url.path == "/api/accounts/forgot-password" and method == "POST":
         return await _account_forgot_password(env, request)
+    if (url.path == "/api/accounts/forgot-password/challenge"
+            and method == "GET"):
+        return await _account_forgot_password_challenge(env, request)
     if url.path == "/api/accounts/reset-password" and method == "POST":
         return await _account_reset_password(env, request)
     if url.path == "/api/accounts/change-password" and method == "POST":

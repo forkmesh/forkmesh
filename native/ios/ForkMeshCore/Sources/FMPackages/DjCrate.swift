@@ -5,12 +5,22 @@ public struct DjTrack: Codable, Equatable, Sendable, Identifiable {
     public var title: String
     public var author: String
     public var tags: [String]
+    public var noShuffle: Bool
 
-    public init(id: String, title: String = "", author: String = "", tags: [String] = []) {
+    enum CodingKeys: String, CodingKey {
+        case id
+        case title
+        case author
+        case tags
+        case noShuffle
+    }
+
+    public init(id: String, title: String = "", author: String = "", tags: [String] = [], noShuffle: Bool = false) {
         self.id = id
         self.title = DjCrate.line(title, 300)
         self.author = DjCrate.line(author, 200)
         self.tags = DjCrate.tagList(tags)
+        self.noShuffle = noShuffle
     }
 
     public init(from decoder: Decoder) throws {
@@ -23,7 +33,17 @@ public struct DjTrack: Codable, Equatable, Sendable, Identifiable {
             id: id,
             title: ((try? values.decodeIfPresent(String.self, forKey: .title)) ?? nil) ?? "",
             author: ((try? values.decodeIfPresent(String.self, forKey: .author)) ?? nil) ?? "",
-            tags: ((try? values.decodeIfPresent([String].self, forKey: .tags)) ?? nil) ?? [])
+            tags: ((try? values.decodeIfPresent([String].self, forKey: .tags)) ?? nil) ?? [],
+            noShuffle: ((try? values.decodeIfPresent(Bool.self, forKey: .noShuffle)) ?? nil) ?? false)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(id, forKey: .id)
+        try values.encode(title, forKey: .title)
+        try values.encode(author, forKey: .author)
+        try values.encode(tags, forKey: .tags)
+        if noShuffle { try values.encode(true, forKey: .noShuffle) }
     }
 
     public var thumbnail: URL { DjStudio.thumbnailURL(id, quality: "mqdefault") }
@@ -56,9 +76,12 @@ public enum DjFocus: Hashable, Sendable, Codable {
     case everything
     case playlist(String)
     case tag(String)
+    case smart(String)
 
     public init(key: String) {
-        if key.hasPrefix("playlist:") {
+        if key.hasPrefix("smart:") {
+            self = .smart(String(key.dropFirst(6)))
+        } else if key.hasPrefix("playlist:") {
             self = .playlist(String(key.dropFirst(9)))
         } else if key.hasPrefix("tag:") {
             let name = DjCrate.tagName(String(key.dropFirst(4)))
@@ -73,6 +96,19 @@ public enum DjFocus: Hashable, Sendable, Codable {
         case .everything: return ""
         case let .playlist(id): return "playlist:\(id)"
         case let .tag(name): return "tag:\(name)"
+        case let .smart(id): return "smart:\(id)"
+        }
+    }
+
+    public var isSmart: Bool {
+        if case .smart = self { return true }
+        return false
+    }
+
+    public var isFiled: Bool {
+        switch self {
+        case .playlist, .tag: return true
+        case .everything, .smart: return false
         }
     }
 
@@ -158,6 +194,15 @@ public struct DjCrate: Codable, Equatable, Sendable {
     public var focus: DjFocus = .everything
     public var shuffle = true
     public var cursor = ""
+    public var smart: [DjSmartList] = []
+
+    enum CodingKeys: String, CodingKey {
+        case tracks
+        case playlists
+        case focus
+        case shuffle
+        case cursor
+    }
 
     public init() {}
 
@@ -173,7 +218,7 @@ public struct DjCrate: Codable, Equatable, Sendable {
         shuffle = ((try? values.decodeIfPresent(Bool.self, forKey: .shuffle)) ?? nil) ?? true
         cursor = ((try? values.decodeIfPresent(String.self, forKey: .cursor)) ?? nil) ?? ""
         focus = ((try? values.decodeIfPresent(DjFocus.self, forKey: .focus)) ?? nil) ?? .everything
-        if !knows(focus) { focus = .everything }
+        if !focus.isSmart, !knows(focus) { focus = .everything }
     }
 
     public static func decode(_ data: Data?) -> DjCrate {
@@ -209,11 +254,35 @@ public struct DjCrate: Codable, Equatable, Sendable {
 
     public func playlist(_ id: String) -> DjPlaylist? { playlists.first { $0.id == id } }
 
+    public func smartList(_ id: String) -> DjSmartList? { smart.first { $0.id == id } }
+
+    public func shuffles(_ id: String) -> Bool { track(id)?.noShuffle != true }
+
+    public var unshuffled: Set<String> { Set(tracks.filter(\.noShuffle).map(\.id)) }
+
+    public mutating func categorize(_ songs: [DjTrack], library: [DjPlayedSong], now: Double) {
+        smart = DjSmart.lists(songs, library: library, now: now)
+        if focus.isSmart, !knows(focus) { setFocus(.everything) }
+    }
+
+    @discardableResult
+    public mutating func setShuffles(_ id: String, _ on: Bool, title: String = "", author: String = "") -> Bool {
+        if on {
+            guard let index = tracks.firstIndex(where: { $0.id == id }) else { return true }
+            tracks[index].noShuffle = false
+            return true
+        }
+        guard keep(id, title: title, author: author), let index = tracks.firstIndex(where: { $0.id == id }) else { return false }
+        tracks[index].noShuffle = true
+        return true
+    }
+
     public func knows(_ focus: DjFocus) -> Bool {
         switch focus {
         case .everything: return true
         case let .playlist(id): return playlist(id) != nil
         case let .tag(name): return tracks.contains { $0.tags.contains(name) }
+        case let .smart(id): return smartList(id) != nil
         }
     }
 
@@ -228,6 +297,7 @@ public struct DjCrate: Codable, Equatable, Sendable {
         case .everything: return "Everything"
         case let .playlist(id): return playlist(id)?.name ?? "Playlist"
         case let .tag(name): return "#\(name)"
+        case let .smart(id): return smartList(id)?.name ?? "Smart Playlist"
         }
     }
 
@@ -240,6 +310,9 @@ public struct DjCrate: Codable, Equatable, Sendable {
             return (playlist(id)?.songs ?? []).compactMap { known[$0] }
         case let .tag(name):
             return tracks.filter { $0.tags.contains(name) }
+        case let .smart(id):
+            let known = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+            return (smartList(id)?.songs ?? []).map { known[$0.id] ?? $0 }
         }
     }
 
@@ -358,11 +431,11 @@ public struct DjCrate: Codable, Equatable, Sendable {
             if playlist(list)?.songs.contains(id) != true, add([DjTrack(id: id, title: title, author: author)], to: list) == 0 { return .full }
         case let .tag(name):
             guard tag(id, name, title: title, author: author) else { return .full }
-        case .everything:
+        case .everything, .smart:
             break
         }
         let from = focus
-        guard from != target else { return .added }
+        guard from != target, from.isFiled else { return .added }
         var left = false
         switch from {
         case let .playlist(list):
@@ -371,7 +444,7 @@ public struct DjCrate: Codable, Equatable, Sendable {
         case let .tag(name):
             left = track(id)?.tags.contains(name) == true
             untag(id, name)
-        case .everything:
+        case .everything, .smart:
             break
         }
         return target == .everything ? .removed : left ? .moved : .added
@@ -396,7 +469,8 @@ public struct DjCrate: Codable, Equatable, Sendable {
                 return song
             }
         }
-        return songs.filter { !skip.contains($0.id) }
+        let held = focus == .everything || shuffle ? unshuffled : []
+        return songs.filter { !skip.contains($0.id) && !held.contains($0.id) }
     }
 
     public mutating func next(_ library: [DjPlayedSong], loaded: Set<String>, playing: Set<String>, skip: Set<String> = [], seed: UInt64) -> DjPlayedSong? {
@@ -420,6 +494,7 @@ public struct DjCrate: Codable, Equatable, Sendable {
         case .everything: lists = playlists
         case let .playlist(id): lists = playlist(id).map { [$0] } ?? []
         case .tag: lists = []
+        case let .smart(id): lists = smartList(id).map { [DjPlaylist(id: $0.id, name: $0.name, songs: $0.songs.map(\.id))] } ?? []
         }
         let file = DjCrateFile(
             format: Self.format, version: 1, exported: ISO8601DateFormatter().string(from: date),
@@ -440,6 +515,7 @@ public struct DjCrate: Codable, Equatable, Sendable {
         case .everything: label = "DJ Playlists"
         case let .playlist(id): label = playlist(id)?.name ?? "Playlist"
         case let .tag(name): label = "Tag \(name)"
+        case let .smart(id): label = smartList(id)?.name ?? "Smart Playlist"
         }
         let safe = String(label.unicodeScalars.map { CharacterSet.alphanumerics.contains($0) || " -_".unicodeScalars.contains($0) ? Character($0) : "-" })
         let trimmed = safe.trimmingCharacters(in: .whitespaces)
@@ -499,7 +575,8 @@ public struct DjCrate: Codable, Equatable, Sendable {
         let tags = (object["tags"] as? [Any])?.compactMap { $0 as? String } ?? (object["tags"] as? String).map(tagNames) ?? []
         return DjTrack(
             id: id, title: (object["title"] ?? object["name"]) as? String ?? "",
-            author: (object["author"] ?? object["artist"] ?? object["channel"]) as? String ?? "", tags: tags)
+            author: (object["author"] ?? object["artist"] ?? object["channel"]) as? String ?? "", tags: tags,
+            noShuffle: object["noShuffle"] as? Bool ?? false)
     }
 
     static func built(_ found: [DjTrack], _ lists: [DjImportedList]) -> DjCrateImport? {
@@ -514,6 +591,7 @@ public struct DjCrate: Codable, Equatable, Sendable {
             if known.title.isEmpty { known.title = track.title }
             if known.author.isEmpty { known.author = track.author }
             known.tags = tagList(known.tags + track.tags)
+            known.noShuffle = known.noShuffle || track.noShuffle
             merged[track.id] = known
         }
         guard !order.isEmpty else { return nil }
@@ -528,6 +606,7 @@ public struct DjCrate: Codable, Equatable, Sendable {
                 if tracks[index].title.isEmpty { tracks[index].title = track.title }
                 if tracks[index].author.isEmpty { tracks[index].author = track.author }
                 tracks[index].tags = Self.tagList(tracks[index].tags + track.tags)
+                if track.noShuffle { tracks[index].noShuffle = true }
             } else if tracks.count < Self.trackLimit {
                 tracks.append(track)
                 report.songs += 1

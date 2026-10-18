@@ -16,6 +16,10 @@ ROW = 120
 SCRIPT_EXTENSIONS = (".sh", ".bash")
 PROMPT_EXTENSIONS = (".md", ".txt", ".prompt")
 HEADER_KEYS = ("name", "description", "agent", "model")
+STEP_RE = re.compile(r"^#\s*step:\s*(.+?)\s*$")
+RUN_SHORTCUT_RE = re.compile(
+    r"^\s*bash\s+\.forkmesh/shortcuts/([A-Za-z0-9._-]{1,96})(?:\s|$)")
+MAX_STEP_NAME = 80
 ACTION_EVENTS = ("push", "pull_request", "release", "workflow_dispatch")
 ACTION_TOP_KEYS = ("name", "on", "runs-on", "needs", "env", "checkout",
                    "fetch-depth", "steps", "jobs")
@@ -124,6 +128,15 @@ FILE_NODES = {
         "description": "Part of the script or prompt, in order. "
                        "{{appLog}} and {{stallLog}} are filled in when it runs.",
         "fields": [_field("text", "Text", "code", required=True)],
+    },
+    "shortcut.run": {
+        "kind": "shortcut", "name": "Run shortcut", "group": "Shortcut",
+        "icon": "corner-down-right", "color": "#2563eb", "outputs": ["main"],
+        "description": "A step that runs another shortcut in this folder "
+                       "with bash .forkmesh/shortcuts/<file>.",
+        "fields": [_field("text", "Text", "code", required=True,
+                          placeholder="# step: Deploy\nbash .forkmesh/"
+                                      "shortcuts/deploy.sh")],
     },
     "skill.header": {
         "kind": "skill", "name": "Skill", "group": "Skill",
@@ -1013,15 +1026,45 @@ def parse_header_file(kind, path, text):
         params["model"] = header["model"]
     file_name = path.rsplit("/", 1)[-1]
     nodes = [_node("h", root_type, params["name"] or file_name, 0, 0, params)]
-    label = "Commands" if is_script(path) else "Section"
+    script = is_script(path)
+    steps = kind == "shortcut" and script
+    label = "Commands" if script else "Section"
     for number, block in enumerate(blocks, 1):
-        nodes.append(_node("b%d" % number, block_type,
-                           "%s %d" % (label, number), number, 0,
-                           {"text": block}))
+        node_type, name, params = block_type, "", {"text": block}
+        if steps:
+            name = shortcut_step_name(block)
+            target = shortcut_link(block)
+            if target:
+                node_type = "shortcut.run"
+                params["shortcut"] = target
+        nodes.append(_node("b%d" % number, node_type,
+                           name or "%s %d" % (label, number), number, 0,
+                           params))
     connections = [{"from": nodes[i]["id"], "output": "main",
                     "to": nodes[i + 1]["id"]} for i in range(len(nodes) - 1)]
     meta = {"shebang": shebang, "blankAfterHeader": blank_after}
+    if text and not text.endswith("\n"):
+        meta["finalNewline"] = False
     return nodes, connections, meta, []
+
+
+def shortcut_step_name(block):
+    for line in str(block or "").split("\n"):
+        if not line.strip():
+            continue
+        match = STEP_RE.match(line)
+        if not match:
+            return ""
+        return " ".join(match.group(1).split())[:MAX_STEP_NAME]
+    return ""
+
+
+def shortcut_link(block):
+    for line in str(block or "").split("\n"):
+        match = RUN_SHORTCUT_RE.match(line)
+        if match:
+            return match.group(1)
+    return ""
 
 
 def is_script(path):
@@ -1045,15 +1088,17 @@ def render_header_file(kind, path, chain, meta):
         value = " ".join(str(params.get(key) or "").split())
         if value:
             out.append("# " + key + ": " + value)
+    block_types = (kind + ".block", "shortcut.run")
     blocks = [str((n.get("params") or {}).get("text") or "").strip("\n")
-              for n in chain[1:] if n["type"] == kind + ".block"]
+              for n in chain[1:] if n["type"] in block_types]
     blocks = [b for b in blocks if b.strip()]
     script = kind == "shortcut" and is_script(path)
     if blocks:
         if (meta or {}).get("blankAfterHeader", not script):
             out.append("")
         out.append("\n\n".join(blocks))
-    return "\n".join(out) + "\n"
+    end = "" if (meta or {}).get("finalNewline") is False else "\n"
+    return "\n".join(out) + end
 
 
 def _qt_escape(text):
@@ -1417,7 +1462,7 @@ def clean_document(document):
                                                  dict) else {}
         keys = {f["key"] for f in spec["fields"]}
         nodes.append({"id": node_id, "type": node_type,
-                      "name": str(raw.get("name") or spec["name"])[:60],
+                      "name": str(raw.get("name") or spec["name"])[:80],
                       "x": _int(raw.get("x")), "y": _int(raw.get("y")),
                       "params": {k: v for k, v in params.items()
                                  if k in keys}})

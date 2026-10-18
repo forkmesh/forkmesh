@@ -244,6 +244,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `backups`, `cleanup` ([cleanup.md](cleanup.md)), `computer-security`
   ([computer-security.md](computer-security.md)), `phone-security`, its
   iPhone and Android counterpart ([phone-security.md](phone-security.md)).
+- **Home network:** `openwrt` (manage an OpenWrt router and its USB storage on
+  the user's LAN from the desktop, iPhone and Android over its ubus JSON-RPC
+  endpoint; [openwrt.md](openwrt.md)).
 - **Desktop and phone extras:** `capture`, `discord`,
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `tour`, `people` ([people.md](people.md)), `aquarium`
@@ -389,5 +392,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [openwrt.md](openwrt.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).

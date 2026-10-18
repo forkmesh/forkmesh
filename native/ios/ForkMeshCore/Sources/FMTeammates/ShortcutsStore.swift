@@ -4,6 +4,56 @@ import FMControl
 import Foundation
 import Observation
 
+public struct ShortcutStep: Equatable, Sendable, Identifiable {
+    public static let maxSteps = 32
+
+    public var number: Int
+    public var name: String
+    public var shortcut: String
+
+    public var id: Int { number }
+
+    public init(number: Int, name: String, shortcut: String = "") {
+        self.number = number
+        self.name = name
+        self.shortcut = shortcut
+    }
+
+    public static func list(_ value: JSONValue?) -> [ShortcutStep] {
+        var steps: [ShortcutStep] = []
+        for item in value?.arrayOrEmpty ?? [] {
+            guard steps.count < maxSteps else { break }
+            let name: String
+            let shortcut: String
+            if let text = item.stringValue {
+                name = clean(text)
+                shortcut = ""
+            } else if let object = item.objectValue {
+                shortcut = clean(object["shortcut"]?.stringValue ?? "")
+                let named = clean(object["name"]?.stringValue ?? "")
+                name = named.isEmpty ? shortcut : named
+            } else {
+                continue
+            }
+            guard !name.isEmpty else { continue }
+            steps.append(ShortcutStep(number: steps.count + 1, name: name, shortcut: shortcut))
+        }
+        return steps
+    }
+
+    static func clean(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline).joined(separator: " ").trimmingCharacters(in: .whitespaces)
+    }
+
+    public static func countText(_ count: Int) -> String? {
+        count > 0 ? (count == 1 ? "1 step" : "\(count) steps") : nil
+    }
+
+    public func accessibilityLabel(of total: Int, opens: Bool) -> String {
+        "Step \(number) of \(total), \(name)" + (opens ? ", opens shortcut" : "")
+    }
+}
+
 public struct ShortcutEntry: Equatable, Sendable, Identifiable {
     public var file: String
     public var scope: String
@@ -23,6 +73,7 @@ public struct ShortcutEntry: Equatable, Sendable, Identifiable {
     public var startedAtMs: Int64 = 0
     public var queued = 0
     public var onPhone = false
+    public var steps: [ShortcutStep] = []
 
     public var id: String { scope + "|" + file }
 
@@ -64,7 +115,10 @@ public struct ShortcutEntry: Equatable, Sendable, Identifiable {
         expectedMs = json.int64("expectedMs", lastMs)
         let elapsed = json.int64("elapsedMs", -1)
         startedAtMs = running && elapsed >= 0 ? nowMs - elapsed : 0
+        steps = ShortcutStep.list(json["steps"])
     }
+
+    public var stepsText: String? { ShortcutStep.countText(steps.count) }
 
     public var isSkill: Bool { scope != "shortcut" }
     public var isScript: Bool { kind == "script" }
@@ -96,6 +150,11 @@ public struct ShortcutCatalog: Equatable, Sendable {
     public var scriptRunning: Bool { !onPhone && entries.contains { $0.isScript && $0.running } }
 
     public var skills: [ShortcutEntry] { entries.filter(\.isSkill).sorted { $0.uses > $1.uses } }
+
+    public func linked(_ step: ShortcutStep, from entry: ShortcutEntry) -> ShortcutEntry? {
+        guard !step.shortcut.isEmpty, step.shortcut != entry.file else { return nil }
+        return entries.first { $0.scope == entry.scope && $0.file == step.shortcut }
+    }
 
     public func pick(preferred: String) -> String {
         repos.first { $0.caseInsensitiveCompare(preferred) == .orderedSame } ?? repos.first ?? preferred

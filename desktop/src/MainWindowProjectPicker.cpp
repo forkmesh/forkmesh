@@ -11,6 +11,7 @@
 #include "AgentAccessEditor.h"
 #include "ClaudeTranscriptView.h"
 #include "ForkMeshPackageRegistry.h"
+#include "NetworkReplyError.h"
 #include "OfficeChannelMirror.h"
 #include "ProjectAgentAccess.h"
 #include "ProjectInvite.h"
@@ -945,7 +946,67 @@ void MainWindow::connectProjectInstance(const QString &url, const QString &name)
     }
     setOfflineMode(false);
     fetchFavicon(m_activeServer);
+    adoptInstanceLogo(canonical);
     updateRelaySwitcher();
+}
+
+void MainWindow::adoptInstanceLogo(const QString &serverUrl)
+{
+    const QString dir = forkmesh::paths::projectDir();
+    QUrl api = faviconUrl(serverUrl);
+    if (!m_networkAccess || dir.isEmpty() || api.isEmpty() ||
+        !forkmesh::projects::logoPathIn(dir).isEmpty())
+        return;
+    api.setPath(QStringLiteral("/api/instance"));
+    QNetworkRequest request(api);
+    request.setRawHeader("Accept", "application/json");
+    QNetworkReply *reply = m_networkAccess->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, api, dir] {
+        reply->deleteLater();
+        const QString logo =
+            reply->error() == QNetworkReply::NoError
+                ? QJsonDocument::fromJson(reply->readAll())
+                      .object()
+                      .value(QStringLiteral("logo"))
+                      .toString()
+                      .trimmed()
+                : QString();
+        QList<QUrl> candidates;
+        QUrl url(api);
+        if (logo.startsWith(QLatin1Char('/')) && !logo.startsWith(QStringLiteral("//"))) {
+            url.setPath(logo);
+            candidates.append(url);
+        }
+        url.setPath(faviconRootPath());
+        candidates.append(url);
+        url.setPath(faviconAssetPath());
+        candidates.append(url);
+        saveInstanceLogo(dir, candidates);
+    });
+}
+
+void MainWindow::saveInstanceLogo(const QString &projectDir, QList<QUrl> candidates)
+{
+    if (candidates.isEmpty() || !m_networkAccess)
+        return;
+    QNetworkRequest request(candidates.takeFirst());
+    forkmesh::markFaviconProbe(request);
+    QNetworkReply *reply = m_networkAccess->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, projectDir, candidates] {
+        reply->deleteLater();
+        QImage image;
+        if (reply->error() != QNetworkReply::NoError || !image.loadFromData(reply->readAll()) ||
+            image.isNull()) {
+            saveInstanceLogo(projectDir, candidates);
+            return;
+        }
+        if (!forkmesh::projects::logoPathIn(projectDir).isEmpty())
+            return;
+        if (image.width() > 512 || image.height() > 512)
+            image = image.scaled(512, 512, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        if (image.save(QDir(projectDir).filePath(QStringLiteral("logo.png")), "PNG"))
+            updateProjectSwitcher();
+    });
 }
 
 void MainWindow::openProject(const QString &slug, bool keepThisOneOpen)
