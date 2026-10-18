@@ -258,7 +258,11 @@ destination, in sections, with counts and activity:
 opens the project drawer), the telemetry strip centred (tiny health-coloured
 charts of phone metrics and, when a desktop answers `diag.watch`, desktop
 memory, CPU, disk and swap), the new agent button and the avatar
-(`AvatarWithDot`, rounded square, status emoji badge, connection dot). The top
+(`AvatarWithDot`, rounded square). The connection status is a 2 pt stroke
+around the square in the status colour (green online, amber away or
+connecting, red when diagnostics need attention, grey offline), not a corner
+dot, and the status emoji sits off the bottom-left corner, clear of the stroke
+(2026-10-18). The top
 bar has no background: on a tab root (`HomeShell.floatsChrome`, empty path) the
 list scrolls under it; pushed pages start below it so their back button is
 never covered. The offline strip appears only after the relay has been down
@@ -748,10 +752,13 @@ command palette's Switch project (and the iPad sidebar).
   `diagnostics/showStrip`, on by default) shows or hides the telemetry strip and
   the profile footer.
 - **Version row** (last row; iOS `YouHubSheet.versionRow`, one small darker
-  rectangle; Android `HubVersionRow`): "Version x (build)" and **What's new**
-  side by side, opening the bundled changelog in a sheet
-  ([MAC_BUILD.md](MAC_BUILD.md)), and a compact **Send diagnostics** capsule
-  that turns red ("Slow, send report") when `PerformanceAlert.evaluate` finds,
+  rectangle; Android `HubVersionRow`): "Version x (build)" with a slightly
+  larger **What's new** under it, opening the bundled changelog in a sheet
+  ([MAC_BUILD.md](MAC_BUILD.md)), and a compact **Send diagnostics** capsule.
+  None of the three truncates: on iOS each keeps its full width, and when the
+  320 pt card is too narrow for both (a long build number, "Slow, send
+  report", larger text) the capsule drops to its own line under the version
+  instead of squeezing it. The capsule turns red ("Slow, send report") when `PerformanceAlert.evaluate` finds,
   since the last send, an OS diagnostic in 24 h, a main-thread stall of 250 ms
   or more in 10 min, or five or more dropped-frame stalls in 10 min.
 - **Send diagnostics** (also the composer's "+" menu and `/diagnostics`) builds

@@ -99,15 +99,22 @@ int main()
     using forkmesh::agentwt::addScript;
     expectEq(addScript(QStringLiteral("/w/7-fix"), QStringLiteral("agent/7-fix"),
                        QStringLiteral("abc123"), false),
-             QStringLiteral("git worktree add -b "
-                            "'agent/7-fix' '/w/7-fix' 'abc123'"),
-             "worktree script quotes branch, path and base");
+             QStringLiteral("if git rev-parse --verify --quiet "
+                            "'refs/heads/agent/7-fix' >/dev/null; "
+                            "then git worktree add '/w/7-fix' 'agent/7-fix'; "
+                            "else git worktree add -b "
+                            "'agent/7-fix' '/w/7-fix' 'abc123'; fi"),
+             "worktree script reuses a branch a failed attempt left, else creates it");
     expectEq(addScript(QStringLiteral("/w/8"),
                        QStringLiteral("x';touch${IFS}/tmp/pwned;'"),
                        QStringLiteral("main';id;'"), false),
-             QStringLiteral("git worktree add -b "
+             QStringLiteral("if git rev-parse --verify --quiet "
+                            "'refs/heads/x'\\'';touch${IFS}/tmp/pwned;'\\''' >/dev/null; "
+                            "then git worktree add '/w/8' "
+                            "'x'\\'';touch${IFS}/tmp/pwned;'\\'''; "
+                            "else git worktree add -b "
                             "'x'\\'';touch${IFS}/tmp/pwned;'\\''' '/w/8' "
-                            "'main'\\'';id;'\\'''"),
+                            "'main'\\'';id;'\\'''; fi"),
              "a branch name from a pull request cannot break out of its quotes");
     expectEq(addScript(QStringLiteral("/w/9"),
                        QStringLiteral("feat';reboot;'"), QString(), true),

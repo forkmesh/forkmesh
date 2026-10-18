@@ -87,6 +87,7 @@ public enum PackageRoutes {
         case "speech": return .speech
         case "glassesAlert": return .glassesAlert
         case "phoneSecurity": return .phoneSecurity
+        case "eyeControl": return .eyeControl
         case "ember": return .ember(nil)
         case "strata": return .strata(nil)
         case "synapse": return .synapse(nil)
@@ -96,6 +97,7 @@ public enum PackageRoutes {
         case "appStoreStatus": return .appStoreStatus
         case "rssReader": return .rssReader
         case "secureDrive": return .secureDrive
+        case "spiderRoom": return .spiderRoom
         case "workflows": return .workflows
         case "people": return .people
         case "docs": return .docs

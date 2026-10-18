@@ -14,7 +14,7 @@
     ]
   },
   "packages": [
-    { "id": "capture", "version": "1.0.0", "manifest": "packages/capture/manifest.json" },
+    { "id": "capture", "version": "1.1.0", "manifest": "packages/capture/manifest.json" },
     { "id": "ledger", "version": "1.4.0", "manifest": "packages/ledger/manifest.json" },
     { "id": "x-banner-board", "version": "1.0.0", "manifest": "packages/x-banner-board/manifest.json" },
     { "id": "reddit-banner-board", "version": "1.0.0", "manifest": "packages/reddit-banner-board/manifest.json" },
@@ -52,6 +52,7 @@
     { "id": "agent-watch", "version": "1.0.0", "manifest": "packages/agent-watch/manifest.json" },
     { "id": "tour", "version": "1.1.0", "manifest": "packages/tour/manifest.json" },
     { "id": "aquarium", "version": "1.4.0", "manifest": "packages/aquarium/manifest.json" },
+    { "id": "spider-room", "version": "1.0.0", "manifest": "packages/spider-room/manifest.json" },
     { "id": "backups", "version": "1.0.0", "manifest": "packages/backups/manifest.json" },
     { "id": "secure-drive", "version": "1.1.0", "manifest": "packages/secure-drive/manifest.json" },
     { "id": "docs", "version": "1.2.0", "manifest": "packages/docs/manifest.json" },
@@ -59,6 +60,7 @@
     { "id": "computer-security", "version": "1.2.0", "manifest": "packages/computer-security/manifest.json" },
     { "id": "openwrt", "version": "1.0.0", "manifest": "packages/openwrt/manifest.json" },
     { "id": "phone-security", "version": "1.0.0", "manifest": "packages/phone-security/manifest.json" },
+    { "id": "eye-control", "version": "1.0.0", "manifest": "packages/eye-control/manifest.json" },
     { "id": "status-page", "version": "2.1.0", "manifest": "packages/status-page/manifest.json" },
     { "id": "logs", "version": "1.0.0", "manifest": "packages/logs/manifest.json" },
     { "id": "diagnostics", "version": "1.0.0", "manifest": "packages/diagnostics/manifest.json" },

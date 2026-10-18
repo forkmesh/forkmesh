@@ -79,7 +79,7 @@ def test_chunks_run_against_the_core_scope():
                   + "const out = window.%s[%s](scope);\n"
                     % (dashboard_bundle.CHUNK_GLOBAL, json.dumps(chunk))
                   + "console.log(JSON.stringify(Object.keys(out).map((k) => [k, typeof out[k]])));")
-        result = subprocess.run(["node", "-e", script], check=True,
+        result = subprocess.run(["node", "-"], input=script, check=True,
                                 capture_output=True, text=True)
         assert json.loads(result.stdout) == [[n, "function"] for n in exports]
 

@@ -37,6 +37,12 @@ refuses a running agent. New agents still start through the website queue.
 [Settings → Agents & runners](settings-agents-and-runners.md) and the phones
 ([native/DESKTOP_AGENTS.md](../native/DESKTOP_AGENTS.md)) use the same channel.
 
+The Workflows page uses the same channel for desktop steps: `diag.prepare` then
+`diag.run` with action `freeDiskSpace` and a `step`, one step at a time
+([workflows.md](workflows.md#desktop-steps)). A failed request rejects with the
+desktop's own `message` when it sent one (for example the last line a failed
+cleanup step printed), otherwise with the text for its error code.
+
 Requires Ed25519 and X25519 in WebCrypto. A relay reconnect ends all channels.
 
 Tests: `app/tests/test_desktop_control_js.py`, `app/tests/test_mobile_node_devices.py`,

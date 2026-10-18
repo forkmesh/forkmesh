@@ -30,6 +30,7 @@ state on the ForkMesh account and follow every device.
 - **No `installedBefore`, account-synced:** `timers`, `vault`, `calories`,
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
   only), `phone-security` (mobile only, [phone-security.md](phone-security.md)),
+  `eye-control` (mobile only, [eye-control.md](eye-control.md)),
   `strata`, `ember`, `synapse` (mobile and desktop since 1.1.0; desktop
   installs from before are carried to the account,
   [codebase-analysis.md](codebase-analysis.md#on-phones)).

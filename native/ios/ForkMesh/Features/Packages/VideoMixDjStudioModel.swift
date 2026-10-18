@@ -197,6 +197,7 @@ final class DjStudioModel {
     var queueDrag: DjQueueDrag?
     var draggedId: String?
     var dropSide: DjDeckSide?
+    var pace = DjPace()
 
     @ObservationIgnored var crowdDate = Date()
     @ObservationIgnored var deckFrames: [DjDeckSide: CGRect] = [:]
@@ -287,6 +288,11 @@ final class DjStudioModel {
         center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.comeBack() }
         }
+        for name in [ProcessInfo.thermalStateDidChangeNotification, Notification.Name.NSProcessInfoPowerStateDidChange] {
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshPace() }
+            }
+        }
         center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
             let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init(rawValue:))
             let options = AVAudioSession.InterruptionOptions(rawValue: note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
@@ -294,6 +300,17 @@ final class DjStudioModel {
             MainActor.assumeIsolated { self?.comeBack() }
         }
         refreshSmart()
+        refreshPace()
+    }
+
+    func refreshPace() {
+        let info = ProcessInfo.processInfo
+        let fresh = DjPace(
+            hot: info.thermalState == .serious || info.thermalState == .critical, lowPower: info.isLowPowerModeEnabled,
+            displayFps: UIApplication.shared.connectedScenes.compactMap { ($0 as? UIWindowScene)?.screen.maximumFramesPerSecond }.max() ?? DjPace.full)
+        guard fresh != pace else { return }
+        if fresh.strained != pace.strained { DjDiagnostics.mark(fresh.strained ? "pace eased" : "pace back to full") }
+        pace = fresh
     }
 
     func resumePlayback() {
@@ -344,6 +361,7 @@ final class DjStudioModel {
     func appear() {
         guard !active else { return }
         active = true
+        refreshPace()
         onScreen = true
         claimAudio()
         FmCuePlayer.shared.quieten(true)
@@ -734,6 +752,28 @@ final class DjStudioModel {
             if let bars = read.bars { deck.waveform = bars }
             deck.scratchAudio = read.audio
             if read.bars == nil, read.audio == nil { deck.audioFor = "" }
+            if deck.bpm == 0 { self?.detectBpm(deck.side, quietly: true) }
+        }
+    }
+
+    func detectBpm(_ side: DjDeckSide, quietly: Bool = false) {
+        let deck = deck(side)
+        let id = deck.videoId
+        guard let audio = deck.scratchAudio, !id.isEmpty else {
+            if !quietly { show("Deck \(side.label)’s audio is not read yet: tap the BPM box on the beat instead.") }
+            return
+        }
+        Task { [weak self, weak deck] in
+            let found = await Task.detached(priority: .utility) { DjBpm.detect(audio) }.value
+            DjDiagnostics.mark("Deck \(side.label) BPM \(found.map { String(format: "%.1f", $0) } ?? "not found")")
+            guard let self, let deck, deck.videoId == id, !quietly || deck.bpm == 0 else { return }
+            guard let found else {
+                if !quietly { self.show("No steady beat found on Deck \(side.label): tap the BPM box on the beat instead.") }
+                return
+            }
+            deck.bpm = found
+            deck.tapTempo = DjTapTempo()
+            self.save()
         }
     }
 

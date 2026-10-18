@@ -4,8 +4,6 @@ import SwiftUI
 import UIKit
 
 enum DjTheme {
-    static let frame: Double = 1.0 / 80
-
     static func rgb(_ hex: UInt32) -> Color {
         Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
     }
@@ -227,7 +225,7 @@ struct DjWaveform: View {
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            TimelineView(.animation(minimumInterval: DjTheme.frame, paused: !deck.moving)) { _ in
+            TimelineView(.animation(minimumInterval: model.pace.motionInterval, paused: !deck.moving)) { _ in
                 let time = deck.shown() - Double((dragX ?? 0) / max(1, size.width)) * DjWaveDrawing.window
                 let bars = deck.waveform
                 let duration = deck.duration
@@ -487,6 +485,7 @@ struct DjPitchStrip: View {
                 }
                 .buttonStyle(DjPressStyle())
                 .contextMenu {
+                    Button("Detect BPM", systemImage: "waveform") { model.detectBpm(deck.side) }
                     Button("Clear BPM", systemImage: "xmark") { model.clearBpm(deck.side) }
                 }
                 .accessibilityLabel(deck.bpm > 0 ? "\(String(format: "%.1f", deck.shownBpm)) BPM, tap to retap" : "Tap tempo")
@@ -504,6 +503,19 @@ struct DjPitchStrip: View {
                 .buttonStyle(DjPressStyle())
                 DjPitchFader(model: model, deck: deck, u: u)
                     .frame(maxHeight: .infinity)
+                Button {
+                    DjTheme.tick()
+                    model.setRate(deck.side, 1)
+                } label: {
+                    Text("RESET")
+                        .font(.system(size: 10 * u, weight: .bold))
+                        .foregroundStyle(abs(deck.rate - 1) > 0.0005 ? DjTheme.ink.opacity(0.9) : DjTheme.muted)
+                        .frame(maxWidth: .infinity, minHeight: 22 * u)
+                        .background(DjTheme.control, in: RoundedRectangle(cornerRadius: 3 * u, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 3 * u, style: .continuous).strokeBorder(Color.black.opacity(0.6), lineWidth: 1))
+                }
+                .buttonStyle(DjPressStyle())
+                .accessibilityLabel("Reset Deck \(deck.side.label) tempo to the middle")
             }
             .padding(6 * u)
             .background(DjTheme.panel, in: RoundedRectangle(cornerRadius: 5 * u, style: .continuous))

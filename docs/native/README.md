@@ -22,6 +22,7 @@ Topic pages:
 | [PARITY.md](PARITY.md) | Phone feature matrix, platform decisions, iOS workstream hooks, the watchOS app, bundle ids |
 | [DESKTOP_PARITY.md](DESKTOP_PARITY.md) | Parity with the Qt desktop, route contract, desktop control families, extension targets |
 | [NAVIGATION.md](NAVIGATION.md) | Tabs, routes, Home grid, bars, sitemap and URLs |
+| [THEMES.md](THEMES.md) | Accent contrast, surface families, the theme editor and its stored keys |
 | [DESKTOP_AGENTS.md](DESKTOP_AGENTS.md) | Desktop agents on the phone (relay control, diff, merge, delete) |
 | [RUNNER_AGENTS.md](RUNNER_AGENTS.md) | Cloud runner agents: branches, merge and clean up, pull requests |
 | [AGENT_ATTACHMENTS.md](AGENT_ATTACHMENTS.md) | Photos and files in agent transcripts and prompts |
@@ -249,6 +250,9 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 - The **Phone Security** package (`phone-security`) is the phones' checkup,
   the counterpart of the desktop's Security package; checks, rules and code
   are in [../marketplace/phone-security.md](../marketplace/phone-security.md).
+- The **Eye Control** package (`eye-control`, iOS only, experimental) moves a
+  cursor with ARKit face tracking and taps on a firm blink (route
+  `eyeControl`); see [../marketplace/eye-control.md](../marketplace/eye-control.md).
 - The **Router** package (`openwrt`) manages an OpenWrt router on the phone's
   Wi-Fi (route `openWrtRouter`, web path `/dashboard/openwrt`). Logic is in
   `FMPackages/OpenWrt*.swift` and core `openwrt/`; screens in

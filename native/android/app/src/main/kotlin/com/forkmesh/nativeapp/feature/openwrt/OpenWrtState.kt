@@ -31,6 +31,8 @@ class OpenWrtState {
     var rollback by mutableStateOf(true)
     var snapshot by mutableStateOf(OpenWrtSnapshot())
     var packageOutput by mutableStateOf("")
+    var storageLog by mutableStateOf("")
+    var storageBusy by mutableStateOf(false)
     var routerHost by mutableStateOf("")
 
     private var client: OpenWrtClient? = null
@@ -119,6 +121,8 @@ class OpenWrtState {
         signedIn = false
         snapshot = OpenWrtSnapshot()
         packageOutput = ""
+        storageLog = ""
+        storageBusy = false
         routerHost = ""
         show(text)
     }
@@ -143,6 +147,7 @@ class OpenWrtState {
         val loaded = withContext(Dispatchers.IO) { current.call("uci", "get", mapOf("config" to config)) to current.changes() }
         snapshot = snapshot.copy(
             configs = if (loaded.first.ok) snapshot.configs + (config to loaded.first.data.obj("values")) else snapshot.configs,
+            missingConfigs = if (loaded.first.ok) snapshot.missingConfigs - config else snapshot.missingConfigs,
             changes = loaded.second,
         )
     }
@@ -245,9 +250,101 @@ class OpenWrtState {
     }
 
     suspend fun setAutoMount(on: Boolean) {
+        val current = client ?: return
+        if (snapshot.fstabMissing) {
+            if (!on || storageBusy) return
+            storageBusy = true
+            show("The router has no storage settings file (/etc/config/fstab) yet. Creating it…")
+            val created = withContext(Dispatchers.IO) { current.createFstab() }
+            storageBusy = false
+            if (!created.ok) {
+                show(created.error, true)
+                checkStorage()
+                return
+            }
+            appendStorageLog("Created /etc/config/fstab on the router.")
+            val fstab = withContext(Dispatchers.IO) { current.call("uci", "get", mapOf("config" to "fstab")) }
+            if (!fstab.ok) return show("ForkMesh created /etc/config/fstab, but the router cannot read it: ${fstab.error}", true)
+            snapshot = snapshot.copy(configs = snapshot.configs + ("fstab" to fstab.data.obj("values")), missingConfigs = snapshot.missingConfigs - "fstab")
+        }
         val values = mapOf("anon_mount" to if (on) "1" else "0", "auto_mount" to "1")
         val global = snapshot.sections("fstab", "global").firstOrNull()
-        if (global == null) add("fstab", "global", values, "Automatic mounting") else stage("fstab", global.name, UciEdit(values), "Automatic mounting")
+        val saved = if (global == null) add("fstab", "global", values, "Automatic mounting") else stage("fstab", global.name, UciEdit(values), "Automatic mounting")
+        if (saved) {
+            show(if (on) "Automatic mounting saved. Apply the change, then press Mount disks now." else "Automatic mounting turned off. Apply to make it take effect.")
+        } else {
+            show("Could not change automatic mounting: $message", true)
+            checkStorage()
+        }
+    }
+
+    fun appendStorageLog(line: String) {
+        storageLog = if (storageLog.isEmpty()) line else "$storageLog\n$line"
+    }
+
+    suspend fun checkStorage(keepLog: Boolean = false) {
+        val current = client ?: return
+        if (storageBusy) return
+        storageBusy = true
+        try {
+            if (keepLog) appendStorageLog("\nChecking USB storage…") else storageLog = "Checking USB storage…"
+            val start = snapshot
+            val (check, fresh) = withContext(Dispatchers.IO) { current.checkStorage(start) }
+            snapshot = fresh
+            val report = OpenWrtModel.storageReport(check)
+            if (keepLog) appendStorageLog(report) else storageLog = report
+        } finally {
+            storageBusy = false
+        }
+    }
+
+    suspend fun installStorageSupport() {
+        val current = client ?: return
+        if (storageBusy) return
+        val tool = snapshot.packageTool
+        if (tool == null) {
+            show("The router does not let ForkMesh run its package manager, so USB storage support cannot be installed from here. Install luci-app-package-manager (or luci-app-opkg on older releases) on the router.", true)
+            checkStorage()
+            return
+        }
+        storageBusy = true
+        val failed = mutableListOf<String>()
+        try {
+            show("Installing USB storage support…")
+            storageLog = "Updating the router's package lists…"
+            val update = withContext(Dispatchers.IO) { current.packageAction(tool, "update", emptyList()) }
+            if (update.ok) {
+                appendStorageLog("Package lists updated.")
+            } else {
+                appendStorageLog("Updating the package lists failed; the router may have no internet connection. Trying to install anyway.")
+                OpenWrtModel.outputTail(update.error).forEach { appendStorageLog("  $it") }
+            }
+            for (name in OpenWrtModel.usbStoragePackages) {
+                appendStorageLog("Installing $name…")
+                val result = withContext(Dispatchers.IO) { current.packageAction(tool, "install", listOf(name)) }
+                if (result.ok) {
+                    appendStorageLog("  $name is installed.")
+                } else {
+                    failed += name
+                    appendStorageLog("  $name failed:")
+                    val output = (result.data.str("stdout") + "\n" + result.data.str("stderr")).trim()
+                    OpenWrtModel.outputTail(output.ifEmpty { result.error }).forEach { appendStorageLog("    $it") }
+                }
+            }
+        } finally {
+            storageBusy = false
+        }
+        refresh()
+        if (failed.isEmpty()) show("USB storage support installed.")
+        else show("Some storage packages could not be installed: ${failed.joinToString(", ")}. The log below says why.", true)
+        checkStorage(keepLog = true)
+    }
+
+    suspend fun applyAndMount() {
+        apply()
+        if (snapshot.pendingCount > 0) return
+        mountAll()
+        checkStorage()
     }
 
     suspend fun mountAtBoot(disk: OpenWrtDisk, path: String) {

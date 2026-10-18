@@ -136,6 +136,32 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(spin.step(target: .nan, speed: 1, at: now + 5.05), 42)
     }
 
+    func testWaveformKeepsMovingBetweenRecordStepsTimedForTheNextFrame() {
+        var spin = DjSpin()
+        var now = 0.0
+        _ = spin.step(target: 0, speed: 1, motor: 1, at: now)
+        for _ in 1...120 {
+            now += 1.0 / 60
+            _ = spin.step(target: now, speed: 1, motor: 1, at: now)
+        }
+        let turned = spin.turn
+        let ahead = now + 1.0 / 15
+        let record = spin.step(target: ahead, speed: 1, motor: 1, at: ahead)
+        var shown = spin.step(target: now, speed: 1, motor: 1, at: now)
+        XCTAssertEqual(shown, now, accuracy: 0.01)
+        for frame in 1...4 {
+            let at = now + Double(frame) / 60
+            let next = spin.step(target: at, speed: 1, motor: 1, at: at)
+            XCTAssertEqual(next - shown, 1.0 / 60, accuracy: 0.002)
+            XCTAssertLessThanOrEqual(next, record + 0.0001)
+            shown = next
+        }
+        XCTAssertEqual(spin.turn - turned, 1.0 / 15, accuracy: 0.001)
+        let later = ahead + 1.0 / 15
+        XCTAssertEqual(spin.step(target: later, speed: 1, motor: 1, at: later) - record, 1.0 / 15, accuracy: 0.002)
+        XCTAssertEqual(spin.turn - turned, 2.0 / 15, accuracy: 0.001)
+    }
+
     func testRecordTurnsAtOnceWhileTheMusicStarts() {
         var spin = DjSpin()
         spin.hold(10, at: 0)

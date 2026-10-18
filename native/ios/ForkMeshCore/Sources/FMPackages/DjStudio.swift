@@ -368,8 +368,9 @@ public struct DjSpin: Equatable, Sendable {
             if now.isFinite { stamp = now }
             return position
         }
-        stamp = max(last, now)
-        let elapsed = max(0, now - last)
+        guard now >= last else { return position - speed * min(last - now, Self.gap) }
+        stamp = now
+        let elapsed = now - last
         guard elapsed <= Self.gap else {
             if elapsed <= Self.hitch { turn += motor * elapsed }
             position = target

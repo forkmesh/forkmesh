@@ -3877,6 +3877,8 @@ private:
                                    const QJsonObject &params);
     void runLocalControlDiagnosticsAction(int connectionId, int requestId,
                                           const QString &action, const QString &subject);
+    void runLocalControlFreeDiskSpace(int connectionId, int requestId, const QString &step,
+                                      const QString &who);
     forkmesh::localcontrol::hosts::ConfirmationStore m_diagControlConfirmations;
     QJsonObject localControlBackupStatus() const;
     void noteBackupResult(const QString &failure);

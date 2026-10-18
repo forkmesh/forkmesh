@@ -608,8 +608,10 @@ def test_create_list_update_and_delete_are_owner_scoped(harness):
                         workflow["hookPath"])
     path = "/api/workflows/" + workflow["id"]
     listed = harness.call("/api/workflows", user="alice").data["workflows"]
-    assert [item["id"] for item in listed] == [workflow["id"]]
-    assert harness.call("/api/workflows", user="bob").data["workflows"] == []
+    assert [item["id"] for item in listed if item["name"] != "Free disk space"] \
+        == [workflow["id"]]
+    assert [item["name"] for item in harness.call(
+        "/api/workflows", user="bob").data["workflows"]] == ["Free disk space"]
     assert harness.call(path, user="bob").status == 404
     assert harness.call(path, "POST", _definition(), user="bob").status == 404
     stored = harness.db.execute("SELECT data FROM workflows").fetchone()[0]
@@ -646,7 +648,8 @@ def test_manual_run_records_an_execution(harness):
     assert detail.data["run"]["nodes"]["h"]["status"] == "success"
     assert harness.call(path + "/runs/" + run["id"], user="bob").status == 404
     listed = harness.call("/api/workflows", user="alice").data["workflows"]
-    assert listed[0]["lastStatus"] == "success"
+    assert {item["id"]: item for item in listed}[created["id"]]["lastStatus"] \
+        == "success"
 
 
 def test_runs_are_rate_limited_and_pruned(harness):

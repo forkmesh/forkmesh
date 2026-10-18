@@ -114,7 +114,7 @@ struct DjRecord: View {
             DjVinyl(d: d * 0.82).equatable()
             DjSpinner(
                 deck: deck, d: d, artwork: deck.artwork, gain: DjStudio.gain(deck.side, crossfader: model.crossfader),
-                moving: deck.moving, scratching: deck.scratching, rate: deck.effectiveRate)
+                moving: deck.moving, scratching: deck.scratching, rate: deck.effectiveRate, pace: model.pace)
                 .frame(width: d, height: d)
                 .allowsHitTesting(false)
         }
