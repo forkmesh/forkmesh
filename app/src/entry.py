@@ -39461,6 +39461,15 @@ async def _authorized_mirror_issue_signing_key(env, request, owner, repo):
             safe_segment(original.group(1)) if original else owner)
         public_repo = (
             safe_segment(original.group(2)) if original else repo)
+        backing_owner = str(owner or "").strip().lower()
+        if (
+            str(public_owner or "").lower() != backing_owner
+            and str(public_repo or "").lower()
+            == str(repo or "").strip().lower()
+            and await _org_repo_node(env, public_owner, public_repo)
+            == backing_owner
+        ):
+            public_owner, public_repo = backing_owner, repo
         flagship_owner = (
             await _org_repo_node(env, "forkmesh", "forkmesh")
             or "forkmesh"

@@ -1151,3 +1151,26 @@ func TestCatalogFailureDoesNotPostEveryGitSafetyCycle(t *testing.T) {
 		t.Fatalf("due catalog retry POSTs = %d, want 2", posts)
 	}
 }
+
+func TestCollaborationCatchUpDrainsEachRepositoryOnce(t *testing.T) {
+	daemon := &Daemon{
+		config: Config{PublishOwner: "node1"},
+		gateway: GatewayConfig{Repositories: []Repository{
+			{Owner: "node1", Name: "platform", GitDir: "/srv/platform.git"},
+			{Owner: "acme", Name: "platform", GitDir: "/srv/platform.git"},
+			{Owner: "alice", Name: "Widgets", GitDir: "/srv/widgets.git"},
+			{Owner: "acme", Name: "Widgets", GitDir: "/srv/widgets.git"},
+			{Owner: "node1", Name: "solo", GitDir: "/srv/solo.git"},
+		}},
+	}
+	var drained []string
+	for _, repo := range daemon.gateway.Repositories {
+		if daemon.preferredCollaborationAlias(repo) {
+			drained = append(drained, repositoryKey(repo))
+		}
+	}
+	want := []string{"acme/platform", "alice/widgets", "node1/solo"}
+	if strings.Join(drained, ",") != strings.Join(want, ",") {
+		t.Fatalf("catch-up drained %v, want %v", drained, want)
+	}
+}

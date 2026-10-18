@@ -24,6 +24,31 @@ source desktop lives in the desktop's `desktop/src/UpstreamCheckoutSync.cpp`.
   with a signed `forkmesh-repostate-v1` statement of the refs digest after the
   commit. The relay records that as an attested state for the repository.
 
+### Organization aliases
+
+The gateway can list one bare repository under several names: the node owner
+(`publishOwner`), the creator or source owner, and organization aliases
+(`acme/widgets` linked to `alice/widgets` in `org_repos`). The relay rewrites
+an alias to the linked repository before routing, so every name reaches the
+same inbox.
+
+- **Catch-up drains each repository once.** `preferredCollaborationAlias`
+  picks the first gateway entry for a git directory that is not the node
+  owner, or the node owner when there is no other name. It used to accept
+  every non-node name, so a hosted repository with an organization alias was
+  drained twice per pass.
+- **The relay authorizes an alias drain against the linked repository.**
+  `_authorized_mirror_issue_signing_key` reads the public URL from the original
+  request. The public catalog lists the linked repository, never the alias, so
+  the mirror group lookup for `acme/widgets` found nothing and every alias drain
+  got `401 unauthorized`. On a single-organization instance this repeated for
+  the platform mirror and every hosted repository on each retry. When the
+  public name is an organization alias whose `org_repos` row points at the
+  routed owner, the lookup (and the flagship check) now uses the routed
+  `owner/repo`. An alias linked to a different owner still fails. Tests:
+  `TestCollaborationCatchUpDrainsEachRepositoryOnce`,
+  `test_mirror_intake_on_an_org_alias_uses_the_linked_repository_group`.
+
 ## Pull metadata
 
 Each open pull has its own branch `refs/heads/forkmesh/pull/<n>` (alias
