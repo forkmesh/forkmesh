@@ -87,7 +87,24 @@ jobs:
   empty string.
 - In `run:` an expression becomes a reference to an environment variable
   holding its value (`"$FM_EXPR_1"`), so issue titles and inputs can never
-  inject shell. `${{ secrets.X }}` becomes `"$X"` with `X` exported.
+  inject shell. `${{ secrets.X }}` becomes `"$X"` with `X` exported (trusted
+  jobs; otherwise it is an empty `FM_EXPR_n`). Inside a double-quoted string
+  the reference is written `${FM_EXPR_1}` and inside a single-quoted one
+  `'"$FM_EXPR_1"'`, so the value lands where GitHub would put it; the runner
+  tracks quotes and `#` comments only, not heredocs. Numbering restarts at 1
+  for every step.
+- `if:` follows GitHub: without `success()`, `failure()`, `always()` or
+  `cancelled()` it is `success() && (<if>)`; an empty `if:` is `success()`.
+  A failed step makes later steps skip unless their `if:` asks for
+  `failure()` or `always()`; the run is then `failed`. A job's `if:` is
+  evaluated before its first step; a false one logs `Skipped: <step>` for
+  each of its steps. An unparsable expression fails the step.
+- `on.push.branches` absent means every branch (GitHub's meaning; the
+  desktop and mirror runners still follow only the default branch).
+  `on.push.paths` is applied to `git diff --name-only <before> <commit>`;
+  with no usable `before` (empty or all zeros) every path counts as changed.
+- `timeout-minutes` on a job sets the workflow's limit (the largest job value,
+  capped at 90 minutes; 60 by default); on a step it limits that step.
 
 ## Job environment
 
@@ -95,6 +112,7 @@ Every step gets the runner Actions environment plus:
 
 | Variable | Value |
 | --- | --- |
+| `FORKMESH_BEFORE` | the push's previous commit (`before`), empty when unknown |
 | `FORKMESH_EVENT`, `GITHUB_EVENT_NAME` | `push`, `schedule`, `workflow_dispatch`, `issues`, `issue_comment` |
 | `FORKMESH_EVENT_PATH`, `GITHUB_EVENT_PATH` | JSON event payload file |
 | `FORKMESH_TOKEN`, `GITHUB_TOKEN` | job token for the job API (trusted jobs only) |
@@ -114,16 +132,36 @@ Payloads (`FORKMESH_EVENT_PATH`) follow GitHub's shapes for the fields used:
 - issues: `{action, issue:{number, title, body, state, labels:[{name}], user:{login}}, label:{name}, sender:{login}}`
 - issue_comment: `{action, issue:{...}, comment:{id, body, user:{login}}, sender:{login}}`
 
-### Pushing back
+### Checkout and pushing back
 
-A job whose workflow sets `permissions: contents: write`, and that runs for
-`push`, `schedule` or `workflow_dispatch` on a branch (or `issues` /
-`issue_comment`, on the default branch), gets a real clone instead of an
-exported copy: `origin` points at the runner clone URL with the push grant in
-`http.extraHeader`, `user.name`/`user.email` are the instance's Actions bot,
-and the branch is checked out. `git push origin HEAD:<branch>` is accepted
-when it fast-forwards that branch. A push made with an Actions grant does not
-trigger `push` workflows again.
+Every run gets a real clone (`git clone --no-hardlinks` from the runner's
+repository cache, full history and every branch as `origin/*`), with the
+job's branch checked out at the job's commit (`git checkout -B <branch>
+<commit>`), so `git diff $FORKMESH_BEFORE $GITHUB_SHA` works. `origin` is the
+lease's runner clone URL, with no credential, and `user.name`/`user.email`
+are the Actions bot when the lease names one. The clone is owned by the job
+user.
+
+Only a trusted job whose workflow sets `permissions: contents: write` (or
+`write-all`, at the workflow or a job) and whose lease carries an
+`actions-push` grant for exactly `refs/heads/<branch>` (this runner, owner and
+repository) gets the credential: `http.extraHeader` is
+`X-ForkMesh-Runner-Grant: <grant>` (the header agent-branch pushes use), and
+`branch.<branch>.remote`/`.merge` point at `origin`. A grant that does not
+match is left out silently and the run continues without it.
+`git push origin HEAD:<branch>` is accepted when it fast-forwards that branch.
+A push made with an Actions grant does not trigger `push` workflows again.
+
+The runner masks the job token and the push grant as well as the secrets.
+
+### Which commit runs
+
+A `push` to the default branch runs only a commit that is an ancestor of the
+branch tip (as runner Actions always did). A `push` to another branch runs
+the pushed commit when the cache has it, even after a force-push. Other
+events run `commit` when the lease names one the cache has, else the branch
+tip. `issues` and `issue_comment` runs need the payload's `action` in the
+workflow's `types` (no `types` means every action).
 
 ## Job API
 
@@ -181,9 +219,13 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   `eventPayload`, `inputs`, `secrets`, `pushGrant`, `pushRef`, `jobToken`,
   `apiUrl`, `trusted`, `botName`, `botEmail`.
 - The report adds `catalog` (`[{path, name, events, schedules, inputs}]`,
-  stored in `repo_action_workflows`) and per run `event` and `log` (full log,
-  1 MiB cap, stored in `repo_action_logs`). The runner reports every 5
-  seconds while a workflow runs.
+  every workflow at the commit that parses, at most 64; each input is
+  `{name, description, required, default, type, options}`; stored in
+  `repo_action_workflows`) and per run `event` and `log` (full log, 1 MiB
+  cap: the first 768 KiB and the last 256 KiB with an omitted-bytes line
+  between; stored in `repo_action_logs`). `logTail` stays the last 16 KiB.
+  The runner reports every 5 seconds while a workflow runs; those progress
+  reports are sent once, without retries.
 - `snapshot` returns `controlAvailable: true` and each run's `event`.
   `POST /api/repo/<owner>/<repo>/actions/control` with
   `{action: "dispatch", workflow, ref, inputs}`, `{action: "cancel", runId}`
