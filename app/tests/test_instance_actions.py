@@ -899,3 +899,17 @@ def test_the_instance_runner_log_header_names_this_server():
     assert runner_actions._show_runner(runtime, other) == other
     runtime.runner_app_url = lambda: ""
     assert runner_actions._show_runner(runtime, header) == header
+
+
+def test_a_renamed_instance_runner_still_shows_its_old_jobs_as_this_server():
+    runtime, _key = setup()
+    runtime.runner_app_url = lambda: "https://code.example.org"
+    runtime.settings["INSTANCE_FLAGSHIP_NODE"] = "box"
+    runtime.settings["ACTIONS_INSTANCE_RUNNER"] = "acme-runner"
+    assert runner_actions._local_runner(runtime, "box-runner") is True
+    assert runner_actions._local_runner(runtime, "acme-runner") is True
+    assert runner_actions._local_runner(runtime, "elsewhere") is False
+    old = "==> ci at 0123456789ab on main (runner box-runner; event push)\n"
+    assert "(runner code.example.org;" in runner_actions._show_runner(runtime, old)
+    runtime.settings["ACTIONS_INSTANCE_RUNNER"] = ""
+    assert runner_actions._local_runner(runtime, "box-runner") is False

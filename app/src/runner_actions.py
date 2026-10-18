@@ -915,17 +915,28 @@ def _site_host(runtime):
     return host if re.fullmatch(r"[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?", host) else ""
 
 
+def _instance_runners(runtime):
+    own = runtime.setting("ACTIONS_INSTANCE_RUNNER").lower()
+    if not own:
+        return ()
+    node = runtime.setting("INSTANCE_FLAGSHIP_NODE").lower()
+    legacy = node + "-runner" if node else ""
+    return tuple(name for name in (own, legacy) if name)
+
+
 def _show_runner(runtime, text):
-    own = runtime.setting("ACTIONS_INSTANCE_RUNNER")
     host = _site_host(runtime)
-    if not text or not own or not host:
+    if not text or not host:
         return text
-    return str(text).replace("(runner %s;" % own, "(runner %s;" % host)
+    text = str(text)
+    for name in _instance_runners(runtime):
+        text = text.replace("(runner %s;" % name, "(runner %s;" % host)
+    return text
 
 
 def _local_runner(runtime, node):
-    own = runtime.setting("ACTIONS_INSTANCE_RUNNER").lower()
-    return bool(own) and (not node or node.lower() == own)
+    names = _instance_runners(runtime)
+    return bool(names) and (not node or node.lower() in names)
 
 
 def public_summary(full):
