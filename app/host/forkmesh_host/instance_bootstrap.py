@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import os
 import re
 import sys
 
 NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,37}[a-z0-9])?$")
 PUBKEY_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+RUNNER_NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+SEED_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+BOT_SUFFIX = "-actions"
+BOT_ROLE = "maintainer"
 NODE = "forkmesh"
 REPO = "forkmesh"
 MAX_OWNERS = 20
@@ -208,7 +214,37 @@ async def ensure_theme(entry, env, value):
         doc, int(entry.Date.now()))
 
 
-async def bootstrap(runtime, spec):
+def bot_public_key(seed):
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    key = ed25519.Ed25519PrivateKey.from_private_bytes(bytes.fromhex(seed))
+    raw = key.public_key().public_bytes_raw()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+async def ensure_bot(entry, env, spec, seed):
+    name = spec["owner"] + BOT_SUFFIX
+    if not RUNNER_NAME_RE.fullmatch(name):
+        raise BootstrapError("the Actions bot name %s is too long" % name)
+    public_key = bot_public_key(seed)
+    name_bi, rec = await entry._account_row(env, name)
+    if rec and entry._account_kind(rec) != "node":
+        raise BootstrapError("the name %s is taken by a user account" % name)
+    rec = rec or {}
+    rec.update({"name": name, "kind": "node", "status": "active",
+                "pubkey": public_key, "actionsBot": True})
+    rec.setdefault("created_at", int(entry.Date.now()))
+    await entry._save_account(env, name_bi, rec)
+    await entry.touch_registered_node(env, name_bi, rec)
+    if spec["ownerType"] == "org":
+        org_bi, _ = await entry._org_row(env, spec["owner"])
+        await entry.d1_run(
+            env, "INSERT OR REPLACE INTO org_members "
+            "(org_bi, member_bi, role, name, created_at) VALUES (?,?,?,?,?)",
+            org_bi, name_bi, BOT_ROLE, name, int(entry.Date.now()))
+    return name
+
+
+async def bootstrap(runtime, spec, bot_seed=""):
     entry, env = runtime.entry, runtime.env
     await entry.ensure_schema(env)
     admin_bi, admin_created = await ensure_admin(entry, env, spec)
@@ -227,7 +263,12 @@ async def bootstrap(runtime, spec):
         await ensure_mirror_features(entry, env)
     if spec["theme"]:
         await ensure_theme(entry, env, spec["theme"])
-    return {
+    bot = ""
+    if bot_seed:
+        if not SEED_RE.fullmatch(bot_seed):
+            raise BootstrapError("ACTIONS_BOT_SEED is not 64 hex characters")
+        bot = await ensure_bot(entry, env, spec, bot_seed)
+    result = {
         "ok": True,
         "admin": spec["admin"],
         "adminCreated": admin_created,
@@ -238,6 +279,9 @@ async def bootstrap(runtime, spec):
         "node": NODE if spec["nodePublicKey"] else "",
         "repository": "%s/%s" % (spec["owner"], REPO),
     }
+    if bot:
+        result["actionsBot"] = bot
+    return result
 
 
 def cmd_instance_bootstrap(args):
@@ -249,7 +293,10 @@ def cmd_instance_bootstrap(args):
         return 2
     runtime = _runtime(args)
     try:
-        result = asyncio.run(bootstrap(runtime, spec))
+        result = asyncio.run(bootstrap(
+            runtime, spec,
+            os.environ.get("ACTIONS_BOT_SEED", "").strip()
+            or str(getattr(runtime.env, "ACTIONS_BOT_SEED", "") or "").strip()))
     except BootstrapError as error:
         result = {"ok": False, "error": str(error)}
     finally:
@@ -260,9 +307,50 @@ def cmd_instance_bootstrap(args):
     return 0 if result.get("ok") else 1
 
 
+async def register_runner(runtime, name, public_key, owner):
+    entry, env = runtime.entry, runtime.env
+    await entry.ensure_schema(env)
+    now = int(entry.Date.now())
+    await entry.d1_run(
+        env,
+        "INSERT INTO runner_nodes (name,public_key,registered_by,scope,"
+        "allowed_owners,status,created_at,updated_at,last_seen_at,"
+        "actions_trusted) VALUES (?,?,?,'pool',?,'active',?,?,0,1) "
+        "ON CONFLICT(name) DO UPDATE SET public_key=excluded.public_key,"
+        "registered_by=excluded.registered_by,scope='pool',"
+        "allowed_owners=excluded.allowed_owners,status='active',"
+        "actions_trusted=1,updated_at=excluded.updated_at",
+        name, public_key, owner, json.dumps([owner]), now, now)
+    return {"ok": True, "runner": name, "owner": owner, "scope": "pool",
+            "allowedOwners": [owner], "actionsTrusted": True}
+
+
+def cmd_instance_runner(args):
+    from .ops import _runtime
+    name = str(args.name or "").strip().lower()
+    public_key = str(args.public_key or "").strip()
+    owner = str(args.owner or "").strip().lower()
+    if (not RUNNER_NAME_RE.fullmatch(name) or not PUBKEY_RE.fullmatch(
+            public_key) or not RUNNER_NAME_RE.fullmatch(owner)):
+        print(json.dumps({"ok": False, "error": "invalid runner settings"}))
+        return 2
+    result = asyncio.run(register_runner(_runtime(args), name, public_key,
+                                         owner))
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
 def add_parser(sub, common):
     command = sub.add_parser(
         "instance-bootstrap",
         help="create the first admin and owner of a new instance (JSON on stdin)")
     common(command)
     command.set_defaults(func=cmd_instance_bootstrap)
+    runner = sub.add_parser(
+        "instance-runner",
+        help="register the instance's own Actions runner (pool, trusted)")
+    common(runner)
+    runner.add_argument("--name", required=True)
+    runner.add_argument("--public-key", required=True)
+    runner.add_argument("--owner", required=True)
+    runner.set_defaults(func=cmd_instance_runner)

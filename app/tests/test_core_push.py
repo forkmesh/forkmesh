@@ -640,6 +640,9 @@ def test_a_main_push_queues_runner_actions_only_while_the_desktop_is_offline(
     db.executescript(
         (ROOT / "migrations" / "0248_repo_action_jobs.sql").read_text()
         .split("INSERT INTO schema_meta")[0])
+    db.executescript(
+        (ROOT / "migrations" / "0272_actions_instance.sql").read_text()
+        .split("INSERT INTO schema_meta")[0])
     online = {"forkmesh"}
 
     async def holds(_env, name):
@@ -672,6 +675,48 @@ def test_a_main_push_queues_runner_actions_only_while_the_desktop_is_offline(
             ("forkmesh", "forkmesh", "main", "6" * 40, "fmnext-n1", "queued")]
         assert asyncio.run(loaded.queue_runner_actions(
             env, "forkmesh", "forkmesh", "6" * 40, "fmnext-n2")) == 0
+    finally:
+        for name in ("runner_leases", "runner_actions"):
+            sys.modules.pop(name, None)
+
+
+def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pushes(
+        module):
+    loaded, ctx = module
+    db = ctx["db"]
+    db.execute("CREATE TABLE repositories (key_bi TEXT, data TEXT)")
+    for name in ("0193_runner_nodes.sql", "0248_repo_action_jobs.sql",
+                 "0272_actions_instance.sql"):
+        db.executescript(
+            (ROOT / "migrations" / name).read_text()
+            .split("-- The runtime schema text changed")[0]
+            .split("INSERT INTO schema_meta")[0])
+
+    async def holds(_env, _name):
+        return True
+
+    for name in ("runner_leases", "runner_actions"):
+        sys.modules.pop(name, None)
+    loaded._bind_runtime({"_node_events_object_holds_node": holds})
+    env = type("Env", (), {"RUNNER_POOL_TARGET_NODES": "forkmesh",
+                           "ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+
+    def push(*updates):
+        asyncio.run(loaded.record_accepted_push(
+            env, "forkmesh", "site", {"node": "forkmesh"}, "jett",
+            _report(*updates), core=True, state="e" * 64))
+        return [tuple(row) for row in db.execute(
+            "SELECT branch,commit_oid,before_oid,event,actor "
+            "FROM repo_action_jobs ORDER BY id")]
+
+    try:
+        assert push(("refs/heads/topic", "1" * 40, "4" * 40, 1),
+                    ("refs/tags/v1", "0" * 40, "5" * 40, 0),
+                    ("refs/heads/gone", "2" * 40, "0" * 40, 0)) == [
+            ("topic", "4" * 40, "1" * 40, "push", "jett")]
+        db.execute("UPDATE repo_action_jobs SET status='completed',"
+                   "pushed_commit=?", ("7" * 40,))
+        assert len(push(("refs/heads/topic", "4" * 40, "7" * 40, 1))) == 1
     finally:
         for name in ("runner_leases", "runner_actions"):
             sys.modules.pop(name, None)
