@@ -139,6 +139,7 @@
   };
 
   const poweredBy = () => {
+    if (script && script.dataset.instancePoweredBy === "off") return;
     if (document.querySelector("[data-instance-powered-by]")) return;
     const footer = document.createElement("footer");
     footer.setAttribute("data-instance-powered-by", "");
