@@ -63,7 +63,8 @@ WORLD_DOCUMENT_SECURITY_HEADERS = {
     "content-security-policy": (
         "default-src 'self'; base-uri 'self'; object-src 'none'; "
         "frame-ancestors 'none'; form-action 'self'; "
-        "script-src 'self' 'unsafe-inline'; style-src 'self' "
+        "script-src 'self' 'unsafe-inline' "
+        "https://static.cloudflareinsights.com; style-src 'self' "
         "'unsafe-inline'; img-src 'self' data: blob: https:; "
         "font-src 'self' data:; connect-src 'self' https: wss:; "
         "media-src 'self' blob: https:; frame-src 'self' https:; "

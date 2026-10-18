@@ -138,6 +138,8 @@ def test_on_a_one_origin_instance_the_world_is_served_locally():
     ("/office", "world"),
     ("/api/world/store/catalog", "rewards"),
     ("/api/world/wallet", "rewards"),
+    ("/api/accounts/central-fund", "rewards"),
+    ("/api/accounts/sessions", ""),
     ("/api/world/community-ads/placements", "ads"),
     ("/api/orgs/acme/discord", "discord"),
     ("/dashboard", ""),
@@ -150,5 +152,5 @@ def test_world_shell_policy_keeps_three_local():
     source = (ROOT / "src" / "app_runtime.py").read_text(encoding="utf-8")
     block = re.search(r"WORLD_DOCUMENT_SECURITY_HEADERS = \{(.*?)\n\}",
                       source, re.S).group(1)
-    assert "script-src 'self' 'unsafe-inline';" in block
-    assert "jsdelivr" not in block and "cloudflareinsights" not in block
+    assert "script-src 'self' 'unsafe-inline' \"\n        \"https://static.cloudflareinsights.com;" in block
+    assert "jsdelivr" not in block

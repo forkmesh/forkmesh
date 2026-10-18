@@ -65,6 +65,8 @@ import { proceduralAvatarFaceDataURL } from "./world-avatar-face.js";
 import {
   PORTAL_PARAM,
   homePortalHex,
+  instanceKeepsDirectory,
+  instancePluginOff,
   portalDestination,
   requestedPortalSlot,
   withHomePortal,
@@ -8700,9 +8702,11 @@ class ForkMeshWorld extends HTMLElement {
           timeout: 4000,
           cache: "no-store",
         }),
-        this.fetchJSON(
-          "/api/world/community-ads/placements?context=town-square",
-          { auth: false, timeout: 4000, cache: "no-store" },
+        this.whenInstancePlugin("ads", () =>
+          this.fetchJSON(
+            "/api/world/community-ads/placements?context=town-square",
+            { auth: false, timeout: 4000, cache: "no-store" },
+          ),
         ),
         this.fetchJSON("/api/world/fediverse-mentions", {
           auth: false,
@@ -8767,12 +8771,14 @@ class ForkMeshWorld extends HTMLElement {
       this.networkAd = null;
       return Promise.resolve();
     }
-    this.networkAdLoad = this.fetchJSON(NETWORK_AD_SERVE_PATH, {
-      auth: false,
-      credentials: "omit",
-      timeout: 4000,
-      maxAge: NETWORK_AD_MAX_AGE_MS,
-    })
+    this.networkAdLoad = this.whenInstancePlugin("ads", () =>
+      this.fetchJSON(NETWORK_AD_SERVE_PATH, {
+        auth: false,
+        credentials: "omit",
+        timeout: 4000,
+        maxAge: NETWORK_AD_MAX_AGE_MS,
+      }),
+    )
       .then(
         (payload) => normalizeNetworkAd(payload),
         // A failed or cooling-down serve call is an empty slot, not an error.
@@ -10913,11 +10919,13 @@ class ForkMeshWorld extends HTMLElement {
         // absent: loadRepositoryCatalog() issues them when a character
         // reaches the repository district.
         this.fetchJSON("/api/version", { auth: false, timeout: 5000 }),
-        this.fetchJSON("/api/accounts/central-fund", {
-          auth: false,
-          timeout: 5000,
-          cache: "no-store",
-        }),
+        this.whenInstancePlugin("rewards", () =>
+          this.fetchJSON("/api/accounts/central-fund", {
+            auth: false,
+            timeout: 5000,
+            cache: "no-store",
+          }),
+        ),
         this.fetchJSON("/api/world/organizations", {
           auth: hasSession,
           timeout: 5000,
@@ -10944,10 +10952,12 @@ class ForkMeshWorld extends HTMLElement {
           timeout: 4000,
         }),
         hasSession
-          ? this.fetchJSON("/api/rewards/pending", {
-              timeout: 5000,
-              cache: "no-store",
-            })
+          ? this.whenInstancePlugin("rewards", () =>
+              this.fetchJSON("/api/rewards/pending", {
+                timeout: 5000,
+                cache: "no-store",
+              }),
+            )
           : Promise.resolve({ rewards: [] }),
         hasSession && session?.nodeName
           ? this.fetchJSON(
@@ -10970,13 +10980,15 @@ class ForkMeshWorld extends HTMLElement {
           timeout: 5000,
           cache: "no-store",
         }),
-        this.fetchJSON(
-          "/api/world/community-ads/placements?context=town-square",
-          {
-            auth: false,
-            timeout: 4000,
-            cache: "no-store",
-          },
+        this.whenInstancePlugin("ads", () =>
+          this.fetchJSON(
+            "/api/world/community-ads/placements?context=town-square",
+            {
+              auth: false,
+              timeout: 4000,
+              cache: "no-store",
+            },
+          ),
         ),
         this.fetchJSON("/api/world/fediverse-mentions", {
           auth: false,
@@ -11200,20 +11212,14 @@ class ForkMeshWorld extends HTMLElement {
       this.world?.updateFederatedInstances?.(instances);
       this.celebrateRecentInstance(instances);
     } catch (_) {}
+    const instance = await this.instanceInfo();
     if (this.homePortal === undefined) {
-      try {
-        this.homePortal = homePortalHex(
-          await this.fetchJSON("/api/instance", {
-            auth: false,
-            timeout: 5000,
-            credentials: "omit",
-          }),
-        );
-      } catch (_) {
-        this.homePortal = null;
-      }
+      this.homePortal = homePortalHex(instance);
     }
     try {
+      if (!instanceKeepsDirectory(instance)) {
+        throw new Error("instance_directory_not_here");
+      }
       const payload = await this.fetchJSON(
         `/api/start/instances?refresh=${Math.floor(Date.now() / 300_000)}`,
         {
@@ -15627,7 +15633,34 @@ class ForkMeshWorld extends HTMLElement {
     }
   }
 
+  instanceInfo() {
+    if (!this.instanceInfoRequest) {
+      this.instanceInfoRequest = this.fetchJSON("/api/instance", {
+        auth: false,
+        timeout: 5000,
+        credentials: "omit",
+      }).catch(() => null);
+    }
+    return this.instanceInfoRequest;
+  }
+
+  async whenInstancePlugin(id, request) {
+    if (instancePluginOff(await this.instanceInfo(), id)) {
+      throw new Error("plugin_disabled");
+    }
+    return request();
+  }
+
   async refreshRewardState({ force = false } = {}) {
+    if (instancePluginOff(await this.instanceInfo(), "rewards")) {
+      this.pendingRewards = [];
+      this.setLandmarkCapability(
+        "fountain",
+        false,
+        LANDMARK_CONSTRUCTION_REASONS.fountain,
+      );
+      return;
+    }
     const hasSession =
       this.sessionAuthenticated && Boolean(validWorldSession());
     const [pool, pending] = await Promise.allSettled([

@@ -233,6 +233,7 @@ function makeApp(serve) {
     renders: 0,
     requests,
     renderCommunityPlacement() { this.renders += 1; },
+    async whenInstancePlugin(_id, request) { return request(); },
     fetchJSON(path, options) {
       requests.push({ path, options });
       return serve();

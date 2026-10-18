@@ -128,3 +128,53 @@ def test_the_world_wires_portals_both_ways():
     assert "arrivalSlot: Number(hit.object.userData.arrivalSlot)" in POINTER
     assert 'import { instanceHexArrival } from "./instance-hexes.js";' in CORE
     assert "    instanceHexArrival,\n" in CORE
+
+
+PLUGIN_SCRIPT = r"""
+import { instanceKeepsDirectory, instancePluginOff } from "./world-instance-portals.js";
+const off = { branded: true, plugins: [{ id: "rewards", enabled: false },
+  { id: "world", enabled: true }] };
+console.log(JSON.stringify({
+  off: [instancePluginOff(off, "rewards"), instancePluginOff(off, "world"),
+    instancePluginOff(off, "ads"),
+    instancePluginOff({ branded: false, plugins: off.plugins }, "rewards"),
+    instancePluginOff(null, "rewards")],
+  directory: [instanceKeepsDirectory(off), instanceKeepsDirectory({ branded: false }),
+    instanceKeepsDirectory(null)],
+}));
+"""
+
+
+def test_an_instance_world_skips_what_its_plugins_switch_off():
+    if not NODE:
+        pytest.skip("node is not installed")
+    run = subprocess.run([NODE, "--input-type=module", "-e", PLUGIN_SCRIPT],
+                         cwd=WORLD, capture_output=True, text=True,
+                         timeout=60)
+    assert run.returncode == 0, run.stderr
+    result = json.loads(run.stdout)
+    assert result["off"] == [True, False, False, False, False]
+    assert result["directory"] == [False, True, True]
+
+
+def test_rewards_ads_and_the_directory_are_not_requested_when_off():
+    rewards = APP.split("  async refreshRewardState(", 1)[1].split(
+        "\n  }\n", 1)[0]
+    assert 'instancePluginOff(await this.instanceInfo(), "rewards")' in rewards
+    assert rewards.index("instancePluginOff") < rewards.index(
+        '"/api/accounts/central-fund"')
+    for path in ('fetchJSON("/api/accounts/central-fund"',
+                 'fetchJSON("/api/rewards/pending"',
+                 '"/api/world/community-ads/placements?context=town-square"',
+                 "fetchJSON(NETWORK_AD_SERVE_PATH, {"):
+        for chunk in APP.split(path)[:-1]:
+            tail = chunk[-700:]
+            assert ("whenInstancePlugin(" in tail
+                    or "instancePluginOff(" in tail
+                    or "const NETWORK_AD_SERVE_PATH" in tail), (path, tail)
+    directory = APP.split("  async refreshInstanceDirectory() {", 1)[1].split(
+        "\n  }\n", 1)[0]
+    assert "if (!instanceKeepsDirectory(instance)) {" in directory
+    assert directory.index("instanceKeepsDirectory") < directory.index(
+        "/api/start/instances")
+    assert APP.count('this.fetchJSON("/api/instance", {') == 1

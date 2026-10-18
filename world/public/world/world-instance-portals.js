@@ -66,3 +66,13 @@ export function withHomePortal(hexes = [], home = null) {
   if (!home || list.some((hex) => hex.slot === home.slot)) return list;
   return [...list, home];
 }
+
+export function instancePluginOff(payload, id) {
+  if (payload?.branded !== true || !Array.isArray(payload?.plugins)) return false;
+  const plugin = payload.plugins.find((item) => item?.id === id);
+  return Boolean(plugin) && plugin.enabled !== true;
+}
+
+export function instanceKeepsDirectory(payload) {
+  return payload?.branded !== true;
+}

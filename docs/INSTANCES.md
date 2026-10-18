@@ -516,7 +516,11 @@ file (`static_routes.world_asset_path`; dot segments and unknown files are
   document and any unversioned file, as on world.forkmesh.com, so a rebuild
   never mixes module graphs.
 - The World CSP (`WORLD_DOCUMENT_SECURITY_HEADERS`): `script-src 'self'
-  'unsafe-inline'` with no CDN, since three.js is local; `connect-src 'self'
+  'unsafe-inline' https://static.cloudflareinsights.com` with no CDN, since
+  three.js is local. The Cloudflare origin is the Web Analytics beacon that
+  Cloudflare injects into pages of a proxied instance; the site-wide CSP
+  already allows it, and without it every World load logged a CSP error.
+  `connect-src 'self'
   https: wss:` for the API and the `/api/world/ws` presence socket; frames
   `'self'` for the embedded chat; `frame-ancestors 'none'` (nothing frames
   the World on an instance, and the global HTML layer sets
@@ -547,6 +551,26 @@ store, wallet, central fund, pending rewards), community ads, the ForkMesh
 blog board, the `forkmesh/forkmesh` mirror and agent-bot boards (they read
 that repository, which an instance does not have under that name), Discord,
 and the relay federation towers. The World shows those boards empty.
+
+The World asks `/api/instance` once (`instanceInfo()` in `world.js`) and
+does not request what the instance has switched off, so a visitor's console
+stays clean: with `rewards` off it skips `/api/accounts/central-fund` and
+`/api/rewards/pending`; with `ads` off the community placement and
+`/api/ads/serve`; and on any instance (`branded: true`) the forkmesh.com
+directory `/api/start/instances`, which only forkmesh.com fills (only the
+home portal is drawn). `instancePluginOff` and `instanceKeepsDirectory` in
+`world-instance-portals.js` decide. `/api/accounts/central-fund` belongs to
+the `rewards` plugin on the server too, so it answers 404 rather than 503.
+The one error left for a signed-out visitor is the 401 from
+`/api/accounts/sessions`: the session cookie is HttpOnly, so asking is the
+only way to learn there is none, as on forkmesh.com.
+
+The World never changes the page address by itself: it opens repositories,
+issues and other sites with `window.open(..., "_blank")` and travels only
+when a visitor clicks a portal or the site menu. An embedded browser that
+loads `_blank` windows in the same tab, or a tool that drives the active tab
+of a shared browser, can look like the World navigating away on its own; a
+plain browser left on `/world/` stays there.
 
 ## Dashboard on an instance
 

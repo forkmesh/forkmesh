@@ -96,7 +96,8 @@ def test_the_world_document_is_served_by_the_instance(world_on, path):
     assert headers["cache-control"] == "no-store, max-age=0, must-revalidate"
     assert "location" not in headers
     policy = headers["content-security-policy"]
-    assert "script-src 'self' 'unsafe-inline';" in policy
+    assert ("script-src 'self' 'unsafe-inline' "
+            "https://static.cloudflareinsights.com;") in policy
     assert "cdn.jsdelivr.net" not in policy
     assert "connect-src 'self' https: wss:" in policy
     assert headers["x-content-type-options"] == "nosniff"

@@ -31,6 +31,7 @@ FEATURES = (
     ("rewards", "Rewards and ledger",
      "Mirror rewards, the Solana ledger, wallets and the World store.",
      ("/ledger", "/api/ledger", "/api/rewards", "/api/relay-mesh",
+      "/api/accounts/central-fund",
       "/api/leaderboards/wallets", "/api/world/wallet", "/api/world/store",
       "/mirror-payouts"), ()),
     ("referrals", "Referrals and bounties",
