@@ -5,6 +5,7 @@
 
 #include <QAbstractListModel>
 #include <QApplication>
+#include <QBuffer>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
@@ -22,6 +23,7 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QImageReader>
 #include <QInputDialog>
 #include <QJsonDocument>
 #include <QListWidget>
@@ -70,6 +72,8 @@ enum ItemKind { SectionItem = 1, SmartItem, FolderItem, FeedItem };
 
 constexpr qint64 kMaxImageBytes = qint64(5) * 1024 * 1024;
 constexpr qint64 kMaxIconBytes = qint64(1) * 1024 * 1024;
+constexpr int kIconSide = 64;
+constexpr int kMinIconSide = 8;
 constexpr int kMaxCachedImages = 300;
 constexpr int kThumbnailSide = 56;
 const QColor kStarColor(0xd4, 0xa7, 0x2c);
@@ -219,6 +223,72 @@ QString originOf(const QUrl &url)
     origin.setHost(url.host());
     origin.setPort(url.port());
     return origin.toString();
+}
+
+bool svgIconsSupported()
+{
+    static const bool supported = QImageReader::supportedImageFormats().contains(QByteArrayLiteral("svg"));
+    return supported;
+}
+
+int iconFramePenalty(const QImage &image)
+{
+    const int side = qMax(image.width(), image.height());
+    return side >= kIconSide ? side - kIconSide : (kIconSide - side) * 2;
+}
+
+QImage decodeIcon(const QByteArray &bytes)
+{
+    QBuffer buffer;
+    buffer.setData(bytes);
+    if (!buffer.open(QIODevice::ReadOnly))
+        return {};
+    QImageReader reader(&buffer);
+    reader.setDecideFormatFromContent(true);
+    const QByteArray format = reader.format();
+    if (format.isEmpty())
+        return {};
+    if (format.startsWith("svg")) {
+        const QSize size = reader.size();
+        if (size.isValid() && !size.isEmpty())
+            reader.setScaledSize(size.scaled(QSize(kIconSide, kIconSide), Qt::KeepAspectRatio));
+        else
+            reader.setScaledSize(QSize(kIconSide, kIconSide));
+    }
+    QImage best;
+    const int count = qBound(1, reader.imageCount(), 16);
+    for (int index = 0; index < count; ++index) {
+        if (index > 0 && !reader.jumpToImage(index))
+            break;
+        const QImage frame = reader.read();
+        if (!frame.isNull() && (best.isNull() || iconFramePenalty(frame) < iconFramePenalty(best)))
+            best = frame;
+    }
+    return best;
+}
+
+bool visibleIcon(const QImage &image)
+{
+    if (image.isNull() || image.width() < kMinIconSide || image.height() < kMinIconSide)
+        return false;
+    if (!image.hasAlphaChannel())
+        return true;
+    const QImage sample = image.scaled(16, 16, Qt::IgnoreAspectRatio, Qt::FastTransformation)
+                              .convertToFormat(QImage::Format_ARGB32);
+    for (int y = 0; y < sample.height(); ++y) {
+        for (int x = 0; x < sample.width(); ++x) {
+            if (qAlpha(sample.pixel(x, y)) > 16)
+                return true;
+        }
+    }
+    return false;
+}
+
+bool squareEnough(const QImage &image)
+{
+    const int longer = qMax(image.width(), image.height());
+    const int shorter = qMin(image.width(), image.height());
+    return shorter > 0 && longer <= shorter * 2;
 }
 
 QString sizeLabel(qint64 bytes)
@@ -1047,6 +1117,9 @@ QWidget *RssReaderFeature::buildArticlePane()
     m_readerButton = toolButton(QStringLiteral("book"), QStringLiteral("Reader View (V)"), true);
     m_openButton = toolButton(QStringLiteral("link-external"), QStringLiteral("Open in Browser (O)"));
     m_copyButton = toolButton(QStringLiteral("copy"), QStringLiteral("Copy Link"));
+    m_shareButton = toolButton(QStringLiteral("paper-airplane"), QStringLiteral("Share to Chat…"));
+    if (!m_host.chatTargets || !m_host.sendChatMessage)
+        m_shareButton->hide();
     toolbar->addWidget(m_readButton);
     toolbar->addWidget(m_starButton);
     toolbar->addWidget(m_readLaterButton);
@@ -1055,6 +1128,7 @@ QWidget *RssReaderFeature::buildArticlePane()
     toolbar->addWidget(m_readerButton);
     toolbar->addWidget(m_openButton);
     toolbar->addWidget(m_copyButton);
+    toolbar->addWidget(m_shareButton);
     layout->addLayout(toolbar);
 
     m_articleStack = new QStackedWidget;
@@ -1089,6 +1163,7 @@ QWidget *RssReaderFeature::buildArticlePane()
     connect(m_readerButton, &QToolButton::clicked, this, [this] { showReaderView(); });
     connect(m_openButton, &QToolButton::clicked, this, [this] { openInBrowser(); });
     connect(m_copyButton, &QToolButton::clicked, this, [this] { copyLink(); });
+    connect(m_shareButton, &QToolButton::clicked, this, [this] { showShareDialog(m_article); });
     updateArticleToolbar();
     return pane;
 }
@@ -2021,7 +2096,7 @@ QString RssReaderFeature::composeArticleHtml(const Article &item) const
                                            : QStringLiteral(" <span class=\"muted\">(%1)</span>")
                                                  .arg(escapeHtml(details.join(QStringLiteral(", ")))));
     }
-    if (!item.comments.isEmpty())
+    if (!item.comments.isEmpty() && !htmlLinksTo(body, item.comments, QUrl(item.link)))
         html += QStringLiteral("<p><a href=\"%1\">Comments</a></p>").arg(escapeHtml(item.comments));
     html += QStringLiteral("</body></html>");
     return html;
@@ -2057,7 +2132,7 @@ void RssReaderFeature::updateArticleToolbar()
 {
     const Article *item = m_store.article(m_article);
     const bool has = item != nullptr;
-    for (QToolButton *button : {m_readButton, m_starButton, m_readLaterButton, m_readerButton, m_openButton, m_copyButton})
+    for (QToolButton *button : {m_readButton, m_starButton, m_readLaterButton, m_readerButton, m_openButton, m_copyButton, m_shareButton})
         button->setEnabled(has);
     if (item) {
         m_readButton->setToolTip(item->read ? QStringLiteral("Mark as Unread (R)") : QStringLiteral("Mark as Read (R)"));
@@ -2068,6 +2143,7 @@ void RssReaderFeature::updateArticleToolbar()
         const bool hasLink = QUrl(item->link).isValid() && !QUrl(item->link).host().isEmpty();
         m_openButton->setEnabled(hasLink);
         m_copyButton->setEnabled(hasLink);
+        m_shareButton->setEnabled(hasLink);
         m_readerButton->setEnabled(hasLink || !item->readerHtml.isEmpty());
     }
     m_nextUnreadButton->setEnabled(m_loaded && m_store.totalUnread() > 0);
@@ -2493,6 +2569,99 @@ void RssReaderFeature::copyLink()
         QGuiApplication::clipboard()->setText(item->link);
 }
 
+QList<forkmesh::market::NativePackageChatTarget> RssReaderFeature::shareTargets() const
+{
+    return m_host.chatTargets ? m_host.chatTargets() : QList<forkmesh::market::NativePackageChatTarget>();
+}
+
+QString RssReaderFeature::shareArticle(const ArticleRef &ref, const QString &target)
+{
+    const Article *item = m_store.article(ref);
+    if (!item)
+        return QStringLiteral("This article is no longer in the reader.");
+    if (!m_host.sendChatMessage)
+        return QStringLiteral("Chat is not available in this window.");
+    const QString text = shareMessage(item->title, item->link);
+    if (text.isEmpty())
+        return QStringLiteral("This article has no title or link to share.");
+    if (target.isEmpty() || !m_host.sendChatMessage(target, text))
+        return QStringLiteral("The message was not sent. Check that chat is connected and that you can post there.");
+    return QString();
+}
+
+void RssReaderFeature::showShareDialog(const ArticleRef &ref)
+{
+    if (!m_store.article(ref) || !m_host.chatTargets || !m_host.sendChatMessage)
+        return;
+    QDialog dialog(this);
+    dialog.setObjectName(QStringLiteral("rssShareDialog"));
+    dialog.setWindowTitle(QStringLiteral("Share to Chat"));
+    dialog.setMinimumWidth(380);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->setContentsMargins(18, 16, 18, 14);
+    layout->setSpacing(10);
+    auto *filter = new QLineEdit;
+    filter->setObjectName(QStringLiteral("rssShareFilter"));
+    filter->setPlaceholderText(QStringLiteral("Find a channel or person"));
+    filter->setClearButtonEnabled(true);
+    layout->addWidget(filter);
+    auto *list = new QListWidget;
+    list->setObjectName(QStringLiteral("rssShareTargets"));
+    list->setMinimumHeight(240);
+    for (const auto &target : shareTargets()) {
+        if (target.id.isEmpty())
+            continue;
+        auto *row = new QListWidgetItem(target.label.isEmpty() ? target.id : target.label, list);
+        row->setData(Qt::UserRole, target.id);
+        row->setToolTip(target.person ? QStringLiteral("Direct message") : QStringLiteral("Channel"));
+    }
+    layout->addWidget(list, 1);
+    auto *status = new QLabel;
+    status->setObjectName(QStringLiteral("fieldHint"));
+    status->setWordWrap(true);
+    status->setText(list->count() > 0
+                        ? QStringLiteral("Sends the article's title and link as a message from you.")
+                        : QStringLiteral("There is no channel or conversation to share to. Sign in to chat, or start a "
+                                         "conversation first."));
+    layout->addWidget(status);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
+    QPushButton *send = buttons->addButton(QStringLiteral("Send"), QDialogButtonBox::AcceptRole);
+    send->setObjectName(QStringLiteral("primaryButton"));
+    send->setDefault(true);
+    send->setEnabled(false);
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(filter, &QLineEdit::textChanged, list, [list](const QString &text) {
+        const QString needle = text.trimmed();
+        QListWidgetItem *firstVisible = nullptr;
+        for (int index = 0; index < list->count(); ++index) {
+            QListWidgetItem *row = list->item(index);
+            const bool hidden = !needle.isEmpty() && !row->text().contains(needle, Qt::CaseInsensitive);
+            row->setHidden(hidden);
+            if (!hidden && !firstVisible)
+                firstVisible = row;
+        }
+        if (list->currentItem() && list->currentItem()->isHidden())
+            list->setCurrentItem(firstVisible);
+    });
+    connect(list, &QListWidget::currentItemChanged, send,
+            [send](QListWidgetItem *current) { send->setEnabled(current && !current->isHidden()); });
+    auto submit = [this, &dialog, list, status, ref] {
+        QListWidgetItem *current = list->currentItem();
+        if (!current || current->isHidden())
+            return;
+        const QString error = shareArticle(ref, current->data(Qt::UserRole).toString());
+        if (error.isEmpty())
+            dialog.accept();
+        else
+            status->setText(error);
+    };
+    connect(send, &QPushButton::clicked, &dialog, submit);
+    connect(list, &QListWidget::itemActivated, &dialog, submit);
+    filter->setFocus();
+    dialog.exec();
+}
+
 bool RssReaderFeature::eventFilter(QObject *watched, QEvent *event)
 {
     if (event->type() == QEvent::KeyPress &&
@@ -2686,6 +2855,10 @@ void RssReaderFeature::timelineContextMenu(const QPoint &position)
     open->setEnabled(hasLink);
     QAction *copy = menu.addAction(QStringLiteral("Copy Link"), this, [link] { QGuiApplication::clipboard()->setText(link); });
     copy->setEnabled(hasLink);
+    if (m_host.chatTargets && m_host.sendChatMessage) {
+        QAction *share = menu.addAction(QStringLiteral("Share to Chat…"), this, [this, ref] { showShareDialog(ref); });
+        share->setEnabled(hasLink);
+    }
     menu.exec(m_timeline->viewport()->mapToGlobal(position));
 }
 
@@ -3781,55 +3954,130 @@ QPixmap RssReaderFeature::feedIcon(const QString &feedId, int side) const
     return result;
 }
 
+struct IconSearch {
+    QString feedId;
+    QStringList candidates;
+    QStringList tried;
+    bool pageChecked = false;
+    QImage fallback;
+};
+
 void RssReaderFeature::fetchMissingIcons()
 {
+    if (!m_disk || !m_assetQueue)
+        return;
+    const qint64 at = now();
+    QList<std::shared_ptr<IconSearch>> searches;
     for (const Feed &owner : m_store.feeds()) {
-        if (m_iconAttempts.contains(owner.id) || QFile::exists(m_disk->iconPath(owner.id)))
+        if (m_iconAttempts.contains(owner.id) ||
+            !iconFetchDue(owner, QFile::exists(m_disk->iconPath(owner.id)), at))
             continue;
-        m_iconAttempts.insert(owner.id);
-        QStringList candidates;
+        auto search = std::make_shared<IconSearch>();
+        search->feedId = owner.id;
         if (!owner.iconUrl.isEmpty())
-            candidates << owner.iconUrl;
-        const QString homeOrigin = originOf(QUrl(owner.homePage));
-        const QString feedOrigin = originOf(QUrl(owner.url));
-        if (!homeOrigin.isEmpty())
-            candidates << homeOrigin + QStringLiteral("/favicon.ico");
-        if (!feedOrigin.isEmpty() && feedOrigin != homeOrigin)
-            candidates << feedOrigin + QStringLiteral("/favicon.ico");
-        fetchIcon(owner.id, candidates);
+            search->candidates << owner.iconUrl;
+        searches.append(search);
     }
+    for (const auto &search : std::as_const(searches)) {
+        m_iconAttempts.insert(search->feedId);
+        m_store.recordIconAttempt(search->feedId, at);
+    }
+    for (const auto &search : std::as_const(searches))
+        fetchIcon(search);
+    if (!searches.isEmpty())
+        scheduleSave();
 }
 
-void RssReaderFeature::fetchIcon(const QString &feedId, QStringList candidates)
+void RssReaderFeature::fetchIcon(const std::shared_ptr<IconSearch> &search)
 {
-    if (candidates.isEmpty() || !m_store.feed(feedId))
+    if (!m_store.feed(search->feedId)) {
+        m_iconAttempts.remove(search->feedId);
         return;
-    const QString url = candidates.takeFirst();
+    }
+    while (!search->candidates.isEmpty() && search->tried.contains(search->candidates.first()))
+        search->candidates.removeFirst();
+    if (search->candidates.isEmpty()) {
+        if (!search->pageChecked) {
+            search->pageChecked = true;
+            fetchIconPage(search);
+            return;
+        }
+        if (!search->fallback.isNull())
+            storeIcon(search->feedId, search->fallback);
+        m_iconAttempts.remove(search->feedId);
+        return;
+    }
+    const QString url = search->candidates.takeFirst();
+    search->tried << url;
     FetchRequest request;
     request.url = QUrl(url);
     request.maxBytes = kMaxIconBytes;
     request.accept = QByteArrayLiteral("image/png,image/x-icon,image/vnd.microsoft.icon,image/*;q=0.8");
-    m_assetQueue->get(request, [this, feedId, candidates](const FetchResult &result) {
-        QImage image;
-        if (result.ok() && !result.notModified)
-            image.loadFromData(result.body);
-        if (image.isNull() || !m_store.feed(feedId)) {
-            fetchIcon(feedId, candidates);
+    m_assetQueue->get(request, [this, search](const FetchResult &result) {
+        const QImage image = result.ok() && !result.notModified ? decodeIcon(result.body) : QImage();
+        if (visibleIcon(image) && m_store.feed(search->feedId)) {
+            if (squareEnough(image)) {
+                storeIcon(search->feedId, image);
+                m_iconAttempts.remove(search->feedId);
+                return;
+            }
+            if (search->fallback.isNull())
+                search->fallback = image;
+        }
+        fetchIcon(search);
+    });
+}
+
+void RssReaderFeature::fetchIconPage(const std::shared_ptr<IconSearch> &search)
+{
+    const Feed *owner = m_store.feed(search->feedId);
+    if (!owner) {
+        m_iconAttempts.remove(search->feedId);
+        return;
+    }
+    const QUrl page = iconPageUrl(*owner);
+    if (!page.isValid()) {
+        search->candidates = fallbackIconUrls(QUrl(owner->homePage), QUrl(owner->url));
+        fetchIcon(search);
+        return;
+    }
+    FetchRequest request;
+    request.url = page;
+    request.accept = QByteArrayLiteral("text/html,application/xhtml+xml;q=0.9,*/*;q=0.5");
+    m_assetQueue->get(request, [this, search, page](const FetchResult &result) {
+        const Feed *current = m_store.feed(search->feedId);
+        if (!current) {
+            m_iconAttempts.remove(search->feedId);
             return;
         }
-        if (image.width() > 64 || image.height() > 64)
-            image = image.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        const QString path = m_disk->iconPath(feedId);
-        QDir().mkpath(QFileInfo(path).absolutePath());
-        image.save(path, "PNG");
-        m_icons.insert(feedId, QPixmap::fromImage(image));
-        m_iconMisses.remove(feedId);
-        m_scaledIcons.clear();
-        m_sources->viewport()->update();
-        m_timeline->viewport()->update();
-        if (m_article.feedId == feedId)
-            m_renderTimer->start();
+        QStringList candidates;
+        if (result.ok() && !result.notModified && looksLikeHtml(result.body, result.contentType))
+            candidates = discoverIconLinks(QString::fromUtf8(result.body),
+                                           result.finalUrl.isValid() ? result.finalUrl : page,
+                                           svgIconsSupported());
+        candidates += fallbackIconUrls(QUrl(current->homePage), QUrl(current->url));
+        search->candidates = candidates;
+        fetchIcon(search);
     });
+}
+
+void RssReaderFeature::storeIcon(const QString &feedId, const QImage &source)
+{
+    if (!m_disk)
+        return;
+    QImage image = source;
+    if (image.width() > kIconSide || image.height() > kIconSide)
+        image = image.scaled(kIconSide, kIconSide, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    const QString path = m_disk->iconPath(feedId);
+    QDir().mkpath(QFileInfo(path).absolutePath());
+    image.save(path, "PNG");
+    m_icons.insert(feedId, QPixmap::fromImage(image));
+    m_iconMisses.remove(feedId);
+    m_scaledIcons.clear();
+    m_sources->viewport()->update();
+    m_timeline->viewport()->update();
+    if (m_article.feedId == feedId)
+        m_renderTimer->start();
 }
 
 void RssReaderFeature::setHostSearchQuery(const QString &query)

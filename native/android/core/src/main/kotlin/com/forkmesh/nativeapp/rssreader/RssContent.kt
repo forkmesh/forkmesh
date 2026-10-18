@@ -342,7 +342,7 @@ object RssPages {
 
     private class LinkFinder : RssHtmlHandler {
         val feeds = ArrayList<Triple<String, String, String>>()
-        val icons = ArrayList<Pair<Boolean, String>>()
+        val icons = ArrayList<RssIconLink>()
         var title = ""
         var inTitle = false
         var base = ""
@@ -357,7 +357,7 @@ object RssPages {
             val href = values["href"].orEmpty()
             if (href.isEmpty()) return
             if ("alternate" in rel && kind in FEED_TYPES) feeds.add(Triple(kind, href, RssText.clean(values["title"], 200)))
-            else if ("icon" in rel || "apple-touch-icon" in rel) icons.add(("apple-touch-icon" in rel) to href)
+            else if (rel.any { it == "icon" || it.startsWith("apple-touch-icon") }) icons.add(RssIconLink(href.trim(), rel, values["sizes"].orEmpty(), kind))
         }
 
         override fun end(tag: String) {
@@ -369,16 +369,33 @@ object RssPages {
         }
     }
 
-    fun discover(document: String, base: String): RssDiscovery {
+    private fun links(document: String): LinkFinder {
         val finder = LinkFinder()
         runCatching { RssHtml.tokenize(document.take(600_000), finder) }
+        return finder
+    }
+
+    private fun icons(finder: LinkFinder, root: String): List<String> = RssIcons.rank(
+        finder.icons.mapNotNull { link ->
+            val href = if (link.href.startsWith("data:image/", ignoreCase = true)) link.href else RssUrls.httpUrl(link.href, root)
+            if (href.isEmpty()) null else link.copy(href = href)
+        },
+    )
+
+    fun icons(document: String, base: String): List<String> {
+        val finder = links(document)
+        return icons(finder, RssUrls.httpUrl(finder.base, base).ifEmpty { base })
+    }
+
+    fun discover(document: String, base: String): RssDiscovery {
+        val finder = links(document)
         val root = RssUrls.httpUrl(finder.base, base).ifEmpty { base }
         val feeds = ArrayList<RssDiscoveredFeed>()
         for ((kind, href, title) in finder.feeds.sortedBy { ORDER[it.first] ?: 5 }) {
             val url = RssUrls.httpUrl(href, root)
             if (url.isNotEmpty() && feeds.none { it.url == url }) feeds.add(RssDiscoveredFeed(url, title, kind))
         }
-        val icon = finder.icons.sortedBy { !it.first }.map { RssUrls.httpUrl(it.second, root) }.firstOrNull { it.isNotEmpty() }.orEmpty()
+        val icon = icons(finder, root).firstOrNull { !it.startsWith("data:") }.orEmpty()
         return RssDiscovery(feeds, icon, finder.title)
     }
 

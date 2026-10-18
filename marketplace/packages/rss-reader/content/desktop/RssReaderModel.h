@@ -25,6 +25,7 @@ constexpr qint64 kTodayWindowMs = qint64(24) * 60 * 60 * 1000;
 constexpr int kMaxGuidLength = 600;
 constexpr int kMaxConcurrentFetches = 6;
 constexpr int kMaxDiscoveryLinks = 3;
+constexpr int kMaxIconLinks = 4;
 constexpr int kMaxLogEntries = 200;
 constexpr int kMaxStarredHtml = 8 * 1024;
 constexpr int kMaxStarredExport = 2 * 1024 * 1024;
@@ -119,6 +120,8 @@ struct Feed {
     bool excludeFromUnread = false;
     QString language;
     QStringList previousUrls;
+    qint64 iconCheckedMs = 0;
+    QString iconKey;
     QString displayName() const;
 };
 
@@ -275,6 +278,13 @@ ParsedFeed parseFeed(const QByteArray &data, const QUrl &base);
 bool looksLikeHtml(const QByteArray &data, const QString &contentType);
 QList<QUrl> discoverFeedLinks(const QString &html, const QUrl &base);
 QList<QUrl> fallbackFeedUrls(const QUrl &address);
+QStringList discoverIconLinks(const QString &html, const QUrl &base, bool allowSvg);
+QStringList fallbackIconUrls(const QUrl &homePage, const QUrl &feedUrl);
+QUrl iconPageUrl(const Feed &feed);
+QString iconSourceKey(const Feed &feed);
+bool iconFetchDue(const Feed &feed, bool hasIcon, qint64 nowMs);
+bool htmlLinksTo(const QString &html, const QString &target, const QUrl &base);
+QString shareMessage(const QString &title, const QString &link);
 QUrl normalizeAddress(const QString &input, bool allowFile = false);
 QString feedKey(const QUrl &url);
 QString linkKey(const QString &link);
@@ -359,6 +369,7 @@ public:
                        const QString &lastModified, const QUrl &movedTo);
     void recordFailure(const QString &feedId, const QString &error, qint64 nowMs);
     void updateFeedMeta(const QString &feedId, const QString &homePage);
+    void recordIconAttempt(const QString &feedId, qint64 nowMs);
 
     void logError(qint64 nowMs, const QString &text);
     void logActivity(qint64 nowMs, const QString &text);

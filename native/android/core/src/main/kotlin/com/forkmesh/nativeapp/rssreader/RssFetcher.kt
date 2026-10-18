@@ -120,7 +120,8 @@ class RssFetcher(
     companion object {
         const val MAX_FEED_BYTES = 2 * 1024 * 1024
         const val MAX_PAGE_BYTES = 3 * 1024 * 1024
-        const val MAX_ICON_BYTES = 256 * 1024
+        const val MAX_ICON_BYTES = 512 * 1024
+        const val ICON_ACCEPT = "image/png, image/x-icon, image/vnd.microsoft.icon, image/webp, image/jpeg, image/gif, image/*;q=0.8, */*;q=0.5"
         const val FEED_ACCEPT = "application/rss+xml, application/atom+xml, application/feed+json, " +
             "application/json;q=0.9, application/xml;q=0.9, text/xml;q=0.9, text/html;q=0.8, */*;q=0.5"
         val GUESS_PATHS = listOf("/feed", "/rss", "/feed.xml", "/atom.xml", "/rss/")
@@ -249,15 +250,32 @@ class RssFetcher(
         return RssPages.readable(response.text(), response.url)
     }
 
-    fun icon(feed: RssFeed): ByteArray? {
-        val candidates = listOf(feed.iconUrl, RssUrls.favicon(feed.siteUrl.ifEmpty { feed.url })).filter { it.isNotEmpty() }.distinct()
-        for (candidate in candidates) {
-            val bytes = runCatching {
-                val result = request(candidate, mapOf("Accept" to "image/*"), MAX_ICON_BYTES)
-                result.response.takeIf { it.status in 200..299 && it.body.isNotEmpty() && !it.contentType.startsWith("text/") }?.body
-            }.getOrNull()
-            if (bytes != null) return bytes
+    fun iconAt(url: String): ByteArray? {
+        if (url.startsWith("data:", ignoreCase = true)) return RssIcons.dataBytes(url)?.takeIf { RssIcons.imageType(it).isNotEmpty() }
+        if (RssUrls.httpUrl(url).isEmpty()) return null
+        return runCatching {
+            val response = request(url, mapOf("Accept" to ICON_ACCEPT), MAX_ICON_BYTES).response
+            response.body.takeIf { response.status in 200..299 && it.isNotEmpty() && RssIcons.imageType(it).isNotEmpty() }
+        }.getOrNull()
+    }
+
+    fun icon(feed: RssFeed, hint: String = "", accept: (ByteArray) -> Boolean = { true }): RssIconResult? {
+        val tried = HashSet<String>()
+        fun attempt(url: String): RssIconResult? {
+            if (url.isEmpty() || !tried.add(url)) return null
+            val bytes = iconAt(url) ?: return null
+            return if (runCatching { accept(bytes) }.getOrDefault(false)) RssIconResult(url, bytes) else null
         }
+        attempt(RssIcons.declared(feed))?.let { return it }
+        val seen = ArrayList<String>()
+        for (home in RssIcons.homePages(feed, hint)) {
+            val response = runCatching { page(home) }.getOrNull() ?: continue
+            seen.add(response.url)
+            val links = RssPages.icons(response.text(), response.url)
+            for (link in links) attempt(link)?.let { return it }
+            if (links.isNotEmpty()) break
+        }
+        for (url in RssIcons.fallbacks(feed, hint, seen)) attempt(url)?.let { return it }
         return null
     }
 }
