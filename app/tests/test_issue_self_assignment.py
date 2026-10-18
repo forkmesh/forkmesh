@@ -174,7 +174,7 @@ def test_relay_accepts_a_claim_only_from_the_account_it_names():
 
     handler = _slice(
         ENTRY,
-        "async def issues_handler(env, request, owner, repo):",
+        "async def _accept_issue_submission(",
         "async def discussions_handler",
     )
     # A claim is deliberately NOT a structural event: it never goes through the
