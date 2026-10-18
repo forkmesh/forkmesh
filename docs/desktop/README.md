@@ -335,6 +335,59 @@ The full description is in
   cookies or a browser origin.
 - Agents are sandboxed as described in
   [Desktop agent sandboxing](#desktop-agent-sandboxing).
+- Actions steps run in a bubblewrap sandbox unless a workflow says
+  `sandbox: false` ([below](#actions-outside-the-sandbox)).
+
+### Actions outside the sandbox
+
+A sandboxed step runs as uid 65534 with a fresh home and `/tmp`, its own
+`/proc`, and no view of the user's files (`ActionRunner::sandboxArguments`).
+A workflow that has to work on this computer itself, such as
+`.forkmesh/free-disk-space.yml` ([../tools/free-disk-space.md](../tools/free-disk-space.md)),
+sets a top-level `sandbox: false` (`no`, `off` and `0` work too):
+
+```yaml
+name: Free disk space
+on: [workflow_dispatch]
+sandbox: false
+```
+
+- **Manual runs only.** `ActionFile::parse` marks the workflow invalid unless
+  `on` is exactly `workflow_dispatch`, so a push, pull request, release or
+  any other event can never start it; only the node's owner can, with
+  **Run workflow** on the desktop or from a paired phone. Approval is
+  unchanged: it is bound to the workflow text and the repository tree, and
+  the repository's auto-approve setting applies as for any other run. That is
+  the same trust as running a shortcut from that checkout, plus the approval
+  record. A manual run on another branch runs that branch's code, so only
+  start one on a branch whose author you trust.
+- **What changes.** The steps run as the desktop user with plain `bash -se`
+  (no bwrap) in the run's verified writable clone, still inside the
+  `forkmesh-action-*.scope` systemd scope with the same memory, task, CPU
+  and time limits and the same rlimits. The environment is still built from
+  scratch: the real `HOME`, `USER`, `LOGNAME`, `TMPDIR=/tmp`,
+  `PATH=$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin`, the session bus, the
+  usual `FORKMESH_COMMIT`/`FORKMESH_REF`/`FORKMESH_RUN_ID`, and
+  `FORKMESH_LOCAL_CHECKOUT`, the repository's local checkout on this desktop
+  (absent when it has none). A workflow's `env:` and node variables cannot
+  set `FORKMESH_LOCAL_CHECKOUT`. There is no `/cache` build cache and no
+  network namespace.
+- **Disk check.** A sandboxed run needs the full workspace quota (2 GiB) free
+  before its checkout; a `sandbox: false` run needs 1 GiB, so a disk cleanup
+  can still start on a nearly full disk.
+- **Where it runs.** Only the desktop runner honours the key, on Linux. The
+  mirror and runner-tier executors take push events only, which such a
+  workflow never has; an older desktop that does not know the key runs it
+  sandboxed, where it fails instead of touching anything.
+- **Phones and web.** Nothing new is needed: the phones' Actions screens list
+  it under **Run by hand**, start it and show its steps live, as for any
+  workflow. The web canvas shows the key as **Where the steps run** and
+  refuses to save `sandbox: false` with any event besides Manual run
+  (`sandbox_needs_manual_run`).
+
+Tests: `desktop/tests/test_action_security.cpp` (parse rules, and a run that
+checks the uid, the real home, the local checkout and that `env:` cannot
+redirect it), `app/tests/test_workflow_files.py`.
 
 ## Change process
 

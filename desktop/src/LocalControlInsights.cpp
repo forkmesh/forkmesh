@@ -371,6 +371,43 @@ QString appendShortcutOutput(const QString &output, const QString &chunk, int ma
     return newline >= 0 && newline + 1 < joined.size() ? joined.mid(newline + 1) : joined;
 }
 
+int shortcutStepMarker(const QString &line, const QList<ShortcutStep> &steps)
+{
+    static const QRegularExpression escapes(QStringLiteral("\x1b\\[[0-9;?]*[A-Za-z]"));
+    static const QRegularExpression marker(QStringLiteral("^::step::\\s*(.+?)\\s*$"));
+    QString text = line;
+    while (text.endsWith(QLatin1Char('\r')))
+        text.chop(1);
+    text = text.section(QLatin1Char('\r'), -1);
+    text.remove(escapes);
+    const QRegularExpressionMatch match = marker.match(text.trimmed());
+    if (!match.hasMatch())
+        return -1;
+    const QString wanted = match.captured(1).simplified().left(kMaxShortcutStepName);
+    for (qsizetype index = 0; index < steps.size(); ++index)
+        if (steps.at(index).name.compare(wanted, Qt::CaseInsensitive) == 0)
+            return int(index);
+    bool number = false;
+    const int position = wanted.toInt(&number);
+    return number && position >= 1 && position <= steps.size() ? position - 1 : -1;
+}
+
+bool trackShortcutStep(ShortcutRun &run, const QString &chunk)
+{
+    constexpr int kMaxPendingStepLine = 4096;
+    if (run.steps.isEmpty())
+        return false;
+    QStringList lines = (run.stepLine + chunk).split(QLatin1Char('\n'));
+    run.stepLine = lines.takeLast().right(kMaxPendingStepLine);
+    const int before = run.step;
+    for (const QString &line : std::as_const(lines)) {
+        const int index = shortcutStepMarker(line, run.steps);
+        if (index >= 0)
+            run.step = index;
+    }
+    return run.step != before;
+}
+
 QJsonObject shortcutRunRow(const ShortcutRun &run, bool withOutput)
 {
     QJsonObject row{{QStringLiteral("id"), run.id},
@@ -386,6 +423,10 @@ QJsonObject shortcutRunRow(const ShortcutRun &run, bool withOutput)
                      double(run.running ? qMax<qint64>(0, QDateTime::currentMSecsSinceEpoch() -
                                                                run.startedAtMs)
                                         : -1)}};
+    if (!run.steps.isEmpty()) {
+        row.insert(QStringLiteral("step"), run.step);
+        row.insert(QStringLiteral("stepCount"), int(run.steps.size()));
+    }
     if (withOutput)
         row.insert(QStringLiteral("output"), run.output);
     return row;

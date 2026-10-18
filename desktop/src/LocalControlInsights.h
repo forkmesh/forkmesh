@@ -86,8 +86,15 @@ struct ShortcutRun {
     QString message;
     qint64 startedAtMs = 0;
     qint64 expectedMs = -1;
+    QString filePath;
+    QList<ShortcutStep> steps;
+    int step = -1;
+    bool stopped = false;
+    QString stepLine;
 };
 QString appendShortcutOutput(const QString &output, const QString &chunk, int maxChars);
+int shortcutStepMarker(const QString &line, const QList<ShortcutStep> &steps);
+bool trackShortcutStep(ShortcutRun &run, const QString &chunk);
 QJsonObject shortcutRunRow(const ShortcutRun &run, bool withOutput);
 QString lastOutputLine(const QString &output, int maxChars = 200);
 

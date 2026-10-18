@@ -27,7 +27,7 @@ def _action_semantics(path, text):
     jobs = [n["params"]["id"] for n in nodes if n["type"] == "action.job"]
     return (trigger["name"], trigger["events"], trigger["paths"],
             trigger["branches"], trigger["runsOn"], trigger["needs"],
-            trigger["checkout"], trigger["fetchDepth"], trigger["env"],
+            trigger["checkout"], trigger["sandbox"], trigger["fetchDepth"], trigger["env"],
             jobs, steps)
 
 
@@ -65,7 +65,7 @@ def test_every_valid_repository_action_keeps_its_meaning_and_comments():
 
 
 def test_simple_actions_round_trip_byte_for_byte():
-    for name in ("deploy.yml", "release.yml", "deploy-nodes.yml"):
+    for name in ("deploy.yml", "release.yml", "deploy-nodes.yml", "free-disk-space.yml"):
         path = ".forkmesh/" + name
         if (PROJECT / path).exists():
             text, out, _ = _round_trip(path)
@@ -115,6 +115,22 @@ def test_action_graph_order_follows_connections():
     assert "Loose" not in text
     assert warnings == ["y is not connected and is left out"]
     assert "- name: Second\n        run: |\n          echo two\n" in text
+
+
+def test_sandbox_off_round_trips_and_needs_manual_runs_only():
+    path = ".forkmesh/free-disk-space.yml"
+    text = (PROJECT / path).read_text(encoding="utf-8")
+    document, _ = files.parse_file(path, text)
+    trigger = document["nodes"][0]
+    assert trigger["params"]["sandbox"] == "false"
+    assert trigger["params"]["events"] == ["workflow_dispatch"]
+    trigger["params"]["events"] = ["workflow_dispatch", "push"]
+    with pytest.raises(files.FileError, match="sandbox_needs_manual_run"):
+        files.render_file(document)
+    trigger["params"]["events"] = ["workflow_dispatch"]
+    trigger["params"]["sandbox"] = ""
+    out, _ = files.render_file(document)
+    assert "sandbox" not in out
 
 
 def test_action_rendering_rejects_broken_graphs():

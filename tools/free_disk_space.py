@@ -24,6 +24,8 @@ BACKUP_PATTERNS = (re.compile(r"^forkmesh-fleet-\d{8}-\d{6}\.tar\.gz\.age$"),
                    re.compile(r"^forkmesh-minimal-\d{8}-\d{6}\.tar\.gz$"))
 BACKUP_KEEP = 3
 CLAUDE_VERSION = re.compile(r"^\d+(?:\.\d+)+$")
+STEPS = ("usage", "agents", "tests", "versions", "caches", "report")
+DELETE_STEPS = ("agents", "tests", "versions")
 
 
 @dataclass
@@ -31,6 +33,7 @@ class Candidate:
     path: Path
     parent: Path
     reason: str
+    group: str = "agents"
     size: int = 0
 
 
@@ -47,6 +50,8 @@ def _parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--tmp", type=Path, default=Path("/tmp"))
     parser.add_argument("--no-caches", action="store_true", help="skip the pip and npm cache clean")
     parser.add_argument("--proc", type=Path, default=Path("/proc"))
+    parser.add_argument("--step", choices=STEPS,
+                        help="run one part only: usage, agents, tests, versions, caches or report")
     return parser.parse_args(argv)
 
 
@@ -95,6 +100,10 @@ def paths_in_use(proc: Path) -> set[str]:
         return used
     for pid in pids:
         if pid in own:
+            try:
+                used.add(os.readlink(proc / pid / "cwd"))
+            except OSError:
+                pass
             continue
         base = proc / pid
         for link in ("cwd", "root", "exe"):
@@ -186,7 +195,7 @@ def find_candidates(args: argparse.Namespace, worktree_paths: set[str], names: s
     pytest_root = args.tmp / f"pytest-of-{os.environ.get('USER') or Path.home().name}"
     for path in _children(pytest_root):
         if path.name.startswith("pytest-") and path.name != "pytest-current":
-            found.append(Candidate(path, pytest_root, "old pytest temp dir"))
+            found.append(Candidate(path, pytest_root, "old pytest temp dir", "tests"))
     cache = home / ".cache"
     for path in _children(cache):
         match = CACHE_NUMBERED.match(path.name)
@@ -195,18 +204,19 @@ def find_candidates(args: argparse.Namespace, worktree_paths: set[str], names: s
     sandbox = home / ".local" / "share" / "ForkMesh" / "ForkMesh" / "actions" / "sandbox"
     for path in _children(sandbox):
         if path.name.startswith(("forkmesh-run-", "forkmesh-discard-")):
-            found.append(Candidate(path, sandbox, "stranded Actions sandbox"))
+            found.append(Candidate(path, sandbox, "stranded Actions sandbox", "tests"))
     qttests = home / ".qttest" / "share" / "ForkMeshTests"
     for path in _children(qttests):
         if "qt_temp-" in path.name:
-            found.append(Candidate(path, qttests, "leftover Qt test temp dir"))
+            found.append(Candidate(path, qttests, "leftover Qt test temp dir", "tests"))
     trash = home / ".local" / "share" / "Trash"
     for path in _children(trash / "files"):
         if path.name.startswith("forkmesh-cleanup-"):
-            found.append(Candidate(path, trash / "files", "trashed by clean-forkmesh-temporary-files"))
+            found.append(Candidate(path, trash / "files", "trashed by clean-forkmesh-temporary-files",
+                                   "versions"))
             info = trash / "info" / f"{path.name}.trashinfo"
             if info.exists():
-                found.append(Candidate(info, trash / "info", "its Trash record"))
+                found.append(Candidate(info, trash / "info", "its Trash record", "versions"))
     found.extend(_old_backups(home))
     found.extend(_old_claude_versions(home, args.proc))
     return [item for item in found if not _registered(item.path, worktree_paths)]
@@ -217,7 +227,7 @@ def _old_backups(home: Path) -> list[Candidate]:
     found = []
     for pattern in BACKUP_PATTERNS:
         matches = sorted(path for path in _children(folder) if pattern.match(path.name))
-        found.extend(Candidate(path, folder, f"older than the {BACKUP_KEEP} newest backups")
+        found.extend(Candidate(path, folder, f"older than the {BACKUP_KEEP} newest backups", "versions")
                      for path in matches[:-BACKUP_KEEP])
     return found
 
@@ -238,7 +248,8 @@ def _old_claude_versions(home: Path, proc: Path) -> list[Candidate]:
             continue
         if exe.startswith(str(versions) + "/"):
             keep.add(exe[len(str(versions)) + 1:].split("/", 1)[0])
-    return [Candidate(path, versions, "old Claude Code version") for path in entries if path.name not in keep]
+    return [Candidate(path, versions, "old Claude Code version", "versions")
+            for path in entries if path.name not in keep]
 
 
 def _make_writable(path: Path) -> None:
@@ -315,20 +326,34 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     args.repo = args.repo.resolve()
     args.home = args.home.resolve()
-    print(f"Before: / {_free(args.home)}; /tmp {_free(args.tmp)}")
-    worktree_paths, names, numbers = worktrees(args.repo)
-    used = paths_in_use(args.proc)
-    cutoff = time.time() - args.idle_minutes * 60
+    step = args.step
+    if step in (None, "usage"):
+        print(f"Before: / {_free(args.home)}; /tmp {_free(args.tmp)}")
+    if step == "usage":
+        worktree_paths, _names, _numbers = worktrees(args.repo)
+        print(f"Keeping {len(worktree_paths)} registered worktrees of {args.repo}")
+        return 0
+    if step == "report":
+        print(f"After: / {_free(args.home)}; /tmp {_free(args.tmp)}")
+        report_large(args.home)
+        return 0
     removable: list[Candidate] = []
-    for candidate in find_candidates(args, worktree_paths, names, numbers):
-        if in_use(candidate.path, used):
-            print(f"skip  {candidate.path}  (a running process uses it)")
-            continue
-        if args.idle_minutes > 0 and touched_since(candidate.path, cutoff):
-            print(f"skip  {candidate.path}  (changed in the last {args.idle_minutes} min)")
-            continue
-        candidate.size = tree_size(candidate.path)
-        removable.append(candidate)
+    if step != "caches":
+        groups = DELETE_STEPS if step is None else (step,)
+        worktree_paths, names, numbers = worktrees(args.repo)
+        used = paths_in_use(args.proc)
+        cutoff = time.time() - args.idle_minutes * 60
+        for candidate in find_candidates(args, worktree_paths, names, numbers):
+            if candidate.group not in groups:
+                continue
+            if in_use(candidate.path, used):
+                print(f"skip  {candidate.path}  (a running process uses it)")
+                continue
+            if args.idle_minutes > 0 and touched_since(candidate.path, cutoff):
+                print(f"skip  {candidate.path}  (changed in the last {args.idle_minutes} min)")
+                continue
+            candidate.size = tree_size(candidate.path)
+            removable.append(candidate)
     total = 0
     for candidate in removable:
         verb = "del  " if args.execute else "would"
@@ -336,11 +361,16 @@ def main(argv: list[str] | None = None) -> int:
         if args.execute and not remove(candidate):
             continue
         total += candidate.size
-    if not args.no_caches:
-        clean_caches(args.execute)
-    print(f"\n{'Freed' if args.execute else 'Would free'} {_human(total)} from {len(removable)} items.")
-    print(f"After: / {_free(args.home)}; /tmp {_free(args.tmp)}")
-    report_large(args.home)
+    if step in (None, "caches"):
+        if args.no_caches:
+            print("Left the pip and npm caches alone (--no-caches).")
+        else:
+            clean_caches(args.execute)
+    if step != "caches":
+        print(f"\n{'Freed' if args.execute else 'Would free'} {_human(total)} from {len(removable)} items.")
+    if step is None:
+        print(f"After: / {_free(args.home)}; /tmp {_free(args.tmp)}")
+        report_large(args.home)
     if not args.execute:
         print("\nDry run. Re-run with --execute to delete.")
     return 0
