@@ -312,6 +312,17 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   clears `token_hash`. The answer is `{ok: true, cancel}`: `cancel: true`
   means the job was cancelled from the web and the runner should stop it and
   send its final report (the job then ends `cancelled`).
+- The Go runner (`server/runner_actions.go`) sends `workflowPath` on every
+  run, and sends a run's `log` only when it changed since the last report
+  the app accepted; when the body would pass 8 MiB (less 64 KiB of margin)
+  it leaves out the logs of the runs that started earliest, which then follow
+  in a later report. On `cancel: true` from any report, progress reports
+  included, it cancels the job's context (the step's process group is
+  killed), marks the running workflow and every queued one `cancelled`, and
+  sends a final `completed` report. A job that names a `workflow` runs only
+  that file, for `push` too (re-run of a push run): its `on.push.branches`
+  still applies, `on.push.paths` does not. The runner does not send
+  `pushedCommit` yet.
 - `snapshot` returns `controlAvailable: true` when `ACTIONS_INSTANCE_RUNNER`
   is set, each run's `event` and `workflows` (the catalog, inputs as a list
   of `{name, description, required, default, type, options}`).

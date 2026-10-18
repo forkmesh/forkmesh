@@ -32,6 +32,7 @@ const (
 	runnerActionsTick       = 5 * time.Second
 	runnerActionsPayloadMax = 1 << 20
 	runnerActionsSecretMax  = 48 << 10
+	runnerActionsReportMax  = 8<<20 - 64<<10
 )
 
 var (
@@ -86,21 +87,23 @@ func (job runnerActionsJob) event() string {
 }
 
 type runnerActionsRun struct {
-	Workflow   string `json:"workflow"`
-	Commit     string `json:"commit"`
-	Ref        string `json:"ref"`
-	Status     string `json:"status"`
-	CreatedAt  int64  `json:"createdAt"`
-	StartedAt  int64  `json:"startedAt"`
-	FinishedAt int64  `json:"finishedAt"`
-	LogTail    string `json:"logTail"`
-	Event      string `json:"event"`
-	Log        string `json:"log"`
+	Workflow     string `json:"workflow"`
+	Commit       string `json:"commit"`
+	Ref          string `json:"ref"`
+	Status       string `json:"status"`
+	CreatedAt    int64  `json:"createdAt"`
+	StartedAt    int64  `json:"startedAt"`
+	FinishedAt   int64  `json:"finishedAt"`
+	LogTail      string `json:"logTail"`
+	Event        string `json:"event"`
+	WorkflowPath string `json:"workflowPath"`
+	Log          string `json:"-"`
 
-	path  string
-	name  string
-	needs []string
-	wf    *workflow
+	sentLog string
+	path    string
+	name    string
+	needs   []string
+	wf      *workflow
 }
 
 type runnerActions struct {
@@ -181,7 +184,7 @@ func (a *runnerActions) validate(job runnerActionsJob) string {
 		(job.Commit != "" && !runnerObjectID.MatchString(job.Commit)) ||
 		(job.Before != "" && !runnerObjectID.MatchString(job.Before)) ||
 		!runnerActionsEventPattern.MatchString(job.event()) ||
-		(job.event() != "push" && !workflowPathPattern.MatchString(job.Workflow)) {
+		((job.event() != "push" || job.Workflow != "") && !workflowPathPattern.MatchString(job.Workflow)) {
 		return "Malformed or unsafe Actions job."
 	}
 	if problem := validRunnerActionsExtras(job); problem != "" {
@@ -287,8 +290,15 @@ func (a *runnerActions) execute(ctx context.Context, job runnerActionsJob) {
 		a.report(ctx, job, "completed", nil, commit, message)
 		return
 	}
-	a.report(ctx, job, "running", runs, commit, "")
-	for {
+	ctx, cancelJob := context.WithCancel(ctx)
+	defer cancelJob()
+	stopIfCancelled := func(cancel bool) {
+		if cancel {
+			cancelJob()
+		}
+	}
+	stopIfCancelled(a.report(ctx, job, "running", runs, commit, ""))
+	for ctx.Err() == nil {
 		index, verdict := nextRunnerActionsRun(runs)
 		if index < 0 {
 			break
@@ -301,10 +311,13 @@ func (a *runnerActions) execute(ctx context.Context, job runnerActionsJob) {
 			continue
 		}
 		run.Status, run.StartedAt = actionRunning, a.now().UnixMilli()
-		a.report(ctx, job, "running", runs, commit, "")
+		stopIfCancelled(a.report(ctx, job, "running", runs, commit, ""))
+		if ctx.Err() != nil {
+			break
+		}
 		live := &runnerActionsLog{}
 		stop, done := make(chan struct{}), make(chan struct{})
-		go a.tickReports(ctx, job, runs, commit, run, live, stop, done)
+		go a.tickReports(ctx, cancelJob, job, runs, commit, run, live, stop, done)
 		status := a.runWorkflow(ctx, job, cache, lock, commit, index, run, live)
 		close(stop)
 		<-done
@@ -321,7 +334,7 @@ func (a *runnerActions) execute(ctx context.Context, job runnerActionsJob) {
 	a.report(context.WithoutCancel(ctx), job, "completed", runs, commit, "")
 }
 
-func (a *runnerActions) tickReports(ctx context.Context, job runnerActionsJob, runs []*runnerActionsRun, commit string,
+func (a *runnerActions) tickReports(ctx context.Context, cancelJob context.CancelFunc, job runnerActionsJob, runs []*runnerActionsRun, commit string,
 	run *runnerActionsRun, live *runnerActionsLog, stop, done chan struct{}) {
 	defer close(done)
 	if a.tick <= 0 {
@@ -337,11 +350,19 @@ func (a *runnerActions) tickReports(ctx context.Context, job runnerActionsJob, r
 			return
 		case <-ticker.C:
 			run.Log, run.LogTail = live.String(), live.Tail()
-			body, err := a.reportBody(job, "running", runs, commit, "")
+			body, sent, err := a.reportBody(job, "running", runs, commit, "")
 			if err != nil {
 				continue
 			}
-			if code, reply, err := a.post(ctx, body); err == nil && code >= 400 && code < 500 {
+			code, reply, err := a.post(ctx, body)
+			switch {
+			case err == nil && code >= 200 && code < 300:
+				markRunnerActionsLogsSent(sent)
+				if runnerActionsCancelRequested(reply) {
+					cancelJob()
+					return
+				}
+			case err == nil && code >= 400 && code < 500:
 				log.Printf("runner actions: progress for job %d refused (HTTP %d): %s", job.JobID, code, boundedText(reply, 200))
 			}
 		}
@@ -473,15 +494,18 @@ func (a *runnerActions) plan(ctx context.Context, cache string, job runnerAction
 			continue
 		}
 		runs = append(runs, &runnerActionsRun{Workflow: wf.Name, Commit: commit, Ref: ref,
-			Status: actionQueued, CreatedAt: created, Event: event, path: wf.Path, name: wf.Name,
+			Status: actionQueued, CreatedAt: created, Event: event, WorkflowPath: wf.Path, path: wf.Path, name: wf.Name,
 			needs: wf.Needs, wf: wf})
 	}
 	return runs, commit, catalog, ""
 }
 
 func workflowWantsEvent(wf *workflow, job runnerActionsJob, event, action string, changed []string, changedKnown bool) bool {
-	if !wf.on(event) {
+	if !wf.on(event) || (job.Workflow != "" && wf.Path != job.Workflow) {
 		return false
+	}
+	if event == "push" && job.Workflow != "" {
+		return len(wf.PushBranches) == 0 || wf.matchesPushBranch(job.Branch)
 	}
 	if event == "push" {
 		if len(wf.PushBranches) != 0 && !wf.matchesPushBranch(job.Branch) {
@@ -914,41 +938,101 @@ func (a *runnerActions) runStep(ctx context.Context, work string, env []string, 
 	return 0, err
 }
 
-func (a *runnerActions) reportBody(job runnerActionsJob, status string, runs []*runnerActionsRun, commit, message string) ([]byte, error) {
-	if runs == nil {
-		runs = []*runnerActionsRun{}
+type runnerActionsRunWire struct {
+	*runnerActionsRun
+	Log *string `json:"log,omitempty"`
+}
+
+type runnerActionsSentLog struct {
+	run *runnerActionsRun
+	log string
+}
+
+func markRunnerActionsLogsSent(sent []runnerActionsSentLog) {
+	for _, item := range sent {
+		item.run.sentLog = item.log
 	}
+}
+
+func runnerActionsCancelRequested(reply []byte) bool {
+	var answer struct {
+		Cancel bool `json:"cancel"`
+	}
+	return json.Unmarshal(reply, &answer) == nil && answer.Cancel
+}
+
+func (a *runnerActions) reportBody(job runnerActionsJob, status string, runs []*runnerActionsRun, commit, message string) ([]byte, []runnerActionsSentLog, error) {
 	catalog := job.catalog
 	if catalog == nil {
 		catalog = []runnerActionsCatalogEntry{}
 	}
-	return json.Marshal(map[string]any{
+	wire := make([]runnerActionsRunWire, len(runs))
+	for i, run := range runs {
+		wire[i].runnerActionsRun = run
+	}
+	envelope := map[string]any{
 		"jobId": job.JobID, "leaseId": job.LeaseID, "status": status,
-		"commit": commit, "runs": runs, "message": message, "catalog": catalog,
+		"commit": commit, "runs": wire, "message": message, "catalog": catalog,
+	}
+	base, err := json.Marshal(envelope)
+	if err != nil {
+		return nil, nil, err
+	}
+	order := make([]int, 0, len(runs))
+	for i, run := range runs {
+		if run.Log != run.sentLog {
+			order = append(order, i)
+		}
+	}
+	sort.SliceStable(order, func(x, y int) bool {
+		return runs[order[x]].StartedAt > runs[order[y]].StartedAt
 	})
+	size := len(base)
+	var sent []runnerActionsSentLog
+	for _, i := range order {
+		encoded, err := json.Marshal(runs[i].Log)
+		if err != nil {
+			continue
+		}
+		cost := len(encoded) + len(`,"log":`)
+		if size+cost > runnerActionsReportMax {
+			continue
+		}
+		size += cost
+		text := runs[i].Log
+		wire[i].Log = &text
+		sent = append(sent, runnerActionsSentLog{run: runs[i], log: text})
+	}
+	if len(sent) == 0 {
+		return base, nil, nil
+	}
+	body, err := json.Marshal(envelope)
+	return body, sent, err
 }
 
-func (a *runnerActions) report(ctx context.Context, job runnerActionsJob, status string, runs []*runnerActionsRun, commit, message string) {
-	body, err := a.reportBody(job, status, runs, commit, message)
+func (a *runnerActions) report(ctx context.Context, job runnerActionsJob, status string, runs []*runnerActionsRun, commit, message string) bool {
+	body, sent, err := a.reportBody(job, status, runs, commit, message)
 	if err != nil {
-		return
+		return false
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		code, reply, err := a.post(ctx, body)
 		if err == nil && code >= 200 && code < 300 {
-			return
+			markRunnerActionsLogsSent(sent)
+			return runnerActionsCancelRequested(reply)
 		}
 		if err == nil && code >= 400 && code < 500 {
 			log.Printf("runner actions: report for job %d refused (HTTP %d): %s", job.JobID, code, boundedText(reply, 200))
-			return
+			return false
 		}
 		select {
 		case <-ctx.Done():
-			return
+			return false
 		case <-time.After(time.Duration(attempt+1) * 2 * time.Second):
 		}
 	}
 	log.Printf("runner actions: report for job %d was not delivered", job.JobID)
+	return false
 }
 
 type tailBuffer struct {
