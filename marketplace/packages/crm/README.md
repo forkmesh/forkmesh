@@ -272,6 +272,43 @@ sent from the CRM and nothing is stored except a saved brief. Tests:
   Self Client code with all four scopes) before automated email can go
   through Zoho.
 
+**Zoho status and missing steps** (1.39.0). After 1.36.0 an organization
+connected earlier kept syncing, so it looked healthy, but every automated
+email was refused with `zoho_send_not_allowed`: a refresh token keeps the
+scopes it was granted, and only a new consent adds `ZohoMail.messages.CREATE`.
+Syncing again could never fix it, and nothing on the CRM page said so. Now:
+
+- The sealed `zoho` settings record what the token can do: `connectedAt`
+  (set whenever a new refresh token is saved, which also clears the fields
+  below), `scope` (from Zoho's token response at connect and on every sync's
+  refresh; one-click connects store the requested scopes when Zoho omits it),
+  `sendRefusedAt` / `lastSentAt` (the last refused and accepted Zoho send),
+  `tokenRejectedAt`, and `lastSyncError` / `lastSyncErrorAt`.
+- `canSend` is the newer of a refused or accepted send when there is one,
+  else whether `scope` holds `ZohoMail.messages.CREATE` (or `.ALL`), else
+  whether the connection has a `connectedAt`. Connections made before 1.39.0
+  have none, so they read as read-only until a sync's token response shows
+  the send scope or a reconnect saves a new token.
+- `settings.zoho` (`_zoho_project`) carries `canSend`, `lastSyncAt`,
+  `lastSentAt`, `lastSyncError` and `steps`: `[{key, action, text}]` with
+  `key` one of `connect`, `self_client`, `token`, `send`, `sync_failed`,
+  `sync`, and `action` one of `connect`, `reconnect`, `sync`, `guide`.
+- The web CRM shows a Zoho Mail bar under the page header: a status word,
+  the account, last synced and last sent, and each step with its button
+  (one-click reconnect goes straight to Zoho's consent page; without the
+  ForkMesh Zoho app it opens settings for a Self Client code). The iPhone CRM
+  header shows the same bar, and its settings add **Reconnect Zoho Mail**
+  when sending is not allowed.
+- The web page syncs Zoho by itself when the last attempt is 15 minutes old
+  (`POST /mail/import {auto: true}`; the worker answers `skipped: true`
+  inside `ZOHO_AUTO_SYNC_MS`, so open tabs do not multiply syncs).
+- `_opened_settings` used to pass the stored record through the input
+  sanitiser, which kept only the four credentials, so `lastSyncAt` was lost
+  on every read and the page always said "not synced yet". It now keeps the
+  stored fields.
+
+Tests: the last four tests in `tests/test_auto_email.py`.
+
 A sync reads the Sent folder after the others, reserving half the sync limit
 for it, and records each sent-folder message as an outbound CRM email. Email
 cells open a compose window in the organization's Zoho data center

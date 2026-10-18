@@ -894,7 +894,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     draft_unusable: "The model's draft had placeholders or links we could not check, so nothing was sent. Try again.",
     rate_limited: "The AI model is busy. Try again in a minute.",
     send_failed: "The email provider refused the send.",
-    zoho_send_not_allowed: "Zoho Mail did not let ForkMesh send from your mailbox. Reconnect Zoho Mail in Settings so it may send as well as read.",
+    zoho_send_not_allowed: "Zoho Mail did not let ForkMesh send from your mailbox: its sign-in only allows reading, and syncing does not change that. Use Reconnect Zoho Mail at the top of the CRM and allow sending.",
   };
 
   function crmEmailAddress(contact) {
@@ -921,6 +921,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       const known = CRM_AUTO_EMAIL_ERRORS[error.payload?.error || ""];
       crmMessage("error", `Nothing was sent: ${known || error.message}`);
       if (button) { button.disabled = false; button.textContent = "Send AI email"; }
+      if (error.payload?.error === "zoho_send_not_allowed") await loadCrm();
       return;
     }
     await loadCrm();
@@ -4190,7 +4191,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     }
     $(`[data-crm-failed-summary]`)?.classList.toggle("text-destructive", Number(summary.failed || 0) > 0);
     renderCrmSections(); renderCrmFlowFilters(); renderCrmContacts(); renderCrmEmails(); renderCrmMail(); renderCrmOutreach();
-    renderCrmTeam(); renderCrmMailLinks(); crmNoteListViewed();
+    renderCrmTeam(); renderCrmMailLinks(); crmNoteListViewed(); renderCrmZohoBar();
     $(`[data-crm-account-evidence]`)?.classList.toggle("hidden", !state.crmView.canManageSettings);
     renderCrmUsersImport();
     if ($(`[data-crm-lists-dialog]`)?.open) renderCrmListsOverview();
@@ -4761,7 +4762,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-zoho-code]`).value = "";
     $(`[data-crm-zoho-exchange]`).disabled = !state.crmView.canManageSettings;
     $(`[data-crm-zoho-status]`).textContent = zoho.connected
-      ? `Connected to account ${zoho.accountId}${zoho.managed ? " through ForkMesh's Zoho app" : ""}${zoho.lastSyncAt ? ` · last synced ${relativeTimeLabel(zoho.lastSyncAt)}` : " · not synced yet"}.${zoho.managed ? "" : " Leave secrets blank to keep them unchanged."}`
+      ? `Connected to account ${zoho.accountId}${zoho.managed ? " through ForkMesh's Zoho app" : ""}${zoho.lastSyncAt ? ` · last synced ${relativeTimeLabel(zoho.lastSyncAt)}` : " · not synced yet"}${zoho.canSend ? " · sends from the mailbox" : " · read only: reconnect and allow sending"}.${zoho.managed ? "" : " Leave secrets blank to keep them unchanged."}`
       : zoho.oneClick
       ? "Not connected. Connect with Zoho signs you in to Zoho and asks to read mail, folders, and the account and to send the CRM's emails. Or enter your own OAuth client below."
       : "Not connected. Use a Zoho OAuth client with ZohoMail.messages.READ, ZohoMail.messages.CREATE, ZohoMail.folders.READ, and ZohoMail.accounts.READ scopes.";
@@ -5142,14 +5143,82 @@ window.ForkMeshDashboard.registerPage("crm", ({
     } catch (error) { crmMessage("error", `Could not log the toot: ${error.message}`); }
   }
 
-  async function syncCrmZoho() {
+  async function syncCrmZoho(quiet = false) {
+    if (state.crmView.zohoSyncing) return;
+    state.crmView.zohoSyncing = true;
     const button = $(`[data-crm-zoho-sync]`); if (button) button.disabled = true;
+    renderCrmZohoBar();
     try {
-      const payload = await crmRequest(crmOrganizationPath("/mail/import"), "POST", { limit: 200 });
-      crmMessage("notice", `Zoho Mail synced: ${payload.created || 0} new, ${payload.updated || 0} refreshed, ${payload.outboundRecorded || 0} sent emails recorded.`);
+      const payload = await crmRequest(crmOrganizationPath("/mail/import"), "POST", quiet ? { limit: 200, auto: true } : { limit: 200 });
+      if (!quiet) crmMessage("notice", `Zoho Mail synced: ${payload.created || 0} new, ${payload.updated || 0} refreshed, ${payload.outboundRecorded || 0} sent emails recorded.`);
+      state.crmView.zohoSyncing = false;
+      if (!payload.skipped) await loadCrm();
+    } catch (error) {
+      state.crmView.zohoSyncing = false;
+      if (!quiet) crmMessage("error", `Zoho Mail sync failed: ${error.message}`);
       await loadCrm();
-    } catch (error) { crmMessage("error", `Zoho Mail sync failed: ${error.message}`); }
-    finally { if (button) button.disabled = false; }
+    } finally {
+      state.crmView.zohoSyncing = false;
+      if (button) button.disabled = false;
+      renderCrmZohoBar();
+    }
+  }
+
+  const CRM_ZOHO_SYNC_MS = 15 * 60 * 1000;
+
+  function crmAutoSyncZoho() {
+    const zoho = state.crmView.settings?.zoho;
+    if (!zoho?.connected || state.crmView.sharedOnly) return;
+    const key = state.crmView.organization;
+    const tried = Math.max(Number(zoho.lastSyncAt) || 0, Number(zoho.lastSyncErrorAt) || 0, state.crmView.zohoSyncedAt?.[key] || 0);
+    if (Date.now() - tried < CRM_ZOHO_SYNC_MS) return;
+    state.crmView.zohoSyncedAt = { ...(state.crmView.zohoSyncedAt || {}), [key]: Date.now() };
+    void syncCrmZoho(true);
+  }
+
+  const CRM_ZOHO_STEP_BUTTONS = { connect: "Connect Zoho Mail", reconnect: "Reconnect Zoho Mail", sync: "Sync now", guide: "Open the setup guide" };
+
+  function crmZohoBarBadge(zoho, steps) {
+    if (!zoho.connected) return ["text-attention", "Not connected"];
+    if (!zoho.canSend) return ["text-attention", "Read only: cannot send yet"];
+    if (steps.some((step) => step.key === "sync_failed")) return ["text-attention", "Last sync failed"];
+    return ["text-success", "Reads and sends"];
+  }
+
+  function renderCrmZohoBar() {
+    const bar = $(`[data-crm-zoho-bar]`); if (!bar) return;
+    const zoho = state.crmView.settings?.zoho;
+    bar.classList.toggle("hidden", !zoho || !state.crmView.installed || Boolean(state.crmView.sharedOnly));
+    if (!zoho) return;
+    const steps = Array.isArray(zoho.steps) ? zoho.steps : [];
+    const [tone, label] = crmZohoBarBadge(zoho, steps);
+    const badge = $(`[data-crm-zoho-bar-badge]`);
+    badge.className = `font-semibold ${tone}`; badge.textContent = label;
+    const parts = [];
+    if (zoho.connected) {
+      parts.push(`account ${zoho.accountId}`);
+      parts.push(state.crmView.zohoSyncing ? "syncing…" : zoho.lastSyncAt ? `last synced ${relativeTimeLabel(zoho.lastSyncAt)}` : "never synced");
+      if (zoho.lastSentAt) parts.push(`last sent ${relativeTimeLabel(zoho.lastSentAt)}`);
+    } else parts.push("the CRM cannot read or send from your mailbox yet");
+    $(`[data-crm-zoho-bar-state]`).textContent = parts.join(" · ");
+    const canManage = Boolean(state.crmView.canManageSettings);
+    const list = $(`[data-crm-zoho-bar-steps]`);
+    list.hidden = steps.length === 0;
+    list.innerHTML = steps.map((step, index) => {
+      const allowed = step.action === "sync" ? zoho.connected : canManage;
+      const action = allowed
+        ? `<button data-crm-zoho-step="${escapeHtml(step.action)}" type="button" ${state.crmView.zohoSyncing && step.action === "sync" ? "disabled" : ""} class="ml-2 h-7 rounded-md border border-border bg-secondary px-2.5 text-xs font-semibold text-foreground hover:bg-background disabled:opacity-50">${escapeHtml(CRM_ZOHO_STEP_BUTTONS[step.action] || "Open CRM settings")}</button>`
+        : `<span class="ml-2 text-muted-foreground">Ask an organization owner or admin.</span>`;
+      return `<li class="text-foreground"><span class="text-muted-foreground" style="font-variant-numeric:tabular-nums">${index + 1}.</span> ${escapeHtml(step.text)}${action}</li>`;
+    }).join("");
+  }
+
+  function runCrmZohoStep(action) {
+    const zoho = state.crmView.settings?.zoho || {};
+    if (action === "sync") void syncCrmZoho();
+    else if ((action === "connect" || action === "reconnect") && zoho.oneClick) void connectCrmZoho();
+    else if (action === "reconnect") openCrmSettings();
+    else openCrmZohoGuide();
   }
 
   const CRM_ZOHO_CODE_ERRORS = {
@@ -6519,7 +6588,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         zohoButton.title = zohoConnected
           ? "Refresh the organization's shared Zoho Mail boxes"
           : state.crmView.canManageSettings && state.crmView.settings?.zoho?.oneClick
-          ? "Sign in to Zoho and allow read access to the organization's mail"
+          ? "Sign in to Zoho and allow ForkMesh to read and send the organization's mail"
           : state.crmView.canManageSettings
           ? "Set up the Zoho OAuth client: opens the step-by-step guide"
           : "Ask an organization owner or admin to connect Zoho Mail";
@@ -6527,6 +6596,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       renderCrmDraftsLabel(); crmMessage("error", ""); renderCrm();
       crmRefreshForkMeshAvatars();
       crmAutoSyncToots();
+      crmAutoSyncZoho();
     } catch (error) {
       if (error.status === 409 && error.payload?.error === "plugin_not_installed") {
         const record = crmSelectedOrg(); if (record) record.installed = false;
@@ -6756,6 +6826,10 @@ window.ForkMeshDashboard.registerPage("crm", ({
       else if (state.crmView.canManageSettings) openCrmZohoGuide();
     });
     $(`[data-crm-zoho-guide]`)?.addEventListener("click", openCrmZohoGuide);
+    $(`[data-crm-zoho-bar]`)?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-crm-zoho-step]");
+      if (button) runCrmZohoStep(button.dataset.crmZohoStep);
+    });
     $$(`[data-crm-zoho-guide-copy]`).forEach((button) => button.addEventListener("click", () => void copyCrmZohoGuide(button.dataset.crmZohoGuideCopy)));
     $(`[data-crm-zoho-guide-settings]`)?.addEventListener("click", () => { $(`[data-crm-zoho-guide-dialog]`).close(); openCrmSettings(); });
     $(`[data-crm-zoho-guide-connect]`)?.addEventListener("click", () => { $(`[data-crm-zoho-guide-dialog]`).close(); void connectCrmZoho(); });

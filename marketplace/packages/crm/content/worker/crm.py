@@ -951,6 +951,10 @@ ZOHO_REGIONS = {
 ZOHO_CONNECTION_KEYS = ("accountId", "clientId", "clientSecret", "refreshToken")
 ZOHO_SCOPES = ("ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,"
                "ZohoMail.accounts.READ")
+ZOHO_SEND_SCOPES = frozenset({"zohomail.messages.create", "zohomail.messages.all"})
+ZOHO_GRANT_KEYS = ("scope", "sendRefusedAt", "lastSentAt", "tokenRejectedAt",
+                   "lastSyncError", "lastSyncErrorAt")
+ZOHO_AUTO_SYNC_MS = 15 * 60 * 1000
 ZOHO_CALLBACK_PATH = "/api/crm/-/zoho/callback"
 ZOHO_STATE_TTL_MS = 10 * 60 * 1000
 ZOHO_SENT_FOLDERS = frozenset({"sent", "sent items", "sent mail", "sent messages"})
@@ -1007,6 +1011,84 @@ def _zoho_connected(zoho):
     zoho = zoho if isinstance(zoho, dict) else {}
     keys = ("accountId", "refreshToken") if zoho.get("managed") else ZOHO_CONNECTION_KEYS
     return all(zoho.get(key) for key in keys)
+
+
+def _zoho_scope(value):
+    return " ".join(part for part in re.split(r"[\s,]+", _clean(value, 1000)) if part)
+
+
+def _zoho_can_send(zoho):
+    refused = _integer(zoho.get("sendRefusedAt"))
+    sent = _integer(zoho.get("lastSentAt"))
+    if refused or sent:
+        return sent > refused
+    scope = _zoho_scope(zoho.get("scope"))
+    if scope:
+        return bool(ZOHO_SEND_SCOPES & set(scope.lower().split()))
+    return "connectedAt" in zoho
+
+
+def _zoho_steps(zoho, one_click):
+    if not _zoho_connected(zoho):
+        return [{"key": "connect", "action": "connect" if one_click else "guide",
+                 "text": "Connect Zoho Mail so the CRM can read and send from your mailbox."}]
+    if zoho.get("managed") and not one_click:
+        return [{"key": "self_client", "action": "guide",
+                 "text": "This server no longer has ForkMesh's Zoho app. Connect again "
+                         "with your own Zoho Self Client."}]
+    if zoho.get("tokenRejectedAt"):
+        return [{"key": "token", "action": "reconnect",
+                 "text": "Zoho no longer accepts the saved sign-in. Reconnect Zoho Mail."}]
+    steps = []
+    if not _zoho_can_send(zoho):
+        steps.append({"key": "send", "action": "reconnect",
+                      "text": ("Zoho refused to let ForkMesh send from the mailbox. "
+                               if zoho.get("sendRefusedAt") else
+                               "The Zoho sign-in only allows reading mail. ")
+                              + "Reconnect Zoho Mail once and allow sending; syncing "
+                                "again does not add the permission."})
+    if zoho.get("lastSyncError"):
+        steps.append({"key": "sync_failed", "action": "sync",
+                      "text": "The last sync failed (" + _clean(zoho.get("lastSyncError"), 120)
+                              + "). Sync again."})
+    elif not _integer(zoho.get("lastSyncAt")):
+        steps.append({"key": "sync", "action": "sync",
+                      "text": "Sync Zoho Mail once to bring in the mailbox."})
+    return steps
+
+
+def _zoho_project(runtime, zoho):
+    zoho = zoho if isinstance(zoho, dict) else {}
+    one_click = bool(_zoho_client(runtime))
+    connected = _zoho_connected(zoho)
+    return {
+        "connected": connected,
+        "region": str(zoho.get("region") or "com"),
+        "accountId": str(zoho.get("accountId") or ""),
+        "lastSyncAt": _integer(zoho.get("lastSyncAt")),
+        "oneClick": one_click,
+        "managed": bool(zoho.get("managed")),
+        "canSend": connected and not zoho.get("tokenRejectedAt") and _zoho_can_send(zoho),
+        "connectedAt": _integer(zoho.get("connectedAt")),
+        "lastSentAt": _integer(zoho.get("lastSentAt")),
+        "lastSyncError": _clean(zoho.get("lastSyncError"), 120),
+        "lastSyncErrorAt": _integer(zoho.get("lastSyncErrorAt")),
+        "steps": _zoho_steps(zoho, one_click),
+    }
+
+
+async def _record_zoho(runtime, org_bi, **changes):
+    row = await runtime.d1_first("SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
+    settings = await runtime.open(row.get("data")) if row else None
+    if not isinstance(settings, dict) or not isinstance(settings.get("zoho"), dict):
+        return
+    for key, value in changes.items():
+        if value is None:
+            settings["zoho"].pop(key, None)
+        else:
+            settings["zoho"][key] = value
+    await runtime.d1_run("UPDATE crm_settings SET data=? WHERE org_bi=?",
+                         await runtime.seal(settings), org_bi)
 
 
 def _zoho_client(runtime):
@@ -1322,7 +1404,11 @@ async def _opened_settings(runtime, org_bi):
     row = await runtime.d1_first(
         "SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
     data = await runtime.open(row.get("data")) if row else {}
-    return _settings_data(data if isinstance(data, dict) else {})
+    data = data if isinstance(data, dict) else {}
+    result = _settings_data(data)
+    if isinstance(data.get("zoho"), dict) and isinstance(result.get("zoho"), dict):
+        result["zoho"] = dict(data["zoho"], **result["zoho"])
+    return result
 
 
 async def _mail_message_project(runtime, row):
@@ -1423,8 +1509,8 @@ async def _zoho_access_token(runtime, connection):
     access_token = str(token_data.get("access_token") or "")
     if (not (token or {}).get("ok") or not 200 <= _integer(
             (token or {}).get("status")) < 300 or not access_token):
-        return ""
-    return access_token
+        return "", ""
+    return access_token, _zoho_scope(token_data.get("scope"))
 
 
 def _zoho_connection(runtime, settings):
@@ -1447,7 +1533,7 @@ async def _zoho_mail_import(runtime, connection, limit):
     account_id = _clean(connection.get("accountId"), 80)
     if not accounts_server or not mail_server or not account_id:
         return {"ok": False, "error": "zoho_connection_incomplete"}
-    access_token = await _zoho_access_token(runtime, connection)
+    access_token, scope = await _zoho_access_token(runtime, connection)
     if not access_token:
         return {"ok": False, "error": "zoho_token_rejected"}
     headers = {"accept": "application/json",
@@ -1515,7 +1601,7 @@ async def _zoho_mail_import(runtime, connection, limit):
             })
             if len(messages) >= budget:
                 break
-    return {"ok": True, "messages": messages}
+    return {"ok": True, "messages": messages, "scope": scope}
 
 
 def _zoho_sender_addresses(account):
@@ -1534,7 +1620,7 @@ async def _zoho_send(runtime, connection, from_email, recipient, subject, html):
     account_id = _clean(connection.get("accountId"), 80)
     if not connection.get("accountsServer") or not mail_server or not account_id:
         return {"ok": False, "error": "zoho_connection_incomplete"}
-    access_token = await _zoho_access_token(runtime, connection)
+    access_token, _ = await _zoho_access_token(runtime, connection)
     if not access_token:
         return {"ok": False, "error": "zoho_token_rejected"}
     headers = {"accept": "application/json",
@@ -1623,12 +1709,18 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
     connection, refused = _zoho_connection(runtime, settings)
     if not connection:
         return _response(runtime, {"error": refused}, 409)
+    tried = max(_integer(zoho.get("lastSyncAt")), _integer(zoho.get("lastSyncErrorAt")))
+    if data.get("auto") and runtime.now() - tried < ZOHO_AUTO_SYNC_MS:
+        return _response(runtime, {"ok": True, "skipped": True, "created": 0, "updated": 0,
+                                   "outboundRecorded": 0, "contactsAdvanced": 0})
     limit = max(1, min(MAX_ZOHO_IMPORT, _integer(data.get("limit"), 100)))
     result = await _zoho_mail_import(runtime, connection, limit)
     if not (result or {}).get("ok"):
-        return _response(runtime, {
-            "error": _clean((result or {}).get("error"), 120) or "zoho_unavailable",
-        }, 502)
+        error = _clean((result or {}).get("error"), 120) or "zoho_unavailable"
+        await _record_zoho(
+            runtime, org_bi, lastSyncError=error, lastSyncErrorAt=runtime.now(),
+            tokenRejectedAt=runtime.now() if error == "zoho_token_rejected" else None)
+        return _response(runtime, {"error": error}, 502)
     created = 0
     updated = 0
     outbound_recorded = 0
@@ -1735,6 +1827,10 @@ async def _import_zoho(runtime, org_bi, org_name, account_bi, actor, data):
                 await runtime.open(contact_row.get("data")) if contact_row else {},
                 "contact.emailed", {"subject": _clean(source.get("subject"), 200)})
     zoho["lastSyncAt"] = now
+    for key in ("lastSyncError", "lastSyncErrorAt", "tokenRejectedAt"):
+        zoho.pop(key, None)
+    if result.get("scope"):
+        zoho["scope"] = _zoho_scope(result.get("scope"))
     settings["zoho"] = zoho
     await runtime.d1_run(
         "UPDATE crm_settings SET updated_by_bi=?,updated_by_name=?,updated_at=?,"
@@ -1819,6 +1915,7 @@ async def email_channel_report(runtime, org_bi, since):
         "closedStages": sorted(CLOSED_DEAL_STAGES),
         "zoho": {
             "connected": _zoho_connected(zoho),
+            "canSend": _zoho_connected(zoho) and _zoho_can_send(zoho),
             "lastSyncAt": _integer(zoho.get("lastSyncAt")),
             "mailServer": _https(zoho.get("mailServer")),
         },
@@ -2009,7 +2106,7 @@ async def _zoho_redeem(runtime, accounts_server, fields):
     if (not (token or {}).get("ok") or not 200 <= _integer((token or {}).get("status")) < 300
             or not access_token or not refresh_token):
         return None, _clean(token_data.get("error"), 80) or "token_rejected"
-    return (access_token, refresh_token), ""
+    return (access_token, refresh_token, _zoho_scope(token_data.get("scope"))), ""
 
 
 async def _zoho_mail_account(runtime, mail_server, access_token):
@@ -2058,7 +2155,8 @@ async def _zoho_exchange(runtime, org_bi, org_name, account_bi, actor, data):
         return _response(runtime, {"error": "zoho_account_missing", "region": region}, 400)
     saved = await _save_settings(runtime, org_bi, account_bi, actor, {
         "zoho": {"region": region, "accountId": account_id, "clientId": client_id,
-                 "clientSecret": client_secret, "refreshToken": tokens[1]}})
+                 "clientSecret": client_secret, "refreshToken": tokens[1]}},
+        zoho_scope=tokens[2])
     await runtime.audit(actor, "crm.zoho.connect", "organization", org_name,
                         details={"region": region, "selfClient": True})
     return saved
@@ -2097,7 +2195,7 @@ async def _zoho_callback(runtime):
     await _save_settings(runtime, org_bi, state["account"], str(state.get("actor") or ""), {
         "zoho": {"region": region, "accountId": account_id,
                  "clientId": client["clientId"], "refreshToken": tokens[1],
-                 "managed": True}})
+                 "managed": True}}, zoho_scope=tokens[2] or ZOHO_SCOPES)
     await runtime.audit(str(state.get("actor") or ""), "crm.zoho.connect",
                         "organization", org_name, details={"region": region})
     return _redirect(runtime, page + "&zoho=connected")
@@ -2115,26 +2213,17 @@ async def _settings(runtime, org_bi):
             "updatedBy": "", "updatedAt": 0,
             "flows": _default_flows(), "mailBoxes": list(DEFAULT_MAIL_BOXES),
             "removedColumns": [], "tableViews": [],
-            "zoho": {"connected": False, "region": "com", "accountId": "",
-                     "oneClick": bool(_zoho_client(runtime)), "managed": False},
+            "zoho": _zoho_project(runtime, {}),
             "mastodon": _mastodon_project({}),
             "mailtrapConfigured": bool(runtime.mailtrap_configured()),
         }
     data = await runtime.open(row.get("data"))
     data = data if isinstance(data, dict) else {}
     mastodon = _mastodon_project(data.get("mastodon"))
+    zoho = data.get("zoho")
     data = _settings_data(data)
     data["mastodon"] = mastodon
-    zoho = data.pop("zoho", {})
-    zoho = zoho if isinstance(zoho, dict) else {}
-    data["zoho"] = {
-        "connected": _zoho_connected(zoho),
-        "region": str(zoho.get("region") or "com"),
-        "accountId": str(zoho.get("accountId") or ""),
-        "lastSyncAt": _integer(zoho.get("lastSyncAt")),
-        "oneClick": bool(_zoho_client(runtime)),
-        "managed": bool(zoho.get("managed")),
-    }
+    data["zoho"] = _zoho_project(runtime, zoho)
     data.update({
         "updatedBy": str(row.get("updated_by_name") or ""),
         "updatedAt": _integer(row.get("updated_at")),
@@ -6019,6 +6108,13 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         envelope["fromEmail"] = _email(result.get("fromAddress")) or from_email
         envelope["mailbox"] = envelope["fromEmail"]
         result["accepted"] = bool(result.get("ok"))
+        if result["accepted"]:
+            await _record_zoho(runtime, org_bi, lastSentAt=runtime.now(),
+                               sendRefusedAt=None, tokenRejectedAt=None)
+        elif result.get("error") == "zoho_send_not_allowed":
+            await _record_zoho(runtime, org_bi, sendRefusedAt=runtime.now())
+        elif result.get("error") == "zoho_token_rejected":
+            await _record_zoho(runtime, org_bi, tokenRejectedAt=runtime.now())
     else:
         result = await runtime.send_mailtrap("", {
             "from": {"email": from_email, "name": from_name},
@@ -6061,8 +6157,9 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
     if not accepted and envelope["error"] == "zoho_send_not_allowed":
         return _response(runtime, dict(
             fallback, error="zoho_send_not_allowed", via=via,
-            detail="Zoho Mail did not let ForkMesh send from your mailbox. Reconnect "
-                   "Zoho Mail in the CRM settings so it may send as well as read."),
+            detail="Zoho Mail did not let ForkMesh send from your mailbox: its sign-in "
+                   "only allows reading, and syncing does not change that. Open the CRM "
+                   "and tap Reconnect Zoho Mail at the top, then allow sending."),
             409)
     if not accepted:
         return _response(runtime, dict(
@@ -6552,11 +6649,20 @@ async def _update_email(runtime, row, org_bi, actor, data):
     })
 
 
-async def _save_settings(runtime, org_bi, actor_bi, actor, data):
+async def _save_settings(runtime, org_bi, actor_bi, actor, data, zoho_scope=""):
     current = await runtime.d1_first(
         "SELECT data FROM crm_settings WHERE org_bi=?", org_bi)
     opened = await runtime.open(current.get("data")) if current else {}
-    settings = _settings_data(data, opened if isinstance(opened, dict) else {})
+    opened = opened if isinstance(opened, dict) else {}
+    settings = _settings_data(data, opened)
+    zoho = settings.get("zoho")
+    before = opened.get("zoho") if isinstance(opened.get("zoho"), dict) else {}
+    if isinstance(zoho, dict) and zoho.get("refreshToken") != before.get("refreshToken"):
+        for key in ZOHO_GRANT_KEYS:
+            zoho.pop(key, None)
+        zoho["connectedAt"] = runtime.now()
+        if zoho_scope:
+            zoho["scope"] = _zoho_scope(zoho_scope)
     if data.get("providerUrlTemplate") and not settings.get("providerUrlTemplate"):
         return _response(runtime, {"error": "invalid_provider_url"}, 400)
     if data.get("fromEmail") and not settings.get("fromEmail"):
