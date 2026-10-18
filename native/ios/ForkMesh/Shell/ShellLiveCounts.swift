@@ -46,7 +46,7 @@ struct ShellLiveCounts: Equatable {
                 case .timers: badge = ShellCounts.shared.timers
                 case .hosts: badge = attention?.items.count ?? 0
                 case .status: badge = fleet?.watchedLights.filter { !$0.healthy }.count ?? 0
-                default: badge = 0
+                default: badge = navigator.badge(route.kind)
                 }
                 if badge != 0 { out.hubBadges[item.id] = badge }
                 if navigator.active(route.kind) { out.hubActive.insert(item.id) }

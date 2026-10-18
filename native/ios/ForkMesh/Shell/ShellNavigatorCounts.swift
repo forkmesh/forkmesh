@@ -18,12 +18,50 @@ final class ShellNavigatorCounts {
     static let shared = ShellNavigatorCounts()
 
     private(set) var fetched: [Route.Kind: Int] = [:]
+    private(set) var assignedTasks: Int = 0
     @ObservationIgnored private var loadedAt: Date?
+    @ObservationIgnored private var loadingTasks = false
+    @ObservationIgnored private var rssUnread: (model: ObjectIdentifier, revision: Int, count: Int)?
+    private(set) var rssOpened = false
     private(set) var loading = false
 
     func reset() {
         fetched = [:]
+        assignedTasks = 0
+        rssUnread = nil
+        rssOpened = false
         loadedAt = nil
+    }
+
+    func badge(_ kind: Route.Kind) -> Int {
+        switch kind {
+        case .tasks:
+            return assignedTasks
+        case .rssReader:
+            guard rssOpened, let model = RSSReaderFeature.loaded else { return 0 }
+            let id: ObjectIdentifier = ObjectIdentifier(model)
+            if let cached = rssUnread, cached.model == id, cached.revision == model.revision { return cached.count }
+            let count: Int = model.unread(.unread)
+            rssUnread = (id, model.revision, count)
+            return count
+        default:
+            return 0
+        }
+    }
+
+    func adoptTasks(_ model: TasksListModel) {
+        guard model.error.isEmpty, !model.loading else { return }
+        let open: Int = model.open.count
+        let mine: Int = model.mineOpen.count
+        if fetched[.tasks] != open { fetched[.tasks] = open }
+        if assignedTasks != mine { assignedTasks = mine }
+    }
+
+    func refreshAssignedTasks() async {
+        guard !loadingTasks, let api = Services.get(ApiService.self) else { return }
+        loadingTasks = true
+        defer { loadingTasks = false }
+        _ = await ShellNavigatorCounts.tasks(api)
     }
 
     func count(_ kind: Route.Kind) -> Int? {
@@ -126,6 +164,11 @@ final class ShellNavigatorCounts {
         }
         if shown.contains(.shortcuts) { await ShellNavigatorCounts.loadShortcuts() }
         if shown.contains(.coves) { await ShellNavigatorCounts.loadCoves() }
+        if shown.contains(.rssReader) {
+            let reader: RSSReaderModel = RSSReaderFeature.model()
+            if !rssOpened { rssOpened = true }
+            Task { await reader.refresh() }
+        }
         if fetched != next { fetched = next }
         if !Task.isCancelled { loadedAt = Date() }
     }
@@ -257,7 +300,9 @@ final class ShellNavigatorCounts {
     private static func tasks(_ api: ApiService) async -> Int? {
         let model: TasksListModel = TasksListModel(api: api)
         await model.load()
-        return model.error.isEmpty ? model.open.count : nil
+        guard model.error.isEmpty else { return nil }
+        ShellNavigatorCounts.shared.adoptTasks(model)
+        return model.open.count
     }
 
     private static func eventsToday(_ api: ApiService) async -> Int? {

@@ -168,8 +168,12 @@ public final class RepoPullsModel {
         do {
             state = .ready(try await api.publishedPulls(repo.owner, repo.name))
         } catch {
-            state = .failed(dartErrorText(error))
+            if state.value == nil { state = .failed(dartErrorText(error)) }
         }
+    }
+
+    public func adopt(_ pulls: [PublishedPull]) {
+        if state.value != pulls { state = .ready(pulls) }
     }
 }
 
