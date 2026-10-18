@@ -1105,7 +1105,29 @@ final class DjStudioModel {
         for deck in idle where pool.count > 1 || deck.side == favoured || a.playing || b.playing { preload(deck.side) }
     }
 
-    private func mix(from outgoing: DjDeck, to incoming: DjDeck, seconds: Double) {
+    func skipOut(_ deck: DjDeck) -> Bool {
+        guard !automixing, !deck.scratching else { return false }
+        let other = self.deck(deck.side.other)
+        guard deck.playing else {
+            if !preload(deck.side) { eject(deck.side) }
+            return true
+        }
+        if other.playing {
+            pause(deck)
+            fade(to: other.side == .a ? -1 : 1, seconds: 0.4, then: nil)
+            if !preload(deck.side) { eject(deck.side) }
+            return true
+        }
+        let pool = Set(crate.pool(library, skip: unplayable).map(\.id))
+        if !(snapshot(other).fresh && pool.contains(other.videoId)), !preload(other.side) {
+            pause(deck)
+            return false
+        }
+        mix(from: deck, to: other, seconds: 2, replacing: true)
+        return true
+    }
+
+    private func mix(from outgoing: DjDeck, to incoming: DjDeck, seconds: Double, replacing: Bool = false) {
         automixing = true
         if !incoming.playing { play(incoming) }
         automixTask?.cancel()
@@ -1120,6 +1142,7 @@ final class DjStudioModel {
                 guard let self else { return }
                 self.automixing = false
                 if outgoing.playing { self.pause(outgoing) }
+                if replacing, !self.preload(outgoing.side) { self.eject(outgoing.side) }
             }
         }
     }

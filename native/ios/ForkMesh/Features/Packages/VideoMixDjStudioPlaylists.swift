@@ -118,6 +118,36 @@ extension DjStudioModel {
         return true
     }
 
+    func move(_ side: DjDeckSide, to target: DjFocus) {
+        let deck = deck(side)
+        guard deck.loaded else { return }
+        let id = deck.videoId
+        let track = song(id)
+        let from = crate.focus
+        let fromLabel = crate.label(from)
+        let result = crate.move(id, title: track.title, author: track.author, to: target)
+        guard result != .full else {
+            show("\(crate.label(target)) or the library is full.")
+            return
+        }
+        saveCrate()
+        let done: String
+        switch result {
+        case .removed: done = "Took it out of \(fromLabel)"
+        case .moved: done = "Moved from \(fromLabel) to \(crate.label(target))"
+        default: done = "Added to \(crate.label(target))"
+        }
+        guard automixOn, result == .moved || result == .removed, !crate.songs(from).contains(where: { $0.id == id }) else {
+            show(done + ".")
+            return
+        }
+        if skipOut(deck) {
+            show(done + ". Skipping to the next song.")
+        } else {
+            show(done + ". Nothing else in \(fromLabel) to play.")
+        }
+    }
+
     func setShuffle(_ on: Bool) {
         crate.shuffle = on
         saveCrate()

@@ -135,6 +135,13 @@ public struct DjMergeReport: Equatable, Sendable {
     }
 }
 
+public enum DjMove: Equatable, Sendable {
+    case full
+    case added
+    case moved
+    case removed
+}
+
 public struct DjCrate: Codable, Equatable, Sendable {
     public static let storageKey = "fm.videoMixDjStudio.crate.v1"
     public static let format = "forkmesh-dj-playlists"
@@ -343,6 +350,31 @@ public struct DjCrate: Codable, Equatable, Sendable {
         for index in playlists.indices { playlists[index].songs.removeAll { $0 == id } }
         if cursor == id { cursor = "" }
         if !knows(focus) { setFocus(.everything) }
+    }
+
+    public mutating func move(_ id: String, title: String = "", author: String = "", to target: DjFocus) -> DjMove {
+        switch target {
+        case let .playlist(list):
+            if playlist(list)?.songs.contains(id) != true, add([DjTrack(id: id, title: title, author: author)], to: list) == 0 { return .full }
+        case let .tag(name):
+            guard tag(id, name, title: title, author: author) else { return .full }
+        case .everything:
+            break
+        }
+        let from = focus
+        guard from != target else { return .added }
+        var left = false
+        switch from {
+        case let .playlist(list):
+            left = playlist(list)?.songs.contains(id) == true
+            remove(id, from: list)
+        case let .tag(name):
+            left = track(id)?.tags.contains(name) == true
+            untag(id, name)
+        case .everything:
+            break
+        }
+        return target == .everything ? .removed : left ? .moved : .added
     }
 
     public mutating func setFocus(_ focus: DjFocus) {

@@ -624,3 +624,86 @@ struct DjCrateButton: View {
         .accessibilityLabel("Playlists and tags")
     }
 }
+
+enum DjNewList {
+    case playlist
+    case tag
+}
+
+struct DjFileButton: View {
+    let model: DjStudioModel
+    let deck: DjDeck
+    let size: CGFloat
+    @State private var naming: DjNewList?
+    @State private var name = ""
+
+    var body: some View {
+        let crate = model.crate
+        let id = deck.videoId
+        let focus = crate.focus
+        let inFocus = focus != .everything && crate.songs(focus).contains { $0.id == id }
+        let filed = crate.track(id).map { !$0.tags.isEmpty } == true || crate.playlists.contains { $0.songs.contains(id) }
+        Menu {
+            Section(inFocus ? "Move from \(crate.label(focus)) to" : "Add to") {
+                ForEach(crate.playlists) { (list: DjPlaylist) in
+                    Button {
+                        model.move(deck.side, to: .playlist(list.id))
+                    } label: {
+                        Label(list.name, systemImage: list.songs.contains(id) ? "checkmark" : "music.note.list")
+                    }
+                }
+                ForEach(crate.tagCounts) { (tag: DjTagCount) in
+                    Button {
+                        model.move(deck.side, to: .tag(tag.name))
+                    } label: {
+                        Label("#\(tag.name)", systemImage: crate.track(id)?.tags.contains(tag.name) == true ? "checkmark" : "tag")
+                    }
+                }
+                Button("New Playlist…", systemImage: "plus") {
+                    name = ""
+                    naming = .playlist
+                }
+                Button("New Tag…", systemImage: "number") {
+                    name = ""
+                    naming = .tag
+                }
+            }
+            if inFocus {
+                Button("Take Out of \(crate.label(focus))", systemImage: "minus.circle", role: .destructive) {
+                    model.move(deck.side, to: .everything)
+                }
+            }
+            Button("Tags and Playlists…", systemImage: "slider.horizontal.3") { model.editSong(id) }
+        } label: {
+            DjRoundFace(size: size, lit: filed) {
+                Image(systemName: "text.badge.plus")
+            }
+            .frame(width: max(44, size), height: max(44, size))
+            .contentShape(Rectangle())
+        }
+        .accessibilityLabel("File Deck \(deck.side.label) song in a playlist or tag")
+        .accessibilityValue(filed ? "Filed" : "Not filed")
+        .alert(naming == .tag ? "New Tag" : "New Playlist", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
+            TextField(naming == .tag ? "Tag" : "Name", text: $name)
+                .autocorrectionDisabled()
+            Button(inFocus ? "Move Here" : "Add") { create() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(inFocus ? "The song leaves \(crate.label(focus)) and AUTOMIX skips to the next one." : "The song is added and keeps playing.")
+        }
+    }
+
+    private func create() {
+        let kind = naming
+        naming = nil
+        switch kind {
+        case .playlist:
+            if let list = model.newPlaylist(name) { model.move(deck.side, to: .playlist(list)) }
+        case .tag:
+            let tag = DjCrate.tagName(name)
+            if !tag.isEmpty { model.move(deck.side, to: .tag(tag)) }
+        case nil:
+            break
+        }
+    }
+}

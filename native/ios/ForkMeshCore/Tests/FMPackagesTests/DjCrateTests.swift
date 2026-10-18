@@ -70,6 +70,35 @@ final class DjCrateTests: XCTestCase {
         XCTAssertEqual(crate.focus, .everything)
     }
 
+    func testMovingASongLeavesTheFocusedList() {
+        var crate = DjCrate()
+        crate.createPlaylist("Main", id: "main")
+        crate.createPlaylist("Later", id: "later")
+        crate.add([DjTrack(id: one, title: "One"), DjTrack(id: two)], to: "main")
+        crate.setFocus(.playlist("main"))
+        XCTAssertEqual(crate.move(one, to: .playlist("later")), .moved)
+        XCTAssertEqual(crate.playlist("main")?.songs, [two])
+        XCTAssertEqual(crate.playlist("later")?.songs, [one])
+        XCTAssertEqual(crate.move(three, title: "Three", to: .tag("chill")), .added)
+        XCTAssertEqual(crate.track(three)?.tags, ["chill"])
+        XCTAssertEqual(crate.move(two, to: .playlist("main")), .added)
+        XCTAssertEqual(crate.playlist("main")?.songs, [two])
+        XCTAssertEqual(crate.move(two, to: .everything), .removed)
+        XCTAssertEqual(crate.playlist("main")?.songs, [])
+        XCTAssertEqual(crate.focus, .playlist("main"))
+
+        crate.tag(four, "loud")
+        crate.tag(one, "loud")
+        crate.setFocus(.tag("loud"))
+        XCTAssertEqual(crate.move(four, to: .tag("chill")), .moved)
+        XCTAssertEqual(crate.track(four)?.tags, ["chill"])
+        XCTAssertEqual(crate.focus, .tag("loud"))
+        XCTAssertEqual(crate.move(one, to: .playlist("main")), .moved)
+        XCTAssertEqual(crate.focus, .everything)
+        XCTAssertEqual(crate.move("short", to: .tag("x")), .full)
+        XCTAssertEqual(crate.move(one, to: .playlist("gone")), .full)
+    }
+
     func testFocusOnAPlaylistPlaysItInOrderAndWraps() {
         var crate = DjCrate()
         crate.createPlaylist("Set", id: "p")
