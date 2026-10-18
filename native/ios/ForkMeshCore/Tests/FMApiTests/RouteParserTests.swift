@@ -137,6 +137,7 @@ final class RouteParserTests: XCTestCase {
         XCTAssertEqual(web("/dashboard/speech"), [.speech])
         XCTAssertEqual(web("/dashboard/glasses-alert"), [.glassesAlert])
         XCTAssertEqual(web("/dashboard/phone-security"), [.phoneSecurity])
+        XCTAssertEqual(web("/dashboard/eye-control"), [.eyeControl])
         XCTAssertEqual(web("/dashboard/openwrt"), [.openWrtRouter])
         XCTAssertEqual(web("/dashboard/face-changer"), [.faceChanger])
         XCTAssertEqual(web("/dashboard/video-mix-dj-studio"), [.videoMixDjStudio])
