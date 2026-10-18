@@ -2823,10 +2823,11 @@ void MainWindow::refreshPullList()
         num->setData(Qt::DisplayRole, QStringLiteral("#%1").arg(pr.number));
         num->setData(Qt::UserRole, pr.number);
         num->setData(kTableSortRole, pr.number);
-        num->setData(kPullCreatedAtRole, pr.ts);
-        qint64 updatedAt = pr.ts;
+        const qint64 createdAtMs = issueDisplayTimestampMs(pr.ts);
+        num->setData(kPullCreatedAtRole, createdAtMs);
+        qint64 updatedAt = createdAtMs;
         for (const PullEvent &ev : pr.events)
-            updatedAt = qMax(updatedAt, ev.ts);
+            updatedAt = qMax(updatedAt, issueDisplayTimestampMs(ev.ts));
         num->setData(kPullModifiedAtRole, updatedAt);
         num->setData(kPullFilesChangedRole, pr.filesChanged);
         num->setData(kPullViewedFilesRole,
@@ -2859,7 +2860,7 @@ void MainWindow::refreshPullList()
                           : pullListStatusColor(displayStatus),
             14));
         const QString createdAt =
-            pr.ts > 0 ? QDateTime::fromMSecsSinceEpoch(pr.ts)
+            createdAtMs > 0 ? QDateTime::fromMSecsSinceEpoch(createdAtMs)
                            .toString(QStringLiteral("yyyy-MM-dd HH:mm"))
                       : QStringLiteral("unknown");
         const QString modifiedAt =
@@ -2874,7 +2875,7 @@ void MainWindow::refreshPullList()
                 .arg(pr.number)
                 .arg(checksRunning ? QStringLiteral(" · checks running")
                                    : QString())
-                .arg(createdAt, formatIssueRelativeTime(pr.ts))
+                .arg(createdAt, formatIssueRelativeTime(createdAtMs))
                 .arg(modifiedAt, formatIssueRelativeTime(updatedAt))
                 .arg(pr.base, pr.head)
                 .arg(pr.filesChanged)

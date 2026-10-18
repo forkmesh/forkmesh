@@ -746,27 +746,34 @@ const PackageGuide *PackageRegistry::guide(const QString &id) const
     return nullptr;
 }
 
+static bool bundleablePackage(const PackageManifest &manifest)
+{
+    return PackageRegistry::installableHere(manifest) && !manifest.agent.isValid() &&
+           manifest.type != QLatin1String("agent") &&
+           manifest.type != QLatin1String("theme");
+}
+
+QStringList PackageRegistry::installAllPackages() const
+{
+    QStringList ids;
+    for (const PackageManifest &manifest : m_packages) {
+        if (marketParent(manifest.id).isEmpty() && bundleablePackage(manifest))
+            ids.append(manifest.id);
+    }
+    return ids;
+}
+
 QStringList PackageRegistry::packPackages(const QString &packId) const
 {
     const PackagePack *found = pack(packId);
     if (!found)
         return {};
     QStringList ids;
-    const auto bundleable = [](const PackageManifest &manifest) {
-        return installableHere(manifest) && !manifest.agent.isValid() &&
-               manifest.type != QLatin1String("agent") &&
-               manifest.type != QLatin1String("theme");
-    };
-    if (found->everything) {
-        for (const PackageManifest &manifest : m_packages) {
-            if (marketParent(manifest.id).isEmpty() && bundleable(manifest))
-                ids.append(manifest.id);
-        }
-        return ids;
-    }
+    if (found->everything)
+        return installAllPackages();
     for (const QString &id : found->packages) {
         const PackageManifest *manifest = package(id);
-        if (manifest && bundleable(*manifest) && !ids.contains(id))
+        if (manifest && bundleablePackage(*manifest) && !ids.contains(id))
             ids.append(id);
     }
     return ids;
