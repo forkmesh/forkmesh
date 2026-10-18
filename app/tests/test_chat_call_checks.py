@@ -455,6 +455,9 @@ def test_native_call_pages_share_quality_route_and_audio_test_clips():
         "const recorded = [video ? outgoingVideo() : null, outgoingAudio()].filter(Boolean);",
         'mime: mimeType || (video ? "video/mp4" : "audio/mp4"),',
         "stopRoute();",
+        '"video/mp4;codecs=avc1.42E028,mp4a.40.2",',
     ):
         assert marker in first
     assert "videoBitsPerSecond: 900000" not in first
+    assert "avc1.42E01E" not in first
+    assert "avc1.42E01E" not in (PUBLIC / "chat-call-quality.js").read_text(encoding="utf-8")
