@@ -183,35 +183,49 @@ struct YouHubSheet: View {
     }
 
     private var versionRow: some View {
-        HStack(spacing: FmSpace.x2) {
-            Button {
-                FmHaptics.selection()
-                showWhatsNew = true
-            } label: {
-                HStack(spacing: FmSpace.x2) {
-                    Text(verbatim: AppChangelog.label(infoDictionary: Bundle.main.infoDictionary))
-                        .fmText(.labelSmall, color: fm.textSecondary)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                    Text("What's new")
-                        .fmText(.labelSmall, color: fm.accent)
-                        .lineLimit(1)
-                }
-                .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
-                .contentShape(Rectangle())
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: FmSpace.x2) {
+                versionButton
+                diagnosticsButton
             }
-            .buttonStyle(.borderless)
-            .accessibilityIdentifier("hub-version")
-            if onSendDiagnostics != nil {
-                DiagnosticsSendButton(alert: diagnostics.alert, compact: true) {
-                    FmHaptics.selection()
-                    sendingDiagnostics = true
-                }
+            VStack(alignment: .leading, spacing: FmSpace.x1) {
+                versionButton
+                diagnosticsButton
             }
         }
         .padding(.horizontal, FmSpace.x2)
-        .padding(.vertical, FmSpace.x1)
+        .padding(.vertical, FmSpace.x2)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(fm.bgElevated))
+    }
+
+    private var versionButton: some View {
+        Button {
+            FmHaptics.selection()
+            showWhatsNew = true
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: AppChangelog.label(infoDictionary: Bundle.main.infoDictionary))
+                    .fmText(.labelSmall, color: fm.textSecondary)
+                    .monospacedDigit()
+                    .fixedSize()
+                Text("What's new")
+                    .fmText(.labelMedium, color: fm.accent)
+                    .fixedSize()
+            }
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.borderless)
+        .accessibilityIdentifier("hub-version")
+    }
+
+    @ViewBuilder private var diagnosticsButton: some View {
+        if onSendDiagnostics != nil {
+            DiagnosticsSendButton(alert: diagnostics.alert, compact: true) {
+                FmHaptics.selection()
+                sendingDiagnostics = true
+            }
+        }
     }
 
     private var pocketRow: some View {

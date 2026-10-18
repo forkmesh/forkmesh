@@ -752,10 +752,13 @@ command palette's Switch project (and the iPad sidebar).
   `diagnostics/showStrip`, on by default) shows or hides the telemetry strip and
   the profile footer.
 - **Version row** (last row; iOS `YouHubSheet.versionRow`, one small darker
-  rectangle; Android `HubVersionRow`): "Version x (build)" and **What's new**
-  side by side, opening the bundled changelog in a sheet
-  ([MAC_BUILD.md](MAC_BUILD.md)), and a compact **Send diagnostics** capsule
-  that turns red ("Slow, send report") when `PerformanceAlert.evaluate` finds,
+  rectangle; Android `HubVersionRow`): "Version x (build)" with a slightly
+  larger **What's new** under it, opening the bundled changelog in a sheet
+  ([MAC_BUILD.md](MAC_BUILD.md)), and a compact **Send diagnostics** capsule.
+  None of the three truncates: on iOS each keeps its full width, and when the
+  320 pt card is too narrow for both (a long build number, "Slow, send
+  report", larger text) the capsule drops to its own line under the version
+  instead of squeezing it. The capsule turns red ("Slow, send report") when `PerformanceAlert.evaluate` finds,
   since the last send, an OS diagnostic in 24 h, a main-thread stall of 250 ms
   or more in 10 min, or five or more dropped-frame stalls in 10 min.
 - **Send diagnostics** (also the composer's "+" menu and `/diagnostics`) builds
