@@ -67,6 +67,7 @@ object Features {
         com.forkmesh.nativeapp.feature.codeinsight.CodeInsightFeature.install(app)
         com.forkmesh.nativeapp.feature.openwrt.OpenWrtFeature.install()
         com.forkmesh.nativeapp.feature.appstorestatus.AppStoreStatusFeature.install()
+        com.forkmesh.nativeapp.feature.usage.UsageFeature.install()
         com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)
         com.forkmesh.nativeapp.feature.securedrive.SecureDriveFeature.install(app)
         com.forkmesh.nativeapp.feature.files.FilesFeature.install(app)

@@ -244,16 +244,27 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   touched.
 - Clicking a usage icon (the **Usage** button atop the agents list and the
   Claude Code and Codex meters at the bottom right of the prompt) opens the
-  Usage package's `/dashboard/usage` page (`openAgentUsagePage`,
-  `marketplace/packages/usage`) for every account across the user's desktops.
-  Right-click opens the account and terminal menus below; with no ForkMesh
-  host set a click opens them too. Before 2026-10-18 a click opened the menu
-  and the page was only its first entry.
+  in-app **Usage** page (`openAgentUsagePage`, `MainWindowAgentUsagePage.cpp`).
+  It lists Claude Code and Codex, the default provider first, and carries
+  everything the right-click menus offer: **Open … in a terminal**
+  (`openAgentProviderTerminal`), **Launch in system terminal**, **Add
+  account…**, **Runner accounts**, **Use … for new agents**, and per account
+  **Run new agents as this account**, **Edit account…**, **Log in…**, **Log
+  out…**, **Delete…**, the terminal launch button and each usage window's bar
+  with its reset countdown button. The page reads this desktop's settings, so
+  it works without a ForkMesh host, and it rebuilds after usage responses and
+  account changes (`scheduleAgentUsagePagesRefresh`). When the Usage package is
+  installed its rail entry hosts the same page (`NativePackageHost::agentUsagePage`,
+  permission `desktop.models.usage.read`) and a usage icon opens that entry;
+  otherwise the page is a section of its own under **Agents**. Right-click
+  still opens the account and terminal menus below. From 2026-10-18 until
+  this change a click opened the web `/dashboard/usage` page; before that it
+  opened the menu.
 - Both account popups start with **Open the Usage page**
-  (`addAgentUsagePageAction`). The entry is hidden when no ForkMesh host is set.
+  (`addAgentUsagePageAction`), which opens the in-app page.
 - Usage rows (`TokenUsageMenuRow`) segment the bar per hour or day of the
   window, mark even pace and add a pace note (`usagePaceNote`).
-- **Usage** (`agentUsageButton`) opens the Usage page; its right-click menu
+- **Usage** (`agentUsageButton`) opens the in-app Usage page; its right-click menu
   (`showAgentUsageMenu`) shows the default
   provider's bars and offers terminals, **Run new agents as**, account
   management and the default provider switch. **Runner accounts**

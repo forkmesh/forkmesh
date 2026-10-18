@@ -79,6 +79,10 @@ CLI, never listed in Agents) and, for packages declaring `desktop.agents.run`,
 `repository.read`, `repositories()`, `currentRepository()` and
 `openRepositoryFile(repository, path, line)`
 ([codebase-analysis.md](codebase-analysis.md#host-contract)), and for packages
+declaring `desktop.models.usage.read`, `agentUsagePage(parent)`: the window's
+own Usage page with this desktop's Claude Code and Codex accounts and their
+controls, which the Usage package embeds
+([../desktop/agents-ui.md](../desktop/agents-ui.md)), and for packages
 declaring `desktop.logins.use`, `loginStoreName()`, `saveLogin(login, asker,
 done)` and `findLogins(url, asker, done)` (see **Login store** below). `request` waits out the
 network manager's host-wide cooldown (after a 5xx or 429 on any `/api/`

@@ -495,6 +495,43 @@ class AgentUsageModel(private val client: AgentOpsClient) : OpsState() {
     }
 
     val reminders: List<UsageReminder> get() = summary?.reminders(client.nowMs) ?: emptyList()
+
+    @Volatile
+    var busy = false
+        private set
+
+    fun selectAccount(provider: String, account: String): Boolean = apply { client.selectAccount(provider, account) }
+
+    fun renameAccount(provider: String, account: String, label: String): Boolean {
+        if (AgentOpsClient.accountLabel(label).isEmpty()) return false
+        return apply { client.renameAccount(provider, account, label) }
+    }
+
+    fun deleteAccount(provider: String, account: String): Boolean = apply { client.deleteAccount(provider, account) }
+
+    fun addAccount(provider: String, label: String): String? {
+        if (AgentOpsClient.accountLabel(label).isEmpty()) return null
+        var created = ""
+        val ok = apply { client.addAccount(provider, label).let { (next, id) -> created = id; next } }
+        return if (ok && created.isNotEmpty()) created else null
+    }
+
+    private fun apply(call: () -> UsageSummary): Boolean {
+        busy = true
+        changed()
+        try {
+            summary = call()
+            errorText = ""
+            unsupported = false
+            return true
+        } catch (error: Exception) {
+            errorText = AgentOpsClient.describe(error)
+            return false
+        } finally {
+            busy = false
+            changed()
+        }
+    }
 }
 
 class MergeLeaderboardModel(private val client: AgentOpsClient, val sessionId: Int? = null) : OpsState() {

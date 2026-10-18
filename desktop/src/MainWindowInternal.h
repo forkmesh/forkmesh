@@ -4041,6 +4041,19 @@ QString agentAccountIdentity(const QString &provider, const QString &configDir);
 QList<forkmesh::localcontrol::agentops::UsageWindow>
 agentAccountUsageWindows(const QString &provider, const QString &accountId);
 
+struct AgentUsageMenuData {
+    QString label;
+    QString value;
+    QString resetNote;
+    QString detail;
+    int usedPercent = -1;
+    qint64 resetAtMs = 0;
+    qint64 windowMs = 0;
+};
+
+QList<AgentUsageMenuData> agentAccountUsageMenuData(const QString &provider,
+                                                    const QString &accountId);
+
 QString agentAccountUsageSetting(const QString &provider,
                                         const QString &accountId,
                                         const QString &field);

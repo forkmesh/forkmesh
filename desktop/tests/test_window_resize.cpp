@@ -27150,6 +27150,37 @@ else:
         if (usageMenu)
             usageMenu->close();
         QApplication::processEvents();
+
+        window.testOpenAgentUsagePage();
+        QApplication::processEvents();
+        QWidget *usagePage = window.findChild<QWidget *>(QStringLiteral("agentUsagePage"));
+        const auto pageHas = [usagePage](const QString &name) {
+            return usagePage && usagePage->findChild<QWidget *>(name) != nullptr;
+        };
+        QStringList usageProviders;
+        if (usagePage)
+            for (QWidget *child : usagePage->findChildren<QWidget *>())
+                if (child->objectName().startsWith(
+                        QStringLiteral("agentUsagePageProvider")))
+                    usageProviders << child->objectName();
+        check(usagePage && usagePage->isVisible() &&
+                  usageProviders.value(0) ==
+                      QStringLiteral("agentUsagePageProviderCodex") &&
+                  pageHas(QStringLiteral("agentUsagePageTerminalCodex")) &&
+                  pageHas(QStringLiteral("agentUsagePageTerminalClaude")) &&
+                  pageHas(QStringLiteral("agentUsagePageSystemTerminalClaude")) &&
+                  pageHas(QStringLiteral("agentUsagePageAddAccountCodex")) &&
+                  pageHas(QStringLiteral("agentUsagePageRunnerAccountsClaude")) &&
+                  pageHas(QStringLiteral("agentUsagePageMakeDefaultClaude")) &&
+                  !pageHas(QStringLiteral("agentUsagePageMakeDefaultCodex")) &&
+                  pageHas(QStringLiteral("agentUsagePageEdit_default")) &&
+                  pageHas(QStringLiteral("agentUsagePageLogin_default")) &&
+                  pageHas(QStringLiteral("agentUsagePageAccountTerminal_default")),
+              QString("clicking a usage chart opens the in-app Usage page with "
+                      "the menus' terminals, account controls and default "
+                      "provider switch (providers=%1)")
+                  .arg(usageProviders.join(QLatin1Char(','))));
+
         if (savedDefaultProvider.isValid())
             QSettings().setValue(forkmesh::ui::kDefaultAgentProviderSetting,
                                  savedDefaultProvider);

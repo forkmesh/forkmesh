@@ -449,20 +449,6 @@ QString agentAccountIdentity(const QString &provider, const QString &configDir)
 } // namespace forkmesh::ui
 
 namespace {
-struct AgentUsageMenuData {
-    QString label;
-    QString value;
-    QString resetNote;
-    QString detail;
-    // Menu bars always fill in the direction of quota consumed. Keeping this
-    // separate from the displayed availability prevents a full available
-    // balance from looking like a full, red usage bar.
-    int usedPercent = -1;
-    // When the window resets (epoch ms), or 0 when no reset is ahead of it.
-    qint64 resetAtMs = 0;
-    qint64 windowMs = 0;
-};
-
 QString usagePaceNote(int usedPercent, qint64 resetAtMs, qint64 windowMs,
                       qint64 now)
 {
@@ -479,8 +465,11 @@ QString usagePaceNote(int usedPercent, qint64 resetAtMs, qint64 windowMs,
         .arg(ahead > 0 ? QStringLiteral("over") : QStringLiteral("under"));
 }
 
-QList<AgentUsageMenuData> agentAccountUsageMenuData(const QString &provider,
-                                                    const QString &accountId)
+} // namespace
+
+QList<forkmesh::ui::AgentUsageMenuData>
+forkmesh::ui::agentAccountUsageMenuData(const QString &provider,
+                                        const QString &accountId)
 {
     const bool codex = agentIsCodexProvider(provider);
     const bool builtIn = accountId == QLatin1String("default");
@@ -662,7 +651,6 @@ QList<AgentUsageMenuData> agentAccountUsageMenuData(const QString &provider,
     }
     return result;
 }
-} // namespace
 
 QList<forkmesh::localcontrol::agentops::UsageWindow>
 forkmesh::ui::agentAccountUsageWindows(const QString &provider, const QString &accountId)
@@ -1046,26 +1034,38 @@ void MainWindow::showAgentUsageMenu(const QPoint &globalPosition)
 
 QAction *MainWindow::addAgentUsagePageAction(QMenu *menu)
 {
-    if (!nativePackageLinkUrl(QStringLiteral("usage")).isValid())
-        return nullptr;
     QAction *page = menu->addAction(
         forkmesh::ui::themedOcticon(
             QStringLiteral("graph"),
             menu->palette().color(QPalette::PlaceholderText), 14),
         QStringLiteral("Open the Usage page"));
     page->setObjectName(QStringLiteral("agentUsagePageAction"));
-    page->setToolTip(QStringLiteral("Every Claude Code and Codex account's usage "
-                                    "across your connected desktops"));
-    connect(page, &QAction::triggered, this,
-            [this] { openNativePackageLink(QStringLiteral("usage")); });
+    page->setToolTip(QStringLiteral("Every Claude Code and Codex account on this "
+                                    "desktop, with its usage, terminals and "
+                                    "account controls"));
+    connect(page, &QAction::triggered, this, [this] { openAgentUsagePage(); });
     return page;
 }
 
 bool MainWindow::openAgentUsagePage()
 {
-    if (!nativePackageLinkUrl(QStringLiteral("usage")).isValid())
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages)) {
+        if (page.id == QLatin1String("usage") && page.widget) {
+            showNativePackage(page.id);
+            return true;
+        }
+    }
+    if (!m_sectionStack)
         return false;
-    openNativePackageLink(QStringLiteral("usage"));
+    if (!m_agentUsageSectionPage) {
+        m_agentUsageSectionPage = buildAgentUsagePage(m_sectionStack);
+        m_sectionStack->addWidget(m_agentUsageSectionPage);
+    }
+    if (m_agentsNavButton)
+        m_agentsNavButton->setChecked(true);
+    m_sectionStack->setCurrentWidget(m_agentUsageSectionPage);
+    scheduleNavRecord();
+    updateBreadcrumb();
     return true;
 }
 
@@ -1076,6 +1076,7 @@ void MainWindow::refreshAgentAccountUsageMenu(const QString &provider)
     // walked every widget in the window each time only to find nothing — a
     // 592 ms stall was sampled inside that recursion. The menu registers itself
     // when it is built instead.
+    scheduleAgentUsagePagesRefresh();
     QMenu *menu = codex ? m_codexAccountUsageMenu : m_claudeAccountUsageMenu;
     if (!menu)
         return;

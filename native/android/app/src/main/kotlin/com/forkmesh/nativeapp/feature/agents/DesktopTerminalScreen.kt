@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import com.forkmesh.nativeapp.agents.AGENT_LOGIN_PROVIDERS
 import com.forkmesh.nativeapp.agents.DesktopAgentTerminal
@@ -45,29 +46,60 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-internal class DesktopTerminalScreen(attach: String = "", private val session: Int = 0, owner: String = "", name: String = "", provider: String = "") : Screen() {
+internal class DesktopTerminalScreen(
+    attach: String = "",
+    private val session: Int = 0,
+    owner: String = "",
+    name: String = "",
+    provider: String = "",
+    private val account: String = "",
+    private val accountLabel: String = "",
+    private val mode: String = "",
+) : Screen() {
+    private val signIn: Boolean get() = mode == "login" || mode == "logout"
     private var terminal by mutableStateOf(
         when {
             session > 0 -> DesktopAgentTerminal(AgentsFeature.hub, owner = owner, name = name, provider = provider, session = session)
+            mode == "login" || mode == "logout" -> DesktopAgentTerminal(AgentsFeature.hub, provider = provider, mode = mode, account = account)
             attach.isEmpty() -> null
             else -> DesktopAgentTerminal(AgentsFeature.hub, terminal = attach)
         },
     )
     private var repo by mutableStateOf<String?>(null)
-    private var provider by mutableStateOf("claude-code")
+    private var provider by mutableStateOf(provider.ifEmpty { "claude-code" })
     private var ending by mutableStateOf(false)
     private val status = FmStatus()
 
-    override val title: String get() = terminal?.title ?: "Agent in a terminal"
+    private val who: String get() = if (accountLabel.isEmpty()) "" else " ($accountLabel)"
+
+    override val title: String
+        get() = when (mode) {
+            "login" -> "Log in to ${agentProviderLabel(provider)}$who"
+            "logout" -> "Log out of ${agentProviderLabel(provider)}$who"
+            else -> terminal?.title?.let { if (accountLabel.isEmpty()) it else "$it · $accountLabel" } ?: "Agent in a terminal"
+        }
 
     override fun onDisposed() {
         val last = terminal ?: return
-        Thread { last.detach() }.start()
+        val close = signIn && !last.finished && last.terminalId.isNotEmpty()
+        Thread {
+            if (close) runCatching { last.end() }
+            last.detach()
+        }.start()
     }
 
     private fun start(center: AgentControlCenter, owner: String, name: String) {
         val previous = terminal
-        terminal = DesktopAgentTerminal(AgentsFeature.hub, owner = owner, name = name, provider = provider, onStarted = { center.refreshDesktopAsync() })
+        terminal = DesktopAgentTerminal(
+            AgentsFeature.hub, owner = owner, name = name, provider = provider, account = account,
+            onStarted = { center.refreshDesktopAsync() },
+        )
+        previous?.let { Thread { it.detach() }.start() }
+    }
+
+    private fun restartSignIn() {
+        val previous = terminal
+        terminal = DesktopAgentTerminal(AgentsFeature.hub, provider = provider, mode = mode, account = account)
         previous?.let { Thread { it.detach() }.start() }
     }
 
@@ -83,6 +115,7 @@ internal class DesktopTerminalScreen(attach: String = "", private val session: I
         val scope = rememberCoroutineScope()
         val messenger = LocalFmMessenger.current
         val clipboard = LocalClipboardManager.current
+        val uri = LocalUriHandler.current
         val center = AgentsFeature.control
         val centerTick = rememberCenterTick(center)
         val current = terminal
@@ -136,11 +169,21 @@ internal class DesktopTerminalScreen(attach: String = "", private val session: I
                         style = Fm.text.bodySmall.copy(color = terminalStatusColor(current.statusLevel)),
                         minLines = 2,
                     )
-                    if (current.failed && session == 0) {
+                    if (current.failed && signIn) {
+                        FmToneButton("Try again", onPressed = { restartSignIn() }, icon = "refresh")
+                    } else if (current.failed && session == 0) {
                         FmToneButton("Change and retry", onPressed = { backToForm() }, icon = "refresh")
                     }
                 }
                 FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x3).padding(bottom = FmSpace.x2))
+                val link = if (signIn) remember(tick) { current.screen.links().lastOrNull().orEmpty() } else ""
+                if (link.isNotEmpty()) {
+                    Row(Modifier.padding(horizontal = FmSpace.x3), horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                        FmFilledButton("Open sign-in page", onClick = { runCatching { uri.openUri(link) } }, icon = "open_in_new")
+                        FmToneButton("Copy link", onPressed = { clipboard.setText(AnnotatedString(link)) }, icon = "content_copy")
+                    }
+                    Spacer(Modifier.height(FmSpace.x2))
+                }
                 AgentTerminalPane(current, tick, "Type, then send to ${current.providerLabel}", Modifier.weight(1f).fillMaxWidth())
             }
         }
@@ -158,6 +201,9 @@ internal class DesktopTerminalScreen(attach: String = "", private val session: I
             verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
         ) {
             Text(center.hub.reach.label, style = Fm.text.bodySmall.copy(color = c.textSecondary))
+            if (accountLabel.isNotEmpty()) {
+                Text("Runs as the ${agentProviderLabel(provider)} account $accountLabel.", style = Fm.text.bodySmall.copy(color = c.textSecondary))
+            }
             Text(
                 "Start Claude Code or Codex in a terminal on your desktop, in a repository it has open. You watch and type " +
                     "into that terminal here. It keeps running when you leave this screen and shows in your Agents list until it ends.",
@@ -176,7 +222,9 @@ internal class DesktopTerminalScreen(attach: String = "", private val session: I
                 return@Column
             }
             TerminalMenu("Repository", chosenRepo ?: "", repos.map { it.label to it.label }) { repo = it }
-            TerminalMenu("Agent", agentProviderLabel(provider), AGENT_LOGIN_PROVIDERS.toList()) { provider = it }
+            if (account.isEmpty()) {
+                TerminalMenu("Agent", agentProviderLabel(provider), AGENT_LOGIN_PROVIDERS.toList()) { provider = it }
+            }
             Spacer(Modifier.height(FmSpace.x2))
             FmFilledButton("Start", onClick = if (chosenRepo == null) null else ({
                 val parts = chosenRepo.split('/', limit = 2)

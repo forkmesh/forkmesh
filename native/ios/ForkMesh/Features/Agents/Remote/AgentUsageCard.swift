@@ -12,12 +12,24 @@ struct AgentUsageCard: View {
     var body: some View {
         FmCard(radius: FmRadius.lg) {
             VStack(alignment: .leading, spacing: FmSpace.x3) {
-                HStack {
-                    Text("Usage")
-                        .fmText(.titleSmall)
-                    Spacer()
-                    if model.loading { ProgressView().controlSize(.small) }
+                NavigationLink {
+                    UsageScreen(usage: model)
+                        .shellPageClearance()
+                } label: {
+                    HStack {
+                        Text("Usage")
+                            .fmText(.titleSmall)
+                        Spacer()
+                        if model.loading { ProgressView().controlSize(.small) }
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(fm.textTertiary)
+                    }
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint(Text("Opens Usage: accounts, sign-in and new terminals"))
+                .accessibilityIdentifier("agent-ops-usage-open")
                 content
             }
         }

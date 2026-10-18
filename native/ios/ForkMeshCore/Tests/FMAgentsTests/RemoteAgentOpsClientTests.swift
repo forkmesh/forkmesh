@@ -317,6 +317,7 @@ final class RemoteAgentOpsClientTests: XCTestCase {
         channel.reply("agentops.accounts.select", summary)
         channel.reply("agentops.accounts.rename", summary)
         channel.reply("agentops.accounts.add", added)
+        channel.reply("agentops.accounts.delete", summary)
         let client = AgentOpsClient(channel: channel)
         let selected = try await client.selectAccount(provider: "codex", account: "n1")
         XCTAssertEqual(channel.params("agentops.accounts.select")?.str("provider"), "codex")
@@ -327,6 +328,11 @@ final class RemoteAgentOpsClientTests: XCTestCase {
         let (_, account) = try await client.addAccount(provider: "codex", label: "Side")
         XCTAssertEqual(account, "n1")
         XCTAssertEqual(channel.params("agentops.accounts.add")?.str("label"), "Side")
+        let afterDelete = try await client.deleteAccount(provider: "codex", account: "n1")
+        XCTAssertEqual(channel.params("agentops.accounts.delete")?.str("provider"), "codex")
+        XCTAssertEqual(channel.params("agentops.accounts.delete")?.str("account"), "n1")
+        XCTAssertEqual(afterDelete.providers.first?.accounts.count, 2)
+        XCTAssertEqual(AgentOpsClient.describe(code: "default_account"), "The default account cannot be deleted. Log it out instead.")
     }
 
     @MainActor func testBellsAreFilteredToChanged() async {

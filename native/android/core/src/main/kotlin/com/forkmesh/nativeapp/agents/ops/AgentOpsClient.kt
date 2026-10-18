@@ -95,6 +95,20 @@ class AgentOpsClient(channel: ControlCalling, private val clock: () -> Long = Sy
 
     fun usage(): UsageSummary = UsageSummary.from(family.call("usage"))
 
+    fun selectAccount(provider: String, account: String): UsageSummary =
+        UsageSummary.from(family.call("accounts.select", linkedMapOf("provider" to provider, "account" to account)))
+
+    fun renameAccount(provider: String, account: String, label: String): UsageSummary =
+        UsageSummary.from(family.call("accounts.rename", linkedMapOf("provider" to provider, "account" to account, "label" to accountLabel(label))))
+
+    fun addAccount(provider: String, label: String): Pair<UsageSummary, String> {
+        val reply = family.call("accounts.add", linkedMapOf("provider" to provider, "label" to accountLabel(label)))
+        return UsageSummary.from(reply) to reply.str("account")
+    }
+
+    fun deleteAccount(provider: String, account: String): UsageSummary =
+        UsageSummary.from(family.call("accounts.delete", linkedMapOf("provider" to provider, "account" to account)))
+
     fun grants(): List<CapabilityGrant> = family.call("grants").maps("grants").map(CapabilityGrant::from)
 
     fun prepareRevoke(grantId: String): AgentOpsConfirmation = prepare(AgentOpsAction.Revoke, linkedMapOf("grantId" to grantId))
@@ -118,6 +132,8 @@ class AgentOpsClient(channel: ControlCalling, private val clock: () -> Long = Sy
 
     companion object {
         fun canonical(ids: List<Int>): List<Int> = ids.filter { it > 0 }.toSortedSet().toList()
+
+        fun accountLabel(label: String): String = label.trim().take(80)
 
         fun errorCode(error: Throwable): String? = when (error) {
             is AgentOpsException -> error.code
@@ -156,6 +172,10 @@ class AgentOpsClient(channel: ControlCalling, private val clock: () -> Long = Sy
             "unknown_grant" -> "That saved permission no longer exists."
             "not_saved" -> "The desktop revoked it but could not save the change."
             "unavailable" -> "The desktop's agent store is not open yet. Try again in a moment."
+            "unknown_account" -> "The desktop no longer has that account."
+            "unsupported_provider" -> "The desktop does not manage accounts for that model provider."
+            "default_account" -> "The default account cannot be deleted. Log it out instead."
+            "account_failed" -> "The desktop could not save that account change."
             "bad_request", "unknown_action" -> "The desktop did not understand that request."
             else -> ControlErrorText.describe(code)
         }

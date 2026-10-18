@@ -308,6 +308,97 @@ class AgentOpsTest {
         expect(grants.first().allows)
     }
 
+    private fun accountsSummary(activeId: String, label: String = "Side"): Map<String, Any?> = mapOf(
+        "providers" to listOf(
+            mapOf(
+                "id" to "codex",
+                "label" to "Codex",
+                "windows" to listOf(mapOf("id" to "5h", "label" to "5h", "usedPercent" to 40L, "state" to "ok")),
+                "accounts" to listOf(
+                    mapOf(
+                        "id" to "default", "label" to "Default", "active" to (activeId == "default"), "signedIn" to true,
+                        "identity" to "me@example.com", "windows" to emptyList<Any>(),
+                    ),
+                    mapOf(
+                        "id" to "n1", "label" to label, "active" to (activeId == "n1"), "signedIn" to false,
+                        "windows" to listOf(mapOf("id" to "weekly", "label" to "Weekly", "usedPercent" to 90L, "state" to "high")),
+                    ),
+                ),
+            ),
+        ),
+        "spend" to mapOf("claudeUsd" to 2.0, "openAiUsd" to 0.5),
+        "activeProvider" to "codex",
+    )
+
+    fun testUsageAccountsCarryTheirOwnWindowsAndSignInState() {
+        val summary = UsageSummary.from(accountsSummary("default"))
+        val codex = summary.provider("codex")!!
+        val (main, side) = codex.accounts
+        assertEq(true, main.signedIn)
+        expect(main.isDefault && !side.isDefault)
+        assertEq("me@example.com", main.identity)
+        assertEq("me@example.com", main.detail)
+        assertEq("In use", main.statusLabel)
+        assertEq(listOf("5h"), codex.windowsFor(main).map { it.id })
+        assertEq(false, side.signedIn)
+        expect(side.signedOut)
+        assertEq("Not signed in", side.statusLabel)
+        assertEq("Not signed in", side.detail)
+        assertEq(listOf("weekly"), codex.windowsFor(side).map { it.id })
+        assertEq(UsageState.High, codex.windowsFor(side).single().state)
+        val older = UsageAccount.from(mapOf("id" to "x", "label" to "", "active" to false))
+        assertEq(null, older.signedIn)
+        assertEq("Available", older.statusLabel)
+        assertEq("Signed in", older.detail)
+        assertEq("Account", older.name)
+        expect(codex.windowsFor(older).isEmpty(), "an idle account without readings shows none")
+        assertEq(2.0, summary.spendUsd("claude-code"))
+        assertEq(0.5, summary.spendUsd("codex"))
+        assertEq(null, summary.spendUsd("other"))
+        expect(summary.usedForNewAgents("codex") && !summary.usedForNewAgents("claude-code"))
+        expect(!UsageSummary().usedForNewAgents(""), "an older desktop names no provider")
+        expect(!summary.isEmpty)
+        expect(UsageSummary().isEmpty)
+    }
+
+    fun testAccountActionsSendProviderAndAccountAndReplaceTheSummary() {
+        val channel = FakeControlChannel()
+        channel.reply("agentops.usage", accountsSummary("default"))
+        channel.reply("agentops.accounts.select", accountsSummary("n1"))
+        channel.reply("agentops.accounts.rename", accountsSummary("n1", "Side 2"))
+        channel.reply("agentops.accounts.add", accountsSummary("n2") + ("account" to "n2"))
+        channel.reply("agentops.accounts.delete", accountsSummary("default"))
+        val model = AgentUsageModel(AgentOpsClient(channel))
+        model.refresh()
+        assertEq("default", model.summary?.provider("codex")?.activeAccount?.id)
+
+        expect(model.selectAccount("codex", "n1"))
+        assertEq("codex", channel.params("agentops.accounts.select").str("provider"))
+        assertEq("n1", channel.params("agentops.accounts.select").str("account"))
+        assertEq("n1", model.summary?.provider("codex")?.activeAccount?.id)
+
+        expect(model.renameAccount("codex", "n1", "  Side 2  "))
+        assertEq("Side 2", channel.params("agentops.accounts.rename").str("label"))
+        assertEq("Side 2", model.summary?.provider("codex")?.activeAccount?.label)
+        expect(!model.renameAccount("codex", "n1", "   "), "a blank name is not sent")
+        assertEq(1, channel.methods().count { it == "agentops.accounts.rename" })
+
+        assertEq("n2", model.addAccount("codex", "Work"))
+        assertEq("Work", channel.params("agentops.accounts.add").str("label"))
+        assertEq(null, model.addAccount("codex", " "))
+        assertEq("x".repeat(80), AgentOpsClient.accountLabel("x".repeat(90)))
+
+        expect(model.deleteAccount("codex", "n1"))
+        assertEq("n1", channel.params("agentops.accounts.delete").str("account"))
+        assertEq("", model.errorText)
+        expect(!model.busy)
+
+        channel.failures["agentops.accounts.delete"] = LocalControlException("default_account")
+        expect(!model.deleteAccount("codex", "default"))
+        assertEq("The default account cannot be deleted. Log it out instead.", model.errorText)
+        assertEq("default", model.summary?.provider("codex")?.activeAccount?.id, "a failed action keeps the last summary")
+    }
+
     fun testBellsAreFilteredToChanged() {
         val channel = FakeControlChannel()
         val client = AgentOpsClient(channel)

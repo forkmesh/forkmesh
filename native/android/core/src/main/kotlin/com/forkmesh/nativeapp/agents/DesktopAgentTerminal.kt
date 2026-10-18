@@ -27,6 +27,8 @@ class DesktopAgentTerminal(
     val provider: String = "",
     terminal: String = "",
     val session: Int = 0,
+    val mode: String = "",
+    val account: String = "",
     private val onStarted: (DesktopTerminalInfo) -> Unit = {},
     private val inputFlushMs: Long = TERMINAL_INPUT_FLUSH_MS,
     private val notifyDelayMs: Long = 16,
@@ -54,6 +56,8 @@ class DesktopAgentTerminal(
     @Volatile
     override var statusText: String = when {
         session > 0 -> "Opening the agent in a terminal on your desktop…"
+        terminal.isEmpty() && mode == "login" -> "Starting ${agentProviderLabel(provider)} sign-in on your desktop…"
+        terminal.isEmpty() && mode == "logout" -> "Signing ${agentProviderLabel(provider)} out on your desktop…"
         terminal.isEmpty() -> "Starting ${agentProviderLabel(provider)} on your desktop…"
         else -> "Connecting to the terminal…"
     }
@@ -154,11 +158,7 @@ class DesktopAgentTerminal(
                     30_000,
                 )
             } else if (starting) {
-                link.request(
-                    "terminal.start",
-                    linkedMapOf("owner" to owner, "name" to name, "provider" to provider, "cols" to sentCols, "rows" to sentRows),
-                    30_000,
-                )
+                link.request("terminal.start", startParams(sentCols, sentRows), 30_000)
             } else {
                 link.request("terminal.attach", linkedMapOf("terminal" to terminalId, "cols" to sentCols, "rows" to sentRows), 20_000)
             }
@@ -220,6 +220,13 @@ class DesktopAgentTerminal(
                 }
             }
         }
+    }
+
+    fun startParams(cols: Int, rows: Int): Map<String, Any?> {
+        val params = linkedMapOf<String, Any?>("owner" to owner, "name" to name, "provider" to provider, "cols" to cols, "rows" to rows)
+        if (mode.isNotEmpty()) params["mode"] = mode
+        if (account.isNotEmpty()) params["account"] = account
+        return params
     }
 
     private fun current(attempt: Int): Boolean = synchronized(lock) { attempt == generation && !detached }

@@ -10,6 +10,7 @@ class PackageMenuTest {
         assertEq("notes", PackageMenu.packageFor(Route.Kind.Note))
         assertEq(PackageGate.CRM, PackageMenu.packageFor(Route.Kind.Contact))
         assertEq("face-changer", PackageMenu.packageFor(Route.Kind.FaceChanger))
+        assertEq("usage", PackageMenu.packageFor(Route.Kind.Usage))
         assertEq("special-agents", PackageMenu.packageFor(Route.Kind.Teammates))
         assertEq(PackageGate.ISSUES, PackageMenu.packageFor(Route.Kind.Issue))
     }

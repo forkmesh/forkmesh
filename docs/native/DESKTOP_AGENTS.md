@@ -311,7 +311,8 @@ the line under the cursor and restores the cursor, so nothing scrolls.
   repository, branch, worktree, ahead/behind/conflict, files, churn bars on
   the desktop's log scale, PR), and a thumbnail of the first image.
 - **Usage bars** (`AgentUsageBars`): one small bar per usage window, coloured by
-  state; they open the accounts and usage sheet.
+  state; on iOS they push the native Usage screen. On Android the Usage card
+  on Desktop agents opens the native Usage screen when tapped.
 
 ### Eagle view on iOS
 
@@ -735,12 +736,17 @@ The emulators drop CSI sequences with a prefix or intermediate byte (except
 `?` on `h`, `l`, `J`, `K`) and read SGR colon sub-parameters. The iOS grid clips
 each row to the pane and kerns non-ASCII glyphs to one cell.
 
-## Accounts, usage and terminals from the usage sheet
+## Accounts, usage and terminals from the Usage screen
 
-The usage bars open `AgentAccountsSheet` (iOS): per provider, New terminal,
-every account profile (name, signed-in identity, usage windows), tap to use
-for new agents, and a menu with New terminal as this account, Log in, Log out,
-Rename; Add account creates and selects a profile and opens its sign-in.
+On iOS the usage bars push `UsageScreen`, whose body is `AgentAccountsPanel`:
+per provider, New terminal, every account profile (name, signed-in identity,
+usage windows), tap to use for new agents, and a menu with New terminal as
+this account, Log in, Log out, Rename, Delete; Add account creates and selects
+a profile and opens its sign-in
+([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md#usage-on-ios)).
+Android's `UsageScreen` offers the same actions, with Log in and Log out
+started as `terminal.start {provider, mode, account}`
+([Usage on Android](../marketplace-usage-feed-mastodon.md#usage-on-android)).
 
 - Capabilities `terminal.accounts` and `agentops.accounts` gate the per-account
   terminals and the account methods.

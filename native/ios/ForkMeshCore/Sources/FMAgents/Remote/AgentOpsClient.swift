@@ -159,6 +159,11 @@ public final class AgentOpsClient {
         return (UsageSummary(json: reply), reply.str("account"))
     }
 
+    public func deleteAccount(provider: String, account: String) async throws -> UsageSummary {
+        UsageSummary(json: try await family.call(
+            "accounts.delete", ["provider": .string(provider), "account": .string(account)]))
+    }
+
     public func grants() async throws -> [CapabilityGrant] {
         try await family.call("grants").maps("grants").map(CapabilityGrant.init(json:))
     }
@@ -237,7 +242,8 @@ public final class AgentOpsClient {
         case "too_large": return "The image is too large to send to the phone."
         case "unknown_grant": return "That saved permission no longer exists."
         case "unknown_account": return "That account is no longer on the desktop."
-        case "account_failed": return "The desktop could not create the account."
+        case "account_failed": return "The desktop could not save that account change."
+        case "default_account": return "The default account cannot be deleted. Log it out instead."
         case "not_saved": return "The desktop revoked it but could not save the change."
         case "unavailable": return "The desktop's agent store is not open yet. Try again in a moment."
         case "bad_request", "unknown_action": return "The desktop did not understand that request."

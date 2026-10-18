@@ -3637,6 +3637,7 @@ public:
         showAgentAccountMenu(provider, QPoint(20, 20));
     }
     void testShowAgentUsageMenu() { showAgentUsageMenu(QPoint(20, 20)); }
+    void testOpenAgentUsagePage() { openAgentUsagePage(); }
     void testApplyClaudeUsageResponse(const QJsonObject &response)
     {
         applyClaudeUsageResponse(response);
@@ -7000,6 +7001,12 @@ private:
                                    const QString &accountId);
     QAction *addAgentUsagePageAction(QMenu *menu);
     bool openAgentUsagePage();
+    QWidget *buildAgentUsagePage(QWidget *parent);
+    void fillAgentUsagePage(QWidget *page);
+    void scheduleAgentUsagePagesRefresh();
+    QList<QPointer<QWidget>> m_agentUsagePages;
+    QPointer<QWidget> m_agentUsageSectionPage;
+    QTimer *m_agentUsagePagesTimer = nullptr;
     void refreshAgentAccountUsageMenu(const QString &provider);
     // The open account menu per provider, so a usage response does not have to
     // findChild() its way through the whole window to find one that is usually
