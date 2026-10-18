@@ -68,6 +68,9 @@ struct ReportBugSheet: View {
         .interactiveDismissDisabled(model.busy)
         .accessibilityIdentifier("report-bug-sheet")
         .task { if let inbox, !inbox.loaded { await inbox.reload() } }
+        .onChange(of: inbox?.counts) { (_: [String: Int]?, counts: [String: Int]?) in
+            if let counts { ShellNavigatorCounts.shared.adoptBugReports(counts) }
+        }
         .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case let .success(urls) = result else { return }
             let files = urls.prefix(5 - model.attachments.count).compactMap { url -> BugReportAttachment? in

@@ -19,6 +19,7 @@ final class ShellNavigatorCounts {
 
     private(set) var fetched: [Route.Kind: Int] = [:]
     private(set) var assignedTasks: Int = 0
+    private(set) var bugReports: Int?
     @ObservationIgnored private var loadedAt: Date?
     @ObservationIgnored private var loadingTasks = false
     @ObservationIgnored private var rssUnread: (model: ObjectIdentifier, revision: Int, count: Int)?
@@ -28,6 +29,7 @@ final class ShellNavigatorCounts {
     func reset() {
         fetched = [:]
         assignedTasks = 0
+        bugReports = nil
         rssUnread = nil
         rssOpened = false
         loadedAt = nil
@@ -55,6 +57,11 @@ final class ShellNavigatorCounts {
         let mine: Int = model.mineOpen.count
         if fetched[.tasks] != open { fetched[.tasks] = open }
         if assignedTasks != mine { assignedTasks = mine }
+    }
+
+    func adoptBugReports(_ counts: [String: Int]) {
+        guard let new = counts["new"], bugReports != new else { return }
+        bugReports = new
     }
 
     func refreshAssignedTasks() async {
@@ -164,6 +171,10 @@ final class ShellNavigatorCounts {
         }
         if shown.contains(.shortcuts) { await ShellNavigatorCounts.loadShortcuts() }
         if shown.contains(.coves) { await ShellNavigatorCounts.loadCoves() }
+        if InsightsFeature.isAdmin {
+            let inbox: BugReportInbox = await api.bugReportInbox(status: "new", limit: 1)
+            if inbox.ok { adoptBugReports(inbox.counts) }
+        }
         if shown.contains(.rssReader) {
             let reader: RSSReaderModel = RSSReaderFeature.model()
             if !rssOpened { rssOpened = true }
