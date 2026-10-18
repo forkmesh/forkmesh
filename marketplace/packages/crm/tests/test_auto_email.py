@@ -472,6 +472,34 @@ def test_a_refused_send_shows_the_reconnect_step_and_a_new_sign_in_clears_it():
     assert saved["data"]["settings"]["zoho"]["canSend"] is True
 
 
+def test_a_forbidden_send_on_a_read_only_grant_records_the_grant_and_asks_for_a_reconnect():
+    runtime = _zoho_connected(ScopedZohoRuntime(
+        [_draft("Hello")], scope="ZohoMail.messages.READ ZohoMail.folders.READ",
+        send_status=403, send_error="FORBIDDEN"))
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    refused = _send(runtime, sam)
+    assert refused["status"] == 409
+    assert refused["data"]["error"] == "zoho_send_not_allowed"
+    status = _zoho_status(runtime)
+    assert status["canSend"] is False
+    assert status["steps"][0]["action"] == "reconnect"
+
+
+def test_a_forbidden_send_with_the_send_scope_granted_reports_zoho_s_reason_not_a_reconnect():
+    runtime = _zoho_connected(ScopedZohoRuntime(
+        [_draft("Hello")], scope="ZohoMail.messages.READ ZohoMail.messages.CREATE",
+        send_status=403, send_error="FROM_ADDRESS_NOT_ALLOWED"))
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    refused = _send(runtime, sam)
+    assert refused["status"] == 502
+    assert refused["data"]["error"] == "send_failed"
+    assert "FROM_ADDRESS_NOT_ALLOWED" in refused["data"]["detail"]
+    assert runtime.mailtrap_calls == []
+    status = _zoho_status(runtime)
+    assert status["canSend"] is True
+    assert all(step["action"] != "reconnect" for step in status["steps"])
+
+
 def test_a_rejected_sign_in_or_failed_sync_becomes_a_step():
     runtime = _zoho_connected(ScopedZohoRuntime(token_ok=False))
     failed = call(runtime.use("POST", body={}), "/api/crm/acme/mail/import")
