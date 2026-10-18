@@ -177,7 +177,7 @@ SecureDriveFeature::SecureDriveFeature(const forkmesh::market::NativePackageHost
     title->setObjectName(QStringLiteral("pageTitle"));
     heading->addWidget(title);
     heading->addWidget(mutedLabel(QStringLiteral(
-                           "An encrypted shared folder on your router's USB drive. The drive holds only ciphertext; the keys live on the computers you approve.")),
+                           "One encrypted file on your router's USB drive holds every document, version and log entry. The keys live only on the devices you approve.")),
                        1);
     m_lockButton = button(QStringLiteral("Lock"));
     heading->addWidget(m_lockButton);
@@ -296,9 +296,9 @@ QWidget *SecureDriveFeature::buildMainPanel()
     auto *more = button(QStringLiteral("⋯"));
     more->setAccessibleName(QStringLiteral("More drive actions"));
     auto *menu = new QMenu(more);
-    menu->addAction(QStringLiteral("Show the drive folder"), this, [this] {
+    menu->addAction(QStringLiteral("Show the drive file"), this, [this] {
         if (m_drive && m_drive->membership())
-            QDesktopServices::openUrl(QUrl::fromLocalFile(m_drive->membership()->folder));
+            QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(m_drive->membership()->container).absolutePath()));
     });
     menu->addAction(QStringLiteral("Check the drive now"), this, [this] { scanCurrent(false); });
     menu->addSeparator();
@@ -329,8 +329,8 @@ QWidget *SecureDriveFeature::buildMainPanel()
     emptyLayout->addWidget(mutedLabel(QStringLiteral(
         "1. Plug a USB drive into your router and turn on its file sharing (often called USB storage, SMB or Samba).\n"
         "2. Open the shared folder once in your file manager so this computer can reach it, for example \\\\router\\usb on Windows or smb://router/usb on macOS and Linux.\n"
-        "3. Choose New drive and pick a folder on it. Other computers join with an invitation code that you approve here.\n\n"
-        "Everything written to the folder is encrypted first: file names, contents, sizes rounded up, who opened what. The router and anyone who copies the USB drive see only random-looking .fmsd objects.")));
+        "3. Choose New drive and save the drive file there. Other computers and phones open the same file and join with an invitation code that you approve here.\n\n"
+        "The share holds one file of random-looking bytes. File names, contents, how many files there are, every version and who opened what are all inside it, encrypted. The router sees only the file's size and when it changes.")));
     emptyLayout->addStretch(1);
     m_driveStack->addWidget(empty);
 
@@ -557,17 +557,17 @@ QWidget *SecureDriveFeature::buildDevicesTab()
 
     const auto selectedRequest = [this] {
         QTreeWidgetItem *item = m_requests->currentItem();
-        return item ? item->data(0, Qt::UserRole).toString() : QString();
+        return item ? item->data(0, Qt::UserRole).toInt() : -1;
     };
     connect(approve, &QPushButton::clicked, this, [this, selectedRequest] {
-        const QString object = selectedRequest();
-        if (!object.isEmpty())
-            approveRequest(object);
+        const int mailbox = selectedRequest();
+        if (mailbox >= 0)
+            approveRequest(mailbox);
     });
     connect(deny, &QPushButton::clicked, this, [this, selectedRequest] {
-        const QString object = selectedRequest();
-        if (!object.isEmpty())
-            denyRequest(object);
+        const int mailbox = selectedRequest();
+        if (mailbox >= 0)
+            denyRequest(mailbox);
     });
     connect(m_inviteButton, &QPushButton::clicked, this, [this] { invite(); });
     connect(m_removeDeviceButton, &QPushButton::clicked, this, [this] {
@@ -609,8 +609,15 @@ QString SecureDriveFeature::explain(const QString &code) const
         {QStringLiteral("device_unreadable"), QStringLiteral("This computer's Secure Drive key file cannot be read.")},
         {QStringLiteral("device_write_failed"), QStringLiteral("Could not save this computer's key file.")},
         {QStringLiteral("folder_unavailable"), QStringLiteral("The folder cannot be reached or is read-only. Check that the router's drive is plugged in and shared, and that this computer can write to it.")},
-        {QStringLiteral("folder_in_use"), QStringLiteral("That folder already holds a Secure Drive. Use Join a drive with an invitation code instead.")},
-        {QStringLiteral("folder_already_connected"), QStringLiteral("This computer is already connected to that folder.")},
+        {QStringLiteral("container_exists"), QStringLiteral("A file with that name already exists. Pick a new name, or use Join a drive to open an existing drive.")},
+        {QStringLiteral("container_unavailable"), QStringLiteral("The drive file cannot be reached or is read-only. Check that the router's drive is plugged in and shared, and that this device can write to it.")},
+        {QStringLiteral("not_a_drive"), QStringLiteral("That file is not a Secure Drive.")},
+        {QStringLiteral("drive_unreadable"), QStringLiteral("This device cannot read the drive's index with its keys. It may have been removed from the drive, or the file was damaged.")},
+        {QStringLiteral("drive_busy"), QStringLiteral("Another device has been writing to the drive for a long time. Try again in a minute.")},
+        {QStringLiteral("drive_changed"), QStringLiteral("Another device changed the drive at the same moment. Try again.")},
+        {QStringLiteral("drive_full"), QStringLiteral("The drive has no room left. Free space on the router's USB drive, or delete files.")},
+        {QStringLiteral("drive_index_full"), QStringLiteral("The drive's index is full. Delete old files or versions.")},
+        {QStringLiteral("folder_already_connected"), QStringLiteral("This device is already connected to that drive.")},
         {QStringLiteral("invalid_invite_code"), QStringLiteral("That invitation code is not valid. Check it for typos.")},
         {QStringLiteral("invite_expired"), QStringLiteral("That invitation expired or was cancelled. Create a new one.")},
         {QStringLiteral("unknown_request"), QStringLiteral("That request is no longer on the drive.")},
@@ -813,11 +820,11 @@ void SecureDriveFeature::renderDrives()
     m_drivePicker->clear();
     for (const Membership &m : std::as_const(m_state->drives)) {
         const QString label = m.isPending() ? QStringLiteral("%1 (waiting for approval)").arg(m.label) : m.label;
-        m_drivePicker->addItem(label, m.slot);
-        m_drivePicker->setItemData(m_drivePicker->count() - 1, m.folder, Qt::ToolTipRole);
+        m_drivePicker->addItem(label, m.id);
+        m_drivePicker->setItemData(m_drivePicker->count() - 1, m.container, Qt::ToolTipRole);
     }
     if (m_drive)
-        m_drivePicker->setCurrentIndex(m_drivePicker->findData(m_drive->slot()));
+        m_drivePicker->setCurrentIndex(m_drivePicker->findData(m_drive->id()));
     m_drivePicker->setVisible(m_drivePicker->count() > 0);
 }
 
@@ -827,8 +834,8 @@ void SecureDriveFeature::selectDrive(const QString &requested)
         return;
     QString slot = requested;
     if (!m_state->membership(slot))
-        slot = m_state->drives.isEmpty() ? QString() : m_state->drives.first().slot;
-    if (m_drive && m_drive->slot() == slot && m_drive->scanned()) {
+        slot = m_state->drives.isEmpty() ? QString() : m_state->drives.first().id;
+    if (m_drive && m_drive->id() == slot && m_drive->scanned()) {
         renderDrives();
         return;
     }
@@ -921,9 +928,9 @@ void SecureDriveFeature::renderAll()
         m_pendingText->setText(
             m_drive->joinRequestMissing()
                 ? QStringLiteral("The request is no longer on the drive: it was turned down, or someone deleted it. Cancel it and ask for a new invitation code.")
-                : QStringLiteral("This computer asked to join the drive in %1. On a computer that is already approved, open Secure Drive, then Computers, "
+                : QStringLiteral("This device asked to join the drive %1. On a computer that is already approved, open Secure Drive, then Computers, "
                                  "and approve this one only if it shows this safety number:")
-                      .arg(m->folder));
+                      .arg(QDir::toNativeSeparators(m->container)));
         m_pendingSafety->setText(m_drive->joinSafetyNumber());
         m_pendingSafety->setVisible(!m_drive->joinRequestMissing());
         m_banner->hide();
@@ -958,13 +965,12 @@ void SecureDriveFeature::renderBanner()
         int members = 0;
         for (const DeviceInfo &device : m_drive->devices())
             members += device.removed ? 0 : 1;
-        QString text = QStringLiteral("Verified: %1 signed activity records from %2 approved computer%3, none missing or altered. %4 encrypted objects on the drive.")
+        QString text = QStringLiteral("Verified: %1 signed activity records from %2 approved device%3, none missing or altered. The drive file is %4, %5 in use.")
                            .arg(m_drive->records().size())
                            .arg(members)
                            .arg(members == 1 ? QString() : QStringLiteral("s"))
-                           .arg(m_drive->objectCount());
-        if (m_drive->foreignCount() > 0)
-            text += QStringLiteral(" %1 other files in the folder are not part of the drive.").arg(m_drive->foreignCount());
+                           .arg(QLocale().formattedDataSize(m_drive->containerBytes()),
+                                QLocale().formattedDataSize(m_drive->usedBytes()));
         restyle(m_banner, QStringLiteral("mutedLabel"));
         m_banner->setText(text);
     }
@@ -1060,7 +1066,7 @@ void SecureDriveFeature::renderDevices()
         return;
     for (const JoinRequest &request : m_drive->requests()) {
         auto *item = new QTreeWidgetItem(m_requests, {request.name, request.safety, when(request.time)});
-        item->setData(0, Qt::UserRole, request.object);
+        item->setData(0, Qt::UserRole, request.mailbox);
         item->setFont(1, QFontDatabase::systemFont(QFontDatabase::FixedFont));
     }
     m_requestsBox->setVisible(m_requests->topLevelItemCount() > 0);
@@ -1207,7 +1213,9 @@ void SecureDriveFeature::openFile(const QString &fileId, int version)
     const bool readOnly = version >= 0 || m_drive->removedFromDrive();
     const QString purpose = editableKind(kind) && !readOnly ? QStringLiteral("edit") : QStringLiteral("view");
     Drive *drive = m_drive.get();
-    const QString slot = drive->slot();
+    const QString slot = drive->id();
+    const auto startedFrom = std::make_shared<QString>(
+        version < 0 && entry->current() ? entry->current()->blob : QString());
     run(QStringLiteral("Decrypting %1…").arg(entry->name),
         [drive, fileId, version, purpose] {
             Outcome outcome;
@@ -1220,7 +1228,7 @@ void SecureDriveFeature::openFile(const QString &fileId, int version)
                 outcome.bytes.fill('\0');
             return outcome;
         },
-        [this, fileId, kind, name, readOnly, slot](const Outcome &outcome) {
+        [this, fileId, kind, name, readOnly, slot, startedFrom](const Outcome &outcome) {
             if (!outcome.ok) {
                 setStatus(explain(outcome.code), true);
                 renderAll();
@@ -1228,7 +1236,7 @@ void SecureDriveFeature::openFile(const QString &fileId, int version)
             }
             setStatus(QString());
             const QPointer<SecureDriveFeature> guard(this);
-            SaveHandler save = [guard, slot, fileId](const QByteArray &bytes, QString *error) {
+            SaveHandler save = [guard, slot, fileId, startedFrom](const QByteArray &bytes, QString *error) {
                 if (!guard)
                     return false;
                 SecureDriveFeature *self = guard.data();
@@ -1236,7 +1244,7 @@ void SecureDriveFeature::openFile(const QString &fileId, int version)
                     *error = QStringLiteral("The drive is busy with another task. Try again in a moment.");
                     return false;
                 }
-                if (!self->m_drive || self->m_drive->slot() != slot) {
+                if (!self->m_drive || self->m_drive->id() != slot) {
                     *error = QStringLiteral("Switch back to the drive this file came from to save it.");
                     return false;
                 }
@@ -1244,12 +1252,14 @@ void SecureDriveFeature::openFile(const QString &fileId, int version)
                 QBuffer buffer(&copy);
                 buffer.open(QIODevice::ReadOnly);
                 Failure failure;
-                const bool ok = self->m_drive->saveFile(fileId, &buffer, &failure);
+                const bool ok = self->m_drive->saveFile(fileId, &buffer, &failure, *startedFrom);
                 copy.fill('\0');
                 if (!ok) {
                     *error = self->explain(failure.code);
                     return false;
                 }
+                if (const FileEntry *saved = self->m_drive->file(fileId); saved && saved->current())
+                    *startedFrom = saved->current()->blob;
                 self->renderAll();
                 return true;
             };
@@ -1284,7 +1294,7 @@ void SecureDriveFeature::openExternally(const QString &fileId)
     const QString name = entry->name;
     const QString folder = QDir(externalFolder()).filePath(randomId());
     Drive *drive = m_drive.get();
-    const QString slot = drive->slot();
+    const QString slot = drive->id();
     run(QStringLiteral("Decrypting %1 for another app…").arg(name),
         [drive, fileId, name, folder] {
             Outcome outcome;
@@ -1330,7 +1340,7 @@ void SecureDriveFeature::saveExternalCopies()
         return;
     Drive *drive = m_drive.get();
     auto copies = std::make_shared<QList<ExternalCopy>>(m_external);
-    const QString slot = drive->slot();
+    const QString slot = drive->id();
     run(QStringLiteral("Encrypting changed copies back onto the drive…"),
         [drive, copies, slot] {
             Outcome outcome;
@@ -1620,7 +1630,7 @@ void SecureDriveFeature::invite()
             dialog.setWindowTitle(QStringLiteral("Invite a computer"));
             auto *layout = new QVBoxLayout(&dialog);
             layout->addWidget(mutedLabel(QStringLiteral(
-                "On the other computer, open Secure Drive, choose Join a drive, pick the same folder on the router and type this code. "
+                "On the other computer or phone, open Secure Drive, choose Join a drive, pick the same drive file on the router and type this code. "
                 "Then approve it here under Computers, after checking that both screens show the same safety number.\n\n"
                 "Tell the code in person or over a call rather than by email. It works once and expires in 24 hours. "
                 "On its own it opens nothing: the drive key is only handed over when you approve.")));
@@ -1644,15 +1654,15 @@ void SecureDriveFeature::invite()
         });
 }
 
-void SecureDriveFeature::approveRequest(const QString &object)
+void SecureDriveFeature::approveRequest(int mailbox)
 {
     if (!m_drive || m_busy)
         return;
     JoinRequest request;
     for (const JoinRequest &candidate : m_drive->requests())
-        if (candidate.object == object)
+        if (candidate.mailbox == mailbox)
             request = candidate;
-    if (request.object.isEmpty())
+    if (request.mailbox < 0)
         return;
     if (QMessageBox::question(this, QStringLiteral("Approve %1?").arg(request.name),
                               QStringLiteral("Approve only if %1 shows this safety number:\n\n%2\n\n"
@@ -1663,10 +1673,10 @@ void SecureDriveFeature::approveRequest(const QString &object)
         return;
     Drive *drive = m_drive.get();
     run(QStringLiteral("Sealing the drive key to %1…").arg(request.name),
-        [drive, object] {
+        [drive, mailbox] {
             Failure failure;
             Outcome outcome;
-            outcome.ok = drive->approve(object, &failure);
+            outcome.ok = drive->approve(mailbox, &failure);
             outcome.code = failure.code;
             return outcome;
         },
@@ -1678,16 +1688,16 @@ void SecureDriveFeature::approveRequest(const QString &object)
         });
 }
 
-void SecureDriveFeature::denyRequest(const QString &object)
+void SecureDriveFeature::denyRequest(int mailbox)
 {
     if (!m_drive || m_busy)
         return;
     Drive *drive = m_drive.get();
     run(QStringLiteral("Turning the request down…"),
-        [drive, object] {
+        [drive, mailbox] {
             Failure failure;
             Outcome outcome;
-            outcome.ok = drive->deny(object, &failure);
+            outcome.ok = drive->deny(mailbox, &failure);
             outcome.code = failure.code;
             return outcome;
         },
@@ -1765,14 +1775,15 @@ void SecureDriveFeature::createDrive()
 {
     if (m_busy || !m_state->isUnlocked())
         return;
-    const QString folder = QFileDialog::getExistingDirectory(
-        this, QStringLiteral("Choose an empty folder on the router's USB drive"));
+    const QString folder = QFileDialog::getSaveFileName(
+        this, QStringLiteral("Save the drive file on the router's USB drive"),
+        QStringLiteral("SecureDrive.fmsd"), QStringLiteral("Secure Drive (*.fmsd);;All files (*)"));
     if (folder.isEmpty())
         return;
     bool ok = false;
     const QString label = QInputDialog::getText(this, QStringLiteral("Name the drive"),
-                                                QStringLiteral("Shown only on approved computers; the drive itself never holds it in the clear."),
-                                                QLineEdit::Normal, QFileInfo(folder).fileName(), &ok);
+                                                QStringLiteral("Shown only on approved devices; the drive file itself never holds it in the clear."),
+                                                QLineEdit::Normal, QFileInfo(folder).completeBaseName(), &ok);
     if (!ok)
         return;
     LocalState *state = m_state.get();
@@ -1801,7 +1812,7 @@ void SecureDriveFeature::joinDrive()
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Join a drive"));
     auto *layout = new QVBoxLayout(&dialog);
-    layout->addWidget(mutedLabel(QStringLiteral("Pick the drive's folder on the router and type the invitation code from a computer that is already approved.")));
+    layout->addWidget(mutedLabel(QStringLiteral("Pick the drive file on the router and type the invitation code from a device that is already approved.")));
     auto *form = new QFormLayout;
     auto *folderRow = new QHBoxLayout;
     auto *folder = new QLineEdit;
@@ -1812,14 +1823,15 @@ void SecureDriveFeature::joinDrive()
     auto *code = new QLineEdit;
     code->setPlaceholderText(QStringLiteral("ABC-DEF-…"));
     code->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    form->addRow(QStringLiteral("Folder"), folderRow);
+    form->addRow(QStringLiteral("Drive file"), folderRow);
     form->addRow(QStringLiteral("Invitation code"), code);
     layout->addLayout(form);
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
     buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Ask to join"));
     layout->addWidget(buttons);
     connect(choose, &QPushButton::clicked, &dialog, [&dialog, folder] {
-        const QString picked = QFileDialog::getExistingDirectory(&dialog, QStringLiteral("Choose the drive's folder"));
+        const QString picked = QFileDialog::getOpenFileName(&dialog, QStringLiteral("Choose the drive file"), QString(),
+                                                            QStringLiteral("Secure Drive (*.fmsd);;All files (*)"));
         if (!picked.isEmpty())
             folder->setText(picked);
     });
@@ -1873,7 +1885,7 @@ void SecureDriveFeature::forgetDrive()
     if (pending) {
         ok = m_drive->cancelJoin(&failure);
     } else {
-        m_state->forget(m_drive->slot());
+        m_state->forget(m_drive->id());
         ok = m_state->save(&failure);
     }
     m_drive.reset();

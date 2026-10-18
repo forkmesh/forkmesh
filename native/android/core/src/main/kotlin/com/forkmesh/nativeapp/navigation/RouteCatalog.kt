@@ -149,6 +149,7 @@ object RouteCatalog {
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
         Route.Kind.RssReader -> "RSS Reader"
+        Route.Kind.SecureDrive -> "Secure Drive"
         Route.Kind.Workflows -> "Workflows"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
@@ -216,6 +217,7 @@ object RouteCatalog {
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
         Route.Kind.RssReader -> "feed"
+        Route.Kind.SecureDrive -> "lock"
         Route.Kind.Workflows -> "account_tree"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
@@ -316,6 +318,7 @@ object HubCatalog {
         HubItem.destination(Route.PhoneSecurity),
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
+        HubItem.destination(Route.SecureDrive),
         HubItem.destination(Route.LocalAI, needsRegistration = true),
         HubItem.destination(Route.Activity),
     )

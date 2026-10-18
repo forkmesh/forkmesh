@@ -39,7 +39,7 @@ object PackageGate {
         "hosts" to "hosts", "network" to "network",
         "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
-        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "rssReader" to "rss-reader", "localAI" to "on-device-ai", "activity" to "activity",
+        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "rssReader" to "rss-reader", "secureDrive" to "secure-drive", "localAI" to "on-device-ai", "activity" to "activity",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
         "tour" to "tour", "world" to "world", "people" to "people", "docs" to "docs", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
@@ -78,6 +78,7 @@ object PackageGate {
         put("face-changer", Route.Kind.FaceChanger)
         put("app-store-status", Route.Kind.AppStoreStatus)
         put("rss-reader", Route.Kind.RssReader)
+        put("secure-drive", Route.Kind.SecureDrive)
         put(WORKFLOWS, Route.Kind.Workflows)
         put("people", Route.Kind.People)
         put("docs", Route.Kind.Docs)

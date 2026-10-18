@@ -18,6 +18,19 @@ class QIODevice;
 
 namespace forkmesh::securedrive {
 
+inline constexpr qint64 kPageBytes = 16384;
+inline constexpr qint64 kUnitOverhead = 28;
+inline constexpr qint64 kChunkBytes = kPageBytes - kUnitOverhead;
+inline constexpr qint64 kLeasePage = 0;
+inline constexpr qint64 kRootPages = 4;
+inline constexpr qint64 kRootAPage = 1;
+inline constexpr qint64 kRootBPage = 5;
+inline constexpr qint64 kMailboxPage = 9;
+inline constexpr int kMailboxSlots = 64;
+inline constexpr qint64 kSlotBytes = 8192;
+inline constexpr qint64 kDataPage = 41;
+inline constexpr qint64 kInitialDataPages = 32;
+
 struct EpochKey
 {
     QString id;
@@ -31,23 +44,32 @@ struct Head
     QString hash;
 };
 
+struct Run
+{
+    qint64 start = 0;
+    qint64 count = 0;
+};
+
 struct Membership
 {
-    QString slot;
-    QString folder;
+    QString id;
+    QString container;
     QString label;
     QString driveId;
     QString rootDevice;
     QByteArray rootEd25519;
     QList<EpochKey> epochs;
-    QString segment;
-    QString segmentKey;
+    int mailbox = -1;
     qint64 lastSeq = -1;
     QString lastHash;
     qint64 lamport = 0;
     QMap<QString, Head> heads;
+    qint64 rootGeneration = -1;
+    QString rootHash;
+    QStringList removedDevices;
+    QString cachedRoot;
+    bool keyringSeen = false;
     QByteArray joinSecret;
-    QString joinRequest;
     qint64 joinedAt = 0;
 
     bool isMember() const { return !driveId.isEmpty(); }
@@ -75,10 +97,12 @@ public:
     bool changePassphrase(const QString &current, const QString &next, Failure *failure);
     void lock();
     bool save(Failure *failure);
+    QJsonObject exportDevice() const;
+    bool importDevice(const QJsonObject &device, const QString &passphrase, Failure *failure);
 
-    Membership *membership(const QString &slot);
-    const Membership *membership(const QString &slot) const;
-    void forget(const QString &slot);
+    Membership *membership(const QString &id);
+    const Membership *membership(const QString &id) const;
+    void forget(const QString &id);
 
     QString deviceId;
     QString deviceName;
@@ -101,12 +125,11 @@ struct DeviceInfo
     PublicKeys keys;
     QString addedBy;
     qint64 addedAt = 0;
-    qint64 addedLamport = 0;
+    int mailbox = -1;
     bool removed = false;
     QString removedBy;
     qint64 removedAt = 0;
     qint64 removedSeq = -1;
-    QString keyring;
     bool root = false;
 };
 
@@ -114,6 +137,7 @@ struct FileVersion
 {
     QString blob;
     QByteArray key;
+    QList<Run> pages;
     qint64 size = 0;
     QString sha256;
     qint64 time = 0;
@@ -150,7 +174,7 @@ struct Record
     QString prev;
     QString hash;
     QJsonObject witness;
-    QJsonObject signedJson;
+    QJsonObject stored;
 };
 
 struct Issue
@@ -165,6 +189,7 @@ struct Invite
     QString id;
     QByteArray requestKey;
     QByteArray approveKey;
+    int mailbox = -1;
     qint64 created = 0;
     qint64 expires = 0;
     QString createdBy;
@@ -175,7 +200,7 @@ struct Invite
 
 struct JoinRequest
 {
-    QString object;
+    int mailbox = -1;
     QString inviteId;
     QString device;
     QString name;
@@ -184,26 +209,41 @@ struct JoinRequest
     QString safety;
 };
 
+struct LeaseTiming
+{
+    int settleMs = 600;
+    int staleMs = 120000;
+    int pollMs = 250;
+};
+
 QString fileKindForName(const QString &name);
 QString describeRecord(const Record &record, const std::function<QString(const QString &)> &deviceName);
 QString issueText(const Issue &issue, const std::function<QString(const QString &)> &deviceName);
+int mailboxForInvite(const QByteArray &secret);
+QList<Run> runsFromJson(const QJsonArray &array);
+QJsonArray runsToJson(const QList<Run> &runs);
+
+class ContainerFile;
 
 class Drive
 {
 public:
-    Drive(LocalState *state, QString slot);
+    Drive(LocalState *state, QString id);
+    ~Drive();
 
-    static bool create(LocalState *state, const QString &folder, const QString &label,
-                       QString *slot, Failure *failure);
-    static bool requestJoin(LocalState *state, const QString &folder, const QString &code,
-                            QString *slot, QString *safety, Failure *failure);
+    static void setLeaseTiming(const LeaseTiming &timing);
+    static void setInviteLifetime(qint64 milliseconds);
+    static bool create(LocalState *state, const QString &path, const QString &label, QString *id,
+                       Failure *failure);
+    static bool requestJoin(LocalState *state, const QString &path, const QString &code, QString *id,
+                            QString *safety, Failure *failure);
     bool cancelJoin(Failure *failure);
 
-    QString slot() const { return m_slot; }
+    QString id() const { return m_id; }
     const Membership *membership() const;
     bool scan(Failure *failure);
     bool scanned() const { return m_scanned; }
-    bool changedSinceScan() const { return folderFingerprint() != m_fingerprint; }
+    bool changedSinceScan() const { return fingerprint() != m_fingerprint; }
     QString joinSafetyNumber() const;
     bool joinRequestMissing() const { return m_joinRequestMissing; }
     bool removedFromDrive() const { return m_removed; }
@@ -217,17 +257,19 @@ public:
     QList<Issue> issues() const { return m_issues; }
     QString deviceName(const QString &id) const;
     QString deviceSafetyNumber(const QString &id) const;
-    int objectCount() const { return m_objectCount; }
-    int foreignCount() const { return m_foreignCount; }
+    qint64 containerBytes() const { return m_totalPages * kPageBytes; }
+    qint64 usedBytes() const;
+    QList<Run> dataRunsInUse() const;
+    QList<int> mailboxesInUse() const;
 
     bool createInvite(QString *code, QString *inviteId, Failure *failure);
     bool revokeInvite(const QString &inviteId, Failure *failure);
-    bool approve(const QString &object, Failure *failure);
-    bool deny(const QString &object, Failure *failure);
+    bool approve(int mailbox, Failure *failure);
+    bool deny(int mailbox, Failure *failure);
 
     bool addFile(const QString &name, QIODevice *source, QString *fileId, Failure *failure,
                  const QString &kind = QString());
-    bool saveFile(const QString &fileId, QIODevice *source, Failure *failure);
+    bool saveFile(const QString &fileId, QIODevice *source, Failure *failure, const QString &base = QString());
     bool readFile(const QString &fileId, int version, QIODevice *out, const QString &purpose,
                   Failure *failure);
     bool renameFile(const QString &fileId, const QString &name, Failure *failure);
@@ -239,51 +281,53 @@ public:
     QString activityCsv() const;
 
 private:
-    struct ParsedSegment
-    {
-        QString object;
-        QString device;
-        QString keyId;
-        QJsonArray records;
-    };
+    struct Txn;
+    struct RootCandidate;
 
     Membership *mutableMembership() const;
-    QString objectPath(const QString &object) const;
-    bool writeObject(const QString &object, const QByteArray &bytes, Failure *failure) const;
-    bool removeObject(const QString &object) const;
-    bool append(const QList<QPair<QString, QJsonObject>> &entries, Failure *failure);
-    bool writeSegment(Failure *failure);
-    bool sealKeyring(const DeviceInfo &recipient, const QByteArray &approveKey,
-                     const QString &inviteId, QString *object, Failure *failure);
-    bool writeBlob(QIODevice *source, QString *object, QByteArray *key, qint64 *size,
-                   QString *digest, Failure *failure);
-    bool transcodeBlob(const FileVersion &version, QString *object, QByteArray *key,
-                       Failure *failure);
-    bool tryAdopt(const QHash<QString, QByteArray> &keyrings, Failure *failure);
+    QByteArray fingerprint() const;
+    bool load(ContainerFile &file, Failure *failure);
+    bool loadPending(ContainerFile &file, Failure *failure);
+    bool transact(const std::function<bool(Txn &, Failure *)> &body, Failure *failure,
+                  const std::function<void()> &renew = {});
+    bool acquireLease(ContainerFile &file, Failure *failure);
+    bool renewLease(ContainerFile &file);
+    void releaseLease(ContainerFile &file);
+    bool commit(Txn &txn, Failure *failure);
+    QList<qint64> freePages(const Txn &txn) const;
+    bool allocate(Txn &txn, qint64 count, bool contiguous, QList<Run> *runs, Failure *failure);
+    bool writeBlob(Txn &txn, QIODevice *source, FileVersion *version, Failure *failure);
+    bool readBlob(ContainerFile &file, const FileVersion &version, const std::function<bool(const QByteArray &)> &sink,
+                  Failure *failure) const;
+    QByteArray keyringUnit(const DeviceInfo &recipient, int mailbox, const QByteArray &approveKey,
+                           const QString &inviteId, Failure *failure) const;
     void fold(const QList<Record> &records);
     void checkWitnesses(const QMap<QString, QMap<qint64, Record>> &chains);
     void addIssue(const QString &code, const QString &device, const QString &detail);
-    QString keyringLabel() const;
-    QByteArray folderFingerprint() const;
+    QSet<int> usedMailboxes() const;
 
     LocalState *m_state = nullptr;
-    QString m_slot;
+    QString m_id;
     bool m_scanned = false;
-    QByteArray m_fingerprint;
     bool m_opened = false;
     bool m_joinRequestMissing = false;
     bool m_removed = false;
-    int m_objectCount = 0;
-    int m_foreignCount = 0;
-    QJsonArray m_segmentRecords;
+    bool m_repairKeyring = false;
+    QByteArray m_fingerprint;
+    QByteArray m_leaseBytes;
+    QByteArray m_rootABytes;
+    QByteArray m_rootBBytes;
+    qint64 m_rootGeneration = -1;
+    QString m_rootHash;
+    qint64 m_totalPages = 0;
+    QMap<QString, QList<Run>> m_logs;
+    QJsonArray m_myLastRecords;
     QList<Record> m_records;
     QMap<QString, DeviceInfo> m_devices;
     QMap<QString, FileEntry> m_files;
     QMap<QString, Invite> m_invites;
     QList<JoinRequest> m_requests;
     QList<Issue> m_issues;
-    QSet<QString> m_blobs;
-    QStringList m_keyringObjects;
     QString m_driveLabel;
 };
 

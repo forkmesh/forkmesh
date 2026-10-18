@@ -110,8 +110,8 @@ private:
     void wipeExternalFolder();
     void exportActivity();
     void invite();
-    void approveRequest(const QString &object);
-    void denyRequest(const QString &object);
+    void approveRequest(int mailbox);
+    void denyRequest(int mailbox);
     void removeDevice(const QString &deviceId);
     void cancelInvites();
     void closeEditors(bool discard);

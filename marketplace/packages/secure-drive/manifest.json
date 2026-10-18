@@ -11,12 +11,12 @@
   },
   "type": "extension.native",
   "category": "Security",
-  "version": "1.0.0",
-  "summary": "An encrypted shared folder on your router's USB drive or any network share. The drive holds only ciphertext; approved computers hold the keys. Documents, spreadsheets, drawings and any file, with a signed access log.",
+  "version": "1.1.0",
+  "summary": "One encrypted file on your router's USB drive holds every document, spreadsheet, drawing and file, their versions and a signed access log. Only the computers and phones you approve hold the keys.",
   "screenshots": [
     {
       "path": "preview/market.svg",
-      "alt": "Secure Drive listing encrypted documents, a spreadsheet and a drawing on a router share, with a verified-log banner and the Files, Activity and Computers tabs"
+      "alt": "Secure Drive listing encrypted documents, a spreadsheet and a drawing kept in one encrypted file on a router share, with a verified-log banner and the Files, Activity and Computers tabs"
     }
   ],
   "license": {
@@ -31,6 +31,8 @@
   },
   "entrypoints": {
     "desktop": "builtin:secure-drive",
+    "ios": "builtin:secure-drive",
+    "android": "builtin:secure-drive",
     "settings": "builtin:package"
   },
   "dataLifecycle": {
@@ -40,12 +42,12 @@
   "permissions": [
     {
       "id": "storage.folder.write",
-      "label": "Read and write encrypted objects in folders you pick, such as a router's shared USB drive",
+      "label": "Read and write the one encrypted drive file you pick, such as a file on a router's shared USB drive",
       "risk": "sensitive"
     },
     {
       "id": "device.keys.store",
-      "label": "Keep this computer's drive keys in its data folder, locked by a passphrase you choose",
+      "label": "Keep this device's drive keys in its private storage, locked by a passphrase you choose",
       "risk": "sensitive"
     },
     {
@@ -67,7 +69,12 @@
   },
   "install": {
     "bundled": true,
-    "default": false
+    "default": false,
+    "sync": "account",
+    "places": [
+      "mobile",
+      "desktop"
+    ]
   },
   "lifecycle": {
     "migrations": []

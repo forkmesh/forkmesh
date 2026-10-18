@@ -66,6 +66,7 @@ object Features {
         com.forkmesh.nativeapp.feature.phonesecurity.PhoneSecurityFeature.install()
         com.forkmesh.nativeapp.feature.appstorestatus.AppStoreStatusFeature.install()
         com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)
+        com.forkmesh.nativeapp.feature.securedrive.SecureDriveFeature.install(app)
         com.forkmesh.nativeapp.feature.workflows.WorkflowsFeature.install()
         com.forkmesh.nativeapp.feature.people.PeopleFeature.install()
         com.forkmesh.nativeapp.feature.docs.DocsFeature.install()

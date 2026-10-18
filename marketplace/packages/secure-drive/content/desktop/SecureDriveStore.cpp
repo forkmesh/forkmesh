@@ -3,37 +3,85 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QIODevice>
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QSaveFile>
-#include <QtEndian>
+#include <QThread>
 
 #include <algorithm>
+#include <optional>
+
+#ifdef Q_OS_WIN
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace forkmesh::securedrive {
+
+class ContainerFile
+{
+public:
+    explicit ContainerFile(const QString &path) : m_file(path) {}
+
+    bool openRead() { return m_file.open(QIODevice::ReadOnly); }
+    bool openWrite() { return QFileInfo::exists(m_file.fileName()) && m_file.open(QIODevice::ReadWrite); }
+    qint64 pages() const { return m_file.size() / kPageBytes; }
+    qint64 size() const { return m_file.size(); }
+
+    QByteArray readAt(qint64 offset, qint64 length)
+    {
+        if (!m_file.seek(offset))
+            return {};
+        QByteArray bytes = m_file.read(length);
+        return bytes.size() == length ? bytes : QByteArray();
+    }
+
+    bool writeAt(qint64 offset, const QByteArray &bytes)
+    {
+        return m_file.seek(offset) && m_file.write(bytes) == bytes.size();
+    }
+
+    bool sync()
+    {
+        if (!m_file.flush())
+            return false;
+#ifdef Q_OS_WIN
+        return _commit(m_file.handle()) == 0;
+#else
+        return ::fsync(m_file.handle()) == 0;
+#endif
+    }
+
+    bool appendRandom(qint64 pages)
+    {
+        if (!m_file.seek(m_file.size()))
+            return false;
+        qint64 left = pages * kPageBytes;
+        while (left > 0) {
+            const QByteArray block = randomBytes(int(std::min<qint64>(left, qint64(1) << 20)));
+            if (m_file.write(block) != block.size())
+                return false;
+            left -= block.size();
+        }
+        return sync();
+    }
+
+private:
+    QFile m_file;
+};
+
 namespace {
 
-constexpr char kKeyring = 1;
-constexpr char kRequest = 2;
-constexpr char kLog = 3;
-constexpr char kBlob = 4;
-constexpr qint64 kChunk = qint64(1) << 20;
-constexpr int kSegmentLimit = 400;
-constexpr qint64 kInviteLifetime = qint64(24) * 60 * 60 * 1000;
-constexpr qint64 kSmallObjectLimit = qint64(64) << 20;
+LeaseTiming g_timing;
+qint64 g_inviteLifetime = qint64(24) * 60 * 60 * 1000;
+constexpr qint64 kLogUnitLimitPages = 4;
 
-QByteArray header(char kind)
-{
-    QByteArray out("FMSD");
-    out.append(char(1));
-    out.append(kind);
-    return out;
-}
-
-QByteArray label(const char *name)
+QByteArray label(const QByteArray &name)
 {
     return QByteArrayLiteral("forkmesh-secure-drive/fmsd1/") + name;
 }
@@ -55,61 +103,82 @@ bool parseObject(const QByteArray &bytes, QJsonObject *value)
 
 qint64 now() { return QDateTime::currentMSecsSinceEpoch(); }
 
-QString newObjectName() { return randomId() + QStringLiteral(".fmsd"); }
-
-bool validObjectName(const QString &name)
+QByteArray derive(const QByteArray &key, const char *info, int length = kKeyBytes)
 {
-    static const QRegularExpression pattern(QStringLiteral("^[0-9a-f]{32}\\.fmsd$"));
-    return pattern.match(name).hasMatch();
-}
-
-bool partialObjectName(const QString &name)
-{
-    static const QRegularExpression pattern(QStringLiteral("^[0-9a-f]{32}\\.fmsd\\..+$"));
-    return pattern.match(name).hasMatch();
+    QByteArray out;
+    if (!hkdf(key, QString::fromLatin1(info), &out, length))
+        return {};
+    return out;
 }
 
 QString epochIdFor(const QByteArray &key)
 {
-    QByteArray id;
-    hkdf(key, QStringLiteral("key-id"), &id, 8);
-    return QString::fromLatin1(id.toHex());
+    return QString::fromLatin1(derive(key, "key-id", 8).toHex());
 }
 
-QByteArray recordMessage(const QString &driveId, QJsonObject record)
+QByteArray stripPadding(const QByteArray &plain)
 {
-    record.remove(QStringLiteral("sig"));
-    return label("record\n") + driveId.toUtf8() + '\n' + compact(record);
+    const int end = int(plain.indexOf('\0'));
+    return end < 0 ? plain : plain.left(end);
 }
 
-QByteArray keyringMessage(QJsonObject payload)
+QByteArray sealUnit(const QByteArray &key, const QByteArray &aad, const QByteArray &plain, qint64 size)
 {
-    payload.remove(QStringLiteral("sig"));
-    return label("keyring\n") + compact(payload);
+    if (plain.size() > size - kUnitOverhead)
+        return {};
+    QByteArray padded = plain;
+    padded.append(QByteArray(int(size - kUnitOverhead - plain.size()), '\0'));
+    const QByteArray nonce = randomBytes(12);
+    QByteArray sealed;
+    const bool ok = aeadSeal(key, nonce, aad, padded, &sealed);
+    wipe(padded);
+    return ok ? nonce + sealed : QByteArray();
 }
 
-QByteArray requestMessage(QJsonObject payload)
+bool openUnit(const QByteArray &key, const QByteArray &aad, const QByteArray &bytes, QByteArray *plain)
 {
-    payload.remove(QStringLiteral("sig"));
-    return label("request\n") + compact(payload);
+    if (bytes.size() < kUnitOverhead || key.size() != kKeyBytes)
+        return false;
+    return aeadOpen(key, bytes.left(12), aad, bytes.mid(12), plain);
 }
 
-QByteArray inviteIdBytes(const QByteArray &secret)
+QJsonObject envelope(const QByteArray &body, const QByteArray &signature)
 {
-    QByteArray id;
-    hkdf(secret, QStringLiteral("invite-id"), &id, 12);
-    return id;
+    return {{QStringLiteral("b"), toBase64Url(body)}, {QStringLiteral("s"), toBase64Url(signature)}};
 }
 
-QByteArray beBytes(quint64 value, int width)
+bool openEnvelope(const QJsonObject &json, QByteArray *body, QByteArray *signature, QJsonObject *parsed)
 {
-    QByteArray out(width, '\0');
-    for (int i = width - 1; i >= 0; --i) {
-        out[i] = char(value & 0xff);
-        value >>= 8;
-    }
-    return out;
+    return fromBase64Url(json.value(QStringLiteral("b")).toString(), body)
+           && fromBase64Url(json.value(QStringLiteral("s")).toString(), signature) && signature->size() == 64
+           && parseObject(*body, parsed);
 }
+
+QByteArray recordMessage(const QString &driveId, const QByteArray &body)
+{
+    return label("record\n") + driveId.toUtf8() + '\n' + body;
+}
+
+QByteArray rootMessage(const QByteArray &body) { return label("root\n") + body; }
+QByteArray keyringMessage(const QByteArray &body) { return label("keyring\n") + body; }
+QByteArray requestMessage(const QByteArray &body) { return label("request\n") + body; }
+
+QByteArray mailboxLabel(int mailbox) { return QByteArrayLiteral("keyring/") + QByteArray::number(mailbox); }
+QByteArray requestAad(int mailbox) { return label("request/") + QByteArray::number(mailbox); }
+QByteArray logAad(const QString &driveId, qint64 start)
+{
+    return label("log/") + driveId.toUtf8() + '/' + QByteArray::number(start);
+}
+QByteArray blobAad(const QString &driveId, const QString &blob, qint64 chunk, bool last, qint64 page)
+{
+    return label("blob/") + driveId.toUtf8() + '/' + blob.toUtf8() + '/' + QByteArray::number(chunk) + '/'
+           + (last ? "1" : "0") + '/' + QByteArray::number(page);
+}
+QByteArray rootAad(bool slotA) { return label(slotA ? "root/A" : "root/B"); }
+
+qint64 mailboxOffset(int mailbox) { return kMailboxPage * kPageBytes + qint64(mailbox) * kSlotBytes; }
+
+QByteArray inviteIdBytes(const QByteArray &secret) { return derive(secret, "invite-id", 12); }
 
 QJsonArray epochsJson(const QList<EpochKey> &epochs)
 {
@@ -139,44 +208,23 @@ QList<EpochKey> epochsFrom(const QJsonArray &array)
     return out;
 }
 
-Record recordFrom(const QJsonObject &json)
+qint64 chunkCount(qint64 size) { return std::max<qint64>(1, (paddedSize(size) + kChunkBytes - 1) / kChunkBytes); }
+
+qint64 runPages(const QList<Run> &runs)
 {
-    Record record;
-    record.device = json.value(QStringLiteral("d")).toString();
-    record.seq = qint64(json.value(QStringLiteral("s")).toDouble(-1));
-    record.lamport = qint64(json.value(QStringLiteral("l")).toDouble());
-    record.time = qint64(json.value(QStringLiteral("t")).toDouble());
-    record.action = json.value(QStringLiteral("a")).toString();
-    record.data = json.value(QStringLiteral("x")).toObject();
-    record.prev = json.value(QStringLiteral("p")).toString();
-    record.witness = json.value(QStringLiteral("w")).toObject();
-    record.signedJson = json;
-    return record;
+    qint64 total = 0;
+    for (const Run &run : runs)
+        total += run.count;
+    return total;
 }
 
-QString recordHash(const QString &driveId, const QJsonObject &json)
+QList<qint64> expand(const QList<Run> &runs)
 {
-    QByteArray signature;
-    fromBase64Url(json.value(QStringLiteral("sig")).toString(), &signature);
-    return toBase64Url(sha256(recordMessage(driveId, json) + signature));
-}
-
-bool readSmall(const QString &path, QByteArray *bytes)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly) || file.size() > kSmallObjectLimit)
-        return false;
-    *bytes = file.readAll();
-    return true;
-}
-
-qint64 chunkCount(qint64 padded) { return (padded + kChunk - 1) / kChunk; }
-
-QByteArray blobAad(const QString &driveId, const QString &object, qint64 index, bool last,
-                   const QByteArray &head)
-{
-    return label("blob/") + driveId.toUtf8() + '/' + object.toUtf8() + beBytes(quint64(index), 8)
-           + char(last ? 1 : 0) + head;
+    QList<qint64> pages;
+    for (const Run &run : runs)
+        for (qint64 i = 0; i < run.count; ++i)
+            pages.append(run.start + i);
+    return pages;
 }
 
 QString quoted(const QString &text) { return QStringLiteral("“%1”").arg(text); }
@@ -191,7 +239,46 @@ QString csvField(QString text)
     return text;
 }
 
+bool readSmall(const QString &path, QByteArray *bytes)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly) || file.size() > (qint64(1) << 24))
+        return false;
+    *bytes = file.readAll();
+    return true;
+}
+
 }  // namespace
+
+int mailboxForInvite(const QByteArray &secret)
+{
+    const QByteArray bytes = derive(secret, "mailbox", 2);
+    if (bytes.size() != 2)
+        return 0;
+    return int(((quint8(bytes.at(0)) << 8) | quint8(bytes.at(1))) % kMailboxSlots);
+}
+
+QList<Run> runsFromJson(const QJsonArray &array)
+{
+    QList<Run> runs;
+    for (const QJsonValue &value : array) {
+        const QJsonArray pair = value.toArray();
+        const qint64 start = qint64(pair.at(0).toDouble(-1));
+        const qint64 count = qint64(pair.at(1).toDouble(-1));
+        if (start < kDataPage || count <= 0)
+            return {};
+        runs.append({start, count});
+    }
+    return runs;
+}
+
+QJsonArray runsToJson(const QList<Run> &runs)
+{
+    QJsonArray out;
+    for (const Run &run : runs)
+        out.append(QJsonArray{double(run.start), double(run.count)});
+    return out;
+}
 
 const EpochKey *Membership::currentEpoch() const
 {
@@ -216,36 +303,38 @@ QJsonObject Membership::toJson() const
     QJsonObject headsJson;
     for (auto it = heads.cbegin(); it != heads.cend(); ++it)
         headsJson.insert(it.key(), QJsonArray{double(it->seq), it->hash});
-    return {{QStringLiteral("slot"), slot},
-            {QStringLiteral("folder"), folder},
+    return {{QStringLiteral("id"), id},
+            {QStringLiteral("container"), container},
             {QStringLiteral("label"), label},
             {QStringLiteral("drive"), driveId},
             {QStringLiteral("root"), rootDevice},
             {QStringLiteral("rootEd25519"), toBase64Url(rootEd25519)},
             {QStringLiteral("epochs"), epochsJson(epochs)},
-            {QStringLiteral("segment"), segment},
-            {QStringLiteral("segmentKey"), segmentKey},
+            {QStringLiteral("mailbox"), mailbox},
             {QStringLiteral("lastSeq"), double(lastSeq)},
             {QStringLiteral("lastHash"), lastHash},
             {QStringLiteral("lamport"), double(lamport)},
             {QStringLiteral("heads"), headsJson},
+            {QStringLiteral("rootGeneration"), double(rootGeneration)},
+            {QStringLiteral("rootHash"), rootHash},
+            {QStringLiteral("removed"), QJsonArray::fromStringList(removedDevices)},
+            {QStringLiteral("cachedRoot"), cachedRoot},
+            {QStringLiteral("keyringSeen"), keyringSeen},
             {QStringLiteral("joinSecret"), toBase64Url(joinSecret)},
-            {QStringLiteral("joinRequest"), joinRequest},
             {QStringLiteral("joinedAt"), double(joinedAt)}};
 }
 
 Membership Membership::fromJson(const QJsonObject &json)
 {
     Membership m;
-    m.slot = json.value(QStringLiteral("slot")).toString();
-    m.folder = json.value(QStringLiteral("folder")).toString();
+    m.id = json.value(QStringLiteral("id")).toString();
+    m.container = json.value(QStringLiteral("container")).toString();
     m.label = json.value(QStringLiteral("label")).toString();
     m.driveId = json.value(QStringLiteral("drive")).toString();
     m.rootDevice = json.value(QStringLiteral("root")).toString();
     fromBase64Url(json.value(QStringLiteral("rootEd25519")).toString(), &m.rootEd25519);
     m.epochs = epochsFrom(json.value(QStringLiteral("epochs")).toArray());
-    m.segment = json.value(QStringLiteral("segment")).toString();
-    m.segmentKey = json.value(QStringLiteral("segmentKey")).toString();
+    m.mailbox = json.value(QStringLiteral("mailbox")).toInt(-1);
     m.lastSeq = qint64(json.value(QStringLiteral("lastSeq")).toDouble(-1));
     m.lastHash = json.value(QStringLiteral("lastHash")).toString();
     m.lamport = qint64(json.value(QStringLiteral("lamport")).toDouble());
@@ -254,8 +343,13 @@ Membership Membership::fromJson(const QJsonObject &json)
         const QJsonArray pair = it.value().toArray();
         m.heads.insert(it.key(), Head{qint64(pair.at(0).toDouble(-1)), pair.at(1).toString()});
     }
+    m.rootGeneration = qint64(json.value(QStringLiteral("rootGeneration")).toDouble(-1));
+    m.rootHash = json.value(QStringLiteral("rootHash")).toString();
+    m.cachedRoot = json.value(QStringLiteral("cachedRoot")).toString();
+    m.keyringSeen = json.value(QStringLiteral("keyringSeen")).toBool();
+    for (const QJsonValue &value : json.value(QStringLiteral("removed")).toArray())
+        m.removedDevices.append(value.toString());
     fromBase64Url(json.value(QStringLiteral("joinSecret")).toString(), &m.joinSecret);
-    m.joinRequest = json.value(QStringLiteral("joinRequest")).toString();
     m.joinedAt = qint64(json.value(QStringLiteral("joinedAt")).toDouble());
     return m;
 }
@@ -425,26 +519,63 @@ bool LocalState::save(Failure *failure)
     return true;
 }
 
-Membership *LocalState::membership(const QString &slot)
+QJsonObject LocalState::exportDevice() const
+{
+    QJsonArray drivesJson;
+    for (const Membership &m : drives)
+        drivesJson.append(m.toJson());
+    return {{QStringLiteral("device"), deviceId},
+            {QStringLiteral("name"), deviceName},
+            {QStringLiteral("keys"), keys.toJson()},
+            {QStringLiteral("drives"), drivesJson}};
+}
+
+bool LocalState::importDevice(const QJsonObject &device, const QString &passphrase, Failure *failure)
+{
+    if (passphrase.size() < 10)
+        return fail(failure, "passphrase_too_short");
+    DeviceKeys loaded;
+    PublicKeys published;
+    if (!DeviceKeys::fromJson(device.value(QStringLiteral("keys")).toObject(), &loaded, failure)
+        || !securedrive::publicKeys(loaded, &published, failure))
+        return false;
+    const Kdf kdf = Kdf::fresh();
+    QByteArray key;
+    if (!stretch(passphrase, kdf, &key, failure))
+        return false;
+    keys = loaded;
+    publicKeys = published;
+    deviceId = device.value(QStringLiteral("device")).toString();
+    deviceName = device.value(QStringLiteral("name")).toString();
+    drives.clear();
+    for (const QJsonValue &value : device.value(QStringLiteral("drives")).toArray())
+        drives.append(Membership::fromJson(value.toObject()));
+    m_kdf = kdf;
+    m_key = key;
+    wipe(key);
+    return save(failure);
+}
+
+Membership *LocalState::membership(const QString &id)
 {
     for (Membership &m : drives)
-        if (m.slot == slot)
+        if (m.id == id)
             return &m;
     return nullptr;
 }
 
-const Membership *LocalState::membership(const QString &slot) const
+const Membership *LocalState::membership(const QString &id) const
 {
     for (const Membership &m : drives)
-        if (m.slot == slot)
+        if (m.id == id)
             return &m;
     return nullptr;
 }
 
-void LocalState::forget(const QString &slot)
+void LocalState::forget(const QString &id)
 {
     for (int i = 0; i < drives.size(); ++i) {
-        if (drives.at(i).slot != slot)
+        if (drives.at(i).id != id)
             continue;
         for (EpochKey &epoch : drives[i].epochs)
             wipe(epoch.key);
@@ -519,6 +650,8 @@ QString describeRecord(const Record &record, const std::function<QString(const Q
             return QStringLiteral("Opened %1 in another app").arg(name);
         return QStringLiteral("Opened %1").arg(name);
     }
+    if (a == QLatin1String("drive_rekeyed"))
+        return QStringLiteral("Replaced the drive key");
     if (a == QLatin1String("log_exported"))
         return QStringLiteral("Exported the activity log");
     if (a == QLatin1String("integrity_alert"))
@@ -547,9 +680,21 @@ QString issueText(const Issue &issue, const std::function<QString(const QString 
     if (c == QLatin1String("after_removal"))
         return QStringLiteral("%1 wrote records after it was removed; they were ignored.").arg(device);
     if (c == QLatin1String("own_records_missing"))
-        return QStringLiteral("Activity records this computer wrote are missing from the drive.");
+        return QStringLiteral("Activity records this device wrote are missing from the drive.");
+    if (c == QLatin1String("rolled_back") && issue.device.isEmpty())
+        return QStringLiteral("The drive's encrypted index went back to an older version (%1). The drive file may have been restored from an old copy.").arg(issue.detail);
+    if (c == QLatin1String("untrusted_root"))
+        return QStringLiteral("The drive's encrypted index was written by a device that is not an approved member (%1) and was not used.").arg(device);
+    if (c == QLatin1String("keyring_missing"))
+        return QStringLiteral("This device's key slot on the drive is gone: it was probably removed from the drive, or the drive file was damaged. It can no longer make changes.");
+    if (c == QLatin1String("keyring_restored"))
+        return QStringLiteral("This device's key slot on the drive was overwritten. The drive still opens with its keys, so it writes the slot again with its next change.");
+    if (c == QLatin1String("index_restored"))
+        return QStringLiteral("The drive's encrypted index was older than the one this device last saw, or was damaged. This device used its own verified copy; the next change saves it back to the drive.");
+    if (c == QLatin1String("drive_truncated"))
+        return QStringLiteral("The drive file is shorter than its index says. Part of it was cut off or lost.");
     if (c == QLatin1String("rolled_back"))
-        return QStringLiteral("The drive shows older activity from %1 than this computer saw before (%2). The drive may have been restored from an old copy.").arg(device, issue.detail);
+        return QStringLiteral("The drive shows older activity from %1 than this device saw before (%2). The drive may have been restored from an old copy.").arg(device, issue.detail);
     if (c == QLatin1String("missing_content"))
         return QStringLiteral("The encrypted content of %1 is missing from the drive.").arg(quoted(issue.detail));
     if (c == QLatin1String("content_damaged"))
@@ -557,154 +702,180 @@ QString issueText(const Issue &issue, const std::function<QString(const QString 
     if (c == QLatin1String("untrusted_keyring"))
         return QStringLiteral("A key file that no member device signed was ignored.");
     if (c == QLatin1String("unreadable_objects"))
-        return QStringLiteral("%1 encrypted objects on the drive could not be opened with this computer's keys.").arg(issue.detail);
+        return QStringLiteral("%1 encrypted parts of the drive could not be opened with this device's keys.").arg(issue.detail);
     if (c == QLatin1String("misplaced_object"))
         return QStringLiteral("An object from a different drive was found in this folder and ignored.");
     return c;
 }
 
-Drive::Drive(LocalState *state, QString slot) : m_state(state), m_slot(std::move(slot)) {}
 
-const Membership *Drive::membership() const { return m_state ? m_state->membership(m_slot) : nullptr; }
-
-Membership *Drive::mutableMembership() const { return m_state ? m_state->membership(m_slot) : nullptr; }
-
-QString Drive::objectPath(const QString &object) const
+struct Drive::Txn
 {
-    const Membership *m = membership();
-    return m ? QDir(m->folder).filePath(object) : QString();
-}
+    ContainerFile *file = nullptr;
+    QList<QPair<QString, QJsonObject>> records;
+    QSet<qint64> reserved;
+    QList<Run> freed;
+    QList<std::function<bool()>> afterCommit;
+    std::function<void()> renew;
+    bool bothRoots = false;
+};
 
-bool Drive::writeObject(const QString &object, const QByteArray &bytes, Failure *failure) const
+struct Drive::RootCandidate
 {
-    QSaveFile file(objectPath(object));
-    file.setDirectWriteFallback(false);
-    if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
-        return fail(failure, "drive_write_failed");
-    return true;
-}
+    qint64 generation = -1;
+    int keyNumber = -1;
+    QString keyId;
+    QJsonObject body;
+    QByteArray bodyBytes;
+    QByteArray signature;
+    QString hash;
+};
 
-bool Drive::removeObject(const QString &object) const
-{
-    if (!validObjectName(object))
-        return false;
-    return QFile::remove(objectPath(object));
-}
+Drive::Drive(LocalState *state, QString id) : m_state(state), m_id(std::move(id)) {}
 
-QString Drive::keyringLabel() const { return QStringLiteral("keyring"); }
+Drive::~Drive() = default;
 
-QByteArray Drive::folderFingerprint() const
+void Drive::setLeaseTiming(const LeaseTiming &timing) { g_timing = timing; }
+
+void Drive::setInviteLifetime(qint64 milliseconds) { g_inviteLifetime = milliseconds; }
+
+const Membership *Drive::membership() const { return m_state ? m_state->membership(m_id) : nullptr; }
+
+Membership *Drive::mutableMembership() const { return m_state ? m_state->membership(m_id) : nullptr; }
+
+QByteArray Drive::fingerprint() const
 {
     const Membership *m = membership();
     if (!m)
         return {};
+    ContainerFile file(m->container);
+    if (!file.openRead())
+        return {};
     QCryptographicHash hash(QCryptographicHash::Sha256);
-    const QFileInfoList entries = QDir(m->folder).entryInfoList(QDir::Files | QDir::Hidden | QDir::System,
-                                                                QDir::Name);
-    for (const QFileInfo &entry : entries) {
-        hash.addData(entry.fileName().toUtf8());
-        hash.addData(QByteArray::number(entry.size()));
-        hash.addData(QByteArray::number(entry.lastModified().toMSecsSinceEpoch()));
-    }
+    hash.addData(QByteArray::number(file.size()));
+    hash.addData(file.readAt(kRootAPage * kPageBytes, (kDataPage - kRootAPage) * kPageBytes));
     return hash.result();
 }
 
-bool Drive::create(LocalState *state, const QString &folder, const QString &label, QString *slot,
+bool Drive::create(LocalState *state, const QString &path, const QString &label, QString *id,
                    Failure *failure)
 {
     if (!state || !state->isUnlocked())
         return fail(failure, "locked");
-    const QFileInfo info(folder);
-    if (!info.isDir() || !info.isWritable())
+    const QFileInfo info(path);
+    if (info.exists())
+        return fail(failure, "container_exists");
+    if (!QFileInfo(info.absolutePath()).isWritable())
         return fail(failure, "folder_unavailable");
-    const QString path = info.canonicalFilePath();
-    for (const Membership &m : state->drives)
-        if (QFileInfo(m.folder).canonicalFilePath() == path)
+    for (const Membership &m : std::as_const(state->drives))
+        if (QFileInfo(m.container).absoluteFilePath() == info.absoluteFilePath())
             return fail(failure, "folder_already_connected");
-    const QStringList existing = QDir(path).entryList(QDir::Files | QDir::Hidden);
-    for (const QString &name : existing)
-        if (validObjectName(name))
-            return fail(failure, "folder_in_use");
+    {
+        QFile file(info.absoluteFilePath());
+        if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+            return fail(failure, "folder_unavailable");
+        file.close();
+        ContainerFile container(info.absoluteFilePath());
+        if (!container.openWrite() || !container.appendRandom(kDataPage + kInitialDataPages)) {
+            QFile::remove(info.absoluteFilePath());
+            return fail(failure, "drive_write_failed");
+        }
+    }
     Membership m;
-    m.slot = randomId();
-    m.folder = path;
-    m.label = label.trimmed().isEmpty() ? info.fileName() : label.trimmed().left(80);
+    m.id = randomId();
+    m.container = info.absoluteFilePath();
+    m.label = label.trimmed().isEmpty() ? info.completeBaseName() : label.trimmed().left(80);
     m.driveId = randomId();
     m.rootDevice = state->deviceId;
     m.rootEd25519 = state->publicKeys.ed25519;
+    m.mailbox = int(quint8(randomBytes(1).at(0))) % kMailboxSlots;
     EpochKey first;
     first.key = randomBytes(kKeyBytes);
     first.id = epochIdFor(first.key);
     m.epochs.append(first);
     m.joinedAt = now();
     state->drives.append(m);
-    Drive drive(state, m.slot);
+    Drive drive(state, m.id);
     const QJsonObject device{{QStringLiteral("id"), state->deviceId},
                              {QStringLiteral("name"), state->deviceName},
                              {QStringLiteral("keys"), state->publicKeys.toJson()}};
-    if (!drive.append({{QStringLiteral("drive_created"),
-                        {{QStringLiteral("label"), m.label}, {QStringLiteral("device"), device}}}},
-                      failure)) {
-        state->forget(m.slot);
+    const bool ok = drive.transact(
+        [&](Txn &txn, Failure *) {
+            txn.records.append({QStringLiteral("drive_created"),
+                                {{QStringLiteral("label"), m.label},
+                                 {QStringLiteral("device"), device},
+                                 {QStringLiteral("mailbox"), m.mailbox}}});
+            DeviceInfo self;
+            self.id = state->deviceId;
+            self.keys = state->publicKeys;
+            Failure keyringFailure;
+            const QByteArray unit = drive.keyringUnit(self, m.mailbox, {}, {}, &keyringFailure);
+            if (unit.isEmpty())
+                return false;
+            ContainerFile *file = txn.file;
+            const int mailbox = m.mailbox;
+            txn.afterCommit.append([file, mailbox, unit] {
+                return file->writeAt(mailboxOffset(mailbox), unit) && file->sync();
+            });
+            return true;
+        },
+        failure);
+    if (!ok) {
+        state->forget(m.id);
+        QFile::remove(info.absoluteFilePath());
         return false;
     }
-    *slot = m.slot;
+    *id = m.id;
     return true;
 }
 
-bool Drive::requestJoin(LocalState *state, const QString &folder, const QString &code,
-                        QString *slot, QString *safety, Failure *failure)
+bool Drive::requestJoin(LocalState *state, const QString &path, const QString &code, QString *id,
+                        QString *safety, Failure *failure)
 {
     if (!state || !state->isUnlocked())
         return fail(failure, "locked");
     QByteArray secret;
     if (!parseInviteCode(code, &secret))
         return fail(failure, "invalid_invite_code");
-    const QFileInfo info(folder);
-    if (!info.isDir() || !info.isWritable())
-        return fail(failure, "folder_unavailable");
-    const QString path = info.canonicalFilePath();
-    for (const Membership &m : state->drives)
-        if (QFileInfo(m.folder).canonicalFilePath() == path)
+    const QFileInfo info(path);
+    for (const Membership &m : std::as_const(state->drives))
+        if (QFileInfo(m.container).absoluteFilePath() == info.absoluteFilePath())
             return fail(failure, "folder_already_connected");
-    QByteArray requestKey;
-    if (!hkdf(secret, QStringLiteral("request"), &requestKey))
-        return fail(failure, "encryption_failed");
+    ContainerFile container(info.absoluteFilePath());
+    if (!container.openWrite())
+        return fail(failure, "container_unavailable");
+    if (container.pages() < kDataPage)
+        return fail(failure, "not_a_drive");
     const QByteArray inviteId = inviteIdBytes(secret);
-    QJsonObject payload{{QStringLiteral("suite"), QLatin1String(kSuite)},
-                        {QStringLiteral("invite"), toBase64Url(inviteId)},
-                        {QStringLiteral("device"), state->deviceId},
-                        {QStringLiteral("name"), state->deviceName},
-                        {QStringLiteral("keys"), state->publicKeys.toJson()},
-                        {QStringLiteral("time"), double(now())}};
+    const int mailbox = mailboxForInvite(secret);
+    const QByteArray body = compact({{QStringLiteral("suite"), QLatin1String(kSuite)},
+                                     {QStringLiteral("invite"), toBase64Url(inviteId)},
+                                     {QStringLiteral("device"), state->deviceId},
+                                     {QStringLiteral("name"), state->deviceName},
+                                     {QStringLiteral("keys"), state->publicKeys.toJson()},
+                                     {QStringLiteral("time"), double(now())}});
     QByteArray signature;
-    if (!sign(state->keys.ed25519, requestMessage(payload), &signature))
+    if (!sign(state->keys.ed25519, requestMessage(body), &signature))
         return fail(failure, "signing_failed");
-    payload.insert(QStringLiteral("sig"), toBase64Url(signature));
-    const QByteArray head = header(kRequest);
-    const QByteArray nonce = randomBytes(12);
-    QByteArray sealed;
-    if (!aeadSeal(requestKey, nonce, head + label("request"), compact(payload), &sealed))
-        return fail(failure, "encryption_failed");
+    QByteArray requestKey = derive(secret, "request");
+    const QByteArray unit = sealUnit(requestKey, requestAad(mailbox), compact(envelope(body, signature)), kSlotBytes);
     wipe(requestKey);
+    if (unit.isEmpty())
+        return fail(failure, "encryption_failed");
+    if (!container.writeAt(mailboxOffset(mailbox), unit) || !container.sync())
+        return fail(failure, "drive_write_failed");
     Membership m;
-    m.slot = randomId();
-    m.folder = path;
-    m.label = info.fileName();
+    m.id = randomId();
+    m.container = info.absoluteFilePath();
+    m.label = info.completeBaseName();
     m.joinSecret = secret;
-    m.joinRequest = newObjectName();
+    m.mailbox = mailbox;
     state->drives.append(m);
-    Drive drive(state, m.slot);
-    if (!drive.writeObject(m.joinRequest, head + nonce + sealed, failure)) {
-        state->forget(m.slot);
-        return false;
-    }
     if (!state->save(failure)) {
-        drive.removeObject(m.joinRequest);
-        state->forget(m.slot);
+        state->forget(m.id);
         return false;
     }
-    *slot = m.slot;
+    *id = m.id;
     if (safety)
         *safety = safetyNumber(inviteId, state->publicKeys);
     return true;
@@ -715,8 +886,18 @@ bool Drive::cancelJoin(Failure *failure)
     const Membership *m = membership();
     if (!m || !m->isPending())
         return fail(failure, "not_pending");
-    removeObject(m->joinRequest);
-    m_state->forget(m_slot);
+    ContainerFile container(m->container);
+    if (container.openWrite()) {
+        QByteArray requestKey = derive(m->joinSecret, "request");
+        QByteArray plain;
+        if (openUnit(requestKey, requestAad(m->mailbox), container.readAt(mailboxOffset(m->mailbox), kSlotBytes),
+                     &plain)) {
+            container.writeAt(mailboxOffset(m->mailbox), randomBytes(int(kSlotBytes)));
+            container.sync();
+        }
+        wipe(requestKey);
+    }
+    m_state->forget(m_id);
     return m_state->save(failure);
 }
 
@@ -728,205 +909,247 @@ QString Drive::joinSafetyNumber() const
     return safetyNumber(inviteIdBytes(m->joinSecret), m_state->publicKeys);
 }
 
-bool Drive::tryAdopt(const QHash<QString, QByteArray> &keyrings, Failure *failure)
+bool Drive::scan(Failure *failure)
 {
-    Membership *m = mutableMembership();
-    QByteArray approveKey;
-    if (!hkdf(m->joinSecret, QStringLiteral("approve"), &approveKey))
+    const Membership *m = membership();
+    if (!m)
+        return fail(failure, "unknown_drive");
+    ContainerFile file(m->container);
+    if (!file.openRead())
+        return fail(failure, "container_unavailable");
+    const QByteArray print = fingerprint();
+    if (!load(file, failure))
         return false;
-    const QString inviteId = toBase64Url(inviteIdBytes(m->joinSecret));
-    for (auto it = keyrings.cbegin(); it != keyrings.cend(); ++it) {
-        QByteArray plain;
-        QJsonObject payload;
-        if (!openFromDevice(m_state->keys, keyringLabel().toUtf8(), it.value().mid(6), &plain, nullptr)
-            || !parseObject(plain, &payload))
-            continue;
-        wipe(plain);
-        if (payload.value(QStringLiteral("device")).toString() != m_state->deviceId
-            || payload.value(QStringLiteral("invite")).toString() != inviteId)
-            continue;
-        QJsonObject unsignedPayload = payload;
-        unsignedPayload.remove(QStringLiteral("sig"));
-        unsignedPayload.remove(QStringLiteral("mac"));
-        QByteArray mac, signature;
-        PublicKeys issuer;
-        if (!fromBase64Url(payload.value(QStringLiteral("mac")).toString(), &mac)
-            || !constantTimeEqual(mac, hmac(approveKey, compact(unsignedPayload)))
-            || !PublicKeys::fromJson(payload.value(QStringLiteral("issuerKeys")).toObject(), &issuer)
-            || !fromBase64Url(payload.value(QStringLiteral("sig")).toString(), &signature)
-            || !verify(issuer.ed25519, keyringMessage(payload), signature))
-            continue;
-        const QJsonObject root = payload.value(QStringLiteral("root")).toObject();
-        QByteArray rootEd;
-        const QList<EpochKey> epochs = epochsFrom(payload.value(QStringLiteral("epochs")).toArray());
-        if (epochs.isEmpty()
-            || !fromBase64Url(root.value(QStringLiteral("ed25519")).toString(), &rootEd)
-            || rootEd.size() != 32)
-            continue;
-        m->driveId = payload.value(QStringLiteral("drive")).toString();
-        m->rootDevice = root.value(QStringLiteral("device")).toString();
-        m->rootEd25519 = rootEd;
-        m->epochs = epochs;
-        wipe(m->joinSecret);
-        m->joinSecret.clear();
-        m->joinRequest.clear();
-        m->joinedAt = now();
-        wipe(approveKey);
-        return m_state->save(failure);
+    m_fingerprint = print;
+    if (!m_opened && membership() && membership()->isMember() && !m_removed) {
+        m_opened = true;
+        return note(QStringLiteral("drive_opened"), {}, failure);
     }
-    wipe(approveKey);
-    return false;
+    return true;
 }
 
-bool Drive::scan(Failure *failure)
+bool Drive::loadPending(ContainerFile &file, Failure *failure)
+{
+    Membership *m = mutableMembership();
+    const QByteArray slot = file.readAt(mailboxOffset(m->mailbox), kSlotBytes);
+    QByteArray approveKey = derive(m->joinSecret, "approve");
+    QByteArray requestKey = derive(m->joinSecret, "request");
+    const QString inviteId = toBase64Url(inviteIdBytes(m->joinSecret));
+    QByteArray plain;
+    bool adopted = false;
+    if (openFromDevice(m_state->keys, mailboxLabel(m->mailbox), slot, &plain, nullptr)) {
+        QJsonObject outer, body;
+        QByteArray bodyBytes, signature, mac;
+        PublicKeys issuer;
+        QByteArray rootEd;
+        if (parseObject(stripPadding(plain), &outer) && openEnvelope(outer, &bodyBytes, &signature, &body)
+            && fromBase64Url(outer.value(QStringLiteral("m")).toString(), &mac)
+            && constantTimeEqual(mac, hmac(approveKey, bodyBytes))
+            && body.value(QStringLiteral("device")).toString() == m_state->deviceId
+            && body.value(QStringLiteral("invite")).toString() == inviteId
+            && PublicKeys::fromJson(body.value(QStringLiteral("issuerKeys")).toObject(), &issuer)
+            && verify(issuer.ed25519, keyringMessage(bodyBytes), signature)
+            && fromBase64Url(body.value(QStringLiteral("root")).toObject().value(QStringLiteral("ed25519")).toString(),
+                             &rootEd)
+            && rootEd.size() == 32) {
+            const QList<EpochKey> epochs = epochsFrom(body.value(QStringLiteral("epochs")).toArray());
+            if (!epochs.isEmpty()) {
+                m->driveId = body.value(QStringLiteral("drive")).toString();
+                m->rootDevice = body.value(QStringLiteral("root")).toObject().value(QStringLiteral("device")).toString();
+                m->rootEd25519 = rootEd;
+                m->epochs = epochs;
+                wipe(m->joinSecret);
+                m->joinSecret.clear();
+                m->joinedAt = now();
+                adopted = true;
+            }
+        }
+        wipe(plain);
+    }
+    wipe(approveKey);
+    if (adopted) {
+        wipe(requestKey);
+        if (!m_state->save(failure))
+            return false;
+        return load(file, failure);
+    }
+    QByteArray request;
+    m_joinRequestMissing = !openUnit(requestKey, requestAad(m->mailbox), slot, &request);
+    wipe(requestKey);
+    m_scanned = true;
+    return true;
+}
+
+bool Drive::load(ContainerFile &file, Failure *failure)
 {
     Membership *m = mutableMembership();
     if (!m)
         return fail(failure, "unknown_drive");
-    const QDir dir(m->folder);
-    if (!dir.exists())
-        return fail(failure, "folder_unavailable");
-    const QByteArray fingerprint = folderFingerprint();
     m_issues.clear();
     m_requests.clear();
-    m_blobs.clear();
-    m_objectCount = 0;
-    m_foreignCount = 0;
     m_joinRequestMissing = false;
     m_removed = false;
-
-    QHash<QString, QByteArray> keyrings, requests, logs;
-    const QFileInfoList entries = dir.entryInfoList(QDir::Files | QDir::Hidden | QDir::System,
-                                                    QDir::Name);
-    for (const QFileInfo &entry : entries) {
-        const QString name = entry.fileName();
-        if (!validObjectName(name)) {
-            if (!name.startsWith(QLatin1Char('.')) && !partialObjectName(name))
-                ++m_foreignCount;
-            continue;
-        }
-        ++m_objectCount;
-        QFile file(entry.filePath());
-        if (!file.open(QIODevice::ReadOnly))
-            continue;
-        const QByteArray head = file.peek(6);
-        if (head.size() < 6 || !head.startsWith("FMSD") || head.at(4) != 1)
-            continue;
-        const char kind = head.at(5);
-        if (kind == kBlob) {
-            m_blobs.insert(name);
-            continue;
-        }
-        if (file.size() > kSmallObjectLimit)
-            continue;
-        const QByteArray bytes = file.readAll();
-        if (kind == kKeyring)
-            keyrings.insert(name, bytes);
-        else if (kind == kRequest)
-            requests.insert(name, bytes);
-        else if (kind == kLog)
-            logs.insert(name, bytes);
-    }
-
-    if (m->isPending()) {
-        Failure adoptFailure;
-        if (!tryAdopt(keyrings, &adoptFailure)) {
-            if (adoptFailure.failed()) {
-                if (failure)
-                    *failure = adoptFailure;
-                return false;
-            }
-            m_joinRequestMissing = !requests.contains(m->joinRequest);
-            m_scanned = true;
-            m_fingerprint = fingerprint;
-            return true;
-        }
-        m = mutableMembership();
-    }
+    m_totalPages = file.pages();
+    if (m_totalPages < kDataPage)
+        return fail(failure, "not_a_drive");
+    if (m->isPending())
+        return loadPending(file, failure);
     if (!m->isMember())
         return fail(failure, "unknown_drive");
     const QJsonObject stateBefore = m->toJson();
+    const QString me = m_state->deviceId;
 
-    struct KeyringPayload
+    struct Ring
     {
-        QString object;
-        QJsonObject payload;
+        QJsonObject body;
+        QByteArray bodyBytes;
+        QByteArray signature;
         QList<EpochKey> epochs;
     };
-    QList<KeyringPayload> mine;
-    for (auto it = keyrings.cbegin(); it != keyrings.cend(); ++it) {
+    std::optional<Ring> ring;
+    if (m->mailbox >= 0) {
         QByteArray plain;
-        QJsonObject payload;
-        if (!openFromDevice(m_state->keys, keyringLabel().toUtf8(), it.value().mid(6), &plain, nullptr)
-            || !parseObject(plain, &payload))
-            continue;
-        wipe(plain);
-        if (payload.value(QStringLiteral("drive")).toString() != m->driveId
-            || payload.value(QStringLiteral("device")).toString() != m_state->deviceId)
-            continue;
-        mine.append({it.key(), payload, epochsFrom(payload.value(QStringLiteral("epochs")).toArray())});
+        if (openFromDevice(m_state->keys, mailboxLabel(m->mailbox), file.readAt(mailboxOffset(m->mailbox), kSlotBytes),
+                           &plain, nullptr)) {
+            QJsonObject outer;
+            Ring candidate;
+            if (parseObject(stripPadding(plain), &outer)
+                && openEnvelope(outer, &candidate.bodyBytes, &candidate.signature, &candidate.body)
+                && candidate.body.value(QStringLiteral("drive")).toString() == m->driveId
+                && candidate.body.value(QStringLiteral("device")).toString() == me) {
+                candidate.epochs = epochsFrom(candidate.body.value(QStringLiteral("epochs")).toArray());
+                ring = candidate;
+            }
+            wipe(plain);
+        }
     }
 
+    m_rootABytes = file.readAt(kRootAPage * kPageBytes, kRootPages * kPageBytes);
+    m_rootBBytes = file.readAt(kRootBPage * kPageBytes, kRootPages * kPageBytes);
+
+    QMap<qint64, Record> emptyChain;
     QMap<QString, QMap<qint64, Record>> chains;
-    QSet<QString> rejectedKeys;
+    QList<Record> accepted;
+    QSet<QString> usedKeys;
     int unreadable = 0;
-    QMap<QString, ParsedSegment> segments;
-    const auto decode = [&](const QMap<QString, QByteArray> &keys) {
+    bool restored = false;
+    std::optional<RootCandidate> chosen;
+
+    const auto attempt = [&](const QList<EpochKey> &keys) {
+        m_issues.clear();
         chains.clear();
-        segments.clear();
+        accepted.clear();
+        usedKeys.clear();
         unreadable = 0;
-        for (auto it = logs.cbegin(); it != logs.cend(); ++it) {
-            const QByteArray &bytes = it.value();
-            if (bytes.size() < 6 + 8 + 12 + 16) {
-                ++unreadable;
-                continue;
-            }
-            const QString keyId = QString::fromLatin1(bytes.mid(6, 8).toHex());
-            const QByteArray epochKey = keys.value(keyId);
-            QByteArray logKey, plain;
-            QJsonObject payload;
-            if (epochKey.isEmpty() || !hkdf(epochKey, QStringLiteral("log"), &logKey)
-                || !aeadOpen(logKey, bytes.mid(14, 12), bytes.left(14) + m->driveId.toUtf8() + it.key().toUtf8(),
-                             bytes.mid(26), &plain)
-                || !parseObject(plain, &payload)) {
-                ++unreadable;
-                continue;
-            }
-            if (payload.value(QStringLiteral("drive")).toString() != m->driveId) {
-                addIssue(QStringLiteral("misplaced_object"), QString(), it.key());
-                continue;
-            }
-            ParsedSegment segment{it.key(), payload.value(QStringLiteral("device")).toString(), keyId,
-                                  payload.value(QStringLiteral("records")).toArray()};
-            segments.insert(it.key(), segment);
-            for (const QJsonValue &value : segment.records) {
-                Record record = recordFrom(value.toObject());
-                if (record.device != segment.device || record.seq < 0)
+        chosen.reset();
+        for (const bool slotA : {true, false}) {
+            const QByteArray &bytes = slotA ? m_rootABytes : m_rootBBytes;
+            for (const EpochKey &epoch : keys) {
+                QByteArray plain;
+                if (!openUnit(derive(epoch.key, "root"), rootAad(slotA), bytes, &plain))
                     continue;
-                record.hash = recordHash(m->driveId, record.signedJson);
-                QMap<qint64, Record> &chain = chains[record.device];
-                const auto found = chain.constFind(record.seq);
-                if (found != chain.constEnd()) {
-                    if (found->hash != record.hash)
-                        addIssue(QStringLiteral("log_forked"), record.device, QString());
-                    continue;
+                QJsonObject outer;
+                RootCandidate candidate;
+                if (parseObject(stripPadding(plain), &outer)
+                    && openEnvelope(outer, &candidate.bodyBytes, &candidate.signature, &candidate.body)
+                    && candidate.body.value(QStringLiteral("drive")).toString() == m->driveId
+                    && candidate.body.value(QStringLiteral("v")).toInt() == 2) {
+                    candidate.generation = qint64(candidate.body.value(QStringLiteral("gen")).toDouble(-1));
+                    candidate.keyNumber = epoch.number;
+                    candidate.keyId = epoch.id;
+                    candidate.hash = toBase64Url(sha256(rootMessage(candidate.bodyBytes) + candidate.signature));
+                    if (m->removedDevices.contains(candidate.body.value(QStringLiteral("writer")).toString())) {
+                        addIssue(QStringLiteral("untrusted_root"), candidate.body.value(QStringLiteral("writer")).toString(),
+                                 QString());
+                        break;
+                    }
+                    if (!chosen || candidate.keyNumber > chosen->keyNumber
+                        || (candidate.keyNumber == chosen->keyNumber && candidate.generation > chosen->generation))
+                        chosen = candidate;
                 }
-                chain.insert(record.seq, record);
+                break;
             }
         }
-    };
+        restored = false;
+        QByteArray cachedBytes;
+        QJsonObject cachedOuter;
+        RootCandidate cached;
+        if (!m->cachedRoot.isEmpty() && fromBase64Url(m->cachedRoot, &cachedBytes)
+            && parseObject(cachedBytes, &cachedOuter)
+            && openEnvelope(cachedOuter, &cached.bodyBytes, &cached.signature, &cached.body)
+            && cached.body.value(QStringLiteral("drive")).toString() == m->driveId) {
+            cached.generation = qint64(cached.body.value(QStringLiteral("gen")).toDouble(-1));
+            cached.hash = toBase64Url(sha256(rootMessage(cached.bodyBytes) + cached.signature));
+            if (cached.hash == m->rootHash && (!chosen || cached.generation > chosen->generation)) {
+                chosen = cached;
+                restored = true;
+                addIssue(QStringLiteral("index_restored"), QString(), QString());
+            }
+        }
+        m_logs.clear();
+        m_myLastRecords = QJsonArray();
+        if (!chosen)
+            return;
+        usedKeys.insert(chosen->keyId);
+        const QJsonObject logs = chosen->body.value(QStringLiteral("logs")).toObject();
+        for (auto it = logs.constBegin(); it != logs.constEnd(); ++it) {
+            const QString device = it.key();
+            const QList<Run> runs = runsFromJson(it.value().toArray());
+            m_logs.insert(device, runs);
+            for (int r = 0; r < runs.size(); ++r) {
+                const Run &run = runs.at(r);
+                if (run.start + run.count > m_totalPages) {
+                    ++unreadable;
+                    continue;
+                }
+                const QByteArray bytes = file.readAt(run.start * kPageBytes, run.count * kPageBytes);
+                QJsonObject payload;
+                bool opened = false;
+                for (const EpochKey &epoch : keys) {
+                    QByteArray plain;
+                    if (!openUnit(derive(epoch.key, "log"), logAad(m->driveId, run.start), bytes, &plain))
+                        continue;
+                    opened = parseObject(stripPadding(plain), &payload);
+                    usedKeys.insert(epoch.id);
+                    break;
+                }
+                if (!opened || payload.value(QStringLiteral("device")).toString() != device) {
+                    ++unreadable;
+                    continue;
+                }
+                const QJsonArray stored = payload.value(QStringLiteral("records")).toArray();
+                if (device == me && r == runs.size() - 1)
+                    m_myLastRecords = stored;
+                for (const QJsonValue &value : stored) {
+                    QByteArray bodyBytes, signature;
+                    QJsonObject body;
+                    if (!openEnvelope(value.toObject(), &bodyBytes, &signature, &body))
+                        continue;
+                    Record record;
+                    record.device = body.value(QStringLiteral("d")).toString();
+                    record.seq = qint64(body.value(QStringLiteral("s")).toDouble(-1));
+                    record.lamport = qint64(body.value(QStringLiteral("l")).toDouble());
+                    record.time = qint64(body.value(QStringLiteral("t")).toDouble());
+                    record.action = body.value(QStringLiteral("a")).toString();
+                    record.data = body.value(QStringLiteral("x")).toObject();
+                    record.prev = body.value(QStringLiteral("p")).toString();
+                    record.witness = body.value(QStringLiteral("w")).toObject();
+                    record.stored = value.toObject();
+                    record.hash = toBase64Url(sha256(recordMessage(m->driveId, bodyBytes) + signature));
+                    if (record.device != device || record.seq < 0)
+                        continue;
+                    QMap<qint64, Record> &chain = chains[device];
+                    const auto found = chain.constFind(record.seq);
+                    if (found != chain.constEnd()) {
+                        if (found->hash != record.hash)
+                            addIssue(QStringLiteral("log_forked"), device, QString());
+                        continue;
+                    }
+                    chain.insert(record.seq, record);
+                }
+            }
+        }
 
-    QMap<QString, QByteArray> keyMap;
-    for (const EpochKey &epoch : m->epochs)
-        keyMap.insert(epoch.id, epoch.key);
-    for (const KeyringPayload &ring : mine)
-        for (const EpochKey &epoch : ring.epochs)
-            if (!keyMap.contains(epoch.id))
-                keyMap.insert(epoch.id, epoch.key);
-
-    QList<Record> accepted;
-    const auto verifyChains = [&]() {
-        accepted.clear();
         QMap<QString, QByteArray> trusted;
         trusted.insert(m->rootDevice, m->rootEd25519);
         QSet<QString> verified;
@@ -942,24 +1165,24 @@ bool Drive::scan(Failure *failure)
                 const QByteArray ed = trusted.value(device);
                 qint64 expected = 0;
                 QString lastHash;
-                const QMap<qint64, Record> chain = chains.value(device);
+                const auto chainIt = chains.constFind(device);
+                const QMap<qint64, Record> &chain = chainIt == chains.constEnd() ? emptyChain : chainIt.value();
                 for (auto it = chain.cbegin(); it != chain.cend(); ++it) {
                     const Record &record = it.value();
-                    QByteArray signature;
-                    if (!fromBase64Url(record.signedJson.value(QStringLiteral("sig")).toString(), &signature)
-                        || !verify(ed, recordMessage(m->driveId, record.signedJson), signature)) {
+                    QByteArray bodyBytes, signature;
+                    QJsonObject body;
+                    if (!openEnvelope(record.stored, &bodyBytes, &signature, &body)
+                        || !verify(ed, recordMessage(m->driveId, bodyBytes), signature)) {
                         addIssue(QStringLiteral("bad_signature"), device, QString());
                         continue;
                     }
-                    if (record.seq != expected) {
+                    if (record.seq != expected)
                         addIssue(QStringLiteral("records_missing"), device,
                                  record.seq - expected == 1
                                      ? QStringLiteral("record %1").arg(expected + 1)
                                      : QStringLiteral("records %1 to %2").arg(expected + 1).arg(record.seq));
-                    } else if (record.prev != lastHash) {
-                        addIssue(QStringLiteral("chain_broken"), device,
-                                 QStringLiteral("record %1").arg(record.seq + 1));
-                    }
+                    else if (record.prev != lastHash)
+                        addIssue(QStringLiteral("chain_broken"), device, QStringLiteral("record %1").arg(record.seq + 1));
                     expected = record.seq + 1;
                     lastHash = record.hash;
                     accepted.append(record);
@@ -976,63 +1199,94 @@ bool Drive::scan(Failure *failure)
         for (auto it = chains.cbegin(); it != chains.cend(); ++it)
             if (!trusted.contains(it.key()))
                 addIssue(QStringLiteral("unknown_device"), it.key(), QString());
+        fold(accepted);
     };
 
-    decode(keyMap);
-    verifyChains();
-    fold(accepted);
-
-    bool dropped = false;
-    for (const KeyringPayload &ring : mine) {
-        const QString issuer = ring.payload.value(QStringLiteral("issuer")).toString();
-        const auto device = m_devices.constFind(issuer);
-        QByteArray signature;
-        const bool valid = device != m_devices.constEnd()
-                           && fromBase64Url(ring.payload.value(QStringLiteral("sig")).toString(), &signature)
-                           && verify(device->keys.ed25519, keyringMessage(ring.payload), signature);
-        for (const EpochKey &epoch : ring.epochs) {
-            if (m->epoch(epoch.id))
-                continue;
-            if (valid) {
-                m->epochs.append(epoch);
-            } else {
-                rejectedKeys.insert(epoch.id);
-                dropped = true;
+    QList<EpochKey> keys = m->epochs;
+    QSet<QString> ringKeys;
+    if (ring)
+        for (const EpochKey &epoch : ring->epochs)
+            if (!m->epoch(epoch.id)) {
+                keys.append(epoch);
+                ringKeys.insert(epoch.id);
             }
+    std::sort(keys.begin(), keys.end(), [](const EpochKey &a, const EpochKey &b) { return a.number > b.number; });
+    attempt(keys);
+
+    bool ringValid = false;
+    if (ring) {
+        const QString issuer = ring->body.value(QStringLiteral("issuer")).toString();
+        const auto device = m_devices.constFind(issuer);
+        ringValid = device != m_devices.constEnd() && !device->removed
+                    && verify(device->keys.ed25519, keyringMessage(ring->bodyBytes), ring->signature);
+        if (!ringValid && !ringKeys.isEmpty()) {
+            bool usedRingKey = false;
+            for (const QString &id : std::as_const(ringKeys))
+                usedRingKey = usedRingKey || usedKeys.contains(id);
+            keys.erase(std::remove_if(keys.begin(), keys.end(),
+                                      [&](const EpochKey &e) { return ringKeys.contains(e.id); }),
+                       keys.end());
+            if (usedRingKey)
+                attempt(keys);
+            addIssue(QStringLiteral("untrusted_keyring"), issuer, QString());
         }
-        if (!valid)
-            addIssue(QStringLiteral("untrusted_keyring"), issuer, ring.object);
     }
-    if (dropped) {
-        for (const QString &id : rejectedKeys)
-            keyMap.remove(id);
-        decode(keyMap);
-        verifyChains();
-        fold(accepted);
+    if (ringValid) {
+        m->keyringSeen = true;
+        for (const EpochKey &epoch : ring->epochs)
+            if (!m->epoch(epoch.id))
+                m->epochs.append(epoch);
+    }
+    const bool slotEmpty = !ring && m->keyringSeen;
+    const bool keyringGone = slotEmpty && (!chosen || restored);
+    m_repairKeyring = slotEmpty && !keyringGone;
+    if (keyringGone)
+        addIssue(QStringLiteral("keyring_missing"), me, QString());
+    else if (m_repairKeyring)
+        addIssue(QStringLiteral("keyring_restored"), me, QString());
+
+    if (!chosen) {
+        const bool fresh = m->rootGeneration < 0 && m->rootDevice == me && m->lastSeq < 0;
+        if (!fresh)
+            return fail(failure, "drive_unreadable");
+        m_rootGeneration = -1;
+        m_rootHash.clear();
+    } else {
+        m_rootGeneration = chosen->generation;
+        m_rootHash = chosen->hash;
+        const QString writer = chosen->body.value(QStringLiteral("writer")).toString();
+        const auto device = m_devices.constFind(writer);
+        if (device == m_devices.constEnd() || device->removed
+            || !verify(device->keys.ed25519, rootMessage(chosen->bodyBytes), chosen->signature))
+            addIssue(QStringLiteral("untrusted_root"), writer, QString());
+        if (qint64(chosen->body.value(QStringLiteral("pages")).toDouble()) > m_totalPages)
+            addIssue(QStringLiteral("drive_truncated"), QString(), QString());
+        if (chosen->generation < m->rootGeneration)
+            addIssue(QStringLiteral("rolled_back"), QString(),
+                     QStringLiteral("index %1, this device saw %2").arg(chosen->generation).arg(m->rootGeneration));
+        else if (chosen->generation == m->rootGeneration && chosen->hash != m->rootHash)
+            addIssue(QStringLiteral("log_forked"), QString(), QString());
+        if (chosen->generation > m->rootGeneration) {
+            m->rootGeneration = chosen->generation;
+            m->rootHash = chosen->hash;
+            m->cachedRoot = toBase64Url(compact(envelope(chosen->bodyBytes, chosen->signature)));
+        }
+        Q_UNUSED(restored);
     }
     if (unreadable > 0)
         addIssue(QStringLiteral("unreadable_objects"), QString(), QString::number(unreadable));
 
     checkWitnesses(chains);
-
-    const QMap<qint64, Record> own = chains.value(m_state->deviceId);
+    const QMap<qint64, Record> own = chains.value(me);
     const qint64 ownMax = own.isEmpty() ? -1 : own.lastKey();
     if (ownMax < m->lastSeq)
-        addIssue(QStringLiteral("own_records_missing"), m_state->deviceId, QString());
+        addIssue(QStringLiteral("own_records_missing"), me, QString());
     if (ownMax > m->lastSeq && m->lastSeq >= 0)
-        addIssue(QStringLiteral("log_forked"), m_state->deviceId, QString());
+        addIssue(QStringLiteral("log_forked"), me, QString());
     if (m->lastSeq < 0 && ownMax >= 0) {
         m->lastSeq = ownMax;
         m->lastHash = own.last().hash;
     }
-    const auto openSegment = segments.constFind(m->segment);
-    if (openSegment != segments.constEnd() && openSegment->device == m_state->deviceId)
-        m_segmentRecords = openSegment->records;
-    else {
-        m_segmentRecords = QJsonArray();
-        m->segment.clear();
-    }
-
     for (const Record &record : std::as_const(m_records))
         m->lamport = std::max(m->lamport, record.lamport);
     for (auto it = chains.cbegin(); it != chains.cend(); ++it) {
@@ -1045,60 +1299,53 @@ bool Drive::scan(Failure *failure)
     }
 
     const qint64 moment = now();
-    for (auto it = requests.cbegin(); it != requests.cend(); ++it) {
-        const QByteArray &bytes = it.value();
-        if (bytes.size() < 6 + 12 + 16)
+    for (const Invite &invite : std::as_const(m_invites)) {
+        if (!invite.open(moment) || invite.mailbox < 0)
             continue;
-        for (const Invite &invite : std::as_const(m_invites)) {
-            if (!invite.open(moment))
-                continue;
-            QByteArray plain;
-            QJsonObject payload;
-            if (!aeadOpen(invite.requestKey, bytes.mid(6, 12), bytes.left(6) + label("request"),
-                          bytes.mid(18), &plain)
-                || !parseObject(plain, &payload))
-                continue;
-            JoinRequest request;
-            QByteArray signature;
-            request.object = it.key();
-            request.inviteId = payload.value(QStringLiteral("invite")).toString();
-            request.device = payload.value(QStringLiteral("device")).toString();
-            request.name = payload.value(QStringLiteral("name")).toString().left(64);
-            request.time = qint64(payload.value(QStringLiteral("time")).toDouble());
-            if (request.inviteId != invite.id
-                || !PublicKeys::fromJson(payload.value(QStringLiteral("keys")).toObject(), &request.keys)
-                || !fromBase64Url(payload.value(QStringLiteral("sig")).toString(), &signature)
-                || !verify(request.keys.ed25519, requestMessage(payload), signature)
-                || m_devices.contains(request.device))
-                break;
-            QByteArray inviteBytes;
-            fromBase64Url(invite.id, &inviteBytes);
-            request.safety = safetyNumber(inviteBytes, request.keys);
-            m_requests.append(request);
-            break;
-        }
+        QByteArray plain;
+        if (!openUnit(invite.requestKey, requestAad(invite.mailbox), file.readAt(mailboxOffset(invite.mailbox), kSlotBytes),
+                      &plain))
+            continue;
+        QJsonObject outer, body;
+        QByteArray bodyBytes, signature;
+        JoinRequest request;
+        request.mailbox = invite.mailbox;
+        if (!parseObject(stripPadding(plain), &outer) || !openEnvelope(outer, &bodyBytes, &signature, &body)
+            || !PublicKeys::fromJson(body.value(QStringLiteral("keys")).toObject(), &request.keys)
+            || !verify(request.keys.ed25519, requestMessage(bodyBytes), signature))
+            continue;
+        request.inviteId = body.value(QStringLiteral("invite")).toString();
+        request.device = body.value(QStringLiteral("device")).toString();
+        request.name = body.value(QStringLiteral("name")).toString().left(64);
+        request.time = qint64(body.value(QStringLiteral("time")).toDouble());
+        if (request.inviteId != invite.id || m_devices.contains(request.device))
+            continue;
+        QByteArray inviteBytes;
+        fromBase64Url(invite.id, &inviteBytes);
+        request.safety = safetyNumber(inviteBytes, request.keys);
+        m_requests.append(request);
     }
 
     for (const FileEntry &entry : std::as_const(m_files)) {
-        if (entry.deleted)
+        if (entry.deleted || !entry.current())
             continue;
-        const FileVersion *version = entry.current();
-        if (version && !m_blobs.contains(version->blob))
-            addIssue(QStringLiteral("missing_content"), QString(), entry.name);
+        for (const Run &run : entry.current()->pages)
+            if (run.start + run.count > m_totalPages) {
+                addIssue(QStringLiteral("missing_content"), QString(), entry.name);
+                break;
+            }
     }
 
     if (!m_driveLabel.isEmpty())
         m->label = m_driveLabel;
-    const auto self = m_devices.constFind(m_state->deviceId);
-    m_removed = self != m_devices.constEnd() && self->removed;
+    const auto self = m_devices.constFind(me);
+    m_removed = (self != m_devices.constEnd() && self->removed) || keyringGone;
+    for (const DeviceInfo &device : std::as_const(m_devices))
+        if (device.removed && !m->removedDevices.contains(device.id))
+            m->removedDevices.append(device.id);
     if (m->toJson() != stateBefore && !m_state->save(failure))
         return false;
     m_scanned = true;
-    m_fingerprint = fingerprint;
-    if (!m_opened && !m_removed) {
-        m_opened = true;
-        return note(QStringLiteral("drive_opened"), {}, failure);
-    }
     return true;
 }
 
@@ -1114,6 +1361,7 @@ void Drive::addIssue(const QString &code, const QString &device, const QString &
 void Drive::checkWitnesses(const QMap<QString, QMap<qint64, Record>> &chains)
 {
     const Membership *m = membership();
+    const QMap<qint64, Record> empty;
     for (const Record &record : std::as_const(m_records)) {
         for (auto it = record.witness.constBegin(); it != record.witness.constEnd(); ++it) {
             const QJsonArray pair = it.value().toArray();
@@ -1121,7 +1369,8 @@ void Drive::checkWitnesses(const QMap<QString, QMap<qint64, Record>> &chains)
             const QString hash = pair.at(1).toString();
             if (seq < 0 || it.key() == m_state->deviceId)
                 continue;
-            const QMap<qint64, Record> chain = chains.value(it.key());
+            const auto chainIt = chains.constFind(it.key());
+            const QMap<qint64, Record> &chain = chainIt == chains.constEnd() ? empty : chainIt.value();
             const auto found = chain.constFind(seq);
             if (found == chain.constEnd())
                 addIssue(QStringLiteral("records_missing"), it.key(),
@@ -1133,11 +1382,12 @@ void Drive::checkWitnesses(const QMap<QString, QMap<qint64, Record>> &chains)
     for (auto it = m->heads.cbegin(); it != m->heads.cend(); ++it) {
         if (it.key() == m_state->deviceId || it->seq < 0)
             continue;
-        const QMap<qint64, Record> chain = chains.value(it.key());
+        const auto chainIt = chains.constFind(it.key());
+        const QMap<qint64, Record> &chain = chainIt == chains.constEnd() ? empty : chainIt.value();
         const auto found = chain.constFind(it->seq);
         if (found == chain.constEnd())
             addIssue(QStringLiteral("rolled_back"), it.key(),
-                     QStringLiteral("this computer saw record %1").arg(it->seq + 1));
+                     QStringLiteral("this device saw record %1").arg(it->seq + 1));
         else if (found->hash != it->hash)
             addIssue(QStringLiteral("log_forked"), it.key(), QString());
     }
@@ -1159,7 +1409,6 @@ void Drive::fold(const QList<Record> &input)
     m_devices.clear();
     m_files.clear();
     m_invites.clear();
-    m_keyringObjects.clear();
     QMap<QString, qint64> cutoff;
     for (const Record &r : std::as_const(records)) {
         if (r.action != QLatin1String("device_removed"))
@@ -1174,7 +1423,6 @@ void Drive::fold(const QList<Record> &input)
             addIssue(QStringLiteral("after_removal"), r.device, QString());
             continue;
         }
-        const auto author = m_devices.constFind(r.device);
         if (r.action == QLatin1String("drive_created")) {
             if (r.device != m->rootDevice || r.seq != 0 || !m_devices.isEmpty())
                 continue;
@@ -1185,13 +1433,14 @@ void Drive::fold(const QList<Record> &input)
             PublicKeys::fromJson(device.value(QStringLiteral("keys")).toObject(), &info.keys);
             info.addedBy = r.device;
             info.addedAt = r.time;
+            info.mailbox = x.value(QStringLiteral("mailbox")).toInt(-1);
             info.root = true;
             m_devices.insert(info.id, info);
             m_driveLabel = x.value(QStringLiteral("label")).toString().left(80);
             m_records.append(r);
             continue;
         }
-        if (author == m_devices.constEnd())
+        if (!m_devices.contains(r.device))
             continue;
         m_records.append(r);
         const QString fileId = x.value(QStringLiteral("file")).toString();
@@ -1199,6 +1448,7 @@ void Drive::fold(const QList<Record> &input)
             FileVersion v;
             v.blob = x.value(QStringLiteral("blob")).toString();
             fromBase64Url(x.value(QStringLiteral("key")).toString(), &v.key);
+            v.pages = runsFromJson(x.value(QStringLiteral("pages")).toArray());
             v.size = qint64(x.value(QStringLiteral("size")).toDouble());
             v.sha256 = x.value(QStringLiteral("sha256")).toString();
             v.time = r.time;
@@ -1216,11 +1466,8 @@ void Drive::fold(const QList<Record> &input)
             PublicKeys::fromJson(x.value(QStringLiteral("keys")).toObject(), &info.keys);
             info.addedBy = r.device;
             info.addedAt = r.time;
-            info.addedLamport = r.lamport;
-            info.keyring = x.value(QStringLiteral("keyring")).toString();
+            info.mailbox = x.value(QStringLiteral("mailbox")).toInt(-1);
             m_devices.insert(id, info);
-            if (!info.keyring.isEmpty())
-                m_keyringObjects.append(info.keyring);
         } else if (a == QLatin1String("device_removed")) {
             auto target = m_devices.find(x.value(QStringLiteral("device")).toString());
             if (target != m_devices.end() && !target->removed) {
@@ -1229,13 +1476,12 @@ void Drive::fold(const QList<Record> &input)
                 target->removedAt = r.time;
                 target->removedSeq = qint64(x.value(QStringLiteral("upTo")).toDouble(-1));
             }
-            for (const QJsonValue &value : x.value(QStringLiteral("keyrings")).toArray())
-                m_keyringObjects.append(value.toString());
         } else if (a == QLatin1String("invite_created")) {
             Invite invite;
             invite.id = x.value(QStringLiteral("invite")).toString();
             fromBase64Url(x.value(QStringLiteral("requestKey")).toString(), &invite.requestKey);
             fromBase64Url(x.value(QStringLiteral("approveKey")).toString(), &invite.approveKey);
+            invite.mailbox = x.value(QStringLiteral("mailbox")).toInt(-1);
             invite.created = r.time;
             invite.expires = qint64(x.value(QStringLiteral("expires")).toDouble());
             invite.createdBy = r.device;
@@ -1286,6 +1532,7 @@ void Drive::fold(const QList<Record> &input)
                         continue;
                     v.blob = change.value(QStringLiteral("blob")).toString();
                     fromBase64Url(change.value(QStringLiteral("key")).toString(), &v.key);
+                    v.pages = runsFromJson(change.value(QStringLiteral("pages")).toArray());
                 }
             }
         } else if (a == QLatin1String("file_opened")) {
@@ -1332,7 +1579,7 @@ QList<Invite> Drive::openInvites() const
 QString Drive::deviceName(const QString &id) const
 {
     if (m_state && id == m_state->deviceId)
-        return m_state->deviceName + QStringLiteral(" (this computer)");
+        return m_state->deviceName + QStringLiteral(" (this device)");
     const auto found = m_devices.constFind(id);
     if (found != m_devices.constEnd() && !found->name.isEmpty())
         return found->name;
@@ -1347,109 +1594,414 @@ QString Drive::deviceSafetyNumber(const QString &id) const
     return safetyNumber(QByteArrayLiteral("device"), found->keys);
 }
 
-bool Drive::writeSegment(Failure *failure)
+QSet<int> Drive::usedMailboxes() const
 {
-    const Membership *m = membership();
-    const EpochKey *epoch = m->epoch(m->segmentKey);
-    if (!epoch)
-        return fail(failure, "no_drive_key");
-    QByteArray logKey, sealed;
-    if (!hkdf(epoch->key, QStringLiteral("log"), &logKey))
-        return fail(failure, "encryption_failed");
-    const QByteArray head = header(kLog) + QByteArray::fromHex(epoch->id.toLatin1());
-    const QByteArray nonce = randomBytes(12);
-    const QJsonObject payload{{QStringLiteral("drive"), m->driveId},
-                              {QStringLiteral("device"), m_state->deviceId},
-                              {QStringLiteral("records"), m_segmentRecords}};
-    const bool ok = aeadSeal(logKey, nonce, head + m->driveId.toUtf8() + m->segment.toUtf8(),
-                             compact(payload), &sealed);
-    wipe(logKey);
-    if (!ok)
-        return fail(failure, "encryption_failed");
-    return writeObject(m->segment, head + nonce + sealed, failure);
+    QSet<int> used;
+    for (const DeviceInfo &device : m_devices)
+        if (!device.removed && device.mailbox >= 0)
+            used.insert(device.mailbox);
+    const qint64 moment = now();
+    for (const Invite &invite : m_invites)
+        if (invite.open(moment) && invite.mailbox >= 0)
+            used.insert(invite.mailbox);
+    return used;
 }
 
-bool Drive::append(const QList<QPair<QString, QJsonObject>> &entries, Failure *failure)
+QList<Run> Drive::dataRunsInUse() const
+{
+    QList<Run> runs;
+    for (const QList<Run> &log : m_logs)
+        runs += log;
+    for (const FileEntry &entry : m_files)
+        if (!entry.deleted)
+            for (const FileVersion &version : entry.versions)
+                runs += version.pages;
+    return runs;
+}
+
+QList<int> Drive::mailboxesInUse() const
+{
+    QList<int> out = usedMailboxes().values();
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
+QList<qint64> Drive::freePages(const Txn &txn) const
+{
+    const qint64 total = txn.file ? txn.file->pages() : m_totalPages;
+    QVector<bool> used(int(std::max<qint64>(total, 0)), false);
+    for (qint64 page = 0; page < std::min(total, kDataPage); ++page)
+        used[int(page)] = true;
+    const auto mark = [&used, total](const QList<Run> &runs) {
+        for (const Run &run : runs)
+            for (qint64 i = 0; i < run.count; ++i)
+                if (run.start + i < total)
+                    used[int(run.start + i)] = true;
+    };
+    for (const QList<Run> &runs : m_logs)
+        mark(runs);
+    for (const FileEntry &entry : m_files)
+        if (!entry.deleted)
+            for (const FileVersion &version : entry.versions)
+                mark(version.pages);
+    for (const qint64 page : txn.reserved)
+        if (page < total)
+            used[int(page)] = true;
+    QList<qint64> free;
+    for (qint64 page = kDataPage; page < total; ++page)
+        if (!used[int(page)])
+            free.append(page);
+    return free;
+}
+
+qint64 Drive::usedBytes() const
+{
+    qint64 pages = kDataPage;
+    for (const QList<Run> &runs : m_logs)
+        pages += runPages(runs);
+    for (const FileEntry &entry : m_files)
+        if (!entry.deleted) {
+            QSet<qint64> seen;
+            for (const FileVersion &version : entry.versions)
+                for (const Run &run : version.pages)
+                    if (!seen.contains(run.start)) {
+                        seen.insert(run.start);
+                        pages += run.count;
+                    }
+        }
+    return pages * kPageBytes;
+}
+
+bool Drive::allocate(Txn &txn, qint64 count, bool contiguous, QList<Run> *runs, Failure *failure)
+{
+    QList<qint64> free = freePages(txn);
+    const auto findRun = [&free, count]() -> qint64 {
+        qint64 length = 0;
+        for (int i = 0; i < free.size(); ++i) {
+            length = (i > 0 && free.at(i) == free.at(i - 1) + 1) ? length + 1 : 1;
+            if (length >= count)
+                return free.at(i) - count + 1;
+        }
+        return -1;
+    };
+    qint64 start = contiguous ? findRun() : 0;
+    if ((contiguous && start < 0) || (!contiguous && free.size() < count)) {
+        const qint64 total = txn.file->pages();
+        const qint64 shortfall = contiguous ? count : count - free.size();
+        const qint64 grow = std::max({shortfall, kInitialDataPages, total / 8});
+        if (!txn.file->appendRandom(grow))
+            return fail(failure, "drive_write_failed");
+        if (txn.renew)
+            txn.renew();
+        free = freePages(txn);
+        start = contiguous ? findRun() : 0;
+        if ((contiguous && start < 0) || (!contiguous && free.size() < count))
+            return fail(failure, "drive_full");
+    }
+    runs->clear();
+    QList<qint64> taken;
+    if (contiguous)
+        for (qint64 i = 0; i < count; ++i)
+            taken.append(start + i);
+    else
+        taken = free.mid(0, int(count));
+    for (const qint64 page : std::as_const(taken)) {
+        txn.reserved.insert(page);
+        if (!runs->isEmpty() && runs->last().start + runs->last().count == page)
+            ++runs->last().count;
+        else
+            runs->append({page, 1});
+    }
+    return true;
+}
+
+bool Drive::acquireLease(ContainerFile &file, Failure *failure)
+{
+    const Membership *m = membership();
+    const EpochKey *epoch = m->currentEpoch();
+    if (!epoch)
+        return fail(failure, "no_drive_key");
+    QByteArray observed;
+    QElapsedTimer seen, total;
+    total.start();
+    for (;;) {
+        const QByteArray bytes = file.readAt(kLeasePage * kPageBytes, kPageBytes);
+        QString holder;
+        for (const EpochKey &key : m->epochs) {
+            QByteArray plain;
+            QJsonObject lease;
+            if (openUnit(derive(key.key, "lease"), label("lease"), bytes, &plain)
+                && parseObject(stripPadding(plain), &lease)) {
+                holder = lease.value(QStringLiteral("device")).toString();
+                break;
+            }
+        }
+        const auto holderInfo = m_devices.constFind(holder);
+        bool free = holder.isEmpty() || holder == m_state->deviceId
+                    || (holderInfo != m_devices.constEnd() && holderInfo->removed);
+        if (!free) {
+            if (bytes != observed) {
+                observed = bytes;
+                seen.start();
+            } else if (seen.elapsed() >= g_timing.staleMs) {
+                free = true;
+            }
+        }
+        if (free) {
+            const QByteArray mine = sealUnit(derive(epoch->key, "lease"), label("lease"),
+                                             compact({{QStringLiteral("device"), m_state->deviceId},
+                                                      {QStringLiteral("token"), randomId()}}),
+                                             kPageBytes);
+            if (mine.isEmpty() || !file.writeAt(kLeasePage * kPageBytes, mine) || !file.sync())
+                return fail(failure, "drive_write_failed");
+            if (g_timing.settleMs > 0)
+                QThread::msleep(ulong(g_timing.settleMs));
+            if (file.readAt(kLeasePage * kPageBytes, kPageBytes) == mine) {
+                m_leaseBytes = mine;
+                return true;
+            }
+            observed.clear();
+        }
+        if (total.elapsed() > qint64(g_timing.staleMs) * 2 + 10000)
+            return fail(failure, "drive_busy");
+        QThread::msleep(ulong(std::max(1, g_timing.pollMs)));
+    }
+}
+
+bool Drive::renewLease(ContainerFile &file)
+{
+    const EpochKey *epoch = membership()->currentEpoch();
+    if (!epoch || file.readAt(kLeasePage * kPageBytes, kPageBytes) != m_leaseBytes)
+        return false;
+    const QByteArray mine = sealUnit(derive(epoch->key, "lease"), label("lease"),
+                                     compact({{QStringLiteral("device"), m_state->deviceId},
+                                              {QStringLiteral("token"), randomId()}}),
+                                     kPageBytes);
+    if (mine.isEmpty() || !file.writeAt(kLeasePage * kPageBytes, mine) || !file.sync())
+        return false;
+    m_leaseBytes = mine;
+    return true;
+}
+
+void Drive::releaseLease(ContainerFile &file)
+{
+    if (!m_leaseBytes.isEmpty() && file.readAt(kLeasePage * kPageBytes, kPageBytes) == m_leaseBytes) {
+        file.writeAt(kLeasePage * kPageBytes, randomBytes(int(kPageBytes)));
+        file.sync();
+    }
+    m_leaseBytes.clear();
+}
+
+bool Drive::transact(const std::function<bool(Txn &, Failure *)> &body, Failure *failure,
+                     const std::function<void()> &)
 {
     Membership *m = mutableMembership();
     if (!m || !m->isMember())
         return fail(failure, "unknown_drive");
+    ContainerFile file(m->container);
+    if (!file.openWrite())
+        return fail(failure, "container_unavailable");
+    if (!load(file, failure))
+        return false;
     if (m_removed)
         return fail(failure, "device_removed");
+    if (!acquireLease(file, failure))
+        return false;
+    bool ok = load(file, failure);
+    m = mutableMembership();
+    const Membership before = *m;
+    Txn txn;
+    txn.file = &file;
+    QElapsedTimer sinceRenew;
+    sinceRenew.start();
+    txn.renew = [this, &file, &sinceRenew]() {
+        if (sinceRenew.elapsed() > std::max(1000, g_timing.staleMs / 8)) {
+            renewLease(file);
+            sinceRenew.restart();
+        }
+    };
+    ok = ok && !m_removed && body(txn, failure) && commit(txn, failure);
+    if (!ok) {
+        if (Membership *current = mutableMembership())
+            *current = before;
+    }
+    releaseLease(file);
+    if (ok) {
+        Failure ignored;
+        load(file, &ignored);
+    }
+    return ok;
+}
+
+bool Drive::commit(Txn &txn, Failure *failure)
+{
+    Membership *m = mutableMembership();
     const EpochKey *epoch = m->currentEpoch();
     if (!epoch)
         return fail(failure, "no_drive_key");
-    const Membership before = *m;
-    const QJsonArray segmentBefore = m_segmentRecords;
-    if (m->segment.isEmpty() || m->segmentKey != epoch->id || m_segmentRecords.size() >= kSegmentLimit) {
-        m->segment = newObjectName();
-        m->segmentKey = epoch->id;
-        m_segmentRecords = QJsonArray();
-    }
-    QList<Record> added;
-    for (const auto &entry : entries) {
+    const QString me = m_state->deviceId;
+    QList<Run> mine = m_logs.value(me);
+    bool reuse = !m_myLastRecords.isEmpty() && !mine.isEmpty();
+    QJsonArray added;
+    for (const auto &entry : std::as_const(txn.records)) {
         QJsonObject witness;
         for (auto it = m->heads.cbegin(); it != m->heads.cend(); ++it)
-            if (it.key() != m_state->deviceId && it->seq >= 0)
+            if (it.key() != me && it->seq >= 0)
                 witness.insert(it.key(), QJsonArray{double(it->seq), it->hash});
-        QJsonObject json{{QStringLiteral("d"), m_state->deviceId},
-                         {QStringLiteral("s"), double(m->lastSeq + 1)},
-                         {QStringLiteral("l"), double(m->lamport + 1)},
-                         {QStringLiteral("t"), double(now())},
-                         {QStringLiteral("a"), entry.first},
-                         {QStringLiteral("x"), entry.second},
-                         {QStringLiteral("p"), m->lastHash},
-                         {QStringLiteral("w"), witness}};
+        const QByteArray bodyBytes = compact({{QStringLiteral("d"), me},
+                                              {QStringLiteral("s"), double(m->lastSeq + 1)},
+                                              {QStringLiteral("l"), double(m->lamport + 1)},
+                                              {QStringLiteral("t"), double(now())},
+                                              {QStringLiteral("a"), entry.first},
+                                              {QStringLiteral("x"), entry.second},
+                                              {QStringLiteral("p"), m->lastHash},
+                                              {QStringLiteral("w"), witness}});
         QByteArray signature;
-        if (!sign(m_state->keys.ed25519, recordMessage(m->driveId, json), &signature)) {
-            *m = before;
-            m_segmentRecords = segmentBefore;
+        if (!sign(m_state->keys.ed25519, recordMessage(m->driveId, bodyBytes), &signature))
             return fail(failure, "signing_failed");
-        }
-        json.insert(QStringLiteral("sig"), toBase64Url(signature));
-        Record record = recordFrom(json);
-        record.hash = recordHash(m->driveId, json);
-        m->lastSeq = record.seq;
-        m->lastHash = record.hash;
-        m->lamport = record.lamport;
-        m->heads[m_state->deviceId] = Head{record.seq, record.hash};
-        m_segmentRecords.append(json);
-        added.append(record);
+        const QString hash = toBase64Url(sha256(recordMessage(m->driveId, bodyBytes) + signature));
+        m->lastSeq += 1;
+        m->lastHash = hash;
+        m->lamport += 1;
+        m->heads[me] = Head{m->lastSeq, hash};
+        added.append(envelope(bodyBytes, signature));
     }
-    if (!writeSegment(failure)) {
-        *m = before;
-        m_segmentRecords = segmentBefore;
+    const auto payloadFor = [&me](const QJsonArray &records) {
+        return compact({{QStringLiteral("device"), me}, {QStringLiteral("records"), records}});
+    };
+    QJsonArray records = reuse ? m_myLastRecords : QJsonArray();
+    for (const QJsonValue &value : std::as_const(added))
+        records.append(value);
+    QByteArray payload = payloadFor(records);
+    if (reuse && (payload.size() + kUnitOverhead + kPageBytes - 1) / kPageBytes > kLogUnitLimitPages) {
+        reuse = false;
+        payload = payloadFor(added);
+    }
+    const qint64 pages = std::max<qint64>(1, (payload.size() + kUnitOverhead + kPageBytes - 1) / kPageBytes);
+    QList<Run> unitRuns;
+    if (!allocate(txn, pages, true, &unitRuns, failure))
         return false;
+    const Run unit = unitRuns.first();
+    const QByteArray sealed = sealUnit(derive(epoch->key, "log"), logAad(m->driveId, unit.start), payload,
+                                       unit.count * kPageBytes);
+    if (sealed.isEmpty() || !txn.file->writeAt(unit.start * kPageBytes, sealed))
+        return fail(failure, "drive_write_failed");
+    if (reuse)
+        txn.freed.append(mine.takeLast());
+    mine.append(unit);
+    QMap<QString, QList<Run>> logs = m_logs;
+    logs.insert(me, mine);
+    QJsonObject logsJson;
+    for (auto it = logs.cbegin(); it != logs.cend(); ++it)
+        logsJson.insert(it.key(), runsToJson(it.value()));
+    const qint64 generation = m_rootGeneration + 1;
+    const QByteArray rootBody = compact({{QStringLiteral("v"), 2},
+                                         {QStringLiteral("drive"), m->driveId},
+                                         {QStringLiteral("gen"), double(generation)},
+                                         {QStringLiteral("pages"), double(txn.file->pages())},
+                                         {QStringLiteral("logs"), logsJson},
+                                         {QStringLiteral("writer"), me},
+                                         {QStringLiteral("time"), double(now())},
+                                         {QStringLiteral("prev"), m_rootHash}});
+    QByteArray rootSignature;
+    if (!sign(m_state->keys.ed25519, rootMessage(rootBody), &rootSignature))
+        return fail(failure, "signing_failed");
+    const bool slotA = generation % 2 == 0;
+    const QByteArray rootUnit = sealUnit(derive(epoch->key, "root"), rootAad(slotA),
+                                         compact(envelope(rootBody, rootSignature)), kRootPages * kPageBytes);
+    if (rootUnit.isEmpty())
+        return fail(failure, "drive_index_full");
+    if (!txn.file->sync())
+        return fail(failure, "drive_write_failed");
+    if (txn.file->readAt(kLeasePage * kPageBytes, kPageBytes) != m_leaseBytes)
+        return fail(failure, "drive_busy");
+    if (txn.file->readAt(kRootAPage * kPageBytes, kRootPages * kPageBytes) != m_rootABytes
+        || txn.file->readAt(kRootBPage * kPageBytes, kRootPages * kPageBytes) != m_rootBBytes)
+        return fail(failure, "drive_changed");
+    const qint64 rootOffset = (slotA ? kRootAPage : kRootBPage) * kPageBytes;
+    if (!txn.file->writeAt(rootOffset, rootUnit) || !txn.file->sync()
+        || txn.file->readAt(rootOffset, kRootPages * kPageBytes) != rootUnit)
+        return fail(failure, "drive_write_failed");
+    if (txn.bothRoots) {
+        const QByteArray twin = sealUnit(derive(epoch->key, "root"), rootAad(!slotA),
+                                         compact(envelope(rootBody, rootSignature)), kRootPages * kPageBytes);
+        const qint64 twinOffset = (slotA ? kRootBPage : kRootAPage) * kPageBytes;
+        if (twin.isEmpty() || !txn.file->writeAt(twinOffset, twin) || !txn.file->sync())
+            return fail(failure, "drive_write_failed");
     }
+    if (m_repairKeyring && m->mailbox >= 0) {
+        DeviceInfo self;
+        self.id = me;
+        self.keys = m_state->publicKeys;
+        Failure ignored;
+        const QByteArray unit = keyringUnit(self, m->mailbox, {}, {}, &ignored);
+        ContainerFile *file = txn.file;
+        const int mailbox = m->mailbox;
+        if (!unit.isEmpty())
+            txn.afterCommit.append([file, mailbox, unit] {
+                return file->writeAt(mailboxOffset(mailbox), unit) && file->sync();
+            });
+    }
+    m->rootGeneration = generation;
+    m->rootHash = toBase64Url(sha256(rootMessage(rootBody) + rootSignature));
+    m->cachedRoot = toBase64Url(compact(envelope(rootBody, rootSignature)));
+    bool after = true;
+    for (const auto &action : std::as_const(txn.afterCommit))
+        after = action() && after;
+    for (const Run &run : std::as_const(txn.freed))
+        txn.file->writeAt(run.start * kPageBytes, randomBytes(int(run.count * kPageBytes)));
+    txn.file->sync();
     if (!m_state->save(failure))
         return false;
-    QList<Record> all = m_records + added;
-    fold(all);
-    return true;
+    return after ? true : fail(failure, "drive_write_failed");
 }
 
 bool Drive::note(const QString &action, const QJsonObject &data, Failure *failure)
 {
-    return append({{action, data}}, failure);
+    return transact(
+        [&](Txn &txn, Failure *) {
+            txn.records.append({action, data});
+            return true;
+        },
+        failure);
 }
 
 bool Drive::createInvite(QString *code, QString *inviteId, Failure *failure)
 {
-    QByteArray secret, requestKey, approveKey;
-    const QString text = newInviteCode(&secret);
-    if (!hkdf(secret, QStringLiteral("request"), &requestKey)
-        || !hkdf(secret, QStringLiteral("approve"), &approveKey))
-        return fail(failure, "encryption_failed");
-    const QString id = toBase64Url(inviteIdBytes(secret));
-    wipe(secret);
-    const bool ok = append({{QStringLiteral("invite_created"),
-                             {{QStringLiteral("invite"), id},
-                              {QStringLiteral("requestKey"), toBase64Url(requestKey)},
-                              {QStringLiteral("approveKey"), toBase64Url(approveKey)},
-                              {QStringLiteral("expires"), double(now() + kInviteLifetime)}}}},
-                           failure);
-    wipe(requestKey);
-    wipe(approveKey);
+    QString text, id;
+    const bool ok = transact(
+        [&](Txn &txn, Failure *f) {
+            const QSet<int> used = usedMailboxes();
+            if (used.size() >= kMailboxSlots)
+                return fail(f, "drive_full");
+            QByteArray secret;
+            int mailbox = -1;
+            for (int tries = 0; tries < 4096; ++tries) {
+                text = newInviteCode(&secret);
+                mailbox = mailboxForInvite(secret);
+                if (!used.contains(mailbox))
+                    break;
+                mailbox = -1;
+            }
+            if (mailbox < 0)
+                return fail(f, "drive_full");
+            id = toBase64Url(inviteIdBytes(secret));
+            const QByteArray requestKey = derive(secret, "request");
+            const QByteArray approveKey = derive(secret, "approve");
+            wipe(secret);
+            txn.records.append({QStringLiteral("invite_created"),
+                                {{QStringLiteral("invite"), id},
+                                 {QStringLiteral("requestKey"), toBase64Url(requestKey)},
+                                 {QStringLiteral("approveKey"), toBase64Url(approveKey)},
+                                 {QStringLiteral("mailbox"), mailbox},
+                                 {QStringLiteral("expires"), double(now() + g_inviteLifetime)}}});
+            ContainerFile *file = txn.file;
+            txn.afterCommit.append([file, mailbox] {
+                return file->writeAt(mailboxOffset(mailbox), randomBytes(int(kSlotBytes))) && file->sync();
+            });
+            return true;
+        },
+        failure);
     if (!ok)
         return false;
     *code = text;
@@ -1462,185 +2014,190 @@ bool Drive::revokeInvite(const QString &inviteId, Failure *failure)
 {
     if (!m_invites.contains(inviteId))
         return fail(failure, "unknown_invite");
-    return note(QStringLiteral("invite_revoked"), {{QStringLiteral("invite"), inviteId}}, failure);
+    const int mailbox = m_invites.value(inviteId).mailbox;
+    return transact(
+        [&](Txn &txn, Failure *) {
+            txn.records.append({QStringLiteral("invite_revoked"), {{QStringLiteral("invite"), inviteId}}});
+            ContainerFile *file = txn.file;
+            if (mailbox >= 0 && !usedMailboxes().contains(mailbox))
+                txn.afterCommit.append([file, mailbox] {
+                    return file->writeAt(mailboxOffset(mailbox), randomBytes(int(kSlotBytes))) && file->sync();
+                });
+            return true;
+        },
+        failure);
 }
 
-bool Drive::sealKeyring(const DeviceInfo &recipient, const QByteArray &approveKey,
-                        const QString &inviteId, QString *object, Failure *failure)
+QByteArray Drive::keyringUnit(const DeviceInfo &recipient, int mailbox, const QByteArray &approveKey,
+                              const QString &inviteId, Failure *failure) const
 {
     const Membership *m = membership();
-    QJsonObject payload{{QStringLiteral("suite"), QLatin1String(kSuite)},
-                        {QStringLiteral("drive"), m->driveId},
-                        {QStringLiteral("device"), recipient.id},
-                        {QStringLiteral("epochs"), epochsJson(m->epochs)},
-                        {QStringLiteral("root"),
-                         QJsonObject{{QStringLiteral("device"), m->rootDevice},
-                                     {QStringLiteral("ed25519"), toBase64Url(m->rootEd25519)}}},
-                        {QStringLiteral("issuer"), m_state->deviceId},
-                        {QStringLiteral("issuerKeys"), m_state->publicKeys.toJson()},
-                        {QStringLiteral("time"), double(now())}};
-    if (!approveKey.isEmpty()) {
-        payload.insert(QStringLiteral("invite"), inviteId);
-        payload.insert(QStringLiteral("mac"), toBase64Url(hmac(approveKey, compact(payload))));
+    QJsonObject body{{QStringLiteral("suite"), QLatin1String(kSuite)},
+                     {QStringLiteral("drive"), m->driveId},
+                     {QStringLiteral("device"), recipient.id},
+                     {QStringLiteral("mailbox"), mailbox},
+                     {QStringLiteral("epochs"), epochsJson(m->epochs)},
+                     {QStringLiteral("root"),
+                      QJsonObject{{QStringLiteral("device"), m->rootDevice},
+                                  {QStringLiteral("ed25519"), toBase64Url(m->rootEd25519)}}},
+                     {QStringLiteral("issuer"), m_state->deviceId},
+                     {QStringLiteral("issuerKeys"), m_state->publicKeys.toJson()},
+                     {QStringLiteral("time"), double(now())}};
+    if (!inviteId.isEmpty())
+        body.insert(QStringLiteral("invite"), inviteId);
+    const QByteArray bodyBytes = compact(body);
+    QByteArray signature;
+    if (!sign(m_state->keys.ed25519, keyringMessage(bodyBytes), &signature)) {
+        fail(failure, "signing_failed");
+        return {};
     }
-    QByteArray signature, sealed;
-    if (!sign(m_state->keys.ed25519, keyringMessage(payload), &signature))
-        return fail(failure, "signing_failed");
-    payload.insert(QStringLiteral("sig"), toBase64Url(signature));
-    QByteArray plain = compact(payload);
-    const bool ok = sealToDevice(recipient.keys, keyringLabel().toUtf8(), plain, &sealed, failure);
+    QJsonObject outer = envelope(bodyBytes, signature);
+    if (!approveKey.isEmpty())
+        outer.insert(QStringLiteral("m"), toBase64Url(hmac(approveKey, bodyBytes)));
+    QByteArray plain = compact(outer);
+    const qint64 capacity = kSlotBytes - 32 - kMlkemCiphertextBytes - kUnitOverhead;
+    if (plain.size() > capacity) {
+        fail(failure, "keyring_too_large");
+        return {};
+    }
+    plain.append(QByteArray(int(capacity - plain.size()), '\0'));
+    QByteArray sealed;
+    const bool ok = sealToDevice(recipient.keys, mailboxLabel(mailbox), plain, &sealed, failure);
     wipe(plain);
-    if (!ok)
-        return false;
-    *object = newObjectName();
-    return writeObject(*object, header(kKeyring) + sealed, failure);
+    return ok && sealed.size() == kSlotBytes ? sealed : QByteArray();
 }
 
-bool Drive::approve(const QString &object, Failure *failure)
+bool Drive::approve(int mailbox, Failure *failure)
 {
     const auto found = std::find_if(m_requests.cbegin(), m_requests.cend(),
-                                    [&object](const JoinRequest &r) { return r.object == object; });
+                                    [mailbox](const JoinRequest &r) { return r.mailbox == mailbox; });
     if (found == m_requests.cend())
         return fail(failure, "unknown_request");
     const JoinRequest request = *found;
-    const auto invite = m_invites.constFind(request.inviteId);
-    if (invite == m_invites.constEnd() || !invite->open(now()))
-        return fail(failure, "invite_expired");
-    DeviceInfo device;
-    device.id = request.device;
-    device.name = request.name;
-    device.keys = request.keys;
-    QString keyring;
-    if (!sealKeyring(device, invite->approveKey, invite->id, &keyring, failure))
-        return false;
-    if (!append({{QStringLiteral("device_added"),
-                  {{QStringLiteral("device"), device.id},
-                   {QStringLiteral("name"), device.name},
-                   {QStringLiteral("keys"), device.keys.toJson()},
-                   {QStringLiteral("invite"), request.inviteId},
-                   {QStringLiteral("keyring"), keyring}}},
-                 {QStringLiteral("invite_used"),
-                  {{QStringLiteral("invite"), request.inviteId},
-                   {QStringLiteral("device"), device.id},
-                   {QStringLiteral("name"), device.name}}}},
-                failure)) {
-        removeObject(keyring);
-        return false;
-    }
-    removeObject(object);
-    m_requests.erase(std::remove_if(m_requests.begin(), m_requests.end(),
-                                    [&object](const JoinRequest &r) { return r.object == object; }),
-                     m_requests.end());
-    return true;
+    return transact(
+        [&](Txn &txn, Failure *f) {
+            const auto invite = m_invites.constFind(request.inviteId);
+            if (invite == m_invites.constEnd() || !invite->open(now()))
+                return fail(f, "invite_expired");
+            DeviceInfo device;
+            device.id = request.device;
+            device.name = request.name;
+            device.keys = request.keys;
+            const QByteArray unit = keyringUnit(device, mailbox, invite->approveKey, invite->id, f);
+            if (unit.isEmpty())
+                return false;
+            txn.records.append({QStringLiteral("device_added"),
+                                {{QStringLiteral("device"), device.id},
+                                 {QStringLiteral("name"), device.name},
+                                 {QStringLiteral("keys"), device.keys.toJson()},
+                                 {QStringLiteral("invite"), request.inviteId},
+                                 {QStringLiteral("mailbox"), mailbox}}});
+            txn.records.append({QStringLiteral("invite_used"),
+                                {{QStringLiteral("invite"), request.inviteId},
+                                 {QStringLiteral("device"), device.id},
+                                 {QStringLiteral("name"), device.name}}});
+            ContainerFile *file = txn.file;
+            txn.afterCommit.append([file, mailbox, unit] {
+                return file->writeAt(mailboxOffset(mailbox), unit) && file->sync()
+                       && file->readAt(mailboxOffset(mailbox), kSlotBytes) == unit;
+            });
+            return true;
+        },
+        failure);
 }
 
-bool Drive::deny(const QString &object, Failure *failure)
+bool Drive::deny(int mailbox, Failure *failure)
 {
     const auto found = std::find_if(m_requests.cbegin(), m_requests.cend(),
-                                    [&object](const JoinRequest &r) { return r.object == object; });
+                                    [mailbox](const JoinRequest &r) { return r.mailbox == mailbox; });
     if (found == m_requests.cend())
         return fail(failure, "unknown_request");
     const JoinRequest request = *found;
-    if (!append({{QStringLiteral("join_denied"),
-                  {{QStringLiteral("invite"), request.inviteId},
-                   {QStringLiteral("device"), request.device},
-                   {QStringLiteral("name"), request.name}}},
-                 {QStringLiteral("invite_revoked"), {{QStringLiteral("invite"), request.inviteId}}}},
-                failure))
-        return false;
-    removeObject(object);
-    m_requests.erase(std::remove_if(m_requests.begin(), m_requests.end(),
-                                    [&object](const JoinRequest &r) { return r.object == object; }),
-                     m_requests.end());
-    return true;
+    return transact(
+        [&](Txn &txn, Failure *) {
+            txn.records.append({QStringLiteral("join_denied"),
+                                {{QStringLiteral("invite"), request.inviteId},
+                                 {QStringLiteral("device"), request.device},
+                                 {QStringLiteral("name"), request.name}}});
+            txn.records.append({QStringLiteral("invite_revoked"), {{QStringLiteral("invite"), request.inviteId}}});
+            ContainerFile *file = txn.file;
+            txn.afterCommit.append([file, mailbox] {
+                return file->writeAt(mailboxOffset(mailbox), randomBytes(int(kSlotBytes))) && file->sync();
+            });
+            return true;
+        },
+        failure);
 }
 
-bool Drive::writeBlob(QIODevice *source, QString *object, QByteArray *key, qint64 *size,
-                      QString *digest, Failure *failure)
+bool Drive::writeBlob(Txn &txn, QIODevice *source, FileVersion *version, Failure *failure)
 {
     const Membership *m = membership();
     if (!source || !source->isOpen() || source->isSequential())
         return fail(failure, "read_failed");
     const qint64 length = source->size() - source->pos();
-    const qint64 padded = paddedSize(length);
-    const qint64 chunks = chunkCount(padded);
-    const QByteArray blobKey = randomBytes(kKeyBytes);
-    const QByteArray prefix = randomBytes(8);
-    const QByteArray head = header(kBlob) + prefix;
-    const QString name = newObjectName();
-    QSaveFile out(QDir(m->folder).filePath(name));
-    out.setDirectWriteFallback(false);
-    if (!out.open(QIODevice::WriteOnly) || out.write(head) != head.size())
-        return fail(failure, "drive_write_failed");
+    const qint64 chunks = chunkCount(length);
+    QList<Run> runs;
+    if (!allocate(txn, chunks, false, &runs, failure))
+        return false;
+    const QList<qint64> pages = expand(runs);
+    const QByteArray key = randomBytes(kKeyBytes);
+    const QString blob = randomId();
     QCryptographicHash hash(QCryptographicHash::Sha256);
     qint64 remaining = length;
     for (qint64 i = 0; i < chunks; ++i) {
-        const qint64 span = std::min(kChunk, padded - i * kChunk);
-        QByteArray plain = remaining > 0 ? source->read(std::min(span, remaining)) : QByteArray();
-        if (plain.size() != std::min(span, std::max<qint64>(remaining, 0))) {
-            out.cancelWriting();
+        const qint64 take = std::min(kChunkBytes, std::max<qint64>(remaining, 0));
+        QByteArray plain = take > 0 ? source->read(take) : QByteArray();
+        if (plain.size() != take)
             return fail(failure, "read_failed");
-        }
         hash.addData(plain);
-        remaining -= plain.size();
-        plain.append(QByteArray(int(span - plain.size()), '\0'));
-        QByteArray sealed;
-        const bool ok = aeadSeal(blobKey, prefix + beBytes(quint64(i), 4),
-                                 blobAad(m->driveId, name, i, i == chunks - 1, head), plain, &sealed);
+        remaining -= take;
+        plain.append(QByteArray(int(kChunkBytes - plain.size()), '\0'));
+        const qint64 page = pages.at(int(i));
+        const QByteArray unit = sealUnit(key, blobAad(m->driveId, blob, i, i == chunks - 1, page), plain, kPageBytes);
         wipe(plain);
-        if (!ok || out.write(sealed) != sealed.size()) {
-            out.cancelWriting();
+        if (unit.isEmpty() || !txn.file->writeAt(page * kPageBytes, unit))
             return fail(failure, "drive_write_failed");
-        }
+        if (txn.renew && i % 256 == 255)
+            txn.renew();
     }
-    if (!out.commit())
-        return fail(failure, "drive_write_failed");
-    *object = name;
-    *key = blobKey;
-    *size = length;
-    *digest = QString::fromLatin1(hash.result().toHex());
+    version->blob = blob;
+    version->key = key;
+    version->pages = runs;
+    version->size = length;
+    version->sha256 = QString::fromLatin1(hash.result().toHex());
     return true;
 }
 
-bool Drive::transcodeBlob(const FileVersion &version, QString *object, QByteArray *key,
-                          Failure *failure)
+bool Drive::readBlob(ContainerFile &file, const FileVersion &version,
+                     const std::function<bool(const QByteArray &)> &sink, Failure *failure) const
 {
     const Membership *m = membership();
-    const qint64 padded = paddedSize(version.size);
-    const qint64 chunks = chunkCount(padded);
-    QFile in(objectPath(version.blob));
-    if (!in.open(QIODevice::ReadOnly) || in.size() != 14 + padded + 16 * chunks)
+    const QList<qint64> pages = expand(version.pages);
+    const qint64 chunks = chunkCount(version.size);
+    if (pages.size() != chunks)
         return fail(failure, "content_damaged");
-    const QByteArray oldHead = in.read(14);
-    const QByteArray newKey = randomBytes(kKeyBytes);
-    const QByteArray prefix = randomBytes(8);
-    const QByteArray head = header(kBlob) + prefix;
-    const QString name = newObjectName();
-    QSaveFile out(QDir(m->folder).filePath(name));
-    out.setDirectWriteFallback(false);
-    if (!out.open(QIODevice::WriteOnly) || out.write(head) != head.size())
-        return fail(failure, "drive_write_failed");
+    QCryptographicHash hash(QCryptographicHash::Sha256);
+    qint64 remaining = version.size;
     for (qint64 i = 0; i < chunks; ++i) {
-        const qint64 span = std::min(kChunk, padded - i * kChunk);
-        const bool last = i == chunks - 1;
-        QByteArray plain, sealed;
-        if (!aeadOpen(version.key, oldHead.mid(6, 8) + beBytes(quint64(i), 4),
-                      blobAad(m->driveId, version.blob, i, last, oldHead), in.read(span + 16), &plain)) {
-            out.cancelWriting();
+        const qint64 page = pages.at(int(i));
+        QByteArray plain;
+        if (!openUnit(version.key, blobAad(m->driveId, version.blob, i, i == chunks - 1, page),
+                      file.readAt(page * kPageBytes, kPageBytes), &plain))
             return fail(failure, "content_damaged");
+        const qint64 take = std::min<qint64>(remaining, plain.size());
+        if (take > 0) {
+            const QByteArray part = plain.left(int(take));
+            hash.addData(part);
+            if (!sink(part)) {
+                wipe(plain);
+                return fail(failure, "write_failed");
+            }
         }
-        const bool ok = aeadSeal(newKey, prefix + beBytes(quint64(i), 4),
-                                 blobAad(m->driveId, name, i, last, head), plain, &sealed);
         wipe(plain);
-        if (!ok || out.write(sealed) != sealed.size()) {
-            out.cancelWriting();
-            return fail(failure, "drive_write_failed");
-        }
+        remaining -= take;
     }
-    if (!out.commit())
-        return fail(failure, "drive_write_failed");
-    *object = name;
-    *key = newKey;
+    if (QString::fromLatin1(hash.result().toHex()) != version.sha256)
+        return fail(failure, "content_damaged");
     return true;
 }
 
@@ -1651,56 +2208,59 @@ bool Drive::addFile(const QString &name, QIODevice *source, QString *fileId, Fai
     if (cleaned.isEmpty() || cleaned.size() > 255 || cleaned.contains(QLatin1Char('/'))
         || cleaned.contains(QLatin1Char('\\')))
         return fail(failure, "invalid_name");
-    QString blob, digest;
-    QByteArray key;
-    qint64 size = 0;
-    if (!writeBlob(source, &blob, &key, &size, &digest, failure))
-        return false;
     const QString id = randomId();
-    if (!append({{QStringLiteral("file_created"),
-                  {{QStringLiteral("file"), id},
-                   {QStringLiteral("name"), cleaned},
-                   {QStringLiteral("kind"), kind.isEmpty() ? fileKindForName(cleaned) : kind},
-                   {QStringLiteral("blob"), blob},
-                   {QStringLiteral("key"), toBase64Url(key)},
-                   {QStringLiteral("size"), double(size)},
-                   {QStringLiteral("sha256"), digest}}}},
-                failure)) {
-        removeObject(blob);
-        return false;
-    }
-    wipe(key);
-    if (fileId)
+    const qint64 start = source ? source->pos() : 0;
+    const bool ok = transact(
+        [&](Txn &txn, Failure *f) {
+            if (source && source->pos() != start && !source->seek(start))
+                return fail(f, "read_failed");
+            FileVersion version;
+            if (!writeBlob(txn, source, &version, f))
+                return false;
+            txn.records.append({QStringLiteral("file_created"),
+                                {{QStringLiteral("file"), id},
+                                 {QStringLiteral("name"), cleaned},
+                                 {QStringLiteral("kind"), kind.isEmpty() ? fileKindForName(cleaned) : kind},
+                                 {QStringLiteral("blob"), version.blob},
+                                 {QStringLiteral("pages"), runsToJson(version.pages)},
+                                 {QStringLiteral("key"), toBase64Url(version.key)},
+                                 {QStringLiteral("size"), double(version.size)},
+                                 {QStringLiteral("sha256"), version.sha256}}});
+            return true;
+        },
+        failure);
+    if (ok && fileId)
         *fileId = id;
-    return true;
+    return ok;
 }
 
-bool Drive::saveFile(const QString &fileId, QIODevice *source, Failure *failure)
+bool Drive::saveFile(const QString &fileId, QIODevice *source, Failure *failure, const QString &startedFrom)
 {
-    const FileEntry *entry = file(fileId);
-    if (!entry || !entry->current())
-        return fail(failure, "unknown_file");
-    const QString base = entry->current()->blob;
-    const QString name = entry->name;
-    QString blob, digest;
-    QByteArray key;
-    qint64 size = 0;
-    if (!writeBlob(source, &blob, &key, &size, &digest, failure))
-        return false;
-    if (!append({{QStringLiteral("file_saved"),
-                  {{QStringLiteral("file"), fileId},
-                   {QStringLiteral("name"), name},
-                   {QStringLiteral("blob"), blob},
-                   {QStringLiteral("key"), toBase64Url(key)},
-                   {QStringLiteral("size"), double(size)},
-                   {QStringLiteral("sha256"), digest},
-                   {QStringLiteral("base"), base}}}},
-                failure)) {
-        removeObject(blob);
-        return false;
-    }
-    wipe(key);
-    return true;
+    const qint64 start = source ? source->pos() : 0;
+    return transact(
+        [&](Txn &txn, Failure *f) {
+            const FileEntry *entry = file(fileId);
+            if (!entry || !entry->current())
+                return fail(f, "unknown_file");
+            const QString base = startedFrom.isEmpty() ? entry->current()->blob : startedFrom;
+            const QString name = entry->name;
+            if (source && source->pos() != start && !source->seek(start))
+                return fail(f, "read_failed");
+            FileVersion version;
+            if (!writeBlob(txn, source, &version, f))
+                return false;
+            txn.records.append({QStringLiteral("file_saved"),
+                                {{QStringLiteral("file"), fileId},
+                                 {QStringLiteral("name"), name},
+                                 {QStringLiteral("blob"), version.blob},
+                                 {QStringLiteral("pages"), runsToJson(version.pages)},
+                                 {QStringLiteral("key"), toBase64Url(version.key)},
+                                 {QStringLiteral("size"), double(version.size)},
+                                 {QStringLiteral("sha256"), version.sha256},
+                                 {QStringLiteral("base"), base}}});
+            return true;
+        },
+        failure);
 }
 
 bool Drive::readFile(const QString &fileId, int versionIndex, QIODevice *out, const QString &purpose,
@@ -1714,48 +2274,25 @@ bool Drive::readFile(const QString &fileId, int versionIndex, QIODevice *out, co
         return fail(failure, "unknown_version");
     const FileVersion version = entry->versions.at(index);
     const QString name = entry->name;
-    const Membership *m = membership();
-    const qint64 padded = paddedSize(version.size);
-    const qint64 chunks = chunkCount(padded);
-    QFile in(objectPath(version.blob));
-    const auto damaged = [&]() {
-        Failure ignored;
-        note(QStringLiteral("integrity_alert"),
-             {{QStringLiteral("code"), QStringLiteral("content_damaged")},
-              {QStringLiteral("file"), fileId},
-              {QStringLiteral("detail"), name}},
-             &ignored);
-        addIssue(QStringLiteral("content_damaged"), QString(), name);
-        return fail(failure, "content_damaged");
-    };
-    if (!in.open(QIODevice::ReadOnly))
-        return fail(failure, "content_missing");
-    if (in.size() != 14 + padded + 16 * chunks)
-        return damaged();
-    const QByteArray head = in.read(14);
-    QCryptographicHash hash(QCryptographicHash::Sha256);
-    qint64 remaining = version.size;
-    for (qint64 i = 0; i < chunks; ++i) {
-        const qint64 span = std::min(kChunk, padded - i * kChunk);
-        QByteArray plain;
-        if (!aeadOpen(version.key, head.mid(6, 8) + beBytes(quint64(i), 4),
-                      blobAad(m->driveId, version.blob, i, i == chunks - 1, head), in.read(span + 16),
-                      &plain))
-            return damaged();
-        const qint64 take = std::min<qint64>(remaining, plain.size());
-        if (take > 0) {
-            const QByteArray part = plain.left(int(take));
-            hash.addData(part);
-            if (out->write(part) != take) {
-                wipe(plain);
-                return fail(failure, "write_failed");
-            }
+    ContainerFile container(membership()->container);
+    if (!container.openRead())
+        return fail(failure, "container_unavailable");
+    Failure readFailure;
+    if (!readBlob(container, version, [out](const QByteArray &part) { return out->write(part) == part.size(); },
+                  &readFailure)) {
+        if (readFailure.code == QLatin1String("content_damaged")) {
+            Failure ignored;
+            note(QStringLiteral("integrity_alert"),
+                 {{QStringLiteral("code"), QStringLiteral("content_damaged")},
+                  {QStringLiteral("file"), fileId},
+                  {QStringLiteral("detail"), name}},
+                 &ignored);
+            addIssue(QStringLiteral("content_damaged"), QString(), name);
         }
-        wipe(plain);
-        remaining -= take;
+        if (failure)
+            *failure = readFailure;
+        return false;
     }
-    if (QString::fromLatin1(hash.result().toHex()) != version.sha256)
-        return damaged();
     return note(QStringLiteral("file_opened"),
                 {{QStringLiteral("file"), fileId},
                  {QStringLiteral("name"), name},
@@ -1766,152 +2303,182 @@ bool Drive::readFile(const QString &fileId, int versionIndex, QIODevice *out, co
 
 bool Drive::renameFile(const QString &fileId, const QString &name, Failure *failure)
 {
-    const FileEntry *entry = file(fileId);
     const QString cleaned = name.trimmed();
-    if (!entry)
-        return fail(failure, "unknown_file");
     if (cleaned.isEmpty() || cleaned.size() > 255 || cleaned.contains(QLatin1Char('/'))
         || cleaned.contains(QLatin1Char('\\')))
         return fail(failure, "invalid_name");
-    return note(QStringLiteral("file_renamed"),
-                {{QStringLiteral("file"), fileId},
-                 {QStringLiteral("name"), cleaned},
-                 {QStringLiteral("from"), entry->name}},
-                failure);
+    return transact(
+        [&](Txn &txn, Failure *f) {
+            const FileEntry *entry = file(fileId);
+            if (!entry)
+                return fail(f, "unknown_file");
+            txn.records.append({QStringLiteral("file_renamed"),
+                                {{QStringLiteral("file"), fileId},
+                                 {QStringLiteral("name"), cleaned},
+                                 {QStringLiteral("from"), entry->name}}});
+            return true;
+        },
+        failure);
 }
 
 bool Drive::deleteFile(const QString &fileId, Failure *failure)
 {
-    const FileEntry *entry = file(fileId);
-    if (!entry)
-        return fail(failure, "unknown_file");
-    QSet<QString> blobs;
-    for (const FileVersion &version : entry->versions)
-        blobs.insert(version.blob);
-    if (!note(QStringLiteral("file_deleted"),
-              {{QStringLiteral("file"), fileId}, {QStringLiteral("name"), entry->name}}, failure))
-        return false;
-    for (const QString &blob : std::as_const(blobs))
-        removeObject(blob);
-    return true;
+    return transact(
+        [&](Txn &txn, Failure *f) {
+            const FileEntry *entry = file(fileId);
+            if (!entry)
+                return fail(f, "unknown_file");
+            QSet<qint64> seen;
+            for (const FileVersion &version : entry->versions)
+                for (const Run &run : version.pages)
+                    if (!seen.contains(run.start)) {
+                        seen.insert(run.start);
+                        txn.freed.append(run);
+                    }
+            txn.records.append({QStringLiteral("file_deleted"),
+                                {{QStringLiteral("file"), fileId}, {QStringLiteral("name"), entry->name}}});
+            return true;
+        },
+        failure);
 }
 
 bool Drive::restoreVersion(const QString &fileId, int index, Failure *failure)
 {
-    const FileEntry *entry = file(fileId);
-    if (!entry)
-        return fail(failure, "unknown_file");
-    if (index < 0 || index >= entry->versions.size())
-        return fail(failure, "unknown_version");
-    const FileVersion version = entry->versions.at(index);
-    return note(QStringLiteral("file_restored"),
-                {{QStringLiteral("file"), fileId},
-                 {QStringLiteral("name"), entry->name},
-                 {QStringLiteral("version"), index},
-                 {QStringLiteral("blob"), version.blob},
-                 {QStringLiteral("key"), toBase64Url(version.key)},
-                 {QStringLiteral("size"), double(version.size)},
-                 {QStringLiteral("sha256"), version.sha256}},
-                failure);
+    return transact(
+        [&](Txn &txn, Failure *f) {
+            const FileEntry *entry = file(fileId);
+            if (!entry)
+                return fail(f, "unknown_file");
+            if (index < 0 || index >= entry->versions.size())
+                return fail(f, "unknown_version");
+            const FileVersion version = entry->versions.at(index);
+            txn.records.append({QStringLiteral("file_restored"),
+                                {{QStringLiteral("file"), fileId},
+                                 {QStringLiteral("name"), entry->name},
+                                 {QStringLiteral("version"), index},
+                                 {QStringLiteral("blob"), version.blob},
+                                 {QStringLiteral("pages"), runsToJson(version.pages)},
+                                 {QStringLiteral("key"), toBase64Url(version.key)},
+                                 {QStringLiteral("size"), double(version.size)},
+                                 {QStringLiteral("sha256"), version.sha256}}});
+            return true;
+        },
+        failure);
 }
 
 bool Drive::removeDevice(const QString &deviceId, const std::function<void(int, int)> &progress,
                          Failure *failure)
 {
-    Membership *m = mutableMembership();
-    const auto target = m_devices.constFind(deviceId);
-    if (target == m_devices.constEnd() || target->removed)
-        return fail(failure, "unknown_device");
     if (deviceId == m_state->deviceId)
         return fail(failure, "cannot_remove_self");
-    const QString targetName = target->name;
-    const QStringList oldKeyrings = m_keyringObjects;
-    EpochKey next;
-    next.key = randomBytes(kKeyBytes);
-    next.id = epochIdFor(next.key);
-    next.number = m->currentEpoch() ? m->currentEpoch()->number + 1 : 1;
-    m->epochs.append(next);
-    QStringList written;
-    const auto undo = [&]() {
-        for (const QString &object : std::as_const(written))
-            removeObject(object);
-        Membership *current = mutableMembership();
-        for (int i = 0; i < current->epochs.size(); ++i)
-            if (current->epochs.at(i).id == next.id)
-                current->epochs.removeAt(i--);
-        return false;
-    };
-    for (const DeviceInfo &device : std::as_const(m_devices)) {
-        if (device.removed || device.id == deviceId || device.id == m_state->deviceId)
-            continue;
-        QString object;
-        if (!sealKeyring(device, {}, {}, &object, failure))
-            return undo();
-        written.append(object);
-    }
-    QJsonArray keyrings;
-    for (const QString &object : std::as_const(written))
-        keyrings.append(object);
-    if (!append({{QStringLiteral("device_removed"),
-                  {{QStringLiteral("device"), deviceId},
-                   {QStringLiteral("name"), targetName},
-                   {QStringLiteral("epoch"), next.number},
-                   {QStringLiteral("keyId"), next.id},
-                   {QStringLiteral("upTo"), double(m->heads.value(deviceId).seq)},
-                   {QStringLiteral("keyrings"), keyrings}}}},
-                failure))
-        return undo();
-    for (const QString &object : oldKeyrings)
-        if (!written.contains(object))
-            removeObject(object);
-
-    const QList<FileEntry> current = files();
-    int total = 0, done = 0;
-    for (const FileEntry &entry : current)
-        total += int(entry.versions.size());
-    for (const FileEntry &entry : current) {
-        QHash<QString, QPair<QString, QByteArray>> moved;
-        QJsonArray changes;
-        for (const FileVersion &version : entry.versions) {
-            if (progress)
-                progress(++done, total);
-            if (moved.contains(version.blob) || !m_blobs.contains(version.blob))
-                continue;
-            QString object;
-            QByteArray key;
-            Failure transcodeFailure;
-            if (!transcodeBlob(version, &object, &key, &transcodeFailure)) {
-                if (transcodeFailure.code == QLatin1String("content_damaged")) {
-                    addIssue(QStringLiteral("content_damaged"), QString(), entry.name);
+    const bool removed = transact(
+        [&](Txn &txn, Failure *f) {
+            Membership *m = mutableMembership();
+            const auto target = m_devices.constFind(deviceId);
+            if (target == m_devices.constEnd() || target->removed)
+                return fail(f, "unknown_device");
+            txn.bothRoots = true;
+            EpochKey next;
+            next.key = randomBytes(kKeyBytes);
+            next.id = epochIdFor(next.key);
+            next.number = m->currentEpoch() ? m->currentEpoch()->number + 1 : 1;
+            m->epochs.append(next);
+            ContainerFile *file = txn.file;
+            for (const DeviceInfo &device : std::as_const(m_devices)) {
+                if (device.removed || device.id == deviceId || device.id == m_state->deviceId || device.mailbox < 0)
                     continue;
-                }
-                if (failure)
-                    *failure = transcodeFailure;
-                return false;
+                const QByteArray unit = keyringUnit(device, device.mailbox, {}, {}, f);
+                if (unit.isEmpty())
+                    return false;
+                const int mailbox = device.mailbox;
+                txn.afterCommit.append([file, mailbox, unit] {
+                    return file->writeAt(mailboxOffset(mailbox), unit) && file->sync();
+                });
             }
-            moved.insert(version.blob, {object, key});
-            changes.append(QJsonObject{{QStringLiteral("old"), version.blob},
-                                       {QStringLiteral("blob"), object},
-                                       {QStringLiteral("key"), toBase64Url(key)}});
-        }
-        if (changes.isEmpty())
-            continue;
-        if (!note(QStringLiteral("file_rekeyed"),
-                  {{QStringLiteral("file"), entry.id},
-                   {QStringLiteral("name"), entry.name},
-                   {QStringLiteral("versions"), changes}},
-                  failure)) {
-            for (const auto &pair : std::as_const(moved))
-                removeObject(pair.first);
-            return false;
-        }
-        for (auto it = moved.cbegin(); it != moved.cend(); ++it) {
-            removeObject(it.key());
-            m_blobs.remove(it.key());
-            m_blobs.insert(it->first);
-        }
-    }
-    return true;
+            if (target->mailbox >= 0) {
+                const int mailbox = target->mailbox;
+                txn.afterCommit.append([file, mailbox] {
+                    return file->writeAt(mailboxOffset(mailbox), randomBytes(int(kSlotBytes))) && file->sync();
+                });
+            }
+            txn.records.append({QStringLiteral("device_removed"),
+                                {{QStringLiteral("device"), deviceId},
+                                 {QStringLiteral("name"), target->name},
+                                 {QStringLiteral("epoch"), next.number},
+                                 {QStringLiteral("keyId"), next.id},
+                                 {QStringLiteral("upTo"), double(m->heads.value(deviceId).seq)}}});
+            return true;
+        },
+        failure);
+    if (!removed)
+        return false;
+    if (files().isEmpty())
+        return true;
+    return transact(
+        [&](Txn &txn, Failure *f) {
+            const Membership *m = membership();
+            const QList<FileEntry> current = files();
+            int total = 0, done = 0;
+            for (const FileEntry &entry : current)
+                total += int(entry.versions.size());
+            for (const FileEntry &entry : current) {
+                QHash<QString, QJsonObject> moved;
+                QJsonArray changes;
+                for (const FileVersion &version : entry.versions) {
+                    if (progress)
+                        progress(++done, total);
+                    if (moved.contains(version.blob))
+                        continue;
+                    QList<Run> runs;
+                    if (!allocate(txn, runPages(version.pages), false, &runs, f))
+                        return false;
+                    const QList<qint64> target = expand(runs);
+                    const QByteArray key = randomBytes(kKeyBytes);
+                    const QString blob = randomId();
+                    const qint64 chunks = chunkCount(version.size);
+                    bool intact = expand(version.pages).size() == chunks;
+                    QList<qint64> source = expand(version.pages);
+                    for (qint64 i = 0; intact && i < chunks; ++i) {
+                        QByteArray plain;
+                        intact = openUnit(version.key, blobAad(m->driveId, version.blob, i, i == chunks - 1, source.at(int(i))),
+                                          txn.file->readAt(source.at(int(i)) * kPageBytes, kPageBytes), &plain);
+                        if (!intact)
+                            break;
+                        const QByteArray unit = sealUnit(key, blobAad(m->driveId, blob, i, i == chunks - 1, target.at(int(i))),
+                                                         plain, kPageBytes);
+                        wipe(plain);
+                        if (unit.isEmpty() || !txn.file->writeAt(target.at(int(i)) * kPageBytes, unit))
+                            return fail(f, "drive_write_failed");
+                        if (txn.renew && i % 256 == 255)
+                            txn.renew();
+                    }
+                    if (!intact) {
+                        for (const qint64 page : target)
+                            txn.reserved.remove(page);
+                        addIssue(QStringLiteral("content_damaged"), QString(), entry.name);
+                        continue;
+                    }
+                    const QJsonObject change{{QStringLiteral("old"), version.blob},
+                                             {QStringLiteral("blob"), blob},
+                                             {QStringLiteral("pages"), runsToJson(runs)},
+                                             {QStringLiteral("key"), toBase64Url(key)}};
+                    moved.insert(version.blob, change);
+                    changes.append(change);
+                    txn.freed.append(version.pages);
+                    if (txn.renew)
+                        txn.renew();
+                }
+                if (!changes.isEmpty())
+                    txn.records.append({QStringLiteral("file_rekeyed"),
+                                        {{QStringLiteral("file"), entry.id},
+                                         {QStringLiteral("name"), entry.name},
+                                         {QStringLiteral("versions"), changes}}});
+            }
+            if (txn.records.isEmpty())
+                txn.records.append({QStringLiteral("drive_rekeyed"), {}});
+            return true;
+        },
+        failure);
 }
 
 QString Drive::activityCsv() const

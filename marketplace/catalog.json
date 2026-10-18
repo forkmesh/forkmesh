@@ -53,7 +53,7 @@
     { "id": "tour", "version": "1.1.0", "manifest": "packages/tour/manifest.json" },
     { "id": "aquarium", "version": "1.4.0", "manifest": "packages/aquarium/manifest.json" },
     { "id": "backups", "version": "1.0.0", "manifest": "packages/backups/manifest.json" },
-    { "id": "secure-drive", "version": "1.0.0", "manifest": "packages/secure-drive/manifest.json" },
+    { "id": "secure-drive", "version": "1.1.0", "manifest": "packages/secure-drive/manifest.json" },
     { "id": "docs", "version": "1.2.0", "manifest": "packages/docs/manifest.json" },
     { "id": "cleanup", "version": "1.2.0", "manifest": "packages/cleanup/manifest.json" },
     { "id": "computer-security", "version": "1.2.0", "manifest": "packages/computer-security/manifest.json" },
