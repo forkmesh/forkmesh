@@ -732,12 +732,21 @@ QWidget *OpenWrtFeature::buildStorage()
     layout->addWidget(m_storageLog, 1);
     layout->addWidget(sectionTitle(QStringLiteral("Network shares")));
     m_shareNote = mutedLabel();
-    layout->addWidget(m_shareNote);
+    m_shareInstall = makeButton(QStringLiteral("Install network sharing"));
+    m_shareInstall->setToolTip(QStringLiteral("Install ksmbd-server and luci-app-ksmbd on the router, so its disks can be shared with computers and phones."));
+    auto *shareNoteRow = new QHBoxLayout;
+    shareNoteRow->addWidget(m_shareNote, 1);
+    shareNoteRow->addWidget(m_shareInstall, 0, Qt::AlignTop);
+    layout->addLayout(shareNoteRow);
     m_shareTree = makeTree(QStringLiteral("openWrtShares"), {QStringLiteral("Share"), QStringLiteral("Folder"), QStringLiteral("Access")},
                            QStringLiteral("Folders the router shares on the network"));
     layout->addWidget(m_shareTree, 1);
     auto *shareActions = new QHBoxLayout;
     auto *unshare = makeButton(QStringLiteral("Stop sharing"));
+    m_shareBrowse = makeButton(QStringLiteral("Browse files"));
+    m_shareBrowse->setToolTip(QStringLiteral("Open the selected share in the Files page"));
+    m_shareBrowse->setVisible(bool(m_host.openNetworkShare));
+    shareActions->addWidget(m_shareBrowse);
     shareActions->addWidget(unshare);
     shareActions->addStretch();
     layout->addLayout(shareActions);
@@ -752,6 +761,12 @@ QWidget *OpenWrtFeature::buildStorage()
     connect(unmount, &QPushButton::clicked, this, [this] { unmountDisk(); });
     connect(share, &QPushButton::clicked, this, [this] { shareDisk(); });
     connect(unshare, &QPushButton::clicked, this, [this] { stopSharing(); });
+    connect(m_shareInstall, &QPushButton::clicked, this, [this] { installNetworkSharing(); });
+    connect(m_shareBrowse, &QPushButton::clicked, this, [this] { browseShare(); });
+    connect(m_shareTree, &QTreeWidget::itemDoubleClicked, this, [this] { browseShare(); });
+    connect(m_shareTree, &QTreeWidget::currentItemChanged, this, [this] {
+        m_shareBrowse->setEnabled(m_shareTree->currentItem() != nullptr);
+    });
     return page;
 }
 
@@ -2089,8 +2104,11 @@ void OpenWrtFeature::renderStorage()
 
     const QString config = shareConfig(m_advancedConfigs);
     m_shareTree->clear();
+    m_shareInstall->setVisible(config.isEmpty());
+    m_shareInstall->setEnabled(m_client.signedIn() && !m_storageBusy);
+    m_shareBrowse->setEnabled(m_shareTree->currentItem() != nullptr);
     if (config.isEmpty()) {
-        m_shareNote->setText(QStringLiteral("To share disks with computers and phones on your network, install ksmbd-server and luci-app-ksmbd on the Packages tab."));
+        m_shareNote->setText(QStringLiteral("To share disks with computers and phones on your network, install ksmbd-server and luci-app-ksmbd."));
     } else {
         m_shareNote->setText(QStringLiteral("Shared with the %1 file server (SMB). Shares with guest access need no password; others need a user set up on the router.").arg(config));
         for (const Share &share : parseShares(sections(config))) {
@@ -2358,7 +2376,7 @@ void OpenWrtFeature::shareDisk()
     const QString config = shareConfig(m_advancedConfigs);
     const StorageDisk *disk = selectedDisk();
     if (config.isEmpty()) {
-        showStatus(QStringLiteral("Install ksmbd-server and luci-app-ksmbd on the Packages tab to share disks."), true);
+        showStatus(QStringLiteral("Press Install network sharing to install ksmbd-server and luci-app-ksmbd, then share a disk."), true);
         return;
     }
     if (!disk || !disk->mounted()) {
@@ -2454,6 +2472,87 @@ void OpenWrtFeature::installStoragePackages(QStringList remaining, QStringList f
         }
         installStoragePackages(remaining, failed);
     }, 300000);
+}
+
+void OpenWrtFeature::installNetworkSharing()
+{
+    if (m_storageBusy || !m_client.signedIn())
+        return;
+    const QStringList packages = networkSharingPackages();
+    if (m_packageTool < 0) {
+        showStatus(QStringLiteral("The router does not let ForkMesh run its package manager, so network sharing cannot be installed from here. Install luci-app-package-manager (or luci-app-opkg on older releases) on the router."), true);
+        return;
+    }
+    if (!confirm(QStringLiteral("Install network sharing?"), QStringLiteral("This updates the router's package lists and installs %1. The router needs internet access to download them.").arg(packages.join(QStringLiteral(" and "))),
+                 QStringLiteral("Install")))
+        return;
+    const PackageTool tool = packageTools().at(m_packageTool);
+    m_storageBusy = true;
+    renderStorage();
+    showStatus(QStringLiteral("Installing ksmbd-server and luci-app-ksmbd…"));
+    m_storageLog->setPlainText(QStringLiteral("Updating the router's package lists…"));
+    m_client.exec(tool.program, packageArguments(tool, QStringLiteral("update")), [this, packages](const RpcResult &result) {
+        if (result.ok) {
+            appendStorageLog(QStringLiteral("Package lists updated."));
+        } else {
+            appendStorageLog(QStringLiteral("Updating the package lists failed; the router may have no internet connection. Trying to install anyway."));
+            for (const QString &line : outputTail(result.error))
+                appendStorageLog(QStringLiteral("  ") + line);
+        }
+        installPackageList(packages, {}, {}, [this](const QStringList &failed, const QString &firstFailure) {
+            m_storageBusy = false;
+            if (failed.isEmpty())
+                showStatus(QStringLiteral("Network sharing is installed. Share a mounted disk below."));
+            else
+                showStatus(firstFailure, true);
+            loadAdvancedConfigs();
+            renderStorage();
+        });
+    }, 300000);
+}
+
+void OpenWrtFeature::installPackageList(QStringList remaining, QStringList failed, QString firstFailure,
+                                        const std::function<void(const QStringList &, const QString &)> &done)
+{
+    if (remaining.isEmpty() || m_packageTool < 0) {
+        done(failed + remaining, firstFailure);
+        return;
+    }
+    const QString name = remaining.takeFirst();
+    const PackageTool tool = packageTools().at(m_packageTool);
+    appendStorageLog(QStringLiteral("Installing %1…").arg(name));
+    m_client.exec(tool.program, packageArguments(tool, QStringLiteral("install"), {name}), [this, remaining, failed, firstFailure, name, done](const RpcResult &result) mutable {
+        if (result.ok) {
+            appendStorageLog(QStringLiteral("  %1 is installed.").arg(name));
+        } else {
+            failed << name;
+            appendStorageLog(QStringLiteral("  %1 failed:").arg(name));
+            const QString output = (result.data.value(QStringLiteral("stdout")).toString() + QLatin1Char('\n') + result.data.value(QStringLiteral("stderr")).toString()).trimmed();
+            const QStringList tail = outputTail(output.isEmpty() ? result.error : output);
+            for (const QString &line : tail)
+                appendStorageLog(QStringLiteral("    ") + line);
+            if (firstFailure.isEmpty())
+                firstFailure = QStringLiteral("Could not install %1: %2").arg(name, tail.isEmpty() ? result.error : tail.join(QLatin1Char(' ')));
+        }
+        installPackageList(remaining, failed, firstFailure, done);
+    }, 300000);
+}
+
+void OpenWrtFeature::browseShare()
+{
+    QTreeWidgetItem *item = m_shareTree->currentItem();
+    if (!item || !m_host.openNetworkShare)
+        return;
+    const QString section = itemKey(item);
+    bool guests = false;
+    QString name = item->text(0);
+    for (const Share &share : parseShares(sections(shareConfig(m_advancedConfigs)))) {
+        if (share.section == section) {
+            guests = share.guests;
+            name = share.name;
+        }
+    }
+    m_host.openNetworkShare(shareUrl(m_client.base().host(), name), guests);
 }
 
 void OpenWrtFeature::renderServices()

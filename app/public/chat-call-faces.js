@@ -42,6 +42,7 @@ const CUSTOM_TRACK_TRIES = 4;
 const SLOW_MS = 34;
 const FAST_MS = 20;
 const QUALITY_HOLD = 24;
+const CAMERA_STYLE = "position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
 
 export const CALL_FACE_STORAGE_KEY = "forkmesh.chat.callFace";
 export const CALL_FACE_PHOTO_BASE = "/assets/call-faces/";
@@ -360,7 +361,11 @@ export function createFaceStage({
   video.muted = true;
   video.playsInline = true;
   if (cameraTrack) {
+    video.setAttribute?.("playsinline", "");
+    video.setAttribute?.("aria-hidden", "true");
+    video.setAttribute?.("style", CAMERA_STYLE);
     video.srcObject = new MediaStreamImpl([cameraTrack]);
+    documentRef.body?.append?.(video);
     video.play?.()?.catch?.(() => {});
   }
 
@@ -572,7 +577,9 @@ export function createFaceStage({
   }
 
   function tick() {
-    if (stopped || !video.videoWidth || (video.readyState ?? 4) < 2) return;
+    if (stopped) return;
+    if (cameraTrack && video.paused) video.play?.()?.catch?.(() => {});
+    if (!video.videoWidth || (video.readyState ?? 4) < 2) return;
     process(video, video.videoWidth, video.videoHeight, now());
   }
 
@@ -739,6 +746,7 @@ export function createFaceStage({
         track?.stop();
       } catch (_) {}
       video.srcObject = null;
+      video.remove?.();
       renderer.dispose();
     },
   };

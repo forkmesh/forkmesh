@@ -11,6 +11,8 @@
 #include <QJsonDocument>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QTimer>
 #include <QNetworkAccessManager>
 #include <QPushButton>
 #include <QSettings>
@@ -78,6 +80,8 @@ public:
     bool expireOnce = false;
     bool fstabMissing = false;
     bool fstabWritten = false;
+    bool ksmbdInstalled = false;
+    QStringList packageCommands;
 
     FakeRouter()
     {
@@ -176,6 +180,19 @@ private:
             return QJsonArray{0, QJsonObject{{QStringLiteral("data"), QStringLiteral("Flash Disk\n")}}};
         if (object == QStringLiteral("file") && method == QStringLiteral("read") && args.value(QStringLiteral("path")).toString() == QStringLiteral("/proc/partitions"))
             return QJsonArray{0, QJsonObject{{QStringLiteral("data"), QStringLiteral("major minor  #blocks  name\n\n  31        0       1024 mtdblock0\n   8        0   15000000 sda\n   8        1   14999000 sda1\n")}}};
+        if (object == QStringLiteral("uci") && method == QStringLiteral("configs")) {
+            QJsonArray configs{QStringLiteral("fstab"), QStringLiteral("network")};
+            if (ksmbdInstalled)
+                configs.append(QStringLiteral("ksmbd"));
+            return QJsonArray{0, QJsonObject{{QStringLiteral("configs"), configs}}};
+        }
+        if (object == QStringLiteral("uci") && method == QStringLiteral("get") && args.value(QStringLiteral("config")).toString() == QStringLiteral("ksmbd")) {
+            const QJsonObject values{{QStringLiteral("cfg02"), QJsonObject{{QStringLiteral(".name"), QStringLiteral("cfg02")}, {QStringLiteral(".type"), QStringLiteral("share")},
+                                                                         {QStringLiteral(".anonymous"), true}, {QStringLiteral(".index"), 0},
+                                                                         {QStringLiteral("name"), QStringLiteral("media")}, {QStringLiteral("path"), QStringLiteral("/mnt/sda1")},
+                                                                         {QStringLiteral("guest_ok"), QStringLiteral("yes")}, {QStringLiteral("read_only"), QStringLiteral("no")}}}};
+            return QJsonArray{0, QJsonObject{{QStringLiteral("values"), values}}};
+        }
         if (object == QStringLiteral("uci") && method == QStringLiteral("get")) {
             if (args.value(QStringLiteral("config")).toString() != QStringLiteral("network"))
                 return QJsonArray{0, QJsonObject{{QStringLiteral("values"), QJsonObject()}}};
@@ -194,6 +211,16 @@ private:
             const QString command = args.value(QStringLiteral("command")).toString();
             if (command == QStringLiteral("/bin/false"))
                 return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 1}, {QStringLiteral("stderr"), QStringLiteral("nope")}}};
+            const QJsonArray execParams = args.value(QStringLiteral("params")).toArray();
+            if (command == QStringLiteral("/bin/opkg") && !execParams.isEmpty() && execParams.first().toString() != QStringLiteral("list-installed")) {
+                QStringList words;
+                for (const QJsonValue &word : execParams)
+                    words << word.toString();
+                packageCommands << words.join(QLatin1Char(' '));
+                if (words.value(1) == QStringLiteral("ksmbd-server"))
+                    ksmbdInstalled = true;
+                return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), QStringLiteral("Installing.\n")}}};
+            }
             if (command == QStringLiteral("/bin/opkg"))
                 return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), QStringLiteral("base-files - 1-r1\nluci - git-24\n")}}};
             if (command == QStringLiteral("/sbin/block") && args.value(QStringLiteral("params")).toArray().first().toString() == QStringLiteral("detect"))
@@ -369,6 +396,11 @@ void testModel()
     check(mountValues.value(QStringLiteral("uuid")).toString() == QStringLiteral("1234-ABCD") && mountValues.value(QStringLiteral("target")).toString() == QStringLiteral("/mnt/media")
               && mountValues.value(QStringLiteral("enabled")).toString() == QStringLiteral("1") && !mountValues.contains(QStringLiteral("device")),
           QStringLiteral("a boot mount is keyed by UUID"));
+    check(networkSharingPackages() == QStringList({QStringLiteral("ksmbd-server"), QStringLiteral("luci-app-ksmbd")}),
+          QStringLiteral("network sharing installs the ksmbd server and its LuCI page"));
+    check(shareUrl(QStringLiteral("192.168.1.1"), QStringLiteral("My Disk")) == QStringLiteral("smb://192.168.1.1/My%20Disk/")
+              && shareUrl(QStringLiteral("fd00::1"), QStringLiteral("media")) == QStringLiteral("smb://[fd00::1]/media/"),
+          QStringLiteral("a share opens at an smb URL on the router"));
     check(usbStoragePackages().contains(QStringLiteral("block-mount")) && usbStoragePackages().contains(QStringLiteral("kmod-usb-storage")),
           QStringLiteral("USB storage support names the driver and mount packages"));
     check(shareConfig({QStringLiteral("network"), QStringLiteral("samba4")}) == QStringLiteral("samba4") && shareConfig({QStringLiteral("ksmbd"), QStringLiteral("samba4")}) == QStringLiteral("ksmbd")
@@ -493,6 +525,12 @@ void testFeature()
     forkmesh::market::NativePackageHost host;
     host.packageId = QStringLiteral("openwrt");
     host.network = &network;
+    QString browsedUrl;
+    bool browsedAsGuest = false;
+    host.openNetworkShare = [&](const QString &url, bool guest) {
+        browsedUrl = url;
+        browsedAsGuest = guest;
+    };
     OpenWrtFeature page(host);
     QLineEdit *addressField = nullptr;
     QLineEdit *passwordField = nullptr;
@@ -603,6 +641,44 @@ void testFeature()
               && report.contains(QStringLiteral("found no filesystem it can read")) && report.contains(QStringLiteral("usb 1-1: new high-speed"))
               && !report.contains(QStringLiteral("crng")),
           QStringLiteral("the USB check reports the device, the kernel's disks, the reason and the USB kernel messages"));
+
+    QPushButton *installSharing = nullptr;
+    QPushButton *browse = nullptr;
+    for (QPushButton *button : page.findChildren<QPushButton *>()) {
+        if (button->text() == QStringLiteral("Install network sharing"))
+            installSharing = button;
+        if (button->text() == QStringLiteral("Browse files"))
+            browse = button;
+    }
+    auto *shares = page.findChild<QTreeWidget *>(QStringLiteral("openWrtShares"));
+    check(installSharing && !installSharing->isHidden() && installSharing->isEnabled() && browse && shares && shares->topLevelItemCount() == 0,
+          QStringLiteral("without a file server the share note offers to install network sharing"));
+    if (!installSharing || !browse || !shares)
+        return;
+    QTimer::singleShot(0, &page, [] {
+        for (int i = 0; i < 100; ++i) {
+            if (auto *box = qobject_cast<QMessageBox *>(QApplication::activeModalWidget())) {
+                for (QAbstractButton *button : box->buttons()) {
+                    if (button->text() == QStringLiteral("Install"))
+                        button->click();
+                }
+                return;
+            }
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        }
+    });
+    installSharing->click();
+    check(waitFor([&] { return statusText().contains(QStringLiteral("Network sharing is installed")); }), QStringLiteral("installing network sharing finishes"));
+    check(router.packageCommands == QStringList({QStringLiteral("update"), QStringLiteral("install ksmbd-server"), QStringLiteral("install luci-app-ksmbd")}),
+          QStringLiteral("the package lists are updated, then ksmbd-server and luci-app-ksmbd are installed one at a time"));
+    check(log->toPlainText().contains(QStringLiteral("luci-app-ksmbd is installed.")), QStringLiteral("the install progress goes to the Storage log"));
+    check(waitFor([&] { return shares->topLevelItemCount() == 1 && installSharing->isHidden(); }),
+          QStringLiteral("the shares list appears and the install button goes away"));
+    if (shares->topLevelItemCount() != 1)
+        return;
+    shares->setCurrentItem(shares->topLevelItem(0));
+    browse->click();
+    check(browsedUrl == QStringLiteral("smb://127.0.0.1/media/") && browsedAsGuest, QStringLiteral("Browse files opens the share in Files as a guest when guests are allowed"));
 }
 
 }

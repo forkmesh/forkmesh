@@ -2442,6 +2442,7 @@ class RequestBodyTooLarge(BaseException):
 _request_bodies = _LazyModule("request_bodies")
 bounded_request_text = _request_bodies.export("bounded_request_text")
 bounded_json_request = _request_bodies.export("bounded_json_request")
+_json_request_limit = _request_bodies.export("_json_request_limit")
 
 
 def _legacy_custody_not_ready_response():

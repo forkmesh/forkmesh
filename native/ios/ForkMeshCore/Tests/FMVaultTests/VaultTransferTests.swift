@@ -35,6 +35,10 @@ final class VaultTransferTests: XCTestCase {
         XCTAssertEqual(
             VaultTransfer.source(forHeader: ["folder", "favorite", "type", "name", "notes", "fields", "reprompt", "login_uri", "login_username", "login_password", "login_totp"]),
             .bitwarden)
+        XCTAssertEqual(
+            VaultTransfer.source(forHeader: ["Title", "Url", "Username", "Password", "OTPAuth", "Favorite", "Archived", "Tags", "Notes"]),
+            .onePassword)
+        XCTAssertEqual(VaultTransfer.source(forHeader: ["Title", "URL", "Username", "Password", "Notes", "OTPAuth"]), .applePasswords)
         XCTAssertEqual(VaultTransfer.source(forHeader: ["Password", "Site"]), .other)
     }
 

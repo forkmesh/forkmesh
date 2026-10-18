@@ -115,6 +115,44 @@ A master password is NFKC-normalized before it is stretched: browsers and Qt
 do that themselves, the iOS app uses Foundation and the Android app
 `java.text.Normalizer`.
 
+## Importing from Apple Passwords and other password managers
+
+The dashboard page's **Import** button (next to New login) takes a CSV export
+from Apple Passwords (on a Mac: Passwords, File, Export All Passwords), Chrome,
+Firefox, DuckDuckGo, Bitwarden or 1Password, or the ZIP that Safari's Export
+writes on iPhone. The iPhone app reads the same files (see On the phone).
+
+- `vault-client.js` does the reading, so the page and the browser extension
+  share it: `readLoginsFile(bytes)` opens a ZIP (stored or deflated, through
+  `DecompressionStream`; `__MACOSX/` and dot files skipped), decodes UTF-8 or
+  falls back to Latin-1, and `readLoginsCsv(text)` matches columns by header
+  name. The only column it needs is a password one. Rows with neither a
+  username nor a password (secure notes, cards) are counted and left out.
+  Files over 16 MB are refused.
+- The header also names the app for the review: Bitwarden's `login_*`,
+  Firefox's `guid`, 1Password's `Archived` (checked before `OTPAuth`, which
+  1Password's export has too), Apple's `OTPAuth`, Chrome's `note`, then
+  DuckDuckGo's plain `title,url,username,password,notes`.
+- `importFields(login)` gives what `save()` takes: the title falls back to the
+  site's host, then the username, then "Imported login"; an `otpauth://` code
+  (the vault has no one-time-code field) goes at the end of the notes, which is
+  where the iPhone app's export looks for it.
+- `planImport(logins, items)` skips a login whose host (www. folded), username
+  (case-folded) and password match a readable item or an earlier row. A
+  changed password for the same account is imported beside the old item, never
+  over it.
+- `client.importLogins(logins, { onProgress })` saves the new logins one at a
+  time, each encrypted in the browser exactly as a typed-in login is, and stops
+  at the first error (`vault_full`, `vault_locked`, a network failure),
+  reporting `added`, `duplicates`, `remaining` and `stoppedBy`.
+- The page shows how many logins are new, already there or left out before
+  anything is saved, and afterwards reminds the person to delete the export:
+  it holds every password in plain text. The file is read in memory and never
+  uploaded.
+
+`tests/transfer_check.js` reads each app's format, Latin-1 and ZIP files;
+`tests/e2e_client.js` imports an Apple export against the real Worker module.
+
 ## On the desktop
 
 The rail page keeps every secret in memory: no settings key, no log line, no

@@ -74,11 +74,12 @@ let modules: [Module] = [
     // The Market and the business packages: CRM, marketing, analytics, ledger (WS19).
     Module(name: "FMPackages", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi"]),
     // Stats, health, logs and the admin console (WS20).
-    Module(name: "FMInsights", deps: ["FMBase", "FMNet", "FMAccount", "FMApi", "FMControl"]),
+    Module(name: "FMInsights", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMControl"]),
     // Coves (encrypted file vaults) and secrets (WS21).
     Module(name: "FMCoves", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi"]),
     Module(name: "FMPush", deps: ["FMBase", "FMCrypto"]),
     Module(name: "FMWorkflows", deps: ["FMBase", "FMNet", "FMAccount", "FMApi"], resources: true, assets: true),
+    Module(name: "FMFiles", deps: ["FMBase", "FMCrypto", "FMPackages"]),
     Module(name: "FMAssistant", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMControl", "FMPackages", "FMPlanning", "FMLocalAI"]),
 ]
 
