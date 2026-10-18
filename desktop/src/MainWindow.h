@@ -6996,6 +6996,7 @@ private:
     void confirmDeleteAgentAccount(const QString &provider,
                                    const QString &accountId);
     QAction *addAgentUsagePageAction(QMenu *menu);
+    bool openAgentUsagePage();
     void refreshAgentAccountUsageMenu(const QString &provider);
     // The open account menu per provider, so a usage response does not have to
     // findChild() its way through the whole window to find one that is usually

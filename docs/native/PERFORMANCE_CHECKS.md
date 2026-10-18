@@ -18,7 +18,10 @@ characters, lowest-ranked sections are trimmed first and say so):
 - Header. `build ... commit <sha>`: check out that commit to read the code
   that ran. `tab`, `screen`, `recent screens` are the state when the report
   was built, not when the stalls happened. `stalls since launch` counts
-  frame, event-loop and named sync stalls of 200 ms or more. `agents`
+  frame, event-loop and named sync stalls of 200 ms or more; `paused while
+  visible N (longest X ms)` (since 2026-10-18) counts the times the whole
+  process stopped while the stall probes were running, which are not stalls
+  (see `FRAME`). `agents`
   (lines listed, running, list view, agent dots, aquarium) and `watch`
   (paired, app installed, reachable) since 2026-10-18: the watch bridge
   reads and parses agent work only while a watch with the app is paired.
@@ -31,7 +34,15 @@ characters, lowest-ranked sections are trimmed first and say so):
   stall. Compare the 5 minute average with the hour's: a `FRAME` average of
   40-50 ms over an hour has been this phone's usual level (41 ms in the
   2026-10-18 bundle, 51 ms in the 2026-10-17 one), so only a rise above it
-  points at the last few minutes.
+  points at the last few minutes. A `max` of tens of seconds with an
+  `uptime` not much longer, in a build without `paused while visible`, is
+  the process being suspended while the probes thought the app visible, not
+  a frozen main thread: the per-second rows go missing for that stretch, no
+  tracked operation lasts as long (one open across a suspension would), and
+  the stall's in-flight requests and sections are the resume burst. Since
+  2026-10-18 an off-main watch timer (`PerformanceMonitorService`, same
+  rate as the heartbeat) sees such a gap too, and the time it missed is
+  taken out of heartbeat lags, frame gaps and the telemetry `FRAME`.
 - `RELAY` is relay frames received. Before 2026-10-17 the hook was never
   wired and it always read 0.
 - `Stalls by name` (before 2026-10-17 merged into `Slow events by name`,
@@ -64,7 +75,7 @@ characters, lowest-ranked sections are trimmed first and say so):
   reach 24 s. Longer ones (31-32 s in the 2026-10-18 bundle) span the app
   being suspended: look for empty minutes in the per-minute rows. Waiting
   for the main actor between hops adds at most about the `LOOP` max per
-  hop; it explains an operation a few hundred ms slower than its endpoint,
+  hop (once `LOOP` is not a suspension); it explains an operation a few hundred ms slower than its endpoint,
   not seconds.
 - `In flight or finished during stalls`: requests open while a stall was
   recorded. Correlation, not cause: a request that is in flight in many
@@ -85,6 +96,47 @@ characters, lowest-ranked sections are trimmed first and say so):
 
 Newest first. Each entry: date and branch; what the bundle showed; the
 cause; the fix; what was ruled out; what the bundle lacked.
+
+- 2026-10-18, `2284-slow-ios-app-performance` (1.4.1 (284), commit
+  d11bec0, iPhone16,2, Agents tab root). Showed: "froze for 86.0 s (4
+  freezes)" with `uptime 1m50s`: one frame and one event-loop stall of
+  about 86 s (last 15:38:59, so starting about 10 s after the telemetry
+  started) and three pairs of about 0.7 s; `FRAME` and `LOOP` averages of
+  4 s are that one second averaged over about 22 sampled seconds (the
+  rest of the 110 s has no samples); no slow operation near 86 s (the
+  largest total is 9.6 s, and the list is sorted by total); chat
+  channels, direct messages and reads in flight, the requests a return
+  to the app starts; `relay.send.hello` (sent on each connect) inside two
+  stalls. Cause: the process was stopped for about 86 s while both stall
+  probes were armed, and the probes read the gap as a frozen main
+  thread. The heartbeat and frame probe park only when the scene phase
+  says the app went to the background. The monitor was installed as
+  `.resumed` whatever UIKit's state was, and heard lifecycle changes only
+  through `AppServices`, which subscribes after the identity load. So a
+  launch in the background (Bluetooth or audio, both in
+  `UIBackgroundModes`), a change during that load, or a suspension while
+  `.inactive` (the probes run then on purpose) left them armed, and every
+  frame and heartbeat gap after the suspension counted. Which of these
+  happened on this phone the bundle cannot say. Fix: a watch timer on its
+  own queue ticks with the heartbeat. A gap it saw too (or one still
+  pending when a beat or frame arrives) is a pause: it is subtracted from
+  the heartbeat lag, the frame gap and the telemetry frame, logged as
+  `[pause] process paused N ms while visible`, and counted in the header.
+  A real block of the main thread with the rest of the process running
+  is still a stall, with `pausedMs` when a pause overlapped it.
+  `AppLifecycle` starts from `UIApplication.applicationState`, and the
+  monitor observes it from the moment it is installed. Ruled out: a real
+  86 s hang (no operation spans it, and the burst in flight is the resume
+  one); the pull ledger reads (`.forkmesh/pulls/<n>` trees, 24 in 5
+  minutes at about 540 ms, plus blobs) finished after the stalls and are
+  network time; MetricKit's 1.0 GB of disk writes is from the day before.
+  Not checked: what the three pairs of about 0.7 s ran; they name no
+  section over 8 ms besides `relay.send.hello` (73 ms), so it was
+  SwiftUI's own updates or unwrapped code. Bundle gaps closed: pauses are
+  told apart from stalls and counted (`paused while visible` in the
+  header, `[pause]` lines in `stalls.log`). Still missing: symbolicated
+  stacks, and what started the process (a background launch or a user
+  launch).
 
 - 2026-10-18, `2228-slow-ios-app-performance` (1.4.1 (276), commit
   b57c0d2, iPhone16,2, Agents tab root). Showed: "froze for 0.5 s": 23

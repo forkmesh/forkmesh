@@ -1225,6 +1225,7 @@ public:
 
     std::function<void()> onHover;
     std::function<void(const QPoint &)> onClick;
+    std::function<void(const QPoint &)> onContextMenu;
     std::function<void()> onChanged;
 
     QColor barColor(int pct) const
@@ -1300,6 +1301,15 @@ protected:
         }
         QWidget::mousePressEvent(event);
     }
+    void contextMenuEvent(QContextMenuEvent *event) override
+    {
+        if (onContextMenu) {
+            onContextMenu(event->globalPos());
+            event->accept();
+            return;
+        }
+        QWidget::contextMenuEvent(event);
+    }
 
 private:
     static QString defaultLabel(int index)
@@ -1353,7 +1363,8 @@ private:
                           m_note.value(i));
         if (!m_stats.isEmpty())
             tip += QStringLiteral("\n\n") + m_stats;
-        tip += QStringLiteral("\n\nClick to view accounts and usage.");
+        tip += QStringLiteral("\n\nClick to open the Usage page. Right-click to "
+                              "manage accounts.");
         setToolTip(tip);
         if (onChanged)
             onChanged();

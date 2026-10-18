@@ -30,7 +30,7 @@ FUNCS = {
     "_notification_item_record",
     "_notification_item_path",
     "_notification_stored_path",
-    "_notification_code_push_tail",
+    "_notification_stored_tail",
     "_push_alert_item",
 }
 CONSTANTS = {
@@ -232,6 +232,22 @@ def test_a_tap_lands_on_the_record_the_banner_names():
         _issue_ping(repo="mirror23/forkmesh"),
         {"mirror23/forkmesh": "forkmesh/forkmesh"})
     assert aliased["href"] == "/forkmesh/forkmesh/issues/42"
+
+
+def test_a_tap_on_a_desktop_ping_lands_on_its_run_or_agent():
+    ns = _load()
+    run = ns["_push_alert_item"]({
+        "kind": "desktop_ping", "title": "Workflow build failed",
+        "repo": "mirror23/forkmesh",
+        "href": "/mirror23/forkmesh/actions/runs/41",
+        "meta": {"desktopKind": "action", "runId": "41"}},
+        {"mirror23/forkmesh": "forkmesh/forkmesh"})
+    assert run["href"] == "/forkmesh/forkmesh/actions/runs/41"
+    agent = ns["_push_alert_item"]({
+        "kind": "desktop_ping", "title": "Agent #12", "repo": "jett/forkmesh",
+        "href": "/jett/forkmesh/agents/12",
+        "meta": {"desktopKind": "agent-done", "sessionId": "12"}})
+    assert agent["href"] == "/jett/forkmesh/agents/12"
 
 
 def test_a_tap_without_a_repository_uses_only_a_same_site_stored_path():

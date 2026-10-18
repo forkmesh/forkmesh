@@ -6,14 +6,15 @@ import FMAccount
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
 
 @MainActor
 @Observable
 final class AppLifecycle {
     static let shared: AppLifecycle = AppLifecycle()
 
-    /// The last state delivered. The app starts resumed.
-    private(set) var state: AppLifecycleState = .resumed
+    /// The last state delivered, seeded from UIKit's state when first read.
+    private(set) var state: AppLifecycleState = AppLifecycle.map(UIApplication.shared.applicationState)
 
     var isForeground: Bool {
         return state == .resumed
@@ -45,6 +46,19 @@ final class AppLifecycle {
 
     func remove(_ token: UUID) {
         observers.removeValue(forKey: token)
+    }
+
+    static func map(_ state: UIApplication.State) -> AppLifecycleState {
+        switch state {
+        case .active:
+            return .resumed
+        case .inactive:
+            return .inactive
+        case .background:
+            return .paused
+        @unknown default:
+            return .inactive
+        }
     }
 
     /// The root view's `.onChange(of: scenePhase)`.

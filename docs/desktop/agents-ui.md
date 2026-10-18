@@ -242,13 +242,19 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   CLI's own home folder (`~/.claude`, `~/.codex`) and cannot be deleted; sign
   it out with **Log out**. On macOS a Claude login kept in the Keychain is not
   touched.
+- Clicking a usage icon (the **Usage** button atop the agents list and the
+  Claude Code and Codex meters at the bottom right of the prompt) opens the
+  Usage package's `/dashboard/usage` page (`openAgentUsagePage`,
+  `marketplace/packages/usage`) for every account across the user's desktops.
+  Right-click opens the account and terminal menus below; with no ForkMesh
+  host set a click opens them too. Before 2026-10-18 a click opened the menu
+  and the page was only its first entry.
 - Both account popups start with **Open the Usage page**
-  (`addAgentUsagePageAction`), which opens the Usage package's
-  `/dashboard/usage` page (`marketplace/packages/usage`) for every account
-  across the user's desktops. The entry is hidden when no ForkMesh host is set.
+  (`addAgentUsagePageAction`). The entry is hidden when no ForkMesh host is set.
 - Usage rows (`TokenUsageMenuRow`) segment the bar per hour or day of the
   window, mark even pace and add a pace note (`usagePaceNote`).
-- **Usage** (`agentUsageButton`, `showAgentUsageMenu`) shows the default
+- **Usage** (`agentUsageButton`) opens the Usage page; its right-click menu
+  (`showAgentUsageMenu`) shows the default
   provider's bars and offers terminals, **Run new agents as**, account
   management and the default provider switch. **Runner accounts**
   (`fillRunnerAccountsMenu`) switches a runner's account.

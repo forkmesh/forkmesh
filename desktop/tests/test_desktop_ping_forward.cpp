@@ -70,6 +70,40 @@ static void checkCategories()
     check(pingFor(issue).sessionId.isEmpty(), "an issue number is not a session");
 }
 
+static void checkFailedAction()
+{
+    Source source;
+    source.localId = 9;
+    source.timestampMs = 1760000000000;
+    source.node = QStringLiteral("Jett-Laptop");
+    source.kind = QStringLiteral("action");
+    source.runId = 41;
+    source.repo = QStringLiteral("jett/forkmesh");
+    source.warning = true;
+    source.title = QStringLiteral("Workflow build failed");
+    source.body = QStringLiteral("Step test exited 1");
+    Ping ping = pingFor(source);
+    check(valid(ping), "a failed-action ping is valid");
+    check(ping.runId == QLatin1String("41"), "a failed action carries its run");
+    check(ping.category == QLatin1String("ci-failed"), "a failed action is ci-failed");
+    check(ping.sessionId.isEmpty(), "a run is not a session");
+    ping.pingId = QStringLiteral("1760000000000-7");
+    check(canonical(QStringLiteral("jett"), ping, QStringLiteral("123")) ==
+              QStringLiteral("forkmesh-account-desktop-ping-v1\njett\n1760000000000-7\n"
+                             "jett-laptop\naction\nci-failed\n\n41\n"
+                             "jett/forkmesh\n1\nWorkflow build failed\n"
+                             "Step test exited 1\n123"),
+          "the run canonical matches desktop_ping_canonical in app/src/desktop_pings.py");
+    check(body(ping).value(QStringLiteral("runId")).toString() == QLatin1String("41"),
+          "the body carries the run");
+    check(!body(pingFor(agentDone())).contains(QStringLiteral("runId")),
+          "an agent ping sends no run");
+    source.warning = false;
+    const Ping passed = pingFor(source);
+    check(passed.runId == QLatin1String("41") && passed.category.isEmpty(),
+          "a passing run opens its run without failure actions");
+}
+
 static void checkKinds()
 {
     check(forwardsKind(QStringLiteral("agent-done")), "agent-done is forwarded");
@@ -279,6 +313,7 @@ int main()
 {
     checkWireShape();
     checkCategories();
+    checkFailedAction();
     checkKinds();
     checkText();
     checkPhones();

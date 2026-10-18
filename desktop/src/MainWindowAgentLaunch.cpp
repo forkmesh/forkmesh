@@ -2628,8 +2628,9 @@ void MainWindow::refreshAgentToolbarAccountButtons()
         if (!lines.isEmpty())
             tip += QLatin1Char('\n') + lines.join(QLatin1Char('\n'));
     }
-    tip += QStringLiteral("\n\nClick to open Claude Code or Codex in a terminal, "
-                          "switch accounts, and see every account's usage.");
+    tip += QStringLiteral("\n\nClick to open the Usage page with every account's "
+                          "usage. Right-click to open Claude Code or Codex in a "
+                          "terminal or switch accounts.");
     m_agentUsageButton->setToolTip(tip);
     m_agentUsageButton->setAccessibleDescription(tip);
     m_agentUsageButton->update();

@@ -170,8 +170,9 @@ the desktop's website-pings list and unread count (`pingforward::isOwnEcho`).
 | `pingId` | `[A-Za-z0-9_.:-]{1,64}`; the desktop sends `<timestampMs>-<row id>` |
 | `node` | `[A-Za-z0-9_.-]{1,64}`, lowercased by the relay |
 | `kind` | the desktop's kind, `[A-Za-z0-9_-]{0,40}` |
-| `category` | `""`, `agent-finished` or `agent-failed` |
+| `category` | `""`, `agent-finished`, `agent-failed` or `ci-failed` |
 | `sessionId` | digits, at most 12 |
+| `runId` | optional; a desktop Actions run id, 1 to 12 digits, no leading zero |
 | `repo` | `""` or `owner/name` |
 | `warning` | JSON boolean |
 | `title`, `body` | at most 160 and 500 characters; not both empty; refused rather than trimmed |
@@ -181,9 +182,13 @@ Authorised by the account session, or by `user`/`ts`/`sig` over
 ```
 forkmesh-account-desktop-ping-v1
 <user>
-<pingId>\n<node>\n<kind>\n<category>\n<sessionId>\n<repo>\n<0|1>\n<title>\n<body>
+<pingId>\n<node>\n<kind>\n<category>\n<sessionId>\n[<runId>\n]<repo>\n<0|1>\n<title>\n<body>
 <ts>
 ```
+
+The `runId` line is there only when the ping names a run, so a desktop that
+sends no run signs the same proof as before. Deploy the relay before the
+desktop: an older relay refuses `ci-failed` and does not sign over `runId`.
 
 signed by the account key (`signOrgTaskProof`), so a captured proof announces
 exactly one ping into the signer's own inbox.
@@ -199,13 +204,15 @@ forkmesh-account-desktop-ping-delete-v1
 <ts>
 ```
 
-The row's `meta` holds `node`, `desktopKind`, `warning`, and `category` and
-`sessionId` when set; `href` is `/<repo>/agents/<sessionId>` when both are
-known.
+The row's `meta` holds `node`, `desktopKind`, `warning`, and `category`,
+`sessionId` and `runId` when set. `href` is `/<repo>/agents/<sessionId>` for an
+agent and `/<repo>/actions/runs/<runId>` for an Actions run, so every surface
+that follows the href lands on the record, not the repository.
 
 Categories: an agent ping that is not a warning is `agent-finished` (Open,
 Continue, Merge & clean up); a warning about an agent is `agent-failed` (Open,
-Retry, Send to agent).
+Retry, Send to agent). A failed Actions run is `ci-failed` (Open log, Send to
+agent); a run that did not fail carries its `runId` with no category.
 
 ### Tapping the banner
 
@@ -220,6 +227,22 @@ session is not in the relay's agent list).
   `com.forkmesh.push.agent` extra; `PushFeature.open` marks the row read and
   opens `AgentRouteScreen`, which resolves `desktop:<n>` for a number and
   `node:<id>` otherwise.
+
+A tap on an Actions ping opens that run. The APNs payload carries `runId`
+next to `href`; the iOS `NotificationDeepLink` keeps `actions/runs/<id>` as
+its `reference` and `InboxRoutes` turns it into `.run`. Android's
+`NotificationDeepLink.run` routes to `Route.Run`, which opens
+`ActionRunScreen` (loading the runs itself when opened on its own) instead of
+the Actions list. The web Actions tab opens the run named by
+`/<owner>/<repo>/actions/runs/<id>`.
+
+### Every banner lands on its record
+
+`_push_alert_item` and the digest email keep the stored href's tail under the
+repository (`_notification_stored_tail`) for every kind, not only code pushes,
+rewriting just the `owner/repo` prefix to the public identity. Before this a
+ping with a repository and no record number (an agent, an Actions run, a
+branch) opened the repository's front page.
 
 ## Traps
 
