@@ -1517,7 +1517,7 @@
   function repoTabRoutesFor(repo) {
     const routes = REPO_TAB_ROUTES.slice();
     if (repo && sessionCanAssignAgent(repo)) routes.push("agents");
-    if (repo && sessionOwnsRepo(repo)) routes.push("settings");
+    if (repo && sessionAdministersRepo(repo)) routes.push("settings");
     return routes;
   }
 

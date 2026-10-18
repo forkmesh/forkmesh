@@ -65,6 +65,12 @@ Denied writes are recorded in the sensitive-action audit log with a reason
   bot tokens and repository imports.
 - `_org_permission`, used by the Git push gate and every repository-permission
   check: the role's baseline, raised by team grants up to the role's ceiling.
+- A linked repository's Settings tab and every endpoint behind it (About,
+  features, federation switches, webhooks, provider mirror, Actions secrets,
+  logo review, delete) need repository permission `admin`, so `owner` and
+  `admin` hold it and `maintainer` does not unless a team grants `admin`; the
+  account that stores the repository keeps it too
+  (`docs/app/repo-settings-access.md` in the source tree).
 - World building access, office chat channels, task boards and succession
   votes, which enumerate the insider roles in SQL.
 

@@ -170,6 +170,9 @@ def _about_env(catalog_record, media_store, log):
         "ensure_schema": ensure_schema,
         "_authed_account_name": _authed_account_name,
         "_account_owns_node": _account_owns_node,
+        "_repo_admin_allowed": (
+            lambda env, actor, owner, repo: _account_owns_node(
+                env, actor, owner)),
         "_is_admin": _is_admin,
         "_owner_pubkey": _owner_pubkey,
         "d1_all": d1_all,

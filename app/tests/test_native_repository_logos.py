@@ -517,6 +517,8 @@ def test_private_collaborator_can_suggest_but_cannot_replace_or_review():
         "ensure_schema": ensure_schema,
         "_native_repository_logo_context": context,
         "_account_owns_node": owns,
+        "_repo_admin_allowed": (
+            lambda env, actor, owner, repo: owns(env, actor, owner)),
         "_repository_import_moderator": moderator,
         "_repository_import_service": Service,
         "json_response": json_response,
