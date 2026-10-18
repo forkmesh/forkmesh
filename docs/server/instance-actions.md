@@ -206,7 +206,16 @@ Issue changes are signed by the instance's Actions bot account
 the bot makes do not trigger workflows.
 
 `tools/forkmesh-actions.sh` wraps these calls for workflows
-(`forkmesh-actions comment 12 "Thanks!"`).
+(`forkmesh-actions comment 12 "Thanks!"`); `install-instance.sh` installs it
+as `/usr/local/bin/forkmesh-actions`. Subcommands: `event` (prints
+`$FORKMESH_EVENT_PATH`, else `GET event`), `issue <n>`, `comment <n>
+<body|->`, `label <n> --add a,b --remove c`, `close <n>`, `reopen <n>`,
+`open-issue <title> <body|-> [labels]` (`-` reads standard input). It needs
+curl and builds JSON with jq, or python3 when jq is missing
+(`FORKMESH_ACTIONS_JSON=python` forces that path, for tests). The token is
+passed to curl through a process-substitution header file, never on its
+command line; a non-2xx answer prints the body to stderr and exits 1, bad
+arguments exit 2. Test: `app/tests/test_forkmesh_actions_helper.py`.
 
 ## Secrets
 
