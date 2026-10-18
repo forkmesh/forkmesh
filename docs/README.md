@@ -61,6 +61,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [marketplace-usage-feed-mastodon.md](marketplace-usage-feed-mastodon.md): privacy and federation boundaries for the Usage, Feed, and Mastodon packages.
 - [MARKETPLACE_RATINGS.md](MARKETPLACE_RATINGS.md): Market ratings and reviews.
 - [attribution.md](attribution.md): acquisition attribution.
+- [app/branch-protection.md](app/branch-protection.md): protected default branches (merge only an owner- or admin-approved pull request) and the per-repository Actions switch.
 - [PERF_PAGES.md](PERF_PAGES.md): page performance techniques.
 - [GIT_ERROR_MESSAGES.md](GIT_ERROR_MESSAGES.md): what failing Git commands show.
 - [Folder About boxes](../www/docs/folder-about.md): the `<folder>/.forkmesh/info.json` file format for a folder's own About box and logo (user guide); [app/directory-about.md](app/directory-about.md) has the API, caching and permissions.
