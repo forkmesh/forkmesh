@@ -591,7 +591,7 @@ def test_issue_mirror_wake_is_durable_but_off_the_acceptance_path():
     node_runtime = (
         ENTRY.parent / "node_events_runtime.py"
     ).read_text(encoding="utf-8")
-    issue_start = entry.index("async def issues_handler")
+    issue_start = entry.index("async def _accept_issue_submission")
     issue_end = entry.index("\nasync def ", issue_start + 1)
     issue_handler = entry[issue_start:issue_end]
     scheduler_start = node_runtime.index(
