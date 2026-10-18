@@ -11,6 +11,7 @@ struct DjSpinner: UIViewRepresentable {
     let moving: Bool
     let scratching: Bool
     let rate: Double
+    let pace: DjPace
 
     func makeUIView(context: Context) -> DjSpinView {
         DjSpinView(deck: deck)
@@ -18,6 +19,7 @@ struct DjSpinner: UIViewRepresentable {
 
     func updateUIView(_ view: DjSpinView, context: Context) {
         view.deck = deck
+        view.set(pace)
         view.show(d: d, artwork: artwork, gain: gain)
         view.wake()
     }
@@ -43,8 +45,6 @@ final class DjSpinTicker: NSObject {
 @MainActor
 final class DjSpinView: UIView {
     static let key = "spin"
-    static let fast = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
-    static let slow = CAFrameRateRange(minimum: 8, maximum: 15, preferred: 15)
     static let settled = 0.0005
     static let slip = 0.01
 
@@ -53,7 +53,8 @@ final class DjSpinView: UIView {
     private let art = CALayer()
     private let marks = CALayer()
     private var link: CADisplayLink?
-    private var quick = true
+    private var pace = DjPace()
+    private var paced: DjPace.Range?
     private var drawnFor: CGFloat = 0
     private var drawnScale: CGFloat = 0
     private var shownArt: UIImage?
@@ -102,11 +103,18 @@ final class DjSpinView: UIView {
         draw(drawnFor)
         guard link == nil else { return }
         let link = CADisplayLink(target: DjSpinTicker(self), selector: #selector(DjSpinTicker.tick(_:)))
-        link.preferredFrameRateRange = Self.fast
-        quick = true
         link.add(to: .main, forMode: .common)
         self.link = link
+        paced = nil
+        run(at: pace.touched)
         step(at: CACurrentMediaTime())
+    }
+
+    func set(_ fresh: DjPace) {
+        guard fresh != pace else { return }
+        pace = fresh
+        paced = nil
+        loose()
     }
 
     func show(d: CGFloat, artwork: UIImage?, gain: Double) {
@@ -131,14 +139,14 @@ final class DjSpinView: UIView {
         defer { DjVitalsRecorder.shared.work(.spin, from: began, to: CACurrentMediaTime()) }
         let angle = DjStudio.turnDegrees(deck.turned(at: now)) * Double.pi / 180
         if let speed = steadySpeed() {
-            pace(Self.slow, quick: false)
+            run(at: DjPace.idle)
             if let free, disc.animation(forKey: Self.key) != nil, abs(Self.wrapped(angle - freeAngle - free * (now - freeSince))) < Self.slip {
                 return
             }
             spinFreely(angle, at: now, speed: speed)
             return
         }
-        pace(deck.moving || deck.scratching ? Self.fast : Self.slow, quick: deck.moving || deck.scratching)
+        run(at: deck.moving || deck.scratching ? pace.touched : DjPace.idle)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         loose()
@@ -165,7 +173,7 @@ final class DjSpinView: UIView {
         spin.duration = 2 * Double.pi / speed
         spin.repeatCount = .infinity
         spin.beginTime = disc.convertTime(time, from: nil)
-        spin.preferredFrameRateRange = Self.fast
+        spin.preferredFrameRateRange = Self.range(pace.steady)
         disc.add(spin, forKey: Self.key)
         CATransaction.commit()
         free = speed
@@ -179,10 +187,14 @@ final class DjSpinView: UIView {
         free = nil
     }
 
-    private func pace(_ range: CAFrameRateRange, quick wanted: Bool) {
-        guard let link, wanted != quick else { return }
-        quick = wanted
-        link.preferredFrameRateRange = range
+    private func run(at range: DjPace.Range) {
+        guard let link, range != paced else { return }
+        paced = range
+        link.preferredFrameRateRange = Self.range(range)
+    }
+
+    static func range(_ range: DjPace.Range) -> CAFrameRateRange {
+        CAFrameRateRange(minimum: range.minimum, maximum: range.maximum, preferred: range.preferred)
     }
 
     private func draw(_ side: CGFloat) {

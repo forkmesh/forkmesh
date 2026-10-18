@@ -79,7 +79,7 @@ struct DjPeopleStrip: View {
                 layout {
                     ForEach(jam.members) { (member: DjJamMember) in
                         let seen = crowd.first { $0.name == member.name }
-                        TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !moving)) { timeline in
+                        TimelineView(.animation(minimumInterval: model.pace.peopleInterval, paused: !moving)) { timeline in
                             let progress = timeline.date.timeIntervalSince(model.crowdDate) / 1.5
                             icon(member, mine: member.name == jam.me, seen: seen, effects: effects, progress: progress)
                         }
@@ -250,7 +250,7 @@ struct DjReactionLayer: View {
     var body: some View {
         let effects = model.effects
         let emojis = Array(Set(effects.map(\.reaction.emoji))).sorted()
-        TimelineView(.animation(minimumInterval: DjTheme.frame, paused: effects.isEmpty)) { timeline in
+        TimelineView(.animation(minimumInterval: model.pace.motionInterval, paused: effects.isEmpty)) { timeline in
             Canvas { context, size in
                 for effect in effects {
                     DjEffectDrawing.draw(effect, context, size, now: timeline.date, reduced: reduceMotion)
