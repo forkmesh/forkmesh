@@ -132,7 +132,7 @@ struct ProfileAccountCard: View {
     var body: some View {
         let text: ProfileCardText = profileCardText(session, guest: guest)
         HStack(spacing: FmSpace.x3) {
-            FmIcon("person_outline", size: 24, color: fm.dark ? FmColors.darkBgBase : FmColors.bgRaised)
+            FmIcon("person_outline", size: 24, color: fm.dark ? fm.bgBase : fm.bgRaised)
                 .frame(width: 42, height: 42)
                 .background(fm.textPrimary)
                 .clipShape(Circle())
@@ -769,11 +769,12 @@ struct NotificationContentCard: View {
 
 // MARK: Appearance
 
-/// Theme mode and accent colour, applied the moment they
+/// Theme mode, accent colour and surfaces, applied the moment they
 /// are tapped.
 struct AppearanceCard: View {
     @Environment(\.fmPalette) var fm
     let settings: SettingsService
+    @State private var writer: ThemeWriter = ThemeWriter()
 
     private static let modes: [(mode: ThemeMode, icon: String, label: String)] = [
         (mode: ThemeMode.system, icon: "brightness_auto_outlined", label: "System"),
@@ -797,27 +798,47 @@ struct AppearanceCard: View {
         .clipShape(Capsule())
     }
 
-    private var swatches: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 64), spacing: FmSpace.x2)], spacing: FmSpace.x3) {
-            ForEach(FmAccent.allCases, id: \.self) { (accent: FmAccent) in
-                AccentSwatch(
-                    accent: accent,
-                    selected: settings.accent.rawValue == accent.rawValue,
-                    onTap: { settings.setAccent(AccentChoice.fromName(accent.rawValue)) })
-                    .accessibilityIdentifier("appearance-accent-\(accent.rawValue)")
+    private func apply(_ theme: AppTheme, now: Bool) {
+        writer.write(theme, to: settings, now: now)
+    }
+
+    private var editorLink: some View {
+        NavigationLink {
+            ThemeEditorScreen(settings: settings)
+                .shellPageClearance()
+        } label: {
+            HStack(spacing: FmSpace.x3) {
+                FmIcon("tune", size: 22, color: fm.textSecondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Theme editor").fmText(.titleSmall)
+                    Text("Preview, shuffle and every colour").fmText(.bodySmall, color: fm.textTertiary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                FmIcon("chevron_right", size: 20, color: fm.textDisabled)
             }
+            .frame(minHeight: 48)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(FmPressStyle(highlight: fm.accentSubtle, cornerRadius: FmRadius.sm))
+        .accessibilityIdentifier("appearance-theme-editor")
     }
 
     var body: some View {
+        let theme: AppTheme = settings.theme
         VStack(alignment: .leading, spacing: 0) {
             Text("Theme").fmText(.labelMedium, color: fm.textSecondary)
             modeTrack
                 .padding(.top, FmSpace.x2)
             Text("Accent colour").fmText(.labelMedium, color: fm.textSecondary)
                 .padding(.top, FmSpace.x4)
-            swatches
+            ThemeAccentPicker(theme: theme, dark: fm.dark, onChange: apply)
                 .padding(.top, FmSpace.x2)
+            Text("Surfaces").fmText(.labelMedium, color: fm.textSecondary)
+                .padding(.top, FmSpace.x4)
+            ThemeSurfacePicker(theme: theme, onChange: apply)
+                .padding(.top, FmSpace.x2)
+            editorLink
+                .padding(.top, FmSpace.x3)
             Text("Background").fmText(.labelMedium, color: fm.textSecondary)
                 .padding(.top, FmSpace.x4)
             AppearanceBackgroundRow(settings: settings)
@@ -868,51 +889,6 @@ private struct ThemeModeSegment: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text(verbatim: "\(label) theme"))
-        .accessibilityAddTraits(selected ? [.isButton, .isSelected] : [.isButton])
-    }
-}
-
-private struct AccentSwatch: View {
-    @Environment(\.fmPalette) var fm
-    let accent: FmAccent
-    let selected: Bool
-    let onTap: () -> Void
-
-    var body: some View {
-        // The variant the app will actually draw in the current mode.
-        let color: Color = fm.dark ? accent.onDark : accent.light
-        VStack(spacing: FmSpace.x1) {
-            Circle()
-                .fill(color)
-                .overlay {
-                    if selected {
-                        FmIcon("check_rounded", size: 20, color: fm.onPrimary)
-                    }
-                }
-                .padding(3)
-                .frame(width: 44, height: 44)
-                .overlay {
-                    Circle().strokeBorder(selected ? color : Color.clear, lineWidth: 2)
-                }
-            Text(accent.label)
-                .fmText(
-                    .bodySmall,
-                    color: selected ? fm.textPrimary : fm.textSecondary,
-                    weight: selected ? FmType.emphasis : FmType.regular)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if selected {
-                return
-            }
-            FmHaptics.selection()
-            onTap()
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(accent.label) accent"))
         .accessibilityAddTraits(selected ? [.isButton, .isSelected] : [.isButton])
     }
 }

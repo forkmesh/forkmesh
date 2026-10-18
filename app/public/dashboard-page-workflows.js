@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["workflows"] = (core) => {
-  const { $, $$, blobText, desktopControlErrorText, desktopControlHub, escapeHtml, fetchJson, fetchRepoJson, formatTimeAgo, state } = core;
+  const { $, $$, blobText, desktopControlErrorText, desktopControlHub, escapeHtml, fetchJson, fetchRepoJson, formatTimeAgo, sendTextToPrompt, state } = core;
   const WF_NODE_W = 216;
   const WF_NODE_H = 64;
   const WF_GRID = 8;
@@ -83,6 +83,10 @@
     unsupported_action: "The desktop app is too old for desktop steps. Update ForkMesh on the desktop.",
     cleanup_failed: "The cleanup step failed on the desktop.",
   };
+  const WF_FAILURE_PROMPT_MAX = 7500;
+  const WF_FAILURE_LOG_LINES = 40;
+  const WF_FAILURE_PARAMS_MAX = 1500;
+  const WF_SECRET_KEY_RE = /token|secret|password|passwd|api[_-]?key|auth|cookie|signature/i;
   const WF_PACKAGE = "workflows";
   const WF_EXAMPLES_PACKAGE = "workflows-examples";
   const WF_FILES_PACKAGE = "workflows-repository-files";
@@ -853,6 +857,7 @@
     if (!entry) return '<p class="wf-help">Run the workflow to see what this step receives and returns.</p>';
     const parts = [`<div class="wf-row"><span class="wf-dot" data-status="${escapeHtml(entry.status)}"></span><span class="text-sm font-semibold">${escapeHtml(entry.status === "success" ? "Succeeded" : entry.status === "error" ? "Failed" : "Skipped")}</span>${entry.ms !== undefined ? `<span class="wf-help mt-0">${escapeHtml(String(entry.ms))} ms</span>` : ""}</div>`];
     if (entry.error) parts.push(`<div class="wf-pre" style="color:#dc2626">${escapeHtml(entry.error)}</div>`);
+    if (entry.status === "error" && wfFailedRun()) parts.push(`<div class="wf-row mt-3">${wfFailureButton()}</div>`);
     if (entry.logs?.length) {
       parts.push(`<p class="wf-help">Script log, ${entry.logs.length} line${entry.logs.length === 1 ? "" : "s"}</p>`);
       parts.push(`<pre class="wf-pre">${escapeHtml(entry.logs.join("\n"))}</pre>`);
@@ -960,7 +965,7 @@
     const parts = [`<h2>${escapeHtml(current.name || "Untitled workflow")}</h2>`];
     parts.push(`<p class="wf-help">${current.nodes.length} step${current.nodes.length === 1 ? "" : "s"}, ${current.connections.length} connection${current.connections.length === 1 ? "" : "s"}. ${trigger ? `Starts from ${escapeHtml(wfSpec(trigger.type).name.toLowerCase())}.` : "Add a trigger to start."}</p>`);
     if (run) {
-      parts.push(`<div class="wf-section"><p class="wf-label mt-0">Selected execution</p><div class="wf-row"><span class="wf-dot" data-status="${escapeHtml(run.status)}"></span><span class="text-sm">${escapeHtml(run.status === "success" ? "Succeeded" : "Failed")} · ${escapeHtml(wfTriggerLabel(run.trigger))} · ${escapeHtml(String(run.requests || 0))} requests</span></div>${run.output?.text && run.status === "success" ? `<p class="wf-help">Output: ${escapeHtml(run.output.text)}</p>` : ""}${run.error ? `<div class="wf-pre" style="color:#dc2626">${escapeHtml(run.error)}</div>` : ""}<p class="wf-help">Select a step to see its output.</p></div>`);
+      parts.push(`<div class="wf-section"><p class="wf-label mt-0">Selected execution</p><div class="wf-row"><span class="wf-dot" data-status="${escapeHtml(run.status)}"></span><span class="text-sm">${escapeHtml(run.status === "success" ? "Succeeded" : "Failed")} · ${escapeHtml(wfTriggerLabel(run.trigger))} · ${escapeHtml(String(run.requests || 0))} requests</span></div>${run.output?.text && run.status === "success" ? `<p class="wf-help">Output: ${escapeHtml(run.output.text)}</p>` : ""}${run.error ? `<div class="wf-pre" style="color:#dc2626">${escapeHtml(run.error)}</div>` : ""}${wfFailedRun() ? `<div class="wf-row mt-3">${wfFailureButton()}</div>` : ""}<p class="wf-help">Select a step to see its output.</p></div>`);
     }
     parts.push(`<div class="wf-section"><p class="wf-label mt-0">Building</p><ul class="wf-help" style="list-style:disc;padding-left:1rem">
       <li>Add steps with Add step, the + next to a step, or a double-click (long press on touch) on empty canvas.</li>
@@ -1023,6 +1028,81 @@
     if (output.text && output.freedBytes === undefined) parts.push(`<span class="wf-run-text">${escapeHtml(output.text)}</span>`);
     if (!parts.length) return '<span class="wf-run-output is-empty" aria-hidden="true"></span>';
     return `<span class="wf-run-output" title="${escapeHtml(output.text || "")}">${parts.join("")}</span>`;
+  }
+
+  function wfFailedRun() {
+    const view = wfView();
+    if (view.live || wfIsFileMode()) return null;
+    return view.run?.status === "error" ? view.run : null;
+  }
+
+  function wfFailureButton() {
+    return '<button type="button" class="wf-btn" data-wf-send-failure title="Put this failure in the agent prompt so an agent can fix it"><i data-lucide="send"></i>Send to agent</button>';
+  }
+
+  function wfRedactParams(value, depth = 0) {
+    if (depth > 6 || value === null || typeof value !== "object") return value;
+    if (Array.isArray(value)) return value.map((item) => wfRedactParams(item, depth + 1));
+    const secretPair = "value" in value && WF_SECRET_KEY_RE.test(String(value.name ?? value.key ?? ""));
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      out[key] = WF_SECRET_KEY_RE.test(key) || (secretPair && key === "value") ? "[hidden]" : wfRedactParams(item, depth + 1);
+    }
+    return out;
+  }
+
+  function wfFailurePrompt(run) {
+    const view = wfView();
+    const workflow = view.current || { name: "", nodes: [], connections: [] };
+    const nodes = run.nodes && typeof run.nodes === "object" ? run.nodes : {};
+    const ordered = wfRunOrder(workflow).map((node) => node.id).filter((id) => nodes[id]);
+    const ids = ordered.concat(Object.keys(nodes).filter((id) => !ordered.includes(id)));
+    const where = `/dashboard/workflows${workflow.id ? `?id=${encodeURIComponent(workflow.id)}` : ""}`;
+    const lines = [`The ForkMesh workflow "${workflow.name || "Untitled workflow"}" failed (${where}). Find the cause and fix it.`, ""];
+    const started = Number(run.startedAt) ? new Date(Number(run.startedAt)).toISOString() : "an unknown time";
+    lines.push(`Run ${run.id || "(not saved)"}, ${wfTriggerLabel(run.trigger)}, started ${started}, failed after ${wfDuration((run.finishedAt || 0) - (run.startedAt || 0))}.`);
+    if (run.error) lines.push(`Error: ${run.error}`);
+    if (ids.length) lines.push("", "Steps:");
+    for (const id of ids) {
+      const node = wfNode(id);
+      const entry = nodes[id] || {};
+      const status = entry.status === "success" ? "succeeded" : entry.status === "error" ? "failed" : "skipped";
+      const time = entry.status !== "skipped" && entry.ms !== undefined ? `, ${wfDuration(entry.ms)}` : "";
+      lines.push(`- ${node ? `${node.name} (${node.type})` : id}: ${status}${time}`);
+      if (entry.error) lines.push(`  Error: ${entry.error}`);
+    }
+    const failedId = ids.find((id) => nodes[id]?.status === "error");
+    const failed = failedId ? wfNode(failedId) : null;
+    if (failed) {
+      const step = wfCore(failed.type)?.desktopStep;
+      if (step) {
+        lines.push("", `"${failed.name}" is a desktop step. The ForkMesh desktop app (MainWindow::runLocalControlFreeDiskSpace) runs \`python3 -u <checkout>/tools/free_disk_space.py --execute --step ${step} --repo <checkout> --json\` and reports the last line it printed as the error. \`python3 tools/free_disk_space.py --step ${step}\` repeats it as a dry run that deletes nothing. See docs/tools/free-disk-space.md and docs/app/workflows.md.`);
+      } else {
+        lines.push("", `Settings of "${failed.name}": ${wfShort(JSON.stringify(wfRedactParams(failed.params || {})), WF_FAILURE_PARAMS_MAX)}`, "See docs/app/workflows.md for how steps run.");
+      }
+      const logs = Array.isArray(nodes[failedId].logs) ? nodes[failedId].logs.map(String) : [];
+      if (logs.length) {
+        const tail = logs.slice(-WF_FAILURE_LOG_LINES);
+        lines.push("", `Last ${tail.length} log line${tail.length === 1 ? "" : "s"} of "${failed.name}":`, "```", ...tail.map((line) => wfShort(line, 300)), "```");
+      }
+    }
+    return lines.join("\n").slice(0, WF_FAILURE_PROMPT_MAX);
+  }
+
+  async function wfSendFailure() {
+    const run = wfFailedRun();
+    if (!run) return;
+    const prompt = wfFailurePrompt(run);
+    if (sendTextToPrompt(prompt)) {
+      wfSetNotice("The failure is in the agent prompt. Pick the repository and agent, then send it.", "good");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(prompt);
+      wfSetNotice("There is no agent prompt on this page, so the failure report was copied instead.", "good");
+    } catch {
+      wfSetNotice("There is no agent prompt on this page and the failure report could not be copied.", "bad");
+    }
   }
 
   function wfRailData() {
@@ -1098,7 +1178,8 @@
       headline = `${data.past.length} run${data.past.length === 1 ? "" : "s"} so far`;
     }
     const scaleNote = data.longest ? `Full bar: longest run, ${wfDuration(data.longest)}` : "";
-    root.innerHTML = `<div class="wf-rail-head"><span class="font-semibold">${escapeHtml(headline)}</span><span class="wf-help mt-0">${escapeHtml(scaleNote)}</span></div>
+    const send = !data.live && data.status === "error" && wfFailedRun() ? wfFailureButton() : "";
+    root.innerHTML = `<div class="wf-rail-head"><span class="wf-row"><span class="font-semibold">${escapeHtml(headline)}</span>${send}</span><span class="wf-help mt-0">${escapeHtml(scaleNote)}</span></div>
       <div class="wf-rail-track" role="progressbar" aria-label="Run progress" aria-valuemin="0" aria-valuemax="${Math.round(data.scale)}" aria-valuenow="${Math.round(data.elapsed)}" aria-valuetext="${escapeHtml(headline)}">
         <span class="wf-rail-fill" data-status="${escapeHtml(data.status)}" style="width:${pct(data.elapsed)}%"></span>
         ${ticks}${marks}
@@ -2887,6 +2968,10 @@
       }
       if (event.target.closest("[data-wf-new]")) {
         wfNewWorkflow();
+        return;
+      }
+      if (event.target.closest("[data-wf-send-failure]")) {
+        void wfSendFailure();
         return;
       }
       const open = event.target.closest("[data-wf-open]");

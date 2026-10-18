@@ -502,7 +502,7 @@ private struct AuthPrimaryButton: View {
         FmFilledButton(
             label,
             background: fm.textPrimary,
-            foreground: fm.dark ? FmColors.darkBgBase : FmColors.bgRaised,
+            foreground: fm.dark ? fm.bgBase : fm.bgRaised,
             minHeight: 48,
             radius: FmRadius.md,
             fillWidth: true,

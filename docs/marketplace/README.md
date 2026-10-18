@@ -247,7 +247,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
 - **Home network:** `openwrt` (manage an OpenWrt router and its USB storage on
   the user's LAN from the desktop, iPhone and Android over its ubus JSON-RPC
   endpoint; [openwrt.md](openwrt.md)).
-- **Desktop and phone extras:** `capture`, `discord`,
+- **Desktop and phone extras:** `capture` (on the iPhone, long-press a blank
+  area to select, mark up and copy part of the screen;
+  [../native/CAPTURE_MARKUP.md](../native/CAPTURE_MARKUP.md)), `discord`,
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `eye-control` (iPhone, experimental: gaze cursor and blink to tap;
   [eye-control.md](eye-control.md)),
