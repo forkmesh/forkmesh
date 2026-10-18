@@ -49,6 +49,10 @@ struct DjPlatter: View {
             .position(x: d * 0.13, y: d * 0.13)
             DjCueLight(model: model, deck: deck, d: d)
                 .position(x: d * 0.12, y: d * 0.88)
+            if deck.loaded {
+                DjFileButton(model: model, deck: deck, size: d * 0.13)
+                    .position(x: d * 0.88, y: d * 0.88)
+            }
             DjDropRing(model: model, side: deck.side, d: d)
         }
         .frame(width: d, height: d)
