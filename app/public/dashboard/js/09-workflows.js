@@ -29,6 +29,7 @@
     too_many_credentials: "You already have 50 credentials. Delete one to add another.",
     no_credential_needed: "This integration does not need a credential.",
     document_too_large: "That file is larger than 1 MB.",
+    script_unavailable: "This server does not have the script's source. The command above is what the desktop runs.",
     invalid_document: "That file is not valid JSON.",
     not_a_workflow: "That file does not contain a workflow (no nodes and connections).",
     invalid_import_url: "Use a public https:// link to a workflow JSON file.",
@@ -82,6 +83,10 @@
   const WF_FAILURE_LOG_LINES = 40;
   const WF_FAILURE_PARAMS_MAX = 1500;
   const WF_SECRET_KEY_RE = /token|secret|password|passwd|api[_-]?key|auth|cookie|signature/i;
+  const WF_DESKTOP_SCRIPT = "/api/workflows/desktop-script";
+  const WF_SCRIPT_EXTENSIONS = [".sh", ".bash"];
+  const WF_BODY_METHODS = ["POST", "PUT", "PATCH", "DELETE"];
+  const WF_SCRIPT_TAGS = { script: "Script", "script-part": "Part of script" };
   const WF_PACKAGE = "workflows";
   const WF_EXAMPLES_PACKAGE = "workflows-examples";
   const WF_FILES_PACKAGE = "workflows-repository-files";
@@ -634,17 +639,19 @@
     }).join("");
     const title = wfNodeTitle(node);
     const sub = node.disabled ? "Disabled" : wfNodeSummary(node);
+    const nature = wfNature(node);
+    const tag = WF_SCRIPT_TAGS[nature.kind] || "";
     const link = wfShortcutLink(node);
     const open = link
       ? `<button type="button" class="wf-node-link" data-wf-open-file="${escapeHtml(`.forkmesh/shortcuts/${link}`)}" aria-label="Open ${escapeHtml(link)}" title="Open ${escapeHtml(link)} on the canvas"><i data-lucide="arrow-up-right"></i><span>Open</span></button>`
       : "";
-    return `<div class="${classes.join(" ")}" data-wf-node="${escapeHtml(node.id)}" data-status="${escapeHtml(entry?.status || "")}" style="left:${node.x}px;top:${node.y}px;--wf-node-color:${escapeHtml(spec.color || "#64748b")}" role="button" aria-label="${escapeHtml(`${title}: ${sub}`)}">
+    return `<div class="${classes.join(" ")}" data-wf-node="${escapeHtml(node.id)}" data-status="${escapeHtml(entry?.status || "")}" style="left:${node.x}px;top:${node.y}px;--wf-node-color:${escapeHtml(spec.color || "#64748b")}" role="button" aria-label="${escapeHtml(`${title}${tag ? ` (${tag.toLowerCase()})` : ""}: ${sub}`)}">
       ${status}
       ${spec.inputs ? `<span class="wf-port wf-port-in" data-wf-port-in="${escapeHtml(node.id)}" title="Drag to move a connection"></span>` : ""}
       <div class="wf-node-row">
         ${wfBadge(node.type)}
         <div class="wf-node-text">
-          <div class="wf-node-kicker">${escapeHtml(spec.name)}</div>
+          <div class="wf-node-kicker"><span>${escapeHtml(spec.name)}</span>${tag ? `<span class="wf-node-tag" data-kind="${escapeHtml(nature.kind)}">${escapeHtml(tag)}</span>` : ""}</div>
           <div class="wf-node-title">${escapeHtml(title)}</div>
           ${open ? `<div class="wf-node-subline"><div class="wf-node-sub">${escapeHtml(sub)}</div>${open}</div>` : `<div class="wf-node-sub">${escapeHtml(sub)}</div>`}
         </div>
@@ -865,6 +872,395 @@
     return parts.join("");
   }
 
+  function wfFilePath() {
+    return String(wfView().current?.path || "this file");
+  }
+
+  function wfShortcutIsScript() {
+    const name = wfFilePath().split("/").pop().toLowerCase();
+    return WF_SCRIPT_EXTENSIONS.some((ext) => name.endsWith(ext)) || !name.includes(".");
+  }
+
+  function wfNature(node) {
+    const spec = wfSpec(node.type);
+    const path = wfFilePath();
+    const script = wfCore(node.type)?.script;
+    if (script) {
+      return { kind: "script-part", label: "Part of a script", icon: "file-code", text: `One part of ${script.path} (${script.language}). Your desktop runs only this part of the script, with --step ${script.step}.` };
+    }
+    if (node.type === "core.code") {
+      return { kind: "script", label: "Script", icon: "file-code", text: "Your own JavaScript. ForkMesh's sandboxed script interpreter runs it on the server, or on the phone that runs the workflow; it cannot reach files, the network or the host." };
+    }
+    if (node.type === "core.comment") return { kind: "note", label: "Note", icon: "sticky-note", text: "A note on the canvas. It does not run and passes nothing on." };
+    if (wfIsFileMode()) {
+      if (wfIsRoot(node)) return { kind: "file-part", label: "File header", icon: "file-text", text: `The start of ${path}: its name and the settings that apply to the whole file.` };
+      if (node.type === "action.step") return { kind: "script-part", label: "Part of a script", icon: "file-code", text: `Shell commands: one step of the action ${path}. They run after the steps before them, in the job they are connected to.` };
+      if (node.type === "shortcut.block" || node.type === "shortcut.run") {
+        return wfShortcutIsScript()
+          ? { kind: "script-part", label: "Part of a script", icon: "file-code", text: `One block of the shell script ${path}. The blocks are joined top to bottom and run as one script.` }
+          : { kind: "file-part", label: "Part of a prompt", icon: "message-square-text", text: `One section of the prompt ${path}. The sections are joined and sent to the agent as one prompt.` };
+      }
+      if (node.type === "skill.block") return { kind: "file-part", label: "Part of a skill", icon: "book-open", text: `One section of the instructions in ${path}.` };
+      if (node.type.startsWith("agent.")) return { kind: "file-part", label: "Agent setting", icon: "bot", text: `One setting of the special agent in ${path}.` };
+      return { kind: "file-part", label: "Part of a file", icon: "file-text", text: `Part of ${path}.` };
+    }
+    if (spec.trigger) return { kind: "trigger", label: "Trigger", icon: "zap", text: "Starts the workflow. Every run begins here, and its item is the first data the next steps receive." };
+    if (spec.kind === "app") return { kind: "integration", label: "Integration call", icon: "plug", text: `Calls the ${spec.name} API once for each item it receives, signed in with the credential you pick.` };
+    if (node.type === "core.http") return { kind: "request", label: "Web request", icon: "globe", text: "Calls the address you enter once for each item it receives and passes the reply on." };
+    if (node.type === "core.runWorkflow") return { kind: "workflow", label: "Runs another workflow", icon: "workflow", text: "Runs one of your other workflows with each item and passes on what it returns." };
+    if (spec.kind === "core") return { kind: "built-in", label: "Built-in step", icon: "box", text: "A step built into ForkMesh. It works on the items it receives and calls nothing outside ForkMesh." };
+    return { kind: "unknown", label: "Unknown step", icon: "circle-help", text: "This step type is not in the catalog any more, so ForkMesh cannot run it." };
+  }
+
+  function wfRunsOn(node) {
+    if (wfIsDesktopType(node.type)) return "Your desktop, through the ForkMesh desktop app";
+    if (node.type === "core.comment") return "Nowhere, it is a note";
+    if (wfIsFileMode()) {
+      const kind = wfView().current?.kind;
+      if (kind === "action") return "Wherever the action's job runs";
+      if (kind === "shortcut") return "Your desktop, when the shortcut is started";
+      if (kind === "skill") return "In the agent that loads the skill";
+      return "In the special agent";
+    }
+    return "The ForkMesh server, or the phone that runs the workflow";
+  }
+
+  function wfNeighbours(node) {
+    const conns = wfView().current?.connections || [];
+    const pick = (list, key) => list.map((conn) => ({ node: wfNode(conn[key]), output: conn.output })).filter((item) => item.node);
+    return {
+      from: pick(conns.filter((conn) => conn.to === node.id), "from"),
+      to: pick(conns.filter((conn) => conn.from === node.id), "to"),
+    };
+  }
+
+  function wfStepLinks(list, empty) {
+    if (!list.length) return `<span class="wf-help mt-0">${escapeHtml(empty)}</span>`;
+    return list.map(({ node, output }) => {
+      const branch = output && output !== "main" ? ` <span class="wf-help mt-0">(${escapeHtml(WF_OUTPUT_LABELS[output] || output)})</span>` : "";
+      return `<button type="button" class="wf-step-link" data-wf-select-node="${escapeHtml(node.id)}" title="Show this step">${wfBadge(node.type, true)}<span>${escapeHtml(wfNodeTitle(node))}</span>${branch}</button>`;
+    }).join("");
+  }
+
+  function wfFact(label, html) {
+    return `<dt>${escapeHtml(label)}</dt><dd>${html}</dd>`;
+  }
+
+  function wfCode(text) {
+    return `<code class="wf-mono">${escapeHtml(text)}</code>`;
+  }
+
+  function wfCodeHtml(text, first = 1, marked = null) {
+    const lines = String(text ?? "").replace(/\n$/, "").split("\n");
+    const rows = lines.map((line, index) => {
+      const number = first + index;
+      const mark = marked && marked(number) ? " is-marked" : "";
+      return `<span class="wf-code-line${mark}" data-wf-line="${number}"><span class="wf-code-no" aria-hidden="true">${number}</span>${escapeHtml(line) || " "}</span>`;
+    });
+    return `<pre class="wf-code-view">${rows.join("")}</pre>`;
+  }
+
+  function wfFillTemplate(value, params, keys, depth = 0) {
+    if (depth > 6) return value;
+    if (typeof value === "string") {
+      return value.replace(/\{([A-Za-z0-9_]+)\}/g, (all, key) => {
+        const filled = keys.has(key) ? params[key] : undefined;
+        return filled === undefined || filled === null || filled === "" ? all : String(filled);
+      });
+    }
+    if (Array.isArray(value)) return value.map((item) => wfFillTemplate(item, params, keys, depth + 1));
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, wfFillTemplate(item, params, keys, depth + 1)]));
+    }
+    return value;
+  }
+
+  function wfObject(value) {
+    if (value && typeof value === "object" && !Array.isArray(value)) return value;
+    try {
+      const parsed = JSON.parse(String(value));
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function wfPairs(map) {
+    return Object.entries(map || {}).map(([key, value]) => `${key}: ${value}`).join("\n");
+  }
+
+  function wfRequestHtml(node, app) {
+    const op = wfOperation(node);
+    const spec = wfView().catalog?.requests?.[app.key];
+    const sent = spec?.operations?.[op?.key];
+    if (!op || !sent) return "";
+    const params = node.params || {};
+    const keys = new Set((op.fields || []).map((field) => field.key));
+    const secrets = new Set((app.credential || []).filter((field) => field.secret).map((field) => field.label));
+    const address = `${spec.base || ""}${sent.path || ""}`;
+    const filled = wfFillTemplate(address, Object.fromEntries((op.fields || []).map((field) => [field.key, params[field.key] ?? field.default])), keys);
+    const cred = wfView().credentials.find((item) => item.id === node.credential);
+    const auth = spec.auth || {};
+    const sends = [];
+    if (auth.headers) sends.push(`header ${wfPairs(auth.headers)}`);
+    if (auth.query) sends.push(`query ${Object.entries(auth.query).map(([key, value]) => `${key}=${value}`).join("&")}`);
+    if (auth.basic) sends.push(`HTTP Basic sign-in as ${auth.basic[0]}`);
+    if (auth.body) sends.push(`body ${Object.keys(auth.body).join(", ")}`);
+    if (!sends.length && (spec.base || "").startsWith("{")) sends.push("the whole address is the credential");
+    const main = [
+      wfFact("Request", `${wfCode(`${op.method} ${filled}`)}${filled !== address ? `<span class="wf-help mt-0">Template ${escapeHtml(address)}</span>` : ""}`),
+      wfFact("Credential", app.credential?.length ? `${escapeHtml(cred ? cred.name : "None chosen yet")}<span class="wf-help mt-0">${escapeHtml(sends.join("; ") || "Sent by the integration")}${secrets.size ? `. ${escapeHtml(Array.from(secrets).join(", "))} ${secrets.size === 1 ? "stays in the credential and never shows" : "stay in the credential and never show"} here.` : ""}</span>` : "None needed"),
+    ];
+    const values = {};
+    for (const field of op.fields || []) {
+      const value = params[field.key] ?? field.default;
+      if (value !== undefined && value !== null && value !== "") values[field.key] = value;
+    }
+    const fill = (value) => wfFillTemplate(value, values, keys);
+    const inPath = new Set(Array.from(String(sent.path || "").matchAll(/\{([A-Za-z0-9_]+)\}/g), (match) => match[1]));
+    const headers = { ...(spec.headers || {}), ...fill(sent.headers || {}) };
+    const query = { ...fill(sent.query || {}) };
+    const bodyFields = {};
+    for (const field of op.fields || []) {
+      const value = values[field.key];
+      if (inPath.has(field.key) || value === undefined || field.in === "template") continue;
+      const where = field.in || (WF_BODY_METHODS.includes(op.method) ? "body" : "query");
+      if (where === "query") query[field.key.split(".").pop()] = value;
+      else if (where === "query_object") Object.assign(query, wfObject(value) || { [field.key]: value });
+      else if (where === "header") headers[field.header || field.key] = value;
+      else bodyFields[field.key] = value;
+    }
+    let body = sent.body !== undefined ? fill(sent.body) : null;
+    if (Object.keys(bodyFields).length && (body === null || (typeof body === "object" && !Array.isArray(body)))) {
+      body = body || {};
+      const used = JSON.stringify(sent.body ?? "");
+      for (const [key, value] of Object.entries(bodyFields)) {
+        if (used.includes(`{${key}}`)) continue;
+        const path = key.split(".");
+        let target = body;
+        for (const part of path.slice(0, -1)) target = target[part] = target[part] && typeof target[part] === "object" ? target[part] : {};
+        target[path[path.length - 1]] = value;
+      }
+    }
+    const facts = [];
+    if (Object.keys(headers).length) facts.push(wfFact("Headers", `<pre class="wf-pre mt-0">${escapeHtml(wfPairs(headers))}</pre>`));
+    if (Object.keys(query).length) facts.push(wfFact("Query", `<pre class="wf-pre mt-0">${escapeHtml(wfPairs(query))}</pre>`));
+    if (body !== null && WF_BODY_METHODS.includes(op.method)) facts.push(wfFact((sent.encoding || spec.encoding) === "form" ? "Form body" : "Body", `<pre class="wf-pre mt-0">${escapeHtml(JSON.stringify(body, null, 2))}</pre>`));
+    const more = facts.length ? `<details class="wf-more"><summary>What it sends</summary><dl class="wf-facts">${facts.join("")}</dl><p class="wf-help">Values in braces come from this step's settings; <code>{{ ... }}</code> is filled in from each item when it runs.</p></details>` : "";
+    return `<dl class="wf-facts">${main.join("")}</dl>${more}`;
+  }
+
+  function wfSettingText(field, node) {
+    const value = wfFieldValue(field, node);
+    if (field.type === "boolean") return ["true", "1", "yes", "on"].includes(String(value).toLowerCase()) ? "Yes" : "No";
+    if (field.type === "checks") {
+      const chosen = new Set(wfChecks(value));
+      const labels = (field.options || []).filter((option) => chosen.has(String(option.value))).map((option) => option.label);
+      return labels.join(", ");
+    }
+    if (field.type === "select") return (field.options || []).find((option) => String(option.value) === String(value))?.label || String(value ?? "");
+    if (field.type === "code") {
+      const count = String(value || "").split("\n").length;
+      return value ? `${count} line${count === 1 ? "" : "s"} of code` : "";
+    }
+    return wfShort(value, 120);
+  }
+
+  function wfSettingsHtml(node) {
+    const fields = wfFields(node);
+    const rows = fields.map((field) => {
+      const text = wfSettingText(field, node);
+      return wfFact(field.label, text ? escapeHtml(text) : '<span class="wf-help mt-0">Not set</span>');
+    });
+    const saved = JSON.stringify(node.params || {}, null, 2);
+    return `<details class="wf-more"><summary>Settings${fields.length ? ` (${fields.length})` : ""}</summary>${rows.length ? `<dl class="wf-facts">${rows.join("")}</dl>` : '<p class="wf-help">This step has no settings.</p>'}<p class="wf-label">Saved as</p><pre class="wf-pre mt-0">${escapeHtml(saved)}</pre></details>`;
+  }
+
+  function wfBlockText(node) {
+    return String(node.type === "action.step" ? node.params?.run || "" : node.params?.text || "");
+  }
+
+  function wfBlockPlace(node) {
+    const current = wfView().current;
+    const family = node.type.startsWith("shortcut.") ? ["shortcut.block", "shortcut.run"] : [node.type];
+    const blocks = wfRunOrder(current).filter((item) => family.includes(item.type));
+    const index = blocks.findIndex((item) => item.id === node.id);
+    return index < 0 ? "" : `${node.type === "action.step" ? "Step" : "Block"} ${index + 1} of ${blocks.length}`;
+  }
+
+  function wfScriptHtml(node, nature) {
+    const view = wfView();
+    const info = wfCore(node.type)?.script;
+    if (info) {
+      const parts = (info.functions || []).map((name) => `<button type="button" class="wf-chip" data-wf-view-script="${escapeHtml(name)}" title="Show ${escapeHtml(name)}() in the script">${escapeHtml(name)}()</button>`).join("");
+      return `<div class="wf-script" data-wf-script-area>
+        <div class="wf-script-head"><i data-lucide="file-code"></i><span class="wf-mono">${escapeHtml(info.path)}</span><span class="wf-help mt-0">${escapeHtml(info.language)}</span></div>
+        <dl class="wf-facts">
+          ${wfFact("This part", wfCode(`--step ${info.step}`))}
+          ${wfFact("Desktop runs", wfCode(info.command))}
+          ${wfFact("Dry run", `${wfCode(info.dryRun)}<span class="wf-help mt-0">Lists what it would delete and deletes nothing.</span>`)}
+          ${wfFact("Started by", wfCode(info.runner))}
+        </dl>
+        <p class="wf-label">Code this part runs</p><div>${parts}</div>
+        <div class="wf-row mt-3"><button type="button" class="wf-btn" data-wf-view-script><i data-lucide="file-code"></i>View script</button><span class="wf-help mt-0">See ${escapeHtml(info.docs)}</span></div>
+      </div>`;
+    }
+    if (node.type === "core.code") {
+      const code = String(wfFieldValue(wfFields(node).find((field) => field.key === "code") || { key: "code" }, node) || "");
+      const lines = code ? code.split("\n").length : 0;
+      const mode = WF_SELECT_LABELS(wfSpec(node.type), "mode", node.params?.mode);
+      const logs = wfRunNode(node.id)?.logs?.length || 0;
+      return `<div class="wf-script" data-wf-script-area>
+        <div class="wf-script-head"><i data-lucide="file-code"></i><span>${escapeHtml(node.name)}</span><span class="wf-help mt-0">JavaScript</span></div>
+        <dl class="wf-facts">
+          ${wfFact("Size", `${lines} line${lines === 1 ? "" : "s"}`)}
+          ${wfFact("Runs", escapeHtml(mode))}
+          ${wfFact("Last run log", logs ? `${logs} line${logs === 1 ? "" : "s"}` : '<span class="wf-help mt-0">None yet</span>')}
+        </dl>
+        <div class="wf-row mt-3"><button type="button" class="wf-btn" data-wf-view-script><i data-lucide="file-code"></i>View script</button><span class="wf-help mt-0">Edit it in Script below.</span></div>
+      </div>`;
+    }
+    if (wfIsFileMode() && !wfIsRoot(node) && (nature.kind === "script-part" || ["shortcut.block", "skill.block"].includes(node.type))) {
+      const text = wfBlockText(node);
+      const place = wfBlockPlace(node);
+      return `<div class="wf-script" data-wf-script-area>
+        <div class="wf-script-head"><i data-lucide="${escapeHtml(nature.icon)}"></i><span class="wf-mono">${escapeHtml(view.current.path)}</span>${place ? `<span class="wf-help mt-0">${escapeHtml(place)}</span>` : ""}</div>
+        ${text.trim() ? wfCodeHtml(text) : '<p class="wf-help">This part is empty.</p>'}
+        <div class="wf-row mt-3"><button type="button" class="wf-btn" data-wf-view-script><i data-lucide="file-code"></i>View in the whole file</button></div>
+      </div>`;
+    }
+    return "";
+  }
+
+  function wfAboutHtml(node) {
+    const spec = wfSpec(node.type);
+    const nature = wfNature(node);
+    const near = wfNeighbours(node);
+    const facts = [
+      wfFact("Step type", `${wfCode(node.type)}${spec.group ? `<span class="wf-help mt-0">${escapeHtml(spec.name)} in ${escapeHtml(spec.group)}</span>` : ""}`),
+      wfFact("Runs on", escapeHtml(wfRunsOn(node))),
+    ];
+    if (spec.inputs) facts.push(wfFact("Receives from", wfStepLinks(near.from, "Nothing is connected yet")));
+    if (spec.outputs.length) facts.push(wfFact("Sends to", wfStepLinks(near.to, "Nothing yet, so this is a last step")));
+    const flags = [node.disabled ? "Disabled, passes items through" : "", node.continueOnFail ? "The workflow goes on if it fails" : ""].filter(Boolean);
+    if (flags.length) facts.push(wfFact("Flags", escapeHtml(flags.join("; "))));
+    if (node.type === "core.http") facts.push(wfFact("Request", wfCode(`${node.params?.method || "GET"} ${node.params?.url || "(no address yet)"}`)));
+    if (node.type === "core.runWorkflow") {
+      const wanted = String(node.params?.workflow || "").trim();
+      const target = wfView().workflows.find((item) => item.id === wanted || item.name === wanted);
+      facts.push(wfFact("Workflow", target ? `<button type="button" class="wf-step-link" data-wf-open="${escapeHtml(target.id)}" title="Open this workflow">${escapeHtml(target.name)}</button>` : `<span class="wf-help mt-0">${escapeHtml(wanted ? `No saved workflow is called ${wanted}` : "Not chosen yet")}</span>`));
+    }
+    if (node.type === "shortcut.run") {
+      const file = wfShortcutLink(node);
+      if (file) facts.push(wfFact("Runs", `<button type="button" class="wf-step-link" data-wf-open-file="${escapeHtml(`.forkmesh/shortcuts/${file}`)}" title="Open this shortcut on the canvas">${escapeHtml(file)}</button>`));
+    }
+    const parts = [`<div class="wf-section wf-about" data-wf-about>
+      <div class="wf-row"><span class="wf-kind" data-kind="${escapeHtml(nature.kind)}"><i data-lucide="${escapeHtml(nature.icon)}"></i>${escapeHtml(nature.label)}</span></div>
+      <p class="wf-help">${escapeHtml(nature.text)}</p>
+      <dl class="wf-facts">${facts.join("")}</dl>
+      ${wfScriptHtml(node, nature)}
+      ${spec.app ? wfRequestHtml(node, spec.app) : ""}
+      ${wfSettingsHtml(node)}
+    </div>`];
+    return parts.join("");
+  }
+
+  async function wfDesktopScript() {
+    const view = wfView();
+    if (view.desktopScript) return view.desktopScript;
+    const data = await fetchJson(WF_DESKTOP_SCRIPT);
+    if (!data || typeof data.source !== "string") throw Object.assign(new Error("script_unavailable"), { code: "script_unavailable" });
+    view.desktopScript = data;
+    return data;
+  }
+
+  function wfScrollToMark(selector) {
+    window.setTimeout(() => {
+      const target = $("[data-wf-dialog-body]")?.querySelector(selector);
+      target?.scrollIntoView?.({ block: "center" });
+    }, 30);
+  }
+
+  async function wfOpenDesktopScript(node, info, focus) {
+    const facts = `<dl class="wf-facts">
+      ${wfFact("File", wfCode(info.path))}
+      ${wfFact("This step", `${escapeHtml(node.name)}, ${wfCode(`--step ${info.step}`)}`)}
+      ${wfFact("Desktop runs", wfCode(info.command))}
+      ${wfFact("Dry run", wfCode(info.dryRun))}
+      ${wfFact("Started by", wfCode(info.runner))}
+    </dl>`;
+    let script = null;
+    let failure = "";
+    try {
+      script = await wfDesktopScript();
+    } catch (error) {
+      failure = wfErrorText(error, "The script's source could not be loaded.");
+    }
+    if (!script) {
+      wfOpenDialog(`${info.path} · ${node.name}`, "file-code", `<div class="p-2">${facts}<p class="wf-help">${escapeHtml(failure)}</p></div>`, true);
+      return;
+    }
+    const lines = script.source.replace(/\n$/, "").split("\n");
+    const names = (script.steps?.[info.step] || info.functions || []).filter((name) => Array.isArray(script.functions?.[name]));
+    const open = names.includes(focus) ? focus : names[0];
+    const ranges = names.map((name) => script.functions[name]);
+    const parts = names.map((name) => {
+      const [start, end] = script.functions[name];
+      return `<details class="wf-more wf-script-part" data-wf-script-part="${escapeHtml(name)}"${name === open ? " open" : ""}><summary><span class="wf-mono">${escapeHtml(name)}()</span><span class="wf-help mt-0">lines ${start} to ${end}</span></summary>${wfCodeHtml(lines.slice(start - 1, end).join("\n"), start)}</details>`;
+    }).join("");
+    const whole = `<details class="wf-more wf-script-part" data-wf-script-part=""><summary><span>Whole file</span><span class="wf-help mt-0">${lines.length} lines; the code this step runs is marked</span></summary>${wfCodeHtml(lines.join("\n"), 1, (number) => ranges.some(([start, end]) => number >= start && number <= end))}</details>`;
+    wfOpenDialog(`${info.path} · ${node.name}`, "file-code", `<div class="p-2">${facts}<p class="wf-label">Code this step runs, in the order it is used</p>${parts}${whole}<p class="wf-help">This is the copy on the ForkMesh server. Your desktop runs the copy in its own checkout, which matches once both are up to date.</p></div>`, true);
+    if (focus) wfScrollToMark(`[data-wf-script-part="${CSS.escape(focus)}"]`);
+  }
+
+  function wfOpenCodeScript(node) {
+    const code = String(wfFieldValue(wfFields(node).find((field) => field.key === "code") || { key: "code" }, node) || "");
+    const logs = wfRunNode(node.id)?.logs || [];
+    const mode = WF_SELECT_LABELS(wfSpec(node.type), "mode", node.params?.mode);
+    const log = logs.length ? `<p class="wf-label">Log from the selected run</p><pre class="wf-pre">${escapeHtml(logs.join("\n"))}</pre>` : "";
+    wfOpenDialog(`${node.name} · Run script`, "file-code", `<div class="p-2"><dl class="wf-facts">${wfFact("Language", "JavaScript, the subset in docs/app/workflow-scripts.md")}${wfFact("Runs", escapeHtml(mode))}${wfFact("Reads", `${wfCode("items")} and ${wfCode("$json")}; what it returns becomes the step's items`)}</dl>${wfCodeHtml(code)}${log}</div>`, true);
+  }
+
+  function wfFindBlock(lines, text) {
+    const block = String(text || "").split("\n").map((line) => line.trim());
+    while (block.length && !block[0]) block.shift();
+    while (block.length && !block[block.length - 1]) block.pop();
+    if (!block.length) return null;
+    for (let i = 0; i < lines.length; i += 1) {
+      if (lines[i].trim() !== block[0]) continue;
+      if (block.every((line, j) => (lines[i + j] ?? "").trim() === line)) return [i + 1, i + block.length];
+    }
+    return null;
+  }
+
+  async function wfOpenFileScript(node) {
+    let data;
+    try {
+      data = await wfRenderFileText();
+    } catch (error) {
+      wfSetNotice(wfErrorText(error, "The file could not be built."), "bad");
+      return;
+    }
+    const path = wfView().current.path;
+    const lines = String(data.text || "").replace(/\n$/, "").split("\n");
+    const range = wfFindBlock(lines, wfBlockText(node));
+    const where = range
+      ? `Lines ${range[0]} to ${range[1]} of ${lines.length}, marked below`
+      : "Not in the file yet: connect it to the steps that are saved";
+    const place = wfBlockPlace(node);
+    wfOpenDialog(path, "file-code", `<div class="p-2"><dl class="wf-facts">${wfFact("File", wfCode(path))}${wfFact("This step", `${escapeHtml(wfNodeTitle(node))}${place ? `, ${escapeHtml(place.toLowerCase())}` : ""}`)}${wfFact("Where", escapeHtml(where))}</dl>${wfCodeHtml(lines.join("\n"), 1, range ? (number) => number >= range[0] && number <= range[1] : null)}</div>`, true);
+    if (range) wfScrollToMark(`[data-wf-line="${range[0]}"]`);
+  }
+
+  async function wfOpenScript(focus = "") {
+    const node = wfNode(wfView().selected);
+    if (!node) return;
+    const info = wfCore(node.type)?.script;
+    if (info) return wfOpenDesktopScript(node, info, focus);
+    if (node.type === "core.code") return wfOpenCodeScript(node);
+    if (wfIsFileMode()) return wfOpenFileScript(node);
+  }
+
   function wfCredentialOptions(app, node) {
     const creds = wfView().credentials.filter((cred) => cred.integration === app.key);
     const options = [`<option value="">${creds.length ? "Choose a credential" : "No credentials yet"}</option>`]
@@ -880,6 +1276,7 @@
     const parts = [];
     parts.push(`<div class="wf-row">${wfBadge(node.type)}<div class="min-w-0"><h2>${escapeHtml(wfNodeTitle(node))}</h2><p class="wf-help mt-0">${escapeHtml(spec.name)}${spec.group ? ` · ${escapeHtml(spec.group)}` : ""}</p></div></div>`);
     parts.push(`<p class="wf-help">${escapeHtml(spec.description || "")}</p>`);
+    parts.push(wfAboutHtml(node));
     if (!fileMode) {
       parts.push(`<label class="wf-label" for="wf-node-name">Step name</label><input id="wf-node-name" class="wf-input" type="text" maxlength="60" data-wf-node-name value="${escapeHtml(node.name)}" />`);
     }
@@ -2844,6 +3241,16 @@
       if (insert) {
         event.preventDefault();
         wfInsertExpression(insert.dataset.wfInsert);
+        return;
+      }
+      const step = event.target.closest("[data-wf-select-node]");
+      if (step && wfNode(step.dataset.wfSelectNode)) {
+        wfSelect(step.dataset.wfSelectNode);
+        return;
+      }
+      const script = event.target.closest("[data-wf-view-script]");
+      if (script) {
+        void wfOpenScript(script.dataset.wfViewScript || "");
         return;
       }
       if (event.target.closest("[data-wf-copy-hook]")) {

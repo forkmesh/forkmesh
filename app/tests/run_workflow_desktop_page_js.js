@@ -59,6 +59,7 @@ globalThis.requestAnimationFrame = (fn) => setTimeout(fn, 0);
 globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
 globalThis.addEventListener = () => {};
 globalThis.confirm = () => true;
+globalThis.CSS = { escape: (value) => String(value) };
 
 const workflow = fixture.workflow;
 const recorded = [];
@@ -73,6 +74,7 @@ async function fetchJson(path) {
   if (path === "/api/workflows/credentials") return { credentials: [] };
   if (path === `/api/workflows/${workflow.id}`) return { workflow };
   if (path === `/api/workflows/${workflow.id}/runs`) return { runs };
+  if (path === "/api/workflows/desktop-script") return fixture.script;
   return {};
 }
 
@@ -147,6 +149,26 @@ async function waitFor(check) {
   api.initWorkflowsPage();
   await waitFor(() => state.workflowsView.current?.id === workflow.id && state.workflowsView.runs.length === runs.length);
   const app = $("[data-wf-app]");
+  if (mode === "details") {
+    const panel = $("[data-wf-panel-body]");
+    const press = async (attr, value) => {
+      const key = attr.replace(/^data-/, "").replace(/-([a-z])/g, (_all, letter) => letter.toUpperCase());
+      const target = { closest: (selector) => (selector === `[${attr}]` ? { dataset: { [key]: value } } : null) };
+      for (const listener of panel.listeners.click) await listener({ target, preventDefault() {} });
+      await tick();
+    };
+    await press("data-wf-select-node", "agents");
+    const panelHtml = panel.innerHTML;
+    await press("data-wf-view-script", "find_candidates");
+    await waitFor(() => !$("[data-wf-dialog]").hidden);
+    process.stdout.write(JSON.stringify({
+      panelHtml,
+      canvasHtml: $("[data-wf-nodes]").innerHTML,
+      dialogTitle: $("[data-wf-dialog-title]").textContent,
+      dialogHtml: $("[data-wf-dialog-body]").innerHTML,
+    }));
+    return;
+  }
   const click = { target: { closest: (selector) => (selector === "[data-wf-run]" ? {} : null) } };
   for (const listener of app.listeners.click) listener(click);
   if (mode !== "fail") {

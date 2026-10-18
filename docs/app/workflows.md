@@ -80,7 +80,8 @@ Writes need a user session. Errors are `{"ok": false, "error": "<code>"}`.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/workflows/catalog` | Core nodes, integrations, operators (public) |
+| `GET /api/workflows/catalog` | Core nodes, integrations, operators, and `requests`: each integration's base URL, credential placement, headers and per-operation path, query and body templates (public) |
+| `GET /api/workflows/desktop-script` | Source of `tools/free_disk_space.py` with each function's line range and the functions each desktop step runs (public); `script_unavailable` (404) when the server has no copy |
 | `GET`/`POST /api/workflows` | List / create `{name, active, nodes, connections}` |
 | `GET`/`POST /api/workflows/<id>` | Read / replace (`rotateHook: true` issues a new webhook token) |
 | `POST /api/workflows/<id>/run` | Run now (`payload` overrides trigger test data); `runs_on_desktop` (409) for a workflow with desktop steps |
@@ -92,6 +93,49 @@ Writes need a user session. Errors are `{"ok": false, "error": "<code>"}`.
 | `POST /api/workflows/export`, `/convert`, `/import-url` | File format conversion |
 | `POST /api/workflows/files/parse`, `/files/render`, `/files/new`; `GET /api/workflows/package-files` | Repository files |
 | `GET`/`POST`/`PUT`/`PATCH /api/workflows/hook/<id>/<token>` | Webhook trigger, no session; item `{method, query, body}` |
+
+## Step details and scripts
+
+Selecting a step opens its panel with a **What this step is** section above
+the settings (`wfAboutHtml`), so every step says what it is and what it does
+before you edit it:
+
+- **Kind** (`wfNature`): Trigger, Script (Run script), Part of a script (a
+  desktop step, an Action's Run step, or a block of a `.sh`/`.bash` shortcut),
+  Integration call, Web request, Runs another workflow, Built-in step, Note,
+  or in the Repository view Part of a prompt, Part of a skill, Agent setting
+  and File header. Scripts and parts of scripts also carry a **Script** or
+  **Part of script** tag on the canvas, next to the step's type.
+- **Facts**: the step type id, where it runs, and the steps it receives from
+  and sends to. Each of those is a link that selects that step, so you can
+  walk the workflow from the panel. Run workflow steps link to the workflow
+  they run, Run shortcut steps to the shortcut.
+- **Integrations** show the request: method and URL with the step's settings
+  filled in, the chosen credential and how it is sent (header, query, Basic
+  sign-in or the whole URL; secret values never appear), and under
+  **What it sends** the headers, query and body the engine builds, placing
+  fields the way `build_app_request` does. The templates come from the
+  catalog's `requests` map, which stays out of `engine.catalog()` so the phone
+  engines' catalog parity is unchanged.
+- **Settings** lists every field's value in words, then the step's saved JSON.
+
+The **script area** under the facts:
+
+- **Desktop steps** name the file (`tools/free_disk_space.py`), the
+  `--step` they run, the exact command the desktop runs, the dry run that
+  deletes nothing, the desktop function that starts it, and the script's
+  functions this step uses (`workflow_desktop.FUNCTIONS`, in `script` on each
+  catalog node). **View script** or a function chip opens a wide viewer with
+  each of those functions, numbered by their lines in the file, and the whole
+  file with this step's code marked. The source comes from
+  `/api/workflows/desktop-script`, which parses the server's copy with `ast`;
+  the desktop runs the copy in its own checkout.
+- **Run script** shows its size, how often it runs and its last log; the
+  viewer shows the code with line numbers and the selected run's log.
+- **Repository files**: a script block, an Action Run step, a prompt section
+  or a skill section shows its place (block N of M) and its text; **View in
+  the whole file** renders the file through `/api/workflows/files/render` and
+  marks the lines that step becomes.
 
 ## Run output
 
