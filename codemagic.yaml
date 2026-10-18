@@ -173,6 +173,10 @@ definitions:
         if [ "$status" != "0" ] || [ ! -d "$CM_BUILD_DIR/forkmesh-native.xcarchive/Products/Applications/ForkMesh.app" ]; then
           echo "ERROR: the archive failed. Every compiler error:" >&2
           grep -E "error:" "$CM_BUILD_DIR/xcodebuild-archive.log" | sort -u >&2 || true
+          if grep -qi "submit a bug report.*crash backtrace" "$CM_BUILD_DIR/xcodebuild-archive.log"; then
+            grep -E "^[0-9]+\.[[:space:]]" "$CM_BUILD_DIR/xcodebuild-archive.log" | grep -v "Program arguments:" \
+              | cut -c1-300 | head -n 8 | sed 's/^/ERROR: compiler crash: /' >&2 || true
+          fi
           tail -n 40 "$CM_BUILD_DIR/xcodebuild-archive.log" >&2
           exit 1
         fi
@@ -283,7 +287,16 @@ definitions:
             -skipPackagePluginValidation -skipMacroValidation \
             "${signing[@]}" "${cache[@]}" \
             > "$CM_BUILD_DIR/xcodebuild-archive.log" 2>&1 || status=$?
-          if [ "$status" = "0" ] || [ "$attempt" = "2" ] || ! grep -q "via CoreSimulator spawn" "$CM_BUILD_DIR/xcodebuild-archive.log"; then
+          if [ "$status" = "0" ] || [ "$attempt" = "2" ]; then
+            break
+          fi
+          if grep -qi "submit a bug report.*crash backtrace" "$CM_BUILD_DIR/xcodebuild-archive.log"; then
+            echo "The compiler crashed; archiving again. Its stack:"
+            grep -E "^[0-9]+\.[[:space:]]" "$CM_BUILD_DIR/xcodebuild-archive.log" | grep -v "Program arguments:" | cut -c1-300 | head -n 8 || true
+            cp "$CM_BUILD_DIR/xcodebuild-archive.log" "$CM_BUILD_DIR/xcodebuild-archive-crash.log"
+            continue
+          fi
+          if ! grep -q "via CoreSimulator spawn" "$CM_BUILD_DIR/xcodebuild-archive.log"; then
             break
           fi
           echo "CoreSimulator could not spawn a helper; remounting the simulator runtimes, restarting CoreSimulatorService and archiving again."
@@ -310,6 +323,10 @@ definitions:
         if [ "$status" != "0" ] || [ ! -d "$CM_BUILD_DIR/forkmesh-native.xcarchive/Products/Applications/ForkMesh.app" ]; then
           echo "ERROR: the archive failed. Every error:" >&2
           grep -E "error:|error: " "$CM_BUILD_DIR/xcodebuild-archive.log" | sort -u >&2 || true
+          if grep -qi "submit a bug report.*crash backtrace" "$CM_BUILD_DIR/xcodebuild-archive.log"; then
+            grep -E "^[0-9]+\.[[:space:]]" "$CM_BUILD_DIR/xcodebuild-archive.log" | grep -v "Program arguments:" \
+              | cut -c1-300 | head -n 8 | sed 's/^/ERROR: compiler crash: /' >&2 || true
+          fi
           tail -n 40 "$CM_BUILD_DIR/xcodebuild-archive.log" >&2
           exit 1
         fi

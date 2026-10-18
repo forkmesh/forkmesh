@@ -159,6 +159,22 @@ def test_a_wedged_simulator_service_names_a_fix(monkeypatch):
                                 "launch AssetCatalogSimulatorAgent via CoreSimulator spawn"]
     assert "reboot the office Mac" in mac_adhoc_deploy.failure_hint(timeline.cause())
 
+
+def test_a_compiler_crash_is_the_cause_and_names_a_fix(monkeypatch):
+    timeline = fresh_timeline(monkeypatch)
+    timeline.begin("Build on the office Mac")
+    for line in ("ERROR: the archive failed. Every error:",
+                 "ERROR: compiler crash: 1.\tApple Swift version 6.3.3",
+                 "ERROR: compiler crash: 4.\tRunning pass \"lower-expect\" on function \"$s8F\"",
+                 "!! Archive (signing per FORKMESH_NATIVE_SIGNING) failed after 1172 s"):
+        timeline.note(line)
+    timeline.end(ok=False)
+    assert timeline.cause() == ["ERROR: compiler crash: 1.\tApple Swift version 6.3.3",
+                                "ERROR: compiler crash: 4.\tRunning pass \"lower-expect\" on "
+                                "function \"$s8F\""]
+    assert "Compiler crashes" in mac_adhoc_deploy.failure_hint(timeline.cause())
+
+
 def test_the_summary_times_every_phase_and_step(monkeypatch):
     timeline = fresh_timeline(monkeypatch, [0, 0, 65, 65, 765, 800])
     timeline.begin("Find the office Mac")
