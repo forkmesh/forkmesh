@@ -17,6 +17,7 @@ private class FakeRouter : OpenWrtTransport {
     var expireNextBoard = false
     var confirmFailures = 0
     var fstabMissing = false
+    val installed = mutableListOf<String>()
     val calls = mutableListOf<List<Any?>>()
 
     fun last(objectName: String, method: String): List<Any?>? = calls.lastOrNull { it.getOrNull(1) == objectName && it.getOrNull(2) == method }
@@ -79,7 +80,17 @@ private class FakeRouter : OpenWrtTransport {
         if (objectName == "file" && method == "exec") {
             return when (args.str("command")) {
                 "/bin/false" -> reply(listOf(0L, mapOf("code" to 1L, "stderr" to "nope")))
-                "/bin/opkg" -> reply(listOf(0L, mapOf("code" to 0L, "stdout" to "base-files - 1-r1\nluci - git-24\n")))
+                "/bin/opkg" -> {
+                    val words = (args["params"] as? List<Any?>).orEmpty().map { it.toString() }
+                    if (words.firstOrNull() == "install") {
+                        installed += words.drop(1)
+                        if (words.getOrNull(1).orEmpty().startsWith("luci-app-")) {
+                            return respond(mapOf("jsonrpc" to "2.0", "id" to request["id"], "error" to mapOf("code" to -32003L, "message" to "ubus request timed out")))
+                        }
+                        return reply(listOf(0L, mapOf("code" to 0L)))
+                    }
+                    reply(listOf(0L, mapOf("code" to 0L, "stdout" to "base-files - 1-r1\nluci - git-24\n" + installed.joinToString("") { "$it - 1.0\n" })))
+                }
                 "/sbin/block" -> reply(listOf(0L, mapOf("code" to 0L, "stdout" to "config 'global'\n\toption\tanon_mount\t'0'\n")))
                 "/bin/dmesg" -> reply(listOf(0L, mapOf("code" to 0L, "stdout" to "<6>[    5.1] usb 1-1: new high-speed USB device number 2\n<5>[    6.0] random: crng init done\n")))
                 else -> reply(listOf(6L))
@@ -114,6 +125,11 @@ class OpenWrtTest {
         expect(OpenWrtModel.parseReply("""{"result":[6]}""".toByteArray()).accessDenied)
         expect(OpenWrtModel.parseReply("""{"error":{"code":-32002,"message":"Access denied"}}""".toByteArray()).accessDenied)
         expect(OpenWrtModel.parseReply("""{"error":{"code":-32000}}""".toByteArray()).error.contains("not found"))
+        val slow = OpenWrtModel.parseReply("""{"error":{"code":-32003,"message":"ubus request timed out"}}""".toByteArray())
+        expect(slow.timedOut && !slow.ok && !slow.accessDenied)
+        expect(OpenWrtModel.parseReply("""{"result":[7]}""".toByteArray()).timedOut)
+        val listed = listOf(OpenWrtPackage("ksmbd-server", "1"), OpenWrtPackage("luci-app-ksmbd", "1"))
+        expect(OpenWrtModel.packagesInstalled(listed, listOf("luci-app-ksmbd")) && !OpenWrtModel.packagesInstalled(listed, listOf("luci-app-ksmbd", "nano")))
         expect(OpenWrtModel.parseReply("<html>".toByteArray(), 404).error.contains("/ubus"))
     }
 
@@ -354,6 +370,9 @@ class OpenWrtTest {
         expect(client.apply(true) {} is OpenWrtApplyOutcome.RolledBack)
         expect(client.apply(false) { throw AssertionError("no waiting without rollback") } == OpenWrtApplyOutcome.Applied)
         expect(!client.packageAction(OpenWrtModel.packageTools[3], "install", listOf("a;reboot")).ok)
+        expect(client.packageAction(OpenWrtModel.packageTools[3], "install", listOf("luci-app-ksmbd")).ok)
+        assertEq(listOf("install luci-app-ksmbd"), router.calls.filter { it.getOrNull(2) == "exec" }.mapNotNull { (it.getOrNull(3) as? Map<*, *>)?.get("params") as? List<*> }
+            .map { it.joinToString(" ") }.filter { it.startsWith("install") })
     }
 
     fun testRouterHttpSpeaksHttpOverASocket() {

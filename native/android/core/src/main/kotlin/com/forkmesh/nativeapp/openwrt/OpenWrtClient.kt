@@ -477,7 +477,18 @@ class OpenWrtClient(private val transport: OpenWrtTransport, base: String) {
         if (action != "update" && (names.isEmpty() || !names.all(OpenWrtModel::validPackageName))) {
             return OpenWrtResult.failure(if (names.isEmpty()) "Choose a package first." else "That is not a package name.")
         }
-        return exec(tool.program, OpenWrtModel.packageArguments(tool, action, names), 300_000)
+        val result = exec(tool.program, OpenWrtModel.packageArguments(tool, action, names), 300_000)
+        if (action != "install" || result.ok || !result.timedOut) return result
+        val deadline = System.currentTimeMillis() + 180_000
+        while (true) {
+            if (OpenWrtModel.packagesInstalled(listPackages(tool).second, names)) return OpenWrtResult.OK
+            if (System.currentTimeMillis() >= deadline) break
+            Thread.sleep(5_000)
+        }
+        return result.copy(
+            error = "The router stopped answering during the install, and ${names.joinToString(", ")} still is not installed after three minutes. " +
+                "The router may have no internet connection, or the download is still running: check Packages later, or try again.",
+        )
     }
 
     companion object {

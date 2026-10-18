@@ -126,6 +126,10 @@ private:
     void installNetworkSharing();
     void installPackageList(QStringList remaining, QStringList failed, QString firstFailure,
                             const std::function<void(const QStringList &, const QString &)> &done);
+    void installPackages(const QStringList &names, const std::function<void(const QString &)> &note,
+                         const std::function<void(const RpcResult &)> &done);
+    void waitForPackages(const QStringList &names, qint64 deadline, const RpcResult &timedOut,
+                         const std::function<void(const RpcResult &)> &done);
     void browseShare();
     void createFstab(const std::function<void()> &then);
     void checkStorage(bool keepLog = false);

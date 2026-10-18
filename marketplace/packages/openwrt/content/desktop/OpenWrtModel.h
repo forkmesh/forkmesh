@@ -36,6 +36,7 @@ struct RpcResult {
     QString error;
     bool accessDenied = false;
     bool unreachable = false;
+    bool timedOut = false;
     QString certificate;
 };
 
@@ -101,6 +102,7 @@ struct PackageTool {
 QList<PackageTool> packageTools();
 QList<Package> parseInstalledPackages(const QString &text);
 QStringList packageArguments(const PackageTool &tool, const QString &action, const QStringList &names = {});
+bool packagesInstalled(const QList<Package> &packages, const QStringList &names);
 bool validPackageName(const QString &name);
 
 struct Service {

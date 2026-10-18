@@ -118,6 +118,10 @@ RpcResult parseReply(const QByteArray &body, int httpStatus)
         case -32602:
             result.error = statusMessage(UbusInvalidArgument);
             break;
+        case -32003:
+            result.timedOut = true;
+            result.error = QStringLiteral("The router stopped waiting for an answer. What was asked may still be running on the router.");
+            break;
         default:
             result.error = QStringLiteral("The router answered: %1").arg(error.value(QStringLiteral("message")).toString(QStringLiteral("unknown error")));
         }
@@ -133,6 +137,7 @@ RpcResult parseReply(const QByteArray &body, int httpStatus)
     result.ok = result.status == UbusOk;
     if (!result.ok) {
         result.accessDenied = result.status == UbusPermissionDenied;
+        result.timedOut = result.status == UbusTimeout;
         result.error = statusMessage(result.status);
     }
     return result;
@@ -454,6 +459,13 @@ QStringList packageArguments(const PackageTool &tool, const QString &action, con
     if (action == QStringLiteral("remove"))
         return QStringList{apk ? QStringLiteral("del") : QStringLiteral("remove")} + names;
     return {};
+}
+
+bool packagesInstalled(const QList<Package> &packages, const QStringList &names)
+{
+    return std::all_of(names.begin(), names.end(), [&packages](const QString &name) {
+        return std::any_of(packages.begin(), packages.end(), [&name](const Package &package) { return package.name == name; });
+    });
 }
 
 bool validPackageName(const QString &name)

@@ -30,6 +30,7 @@ public struct OpenWrtResult: Sendable, Equatable {
     public var error: String = ""
     public var accessDenied: Bool = false
     public var unreachable: Bool = false
+    public var timedOut: Bool = false
     public var certificate: String = ""
 
     public init(ok: Bool = false, status: Int = -1, data: JSONObject = JSONObject(), error: String = "") {
@@ -264,6 +265,9 @@ public enum OpenWrtModel {
                 result.error = statusMessage(UbusStatus.methodNotFound.rawValue)
             case -32602:
                 result.error = statusMessage(UbusStatus.invalidArgument.rawValue)
+            case -32003:
+                result.timedOut = true
+                result.error = "The router stopped waiting for an answer. What was asked may still be running on the router."
             default:
                 result.error = "The router answered: \(error.str("message", "unknown error"))"
             }
@@ -279,6 +283,7 @@ public enum OpenWrtModel {
         result.ok = status == 0
         if !result.ok {
             result.accessDenied = status == UbusStatus.permissionDenied.rawValue
+            result.timedOut = status == UbusStatus.timeout.rawValue
             result.error = statusMessage(status)
         }
         return result
@@ -457,6 +462,10 @@ public enum OpenWrtModel {
         if expires <= 0 { return "Never" }
         let left = expires - now
         return left <= 0 ? "Expired" : "in \(formatUptime(left))"
+    }
+
+    public static func packagesInstalled(_ packages: [OpenWrtPackage], _ names: [String]) -> Bool {
+        names.allSatisfy { name in packages.contains { $0.name == name } }
     }
 
     public static func parseInstalledPackages(_ text: String) -> [OpenWrtPackage] {
