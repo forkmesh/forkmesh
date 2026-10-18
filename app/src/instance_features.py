@@ -1,3 +1,4 @@
+import html
 import json
 import re
 
@@ -119,6 +120,25 @@ def _setting(env, name):
 
 def branded(env):
     return bool(" ".join(_setting(env, "INSTANCE_NAME").split()))
+
+
+PLATFORM = "ForkMesh"
+_RENAME_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)")
+
+
+def display_name(env):
+    return " ".join(_setting(env, "INSTANCE_NAME").split())[:60] or PLATFORM
+
+
+def rename(env, text, name=None):
+    if not text or not branded(env):
+        return text
+    replacement = display_name(env) if name is None else name
+    return _RENAME_RE.sub(lambda _: replacement, str(text))
+
+
+def rename_html(env, text):
+    return rename(env, text, html.escape(display_name(env), quote=True))
 
 
 def installed_ids(env):

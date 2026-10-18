@@ -18,10 +18,13 @@ import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 from urllib.parse import parse_qs, quote, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
+sys.path.insert(0, str(ROOT / "src"))
+import instance_features  # noqa: E402
 ENTRY = ROOT / "src" / "entry.py"
 FEDIVERSE_ROUTES = ROOT / "src" / "fediverse_routes.py"
 DASHBOARD_JS = ROOT / "public" / "dashboard.js"
@@ -480,6 +483,7 @@ def _profile_page(media=(), record=None):
         return "<html></html>"
 
     subject = _load_method("Default", "_serve_repo_profile_page", {
+        "instance_features": instance_features,
         "re": re,
         "quote": quote,
         "clean_string": lambda value, cap=0: (

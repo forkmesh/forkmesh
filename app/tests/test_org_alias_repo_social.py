@@ -389,6 +389,7 @@ def test_alias_card_renders_public_identity_after_internal_route_rewrite():
         "repo_mirror_same_group": lambda *_args: False,
         "time": time,
         "og_card": Card,
+        "instance_name": lambda _env: "ForkMesh",
         "JsResponse": _BinaryResponse,
         "Uint8Array": _Uint8Array,
         "_to_js": lambda value: value,
