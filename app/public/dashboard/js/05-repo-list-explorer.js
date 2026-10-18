@@ -282,7 +282,7 @@
         >
           <i data-lucide="book-marked" class="h-3.5 w-3.5 text-muted-foreground"></i>
           <span class="min-w-0">
-            <span class="block truncate font-medium text-foreground">${escapeHtml(`${groupDisplayOwner(group)}/${repo.name || ""}`)}</span>
+            <span class="block truncate font-medium text-foreground">${escapeHtml(groupDisplayName(group))}</span>
             <span class="block truncate text-xs text-muted-foreground">${escapeHtml(globalSearchRepoSummary(group, repo))}</span>
           </span>
         </button>`;
@@ -674,10 +674,12 @@
     const origin = sourceOfTruth(group);
     const repo = group.primary;
     const key = repoKey(origin);
-    const displayOwner = groupDisplayOwner(group);
-    const servedNote = displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
+    const label = repoLabelParts(groupDisplayName(group));
+    const displayOwner = label.owner;
+    const servedNote = displayOwner && displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
       ? ` (published from ${origin.owner || "a node"})`
       : "";
+    const fullLabel = displayOwner ? `${displayOwner}/${origin.name || "repository"}` : String(origin.name || "repository");
     const live = repoIsLive(origin);
     const viaMirror = repoServedByMirror(origin);
     const visibility = origin.isPrivate ? "private" : "public";
@@ -698,14 +700,14 @@
     const activityWeeks = groupActivityWeeks(group);
     const language = repoLanguage(origin);
     return `
-      <div data-repo="${escapeHtml(key.toLowerCase())}" data-dashboard-open-repo="${escapeHtml(key)}" data-clone-url="${escapeHtml(cloneUrl(origin))}" role="link" tabindex="0" aria-label="Open ${escapeHtml(`${displayOwner || "owner"}/${origin.name || "repository"}`)}" class="repo-card group cursor-pointer px-4 py-3 hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
+      <div data-repo="${escapeHtml(key.toLowerCase())}" data-dashboard-open-repo="${escapeHtml(key)}" data-clone-url="${escapeHtml(cloneUrl(origin))}" role="link" tabindex="0" aria-label="Open ${escapeHtml(fullLabel)}" class="repo-card group cursor-pointer px-4 py-3 hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
         <div class="repo-layout grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)] md:items-center">
           <div class="flex min-w-0 items-start gap-3">
             ${nativeRepositoryLogoMarkup(origin)}
             <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
-              <p class="min-w-0 truncate text-sm font-medium text-foreground" title="${escapeHtml(`${displayOwner || "owner"}/${origin.name || "repository"}${servedNote}`)}">
-                <span class="text-muted-foreground">${escapeHtml(displayOwner || "owner")}/</span>${escapeHtml(origin.name || "repository")}
+              <p class="min-w-0 truncate text-sm font-medium text-foreground" title="${escapeHtml(`${fullLabel}${servedNote}`)}">
+                ${displayOwner ? `<span class="text-muted-foreground">${escapeHtml(displayOwner)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
               </p>
               <span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-mono ${statusClass}">
                 ${statusText}
@@ -815,7 +817,7 @@
     const language = profileRepositoryLanguage(group);
     const license = String(repo.license || repo.licenseName || "").trim();
     const description = String(repo.description || "").trim();
-    const displayOwner = groupDisplayOwner(group);
+    const displayOwner = repoLabelParts(groupDisplayName(group)).owner;
     const publishedFrom = displayOwner && repo.owner &&
       displayOwner.toLowerCase() !== String(repo.owner).toLowerCase()
       ? `<p class="mb-1 text-xs text-muted-foreground">Published from ${escapeHtml(repo.owner)}/${escapeHtml(repo.name || "repository")}</p>`
@@ -934,18 +936,15 @@
     const entries = [
       ...organizationRepositories.map((repo) => ({
         repo,
-        key: `${repo.owner}/${repo.name}`,
-        href: `/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+        key: repoHasShortAddress(repo) ? String(repo.name) : `${repo.owner}/${repo.name}`,
+        href: repoPathUrl(repo),
         organization: true,
       })),
       ...groups.map((group) => {
         const repo = sourceOfTruth(group);
         return {
           repo,
-          // Dedupe on the label, so a repo already listed under its
-          // organization does not come back a second time under the node that
-          // publishes it.
-          key: `${groupDisplayOwner(group)}/${repo.name || ""}`,
+          key: groupDisplayName(group),
           href: groupLinkUrl(group),
           organization: false,
         };
@@ -962,10 +961,11 @@
     list.innerHTML = entries.slice(0, 6).map((entry) => {
       const repo = entry.repo;
       const live = repoIsLive(repo);
+      const label = repoLabelParts(entry.key);
       return `
-        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo">
+        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
           <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
-          <span class="min-w-0 flex-1 truncate"><span class="text-muted-foreground">${escapeHtml(repoDisplayOwner(repo) || "owner")}/</span><span class="text-foreground">${escapeHtml(repo.name || "repository")}</span></span>
+          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${escapeHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
           ${repositoryTermsBadge(repo, true)}
           ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
           <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
@@ -1025,17 +1025,17 @@
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
           repo,
-          href: `/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+          href: repoPathUrl(repo),
           organization: true,
         })),
       ...mergeGroupsByPublicAddress(groupRepositories(state.repositories || [])).map((group) => {
         const repo = sourceOfTruth(group);
-        return { repo, href: groupLinkUrl(group), organization: false };
+        return { repo, label: groupDisplayName(group), href: groupLinkUrl(group), organization: false };
       }),
-    ].filter((entry, index, values) =>
-      values.findIndex((candidate) =>
-        repoDisplayKey(candidate.repo).toLowerCase() ===
-        repoDisplayKey(entry.repo).toLowerCase()) === index)
+    ].map((entry) => ({ ...entry, label: entry.label || repoDisplayName(entry.repo) }))
+      .filter((entry, index, values) =>
+        values.findIndex((candidate) =>
+          candidate.label.toLowerCase() === entry.label.toLowerCase()) === index)
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
@@ -1053,7 +1053,7 @@
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(repoDisplayKey(repo))}">${escapeHtml(repoDisplayKey(repo))}</span>
+        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${escapeHtml(entry.label || repoDisplayName(repo))}</span>
         ${description ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           ${statusHtml}
@@ -1116,20 +1116,20 @@
   }
 
   function homeFeedCard(item) {
-    const href = String(item?.href || "").trim();
+    const href = repoPublicHref(String(item?.href || "").trim());
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
       `@${homeFeedActor(item)}`,
       notificationTimeLabel(item.ts),
-      item.repo || "",
+      item.repo ? repoPublicKey(item.repo) : "",
     ].filter(Boolean).map(escapeHtml).join(" · ");
     return `
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
         <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(item.title || "ForkMesh activity")}</span>
-          ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(item.body)}</span>` : ""}
+          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "ForkMesh activity")}</span>
+          ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
           <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
         </span>
       </${tag}>
@@ -1299,7 +1299,7 @@
     const repo = String(session.repo || "").trim();
     const repoLabel = owner && repo ? `${owner}/${repo}` : repo;
     const href = owner && repo
-      ? `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/agents`
+      ? `${repoPathUrl({ owner, name: repo })}/agents`
       : "";
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
@@ -1417,8 +1417,7 @@
     const merged = new Map();
     for (const group of groups) {
       const origin = sourceOfTruth(group);
-      const key = `${groupDisplayOwner(group) || origin.owner || ""}/${origin.name || ""}`
-        .toLowerCase();
+      const key = groupDisplayName(group).toLowerCase();
       const seen = merged.get(key);
       if (!seen) {
         merged.set(key, group);
@@ -1477,7 +1476,7 @@
     const provider = String(repository?.attribution?.provider || repository?.provider || "Provider");
     const original = String(repository?.originalUrl || "");
     const forkmeshUrl = hosted
-      ? `/${encodeURIComponent(repository.targetOwner)}/${encodeURIComponent(repository.name)}`
+      ? repoPathUrl({ owner: repository.targetOwner, name: repository.name })
       : original;
     const canVolunteer = Boolean(state.session?.sessionToken) &&
       !["actively_mirrored", "archived"].includes(String(repository?.status || ""));
@@ -2347,7 +2346,7 @@
 
   function renderNewRepoPush(repository, push, hosting = null) {
     const repoLabel = $("[data-new-repo-push-repo]");
-    if (repoLabel) repoLabel.textContent = repoKey(repository || {});
+    if (repoLabel) repoLabel.textContent = repoPublicKey(repoKey(repository || {}));
     const intro = $("[data-new-repo-push-intro]");
     if (intro) {
       intro.textContent = hosting?.importing
@@ -3704,7 +3703,7 @@
             return;
           }
           updateRepoFileStatus(viewer, proposal
-            ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayKey(repo))
+            ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayName(repo))
             : repoFileEditError(error), "bad");
         }
         return;

@@ -40,7 +40,7 @@ DEFAULT_MAX_PULL_BODY = 32 * 1024 * 1024
 DEFAULT_MAX_GIT_PUSH_BODY = 256 * 1024 * 1024
 # Keep in sync with deploy/core/render.py (Caddy request_body).
 PULL_SUBMIT_RE = re.compile(r"^/api/repo/[^/]+/[^/]+/pulls$")
-GIT_PUSH_RE = re.compile(r"^/[^/]+/[^/]+/git-receive-pack$")
+GIT_PUSH_RE = re.compile(r"^/(?:[^/]+/)?[^/]+/git-receive-pack$")
 LOOPBACK_EXEMPT = {"/health", "/readyz"}
 LOOPBACK_EXEMPT_GET = {"/api/version"}
 EDGE_HEADER = "x-forkmesh-edge-client"

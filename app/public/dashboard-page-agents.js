@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["agents"] = (core) => {
-  const { $, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, state } = core;
+  const { $, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, repoPathUrl, repoPublicKey, state } = core;
   const AGENTS_ACTIVE_STATUSES = new Set(["queued", "running", "security_pending"]);
   const AGENTS_FAILED_STATUSES = new Set(["failed", "rejected", "stopped"]);
   const AGENTS_FILTER_KEYS = Object.freeze(["status", "repo", "node"]);
@@ -38,7 +38,7 @@
   };
 
   function agentsSessionHref(owner, repo, id) {
-    const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/agents`;
+    const base = `${repoPathUrl({ owner, name: repo })}/agents`;
     return id ? `${base}?session=${encodeURIComponent(id)}` : base;
   }
 
@@ -109,7 +109,7 @@
   }
 
   function agentsRepoLabel(row) {
-    return row.owner && row.repo ? `${row.owner}/${row.repo}` : row.repo || "";
+    return row.owner && row.repo ? repoPublicKey(`${row.owner}/${row.repo}`) : row.repo || "";
   }
 
   function agentsMatchStatus(row, wanted) {
@@ -125,7 +125,7 @@
   function agentsFilteredRows(rows = agentsRows()) {
     const { status, repo, node } = agentsPageView.filters;
     return rows.filter((row) => agentsMatchStatus(row, status)
-      && (!repo || agentsRepoLabel(row).toLowerCase() === repo)
+      && (!repo || [agentsRepoLabel(row), `${row.owner}/${row.repo}`].some((value) => value.toLowerCase() === repo))
       && (!node || row.node.toLowerCase() === node));
   }
 

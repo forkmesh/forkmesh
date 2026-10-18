@@ -1343,8 +1343,13 @@ def test_alias_owner_comes_from_the_original_url_and_must_map_to_the_node():
     async def _org_repo_node(_env, org, repo):
         return {("acme", "app"): "alice"}.get((org, repo), "")
 
-    namespace = _load({"_git_push_alias_owner"}, {
+    sys.path.insert(0, str(ENTRY.parent))
+    import repo_short_urls
+    repo_short_urls.forget()
+    namespace = _load({"_git_push_alias_owner", "_git_request_path"}, {
         **BASE_GLOBALS,
+        "repo_short_urls": repo_short_urls,
+        "Date": _Date,
         "urlparse": _parse.urlparse,
         "GIT_INFO_RE": _re.compile(r"^/([^/]+)/([^/]+?)(?:\.git)?/info/refs$"),
         "GIT_RECEIVE_RE": _re.compile(
@@ -1370,6 +1375,18 @@ def test_alias_owner_comes_from_the_original_url_and_must_map_to_the_node():
         base + "/alice/app.git/git-receive-pack"), "alice", "app")) == ""
     assert asyncio.run(alias(object(), Req(
         base + "/acme/other.git/git-receive-pack"), "alice", "app")) == ""
+    assert asyncio.run(alias(object(), Req(
+        base + "/app.git/git-receive-pack"), "alice", "app")) == ""
+    repo_short_urls.remember({"short": True, "owner": "acme",
+                              "canonical": True}, NOW)
+    try:
+        assert asyncio.run(alias(object(), Req(
+            base + "/app.git/git-receive-pack"), "alice", "app")) == "acme"
+        assert asyncio.run(alias(object(), Req(
+            base + "/app/info/refs?service=git-receive-pack"),
+            "alice", "app")) == "acme"
+    finally:
+        repo_short_urls.forget()
 
 
 def test_push_proofs_ask_for_the_org_alias_the_gateways_serve():

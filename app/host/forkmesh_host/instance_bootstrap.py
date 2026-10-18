@@ -88,6 +88,11 @@ def read_spec(raw):
     theme = spec.get("theme")
     if theme not in (None, "") and not isinstance(theme, (str, dict)):
         raise BootstrapError("invalid theme")
+    single = spec.get("singleOrganization", False)
+    if not isinstance(single, bool):
+        raise BootstrapError("singleOrganization must be true or false")
+    if single and owner_type != "org":
+        raise BootstrapError("singleOrganization needs an organization")
     return {
         "admin": admin,
         "email": email,
@@ -98,6 +103,7 @@ def read_spec(raw):
         "displayName": " ".join(str(spec.get("projectName") or "").split())[:80],
         "nodePublicKey": node_key,
         "theme": theme or "",
+        "singleOrganization": single,
     }
 
 
@@ -214,6 +220,21 @@ async def ensure_theme(entry, env, value):
         doc, int(entry.Date.now()))
 
 
+def repo_paths_doc(owner, canonical=True):
+    return json.dumps({"canonical": bool(canonical), "owner": owner,
+                       "short": True}, sort_keys=True, separators=(",", ":"))
+
+
+async def ensure_repo_paths(entry, env, owner, replace=False):
+    await entry.d1_run(
+        env,
+        "INSERT INTO instance_settings (k, doc, updated_at) "
+        "VALUES ('repo_paths', ?, ?) ON CONFLICT(k) DO "
+        + ("UPDATE SET doc=excluded.doc, updated_at=excluded.updated_at"
+           if replace else "NOTHING"),
+        repo_paths_doc(owner), int(entry.Date.now()))
+
+
 def bot_public_key(seed):
     from cryptography.hazmat.primitives.asymmetric import ed25519
     key = ed25519.Ed25519PrivateKey.from_private_bytes(bytes.fromhex(seed))
@@ -263,6 +284,8 @@ async def bootstrap(runtime, spec, bot_seed=""):
         await ensure_mirror_features(entry, env)
     if spec["theme"]:
         await ensure_theme(entry, env, spec["theme"])
+    if spec["singleOrganization"] and org_created:
+        await ensure_repo_paths(entry, env, spec["owner"])
     bot = ""
     if bot_seed:
         if not SEED_RE.fullmatch(bot_seed):
@@ -278,6 +301,8 @@ async def bootstrap(runtime, spec, bot_seed=""):
         "owners": [name for _, name in owners],
         "node": NODE if spec["nodePublicKey"] else "",
         "repository": "%s/%s" % (spec["owner"], REPO),
+        "singleOrganization": bool(spec["singleOrganization"]
+                                   and org_created),
     }
     if bot:
         result["actionsBot"] = bot
@@ -340,6 +365,58 @@ def cmd_instance_runner(args):
     return 0
 
 
+async def single_org(runtime, org, enable=True):
+    entry, env = runtime.entry, runtime.env
+    await entry.ensure_schema(env)
+    org_bi, row = await entry._org_row(env, org)
+    if not row:
+        raise BootstrapError("no organization named %s" % org)
+    before = await entry.d1_first(
+        env, "SELECT doc FROM instance_settings WHERE k='repo_paths'")
+    doc = repo_paths_doc(org, enable)
+    if (before or {}).get("doc") != doc:
+        await entry.d1_run(
+            env,
+            "INSERT INTO instance_settings (k, doc, updated_at) "
+            "VALUES ('repo_paths', ?, ?) ON CONFLICT(k) DO UPDATE SET "
+            "doc=excluded.doc, updated_at=excluded.updated_at",
+            doc, int(entry.Date.now()))
+    linked = False
+    _, node = await entry._account_row(env, NODE)
+    alias = await entry.d1_first(
+        env, "SELECT node_owner FROM org_repos WHERE org_bi=? AND repo=?",
+        org_bi, REPO)
+    if enable and node and not alias:
+        await ensure_alias(entry, env, org)
+        linked = True
+    repos = await entry.d1_all(
+        env, "SELECT repo, node_owner FROM org_repos WHERE org_bi=? "
+        "ORDER BY repo", org_bi)
+    return {
+        "ok": True,
+        "org": org,
+        "singleOrganization": bool(enable),
+        "repoPaths": json.loads(doc),
+        "changed": (before or {}).get("doc") != doc or linked,
+        "linkedForkmesh": linked,
+        "repositories": ["/" + str(r.get("repo") or "") for r in repos or []],
+    }
+
+
+def cmd_instance_single_org(args):
+    from .ops import _runtime
+    org = str(args.org or "").strip().lower()
+    if not NAME_RE.fullmatch(org):
+        print(json.dumps({"ok": False, "error": "invalid organization name"}))
+        return 2
+    try:
+        result = asyncio.run(single_org(_runtime(args), org, not args.off))
+    except BootstrapError as error:
+        result = {"ok": False, "error": str(error)}
+    print(json.dumps(result, sort_keys=True))
+    return 0 if result.get("ok") else 1
+
+
 def add_parser(sub, common):
     command = sub.add_parser(
         "instance-bootstrap",
@@ -354,3 +431,11 @@ def add_parser(sub, common):
     runner.add_argument("--public-key", required=True)
     runner.add_argument("--owner", required=True)
     runner.set_defaults(func=cmd_instance_runner)
+    single = sub.add_parser(
+        "instance-single-org",
+        help="show every repository of the instance at /<repo> "
+        "(single-organization mode); --off switches it back")
+    common(single)
+    single.add_argument("--org", required=True)
+    single.add_argument("--off", action="store_true")
+    single.set_defaults(func=cmd_instance_single_org)

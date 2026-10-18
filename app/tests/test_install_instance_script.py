@@ -434,10 +434,11 @@ def test_the_bootstrap_settings_carry_the_owners_from_stdin():
     owners = [{"username": "grace", "email": "grace@example.com", "password": OWNER_PASSWORD}]
     stdin = json.dumps(owners) + "\n" + ADMIN_PASSWORD + "\nwith a line break"
     result = subprocess.run(
-        ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, ""],
+        ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, "", "1"],
         input=stdin, capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr
     spec = json.loads(result.stdout)
+    assert spec["singleOrganization"] is True
     assert spec["owners"] == owners
     assert spec["adminPassword"] == ADMIN_PASSWORD + "\nwith a line break"
     assert spec["ownerName"] == "acme"
@@ -466,10 +467,11 @@ def test_the_bootstrap_settings_carry_a_colour_theme_as_an_object():
     colours = {"dark": {"primary": "#f97316"}}
     for theme, expected in ((json.dumps(colours), colours), ("crimson", "crimson"), ("", "")):
         result = subprocess.run(
-            ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, theme],
+            ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, theme, "0"],
             input=stdin, capture_output=True, text=True, timeout=30)
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["theme"] == expected
+        assert json.loads(result.stdout)["singleOrganization"] is False
 
 
 def test_the_admin_console_can_ask_for_an_update():
@@ -576,6 +578,25 @@ def test_actions_default_on_and_must_be_a_boolean(tmp_path):
     result = parse(tmp_path, settings(actions="yes"))
     assert result.returncode == 2
     assert "Setting actions must be true or false." in result.stdout
+
+
+def test_single_organization_is_off_by_default_and_reaches_the_bootstrap(tmp_path):
+    found = values(parse(tmp_path, settings()).stdout)
+    assert found["CFG_singleOrganization"] == "0"
+    assert found["REPO_URL"] == "https://code.example.com/acme/forkmesh"
+    found = values(parse(tmp_path, settings(singleOrganization=True)).stdout)
+    assert found["CFG_singleOrganization"] == "1"
+    assert found["REPO_URL"] == "https://code.example.com/forkmesh"
+    result = parse(tmp_path, settings(singleOrganization="no"))
+    assert result.returncode == 2
+    assert "Setting singleOrganization must be true or false." in result.stdout
+    result = parse(tmp_path, settings(singleOrganization=True, ownerType="user"))
+    assert result.returncode == 2
+    assert "Setting singleOrganization needs ownerType org." in result.stdout
+    create = function("create_admin")
+    assert '"singleOrganization": sys.argv[8] == "1"' in create
+    assert '"$CFG_theme" "$CFG_singleOrganization"' in create
+    assert "instance-bootstrap" not in function("update_admin")
 
 
 def test_actions_install_job_tools_and_configure_the_app():

@@ -360,16 +360,15 @@ async def _pin_hosted_state(env, owner, repo, key_bi, row, record, digest,
     return digest
 
 
-def _push_instructions(origin, owner, name, account, password, expires_at,
-                       node):
-    """The copy-paste block the create modal shows after a hosted create.
+async def _remote_url(env, origin, owner, name):
+    clone_url = globals().get("_repo_clone_url")
+    if callable(clone_url):
+        return await clone_url(env, origin, owner, name)
+    return origin + "/" + owner + "/" + name
 
-    The remote carries no ``.git`` suffix: the smart-HTTP routes are
-    ``/<owner>/<repo>/info/refs`` and ``/<owner>/<repo>/git-receive-pack``
-    exactly, so an advertised ``<repo>.git`` would resolve to a repository
-    named ``repo.git`` and 404.
-    """
-    remote = origin + "/" + owner + "/" + name
+
+def _push_instructions(remote, account, password, expires_at, node):
+    """The copy-paste block the create modal shows after a hosted create."""
     return {
         "remoteUrl": remote,
         "username": account,
@@ -406,8 +405,8 @@ async def _hosted_push_grant(env, request, data, owner, name, account,
         (mac_owner or owner) + "/" + name, "success",
         {"expiresAt": expires_at, "hostedNode": endpoint.get("node", "")})
     return _push_instructions(
-        origin, owner, name, account, password, expires_at,
-        endpoint.get("node", ""))
+        await _remote_url(env, origin, owner, name), account, password,
+        expires_at, endpoint.get("node", ""))
 
 
 def _session_required_response():
@@ -1123,13 +1122,14 @@ async def _create_core_repository(env, request, data, actor):
     grant = await _hosted_push_grant(env, request, data, owner, name, actor)
     if grant is None:
         return _unavailable_response()
-    grant["remoteUrl"] = origin + "/" + public_owner + "/" + name
+    old_remote = grant["remoteUrl"]
+    grant["remoteUrl"] = await _remote_url(env, origin, public_owner, name)
     if init:
         # The remote gets a first commit (or an import): start from a clone.
         grant["commands"] = ["git clone " + grant["remoteUrl"], "cd " + name]
     else:
         grant["commands"] = [
-            line.replace(origin + "/" + owner + "/" + name, grant["remoteUrl"])
+            line.replace(old_remote, grant["remoteUrl"])
             for line in grant["commands"]]
     await store_core_repository(
         env, runtime, target, record, actor=actor, repo_id=repo_id,

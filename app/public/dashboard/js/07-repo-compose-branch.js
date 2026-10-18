@@ -710,8 +710,8 @@
     setRepoRecordOpen("pulls", true);
     const parent = repoForkParent(repo);
     const targetRepo = pullRequestTargetRepo(repo);
-    const sourceLabel = repoDisplayKey(repo);
-    const targetLabel = parent?.key || repoDisplayKey(targetRepo);
+    const sourceLabel = repoDisplayName(repo);
+    const targetLabel = parent?.key ? repoDisplayName(parent.key) : repoDisplayName(targetRepo);
     const branches = repoBranchList(repo);
     const defaultBranch = repoDefaultBranch(repo);
     const presetBase = String(preset?.base || "").trim();
@@ -1045,7 +1045,7 @@
       setSubmitBusy(submit, false);
       const detailUrl = repoRecordUrl(targetRepo, "pulls", number, "conversation");
       if (crossFork) {
-        setHint(`Created #${number}; opening it in ${repoDisplayKey(targetRepo)}…`, "good");
+        setHint(`Created #${number}; opening it in ${repoDisplayName(targetRepo)}…`, "good");
         window.location.assign(detailUrl);
         return;
       }
@@ -1056,7 +1056,7 @@
       console.error("[forkmesh] pull request submission failed", error);
       setHint(
         webPullSubmitErrorText(
-          error, base, head, repoDisplayKey(pullRequestTargetRepo(repo))),
+          error, base, head, repoDisplayName(pullRequestTargetRepo(repo))),
         "bad");
     }
   }
@@ -1157,7 +1157,7 @@
             <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(commit.author || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Date</dt><dd>${escapeHtml(commit.date || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Parents</dt><dd class="font-mono">${parents.length ? parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ") : "root commit"}</dd></div>
-            <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repo.owner || "owner")}/${escapeHtml(repo.name || "repo")}</dd></div>
+            <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</dd></div>
           </dl>
         </header>
         <section class="overflow-hidden rounded-lg border border-border">
@@ -4012,7 +4012,7 @@
 
   function renderIssueContributionTip(repo) {
     if (issueContributionTipDismissed(repo)) return "";
-    const repository = `${repo.owner || "owner"}/${repo.name || "repository"}`;
+    const repository = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repository"}`);
     return `
       <aside data-repo-issue-contribution-tip class="fm-flash relative mb-4 flex-wrap">
         <i data-lucide="heart-handshake"></i>
@@ -4082,7 +4082,7 @@
           </div>
         </section>`;
     }
-    const repository = `${repo.owner || "owner"}/${repo.name || "repository"}`;
+    const repository = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repository"}`);
     return `
       <section data-dashboard-repo-tab-panel="pulls" class="hidden">
         <div data-repo-collection-layout="pulls" data-views-collapsed="${issueViewsCollapsed() ? "true" : "false"}" class="mt-2 grid min-w-0 gap-6">

@@ -104,12 +104,193 @@ or organization. `app/src/repo_short_urls.py` holds the rules.
 - The repository page is served at the short address with two meta tags
   (`forkmesh-repo-short`, `forkmesh-repo-owner`). `repoRouteParts` in
   `02-helpers.js` maps the short path back to owner, repository, tab and
-  folder. Links inside the page keep the full address. Short-address pages
+  folder. Links inside the page keep the full address unless the owner is
+  canonical (below). Short-address pages
   skip the shared social edge cache because the page differs.
 - The setting is cached for 30 seconds per process
   (`repo_short_urls.cached`); a save clears the local cache.
 - On the cores Caddy serves static files before the app, so short addresses
   are meant for instances.
+
+### Single-organization instances (canonical short addresses)
+
+The second switch on the Short addresses card, "Show repositories without
+the owner (single-organization instance)", stores `"canonical": true` in the
+same row: `{"canonical":true,"owner":"acme-bolt","short":true}`. It only
+counts while `short` is on. The repositories of that owner then show only as
+`/<repo>`: `https://code.example.org/Bolt`, `/Bolt/issues`,
+`/Bolt/tree/bolt-c`, clone `https://code.example.org/Bolt.git`.
+
+Organization repositories are stored under the account that created them
+and linked to the organization in `org_repos` (Bolt is hosted as
+`drew/Bolt` and aliased as `acme-bolt/Bolt`). That creator address is
+treated like the organization address.
+
+| Request | Answer |
+| --- | --- |
+| `GET`/`HEAD /<owner>/<repo>[/tab/...]` | `308` to `/<repo>[/...]`, query kept, `cache-control: no-store` so turning the switch off takes effect at once |
+| `GET /<creator>/<repo>[/...]`, the repository linked to the owner (the creating account, or the `forkmesh` node for the platform mirror) | the same `308`, for a public repository only (a redirect for a private one would tell a visitor that it exists) |
+| `/<owner>/<repo>/info/refs`, `git-upload-pack`, `git-receive-pack`, `/api/repo/...` | unchanged at both addresses; git and the API are never redirected |
+| a name that is reserved, looks like a file, ends in `.git`, equals the owner, or is a person's account or an organization | keeps `/<owner>/<repo>` (the short rewrite refuses those names, so the full address is the only one that works) |
+| a name that is only an internal node account (`forkmesh`, `<org>-actions`) | goes to the root: in this mode internal accounts have no address of their own, so the instance's platform mirror is `/forkmesh` |
+
+Where the short form is produced:
+
+- **Server redirect**: `_repo_canonical_path` in `entry.py` (called from
+  `_route` just before the `/<owner>/<repo>` page is served, after every git
+  and API route, so those never redirect). `repo_short_urls.canonical_redirect`
+  holds the pure rule: the short path must rewrite back to exactly the
+  requested full path.
+- **Head tags**: a page served at the short address with canonical on gets
+  `<link rel="canonical">` and `og:url` of `https://<host>/<repo>` and a
+  `forkmesh-repo-canonical` meta tag naming the owner.
+- **Browser**: the dashboard pages are static files, so the setting reaches
+  them through `GET /api/instance` (`repoAddresses`: owner, canonical, the
+  owner's public repository names that must keep the owner, public creator
+  aliases `{repo: creator}`, and the reserved route names). Dashboard boot
+  (`10-boot.js`) starts the read at once and waits for it (at most 1.5 s)
+  when no answer is cached or the cached one is older than ten minutes
+  (`REPO_ADDRESSES_TTL_MS`); the answer is kept in `localStorage`
+  (`forkmesh.repoAddresses`, saved time in `forkmesh.repoAddressesSavedAt`)
+  so later pages render short links straight away. A page drawn from a cached
+  answer can be wrong right after an admin switches the mode, so when the
+  fresh answer differs from the one the page already used,
+  `applyRepoAddresses` fires `forkmesh:repo-addresses` and boot runs
+  `refreshRepoAddressViews`: the repository lists and sidebar are drawn
+  again, the header is redrawn, every same-site link is rewritten
+  (`refreshRepoLinks`: long to short, or back to the long form when the mode
+  was turned off) and a long address in the address bar is replaced with
+  `history.replaceState` (`replaceLongRepoLocation`). An identical answer
+  changes nothing.
+  The core hosts never ask. `repoPathUrl`, and through it `repoLinkUrl`,
+  `groupLinkUrl`, record and compare links, `navigateHistory` targets and the
+  repository lists, return `/<repo>/...` for the owner, its creator aliases
+  and rows whose public owner is the organization. `cloneUrl` adds `.git` to a
+  one-segment address. `repoPublicHref`/`repoPublicKey` shorten notification
+  links and labels. Short paths the page itself made are remembered so
+  Back/Forward parse them again (`repoRouteParts`). `parseCloneUrlIdentity`
+  reads a one-segment clone URL of this site as `<owner>/<repo>`.
+- **Clone URLs in API answers**: the hosted-create and push-credential
+  answers (`remoteUrl` and the commands) use `_repo_clone_url`. The catalog
+  rows keep their stored, signed `cloneUrl` (the server reads identities from
+  it), and `GET /api/repositories` and `/api/repositories/search` answers are
+  rewritten on the way out (`repo_short_urls.short_urls`): same-site URLs of
+  the owner or of a linked creator become `/<repo>` (`/<repo>.git` for
+  `cloneUrl`, `clone.https` and `git clone` commands); mirror URLs on other
+  hosts and names that must keep the owner are left alone.
+- **Notifications**: `enqueue_notification` stores the short `href`.
+- **Git over the short address**: `/<repo>.git/info/refs` and
+  `/<repo>.git/git-receive-pack` are re-dispatched as the full path. The
+  request object still carries the short URL, so the organization-alias
+  recovery (`_git_push_alias_owner`, `_https_mirror_proxy`) maps it back
+  through `_git_request_path`. The instance host's 256 MiB push body limit
+  (`request_guard.GIT_PUSH_RE`) also matches the one-segment push path.
+
+Server pages that live at the root (`/admin`, `/health`, `/readyz`,
+`/oauth`, `/developers`, `/mcp`, `/nodeinfo`, `/ap`, `/v1`, `/ws` and the
+others in `static_routes.CORE_RESERVED_ROUTE_PREFIXES`) are reserved, so a
+one-segment address never turns them into a repository page. Before they were
+listed, turning canonical mode on made `/admin` render an empty repository
+page named "admin" and the admin console unreachable. A repository whose name
+is reserved keeps its `/<owner>/<repo>` address.
+
+Internal accounts are node accounts (`_account_kind` = `node`): the git
+node `forkmesh`, the Actions bot `<org>-actions`. They keep their
+organization role (the bot stays a maintainer so workflows can push), but the
+organization roster (`GET /api/orgs/<org>/members`) leaves them out while
+the mode is on (`_org_internal_members`). The organization owners shown are
+the people configured at install.
+
+Signing up and contributing are not affected: `/signup` is unchanged, and
+opening an issue, pull request or discussion on an organization repository
+needs only a signed event and the feature switch (`_repo_feature_off`), not
+organization membership (`app/tests/test_single_org_contributors.py`).
+
+The owner's repository names and creator links are read from `org_repos`
+and the owner's `repositories` rows and cached for five minutes per process
+(`_repo_short_links`); a save on the admin page clears it. A new repository
+whose name collides with an account can show a short link for up to that
+long; the server redirect itself checks accounts on every request.
+
+With canonical on, the repository page names only the repository:
+
+- **Header**: `renderHeaderContext` (`04-account.js`) shows just the
+  repository link when `repoLinkUrl` gives a one-segment address, instead of
+  `acme-bolt / Bolt`.
+- **`og:title`, `twitter:title`** and the fallback `og:description` read
+  `Bolt - ForkMesh` (`_serve_repo_page`, only for a page served at the short
+  address of the canonical owner).
+- **Server-rendered first view** (`app/host/forkmesh_host/repo_ssr.py`): a
+  one-segment GET (`short_target`) gets a `ShortTicket`; the owner is not
+  known until the Worker's page arrives, so `finish` reads the
+  `forkmesh-repo-short` / `forkmesh-repo-owner` meta tags from it
+  (`short_page`), then renders the remembered first view of
+  `<owner>/<repo>` within the same budget as a full address. With
+  `forkmesh-repo-canonical` present, the title is the repository alone and
+  the file, folder and README links are `/<repo>/...`. The early-read script
+  still only reads two-segment paths, so on a short page the dashboard reads
+  the tree itself when it boots.
+
+Labels follow the same rule. `repoDisplayName(repo)` (`02-helpers.js`)
+returns only the name for a repository that has a short address (the owner,
+a creator alias, or a row whose public owner is the organization) and the
+usual `owner/name` otherwise; a string key goes through `repoPublicKey`.
+`groupDisplayName(group)` does the same for a mirror group,
+`repoReferenceLabel` gives `Repo#12`, and `repoPublicText` shortens
+`owner/name` inside server-written text (notification and activity titles,
+for example `Bounty funded on acme/Repo` becomes `Bounty funded on Repo`).
+They are used by the sidebar, the dashboard home list, the repositories
+page, global search, profile activity, the activity feed, notifications,
+the agent, task and note lists, the repository page's loading header and
+its not-found message, the pull request compose and detail
+labels, the contribution tips, the commit detail, the copy-path menu, the
+code map and the agent repository picker. The sidebar and home list
+deduplicate on that label, so a repository stored under its creator
+(`alice/Repo`) and linked to the organization (`acme/Repo`) appears once,
+as `Repo`. Where a label would name an internal node account (the platform
+mirror under `forkmesh`), the "published from" note is dropped with the
+owner. With canonical on the browser title of a repository page becomes
+`<repo> - <instance>` (`renderHeaderContext`, restored when the page leaves
+the repository). The network page's largest-repositories board names a
+short repository by its name (`_short_repo_board` in `entry.py`). Without
+canonical, every label keeps its previous form; the call sites that used
+the physical `owner/name` pass it as the fallback.
+
+Still shown with the owner: ActivityPub actor URLs and the fediverse
+profile, mirror and runner clone URLs on other hosts, and the materialized
+public catalog snapshot on the cores (instances do not use it).
+
+New instances opt in with `"singleOrganization": true` in the install
+settings (default `false`, organization owners only); see
+[../INSTANCES.md](../INSTANCES.md). To turn it on for an existing instance,
+run the operator command as the app user, from the instance's source:
+
+```sh
+cd /opt/forkmesh-instance/src/app/host && runuser -u forkmesh-app -- \
+  env HOME=/var/lib/forkmesh-instance /opt/forkmesh-instance/venv/bin/python \
+  -m forkmesh_host instance-single-org --org acme-bolt \
+  --env-file /etc/forkmesh-instance/app.env \
+  --db sqlite:/var/lib/forkmesh-instance/app.db \
+  --data-dir /var/lib/forkmesh-instance/data
+```
+
+It writes the `repo_paths` row, links the `forkmesh` platform mirror to the
+organization if that alias is missing, prints the repositories now served at
+the root, and is safe to run again (`"changed": false`). `--off` sets
+`canonical` back to `false`. No catalog row is rewritten: stored `cloneUrl`
+values are signed identity data the server reads, so the short form is
+applied to answers instead. The admin page (Platform → Repository addresses,
+both switches, owner = the organization) does the same as the command
+without the alias repair, or the row can be written directly:
+
+```sql
+INSERT INTO instance_settings (k, doc, updated_at)
+VALUES ('repo_paths', '{"canonical":true,"owner":"acme-bolt","short":true}',
+        CAST(strftime('%s','now') AS INTEGER) * 1000)
+ON CONFLICT(k) DO UPDATE SET doc=excluded.doc, updated_at=excluded.updated_at;
+```
+
+A row written by SQL takes effect within 30 seconds (the per-process cache).
 
 ### Project addresses
 
@@ -136,6 +317,9 @@ tab-separated; `#` lines are comments. A folder of `-` marks retired names,
 which redirect to the repository. The same table can live in the repository
 (Bolt keeps it in `scripts/routing/projects.tsv`) and be pasted here.
 `app/src/repo_projects.py` holds the rules.
+Project addresses already target `/<repo>/...`, so they work unchanged with
+canonical short addresses: a project redirect is checked before the short
+route and lands on an address that canonical mode never redirects again.
 
 - Names match without regard to case, and the folder name works as well as
   the address name. Unknown names fall through to the short-address rules.

@@ -69,3 +69,11 @@ def test_organization_page_markup_and_styles():
     assert "data-org-profile-overview hidden" in overview
     assert "data-org-profile-popular" in overview
     assert "data-org-profile-languages" in overview
+
+
+def test_header_names_only_the_repository_at_a_short_address():
+    header = _slice(
+        DASHBOARD_JS, "function renderHeaderContext(", "// ---- Public-profile mode")
+    assert "const repoHref = repoLinkUrl(repo);" in header
+    assert 'repoHref.split("/").filter(Boolean).length === 1' in header
+    assert "headerContext.innerHTML = owner && !shortAddress" in header
