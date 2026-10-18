@@ -61,6 +61,8 @@ object CodeFeature {
 
     fun actionsScreen(repo: Repository, commit: String = ""): Screen = com.forkmesh.nativeapp.feature.code.review.ActionsScreen(repo, commit)
 
+    fun actionRunScreen(repo: Repository, runId: Int): Screen = com.forkmesh.nativeapp.feature.code.review.standaloneActionRunScreen(repo, runId)
+
     fun releasesScreen(repo: Repository): Screen = com.forkmesh.nativeapp.feature.code.review.ReleasesScreen(repo)
 
     fun securityScreen(repo: Repository): Screen = com.forkmesh.nativeapp.feature.code.review.SecurityScreen(repo)

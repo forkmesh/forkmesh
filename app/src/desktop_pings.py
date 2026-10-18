@@ -17,18 +17,21 @@ DESKTOP_PING_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,64}$")
 DESKTOP_PING_NODE_RE = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 DESKTOP_PING_DESKTOP_KIND_RE = re.compile(r"^[A-Za-z0-9_-]{0,40}$")
 DESKTOP_PING_SESSION_RE = re.compile(r"^[0-9]{0,12}$")
+DESKTOP_PING_RUN_RE = re.compile(r"^(?:[1-9][0-9]{0,11})?$")
 DESKTOP_PING_REPO_RE = re.compile(
     r"^$|^[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}$")
-DESKTOP_PING_CATEGORIES = frozenset({"", "agent-finished", "agent-failed"})
+DESKTOP_PING_CATEGORIES = frozenset(
+    {"", "agent-finished", "agent-failed", "ci-failed"})
 DESKTOP_PING_ALARMS = {"power-battery": "power"}
 DESKTOP_PING_TITLE_MAX = 160
 DESKTOP_PING_BODY_MAX = 500
 
 
 def desktop_ping_resource(fields):
+    run = [fields["runId"]] if fields.get("runId") else []
     return "\n".join([
         fields["pingId"], fields["node"], fields["kind"], fields["category"],
-        fields["sessionId"], fields["repo"],
+        fields["sessionId"], *run, fields["repo"],
         "1" if fields["warning"] else "0",
         fields["title"], fields["body"],
     ])
@@ -78,6 +81,7 @@ def desktop_ping_fields(data):
                          ("node", DESKTOP_PING_NODE_RE),
                          ("kind", DESKTOP_PING_DESKTOP_KIND_RE),
                          ("sessionId", DESKTOP_PING_SESSION_RE),
+                         ("runId", DESKTOP_PING_RUN_RE),
                          ("repo", DESKTOP_PING_REPO_RE)):
         value = data.get(key, "")
         if not isinstance(value, str) or not pattern.match(value):
@@ -193,12 +197,16 @@ async def desktop_ping_handler(env, request):
     href = ""
     if repo and fields["sessionId"]:
         href = "/" + repo + "/agents/" + fields["sessionId"]
+    elif repo and fields["runId"]:
+        href = "/" + repo + "/actions/runs/" + fields["runId"]
     meta = {"node": node, "desktopKind": fields["kind"],
             "warning": fields["warning"], "pingId": fields["pingId"]}
     if fields["category"]:
         meta["category"] = fields["category"]
     if fields["sessionId"]:
         meta["sessionId"] = fields["sessionId"]
+    if fields["runId"]:
+        meta["runId"] = fields["runId"]
     alarm = DESKTOP_PING_ALARMS.get(fields["kind"], "")
     if alarm:
         meta["alarm"] = alarm

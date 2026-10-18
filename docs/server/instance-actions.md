@@ -241,7 +241,10 @@ App side (`app/src/actions_job_api.py`, routed for `/api/actions/job/*` in
 `app_runtime.py`): the token's SHA-256 must match `token_hash` of a job in
 `leased`, `running` or `cancelling`. The bot key is derived from
 `ACTIONS_BOT_SEED` (64 hex characters, the raw Ed25519 seed; WebCrypto
-imports it as PKCS#8 and exports the public half). Each change is a v2
+imports it as PKCS#8 and exports it as a JWK; `to_py()` turns the JWK into a
+dict on both Pyodide and the host, so `x` and `d` are read as keys, which
+keeps the `test_host_js_surface` inventory free of attribute chains on it).
+Each change is a v2
 issue event (`forkmesh-issue-event-v2\n<owner>/<repo>\n...`, owner being the
 repository's node owner) with `authorName: <org>-actions`, handed to
 `_accept_issue_submission` in `entry.py` — the same validation, inbox row and

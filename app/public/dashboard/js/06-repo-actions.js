@@ -300,6 +300,11 @@
         branchesAsked: false, logs: {},
       });
     }
+    const initialRun = state.repoActionsInitialRun;
+    if (initialRun && initialRun.key === key) {
+      view.selectedRunId = initialRun.runId;
+      state.repoActionsInitialRun = null;
+    }
     if (view.loading) return;
     if (view.treeWorkflows === null) void loadRepoActionsTreeWorkflows(repo);
     if (!state.session?.sessionToken && !dashboardOnInstance()) {
