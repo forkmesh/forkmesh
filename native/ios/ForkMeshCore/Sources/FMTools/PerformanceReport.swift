@@ -37,6 +37,7 @@ public enum PerformanceReport {
             Part("Stalls by name", eventGroups(events.filter(\.isStall), lastSeen: timeZone), rank: 9),
             Part("Stalls by screen", eventGroups(events.filter(\.isStall), lastSeen: timeZone, key: stallScreen), rank: 8),
             Part("Slow operations by name", eventGroups(events.filter { !$0.isStall }), rank: 8),
+            Part("Main-actor work during stalls", stallSections(events), rank: 8),
             Part("In flight or finished during stalls", stallCulprits(events), rank: 7),
             Part("HTTP endpoints, last \(minutes) min", endpoints(telemetry.log, now), rank: 6),
             Part("MetricKit", metricKitLines(metricKit), rank: 8),
@@ -240,6 +241,30 @@ public enum PerformanceReport {
             }
         }
         return ranked(counts, limit: topRows)
+    }
+
+    static func stallSections(_ events: [PerformanceEvent]) -> String {
+        var groups: [String: EventGroup] = [:]
+        for event in events where event.isStall {
+            guard let value = event.details["sections"] else { continue }
+            for item in PerformanceLogText.dartText(value).components(separatedBy: ", ") {
+                guard let space = item.lastIndex(of: " "), item.hasSuffix("ms"),
+                    let ms = Int(item[item.index(after: space)...].dropLast(2))
+                else { continue }
+                let name = String(item[..<space])
+                var group = groups[name] ?? EventGroup(key: name)
+                group.count += 1
+                group.totalMs += ms
+                group.maxMs = max(group.maxMs, ms)
+                groups[name] = group
+            }
+        }
+        let sorted = groups.values.sorted { ($0.totalMs, $1.key) > ($1.totalMs, $0.key) }
+        var lines = sorted.prefix(topRows).map { (g: EventGroup) -> String in
+            row(["\(g.count)x", "total \(g.totalMs)ms", "max \(g.maxMs)ms", clip(g.key, keyChars)])
+        }
+        if sorted.count > topRows { lines.append("... \(sorted.count - topRows) more") }
+        return lines.joined(separator: "\n")
     }
 
     struct Endpoint {

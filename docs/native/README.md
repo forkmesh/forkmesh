@@ -275,6 +275,16 @@ avatar movement but does not silently change that saved feedback preference.
   aquarium, `GenieScreenScan`) runs on the main thread and can cost more than
   it measures: asking SwiftUI for its accessibility elements builds them. Scan
   on page and tab changes, then rarely, and cache everything one walk finds.
+- Parse agent transcripts off the main actor. `beatsFromTranscript` costs about
+  58 ms per 64 KB and `AgentTranscriptFormat.blocks` about 16 ms;
+  `TranscriptBeatCache` (the watch bridge) parses in a detached task, once per
+  transcript length. A live feed re-reads only the transcript that moved
+  (`ControlWatchFeeds.revision`, `AgentEagleFeed`), not every followed run on
+  each delta.
+- Wrap main-actor work that grows with the account's data in
+  `PerformanceMonitorService.section(name)`. A section over 8 ms is named in
+  the `sections` detail of any stall it falls inside; one over 200 ms is its
+  own `sync` stall.
 
 ## Related docs
 

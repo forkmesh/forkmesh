@@ -41,7 +41,7 @@ final class WatchBridge: NSObject {
     private var targets: [String: Target] = [:]
     /// Transcript beats per session key, and how long the transcript was
     /// when read (a transcript that has not grown is not parsed again).
-    private var beatCache: [String: CachedBeats] = [:]
+    private let beatCache = TranscriptBeatCache()
     /// The agent whose live view is open on the watch, if any.
     private var watched: String?
     private var listening = false
@@ -157,18 +157,13 @@ final class WatchBridge: NSObject {
         case lan(LocalAgentRow)
     }
 
-    private struct CachedBeats {
-        var length: Int
-        var beats: [WireBeat]
-    }
-
     private func publish() async {
         guard watchReady, let session else { return }
         let snapshot = await buildSnapshot(reachable: session.isReachable)
-        let fitted = WatchWire.fitted(snapshot, keep: watched)
+        let fitted = PerformanceMonitorService.section("watch.fit") { WatchWire.fitted(snapshot, keep: watched) }
         guard let envelope = try? WatchWire.envelope(.snapshot, fitted) else { return }
         do {
-            try session.updateApplicationContext(envelope)
+            try PerformanceMonitorService.section("watch.context") { try session.updateApplicationContext(envelope) }
         } catch {
             Log.warning("watch", "Application context refused: \(error)")
         }
@@ -252,10 +247,10 @@ final class WatchBridge: NSObject {
         }
         // Frames not read this time keep the beats read last time.
         for index in frames.indices where !reads.contains(frames[index].key) {
-            if let cached = beatCache[frames[index].key] {
-                frames[index].beatCount = cached.beats.count
-                frames[index].beats = Array(cached.beats.suffix(AgentFrame.maxBeats))
-                frames[index].lastReply = cached.beats.last { !$0.said.isEmpty }?.said ?? ""
+            if let cached = beatCache.cached(frames[index].key) {
+                frames[index].beatCount = cached.count
+                frames[index].beats = Array(cached.suffix(AgentFrame.maxBeats))
+                frames[index].lastReply = cached.last { !$0.said.isEmpty }?.said ?? ""
             }
         }
         let note: String
@@ -290,13 +285,9 @@ final class WatchBridge: NSObject {
             }
         } catch {
             Log.debug("watch", "Transcript read failed for \(key): \(error)")
-            return beatCache[key]?.beats
+            return beatCache.cached(key)
         }
-        let length = text.utf8.count
-        if let cached = beatCache[key], cached.length == length { return cached.beats }
-        let beats = beatsFromTranscript(text).map(WireBeat.init)
-        beatCache[key] = CachedBeats(length: length, beats: beats)
-        return beats
+        return await beatCache.beats(key, transcript: text)
     }
 
     private static func sameRepo(_ row: LocalAgentRow, _ repo: Repository) -> Bool {

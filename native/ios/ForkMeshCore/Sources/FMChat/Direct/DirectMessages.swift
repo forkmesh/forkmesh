@@ -681,6 +681,10 @@ public final class DirectMessageService {
     }
 
     private func receive(_ message: WebSocketMessage, conversationId: String) {
+        PerformanceMonitorService.section("chat.direct.receive") { receiveFrame(message, conversationId: conversationId) }
+    }
+
+    private func receiveFrame(_ message: WebSocketMessage, conversationId: String) {
         guard let socket = sockets[conversationId], let record = records.first(where: { $0.id == conversationId })
         else { return }
         let text: String

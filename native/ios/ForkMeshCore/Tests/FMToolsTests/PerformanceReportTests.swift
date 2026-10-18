@@ -161,6 +161,22 @@ final class PerformanceReportTests: XCTestCase {
     }
 
     @MainActor
+    func testStallsSumTheNamedMainActorWorkThatRanInsideThem() async {
+        let (telemetry, clock) = fixture()
+        let monitor = telemetry.monitor!
+        monitor.recordSlowEvent(
+            kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(318),
+            details: ["sections": "watch.fit 180ms, agents.lines 40ms"])
+        monitor.recordSlowEvent(
+            kind: .frame, name: "frame", duration: .milliseconds(246), details: ["sections": "watch.fit 120ms"])
+        monitor.recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(250))
+        let text = PerformanceReport.text(telemetry: telemetry, now: clock.now, timeZone: utc)
+        XCTAssertTrue(text.contains(
+            "## Main-actor work during stalls\n2x     total 300ms max 180ms watch.fit\n"
+                + "1x     total 40ms max 40ms  agents.lines\n"), text)
+    }
+
+    @MainActor
     func testStallsKeepTheirOwnSectionWhenOperationsCrowdTheReport() async {
         let (telemetry, clock) = fixture()
         let monitor = telemetry.monitor!

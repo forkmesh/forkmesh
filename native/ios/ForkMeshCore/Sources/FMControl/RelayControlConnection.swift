@@ -17,6 +17,7 @@
 // The desktop only accepts a relayed channel from a phone it approved in person on its network,
 // and only the desktop key paired then is accepted here.
 
+import FMAccount
 import FMApi
 import FMBase
 import FMChat
@@ -286,6 +287,10 @@ public final class RelayControlConnection: DesktopControlLink {
     }
 
     private func handlePayload(_ payload: [UInt8]) {
+        PerformanceMonitorService.section("relay.control") { openPayload(payload) }
+    }
+
+    private func openPayload(_ payload: [UInt8]) {
         switch stage {
         case .awaitingWelcome:
             if case .object(let decoded)? = try? JSON.parse(Data(payload)), decoded["t"] == .string(controlWelcomeTag) {

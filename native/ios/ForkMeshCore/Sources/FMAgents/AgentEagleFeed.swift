@@ -1,3 +1,4 @@
+import FMAccount
 import FMControl
 import Foundation
 import Observation
@@ -22,10 +23,14 @@ public final class AgentEagleFeed {
     @ObservationIgnored private var asked: Set<String> = []
     @ObservationIgnored private var waiting: [String] = []
     @ObservationIgnored private var fetching = 0
+    @ObservationIgnored private var read: [String: Int] = [:]
+    @ObservationIgnored private let said: @MainActor (String) -> String
 
     public nonisolated static let fetchLimit = 3
 
-    public init() {}
+    public init(dialog: @escaping @MainActor (String) -> String = { AgentLines.dialog($0) }) {
+        said = dialog
+    }
 
     public static func desktopKey(repo: String, localId: Int) -> String {
         "\(repo.lowercased())#\(localId)"
@@ -60,6 +65,7 @@ public final class AgentEagleFeed {
         fetch = nil
         asked = []
         waiting = []
+        read = [:]
         dialogs = [:]
         for box in texts.values where !box.text.isEmpty { box.text = "" }
         texts = [:]
@@ -112,8 +118,9 @@ public final class AgentEagleFeed {
             guard let fetch, let row = rows[id] else { continue }
             fetching += 1
             Task { @MainActor [weak self] in
-                let said = AgentLines.dialog(await fetch(row) + "\n")
+                let text = await fetch(row) + "\n"
                 guard let self else { return }
+                let said = self.said(text)
                 self.fetching -= 1
                 if self.asked.contains(id) { self.recalled(id, said) }
                 self.drain()
@@ -136,9 +143,14 @@ public final class AgentEagleFeed {
     private func refresh() {
         guard let feeds else { return }
         var next = dialogs
-        for id in followed {
-            let said = AgentLines.dialog(feeds.text(id)?.text ?? "")
-            if !said.isEmpty { next[id] = said }
+        PerformanceMonitorService.section("agents.eagle") {
+            for id in followed {
+                let revision = feeds.revision(id)
+                if read[id] == revision { continue }
+                read[id] = revision
+                let line = said(feeds.text(id)?.text ?? "")
+                if !line.isEmpty { next[id] = line }
+            }
         }
         guard next != dialogs else { return }
         dialogs = next
