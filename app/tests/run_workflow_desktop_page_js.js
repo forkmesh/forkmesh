@@ -93,6 +93,7 @@ globalThis.fetch = async (path, init) => {
 };
 
 const calls = [];
+const prompts = [];
 const connection = {
   async request(method, params) {
     calls.push([method, params.action, params.step || "", params.token || ""]);
@@ -127,6 +128,7 @@ const scope = {
   $, $$: () => [], blobText: async () => "", desktopControlErrorText: (error) => String(error?.message || ""),
   desktopControlHub: async () => hub, escapeHtml: (value) => String(value ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`),
   fetchJson, fetchRepoJson: async () => ({}), formatTimeAgo: () => "an hour ago", state,
+  sendTextToPrompt: (text) => { prompts.push(text); return true; },
 };
 
 vm.runInThisContext(fs.readFileSync(chunkPath, "utf8"));
@@ -157,16 +159,25 @@ async function waitFor(check) {
   }
   await waitFor(() => recorded.length === 1 && !state.workflowsView.busy && !state.workflowsView.live);
   await tick();
+  const railAfter = $("[data-wf-rail]").innerHTML;
+  const panelAfter = $("[data-wf-panel-body]").innerHTML;
+  const noticeAfter = state.workflowsView.notice;
+  const send = { target: { closest: (selector) => (selector === "[data-wf-send-failure]" ? {} : null) } };
+  for (const listener of app.listeners.click) listener(send);
+  await tick();
   process.stdout.write(JSON.stringify({
     calls,
     recorded: recorded[0],
     railWhileRunning,
     canvasWhileRunning,
-    railAfter: $("[data-wf-rail]").innerHTML,
+    railAfter,
+    panelAfter,
+    prompts,
+    sentNotice: state.workflowsView.notice,
     railHidden: $("[data-wf-rail]").hidden,
     runsHtml: $("[data-wf-runs]").innerHTML,
     runsHidden: $("[data-wf-runs]").hidden,
-    notice: state.workflowsView.notice,
+    notice: noticeAfter,
     timer: state.workflowsView.railTimer,
   }));
 })().catch((error) => {

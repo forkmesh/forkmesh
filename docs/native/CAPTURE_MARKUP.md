@@ -16,6 +16,35 @@ apps do the same three steps within what a phone allows.
 - **Discard is explicit.** Closing the editor with marks on it (Discard,
   Android back, iOS swipe-down) asks first; iOS disables swipe-down.
 
+## iOS: long-press a blank area to copy part of the screen
+
+With the `capture` package on (Market, "Installed on this device"; on by
+default, stored as `packages/capture/on`), holding a finger still for 0.6 s on
+any blank area of any screen opens a small pop-up at the finger with
+**Select Area** and **Whole Screen**. On Home the existing background menu
+gets **Select area to copy…** instead, so one hold never opens two menus.
+
+- **Select Area** freezes the screen, dims it, and the user drags a box over
+  the part to keep (boxes under 16 pt are ignored). **Whole Screen** skips the
+  box. Either way the crop opens the same PencilKit markup editor as the
+  composer, with **Copy** in place of **Add**; Copy flattens the ink onto the
+  crop (at most 2048 px on the long side) and puts it on the clipboard as an
+  image, then shows
+  "Copied to clipboard". Discard leaves the clipboard alone.
+- Blank means nothing is under the finger: no enabled control, text field,
+  list row or cell in the hit view's ancestors, and no accessibility element
+  smaller than half the screen at that point within the touched screen's
+  view controller. Text, icons and images therefore keep their own long-press
+  behaviour; wallpaper, margins and gaps between rows do not.
+- `ForkMesh/Platform/CaptureHold.swift`: one `UILongPressGestureRecognizer`
+  on the app window (installed by `CaptureHoldAnchor` in `ThemedAppView`),
+  recognising alongside every other gesture and never cancelling touches. The
+  pop-up is a `UIEditMenuInteraction` on the top presented view. The picker,
+  editor and notice run in their own window above alerts, so sheets and
+  menus underneath are captured as they look. The screen is drawn 350 ms
+  after the pop-up closes, as with the composer's capture.
+- Turning the package off stops the hold at once; nothing else changes.
+
 ## iOS: PencilKit
 
 `ForkMesh/Platform/PromptMarkup.swift`. A `PKCanvasView` sits over the
@@ -86,5 +115,6 @@ eight swatches (red first), undo, Discard and "Add to prompt" (or "Done").
 - Android `C/composer/MarkupTest.kt` (fit, normalization, stroke width, arrow
   heads, naming): `./gradlew :core:coreTest -Pfilter=Markup`.
 - iOS `FMAgentsTests/PromptMarkupTests.swift` (fit, pixel size, ink scale,
-  naming): `FM_ONLY=FMAgents swift test --filter PromptMarkupTests`.
+  naming; `CaptureAreaTests` for the dragged box, minimum size, pixel crop and
+  content size): `FM_ONLY=FMAgents swift test --filter 'PromptMarkupTests|CaptureAreaTests'`.
 - Markup happens after the hand-off, never inside the share extension.

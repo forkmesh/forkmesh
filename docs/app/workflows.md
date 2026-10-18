@@ -104,6 +104,29 @@ Stop step) and a short preview of the first item, its `output`, `text`,
 A failed run's output is its error. A desktop run's output is the bytes freed
 and the free space after (`workflow_desktop.disk_output`).
 
+### Send a failure to an agent
+
+A failed run (the one just run, or one picked in the recent runs list) shows
+**Send to agent** in three places: the progress rail's headline, the
+Selected execution panel and the failed step's Last run section. It puts a
+report in the agent prompt ([web-composer.md](web-composer.md)) through
+`sendTextToPrompt`, and the user picks the repository and agent and sends it;
+on a page without a prompt it copies the report instead (`wfSendFailure`).
+The report (`wfFailurePrompt`) names the workflow and its page link, the run
+and its error, every step with its type, status, time and error, and then for
+the failed step:
+
+- a desktop step: the `tools/free_disk_space.py --step <step>` command the
+  desktop ran, the dry run that repeats it, and the docs to read;
+- any other step: its settings as JSON (at most 1500 characters), with values
+  whose key, or whose pair's `name`, looks like a token, secret, password, API
+  key, auth header, cookie or signature replaced by `[hidden]`;
+- its last 40 log lines, when it logged any.
+
+The report stops at 7500 characters, under the prompt's 8000. A desktop step
+that fails sends only the last line it printed (the desktop's
+`cleanup_failed` message), so that is the error the report carries.
+
 ## Desktop steps
 
 The **Desktop** group (`workflow_desktop.NODES`, `runsOn: "desktop"`) holds

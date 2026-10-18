@@ -48,6 +48,17 @@ def test_uses_arkit_face_tracking_and_says_why_it_needs_the_camera():
 
 
 def test_core_math_has_no_apple_only_imports():
-    source = (CORE / "FMTools" / "EyeControlModels.swift").read_text(encoding="utf-8")
-    imports = {line.split()[1] for line in source.splitlines() if line.startswith("import ")}
-    assert imports == {"Foundation"}
+    for name in ("EyeControlModels.swift", "EyeControlTargets.swift"):
+        source = (CORE / "FMTools" / name).read_text(encoding="utf-8")
+        imports = {line.split()[1] for line in source.splitlines() if line.startswith("import ")}
+        assert imports == {"Foundation"}, name
+
+
+def test_snaps_to_targets_and_keeps_learning():
+    tracker = _read("ForkMesh/Platform/EyeTracker.swift")
+    assert "EyeClicker.targets()" in tracker
+    assert "engine.takeSamples()" in tracker
+    assert "EyeLiveCalibration.decode" in tracker
+    assert "static func targets() -> [EyeTarget]" in _read("ForkMesh/Platform/EyeClicker.swift")
+    screen = _read("ForkMesh/Features/Tools/EyeControlScreen.swift")
+    assert "$tracker.snapping" in screen and "$tracker.learning" in screen
