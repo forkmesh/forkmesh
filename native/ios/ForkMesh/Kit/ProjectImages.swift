@@ -136,12 +136,34 @@ final class ProjectImages {
         missing.insert(key)
     }
 
+    func adoptInstanceLogo(_ projectId: String, logoUrl: String) async {
+        guard let relays = Services.get(SettingsService.self)?.relays,
+            let project = relays.byId(projectId), project.hasInstance, project.logo.isEmpty
+        else { return }
+        let candidates: [String] = [logoUrl] + ["/favicon.ico", "/favicon/favicon.ico"].map { project.httpOrigin + $0 }
+        for url in candidates.filter({ !$0.isEmpty }).compactMap({ URL(string: $0) }) {
+            guard let data = await ProjectImages.fetchData(url),
+                let name = await ProjectLogoStore.save(data, projectKey: project.id)
+            else { continue }
+            if relays.byId(projectId)?.logo.isEmpty == true {
+                relays.setLogo(projectId, name)
+            } else {
+                ProjectLogoStore.delete(name)
+            }
+            return
+        }
+    }
+
     private nonisolated static func fetch(_ url: URL) async -> UIImage? {
+        await fetchData(url).flatMap { UIImage(data: $0) }
+    }
+
+    private nonisolated static func fetchData(_ url: URL) async -> Data? {
         var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 10)
         request.httpMethod = "GET"
         guard let (data, response) = try? await URLSession.shared.data(for: request),
             let http = response as? HTTPURLResponse, http.statusCode == 200, !data.isEmpty
         else { return nil }
-        return UIImage(data: data)
+        return data
     }
 }

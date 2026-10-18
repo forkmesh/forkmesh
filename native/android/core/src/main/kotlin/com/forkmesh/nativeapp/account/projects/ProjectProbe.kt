@@ -17,6 +17,8 @@ data class ProbeResult(
     val version: String = "",
     val statusCode: Int = 0,
     val features: RelayFeatureSet = RelayFeatureSet.undeclared(),
+    val instanceName: String = "",
+    val logoUrl: String = "",
 ) {
     val ok: Boolean get() = status == ProbeStatus.ok
 
@@ -25,7 +27,10 @@ data class ProbeResult(
 
     val message: String
         get() = when (status) {
-            ProbeStatus.ok -> if (version.isEmpty()) "Connected. This is a ForkMesh relay." else "Connected to ForkMesh $version."
+            ProbeStatus.ok -> {
+                val name = instanceName.ifEmpty { "ForkMesh" }
+                if (version.isEmpty()) "Connected to $name." else "Connected to $name $version."
+            }
             ProbeStatus.invalidUrl -> "That does not look like a host. Enter something like “relay.example.com” or “192.168.1.20:8787”."
             ProbeStatus.duplicate -> "This instance is already one of your projects."
             ProbeStatus.notHttps -> "Projects connect over https only. Enter the host, or an https:// address."
@@ -92,13 +97,31 @@ class ProjectProbe(
         val features = RelayFeatureSet.fromVersionBody(body)
         if (!features.hasCore) return ProbeResult(ProbeStatus.missingCore, statusCode = response.status, features = features)
         val rev = (body["rev"] ?: "").toString()
+        val instance = describe(candidate)
         return ProbeResult(
             status = ProbeStatus.ok,
             statusCode = response.status,
             rev = rev,
             version = (body["version"] ?: "").toString(),
             features = features,
+            instanceName = (instance["name"] as? String).orEmpty().trim(),
+            logoUrl = logoUrl(candidate, (instance["logo"] as? String).orEmpty().trim()),
             project = candidate.copy(verifiedAt = clock(), verifiedRev = rev, features = features),
         )
+    }
+
+    private fun describe(candidate: Project): Map<String, Any?> = runCatching {
+        val response = transport.send(
+            HttpClient.Request.get(candidate.httpOrigin + "/api/instance")
+                .header("Accept", "application/json")
+                .timeouts(timeoutMs, timeoutMs),
+        )
+        @Suppress("UNCHECKED_CAST")
+        if (response.status == 200) Json.parse(response.text()) as? Map<String, Any?> else null
+    }.getOrNull() ?: emptyMap()
+
+    private fun logoUrl(candidate: Project, logo: String): String = when {
+        logo.startsWith("/") && !logo.startsWith("//") -> candidate.httpOrigin + logo
+        else -> ""
     }
 }

@@ -128,8 +128,10 @@ Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
 - `INSTANCE_NAME` names the instance: email sender and card, page titles,
   and `app/public/instance-brand.js`, which renames the product in visible UI
   text (never user content) and hides switched-off plugin UI.
-- `GET /api/instance` returns name, branding, plugins, offsite hosts and
-  theme.
+- `GET /api/instance` returns name, branding, logo, plugins, offsite hosts
+  and theme. `logo` is the `INSTANCE_LOGO` path, `/assets/logo-96.png` on an
+  unbranded instance, or empty; the phone and desktop apps save it as the
+  project logo when a project attaches the instance.
 - **Logo:** a `data:` URL (PNG, JPEG, WebP or SVG, 200 KB max, type detected
   from bytes, unsafe SVG refused). The brand tool writes it over the logo and
   favicon assets and the web manifest; `INSTANCE_LOGO` points email at it.

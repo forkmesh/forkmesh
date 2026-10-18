@@ -40,6 +40,11 @@ final class Counter: @unchecked Sendable {
         defer { lock.unlock() }
         return urls.last
     }
+    var first: URL? {
+        lock.lock()
+        defer { lock.unlock() }
+        return urls.first
+    }
 }
 
 final class RelayProbeTests: XCTestCase {
@@ -49,7 +54,8 @@ final class RelayProbeTests: XCTestCase {
             seen.hit(request.url)
             return versionResponse()
         }.check("staging.forkmesh.com")
-        XCTAssertEqual(seen.last?.absoluteString, "https://staging.forkmesh.com/api/version")
+        XCTAssertEqual(seen.first?.absoluteString, "https://staging.forkmesh.com/api/version")
+        XCTAssertEqual(seen.last?.absoluteString, "https://staging.forkmesh.com/api/instance")
         XCTAssertTrue(result.ok)
         XCTAssertEqual(result.rev, "abc1234")
         XCTAssertEqual(result.version, "1.2.0")
@@ -59,13 +65,37 @@ final class RelayProbeTests: XCTestCase {
         XCTAssertEqual(result.profile?.verifiedRev, "abc1234")
     }
 
+    func testTheInstanceNameAndLogoComeFromApiInstance() async {
+        let named = await probe { request in
+            if request.url.path == "/api/instance" {
+                return versionResponse(body: ["ok": true, "name": "Acme Code", "logo": "/instance-logo.png"])
+            }
+            return versionResponse()
+        }.check("relay.acme.dev")
+        XCTAssertEqual(named.message, "Connected to Acme Code 1.2.0.")
+        XCTAssertEqual(named.logoUrl, "https://relay.acme.dev/instance-logo.png")
+        let offsite = await probe { request in
+            if request.url.path == "/api/instance" {
+                return versionResponse(body: ["ok": true, "name": "Acme Code", "logo": "//evil.example.com/x.png"])
+            }
+            return versionResponse()
+        }.check("relay.acme.dev")
+        XCTAssertEqual(offsite.logoUrl, "")
+        let older = await probe { request in
+            request.url.path == "/api/instance" ? HTTPResponse(status: 404, text: "") : versionResponse()
+        }.check("relay.acme.dev")
+        XCTAssertTrue(older.ok)
+        XCTAssertEqual(older.message, "Connected to ForkMesh 1.2.0.")
+        XCTAssertEqual(older.logoUrl, "")
+    }
+
     func testALoopbackRelayIsProbedOverPlainHttp() async {
         let seen = Counter()
         _ = await probe { request in
             seen.hit(request.url)
             return versionResponse()
         }.check("localhost:8787")
-        XCTAssertEqual(seen.last?.absoluteString, "http://localhost:8787/api/version")
+        XCTAssertEqual(seen.first?.absoluteString, "http://localhost:8787/api/version")
     }
 
     func testAHostThatIsNotARelayIsRefused() async {
@@ -719,7 +749,7 @@ final class RelaySettingsModelTests: XCTestCase {
         await add.check()
         XCTAssertTrue(add.canAdd)
         XCTAssertEqual(add.add()?.id, "lab.acme.dev")
-        XCTAssertEqual(http.requests.map(\.followRedirects), [false, true])
+        XCTAssertEqual(http.requests.map(\.followRedirects), [false, true, true])
     }
 }
 
@@ -787,7 +817,7 @@ final class AttachInstanceModelTests: XCTestCase {
         XCTAssertFalse(early)
         model.host = "relay.example.com"
         await model.check()
-        XCTAssertEqual(seen.count, 1)
+        XCTAssertEqual(seen.count, 2)
         let verified = try XCTUnwrap(model.verified)
         XCTAssertTrue(verified.hasInstance)
         let done = await model.attach()
