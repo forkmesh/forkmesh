@@ -134,6 +134,16 @@ destination, in sections, with counts and activity:
   (lime, amber) legible; plain totals stay tinted `fm.count` (blue). Items
   with live work (`ShellBarItem.active`) show an activity halo drawn from a
   `TimelineView` (30 fps cap, still with Reduce Motion).
+- While a shortcut runs, the Shortcuts icon swaps that halo for a circular
+  progress bar (`ShellBarProgressRing`) drawn inside the icon's cell, around
+  the glyph (inside the tile when icons are tiles), and the glyph shrinks to
+  78% to make room. `ShellNavigatorCounts.progress` reads the running runs and
+  catalog entries of `ShortcutsStore` (`startedAtMs`, `expectedMs`, the last
+  run's duration) and keeps the one expected to finish last; the ring fills
+  as `elapsed / expected`, capped at 99% like the Shortcuts page's bar, and
+  updates twice a second. With no earlier run to estimate from it spins a
+  short arc instead. It follows the Show activity setting, and VoiceOver reads
+  "Running, N percent". The operator asked for it on 2026-10-18.
 - The heartbeat (`ShellHeartbeatCount`) does not keep its own clock: it beats
   once per turn of the activity ring (`ShellActivityHalo.turn`), when the
   ring's bright head passes the top-left corner where the count sits
