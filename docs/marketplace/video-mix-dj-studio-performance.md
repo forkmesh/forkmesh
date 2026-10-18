@@ -26,7 +26,14 @@ app-wide checks are in
 - any one piece of studio work on the main thread under 4 ms;
 - a player tick from each playing deck every 0.25 s (a gap over 0.6 s is
   late), drift between the predicted and reported position under 0.3 s;
-- web view scripts answered within 16 ms (round trip, sampled one call in 16).
+- web view scripts answered within 16 ms (round trip, sampled one call in 16);
+- a continuous animation (a steady record, the waveforms, the reactions) asks
+  for no more than 60 Hz, and the jam's people icons for 24; when iOS says
+  the phone is hot (thermal state `serious` or `critical`) or Low Power Mode
+  is on, those halve. Only a record being touched, scratched or spinning up
+  asks for the screen's full rate (120 Hz on ProMotion). `DjPace`
+  (`FMPackages/DjPace.swift`) holds these numbers and `DjStudioModel.pace`
+  follows the thermal and power notifications.
 
 ## Reading the bundle
 
@@ -37,23 +44,37 @@ performance report (see the app-wide page) if there is room.
 - Header: how many seconds of frames were measured and the probe's rate. The
   probe (`DjFrameProbe`, `VideoMixDjStudioDiagnostics.swift`) is a
   `CADisplayLink` on the main run loop held to 60 Hz, so it does not force a
-  ProMotion screen to 120 Hz by itself; it sees what the main thread delays,
-  not what the render server drops on its own. It runs only while the studio
+  ProMotion screen to 120 Hz by itself, but the studio's own animations can:
+  long frames that are not multiples of 16.7 ms (42, 58, 62 ms) mean the
+  screen was running faster than the probe. It runs only while the studio
   is on screen; the first frame after it starts and any gap over a second (the
-  app was in the background) are not counted.
+  app was in the background) are not counted. The second line gives the span
+  the counters cover: `Main-thread work`, `Player ticks` and `Web view
+  scripts` count from the moment the app-wide studio model started (at launch
+  when a set resumes) with the studio open or closed, so divide them by that
+  span, not by the seconds of frames. Only `waveform draw` and `record step`
+  run solely on screen.
 - `## Frames`: frames per second, dropped frames, hitch ms a second and the
   worst frame in the last 10 s, the last 60 s and everything measured. The
   worst-frame series is one number per second, oldest first (`.` = not
-  measured), so a burst can be matched to what the user did.
-- `## Long frames`: each frame of 50 ms or more, with the studio work that
-  finished inside it (`inside:`, items of 1 ms or more) and the moments
-  recorded within half a second before it (`around:`). An empty `inside:` with
-  a long frame means the time went to something the studio does not measure
-  yet (SwiftUI layout, the web view, another part of the app): measure it.
+  measured), so a burst can be matched to what the user did. `main thread
+  busy ms/s` is how long the main run loop was awake each second (two run-loop
+  observers in `DjFrameProbe`, since 2026-10-18): near 1000 with dropped
+  frames means the main thread is the bottleneck, so find the work; well under
+  that with dropped frames means the frames were lost elsewhere (the render
+  server, the GPU, the web view's processes, or iOS throttling a hot phone).
+- `## Long frames`: each frame of 50 ms or more, how much of it the main
+  thread was busy, the studio work that finished inside it (`inside:`, items
+  of 1 ms or more) and the moments recorded within half a second before it
+  (`around:`). A busy main thread with an empty `inside:` means the time went
+  to something the studio does not measure yet (SwiftUI layout and drawing,
+  the web view's layer updates, another part of the app): measure it. A long
+  frame with the main thread mostly idle was not lost on the main thread.
 - `## Main-thread work`: count, average, maximum and how many went over 4 ms,
   per kind (`DjWork`): `player tick` and `player event` (`DjStudioModel.handle`),
-  `waveform draw` (the Canvas in `DjWaveform`), `record step` (one
-  `DjSpinView.step`), `crossfade step` (one frame of `fade`), `automix step`,
+  `waveform draw` (the Canvas in `DjWaveform`; divided by the seconds on
+  screen it is the rate the moving waveforms were actually redrawn, against
+  the `pace` asked for), `record step` (one `DjSpinView.step`), `crossfade step` (one frame of `fade`), `automix step`,
   `scratch move`, `jam reply` (`receive`) and `state save` (building the saved
   state; encoding runs on `DjStore`'s queue).
 - `## Player ticks`: per deck, ticks seen, the longest gap while playing, how
@@ -66,9 +87,11 @@ performance report (see the app-wide page) if there is room.
 - `## Recent moments`: what the user and the studio did (start, pause, stop,
   load, scratch, fade begin and end, sheet, jam, waveform read), newest first.
 - `## Studio and device`: both decks (playing, rate, waveform bars, scratch
-  audio), crossfader, AUTOMIX, jam, motion sharing, reactions, the audio
+  audio), the `pace` the animations asked for (and whether it was eased),
+  crossfader, AUTOMIX, jam, motion sharing, reactions, the audio
   session's sample rate, buffer and latency, the device, thermal state and Low
-  Power Mode. A `serious` thermal state makes every number worse.
+  Power Mode. A `serious` thermal state makes every number worse; the
+  moments list `pace eased` when the studio slowed its animations for it.
 
 ## Checks so far
 
@@ -81,7 +104,52 @@ performance report (see the app-wide page) if there is room.
   scroll view 24 times a second while motion was shared: each icon now has
   its own timeline. Ruled out by reading: the scratch voices' render blocks
   (no locks held, no allocation), the save encoding (already off the main
-  thread), the record spin (render-server animation while steady).
+  thread). The record spin was ruled out too as a render-server animation
+  while steady, but that animation asked for 120 Hz: see the next check.
+- 2026-10-18, `2257-fixing-video-mix-dj`: the first device bundle (1.4.1
+  build 281, iPhone 15 Pro Max, iOS 27.2, portrait, thermal state `serious`,
+  Deck A playing, AUTOMIX on, a jam of two sharing motion).
+  Evidence: 39-41 fps against the 60 Hz probe for all 40 s the studio was
+  open, 320-340 ms of hitches a second, a 50-67 ms worst frame in every one of
+  the last 30 seconds and about two long frames a second, none with studio
+  work inside or a moment around it; every measured kind of work averaged
+  under 0.3 ms. The app report's per-minute FPS was 56-61 while the same set
+  (AUTOMIX, jam, music) ran with the studio closed and fell to 31-36 once it
+  opened, so the cost came with the studio's views on screen, not its model.
+  Long frames of 42, 58, 62 and 64 ms showed the screen running faster than
+  60 Hz, and the one moving waveform was redrawn 870 times in 40 s, 22 a
+  second against the 60 its timeline could have drawn.
+  Cause (inferred: the bundle had no main-thread busy time to tell the main
+  thread from the render server): the studio held the ProMotion screen at
+  120 Hz for the whole set on a phone iOS was already throttling. A steady
+  record's `CABasicAnimation` asked for 120 Hz (`DjSpinView.fast`) and the
+  waveform and reaction timelines allowed up to 80, so the render server recomposited the platters with
+  their shadows and gradients 120 times a second and the main thread was
+  woken for each frame, and nothing eased off as the phone got hot. Apart
+  from the frame drops, the waveform stuttered on its own: `DjSpinView.step`
+  advances the deck's shared `DjSpin` with `link.targetTimestamp`, up to 67 ms
+  ahead at its 15 Hz idle pace, and `DjSpin.step` returned its last position
+  for any earlier time, so the waveform (asking with the current time) only
+  moved when the record stepped, in 15 Hz jumps whatever its own frame rate.
+  Fix: `DjPace` (see Budgets): a steady record and the waveform and
+  reactions at 60 Hz, people icons at 24, both halved when hot or in Low
+  Power Mode, the full 120 Hz only for a touched record. `DjSpin.step` now
+  answers a time before its last step by going back along its speed instead
+  of freezing (`DjStudioTests.testWaveformKeepsMovingBetweenRecordStepsTimedForTheNextFrame`,
+  `DjPaceTests`).
+  Gaps closed: main-thread busy time, a second and per long frame, so the
+  next check can tell a busy main thread from frames lost elsewhere, which
+  this bundle could not; the span the counters cover; a `pace` context line
+  and `pace eased` moments.
+  Ruled out: studio work on the main thread (the few items over 4 ms were
+  single outliers during loads); player ticks (6376 and 2544 over the 28
+  minutes the model had run, about 4 and 1.5 a second as designed, not over
+  the 40 s of frames); web view scripts (333 since launch, 7 ms average round
+  trip); jam replies (0.09 ms); the app's own stalls (400-600 ms on the
+  Agents screen during presence and repo-tree requests), which came before
+  the studio opened, while its worst frame inside the studio was 182 ms.
+  Not yet confirmed on a device: whether 60 Hz is enough on a hot phone;
+  the next bundle's busy line answers it.
 
 ## Adding a check
 

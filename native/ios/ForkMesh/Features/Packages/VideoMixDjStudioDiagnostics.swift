@@ -33,6 +33,7 @@ final class DjFrameTicker: NSObject {
 final class DjFrameProbe {
     static let range = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
     private var link: CADisplayLink?
+    private var watchers: [CFRunLoopObserver] = []
 
     func start() {
         guard link == nil else { return }
@@ -41,12 +42,27 @@ final class DjFrameProbe {
         link.preferredFrameRateRange = Self.range
         link.add(to: .main, forMode: .common)
         self.link = link
+        let woke = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, -Int.max) { @Sendable _, _ in
+            let now = CACurrentMediaTime()
+            DjVitalsRecorder.shared.update { $0.awake(at: now) }
+        }
+        let slept = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, Int.max) { @Sendable _, _ in
+            let now = CACurrentMediaTime()
+            DjVitalsRecorder.shared.update { $0.asleep(at: now) }
+        }
+        watchers = [woke, slept].compactMap { $0 }
+        for watcher in watchers { CFRunLoopAddObserver(CFRunLoopGetMain(), watcher, .commonModes) }
     }
 
     func stop() {
         guard let link else { return }
         link.invalidate()
         self.link = nil
+        for watcher in watchers {
+            CFRunLoopRemoveObserver(CFRunLoopGetMain(), watcher, .commonModes)
+            CFRunLoopObserverInvalidate(watcher)
+        }
+        watchers = []
         DjVitalsRecorder.shared.update { $0.end(at: CACurrentMediaTime()) }
     }
 }
@@ -105,6 +121,7 @@ final class DjDiagnostics {
             state += ", \(Int(deck.duration.rounded())) s long"
             out.append(("deck \(deck.side.label)", state))
         }
+        out.append(("pace", model.pace.label))
         out.append(("crossfader", String(format: "%.2f", model.crossfader)))
         out.append(("automix", (model.automixOn ? "on" : "off") + (model.automixing ? ", fading" : "")))
         out.append(("queue", "\(model.queue.count) videos"))
@@ -187,7 +204,7 @@ struct DjDiagnosticsSheet: View {
     private var diagnostics: DjDiagnostics { DjDiagnostics.shared }
 
     private static let contents: [String] = [
-        "Frame times, dropped frames and hitches while the studio is open",
+        "Frame times, dropped frames, hitches and main-thread busy time while the studio is open",
         "Each long frame with the studio work inside it and what you did just before",
         "Player ticks, drift, web view scripts and their round trip",
         "Both decks, crossfader, AUTOMIX, jam and audio session state",

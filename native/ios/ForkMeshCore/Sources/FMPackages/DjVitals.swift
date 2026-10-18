@@ -69,6 +69,7 @@ public struct DjVitals: Sendable {
         public var hitchMs: Double = 0
         public var worstMs: Double = 0
         public var span: Double = 0
+        public var busyMs: Double = 0
     }
 
     public struct Mark: Equatable, Sendable {
@@ -85,6 +86,7 @@ public struct DjVitals: Sendable {
     public struct LongFrame: Equatable, Sendable {
         public var at: Double
         public var ms: Double
+        public var busyMs: Double
         public var work: [Work]
         public var marks: [Mark]
     }
@@ -122,6 +124,7 @@ public struct DjVitals: Sendable {
     public private(set) var hitchMs: Double = 0
     public private(set) var worstMs: Double = 0
     public private(set) var measured: Double = 0
+    public private(set) var busyMs: Double = 0
     public private(set) var period: Double = 0
     public private(set) var work: [DjWork: Meter] = [:]
     public private(set) var recentWork: [Work] = []
@@ -131,27 +134,48 @@ public struct DjVitals: Sendable {
     public private(set) var scripts = 0
     public private(set) var scriptTrips = Meter()
     public private(set) var opened: Double?
+    public private(set) var counting: Double?
     private var lastFrame: Double?
+    private var awakeAt: Double?
+    private var busy: Double = 0
+    private var busyAtFrame: Double = 0
 
     public init() {}
 
     public mutating func begin(at now: Double) {
         if opened == nil { opened = now }
         lastFrame = nil
+        awakeAt = nil
         for side in DjDeckSide.allCases { ticks[side]?.lastAt = nil }
         mark("studio on screen", at: now)
     }
 
     public mutating func end(at now: Double) {
         lastFrame = nil
+        awakeAt = nil
         mark("studio closed", at: now)
     }
 
+    public mutating func awake(at now: Double) {
+        guard now.isFinite else { return }
+        awakeAt = now
+    }
+
+    public mutating func asleep(at now: Double) {
+        guard let start = awakeAt, now.isFinite else { return }
+        awakeAt = nil
+        busy += max(0, now - start)
+    }
+
     public mutating func frame(at now: Double, period: Double) {
+        let busyNow = busy + (awakeAt.map { max(0, now - $0) } ?? 0)
+        let busyInside = max(0, busyNow - busyAtFrame) * 1000
+        busyAtFrame = busyNow
         defer { lastFrame = now }
         guard period > 0, let last = lastFrame else { return }
         let interval = now - last
         guard interval > 0, interval < Self.gapSeconds else { return }
+        let busyMs = min(busyInside, interval * 1000)
         self.period = period
         let ms = interval * 1000
         let lost = max(0, Int((interval / period).rounded()) - 1)
@@ -161,6 +185,7 @@ public struct DjVitals: Sendable {
         hitchMs += late
         worstMs = max(worstMs, ms)
         measured += interval
+        self.busyMs += busyMs
         let key = Int(now.rounded(.down))
         if seconds.last?.at != key {
             seconds.append(Second(at: key))
@@ -171,27 +196,36 @@ public struct DjVitals: Sendable {
         seconds[seconds.count - 1].hitchMs += late
         seconds[seconds.count - 1].worstMs = max(seconds[seconds.count - 1].worstMs, ms)
         seconds[seconds.count - 1].span += interval
+        seconds[seconds.count - 1].busyMs += busyMs
         guard ms >= Self.longFrameMs else { return }
         let inside = recentWork.filter { $0.at > last - 0.001 && $0.at <= now }
         let before = marks.filter { $0.at >= last - 0.5 && $0.at <= now }
-        longFrames.append(LongFrame(at: now, ms: ms, work: inside, marks: before))
+        longFrames.append(LongFrame(at: now, ms: ms, busyMs: busyMs, work: inside, marks: before))
         if longFrames.count > Self.longFramesKept { longFrames.removeFirst(longFrames.count - Self.longFramesKept) }
     }
 
     public mutating func work(_ kind: DjWork, ms: Double, at now: Double) {
         guard ms.isFinite, ms >= 0 else { return }
+        count(from: now - ms / 1000)
         work[kind, default: Meter()].add(ms, budget: Self.workBudgetMs)
         guard ms >= Self.workShownMs else { return }
         recentWork.append(Work(at: now, kind: kind, ms: ms))
         if recentWork.count > Self.workKept { recentWork.removeFirst(recentWork.count - Self.workKept) }
     }
 
+    mutating func count(from now: Double) {
+        guard now.isFinite, now < counting ?? .infinity else { return }
+        counting = now
+    }
+
     public mutating func mark(_ text: String, at now: Double) {
+        count(from: now)
         marks.append(Mark(at: now, text: text))
         if marks.count > Self.marksKept { marks.removeFirst(marks.count - Self.marksKept) }
     }
 
     public mutating func tick(_ side: DjDeckSide, at now: Double, playing: Bool, drift: Double?) {
+        count(from: now)
         var state = ticks[side] ?? Ticks()
         state.count += 1
         if playing, let last = state.lastAt {
@@ -220,15 +254,18 @@ public struct DjVitals: Sendable {
         scriptTrips.add(ms, budget: Self.workBudgetMs * 4)
     }
 
-    public func window(_ count: Int, now: Double) -> (frames: Int, dropped: Int, hitchMs: Double, worstMs: Double, span: Double) {
+    public typealias Window = (frames: Int, dropped: Int, hitchMs: Double, worstMs: Double, span: Double, busyMs: Double)
+
+    public func window(_ count: Int, now: Double) -> Window {
         let from = Int(now.rounded(.down)) - count + 1
-        var out: (frames: Int, dropped: Int, hitchMs: Double, worstMs: Double, span: Double) = (0, 0, 0, 0, 0)
+        var out: Window = (0, 0, 0, 0, 0, 0)
         for second in seconds where second.at >= from {
             out.frames += second.frames
             out.dropped += second.dropped
             out.hitchMs += second.hitchMs
             out.worstMs = max(out.worstMs, second.worstMs)
             out.span += second.span
+            out.busyMs += second.busyMs
         }
         return out
     }
@@ -266,17 +303,21 @@ public struct DjVitals: Sendable {
         var lines: [String] = ["# DJ studio vitals"]
         let open = opened.map { now - $0 } ?? 0
         lines.append("measured \(Self.duration(measured)) of frames over \(Self.duration(open)) since the studio first opened, probe \(Self.hz(period))")
+        if let counting {
+            lines.append("main-thread work, player ticks and web view scripts are counted over \(Self.duration(now - counting)), with the studio open or closed")
+        }
         if alert.detected { lines.append("alert: \(alert.reason)") }
         lines.append("")
         lines.append("## Frames (last 10 s | last 60 s | all)")
         let ten = window(10, now: now)
         let sixty = window(60, now: now)
-        let all = (frames: frames, dropped: dropped, hitchMs: hitchMs, worstMs: worstMs, span: measured)
+        let all: Window = (frames: frames, dropped: dropped, hitchMs: hitchMs, worstMs: worstMs, span: measured, busyMs: busyMs)
         let columns = [ten, sixty, all]
         lines.append("fps " + columns.map { $0.span > 0 ? Self.one(Double($0.frames) / $0.span) : "-" }.joined(separator: " | "))
         lines.append("dropped " + columns.map { String($0.dropped) }.joined(separator: " | "))
         lines.append("hitch ms/s " + columns.map { $0.span > 0 ? Self.one($0.hitchMs / $0.span) : "-" }.joined(separator: " | "))
         lines.append("worst ms " + columns.map { Self.ms($0.worstMs) }.joined(separator: " | "))
+        lines.append("main thread busy ms/s " + columns.map { $0.span > 0 ? Self.ms($0.busyMs / $0.span) : "-" }.joined(separator: " | "))
         let from = Int(now.rounded(.down)) - 29
         let series = (from...Int(now.rounded(.down))).map { key in seconds.first { $0.at == key }.map { Self.ms($0.worstMs) } ?? "." }
         lines.append("worst frame each second, last 30 s, oldest first: " + series.joined(separator: " "))
@@ -284,7 +325,7 @@ public struct DjVitals: Sendable {
         lines.append("## Long frames (\(Int(Self.longFrameMs)) ms or more), newest first")
         if longFrames.isEmpty { lines.append("none") }
         for long in longFrames.reversed() {
-            var line = "\(Self.ago(long.at, now)) \(Self.ms(long.ms)) ms"
+            var line = "\(Self.ago(long.at, now)) \(Self.ms(long.ms)) ms, main thread busy \(Self.ms(long.busyMs)) ms"
             if !long.work.isEmpty {
                 line += "; inside: " + long.work.map { "\($0.kind.rawValue) \(Self.one($0.ms)) ms" }.joined(separator: ", ")
             }

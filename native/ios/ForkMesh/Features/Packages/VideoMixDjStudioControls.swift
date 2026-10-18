@@ -4,8 +4,6 @@ import SwiftUI
 import UIKit
 
 enum DjTheme {
-    static let frame: Double = 1.0 / 80
-
     static func rgb(_ hex: UInt32) -> Color {
         Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255)
     }
@@ -227,7 +225,7 @@ struct DjWaveform: View {
     var body: some View {
         GeometryReader { geometry in
             let size = geometry.size
-            TimelineView(.animation(minimumInterval: DjTheme.frame, paused: !deck.moving)) { _ in
+            TimelineView(.animation(minimumInterval: model.pace.motionInterval, paused: !deck.moving)) { _ in
                 let time = deck.shown() - Double((dragX ?? 0) / max(1, size.width)) * DjWaveDrawing.window
                 let bars = deck.waveform
                 let duration = deck.duration

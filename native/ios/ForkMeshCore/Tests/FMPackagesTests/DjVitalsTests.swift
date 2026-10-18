@@ -70,7 +70,45 @@ final class DjVitalsTests: XCTestCase {
         XCTAssertEqual(long?.work.map(\.kind), [.wave])
         XCTAssertEqual(long?.marks.map(\.text), ["start A"])
         let report = vitals.report(now: now, alert: .none, context: [])
-        XCTAssertTrue(report.contains("80 ms; inside: waveform draw 62.0 ms; around: start A"), report)
+        XCTAssertTrue(report.contains("80 ms, main thread busy 0 ms; inside: waveform draw 62.0 ms; around: start A"), report)
+    }
+
+    func testLongFramesTellAMainThreadThatWasBusyFromOneThatWasWaiting() {
+        var vitals = DjVitals()
+        vitals.begin(at: 0)
+        var now = run(&vitals, from: 0, frames: 60)
+        vitals.awake(at: now + 0.001)
+        vitals.asleep(at: now + 0.061)
+        now += 0.07
+        vitals.frame(at: now, period: period)
+        vitals.awake(at: now + 0.002)
+        vitals.asleep(at: now + 0.004)
+        now += 0.07
+        vitals.awake(at: now - 0.01)
+        vitals.frame(at: now, period: period)
+        XCTAssertEqual(vitals.longFrames.map(\.busyMs).first ?? 0, 60, accuracy: 0.01)
+        XCTAssertEqual(vitals.longFrames.map(\.busyMs).last ?? 0, 12, accuracy: 0.01)
+        vitals.asleep(at: now + 0.001)
+        now += period
+        vitals.frame(at: now, period: period)
+        XCTAssertEqual(vitals.busyMs, 73, accuracy: 0.01)
+        XCTAssertEqual(vitals.window(10, now: now).busyMs, 73, accuracy: 0.01)
+        let report = vitals.report(now: now, alert: .none, context: [])
+        XCTAssertTrue(report.contains("70 ms, main thread busy 60 ms"), report)
+        XCTAssertTrue(report.contains("70 ms, main thread busy 12 ms"), report)
+        XCTAssertTrue(report.contains("main thread busy ms/s"), report)
+    }
+
+    func testTheReportSaysWhatTheCountersCover() {
+        var vitals = DjVitals()
+        vitals.tick(.a, at: 10, playing: true, drift: nil)
+        vitals.work(.automix, ms: 200, at: 8.2)
+        vitals.begin(at: 300)
+        let now = run(&vitals, from: 300, frames: 120)
+        let report = vitals.report(now: now, alert: .none, context: [])
+        XCTAssertEqual(vitals.counting ?? 0, 8, accuracy: 0.0001)
+        XCTAssertTrue(report.contains("measured 2s of frames over 2s since the studio first opened"), report)
+        XCTAssertTrue(report.contains("counted over 4m54s, with the studio open or closed"), report)
     }
 
     func testAFreezeRaisesAnAlertThatFadesAfterHalfAMinute() {
