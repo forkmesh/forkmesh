@@ -473,6 +473,12 @@ public final class AccountPackagesStore {
         if let package = PackageRoutes.packageId(forHubItem: id) { markViewed(package) }
     }
 
+    public func markAllViewed() {
+        guard !updated.isEmpty else { return }
+        for (id, version) in latestVersions { seenVersions[id] = version }
+        saveVersions()
+    }
+
     private func adoptVersions(_ packages: [MarketPackage]) {
         for package in packages where !package.version.isEmpty {
             latestVersions[package.id] = package.version
