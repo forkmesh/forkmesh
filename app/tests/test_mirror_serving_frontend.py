@@ -33,7 +33,7 @@ def test_repo_card_uses_group_liveness_not_raw_livehost():
     assert "const viaMirror = repoServedByMirror(origin);" in card
     # A repo served by a live mirror reads as "via mirror" / "served by mirror",
     # never a flat "offline".
-    assert "viaMirror ? \"via mirror\"" in card
+    assert "viaMirror && !onInstance ? \"via mirror\"" in card
     assert "viaMirror ? \"served by mirror\"" in card
 
 
