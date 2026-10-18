@@ -229,6 +229,16 @@ final class ApiBugReportTests: XCTestCase {
         XCTAssertEqual(request.url.query, "status=new&offset=50")
     }
 
+    func testTheHomeCountAsksForOneReportOnly() async throws {
+        let body = portEncode(["ok": true, "status": "new", "counts": ["new": 7, "triaged": 2, "closed": 4], "reports": []])
+        let relay = FakeBugRelay(status: 200, body: body)
+
+        let inbox = await wire(relay).bugReportInbox(status: "new", limit: 1)
+
+        XCTAssertEqual(inbox.counts["new"], 7)
+        XCTAssertEqual(try XCTUnwrap(relay.http.requests.first).url.query, "status=new&limit=1")
+    }
+
     func testTheInboxRefusalSaysItIsForAdministrators() async {
         let relay = FakeBugRelay(status: 403, body: portEncode(["error": "admin_required"]))
         let api = wire(relay)

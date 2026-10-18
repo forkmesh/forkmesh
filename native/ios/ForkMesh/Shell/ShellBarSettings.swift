@@ -98,10 +98,22 @@ struct ShellBarSettingsForm: View {
             }
             .pickerStyle(.segmented)
             .accessibilityIdentifier("shell-bar-width")
+            LabeledContent {
+                Picker("Height", selection: binding(\.rows)) {
+                    ForEach(ShellBarRows.allCases, id: \.self) { (rows: ShellBarRows) in
+                        Text(rows.title).tag(rows)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 200)
+                .accessibilityIdentifier("shell-bar-rows")
+            } label: {
+                SwiftUI.Label("Height", systemImage: style.rows.symbol)
+            }
         } header: {
             Text("Shape")
         } footer: {
-            Text(shapeFooter)
+            Text(shapeFooter + " Double height stacks the icons in two rows.")
         }
     }
 
@@ -184,7 +196,9 @@ struct ShellBarSettingsForm: View {
         Section {
             Stepper(value: binding(\.limit), in: limitRange) {
                 HStack {
-                    SwiftUI.Label("Icons in the bar", systemImage: "square.grid.3x1.below.line.grid.1x2")
+                    SwiftUI.Label(
+                        style.rows == .double ? "Icons in each row" : "Icons in the bar",
+                        systemImage: "square.grid.3x1.below.line.grid.1x2")
                     Spacer(minLength: FmSpace.x2)
                     Text(verbatim: "\(style.limit)")
                         .font(.system(.body, design: .rounded).monospacedDigit())
@@ -219,7 +233,7 @@ struct ShellBarSettingsForm: View {
         } header: {
             Text("What the bar shows")
         } footer: {
-            Text("A folder counts as one icon. More icons than fit scroll sideways. Unread badges always show; activity is the ring and heartbeat count on anything running. Like Home draws them as on the Home screen: solid blue count pills on the icon's corner and the ring around its tile.")
+            Text("A folder counts as one icon. A double height bar holds twice as many, in two rows. More icons than fit scroll sideways. Unread badges always show; activity is the ring and heartbeat count on anything running. Like Home draws them as on the Home screen: solid blue count pills on the icon's corner and the ring around its tile.")
         }
     }
 

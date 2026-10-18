@@ -156,10 +156,11 @@ extension ApiService {
         error is CancellationError || (error as? HTTPError) == .cancelled
     }
 
-    public func bugReportInbox(status: String = "", offset: Int = 0) async -> BugReportInbox {
+    public func bugReportInbox(status: String = "", offset: Int = 0, limit: Int = 0) async -> BugReportInbox {
         var query: [(String, String)] = []
         if !status.isEmpty { query.append(("status", status)) }
         if offset > 0 { query.append(("offset", String(offset))) }
+        if limit > 0 { query.append(("limit", String(limit))) }
         let response: HTTPResponse
         do {
             response = try await http.send(HTTPRequest(

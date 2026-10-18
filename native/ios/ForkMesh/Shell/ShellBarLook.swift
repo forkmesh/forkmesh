@@ -3,8 +3,11 @@ import FMBase
 import SwiftUI
 
 enum ShellBarShapes {
-    static func bar(_ style: ShellBarStyle, height: CGFloat) -> AnyShape {
+    static func bar(_ style: ShellBarStyle, height: CGFloat, rows: Int = 1) -> AnyShape {
         switch style.shape {
+        case .capsule where rows > 1:
+            return AnyShape(
+                RoundedRectangle(cornerRadius: CGFloat(style.barRadius(height: Double(height))), style: .continuous))
         case .capsule:
             return AnyShape(Capsule())
         case .panel:
@@ -15,17 +18,19 @@ enum ShellBarShapes {
         }
     }
 
-    static func cell(_ style: ShellBarStyle, side: CGFloat, first: Bool, last: Bool) -> AnyShape {
+    static func cell(
+        _ style: ShellBarStyle, side: CGFloat, first: Bool, last: Bool, top: Bool = true, bottom: Bool = true
+    ) -> AnyShape {
         switch style.shape {
         case .capsule, .panel:
             let outer: CGFloat = max(0, CGFloat(style.barRadius(height: Double(side)) - ShellBarStyle.padding))
             let inner: CGFloat = min(ShellBottomBar.innerRadius, outer)
-            let leading: CGFloat = first ? outer : inner
-            let trailing: CGFloat = last ? outer : inner
+            func corner(_ edge: Bool, _ row: Bool) -> CGFloat { edge && row ? outer : inner }
             return AnyShape(
                 UnevenRoundedRectangle(
-                    topLeadingRadius: leading, bottomLeadingRadius: leading, bottomTrailingRadius: trailing,
-                    topTrailingRadius: trailing, style: .continuous))
+                    topLeadingRadius: corner(first, top), bottomLeadingRadius: corner(first, bottom),
+                    bottomTrailingRadius: corner(last, bottom), topTrailingRadius: corner(last, top),
+                    style: .continuous))
         case .circles:
             return AnyShape(Circle())
         case .squares:
@@ -220,7 +225,7 @@ struct ShellBarPreview: View {
     ]
 
     private var shown: [ShellBarItem] {
-        Array(ShellBarPreview.samples.prefix(max(1, min(style.limit, ShellBarPreview.samples.count))))
+        Array(ShellBarPreview.samples.prefix(max(1, min(style.capacity, ShellBarPreview.samples.count))))
     }
 
     var body: some View {
@@ -229,21 +234,29 @@ struct ShellBarPreview: View {
             available: Double(available), count: items.count, cell: Double(cellWidth), height: Double(cellHeight))
         let glyph: CGFloat = (iconSize * CGFloat(style.size.scale)).rounded()
         let side: CGFloat = CGFloat(metrics.height)
-        HStack(spacing: CGFloat(metrics.gap)) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { (entry: (offset: Int, element: ShellBarItem)) in
-                let shape: AnyShape = ShellBarShapes.cell(
-                    style, side: side, first: entry.offset == 0, last: entry.offset == items.count - 1)
-                ShellBarCellLabel(
-                    item: entry.element, iconSize: glyph, showsCounts: style.showCounts, look: style,
-                    heat: style.highlightFrequent && entry.offset == 3 ? 0.9 : 0)
-                    .frame(width: CGFloat(metrics.slot), height: side)
-                    .shellBarSlotChrome(shape, style: style, selected: entry.element.selected)
+        let lines: [[ShellBarItem]] = style.rowSplit(items)
+        VStack(alignment: .leading, spacing: CGFloat(metrics.rowGap)) {
+            ForEach(Array(lines.enumerated()), id: \.offset) { (line: (offset: Int, element: [ShellBarItem])) in
+                HStack(spacing: CGFloat(metrics.gap)) {
+                    ForEach(Array(line.element.enumerated()), id: \.element.id) {
+                        (entry: (offset: Int, element: ShellBarItem)) in
+                        let shape: AnyShape = ShellBarShapes.cell(
+                            style, side: side, first: entry.offset == 0,
+                            last: entry.offset == line.element.count - 1 && line.element.count == metrics.columns,
+                            top: line.offset == 0, bottom: line.offset == lines.count - 1)
+                        ShellBarCellLabel(
+                            item: entry.element, iconSize: glyph, showsCounts: style.showCounts, look: style,
+                            heat: style.highlightFrequent && entry.element.id == "preview-chat" ? 0.9 : 0)
+                            .frame(width: CGFloat(metrics.slot), height: side)
+                            .shellBarSlotChrome(shape, style: style, selected: entry.element.selected)
+                    }
+                }
             }
         }
         .padding(CGFloat(metrics.padding))
         .frame(width: style.width == .fit ? CGFloat(metrics.width) : nil)
         .frame(maxWidth: style.width == .fit ? nil : .infinity, alignment: .leading)
-        .shellBarBacked(style, shape: ShellBarShapes.bar(style, height: side), interactive: false)
+        .shellBarBacked(style, shape: ShellBarShapes.bar(style, height: side, rows: metrics.rows), interactive: false)
         .frame(maxWidth: .infinity)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { (width: CGFloat) in
             available = width
