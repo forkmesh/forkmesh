@@ -1951,9 +1951,18 @@
         '<div data-org-pull-rules class="mt-3 text-xs text-muted-foreground">Loading rules…</div>' +
       "</section>" +
       botTokenControls +
+      (canManage
+        ? '<section class="mt-6" data-org-actions-secrets-section>' +
+            '<h4 class="text-sm font-semibold text-foreground">Actions secrets</h4>' +
+            '<div data-actions-secrets data-actions-secrets-scope="org" data-actions-secrets-base="' +
+              escapeHtml("/api/org/" + encodeURIComponent(name) + "/actions/secrets") +
+              '" class="mt-2 text-xs text-muted-foreground"></div>' +
+          "</section>"
+        : "") +
       (canManage ? orgRemoteMcpSetup(name) : "");
 
     window.lucide?.createIcons();
+    mountActionsSecrets(root.querySelector("[data-org-actions-secrets-section] [data-actions-secrets]"));
     wireOrgDetail(root, name, members, teams);
   }
 

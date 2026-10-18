@@ -111,8 +111,50 @@ or organization. `app/src/repo_short_urls.py` holds the rules.
 - On the cores Caddy serves static files before the app, so short addresses
   are meant for instances.
 
+### Project addresses
+
+A repository that keeps one project per folder (a monorepo) can give each
+folder its own address under the short repository address, and send old
+per-project repository addresses there. It needs short addresses on.
+
+| Address | Redirects to |
+| --- | --- |
+| `/<repo>/<Project>` | `/<repo>/tree/<folder>` |
+| `/<repo>/<Project>/blob/<ref>/<path>`, `/tree/<ref>/<path>` | `/<repo>/blob/<folder>/<path>?ref=<ref>` |
+| `/<repo>/<Project>/raw/<ref>/<path>` | `/api/repo/<owner>/<repo>/raw?path=<folder>/<path>&ref=<ref>` |
+| `/<repo>/<Project>/commits[/<ref>]` | `/<repo>/commits?path=<folder>[&ref=<ref>]` |
+| `/<repo>/<Project>/issues` | `/<repo>/issues?label=<folder>` |
+| `/<repo>/<Project>/pulls` and other tabs | that tab of the repository |
+| `/<repo>/commit/<sha>` | `/<repo>/commits?ref=<sha>` |
+| `/<old owner>/<old name>/...` | `/<repo>/<Project>/...` |
+| a retired name | `/<repo>` |
+
+The setting is the `repo_projects` row of `instance_settings`:
+`{"repo": "Bolt", "table": "<tsv>", "legacy": ["acme-bolt"]}`. The table has
+one line per folder: folder, address name and old names separated by commas,
+tab-separated; `#` lines are comments. A folder of `-` marks retired names,
+which redirect to the repository. The same table can live in the repository
+(Bolt keeps it in `scripts/routing/projects.tsv`) and be pasted here.
+`app/src/repo_projects.py` holds the rules.
+
+- Names match without regard to case, and the folder name works as well as
+  the address name. Unknown names fall through to the short-address rules.
+- The redirects run just before the short-address route and answer 302
+  with `cache-control: no-store`, because the table can change.
+- Redirects land on addresses the repository page already understands. The
+  page reads three query parameters once when it opens: `ref` selects the
+  branch, `path` narrows the History tab to a folder, and `label` sets the
+  Issues label filter.
+- The `history` read takes an optional `path`: the gateway runs
+  `git log ... -- <path>`, and the app does not cache path-filtered history.
+- An old owner whose name is also the short-address owner keeps its real
+  repository (`/<owner>/<repo>`); only names in the table redirect. Git
+  paths (`.git`) never redirect.
+- Each project's issues carry a label named after its folder.
+
 ## Tests
 
-`app/tests/test_server_update.py`, `app/tests/test_install_instance_script.py`
+`app/tests/test_server_update.py`, `app/tests/test_repo_projects.py`
+(project addresses), `app/tests/test_install_instance_script.py`
 (updater units, build info), `deploy/tests/test_self_deploy.py` (admin
 requests).

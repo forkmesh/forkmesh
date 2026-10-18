@@ -50,6 +50,14 @@ Code: `server/runner.go`, `sandbox.go`, `runnergrant.go`, `jobhome.go`,
 `runner_setup.py`, `runner_ssh_setup.py`, `runner_auth.py`; dashboard
 `/dashboard/runners`; gateway route in `tools/mirror_gateway.py`.
 
+An instance installs one runner next to its core with
+`install-runner.sh --preregistered --name <name> --owner <owner> --binary
+<daemon>`: no token handshake (the instance registers it with
+`python -m forkmesh_host instance-runner`), `enableActions: true`, job user
+`forkmesh-job` unless `--job-user` says otherwise, and the last output line
+`FM_RUNNER_PUBLIC_KEY=<base64url raw Ed25519 key>`
+([server/instance-actions.md](server/instance-actions.md)).
+
 ## Security model
 
 A runner can read the one leased repository for the lease lifetime,
@@ -59,7 +67,11 @@ arbitrary code inside its sandbox. It cannot:
 - **Write any other ref.** The gateway parses the receive-pack commands before
   git runs and refuses the whole push for another ref, more than one command,
   a delete, a push certificate or malformed input; non-fast-forward pushes are
-  denied.
+  denied. An instance's own Actions runner may hold an `actions-push` grant
+  for one `refs/heads/<branch>` instead, accepted only as a fast-forward of
+  the existing tip; that grant also fetches the same repository, so a
+  workflow can rebase before it pushes
+  ([server/instance-actions.md](server/instance-actions.md)).
 - **Mint or extend a grant.** Grants are Ed25519-signed by the router key,
   which only the app holds, over `forkmesh-runner-grant-v1` plus node, owner,
   repo, access, ref, runner, grant id and times.

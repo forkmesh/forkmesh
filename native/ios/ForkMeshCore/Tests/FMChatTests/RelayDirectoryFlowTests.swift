@@ -96,6 +96,35 @@ final class RelayProbeTests: XCTestCase {
         XCTAssertEqual(older.message, "Connected to ForkMesh 1.2.0.")
         XCTAssertEqual(older.profile?.label, "relay.acme.dev")
         XCTAssertEqual(older.logoUrl, "")
+        XCTAssertFalse(older.branded)
+    }
+
+    func testAnOlderBrandedInstanceGivesItsLogoThroughTheManifest() async {
+        func check(instance: JSONValue, manifest: HTTPResponse, seen: Counter = Counter()) async -> RelayProbeResult {
+            await probe { request in
+                seen.hit(request.url)
+                switch request.url.path {
+                case "/api/instance": return versionResponse(body: instance)
+                case "/favicon/site.webmanifest": return manifest
+                default: return versionResponse()
+                }
+            }.check("relay.acme.dev")
+        }
+        let manifest = HTTPResponse(
+            status: 200, text: #"{"icons":[{"src":"/instance-logo.svg"},{"src":"/instance-logo.png"}]}"#)
+        let older = await check(instance: ["ok": true, "name": "Acme Code", "branded": true], manifest: manifest)
+        XCTAssertTrue(older.branded)
+        XCTAssertEqual(older.logoUrl, "https://relay.acme.dev/instance-logo.png")
+        let stock = await check(
+            instance: ["ok": true, "name": "Acme Code", "branded": true],
+            manifest: HTTPResponse(status: 200, text: #"{"icons":[{"src":"/favicon/android-chrome-192x192.png"}]}"#))
+        XCTAssertEqual(stock.logoUrl, "")
+        let seen = Counter()
+        let noLogo = await check(
+            instance: ["ok": true, "name": "Acme Code", "branded": true, "logo": ""], manifest: manifest, seen: seen)
+        XCTAssertTrue(noLogo.branded)
+        XCTAssertEqual(noLogo.logoUrl, "")
+        XCTAssertEqual(seen.last?.path, "/api/instance")
     }
 
     func testALoopbackRelayIsProbedOverPlainHttp() async {

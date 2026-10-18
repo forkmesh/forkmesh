@@ -936,6 +936,121 @@ def _error(code, status, message="", **extra):
     return json_response(body, status=status, cache_control="no-store")
 
 
+async def core_repository_target(env, runtime, actor, owner, name,
+                                 organization):
+    await ensure_schema(env)
+    await _hosted_repos.ensure_tables(runtime)
+    if not await _account_owns_node(env, actor, owner):
+        return ("forbidden", 403, ""), None
+    if _is_blocked_catalog_identity(env, owner, name):
+        return ("blocked", 403, ""), None
+    org_bi = ""
+    if organization:
+        if not valid_node_name(organization):
+            return ("invalid_organization", 400, ""), None
+        org_bi, org_row = await _org_row(env, organization)
+        if not org_row:
+            return ("organization_not_found", 404, ""), None
+        permission = await _org_permission(env, org_bi, actor)
+        if team_permission_rank(permission) < team_permission_rank(
+                "maintain"):
+            return ("forbidden", 403,
+                    "Creating an organization repository needs the "
+                    "maintain permission there."), None
+        if await d1_first(
+                env, "SELECT 1 AS one FROM org_repos WHERE org_bi=? AND repo=?",
+                org_bi, name.lower()):
+            return ("repository_exists", 409, ""), None
+        count_row = await d1_first(
+            env, "SELECT COUNT(*) AS n FROM org_repos WHERE org_bi=?", org_bi)
+        if count_row and int(count_row.get("n") or 0) >= MAX_ORG_REPOS:
+            return ("too_many_repos", 429, ""), None
+    _owner_bi_unused, owner_rec = await _account_row(env, owner)
+    if not owner_rec:
+        return ("account_required", 403, ""), None
+    owner_bi = await blind_index(env, owner)
+    key_bi = await blind_index(env, owner + "/" + name)
+    if await d1_first(
+            env, "SELECT 1 AS one FROM repositories WHERE key_bi=?", key_bi):
+        return ("repository_exists", 409, ""), None
+    if await _hosted_repos.find_by_key(runtime, key_bi):
+        return ("repository_exists", 409, ""), None
+    if await _repo_delete_tombstone_active(env, key_bi):
+        await _clear_repo_delete_tombstone(env, key_bi)
+    count_row = await d1_first(
+        env, "SELECT COUNT(*) AS c FROM repositories WHERE owner_bi=?",
+        owner_bi)
+    if count_row and (count_row.get("c", 0) or 0) >= (
+            CATALOG_MAX_RECORDS_PER_OWNER):
+        return ("too_many_repos", 429, ""), None
+    return None, {
+        "owner": owner, "name": name, "organization": organization,
+        "org_bi": org_bi, "owner_bi": owner_bi, "owner_rec": owner_rec,
+        "key_bi": key_bi, "count_row": count_row,
+    }
+
+
+def core_catalog_record(target, visibility, description, origin, maintainer,
+                        now):
+    public_owner = target["organization"] or target["owner"]
+    return safe_catalog_record({
+        "owner": target["owner"],
+        "name": target["name"],
+        "visibility": visibility,
+        "description": description,
+        "cloneUrl": origin + "/" + public_owner + "/" + target["name"],
+        "maintainer": maintainer,
+        "source": HOSTED_SOURCE,
+        "hostedSince": str(now),
+        "lastSync": str(now),
+        "updatedAt": str(now),
+    })
+
+
+async def store_core_repository(env, runtime, target, record, *, actor,
+                                repo_id, visibility, init, endpoint, now,
+                                imported=False):
+    owner, name = target["owner"], target["name"]
+    organization = target["organization"]
+    encrypted = await encrypt_row(env, record)
+    await _contribution_write_catalog_state(
+        env, record, target["owner_bi"], target["owner_rec"],
+        target["key_bi"], encrypted)
+    await _emit_first_repository(
+        env, target["owner_bi"], target["count_row"], owner, name)
+    hosted_data = await encrypt_row(env, {
+        "owner": owner,
+        "name": name,
+        "organization": organization,
+        "aliases": [organization] if organization else [],
+        "init": init,
+        "createdBy": actor,
+    })
+    await _hosted_repos.insert(
+        runtime, repo_id, target["key_bi"], target["owner_bi"],
+        await blind_index(env, actor), visibility, hosted_data, now)
+    if organization:
+        await _hosted_repos.link_organization(
+            runtime, target["org_bi"], name, owner, now)
+        memo = globals().get("_ORG_ALIAS_MEMO")
+        if isinstance(memo, dict):
+            memo.clear()
+    forget_closed = globals().get("_forget_repo_closed")
+    if callable(forget_closed):
+        forget_closed(owner, name)
+    _https_mirror_public_context_cache_clear()
+    await edge_cache_delete(CATALOG_CACHE_KEY)
+    await _bump_catalog_rev(env)
+    await schedule_public_catalog_republish(env, owner, name)
+    await _audit_sensitive_action(
+        env, actor, "repository.create_hosted", "repository",
+        owner + "/" + name, "success",
+        {"source": HOSTED_SOURCE, "hostedNode": endpoint.get("node", ""),
+         "visibility": visibility, "organization": organization,
+         "import": bool(imported), "initialized": bool(init)})
+    await _notify_cores(env, owner, name)
+
+
 async def _create_core_repository(env, request, data, actor):
     """Create a repository the core nodes host (private allowed, optional
     first commit or import, optional organization owner, quotas)."""
@@ -960,51 +1075,10 @@ async def _create_core_repository(env, request, data, actor):
                 "invalid_import_url", 400,
                 "Use a public https URL on "
                 + ", ".join(_hosted_repos.import_hosts(env)) + ".")
-    await ensure_schema(env)
-    await _hosted_repos.ensure_tables(runtime)
-    if not await _account_owns_node(env, actor, owner):
-        return _error("forbidden", 403)
-    if _is_blocked_catalog_identity(env, owner, name):
-        return _error("blocked", 403)
-    org_bi = ""
-    if organization:
-        if not valid_node_name(organization):
-            return _error("invalid_organization", 400)
-        org_bi, org_row = await _org_row(env, organization)
-        if not org_row:
-            return _error("organization_not_found", 404)
-        permission = await _org_permission(env, org_bi, actor)
-        if team_permission_rank(permission) < team_permission_rank(
-                "maintain"):
-            return _error("forbidden", 403,
-                          "Creating an organization repository needs the "
-                          "maintain permission there.")
-        if await d1_first(
-                env, "SELECT 1 AS one FROM org_repos WHERE org_bi=? AND repo=?",
-                org_bi, name):
-            return _error("repository_exists", 409)
-        count_row = await d1_first(
-            env, "SELECT COUNT(*) AS n FROM org_repos WHERE org_bi=?", org_bi)
-        if count_row and int(count_row.get("n") or 0) >= MAX_ORG_REPOS:
-            return _error("too_many_repos", 429)
-    _owner_bi_unused, owner_rec = await _account_row(env, owner)
-    if not owner_rec:
-        return _error("account_required", 403)
-    owner_bi = await blind_index(env, owner)
-    key_bi = await blind_index(env, owner + "/" + name)
-    if await d1_first(
-            env, "SELECT 1 AS one FROM repositories WHERE key_bi=?", key_bi):
-        return _error("repository_exists", 409)
-    if await _hosted_repos.find_by_key(runtime, key_bi):
-        return _error("repository_exists", 409)
-    if await _repo_delete_tombstone_active(env, key_bi):
-        await _clear_repo_delete_tombstone(env, key_bi)
-    count_row = await d1_first(
-        env, "SELECT COUNT(*) AS c FROM repositories WHERE owner_bi=?",
-        owner_bi)
-    if count_row and (count_row.get("c", 0) or 0) >= (
-            CATALOG_MAX_RECORDS_PER_OWNER):
-        return _error("too_many_repos", 429)
+    problem, target = await core_repository_target(
+        env, runtime, actor, owner, name, organization)
+    if problem:
+        return _error(*problem)
     creator_bi = await blind_index(env, actor)
     limit = _hosted_repos.max_per_account(env)
     used = await _hosted_repos.count_for_creator(runtime, creator_bi)
@@ -1014,7 +1088,7 @@ async def _create_core_repository(env, request, data, actor):
             "This account already hosts %d repositories on ForkMesh, the "
             "limit. Delete one, or host more from your own node." % limit,
             limit=limit, used=used)
-    limited = await catalog_rate_check(env, owner_bi)
+    limited = await catalog_rate_check(env, target["owner_bi"])
     if limited is not None:
         return limited
     if not _request_account_session_id(request, data):
@@ -1042,18 +1116,8 @@ async def _create_core_repository(env, request, data, actor):
     if init_error:
         return _error(init_error, 400)
     public_owner = organization or owner
-    record = safe_catalog_record({
-        "owner": owner,
-        "name": name,
-        "visibility": visibility,
-        "description": description,
-        "cloneUrl": origin + "/" + public_owner + "/" + name,
-        "maintainer": maintainer,
-        "source": HOSTED_SOURCE,
-        "hostedSince": str(now),
-        "lastSync": str(now),
-        "updatedAt": str(now),
-    })
+    record = core_catalog_record(
+        target, visibility, description, origin, maintainer, now)
     if not record:
         return _error("invalid_name", 400)
     grant = await _hosted_push_grant(env, request, data, owner, name, actor)
@@ -1067,41 +1131,10 @@ async def _create_core_repository(env, request, data, actor):
         grant["commands"] = [
             line.replace(origin + "/" + owner + "/" + name, grant["remoteUrl"])
             for line in grant["commands"]]
-    encrypted = await encrypt_row(env, record)
-    await _contribution_write_catalog_state(
-        env, record, owner_bi, owner_rec, key_bi, encrypted)
-    await _emit_first_repository(env, owner_bi, count_row, owner, name)
-    hosted_data = await encrypt_row(env, {
-        "owner": owner,
-        "name": name,
-        "organization": organization,
-        "aliases": [organization] if organization else [],
-        "init": init,
-        "createdBy": actor,
-    })
-    await _hosted_repos.insert(
-        runtime, repo_id, key_bi, owner_bi, creator_bi, visibility,
-        hosted_data, now)
-    if organization:
-        await _hosted_repos.link_organization(
-            runtime, org_bi, name, owner, now)
-        memo = globals().get("_ORG_ALIAS_MEMO")
-        if isinstance(memo, dict):
-            memo.clear()
-    forget_closed = globals().get("_forget_repo_closed")
-    if callable(forget_closed):
-        forget_closed(owner, name)
-    _https_mirror_public_context_cache_clear()
-    await edge_cache_delete(CATALOG_CACHE_KEY)
-    await _bump_catalog_rev(env)
-    await schedule_public_catalog_republish(env, owner, name)
-    await _audit_sensitive_action(
-        env, actor, "repository.create_hosted", "repository",
-        owner + "/" + name, "success",
-        {"source": HOSTED_SOURCE, "hostedNode": endpoint.get("node", ""),
-         "visibility": visibility, "organization": organization,
-         "import": bool(source_url), "initialized": bool(init)})
-    await _notify_cores(env, owner, name)
+    await store_core_repository(
+        env, runtime, target, record, actor=actor, repo_id=repo_id,
+        visibility=visibility, init=init, endpoint=endpoint, now=now,
+        imported=bool(source_url))
     return json_response({
         "ok": True,
         "repository": record,

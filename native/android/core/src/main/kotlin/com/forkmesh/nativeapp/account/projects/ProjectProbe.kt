@@ -19,6 +19,7 @@ data class ProbeResult(
     val features: RelayFeatureSet = RelayFeatureSet.undeclared(),
     val instanceName: String = "",
     val logoUrl: String = "",
+    val branded: Boolean = false,
 ) {
     val ok: Boolean get() = status == ProbeStatus.ok
 
@@ -105,7 +106,8 @@ class ProjectProbe(
             version = (body["version"] ?: "").toString(),
             features = features,
             instanceName = (instance["name"] as? String).orEmpty().trim(),
-            logoUrl = logoUrl(candidate, (instance["logo"] as? String).orEmpty().trim()),
+            logoUrl = logoUrl(candidate, instance),
+            branded = instance["branded"] == true,
             project = candidate.copy(verifiedAt = clock(), verifiedRev = rev, features = features),
         )
     }
@@ -120,8 +122,31 @@ class ProjectProbe(
         if (response.status == 200) Json.parse(response.text()) as? Map<String, Any?> else null
     }.getOrNull() ?: emptyMap()
 
-    private fun logoUrl(candidate: Project, logo: String): String = when {
+    private fun logoUrl(candidate: Project, instance: Map<String, Any?>): String = when {
+        instance.containsKey("logo") -> sameOrigin(candidate, (instance["logo"] as? String).orEmpty().trim())
+        instance["branded"] == true -> manifestLogo(candidate)
+        else -> ""
+    }
+
+    private fun manifestLogo(candidate: Project): String = runCatching {
+        val response = transport.send(
+            HttpClient.Request.get(candidate.httpOrigin + "/favicon/site.webmanifest")
+                .header("Accept", "application/manifest+json, application/json")
+                .timeouts(timeoutMs, timeoutMs),
+        )
+        if (response.status != 200) return@runCatching ""
+        val icons = (Json.parse(response.text()) as? Map<*, *>)?.get("icons") as? List<*>
+        icons.orEmpty()
+            .mapNotNull { ((it as? Map<*, *>)?.get("src") as? String)?.trim() }
+            .firstOrNull { INSTANCE_LOGO.matches(it) }
+            ?.let { candidate.httpOrigin + it }
+            .orEmpty()
+    }.getOrNull().orEmpty()
+
+    private fun sameOrigin(candidate: Project, logo: String): String = when {
         logo.startsWith("/") && !logo.startsWith("//") -> candidate.httpOrigin + logo
         else -> ""
     }
 }
+
+private val INSTANCE_LOGO = Regex("/instance-logo\\.(?:png|jpg|webp)")

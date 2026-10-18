@@ -1,5 +1,10 @@
 # Actions on a runner when the desktop is offline
 
+The runner executor now also serves instance Actions (every event, real
+clones, secrets, push back, full logs); [instance-actions.md](instance-actions.md)
+is the contract for that and overrides the runner details below where they
+differ.
+
 A repository's `.forkmesh/*.yml` push workflows normally run on the owner's
 desktop. When the default branch of a repository on the core nodes moves and
 the owner's desktop is not connected, the app queues an **Actions job**; a
@@ -53,7 +58,8 @@ The runner (`runnerActions.execute`):
    (`{jobId, leaseId, status, commit, runs, message}`) when planned, at each
    workflow start, and at the end.
 
-Each step gets an exported copy of the commit (`git archive`) under
+Each step gets a clone of the commit (exported with `git archive` before
+instance Actions) under
 `<workRoot>/.actions/<job>-<n>/src` (removed with `removeTreeUnder`), the
 runner's job sandbox (`forkmesh-job` uid, systemd scope limits, egress rules
 refusing private networks), a cleared environment with its own `HOME` and
@@ -95,6 +101,16 @@ offered for runner runs.
   lists are separate.
 - A desktop that is open but lost its node-events socket counts as offline.
 - A hosted repository's pin alone queues nothing; only accepted pushes do.
+
+## Instances
+
+With `ACTIONS_INSTANCE_RUNNER` set (a self-hosted instance), every pushed
+branch queues a job whether or not a desktop is online, jobs carry other
+events, secrets, a push grant and a job token, and runs can be dispatched,
+cancelled and re-run from the web: [instance-actions.md](instance-actions.md).
+Coalescing is per branch; the one-active-job rule is per workflow (push jobs
+share one). The Actions report body may be up to 8 MiB and its answer
+carries `cancel`.
 
 ## Related docs
 

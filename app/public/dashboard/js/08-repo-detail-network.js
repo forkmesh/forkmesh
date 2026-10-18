@@ -46,6 +46,10 @@
     rememberAgentVisitedRepository(repo);
     recordRepositoryView(repo);
     state.repoCollectionPages = { issues: 1, pulls: 1 };
+    const routeQuery = new URLSearchParams(location.search);
+    const routeRef = String(routeQuery.get("ref") || "").trim();
+    if (routeRef) setRepoSelectedBranch(repo, routeRef);
+    state.repoHistoryPath = String(routeQuery.get("path") || "").trim();
     // The Branches page paints a fresh, empty filter box, so a query left
     // over from an earlier visit to this repo must not keep narrowing the
     // list behind it.
@@ -63,7 +67,7 @@
       items: [],
       query: "",
       filters: {
-        author: "", label: "", milestone: "", assignee: "",
+        author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: "",
         mentions: "", involves: "", type: "", sort: "recently_updated",
       },
     };
@@ -231,6 +235,13 @@
             </div>
           </div>
         </div>
+        <div data-repo-actions-secrets-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
+            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="key-round" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions secrets</span>
+            <span class="font-mono text-[10px] text-muted-foreground">secrets.NAME</span>
+          </div>
+          <div data-actions-secrets data-actions-secrets-scope="repo" data-actions-secrets-base="${escapeHtml(`${repoApiBase(repo)}/actions/secrets`)}" class="p-4 text-xs text-muted-foreground"></div>
+        </div>
         <div data-repo-forge-mirror-card id="mirror" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="arrow-left-right" class="h-3.5 w-3.5 text-muted-foreground"></i>Mirror to GitHub or GitLab</span>
@@ -301,7 +312,7 @@
 		                <div class="flex min-w-0 items-center gap-2">${mirrorButton(false)}${renderRepoCodeButton(repo, false)}</div>
 		              </div>
 		              <div data-repo-pathbar class="my-3 flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:justify-between">
-	                <div class="min-w-0 truncate text-xs text-muted-foreground" data-repo-breadcrumb></div>
+	                <div class="flex min-w-0 items-center gap-2"><img data-repo-dir-logo hidden alt="" width="20" height="20" decoding="async" referrerpolicy="no-referrer" class="h-5 w-5 shrink-0 rounded object-contain" /><div class="min-w-0 truncate text-xs text-muted-foreground" data-repo-breadcrumb></div></div>
 		                <div data-repo-focus-actions class="hidden flex shrink-0 flex-wrap items-center gap-2">
 		                  <button type="button" data-repo-file-finder-open class="inline-flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Go to file</span><span class="ml-auto rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">T</span></button>
 		                  <button type="button" data-repo-codemap-open title="See the whole codebase as a zoomable treemap, in 2D or 3D" class="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="layout-grid" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-codemap-label>Code map</span></button>
@@ -505,6 +516,7 @@
               <div data-repo-fedi-posts-list class="mt-2 grid gap-2"></div>
             </details>` : ""}
           </aside>
+          <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
       </div>`;
     // Restore whichever tab the URL points at (e.g. a refresh on

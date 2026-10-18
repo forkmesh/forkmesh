@@ -9,7 +9,9 @@ Code: `app/src/hosted_git.py` (create, push routing, quotas, private reads),
 `app/src/hosted_repos.py` (replica exchange, templates), migration
 `0199_hosted_repositories`, daemon `server/hosted.go` and
 `server/hosted_push_mirror.go`, the `restricted` visibility in
-`tools/mirror_gateway.py`, and the create page `/dashboard/repos/new`.
+`tools/mirror_gateway.py`, and the create page `/dashboard/repos/new`. On a self-hosted instance the
+operator command `instance-repo` creates and fills one from a repository on
+the server through the same create helpers ([INSTANCES.md](INSTANCES.md)).
 
 ## What a user gets
 
@@ -85,6 +87,16 @@ cores hold plaintext. Owner-sealed repositories need the owner's own node.
 The repository is stored under the creator's namespace, linked in `org_repos`
 so `/<org>/<name>` works, and pushes use organization roles (write or better;
 private reads need read or better).
+
+`org_repos.repo` is always the lowercase name: every reader (the git and API
+alias rewrite, org read and push permissions) looks it up lowercased, and the
+organization link endpoint stores it that way. Hosted creation used to store
+the name as typed, so a mixed-case repository such as `Bolt` had a link no
+lookup could find: `/<org>/Bolt.git` and the short `/Bolt.git` answered
+`not_found` and organization members other than the creator could not push.
+`link_organization` now stores the lowercase name and renames an existing
+mixed-case link of the same repository, and re-running `instance-repo` on an
+existing repository relinks it, which repairs a link written before the fix.
 
 ### Imports
 

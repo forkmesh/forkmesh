@@ -6589,9 +6589,18 @@
         '<div data-org-pull-rules class="mt-3 text-xs text-muted-foreground">Loading rules…</div>' +
       "</section>" +
       botTokenControls +
+      (canManage
+        ? '<section class="mt-6" data-org-actions-secrets-section>' +
+            '<h4 class="text-sm font-semibold text-foreground">Actions secrets</h4>' +
+            '<div data-actions-secrets data-actions-secrets-scope="org" data-actions-secrets-base="' +
+              escapeHtml("/api/org/" + encodeURIComponent(name) + "/actions/secrets") +
+              '" class="mt-2 text-xs text-muted-foreground"></div>' +
+          "</section>"
+        : "") +
       (canManage ? orgRemoteMcpSetup(name) : "");
 
     window.lucide?.createIcons();
+    mountActionsSecrets(root.querySelector("[data-org-actions-secrets-section] [data-actions-secrets]"));
     wireOrgDetail(root, name, members, teams);
   }
 
@@ -13422,6 +13431,7 @@
     contentGrid?.classList.toggle("lg:grid-cols-[minmax(0,1fr)_18rem]", showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-1", !showAbout);
     about?.classList.toggle("hidden", !showAbout);
+    if (!showAbout) detail.querySelector("[data-repo-dir-about]")?.classList.add("hidden");
     // Mirrors is the one tab whose content is genuinely wider than the 80rem
     // reading column: twenty-odd node-health columns. Capping it there pushed
     // most of them behind a horizontal scrollbar on a monitor with the room to
@@ -13487,6 +13497,7 @@
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
       void loadRepoPullRulesSettings(state.selectedRepo);
+      mountActionsSecrets($("[data-actions-secrets]"));
     }
     // Counts are live mirror state, not part of the tab's load-once cache.
     // Revalidate them whenever a collaboration tab is explicitly opened.
@@ -14654,8 +14665,8 @@
   // www/docs/operations/mirror-actions-control.md.
   //
   // The workflow list needs no session: it is read from .forkmesh/ in the
-  // repository tree like any other file. Runs, logs and controls are private
-  // to the owner and organization writers, and the Worker enforces that.
+  // repository tree like any other file. Who sees runs, logs and controls:
+  // docs/server/instance-actions.md.
   // ---------------------------------------------------------------------------
 
   const REPO_ACTIONS_WORKFLOW_PATH = /^\.forkmesh\/[A-Za-z0-9._-]{1,96}\.ya?ml$/;
@@ -14683,16 +14694,24 @@
     not_cancellable: "the run already finished",
     not_awaiting_approval: "the run is not waiting for approval",
     invalid_request: "the executor refused the request",
+    run_active: "a run of this workflow is already queued or running",
+    input_required: "a required input is empty",
+    input_invalid: "an input value is not allowed",
+    forbidden: "only the repository owner and organization writers can do that",
   };
+  const REPO_ACTIONS_EVENTS = ["push", "schedule", "workflow_dispatch", "issues", "issue_comment"];
+  const REPO_ACTIONS_INPUT_NAME = /^[A-Za-z_][A-Za-z0-9_-]{0,63}$/;
+  const ACTIONS_SECRET_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/;
+  const ACTIONS_SECRET_MAX_BYTES = 48 * 1024;
 
   function repoActionsView() {
     if (!state.repoActionsView) {
       state.repoActionsView = {
         key: "", phase: "idle", error: "", node: "", updatedAt: 0,
-        schemaVersion: 1, controlAvailable: false, actionsEnabled: null,
+        schemaVersion: 1, controlAvailable: false, actionsEnabled: null, access: "",
         runs: [], controls: [], summaryWorkflows: null, treeWorkflows: null,
         selectedWorkflow: "", selectedRunId: 0, pending: [], notice: null,
-        timer: 0, loading: false, branchesAsked: false,
+        timer: 0, loading: false, branchesAsked: false, logs: {},
       };
     }
     return state.repoActionsView;
@@ -14758,15 +14777,52 @@
       .map((item) => repoActionsCleanLine(item, limit))
       .filter(Boolean)
       .slice(0, 8);
+    const events = list(entry?.events, 40);
     return {
       path,
       name: repoActionsCleanLine(entry?.name, 160) || path.split("/").pop(),
-      events: list(entry?.events, 40),
+      events,
       runsOn: list(entry?.runsOn, 64),
-      manual: entry?.manual === true,
+      manual: entry?.manual === true || events.includes("workflow_dispatch"),
       enabled: entry?.enabled !== false,
       valid: entry?.valid !== false,
+      inputs: normalizeRepoActionsInputs(entry?.inputs),
     };
+  }
+
+  function normalizeRepoActionsInputs(raw) {
+    const entries = Array.isArray(raw)
+      ? raw.map((item) => [item?.name, item])
+      : raw && typeof raw === "object" ? Object.entries(raw) : [];
+    const inputs = [];
+    for (const [rawName, spec] of entries) {
+      const name = String(rawName || "");
+      if (!REPO_ACTIONS_INPUT_NAME.test(name) || inputs.some((input) => input.name === name)) continue;
+      const details = spec && typeof spec === "object" ? spec : {};
+      const kind = ["string", "choice", "boolean"].includes(details.type) ? details.type : "string";
+      const options = (Array.isArray(details.options) ? details.options : [])
+        .map((option) => repoActionsCleanLine(option, 120))
+        .filter(Boolean)
+        .slice(0, 50);
+      const fallback = details.default;
+      inputs.push({
+        name,
+        description: repoActionsCleanLine(details.description, 200),
+        required: details.required === true || details.required === "true",
+        type: kind === "choice" && !options.length ? "string" : kind,
+        options,
+        defaultValue: kind === "boolean"
+          ? fallback === true || String(fallback).toLowerCase() === "true"
+          : repoActionsCleanLine(fallback ?? "", 1000),
+      });
+      if (inputs.length >= 20) break;
+    }
+    return inputs;
+  }
+
+  function repoActionsRunEvent(value) {
+    const event = String(value || "").toLowerCase();
+    return REPO_ACTIONS_EVENTS.includes(event) ? event : "";
   }
 
   function normalizeRepoActionsRun(run) {
@@ -14782,8 +14838,10 @@
       status,
       workflow,
       workflowPath: REPO_ACTIONS_WORKFLOW_PATH.test(workflowPath) ? workflowPath : "",
+      event: repoActionsRunEvent(run?.event),
       commit: immutableGitCommit(run?.commit) || "",
       ref: repoActionsCleanLine(run?.ref, 220),
+      actor: repoActionsCleanLine(run?.actor, 64),
       pullNumber: Math.max(0, Math.floor(Number(run?.pullNumber) || 0)),
       createdAt: Math.max(0, Number(run?.createdAt) || 0),
       startedAt: Math.max(0, Number(run?.startedAt) || 0),
@@ -14890,16 +14948,16 @@
     if (view.key !== key) {
       stopRepoActionsRefresh();
       Object.assign(view, {
-        key, phase: "idle", error: "", node: "", source: "", updatedAt: 0, schemaVersion: 1,
+        key, phase: "idle", error: "", node: "", local: false, host: "", source: "", access: "", updatedAt: 0, schemaVersion: 1,
         controlAvailable: false, actionsEnabled: null, runs: [], controls: [],
         summaryWorkflows: null, treeWorkflows: null, selectedWorkflow: "",
         selectedRunId: 0, pending: [], notice: null, loading: false,
-        branchesAsked: false,
+        branchesAsked: false, logs: {},
       });
     }
     if (view.loading) return;
     if (view.treeWorkflows === null) void loadRepoActionsTreeWorkflows(repo);
-    if (!state.session?.sessionToken) {
+    if (!state.session?.sessionToken && !dashboardOnInstance()) {
       view.phase = "signed-out";
       renderRepoActions(repo);
       return;
@@ -14923,20 +14981,25 @@
       view.error = "";
       view.node = repoActionsCleanLine(payload.node, 80);
       view.source = payload.source === "runner" ? "runner" : "mirror";
+      view.local = view.source === "runner" && payload.local === true;
+      view.host = view.local ? repoActionsCleanLine(payload.host, 253) : "";
+      view.access = view.source === "runner" && payload.access === "public" ? "public" : "member";
       view.updatedAt = Math.max(0, Number(payload.updatedAt) || 0);
       view.schemaVersion = Number(payload.schemaVersion) === 2 ? 2 : 1;
-      view.controlAvailable = payload.controlAvailable === true && view.schemaVersion === 2;
-      view.actionsEnabled = view.schemaVersion === 2 ? payload.actionsEnabled === true : null;
+      const runner = view.source === "runner";
+      view.controlAvailable = payload.controlAvailable === true && (view.schemaVersion === 2 || runner);
+      view.actionsEnabled = view.schemaVersion === 2 && !runner ? payload.actionsEnabled === true : null;
       view.runs = (Array.isArray(payload.runs) ? payload.runs : [])
         .map(normalizeRepoActionsRun).filter(Boolean)
         .sort((left, right) => (right.createdAt - left.createdAt) || (right.id - left.id));
       view.controls = (Array.isArray(payload.controls) ? payload.controls : [])
         .map(normalizeRepoActionsControl).filter(Boolean);
-      view.summaryWorkflows = view.schemaVersion === 2
+      view.summaryWorkflows = view.schemaVersion === 2 || (runner && Array.isArray(payload.workflows))
         ? (Array.isArray(payload.workflows) ? payload.workflows : [])
           .map(normalizeRepoActionsWorkflow).filter(Boolean)
         : null;
       settleRepoActionsPending(view);
+      if (runner && view.access !== "public" && view.selectedRunId) void loadRepoActionsRunLog(repo, view.selectedRunId);
       // The "Run workflow" branch picker needs the real branch list; until a
       // listing is loaded repoBranchList() only knows the selected branch.
       if (view.controlAvailable && !state.repoBranches[key]?.loaded && !view.branchesAsked) {
@@ -15008,8 +15071,75 @@
     return bytesToB64url(bytes);
   }
 
+  async function sendRepoActionsRunnerControl(repo, action, fields, label) {
+    const view = repoActionsView();
+    const key = view.key;
+    view.notice = null;
+    view.pending.push({ requestId: "", action, label, sentAt: Date.now(), ...fields });
+    renderRepoActions(repo);
+    let answer = null;
+    let failure = null;
+    try {
+      answer = await orgAgentRequest("POST", `${repoApiBase(repo)}/actions/control`, { action, ...fields });
+    } catch (error) {
+      failure = error;
+    }
+    view.pending = view.pending.filter((entry) => !(entry.action === action && entry.label === label));
+    if (view.key !== key) return;
+    if (failure) {
+      const status = Number(failure?.status) || 0;
+      const code = String(failure?.code || failure?.payload?.error || "");
+      const reason = REPO_ACTIONS_CONTROL_REASONS[code] || failure?.payload?.message || "";
+      view.notice = {
+        tone: "bad",
+        text: status === 403
+          ? `${label}: only the repository owner and organization writers can do that.`
+          : `${label} was refused${reason ? `: ${reason}` : "."}`,
+      };
+    } else {
+      const runId = Math.max(0, Math.floor(Number(answer?.runId) || 0));
+      view.notice = { tone: "good", text: `${label}: done.` };
+      if (runId && (action === "dispatch" || action === "rerun")) view.selectedRunId = runId;
+    }
+    if (!repoActionsIsCurrent(repo)) return;
+    renderRepoActions(repo);
+    void loadRepoActions(repo, { background: true });
+  }
+
+  async function loadRepoActionsRunLog(repo, runId) {
+    const view = repoActionsView();
+    const key = view.key;
+    const run = view.runs.find((entry) => entry.id === runId);
+    if (!run || view.source !== "runner" || view.access === "public") return;
+    const cached = view.logs[runId];
+    if (cached?.loading) return;
+    if (cached && cached.done && !repoActionsRunIsLive(run)) return;
+    view.logs[runId] = { ...(cached || { text: "" }), loading: true };
+    let text = null;
+    try {
+      const payload = await orgAgentRequest("GET", `${repoApiBase(repo)}/actions/runs/${runId}/log`);
+      const value = typeof payload?.log === "string" ? payload.log
+        : typeof payload?.data === "string" ? payload.data : null;
+      if (value !== null) text = value.replace(/\u0000/g, "");
+    } catch (_) {
+      text = null;
+    }
+    if (view.key !== key) return;
+    view.logs[runId] = {
+      text: text ?? cached?.text ?? "",
+      full: text !== null || Boolean(cached?.full),
+      done: text !== null,
+      loading: false,
+    };
+    if (repoActionsIsCurrent(repo) && view.selectedRunId === runId) renderRepoActions(repo);
+  }
+
   async function sendRepoActionsControl(repo, action, fields, label) {
     const view = repoActionsView();
+    if (repo && view.controlAvailable && view.source === "runner") {
+      await sendRepoActionsRunnerControl(repo, action, fields, label);
+      return;
+    }
     if (!repo || !view.controlAvailable || !view.node) return;
     const requestId = repoActionsRequestId();
     view.notice = null;
@@ -15081,8 +15211,8 @@
     return `
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-foreground"><i data-lucide="server" class="h-3.5 w-3.5 text-muted-foreground"></i><span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span><span class="font-mono font-semibold">${escapeHtml(view.node)}</span><span class="fm-label ${stateTone}">${escapeHtml(stateLabel)}</span></div>
-          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">${view.updatedAt ? `Executor state from ${escapeHtml(relativeTimeLabel(view.updatedAt))}.` : ""}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}${view.source === "runner" ? " A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones." : view.controlAvailable ? "" : " This node publishes runs read-only; controls appear once its operator enables the actions-control operation."}</p>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-foreground"><i data-lucide="server" class="h-3.5 w-3.5 text-muted-foreground"></i>${view.local ? `<span>Runs on this server</span>${view.host ? `<span class="font-mono font-semibold">${escapeHtml(view.host)}</span>` : ""}` : `<span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span>${view.node ? `<span class="font-mono font-semibold">${escapeHtml(view.node)}</span>` : ""}`}<span class="fm-label ${stateTone}">${escapeHtml(stateLabel)}</span></div>
+          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">${view.updatedAt ? `Executor state from ${escapeHtml(relativeTimeLabel(view.updatedAt))}.` : ""}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}${view.access === "public" ? ` ${repoActionsPublicNote()}` : view.source === "runner" && view.controlAvailable ? " Pushes, schedules, issue events and manual runs run here. Pick a workflow to run it by hand." : view.source === "runner" ? " A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones." : view.controlAvailable ? "" : " This node publishes runs read-only; controls appear once its operator enables the actions-control operation."}</p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           ${canToggle ? `<button type="button" data-repo-actions-repository-enabled="${view.actionsEnabled ? "false" : "true"}" ${toggling ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${view.actionsEnabled ? "pause" : "play"}" class="h-3.5 w-3.5"></i>${view.actionsEnabled ? "Pause Actions on this mirror" : "Run Actions on this mirror"}</button>` : ""}
@@ -15125,16 +15255,18 @@
       (entry) => entry.action === action && entry.workflow === workflow.path);
     const branches = repoBranchList(repo).map((branch) => branch.name).filter(Boolean);
     const preferred = repoDefaultBranch(repo);
+    const inputs = view.source === "runner" ? workflow.inputs || [] : [];
     const dispatch = view.controlAvailable && workflow.manual && workflow.enabled && workflow.valid
       ? `<form data-repo-actions-dispatch="${escapeHtml(workflow.path)}" class="flex min-w-0 flex-wrap items-center gap-2">
           <label class="text-[11px] text-muted-foreground" for="repo-actions-dispatch-ref">Branch</label>
-          <select id="repo-actions-dispatch-ref" data-repo-actions-dispatch-ref class="h-7 max-w-48 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground">${branches.map((name) => `<option value="${escapeHtml(name)}"${name === preferred ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>
+          <select id="repo-actions-dispatch-ref" data-repo-actions-dispatch-ref class="h-control-sm max-w-48 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground">${branches.map((name) => `<option value="${escapeHtml(name)}"${name === preferred ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>
+          ${inputs.length ? `<div data-repo-actions-inputs class="grid w-full gap-2 sm:grid-cols-2">${inputs.map(renderRepoActionsInputField).join("")}</div>` : ""}
           <button type="submit" ${busy("dispatch") ? "disabled" : ""} class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="play" class="h-3.5 w-3.5"></i>Run workflow</button>
         </form>`
       : `<span class="text-[11px] text-muted-foreground">${workflow.manual
-        ? (view.controlAvailable ? (workflow.enabled ? "" : "Enable this workflow to run it by hand.") : "Manual runs need a mirror with the actions-control operation.")
+        ? (view.access === "public" ? "Repository writers can run this workflow by hand." : view.controlAvailable ? (workflow.enabled ? "" : "Enable this workflow to run it by hand.") : "Manual runs need a mirror with the actions-control operation.")
         : "No workflow_dispatch trigger, so this workflow only runs on its events."}</span>`;
-    const toggle = view.controlAvailable && view.summaryWorkflows
+    const toggle = view.controlAvailable && view.summaryWorkflows && view.source !== "runner"
       ? `<button type="button" data-repo-actions-workflow-enabled="${workflow.enabled ? "false" : "true"}" data-repo-actions-workflow-path="${escapeHtml(workflow.path)}" ${busy("set-workflow-enabled") ? "disabled" : ""} class="fm-btn fm-btn-sm shrink-0">${workflow.enabled ? "Disable workflow" : "Enable workflow"}</button>`
       : "";
     return `
@@ -15144,11 +15276,25 @@
       </div>`;
   }
 
+  function renderRepoActionsInputField(input) {
+    const id = `repo-actions-input-${input.name}`;
+    const label = `<span class="font-mono">${escapeHtml(input.name)}</span>${input.required ? ' <span class="text-destructive">*</span>' : ""}`;
+    const hint = input.description ? `<span class="text-[10px] font-normal text-muted-foreground">${escapeHtml(input.description)}</span>` : "";
+    const data = `data-repo-actions-input="${escapeHtml(input.name)}" data-repo-actions-input-type="${input.type}"${input.required ? " data-repo-actions-input-required" : ""}`;
+    if (input.type === "boolean") {
+      return `<label for="${escapeHtml(id)}" class="inline-flex min-w-0 items-start gap-2 text-[11px] text-foreground"><input id="${escapeHtml(id)}" type="checkbox" ${data}${input.defaultValue ? " checked" : ""} class="mt-0.5 h-3.5 w-3.5 accent-primary" /><span class="grid gap-0.5">${label}${hint}</span></label>`;
+    }
+    const control = input.type === "choice"
+      ? `<select id="${escapeHtml(id)}" ${data} class="h-control-sm w-full rounded-md border border-border bg-background px-2 text-control text-foreground">${input.required ? "" : '<option value=""></option>'}${input.options.map((option) => `<option value="${escapeHtml(option)}"${option === input.defaultValue ? " selected" : ""}>${escapeHtml(option)}</option>`).join("")}</select>`
+      : `<input id="${escapeHtml(id)}" type="text" autocomplete="off" spellcheck="false" maxlength="1000" ${data}${input.required ? " required" : ""} value="${escapeHtml(input.defaultValue)}" class="h-control-sm w-full rounded-md border border-border bg-background px-2 text-control text-foreground" />`;
+    return `<label for="${escapeHtml(id)}" class="grid min-w-0 gap-1 text-[11px] text-foreground">${label}${hint}${control}</label>`;
+  }
+
   function renderRepoActionsRunControls(view, run) {
     if (!view.controlAvailable) return "";
     const busy = view.pending.some((entry) => entry.runId === run.id);
     const button = (action, label, icon) => `<button type="button" data-repo-actions-run-control="${action}" data-repo-actions-run-id="${run.id}" ${busy ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${label}</button>`;
-    if (run.status === "awaiting-approval") {
+    if (run.status === "awaiting-approval" && view.source !== "runner") {
       return button("approve", "Approve and run", "shield-check") + button("reject", "Reject", "shield-x");
     }
     if (run.status === "running" || run.status === "queued") {
@@ -15157,7 +15303,34 @@
     return button("rerun", "Re-run", "rotate-ccw");
   }
 
+  function repoActionsSignInHref() {
+    return `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+  }
+
+  function repoActionsPublicNote() {
+    return state.session?.sessionToken
+      ? "Logs and controls are shown to the repository owner and organization writers."
+      : "Sign in as a repository writer to see logs and controls.";
+  }
+
+  function renderRepoActionsPublicDetail(run) {
+    const hint = state.session?.sessionToken
+      ? `<span>Logs are shown to the repository owner and organization writers.</span>`
+      : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
+    const facts = [
+      run.actor ? `Triggered by ${escapeHtml(run.actor)}` : "",
+      run.event ? `on ${escapeHtml(run.event)}` : "",
+      run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
+    ].filter(Boolean).join(" ");
+    return `
+      <div data-repo-actions-run-detail="${run.id}" data-repo-actions-public-detail class="border-t border-border bg-background">
+        ${facts ? `<p class="border-b border-border px-4 py-2 text-xs text-muted-foreground">${facts}.</p>` : ""}
+        <p class="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground"><i data-lucide="lock" class="h-3.5 w-3.5 shrink-0"></i>${hint}</p>
+      </div>`;
+  }
+
   function renderRepoActionsRunDetail(repo, view, run) {
+    if (view.access === "public") return renderRepoActionsPublicDetail(run);
     const steps = run.steps.length
       ? `<ol class="grid gap-1 border-b border-border px-4 py-3">${run.steps.map((step) => {
         const meta = REPO_ACTIONS_STEP_STATES[step.status];
@@ -15167,8 +15340,15 @@
     const approval = run.status === "awaiting-approval"
       ? `<p class="fm-flash fm-flash-warning fm-flash-full border-t-0 px-4 py-2 text-xs"><i data-lucide="shield-alert"></i><span class="fm-flash-body">This run is waiting for approval because it would execute code the executor has not run for this repository before${run.pullNumber ? ` (pull request #${run.pullNumber})` : ""}. Review the commit before approving.</span></p>`
       : "";
-    const log = run.logTail
-      ? `<pre data-repo-actions-log class="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-[11px] leading-[1.15rem] text-muted-foreground">${escapeHtml(run.logTail)}</pre><p class="border-t border-border px-4 py-2 text-[10px] text-muted-foreground">Last 16 KiB of the redacted log. The full log stays on ${escapeHtml(view.node)}.</p>`
+    const fullLog = view.source === "runner" ? view.logs?.[run.id] : null;
+    const logText = fullLog?.full && fullLog.text ? fullLog.text : run.logTail;
+    const logNote = fullLog?.full && fullLog.text
+      ? "Full redacted log (up to 1 MiB)."
+      : view.source === "runner"
+        ? (fullLog?.loading ? "Loading the full log ..." : "Last lines of the redacted log.")
+        : `Last 16 KiB of the redacted log. The full log stays on ${view.local ? (view.host || "this server") : view.node}.`;
+    const log = logText
+      ? `<pre data-repo-actions-log class="max-h-[28rem] overflow-auto whitespace-pre-wrap break-words px-4 py-3 font-mono text-[11px] leading-[1.15rem] text-muted-foreground">${escapeHtml(logText)}</pre><p class="border-t border-border px-4 py-2 text-[10px] text-muted-foreground">${escapeHtml(logNote)}</p>`
       : `<p class="px-4 py-3 text-xs text-muted-foreground">${run.status === "queued" ? "Queued: waiting for a free runner or for the workflows this one needs." : run.status === "awaiting-approval" ? "Nothing has run yet." : "This run produced no log output."}</p>`;
     return `
       <div data-repo-actions-run-detail="${run.id}" class="border-t border-border bg-background">
@@ -15180,7 +15360,7 @@
   function renderRepoActionsRuns(repo, view, workflow) {
     const runs = view.runs.filter((run) => repoActionsRunMatchesWorkflow(run, workflow));
     if (!runs.length) {
-      return `<p class="px-4 py-6 text-center text-xs text-muted-foreground">${view.source === "runner" ? "No runner run yet. The next push to the default branch while the desktop is away runs here." : workflow ? "This workflow has no recent run on the executor." : "No recent runs on the executor."}</p>`;
+      return `<p class="px-4 py-6 text-center text-xs text-muted-foreground">${view.access === "public" ? "No run yet." : view.source === "runner" && view.controlAvailable ? "No run yet. Push, wait for a schedule, or pick a workflow and run it." : view.source === "runner" ? "No runner run yet. The next push to the default branch while the desktop is away runs here." : workflow ? "This workflow has no recent run on the executor." : "No recent runs on the executor."}</p>`;
     }
     return runs.map((run) => {
       const meta = pullCheckStateMeta(run.status);
@@ -15197,13 +15377,14 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
+        run.actor ? `<span data-repo-actions-run-actor>${escapeHtml(run.actor)}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `
         <div data-repo-actions-run="${run.id}" class="border-b border-border last:border-b-0">
           <button type="button" data-repo-actions-run-toggle="${run.id}" aria-expanded="${open ? "true" : "false"}" class="flex w-full min-w-0 items-center gap-3 px-4 pb-1 pt-3 text-left hover:bg-secondary/40">
             <i data-lucide="${meta.icon}" class="h-4 w-4 shrink-0 ${meta.tone}${run.status === "running" ? " animate-spin" : ""}"></i>
-            <span class="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm font-medium text-foreground"><span class="min-w-0 truncate">${escapeHtml(run.workflow)}</span><span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${meta.tone}">${escapeHtml(meta.label)}</span></span>
+            <span class="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-sm font-medium text-foreground"><span class="min-w-0 truncate">${escapeHtml(run.workflow)}</span><span class="rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold ${meta.tone}">${escapeHtml(meta.label)}</span>${run.event ? `<span data-repo-actions-run-event="${escapeHtml(run.event)}" class="fm-label font-mono text-[10px] text-muted-foreground">${escapeHtml(run.event)}</span>` : ""}</span>
             <i data-lucide="${open ? "chevron-up" : "chevron-down"}" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
           </button>
           <div class="pb-3 pl-11 pr-4 text-[11px] text-muted-foreground">${facts}</div>
@@ -15296,6 +15477,7 @@
       const id = Number(runToggle.dataset.repoActionsRunToggle) || 0;
       view.selectedRunId = view.selectedRunId === id ? 0 : id;
       renderRepoActions(repo);
+      if (view.selectedRunId && view.source === "runner" && view.access !== "public") void loadRepoActionsRunLog(repo, view.selectedRunId);
       return true;
     }
     const runControl = event.target.closest("[data-repo-actions-run-control]");
@@ -15345,10 +15527,185 @@
     const workflow = form.dataset.repoActionsDispatch || "";
     const branch = String(form.querySelector("[data-repo-actions-dispatch-ref]")?.value || "");
     if (!repo || !REPO_ACTIONS_WORKFLOW_PATH.test(workflow) || !branch) return true;
+    const view = repoActionsView();
+    const label = `Run ${workflow.split("/").pop()} on ${branch}`;
+    if (view.source === "runner") {
+      const inputs = {};
+      const missing = [];
+      form.querySelectorAll("[data-repo-actions-input]").forEach((field) => {
+        const name = field.dataset.repoActionsInput || "";
+        if (!REPO_ACTIONS_INPUT_NAME.test(name)) return;
+        if (field.dataset.repoActionsInputType === "boolean") {
+          inputs[name] = Boolean(field.checked);
+          return;
+        }
+        const value = String(field.value || "");
+        if (field.hasAttribute("data-repo-actions-input-required") && !value.trim()) missing.push(name);
+        inputs[name] = value;
+      });
+      if (missing.length) {
+        view.notice = { tone: "bad", text: `${label}: fill in ${missing.join(", ")}.` };
+        renderRepoActions(repo);
+        return true;
+      }
+      void sendRepoActionsControl(repo, "dispatch", { workflow, ref: branch, inputs }, label);
+      return true;
+    }
     void sendRepoActionsControl(repo, "dispatch",
       { workflow, ref: `refs/heads/${branch}` },
-      `Run ${workflow.split("/").pop()} on ${branch}`);
+      label);
     return true;
+  }
+
+  function actionsSecretsState(container) {
+    if (!container.__actionsSecrets) container.__actionsSecrets = { secrets: [], loaded: false, error: "" };
+    return container.__actionsSecrets;
+  }
+
+  function actionsSecretsBase(container) {
+    const base = String(container?.dataset?.actionsSecretsBase || "");
+    return /^\/api\/(?:repo\/[^/]+\/[^/]+|org\/[^/]+)\/actions\/secrets$/.test(base) ? base : "";
+  }
+
+  function renderActionsSecrets(container) {
+    const data = actionsSecretsState(container);
+    const scope = container.dataset.actionsSecretsScope === "org" ? "organization" : "repository";
+    const rows = data.secrets.map((secret) => `
+      <div data-actions-secret-row="${escapeHtml(secret.name)}" class="flex min-w-0 flex-wrap items-center justify-between gap-2 px-3 py-2">
+        <span class="min-w-0 truncate font-mono text-xs text-foreground">${escapeHtml(secret.name)}</span>
+        <span class="flex shrink-0 items-center gap-2">
+          <span class="text-[10px] text-muted-foreground">${secret.updatedAt ? `updated ${escapeHtml(relativeTimeLabel(secret.updatedAt))}` : ""}</span>
+          <button type="button" data-actions-secret-edit="${escapeHtml(secret.name)}" class="fm-btn fm-btn-sm">Update</button>
+          <button type="button" data-actions-secret-delete="${escapeHtml(secret.name)}" class="fm-btn fm-btn-sm fm-btn-danger">Delete</button>
+        </span>
+      </div>`).join("");
+    const list = !data.loaded
+      ? `<p class="px-3 py-2 text-[11px] text-muted-foreground">${data.error ? escapeHtml(data.error) : "Loading secrets ..."}</p>`
+      : rows
+        ? `<div data-actions-secrets-list class="divide-y divide-border border-y border-border">${rows}</div>`
+        : `<p data-actions-secrets-list class="text-[11px] text-muted-foreground">No secrets yet.</p>`;
+    container.innerHTML = `
+      <div class="grid gap-3">
+        <p class="text-[11px] leading-5 text-muted-foreground">Workflows read these as <span class="font-mono">\${{ secrets.NAME }}</span> on this instance's runner. Values are encrypted, never shown again, and masked in logs. ${scope === "organization" ? "A repository secret with the same name wins over an organization secret." : "Organization secrets with the same name are overridden by these."}</p>
+        ${list}
+        <form data-actions-secret-form class="grid gap-2">
+          <label class="grid gap-1 text-[11px] font-medium text-foreground">Name
+            <input data-actions-secret-name type="text" autocomplete="off" spellcheck="false" maxlength="64" pattern="[A-Z_][A-Z0-9_]*" required placeholder="CLOUDFLARE_API_TOKEN" class="h-control w-full rounded-md border border-border bg-background px-2 font-mono text-control text-foreground" />
+          </label>
+          <label class="grid gap-1 text-[11px] font-medium text-foreground">Value
+            <textarea data-actions-secret-value rows="3" autocomplete="off" spellcheck="false" required class="w-full rounded-md border border-border bg-background px-2 py-1.5 font-mono text-control text-foreground"></textarea>
+          </label>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span data-actions-secrets-status class="text-[11px] ${data.tone === "bad" ? "text-destructive" : "text-muted-foreground"}">${escapeHtml(data.status || "")}</span>
+            <button type="submit" class="fm-btn fm-btn-sm">Save secret</button>
+          </div>
+        </form>
+      </div>`;
+  }
+
+  async function loadActionsSecrets(container) {
+    const base = actionsSecretsBase(container);
+    if (!base) return;
+    const data = actionsSecretsState(container);
+    try {
+      const payload = await orgAgentRequest("GET", base);
+      data.secrets = (Array.isArray(payload?.secrets) ? payload.secrets : [])
+        .map((entry) => ({
+          name: String(entry?.name || ""),
+          updatedAt: Math.max(0, Number(entry?.updatedAt ?? entry?.updated_at) || 0),
+        }))
+        .filter((entry) => ACTIONS_SECRET_NAME.test(entry.name))
+        .sort((left, right) => left.name.localeCompare(right.name));
+      data.loaded = true;
+      data.error = "";
+    } catch (error) {
+      data.loaded = false;
+      data.error = Number(error?.status) === 403
+        ? "Only the repository owner or an organization admin can manage secrets."
+        : "The secrets could not be loaded.";
+    }
+    if (container.isConnected) renderActionsSecrets(container);
+  }
+
+  function mountActionsSecrets(container) {
+    if (!container || !actionsSecretsBase(container)) return;
+    renderActionsSecrets(container);
+    if (!container.__actionsSecretsWired) {
+      container.__actionsSecretsWired = true;
+      container.addEventListener("submit", (event) => {
+        if (!event.target.closest("[data-actions-secret-form]")) return;
+        event.preventDefault();
+        void saveActionsSecret(container, event.target.closest("[data-actions-secret-form]"));
+      });
+      container.addEventListener("click", (event) => {
+        const edit = event.target.closest("[data-actions-secret-edit]");
+        if (edit) {
+          const field = container.querySelector("[data-actions-secret-name]");
+          if (field) field.value = edit.dataset.actionsSecretEdit || "";
+          container.querySelector("[data-actions-secret-value]")?.focus();
+          return;
+        }
+        const remove = event.target.closest("[data-actions-secret-delete]");
+        if (remove) void deleteActionsSecret(container, remove.dataset.actionsSecretDelete || "");
+      });
+    }
+    void loadActionsSecrets(container);
+  }
+
+  function setActionsSecretsStatus(container, text, tone = "") {
+    const data = actionsSecretsState(container);
+    data.status = text;
+    data.tone = tone;
+    const status = container.querySelector("[data-actions-secrets-status]");
+    if (status) {
+      status.textContent = text;
+      status.className = `text-[11px] ${tone === "bad" ? "text-destructive" : tone === "good" ? "text-success" : "text-muted-foreground"}`;
+    }
+  }
+
+  async function saveActionsSecret(container, form) {
+    const base = actionsSecretsBase(container);
+    const nameField = form.querySelector("[data-actions-secret-name]");
+    const valueField = form.querySelector("[data-actions-secret-value]");
+    const name = String(nameField?.value || "").trim();
+    const value = String(valueField?.value || "");
+    if (!base || !ACTIONS_SECRET_NAME.test(name)) {
+      setActionsSecretsStatus(container, "Names use capital letters, digits and _, and do not start with a digit.", "bad");
+      return;
+    }
+    if (!value || new TextEncoder().encode(value).length > ACTIONS_SECRET_MAX_BYTES) {
+      setActionsSecretsStatus(container, "The value must be between 1 byte and 48 KiB.", "bad");
+      return;
+    }
+    const submit = form.querySelector('button[type="submit"]');
+    if (submit) submit.disabled = true;
+    setActionsSecretsStatus(container, "Saving ...");
+    try {
+      await orgAgentRequest("PUT", `${base}/${encodeURIComponent(name)}`, { value });
+      if (valueField) valueField.value = "";
+      if (nameField) nameField.value = "";
+      setActionsSecretsStatus(container, `Saved ${name}.`, "good");
+      await loadActionsSecrets(container);
+    } catch (error) {
+      if (valueField) valueField.value = "";
+      setActionsSecretsStatus(container, error?.message || `${name} could not be saved.`, "bad");
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  }
+
+  async function deleteActionsSecret(container, name) {
+    const base = actionsSecretsBase(container);
+    if (!base || !ACTIONS_SECRET_NAME.test(name)) return;
+    if (!window.confirm(`Delete the secret ${name}? Workflows that read it get an empty value.`)) return;
+    setActionsSecretsStatus(container, "Deleting ...");
+    try {
+      await orgAgentRequest("DELETE", `${base}/${encodeURIComponent(name)}`);
+      setActionsSecretsStatus(container, `Deleted ${name}.`, "good");
+      await loadActionsSecrets(container);
+    } catch (error) {
+      setActionsSecretsStatus(container, error?.message || `${name} could not be deleted.`, "bad");
+    }
   }
 
   function commitSummaryField(commit, ...keys) {
@@ -15952,6 +16309,7 @@
     // permanent right-hand column (the old full-width README override that
     // dropped it below the content was removed, owner decision 2026-07-11).
     renderRepoBreadcrumb(repo, path);
+    if (!background) resetRepoDirAbout();
 
     treeBody.innerHTML = repoTreeSkeletonHtml();
     renderRepoExplorer(repo, path, []);
@@ -15977,6 +16335,7 @@
       // Held so the header search box can re-filter this listing in place
       // (adhoc #37) instead of re-reading the tree from the mirror.
       state.repoTreeView = { repo, path, entries };
+      if (!background) loadRepoDirAbout(repo, path, data.commit, entries);
       if (!entries.length) {
         treeBody.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">This directory is empty.</div>';
         if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
@@ -16051,6 +16410,7 @@
     viewer.classList.remove("hidden");
     viewer.innerHTML = `<div class="py-3 text-sm text-muted-foreground">${loadingHtml("Loading file...")}</div>`;
     renderRepoBreadcrumb(repo, path, "blob");
+    resetRepoDirAbout();
     setRepoExplorerSelection(path, "blob");
     try {
       const pathPreview = repoPreviewKindFromPath(path);
@@ -26221,6 +26581,123 @@
     } catch (_) { /* host offline — keep catalog description */ }
   }
 
+  const repoDirAboutCache = new Map();
+  const REPO_DIR_ABOUT_CACHE_LIMIT = 64;
+
+  function repoDirAboutWanted(entries) {
+    return (entries || []).some((entry) => {
+      const name = String(entry?.name || "");
+      return (entry?.type === "tree" && name === ".forkmesh")
+        || (entry?.type === "blob" && (name === "logo.svg" || name === "logo.png"));
+    });
+  }
+
+  function setRepoDirAboutVisible(on) {
+    const detail = $("[data-repo-detail]");
+    const aside = detail?.querySelector("[data-repo-dir-about]");
+    const contentGrid = detail?.querySelector("[data-repo-content-grid]");
+    if (!aside) return;
+    aside.classList.toggle("hidden", !on);
+    if (on) {
+      contentGrid?.classList.add("lg:grid-cols-[minmax(0,1fr)_18rem]");
+      contentGrid?.classList.remove("lg:grid-cols-1");
+    } else if (detail.querySelector("[data-repo-about]")?.classList.contains("hidden")) {
+      contentGrid?.classList.remove("lg:grid-cols-[minmax(0,1fr)_18rem]");
+      contentGrid?.classList.add("lg:grid-cols-1");
+    }
+  }
+
+  function resetRepoDirAbout() {
+    const detail = $("[data-repo-detail]");
+    const logo = detail?.querySelector("[data-repo-dir-logo]");
+    if (logo) {
+      logo.hidden = true;
+      logo.removeAttribute("src");
+    }
+    const aside = detail?.querySelector("[data-repo-dir-about]");
+    if (aside && !aside.classList.contains("hidden")) setRepoDirAboutVisible(false);
+    if (aside) aside.innerHTML = "";
+  }
+
+  function repoDirAboutUrlLabel(url) {
+    return String(url || "").replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  }
+
+  function repoDirAboutRow(label, value, href, external = true) {
+    const target = external ? ` target="_blank" rel="noopener noreferrer nofollow ugc"` : "";
+    return `<a href="${escapeHtml(href)}"${target} class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">${escapeHtml(label)}</span><span class="dashboard-accent-link min-w-0 truncate text-right">${escapeHtml(value)}</span></a>`;
+  }
+
+  function renderRepoDirAbout(repo, about) {
+    const detail = $("[data-repo-detail]");
+    const aside = detail?.querySelector("[data-repo-dir-about]");
+    if (!aside || !about) return;
+    const safeUrl = (value) => (/^https?:\/\//i.test(String(value || "")) ? String(value) : "");
+    const logoUrl = about.logo && /^\/api\/repo\//.test(String(about.logo.url || "")) ? String(about.logo.url) : "";
+    const name = String(about.name || about.path || "");
+    const path = String(about.path || "");
+    const website = safeUrl(about.website);
+    const links = (Array.isArray(about.links) ? about.links : [])
+      .filter((link) => safeUrl(link?.url))
+      .map((link) => repoDirAboutRow(String(link.label || repoDirAboutUrlLabel(link.url)), repoDirAboutUrlLabel(link.url), String(link.url)));
+    const topics = (Array.isArray(about.topics) ? about.topics : [])
+      .map((topic) => `<span data-repo-dir-about-topic class="fm-label fm-label-accent">${escapeHtml(String(topic))}</span>`)
+      .join("");
+    const readme = String(about.readme || "");
+    const rows = [
+      website ? repoDirAboutRow("Website", repoDirAboutUrlLabel(website), website) : "",
+      ...links,
+      readme ? `<button type="button" data-dashboard-blob-path="${escapeHtml(readme)}" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Readme</span><span class="dashboard-accent-link min-w-0 truncate text-right">${escapeHtml(readme.split("/").pop())}</span></button>` : "",
+      repoDirAboutRow("Commits", "History of this folder", `${repoLinkUrl(repo)}/commits?${new URLSearchParams({ path })}`, false),
+    ].filter(Boolean).join("");
+    aside.innerHTML = `
+      <div class="flex items-center gap-3">
+        ${logoUrl ? `<img data-repo-dir-about-logo src="${escapeHtml(logoUrl)}" alt="" width="40" height="40" decoding="async" referrerpolicy="no-referrer" class="h-10 w-10 shrink-0 rounded-md object-contain" />` : ""}
+        <div class="min-w-0">
+          <h3 data-repo-dir-about-name class="truncate text-sm font-semibold text-foreground">${escapeHtml(name)}</h3>
+          <p class="truncate font-mono text-[11px] text-muted-foreground">${escapeHtml(path)}/</p>
+        </div>
+      </div>
+      <p data-repo-dir-about-description class="mt-3 text-sm leading-6 text-foreground">${escapeHtml(about.description || "No description.")}</p>
+      ${topics ? `<div data-repo-dir-about-topics class="mt-3 flex flex-wrap gap-1.5">${topics}</div>` : ""}
+      <div data-repo-dir-about-links aria-label="Folder links" class="-mx-2 mt-3 grid">${rows}</div>`;
+    const headerLogo = detail.querySelector("[data-repo-dir-logo]");
+    if (headerLogo) {
+      if (logoUrl) {
+        headerLogo.src = logoUrl;
+        headerLogo.hidden = false;
+      } else {
+        headerLogo.hidden = true;
+        headerLogo.removeAttribute("src");
+      }
+    }
+    setRepoDirAboutVisible(true);
+  }
+
+  async function loadRepoDirAbout(repo, path, commit, entries) {
+    if (!path || !repoDirAboutWanted(entries)) return;
+    const ref = String(commit || "") || repoSelectedBranch(repo);
+    const key = `${repoKey(repo).toLowerCase()}\n${path}\n${ref}`;
+    let about = repoDirAboutCache.get(key);
+    if (about === undefined) {
+      try {
+        const data = await fetchRepoJson(repoLiveUrl(repo, "dir-about", { path, ref }));
+        about = data?.about && typeof data.about === "object" ? data.about : null;
+      } catch (_) {
+        return;
+      }
+      repoDirAboutCache.set(key, about);
+      if (repoDirAboutCache.size > REPO_DIR_ABOUT_CACHE_LIMIT) {
+        repoDirAboutCache.delete(repoDirAboutCache.keys().next().value);
+      }
+    }
+    const view = state.repoTreeView;
+    if (!about || !repoAboutStillCurrent(repo) || state.activeRepoTab !== "code"
+        || !view || view.path !== path
+        || $("[data-repo-detail]")?.querySelector("[data-repo-tree-panel]")?.classList.contains("hidden")) return;
+    renderRepoDirAbout(repo, about);
+  }
+
   function repoReleaseTimestampMs(manifest) {
     const raw = Number(manifest?.created_at || manifest?.published_at || 0);
     if (!Number.isFinite(raw) || raw <= 0) return 0;
@@ -31884,16 +32361,23 @@
       REPO_COMMITS_FETCH_TIMEOUT_MS,
     );
     try {
+      const historyPath = String(state.repoHistoryPath || "");
+      state.repoHistoryPath = "";
       const data = await fetchRepoJson(
-        repoLiveUrl(repo, "history"),
+        repoLiveUrl(repo, "history", historyPath ? { path: historyPath } : {}),
         { signal: controller.signal },
       );
       const commits = Array.isArray(data.commits) ? data.commits : [];
       if (!commits.length) {
-        container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">No commits are available from this live mirror yet.</div>';
+        container.innerHTML = historyPath
+          ? `<div class="px-4 py-3 text-sm text-muted-foreground">No commits touch ${escapeHtml(historyPath)} on this branch.</div>`
+          : '<div class="px-4 py-3 text-sm text-muted-foreground">No commits are available from this live mirror yet.</div>';
         return;
       }
-      container.innerHTML = commits.slice(0, 60).map((commit) => {
+      const historyScope = historyPath
+        ? `<div data-repo-commits-path class="px-4 py-2 text-xs text-muted-foreground">Commits that touch <span class="font-mono text-foreground">${escapeHtml(historyPath)}</span> · <a href="${escapeHtml(`${repoLinkUrl(repo)}/commits`)}" class="text-accent hover:underline">All commits</a></div>`
+        : "";
+      container.innerHTML = historyScope + commits.slice(0, 60).map((commit) => {
         const hash = String(commit.hash || "");
         const shortHash = hash.slice(0, 7) || "unknown";
         return `
@@ -34982,6 +35466,10 @@
     rememberAgentVisitedRepository(repo);
     recordRepositoryView(repo);
     state.repoCollectionPages = { issues: 1, pulls: 1 };
+    const routeQuery = new URLSearchParams(location.search);
+    const routeRef = String(routeQuery.get("ref") || "").trim();
+    if (routeRef) setRepoSelectedBranch(repo, routeRef);
+    state.repoHistoryPath = String(routeQuery.get("path") || "").trim();
     // The Branches page paints a fresh, empty filter box, so a query left
     // over from an earlier visit to this repo must not keep narrowing the
     // list behind it.
@@ -34999,7 +35487,7 @@
       items: [],
       query: "",
       filters: {
-        author: "", label: "", milestone: "", assignee: "",
+        author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: "",
         mentions: "", involves: "", type: "", sort: "recently_updated",
       },
     };
@@ -35167,6 +35655,13 @@
             </div>
           </div>
         </div>
+        <div data-repo-actions-secrets-card class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
+            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="key-round" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions secrets</span>
+            <span class="font-mono text-[10px] text-muted-foreground">secrets.NAME</span>
+          </div>
+          <div data-actions-secrets data-actions-secrets-scope="repo" data-actions-secrets-base="${escapeHtml(`${repoApiBase(repo)}/actions/secrets`)}" class="p-4 text-xs text-muted-foreground"></div>
+        </div>
         <div data-repo-forge-mirror-card id="mirror" class="mt-5 scroll-mt-20 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="arrow-left-right" class="h-3.5 w-3.5 text-muted-foreground"></i>Mirror to GitHub or GitLab</span>
@@ -35237,7 +35732,7 @@
 		                <div class="flex min-w-0 items-center gap-2">${mirrorButton(false)}${renderRepoCodeButton(repo, false)}</div>
 		              </div>
 		              <div data-repo-pathbar class="my-3 flex min-w-0 flex-col gap-2 md:flex-row md:items-center md:justify-between">
-	                <div class="min-w-0 truncate text-xs text-muted-foreground" data-repo-breadcrumb></div>
+	                <div class="flex min-w-0 items-center gap-2"><img data-repo-dir-logo hidden alt="" width="20" height="20" decoding="async" referrerpolicy="no-referrer" class="h-5 w-5 shrink-0 rounded object-contain" /><div class="min-w-0 truncate text-xs text-muted-foreground" data-repo-breadcrumb></div></div>
 		                <div data-repo-focus-actions class="hidden flex shrink-0 flex-wrap items-center gap-2">
 		                  <button type="button" data-repo-file-finder-open class="inline-flex h-8 min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-left text-xs text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><span class="min-w-0 truncate">Go to file</span><span class="ml-auto rounded border border-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">T</span></button>
 		                  <button type="button" data-repo-codemap-open title="See the whole codebase as a zoomable treemap, in 2D or 3D" class="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="layout-grid" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-codemap-label>Code map</span></button>
@@ -35441,6 +35936,7 @@
               <div data-repo-fedi-posts-list class="mt-2 grid gap-2"></div>
             </details>` : ""}
           </aside>
+          <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
       </div>`;
     // Restore whichever tab the URL points at (e.g. a refresh on

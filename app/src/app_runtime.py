@@ -1806,6 +1806,13 @@ class Default:
                 repository_file_edits._bind_runtime(globals())
                 return await repository_file_edits.route(
                     self.env, request, owner, repo, action)
+            if action in ("dir-about", "dir-logo"):
+                import directory_about
+                directory_about._bind_runtime(globals())
+                return await directory_about.route(
+                    self.env, request, owner, repo, action,
+                    projects=self._repo_projects_setting,
+                    short=self._repo_short_setting)
 
         # Public clone traffic uses signed, masked HTTPS. Private/missing paths
         # fail closed in _git_host. Private clients use only the identity-free
@@ -2697,6 +2704,11 @@ class Default:
             return await plugin_api_handler(
                 self.env, request, url.path, plugin_api)
 
+        if url.path.startswith("/api/actions/job/"):
+            import actions_job_api
+            actions_job_api._bind_runtime(globals())
+            return await actions_job_api.route(self.env, request, url.path)
+
         # --- Phase 5 runner tier: /api/runners/* (runner_leases.py) ---
         # (/api/runners itself lists runners for the web sign-in page.)
         if url.path.startswith("/api/runners/") or url.path == "/api/runners":
@@ -2936,6 +2948,14 @@ class Default:
         if DISCORD_OAUTH_CALLBACK_RE.match(url.path):
             return await organization_discord_oauth_callback_handler(
                 self.env, request)
+        org_action_secrets_match = ORG_ACTION_SECRETS_RE.match(url.path)
+        if org_action_secrets_match:
+            import actions_secrets
+            actions_secrets._bind_runtime(globals())
+            return await actions_secrets.org_handler(
+                self.env, request, org_action_secrets_match.group(1),
+                org_action_secrets_match.group(2) or "")
+
         org_bot_tokens_match = ORG_BOT_TOKENS_RE.match(url.path)
         if org_bot_tokens_match:
             org = safe_segment(org_bot_tokens_match.group(1))
@@ -3201,6 +3221,28 @@ class Default:
                 return json_response({"error": "not_found"}, status=404)
             return await repository_branch_op_results_handler(
                 self.env, request, owner, repo)
+
+        action_log_match = REPO_ACTION_RUN_LOG_RE.match(url.path)
+        if action_log_match:
+            owner = safe_segment(action_log_match.group(1))
+            repo = safe_segment(action_log_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await repository_actions_run_log_handler(
+                self.env, request, owner, repo,
+                int(action_log_match.group(3)))
+
+        action_secrets_match = REPO_ACTION_SECRETS_RE.match(url.path)
+        if action_secrets_match:
+            owner = safe_segment(action_secrets_match.group(1))
+            repo = safe_segment(action_secrets_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            import actions_secrets
+            actions_secrets._bind_runtime(globals())
+            return await actions_secrets.repo_handler(
+                self.env, request, owner, repo,
+                action_secrets_match.group(3) or "")
 
         action_runs_match = REPO_ACTION_RUNS_RE.match(url.path)
         if action_runs_match:
@@ -3884,6 +3926,11 @@ class Default:
         # per-repo rel="me" head tags are injected at serve time so Mastodon
         # can verify the repo actor's profile link (green check) against this
         # very page — a static shared asset can't carry a per-repo link.
+        project_target = await self._repo_projects_redirect(url)
+        if project_target:
+            return Response("", status=302, headers={
+                "location": project_target, "cache-control": "no-store"})
+
         short_route = await self._repo_short_route(url)
         if short_route is not None:
             short_url, short_name = short_route
@@ -4145,6 +4192,31 @@ class Default:
             row = None
         return repo_short_urls.remember(
             repo_short_urls.parse((row or {}).get("doc") or ""), now)
+
+    async def _repo_projects_setting(self):
+        now = int(Date.now())
+        setting = repo_projects.cached(now)
+        if setting is not None:
+            return setting
+        try:
+            row = await d1_first(
+                self.env,
+                "SELECT doc FROM instance_settings WHERE k=?",
+                repo_projects.SETTING_KEY)
+        except Exception:
+            row = None
+        return repo_projects.remember(
+            repo_projects.parse((row or {}).get("doc") or ""), now)
+
+    async def _repo_projects_redirect(self, url):
+        setting = await self._repo_projects_setting()
+        if not setting["repo"]:
+            return None
+        short = await self._repo_short_setting()
+        if not short["short"]:
+            return None
+        return repo_projects.redirect(
+            url.path, url.query, setting, short["owner"])
 
     async def _repo_short_route(self, url):
         setting = await self._repo_short_setting()

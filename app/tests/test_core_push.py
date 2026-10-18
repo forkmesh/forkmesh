@@ -640,6 +640,9 @@ def test_a_main_push_queues_runner_actions_only_while_the_desktop_is_offline(
     db.executescript(
         (ROOT / "migrations" / "0248_repo_action_jobs.sql").read_text()
         .split("INSERT INTO schema_meta")[0])
+    db.executescript(
+        (ROOT / "migrations" / "0272_actions_instance.sql").read_text()
+        .split("INSERT INTO schema_meta")[0])
     online = {"forkmesh"}
 
     async def holds(_env, name):
@@ -675,3 +678,74 @@ def test_a_main_push_queues_runner_actions_only_while_the_desktop_is_offline(
     finally:
         for name in ("runner_leases", "runner_actions"):
             sys.modules.pop(name, None)
+
+
+def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pushes(
+        module):
+    loaded, ctx = module
+    db = ctx["db"]
+    db.execute("CREATE TABLE repositories (key_bi TEXT, data TEXT)")
+    for name in ("0193_runner_nodes.sql", "0248_repo_action_jobs.sql",
+                 "0272_actions_instance.sql"):
+        db.executescript(
+            (ROOT / "migrations" / name).read_text()
+            .split("-- The runtime schema text changed")[0]
+            .split("INSERT INTO schema_meta")[0])
+
+    async def holds(_env, _name):
+        return True
+
+    for name in ("runner_leases", "runner_actions"):
+        sys.modules.pop(name, None)
+    loaded._bind_runtime({"_node_events_object_holds_node": holds})
+    env = type("Env", (), {"RUNNER_POOL_TARGET_NODES": "forkmesh",
+                           "ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+
+    def push(*updates):
+        asyncio.run(loaded.record_accepted_push(
+            env, "forkmesh", "site", {"node": "forkmesh"}, "jett",
+            _report(*updates), core=True, state="e" * 64))
+        return [tuple(row) for row in db.execute(
+            "SELECT branch,commit_oid,before_oid,event,actor "
+            "FROM repo_action_jobs ORDER BY id")]
+
+    try:
+        assert push(("refs/heads/topic", "1" * 40, "4" * 40, 1),
+                    ("refs/tags/v1", "0" * 40, "5" * 40, 0),
+                    ("refs/heads/gone", "2" * 40, "0" * 40, 0)) == [
+            ("topic", "4" * 40, "1" * 40, "push", "jett")]
+        db.execute("UPDATE repo_action_jobs SET status='completed',"
+                   "pushed_commit=?", ("7" * 40,))
+        assert len(push(("refs/heads/topic", "4" * 40, "7" * 40, 1))) == 1
+    finally:
+        for name in ("runner_leases", "runner_actions"):
+            sys.modules.pop(name, None)
+
+
+def test_an_instance_queues_only_the_default_branch_for_an_import_and_caps_bulk_pushes(
+        module):
+    loaded, _ctx = module
+    zero = "0" * 40
+
+    def heads(updates, default="main"):
+        return [item["ref"][len("refs/heads/"):]
+                for item in loaded.instance_action_updates(
+                    _report(*updates)["updates"], default)]
+
+    imported = [("refs/heads/b%02d" % i, zero, "%040x" % (i + 1), 1)
+                for i in range(45)]
+    imported.insert(7, ("refs/heads/main", zero, "f" * 40, 9))
+    assert heads(imported) == ["main"]
+    assert heads(imported[:8] + [("refs/tags/v1", zero, "e" * 40, 0)]) == [
+        "main"]
+    created = [("refs/heads/n%d" % i, zero, "%040x" % (i + 1), 1)
+               for i in range(4)]
+    assert heads(created) == []
+    assert heads(created[:3]) == ["n0", "n1", "n2"]
+    moved = [("refs/heads/m%d" % i, "1" * 40, "%040x" % (i + 1), 1)
+             for i in range(8)]
+    assert heads(moved + created + [
+        ("refs/heads/main", "1" * 40, "2" * 40, 1)]) == [
+            "main", "m0", "m1", "m2", "m3", "m4"]
+    assert heads([("refs/heads/topic", "", "3" * 40, 1),
+                  ("refs/heads/gone", "1" * 40, zero, 0)]) == ["topic"]

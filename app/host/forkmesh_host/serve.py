@@ -208,6 +208,8 @@ def main(argv=None):
     ops.add_parser(sub, common)
     from . import instance_bootstrap
     instance_bootstrap.add_parser(sub, common)
+    from . import instance_repo
+    instance_repo.add_parser(sub, common)
 
     args = parser.parse_args(argv)
     return args.func(args)

@@ -599,6 +599,7 @@
     // permanent right-hand column (the old full-width README override that
     // dropped it below the content was removed, owner decision 2026-07-11).
     renderRepoBreadcrumb(repo, path);
+    if (!background) resetRepoDirAbout();
 
     treeBody.innerHTML = repoTreeSkeletonHtml();
     renderRepoExplorer(repo, path, []);
@@ -624,6 +625,7 @@
       // Held so the header search box can re-filter this listing in place
       // (adhoc #37) instead of re-reading the tree from the mirror.
       state.repoTreeView = { repo, path, entries };
+      if (!background) loadRepoDirAbout(repo, path, data.commit, entries);
       if (!entries.length) {
         treeBody.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">This directory is empty.</div>';
         if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
@@ -698,6 +700,7 @@
     viewer.classList.remove("hidden");
     viewer.innerHTML = `<div class="py-3 text-sm text-muted-foreground">${loadingHtml("Loading file...")}</div>`;
     renderRepoBreadcrumb(repo, path, "blob");
+    resetRepoDirAbout();
     setRepoExplorerSelection(path, "blob");
     try {
       const pathPreview = repoPreviewKindFromPath(path);
@@ -10866,6 +10869,123 @@
       if (about) applyRepoAboutDescription(repo, about);
       applyRepoAboutWebsite(String(info?.website || ""));
     } catch (_) { /* host offline — keep catalog description */ }
+  }
+
+  const repoDirAboutCache = new Map();
+  const REPO_DIR_ABOUT_CACHE_LIMIT = 64;
+
+  function repoDirAboutWanted(entries) {
+    return (entries || []).some((entry) => {
+      const name = String(entry?.name || "");
+      return (entry?.type === "tree" && name === ".forkmesh")
+        || (entry?.type === "blob" && (name === "logo.svg" || name === "logo.png"));
+    });
+  }
+
+  function setRepoDirAboutVisible(on) {
+    const detail = $("[data-repo-detail]");
+    const aside = detail?.querySelector("[data-repo-dir-about]");
+    const contentGrid = detail?.querySelector("[data-repo-content-grid]");
+    if (!aside) return;
+    aside.classList.toggle("hidden", !on);
+    if (on) {
+      contentGrid?.classList.add("lg:grid-cols-[minmax(0,1fr)_18rem]");
+      contentGrid?.classList.remove("lg:grid-cols-1");
+    } else if (detail.querySelector("[data-repo-about]")?.classList.contains("hidden")) {
+      contentGrid?.classList.remove("lg:grid-cols-[minmax(0,1fr)_18rem]");
+      contentGrid?.classList.add("lg:grid-cols-1");
+    }
+  }
+
+  function resetRepoDirAbout() {
+    const detail = $("[data-repo-detail]");
+    const logo = detail?.querySelector("[data-repo-dir-logo]");
+    if (logo) {
+      logo.hidden = true;
+      logo.removeAttribute("src");
+    }
+    const aside = detail?.querySelector("[data-repo-dir-about]");
+    if (aside && !aside.classList.contains("hidden")) setRepoDirAboutVisible(false);
+    if (aside) aside.innerHTML = "";
+  }
+
+  function repoDirAboutUrlLabel(url) {
+    return String(url || "").replace(/^https?:\/\//i, "").replace(/\/$/, "");
+  }
+
+  function repoDirAboutRow(label, value, href, external = true) {
+    const target = external ? ` target="_blank" rel="noopener noreferrer nofollow ugc"` : "";
+    return `<a href="${escapeHtml(href)}"${target} class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">${escapeHtml(label)}</span><span class="dashboard-accent-link min-w-0 truncate text-right">${escapeHtml(value)}</span></a>`;
+  }
+
+  function renderRepoDirAbout(repo, about) {
+    const detail = $("[data-repo-detail]");
+    const aside = detail?.querySelector("[data-repo-dir-about]");
+    if (!aside || !about) return;
+    const safeUrl = (value) => (/^https?:\/\//i.test(String(value || "")) ? String(value) : "");
+    const logoUrl = about.logo && /^\/api\/repo\//.test(String(about.logo.url || "")) ? String(about.logo.url) : "";
+    const name = String(about.name || about.path || "");
+    const path = String(about.path || "");
+    const website = safeUrl(about.website);
+    const links = (Array.isArray(about.links) ? about.links : [])
+      .filter((link) => safeUrl(link?.url))
+      .map((link) => repoDirAboutRow(String(link.label || repoDirAboutUrlLabel(link.url)), repoDirAboutUrlLabel(link.url), String(link.url)));
+    const topics = (Array.isArray(about.topics) ? about.topics : [])
+      .map((topic) => `<span data-repo-dir-about-topic class="fm-label fm-label-accent">${escapeHtml(String(topic))}</span>`)
+      .join("");
+    const readme = String(about.readme || "");
+    const rows = [
+      website ? repoDirAboutRow("Website", repoDirAboutUrlLabel(website), website) : "",
+      ...links,
+      readme ? `<button type="button" data-dashboard-blob-path="${escapeHtml(readme)}" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Readme</span><span class="dashboard-accent-link min-w-0 truncate text-right">${escapeHtml(readme.split("/").pop())}</span></button>` : "",
+      repoDirAboutRow("Commits", "History of this folder", `${repoLinkUrl(repo)}/commits?${new URLSearchParams({ path })}`, false),
+    ].filter(Boolean).join("");
+    aside.innerHTML = `
+      <div class="flex items-center gap-3">
+        ${logoUrl ? `<img data-repo-dir-about-logo src="${escapeHtml(logoUrl)}" alt="" width="40" height="40" decoding="async" referrerpolicy="no-referrer" class="h-10 w-10 shrink-0 rounded-md object-contain" />` : ""}
+        <div class="min-w-0">
+          <h3 data-repo-dir-about-name class="truncate text-sm font-semibold text-foreground">${escapeHtml(name)}</h3>
+          <p class="truncate font-mono text-[11px] text-muted-foreground">${escapeHtml(path)}/</p>
+        </div>
+      </div>
+      <p data-repo-dir-about-description class="mt-3 text-sm leading-6 text-foreground">${escapeHtml(about.description || "No description.")}</p>
+      ${topics ? `<div data-repo-dir-about-topics class="mt-3 flex flex-wrap gap-1.5">${topics}</div>` : ""}
+      <div data-repo-dir-about-links aria-label="Folder links" class="-mx-2 mt-3 grid">${rows}</div>`;
+    const headerLogo = detail.querySelector("[data-repo-dir-logo]");
+    if (headerLogo) {
+      if (logoUrl) {
+        headerLogo.src = logoUrl;
+        headerLogo.hidden = false;
+      } else {
+        headerLogo.hidden = true;
+        headerLogo.removeAttribute("src");
+      }
+    }
+    setRepoDirAboutVisible(true);
+  }
+
+  async function loadRepoDirAbout(repo, path, commit, entries) {
+    if (!path || !repoDirAboutWanted(entries)) return;
+    const ref = String(commit || "") || repoSelectedBranch(repo);
+    const key = `${repoKey(repo).toLowerCase()}\n${path}\n${ref}`;
+    let about = repoDirAboutCache.get(key);
+    if (about === undefined) {
+      try {
+        const data = await fetchRepoJson(repoLiveUrl(repo, "dir-about", { path, ref }));
+        about = data?.about && typeof data.about === "object" ? data.about : null;
+      } catch (_) {
+        return;
+      }
+      repoDirAboutCache.set(key, about);
+      if (repoDirAboutCache.size > REPO_DIR_ABOUT_CACHE_LIMIT) {
+        repoDirAboutCache.delete(repoDirAboutCache.keys().next().value);
+      }
+    }
+    const view = state.repoTreeView;
+    if (!about || !repoAboutStillCurrent(repo) || state.activeRepoTab !== "code"
+        || !view || view.path !== path
+        || $("[data-repo-detail]")?.querySelector("[data-repo-tree-panel]")?.classList.contains("hidden")) return;
+    renderRepoDirAbout(repo, about);
   }
 
   function repoReleaseTimestampMs(manifest) {

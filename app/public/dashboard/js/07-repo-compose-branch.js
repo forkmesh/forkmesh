@@ -1079,16 +1079,23 @@
       REPO_COMMITS_FETCH_TIMEOUT_MS,
     );
     try {
+      const historyPath = String(state.repoHistoryPath || "");
+      state.repoHistoryPath = "";
       const data = await fetchRepoJson(
-        repoLiveUrl(repo, "history"),
+        repoLiveUrl(repo, "history", historyPath ? { path: historyPath } : {}),
         { signal: controller.signal },
       );
       const commits = Array.isArray(data.commits) ? data.commits : [];
       if (!commits.length) {
-        container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">No commits are available from this live mirror yet.</div>';
+        container.innerHTML = historyPath
+          ? `<div class="px-4 py-3 text-sm text-muted-foreground">No commits touch ${escapeHtml(historyPath)} on this branch.</div>`
+          : '<div class="px-4 py-3 text-sm text-muted-foreground">No commits are available from this live mirror yet.</div>';
         return;
       }
-      container.innerHTML = commits.slice(0, 60).map((commit) => {
+      const historyScope = historyPath
+        ? `<div data-repo-commits-path class="px-4 py-2 text-xs text-muted-foreground">Commits that touch <span class="font-mono text-foreground">${escapeHtml(historyPath)}</span> · <a href="${escapeHtml(`${repoLinkUrl(repo)}/commits`)}" class="text-accent hover:underline">All commits</a></div>`
+        : "";
+      container.innerHTML = historyScope + commits.slice(0, 60).map((commit) => {
         const hash = String(commit.hash || "");
         const shortHash = hash.slice(0, 7) || "unknown";
         return `

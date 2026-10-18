@@ -386,6 +386,7 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             "mirror-health",
             "mail-log",
             "self-deploy-pings",
+            "actions-schedule",
         ]
         if minute % 5 == 0:
             phases.append("status-alert-email")
@@ -739,7 +740,10 @@ def test_tick_continues_with_a_fresh_budget_when_a_phase_overruns():
     final = _tick_state(ns, storage)
     assert final["pending"] == [] and final["failed"] == {}
     assert ran == list(ordered)
-    assert final["invocations"] == 2
+    per_invocation = ns["CRON_BATCH_SUBREQUEST_CAP"] // (
+        1 + ns["CRON_BATCH_RESERVE_HEADROOM"])
+    assert final["invocations"] == 1 + -(-(len(ordered) - 1)
+                                         // per_invocation)
     # The overrun widened its own reserve to the cap, so the next minute
     # never packs anything behind it.
     assert json.loads(storage.data[ns["CRON_TICK_COST_KEY"]])[

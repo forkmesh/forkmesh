@@ -409,12 +409,12 @@ def test_advertised_catalog_issue_count_is_open_only():
         Path(__file__).resolve().parents[2]
         / "desktop"
         / "src"
-        / "MainWindowInternal.h"
+        / "MainWindowInternal4.cpp"
     ).read_text(encoding="utf-8")
-    assert "inline int mirrorOpenIssueCount(const QString &mirrorPath" in internal
+    assert "int mirrorOpenIssueCount(const QString &mirrorPath" in internal
     open_counter = internal[
-        internal.index("inline int mirrorOpenIssueCount")
-        : internal.index("inline int mirrorIssueCount")
+        internal.index("int mirrorOpenIssueCount")
+        : internal.index("int mirrorIssueCount")
     ]
     # Reads each record's status; anything not "closed" counts as open,
     # matching the web's parseIssueJson default.
@@ -423,8 +423,8 @@ def test_advertised_catalog_issue_count_is_open_only():
     assert 'if (status != QLatin1String("closed"))' in open_counter
     # The advertised issueCount is the open count, not the raw directory tally.
     issue_count = internal[
-        internal.index("inline int mirrorIssueCount")
-        : internal.index("inline int mirrorIssueCount") + 260
+        internal.index("int mirrorIssueCount")
+        : internal.index("int mirrorIssueCount") + 260
     ]
     assert "return mirrorOpenIssueCount(mirrorPath, branch);" in issue_count
     assert 'mirrorNumberedDirCount(mirrorPath, branch, QStringLiteral(".forkmesh/issues"))' not in issue_count
@@ -871,7 +871,7 @@ def test_opening_a_different_repo_resets_the_issue_view_state():
         'filter: "open"',
         'items: []',
         'query: ""',
-        'author: "", label: "", milestone: "", assignee: ""',
+        'author: "", label: String(routeQuery.get("label") || "").trim(), milestone: "", assignee: ""',
         'type: "", sort: "recently_updated"',
     ):
         assert marker in reset

@@ -85,7 +85,7 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
 | `services` | `forkmesh-instance.service` (uvicorn on loopback, sandboxed) |
 | `https` | Caddyfile for the app and the Git gateway paths, HSTS; waits for DNS |
 | `admin` | installs the signed Git node daemon and runs `instance-bootstrap` |
-| `repo` | waits for `<owner>/forkmesh` to answer `info/refs` |
+| `repo` | waits for `<owner>/forkmesh` to answer `info/refs`, then installs the Actions runner (setting `actions`) |
 | `done` | prints the final URL |
 
 - The setup runs as a detached systemd service; the SSH session only follows
@@ -98,6 +98,24 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   published ranges.
 - `--update` pulls, rebuilds, migrates and restarts, keeping secrets, data
   and admin; local source changes are saved to a patch file first.
+- **Actions** (setting `actions`, a boolean, default `true`, kept in
+  `instance.json`): the `packages` step adds jq, build-essential, unzip and
+  nftables for jobs; `app.env` gets `RUNNER_POOL_TARGET_NODES=forkmesh`,
+  `ACTIONS_INSTANCE_RUNNER=forkmesh-runner` and a kept `ACTIONS_BOT_SEED`
+  (64 hex). After the git node is up, `install-runner.sh --preregistered`
+  from the instance's own source installs the runner `forkmesh-runner` with
+  the core's daemon binary under `/etc/forkmesh-runner/accounts/<owner>` and
+  `/var/lib/forkmesh-runner/accounts/<owner>` (unit
+  `forkmesh-runner@<owner>.service`, jobs as `forkmesh-job`), and
+  `python -m forkmesh_host instance-runner --name forkmesh-runner
+  --public-key <key> --owner <owner>` registers it. A runner that fails to
+  install or register only warns: the instance works without Actions and
+  `--update` retries. `--update` re-runs the runner installer (same key,
+  restarted on the new binary); `actions: false` stops it. An unclaimed new
+  instance removes the runner it installed (only its own account folders,
+  and the runner roots, firewall unit and `forkmesh-job` user when the
+  install created them). See
+  [server/instance-actions.md](server/instance-actions.md).
 - An admin can run the same update from the admin console (Platform →
   Update ForkMesh). The `services` step installs
   `forkmesh-instance-update.path` and `.service` and the helper
@@ -120,6 +138,16 @@ app does not redirect Git clients to its own origin.
 The bootstrap also switches Issues, Pull requests and Discussions off on the
 `<owner>/forkmesh` mirror; the owner can turn them back on in the
 repository's Settings tab ([app/repo-features.md](app/repo-features.md)).
+With `ACTIONS_BOT_SEED` in its environment (or the app env) it also creates
+the Actions bot `<owner>-actions` (a node account holding the Ed25519 key
+derived from the seed, organization role `maintainer`), and
+`python -m forkmesh_host instance-runner --name N --public-key K --owner O`
+registers the instance's own trusted pool runner; see
+[server/instance-actions.md](server/instance-actions.md). The Actions tab of
+a public repository lists its runs to everyone (workflow, event, branch,
+commit, actor, status, times); logs, live log tails and the Run, Cancel and
+Re-run controls stay with the owner and organization writers, and a private
+repository's runs stay hidden ("Public run summary" there).
 Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
 → Repository addresses ([app/server-update.md](app/server-update.md)).
 
@@ -212,6 +240,122 @@ New installs get all of this from the installer. `--update` rewrites
 predates `mirrorOf` fails `--check` with it, so the installer then writes the
 config without it and says so; the website labelling and refusals still
 apply.
+## Importing a repository on the server (`instance_repo.py`)
+
+`python -m forkmesh_host instance-repo` creates a hosted repository on the
+instance and fills it from a git repository or bundle already on the server.
+No browser session, password or push credential is involved: the operator's
+root shell is the authority. Run it as root from the source checkout:
+
+```
+cd /opt/forkmesh-instance/src/app/host
+/opt/forkmesh-instance/venv/bin/python -m forkmesh_host instance-repo \
+  --owner <account> --organization <org> --name <repo> \
+  [--description TEXT] [--visibility public|private] \
+  --from /root/<repo>.git [--force] [--no-hooks] \
+  --env-file /etc/forkmesh-instance/app.env \
+  --db sqlite:/var/lib/forkmesh-instance/app.db \
+  --data-dir /var/lib/forkmesh-instance/data
+```
+
+It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
+`created`, `branches`, `tags`, `defaultBranch`, `commit`, `refsUpdated`,
+`sizeBytes`, `stateHash`, `gitDir` (or `ok: false` and `error`, exit 1).
+
+- **Source.** `--from` is a repository directory or a `git bundle` file. Only
+  local `refs/heads/*` and `refs/tags/*` are imported, so make the source with
+  `git clone --mirror <url> /root/<repo>.git` (a normal clone has one local
+  branch; the rest are remote-tracking refs and are skipped). Pull-request
+  refs (`refs/pull/*`) are skipped too.
+- **Who does what.** As root, the database work runs in a child process that
+  drops to `forkmesh-app` (`--app-user`), so the SQLite files keep their
+  owner, and every git command runs as `forkmesh-node` (`--git-user`), the
+  owner of `/var/lib/forkmesh/hosted` (`--hosted-root`). The source is first
+  written as a bundle into `/var/lib/forkmesh/tmp` and handed to
+  `forkmesh-node`, which may not be able to read the operator's folder. That
+  bundle holds only what the hosted repository lacks: every hosted head and
+  tag the source also has is passed to `git bundle create` as an exclusion,
+  so re-running after one new commit bundles one commit. Run as another
+  user, everything happens as that user (tests, development).
+- **Create.** Same records as the create form for an organization
+  repository, through the helpers `_create_core_repository` now shares in
+  `hosted_git.py` (`core_repository_target`, `core_catalog_record`,
+  `store_core_repository`): the catalog record (`source: hosted-web`,
+  `cloneUrl` `<PUBLIC_BASE_URL>/<org>/<repo>`), the `hosted_repos` row with
+  creator = owner, the `org_repos` link, cache and catalog revision bumps and
+  the `repository.create_hosted` audit row with the owner as actor. The owner
+  must be a user account with maintain permission in the organization; no
+  first commit is written and the per-account hosted quota is not checked
+  (the repository still counts towards it).
+- **Fill.** The command creates `<root>/<id>.git` itself when the git node has
+  not yet (`git init --bare --initial-branch=main`, mode 0700, then a rename,
+  exactly like `server/hosted.go`). It then works in a staging repository, a
+  quarantine like the one `git receive-pack` uses: a bare repository in a
+  scratch folder (`/var/lib/forkmesh/tmp/instance-repo-*`, else beside the
+  hosted root) whose `objects/info/alternates` names the hosted objects. Every
+  head and tag is fetched there; a fetch from a directory negotiates with the
+  hosted tips, a bundle is indexed whole. The ref plan (fast-forward check)
+  runs in the staging repository too. Only then is one pack built with
+  `git pack-objects --revs --local` from the new tips minus the hosted tips,
+  so a full bundle of a repository the node already holds adds only the
+  missing commits (a first fill moves the staged packs as they are). The size
+  check adds that pack to the hosted repository's reachable size
+  (`git rev-list --all --objects --disk-usage`, which counts each object
+  once whatever duplicate packs hold it). A refused ref or a repository that
+  would pass `HOSTED_REPO_MAX_BYTES` raises before anything reaches the
+  hosted repository, and the scratch folder is removed with
+  `forkmesh_safe_delete.remove_tree` either way. On success the pack is
+  renamed into `objects/pack` (`.pack`, `.rev`, then `.idx`, the order git
+  writes them) and the refs are applied in one `update-ref` transaction:
+  new refs are created, branches move only by fast-forward and tags never
+  move, unless `--force`. Nothing is ever deleted. A failed `update-ref`
+  after the pack moved leaves an unreferenced pack, which the node's
+  maintenance keeps (no prune); a rerun reuses it. The fill touches
+  `forkmesh-maintenance-due` so the git node compacts the repository next
+  (see [HOSTED_REPOS.md](HOSTED_REPOS.md#maintenance)). HEAD points at `main`,
+  else `master`, `trunk`, `develop`, else the first branch.
+
+  Before 2026-10-17 the fill fetched straight into the hosted repository under
+  `refs/forkmesh/import/*`. As root the source was always a full bundle, and
+  a bundle carries no negotiation, so every run wrote the whole history again
+  as a new pack. On the Bolt instance a rerun after one commit added a second
+  392 MB pack; the size check (directory bytes) then counted both, refused
+  the run at 1.2 GB, and left the duplicate pack behind.
+- **Record.** As after an accepted web push: `hosted_repos.pushed_at` /
+  `pushed_by` (so the node does not fetch over it), the routing pin computed
+  from the filled repository with the same canonical form as
+  `routing_refs_sha256` (default branch plus tags) written through
+  `_pin_hosted_state` (catalog `stateHash`, `lastSync`, `branch`, `commit`,
+  `branchCount`, `commitCount`, `rootCommit`, `sizeBytes`, state history),
+  and `core_push.record_accepted_push` with the ref updates (default branch
+  first, 40 listed): one `git.push` audit row per ref, and, unless
+  `--no-hooks`, the push webhooks, code-push ping and Actions queue. An
+  import that creates the default branch queues one Actions push job, for
+  that branch only (the rule is in
+  [server/instance-actions.md](server/instance-actions.md#queue-lease-report));
+  before this rule an import queued one job per branch.
+- **Idempotent.** A second run finds the `hosted_repos` row and only moves
+  refs; with nothing new it records nothing (`refsUpdated: 0`). A repository
+  that exists under another organization, or a catalog name a node
+  published, is refused.
+- **Serving.** The git node learns of a new repository on its next replica
+  exchange (at most two minutes; `systemctl restart forkmesh-mirror-node`
+  makes it immediate) and then serves it at `/<owner>/<repo>` and
+  `/<org>/<repo>`. After updating an existing repository, the gateway may
+  answer from its in-memory response cache until the node rewrites the
+  repository's gateway entry on that same exchange; restart the node to
+  serve the new refs at once.
+- **Size.** The installer sets `HOSTED_REPO_MAX_BYTES=1073741824` (1 GiB) in
+  `app.env` and `hosted.maxRepositoryBytes` to the same in
+  `/etc/forkmesh/mirror-node.json`. The command refuses a fill whose
+  reachable objects plus the new pack would pass the app limit; web pushes
+  are refused past it too (largest copy the node reports, measured as
+  `git count-objects` loose plus pack bytes after the node's maintenance). For a bigger repository raise
+  `HOSTED_REPO_MAX_BYTES` in `app.env` (and the node's value, which bounds
+  imports and replica fetches) and restart `forkmesh-instance`; the next
+  run of the command reads the new value. Later pushes over HTTPS are also
+  bounded per request by `FORKMESH_MAX_GIT_PUSH_BODY_BYTES` (256 MiB), which
+  incremental pushes do not reach.
 
 ## White label
 
@@ -225,6 +369,13 @@ apply.
 - **Logo:** a `data:` URL (PNG, JPEG, WebP or SVG, 200 KB max, type detected
   from bytes, unsafe SVG refused). The brand tool writes it over the logo and
   favicon assets and the web manifest; `INSTANCE_LOGO` points email at it.
+  The logo always lives at `/instance-logo.<png|jpg|webp|svg>`, and the web
+  manifest (`/favicon/site.webmanifest`) lists it, so the phone apps can find
+  it on an instance whose `/api/instance` has no `logo` field yet. An SVG
+  logo also gets a 512 px `/instance-logo.png`, drawn with `rsvg-convert`
+  (the installer installs `librsvg2-bin`), listed first in the manifest; when
+  it exists `INSTANCE_LOGO` names the PNG, because phones and most mail
+  clients cannot draw SVG. Web pages keep the SVG.
 - **Theme** (`app/src/instance_theme.py`): one `instance_settings` row
   (`k = 'theme'`) holding `{"dark": {...}, "light": {...}}` of known token
   names to `#rrggbb` colours, max 8 KB, no raw CSS. Served as
@@ -280,4 +431,7 @@ to every provider.
 `test_start_instance_page.py`, `test_instance_white_label.py`,
 `test_instance_theme.py`, `test_instance_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`, and
-`app/host/tests_unit/test_ssh_helper.py`, `test_instance_bootstrap.py`.
+`app/host/tests_unit/test_ssh_helper.py`, `test_instance_bootstrap.py`,
+`test_instance_repo.py`, and `app/tests/host/test_instance_repo_e2e.py`
+(a served app with a temporary SQLite database: a repository created from
+the web and one from the command list the same way on the dashboard).
