@@ -224,6 +224,9 @@ struct DjDeckSheet: View {
                         Button("Tap") { model.tapTempo(deck.side) }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
+                        Button("Detect") { model.detectBpm(deck.side) }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         if deck.bpm > 0 {
                             Button("Clear") { model.clearBpm(deck.side) }
                                 .buttonStyle(.bordered)
@@ -373,8 +376,8 @@ struct DjInfoSheet: View {
                 Label("Each deck’s volume fader sits beside its tempo strip; double-tap it for full volume.", systemImage: "speaker.wave.2")
                 Label("Jam (the people button) invites other ForkMesh users to share the decks and the queue. Everyone plays their own synchronised copy, and their icons show who is listening and shake when they dance.", systemImage: "person.2")
                 Label("The smiley button opens 30 silent reactions that play over the studio for everyone in the jam.", systemImage: "face.smiling")
-                Label("Push the tempo fader up to speed a deck up; double-tap it to reset.", systemImage: "slider.vertical.3")
-                Label("Tap the BPM box on the beat, then press SYNC.", systemImage: "metronome")
+                Label("Push the tempo fader up to speed a deck up; RESET under it (or a double-tap) puts it back in the middle.", systemImage: "slider.vertical.3")
+                Label("Each song’s BPM is found from its audio and shown above SYNC; tap the box on the beat to set it yourself.", systemImage: "metronome")
                 Label("Hold − or + to nudge a deck’s tempo.", systemImage: "plusminus")
                 Label("AUTOMIX on plays the queue, then songs you have played (or the playlist or tag chosen in Playlists), one after another with an 8-second crossfade; hold it to mix to the other deck now.", systemImage: "arrow.left.arrow.right")
                 Label("Shake the phone to mix into the next song.", systemImage: "iphone.radiowaves.left.and.right")
