@@ -1,0 +1,70 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "openwrt",
+  "name": "OpenWrt Router",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Utilities",
+  "version": "1.0.0",
+  "summary": "Manage an OpenWrt router on your network: internet and LAN, Wi-Fi, devices, port forwards, services, packages, backups, firmware and every UCI setting, with automatic undo if a change cuts you off.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The Router page showing its Wi-Fi tab with two radios and their networks, and a bar with two changes waiting to be applied"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:openwrt",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "network.lan.router",
+      "label": "Connect to an OpenWrt router on your local network with the account you sign in with",
+      "risk": "sensitive"
+    },
+    {
+      "id": "router.settings.write",
+      "label": "Change router settings you save and apply, start and stop its services and install or remove its packages",
+      "risk": "high"
+    },
+    {
+      "id": "router.firmware.write",
+      "label": "Restore a backup, install firmware, restart or reset the router after you confirm",
+      "risk": "high"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": false,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}

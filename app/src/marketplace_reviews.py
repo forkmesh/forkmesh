@@ -78,6 +78,7 @@ FIRST_PARTY_PACKAGES = {
     "network": "Network & nodes",
     "notes": "Notes",
     "on-device-ai": "On-device AI",
+    "openwrt": "OpenWrt Router",
     "organizations": "Organizations",
     "people": "People",
     "pull-requests": "Pull requests",
