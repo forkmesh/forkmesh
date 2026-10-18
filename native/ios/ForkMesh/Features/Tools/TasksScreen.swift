@@ -43,6 +43,11 @@ struct TasksScreen: View {
                     Task { await model.load() }
                 }
             }
+            .onChange(of: model?.loading ?? true) { (_: Bool, loading: Bool) in
+                if !loading, let model = model {
+                    ShellNavigatorCounts.shared.adoptTasks(model)
+                }
+            }
             .sheet(item: $form) { (box: ToolsSheet<TaskFormModel>) in
                 TaskFormSheet(model: box.value) { (task: JSONObject) in
                     form = nil

@@ -206,7 +206,8 @@ struct HomeShell: View {
             let repo: RepoRef? = counts.currentRepo
             items.insert(
                 ShellBarItem(
-                    id: "currentRepo", title: "Code", symbol: "chevron.left.forwardslash.chevron.right", badge: 0,
+                    id: "currentRepo", title: "Code", symbol: "chevron.left.forwardslash.chevron.right",
+                    badge: counts.newPullsBadge,
                     selected: page == nil && router.selectedTab == .code && !router.path(for: .code).isEmpty,
                     kind: .action, count: counts.repoCount(.pulls),
                     action: { openCurrentRepo(repo) }),
@@ -255,7 +256,8 @@ struct HomeShell: View {
             let entry: (RepoSection, String, String)? = RepoOverviewModel.order.first { $0.0 == section }
             return ShellBarItem(
                 id: "repo-\(section.rawValue)", title: entry?.1 ?? RouteCatalog.sectionTitle(section),
-                symbol: entry?.2 ?? "folder", badge: 0, selected: open == Route.repo(repo, section: section), kind: .action,
+                symbol: entry?.2 ?? "folder", badge: section == .pulls ? counts.newPullsBadge : 0,
+                selected: open == Route.repo(repo, section: section), kind: .action,
                 count: counts.repoCount(section), action: { openRepoSection(repo, section) })
         }
         return [ShellMenuGroup(id: "repo", title: repo.name, items: items)]
@@ -738,8 +740,10 @@ struct HomeShell: View {
                 await loadRepoCounts()
                 if !Task.isCancelled {
                     loadingRepoCounts = false
+                    await ShellPullsWatch.shared.refresh()
                 }
             }
+            .task { await ShellPullsWatch.shared.poll() }
             .task { await ShellSuggestions.shared.run() }
             .modifier(ShellAutoSendPresenter())
             .task { DjStudioHub.shared.relaunch() }
@@ -845,6 +849,7 @@ struct HomeShell: View {
                 if let accountPackages = accountPackages {
                     Task { await accountPackages.refreshIfStale() }
                 }
+                Task { await ShellPullsWatch.shared.refresh() }
                 if let fleet = fleet, statusPageOn, diagnosticsEnabled {
                     Task { await fleet.refresh() }
                 }
