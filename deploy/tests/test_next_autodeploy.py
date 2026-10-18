@@ -1017,17 +1017,55 @@ def test_gate_one_gives_up_offline_with_a_cause_that_names_this_machine():
     assert now[0] >= auto.OFFLINE_WAIT_SECONDS
 
 
-def test_gate_one_fails_at_once_when_only_one_node_is_down():
+def test_gate_one_fails_when_one_node_stays_down():
+    now = [0.0]
+    asked = []
+
+    def run(command, **kwargs):
+        target = command[command.index("--resolve") + 1]
+        asked.append(target)
+        if "203.0.113.11" in target:
+            return subprocess.CompletedProcess(command, 7, "\n000", "")
+        return subprocess.CompletedProcess(command, 0, '{"rev": "abc1234"}\n200', "")
+
+    def sleep(seconds):
+        now[0] += seconds
+    said = []
+    with pytest.raises(GuardError, match="n1 did not answer /api/version"):
+        auto.live_revs(offline_hosts(), run=run, say=said.append, sleep=sleep,
+                       clock=lambda: now[0])
+    assert auto.UNREACHABLE_WAIT_SECONDS <= now[0] < auto.OFFLINE_WAIT_SECONDS
+    assert any("n1 did not answer while other cores did" in line for line in said)
+    assert sum("203.0.113.12" in target for target in asked) == 1
+
+
+def test_gate_one_asks_a_silent_node_again_when_the_network_returns_mid_sweep():
+    now = [0.0]
+
+    def run(command, **kwargs):
+        if "203.0.113.12" in command[command.index("--resolve") + 1] and now[0] < 60:
+            return subprocess.CompletedProcess(command, 7, "\n000", "")
+        return subprocess.CompletedProcess(command, 0, '{"rev": "abc1234"}\n200', "")
+
+    def sleep(seconds):
+        now[0] += seconds
+    revs = auto.live_revs(offline_hosts(), run=run, say=lambda line: None, sleep=sleep,
+                          clock=lambda: now[0])
+    assert revs == {"n1": "abc1234", "n2": "abc1234", "n3": "abc1234"}
+    assert now[0] < auto.UNREACHABLE_WAIT_SECONDS
+
+
+def test_gate_one_fails_at_once_when_a_node_answers_with_an_error():
     slept = []
 
     def run(command, **kwargs):
         if "203.0.113.11" in command[command.index("--resolve") + 1]:
-            return subprocess.CompletedProcess(command, 7, "\n000", "")
+            return subprocess.CompletedProcess(command, 0, "down\n503", "")
         return subprocess.CompletedProcess(command, 0, '{"rev": "abc1234"}\n200', "")
-    with pytest.raises(GuardError, match="n1 did not answer /api/version"):
+    with pytest.raises(GuardError, match=r"n1 did not answer /api/version \(HTTP 503\)"):
         auto.live_revs(offline_hosts(), run=run, say=lambda line: None, sleep=slept.append,
                        clock=lambda: 0.0)
-    assert all(seconds == auto.CURL_RETRY_SECONDS for seconds in slept)
+    assert slept == []
 
 
 def test_the_busy_exit_code_matches_next_fleet():
