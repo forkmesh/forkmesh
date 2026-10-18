@@ -178,6 +178,7 @@ public enum RouteCatalog {
         case .videoMixDjStudio: return "Video Mix DJ Studio"
         case .appStoreStatus: return "App Store Status"
         case .rssReader: return "RSS Reader"
+        case .secureDrive: return "Secure Drive"
         case .workflows: return "Workflows"
         case .localAI: return "On-device AI"
         case .activity: return "Activity"
@@ -256,6 +257,7 @@ public enum RouteCatalog {
         case .videoMixDjStudio: return "music.note.list"
         case .appStoreStatus: return "app.badge"
         case .rssReader: return "dot.radiowaves.up.forward"
+        case .secureDrive: return "lock.shield"
         case .workflows: return "point.3.connected.trianglepath.dotted"
         case .localAI: return "cpu"
         case .activity: return "bolt"
@@ -389,6 +391,7 @@ public enum HubCatalog {
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),
         .destination(.rssReader),
+        .destination(.secureDrive),
         .destination(.localAI),
         .destination(.activity),
     ]

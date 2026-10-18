@@ -85,6 +85,7 @@ FIRST_PARTY_PACKAGES = {
     "reddit-banner-board": "Reddit Banner Board",
     "rss-reader": "RSS Reader",
     "releases": "Releases",
+    "secure-drive": "Secure Drive",
     "sentry": "Sentry",
     "shortcuts": "Shortcuts",
     "sign-in": "Sign in",

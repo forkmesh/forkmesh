@@ -8,6 +8,7 @@ final class PluginMenuTests: XCTestCase {
         XCTAssertEqual(PluginMenu.packageId(for: .crm(pipeline: nil)), "crm")
         XCTAssertEqual(PluginMenu.packageId(for: .crmOrg(id: "acme")), "crm")
         XCTAssertEqual(PluginMenu.packageId(for: .rssReader), "rss-reader")
+        XCTAssertEqual(PluginMenu.packageId(for: .secureDrive), "secure-drive")
         XCTAssertEqual(PluginMenu.packageId(for: .faceChanger), "face-changer")
         XCTAssertEqual(PluginMenu.packageId(for: .videoMixDjStudio), "video-mix-dj-studio")
         XCTAssertEqual(PluginMenu.packageId(for: .appStoreStatus), "app-store-status")
@@ -67,6 +68,7 @@ final class PluginMenuTests: XCTestCase {
         XCTAssertFalse(PluginMenu.addsButton(for: .coves(repo)))
         XCTAssertTrue(PluginMenu.addsButton(for: .coves(nil)))
         XCTAssertTrue(PluginMenu.addsButton(for: .rssReader))
+        XCTAssertTrue(PluginMenu.addsButton(for: .secureDrive))
         XCTAssertTrue(PluginMenu.addsButton(for: .calendar(date: nil, mode: .month)))
         let owners: [Route] = [.crm(pipeline: nil), .crmOrg(id: "acme"), .teammates, .coves(repo)]
         for route in owners {

@@ -178,6 +178,7 @@ object RouteCodec {
             Route.Kind.FaceChanger -> Route.FaceChanger
             Route.Kind.AppStoreStatus -> Route.AppStoreStatus
             Route.Kind.RssReader -> Route.RssReader
+            Route.Kind.SecureDrive -> Route.SecureDrive
             Route.Kind.Workflows -> Route.Workflows
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity

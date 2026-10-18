@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "SecureDriveCrypto.h",
+    "SecureDriveCrypto.cpp",
+    "SecureDriveStore.h",
+    "SecureDriveStore.cpp",
+    "SecureDriveFormats.h",
+    "SecureDriveFormats.cpp",
+    "SecureDriveEditors.h",
+    "SecureDriveEditors.cpp",
+    "SecureDriveFeature.h",
+    "SecureDriveFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_secure_drive.cpp",
+    "SecureDriveCrypto.h",
+    "SecureDriveCrypto.cpp",
+    "SecureDriveStore.h",
+    "SecureDriveStore.cpp",
+    "SecureDriveFormats.h",
+    "SecureDriveFormats.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "OpenSSL::Crypto"
+  ]
+}

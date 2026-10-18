@@ -31,7 +31,7 @@ class NavigationTest {
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.GlassesAlert, Route.PhoneSecurity, Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.RssReader, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.GlassesAlert, Route.PhoneSecurity, Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.RssReader, Route.SecureDrive, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -136,6 +136,11 @@ class NavigationTest {
         assertEq(listOf(Route.Workflows), RouteParser.parse("forkmesh://workflows")!!.stack)
         assertEq("RSS Reader", RouteCatalog.title(Route.Kind.RssReader))
         expect(Route.RssReader in HubCatalog.personal.mapNotNull { it.route })
+        assertEq(listOf(Route.SecureDrive), RouteParser.parse("forkmesh://secure-drive")!!.stack)
+        assertEq(listOf(Route.SecureDrive), RouteParser.parse("https://app.forkmesh.com/dashboard/secure-drive")!!.stack)
+        assertEq(listOf(Route.SecureDrive), RouteParser.parse("forkmesh://dashboard/secure-drive")!!.stack)
+        assertEq("Secure Drive", RouteCatalog.title(Route.Kind.SecureDrive))
+        expect(Route.SecureDrive in HubCatalog.personal.mapNotNull { it.route })
         assertEq(listOf(Route.Docs), RouteParser.parse("forkmesh://docs")!!.stack)
         assertEq(listOf(Route.Docs), RouteParser.parse("forkmesh://dashboard/docs")!!.stack)
         assertEq(null, RouteParser.parse("https://forkmesh.com/docs/library"))

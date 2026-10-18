@@ -192,6 +192,7 @@ public enum Route: Codable, Hashable, Sendable {
     case videoMixDjStudio
     case appStoreStatus
     case rssReader
+    case secureDrive
     case workflows
     case localAI
     case activity
@@ -303,6 +304,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .videoMixDjStudio: return .videoMixDjStudio
         case .appStoreStatus: return .appStoreStatus
         case .rssReader: return .rssReader
+        case .secureDrive: return .secureDrive
         case .workflows: return .workflows
         case .localAI: return .localAI
         case .activity: return .activity
@@ -334,7 +336,7 @@ public enum Route: Codable, Hashable, Sendable {
         case notes, note, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, openWrtRouter, faceChanger, videoMixDjStudio, appStoreStatus, rssReader, workflows, localAI, activity, logs, diagnostics
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, openWrtRouter, faceChanger, videoMixDjStudio, appStoreStatus, rssReader, secureDrive, workflows, localAI, activity, logs, diagnostics
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
 
@@ -363,7 +365,7 @@ public enum Route: Codable, Hashable, Sendable {
                 .ledger:
                 return "WS19"
             case .vault, .coves, .cove: return "WS21"
-            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .openWrtRouter, .faceChanger, .videoMixDjStudio, .rssReader, .workflows, .localAI, .orgs,
+            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .openWrtRouter, .faceChanger, .videoMixDjStudio, .rssReader, .secureDrive, .workflows, .localAI, .orgs,
                 .org:
                 return "existing"
             case .projects, .projectAccess: return "WS1"

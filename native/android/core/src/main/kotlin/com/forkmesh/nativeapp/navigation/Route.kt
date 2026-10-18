@@ -177,6 +177,7 @@ sealed class Route {
     data object FaceChanger : Route() { override val kind get() = Kind.FaceChanger }
     data object AppStoreStatus : Route() { override val kind get() = Kind.AppStoreStatus }
     data object RssReader : Route() { override val kind get() = Kind.RssReader }
+    data object SecureDrive : Route() { override val kind get() = Kind.SecureDrive }
     data object Workflows : Route() { override val kind get() = Kind.Workflows }
     data object LocalAI : Route() { override val kind get() = Kind.LocalAI }
     data object Activity : Route() { override val kind get() = Kind.Activity }
@@ -217,7 +218,7 @@ sealed class Route {
         CrmOrg("crmOrg", "WS19"), Marketing("marketing", "WS19"), Analytics("analytics", "WS19"),
         Competitors("competitors", "WS19"), Ads("ads", "WS19"), Ledger("ledger", "WS19"),
         Vault("vault", "WS21"), Coves("coves", "WS21"), Cove("cove", "WS21"), Calories("calories", "existing"),
-        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), RssReader("rssReader", "WS20"), Workflows("workflows", "existing"),
+        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), RssReader("rssReader", "WS20"), SecureDrive("secureDrive", "WS23"), Workflows("workflows", "existing"),
         LocalAI("localAI", "existing"), Activity("activity", "WS20"),
         Stats("stats", "WS20"), Status("status", "WS20"), Admin("admin", "WS20"),
         Settings("settings", "WS18"), Orgs("orgs", "existing"), Org("org", "existing"), InstalledApps("installedApps", "WS22"),
