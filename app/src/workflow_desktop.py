@@ -1,5 +1,7 @@
+import ast
 import hashlib
 import json
+from pathlib import Path
 
 DESKTOP = "#0f766e"
 RUNS_ON = "desktop"
@@ -11,6 +13,20 @@ MAX_LOG_CHARS = 300
 MAX_ERROR_CHARS = 300
 STATUSES = ("success", "error", "skipped")
 PASSIVE = ("core.noop", "core.comment")
+SCRIPT = "tools/free_disk_space.py"
+SCRIPT_FILE = Path(__file__).resolve().parents[2] / SCRIPT
+SCRIPT_DOCS = "docs/tools/free-disk-space.md"
+RUNNER = "MainWindow::runLocalControlFreeDiskSpace"
+FINDS = ("worktrees", "find_candidates", "paths_in_use", "in_use",
+         "touched_since", "tree_size", "remove")
+FUNCTIONS = {
+    "usage": ("main", "_free", "worktrees"),
+    "agents": ("main",) + FINDS,
+    "tests": ("main",) + FINDS,
+    "versions": ("main",) + FINDS + ("_old_backups", "_old_claude_versions"),
+    "caches": ("main", "clean_caches"),
+    "report": ("main", "_free", "report_large"),
+}
 REFUSED = ("This step runs on your desktop. Press Run workflow on the "
            "Workflows page while the ForkMesh desktop app is open.")
 
@@ -31,14 +47,52 @@ STEPS = (
      "leaves for you."),
 )
 
+
+
+def script_info(step):
+    return {
+        "path": SCRIPT, "language": "Python", "step": step,
+        "command": ("python3 -u " + SCRIPT + " --execute --step " + step
+                    + " --repo <checkout> --json"),
+        "dryRun": "python3 " + SCRIPT + " --step " + step,
+        "runner": RUNNER, "docs": SCRIPT_DOCS,
+        "functions": list(FUNCTIONS[step]),
+    }
+
+
 NODES = {
     node_type: {
         "name": name, "group": "Desktop", "icon": icon, "color": DESKTOP,
         "outputs": ["main"], "description": description, "fields": [],
         "runsOn": RUNS_ON, "desktopStep": step, "refusal": REFUSED,
+        "script": script_info(step),
     }
     for node_type, step, name, icon, description in STEPS
 }
+_SOURCE = {}
+
+
+def read_script(path):
+    try:
+        text = Path(path).read_text(encoding="utf-8")
+        tree = ast.parse(text)
+    except (OSError, SyntaxError, UnicodeDecodeError, ValueError):
+        return None
+    functions = {
+        node.name: [node.lineno, node.end_lineno]
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+    steps = {step: [name for name in names if name in functions]
+             for step, names in FUNCTIONS.items()}
+    return {"path": SCRIPT, "language": "Python", "source": text,
+            "lines": len(text.splitlines()), "functions": functions,
+            "steps": steps}
+
+
+def script_source():
+    if "doc" not in _SOURCE:
+        _SOURCE["doc"] = read_script(SCRIPT_FILE)
+    return _SOURCE["doc"]
 
 
 def is_desktop(node_type):

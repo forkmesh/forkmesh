@@ -2077,7 +2077,21 @@
    "fields": [],
    "runsOn": "desktop",
    "desktopStep": "usage",
-   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open.",
+   "script": {
+    "path": "tools/free_disk_space.py",
+    "language": "Python",
+    "step": "usage",
+    "command": "python3 -u tools/free_disk_space.py --execute --step usage --repo <checkout> --json",
+    "dryRun": "python3 tools/free_disk_space.py --step usage",
+    "runner": "MainWindow::runLocalControlFreeDiskSpace",
+    "docs": "docs/tools/free-disk-space.md",
+    "functions": [
+     "main",
+     "_free",
+     "worktrees"
+    ]
+   }
   },
   "desktop.cleanAgents": {
    "name": "Remove agent leftovers",
@@ -2091,7 +2105,26 @@
    "fields": [],
    "runsOn": "desktop",
    "desktopStep": "agents",
-   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open.",
+   "script": {
+    "path": "tools/free_disk_space.py",
+    "language": "Python",
+    "step": "agents",
+    "command": "python3 -u tools/free_disk_space.py --execute --step agents --repo <checkout> --json",
+    "dryRun": "python3 tools/free_disk_space.py --step agents",
+    "runner": "MainWindow::runLocalControlFreeDiskSpace",
+    "docs": "docs/tools/free-disk-space.md",
+    "functions": [
+     "main",
+     "worktrees",
+     "find_candidates",
+     "paths_in_use",
+     "in_use",
+     "touched_since",
+     "tree_size",
+     "remove"
+    ]
+   }
   },
   "desktop.cleanTests": {
    "name": "Remove test leftovers",
@@ -2105,7 +2138,26 @@
    "fields": [],
    "runsOn": "desktop",
    "desktopStep": "tests",
-   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open.",
+   "script": {
+    "path": "tools/free_disk_space.py",
+    "language": "Python",
+    "step": "tests",
+    "command": "python3 -u tools/free_disk_space.py --execute --step tests --repo <checkout> --json",
+    "dryRun": "python3 tools/free_disk_space.py --step tests",
+    "runner": "MainWindow::runLocalControlFreeDiskSpace",
+    "docs": "docs/tools/free-disk-space.md",
+    "functions": [
+     "main",
+     "worktrees",
+     "find_candidates",
+     "paths_in_use",
+     "in_use",
+     "touched_since",
+     "tree_size",
+     "remove"
+    ]
+   }
   },
   "desktop.cleanVersions": {
    "name": "Prune old versions and Trash",
@@ -2119,7 +2171,28 @@
    "fields": [],
    "runsOn": "desktop",
    "desktopStep": "versions",
-   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open.",
+   "script": {
+    "path": "tools/free_disk_space.py",
+    "language": "Python",
+    "step": "versions",
+    "command": "python3 -u tools/free_disk_space.py --execute --step versions --repo <checkout> --json",
+    "dryRun": "python3 tools/free_disk_space.py --step versions",
+    "runner": "MainWindow::runLocalControlFreeDiskSpace",
+    "docs": "docs/tools/free-disk-space.md",
+    "functions": [
+     "main",
+     "worktrees",
+     "find_candidates",
+     "paths_in_use",
+     "in_use",
+     "touched_since",
+     "tree_size",
+     "remove",
+     "_old_backups",
+     "_old_claude_versions"
+    ]
+   }
   },
   "desktop.cleanCaches": {
    "name": "Clear pip and npm caches",
@@ -2133,7 +2206,20 @@
    "fields": [],
    "runsOn": "desktop",
    "desktopStep": "caches",
-   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open.",
+   "script": {
+    "path": "tools/free_disk_space.py",
+    "language": "Python",
+    "step": "caches",
+    "command": "python3 -u tools/free_disk_space.py --execute --step caches --repo <checkout> --json",
+    "dryRun": "python3 tools/free_disk_space.py --step caches",
+    "runner": "MainWindow::runLocalControlFreeDiskSpace",
+    "docs": "docs/tools/free-disk-space.md",
+    "functions": [
+     "main",
+     "clean_caches"
+    ]
+   }
   },
   "desktop.diskReport": {
    "name": "Report free space",
@@ -2147,7 +2233,21 @@
    "fields": [],
    "runsOn": "desktop",
    "desktopStep": "report",
-   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open.",
+   "script": {
+    "path": "tools/free_disk_space.py",
+    "language": "Python",
+    "step": "report",
+    "command": "python3 -u tools/free_disk_space.py --execute --step report --repo <checkout> --json",
+    "dryRun": "python3 tools/free_disk_space.py --step report",
+    "runner": "MainWindow::runLocalControlFreeDiskSpace",
+    "docs": "docs/tools/free-disk-space.md",
+    "functions": [
+     "main",
+     "_free",
+     "report_large"
+    ]
+   }
   }
  },
  "integrations": {
@@ -9139,5 +9239,5 @@
    }
   }
  },
- "version": "c4f5ebdc8f989878"
+ "version": "0df452099843ff6a"
 }

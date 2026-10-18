@@ -198,7 +198,8 @@ def _page(tmp_path, mode="ok"):
     fixture = tmp_path / "fixture.json"
     fixture.write_text(json.dumps({
         "catalog": dict(engine.catalog(), files=workflow_files.catalog()),
-        "workflow": workflow, "summary": summary, "runs": runs}))
+        "workflow": workflow, "summary": summary, "runs": runs,
+        "script": dict(desktop.script_source(), ok=True)}))
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(
         ["node", str(Path(__file__).with_name("run_workflow_desktop_page_js.js")),
@@ -286,3 +287,52 @@ def test_a_successful_run_has_no_send_to_agent_button(tmp_path):
     assert "data-wf-send-failure" not in out["railAfter"]
     assert "data-wf-send-failure" not in out["panelAfter"]
     assert out["prompts"] == []
+
+
+def test_each_desktop_step_names_the_part_of_the_script_it_runs():
+    script = desktop.script_source()
+    assert script["path"] == "tools/free_disk_space.py"
+    for node_type, step, *_rest in desktop.STEPS:
+        info = desktop.NODES[node_type]["script"]
+        assert info["step"] == step and "--step " + step in info["command"]
+        assert info["functions"][0] == "main"
+        assert script["steps"][step] == info["functions"]
+        for name in info["functions"]:
+            start, end = script["functions"][name]
+            assert script["source"].splitlines()[start - 1].startswith("def " + name + "(")
+            assert end > start
+
+
+def test_the_script_source_is_served_and_a_missing_file_is_reported(harness, tmp_path):
+    result = harness.call("/api/workflows/desktop-script")
+    assert result.status == 200
+    assert result.data["source"].startswith("#!/usr/bin/env python3")
+    assert result.data["functions"]["clean_caches"][0] > 1
+    assert desktop.read_script(tmp_path / "missing.py") is None
+
+
+def test_the_catalog_says_what_each_integration_sends(harness):
+    requests = harness.call("/api/workflows/catalog").data["requests"]
+    assert set(requests) == {app["key"] for app in engine.catalog()["integrations"]}
+    slack = requests["slack"]
+    assert slack["base"] == "https://slack.com/api"
+    assert slack["auth"] == {"headers": {"Authorization": "Bearer {token}"}}
+    assert slack["operations"]["postMessage"]["path"] == "/chat.postMessage"
+    assert requests["discordWebhook"]["base"] == "{url}"
+    assert not requests["discordWebhook"]["auth"]
+
+
+def test_a_desktop_step_shows_its_script_and_opens_it(tmp_path):
+    out = _page(tmp_path, "details")
+    panel = out["panelHtml"]
+    assert 'data-kind="script-part"' in panel and "Part of a script" in panel
+    assert "tools/free_disk_space.py" in panel and "--step agents" in panel
+    assert 'data-wf-view-script="find_candidates"' in panel
+    assert 'data-wf-select-node="usage"' in panel and 'data-wf-select-node="tests"' in panel
+    assert "Your desktop, through the ForkMesh desktop app" in panel
+    assert out["canvasHtml"].count('class="wf-node-tag" data-kind="script-part"') == 6
+    assert out["dialogTitle"] == "tools/free_disk_space.py · Remove agent leftovers"
+    dialog = out["dialogHtml"]
+    assert '<details class="wf-more wf-script-part" data-wf-script-part="find_candidates" open>' in dialog
+    assert "def find_candidates(" in dialog and "def clean_caches(" in dialog
+    assert 'class="wf-code-line is-marked"' in dialog

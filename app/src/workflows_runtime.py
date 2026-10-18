@@ -712,7 +712,15 @@ async def api_handler(env, request, path):
         if method != "GET":
             return _not_allowed("GET")
         return json_response(dict(engine.catalog(), files=files.catalog(),
-                                   ok=True),
+                                   requests=engine.request_specs(), ok=True),
+                             cache_control="public, max-age=300")
+    if path in (PREFIX + "/desktop-script", PREFIX + "/desktop-script/"):
+        if method != "GET":
+            return _not_allowed("GET")
+        script = desktop.script_source()
+        if not script:
+            return _error("script_unavailable", 404)
+        return json_response(dict(script, ok=True),
                              cache_control="public, max-age=300")
     if path in (PREFIX + "/templates", PREFIX + "/templates/"):
         if method != "GET":

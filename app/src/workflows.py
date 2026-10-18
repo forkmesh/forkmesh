@@ -204,6 +204,31 @@ def _fields_for(node_type, params):
     return op["fields"] if op else []
 
 
+def _auth_summary(auth):
+    summary = {part: auth[part] for part in ("headers", "query", "body")
+               if auth.get(part)}
+    if auth.get("basic"):
+        summary["basic"] = list(auth["basic"])
+    return summary
+
+
+def request_specs():
+    return {
+        key: {
+            "base": app["base"],
+            "auth": _auth_summary(app["auth"]),
+            "headers": app.get("headers") or {},
+            "encoding": app.get("encoding") or "json",
+            "operations": {
+                op_key: dict({"path": op["path"]},
+                             **{part: op[part] for part in
+                                ("body", "query", "headers", "encoding")
+                                if part in op})
+                for op_key, op in app["operations"].items()},
+        }
+        for key, app in integrations.INTEGRATIONS.items()}
+
+
 def catalog():
     core = [dict(spec, type=key) for key, spec in CORE_NODES.items()]
     apps = []
