@@ -789,6 +789,20 @@ struct DjAutomixButton: View {
                 ForEach(model.crate.tagCounts) { (tag: DjTagCount) in
                     Button("#\(tag.name)") { model.focusAutomix(.tag(tag.name), start: false) }
                 }
+                if !model.crate.smart.isEmpty {
+                    Menu("Smart Playlists") {
+                        ForEach(DjSmartKind.allCases, id: \.self) { (kind: DjSmartKind) in
+                            let lists = model.crate.smart.filter { $0.kind == kind }
+                            if !lists.isEmpty {
+                                Section(kind.title) {
+                                    ForEach(lists) { (list: DjSmartList) in
+                                        Button(list.name) { model.focusAutomix(.smart(list.id), start: false) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             } label: {
                 Label("Plays \(model.crate.label(model.crate.focus))", systemImage: "scope")
             }

@@ -17,6 +17,7 @@ struct DjSheetView: View {
                 case .jam: DjJamSheet(model: model)
                 case .crate: DjCrateSheet(model: model)
                 case let .song(id): DjSongEditor(model: model, id: id)
+                case let .similar(side): DjSimilarSheet(model: model, side: side)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -151,6 +152,7 @@ struct DjLoadSheet: View {
         .contextMenu {
             DjPlaylistMenu(model: model, id: result.id)
             Button("Tags and Playlists…", systemImage: "tag") { model.editSong(result.id) }
+            DjSongActions(model: model, id: result.id)
         }
     }
 }
@@ -238,10 +240,16 @@ struct DjDeckSheet: View {
             .disabled(!deck.loaded)
             Section {
                 Button("Load another video") { model.openLoad(deck.side) }
+                Button("Load the next song") { model.quickNext(deck.side) }
                 if deck.loaded {
+                    Button("Find similar songs") { model.openSimilar(deck.side) }
                     Button("Tags and Playlists…") { model.editSong(deck.videoId) }
+                    Toggle("Leave out of shuffle", isOn: Binding(get: { !model.crate.shuffles(deck.videoId) }, set: { _ in model.toggleShuffle(deck.videoId) }))
                 }
                 if deck.loaded {
+                    Button("Delete song from library", role: .destructive) {
+                        model.deleteSong(on: deck.side)
+                    }
                     Button("Eject Deck \(deck.side.label)", role: .destructive) {
                         model.eject(deck.side)
                         model.sheet = nil
