@@ -134,6 +134,7 @@ enum NavigationRoutes {
         fallback(routes, .appStoreStatus) { _ in AnyView(AppStoreStatusScreen()) }
         fallback(routes, .rssReader) { _ in AnyView(RSSReaderScreen()) }
         fallback(routes, .secureDrive) { _ in AnyView(SecureDriveScreen()) }
+        fallback(routes, .spiderRoom) { _ in AnyView(SpiderRoomScreen()) }
         fallback(routes, .workflows) { _ in AnyView(WorkflowsScreen()) }
         fallback(routes, .people) { _ in AnyView(PeopleScreen()) }
         fallback(routes, .docs) { _ in AnyView(DocsScreen()) }

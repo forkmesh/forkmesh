@@ -91,6 +91,7 @@ FIRST_PARTY_PACKAGES = {
     "sign-in": "Sign in",
     "sleep": "Sleep",
     "special-agents": "Special Agents",
+    "spider-room": "Spider Room",
     "speech": "Speech Playground",
     "stats": "Stats",
     "status-check-api": "Status: API",

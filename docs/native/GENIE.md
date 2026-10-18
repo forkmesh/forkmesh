@@ -42,6 +42,7 @@ tested on Linux); views and platform glue are in
 | CRM outreach (`GenieOutreach`, `GenieOutreachWriter`, `GenieOutreachLog`) | `FMAssistant/GenieOutreach.swift`; `Features/Genie/GenieOutreachCoach.swift` | `GenieOutreachTests` |
 | Suggestion mode, auto-send and pocket mode | `Features/Genie/ShellSuggestions.swift`, `Features/Genie/ShellAutoSend.swift`, `Features/Genie/ShellAutoSendReview.swift`, `FMAssistant/GenieAutoSend.swift`, `Shell/ShellPocket.swift` | `GenieOutreachTests`, `GenieAutoSendTests` |
 | Aquarium fish on the phone | `FMAssistant/Aquarium{Fish,Tank}.swift`, `Features/Aquarium/AquariumLayer.swift` | `AquariumTests` |
+| Spider Room, the spider in the room in AR ([../marketplace/spider-room.md](../marketplace/spider-room.md)) | `FMAssistant/RoomSpider{,Space,Acts}.swift`; `Features/SpiderRoom/SpiderRoom{Screen,Director,Body}.swift` | `RoomSpiderTests` |
 | Overlay, gestures, menu, hub | `Features/Genie/GenieSpiderLayer.swift`, `GenieCrawler.swift`, `GenieHub.swift`, `GenieBubbles.swift` | parse only |
 | Motion, avatar, window, speech, Apple engine, shell bridge | `Features/Genie/GenieMotion.swift`, `GenieAvatar.swift`, `GenieSheet.swift`, `GenieSpeechVoice.swift`, `AppleGenieEngine.swift`, `GenieShellBridge.swift` | parse only |
 
