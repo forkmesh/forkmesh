@@ -23,6 +23,7 @@ or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
 | Examples | `app/src/workflow_templates.py` |
 | `.forkmesh` repository files on the canvas | `app/src/workflow_files.py` |
 | Page script | `app/public/dashboard/js/09-workflows.js` (rebuild with `app/tools/build_dashboard_assets.py`) |
+| Desktop page | `marketplace/packages/workflows/content/desktop/` (`WorkflowsModel`, `WorkflowsFeature`, `WorkflowsDialogs.cpp`); test `forkmesh-workflows-tests` |
 | Plug-in and nested packages | `marketplace/packages/workflows`, `workflows-pack-*`, `workflows-examples`, `workflows-repository-files` |
 | Tables | `workflows`, `workflow_runs`, `workflow_credentials` (migration `0251_workflows.sql`) |
 | Tests | `app/tests/test_workflows.py`, `test_workflow_actions.py`, `test_workflow_script.py`, `test_workflow_formats.py`, `test_workflow_files.py`, `test_workflow_desktop.py` |
@@ -224,6 +225,7 @@ Uninstalled, `/api/workflows` answers 403 `plugin_not_installed`, webhooks 409
 and schedules skip; data is kept. Nested packages add integration categories,
 examples and the Repository view.
 
+On the desktop the plugin is a native page too ([On the desktop](#on-the-desktop)).
 On iPhone and Android the plugin is a native screen, and a phone can run a
 workflow itself: the package's `content/mobile/workflow-engine.js` runs in
 JavaScriptCore on iPhone, Android runs a Kotlin port, and both replay cases
@@ -231,6 +233,66 @@ produced by this engine. After changing `workflows.py`,
 `workflow_integrations.py` or the run limits, run
 `python3 marketplace/tools/workflows_mobile_bundle.py` and keep the phone
 engines passing; see [native/WORKFLOWS.md](../native/WORKFLOWS.md).
+
+## On the desktop
+
+Clicking **Workflows** on the desktop rail opens a native page
+(`builtin:workflows`, API prefix `/api/workflows`, proof
+`forkmesh-workflows-request-v1`) instead of the browser. It calls the same
+routes as the web canvas through the host's `request`, which sends the
+account session as a Bearer token, so the desktop must be signed in; a 401 or
+403 `plugin_not_installed` shows as a sentence in the status line
+(`errorText` maps every server error code).
+
+- **Dashboard.** Stats: workflows (and their step total), active (scheduled,
+  webhook, manual), runs (today), success rate (succeeded and failed),
+  average duration, last run with the last failed workflow, next scheduled
+  run. Your workflows lists name, trigger (a schedule shows its interval),
+  steps, on/off, last run and result, runs kept (failed count), next run and
+  last change, filtered by the box or the window's top search. Edit, Run,
+  Turn on/off, Duplicate (saved off, as "Copy of ...") and Delete act on the
+  selected row; a double click opens it. Recent runs merges the 30 kept runs
+  of every workflow that has run (`GET /<id>/runs`, at most four at a time,
+  only for workflows with a `lastRunAt`), newest first, filtered by workflow
+  and result; selecting one shows each step's result, time, item count and
+  error, first item or last log line, with the log in the tooltip.
+- **Editor.** The graph is an ordered list of steps like the phones'
+  (`Draft::ordered`, Kahn order). The form is built from the catalog fields:
+  select, boolean, text/json/code (fixed-width for json and code),
+  string/value/number. Integrations add Operation (switching keeps the
+  values of fields the new operation shares) and Credential with **Manage...**.
+  Every step but the trigger has **Runs after**: its inputs, each with
+  Disconnect, and Connect for any step and branch that would not make a
+  loop (`Draft::canConnect`), so Merge steps can take several inputs. A new
+  step goes one column (288) right of its parent and one row (120) down per
+  sibling; removing a step joins its parents to its children; changing the
+  trigger keeps its id and connections; a trigger added to a graph without
+  one feeds every unconnected step. Values keep their JSON type: a number or
+  object stays one when the edit still parses. Webhook workflows show their
+  URL with Copy and New URL (`rotateHook`). Save posts the whole graph; Run
+  workflow saves first; Download writes the `/export` n8n file; leaving with
+  unsaved changes asks to Save, Discard or Cancel.
+- **New workflow.** Blank (Manual trigger), any example from
+  `/templates`, **Import file...** (`/convert`, files up to 2 MB) or
+  **Import from link...** (`/import-url`). All open unsaved and off, and
+  conversion warnings are listed.
+- **Credentials.** Lists the masked credentials, adds one for any
+  integration with credential fields (secret fields are hidden while typed)
+  and deletes with a confirmation.
+- **Desktop steps run here.** A workflow with desktop steps runs on this
+  desktop after a confirmation naming each step: the page finds a repository
+  with `tools/free_disk_space.py` through the host's `repositories` (the
+  manifest's `repository.read` permission; `forkmesh/forkmesh` first), then
+  runs `python3 -u tools/free_disk_space.py --execute --step <step> --repo
+  <checkout> --json` per step in graph order, the same command the desktop's
+  local-control runner uses (`freeDiskSpaceArguments`), with the same
+  20-minute limit and the same skip rules as `wfRunOnDesktop`. The process
+  is named `forkmeshFreeDiskSpaceProcess` and parented to the page's window,
+  so while the page sits in the main window it and a browser-driven run
+  refuse to overlap. The report goes to
+  `/<id>/record` like a browser-driven run.
+- **Search and badge.** The top search box finds workflows by name; the rail
+  badge counts workflows whose last run failed.
 
 ## Security
 

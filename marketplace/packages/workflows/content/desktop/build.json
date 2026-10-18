@@ -1,7 +1,27 @@
 {
   "schemaVersion": 1,
   "sources": [
-    "WorkflowsLink.cpp"
+    "WorkflowsModel.h",
+    "WorkflowsModel.cpp",
+    "WorkflowsFeature.h",
+    "WorkflowsFeature.cpp",
+    "WorkflowsDialogs.cpp"
   ],
-  "mocHeaders": []
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_workflows_model.cpp",
+    "tests/test_workflows_feature.cpp",
+    "WorkflowsModel.h",
+    "WorkflowsModel.cpp",
+    "WorkflowsFeature.h",
+    "WorkflowsFeature.cpp",
+    "WorkflowsDialogs.cpp"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Widgets"
+  ]
 }
