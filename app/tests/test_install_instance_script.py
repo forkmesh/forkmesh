@@ -911,6 +911,7 @@ def _write_settings(tmp_path, mode, new, before):
         "CFG_projectName=Acme CFG_domain=code.example.com CFG_mailProvider=none",
         "CFG_actions=0 CFG_adminUsername=ada CFG_adminEmail=ada@example.com",
         "ORIGIN=https://code.example.com DOMAIN=code.example.com",
+        "DIRECTORY_URL=https://directory.example.org",
         "write_settings", ""])
     result = run_functions(
         tmp_path, ["env_value", "new_admin_path", "choose_admin_path", "write_settings"], body)

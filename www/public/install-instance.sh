@@ -197,7 +197,7 @@ reserved_paths = {
     "instance-theme", "leaderboards", "microjobs", "mirror-payouts", "nodeinfo",
     "pitch-deck", "product-analysis", "referral", "referrals", "reset-password",
     "security", "security-report", "simulate-sentry-error", "transparency",
-    "verify-pending", "well-known",
+    "verify-pending", "well-known", "client-error", "cron-runner", "desktop-error",
 }
 values = {}
 c.setdefault("mailProvider", "none")
