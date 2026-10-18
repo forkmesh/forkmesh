@@ -273,6 +273,8 @@ struct CrmHeader: View {
                     .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .padding(.horizontal)
             }
+            CrmZohoBar(model: model, data: data)
+                .padding(.horizontal)
             HStack(spacing: 8) {
                 CrmStatTile(value: "\(data.contacts.count)", label: "Contacts", icon: "person.2.fill", tint: .blue)
                     .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -444,6 +446,80 @@ struct CrmSheetHost: View {
             case .noteDrafts:
                 CrmNoteDraftsSheet(model: model, present: present)
             }
+        }
+    }
+}
+
+struct CrmZohoBar: View {
+    @Bindable var model: CrmModel
+    let data: CrmOrganizationData
+    @Environment(\.openURL) private var openURL
+    @State private var working = false
+
+    private var zoho: CrmZohoStatus { data.settings.zoho }
+
+    private var badge: (String, Color) {
+        if !zoho.connected { return ("Not connected", .orange) }
+        if !zoho.canSend { return ("Read only", .orange) }
+        if !zoho.lastSyncError.isEmpty { return ("Sync failed", .orange) }
+        return ("Reads and sends", .green)
+    }
+
+    private var detail: String {
+        guard zoho.connected else { return "The CRM cannot read or send from your mailbox yet." }
+        var parts: [String] = [zoho.lastSyncAt > 0 ? "Synced \(PackagesFormat.relative(zoho.lastSyncAt))" : "Never synced"]
+        if zoho.lastSentAt > 0 { parts.append("sent \(PackagesFormat.relative(zoho.lastSentAt))") }
+        return parts.joined(separator: " · ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Image(systemName: "envelope").font(.caption).foregroundStyle(.secondary)
+                Text("Zoho Mail").font(.subheadline.weight(.semibold))
+                Text(badge.0).font(.caption.weight(.semibold)).foregroundStyle(badge.1)
+                Spacer(minLength: 4)
+                if working { ProgressView().controlSize(.small) }
+            }
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+            ForEach(zoho.steps) { step in
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(step.text).font(.caption)
+                    action(for: step)
+                }
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .shellGlass(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    @ViewBuilder private func action(for step: CrmZohoStep) -> some View {
+        switch step.action {
+        case "sync" where zoho.connected:
+            Button("Sync now", systemImage: "arrow.clockwise") { run { await model.syncMail() } }
+                .buttonStyle(.bordered).controlSize(.small).disabled(working)
+        case "connect", "reconnect":
+            if zoho.oneClick && model.canManage {
+                Button(step.action == "connect" ? "Connect Zoho Mail" : "Reconnect Zoho Mail", systemImage: "link") {
+                    run { await model.connectZoho() }
+                }
+                .buttonStyle(.borderedProminent).controlSize(.small).disabled(working)
+            } else {
+                Text(model.canManage ? "Open CRM settings to connect with a Self Client code." : "Ask an organization owner or admin.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        default:
+            Text(model.canManage ? "Open CRM settings to connect with a Self Client code." : "Ask an organization owner or admin.")
+                .font(.caption2).foregroundStyle(.secondary)
+        }
+    }
+
+    private func run(_ work: @escaping @MainActor () async -> URL?) {
+        working = true
+        Task { @MainActor in
+            defer { working = false }
+            if let url = await work() { openURL(url) }
         }
     }
 }

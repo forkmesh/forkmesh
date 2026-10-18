@@ -90,6 +90,18 @@ final class CrmWorkspaceTests: XCTestCase {
         XCTAssertEqual(data.customFieldKeys(), ["twitter_followers"])
     }
 
+    func testZohoStatusCarriesSendingAndMissingSteps() {
+        let readOnly = CrmZohoStatus(json: [
+            "connected": true, "canSend": false, "lastSyncAt": 5, "lastSentAt": 0,
+            "steps": [["key": "send", "action": "reconnect", "text": "Reconnect Zoho Mail."], ["key": "empty"]],
+        ])
+        XCTAssertFalse(readOnly.canSend)
+        XCTAssertEqual(readOnly.steps.map(\.action), ["reconnect"])
+        let olderServer = CrmZohoStatus(json: ["connected": true])
+        XCTAssertTrue(olderServer.canSend)
+        XCTAssertTrue(olderServer.steps.isEmpty)
+    }
+
     func testTabsFollowTheDesktopRules() {
         let data = CrmOrganizationData(json: summary())
         let tabs = data.contactTabs
