@@ -87,7 +87,10 @@ Shortcuts (`.forkmesh/shortcuts/`):
   `p/<projectId>/`. A project made from a name alone has `hasInstance` false, a
   `local-<slug>-<random>` id and no server URL; it works on the device alone,
   and choosing an instance is offered, never required. A project row may name a
-  `logo` file.
+  `logo` file. The instance check also reads `GET /api/instance`: its `name`
+  replaces "ForkMesh" in the "Connected to …" line, and attaching an instance
+  to a project with no logo (or creating a project on one without picking a
+  logo) saves the instance's `logo`, else its favicon, as the project logo.
 - **Relay features.** `/api/version` declares a `features` list; the core
   (`accounts`, `repositories`, `repoRead`) is required, every other feature
   gates its own UI, and a missing one leaves the UI absent rather than broken.

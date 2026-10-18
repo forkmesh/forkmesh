@@ -31248,6 +31248,13 @@ def instance_logo_path(env):
         r"/instance-logo\.(?:png|jpg|webp|svg)", path) else ""
 
 
+def instance_logo_url(env):
+    path = instance_logo_path(env)
+    if path:
+        return "/" + path
+    return "" if instance_branded(env) else "/assets/logo-96.png"
+
+
 def _instance_brand_email(env, text, html):
     if not instance_branded(env):
         return text, html

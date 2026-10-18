@@ -140,11 +140,12 @@ object ProjectImages {
         }
     }
 
-    private fun fetch(origin: String): Bitmap? {
-        for (path in listOf("/favicon.ico", "/favicon/favicon.ico")) {
-            val response = runCatching { HttpClient.Request.get(origin + path).timeouts(8_000, 10_000).send() }.getOrNull() ?: continue
+    fun fetch(origin: String, logoUrl: String = ""): Bitmap? {
+        val urls = listOf(logoUrl).filter { it.isNotEmpty() } + listOf("/favicon.ico", "/favicon/favicon.ico").map { origin + it }
+        for (url in urls) {
+            val response = runCatching { HttpClient.Request.get(url).timeouts(8_000, 10_000).send() }.getOrNull() ?: continue
             if (response.status != 200 || response.body.isEmpty()) continue
-            BitmapFactory.decodeByteArray(response.body, 0, response.body.size)?.let { return it }
+            ProjectLogoStore.shrink(response.body)?.let { return it }
         }
         return null
     }

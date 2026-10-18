@@ -128,6 +128,7 @@ fun ChooseInstance(projects: ProjectsService, project: Project, onClose: () -> U
         checking = true
         scope.launch {
             val attached = projects.attachInstance(project.id, instance)
+            if (attached != null) projects.adoptInstanceLogo(project.id, result?.logoUrl.orEmpty())
             checking = false
             if (attached != null) onClose()
         }
