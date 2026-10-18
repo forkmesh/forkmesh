@@ -172,7 +172,7 @@ def test_manifest_declares_the_jam_worker_and_the_player_reports_audio_sources()
     assert manifest["entrypoints"]["worker"] == "content/worker/video_mix_dj_studio.py"
     assert manifest["dataLifecycle"] == {"scope": "account"}
     player = (PACKAGE.parents[2] / "native" / "ios" / "ForkMesh" / "Features" / "Packages" / "VideoMixDjStudioPlayer.swift").read_text(encoding="utf-8")
-    assert 'if(cors)parent.postMessage({fmdjFrame:"source",src:src},"*")' in player
+    assert 'if(a.fmCors)parent.postMessage({fmdjFrame:"source",src:src},"*")' in player
     assert 'post({type:"source",deck:k,id:d.id,src:m.src})' in player
 
 
