@@ -260,7 +260,55 @@ void vaultClientFlow()
           "a file with only a header is refused");
     check(!VaultClient::readImportCsv("", nullptr, &importCode) && importCode == QLatin1String("csv_empty"), "an empty file is refused");
 
+    check(VaultClient::loginOrigin(QStringLiteral("192.168.1.1")) == QLatin1String("http://192.168.1.1:80")
+              && VaultClient::loginOrigin(QStringLiteral("HTTPS://Router.LAN/cgi-bin/luci")) == QLatin1String("https://router.lan:443")
+              && VaultClient::loginOrigin(QStringLiteral("http://[fd00::1]:8080")) == QLatin1String("http://fd00::1:8080")
+              && VaultClient::loginOrigin(QStringLiteral("ftp://router.lan")).isEmpty() && VaultClient::loginOrigin(QStringLiteral("  ")).isEmpty(),
+          "a login's origin is its scheme, host and port");
+    const QJsonObject router{{QStringLiteral("title"), QStringLiteral("OpenWrt router (192.168.1.1)")}, {QStringLiteral("url"), QStringLiteral("http://192.168.1.1")},
+                             {QStringLiteral("username"), QStringLiteral("root")}, {QStringLiteral("password"), QStringLiteral("router-pass")}};
+    QString routerId;
+    bool routerChanged = false;
+    recovered.rememberLogin(router, [&](const QString &code, const QString &id, bool changed) {
+        check(code.isEmpty() && !id.isEmpty() && changed, "a router login is saved");
+        routerId = id;
+        routerChanged = changed;
+    });
+    check(routerChanged && recovered.items().size() == 5 && recovered.loginsFor(QStringLiteral("http://192.168.1.1:80/")).size() == 1
+              && recovered.loginsFor(QStringLiteral("http://192.168.1.1")).first()->field("password") == QLatin1String("router-pass"),
+          "the saved login is found by the router's address");
+    check(recovered.loginsFor(QStringLiteral("https://192.168.1.1")).isEmpty() && recovered.loginsFor(QStringLiteral("http://192.168.1.2")).isEmpty(),
+          "another scheme or host finds nothing");
+    recovered.rememberLogin(router, [&](const QString &code, const QString &id, bool changed) {
+        check(code.isEmpty() && id == routerId && !changed, "saving the same password again changes nothing");
+    });
+    QJsonObject rotated = router;
+    rotated.insert(QStringLiteral("password"), QStringLiteral("router-pass-2"));
+    rotated.insert(QStringLiteral("title"), QStringLiteral("ignored"));
+    recovered.rememberLogin(rotated, [&](const QString &code, const QString &id, bool changed) {
+        check(code.isEmpty() && id == routerId && changed, "a new password updates the same login");
+    });
+    check(recovered.items().size() == 5 && recovered.find(routerId)->field("password") == QLatin1String("router-pass-2")
+              && recovered.find(routerId)->field("title") == QLatin1String("OpenWrt router (192.168.1.1)"),
+          "the update keeps the login's title");
+    QJsonObject admin = router;
+    admin.insert(QStringLiteral("username"), QStringLiteral("admin"));
+    recovered.rememberLogin(admin, [&](const QString &code, const QString &id, bool changed) {
+        check(code.isEmpty() && id != routerId && changed, "another user name is another login");
+    });
+    check(recovered.loginsFor(QStringLiteral("http://192.168.1.1")).size() == 2, "both accounts are offered for the router");
+    QJsonObject nowhere = router;
+    nowhere.insert(QStringLiteral("url"), QStringLiteral("router notes"));
+    recovered.rememberLogin(nowhere, [](const QString &code, const QString &, bool) {
+        check(code == QLatin1String("invalid_url"), "a login without an address is refused");
+    });
+    check(!QJsonDocument(bridge.control(QStringLiteral("dump"))).toJson().contains("router-pass"), "the database never sees a router password");
+
     recovered.lock();
     check(!recovered.unlocked() && recovered.items().isEmpty(), "a locked client holds nothing");
     recovered.save({{QStringLiteral("title"), QStringLiteral("x")}}, QString(), [](const QString &code, const QString &) { check(code == QLatin1String("vault_locked"), "a locked client cannot save"); });
+    check(recovered.loginsFor(QStringLiteral("http://192.168.1.1")).isEmpty(), "a locked client finds no login");
+    recovered.rememberLogin(router, [](const QString &code, const QString &, bool) {
+        check(code == QLatin1String("vault_locked"), "a locked client cannot remember a login");
+    });
 }

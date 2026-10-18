@@ -284,9 +284,16 @@ struct FaceChangerScreen: View {
             record = .review(url, made.mime)
         } catch {
             record = .idle
-            notice = "The clip could not be saved. Try again."
+            notice = Self.saveFailure(error)
             FmHaptics.failure()
         }
+    }
+
+    private static func saveFailure(_ error: Error) -> String {
+        guard case WebCallError.failed(let reason) = error, reason == "empty_recording" else {
+            return "The clip could not be saved. Try again."
+        }
+        return "Nothing was recorded. Record for a little longer, then stop."
     }
 
     private static func recordFailure(_ error: Error) -> String {

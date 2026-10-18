@@ -616,6 +616,18 @@ web view. It owns everything a face change needs, and calls reuse it:
   web page in Safari. The stage now adds that video to the page as a 1 px,
   transparent, fixed element (`CAMERA_STYLE`), calls `play()` again if WebKit
   pauses it, and removes it on `stop()`. Chromium never needed it.
+- **The recorder asks for an H.264 level that fits the picture
+  (2026-10-18).** The page's `record` and the web test clip asked for
+  `video/mp4;codecs=avc1.42E01E`: Baseline level 3.0, at most 1,620
+  macroblocks (about 720x576). That was enough for WebKit's default
+  640x480 camera, but since the call-quality change of 2026-10-16 the camera
+  opens at 1280x720 and the face stage draws up to 960x540, both over the
+  level. On the iPhone the recording then failed or came back empty, and the
+  Face Changer said "The clip could not be saved". The first choice is now
+  `avc1.42E028` (level 4.0, up to 1920x1080 at 30 fps); the plain `avc1`
+  and `video/mp4` fallbacks are unchanged. The view-once recorder keeps
+  level 3.0 because it opens the camera at 640 px. An empty recording (a stop
+  straight after the start) now says "Nothing was recorded" instead.
 - **The preview does not wait on the voice.** The page's `preview` used to
   return only after the voice worklet started, and `addModule` has no time
   limit of its own, so a slow or stuck worklet kept the native screens

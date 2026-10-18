@@ -40,6 +40,26 @@ ten minutes.
   when the mesh `hello`'s `ownerUser` matched its account name. It tried that
   once per launch and never retried, so a phone at home often stayed on the
   relay.
+- **The last LAN address.** `LocalControlService` stores each desktop's LAN
+  address once its channel is paired (`localControl/lanAddresses`, desktop key
+  to address) and hands the addresses of known desktops it is not connected to
+  (and has not heard) to the mesh (`rememberedBeaconTargets`). The mesh sends
+  them a unicast beacon first, at start, on resume, on a network change and on
+  every beat; the desktop answers at once, so the phone dials within one LAN
+  round trip. Before this an iPhone (no multicast entitlement) found its desktop
+  only through the subnet sweep, 16 hosts every 500 ms from start, which took
+  several seconds on a /24.
+- **LAN before relay.** `DesktopControlHub.link()` waits up to `lanGrace`
+  (1.5 s) while `LocalControlService.lanPending` is true (a dial queued or
+  running, or a remembered address probed in the last 1.5 s) and returns the LAN
+  channel when it opens. Before this a request made while the LAN dial was still
+  under way, such as the Agents tab's first load or `keepWarm`, dialled the
+  relay, and the list came through the internet.
+- **Desktop rows first.** `AgentControlCenter` reads the desktop and the
+  account's node runs at the same time and publishes the desktop's rows as
+  soon as they arrive, merged with the node runs it already had; the node runs
+  follow when the API answers. Before this the list waited for both, so the
+  account API held back a desktop that had answered over the LAN.
 - `onMeshChanged` sets `dialQueued` when it queues an automatic dial and
   ignores further calls until the dial starts. Before that, the status read
   `connecting` only once the queued dial ran, so a second trigger in between (a

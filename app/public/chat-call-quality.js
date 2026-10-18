@@ -17,7 +17,7 @@ export const CALL_TEST_CLIP_MS = 10_000;
 export const CALL_ROUTE_CHECK_MS = 4000;
 
 const TEST_VIDEO_MIMES = [
-  "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+  "video/mp4;codecs=avc1.42E028,mp4a.40.2",
   "video/mp4;codecs=avc1,mp4a.40.2",
   "video/mp4",
   "video/webm;codecs=vp9,opus",

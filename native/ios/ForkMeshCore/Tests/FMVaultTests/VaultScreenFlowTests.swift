@@ -289,6 +289,43 @@ final class VaultScreenFlowTests: XCTestCase {
     }
 
     @MainActor
+    func testAnotherFeatureSavesAndFindsALoginThroughTheService() async throws {
+        let bridge = try VaultBridge.start()
+        defer { bridge.stop() }
+        let account = AccountBox("erin")
+        let vault = VaultService(request: bridge.request(as: { account.name }), accountProvider: { account.name },
+                                 store: InMemorySecureStore(), client: bridge.client(for: "erin"))
+        defer { vault.dispose() }
+        let none = await vault.saveLogin(title: "OpenWrt router (192.168.1.1)", url: "http://192.168.1.1", username: "root", password: "router-pass")
+        XCTAssertEqual(none, .noVault)
+        try await vault.refresh()
+        _ = try await vault.create("erin master password")
+        let saved = await vault.saveLogin(title: "OpenWrt router (192.168.1.1)", url: "http://192.168.1.1", username: "root", password: "router-pass")
+        XCTAssertEqual(saved, .saved(changed: true))
+        let same = await vault.saveLogin(title: "x", url: "http://192.168.1.1", username: "root", password: "router-pass")
+        XCTAssertEqual(same, .saved(changed: false))
+        guard case let .found(logins) = await vault.findLogins(url: "http://192.168.1.1:80") else { return XCTFail("nothing found") }
+        XCTAssertEqual(logins.map(\.password), ["router-pass"])
+        let answer1 = await vault.findLogins(url: "https://192.168.1.1")
+        XCTAssertEqual(answer1, .found([]))
+        let answer2 = await vault.saveLogin(title: "x", url: "nowhere at all", username: "root", password: "p")
+        XCTAssertEqual(answer2, .failed("That login has no web address the vault can match."))
+
+        vault.lock()
+        let answer3 = await vault.findLogins(url: "http://192.168.1.1")
+        XCTAssertEqual(answer3, .locked)
+        let answer4 = await vault.saveLogin(title: "x", url: "http://192.168.1.1", username: "root", password: "new")
+        XCTAssertEqual(answer4, .locked)
+        try await vault.unlock("erin master password")
+        guard case let .found(again) = await vault.findLogins(url: "http://192.168.1.1") else { return XCTFail("nothing found after unlock") }
+        XCTAssertEqual(again.count, 1)
+
+        account.name = ""
+        let answer5 = await vault.findLogins(url: "http://192.168.1.1")
+        XCTAssertEqual(answer5, .signedOut)
+    }
+
+    @MainActor
     func testDestroyAndAStaleQuickUnlockCopy() async throws {
         let bridge = try VaultBridge.start()
         defer { bridge.stop() }

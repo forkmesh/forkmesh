@@ -177,9 +177,36 @@ network manager; `desktop/resources/network/endpoint-catalog.json` lists them.
 The list distinguishes an empty vault from a search with no matches, and gives
 the matching count to accessibility clients.
 
+**Saving another package's password.** The page is the desktop's login store
+(`storesLogins()`, permission `desktop.logins.store`; the host side is
+**Login store** in `docs/marketplace/README.md`). Today the Router uses it to
+keep the router password. `saveLogin` and `findLogins` first unlock: a locked
+vault shows its own master-password dialog over the asking page, naming the
+package and the address, asks again after a wrong password, and reports
+`cancelled` when dismissed; an account without a vault is told to create one.
+`VaultClient::rememberLogin(fields)` reloads the items, then updates the
+password of the writable login with the same origin and username (keeping its
+title and notes), does nothing when the password is unchanged, or saves a new
+login; either way it is sealed like any other item. `loginsFor(url)` returns
+the readable logins whose origin (`loginOrigin`: scheme, host and port, `http`
+when no scheme is given) matches, so a password is handed back only for the
+address it was saved for. The save reply never carries the password back.
+`tests/test_vault_client_flow.cpp` checks the matching and the updates against
+the real Worker module.
+
 ## On the phone
 
 The vault locks when idle, after a minute in the background, and on sign-out.
+
+**Saving the Router's password.** `VaultService.saveLogin` and `findLogins`
+(both apps) let the Router keep its password here, with the same rules as the
+desktop's login store: matched by origin, an unchanged password is not saved
+again, a new one updates the login and keeps its title. A locked vault answers
+`locked`, and the Router shows this package's unlock sheet (`VaultUnlockSheet`,
+`VaultUnlockDialog`) rather than asking for the master password itself.
+`VaultClientFlowTests` / `VaultClientFlowTest` and
+`VaultScreenFlowTests.testAnotherFeatureSavesAndFindsALoginThroughTheService`
+check it against the real Worker module.
 
 **Quick unlock** (opt-in) keeps the unlocked keyset in the platform's secure
 storage and releases it after the device's own biometric or passcode prompt.

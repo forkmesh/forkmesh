@@ -412,6 +412,47 @@ private fun UnlockForm(busy: Boolean, quickUnlock: Boolean, onUnlock: (String) -
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+fun VaultUnlockDialog(vault: VaultService, purpose: String, onUnlocked: () -> Unit, onCancel: () -> Unit) {
+    var password by remember { mutableStateOf("") }
+    var problem by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    val quickUnlock by vault.quickUnlockEnabled.collectAsState()
+    val scope = rememberCoroutineScope()
+    fun attempt(work: suspend () -> Boolean) {
+        busy = true
+        problem = null
+        scope.launch {
+            try {
+                if (work()) onUnlocked()
+            } catch (thrown: Exception) {
+                problem = VaultScreenLogic.errorText(thrown)
+            } finally {
+                busy = false
+            }
+        }
+    }
+    FmModalBottomSheet(onDismissRequest = { if (!busy) onCancel() }, isScrollControlled = true) {
+        Column(Modifier.imePadding().padding(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x3)) {
+            Text("Unlock Password Vault", style = Fm.text.titleLarge)
+            Text("$purpose Type your master password to unlock it.", style = Fm.text.bodySmall)
+            SecretField(password, { password = it }, "Master password")
+            problem?.let { Text(it, style = Fm.text.bodySmall.copy(color = Fm.colors.danger)) }
+            AccountFilledButton(if (busy) "Unlocking…" else "Unlock", "lock_open", enabled = !busy && password.isNotEmpty(), onClick = {
+                val entered = password
+                password = ""
+                attempt {
+                    vault.unlock(entered)
+                    true
+                }
+            })
+            if (quickUnlock) AccountOutlinedButton("Unlock with this device", if (busy) null else ({ attempt { vault.unlockWithDevice() } }), icon = "fingerprint")
+            FmTextButton(onClick = onCancel, enabled = !busy) { Text("Cancel") }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun RecoverSheet(onDismiss: () -> Unit, onSubmit: (String, String) -> Unit) {
     var code by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }

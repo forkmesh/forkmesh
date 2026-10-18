@@ -16,6 +16,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPlainTextEdit>
+#include <QPointer>
 #include <QProcess>
 #include <QPushButton>
 #include <QRegularExpression>
@@ -302,8 +303,14 @@ QWidget *OpenWrtFeature::buildSignIn()
     auto *actions = new QHBoxLayout;
     m_connectButton = makeButton(QStringLiteral("Connect"), QStringLiteral("primaryButton"));
     actions->addWidget(m_connectButton);
+    m_savedLoginButton = makeButton(QStringLiteral("Use saved password"));
+    m_savedLoginButton->hide();
+    actions->addWidget(m_savedLoginButton);
     actions->addStretch();
     layout->addLayout(actions);
+    m_saveLogin = new QCheckBox;
+    m_saveLogin->hide();
+    layout->addWidget(m_saveLogin);
 
     m_signInNote = mutedLabel();
     layout->addWidget(m_signInNote);
@@ -318,12 +325,15 @@ QWidget *OpenWrtFeature::buildSignIn()
     trustRow->addWidget(m_trustButton);
     trustRow->addStretch();
     layout->addLayout(trustRow);
-    layout->addWidget(mutedLabel(QStringLiteral("Your password is kept in memory only while this page is open and is sent only to the router. ForkMesh never stores it and the network log records only the size of router traffic.")));
+    m_passwordNote = mutedLabel();
+    layout->addWidget(m_passwordNote);
     layout->addStretch();
 
     const QSettings settings;
     m_address->setText(settings.value(settingsKey(QStringLiteral("address"))).toString());
     m_user->setText(settings.value(settingsKey(QStringLiteral("user")), QStringLiteral("root")).toString());
+    m_saveLogin->setChecked(settings.value(settingsKey(QStringLiteral("saveLogin")), true).toBool());
+    updateLoginStore();
     if (m_address->text().isEmpty())
         detectGateway();
 
@@ -340,6 +350,11 @@ QWidget *OpenWrtFeature::buildSignIn()
     connect(m_address, &QLineEdit::textChanged, this, updateNote);
     connect(m_connectButton, &QPushButton::clicked, this, [this] { connectToRouter(); });
     connect(m_password, &QLineEdit::returnPressed, this, [this] { connectToRouter(); });
+    connect(m_password, &QLineEdit::textEdited, this, [this] { m_passwordFromStore = false; });
+    connect(m_savedLoginButton, &QPushButton::clicked, this, [this] { signInWithSavedLogin(); });
+    connect(m_saveLogin, &QCheckBox::toggled, this, [this](bool on) {
+        QSettings().setValue(settingsKey(QStringLiteral("saveLogin")), on);
+    });
     connect(m_trustButton, &QPushButton::clicked, this, [this] { trustCertificate(); });
     return page;
 }
@@ -1067,7 +1082,7 @@ void OpenWrtFeature::connectToRouter()
         m_client.setBase(address.base);
         const QString certificateKey = settingsKey(QStringLiteral("certificates/") + QString(address.base.authority()).replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9.-]")), QStringLiteral("_")));
         m_client.setTrustedCertificate(QSettings().value(certificateKey).toString());
-        m_client.signIn(user, password, [this, address, user, certificateKey](const RpcResult &result) {
+        m_client.signIn(user, password, [this, address, user, password, certificateKey](const RpcResult &result) {
             m_connectButton->setEnabled(true);
             m_connectButton->setText(QStringLiteral("Connect"));
             if (!result.ok) {
@@ -1085,12 +1100,18 @@ void OpenWrtFeature::connectToRouter()
             settings.setValue(settingsKey(QStringLiteral("address")), m_address->text().trimmed());
             settings.setValue(settingsKey(QStringLiteral("user")), user);
             m_password->clear();
+            m_loginUrl = address.base.toString(QUrl::RemoveUserInfo | QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
             m_routerLabel->setText(QStringLiteral("%1 · %2").arg(address.base.host(), user));
             m_refreshButton->setVisible(true);
             m_signOutButton->setVisible(true);
             m_pages->setCurrentIndex(1);
-            showStatus(QStringLiteral("Connected to %1.").arg(address.base.host()));
+            const QString connected = QStringLiteral("Connected to %1.").arg(address.base.host());
+            showStatus(connected);
+            const bool fromStore = m_passwordFromStore;
+            m_passwordFromStore = false;
             loadAll();
+            if (!fromStore && !m_saveLogin->isHidden() && m_saveLogin->isChecked())
+                QTimer::singleShot(0, this, [this, password, connected] { saveLoginToStore(password, connected); });
         });
     };
 
@@ -1149,6 +1170,7 @@ void OpenWrtFeature::signOut()
     m_advancedConfigs.clear();
     m_advancedConfig.clear();
     m_routerLabel->clear();
+    m_loginUrl.clear();
     m_refreshButton->setVisible(false);
     m_signOutButton->setVisible(false);
     m_pages->setCurrentIndex(0);
@@ -1159,8 +1181,112 @@ void OpenWrtFeature::signOut()
 
 void OpenWrtFeature::refresh()
 {
+    updateLoginStore();
     if (m_client.signedIn())
         loadAll();
+}
+
+void OpenWrtFeature::packageChanged()
+{
+    updateLoginStore();
+}
+
+QString OpenWrtFeature::loginStoreName() const
+{
+    return m_host.loginStoreName && m_host.saveLogin && m_host.findLogins ? m_host.loginStoreName() : QString();
+}
+
+void OpenWrtFeature::updateLoginStore()
+{
+    const QString store = loginStoreName();
+    m_saveLogin->setText(QStringLiteral("Save the password in %1").arg(store));
+    m_saveLogin->setVisible(!store.isEmpty());
+    m_savedLoginButton->setVisible(!store.isEmpty());
+    m_savedLoginButton->setToolTip(QStringLiteral("Fill the password you saved in %1 for this router and connect").arg(store));
+    m_passwordNote->setText(store.isEmpty()
+        ? QStringLiteral("Your password is kept in memory only while this page is open and is sent only to the router. ForkMesh never stores it and the network log records only the size of router traffic.")
+        : QStringLiteral("Your password is sent only to the router. With “Save the password in %1” ticked, %1 encrypts it on this device with your master password before storing it, so ForkMesh cannot read it; otherwise it is kept in memory only while this page is open. The network log records only the size of router traffic.").arg(store));
+}
+
+void OpenWrtFeature::signInWithSavedLogin()
+{
+    const QString store = loginStoreName();
+    const Address address = parseAddress(m_address->text());
+    if (store.isEmpty())
+        return;
+    if (!address.valid()) {
+        showStatus(address.error, true);
+        return;
+    }
+    const QString url = address.base.toString(QUrl::RemoveUserInfo | QUrl::RemovePath | QUrl::RemoveQuery | QUrl::RemoveFragment);
+    m_savedLoginButton->setEnabled(false);
+    showStatus(QStringLiteral("Looking in %1…").arg(store));
+    const QPointer<OpenWrtFeature> guard(this);
+    m_host.findLogins(url, this, [guard, store, url](const forkmesh::market::NativePackageLoginReply &reply) {
+        if (!guard)
+            return;
+        OpenWrtFeature *page = guard;
+        page->m_savedLoginButton->setEnabled(true);
+        if (reply.cancelled) {
+            page->showStatus(QString());
+            return;
+        }
+        if (!reply.ok) {
+            page->showStatus(reply.error, true);
+            return;
+        }
+        if (reply.logins.isEmpty()) {
+            page->showStatus(QStringLiteral("%1 has no password for %2 yet. Type it once with “Save the password in %1” ticked.").arg(store, url), true);
+            return;
+        }
+        const QString typed = page->m_user->text().trimmed().isEmpty() ? QStringLiteral("root") : page->m_user->text().trimmed();
+        forkmesh::market::NativePackageLogin chosen = reply.logins.first();
+        const auto same = std::find_if(reply.logins.cbegin(), reply.logins.cend(),
+                                       [&typed](const forkmesh::market::NativePackageLogin &login) { return login.username == typed; });
+        if (same != reply.logins.cend()) {
+            chosen = *same;
+        } else if (reply.logins.size() > 1) {
+            QStringList users;
+            for (const forkmesh::market::NativePackageLogin &login : reply.logins)
+                users << (login.username.isEmpty() ? QStringLiteral("root") : login.username);
+            bool picked = false;
+            const QString user = QInputDialog::getItem(page, QStringLiteral("Choose an account"),
+                                                       QStringLiteral("%1 has more than one account for %2.").arg(store, url),
+                                                       users, 0, false, &picked);
+            if (!guard)
+                return;
+            if (!picked) {
+                page->showStatus(QString());
+                return;
+            }
+            chosen = reply.logins.at(std::max(0, int(users.indexOf(user))));
+        }
+        page->m_user->setText(chosen.username.isEmpty() ? QStringLiteral("root") : chosen.username);
+        page->m_password->setText(chosen.password);
+        page->m_passwordFromStore = true;
+        page->connectToRouter();
+    });
+}
+
+void OpenWrtFeature::saveLoginToStore(const QString &password, const QString &done)
+{
+    const QString store = loginStoreName();
+    if (store.isEmpty() || m_loginUrl.isEmpty() || password.isEmpty())
+        return;
+    const QString user = m_client.user().isEmpty() ? QStringLiteral("root") : m_client.user();
+    const QString host = QUrl(m_loginUrl).host();
+    const forkmesh::market::NativePackageLogin login{QStringLiteral("OpenWrt router (%1)").arg(host), m_loginUrl, user, password};
+    const QPointer<OpenWrtFeature> guard(this);
+    m_host.saveLogin(login, this, [guard, store, done](const forkmesh::market::NativePackageLoginReply &reply) {
+        if (!guard)
+            return;
+        if (reply.cancelled)
+            guard->showStatus(QStringLiteral("%1 The password was not saved in %2.").arg(done, store));
+        else if (!reply.ok)
+            guard->showStatus(QStringLiteral("%1 The password was not saved in %2: %3").arg(done, store, reply.error), true);
+        else
+            guard->showStatus(QStringLiteral("%1 The password is saved in %2.").arg(done, store));
+    });
 }
 
 void OpenWrtFeature::loadAll()
@@ -2674,6 +2800,8 @@ void OpenWrtFeature::changePassword()
                           m_confirmPassword->clear();
                       }
                       report(result, QStringLiteral("Router password changed."));
+                      if (result.ok && !m_saveLogin->isHidden() && m_saveLogin->isChecked())
+                          saveLoginToStore(password, QStringLiteral("Router password changed."));
                   });
 }
 

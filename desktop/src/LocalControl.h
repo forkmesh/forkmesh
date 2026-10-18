@@ -278,6 +278,7 @@ private:
     void pairDevice(Connection &conn, const QString &approval);
     void admitStored(Connection &conn);
     bool needsAccountCheck(const Connection &conn) const;
+    bool admitsBeforeCheck(const Connection &conn) const;
     void settleAccountCheck(Connection &conn, AccountCheck verdict);
     void refuseRelayed(Connection &conn, const QString &reason);
     void recheckAccount(int connectionId);

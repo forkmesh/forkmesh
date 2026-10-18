@@ -233,6 +233,7 @@ public final class LocalMeshService {
     @ObservationIgnored public var onDirectFocus: (@MainActor (String, String, Bool) -> Void)?
     @ObservationIgnored public var onLinkAuthenticated: (@MainActor (String) -> Void)?
     @ObservationIgnored public var onLinkClosed: (@MainActor (String) -> Void)?
+    @ObservationIgnored public var rememberedBeaconTargets: (@MainActor () -> [MeshAddress])?
     @ObservationIgnored private var ownWakeToken = ""
     @ObservationIgnored private var wakeRefreshing = false
     @ObservationIgnored private var wakeTokens: [String: String] = [:]
@@ -799,6 +800,12 @@ public final class LocalMeshService {
         beaconCount += 1
         var targetOrder: [String] = []
         var targets: [String: MeshAddress] = [:]
+        let linkedAddresses = Set(
+            peerIds.compactMap { id in linkForPeer(id) == nil ? nil : peers[id]?.address?.address })
+        for address in rememberedBeaconTargets?() ?? [] where !linkedAddresses.contains(address.address) {
+            if targets[address.address] == nil { targetOrder.append(address.address) }
+            targets[address.address] = address
+        }
         for id in peerIds {
             guard let address = peers[id]?.address, linkForPeer(id) == nil else { continue }
             if targets[address.address] == nil { targetOrder.append(address.address) }

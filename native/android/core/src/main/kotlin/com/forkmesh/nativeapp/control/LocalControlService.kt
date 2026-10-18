@@ -75,6 +75,8 @@ interface ControlHostSource {
     fun addListener(listener: () -> Unit)
 
     fun removeListener(listener: () -> Unit)
+
+    fun setRememberedTargets(provider: () -> List<String>) {}
 }
 
 data class LocalAgentRow(
@@ -375,6 +377,8 @@ class LocalControlService(
 ) {
     companion object {
         const val PAIRED_KEY = "localControl/pairedDesktops"
+        const val LAN_ADDRESSES_KEY = "localControl/lanAddresses"
+        const val LAN_PROBE_WINDOW_MS = 1_500L
 
         fun safeName(name: String): String {
             var base = name.replace('\\', '/').split('/').last()
@@ -386,6 +390,7 @@ class LocalControlService(
     }
 
     private val pairedPrefsKey = scopePrefix + PAIRED_KEY
+    private val lanAddressesPrefsKey = scopePrefix + LAN_ADDRESSES_KEY
     private val lock = Any()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val tapListeners = CopyOnWriteArrayList<Pair<Any, (ControlEvent) -> Unit>>()
@@ -460,11 +465,44 @@ class LocalControlService(
     private var agentsAgain = false
     private val incoming = HashMap<String, Incoming>()
 
+    @Volatile
+    private var lanProbeMs = 0L
+
     private class Incoming(val name: String, val size: Long, val path: File, val part: File, val out: FileOutputStream) {
         var receivedBytes = 0L
     }
 
     val connected: Boolean get() = status == LocalControlStatus.Connected
+
+    val lanPending: Boolean
+        get() {
+            if (connected || autoConnectHeld) return false
+            if (synchronized(lock) { dialQueued } || status == LocalControlStatus.Connecting) return true
+            return System.currentTimeMillis() - lanProbeMs < LAN_PROBE_WINDOW_MS
+        }
+
+    private fun rememberedAddresses(): Map<String, String> = try {
+        (Json.parse(prefs.getString(lanAddressesPrefsKey) ?: "") as? Map<*, *>)
+            ?.mapNotNull { (key, value) -> if (key is String && value is String) key to value else null }
+            ?.toMap()
+    } catch (_: Exception) {
+        null
+    } ?: emptyMap()
+
+    private fun rememberAddress(key: String, address: String) {
+        if (key.isEmpty() || address.isEmpty()) return
+        val map = rememberedAddresses()
+        if (map[key] == address) return
+        prefs.putString(lanAddressesPrefsKey, Json.stringify(map + (key to address)))
+    }
+
+    private fun lanProbeTargets(): List<String> {
+        if (disposed || connected || autoConnectHeld) return emptyList()
+        val heard = hosts.map { it.nodeId }.toSet()
+        val targets = rememberedAddresses().filter { (key, _) -> isKnown(key) && key !in heard }.values.toList()
+        if (targets.isNotEmpty()) lanProbeMs = System.currentTimeMillis()
+        return targets
+    }
     val receivedFiles: List<LocalReceivedFile> get() = received.toList()
     val hosts: List<MeshControlHost> get() = mesh?.controlHosts() ?: emptyList()
     val currentConnection: LocalControlConnection? get() = synchronized(lock) { connection }
@@ -486,6 +524,7 @@ class LocalControlService(
             null
         } ?: emptyList()
         mesh?.addListener(meshListener)
+        mesh?.setRememberedTargets { lanProbeTargets() }
         worker.execute { onMeshChanged() }
     }
 
@@ -622,6 +661,7 @@ class LocalControlService(
                 if (data["paired"] == true) {
                     pairingCode = ""
                     rememberPaired()
+                    host?.let { rememberAddress(desktopKey, it.address) }
                     setStatus(LocalControlStatus.Connected)
                     worker.execute { refreshAgentsNow() }
                 } else {
