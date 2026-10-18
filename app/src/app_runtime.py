@@ -1681,6 +1681,61 @@ class Default:
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "public, max-age=300"}))
 
+    async def _instance_legal_setting(self):
+        if not instance_branded(self.env):
+            return instance_legal.default()
+        now = int(Date.now())
+        setting = instance_legal.cached(now)
+        if setting is not None:
+            return setting
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_legal.SETTING_KEY)
+        except Exception:
+            row = None
+        return instance_legal.remember(
+            instance_legal.parse((row or {}).get("doc") or ""), now)
+
+    async def _instance_legal_route(self, request, url):
+        if method_name(request) not in ("GET", "HEAD"):
+            return None
+        security_txt = url.path == instance_legal.SECURITY_TXT_PATH
+        page = "" if security_txt else instance_legal.route_page(url.path)
+        if not security_txt and not page:
+            return None
+        setting = await self._instance_legal_setting()
+        if security_txt:
+            origin = _normalized_http_origin(
+                getattr(self.env, "APP_ORIGIN", "") or "") or (
+                    url.scheme + "://" + url.netloc)
+            body = instance_legal.security_txt(setting, origin,
+                                               int(Date.now()))
+            if not body:
+                return None
+            return self._without_head_body(request, Response(
+                body, status=200,
+                headers={"content-type": "text/plain; charset=utf-8",
+                         "cache-control": "public, max-age=300"}))
+        if not instance_legal.enabled(setting, page):
+            if url.path.rstrip("/") == instance_legal.PATHS["security"]:
+                return None
+            return await self._serve_not_found_page(url)
+        entry = setting[page]
+        if entry["mode"] == "url":
+            return Response("", status=302, headers={
+                "location": entry["url"], "cache-control": "no-store"})
+        if url.path != instance_legal.PATHS[page]:
+            return Response("", status=302, headers={
+                "location": instance_legal.PATHS[page],
+                "cache-control": "no-store"})
+        return self._without_head_body(request, Response(
+            instance_legal.page_html(instance_name(self.env), page,
+                                     entry["markdown"]),
+            status=200,
+            headers={"content-type": "text/html; charset=utf-8",
+                     "cache-control": "public, max-age=60"}))
+
     async def _instance_theme(self):
         if not instance_branded(self.env):
             return {}
@@ -1746,6 +1801,9 @@ class Default:
                 "plugins": instance_features.describe(self.env),
                 "offsiteHosts": list(instance_features.OFFSITE_HOSTS),
                 "theme": await self._instance_theme(),
+                "legal": instance_legal.links(
+                    await self._instance_legal_setting(),
+                    instance_branded(self.env)),
                 "repoAddresses": await self._repo_addresses_doc(),
             }, cache_control="public, max-age=60")
         if url.path == "/api/instance/theme" and instance_branded(self.env) \
@@ -1758,6 +1816,9 @@ class Default:
                 headers={"content-type": "text/css; charset=utf-8",
                          "cache-control": "public, max-age=60"}))
         if instance_branded(self.env):
+            legal_page = await self._instance_legal_route(request, url)
+            if legal_page is not None:
+                return legal_page
             instance_page = self._instance_page(request, url)
             if instance_page is not None:
                 return instance_page
