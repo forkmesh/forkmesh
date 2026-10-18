@@ -1,3 +1,4 @@
+import hashlib
 import hmac
 import json
 import re
@@ -19,6 +20,7 @@ def _bind_runtime(runtime):
 
 
 PREFIX = "/api/workflows"
+REQUEST_PROOF = "forkmesh-workflows-request-v1"
 BODY_MAX_BYTES = 1536 * 1024
 HOOK_BODY_MAX_BYTES = 64 * 1024
 MAX_WORKFLOWS = 50
@@ -137,9 +139,12 @@ def _not_allowed(allow):
                          status=405, extra_headers={"allow": allow})
 
 
-async def _session_account(env, request, data=None):
+async def _session_account(env, request, data=None, digest=""):
     try:
         name_bi, rec = await _account_session_record(env, request, data)
+        if not name_bi or not rec:
+            name_bi, rec = await _plugin_scope_signed_session(
+                env, request, digest, REQUEST_PROOF, PREFIX)
     except RuntimeError:
         return ""
     if not name_bi or not rec:
@@ -151,10 +156,14 @@ async def _session_account(env, request, data=None):
 
 async def _body(request, limit=BODY_MAX_BYTES):
     try:
-        data = await bounded_json_request(request, limit)
+        raw = await bounded_request_text(request, limit)
+        data = json.loads(raw or "{}")
     except Exception:
-        return None
-    return data if isinstance(data, dict) else ({} if data is None else None)
+        return None, ""
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    if isinstance(data, dict):
+        return data, digest
+    return ({} if data is None else None), digest
 
 
 def _hook_path(workflow_id, token):
@@ -736,13 +745,14 @@ async def api_handler(env, request, path):
         return json_response({"ok": True, "template": item},
                              cache_control="public, max-age=300")
     data = None
+    digest = ""
     if method == "POST":
-        data = await _body(request)
+        data, digest = await _body(request)
         if data is None:
             return _error("invalid_json", 400)
     elif method != "GET":
         return _not_allowed("GET, POST")
-    owner_bi = await _session_account(env, request, data)
+    owner_bi = await _session_account(env, request, data, digest)
     if not owner_bi:
         return _error("unauthorized", 401)
     if not await _installed(env, owner_bi, engine.PACKAGE):

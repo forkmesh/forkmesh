@@ -3,6 +3,7 @@
 import ast
 import asyncio
 import base64
+import hashlib
 import importlib.util
 import itertools
 import json
@@ -489,6 +490,7 @@ class Harness:
         self.accounts = {}
         self.ids = itertools.count(1)
         self.fetches = []
+        self.signed = []
         self.fetch_answer = (200, '{"ok": true}')
         spec = importlib.util.spec_from_file_location(
             "workflows_runtime_under_test", SRC / "workflows_runtime.py")
@@ -516,7 +518,21 @@ class Harness:
             return request.body
 
         async def bounded_request_text(request, _limit):
-            return request.raw
+            if request.raw or request.body is None:
+                return request.raw
+            if isinstance(request.body, str):
+                return request.body
+            return json.dumps(request.body)
+
+        async def plugin_scope_signed_session(_env, request, digest, proof,
+                                              prefix):
+            params = parse_qs(urlparse(request.url).query)
+            node = params.get("node", [""])[0]
+            harness.signed.append((request.method, digest, proof, prefix))
+            rec = harness.accounts.get(node)
+            if params.get("sig", [""])[0] != "valid" or not rec:
+                return "", None
+            return node + "-bi", rec
 
         async def encrypt_row(_env, obj):
             return "enc:" + json.dumps(obj)
@@ -540,6 +556,7 @@ class Harness:
             "d1_first": d1_first,
             "d1_run": d1_run,
             "_account_session_record": account_session_record,
+            "_plugin_scope_signed_session": plugin_scope_signed_session,
             "_account_kind": lambda rec: rec.get("kind", "user"),
             "bounded_json_request": bounded_json_request,
             "bounded_request_text": bounded_request_text,
@@ -596,6 +613,29 @@ def test_api_requires_a_user_session(harness):
     assert harness.call("/api/workflows/catalog").status == 200
     response = harness.call("/api/workflows", "POST", "broken", user="alice")
     assert response.data["error"] == "invalid_json"
+
+
+def test_desktop_signed_requests_reach_the_same_workflows(harness):
+    created = harness.call("/api/workflows", "POST", _definition(),
+                           user="alice").data["workflow"]
+    signed = "https://app.example.com/api/workflows?node=alice&ts=1&sig=valid"
+    listed = harness.call("/api/workflows", url=signed)
+    assert listed.status == 200
+    assert created["id"] in [item["id"] for item in listed.data["workflows"]]
+    assert harness.signed[-1] == ("GET", "", "forkmesh-workflows-request-v1",
+                                  "/api/workflows")
+    raw = json.dumps(dict(_definition(), name="From desktop"),
+                     separators=(",", ":"))
+    made = harness.call("/api/workflows", "POST", url=signed, raw=raw)
+    assert made.status == 201
+    assert made.data["workflow"]["name"] == "From desktop"
+    assert harness.signed[-1][:2] == (
+        "POST", hashlib.sha256(raw.encode()).hexdigest())
+    forged = signed.replace("sig=valid", "sig=forged")
+    assert harness.call("/api/workflows", url=forged).status == 401
+    harness.user("node1", kind="node")
+    node = signed.replace("node=alice", "node=node1")
+    assert harness.call("/api/workflows", url=node).status == 401
 
 
 def test_create_list_update_and_delete_are_owner_scoped(harness):
