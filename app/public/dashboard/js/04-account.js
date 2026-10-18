@@ -2434,7 +2434,11 @@
         repoVisibility.textContent = repo.isPrivate ? "private" : "public";
       }
       if (repoTerms) repoTerms.innerHTML = repositoryTermsBadge(repo, true);
-      if (repoAvailability) {
+      if (repoAvailability && dashboardOnInstance()) {
+        repoAvailability.textContent = "";
+        repoAvailability.classList.add("hidden");
+      } else if (repoAvailability) {
+        repoAvailability.classList.remove("hidden");
         const servedBy = String(state.repoServedBy?.name || "").trim();
         repoAvailability.textContent = servedBy
           ? `served by ${servedBy}`

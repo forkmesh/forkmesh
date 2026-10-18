@@ -7017,7 +7017,11 @@
         repoVisibility.textContent = repo.isPrivate ? "private" : "public";
       }
       if (repoTerms) repoTerms.innerHTML = repositoryTermsBadge(repo, true);
-      if (repoAvailability) {
+      if (repoAvailability && dashboardOnInstance()) {
+        repoAvailability.textContent = "";
+        repoAvailability.classList.add("hidden");
+      } else if (repoAvailability) {
+        repoAvailability.classList.remove("hidden");
         const servedBy = String(state.repoServedBy?.name || "").trim();
         repoAvailability.textContent = servedBy
           ? `served by ${servedBy}`
@@ -11484,9 +11488,10 @@
     const statusClass = live ? "text-success" : "text-muted-foreground";
     const nodeCount = group.members.length;
     const liveCount = group.members.reduce((n, m) => n + (repoIsLive(m) ? 1 : 0), 0);
+    const onInstance = dashboardOnInstance();
     const statusText = nodeCount > 1
       ? `${liveCount} of ${nodeCount} nodes`
-      : (viaMirror ? "via mirror" : live ? "online" : "offline");
+      : (viaMirror && !onInstance ? "via mirror" : live ? "online" : "offline");
     const metrics = [
       repoMetricStat("Issues", "circle-dot", groupRepoMetric(group, ["issueCount", "issues", "issuesCount", "openIssues"])),
       repoMetricStat("Commits", "git-commit-horizontal", groupRepoMetric(group, ["commitCount", "commits", "commitHistory"])),
@@ -11524,9 +11529,9 @@
               <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <i data-lucide="${origin.isPrivate ? "lock" : "globe-2"}" class="h-3 w-3"></i>${escapeHtml(visibility)}
               </span>
-              <span class="flex items-center gap-1 text-xs text-muted-foreground">
+              ${onInstance ? "" : `<span data-repo-card-served-by class="flex items-center gap-1 text-xs text-muted-foreground">
                 <i data-lucide="radio" class="w-3 h-3"></i>${nodeCount > 1 ? `${nodeCount} mirrors` : (viaMirror ? "served by mirror" : live ? "mirror online" : "mirror offline")}
-              </span>
+              </span>`}
               <span class="text-xs text-muted-foreground font-mono">updated ${escapeHtml(formatDate(repo.updatedAt || repo.lastSync))}</span>
               ${metrics}
             </div>
@@ -11844,6 +11849,7 @@
     const status = live
       ? (repoServedByMirror(repo) ? "served by mirror" : "live host")
       : "offline";
+    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>`;
     const logo = nativeRepositoryLogoMarkup(repo, "h-8 w-8")
       || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
     const description = String(repo.description || "").trim();
@@ -11854,7 +11860,7 @@
         <span class="block truncate font-medium text-foreground" title="${escapeHtml(repoDisplayKey(repo))}">${escapeHtml(repoDisplayKey(repo))}</span>
         ${description ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>
+          ${statusHtml}
           ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
           ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
           ${repositoryTermsBadge(repo, true)}
@@ -33061,7 +33067,7 @@
       if (onlineMirrors.length) {
         repo.cloneOnline = true;
         const availability = $("[data-repo-availability-status]");
-        if (availability) {
+        if (availability && !dashboardOnInstance()) {
           availability.textContent = repo.liveHost
             ? "mirror online"
             : "served by mirror";
@@ -35710,14 +35716,14 @@
               </div>
               <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5"></div>
             </div>
-            <div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+            ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
                 <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
               <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
-            </div>
+            </div>`}
             ${repo.isPrivate ? "" : `
             <details data-repo-logo-workflow class="mt-4 border-t border-border pt-4">
               <summary class="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold text-foreground">

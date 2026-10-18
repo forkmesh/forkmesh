@@ -437,14 +437,14 @@
               </div>
               <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5"></div>
             </div>
-            <div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+            ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
                 <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
               <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
-            </div>
+            </div>`}
             ${repo.isPrivate ? "" : `
             <details data-repo-logo-workflow class="mt-4 border-t border-border pt-4">
               <summary class="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold text-foreground">
