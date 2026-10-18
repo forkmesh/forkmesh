@@ -176,3 +176,31 @@ def test_actions_secrets_on_repository_and_organization_settings():
     assert "escapeHtml(secret.name)" in rendered
     assert "secret.value" not in FRAGMENT
     assert "bg-cta" not in rendered and "fm-btn-cta" not in rendered
+
+
+def test_signed_out_visitors_on_an_instance_read_the_public_summary():
+    loader = function("loadRepoActions")
+    assert "if (!state.session?.sessionToken && !dashboardOnInstance()) {" in loader
+    assert (
+        'view.access = view.source === "runner" && payload.access === "public" '
+        '? "public" : "member";'
+    ) in loader
+    assert 'view.access !== "public" && view.selectedRunId' in loader
+    assert 'view.access === "public") return;' in function("loadRepoActionsRunLog")
+    toggle = function("handleRepoActionsClick")
+    assert 'view.source === "runner" && view.access !== "public"' in toggle
+
+
+def test_public_runs_hint_at_signing_in_for_logs():
+    detail = function("renderRepoActionsRunDetail")
+    assert 'if (view.access === "public") return renderRepoActionsPublicDetail(run);' in detail
+    public = function("renderRepoActionsPublicDetail")
+    assert "Sign in to see logs" in public
+    assert "escapeHtml(repoActionsSignInHref())" in public
+    assert "escapeHtml(run.actor)" in public
+    assert "logTail" not in public and "loadRepoActionsRunLog" not in public
+    assert "/login?next=${encodeURIComponent(location.pathname + location.search)}" in function(
+        "repoActionsSignInHref")
+    assert "actor: repoActionsCleanLine(run?.actor, 64)," in FRAGMENT
+    assert "${escapeHtml(run.actor)}" in function("renderRepoActionsRuns")
+    assert "Sign in to see runs" in FRAGMENT

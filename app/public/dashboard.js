@@ -14599,8 +14599,8 @@
   // www/docs/operations/mirror-actions-control.md.
   //
   // The workflow list needs no session: it is read from .forkmesh/ in the
-  // repository tree like any other file. Runs, logs and controls are private
-  // to the owner and organization writers, and the Worker enforces that.
+  // repository tree like any other file. Who sees runs, logs and controls:
+  // docs/server/instance-actions.md.
   // ---------------------------------------------------------------------------
 
   const REPO_ACTIONS_WORKFLOW_PATH = /^\.forkmesh\/[A-Za-z0-9._-]{1,96}\.ya?ml$/;
@@ -14642,7 +14642,7 @@
     if (!state.repoActionsView) {
       state.repoActionsView = {
         key: "", phase: "idle", error: "", node: "", updatedAt: 0,
-        schemaVersion: 1, controlAvailable: false, actionsEnabled: null,
+        schemaVersion: 1, controlAvailable: false, actionsEnabled: null, access: "",
         runs: [], controls: [], summaryWorkflows: null, treeWorkflows: null,
         selectedWorkflow: "", selectedRunId: 0, pending: [], notice: null,
         timer: 0, loading: false, branchesAsked: false, logs: {},
@@ -14775,6 +14775,7 @@
       event: repoActionsRunEvent(run?.event),
       commit: immutableGitCommit(run?.commit) || "",
       ref: repoActionsCleanLine(run?.ref, 220),
+      actor: repoActionsCleanLine(run?.actor, 64),
       pullNumber: Math.max(0, Math.floor(Number(run?.pullNumber) || 0)),
       createdAt: Math.max(0, Number(run?.createdAt) || 0),
       startedAt: Math.max(0, Number(run?.startedAt) || 0),
@@ -14881,7 +14882,7 @@
     if (view.key !== key) {
       stopRepoActionsRefresh();
       Object.assign(view, {
-        key, phase: "idle", error: "", node: "", source: "", updatedAt: 0, schemaVersion: 1,
+        key, phase: "idle", error: "", node: "", source: "", access: "", updatedAt: 0, schemaVersion: 1,
         controlAvailable: false, actionsEnabled: null, runs: [], controls: [],
         summaryWorkflows: null, treeWorkflows: null, selectedWorkflow: "",
         selectedRunId: 0, pending: [], notice: null, loading: false,
@@ -14890,7 +14891,7 @@
     }
     if (view.loading) return;
     if (view.treeWorkflows === null) void loadRepoActionsTreeWorkflows(repo);
-    if (!state.session?.sessionToken) {
+    if (!state.session?.sessionToken && !dashboardOnInstance()) {
       view.phase = "signed-out";
       renderRepoActions(repo);
       return;
@@ -14914,6 +14915,7 @@
       view.error = "";
       view.node = repoActionsCleanLine(payload.node, 80);
       view.source = payload.source === "runner" ? "runner" : "mirror";
+      view.access = view.source === "runner" && payload.access === "public" ? "public" : "member";
       view.updatedAt = Math.max(0, Number(payload.updatedAt) || 0);
       view.schemaVersion = Number(payload.schemaVersion) === 2 ? 2 : 1;
       const runner = view.source === "runner";
@@ -14929,7 +14931,7 @@
           .map(normalizeRepoActionsWorkflow).filter(Boolean)
         : null;
       settleRepoActionsPending(view);
-      if (runner && view.selectedRunId) void loadRepoActionsRunLog(repo, view.selectedRunId);
+      if (runner && view.access !== "public" && view.selectedRunId) void loadRepoActionsRunLog(repo, view.selectedRunId);
       // The "Run workflow" branch picker needs the real branch list; until a
       // listing is loaded repoBranchList() only knows the selected branch.
       if (view.controlAvailable && !state.repoBranches[key]?.loaded && !view.branchesAsked) {
@@ -15040,7 +15042,7 @@
     const view = repoActionsView();
     const key = view.key;
     const run = view.runs.find((entry) => entry.id === runId);
-    if (!run || view.source !== "runner") return;
+    if (!run || view.source !== "runner" || view.access === "public") return;
     const cached = view.logs[runId];
     if (cached?.loading) return;
     if (cached && cached.done && !repoActionsRunIsLive(run)) return;
@@ -15141,8 +15143,8 @@
     return `
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
         <div class="min-w-0">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-foreground"><i data-lucide="server" class="h-3.5 w-3.5 text-muted-foreground"></i><span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span><span class="font-mono font-semibold">${escapeHtml(view.node)}</span><span class="fm-label ${stateTone}">${escapeHtml(stateLabel)}</span></div>
-          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">${view.updatedAt ? `Executor state from ${escapeHtml(relativeTimeLabel(view.updatedAt))}.` : ""}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}${view.source === "runner" && view.controlAvailable ? " Pushes, schedules, issue events and manual runs run here. Pick a workflow to run it by hand." : view.source === "runner" ? " A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones." : view.controlAvailable ? "" : " This node publishes runs read-only; controls appear once its operator enables the actions-control operation."}</p>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-foreground"><i data-lucide="server" class="h-3.5 w-3.5 text-muted-foreground"></i><span>${view.source === "runner" ? "Runs on runner" : "Runs on mirror"}</span>${view.node ? `<span class="font-mono font-semibold">${escapeHtml(view.node)}</span>` : ""}<span class="fm-label ${stateTone}">${escapeHtml(stateLabel)}</span></div>
+          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">${view.updatedAt ? `Executor state from ${escapeHtml(relativeTimeLabel(view.updatedAt))}.` : ""}${others.length ? ` Also enabled on ${escapeHtml(others.join(", "))}.` : ""}${view.access === "public" ? ` ${repoActionsPublicNote()}` : view.source === "runner" && view.controlAvailable ? " Pushes, schedules, issue events and manual runs run here. Pick a workflow to run it by hand." : view.source === "runner" ? " A push to the default branch runs here while the owner's desktop is away; desktop runs show in the desktop app and on paired phones." : view.controlAvailable ? "" : " This node publishes runs read-only; controls appear once its operator enables the actions-control operation."}</p>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           ${canToggle ? `<button type="button" data-repo-actions-repository-enabled="${view.actionsEnabled ? "false" : "true"}" ${toggling ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${view.actionsEnabled ? "pause" : "play"}" class="h-3.5 w-3.5"></i>${view.actionsEnabled ? "Pause Actions on this mirror" : "Run Actions on this mirror"}</button>` : ""}
@@ -15194,7 +15196,7 @@
           <button type="submit" ${busy("dispatch") ? "disabled" : ""} class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="play" class="h-3.5 w-3.5"></i>Run workflow</button>
         </form>`
       : `<span class="text-[11px] text-muted-foreground">${workflow.manual
-        ? (view.controlAvailable ? (workflow.enabled ? "" : "Enable this workflow to run it by hand.") : "Manual runs need a mirror with the actions-control operation.")
+        ? (view.access === "public" ? "Repository writers can run this workflow by hand." : view.controlAvailable ? (workflow.enabled ? "" : "Enable this workflow to run it by hand.") : "Manual runs need a mirror with the actions-control operation.")
         : "No workflow_dispatch trigger, so this workflow only runs on its events."}</span>`;
     const toggle = view.controlAvailable && view.summaryWorkflows && view.source !== "runner"
       ? `<button type="button" data-repo-actions-workflow-enabled="${workflow.enabled ? "false" : "true"}" data-repo-actions-workflow-path="${escapeHtml(workflow.path)}" ${busy("set-workflow-enabled") ? "disabled" : ""} class="fm-btn fm-btn-sm shrink-0">${workflow.enabled ? "Disable workflow" : "Enable workflow"}</button>`
@@ -15233,7 +15235,34 @@
     return button("rerun", "Re-run", "rotate-ccw");
   }
 
+  function repoActionsSignInHref() {
+    return `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+  }
+
+  function repoActionsPublicNote() {
+    return state.session?.sessionToken
+      ? "Logs and controls are shown to the repository owner and organization writers."
+      : "Sign in as a repository writer to see logs and controls.";
+  }
+
+  function renderRepoActionsPublicDetail(run) {
+    const hint = state.session?.sessionToken
+      ? `<span>Logs are shown to the repository owner and organization writers.</span>`
+      : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
+    const facts = [
+      run.actor ? `Triggered by ${escapeHtml(run.actor)}` : "",
+      run.event ? `on ${escapeHtml(run.event)}` : "",
+      run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
+    ].filter(Boolean).join(" ");
+    return `
+      <div data-repo-actions-run-detail="${run.id}" data-repo-actions-public-detail class="border-t border-border bg-background">
+        ${facts ? `<p class="border-b border-border px-4 py-2 text-xs text-muted-foreground">${facts}.</p>` : ""}
+        <p class="flex items-center gap-2 px-4 py-3 text-xs text-muted-foreground"><i data-lucide="lock" class="h-3.5 w-3.5 shrink-0"></i>${hint}</p>
+      </div>`;
+  }
+
   function renderRepoActionsRunDetail(repo, view, run) {
+    if (view.access === "public") return renderRepoActionsPublicDetail(run);
     const steps = run.steps.length
       ? `<ol class="grid gap-1 border-b border-border px-4 py-3">${run.steps.map((step) => {
         const meta = REPO_ACTIONS_STEP_STATES[step.status];
@@ -15263,7 +15292,7 @@
   function renderRepoActionsRuns(repo, view, workflow) {
     const runs = view.runs.filter((run) => repoActionsRunMatchesWorkflow(run, workflow));
     if (!runs.length) {
-      return `<p class="px-4 py-6 text-center text-xs text-muted-foreground">${view.source === "runner" && view.controlAvailable ? "No run yet. Push, wait for a schedule, or pick a workflow and run it." : view.source === "runner" ? "No runner run yet. The next push to the default branch while the desktop is away runs here." : workflow ? "This workflow has no recent run on the executor." : "No recent runs on the executor."}</p>`;
+      return `<p class="px-4 py-6 text-center text-xs text-muted-foreground">${view.access === "public" ? "No run yet." : view.source === "runner" && view.controlAvailable ? "No run yet. Push, wait for a schedule, or pick a workflow and run it." : view.source === "runner" ? "No runner run yet. The next push to the default branch while the desktop is away runs here." : workflow ? "This workflow has no recent run on the executor." : "No recent runs on the executor."}</p>`;
     }
     return runs.map((run) => {
       const meta = pullCheckStateMeta(run.status);
@@ -15280,6 +15309,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
+        run.actor ? `<span data-repo-actions-run-actor>${escapeHtml(run.actor)}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `
@@ -15379,7 +15409,7 @@
       const id = Number(runToggle.dataset.repoActionsRunToggle) || 0;
       view.selectedRunId = view.selectedRunId === id ? 0 : id;
       renderRepoActions(repo);
-      if (view.selectedRunId && view.source === "runner") void loadRepoActionsRunLog(repo, view.selectedRunId);
+      if (view.selectedRunId && view.source === "runner" && view.access !== "public") void loadRepoActionsRunLog(repo, view.selectedRunId);
       return true;
     }
     const runControl = event.target.closest("[data-repo-actions-run-control]");

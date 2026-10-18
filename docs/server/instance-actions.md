@@ -236,7 +236,9 @@ curl and builds JSON with jq, or python3 when jq is missing
 (`FORKMESH_ACTIONS_JSON=python` forces that path, for tests). The token is
 passed to curl through a process-substitution header file, never on its
 command line; a non-2xx answer prints the body to stderr and exits 1, bad
-arguments exit 2. Test: `app/tests/test_forkmesh_actions_helper.py`.
+arguments exit 2. Test: `app/tests/test_forkmesh_actions_helper.py`; the public summary and its
+gating are in `test_instance_actions.py` (`test_a_public_repository_*`,
+`test_writers_get_the_full_answer_*`, `test_a_private_repository_*`).
 
 ## Secrets
 
@@ -301,6 +303,11 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   always has `source: runner`, `controlAvailable` and `workflows`, even with
   no jobs yet. A job that ended without runs (refused, expired, cancelled)
   shows as a failed or cancelled run whose log tail is the job's note.
+- On a **public** repository the same endpoint answers everyone else
+  (signed out, or signed in without write access) with a read-only summary
+  instead of 401/403; see "Public run summary" below. A private repository
+  (or one `_repo_is_private` cannot read, which fails closed) keeps the
+  401/403 answers.
 - Push jobs on an instance (`core_push.instance_action_updates`): the
   default branch is queued whenever it moved; other branches only up to 5
   per push. Branch creations are skipped when the same push creates the
@@ -378,7 +385,59 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   names its `workflowPath`). Run ids are `job id × 100 + n` (n from 1; the
   placeholder of a job with no runs yet is `job id × 100`).
   `GET /api/repo/<owner>/<repo>/actions/runs/<id>/log` returns
-  `{ok, runId, log, updatedAt}` with the same access as the runs list.
+  `{ok, runId, log, updatedAt}` to the owner, an account owning the storage
+  node or an organization writer only (never the public summary's
+  audience).
+- Each run in the snapshot carries `actor` (the job row's `actor`: pusher,
+  dispatcher, re-runner or issue author). The member answer has
+  `access: "member"`.
+- Masking happens twice: when a report is stored (above) and again when a
+  log or log tail is read (`run_log`, `snapshot`), with the secrets the
+  repository and its organization have at read time, so a value that becomes
+  a secret after it was printed is hidden from then on too.
+
+## Public run summary
+
+Like GitHub, the Actions tab of a public repository shows its runs to anyone;
+logs and controls stay with the people who can change the repository.
+
+Who gets what from `GET /api/repo/<owner>/<repo>/actions/runs` on an
+instance (`repository_actions_instance_status_handler`):
+
+| Caller | Public repository | Private repository |
+| --- | --- | --- |
+| owner, account owning the storage node, organization writer | full snapshot, `access: "member"`, `private, no-store` | same |
+| signed in, no write access | public summary | 403 (audited `denied`) |
+| signed out | public summary | 401 |
+
+The public summary (`runner_actions.public_summary`) is built from a
+whitelist, not by removing fields:
+
+- `ok`, `access: "public"`, `source: "runner"`, `node: ""`,
+  `controlAvailable: false`, `updatedAt`, `expiresAt`;
+- `runs[]`: `id`, `workflow`, `workflowPath`, `event`, `commit`, `ref`,
+  `status`, `createdAt`, `startedAt`, `finishedAt`, `actor`;
+- `workflows[]`: `path`, `name`, `events`.
+
+Left out on purpose: `logTail` and every log (build output can print
+anything), the job's failure note (it can name runner internals), the runner
+name, `controls`, workflow `inputs` and `schedules`, and everything the lease
+carries (payload, secrets, token, grants). The privacy check uses the storage
+address (`runner_actions.identity`), since `/api/repo/<org>/<repo>` is
+rewritten to the node address before routing; single-organization addresses
+(`/<repo>/actions`) call the same API with the organization as owner.
+
+Anonymous traffic: the summary is memoized per storage address for 5 seconds
+in the app process (`_ACTIONS_PUBLIC_MEMO`, at most 256 entries) and sent with
+`Cache-Control: public, max-age=5, stale-while-revalidate=10` and
+`Vary: Cookie, Authorization`, so a shared cache never hands it to a member
+or a member's answer to anyone else. The privacy verdict is not memoized, so
+a repository made private stops answering at once. Public reads are not
+audited; member reads and denials are, as before.
+
+Per-job status: the runner flattens the steps of every job of a workflow into
+one run and reports no per-step state, so the run's status is the finest
+status there is; the summary carries no steps.
 
 Web UI (`app/public/dashboard/js/06-repo-actions.js`): a runner snapshot
 with `controlAvailable: true` (schema version 1 or 2) turns on the controls.
@@ -404,6 +463,24 @@ updatedAt}]}` (milliseconds) and send `PUT .../<NAME>` with `{value}` and
 dashboard call through `orgAgentRequest`, JSON bodies also carry
 `sessionToken` when the session is a bearer token; the endpoints must ignore
 it.
+
+Signed out on an instance (`dashboardOnInstance()`), the tab still asks for
+the runs; elsewhere it shows "Sign in to see runs" without asking, as before.
+An answer with `access: "public"` lists the runs with their actor, branch,
+short commit, event, status, time and duration, never asks for a log, and
+opening a run shows who triggered it and "Sign in to see logs" (a link to
+`/login?next=<this page>`), or, for a signed-in account without write access,
+that logs are shown to the owner and organization writers. Dispatch, cancel
+and re-run stay hidden (`controlAvailable: false`). A 401 or 403 (private
+repository) keeps the old "Sign in to see runs" and "Runs are private"
+states.
+
+Live updates: while a run is queued or running the tab re-reads the runs
+every 6 seconds (30 while the page is hidden, 60 when idle), for visitors and
+members alike; members also re-read the open run's full log on each of those
+reads, following the tail when scrolled to the bottom. The runner reports a
+running workflow's log every 5 seconds, so the page is at most about 11
+seconds behind.
 
 Triggers:
 
