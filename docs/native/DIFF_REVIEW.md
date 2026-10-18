@@ -60,10 +60,11 @@ One sideways-scrolling row of small buttons:
 
 All settings are saved under `diff/*` in app preferences.
 
-On iOS each switch is a 16 pt icon on a 22 pt square, tinted with the accent
-when on, inside a 30 pt tap target (2026-10-17). The tint used to fill the
-whole 30 pt button, so the switches that were on read as large blocks across
-the bar.
+On iOS the row has no bar behind it (2026-10-18): each button is its own
+36 pt glass square, the height the capsule bar had, with a 20 pt icon and an
+accent tint when on, like the Inbox squares. Holding any of them shows its
+name in a small popover (`FmHoldName`, `native/ios/ForkMesh/Kit`), and the tap
+that ends the hold is dropped so it does not also flip the switch.
 
 The **health strip** shows `+A −D` and six pills (Merge, Complexity, Quality,
 Security, Network, Practices), each an icon and score tinted green, orange or
