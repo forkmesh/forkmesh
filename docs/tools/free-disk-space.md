@@ -55,6 +55,9 @@ run; the server cannot run these steps (see
 - The run's output, shown in the run's little window in the recent runs list,
   is the bytes all steps freed and the free space the last step measured:
   "Freed 3.2 GB · 120.4 GB free".
+- A failed run shows **Send to agent**, which puts the failed step, its
+  error, its `--step` command and these docs in the agent prompt
+  ([../app/workflows.md](../app/workflows.md#send-a-failure-to-an-agent)).
 - Each step re-reads `git worktree list` and `/proc`, so a worktree or
   process that appears between steps is still respected. A candidate holding
   the tool's own working directory, or its parent shell's, counts as in use.

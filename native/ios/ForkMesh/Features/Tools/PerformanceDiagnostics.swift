@@ -69,6 +69,7 @@ struct DiagnosticsSendButton: View {
                 .labelStyle(.titleAndIcon)
                 .fmText(compact ? .labelSmall : .labelMedium, color: alert.detected ? Color.white : fm.textSecondary)
                 .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, compact ? FmSpace.x2 : FmSpace.x3)
                 .padding(.vertical, compact ? FmSpace.x1 : FmSpace.x2)
                 .background(Capsule().fill(alert.detected ? fm.danger : fm.bgOverlay))
