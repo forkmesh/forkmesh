@@ -98,6 +98,7 @@ except Exception:  # pragma: no cover
 
 PREFIX = "/api/runners/"
 MAX_BODY_BYTES = 64 * 1024
+ACTIONS_REPORT_MAX_BYTES = 8 * 1024 * 1024
 REQUEST_WINDOW_MS = 60_000
 REGISTER_WINDOW_MS = 5 * 60 * 1000
 MAX_CLAIM = 4
@@ -195,7 +196,9 @@ async def handle(runtime, path):
         return _error(runtime, "not_found", 404)
     if runtime.method() != "POST":
         return _error(runtime, "method_not_allowed", 405)
-    raw = await runtime.body_bytes(MAX_BODY_BYTES)
+    raw = await runtime.body_bytes(
+        ACTIONS_REPORT_MAX_BYTES if action == "actions-report"
+        else MAX_BODY_BYTES)
     if raw is None:
         return _error(runtime, "request_too_large", 413)
     if action == "register":
@@ -364,8 +367,9 @@ async def _signed_caller(runtime, path, raw):
 
     async def runner_keys(name):
         row = await runtime.d1_first(
-            "SELECT name,public_key,scope,allowed_owners,status,registered_by "
-            "FROM runner_nodes WHERE name=? AND status='active'", name)
+            "SELECT name,public_key,scope,allowed_owners,status,registered_by,"
+            "actions_trusted FROM runner_nodes WHERE name=? AND status='active'",
+            name)
         if row:
             rows[name] = row
             return [str(row.get("public_key") or "")]
@@ -382,7 +386,8 @@ async def _signed_caller(runtime, path, raw):
     return {"name": name, "scope": row.get("scope"),
             "publicKey": str(row.get("public_key") or ""),
             "registeredBy": str(row.get("registered_by") or ""),
-            "allowedOwners": _owners(owners) or []}
+            "allowedOwners": _owners(owners) or [],
+            "actionsTrusted": bool(int(row.get("actions_trusted") or 0))}
 
 
 # --- claim ----------------------------------------------------------------
@@ -1081,6 +1086,18 @@ class WorkerRuntime:
 
     def runner_app_url(self):
         return str(getattr(self.env, "APP_ORIGIN", "") or "").rstrip("/")
+
+    def setting(self, name):
+        return str(getattr(self.env, name, "") or "").strip()
+
+    def public_origin(self):
+        return (_public_base_url(self.env)  # noqa: F821
+                or self.runner_app_url()).rstrip("/")
+
+    async def default_branch(self, owner, repo):
+        import core_push
+        core_push._bind_runtime(globals())
+        return await core_push._default_branch(self.env, owner, repo)
 
     def ssh_helper_socket(self):
         return str(getattr(self.env, "RUNNER_SSH_HELPER_SOCKET", "") or "")

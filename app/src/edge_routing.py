@@ -610,7 +610,8 @@ def request_message(node, method, path, body_sha256, request_id, issued_at):
 
 
 RUNNER_GRANT_MAX_TTL_MS = 3 * 60 * 60 * 1000
-RUNNER_GRANT_ACCESS = ("read", "push")
+RUNNER_GRANT_ACCESS = ("read", "push", "actions-push")
+_RUNNER_BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 _RUNNER_REF_TAIL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,150}$")
 _GRANT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,80}$")
 
@@ -629,6 +630,21 @@ def runner_agent_ref_valid(ref):
         and "@{" not in tail
         and "/." not in tail
         and not tail.endswith(("/", ".lock", "."))
+    )
+
+
+def runner_actions_ref_valid(ref):
+    ref = str(ref or "")
+    prefix = "refs/heads/"
+    if not ref.startswith(prefix):
+        return False
+    branch = ref[len(prefix):]
+    return bool(
+        _RUNNER_BRANCH_RE.fullmatch(branch)
+        and ".." not in branch
+        and "//" not in branch
+        and "@{" not in branch
+        and not branch.endswith(("/", ".lock", "."))
     )
 
 
@@ -662,6 +678,7 @@ def runner_grant_message(
         or access not in RUNNER_GRANT_ACCESS
         or (access == "read" and ref != "")
         or (access == "push" and not runner_agent_ref_valid(ref))
+        or (access == "actions-push" and not runner_actions_ref_valid(ref))
         or not NODE_RE.fullmatch(runner)
         or not _GRANT_ID_RE.fullmatch(grant_id)
         or issued_at <= 0
