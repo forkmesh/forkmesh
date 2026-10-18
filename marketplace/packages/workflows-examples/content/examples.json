@@ -9,6 +9,8 @@
     "translate-and-reply",
     "shopify-orders-to-sheets",
     "new-github-release-notes",
-    "calendly-to-notion"
+    "calendly-to-notion",
+  "order-total-script",
+  "weekday-reminder"
   ]
 }

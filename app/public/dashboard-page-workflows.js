@@ -92,6 +92,13 @@
     equals: "=", notEquals: "≠", contains: "contains", notContains: "lacks",
     startsWith: "starts with", endsWith: "ends with", gt: ">", gte: "≥", lt: "<", lte: "≤",
     isEmpty: "is empty", isNotEmpty: "is set", isTrue: "is true", isFalse: "is false",
+    matches: "matches", notMatches: "does not match",
+  };
+  const WF_OUTPUT_LABELS = { case1: "1", case2: "2", case3: "3", otherwise: "else" };
+  const WF_SELECT_LABELS = (spec, key, value) => {
+    const field = (spec.fields || []).find((item) => item.key === key);
+    const option = (field?.options || []).find((item) => String(item.value) === String(value ?? field?.default ?? ""));
+    return option ? option.label : String(value ?? field?.default ?? "");
   };
   const WF_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -363,6 +370,29 @@
       case "core.limit": return `Keeps the first ${p.max || 10}`;
       case "core.split": return `One item per ${p.field || "entry"}`;
       case "core.noop": return "Passes items through";
+      case "core.code": return wfShort(wfFirstLine(String(p.code || "").split("\n").filter((line) => !line.trim().startsWith("//")).join("\n"))) || "Script";
+      case "core.variable": return `${p.mode === "append" ? "Adds to" : p.mode === "add" ? "Adds up" : "Sets"} $vars.${p.name || "name"}`;
+      case "core.switch": return wfShort(["case1", "case2", "case3"].map((key) => p[key]).filter(Boolean).join(" · ")) || "Choose a branch";
+      case "core.repeat": return `${p.times || 3} times`;
+      case "core.wait": return `Waits ${p.seconds || 5} s`;
+      case "core.runWorkflow": return wfShort(p.workflow) || "Choose a workflow";
+      case "core.stop": return p.outcome === "error" ? wfShort(p.message) || "Stops with an error" : "Stops the run";
+      case "core.comment": return wfShort(wfFirstLine(p.text)) || "Note";
+      case "core.textReplace": return wfShort(`${p.find || "…"} → ${p.replace || ""}`);
+      case "core.textMatch": return wfShort(`/${p.pattern || ""}/`);
+      case "core.math": return wfShort(`${String(p.a || "").replace(/\{\{\s*\$json\.?|\s*\}\}/g, "") || "a"} ${WF_SELECT_LABELS(spec, "operator", p.operator)}`);
+      case "core.dateFormat": return p.format === "custom" ? wfShort(p.pattern) || "Custom pattern" : WF_SELECT_LABELS(spec, "format", p.format);
+      case "core.dateAdjust": return p.operation === "startOf" || p.operation === "endOf" ? `${WF_SELECT_LABELS(spec, "operation", p.operation)} ${WF_SELECT_LABELS(spec, "unit", p.unit).toLowerCase()}` : `${WF_SELECT_LABELS(spec, "operation", p.operation)} ${p.amount || 1} ${WF_SELECT_LABELS(spec, "unit", p.unit).toLowerCase()}`;
+      case "core.sort": return p.by ? `By ${p.by}, ${WF_SELECT_LABELS(spec, "order", p.order).toLowerCase()}` : WF_SELECT_LABELS(spec, "order", p.order);
+      case "core.textCase": case "core.textSplit": case "core.textCombine": case "core.textEncode": case "core.hash":
+      case "core.textExtract": case "core.count": case "core.round": case "core.formatNumber": case "core.random":
+      case "core.statistics": case "core.combineItems": case "core.dedupe": case "core.pick": case "core.json":
+      case "core.url": case "core.dateDiff": {
+        const select = (spec.fields || []).find((field) => field.type === "select");
+        const save = p.field || (spec.fields || []).find((field) => field.key === "field")?.default;
+        const head = select ? WF_SELECT_LABELS(spec, select.key, p[select.key]) : spec.name;
+        return wfShort(save ? `${head} → ${save}` : head);
+      }
       case "action.trigger": {
         const events = wfChecks(p.events);
         return events.length ? `On ${events.map((e) => e === "workflow_dispatch" ? "manual run" : e.replace("_", " ")).join(", ")}` : "No events yet";
@@ -508,7 +538,7 @@
     const ports = outputs.map((output, index) => {
       const top = (100 * (index + 1)) / (outputs.length + 1);
       const label = outputs.length > 1
-        ? `<span class="wf-port-label" style="top:${top}%">${escapeHtml(output)}</span>`
+        ? `<span class="wf-port-label" style="top:${top}%">${escapeHtml(WF_OUTPUT_LABELS[output] || output)}</span>`
         : "";
       return `${label}<span class="wf-port wf-port-out" data-wf-port-out="${escapeHtml(node.id)}" data-wf-output="${escapeHtml(output)}" style="top:calc(${top}% - var(--wf-port) / 2)" title="Drag to connect"></span>`;
     }).join("");
@@ -728,6 +758,10 @@
     if (!entry) return '<p class="wf-help">Run the workflow to see what this step receives and returns.</p>';
     const parts = [`<div class="wf-row"><span class="wf-dot" data-status="${escapeHtml(entry.status)}"></span><span class="text-sm font-semibold">${escapeHtml(entry.status === "success" ? "Succeeded" : entry.status === "error" ? "Failed" : "Skipped")}</span>${entry.ms !== undefined ? `<span class="wf-help mt-0">${escapeHtml(String(entry.ms))} ms</span>` : ""}</div>`];
     if (entry.error) parts.push(`<div class="wf-pre" style="color:#dc2626">${escapeHtml(entry.error)}</div>`);
+    if (entry.logs?.length) {
+      parts.push(`<p class="wf-help">Script log, ${entry.logs.length} line${entry.logs.length === 1 ? "" : "s"}</p>`);
+      parts.push(`<pre class="wf-pre">${escapeHtml(entry.logs.join("\n"))}</pre>`);
+    }
     for (const [name, output] of Object.entries(entry.outputs || {})) {
       const title = Object.keys(entry.outputs).length > 1 ? `${name}: ` : "";
       parts.push(`<p class="wf-help">${escapeHtml(title)}${output.count} item${output.count === 1 ? "" : "s"}${output.count > output.items.length ? `, first ${output.items.length} shown` : ""}</p>`);

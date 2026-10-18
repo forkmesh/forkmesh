@@ -1,0 +1,1112 @@
+[
+ {
+  "code": "return 1 + 2 * 3 - 4 / 2",
+  "expected": 5
+ },
+ {
+  "code": "return [7 % 3, -7 % 3, 7.5 % -2, 2 ** 3 ** 2, (-2) ** 2, 10 / 4]",
+  "expected": [
+   1,
+   -1,
+   1.5,
+   512,
+   4,
+   2.5
+  ]
+ },
+ {
+  "code": "return [1 / 0, -1 / 0, 0 / 0].map(String)",
+  "expected": [
+   "Infinity",
+   "-Infinity",
+   "NaN"
+  ]
+ },
+ {
+  "code": "return [0.1 + 0.2, 1e21, 1e-7, 123e-20, 2 ** 70, -1e-7, 5e-324].map(String)",
+  "expected": [
+   "0.30000000000000004",
+   "1e+21",
+   "1e-7",
+   "1.23e-18",
+   "1.1805916207174113e+21",
+   "-1e-7",
+   "5e-324"
+  ]
+ },
+ {
+  "code": "return [String(1.5), String(-0), String(100), (0.000001).toString(), (1e100).toString()]",
+  "expected": [
+   "1.5",
+   "0",
+   "100",
+   "0.000001",
+   "1e+100"
+  ]
+ },
+ {
+  "code": "return ['5' + 3, '5' - 3, '5' * '2', true + 1, null + 1, [1, 2] + [3], {} + 'x']",
+  "expected": [
+   "53",
+   2,
+   10,
+   2,
+   1,
+   "1,23",
+   "[object Object]x"
+  ]
+ },
+ {
+  "code": "return [1 == '1', 0 == '', null == undefined, null == 0, NaN == NaN, [1] == 1, '1' === 1, true == 1]",
+  "expected": [
+   true,
+   true,
+   true,
+   false,
+   false,
+   true,
+   false,
+   true
+  ]
+ },
+ {
+  "code": "return ['a' < 'b', 'B' < 'a', 10 < 9, '10' < '9', 2 > '1', null >= 0, undefined < 1]",
+  "expected": [
+   true,
+   true,
+   false,
+   true,
+   true,
+   true,
+   false
+  ]
+ },
+ {
+  "code": "return [typeof 1, typeof 'a', typeof null, typeof undefined, typeof {}, typeof [], typeof (() => 1), typeof Math, typeof missing]",
+  "expected": [
+   "number",
+   "string",
+   "object",
+   "undefined",
+   "object",
+   "object",
+   "function",
+   "object",
+   "undefined"
+  ]
+ },
+ {
+  "code": "return [!!'', !!'0', !![], !!{}, !!0, !!NaN, !!-1]",
+  "expected": [
+   false,
+   true,
+   true,
+   true,
+   false,
+   false,
+   true
+  ]
+ },
+ {
+  "code": "return [1 && 2, 0 && 2, 0 || 'x', null ?? 'd', 0 ?? 'd', '' || null]",
+  "expected": [
+   2,
+   0,
+   "x",
+   "d",
+   0,
+   null
+  ]
+ },
+ {
+  "code": "return [5 & 3, 5 | 3, 5 ^ 3, ~5, 1 << 31, -16 >> 2, -16 >>> 28]",
+  "expected": [
+   1,
+   7,
+   6,
+   -6,
+   -2147483648,
+   -4,
+   15
+  ]
+ },
+ {
+  "code": "let x = 5; x += 2; x *= 3; x -= 1; x /= 4; x %= 3; return x",
+  "expected": 2
+ },
+ {
+  "code": "let a = 1; const b = a++ + ++a; return [a, b]",
+  "expected": [
+   3,
+   4
+  ]
+ },
+ {
+  "code": "let o = {n: 1}; o.n++; o['n'] += 10; return o",
+  "expected": {
+   "n": 12
+  }
+ },
+ {
+  "code": "let s = ''; for (let i = 0; i < 5; i++) { if (i === 3) continue; s += i } return s",
+  "expected": "0124"
+ },
+ {
+  "code": "let i = 0; while (true) { i++; if (i > 4) break } return i",
+  "expected": 5
+ },
+ {
+  "code": "let n = 0; do { n++ } while (n < 3); return n",
+  "expected": 3
+ },
+ {
+  "code": "const out = []; for (const x of [1, 2, 3]) out.push(x * x); return out",
+  "expected": [
+   1,
+   4,
+   9
+  ]
+ },
+ {
+  "code": "const out = []; for (const ch of 'héllo') out.push(ch); return out",
+  "expected": [
+   "h",
+   "é",
+   "l",
+   "l",
+   "o"
+  ]
+ },
+ {
+  "code": "const out = []; for (const k in {b: 1, a: 2, 1: 0}) out.push(k); return out",
+  "expected": [
+   "1",
+   "b",
+   "a"
+  ]
+ },
+ {
+  "code": "const out = []; for (const i in ['x', 'y']) out.push(typeof i + i); return out",
+  "expected": [
+   "string0",
+   "string1"
+  ]
+ },
+ {
+  "code": "const fs = []; for (let i = 0; i < 3; i++) fs.push(() => i); return fs.map(f => f())",
+  "expected": [
+   0,
+   1,
+   2
+  ]
+ },
+ {
+  "code": "function fact(n) { return n <= 1 ? 1 : n * fact(n - 1) } return fact(12)",
+  "expected": 479001600
+ },
+ {
+  "code": "const add = (a, b = 10) => a + b; return [add(1), add(1, 2), add(1, undefined)]",
+  "expected": [
+   11,
+   3,
+   11
+  ]
+ },
+ {
+  "code": "function sum(...xs) { return xs.reduce((a, b) => a + b, 0) } return sum(1, 2, 3, ...[4, 5])",
+  "expected": 15
+ },
+ {
+  "code": "const {a, b: {c}, d = 4, ...rest} = {a: 1, b: {c: 3}, e: 5, f: 6}; return [a, c, d, rest]",
+  "expected": [
+   1,
+   3,
+   4,
+   {
+    "e": 5,
+    "f": 6
+   }
+  ]
+ },
+ {
+  "code": "const [x, , y = 9, ...zs] = [1, 2, undefined, 4, 5]; return [x, y, zs]",
+  "expected": [
+   1,
+   9,
+   [
+    4,
+    5
+   ]
+  ]
+ },
+ {
+  "code": "let p = 1, q = 2; [p, q] = [q, p]; return [p, q]",
+  "expected": [
+   2,
+   1
+  ]
+ },
+ {
+  "code": "const f = ({name, age = 30}) => name + ':' + age; return [f({name: 'a'}), f({name: 'b', age: 2})]",
+  "expected": [
+   "a:30",
+   "b:2"
+  ]
+ },
+ {
+  "code": "const o = {a: 1, ['b' + 2]: 2, c() { return this.a + 1 }}; return [o.b2, o.c()]",
+  "expected": [
+   2,
+   2
+  ]
+ },
+ {
+  "code": "const o = {x: 1}; const p = {...o, y: 2, x: 3}; return p",
+  "expected": {
+   "x": 3,
+   "y": 2
+  }
+ },
+ {
+  "code": "return [...'ab', ...[1, 2]]",
+  "expected": [
+   "a",
+   "b",
+   1,
+   2
+  ]
+ },
+ {
+  "code": "const o = {a: {b: null}}; return [o?.a?.b?.c, o.z?.y, o.a.b ?? 'none', o.f?.()]",
+  "expected": [
+   null,
+   null,
+   "none",
+   null
+  ]
+ },
+ {
+  "code": "return `a${1 + 1}b${'x'.repeat(2)}c${[1, [2, 3]]}`",
+  "expected": "a2bxxc1,2,3"
+ },
+ {
+  "code": "return `line1\nline2 ${`nested ${1}`}`",
+  "expected": "line1\nline2 nested 1"
+ },
+ {
+  "code": "try { throw new Error('bad') } catch (e) { return [e.name, e.message, e instanceof Error] }",
+  "expected": [
+   "Error",
+   "bad",
+   true
+  ]
+ },
+ {
+  "code": "try { null.x } catch (e) { return [e.name, e instanceof TypeError] }",
+  "expected": [
+   "TypeError",
+   true
+  ]
+ },
+ {
+  "code": "try { undefinedVar } catch (e) { return e.name }",
+  "expected": "ReferenceError"
+ },
+ {
+  "code": "let log = []; try { log.push(1); throw 2 } catch (e) { log.push(e) } finally { log.push(3) } return log",
+  "expected": [
+   1,
+   2,
+   3
+  ]
+ },
+ {
+  "code": "function f() { try { return 'try' } finally { return 'finally' } } return f()",
+  "expected": "finally"
+ },
+ {
+  "code": "switch ('b') { case 'a': return 1; case 'b': case 'c': return 2; default: return 3 }",
+  "expected": 2
+ },
+ {
+  "code": "let r = []; switch (2) { case 1: r.push(1); case 2: r.push(2); case 3: r.push(3); break; case 4: r.push(4) } return r",
+  "expected": [
+   2,
+   3
+  ]
+ },
+ {
+  "code": "let r = 'none'; switch (9) { case 1: r = 'one'; break; default: r = 'default' } return r",
+  "expected": "default"
+ },
+ {
+  "code": "return [1, 2, 3, 4].filter(n => n % 2).map(n => n * 10)",
+  "expected": [
+   10,
+   30
+  ]
+ },
+ {
+  "code": "return [3, 1, 10, 2].sort()",
+  "expected": [
+   1,
+   10,
+   2,
+   3
+  ]
+ },
+ {
+  "code": "return [3, 1, 10, 2].sort((a, b) => b - a)",
+  "expected": [
+   10,
+   3,
+   2,
+   1
+  ]
+ },
+ {
+  "code": "return ['b', 'a', 'C'].sort()",
+  "expected": [
+   "C",
+   "a",
+   "b"
+  ]
+ },
+ {
+  "code": "const a = [1, 2, 3]; return [a.indexOf(2), a.includes(3), a.find(x => x > 1), a.findIndex(x => x > 5), a.some(x => x > 2), a.every(x => x > 0)]",
+  "expected": [
+   1,
+   true,
+   2,
+   -1,
+   true,
+   true
+  ]
+ },
+ {
+  "code": "const a = [1, 2, 3, 4, 5]; return [a.slice(1, 3), a.slice(-2), a.slice(2, -1), a.at(-1)]",
+  "expected": [
+   [
+    2,
+    3
+   ],
+   [
+    4,
+    5
+   ],
+   [
+    3,
+    4
+   ],
+   5
+  ]
+ },
+ {
+  "code": "const a = [1, 2, 3, 4, 5]; const r = a.splice(1, 2, 'x', 'y', 'z'); return [a, r]",
+  "expected": [
+   [
+    1,
+    "x",
+    "y",
+    "z",
+    4,
+    5
+   ],
+   [
+    2,
+    3
+   ]
+  ]
+ },
+ {
+  "code": "const a = [1]; a.push(2, 3); a.unshift(0); const p = a.pop(); const s = a.shift(); return [a, p, s, a.length]",
+  "expected": [
+   [
+    1,
+    2
+   ],
+   3,
+   0,
+   2
+  ]
+ },
+ {
+  "code": "return [[1, [2, [3]]].flat(), [1, [2, [3]]].flat(Infinity), [1, 2].flatMap(x => [x, x])]",
+  "expected": [
+   [
+    1,
+    2,
+    [
+     3
+    ]
+   ],
+   [
+    1,
+    2,
+    3
+   ],
+   [
+    1,
+    1,
+    2,
+    2
+   ]
+  ]
+ },
+ {
+  "code": "return [[1, 2].concat(3, [4, 5]), [1, 2, 3].join('-'), [null, undefined, 1].join(), [3, 2, 1].reverse()]",
+  "expected": [
+   [
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "1-2-3",
+   ",,1",
+   [
+    1,
+    2,
+    3
+   ]
+  ]
+ },
+ {
+  "code": "return [1, 2, 3].reduce((acc, x) => acc + x) + [1, 2, 3].reduceRight((acc, x) => acc + x, '')",
+  "expected": "6321"
+ },
+ {
+  "code": "const a = [1, 2, 3]; a.length = 1; a[3] = 4; return [a.length, a]",
+  "expected": [
+   4,
+   [
+    1,
+    null,
+    null,
+    4
+   ]
+  ]
+ },
+ {
+  "code": "return Array.from({length: 3}, (_, i) => i * 2).concat(Array.from('ab'), Array.of(7))",
+  "expected": [
+   0,
+   2,
+   4,
+   "a",
+   "b",
+   7
+  ]
+ },
+ {
+  "code": "return [Array.isArray([]), Array.isArray({}), new Array(3).length, new Array(1, 2)]",
+  "expected": [
+   true,
+   false,
+   3,
+   [
+    1,
+    2
+   ]
+  ]
+ },
+ {
+  "code": "return ['Hello'.length, 'Hello'.toUpperCase(), 'Hello'.charAt(1), 'Hello'[4], 'Hello'.at(-1)]",
+  "expected": [
+   5,
+   "HELLO",
+   "e",
+   "o",
+   "o"
+  ]
+ },
+ {
+  "code": "return ['abcabc'.indexOf('c'), 'abcabc'.lastIndexOf('c'), 'abc'.includes('bc'), 'abc'.startsWith('ab'), 'abc'.endsWith('bc')]",
+  "expected": [
+   2,
+   5,
+   true,
+   true,
+   true
+  ]
+ },
+ {
+  "code": "return ['abcdef'.slice(1, 3), 'abcdef'.slice(-2), 'abcdef'.substring(4, 1), 'abcdef'.substr(2, 2)]",
+  "expected": [
+   "bc",
+   "ef",
+   "bcd",
+   "cd"
+  ]
+ },
+ {
+  "code": "return ['  hi  '.trim() + '|', '  hi'.trimStart(), 'hi  '.trimEnd() + '|', '5'.padStart(3, '0'), 'ab'.padEnd(5, 'xy')]",
+  "expected": [
+   "hi|",
+   "hi",
+   "hi|",
+   "005",
+   "abxyx"
+  ]
+ },
+ {
+  "code": "return ['a,b,,c'.split(','), 'abc'.split(''), 'a b'.split(' ', 1), 'one'.split()]",
+  "expected": [
+   [
+    "a",
+    "b",
+    "",
+    "c"
+   ],
+   [
+    "a",
+    "b",
+    "c"
+   ],
+   [
+    "a"
+   ],
+   [
+    "one"
+   ]
+  ]
+ },
+ {
+  "code": "return ['a1b2c3'.replace(/[0-9]/g, '#'), 'aaa'.replace('a', 'b'), 'aaa'.replaceAll('a', 'b'), 'x-y'.replace(/(\\w)-(\\w)/, '$2-$1')]",
+  "expected": [
+   "a#b#c#",
+   "baa",
+   "bbb",
+   "y-x"
+  ]
+ },
+ {
+  "code": "return 'John Smith'.replace(/(?<first>\\w+) (?<last>\\w+)/, '$<last>, $<first>')",
+  "expected": "Smith, John"
+ },
+ {
+  "code": "return 'a-b-c'.replace(/-/g, (m, offset) => '[' + offset + ']')",
+  "expected": "a[1]b[3]c"
+ },
+ {
+  "code": "return ['2026-10-18'.match(/(\\d+)-(\\d+)/).slice(0), 'x'.match(/y/), 'a1b22'.match(/\\d+/g)]",
+  "expected": [
+   [
+    "2026-10",
+    "2026",
+    "10"
+   ],
+   null,
+   [
+    "1",
+    "22"
+   ]
+  ]
+ },
+ {
+  "code": "const m = 'key=value'.match(/(?<k>\\w+)=(?<v>\\w+)/); return [m.index, m.groups.k, m.groups.v, m[0]]",
+  "expected": [
+   0,
+   "key",
+   "value",
+   "key=value"
+  ]
+ },
+ {
+  "code": "return [...'a1b2'.matchAll(/[a-z](\\d)/g)].map(m => m[1] + '@' + m.index)",
+  "expected": [
+   "1@0",
+   "2@2"
+  ]
+ },
+ {
+  "code": "return [/^\\d+$/.test('123'), /^\\d+$/.test('12a'), /hello/i.test('HeLLo'), 'abc'.search(/c/)]",
+  "expected": [
+   true,
+   false,
+   true,
+   2
+  ]
+ },
+ {
+  "code": "const re = /o/g; const out = []; let m; while ((m = re.exec('foo boo')) !== null) out.push(m.index + ':' + re.lastIndex); return out",
+  "expected": [
+   "1:2",
+   "2:3",
+   "5:6",
+   "6:7"
+  ]
+ },
+ {
+  "code": "return ['a1b2c3'.split(/\\d/), 'a1b2c3'.split(/(\\d)/), 'abc'.split(/(?:)/)]",
+  "expected": [
+   [
+    "a",
+    "b",
+    "c",
+    ""
+   ],
+   [
+    "a",
+    "1",
+    "b",
+    "2",
+    "c",
+    "3",
+    ""
+   ],
+   [
+    "a",
+    "b",
+    "c"
+   ]
+  ]
+ },
+ {
+  "code": "return [/a.c/.test('a\\nc'), /a.c/s.test('a\\nc'), /^b/m.test('a\\nb'), /^b/.test('a\\nb'), /c$/.test('c\\n')]",
+  "expected": [
+   false,
+   true,
+   true,
+   false,
+   false
+  ]
+ },
+ {
+  "code": "return [/\\bfoo\\b/.test('a foo b'), /\\bfoo\\b/.test('afoob'), /\\s+/.test('\\u00a0'), /[\\s\\d]+/.exec('a 1 2b')[0]]",
+  "expected": [
+   true,
+   false,
+   true,
+   " 1 2"
+  ]
+ },
+ {
+  "code": "return new RegExp('a+', 'g').flags + new RegExp('x').source + /a/gi.flags",
+  "expected": "gxgi"
+ },
+ {
+  "code": "return [JSON.stringify({a: [1, 'x', null, true], b: {c: 1.5}}), JSON.stringify([undefined, () => 1]), JSON.stringify({u: undefined, n: NaN})]",
+  "expected": [
+   "{\"a\":[1,\"x\",null,true],\"b\":{\"c\":1.5}}",
+   "[null,null]",
+   "{\"n\":null}"
+  ]
+ },
+ {
+  "code": "return JSON.stringify({a: 1, b: [1, 2], c: {}}, null, 2)",
+  "expected": "{\n  \"a\": 1,\n  \"b\": [\n    1,\n    2\n  ],\n  \"c\": {}\n}"
+ },
+ {
+  "code": "return JSON.stringify('é\\u0001\"\\n')",
+  "expected": "\"é\\u0001\\\"\\n\""
+ },
+ {
+  "code": "return JSON.parse('{\"a\": [1, 2.5, \"x\", null, true], \"b\": {}}')",
+  "expected": {
+   "a": [
+    1,
+    2.5,
+    "x",
+    null,
+    true
+   ],
+   "b": {}
+  }
+ },
+ {
+  "code": "try { JSON.parse('{bad') } catch (e) { return e.name }",
+  "expected": "SyntaxError"
+ },
+ {
+  "code": "return Object.keys({b: 1, a: 2, 10: 3, 2: 4})",
+  "expected": [
+   "2",
+   "10",
+   "b",
+   "a"
+  ]
+ },
+ {
+  "code": "return [Object.values({a: 1, b: 2}), Object.entries({a: 1}), Object.fromEntries([['x', 1], ['y', 2]])]",
+  "expected": [
+   [
+    1,
+    2
+   ],
+   [
+    [
+     "a",
+     1
+    ]
+   ],
+   {
+    "x": 1,
+    "y": 2
+   }
+  ]
+ },
+ {
+  "code": "const t = {a: 1}; Object.assign(t, {b: 2}, {a: 3}); return [t, 'a' in t, 'z' in t, t.hasOwnProperty('b')]",
+  "expected": [
+   {
+    "a": 3,
+    "b": 2
+   },
+   true,
+   false,
+   true
+  ]
+ },
+ {
+  "code": "const o = {a: 1, b: 2}; delete o.a; return o",
+  "expected": {
+   "b": 2
+  }
+ },
+ {
+  "code": "return [Math.max(1, 5, 3), Math.min(), Math.max(), Math.abs(-3), Math.floor(-1.5), Math.ceil(-1.5), Math.round(2.5), Math.round(-2.5), Math.round(0.49999999999999994), Math.trunc(-4.7), Math.sign(-3)]",
+  "expected": [
+   5,
+   null,
+   null,
+   3,
+   -2,
+   -1,
+   3,
+   -2,
+   0,
+   -4,
+   -1
+  ]
+ },
+ {
+  "code": "return [Math.sqrt(16), Math.pow(2, 10), Math.cbrt(27), Math.hypot(3, 4), Math.PI.toFixed(4)]",
+  "expected": [
+   4,
+   1024,
+   3,
+   5,
+   "3.1416"
+  ]
+ },
+ {
+  "code": "return [parseInt('42px'), parseInt('0x1f'), parseInt('101', 2), parseInt('z', 36), parseInt(''), parseFloat('3.14abc'), parseFloat('.5'), parseFloat('-Infinityx')]",
+  "expected": [
+   42,
+   31,
+   5,
+   35,
+   null,
+   3.14,
+   0.5,
+   null
+  ]
+ },
+ {
+  "code": "return [Number(''), Number(' 12 '), Number('0x10'), Number('1e3'), Number('12px'), Number(null), Number(true), Number([5])]",
+  "expected": [
+   0,
+   12,
+   16,
+   1000,
+   null,
+   0,
+   1,
+   5
+  ]
+ },
+ {
+  "code": "return [isNaN('abc'), isNaN('12'), isFinite('12'), Number.isInteger(5), Number.isInteger(5.5), Number.isNaN('x'), Number.isFinite(Infinity)]",
+  "expected": [
+   true,
+   false,
+   true,
+   true,
+   false,
+   false,
+   false
+  ]
+ },
+ {
+  "code": "return [(1234.5678).toFixed(2), (0.5).toFixed(0), (1.005).toFixed(2), (-1.5).toFixed(0), (1e21).toFixed(2), (255).toString(16), (255).toString(2), (-255).toString(36)]",
+  "expected": [
+   "1234.57",
+   "1",
+   "1.00",
+   "-2",
+   "1e+21",
+   "ff",
+   "11111111",
+   "-73"
+  ]
+ },
+ {
+  "code": "return [String(true), String(null), String(undefined), String([1, [2, 3]]), String({})]",
+  "expected": [
+   "true",
+   "null",
+   "undefined",
+   "1,2,3",
+   "[object Object]"
+  ]
+ },
+ {
+  "code": "return [encodeURIComponent('a b&c=d/é?'), decodeURIComponent('a%20b%C3%A9'), encodeURIComponent(\"!'()*-_.~\")]",
+  "expected": [
+   "a%20b%26c%3Dd%2F%C3%A9%3F",
+   "a bé",
+   "!'()*-_.~"
+  ]
+ },
+ {
+  "code": "try { decodeURIComponent('%E0%A4%A') } catch (e) { return e.name }",
+  "expected": "URIError"
+ },
+ {
+  "code": "return [new Date(0).toISOString(), new Date('2026-10-18T12:34:56.789Z').getTime(), new Date(2026, 0, 31).toISOString()]",
+  "expected": [
+   "1970-01-01T00:00:00.000Z",
+   1792326896789,
+   "2026-01-31T00:00:00.000Z"
+  ]
+ },
+ {
+  "code": "const d = new Date('2026-01-31T10:00:00Z'); d.setUTCMonth(1); return d.toISOString()",
+  "expected": "2026-03-03T10:00:00.000Z"
+ },
+ {
+  "code": "const d = new Date('2026-03-01T00:00:00Z'); d.setUTCDate(0); return [d.getUTCDate(), d.getUTCMonth(), d.getUTCFullYear(), d.getUTCDay()]",
+  "expected": [
+   28,
+   1,
+   2026,
+   6
+  ]
+ },
+ {
+  "code": "const d = new Date(Date.UTC(2026, 11, 31, 23, 59, 59)); return [d.toISOString(), d.toJSON(), JSON.stringify({d})]",
+  "expected": [
+   "2026-12-31T23:59:59.000Z",
+   "2026-12-31T23:59:59.000Z",
+   "{\"d\":\"2026-12-31T23:59:59.000Z\"}"
+  ]
+ },
+ {
+  "code": "return [new Date('nope').getTime(), Date.parse('2026-10-18'), Date.parse('2026-10-18T10:00:00+02:00')]",
+  "expected": [
+   null,
+   1792281600000,
+   1792310400000
+  ]
+ },
+ {
+  "code": "const a = new Date('2026-10-18T00:00:00Z'), b = new Date('2026-10-20T12:00:00Z'); return (b - a) / 36e5",
+  "expected": 60
+ },
+ {
+  "code": "return ['b'.localeCompare('a'), 'a'.localeCompare('a'), 'a'.localeCompare('b')]",
+  "expected": [
+   1,
+   0,
+   -1
+  ]
+ },
+ {
+  "code": "const counts = {}; for (const w of 'a b a c b a'.split(' ')) counts[w] = (counts[w] || 0) + 1; return counts",
+  "expected": {
+   "a": 3,
+   "b": 2,
+   "c": 1
+  }
+ },
+ {
+  "code": "const grouped = [{t: 'x', v: 1}, {t: 'y', v: 2}, {t: 'x', v: 3}].reduce((acc, it) => { (acc[it.t] ||= []).push(it.v); return acc }, {}); return grouped",
+  "expected": {
+   "x": [
+    1,
+    3
+   ],
+   "y": [
+    2
+   ]
+  }
+ },
+ {
+  "code": "function Point(x) { return {x, double() { return this.x * 2 }} } return Point(4).double()",
+  "expected": 8
+ },
+ {
+  "code": "const counter = (() => { let n = 0; return { inc: () => ++n, get: () => n } })(); counter.inc(); counter.inc(); return counter.get()",
+  "expected": 2
+ },
+ {
+  "code": "function outer() { return inner(); function inner() { return 'hoisted' } } return outer()",
+  "expected": "hoisted"
+ },
+ {
+  "code": "const fib = n => n < 2 ? n : fib(n - 1) + fib(n - 2); return fib(15)",
+  "expected": 610
+ },
+ {
+  "code": "let total = 0; for (let i = 0; i < 1000; i++) total += i; return total",
+  "expected": 499500
+ },
+ {
+  "code": "const a = [5, 1, 4]; const b = a.toSorted(); return [a, b, a.toReversed()]",
+  "expected": [
+   [
+    5,
+    1,
+    4
+   ],
+   [
+    1,
+    4,
+    5
+   ],
+   [
+    4,
+    1,
+    5
+   ]
+  ]
+ },
+ {
+  "code": "return [[1, 2, 3].fill(0, 1), [1, 2, 3].lastIndexOf(3), [NaN].includes(NaN), [NaN].indexOf(NaN)]",
+  "expected": [
+   [
+    1,
+    0,
+    0
+   ],
+   2,
+   true,
+   -1
+  ]
+ },
+ {
+  "code": "return [1, 2, 3].map((x, i, arr) => x + i + arr.length)",
+  "expected": [
+   4,
+   6,
+   8
+  ]
+ },
+ {
+  "code": "return [void 0, typeof void 0, undefined === void 0]",
+  "expected": [
+   null,
+   "undefined",
+   true
+  ]
+ },
+ {
+  "code": "const o = {}; o.a ??= 1; o.a ??= 2; o.b ||= 'x'; o.b &&= 'y'; return o",
+  "expected": {
+   "a": 1,
+   "b": "y"
+  }
+ },
+ {
+  "code": "let n = null; return [n?.length, n ?? 0, (n || {}).x]",
+  "expected": [
+   null,
+   0,
+   null
+  ]
+ },
+ {
+  "code": "return Object.entries({a: 1, b: 2}).map(([k, v]) => k + v).join('&')",
+  "expected": "a1&b2"
+ },
+ {
+  "code": "return [...new Set([3, 1, 3, 2, 1])]",
+  "expected": [
+   3,
+   1,
+   2
+  ]
+ },
+ {
+  "code": "const s = new Set(); s.add(1).add('1').add(NaN).add(NaN).add(0).add(-0); return [s.size, s.has('1'), s.has(NaN), [...s]]",
+  "expected": [
+   4,
+   true,
+   true,
+   [
+    1,
+    "1",
+    null,
+    0
+   ]
+  ]
+ },
+ {
+  "code": "const s = new Set('hello'); s.delete('l'); const out = []; s.forEach(v => out.push(v)); return out.join('')",
+  "expected": "heo"
+ },
+ {
+  "code": "const m = new Map([['a', 1]]); m.set('b', 2).set('a', 3); return [m.get('a'), m.get('z'), m.size, [...m], [...m.keys()], m.has('b')]",
+  "expected": [
+   3,
+   null,
+   2,
+   [
+    [
+     "a",
+     3
+    ],
+    [
+     "b",
+     2
+    ]
+   ],
+   [
+    "a",
+    "b"
+   ],
+   true
+  ]
+ },
+ {
+  "code": "const m = new Map(); const k = {}; m.set(k, 'obj'); return [m.get(k), m.get({}), Object.fromEntries(m.set('x', 1))]",
+  "expected": [
+   "obj",
+   null,
+   {
+    "[object Object]": "obj",
+    "x": 1
+   }
+  ]
+ },
+ {
+  "code": "const counts = new Map(); for (const w of 'a b a'.split(' ')) counts.set(w, (counts.get(w) || 0) + 1); return Array.from(counts)",
+  "expected": [
+   [
+    "a",
+    2
+   ],
+   [
+    "b",
+    1
+   ]
+  ]
+ },
+ {
+  "code": "return [JSON.stringify(new Set([1])), new Set([1]) instanceof Set, typeof new Map()]",
+  "expected": [
+   "{}",
+   true,
+   "object"
+  ]
+ },
+ {
+  "code": "let out = []; for (const [k, v] of new Map([[1, 'a'], [2, 'b']])) out.push(k + v); return out",
+  "expected": [
+   "1a",
+   "2b"
+  ]
+ }
+]

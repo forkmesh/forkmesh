@@ -255,13 +255,44 @@ public final class WorkflowsStore {
             return WorkflowRun(json: ["status": "error", "error": .string(WorkflowsText.phoneEngineMissing)], place: .phone,
                                id: "phone-\(started)", startedAt: started, finishedAt: started)
         }
+        let linked = await linkedWorkflows(draft, depth: engine.maxWorkflowDepth - 1)
+        var credentials = phoneCredentials.credentials(for: draft)
+        for child in linked { credentials.merge(phoneCredentials.credentials(for: child)) }
         let report = await engine.run(
-            draft.graph, payload: payload, credentials: phoneCredentials.credentials(for: draft), trigger: "manual",
-            workflowId: draft.id, transport: makeTransport(engine))
+            draft.graph, payload: payload, credentials: credentials, trigger: "manual", workflowId: draft.id,
+            workflows: linked.map { (child: WorkflowDraft) -> JSONValue in
+                .object(["id": .string(child.id), "name": .string(child.name), "workflow": .object(child.graph)])
+            },
+            transport: makeTransport(engine))
         let run = WorkflowRun(json: report, place: .phone, id: "phone-\(started)", startedAt: started, finishedAt: clock.nowMillis)
         let key = draft.id.isEmpty ? "draft" : draft.id
         phoneRuns[key] = Array(([run] + (phoneRuns[key] ?? [])).prefix(Self.phoneRunsKept))
         return run
+    }
+
+    public func linkedWorkflows(_ draft: WorkflowDraft, depth: Int) async -> [WorkflowDraft] {
+        var found: [String: WorkflowDraft] = [:]
+        var queue: [(draft: WorkflowDraft, level: Int)] = [(draft, 0)]
+        while !queue.isEmpty {
+            let (current, level) = queue.removeFirst()
+            guard level < depth else { continue }
+            for node in current.nodes where node.type == "core.runWorkflow" {
+                let ref = node.text("workflow").trimmingCharacters(in: .whitespacesAndNewlines)
+                let targets = ref.contains("{{") ? workflows : Array(workflows.filter { (summary: WorkflowSummary) in
+                    summary.id == ref || summary.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == ref.lowercased()
+                }.prefix(1))
+                for summary in targets where found[summary.id] == nil && summary.id != draft.id {
+                    guard let child = try? await open(summary.id) else { continue }
+                    found[summary.id] = child
+                    queue.append((child, level + 1))
+                }
+            }
+        }
+        if draft.nodes.contains(where: { (node: WorkflowNode) in node.type == "core.runWorkflow" }), !draft.id.isEmpty,
+           found[draft.id] == nil {
+            found[draft.id] = draft
+        }
+        return workflows.compactMap { (summary: WorkflowSummary) in found[summary.id] }
     }
 
     public func runs(_ id: String) async throws -> [WorkflowRun] {

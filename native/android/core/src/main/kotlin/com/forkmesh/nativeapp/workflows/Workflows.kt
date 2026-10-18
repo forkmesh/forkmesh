@@ -100,7 +100,8 @@ data class WorkflowField(
     val options: List<Pair<String, String>>,
     val secret: Boolean,
 ) {
-    val multiline: Boolean get() = type == "json" || type == "text"
+    val multiline: Boolean get() = type == "json" || type == "text" || type == "code"
+    val mono: Boolean get() = type == "json" || type == "code"
 
     companion object {
         fun of(json: Any?): WorkflowField {
@@ -587,11 +588,68 @@ class HttpWorkflowTransport(
 }
 
 class WorkflowPhoneRunner(private val engine: WorkflowEngine, private val transport: HttpWorkflowTransport = HttpWorkflowTransport(engine)) {
-    fun run(draft: WorkflowDraft, credentials: WorkflowJson, payload: Any? = null, clock: () -> Long = { System.currentTimeMillis() }): WorkflowRun {
+    fun run(
+        draft: WorkflowDraft,
+        credentials: WorkflowJson,
+        payload: Any? = null,
+        clock: () -> Long = { System.currentTimeMillis() },
+        workflows: List<WorkflowJson> = emptyList(),
+    ): WorkflowRun {
         val started = clock()
         val report = engine.run(
-            WorkflowEngine.Input(draft.graph, payload, credentials, "manual", draft.id, clock = clock),
+            WorkflowEngine.Input(draft.graph, payload, credentials, "manual", draft.id, clock = clock, workflows = workflows),
         ) { request -> transport.send(request) { engine.safeUrl(it).isNotEmpty() } }
         return WorkflowRun.of(report, phone = true, id = "phone-$started", startedAt = started, finishedAt = clock())
     }
+}
+
+class WorkflowTargets(private val api: WorkflowsApi, private val phone: WorkflowPhoneCredentials) {
+    class Resolved(val workflows: List<WorkflowJson>, val credentials: WorkflowJson)
+
+    fun resolve(draft: WorkflowDraft): Resolved {
+        val credentials = LinkedHashMap(phone.credentials(draft))
+        if (refs(draft).isEmpty()) return Resolved(emptyList(), credentials)
+        val summaries = try {
+            api.list()
+        } catch (_: Exception) {
+            return Resolved(emptyList(), credentials)
+        }
+        val loaded = LinkedHashMap<String, WorkflowDraft>()
+        var level = listOf(draft)
+        repeat(WorkflowActions.MAX_WORKFLOW_DEPTH - 1) {
+            val wanted = LinkedHashSet<String>()
+            for (current in level) {
+                for (ref in refs(current)) {
+                    if (ref.contains("{{")) {
+                        summaries.forEach { wanted.add(it.id) }
+                    } else {
+                        val match = summaries.firstOrNull { it.id == ref } ?: summaries.firstOrNull { it.name.trim().lowercase() == ref.lowercase() }
+                        match?.let { wanted.add(it.id) }
+                    }
+                }
+            }
+            val next = ArrayList<WorkflowDraft>()
+            for (id in wanted) {
+                if (loaded.containsKey(id) || id == draft.id) continue
+                val opened = try {
+                    api.open(id)
+                } catch (_: Exception) {
+                    continue
+                }
+                loaded[id] = opened
+                credentials.putAll(phone.credentials(opened))
+                next.add(opened)
+            }
+            level = next
+        }
+        if (draft.id.isNotEmpty() && summaries.any { it.id == draft.id }) loaded.putIfAbsent(draft.id, draft)
+        val ordered = summaries.mapNotNull { summary -> loaded[summary.id]?.let { summary to it } }
+        return Resolved(
+            ordered.map { (summary, opened) -> linkedMapOf("id" to summary.id, "name" to summary.name, "workflow" to opened.graph) },
+            credentials,
+        )
+    }
+
+    private fun refs(draft: WorkflowDraft): List<String> =
+        draft.nodes.filter { it.type == "core.runWorkflow" }.map { it.text("workflow").trim() }.filter { it.isNotEmpty() }
 }

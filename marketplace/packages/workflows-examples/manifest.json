@@ -12,7 +12,7 @@
   "type": "extension.native",
   "category": "Workflow add-ons",
   "version": "1.0.0",
-  "summary": "Adds 10 ready-made example workflows to Workflows: GitHub bugs to Slack, uptime alerts, Stripe to HubSpot, Claude summaries and more. Each opens as an unsaved copy.",
+  "summary": "Adds 12 ready-made example workflows to Workflows: GitHub bugs to Slack, uptime alerts, Stripe to HubSpot, Claude summaries, an order totalled by a script and more. Each opens as an unsaved copy.",
   "screenshots": [
     {
       "path": "preview/market.svg",
@@ -48,7 +48,9 @@
           "translate-and-reply",
           "shopify-orders-to-sheets",
           "new-github-release-notes",
-          "calendly-to-notion"
+          "calendly-to-notion",
+        "order-total-script",
+        "weekday-reminder"
         ]
       }
     }

@@ -150,7 +150,8 @@ def test_export_is_n8n_shaped_and_round_trips():
         assert document["meta"]["format"] == formats.FORMAT
         for node in document["nodes"]:
             assert isinstance(node["position"], list)
-            assert node["type"].startswith(("n8n-nodes-base.", "forkmesh.app."))
+            assert node["type"].startswith(("n8n-nodes-base.", "forkmesh.app.")) \
+                or node["forkmeshType"] in engine.actions.NODES
         back, warnings = formats.from_document(json.dumps(document))
         assert warnings == []
         assert [(n["type"], n["name"], n["params"]) for n in back["nodes"]] \
@@ -171,10 +172,10 @@ def test_core_steps_keep_their_logic_without_forkmesh_fields():
     assert nodes["Check the site"]["continueOnFail"] is True
 
 
-def test_ten_examples_are_valid_runnable_workflows():
-    assert len(templates.TEMPLATES) == 10
+def test_twelve_examples_are_valid_runnable_workflows():
+    assert len(templates.TEMPLATES) == 12
     keys = [t["key"] for t in templates.TEMPLATES]
-    assert len(set(keys)) == 10
+    assert len(set(keys)) == 12
     for item in templates.TEMPLATES:
         workflow, error = engine.clean_workflow(item["workflow"])
         assert error == "", item["key"]

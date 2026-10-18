@@ -14,7 +14,10 @@
   "positionLimit": 20000,
   "scheduleMinMinutes": 5,
   "scheduleMaxMinutes": 10080,
-  "requestTimeoutSeconds": 30
+  "requestTimeoutSeconds": 30,
+  "maxWaitSeconds": 60,
+  "maxRepeat": 100,
+  "maxWorkflowDepth": 3
  },
  "runLimits": {
   "manual": [
@@ -93,6 +96,14 @@
   [
    "isFalse",
    "is false"
+  ],
+  [
+   "matches",
+   "matches the regular expression"
+  ],
+  [
+   "notMatches",
+   "does not match the regular expression"
   ]
  ],
  "coreNodes": {
@@ -337,6 +348,14 @@
       {
        "value": "isFalse",
        "label": "is false"
+      },
+      {
+       "value": "matches",
+       "label": "matches the regular expression"
+      },
+      {
+       "value": "notMatches",
+       "label": "does not match the regular expression"
       }
      ]
     },
@@ -426,6 +445,14 @@
       {
        "value": "isFalse",
        "label": "is false"
+      },
+      {
+       "value": "matches",
+       "label": "matches the regular expression"
+      },
+      {
+       "value": "notMatches",
+       "label": "does not match the regular expression"
       }
      ]
     },
@@ -496,6 +523,1547 @@
    ],
    "description": "Pass items through unchanged.",
    "fields": []
+  },
+  "core.code": {
+   "name": "Run script",
+   "group": "Scripting",
+   "icon": "code-xml",
+   "color": "#9333ea",
+   "outputs": [
+    "main"
+   ],
+   "description": "Run your own JavaScript on the items.",
+   "fields": [
+    {
+     "key": "mode",
+     "label": "Run",
+     "type": "select",
+     "required": true,
+     "default": "all",
+     "options": [
+      {
+       "value": "all",
+       "label": "Once for all items"
+      },
+      {
+       "value": "each",
+       "label": "Once for each item"
+      }
+     ]
+    },
+    {
+     "key": "code",
+     "label": "Script",
+     "type": "code",
+     "required": true,
+     "default": "// items holds every incoming item. Change them, or build new ones,\n// and return the items this step passes on.\nfor (const item of items) {\n  item.checkedAt = $now;\n}\nreturn items;\n"
+    }
+   ]
+  },
+  "core.variable": {
+   "name": "Set variable",
+   "group": "Scripting",
+   "icon": "variable",
+   "color": "#9333ea",
+   "outputs": [
+    "main"
+   ],
+   "description": "Keep a value for later steps as {{ $vars.name }}.",
+   "fields": [
+    {
+     "key": "name",
+     "label": "Variable name",
+     "type": "string",
+     "required": true,
+     "placeholder": "total"
+    },
+    {
+     "key": "value",
+     "label": "Value",
+     "type": "value",
+     "placeholder": "{{ $json.amount }}"
+    },
+    {
+     "key": "mode",
+     "label": "Action",
+     "type": "select",
+     "required": true,
+     "default": "set",
+     "options": [
+      {
+       "value": "set",
+       "label": "Set to the value"
+      },
+      {
+       "value": "append",
+       "label": "Add the value to a list"
+      },
+      {
+       "value": "add",
+       "label": "Add the value to a number"
+      }
+     ]
+    }
+   ]
+  },
+  "core.switch": {
+   "name": "Choose by value",
+   "group": "Scripting",
+   "icon": "signpost-big",
+   "color": "#9333ea",
+   "outputs": [
+    "case1",
+    "case2",
+    "case3",
+    "otherwise"
+   ],
+   "description": "Send each item down the branch whose value matches.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Value",
+     "type": "value",
+     "required": true,
+     "placeholder": "{{ $json.status }}"
+    },
+    {
+     "key": "case1",
+     "label": "Case 1",
+     "type": "string",
+     "placeholder": "new"
+    },
+    {
+     "key": "case2",
+     "label": "Case 2",
+     "type": "string",
+     "placeholder": "open"
+    },
+    {
+     "key": "case3",
+     "label": "Case 3",
+     "type": "string",
+     "placeholder": "closed"
+    }
+   ]
+  },
+  "core.repeat": {
+   "name": "Repeat",
+   "group": "Scripting",
+   "icon": "repeat",
+   "color": "#9333ea",
+   "outputs": [
+    "main"
+   ],
+   "description": "Pass every item on several times, counting up.",
+   "fields": [
+    {
+     "key": "times",
+     "label": "Times",
+     "type": "number",
+     "required": true,
+     "default": "3"
+    },
+    {
+     "key": "field",
+     "label": "Count field",
+     "type": "string",
+     "required": true,
+     "default": "repeatIndex"
+    }
+   ]
+  },
+  "core.wait": {
+   "name": "Wait",
+   "group": "Scripting",
+   "icon": "timer",
+   "color": "#9333ea",
+   "outputs": [
+    "main"
+   ],
+   "description": "Pause before the next step.",
+   "fields": [
+    {
+     "key": "seconds",
+     "label": "Seconds",
+     "type": "number",
+     "required": true,
+     "default": "5"
+    }
+   ]
+  },
+  "core.runWorkflow": {
+   "name": "Run workflow",
+   "group": "Scripting",
+   "icon": "workflow",
+   "color": "#9333ea",
+   "outputs": [
+    "main"
+   ],
+   "description": "Run another of your workflows with each item.",
+   "fields": [
+    {
+     "key": "workflow",
+     "label": "Workflow name or ID",
+     "type": "string",
+     "required": true,
+     "placeholder": "Send weekly report"
+    }
+   ]
+  },
+  "core.stop": {
+   "name": "Stop workflow",
+   "group": "Scripting",
+   "icon": "octagon-x",
+   "color": "#9333ea",
+   "outputs": [
+    "main"
+   ],
+   "description": "End the run here, as a success or with an error.",
+   "fields": [
+    {
+     "key": "outcome",
+     "label": "End as",
+     "type": "select",
+     "required": true,
+     "default": "success",
+     "options": [
+      {
+       "value": "success",
+       "label": "Success"
+      },
+      {
+       "value": "error",
+       "label": "Error"
+      }
+     ]
+    },
+    {
+     "key": "message",
+     "label": "Error message",
+     "type": "string",
+     "placeholder": "Nothing to do today"
+    }
+   ]
+  },
+  "core.comment": {
+   "name": "Comment",
+   "group": "Scripting",
+   "icon": "message-square-text",
+   "color": "#64748b",
+   "outputs": [
+    "main"
+   ],
+   "description": "A note on the canvas. Items pass through.",
+   "fields": [
+    {
+     "key": "text",
+     "label": "Comment",
+     "type": "text",
+     "placeholder": "What this part of the workflow does"
+    }
+   ]
+  },
+  "core.textCase": {
+   "name": "Change case",
+   "group": "Text",
+   "icon": "case-sensitive",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "Make text upper case, lower case or capitalized.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Text",
+     "type": "string",
+     "default": "{{ $json.text }}",
+     "placeholder": "{{ $json.text }}"
+    },
+    {
+     "key": "case",
+     "label": "Case",
+     "type": "select",
+     "required": true,
+     "default": "upper",
+     "options": [
+      {
+       "value": "upper",
+       "label": "UPPER CASE"
+      },
+      {
+       "value": "lower",
+       "label": "lower case"
+      },
+      {
+       "value": "capitalize",
+       "label": "Capitalize first letter"
+      },
+      {
+       "value": "words",
+       "label": "Capitalize Every Word"
+      }
+     ]
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "text",
+     "placeholder": "text"
+    }
+   ]
+  },
+  "core.textReplace": {
+   "name": "Replace text",
+   "group": "Text",
+   "icon": "replace",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "Find text and replace every match.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Text",
+     "type": "string",
+     "default": "{{ $json.text }}",
+     "placeholder": "{{ $json.text }}"
+    },
+    {
+     "key": "find",
+     "label": "Find",
+     "type": "string",
+     "required": true,
+     "placeholder": "colour"
+    },
+    {
+     "key": "replace",
+     "label": "Replace with",
+     "type": "string",
+     "placeholder": "color"
+    },
+    {
+     "key": "regex",
+     "label": "Regular expression",
+     "type": "boolean",
+     "default": "false"
+    },
+    {
+     "key": "ignoreCase",
+     "label": "Ignore case",
+     "type": "boolean",
+     "default": "false"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "text",
+     "placeholder": "text"
+    }
+   ]
+  },
+  "core.textMatch": {
+   "name": "Match text",
+   "group": "Text",
+   "icon": "text-search",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "Find what a regular expression matches.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Text",
+     "type": "string",
+     "default": "{{ $json.text }}",
+     "placeholder": "{{ $json.text }}"
+    },
+    {
+     "key": "pattern",
+     "label": "Regular expression",
+     "type": "string",
+     "required": true,
+     "placeholder": "[0-9]+"
+    },
+    {
+     "key": "result",
+     "label": "Get",
+     "type": "select",
+     "required": true,
+     "default": "all",
+     "options": [
+      {
+       "value": "all",
+       "label": "All matches"
+      },
+      {
+       "value": "first",
+       "label": "First match"
+      },
+      {
+       "value": "groups",
+       "label": "Groups of the first match"
+      },
+      {
+       "value": "test",
+       "label": "Whether it matches"
+      }
+     ]
+    },
+    {
+     "key": "ignoreCase",
+     "label": "Ignore case",
+     "type": "boolean",
+     "default": "false"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "matches",
+     "placeholder": "matches"
+    }
+   ]
+  },
+  "core.textSplit": {
+   "name": "Split text",
+   "group": "Text",
+   "icon": "scissors",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "Turn text into a list.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Text",
+     "type": "string",
+     "default": "{{ $json.text }}",
+     "placeholder": "{{ $json.text }}"
+    },
+    {
+     "key": "separator",
+     "label": "Split at",
+     "type": "select",
+     "required": true,
+     "default": "newlines",
+     "options": [
+      {
+       "value": "newlines",
+       "label": "New lines"
+      },
+      {
+       "value": "spaces",
+       "label": "Spaces"
+      },
+      {
+       "value": "commas",
+       "label": "Commas"
+      },
+      {
+       "value": "characters",
+       "label": "Every character"
+      },
+      {
+       "value": "custom",
+       "label": "Custom text"
+      }
+     ]
+    },
+    {
+     "key": "custom",
+     "label": "Custom separator",
+     "type": "string",
+     "placeholder": ";"
+    },
+    {
+     "key": "skipEmpty",
+     "label": "Leave out empty parts",
+     "type": "boolean",
+     "default": "true"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "parts",
+     "placeholder": "parts"
+    }
+   ]
+  },
+  "core.textCombine": {
+   "name": "Combine text",
+   "group": "Text",
+   "icon": "combine",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "Join a list into one text.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "List",
+     "type": "value",
+     "default": "{{ $json.parts }}",
+     "placeholder": "{{ $json.parts }}"
+    },
+    {
+     "key": "separator",
+     "label": "Join with",
+     "type": "select",
+     "required": true,
+     "default": "newlines",
+     "options": [
+      {
+       "value": "newlines",
+       "label": "New lines"
+      },
+      {
+       "value": "spaces",
+       "label": "Spaces"
+      },
+      {
+       "value": "commas",
+       "label": "Commas"
+      },
+      {
+       "value": "none",
+       "label": "Nothing"
+      },
+      {
+       "value": "custom",
+       "label": "Custom text"
+      }
+     ]
+    },
+    {
+     "key": "custom",
+     "label": "Custom separator",
+     "type": "string",
+     "placeholder": " | "
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "text",
+     "placeholder": "text"
+    }
+   ]
+  },
+  "core.textEncode": {
+   "name": "Encode text",
+   "group": "Text",
+   "icon": "binary",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "Base64, URL or HTML encode and decode.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Text",
+     "type": "string",
+     "default": "{{ $json.text }}",
+     "placeholder": "{{ $json.text }}"
+    },
+    {
+     "key": "method",
+     "label": "Method",
+     "type": "select",
+     "required": true,
+     "default": "base64Encode",
+     "options": [
+      {
+       "value": "base64Encode",
+       "label": "Base64 encode"
+      },
+      {
+       "value": "base64Decode",
+       "label": "Base64 decode"
+      },
+      {
+       "value": "urlEncode",
+       "label": "URL encode"
+      },
+      {
+       "value": "urlDecode",
+       "label": "URL decode"
+      },
+      {
+       "value": "htmlEscape",
+       "label": "HTML escape"
+      },
+      {
+       "value": "htmlUnescape",
+       "label": "HTML unescape"
+      }
+     ]
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "text",
+     "placeholder": "text"
+    }
+   ]
+  },
+  "core.hash": {
+   "name": "Hash text",
+   "group": "Text",
+   "icon": "hash",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "MD5, SHA or HMAC of a text.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Text",
+     "type": "string",
+     "default": "{{ $json.text }}",
+     "placeholder": "{{ $json.text }}"
+    },
+    {
+     "key": "algorithm",
+     "label": "Algorithm",
+     "type": "select",
+     "required": true,
+     "default": "sha256",
+     "options": [
+      {
+       "value": "md5",
+       "label": "MD5"
+      },
+      {
+       "value": "sha1",
+       "label": "SHA-1"
+      },
+      {
+       "value": "sha256",
+       "label": "SHA-256"
+      },
+      {
+       "value": "sha512",
+       "label": "SHA-512"
+      }
+     ]
+    },
+    {
+     "key": "key",
+     "label": "HMAC key",
+     "type": "string",
+     "placeholder": "Leave empty for a plain hash"
+    },
+    {
+     "key": "encoding",
+     "label": "Output",
+     "type": "select",
+     "required": true,
+     "default": "hex",
+     "options": [
+      {
+       "value": "hex",
+       "label": "Hex"
+      },
+      {
+       "value": "base64",
+       "label": "Base64"
+      }
+     ]
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "hash",
+     "placeholder": "hash"
+    }
+   ]
+  },
+  "core.textExtract": {
+   "name": "Get from text",
+   "group": "Text",
+   "icon": "at-sign",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "Pick out links, emails, numbers, phone numbers or tags.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Text",
+     "type": "string",
+     "default": "{{ $json.text }}",
+     "placeholder": "{{ $json.text }}"
+    },
+    {
+     "key": "kind",
+     "label": "Get",
+     "type": "select",
+     "required": true,
+     "default": "urls",
+     "options": [
+      {
+       "value": "urls",
+       "label": "Links"
+      },
+      {
+       "value": "emails",
+       "label": "Email addresses"
+      },
+      {
+       "value": "numbers",
+       "label": "Numbers"
+      },
+      {
+       "value": "phones",
+       "label": "Phone numbers"
+      },
+      {
+       "value": "hashtags",
+       "label": "Hashtags"
+      },
+      {
+       "value": "mentions",
+       "label": "Mentions"
+      }
+     ]
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "found",
+     "placeholder": "found"
+    }
+   ]
+  },
+  "core.count": {
+   "name": "Count",
+   "group": "Text",
+   "icon": "list-ordered",
+   "color": "#0d9488",
+   "outputs": [
+    "main"
+   ],
+   "description": "Count characters, words, lines or list entries.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Value",
+     "type": "value",
+     "default": "{{ $json.text }}",
+     "placeholder": "{{ $json.text }}"
+    },
+    {
+     "key": "what",
+     "label": "Count",
+     "type": "select",
+     "required": true,
+     "default": "characters",
+     "options": [
+      {
+       "value": "characters",
+       "label": "Characters"
+      },
+      {
+       "value": "words",
+       "label": "Words"
+      },
+      {
+       "value": "lines",
+       "label": "Lines"
+      },
+      {
+       "value": "items",
+       "label": "List entries"
+      }
+     ]
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "count",
+     "placeholder": "count"
+    }
+   ]
+  },
+  "core.math": {
+   "name": "Calculate",
+   "group": "Numbers",
+   "icon": "calculator",
+   "color": "#4f46e5",
+   "outputs": [
+    "main"
+   ],
+   "description": "Add, subtract, multiply, divide and more.",
+   "fields": [
+    {
+     "key": "a",
+     "label": "Number",
+     "type": "value",
+     "required": true,
+     "placeholder": "{{ $json.price }}"
+    },
+    {
+     "key": "operator",
+     "label": "Operation",
+     "type": "select",
+     "required": true,
+     "default": "add",
+     "options": [
+      {
+       "value": "add",
+       "label": "+ Add"
+      },
+      {
+       "value": "subtract",
+       "label": "− Subtract"
+      },
+      {
+       "value": "multiply",
+       "label": "× Multiply"
+      },
+      {
+       "value": "divide",
+       "label": "÷ Divide"
+      },
+      {
+       "value": "modulo",
+       "label": "Remainder"
+      },
+      {
+       "value": "power",
+       "label": "Power"
+      },
+      {
+       "value": "min",
+       "label": "Smaller of the two"
+      },
+      {
+       "value": "max",
+       "label": "Larger of the two"
+      },
+      {
+       "value": "sqrt",
+       "label": "Square root"
+      },
+      {
+       "value": "abs",
+       "label": "Absolute value"
+      }
+     ]
+    },
+    {
+     "key": "b",
+     "label": "Second number",
+     "type": "value",
+     "placeholder": "1.2"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "result",
+     "placeholder": "result"
+    }
+   ]
+  },
+  "core.round": {
+   "name": "Round number",
+   "group": "Numbers",
+   "icon": "sigma",
+   "color": "#4f46e5",
+   "outputs": [
+    "main"
+   ],
+   "description": "Round to whole numbers or decimal places.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Number",
+     "type": "value",
+     "required": true,
+     "placeholder": "{{ $json.price }}"
+    },
+    {
+     "key": "decimals",
+     "label": "Decimal places",
+     "type": "number",
+     "required": true,
+     "default": "0"
+    },
+    {
+     "key": "mode",
+     "label": "Round",
+     "type": "select",
+     "required": true,
+     "default": "nearest",
+     "options": [
+      {
+       "value": "nearest",
+       "label": "To the nearest"
+      },
+      {
+       "value": "up",
+       "label": "Always up"
+      },
+      {
+       "value": "down",
+       "label": "Always down"
+      }
+     ]
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "result",
+     "placeholder": "result"
+    }
+   ]
+  },
+  "core.formatNumber": {
+   "name": "Format number",
+   "group": "Numbers",
+   "icon": "binary",
+   "color": "#4f46e5",
+   "outputs": [
+    "main"
+   ],
+   "description": "Write a number with fixed decimals and separators.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Number",
+     "type": "value",
+     "required": true,
+     "placeholder": "{{ $json.total }}"
+    },
+    {
+     "key": "decimals",
+     "label": "Decimal places",
+     "type": "number",
+     "required": true,
+     "default": "2"
+    },
+    {
+     "key": "grouping",
+     "label": "Thousands separators",
+     "type": "boolean",
+     "default": "true"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "text",
+     "placeholder": "text"
+    }
+   ]
+  },
+  "core.random": {
+   "name": "Random number",
+   "group": "Numbers",
+   "icon": "dices",
+   "color": "#4f46e5",
+   "outputs": [
+    "main"
+   ],
+   "description": "Pick a random number between two values.",
+   "fields": [
+    {
+     "key": "min",
+     "label": "From",
+     "type": "number",
+     "required": true,
+     "default": "1"
+    },
+    {
+     "key": "max",
+     "label": "To",
+     "type": "number",
+     "required": true,
+     "default": "100"
+    },
+    {
+     "key": "whole",
+     "label": "Whole numbers only",
+     "type": "boolean",
+     "default": "true"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "number",
+     "placeholder": "number"
+    }
+   ]
+  },
+  "core.statistics": {
+   "name": "Calculate statistics",
+   "group": "Lists",
+   "icon": "chart-column",
+   "color": "#ca8a04",
+   "outputs": [
+    "main"
+   ],
+   "description": "Sum, average, median and more over all items.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Number",
+     "type": "value",
+     "default": "{{ $json.value }}",
+     "placeholder": "{{ $json.value }}"
+    },
+    {
+     "key": "operation",
+     "label": "Calculate",
+     "type": "select",
+     "required": true,
+     "default": "sum",
+     "options": [
+      {
+       "value": "count",
+       "label": "Count"
+      },
+      {
+       "value": "sum",
+       "label": "Sum"
+      },
+      {
+       "value": "average",
+       "label": "Average"
+      },
+      {
+       "value": "median",
+       "label": "Median"
+      },
+      {
+       "value": "min",
+       "label": "Smallest"
+      },
+      {
+       "value": "max",
+       "label": "Largest"
+      },
+      {
+       "value": "range",
+       "label": "Range"
+      },
+      {
+       "value": "stdev",
+       "label": "Standard deviation"
+      }
+     ]
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "result",
+     "placeholder": "result"
+    }
+   ]
+  },
+  "core.combineItems": {
+   "name": "Combine items",
+   "group": "Lists",
+   "icon": "list-start",
+   "color": "#ca8a04",
+   "outputs": [
+    "main"
+   ],
+   "description": "Gather all items, or one field of each, into one list.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Value from each item",
+     "type": "value",
+     "placeholder": "Leave empty to keep whole items"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "items",
+     "placeholder": "items"
+    }
+   ]
+  },
+  "core.sort": {
+   "name": "Sort items",
+   "group": "Lists",
+   "icon": "arrow-down-up",
+   "color": "#ca8a04",
+   "outputs": [
+    "main"
+   ],
+   "description": "Order items by a field, reverse or shuffle them.",
+   "fields": [
+    {
+     "key": "by",
+     "label": "Sort by field",
+     "type": "string",
+     "placeholder": "name or data.total"
+    },
+    {
+     "key": "order",
+     "label": "Order",
+     "type": "select",
+     "required": true,
+     "default": "ascending",
+     "options": [
+      {
+       "value": "ascending",
+       "label": "Ascending"
+      },
+      {
+       "value": "descending",
+       "label": "Descending"
+      },
+      {
+       "value": "reverse",
+       "label": "Reverse the order"
+      },
+      {
+       "value": "shuffle",
+       "label": "Shuffle"
+      }
+     ]
+    }
+   ]
+  },
+  "core.dedupe": {
+   "name": "Remove duplicates",
+   "group": "Lists",
+   "icon": "list-x",
+   "color": "#ca8a04",
+   "outputs": [
+    "main"
+   ],
+   "description": "Keep the first item for each value.",
+   "fields": [
+    {
+     "key": "by",
+     "label": "Compare field",
+     "type": "string",
+     "placeholder": "Leave empty to compare whole items"
+    }
+   ]
+  },
+  "core.pick": {
+   "name": "Get items",
+   "group": "Lists",
+   "icon": "list-ordered",
+   "color": "#ca8a04",
+   "outputs": [
+    "main"
+   ],
+   "description": "Keep the first, last, a numbered or a random item.",
+   "fields": [
+    {
+     "key": "which",
+     "label": "Get",
+     "type": "select",
+     "required": true,
+     "default": "first",
+     "options": [
+      {
+       "value": "first",
+       "label": "First item"
+      },
+      {
+       "value": "last",
+       "label": "Last item"
+      },
+      {
+       "value": "index",
+       "label": "Item number"
+      },
+      {
+       "value": "range",
+       "label": "Items in a range"
+      },
+      {
+       "value": "random",
+       "label": "A random item"
+      }
+     ]
+    },
+    {
+     "key": "index",
+     "label": "Item number",
+     "type": "number",
+     "default": "1"
+    },
+    {
+     "key": "to",
+     "label": "Up to item number",
+     "type": "number",
+     "default": "2"
+    }
+   ]
+  },
+  "core.json": {
+   "name": "JSON",
+   "group": "Lists",
+   "icon": "braces",
+   "color": "#ca8a04",
+   "outputs": [
+    "main"
+   ],
+   "description": "Read JSON text into fields, or write fields as JSON.",
+   "fields": [
+    {
+     "key": "operation",
+     "label": "Action",
+     "type": "select",
+     "required": true,
+     "default": "parse",
+     "options": [
+      {
+       "value": "parse",
+       "label": "Read JSON text"
+      },
+      {
+       "value": "stringify",
+       "label": "Write as JSON text"
+      }
+     ]
+    },
+    {
+     "key": "value",
+     "label": "Value",
+     "type": "value",
+     "default": "{{ $json.body }}",
+     "placeholder": "{{ $json.body }}"
+    },
+    {
+     "key": "pretty",
+     "label": "Indent the JSON",
+     "type": "boolean",
+     "default": "false"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "data",
+     "placeholder": "data"
+    }
+   ]
+  },
+  "core.url": {
+   "name": "Get URL parts",
+   "group": "Lists",
+   "icon": "link",
+   "color": "#ca8a04",
+   "outputs": [
+    "main"
+   ],
+   "description": "Split a link into host, path and query.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "URL",
+     "type": "string",
+     "default": "{{ $json.url }}",
+     "placeholder": "{{ $json.url }}"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "link",
+     "placeholder": "link"
+    }
+   ]
+  },
+  "core.dateFormat": {
+   "name": "Format date",
+   "group": "Dates",
+   "icon": "calendar",
+   "color": "#db2777",
+   "outputs": [
+    "main"
+   ],
+   "description": "Write a date in the format you choose.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Date",
+     "type": "string",
+     "default": "{{ $now }}",
+     "placeholder": "{{ $now }}"
+    },
+    {
+     "key": "format",
+     "label": "Format",
+     "type": "select",
+     "required": true,
+     "default": "iso",
+     "options": [
+      {
+       "value": "iso",
+       "label": "ISO 8601 (2026-10-17T09:30:00Z)"
+      },
+      {
+       "value": "date",
+       "label": "Date (2026-10-17)"
+      },
+      {
+       "value": "time",
+       "label": "Time (09:30)"
+      },
+      {
+       "value": "datetime",
+       "label": "Date and time (2026-10-17 09:30)"
+      },
+      {
+       "value": "long",
+       "label": "Long (Saturday, 17 October 2026)"
+      },
+      {
+       "value": "unix",
+       "label": "Unix seconds"
+      },
+      {
+       "value": "unixMs",
+       "label": "Unix milliseconds"
+      },
+      {
+       "value": "custom",
+       "label": "Custom pattern"
+      }
+     ]
+    },
+    {
+     "key": "pattern",
+     "label": "Custom pattern",
+     "type": "string",
+     "placeholder": "DD/MM/YYYY HH:mm"
+    },
+    {
+     "key": "timeZone",
+     "label": "Time zone",
+     "type": "string",
+     "placeholder": "UTC, Europe/Berlin or +02:00"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "date",
+     "placeholder": "date"
+    }
+   ]
+  },
+  "core.dateAdjust": {
+   "name": "Adjust date",
+   "group": "Dates",
+   "icon": "calendar-clock",
+   "color": "#db2777",
+   "outputs": [
+    "main"
+   ],
+   "description": "Add or subtract time, or go to the start of a day.",
+   "fields": [
+    {
+     "key": "value",
+     "label": "Date",
+     "type": "string",
+     "default": "{{ $now }}",
+     "placeholder": "{{ $now }}"
+    },
+    {
+     "key": "operation",
+     "label": "Action",
+     "type": "select",
+     "required": true,
+     "default": "add",
+     "options": [
+      {
+       "value": "add",
+       "label": "Add"
+      },
+      {
+       "value": "subtract",
+       "label": "Subtract"
+      },
+      {
+       "value": "startOf",
+       "label": "Start of"
+      },
+      {
+       "value": "endOf",
+       "label": "End of"
+      }
+     ]
+    },
+    {
+     "key": "amount",
+     "label": "Amount",
+     "type": "number",
+     "default": "1"
+    },
+    {
+     "key": "unit",
+     "label": "Unit",
+     "type": "select",
+     "required": true,
+     "default": "days",
+     "options": [
+      {
+       "value": "seconds",
+       "label": "Seconds"
+      },
+      {
+       "value": "minutes",
+       "label": "Minutes"
+      },
+      {
+       "value": "hours",
+       "label": "Hours"
+      },
+      {
+       "value": "days",
+       "label": "Days"
+      },
+      {
+       "value": "weeks",
+       "label": "Weeks"
+      },
+      {
+       "value": "months",
+       "label": "Months"
+      },
+      {
+       "value": "years",
+       "label": "Years"
+      }
+     ]
+    },
+    {
+     "key": "timeZone",
+     "label": "Time zone",
+     "type": "string",
+     "placeholder": "UTC, Europe/Berlin or +02:00"
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "date",
+     "placeholder": "date"
+    }
+   ]
+  },
+  "core.dateDiff": {
+   "name": "Time between dates",
+   "group": "Dates",
+   "icon": "calendar-range",
+   "color": "#db2777",
+   "outputs": [
+    "main"
+   ],
+   "description": "How many seconds, days or months lie between two dates.",
+   "fields": [
+    {
+     "key": "start",
+     "label": "From",
+     "type": "string",
+     "required": true,
+     "default": "{{ $json.start }}",
+     "placeholder": "{{ $json.start }}"
+    },
+    {
+     "key": "end",
+     "label": "To",
+     "type": "string",
+     "required": true,
+     "default": "{{ $now }}",
+     "placeholder": "{{ $now }}"
+    },
+    {
+     "key": "unit",
+     "label": "In",
+     "type": "select",
+     "required": true,
+     "default": "days",
+     "options": [
+      {
+       "value": "seconds",
+       "label": "Seconds"
+      },
+      {
+       "value": "minutes",
+       "label": "Minutes"
+      },
+      {
+       "value": "hours",
+       "label": "Hours"
+      },
+      {
+       "value": "days",
+       "label": "Days"
+      },
+      {
+       "value": "weeks",
+       "label": "Weeks"
+      },
+      {
+       "value": "months",
+       "label": "Months"
+      },
+      {
+       "value": "years",
+       "label": "Years"
+      }
+     ]
+    },
+    {
+     "key": "field",
+     "label": "Save as",
+     "type": "string",
+     "required": true,
+     "default": "difference",
+     "placeholder": "difference"
+    }
+   ]
   }
  },
  "integrations": {
@@ -7487,5 +9055,5 @@
    }
   }
  },
- "version": "5795659946f26af1"
+ "version": "bbbde01b54fb8cad"
 }

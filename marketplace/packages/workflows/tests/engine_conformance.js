@@ -45,7 +45,8 @@ function sorted(value) {
 for (const item of cases.runs) {
   const responses = item.responses.slice();
   const requests = [];
-  const report = engine.runWith({
+  const waits = [];
+  const input = {
     workflow: item.workflow,
     payload: item.payload,
     credentials: item.credentials,
@@ -53,12 +54,15 @@ for (const item of cases.runs) {
     nowMs: cases.nowMs,
     workflowId: cases.workflowId,
     clock: () => 0
-  }, (request) => {
+  };
+  if (item.randoms) input.randoms = item.randoms;
+  if (item.workflows) input.workflows = item.workflows;
+  const report = engine.runWith(input, (request) => {
     requests.push(plain(request));
     return responses.length ? responses.shift() : { status: 200, text: "{\"ok\": true, \"id\": 42, \"items\": [{\"n\": 1}, {\"n\": 2}]}" };
-  });
-  const got = { requests, report: withoutMs(plain(report)) };
-  const want = { requests: item.expect.requests, report: withoutMs(item.expect.report) };
+  }, (ms) => waits.push(ms));
+  const got = { requests, waits, report: withoutMs(plain(report)) };
+  const want = { requests: item.expect.requests, waits: item.expect.waits || [], report: withoutMs(item.expect.report) };
   if (!same(got, want)) failures.push({ name: item.name, got, want });
 }
 

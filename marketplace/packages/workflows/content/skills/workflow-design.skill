@@ -4,7 +4,8 @@
 When this skill is installed:
 
 - Start from the trigger. Name what starts the work (a button, a webhook, a schedule, a push, a pull request, an event) before choosing any step.
-- Keep one workflow to one outcome. Split a long chain into two workflows joined by a webhook instead of one with twenty steps.
+- Keep one workflow to one outcome. Split a long chain into two workflows joined by a Run workflow step instead of one with twenty steps.
+- Prefer a ready-made step (Change case, Format date, Calculate statistics, Sort items, ...) over Run script; write a script only for logic no step covers, and log what it decides with console.log.
 - Put every secret in a credential or an Actions variable. A repository file never holds a token, key or password.
 - Prefer the integration step over a raw HTTP request when one exists; it knows the API's address and authentication.
 - Give every branch an end. An If step's false branch either does something or ends in a No operation step, so the canvas shows the decision was intended.

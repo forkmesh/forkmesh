@@ -3,15 +3,19 @@
 Part of [the App docs](README.md). A workflow is an n8n-style automation: one
 trigger (manual, webhook or schedule) followed by steps on a canvas at
 `/dashboard/workflows`. Each step is a core node (HTTP request, Set fields, If,
-Filter, Merge, Limit, Split out, No operation) or one of 100 integrations
-(Slack, GitHub, Notion, Stripe, Claude, OpenAI, ...). Items flow along
-connections; each step runs once per item it receives.
+Filter, Merge, Limit, Split out, No operation), one of the Shortcuts-style
+scripting, text, number, list and date steps including Run script
+([workflow-steps.md](workflow-steps.md), [workflow-scripts.md](workflow-scripts.md)),
+or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
+...). Items flow along connections; each step runs once per item it receives.
 
 ## Code map
 
 | Piece | Where |
 | --- | --- |
 | Engine (graph, expressions, execution) | `app/src/workflows.py` |
+| Scripting, text, number, list and date steps | `app/src/workflow_actions.py` |
+| Script interpreter (Run script) | `app/src/workflow_script.py` |
 | Integrations, declared as data | `app/src/workflow_integrations.py` |
 | Routes, encrypted storage, credentials, triggers | `app/src/workflows_runtime.py` |
 | n8n-compatible file format | `app/src/workflow_formats.py` |
@@ -20,7 +24,7 @@ connections; each step runs once per item it receives.
 | Page script | `app/public/dashboard/js/09-workflows.js` (rebuild with `app/tools/build_dashboard_assets.py`) |
 | Plug-in and nested packages | `marketplace/packages/workflows`, `workflows-pack-*`, `workflows-examples`, `workflows-repository-files` |
 | Tables | `workflows`, `workflow_runs`, `workflow_credentials` (migration `0251_workflows.sql`) |
-| Tests | `app/tests/test_workflows.py`, `test_workflow_formats.py`, `test_workflow_files.py` |
+| Tests | `app/tests/test_workflows.py`, `test_workflow_actions.py`, `test_workflow_script.py`, `test_workflow_formats.py`, `test_workflow_files.py` |
 | Phone engine and bundle | `marketplace/packages/workflows/content/mobile/workflow-engine.js`, `marketplace/tools/workflows_mobile_bundle.py` |
 
 ## Building a workflow
@@ -28,14 +32,18 @@ connections; each step runs once per item it receives.
 - **Graph**: `{name, nodes, connections}`. A node has `id`, `type` (`core.*` or
   `app.<integration>`), unique `name`, position, `params`, optional
   `credential`, and flags `disabled` / `continueOnFail`. A connection is
-  `{from, output, to}`; If has outputs `true` and `false`, others `main`.
+  `{from, output, to}`; If has outputs `true` and `false`, Choose by value
+  `case1`-`case3` and `otherwise`, others `main`.
   Limits: one trigger, 60 nodes, 120 connections, no cycles, nothing into the
   trigger.
 - **Execution** runs in topological order. A node concatenates items from all
   inputs, is skipped if none arrived, and a step error stops the run unless
-  `continueOnFail` (then it emits `{"error": ...}`). 100 items per node.
+  `continueOnFail` (then it emits `{"error": ...}`). 100 items per node. A
+  Stop workflow step ends the run as a success; the report then names it in
+  `stopped`. Run script steps add their `console.log` lines to the step's
+  report as `logs`.
 - **Expressions** `{{ ... }}` are paths, never code: a root (`$json`, `$node`,
-  `$trigger`, `$now`, `$today`, `$item`, `$workflow`) then `.name`, `[0]` or
+  `$trigger`, `$now`, `$today`, `$item`, `$vars`, `$workflow`) then `.name`, `[0]` or
   `["key"]`. A parameter that is one expression keeps its type.
   `$node["Name"].json` is that step's item at the same index.
 - **Credentials** are created per integration (`/api/workflows/credentials`)
@@ -81,7 +89,9 @@ Writes need a user session. Errors are `{"ok": false, "error": "<code>"}`.
 Per run: manual 25 requests / 45 s, webhook 15 / 25 s, schedule 6 / 40 s.
 Schedules are 5 to 10,080 minutes; the `workflow-schedules` cron phase runs
 every five minutes, starts at most three due workflows, and advances
-`next_run_at` before running so failures never loop.
+`next_run_at` before running so failures never loop. A Wait step pauses at
+most 60 s and never past the run's deadline; Run workflow shares the calling
+run's requests and deadline and nests two levels deep.
 
 ## Plug-in
 
@@ -108,7 +118,10 @@ engines passing; see [native/WORKFLOWS.md](../native/WORKFLOWS.md).
   connection and redirect.
 - Webhook tokens are 256 random bits compared with `hmac.compare_digest`, valid
   only while the workflow is active with a webhook trigger.
-- There is no Code node: nothing a user types is executed.
+- Run script code is interpreted by `workflow_script.py`, a sandboxed
+  JavaScript subset with no access to the host, files or the network, a step
+  limit, a call-depth limit and size caps ([workflow-scripts.md](workflow-scripts.md)).
+  Nothing a user types reaches `eval`, `exec` or a JavaScript engine.
 
 ## Web styling
 

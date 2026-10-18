@@ -181,6 +181,49 @@ TEMPLATES = [
             title="New meeting", text="{{ $json.name }} at "
                                      "{{ $json.start_time }}"),
       ), (C("t", "c"), C("c", "x"), C("x", "n"), C("x", "m"))),
+    T("order-total-script", "Total an order with a script",
+      "A webhook receives an order; a script adds up its lines, the total is "
+      "formatted, and orders over 100 are posted to Slack.",
+      ("Webhook", "Script", "Slack"), (
+          S("t", "core.webhook", "Order arrives", 0),
+          S("c", "core.code", "Add up the lines", 1, mode="all",
+            code="const order = items[0].body || {};\n"
+                 "const lines = order.lines || [];\n"
+                 "const total = lines.reduce((sum, line) =>\n"
+                 "  sum + line.price * line.quantity, 0);\n"
+                 "return [{ ...order, total, lineCount: lines.length }];\n"),
+          S("f", "core.formatNumber", "Format the total", 2,
+            value="{{ $json.total }}", decimals="2", grouping="true",
+            field="totalText"),
+          S("i", "core.if", "Over 100?", 3, left="{{ $json.total }}",
+            operator="gt", right="100"),
+          S("s", "app.slack", "Post to #sales", 4, -1,
+            operation="postMessage", channel="#sales",
+            text="Big order {{ $json.id }}: {{ $json.totalText }} "
+                 "({{ $json.lineCount }} lines)"),
+          S("n", "core.noop", "Small order", 4, 1),
+      ), (C("t", "c"), C("c", "f"), C("f", "i"), C("i", "s", "true"),
+          C("i", "n", "false"))),
+    T("weekday-reminder", "Weekday reminder on Telegram",
+      "Every morning works out the weekday in Berlin, stops on weekends and "
+      "sends a reminder with the date on working days.",
+      ("Schedule", "Dates", "Telegram"), (
+          S("t", "core.schedule", "Every day", 0, every="1440"),
+          S("d", "core.dateFormat", "Which day is it", 1, value="{{ $now }}",
+            format="custom", pattern="dddd", timeZone="Europe/Berlin",
+            field="weekday"),
+          S("c", "core.switch", "Weekend?", 2, value="{{ $json.weekday }}",
+            case1="Saturday", case2="Sunday"),
+          S("x", "core.stop", "Weekend, nothing to do", 3, -1),
+          S("y", "core.stop", "Sunday, nothing to do", 3, 0),
+          S("l", "core.dateFormat", "Long date", 3, 1, value="{{ $now }}",
+            format="long", timeZone="Europe/Berlin", field="today"),
+          S("m", "app.telegram", "Send the reminder", 4, 1,
+            operation="sendMessage", chat_id="123456789",
+            text="Good morning! Today is {{ $json.today }}. "
+                 "Time for the stand-up."),
+      ), (C("t", "d"), C("d", "c"), C("c", "x", "case1"),
+          C("c", "y", "case2"), C("c", "l", "otherwise"), C("l", "m"))),
 ]
 
 

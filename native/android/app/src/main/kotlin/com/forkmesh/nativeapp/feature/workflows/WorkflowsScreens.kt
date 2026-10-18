@@ -93,6 +93,34 @@ internal object WorkflowLook {
         "core.merge" -> "merge_type"
         "core.limit", "core.split" -> "list"
         "core.noop" -> "radio_button_unchecked"
+        "core.code" -> "code"
+        "core.variable", "core.json" -> "data_object_rounded"
+        "core.switch" -> "route_outlined"
+        "core.repeat" -> "replay_outlined"
+        "core.wait" -> "timer_outlined"
+        "core.runWorkflow" -> "account_tree_outlined"
+        "core.stop" -> "stop_circle_outlined"
+        "core.comment" -> "sticky_note_2_outlined"
+        "core.textCase" -> "text_snippet_outlined"
+        "core.textReplace" -> "edit_note_outlined"
+        "core.textMatch" -> "search"
+        "core.textSplit" -> "vertical_split_outlined"
+        "core.textCombine" -> "call_merge"
+        "core.textEncode" -> "lock_outline"
+        "core.hash" -> "tag"
+        "core.textExtract" -> "alternate_email"
+        "core.count" -> "format_list_bulleted"
+        "core.math", "core.round", "core.formatNumber" -> "tune"
+        "core.random" -> "casino_outlined"
+        "core.statistics" -> "leaderboard_outlined"
+        "core.combineItems" -> "layers_outlined"
+        "core.sort" -> "sort"
+        "core.dedupe" -> "filter_alt_off_outlined"
+        "core.pick" -> "playlist_play_outlined"
+        "core.url" -> "link"
+        "core.dateFormat" -> "event_outlined"
+        "core.dateAdjust" -> "update"
+        "core.dateDiff" -> "timelapse"
         else -> "bolt"
     }
 
@@ -731,7 +759,7 @@ private fun FieldEditor(field: WorkflowField, node: WorkflowNode, operators: Lis
             hint = field.placeholder.ifEmpty { null },
             minLines = if (field.multiline) 3 else 1,
             maxLines = if (field.multiline) 12 else 1,
-            textStyle = if (field.type == "json") Fm.text.bodyMedium.copy(fontFamily = FontFamily.Monospace) else Fm.text.bodyLarge,
+            textStyle = if (field.mono) Fm.text.bodyMedium.copy(fontFamily = FontFamily.Monospace) else Fm.text.bodyLarge,
         )
     }
 }

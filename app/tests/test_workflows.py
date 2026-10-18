@@ -830,7 +830,7 @@ def test_plugin_ships_valid_repository_files():
 
 def test_templates_and_catalog_are_public(harness):
     listed = harness.call("/api/workflows/templates")
-    assert listed.status == 200 and len(listed.data["templates"]) == 10
+    assert listed.status == 200 and len(listed.data["templates"]) == 12
     key = listed.data["templates"][0]["key"]
     one = harness.call("/api/workflows/templates/" + key)
     assert one.data["template"]["workflow"]["nodes"]
@@ -941,3 +941,24 @@ def test_plugin_install_state_gates_the_api(harness, monkeypatch):
     assert off.status == 403 and off.data["error"] == "plugin_not_installed"
     assert harness.call(created["hookPath"], "POST", raw="{}").status == 409
     assert harness.call("/api/workflows/catalog").status == 200
+
+
+def test_run_workflow_steps_load_the_owners_own_workflows(harness):
+    child = harness.call("/api/workflows", "POST", {"name": "Double it", "nodes": [
+        _node("t", "core.manual", "Start"),
+        _node("c", "core.code", "Script", {"code": "return items.map(i => ({n: i.n * 2}))"}),
+    ], "connections": [{"from": "t", "to": "c"}]}, user="alice").data["workflow"]
+    harness.call("/api/workflows", "POST", {"name": "Bob's", "nodes": [
+        _node("t", "core.manual", "Start")], "connections": []}, user="bob")
+    parent = harness.call("/api/workflows", "POST", {"name": "Parent", "nodes": [
+        _node("t", "core.manual", "Start", {"payload": '{"n": 21}'}),
+        _node("r", "core.runWorkflow", "By name", {"workflow": "double IT"}),
+        _node("i", "core.runWorkflow", "By id", {"workflow": child["id"]}),
+        _node("b", "core.runWorkflow", "Someone else's", {"workflow": "Bob's"}),
+    ], "connections": [{"from": "t", "to": "r"}, {"from": "r", "to": "i"},
+                       {"from": "i", "to": "b"}]}, user="alice").data["workflow"]
+    run = harness.call("/api/workflows/" + parent["id"] + "/run", "POST", {},
+                       user="alice").data["run"]
+    assert run["nodes"]["r"]["outputs"]["main"]["items"] == [{"n": 42}]
+    assert run["nodes"]["i"]["outputs"]["main"]["items"] == [{"n": 84}]
+    assert run["error"] == "Someone else's: No workflow named Bob's"

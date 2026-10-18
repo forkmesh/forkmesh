@@ -1,11 +1,15 @@
+import asyncio
 import base64
 import ipaddress
 import json
+import random as random_module
 import re
 from datetime import datetime, timezone
 from urllib.parse import quote, urlencode, urlparse
 
+import workflow_actions as actions
 import workflow_integrations as integrations
+import workflow_script as script
 
 MAX_NODES = 60
 PACKAGE = "workflows"
@@ -49,6 +53,8 @@ OPERATORS = (
     ("isNotEmpty", "is not empty"),
     ("isTrue", "is true"),
     ("isFalse", "is false"),
+    ("matches", "matches the regular expression"),
+    ("notMatches", "does not match the regular expression"),
 )
 CONDITION_FIELDS = (
     {"key": "left", "label": "Value", "type": "string",
@@ -157,10 +163,9 @@ CORE_NODES = {
         "fields": [],
     },
 }
-
-
-class NodeError(Exception):
-    pass
+CORE_NODES.update(actions.NODES)
+NodeError = actions.NodeError
+StopRun = actions.StopRun
 
 
 def _app_key(node_type):
@@ -475,7 +480,7 @@ def evaluate_expression(expr, context):
     match = ROOT_RE.match(text)
     if not match:
         raise NodeError("Expressions start with $json, $node, $trigger, "
-                        "$now, $today, $item or $workflow: " + text[:80])
+                        "$now, $today, $item, $vars or $workflow: " + text[:80])
     root = match.group(1)
     if root not in context:
         raise NodeError("Unknown expression variable $" + root)
@@ -550,6 +555,8 @@ def coerce(field, value):
             return json.loads(str(value))
         except ValueError:
             raise NodeError(field["label"] + " is not valid JSON")
+    if kind == "value":
+        return value
     if kind == "select":
         allowed = [option["value"] for option in field.get("options") or []]
         text = _stringify(value)
@@ -564,6 +571,9 @@ def field_values(fields, params, context):
     values = {}
     for field in fields:
         raw = params.get(field["key"], field.get("default"))
+        if field.get("type") == "code":
+            values[field["key"]] = coerce(field, raw)
+            continue
         if field.get("type") == "json" and isinstance(raw, str) and raw.strip():
             try:
                 raw = json.loads(raw)
@@ -862,6 +872,9 @@ def check_condition(left, operator, right):
         return a.startswith(b)
     if operator == "endsWith":
         return a.endswith(b)
+    if operator in ("matches", "notMatches"):
+        found = actions.regex(b, False).compiled.search(a) is not None
+        return found if operator == "matches" else not found
     raise NodeError("Unknown operator " + str(operator))
 
 
@@ -881,9 +894,14 @@ def iso_time(now_ms):
         timespec="seconds").replace("+00:00", "Z")
 
 
+async def _sleep(ms):
+    await asyncio.sleep(ms / 1000)
+
+
 class Execution:
     def __init__(self, workflow, http, credentials, max_requests, deadline_ms,
-                 clock, now_ms, workflow_id=""):
+                 clock, now_ms, workflow_id="", random=None, sleep=None,
+                 load_workflow=None, depth=0, counter=None):
         self.workflow = workflow
         self.http = http
         self.credentials = credentials or {}
@@ -892,10 +910,21 @@ class Execution:
         self.clock = clock
         self.now_ms = now_ms
         self.workflow_id = workflow_id
-        self.requests = 0
+        self.random = random or random_module.random
+        self.sleep = sleep or _sleep
+        self.load_workflow = load_workflow
+        self.depth = depth
+        self.counter = counter if counter is not None else {"requests": 0}
         self.outputs = {}
         self.trigger_item = {}
         self.by_name = {}
+        self.variables = {}
+        self.logs = {}
+        self.stopped = ""
+
+    @property
+    def requests(self):
+        return self.counter["requests"]
 
     def context(self, item, index):
         nodes = {}
@@ -911,9 +940,22 @@ class Execution:
             "trigger": self.trigger_item,
             "now": iso_time(self.now_ms),
             "today": iso_time(self.now_ms)[:10],
+            "vars": self.variables,
             "workflow": {"id": self.workflow_id,
                          "name": self.workflow.get("name", "")},
         }
+
+    def values(self, node, item, index):
+        params = node.get("params") or {}
+        return field_values(_fields_for(node["type"], params), params,
+                            self.context(item, index))
+
+    def read_path(self, path, item, index):
+        path = str(path or "").strip()
+        if not path:
+            return None
+        return evaluate_expression(path if path.startswith("$") else
+                                   "$json." + path, self.context(item, index))
 
     def _first_output(self, node_id):
         out = self.outputs.get(node_id) or {}
@@ -925,12 +967,12 @@ class Execution:
     async def request(self, method, url, headers, body):
         if not safe_url(url):
             raise NodeError("Only public https:// URLs can be called")
-        if self.requests >= self.max_requests:
+        if self.counter["requests"] >= self.max_requests:
             raise NodeError("This run reached its limit of "
                             + str(self.max_requests) + " requests")
         if self.clock() > self.deadline_ms:
             raise NodeError("This run ran out of time")
-        self.requests += 1
+        self.counter["requests"] += 1
         status, text = await self.http(method, url, headers, body)
         if not status:
             raise NodeError("No response from " + (urlparse(url).hostname or url))
@@ -948,12 +990,14 @@ class Execution:
         if node.get("disabled"):
             first = outputs_for(node_type)[0]
             return {first: items}
-        if node_type in ("core.merge", "core.noop"):
+        if node_type in ("core.merge", "core.noop", "core.comment"):
             return {"main": items[:MAX_ITEMS]}
         if node_type == "core.limit":
             values = field_values(_fields_for(node_type, params), params,
                                   self.context({}, 0))
             return {"main": items[:max(0, int(values["max"]))]}
+        if node_type in actions.NODES:
+            return await self.run_action(node, items[:MAX_ITEMS])
         out = {name: [] for name in outputs_for(node_type)}
         for index, item in enumerate(items[:MAX_ITEMS]):
             context = self.context(item, index)
@@ -1005,7 +1049,344 @@ class Execution:
                 del out[name][MAX_ITEMS:]
         return out
 
+    async def run_action(self, node, items):
+        node_type = node["type"]
+        if node_type == "core.code":
+            return {"main": self.run_script(node, items)[:MAX_ITEMS]}
+        if node_type == "core.wait":
+            await self.wait(self.values(node, items[0], 0)["seconds"])
+            return {"main": items}
+        if node_type == "core.stop":
+            values = self.values(node, items[0], 0)
+            if values["outcome"] == "error":
+                raise NodeError(values.get("message")
+                                or "The workflow was stopped")
+            raise StopRun({"main": items})
+        if node_type == "core.pick":
+            return {"main": self.pick(self.values(node, items[0], 0), items)}
+        if node_type == "core.sort":
+            params = node.get("params") or {}
+            values = self.values(node, items[0], 0)
+            keys = [actions.sort_key(self.sort_value(params.get("by"), item,
+                                                     index))
+                    for index, item in enumerate(items)]
+            return {"main": actions.sort_items(items, keys, values["order"],
+                                               self.random)}
+        if node_type == "core.dedupe":
+            by = (node.get("params") or {}).get("by")
+            seen = set()
+            kept = []
+            for index, item in enumerate(items):
+                key = json.dumps(self.read_path(by, item, index) if str(
+                    by or "").strip() else item)
+                if key not in seen:
+                    seen.add(key)
+                    kept.append(item)
+            return {"main": kept}
+        if node_type == "core.statistics":
+            numbers = [self.values(node, item, index).get("value")
+                       for index, item in enumerate(items)]
+            values = self.values(node, items[0], 0)
+            result = actions.statistics(numbers, values["operation"])
+            return {"main": [actions.with_field(
+                {}, values["field"], actions.number_out(result))]}
+        if node_type == "core.combineItems":
+            whole = not str((node.get("params") or {}).get("value") or "").strip()
+            gathered = [actions.copy_json(item) if whole else
+                        self.values(node, item, index).get("value")
+                        for index, item in enumerate(items)]
+            field = self.values(node, items[0], 0)["field"]
+            return {"main": [actions.with_field({}, field, gathered)]}
+        out = {name: [] for name in outputs_for(node_type)}
+        for index, item in enumerate(items):
+            values = self.values(node, item, index)
+            if node_type == "core.switch":
+                text = _stringify(values.get("value"))
+                for case in ("case1", "case2", "case3"):
+                    expected = values.get(case)
+                    if expected not in (None, "") and expected == text:
+                        out[case].append(item)
+                        break
+                else:
+                    out["otherwise"].append(item)
+            elif node_type == "core.repeat":
+                times = int(max(0, min(actions.MAX_REPEAT, values["times"])))
+                for count in range(1, times + 1):
+                    out["main"].append(actions.with_field(
+                        item, values["field"], count))
+            elif node_type == "core.variable":
+                self.set_variable(values)
+                out["main"].append(item)
+            elif node_type == "core.runWorkflow":
+                out["main"].extend(await self.run_child(values["workflow"],
+                                                        item))
+            else:
+                out["main"].append(actions.with_field(
+                    item, values["field"], self.compute(node_type, values)))
+            for name in out:
+                del out[name][MAX_ITEMS:]
+        return out
+
+    def compute(self, node_type, values):
+        text = values.get("value")
+        text = "" if text is None else _stringify(text)
+        if node_type == "core.textCase":
+            return actions.change_case(text, values["case"])
+        if node_type == "core.textReplace":
+            return actions.replace_text(text, values.get("find") or "",
+                                        values.get("replace") or "",
+                                        values.get("regex") is True,
+                                        values.get("ignoreCase") is True)
+        if node_type == "core.textMatch":
+            return actions.match_text(text, values["pattern"], values["result"],
+                                      values.get("ignoreCase") is True)
+        if node_type == "core.textSplit":
+            return actions.split_text(text, values["separator"],
+                                      values.get("custom") or "",
+                                      values.get("skipEmpty") is not False)
+        if node_type == "core.textCombine":
+            return actions.combine_text(values.get("value"),
+                                        values["separator"],
+                                        values.get("custom") or "")
+        if node_type == "core.textEncode":
+            return actions.encode_text(text, values["method"])
+        if node_type == "core.hash":
+            return actions.hash_text(text, values["algorithm"],
+                                     values.get("key") or "",
+                                     values["encoding"])
+        if node_type == "core.textExtract":
+            return actions.extract(text, values["kind"])
+        if node_type == "core.count":
+            return actions.count(values.get("value"), values["what"])
+        if node_type == "core.math":
+            second = values.get("b")
+            return actions.number_out(actions.calculate(
+                actions.to_number(values.get("a"), "Number"),
+                values["operator"],
+                None if second is None else actions.to_number(
+                    second, "Second number")))
+        if node_type == "core.round":
+            return actions.number_out(actions.round_number(
+                actions.to_number(values.get("value"), "Number"),
+                values["decimals"], values["mode"]))
+        if node_type == "core.formatNumber":
+            return actions.format_number(
+                actions.to_number(values.get("value"), "Number"),
+                values["decimals"], values.get("grouping") is not False)
+        if node_type == "core.random":
+            return actions.number_out(self.random_number(values))
+        if node_type == "core.json":
+            return self.json_value(values)
+        if node_type == "core.url":
+            return actions.url_parts(text)
+        if node_type == "core.dateFormat":
+            return actions.format_date(values.get("value"), values["format"],
+                                       values.get("pattern") or "",
+                                       values.get("timeZone") or "")
+        if node_type == "core.dateAdjust":
+            return actions.adjust_date(values.get("value"), values["operation"],
+                                       values.get("amount"), values["unit"],
+                                       values.get("timeZone") or "")
+        if node_type == "core.dateDiff":
+            return actions.date_difference(values.get("start"),
+                                           values.get("end"), values["unit"])
+        raise NodeError("Unknown step " + node_type)
+
+    def json_value(self, values):
+        value = values.get("value")
+        if values["operation"] == "stringify":
+            if values.get("pretty") is True:
+                return json.dumps(value, indent=2)
+            return json.dumps(value)
+        if value is None:
+            raise NodeError("There is no JSON text to read")
+        if not isinstance(value, str):
+            return value
+        try:
+            return json.loads(value, parse_constant=_reject_constant)
+        except (ValueError, RecursionError):
+            raise NodeError("The text is not valid JSON")
+
+    def random_number(self, values):
+        low, high = values["min"], values["max"]
+        if values.get("whole") is not False:
+            low, high = int(-(-low // 1)), int(high // 1)
+            if low > high:
+                raise NodeError("From must not be larger than To")
+            return low + int(self.random() * (high - low + 1) // 1)
+        if low > high:
+            raise NodeError("From must not be larger than To")
+        return low + self.random() * (high - low)
+
+    def set_variable(self, values):
+        name = values.get("name") or ""
+        if not actions.VARIABLE_RE.match(name):
+            raise NodeError("Variable names use letters, digits and _")
+        value = actions.copy_json(values.get("value"))
+        mode = values["mode"]
+        if mode == "set":
+            self.variables[name] = value
+        elif mode == "append":
+            existing = self.variables.get(name)
+            items = list(existing) if isinstance(existing, list) else (
+                [] if existing is None else [existing])
+            items.append(value)
+            self.variables[name] = items[-MAX_ITEMS * 10:]
+        else:
+            existing = self.variables.get(name)
+            base = 0.0 if existing is None else actions.to_number(
+                existing, "The variable " + name)
+            self.variables[name] = actions.number_out(
+                base + actions.to_number(value, "Value"))
+
+    def sort_value(self, by, item, index):
+        if str(by or "").strip():
+            return self.read_path(by, item, index)
+        for value in item.values():
+            return value
+        return None
+
+    def pick(self, values, items):
+        which = values["which"]
+        if which == "first":
+            return items[:1]
+        if which == "last":
+            return items[-1:]
+        if which == "random":
+            return [items[int(self.random() * len(items) // 1)]]
+        position = int(values.get("index") or 0)
+        if which == "index":
+            if position < 0:
+                position += len(items) + 1
+            return [items[position - 1]] if 1 <= position <= len(items) else []
+        end = int(values.get("to") or 0)
+        return items[max(0, position - 1):max(0, end)]
+
+    async def wait(self, seconds):
+        if seconds < 0:
+            raise NodeError("Seconds must be 0 or more")
+        if seconds > actions.MAX_WAIT_SECONDS:
+            raise NodeError("Wait at most " + str(actions.MAX_WAIT_SECONDS)
+                            + " seconds")
+        ms = int(seconds * 1000)
+        if self.clock() + ms > self.deadline_ms:
+            raise NodeError("Waiting would run past this run's time limit")
+        await self.sleep(ms)
+
+    async def run_child(self, ref, item):
+        ref = str(ref or "").strip()
+        if self.depth + 1 >= actions.MAX_WORKFLOW_DEPTH:
+            raise NodeError("Workflows can run other workflows at most "
+                            + str(actions.MAX_WORKFLOW_DEPTH - 1) + " deep")
+        loaded = await self.load_workflow(ref) if self.load_workflow else None
+        if not loaded:
+            raise NodeError("No workflow named " + ref)
+        workflow, credentials, child_id = loaded
+        child = Execution(workflow, self.http, credentials, self.max_requests,
+                          self.deadline_ms, self.clock, self.now_ms, child_id,
+                          self.random, self.sleep, self.load_workflow,
+                          self.depth + 1, self.counter)
+        report = await child.run(item)
+        if report["status"] != "success":
+            raise NodeError(workflow.get("name", ref) + " failed: "
+                            + report["error"])
+        return child.final_items(report)
+
+    def final_items(self, report):
+        nodes = self.workflow.get("nodes") or []
+        connections = self.workflow.get("connections") or []
+        if self.stopped:
+            ids = [self.by_name[self.stopped]]
+        else:
+            sources = {conn["from"] for conn in connections}
+            order = topological_order(nodes, connections) or []
+            ids = [node_id for node_id in order if node_id not in sources]
+        found = []
+        for node_id in ids:
+            if (report["nodes"].get(node_id) or {}).get("status") != "success":
+                continue
+            for items in (self.outputs.get(node_id) or {}).values():
+                found.extend(items)
+        return found[:MAX_ITEMS]
+
+    def run_script(self, node, items):
+        values = self.values(node, items[0], 0)
+        try:
+            program = script.parse(values["code"])
+        except script.ScriptError as error:
+            raise NodeError(str(error))
+        interp = script.Interpreter(self.now_ms, self.random, self.clock,
+                                    self.deadline_ms)
+        script_items = [script.from_json(item) for item in items]
+        shared = {
+            "$trigger": script.from_json(self.trigger_item),
+            "$vars": script.from_json(self.variables),
+            "$now": iso_time(self.now_ms),
+            "$today": iso_time(self.now_ms)[:10],
+            "$workflow": script.from_json({"id": self.workflow_id,
+                                           "name": self.workflow.get("name",
+                                                                     "")}),
+            "$utils": actions.utils_object(interp),
+        }
+        out = []
+        try:
+            if values["mode"] == "each":
+                for index, item in enumerate(script_items):
+                    current = dict(shared, **{
+                        "items": script_items,
+                        "item": item,
+                        "$json": item,
+                        "$index": float(index),
+                        "$node": script.from_json(
+                            self.context(items[index], index)["node"]),
+                        "$input": self._script_input(script_items, item),
+                    })
+                    result = interp.run(program, current)
+                    out.extend(script.unwrap_items(result, item))
+            else:
+                current = dict(shared, **{
+                    "items": script_items,
+                    "$node": script.from_json(self.context(items[0], 0)["node"]),
+                    "$input": self._script_input(script_items, None),
+                })
+                result = interp.run(program, current)
+                out = script.unwrap_items(result, script_items)
+            variables = script.to_json(shared["$vars"])
+        except script.ScriptError as error:
+            raise NodeError(str(error))
+        except script.ScriptLimit as error:
+            raise NodeError(str(error))
+        finally:
+            if interp.logs:
+                self.logs[node["id"]] = list(interp.logs)
+        self.variables = variables if isinstance(variables, dict) else {}
+        return out
+
+    def _script_input(self, script_items, current):
+        def wrap(item):
+            return {"json": item}
+        out = {
+            "all": script.native("all", lambda i, a: [wrap(item) for item in
+                                                      script_items]),
+            "first": script.native("first", lambda i, a: wrap(script_items[0])
+                                   if script_items else script.UNDEFINED),
+            "last": script.native("last", lambda i, a: wrap(script_items[-1])
+                                  if script_items else script.UNDEFINED),
+        }
+        if current is not None:
+            out["item"] = wrap(current)
+        return out
+
     async def run(self, trigger_item):
+        if self.depth:
+            return await self._run(trigger_item)
+        token = script.regex_budget()
+        try:
+            return await self._run(trigger_item)
+        finally:
+            script.REGEX_BUDGET.reset(token)
+
+    async def _run(self, trigger_item):
         self.trigger_item = trigger_item if isinstance(trigger_item, dict) else {}
         nodes = self.workflow.get("nodes") or []
         connections = self.workflow.get("connections") or []
@@ -1018,7 +1399,7 @@ class Execution:
         for node_id in order:
             node = by_id[node_id]
             started = self.clock()
-            if failed:
+            if failed or self.stopped:
                 report[node_id] = {"status": "skipped"}
                 continue
             if is_trigger(node["type"]):
@@ -1041,28 +1422,42 @@ class Execution:
                     report[node_id] = {"status": "skipped"}
                     continue
             try:
-                out = await self.run_node(node, items)
+                try:
+                    out = await self.run_node(node, items)
+                except script.ScriptLimit as limit:
+                    raise NodeError(str(limit))
+            except StopRun as stop:
+                self.outputs[node_id] = stop.out
+                report[node_id] = self._report(node_id, stop.out, started, "")
+                self.stopped = node["name"]
+                continue
             except NodeError as error:
                 if node.get("continueOnFail"):
                     out = {name: [] for name in outputs_for(node["type"])}
                     out[outputs_for(node["type"])[0]] = [{"error": str(error)}]
                     self.outputs[node_id] = out
-                    report[node_id] = self._report(out, started, str(error))
+                    report[node_id] = self._report(node_id, out, started,
+                                                   str(error))
                     continue
                 report[node_id] = {"status": "error", "error": str(error),
                                    "ms": max(0, self.clock() - started)}
+                if self.logs.get(node_id):
+                    report[node_id]["logs"] = self.logs[node_id]
                 failed = node["name"] + ": " + str(error)
                 continue
             self.outputs[node_id] = out
-            report[node_id] = self._report(out, started, "")
-        return {
+            report[node_id] = self._report(node_id, out, started, "")
+        result = {
             "status": "error" if failed else "success",
             "error": failed,
             "requests": self.requests,
             "nodes": report,
         }
+        if self.stopped:
+            result["stopped"] = self.stopped
+        return result
 
-    def _report(self, out, started, error):
+    def _report(self, node_id, out, started, error):
         entry = {
             "status": "success",
             "ms": max(0, self.clock() - started),
@@ -1072,11 +1467,19 @@ class Execution:
         }
         if error:
             entry["error"] = error
+        if self.logs.get(node_id):
+            entry["logs"] = self.logs[node_id]
         return entry
 
 
+def _reject_constant(name):
+    raise ValueError(name)
+
+
 async def execute(workflow, trigger_item, http, credentials, max_requests,
-                  deadline_ms, clock, now_ms, workflow_id=""):
+                  deadline_ms, clock, now_ms, workflow_id="", random=None,
+                  sleep=None, load_workflow=None):
     execution = Execution(workflow, http, credentials, max_requests,
-                          deadline_ms, clock, now_ms, workflow_id)
+                          deadline_ms, clock, now_ms, workflow_id, random,
+                          sleep, load_workflow)
     return await execution.run(trigger_item)

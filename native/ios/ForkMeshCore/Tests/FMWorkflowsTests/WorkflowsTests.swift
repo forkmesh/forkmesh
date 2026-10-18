@@ -67,6 +67,23 @@ final class RecordingTransport: WorkflowTransport, @unchecked Sendable {
     }
 }
 
+final class WaitRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var waits: [Int64] = []
+
+    func add(_ ms: Int64) {
+        lock.lock()
+        waits.append(ms)
+        lock.unlock()
+    }
+
+    var all: [Int64] {
+        lock.lock()
+        defer { lock.unlock() }
+        return waits
+    }
+}
+
 let workflowId = String(repeating: "a", count: 32)
 let credentialId = String(repeating: "c", count: 32)
 
@@ -348,11 +365,16 @@ final class WorkflowConformanceTests: XCTestCase {
         for item in cases.maps("runs") {
             let responses = item.maps("responses").map { WorkflowReply(status: $0.int("status"), text: $0.str("text")) }
             let transport = RecordingTransport(responses)
+            let waits = WaitRecorder()
             let report = await engine.run(
                 item.obj("workflow"), payload: item["payload"], credentials: item.obj("credentials"),
                 trigger: item.str("trigger"), workflowId: cases.str("workflowId"), nowMs: cases["nowMs"]?.int64Value,
-                transport: transport)
+                workflows: item.list("workflows"), randoms: item["randoms"]?.arrayValue, transport: transport, wait: { (ms: Int64) in waits.add(ms) })
             let expected = item.obj("expect")
+            if waits.all != expected.list("waits").map({ (value: JSONValue) in value.int64(or: -1) }) {
+                failures.append(item.str("name") + " waits")
+                continue
+            }
             if withoutMs(.object(report)) != withoutMs(expected["report"] ?? .null) {
                 failures.append(item.str("name"))
                 continue

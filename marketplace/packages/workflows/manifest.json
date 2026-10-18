@@ -12,7 +12,7 @@
   "type": "extension.native",
   "category": "Automation",
   "version": "1.2.0",
-  "summary": "Build automations on a visual canvas with 100 integrations, and edit your repositories' actions, shortcuts, skills and special agents as connected steps. Each integration group is its own package.",
+  "summary": "Build automations on a visual canvas with 100 integrations, Shortcuts-style text, number, list and date steps and your own scripts. Also edits your repositories' actions, shortcuts, skills and special agents.",
   "screenshots": [
     {
       "path": "preview/market.svg",
