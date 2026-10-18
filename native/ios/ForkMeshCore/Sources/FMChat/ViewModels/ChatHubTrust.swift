@@ -38,6 +38,15 @@ extension ChatHub {
         [conversationSubtitle, conversationRouteLine, serverCopiesLine].filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
     }
 
+    public var conversationPeerOnline: Bool {
+        !inGroupConversation && peerPresence(relay.currentConversation) == .online
+    }
+
+    public var conversationStatusLine: String {
+        [conversationPeerOnline ? "" : conversationSubtitle, conversationRouteLine, serverCopiesLine]
+            .filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+    }
+
     public func approveDevice(_ conversation: String, kid: String) async {
         await direct?.approveDevice(conversation, kid: kid)
     }

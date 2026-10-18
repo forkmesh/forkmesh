@@ -60,7 +60,7 @@ struct MessagesConversationView<Drawer: View>: View {
                 .safeAreaInset(edge: .top, spacing: 0) {
                     VStack(spacing: 0) {
                         if showsHeader {
-                            header(palette).transition(.move(edge: .top).combined(with: .opacity))
+                            header(palette).transition(.move(edge: .top).combined(with: .opacity)).zIndex(1)
                         }
                         if hub.inDirect {
                             MessagesTrustBanners(
@@ -319,21 +319,28 @@ struct MessagesConversationView<Drawer: View>: View {
         withAnimation(.easeOut(duration: 0.18)) { tapbackTarget = nil }
     }
 
-    private var headerDetail: String { hub.conversationDetailLine }
+    private var headerDetail: String { hub.conversationStatusLine }
+
+    private var showsLivePhone: Bool { hub.live != nil && hub.inDirect && !hub.inGroupConversation }
 
     @ViewBuilder private func livePhone(_ palette: MessagesColors) -> some View {
-        if let live = hub.live, hub.inDirect, !hub.inGroupConversation {
+        if let live = hub.live, showsLivePhone {
             MessagesLivePartnerPhone(
                 engine: live, conversation: hub.relay.currentConversation, name: hub.conversationName, dark: palette.dark
             ) { (size: CGFloat) in
                 MessagesConversationAvatar(hub: hub, size: size)
             }
+            .frame(width: DirectLivePhone.slot, height: 44)
+            .contentShape(Rectangle())
+            .onTapGesture {}
+            .padding(.leading, 3)
         }
     }
 
     private func header(_ palette: MessagesColors) -> some View {
         let ink: Color = palette.dark ? Color.white : Color.black
         let detail: String = headerDetail
+        let online: Bool = hub.conversationPeerOnline
         return HStack(alignment: .center, spacing: FmSpace.x2) {
             if let onBack {
                 Button(action: onBack) {
@@ -353,7 +360,11 @@ struct MessagesConversationView<Drawer: View>: View {
             }
             Button(action: { details = true }) {
                 HStack(spacing: FmSpace.x2) {
-                    MessagesConversationAvatar(hub: hub, size: 38)
+                    if showsLivePhone {
+                        Color.clear.frame(width: DirectLivePhone.slot, height: 38)
+                    } else {
+                        MessagesConversationAvatar(hub: hub, size: 38)
+                    }
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(spacing: 3) {
                             Text(hub.conversationName)
@@ -364,12 +375,20 @@ struct MessagesConversationView<Drawer: View>: View {
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundStyle(palette.meta)
                         }
-                        if !detail.isEmpty {
-                            Text(detail)
-                                .font(.system(size: 12))
-                                .foregroundStyle(palette.meta)
-                                .lineLimit(1)
-                                .accessibilityIdentifier("chat-direct-server-copies")
+                        if online || !detail.isEmpty {
+                            HStack(spacing: 5) {
+                                if online {
+                                    MessagesOnlineLight(color: fm.success)
+                                }
+                                if !detail.isEmpty {
+                                    Text(detail)
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(palette.meta)
+                                        .lineLimit(1)
+                                        .accessibilityIdentifier("chat-direct-server-copies")
+                                }
+                            }
+                            .frame(minHeight: 14)
                         }
                     }
                     .layoutPriority(1)
@@ -387,8 +406,8 @@ struct MessagesConversationView<Drawer: View>: View {
                     .filter { !$0.isEmpty }.joined(separator: ", "))
             .accessibilityHint("Shows details, people, photos and the background")
             .accessibilityIdentifier("chat-room-header")
+            .overlay(alignment: .leading) { livePhone(palette) }
             Spacer(minLength: 0)
-            livePhone(palette)
             DirectLiveTouchButton(hub: hub, dark: palette.dark, drawing: $drawing, focused: $focused)
             DirectCallHeaderButtons(hub: hub, dark: palette.dark)
                 .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
@@ -402,6 +421,26 @@ struct MessagesConversationView<Drawer: View>: View {
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
         }
+    }
+}
+
+struct MessagesOnlineLight: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dim: Bool = false
+    let color: Color
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .shadow(color: color.opacity(dim ? 0 : 0.9), radius: dim ? 0 : 3)
+            .opacity(dim ? 0.2 : 1)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { dim = true }
+            }
+            .accessibilityHidden(true)
+            .accessibilityIdentifier("chat-peer-online-light")
     }
 }
 
