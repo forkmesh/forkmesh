@@ -1061,6 +1061,14 @@ QAction *MainWindow::addAgentUsagePageAction(QMenu *menu)
     return page;
 }
 
+bool MainWindow::openAgentUsagePage()
+{
+    if (!nativePackageLinkUrl(QStringLiteral("usage")).isValid())
+        return false;
+    openNativePackageLink(QStringLiteral("usage"));
+    return true;
+}
+
 void MainWindow::refreshAgentAccountUsageMenu(const QString &provider)
 {
     const bool codex = agentIsCodexProvider(provider);

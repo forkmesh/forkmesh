@@ -32,6 +32,7 @@ struct FmHoldName: ViewModifier {
     }
 
     private func show() {
+        CaptureHold.noteHandled()
         FmHaptics.selection(.open)
         serial += 1
         let mine: Int = serial

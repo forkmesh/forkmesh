@@ -1652,9 +1652,15 @@ QWidget *MainWindow::buildAgentListToolBar()
             p.restore();
         });
     connect(m_agentUsageButton, &QPushButton::clicked, this, [this] {
-        showAgentUsageMenu(m_agentUsageButton->mapToGlobal(
-            QPoint(0, m_agentUsageButton->height())));
+        if (!openAgentUsagePage())
+            showAgentUsageMenu(m_agentUsageButton->mapToGlobal(
+                QPoint(0, m_agentUsageButton->height())));
     });
+    m_agentUsageButton->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_agentUsageButton, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint &position) {
+                showAgentUsageMenu(m_agentUsageButton->mapToGlobal(position));
+            });
     m_agentUsageButton->installEventFilter(new RailEventHook(
         [this](QObject *, QEvent *event) {
             if (event->type() != QEvent::Enter)

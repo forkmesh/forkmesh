@@ -29,16 +29,7 @@ async def _actor(env, request, data=None):
 
 
 async def _repo_allowed(env, actor, owner, repo):
-    if actor == owner or await _account_owns_node(env, actor, owner):
-        return True
-    rows = await d1_all(
-        env, "SELECT org_bi FROM org_repos WHERE node_owner=? AND repo=?",
-        owner, repo.lower())
-    for row in rows or []:
-        role = await _org_role(env, str(row.get("org_bi") or ""), actor)
-        if role in ADMIN_ROLES:
-            return True
-    return False
+    return actor == owner or await _repo_admin_allowed(env, actor, owner, repo)
 
 
 async def _org_allowed(env, actor, org):

@@ -141,6 +141,7 @@ struct HomeShell: View {
             onOpenHub: { openHub() },
             onOpenSearch: { openSearch("", scope: HomeShellCatalog.searchScope(for: router.selectedTab)) },
             onSignIn: { AccountFeature.openSignIn() },
+            onHome: { openProjectHome() },
             onNewAgent: newAgentAction,
             onPalette: { openPalette() },
             onVoice: voiceAction,

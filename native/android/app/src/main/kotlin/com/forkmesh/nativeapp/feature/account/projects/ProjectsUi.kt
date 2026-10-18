@@ -18,6 +18,7 @@ import com.forkmesh.nativeapp.R
 import com.forkmesh.nativeapp.ui.kit.fmTapSounds
 import com.forkmesh.nativeapp.ui.theme.FmColors
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -173,10 +174,12 @@ fun ProjectSwitcherTitle(
     subtitle: String? = null,
     onOpen: () -> Unit = {},
     iconOnly: Boolean = false,
+    onLongPress: (() -> Unit)? = null,
 ) {
     val projects = Services.get<ProjectsService>()
     if (projects == null && iconOnly) {
-        Image(painterResource(R.drawable.fm_logo), contentDescription = "ForkMesh", modifier = modifier.size(40.dp))
+        val held = if (onLongPress == null) modifier else modifier.combinedClickable(onClick = {}, onLongClick = onLongPress, onLongClickLabel = "Go Home")
+        Image(painterResource(R.drawable.fm_logo), contentDescription = "ForkMesh", modifier = held.size(40.dp))
         return
     }
     if (projects == null) {
@@ -187,7 +190,12 @@ fun ProjectSwitcherTitle(
     Row(
         modifier
             .testTag("home-project-switcher")
-            .clickable(onClickLabel = "Switch project or add a new one", role = Role.Button) {
+            .combinedClickable(
+                onClickLabel = "Switch project or add a new one",
+                role = Role.Button,
+                onLongClick = onLongPress,
+                onLongClickLabel = onLongPress?.let { "Go Home" },
+            ) {
                 onOpen()
                 ProjectDrawer.open()
             },

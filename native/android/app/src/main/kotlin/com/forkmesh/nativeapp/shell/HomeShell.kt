@@ -197,6 +197,12 @@ class HomeShell : Screen() {
         homeSelected = true
     }
 
+    private fun goHome() {
+        paletteOpen = false
+        hubOpen = false
+        selectHome()
+    }
+
     fun select(tab: AppTab, reselect: Boolean = true) {
         val wasHome = homeSelected
         homeSelected = false
@@ -405,6 +411,7 @@ class HomeShell : Screen() {
                         showsSignIn = surfaces.signIn,
                         onAvatar = { hubOpen = true },
                         onSignIn = { AccountFeature.openSignIn() },
+                        onHome = { goHome() },
                         prompt = {
                             if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }, onLongClick = { paletteOpen = true }, running = agentsSurface.activeCount)
                         },
@@ -588,6 +595,7 @@ private fun TopBar(
     showsSignIn: Boolean,
     onAvatar: () -> Unit,
     onSignIn: () -> Unit,
+    onHome: () -> Unit,
     prompt: @Composable () -> Unit,
 ) {
     Box(
@@ -598,7 +606,7 @@ private fun TopBar(
     ) {
         ToolsFeature.TelemetryStripCompact(navigator, Modifier.align(Alignment.Center).padding(horizontal = 64.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { AccountFeature.ProjectSlot() }
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { AccountFeature.ProjectSlot(onLongPress = onHome) }
             Spacer(Modifier.width(FmSpace.x3))
             if (PackageGateFeature.surfaces.collectAsState().value.shows("glasses-alert")) GlassesRadarChip()
             Spacer(Modifier.weight(1f))

@@ -36,6 +36,14 @@ gets **Select area to copy…** instead, so one hold never opens two menus.
   smaller than half the screen at that point within the touched screen's
   view controller. Text, icons and images therefore keep their own long-press
   behaviour; wallpaper, margins and gaps between rows do not.
+- A hold on a control with its own hold never opens the pop-up. The New
+  agent button's hold fires at 0.35 s and opens voice or the palette, so by
+  0.6 s the finger was over that new layer's blank space and the pop-up
+  appeared too (fixed 2026-10-18). Now the recogniser notes the top presented
+  view at touch-down and refuses to begin if it changed during the hold, and
+  every custom hold (New agent, the top-bar project icon, the suggestion
+  chip, the Genie, the listening chip, explorer rows, held names, log lines)
+  calls `CaptureHold.noteHandled()` so in-place overlays are covered too.
 - `ForkMesh/Platform/CaptureHold.swift`: one `UILongPressGestureRecognizer`
   on the app window (installed by `CaptureHoldAnchor` in `ThemedAppView`),
   recognising alongside every other gesture and never cancelling touches. The

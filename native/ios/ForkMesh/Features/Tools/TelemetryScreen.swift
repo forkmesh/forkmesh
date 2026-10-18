@@ -315,6 +315,7 @@ private struct TelemetryLogRow: View {
         }
         .contentShape(Rectangle())
         .onLongPressGesture {
+            CaptureHold.noteHandled()
             UIPasteboard.general.string = entry.description
             notice = FmNotice("Copied log line")
         }

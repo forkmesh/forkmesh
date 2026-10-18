@@ -88,6 +88,7 @@ NAV = (
         ("update", "Update ForkMesh", "refresh", ("console", "update")),
         ("repo-addresses", "Repository addresses", "branch",
          ("console", "repo-addresses")),
+        ("legal-pages", "Legal pages", "lock", ("console", "legal-pages")),
         ("database", "Database", "database", ("console", "database")),
     )),
 )

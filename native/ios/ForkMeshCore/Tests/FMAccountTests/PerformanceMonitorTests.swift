@@ -212,6 +212,27 @@ final class PerformanceMonitorTests: XCTestCase {
     }
 
     @MainActor
+    func testAWatcherHearsMainThreadSectionsOfAMillisecondOrMoreOnTheUptimeClock() async {
+        let monitor = PerformanceMonitorService(logSink: { _ in })
+        let heard = Lines()
+        let before = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+        monitor.watchSections { name, start, end in
+            heard.add("\(name) \(start >= before - 0.001) \(end - start >= 0.003) \(end <= Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000)")
+        }
+        monitor.timeSync("surfaces.publish") { busyWait(milliseconds: 4) }
+        monitor.timeSync("agents.lines") {}
+        await Task.detached {
+            monitor.timeSync("off.main") {
+                let until = Date().addingTimeInterval(0.004)
+                while Date() < until {}
+            }
+        }.value
+        monitor.watchSections(nil)
+        monitor.timeSync("after") { busyWait(milliseconds: 4) }
+        XCTAssertEqual(heard.all, ["surfaces.publish true true true"])
+    }
+
+    @MainActor
     func testNestedSectionsRecordOneStallThatNamesTheInnerWork() throws {
         let monitor = PerformanceMonitorService(
             stallThreshold: .milliseconds(100), sectionFloor: .milliseconds(20), logSink: { _ in })
@@ -338,6 +359,58 @@ extension PerformanceMonitorTests {
         XCTAssertEqual(monitor.events.first?.details["buildMs"], 220)
         XCTAssertEqual(monitor.events.first?.details["vsyncMs"], 100)
         monitor.uninstallStallMonitors()
+    }
+
+    func testAPauseOfTheWholeProcessIsNotAStall() async throws {
+        final class Source: FrameTimingSource {
+            var handler: (([FrameTiming]) -> Void)?
+            func startReporting(_ handler: @escaping ([FrameTiming]) -> Void) { self.handler = handler }
+            func stopReporting() {}
+        }
+        let source = Source()
+        let printed = Lines()
+        let lags = Lines()
+        let ui = DispatchQueue(label: "test.ui")
+        let watch = DispatchQueue(label: "test.watch")
+        let monitor = PerformanceMonitorService(
+            stallThreshold: .milliseconds(120), heartbeatInterval: .milliseconds(20), logSink: { printed.add($0) },
+            heartbeatQueue: ui, watchQueue: watch)
+        monitor.onHeartbeatLag = { lags.add("\(PerformanceMonitorService.micros($0) / 1_000)") }
+        monitor.installStallMonitors(frameSource: source, lifecycleState: .resumed)
+        try await sleep(80)
+
+        let start = DispatchGroup()
+        start.enter()
+        start.enter()
+        watch.async {
+            start.leave()
+            self.busyWait(milliseconds: 400)
+        }
+        let left = Lines()
+        ui.async {
+            start.leave()
+            self.busyWait(milliseconds: 400)
+            let gap = Duration.milliseconds(400)
+            left.add("\(PerformanceMonitorService.micros(monitor.withoutPauses(gap)) / 1_000)")
+            source.handler?([FrameTiming(buildDuration: gap, rasterDuration: .zero, totalSpan: gap)])
+        }
+        start.wait()
+        try await sleep(600)
+
+        XCTAssertFalse(monitor.events.contains { $0.isStall }, "\(monitor.events.map { "\($0.name) \($0.durationMs)" })")
+        XCTAssertEqual(monitor.stallCount, 0)
+        XCTAssertEqual(monitor.pauseCount, 1)
+        XCTAssertGreaterThanOrEqual(PerformanceMonitorService.micros(monitor.longestPause), 300_000)
+        XCTAssertTrue(lags.all.allSatisfy { (Int($0) ?? 0) < 120 }, lags.all.joined(separator: " "))
+        XCTAssertTrue(printed.all.contains { $0.hasPrefix("[pause] process paused ") }, printed.all.joined(separator: "\n"))
+        XCTAssertLessThan(Int(left.all.first ?? "") ?? .max, 120, "a frame gap spanning the pause is not a stall")
+
+        ui.async { self.busyWait(milliseconds: 250) }
+        try await sleep(400)
+        monitor.uninstallStallMonitors()
+        let stall = try XCTUnwrap(monitor.events.first { $0.kind == .eventLoop }, "the main thread alone blocked is a stall")
+        XCTAssertNil(stall.details["pausedMs"])
+        XCTAssertEqual(monitor.pauseCount, 1)
     }
 }
 

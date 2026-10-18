@@ -69,6 +69,7 @@ struct ShellSuggestionChips: View {
         }
         .buttonStyle(ShellBarButtonStyle())
         .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+            CaptureHold.noteHandled()
             held = true
             autoSend.toggle()
         })

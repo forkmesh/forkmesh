@@ -877,7 +877,8 @@ bottom bar.
   glass capsule over colour stripes to check the blur.
 - **Top bar** (`TopBar`, `A/shell/HomeShell.kt`), as iOS `Shell/ShellTopBar.swift`
   on a phone: no fill, 16 dp side and 4 dp vertical padding; the 40 dp project
-  icon (`AccountFeature.ProjectSlot`, opens the project drawer), the Glasses
+  icon (`AccountFeature.ProjectSlot`, opens the project drawer; a long press
+  closes the hub and palette and selects Home, as on iOS), the Glasses
   chip, then the new-agent button and the avatar (36 dp, 12 dp corners). A
   guest sees a person icon and a "Sign in" chip instead, and no guest banner.
   Search is not in the phone bar (iOS shows it only on iPad); it is on Home.

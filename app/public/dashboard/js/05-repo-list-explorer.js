@@ -3297,7 +3297,8 @@
     const rawUrl = escapeHtml(meta.rawUrl);
     let media = "";
     if (meta.kind === "image") {
-      media = `<img data-repo-image class="max-h-[34rem] max-w-full rounded-sm object-contain" src="${rawUrl}" alt="${name}" />`;
+      const source = meta.mime === "image/svg+xml" ? "data-repo-svg-src" : "src";
+      media = `<img data-repo-image class="max-h-[34rem] max-w-full rounded-sm object-contain" ${source}="${rawUrl}" alt="${name}" />`;
     } else if (meta.kind === "video") {
       media = `<video data-repo-video controls preload="metadata" class="max-h-[34rem] w-full max-w-5xl rounded-md bg-black"><source src="${rawUrl}" type="${mime}" />This browser cannot play this video.</video>`;
     } else if (meta.kind === "audio") {

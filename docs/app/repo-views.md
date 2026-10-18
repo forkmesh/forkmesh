@@ -149,3 +149,36 @@ GitHub reference screenshots).
   category. There are no vote or reply counts because the list reads only
   `discussion.md`. New discussion explains that discussions are created from
   the desktop app, since they are signed by the author's node.
+
+## Optional folder reads, repository logos and SVG images
+
+Seen on an instance in October 2026: every repository page logged a 404 for
+`tree?path=.forkmesh/releases`, the repository list logged a 404 for a
+`logo.png` the repository never had, and a README `<img src="logo.svg">`
+stayed blank.
+
+- **Optional folders.** `.forkmesh/releases` (the About rail's latest release
+  and the Releases tab) and `.forkmesh/issues` (the Issues tab) are read with
+  `fetchRepoOptionalTree` (`06-repo-content.js`). It answers `null` without a
+  request when the root listing on screen has no `.forkmesh` folder, reads the
+  parent listing (`.forkmesh`, once per page and catalog version) instead of
+  probing a child that is not there, and remembers a 404 in `sessionStorage`
+  for ten minutes, keyed by repository, branch and catalog version
+  (`fmv`), so a push that adds the folder shows it. The Issues tab passes
+  `fresh: true`: it ignores the remembered miss and checks only the root
+  listing, so a just-filed issue is never hidden. A 503 is still an error.
+- **Repository logos.** Catalog records from git nodes and web-hosted
+  repositories carry an empty `fileStructure`, so the logo endpoint used to
+  guess `logo.png` at the record's commit. `_verified_committed_logo_url`
+  now reads that one blob through `directory_about.read_blobs` when nothing
+  is listed and offers the URL only when the commit holds it; the answer is
+  remembered per owner, repository and commit (512 entries). A mirror that
+  cannot answer keeps the old guess. A record that lists its root files is
+  trusted without a read.
+- **SVG images.** Git nodes serve an `.svg` blob as
+  `application/octet-stream` with `attachment` (SVG can carry script), which
+  an `<img>` cannot draw. README images and file previews that name a
+  repository `.svg` put the raw URL in `data-repo-svg-src`; a
+  `MutationObserver` fetches it (same origin, at most 1 MiB, must start with
+  `<svg`) and sets a `data:image/svg+xml` URL, which an image renders inertly
+  and a browser will not open as a top-level page.

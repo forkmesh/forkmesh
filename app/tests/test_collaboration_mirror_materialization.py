@@ -506,3 +506,77 @@ def test_go_mirror_acks_attest_served_state_and_keeps_owner_only_rows():
     # mention id or the owner's auto-agent request stay queued for the source
     # node instead of being acknowledged by a mirror.
     assert "if !wantsAgent && item.FediverseID == \"\"" in server
+
+
+def _mirror_intake_namespace(calls, links):
+    async def repo_is_private(_env, _owner, _repo):
+        return False
+
+    async def org_repo_node(_env, org, repo):
+        return links.get((org.lower(), repo.lower()), "")
+
+    async def public_context(_env, owner, repo):
+        calls.append((owner, repo))
+        if (owner, repo.lower()) == ("alice", "widgets"):
+            return {"groupNodes": {"node1"}}
+        return None
+
+    async def d1_all(_env, _sql, *_args):
+        return [{"node_name": "node1", "public_key": "pk-node1"}]
+
+    async def claimed_keys(_env, node):
+        return ["pk-node1"] if node == "node1" else []
+
+    async def verify(public_key, _sig, canonical):
+        return public_key == "pk-node1" and canonical.startswith(
+            b"forkmesh-issues-pull-v1\nnode1\n")
+
+    return _load_helpers(
+        {"_authorized_mirror_issue_signing_key"},
+        extra_globals={
+            "Date": _Date,
+            "LOGIN_MAX_SKEW_MS": 300_000,
+            "HTTPS_MIRROR_STATUS_FRESH_MS": 600_000,
+            "MAX_NODE_NAME": 63,
+            "REPO_API_PREFIX_RE": re.compile(
+                r"^/api/repo/([^/]+)/([^/]+)(?:/.*)?$"),
+            "_repo_is_private": repo_is_private,
+            "_org_repo_node": org_repo_node,
+            "_https_mirror_public_context": public_context,
+            "_claimed_node_signing_pubkeys": claimed_keys,
+            "clean_string": lambda value, limit: str(value or "")[:limit],
+            "d1_all": d1_all,
+            "ed25519_verify": verify,
+            "parse_qs": parse_qs,
+            "safe_segment": lambda value: str(value or "").strip() or None,
+            "urlparse": urlparse,
+            "valid_node_pubkey": lambda value: bool(value),
+        },
+    )
+
+
+class _AliasRequest:
+    url = ("https://code.example.org/api/repo/acme/widgets/issues"
+           "?mirror=1&owner=node1&ts=1000000&sig=s")
+
+
+def test_mirror_intake_on_an_org_alias_uses_the_linked_repository_group():
+    calls = []
+    ns = _mirror_intake_namespace(calls, {("acme", "widgets"): "alice"})
+
+    key, node = asyncio.run(ns["_authorized_mirror_issue_signing_key"](
+        object(), _AliasRequest(), "alice", "Widgets"))
+
+    assert (key, node) == ("pk-node1", "node1")
+    assert calls == [("alice", "Widgets")]
+
+
+def test_mirror_intake_ignores_an_alias_not_linked_to_the_routed_repository():
+    calls = []
+    ns = _mirror_intake_namespace(calls, {("acme", "widgets"): "mallory"})
+
+    key, node = asyncio.run(ns["_authorized_mirror_issue_signing_key"](
+        object(), _AliasRequest(), "alice", "Widgets"))
+
+    assert (key, node) == ("", "")
+    assert calls == [("acme", "widgets")]

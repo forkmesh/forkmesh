@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Native catalog logo privacy and authorization contracts."""
 
 import ast
 import asyncio
@@ -353,6 +352,9 @@ def _logo_handler(uploaded="", committed="", approved=None, aliases=None):
         committed_owners.append(url_owner)
         return committed
 
+    async def verified_url(_env, _request, _record, _owner, _repo, url):
+        return url
+
     class Service:
         async def _official_logo(self, _env, _repository_id):
             return approved
@@ -366,6 +368,7 @@ def _logo_handler(uploaded="", committed="", approved=None, aliases=None):
         "_native_repository_logo_context": context,
         "_uploaded_repository_logo_url": uploaded_url,
         "_committed_repository_logo_url": committed_url,
+        "_verified_committed_logo_url": verified_url,
         "_org_repo_node": org_repo_node,
         "REPO_API_PREFIX_RE": re.compile(
             r"^/api/repo/([^/]+)/([^/]+)(?:/.*)?$"),
@@ -517,6 +520,8 @@ def test_private_collaborator_can_suggest_but_cannot_replace_or_review():
         "ensure_schema": ensure_schema,
         "_native_repository_logo_context": context,
         "_account_owns_node": owns,
+        "_repo_admin_allowed": (
+            lambda env, actor, owner, repo: owns(env, actor, owner)),
         "_repository_import_moderator": moderator,
         "_repository_import_service": Service,
         "json_response": json_response,
@@ -535,3 +540,75 @@ def test_private_collaborator_can_suggest_but_cannot_replace_or_review():
         "ownerMayReview": True,
         "moderatorMayReview": True,
     }
+
+
+def _probe(blob_reads):
+    import sys
+    import types
+    reads = []
+
+    async def read_blobs(_env, _request, owner, repo, paths, ref, private):
+        reads.append((owner, repo, tuple(paths), ref, private))
+        outcome = blob_reads.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    fake = types.ModuleType("directory_about")
+    fake.read_blobs = read_blobs
+    fake._bind_runtime = lambda _runtime: None
+    sys.modules["directory_about"] = fake
+    tree = ast.parse(SOURCE, filename=str(ENTRY))
+    nodes = [node for node in tree.body
+             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+             and node.name in {"_repository_root_listing",
+                               "_verified_committed_logo_url", "clean_string"}]
+    namespace = {"_COMMITTED_LOGO_PROBES": {},
+                 "_COMMITTED_LOGO_PROBE_LIMIT": 2, "re": re}
+    exec(compile(ast.fix_missing_locations(
+        ast.Module(body=nodes, type_ignores=[])), str(ENTRY), "exec"),
+        namespace)
+    return namespace, reads
+
+
+def test_an_unlisted_root_logo_is_offered_only_when_the_commit_holds_it():
+    url = "/api/repo/acme/widgets/raw?path=logo.png&ref=" + "a" * 40
+    record = {"commit": "a" * 40, "metadata": {"fileStructure": []}}
+    try:
+        namespace, reads = _probe([
+            (200, {"blobs": {}}),
+            (200, {"blobs": {"logo.png": {"encoding": "base64"}}}),
+            (404, None),
+            (503, None),
+            RuntimeError("down"),
+        ])
+        verify = namespace["_verified_committed_logo_url"]
+        assert run(verify(None, None, record, "acme", "widgets", url)) == ""
+        assert run(verify(None, None, record, "acme", "widgets", url)) == ""
+        assert len(reads) == 1
+        assert reads[0] == ("acme", "widgets", ("logo.png",), "a" * 40, False)
+        other = dict(record, commit="b" * 40)
+        assert run(verify(None, None, other, "acme", "widgets", url)) == url
+        third = dict(record, commit="c" * 40)
+        assert run(verify(None, None, third, "acme", "widgets", url)) == ""
+        assert len(namespace["_COMMITTED_LOGO_PROBES"]) == 2
+        fourth = dict(record, commit="d" * 40)
+        assert run(verify(None, None, fourth, "acme", "widgets", url)) == url
+        assert run(verify(None, None, fourth, "acme", "widgets", url)) == url
+        assert len(reads) == 5
+        listed = {"commit": "e" * 40,
+                  "metadata": {"fileStructure": ["logo.png", "src"]}}
+        assert run(verify(None, None, listed, "acme", "widgets", url)) == url
+        assert run(verify(None, None, record, "acme", "widgets", "")) == ""
+        assert len(reads) == 5
+    finally:
+        import sys
+        sys.modules.pop("directory_about", None)
+
+
+def test_the_logo_handler_verifies_a_guessed_root_logo():
+    handler = SOURCE[
+        SOURCE.index("async def native_repository_logo_handler")
+        : SOURCE.index("async def _repo_about_public")
+    ]
+    assert "await _verified_committed_logo_url(" in handler

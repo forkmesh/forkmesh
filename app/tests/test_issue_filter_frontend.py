@@ -102,7 +102,7 @@ def test_dashboard_js_loads_issues_from_git_tree_and_counts_open():
         : DASHBOARD_JS.index("async function loadRepoCollection")
     ]
     # Published issues come from the repo's .forkmesh/issues/ git folder, not the inbox.
-    assert 'repoLiveUrl(repo, "tree", { path: ".forkmesh/issues" })' in load
+    assert 'fetchRepoOptionalTree(repo, ".forkmesh/issues", { fresh: true })' in load
     assert "issueJsonPath(Number(entry.name))" in load
     # Issues are split into open/ and closed/ status folders (adhoc #14); the
     # loader lists both subdirs and reads each record from wherever it lives,
@@ -489,7 +489,7 @@ def test_dashboard_issues_refreshes_from_mirrors_on_load_and_button_click():
     assert "setRepoIssuesRefreshing(false);" in loader
     assert 'classList.toggle("animate-spin"' in loader
     assert 'loadingHtml("Loading issues from the live mirror...")' in loader
-    assert 'repoLiveUrl(repo, "tree", { path: ".forkmesh/issues" })' in loader
+    assert 'fetchRepoOptionalTree(repo, ".forkmesh/issues", { fresh: true })' in loader
 
     initial = DASHBOARD_JS[
         DASHBOARD_JS.index("function loadRepoFeaturePanels")

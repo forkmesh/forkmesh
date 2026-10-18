@@ -1,8 +1,10 @@
 # Update ForkMesh and repository addresses (admin console)
 
-Two admin console pages under Platform, both rendered by
-`app/src/server_update_admin.py` (views `update` and `repo-addresses`,
-dispatched from the admin route in `app/src/app_runtime.py`). Every change is
+Admin console pages under Platform, rendered by
+`app/src/server_update_admin.py` (views `update`, `repo-addresses` and
+`legal-pages`, dispatched from the admin route in `app/src/app_runtime.py`).
+Legal pages (Terms, Privacy and Security on an instance) are described in
+[instance-legal-pages.md](instance-legal-pages.md). Every change is
 CSRF-checked and written to the sensitive audit log as
 `admin.console_<action>`.
 
