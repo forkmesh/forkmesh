@@ -706,13 +706,16 @@ Each tile pushes `RepoSectionScreen`. Android matches it (`RepoDetailScreen`,
 ## 4. The You hub
 
 The avatar drops a panel down from the top bar (`hubDropdown`, `YouHubSheet`,
-`ShellHubUnroll`; at most 380 x 640 pt over a scrim). Choosing an item closes
-it and pushes the destination onto the current tab. On iPad the same items are
+`ShellHubUnroll`). On iOS it is one small floating gray card (`sheetSurface`,
+320 pt wide, as tall as its contents and at most 640 pt, scrolling only past
+that) over a light scrim, with no title, Done button, recents or project
+switcher: tapping outside it or choosing an item closes it, and choosing an
+item pushes the destination onto the current tab. On iPad the same items are
 sidebar sections (§7).
 
 | Group | Items |
 |---|---|
-| Header | Avatar, name, status; project switcher; account switcher; Pocket mode; Suggestion mode |
+| Header | Avatar, name, status and a small Set a status button on the same row; Pocket mode, Suggestion mode and the Diagnostics switch as compact rows |
 | Workspace | Notes, Tasks, Calendar, Timers |
 | Operate | Desktops, Special agents (teammates), Shortcuts, Hosts & fleet, Network & nodes |
 | Business | Market, CRM, Marketing, Analytics, Competitors, Ad review (reviewers only), Ledger |
@@ -720,16 +723,18 @@ sidebar sections (§7).
 | Insights | Stats, Status, Admin (admins only) |
 | App | Settings, Organizations, People, Docs, Design, Report a bug, Tour, World, Workflows (native, [WORKFLOWS.md](WORKFLOWS.md)), Sign in/out |
 
-Items follow the package gate (§2.0.2). The hub shows up to five recent
-destinations. On iPhone, where Home and the bar hold the links, the hub keeps
-the header, recents and an Account group (Settings, Sign in or Sign out).
+Items follow the package gate (§2.0.2). On iPhone, where Home and the bar hold
+the links, the hub keeps the header rows and the Account items (Settings, Sign
+in or Sign out) as small side-by-side buttons; projects are switched from the
+command palette's Switch project (and the iPad sidebar).
 
-- **Diagnostics switch** (top-leading, `hub-diagnostics-strip`;
+- **Diagnostics switch** (under Suggestion mode, `hub-diagnostics-strip`;
   `diagnostics/showStrip`, on by default) shows or hides the telemetry strip and
   the profile footer.
-- **Version row** (last row; iOS `YouHubSheet.versionRow`, Android
-  `HubVersionRow`): "Version x (build)" opening **What's new** from the bundled
-  changelog ([MAC_BUILD.md](MAC_BUILD.md)), and a **Send diagnostics** capsule
+- **Version row** (last row; iOS `YouHubSheet.versionRow`, one small darker
+  rectangle; Android `HubVersionRow`): "Version x (build)" and **What's new**
+  side by side, opening the bundled changelog in a sheet
+  ([MAC_BUILD.md](MAC_BUILD.md)), and a compact **Send diagnostics** capsule
   that turns red ("Slow, send report") when `PerformanceAlert.evaluate` finds,
   since the last send, an OS diagnostic in 24 h, a main-thread stall of 250 ms
   or more in 10 min, or five or more dropped-frame stalls in 10 min.

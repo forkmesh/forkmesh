@@ -60,18 +60,19 @@ import SwiftUI
 struct DiagnosticsSendButton: View {
     @Environment(\.fmPalette) private var fm
     let alert: PerformanceAlert
+    var compact: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Label(alert.label, systemImage: alert.detected ? "exclamationmark.triangle.fill" : "stethoscope")
                 .labelStyle(.titleAndIcon)
-                .fmText(.labelMedium, color: alert.detected ? Color.white : fm.textSecondary)
+                .fmText(compact ? .labelSmall : .labelMedium, color: alert.detected ? Color.white : fm.textSecondary)
                 .lineLimit(1)
-                .padding(.horizontal, FmSpace.x3)
-                .padding(.vertical, FmSpace.x2)
+                .padding(.horizontal, compact ? FmSpace.x2 : FmSpace.x3)
+                .padding(.vertical, compact ? FmSpace.x1 : FmSpace.x2)
                 .background(Capsule().fill(alert.detected ? fm.danger : fm.bgOverlay))
-                .frame(minHeight: 44)
+                .frame(minHeight: compact ? 32 : 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.borderless)

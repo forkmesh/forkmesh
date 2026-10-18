@@ -109,7 +109,7 @@ struct HomeShell: View {
     static let offlineGrace: TimeInterval = 4
     static let barMargin: CGFloat = FmSpace.x6
     static let hubDrop: CGFloat = 54
-    static let hubWidth: CGFloat = 380
+    static let hubWidth: CGFloat = 320
     static let hubHeight: CGFloat = 640
 
     private var usesSplit: Bool {
@@ -642,11 +642,12 @@ struct HomeShell: View {
                             onAction: { (action: HubItem.Action) in hubAction(action) },
                             onClose: { showHub = false },
                             onSendDiagnostics: { (prompt: String) async -> String? in await diagnosticsLaunch(prompt) })
-                            .frame(
-                                width: min(HomeShell.hubWidth, proxy.size.width - FmSpace.x3 * 2),
-                                height: max(240, min(HomeShell.hubHeight, proxy.size.height - HomeShell.hubDrop - FmSpace.x4)))
-                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                            .frame(width: min(HomeShell.hubWidth, proxy.size.width - FmSpace.x3 * 2))
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .shadow(color: Color.black.opacity(0.28), radius: 24, y: 10)
+                            .frame(
+                                maxHeight: max(240, min(HomeShell.hubHeight, proxy.size.height - HomeShell.hubDrop - FmSpace.x4)),
+                                alignment: .top)
                             .accessibilityAddTraits(.isModal)
                             .transition(
                                 reduceMotion
