@@ -836,7 +836,7 @@ async def run_log(runtime, owner, repo, run_id):
         return {"log": "", "updatedAt": 0}
     record = await _open(runtime, row.get("data"))
     masks = (await secrets_for(runtime, owner, repo, public)).values()
-    return {"log": mask(record.get("log"), masks),
+    return {"log": _show_runner(runtime, mask(record.get("log"), masks)),
             "updatedAt": int(row.get("updated_at") or 0)}
 
 
@@ -867,6 +867,8 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
                     item = {"event": event, "actor": actor, **run}
                     if masks and item.get("logTail"):
                         item["logTail"] = mask(item["logTail"], masks)
+                    if item.get("logTail"):
+                        item["logTail"] = _show_runner(runtime, item["logTail"])
                     runs.append(item)
         elif str(row.get("status") or "") in (
                 ("queued",) + ACTIVE_STATUSES + tuple(ENDED_STATUSES)):
@@ -911,6 +913,14 @@ def _site_host(runtime):
     origin = runtime.runner_app_url() if hasattr(runtime, "runner_app_url") else ""
     host = origin.split("://", 1)[-1].split("/", 1)[0]
     return host if re.fullmatch(r"[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?", host) else ""
+
+
+def _show_runner(runtime, text):
+    own = runtime.setting("ACTIONS_INSTANCE_RUNNER")
+    host = _site_host(runtime)
+    if not text or not own or not host:
+        return text
+    return str(text).replace("(runner %s;" % own, "(runner %s;" % host)
 
 
 def _local_runner(runtime, node):

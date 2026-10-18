@@ -710,7 +710,26 @@ def test_actions_install_job_tools_and_configure_the_app():
     assert 'echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"' in writer
     assert 'echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"' in writer
     assert '"plugins", "actions", "poweredBy", "platformUrl"]' in writer
-    assert 'RUNNER_NAME="$NODE_NAME-runner"' in TEXT
+    assert 'RUNNER_NAME=""' in TEXT
+    assert "  resolve_runner_name\n" in writer
+    assert '[ -n "$RUNNER_NAME" ] || resolve_runner_name' in function("setup_actions_runner")
+
+
+@pytest.mark.parametrize("kept, owner, expected", [
+    ("", "acme", "acme-runner"),
+    ("forkmesh-runner", "acme", "forkmesh-runner"),
+    ("Bad Name", "acme", "acme-runner"),
+    ("", "a" * 60, "instance-runner"),
+])
+def test_the_instance_runner_is_named_after_the_owner_and_keeps_its_name(
+        tmp_path, kept, owner, expected):
+    app_env = tmp_path / "app.env"
+    app_env.write_text("ACTIONS_INSTANCE_RUNNER=%s\n" % kept if kept else "")
+    result = run_functions(
+        tmp_path, ["env_value", "resolve_runner_name"],
+        "APP_ENV=%s\nCFG_ownerName=%s\nresolve_runner_name\necho \"$RUNNER_NAME\"\n"
+        % (shlex.quote(str(app_env)), shlex.quote(owner)))
+    assert result.stdout.strip().splitlines()[-1] == expected
 
 
 def test_the_actions_runner_is_preregistered_after_the_git_node():

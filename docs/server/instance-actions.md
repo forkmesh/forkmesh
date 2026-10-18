@@ -590,6 +590,24 @@ says "Runs on this server <host>" instead of the runner name. `local` and
 Any other runner keeps "Runs on runner <name>" for members and no name in the
 public summary.
 
+The run log's first line, written by the runner as `==> <workflow> at <sha>
+on <branch> (runner <name>; event <event>)`, is shown with the site host in
+place of the instance runner's name (`_show_runner` in
+`app/src/runner_actions.py`, applied to the full log and the log tail), so
+logs that were already stored read the same way.
+
+New installs name the runner `<owner>-runner` (`resolve_runner_name` in
+`install-instance.sh`; `instance-runner` if that name would be too long). An
+instance that already has `ACTIONS_INSTANCE_RUNNER` in `app.env` keeps that
+name on `--update`, because the name is the runner's identity in
+`runner_nodes`, in its `runner.json`/gateway identity and on every job row;
+renaming it in place would orphan running jobs, and the display rules above
+already keep it off the page. To move an existing instance to the new name,
+an operator stops Actions (`"actions": false`, `--update`), sets
+`ACTIONS_INSTANCE_RUNNER=<owner>-runner` in `/etc/forkmesh-instance/app.env`,
+turns Actions back on and runs `--update`, then retires the old row with
+`UPDATE runner_nodes SET status='retired' WHERE name='forkmesh-runner'`.
+
 ## Install
 
 `install-instance.sh` installs a runner on the instance by default (setting

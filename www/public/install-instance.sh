@@ -62,7 +62,7 @@ RUNNER_INSTALLER="www/public/install-runner.sh"
 RUNNER_ETC="/etc/forkmesh-runner"
 RUNNER_STATE="/var/lib/forkmesh-runner"
 RUNNER_JOB_USER="forkmesh-job"
-RUNNER_NAME="$NODE_NAME-runner"
+RUNNER_NAME=""
 CERT_WAIT_SECONDS="${FORKMESH_CERT_WAIT_SECONDS:-300}"
 PROXY_WAIT_SECONDS="${FORKMESH_PROXY_WAIT_SECONDS:-60}"
 CLOUDFLARE_RANGES="173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32"
@@ -890,6 +890,18 @@ upstream_page() {
   printf '%s\n' "$url" | sed -E 's#^https://app\.#https://#'
 }
 
+resolve_runner_name() {
+  local kept
+  kept="$(env_value ACTIONS_INSTANCE_RUNNER)"
+  if [[ "$kept" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    RUNNER_NAME="$kept"
+  elif [[ "$CFG_ownerName-runner" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    RUNNER_NAME="$CFG_ownerName-runner"
+  else
+    RUNNER_NAME="instance-runner"
+  fi
+}
+
 env_value() {
   [ -r "$APP_ENV" ] || return 0
   awk -F= -v key="$1" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$APP_ENV"
@@ -897,6 +909,7 @@ env_value() {
 
 write_settings() {
   begin configure "Saving your settings"
+  resolve_runner_name
   local data_key admin_pass seed public_key mail_key env_before login_deadline bot_seed
   env_before="$(files_digest "$APP_ENV")"
   data_key="$(env_value DATA_KEY)"
@@ -1657,6 +1670,7 @@ start_git_node() {
 }
 
 setup_actions_runner() {
+  [ -n "$RUNNER_NAME" ] || resolve_runner_name
   if [ "$CFG_actions" != "1" ]; then
     if systemctl is-enabled --quiet "$RUNNER_UNIT" 2>/dev/null; then
       systemctl disable --now "$RUNNER_UNIT" >/dev/null 2>&1 || true
