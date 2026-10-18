@@ -2434,7 +2434,11 @@
         repoVisibility.textContent = repo.isPrivate ? "private" : "public";
       }
       if (repoTerms) repoTerms.innerHTML = repositoryTermsBadge(repo, true);
-      if (repoAvailability) {
+      if (repoAvailability && dashboardOnInstance()) {
+        repoAvailability.textContent = "";
+        repoAvailability.classList.add("hidden");
+      } else if (repoAvailability) {
+        repoAvailability.classList.remove("hidden");
         const servedBy = String(state.repoServedBy?.name || "").trim();
         repoAvailability.textContent = servedBy
           ? `served by ${servedBy}`
@@ -2786,9 +2790,54 @@
     // A guest has nothing to reconnect; a node-kind session IS the node.
     const signedIn = Boolean(session && (session.nodeName || session.email));
     if (!signedIn || session.kind === "node") return false;
+    if (dashboardOnInstance()) return offlineLinkedNodes(session).length > 0;
     // Only flag when the account affirmatively has zero linked nodes. An absent
     // list means "unknown" (older payload), not "none" — stay quiet then.
     return Array.isArray(session.nodes) && session.nodes.length === 0;
+  }
+
+  function linkedNodeNames(session) {
+    const nodes = Array.isArray(session?.nodes) ? session.nodes : [];
+    return [...new Set(nodes.map((node) => String(node || "").trim().toLowerCase()).filter(Boolean))];
+  }
+
+  function offlineLinkedNodes(session) {
+    const presence = state.linkedNodePresence || {};
+    return linkedNodeNames(session).filter((node) => presence[node] === false);
+  }
+
+  let linkedNodePresenceKey = "";
+
+  async function refreshLinkedNodePresence(session) {
+    if (!dashboardOnInstance()) return;
+    const nodes = linkedNodeNames(session).slice(0, 8);
+    const key = nodes.join(",");
+    if (key === linkedNodePresenceKey) return;
+    linkedNodePresenceKey = key;
+    const presence = {};
+    await Promise.all(nodes.map(async (node) => {
+      const body = await fetchJson("/api/accounts/" + encodeURIComponent(node), { fresh: true }).catch(() => null);
+      if (body && body.exists !== false && body.kind === "node") presence[node] = body.online === true;
+    }));
+    if (linkedNodePresenceKey !== key) return;
+    state.linkedNodePresence = presence;
+    renderNodeReconnect(state.session);
+  }
+
+  function renderNodeReconnect(session) {
+    const reconnect = $("[data-node-reconnect]");
+    if (!reconnect) return;
+    const show = nodeNeedsReconnect(session);
+    reconnect.classList.toggle("hidden", !show);
+    if (!show || !dashboardOnInstance()) return;
+    const offline = offlineLinkedNodes(session);
+    const names = offline.join(", ");
+    const label = reconnect.querySelector("[data-node-reconnect-label]");
+    if (label) label.textContent = offline.length > 1 ? "Desktops offline" : "Desktop offline";
+    const message = (offline.length > 1 ? "Your desktop nodes " + names + " are" : "Your desktop node " + names + " is") +
+      " offline. Open the ForkMesh desktop app on that machine to reconnect it.";
+    reconnect.title = message;
+    reconnect.setAttribute("aria-label", message);
   }
 
   function setEmailVerificationHint(message, kind = "") {
@@ -2943,10 +2992,8 @@
     // affirmatively tell there are zero linked nodes (session.nodes present and
     // empty) for a user-like account — never for a node session or when the
     // link state is simply unknown, to avoid a false alarm.
-    const reconnect = $("[data-node-reconnect]");
-    if (reconnect) {
-      reconnect.classList.toggle("hidden", !nodeNeedsReconnect(session));
-    }
+    renderNodeReconnect(session);
+    void refreshLinkedNodePresence(session);
     renderEmailVerificationBanner(session);
     renderProfileModal(session);
     renderProfilePage(session);
@@ -5872,7 +5919,7 @@
       // A node linked while this page was open (or since the click) clears it,
       // so the marker never outlives the problem it describes.
       const linked = Array.isArray(session?.nodes) && session.nodes.length > 0;
-      const show = !linked &&
+      const show = !linked && !dashboardOnInstance() &&
         (nodeNeedsReconnect(session) || arrivedFromNodeReconnect());
       callout.classList.toggle("hidden", !show);
     }

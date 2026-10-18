@@ -1925,7 +1925,7 @@
       if (onlineMirrors.length) {
         repo.cloneOnline = true;
         const availability = $("[data-repo-availability-status]");
-        if (availability) {
+        if (availability && !dashboardOnInstance()) {
           availability.textContent = repo.liveHost
             ? "mirror online"
             : "served by mirror";

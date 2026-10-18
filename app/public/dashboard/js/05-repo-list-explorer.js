@@ -684,9 +684,10 @@
     const statusClass = live ? "text-success" : "text-muted-foreground";
     const nodeCount = group.members.length;
     const liveCount = group.members.reduce((n, m) => n + (repoIsLive(m) ? 1 : 0), 0);
+    const onInstance = dashboardOnInstance();
     const statusText = nodeCount > 1
       ? `${liveCount} of ${nodeCount} nodes`
-      : (viaMirror ? "via mirror" : live ? "online" : "offline");
+      : (viaMirror && !onInstance ? "via mirror" : live ? "online" : "offline");
     const metrics = [
       repoMetricStat("Issues", "circle-dot", groupRepoMetric(group, ["issueCount", "issues", "issuesCount", "openIssues"])),
       repoMetricStat("Commits", "git-commit-horizontal", groupRepoMetric(group, ["commitCount", "commits", "commitHistory"])),
@@ -724,9 +725,9 @@
               <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <i data-lucide="${origin.isPrivate ? "lock" : "globe-2"}" class="h-3 w-3"></i>${escapeHtml(visibility)}
               </span>
-              <span class="flex items-center gap-1 text-xs text-muted-foreground">
+              ${onInstance ? "" : `<span data-repo-card-served-by class="flex items-center gap-1 text-xs text-muted-foreground">
                 <i data-lucide="radio" class="w-3 h-3"></i>${nodeCount > 1 ? `${nodeCount} mirrors` : (viaMirror ? "served by mirror" : live ? "mirror online" : "mirror offline")}
-              </span>
+              </span>`}
               <span class="text-xs text-muted-foreground font-mono">updated ${escapeHtml(formatDate(repo.updatedAt || repo.lastSync))}</span>
               ${metrics}
             </div>
@@ -1044,6 +1045,7 @@
     const status = live
       ? (repoServedByMirror(repo) ? "served by mirror" : "live host")
       : "offline";
+    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>`;
     const logo = nativeRepositoryLogoMarkup(repo, "h-8 w-8")
       || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
     const description = String(repo.description || "").trim();
@@ -1054,7 +1056,7 @@
         <span class="block truncate font-medium text-foreground" title="${escapeHtml(repoDisplayKey(repo))}">${escapeHtml(repoDisplayKey(repo))}</span>
         ${description ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>
+          ${statusHtml}
           ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
           ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
           ${repositoryTermsBadge(repo, true)}

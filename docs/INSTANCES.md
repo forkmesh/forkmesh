@@ -398,6 +398,34 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
 - **Pages** (`app/src/instance_pages.py`): an instance renders its own
   `/desktop` and `/docs` guide pages.
 
+## Dashboard on an instance
+
+The dashboard knows it runs on an instance from the
+`<script data-instance-brand>` tag that `apply_instance_brand.py` writes into
+every page (`dashboardOnInstance()` in `02-helpers.js`). forkmesh.com pages
+never carry it.
+
+- **Reconnect node.** On forkmesh.com the header shows "Reconnect node" to a
+  signed-in account with no linked node, because nothing else drains its web
+  writes. On an instance the instance's own git node serves every repository,
+  so a web-only account (no linked node) is never told to reconnect, and the
+  Settings > Nodes "No node is linked" callout stays hidden. The header only
+  shows "Desktop offline" when the account has linked a node of its own and
+  that node's public profile (`GET /api/accounts/<node>`, from its heartbeat)
+  says it is offline; the title names the node. An unknown presence stays
+  quiet.
+- **Served by.** On forkmesh.com a repository can be answered by any of
+  several mirrors, so the header pill ("served by <node>", "served by
+  mirror", "mirror online/offline"), the repository card's mirror label, the
+  home list's serving status and the About rail's "Direct access" mirror list
+  say which one answered and where else to go; that is real routing
+  information there, so they stay. On an instance one node serves
+  everything, so those elements are not rendered (the header pill gets
+  `hidden`) and the card reads "online"/"offline" instead of "via mirror".
+  The Mirrors tab stays as the full diagnostic view. The "Powered by
+  ForkMesh" badge is not a served-by label and stays (see the top of this
+  page).
+
 ## Directory
 
 After a successful launch, `instance_directory.publish` writes an
@@ -430,7 +458,9 @@ to every provider.
 `app/tests/test_instance_launch.py`, `test_install_instance_script.py`,
 `test_start_instance_page.py`, `test_instance_white_label.py`,
 `test_instance_theme.py`, `test_instance_pages.py`, `test_server_update.py`,
-`test_instance_directory.py`, `test_instance_git_routing.py`, and
+`test_instance_directory.py`, `test_instance_git_routing.py`,
+`test_instance_node_reconnect_frontend.py`,
+`test_instance_served_by_frontend.py`, and
 `app/host/tests_unit/test_ssh_helper.py`, `test_instance_bootstrap.py`,
 `test_instance_repo.py`, and `app/tests/host/test_instance_repo_e2e.py`
 (a served app with a temporary SQLite database: a repository created from

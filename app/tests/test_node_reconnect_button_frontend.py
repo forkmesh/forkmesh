@@ -55,7 +55,9 @@ def test_reconnect_visibility_gated_on_missing_linked_node():
 
 def test_render_profile_toggles_the_reconnect_button():
     assert '$("[data-node-reconnect]")' in DASHBOARD_JS
-    assert 'reconnect.classList.toggle("hidden", !nodeNeedsReconnect(session));' in DASHBOARD_JS
+    assert 'reconnect.classList.toggle("hidden", !show);' in DASHBOARD_JS
+    assert "const show = nodeNeedsReconnect(session);" in DASHBOARD_JS
+    assert "renderNodeReconnect(session);" in DASHBOARD_JS
 
 
 def test_settings_page_opens_the_nodes_tab_for_a_reconnect_arrival():
