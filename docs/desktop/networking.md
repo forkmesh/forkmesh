@@ -16,6 +16,13 @@ Part of [the desktop docs](README.md).
   `x-forkmesh-expected-degraded`, `markExpectedHttpStatus()` and
   `markExpectedTransportFailure()` (for third-party servers). The net log then
   writes `EXPECTED` instead of `ERR`, and the line raises no error ping.
+- `markPrivatePayload()` (`NetworkReplyError.h`, attribute `User + 7`) keeps a
+  request's bodies out of the endpoint stats and the archived network log:
+  `BackoffNetworkAccessManager` records `<private request body: N bytes>` and
+  `<private response body: N bytes>` instead. The URL, status and firewall
+  decision are still recorded. Use it when the body itself carries a password,
+  session id or key, as the OpenWrt Router package's ubus calls do
+  ([../marketplace/openwrt.md](../marketplace/openwrt.md)).
 - The account event socket delivers topics that replace polling;
   `src/MainWindowRepoSync.cpp` dispatches them (e.g. `cloud-agents`, `tasks`).
 - A relay instance is a security boundary: repository lists, bearers, chat and
