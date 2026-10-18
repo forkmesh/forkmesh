@@ -239,7 +239,7 @@ struct HomeShell: View {
                         id: item.id, title: item.title, symbol: item.symbol, badge: live.hubBadges[item.id] ?? 0,
                         selected: false, kind: .action, running: HomeShell.runsBadge(item.action),
                         active: live.hubActive.contains(item.id), count: live.hubCounts[item.id],
-                        action: { hubAction(item.action) })
+                        progress: live.hubProgress[item.id], action: { hubAction(item.action) })
                 }
             return ShellMenuGroup(id: group.id, title: group.title, items: items)
         }
