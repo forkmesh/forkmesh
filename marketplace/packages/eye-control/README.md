@@ -14,9 +14,14 @@ anywhere; camera frames never leave the phone.
   taps the spot you were looking at just before the blink. **Firm blink**
   (the default) needs the eyes shut for about a quarter of a second, so
   ordinary blinks do nothing; **Any blink** and **Long blink** change that.
+- **Snapping.** The cursor locks onto the button you are looking at and
+  outlines it, so a blink presses that button even when your gaze is a
+  little off. Turn **Snap to buttons** off to click exactly under the cursor.
 - **Calibration.** Look at nine dots in turn (about 20 seconds). The phone
   fits your eyes' readings to the dots and keeps the result on this device.
-  Without it the cursor uses a rough estimate from the screen's size.
+  Without it the cursor uses a rough estimate from the screen's size. With
+  **Keep learning** on, every blink-tap on a button and every steady look at
+  one fine-tunes the calibration as you go.
 - **Stopping.** The **Stop eye control** button floats above every screen;
   tap it or blink on it. Leaving the app pauses the camera.
 

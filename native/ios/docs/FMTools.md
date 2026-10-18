@@ -184,20 +184,26 @@ The phone checkup; the check table and severity choices are in
   a detail sheet whose fix opens ForkMesh's Settings page or its notification settings, or lists
   steps for system settings iOS cannot link to.
 
-### Eye Control (`EyeControlModels.swift`, package `eye-control`)
+### Eye Control (`EyeControlModels.swift`, `EyeControlTargets.swift`, package `eye-control`)
 
 Experimental gaze cursor; design and thresholds are in
 [`docs/marketplace/eye-control.md`](../../../docs/marketplace/eye-control.md).
 
-- `EyeGaze.screenPoint` intersects the averaged eye ray (face anchor in camera space) with the
-  screen plane and converts metres to points with `EyeScreen`. `EyeTransform`/`EyeVector` are
-  plain-Double stand-ins for simd so the maths tests on Linux.
-- `EyeCursorEngine` applies `EyeCalibration` (affine, least-squares `fit`), smooths with
-  `EyeOneEuro`, freezes during a blink and returns `.click` at the point from just before it
-  (`EyeBlinkDetector`, `EyeBlinkLength`). `EyeCalibrationRun` walks nine dots.
-- `EyeTracker` (app) runs `ARFaceTrackingConfiguration` and draws the cursor window;
-  `EyeClicker` turns a click into a control press or `accessibilityActivate()`.
-- Prefs: `eyeControl.smoothing`, `eyeControl.blinkLength`, `eyeControl.calibration`.
+- `EyeGaze.screenPoint` intersects each eye's ray (face anchor in camera space) with the
+  screen plane, averages the two hits and converts metres to points with `EyeScreen`.
+  `EyeTransform`/`EyeVector` are plain-Double stand-ins for simd so the maths tests on Linux.
+- `EyeCursorEngine` applies `EyeCalibration` (affine or curved, weighted least-squares `fit`),
+  smooths with `EyeOneEuro`, tracks its uncertainty (`sigma`) and fixations, snaps to
+  `EyeTarget`s through `EyeSnapper`, freezes during a blink and returns `.click` at the point
+  (or snapped target) from just before it (`EyeBlinkDetector`, `EyeBlinkLength`). Clicks and
+  dwells on snapped targets come out of `takeSamples()` as `EyeCalibrationSample`s.
+- `EyeLiveCalibration` fits dots plus learned samples (Huber-robust, leave-one-out model
+  choice, recent-drift offset); `EyeCalibrationRun` walks nine dots and seeds it.
+- `EyeTracker` (app) runs `ARFaceTrackingConfiguration`, scans targets with
+  `EyeClicker.targets()` and draws the cursor window and target outline; `EyeClicker` turns a
+  click into a control press or `accessibilityActivate()`.
+- Prefs: `eyeControl.smoothing`, `eyeControl.blinkLength`, `eyeControl.calibration`,
+  `eyeControl.snapping`, `eyeControl.learning`.
 
 ### Speech Playground (`SpeechModels.swift`, package `speech`)
 
