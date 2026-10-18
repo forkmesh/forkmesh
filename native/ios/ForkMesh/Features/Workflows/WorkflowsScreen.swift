@@ -172,9 +172,22 @@ enum WorkflowLook {
         case "core.merge": return "merge_type"
         case "core.limit", "core.split": return "format_list_bulleted"
         case "core.noop": return "radio_button_unchecked"
-        default: return "bolt"
+        default: return actionIcons[type] ?? "bolt"
         }
     }
+
+    static let actionIcons: [String: String] = [
+        "core.code": "code", "core.variable": "data_object_rounded", "core.switch": "route_outlined",
+        "core.repeat": "replay_outlined", "core.wait": "timer_outlined", "core.runWorkflow": "account_tree_outlined",
+        "core.stop": "stop_circle_outlined", "core.comment": "sticky_note_2_outlined",
+        "core.textCase": "text_snippet_outlined", "core.textReplace": "edit_note_outlined", "core.textMatch": "search",
+        "core.textSplit": "vertical_split_outlined", "core.textCombine": "call_merge", "core.textEncode": "lock_outline",
+        "core.hash": "tag", "core.textExtract": "alternate_email", "core.count": "format_list_bulleted",
+        "core.math": "tune", "core.round": "tune", "core.formatNumber": "tune", "core.random": "casino_outlined",
+        "core.statistics": "leaderboard_outlined", "core.combineItems": "layers_outlined", "core.sort": "sort",
+        "core.dedupe": "filter_alt_off_outlined", "core.pick": "playlist_play_outlined", "core.json": "data_object_rounded",
+        "core.url": "link", "core.dateFormat": "event_outlined", "core.dateAdjust": "update", "core.dateDiff": "timelapse",
+    ]
 
     static func color(_ hex: String, fallback: Color) -> Color {
         let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex

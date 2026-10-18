@@ -1,6 +1,6 @@
 # Workflows
 
-A visual automation builder in the style of n8n. Connect a trigger (the Run button, a secret webhook URL or a schedule), logic steps (HTTP request, Set fields, If, Filter, Merge, Limit, Split out) and integrations on one canvas, run it, and read every step's output. Workflows download and upload as n8n-compatible JSON and import from n8n template links.
+A visual automation builder in the style of n8n. Connect a trigger (the Run button, a secret webhook URL or a schedule), logic steps (HTTP request, Set fields, If, Filter, Merge, Limit, Split out), the steps Apple's Shortcuts offers for automations (variables, choose by value, repeat, wait, run another workflow, stop; text, number, list and date actions; hashing and encoding), your own JavaScript in a sandboxed Run script step, and integrations on one canvas, run it, and read every step's output. Workflows download and upload as n8n-compatible JSON and import from n8n template links.
 
 It works on the web, from the desktop rail, and natively on iPhone and Android: the phones list, edit and run workflows on their own screens. A phone can run a workflow itself: the iPhone runs `content/mobile/workflow-engine.js` in Apple's JavaScriptCore, Android runs a Kotlin port of the same engine, and both are checked against the server's results. Phone runs use only credentials saved on that phone.
 

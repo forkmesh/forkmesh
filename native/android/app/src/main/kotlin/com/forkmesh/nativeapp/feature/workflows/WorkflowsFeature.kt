@@ -16,6 +16,7 @@ import com.forkmesh.nativeapp.workflows.WorkflowEngine
 import com.forkmesh.nativeapp.workflows.WorkflowPhoneCredentials
 import com.forkmesh.nativeapp.workflows.WorkflowPhoneRunner
 import com.forkmesh.nativeapp.workflows.WorkflowRun
+import com.forkmesh.nativeapp.workflows.WorkflowTargets
 import com.forkmesh.nativeapp.workflows.WorkflowsApi
 
 object WorkflowsFeature {
@@ -51,7 +52,8 @@ class WorkflowsSession(val api: WorkflowsApi, secrets: SecretStore) {
 
     fun runOnPhone(draft: WorkflowDraft): WorkflowRun? {
         val engine = engine ?: return null
-        val run = WorkflowPhoneRunner(engine, HttpWorkflowTransport(engine)).run(draft, phone.credentials(draft))
+        val targets = WorkflowTargets(api, phone).resolve(draft)
+        val run = WorkflowPhoneRunner(engine, HttpWorkflowTransport(engine)).run(draft, targets.credentials, workflows = targets.workflows)
         val key = draft.id.ifEmpty { "draft" }
         phoneRuns[key] = (listOf(run) + (phoneRuns[key] ?: emptyList())).take(30)
         return run

@@ -28,6 +28,11 @@ both apps (`Route.workflows`), and a phone can run a workflow itself.
   credential is not on the phone fails a phone run with the server's own
   message ("Choose a Slack credential for this step"), and the editor lists
   those steps before the run.
+- **Run workflow on the phone**: before a phone run the store fetches the
+  workflows a Run workflow step can reach (by ID or name from the account
+  list; every listed workflow when the reference is an expression), up to the
+  nesting limit, and passes them to the engine as `workflows` with the phone
+  credentials their steps use. The draft being edited stands in for itself.
 
 ## One engine, three runtimes
 
@@ -38,8 +43,10 @@ both apps (`Route.workflows`), and a phone can run a workflow itself.
 | Android | `core/.../workflows/WorkflowEngine.kt` (+ `WorkflowPy.kt`) | `WorkflowsTest` (`:core:coreTest`) |
 
 The JavaScript engine is a line-for-line port of `workflows.py`: validation
-(`clean`), expressions, every core node, integration request building, the
-run report. Python details that change results are reproduced on purpose:
+(`clean`), expressions, every core node including the scripting, text,
+number, list and date steps ([app/workflow-steps.md](../app/workflow-steps.md)),
+the script interpreter ([app/workflow-scripts.md](../app/workflow-scripts.md)),
+integration request building, the run report. Python details that change results are reproduced on purpose:
 `json.dumps` spacing and `ensure_ascii`, `quote`/`urlencode` escaping, Python
 truthiness for `or`, `str(True)`, negative list indexes, the lazy whole-value
 expression match.
@@ -50,7 +57,11 @@ only (`docs/native/README.md`), and the offline build cannot add QuickJS or
 
 **HTTP stays native.** The JS engine is a generator: `start(input)` returns
 either `{request}` or `{done: report}`; the host performs the request with its
-own HTTP stack and calls `resume(session, {status, text})`. JavaScriptCore has
+own HTTP stack and calls `resume(session, {status, text})`. A Wait step
+yields `{wait: ms}`: the host sleeps (iOS `Task.sleep`, Android the `sleep`
+callback of `WorkflowEngine.run`) and resumes with `null`. Random numbers come
+from the platform unless the input carries `randoms`, which the conformance
+cases use. JavaScriptCore has
 no `fetch`, and this keeps the JSContext single-threaded behind a lock while
 the request runs on URLSession (`HTTPWorkflowTransport` over FMNet's
 `HTTPClient`). Android's `HttpWorkflowTransport` uses `HttpURLConnection`.
@@ -76,11 +87,14 @@ reaches only what the phone itself could already reach.
 - a copy of `workflow-engine.js` into `FMWorkflows/Resources` (SwiftPM
   resources must live inside the target; `Module.assets` in `Package.swift`
   copies the folder).
-- `workflow-cases.json`: 346 runs computed by the server engine (every
+- `workflow-cases.json`: about 970 runs computed by the server engine (every
   integration operation with sample values and credentials, every example
-  template, and core flow, expression, URL-safety and error cases), plus
+  template, core flow, expression, URL-safety and error cases, every new step
+  with its edge cases, time zones across clock changes, and every program of
+  the script corpus plus script errors and limits), plus
   `clean`, `safeUrl` and catalog cases. Both phone test suites replay them and
-  compare requests and reports (step timings excluded).
+  compare requests, recorded waits and reports (step timings excluded; script
+logs and `stopped` included).
 
 `--check` fails when any file is stale; `test_workflows_mobile.py` runs the
 check and the Node conformance harness, so a change to the server engine or an

@@ -157,7 +157,7 @@ struct WorkflowStepScreen: View {
             .pickerStyle(.menu)
             .tint(fm.accent)
         default:
-            FmTextField(text: text, hint: field.placeholder, multiline: field.multiline, mono: field.type == "json")
+            FmTextField(text: text, hint: field.placeholder, multiline: field.multiline, mono: field.mono)
         }
     }
 

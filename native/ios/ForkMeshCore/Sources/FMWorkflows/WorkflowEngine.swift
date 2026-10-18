@@ -77,28 +77,42 @@ public final class WorkflowEngine: @unchecked Sendable {
 
     public func scheduleMinutes(_ workflow: JSONObject) -> Int { call("scheduleMinutes", [.object(workflow)]).int(or: 0) }
 
+    public var maxWorkflowDepth: Int { spec.obj("limits").int("maxWorkflowDepth", 3) }
+
     public func run(
         _ workflow: JSONObject, payload: JSONValue? = nil, credentials: JSONObject = [:], trigger: String = "manual",
-        workflowId: String = "", nowMs: Int64? = nil, transport: WorkflowTransport
+        workflowId: String = "", nowMs: Int64? = nil, workflows: [JSONValue] = [], randoms: [JSONValue]? = nil,
+        transport: WorkflowTransport,
+        wait: @escaping @Sendable (Int64) async -> Void = { (ms: Int64) in await WorkflowEngine.sleep(ms) }
     ) async -> JSONObject {
         var input: JSONObject = [
             "workflow": .object(workflow), "payload": payload ?? .null, "credentials": .object(credentials),
-            "trigger": .string(trigger), "workflowId": .string(workflowId),
+            "trigger": .string(trigger), "workflowId": .string(workflowId), "workflows": .array(workflows),
         ]
         if let nowMs { input["nowMs"] = .int(nowMs) }
+        if let randoms { input["randoms"] = .array(randoms) }
         var step = JSON.parseObject(script.start(JSON.encode(input)))
-        while let request = step["request"]?.objectValue {
+        while step["request"]?.objectValue != nil || step["wait"] != nil {
             let session = step.str("session")
             if Task.isCancelled {
                 script.cancel(session)
                 return ["status": "error", "error": "Stopped", "requests": 0, "nodes": .object([:]), "trigger": .string(trigger)]
             }
-            let reply = await transport.send(WorkflowRequest(json: request), allowed: { [weak self] (url: String) in
-                self?.isSafe(url) ?? false
-            })
-            step = JSON.parseObject(script.resume(session, JSON.encode(reply.json)))
+            if let request = step["request"]?.objectValue {
+                let reply = await transport.send(WorkflowRequest(json: request), allowed: { [weak self] (url: String) in
+                    self?.isSafe(url) ?? false
+                })
+                step = JSON.parseObject(script.resume(session, JSON.encode(reply.json)))
+            } else {
+                await wait(Int64(step.int("wait")))
+                step = JSON.parseObject(script.resume(session, "null"))
+            }
         }
         return step.obj("done")
+    }
+
+    public static func sleep(_ ms: Int64) async {
+        try? await Task.sleep(nanoseconds: UInt64(max(0, ms)) * 1_000_000)
     }
 }
 

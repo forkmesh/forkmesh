@@ -324,6 +324,33 @@ async def _runs_last_hour(env, owner_bi, now):
     return int((row or {}).get("n") or 0)
 
 
+def _workflow_loader(env, owner_bi):
+    async def load(ref):
+        ref = str(ref or "").strip()
+        if not ref:
+            return None
+        row, record = (await _load(env, ref, owner_bi)) if re.fullmatch(
+            HEX32, ref) else (None, None)
+        if not row:
+            rows = await d1_all(
+                env, "SELECT * FROM workflows WHERE owner_bi=? "
+                "ORDER BY updated_at DESC LIMIT ?", owner_bi, MAX_WORKFLOWS)
+            for candidate in rows or []:
+                data = await decrypt_row(env, candidate.get("data"))
+                if isinstance(data, dict) and str(data.get("name") or "").strip(
+                        ).lower() == ref.lower():
+                    row, record = candidate, data
+                    break
+        if not row:
+            return None
+        workflow, error = engine.clean_workflow(record)
+        if error:
+            return None
+        credentials = await _credentials_for(env, owner_bi, workflow)
+        return workflow, credentials, row["workflow_id"]
+    return load
+
+
 async def _execute(env, row, record, kind, trigger_item, now):
     owner_bi = row["owner_bi"]
     workflow_id = row["workflow_id"]
@@ -331,7 +358,8 @@ async def _execute(env, row, record, kind, trigger_item, now):
     credentials = await _credentials_for(env, owner_bi, record)
     report = await engine.execute(
         record, trigger_item, _http, credentials, max_requests,
-        now + budget_ms, _now, now, workflow_id)
+        now + budget_ms, _now, now, workflow_id,
+        load_workflow=_workflow_loader(env, owner_bi))
     finished = _now()
     run_id = _ap_uuid()
     report["trigger"] = kind

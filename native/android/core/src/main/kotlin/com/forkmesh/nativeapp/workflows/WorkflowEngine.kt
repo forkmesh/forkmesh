@@ -414,7 +414,7 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
     fun evaluate(expr: Any?, context: Map<String, Any?>): Any? {
         val text = str(or(expr, "")).trim()
         val match = ROOT_RE.find(text)
-            ?: fail("Expressions start with \$json, \$node, \$trigger, \$now, \$today, \$item or \$workflow: " + text.take(80))
+            ?: fail("Expressions start with \$json, \$node, \$trigger, \$now, \$today, \$item, \$vars or \$workflow: " + text.take(80))
         val root = match.groupValues[1]
         if (!context.containsKey(root)) fail("Unknown expression variable \$$root")
         var value = context[root]
@@ -460,6 +460,7 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
             }
             "boolean" -> if (value is Boolean) value else str(value).trim().lowercase() in setOf("true", "1", "yes", "on")
             "json" -> if (value is Map<*, *> || value is List<*>) value else (parseJson(str(value)) ?: fail("$label is not valid JSON")).value
+            "value" -> value
             "select" -> {
                 val allowed = list(field["options"]).map { get(it, "value").toString() }
                 val text = stringify(value)
@@ -475,6 +476,10 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
         for (field in fields) {
             val key = field["key"].toString()
             var raw = if (params.containsKey(key)) params[key] else field["default"]
+            if (field["type"] == "code") {
+                values[key] = coerce(field, raw)
+                continue
+            }
             if (field["type"] == "json" && raw is String && raw.isNotBlank()) {
                 parseJson(raw)?.let { raw = it.value }
             }
@@ -747,6 +752,10 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
             "notContains" -> if (left is List<*>) left.none { stringify(it) == y } else !x.contains(y)
             "startsWith" -> x.startsWith(y)
             "endsWith" -> x.endsWith(y)
+            "matches", "notMatches" -> {
+                val found = regexSearch(WorkflowActions.regex(y, false).compiled, x, 0) != null
+                if (operator == "matches") found else !found
+            }
             else -> fail("Unknown operator " + str(operator))
         }
     }
@@ -767,37 +776,72 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
         val workflowId: String = "",
         val nowMs: Long? = null,
         val clock: () -> Long = { System.currentTimeMillis() },
+        val randoms: List<Double>? = null,
+        val workflows: List<Map<String, Any?>> = emptyList(),
     )
 
-    fun run(input: Input, http: (WorkflowRequest) -> WorkflowReply): Map<String, Any?> {
+    private class Shared(
+        val http: (WorkflowRequest) -> WorkflowReply,
+        val sleep: (Long) -> Unit,
+        val random: () -> Double,
+        val workflows: List<Map<String, Any?>>,
+        val credentials: Map<String, Any?>,
+        val maxRequests: Int,
+        val deadline: Long,
+        val clock: () -> Long,
+        val now: Long,
+    ) {
+        var requests = 0
+    }
+
+    fun run(input: Input, sleep: (Long) -> Unit = { Thread.sleep(it) }, http: (WorkflowRequest) -> WorkflowReply): Map<String, Any?> {
         val runLimits = map(spec["runLimits"])
         val limitPair = list(runLimits[input.trigger] ?: runLimits["manual"])
         val checked = clean(input.workflow)
         val workflow = checked.workflow
             ?: return linkedMapOf("status" to "error", "error" to "Workflow: " + checked.error, "requests" to 0L,
                                   "nodes" to LinkedHashMap<String, Any?>(), "trigger" to input.trigger)
-        val execution = Execution(
-            workflow, input.credentials, (limitPair[0] as Number).toInt(), input.clock() + (limitPair[1] as Number).toLong(),
-            input.clock, input.nowMs ?: input.clock(), input.workflowId, http)
+        val queue = input.randoms?.let { ArrayDeque(it) }
+        val random: () -> Double = if (queue != null) {
+            { if (queue.isEmpty()) 0.5 else queue.removeFirst() }
+        } else {
+            { Math.random() }
+        }
+        val shared = Shared(
+            http, sleep, random, input.workflows, input.credentials, (limitPair[0] as Number).toInt(),
+            input.clock() + (limitPair[1] as Number).toLong(), input.clock, input.nowMs ?: input.clock(),
+        )
+        val execution = Execution(workflow, input.credentials, input.workflowId, shared, 0)
         val report = execution.run(manualPayload(workflow, input.payload))
         report["trigger"] = input.trigger
         return report
     }
 
+    private fun loadWorkflow(shared: Shared, ref: String): Pair<Map<String, Any?>, String>? {
+        val entry = shared.workflows.firstOrNull { str(or(it["id"], "")) == ref }
+            ?: shared.workflows.firstOrNull { str(or(it["name"], "")).trim().lowercase() == ref.lowercase() }
+            ?: return null
+        val child = clean(entry["workflow"]).workflow ?: return null
+        return child to str(or(entry["id"], ""))
+    }
+
+    @Suppress("UNCHECKED_CAST")
     private inner class Execution(
         val workflow: Map<String, Any?>,
         val credentials: Map<String, Any?>,
-        val maxRequests: Int,
-        val deadline: Long,
-        val clock: () -> Long,
-        val now: Long,
         val workflowId: String,
-        val http: (WorkflowRequest) -> WorkflowReply,
+        val shared: Shared,
+        val depth: Int,
     ) {
-        var requests = 0
+        val clock: () -> Long get() = shared.clock
+        val deadline: Long get() = shared.deadline
+        val now: Long get() = shared.now
         val outputs = LinkedHashMap<String, Map<String, List<Any?>>>()
         var triggerItem: Map<String, Any?> = emptyMap()
         var byName = LinkedHashMap<String, String>()
+        var variables: MutableMap<String, Any?> = LinkedHashMap()
+        val logs = HashMap<String, List<String>>()
+        var stopped = ""
 
         fun firstOutput(id: String): List<Any?> = outputs[id]?.values?.firstOrNull { it.isNotEmpty() } ?: emptyList()
 
@@ -810,17 +854,28 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
             val stamp = isoTime(now)
             return linkedMapOf(
                 "json" to item, "item" to linkedMapOf("index" to index.toLong()), "node" to nodes, "trigger" to triggerItem,
-                "now" to stamp, "today" to stamp.take(10),
+                "now" to stamp, "today" to stamp.take(10), "vars" to variables,
                 "workflow" to linkedMapOf("id" to workflowId, "name" to (workflow["name"] as? String ?: "")),
             )
         }
 
+        fun values(node: Map<String, Any?>, item: Any?, index: Int): LinkedHashMap<String, Any?> {
+            val params = map(or(node["params"], emptyMap<String, Any?>()))
+            return fieldValues(fieldsFor(node["type"].toString(), params), params, context(item, index))
+        }
+
+        fun readPath(path: Any?, item: Any?, index: Int): Any? {
+            val text = str(or(path, "")).trim()
+            if (text.isEmpty()) return null
+            return evaluate(if (text.startsWith("$")) text else "\$json.$text", context(item, index))
+        }
+
         fun request(request: WorkflowRequest): Any? {
             if (safeUrl(request.url).isEmpty()) fail("Only public https:// URLs can be called")
-            if (requests >= maxRequests) fail("This run reached its limit of $maxRequests requests")
+            if (shared.requests >= shared.maxRequests) fail("This run reached its limit of ${shared.maxRequests} requests")
             if (clock() > deadline) fail("This run ran out of time")
-            requests += 1
-            val reply = http(request)
+            shared.requests += 1
+            val reply = shared.http(request)
             if (reply.status == 0) fail("No response from " + hostOf(request.url).ifEmpty { request.url })
             val parsed = parseResponse(reply.text)
             if (reply.status >= 400) fail("HTTP ${reply.status}: " + reply.text.trim().take(300))
@@ -832,12 +887,13 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
             val params = map(or(node["params"], emptyMap<String, Any?>()))
             if (type in TRIGGERS) return linkedMapOf("main" to listOf(triggerItem))
             if (node["disabled"] == true) return linkedMapOf(outputsFor(type)[0] to items)
-            if (type == "core.merge" || type == "core.noop") return linkedMapOf("main" to items.take(maxItems))
+            if (type == "core.merge" || type == "core.noop" || type == "core.comment") return linkedMapOf("main" to items.take(maxItems))
             if (type == "core.limit") {
                 val values = fieldValues(fieldsFor(type, params), params, context(LinkedHashMap<String, Any?>(), 0))
                 val max = (values["max"] as Number).toDouble().toLong().coerceAtLeast(0)
                 return linkedMapOf("main" to items.take(max.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()))
             }
+            if (type in WorkflowActions.TYPES) return runAction(node, items.take(maxItems))
             val out = LinkedHashMap<String, MutableList<Any?>>()
             for (name in outputsFor(type)) out[name] = mutableListOf()
             for ((index, item) in items.take(maxItems).withIndex()) {
@@ -847,7 +903,6 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
                     "core.set" -> {
                         val extra = values["values"]
                         if (extra !is Map<*, *>) fail("Fields must be a JSON object")
-                        @Suppress("UNCHECKED_CAST")
                         val merged = if (values["keep"] != false) LinkedHashMap(map(item)) else LinkedHashMap<String, Any?>()
                         for ((key, value) in extra) setPath(merged, key.toString(), value)
                         out.getValue("main").add(merged)
@@ -885,7 +940,282 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
             return out
         }
 
-        fun report(out: Map<String, List<Any?>>, started: Long, error: String): Map<String, Any?> {
+        fun runAction(node: Map<String, Any?>, items: List<Any?>): Map<String, List<Any?>> {
+            val type = node["type"].toString()
+            val params = map(or(node["params"], emptyMap<String, Any?>()))
+            when (type) {
+                "core.code" -> return linkedMapOf("main" to runScript(node, items).take(maxItems))
+                "core.wait" -> {
+                    waitFor(values(node, items[0], 0)["seconds"])
+                    return linkedMapOf("main" to items)
+                }
+                "core.stop" -> {
+                    val values = values(node, items[0], 0)
+                    if (values["outcome"] == "error") fail((values["message"] as? String)?.ifEmpty { null } ?: "The workflow was stopped")
+                    throw WorkflowStop(linkedMapOf("main" to items))
+                }
+                "core.pick" -> return linkedMapOf("main" to pick(values(node, items[0], 0), items))
+                "core.sort" -> {
+                    val values = values(node, items[0], 0)
+                    val keys = items.mapIndexed { index, item -> WorkflowActions.sortKey(sortValue(params["by"], item, index)) }
+                    return linkedMapOf("main" to WorkflowActions.sortItems(items, keys, values["order"].toString(), shared.random))
+                }
+                "core.dedupe" -> {
+                    val by = params["by"]
+                    val seen = HashSet<String>()
+                    val kept = ArrayList<Any?>()
+                    for ((index, item) in items.withIndex()) {
+                        val key = dumps(if (str(or(by, "")).trim().isNotEmpty()) readPath(by, item, index) else item)
+                        if (seen.add(key)) kept.add(item)
+                    }
+                    return linkedMapOf("main" to kept)
+                }
+                "core.statistics" -> {
+                    val numbers = items.mapIndexed { index, item -> values(node, item, index)["value"] }
+                    val values = values(node, items[0], 0)
+                    val result = WorkflowActions.statistics(numbers, values["operation"].toString())
+                    return linkedMapOf("main" to listOf(WorkflowActions.withField(LinkedHashMap<String, Any?>(), values["field"].toString(), WorkflowActions.numberOut(result))))
+                }
+                "core.combineItems" -> {
+                    val whole = str(or(params["value"], "")).trim().isEmpty()
+                    val gathered = ArrayList(items.mapIndexed { index, item -> if (whole) WorkflowActions.copyJson(item) else values(node, item, index)["value"] })
+                    val field = values(node, items[0], 0)["field"].toString()
+                    return linkedMapOf("main" to listOf(WorkflowActions.withField(LinkedHashMap<String, Any?>(), field, gathered)))
+                }
+            }
+            val out = LinkedHashMap<String, MutableList<Any?>>()
+            for (name in outputsFor(type)) out[name] = mutableListOf()
+            for ((index, item) in items.withIndex()) {
+                val values = values(node, item, index)
+                when (type) {
+                    "core.switch" -> {
+                        val text = stringify(values["value"])
+                        var routed = false
+                        for (case in listOf("case1", "case2", "case3")) {
+                            val expected = values[case]
+                            if (expected != null && expected != "" && expected == text) {
+                                out.getValue(case).add(item)
+                                routed = true
+                                break
+                            }
+                        }
+                        if (!routed) out.getValue("otherwise").add(item)
+                    }
+                    "core.repeat" -> {
+                        val times = (values["times"] as Number).toDouble().coerceIn(0.0, WorkflowActions.MAX_REPEAT.toDouble()).toInt()
+                        for (count in 1..times) out.getValue("main").add(WorkflowActions.withField(item, values["field"].toString(), count.toLong()))
+                    }
+                    "core.variable" -> {
+                        setVariable(values)
+                        out.getValue("main").add(item)
+                    }
+                    "core.runWorkflow" -> out.getValue("main").addAll(runChild(values["workflow"], item))
+                    else -> out.getValue("main").add(WorkflowActions.withField(item, values["field"].toString(), compute(type, values)))
+                }
+                for (list in out.values) while (list.size > maxItems) list.removeAt(list.size - 1)
+            }
+            return out
+        }
+
+        fun compute(type: String, values: Map<String, Any?>): Any? {
+            val text = values["value"].let { if (it == null) "" else stringify(it) }
+            fun s(key: String) = (values[key] as? String) ?: ""
+            return when (type) {
+                "core.textCase" -> WorkflowActions.changeCase(text, s("case"))
+                "core.textReplace" -> WorkflowActions.replaceText(text, s("find"), s("replace"), values["regex"] == true, values["ignoreCase"] == true)
+                "core.textMatch" -> WorkflowActions.matchText(text, s("pattern"), s("result"), values["ignoreCase"] == true)
+                "core.textSplit" -> WorkflowActions.splitText(text, s("separator"), s("custom"), values["skipEmpty"] != false)
+                "core.textCombine" -> WorkflowActions.combineText(values["value"], s("separator"), s("custom"))
+                "core.textEncode" -> WorkflowActions.encodeText(text, s("method"))
+                "core.hash" -> WorkflowActions.hashText(text, s("algorithm"), s("key"), s("encoding"))
+                "core.textExtract" -> WorkflowActions.extract(text, s("kind"))
+                "core.count" -> WorkflowActions.count(values["value"], s("what"))
+                "core.math" -> {
+                    val second = values["b"]
+                    WorkflowActions.numberOut(WorkflowActions.calculate(
+                        WorkflowActions.toNumber(values["a"], "Number"), s("operator"),
+                        if (second == null) null else WorkflowActions.toNumber(second, "Second number"),
+                    ))
+                }
+                "core.round" -> WorkflowActions.numberOut(WorkflowActions.roundNumber(WorkflowActions.toNumber(values["value"], "Number"), values["decimals"], s("mode")))
+                "core.formatNumber" -> WorkflowActions.formatNumber(WorkflowActions.toNumber(values["value"], "Number"), values["decimals"], values["grouping"] != false)
+                "core.random" -> WorkflowActions.numberOut(randomNumber(values))
+                "core.json" -> jsonValue(values)
+                "core.url" -> WorkflowActions.urlParts(text)
+                "core.dateFormat" -> WorkflowActions.formatDate(values["value"], s("format"), s("pattern"), s("timeZone"))
+                "core.dateAdjust" -> WorkflowActions.adjustDate(values["value"], s("operation"), values["amount"], s("unit"), s("timeZone"))
+                "core.dateDiff" -> WorkflowActions.dateDifference(values["start"], values["end"], s("unit"))
+                else -> fail("Unknown step $type")
+            }
+        }
+
+        fun jsonValue(values: Map<String, Any?>): Any? {
+            val value = values["value"]
+            if (values["operation"] == "stringify") return if (values["pretty"] == true) WorkflowActions.pyDumpsIndent(value) else dumps(value)
+            if (value == null) fail("There is no JSON text to read")
+            if (value !is String) return value
+            return try {
+                PyJson.loads(value)
+            } catch (_: PyJson.Bad) {
+                fail("The text is not valid JSON")
+            }
+        }
+
+        fun randomNumber(values: Map<String, Any?>): Any {
+            val low = (values["min"] as Number).toDouble()
+            val high = (values["max"] as Number).toDouble()
+            if (values["whole"] != false) {
+                val lo = Math.ceil(low)
+                val hi = Math.floor(high)
+                if (lo > hi) fail("From must not be larger than To")
+                return lo.toLong() + Math.floor(shared.random() * (hi - lo + 1)).toLong()
+            }
+            if (low > high) fail("From must not be larger than To")
+            return low + shared.random() * (high - low)
+        }
+
+        fun setVariable(values: Map<String, Any?>) {
+            val name = (values["name"] as? String) ?: ""
+            if (!WorkflowActions.VARIABLE_RE.matches(name)) fail("Variable names use letters, digits and _")
+            val value = WorkflowActions.copyJson(values["value"])
+            val next = variables
+            when (values["mode"]) {
+                "set" -> next[name] = value
+                "append" -> {
+                    val existing = next[name]
+                    val items: ArrayList<Any?> = if (existing is List<*>) ArrayList<Any?>(existing) else if (existing == null) ArrayList() else arrayListOf(existing)
+                    items.add(value)
+                    next[name] = ArrayList(items.takeLast(maxItems * 10))
+                }
+                else -> {
+                    val existing = next[name]
+                    val base = if (existing == null) 0.0 else WorkflowActions.toNumber(existing, "The variable $name")
+                    next[name] = WorkflowActions.numberOut(base + WorkflowActions.toNumber(value, "Value"))
+                }
+            }
+        }
+
+        fun sortValue(by: Any?, item: Any?, index: Int): Any? {
+            if (str(or(by, "")).trim().isNotEmpty()) return readPath(by, item, index)
+            return map(item).values.firstOrNull()
+        }
+
+        fun pick(values: Map<String, Any?>, items: List<Any?>): List<Any?> {
+            when (values["which"]) {
+                "first" -> return items.take(1)
+                "last" -> return items.takeLast(1)
+                "random" -> return listOf(items[Math.floor(shared.random() * items.size).toInt()])
+            }
+            var position = (values["index"] as? Number)?.toDouble()?.toLong() ?: 0L
+            if (values["which"] == "index") {
+                if (position < 0) position += items.size + 1
+                return if (position >= 1 && position <= items.size) listOf(items[(position - 1).toInt()]) else emptyList()
+            }
+            val end = (values["to"] as? Number)?.toDouble()?.toLong() ?: 0L
+            val from = maxOf(0L, position - 1).coerceAtMost(items.size.toLong()).toInt()
+            val to = maxOf(0L, end).coerceAtMost(items.size.toLong()).toInt()
+            return if (from < to) items.subList(from, to).toList() else emptyList()
+        }
+
+        fun waitFor(raw: Any?) {
+            val seconds = (raw as Number).toDouble()
+            if (seconds < 0) fail("Seconds must be 0 or more")
+            if (seconds > WorkflowActions.MAX_WAIT_SECONDS) fail("Wait at most ${WorkflowActions.MAX_WAIT_SECONDS} seconds")
+            val ms = (seconds * 1000).toLong()
+            if (clock() + ms > deadline) fail("Waiting would run past this run's time limit")
+            shared.sleep(ms)
+        }
+
+        fun runChild(raw: Any?, item: Any?): List<Any?> {
+            val ref = str(or(raw, "")).trim()
+            if (depth + 1 >= WorkflowActions.MAX_WORKFLOW_DEPTH) {
+                fail("Workflows can run other workflows at most ${WorkflowActions.MAX_WORKFLOW_DEPTH - 1} deep")
+            }
+            val (child, childId) = loadWorkflow(shared, ref) ?: fail("No workflow named $ref")
+            val execution = Execution(child, shared.credentials, childId, shared, depth + 1)
+            val report = execution.run(map(item))
+            if (report["status"] != "success") fail((child["name"] as? String ?: ref) + " failed: " + report["error"])
+            return execution.finalItems(report)
+        }
+
+        fun finalItems(report: Map<String, Any?>): List<Any?> {
+            val nodes = list(or(workflow["nodes"], emptyList<Any?>())).map { map(it) }
+            val connections = list(or(workflow["connections"], emptyList<Any?>())).map { map(it) }
+            val ids = if (stopped.isNotEmpty()) {
+                listOf(byName.getValue(stopped))
+            } else {
+                val sources = connections.map { it["from"].toString() }.toSet()
+                (topologicalOrder(nodes, connections) ?: emptyList()).filter { it !in sources }
+            }
+            val found = ArrayList<Any?>()
+            for (id in ids) {
+                if (get(map(report["nodes"])[id], "status") != "success") continue
+                for (produced in (outputs[id] ?: emptyMap()).values) found.addAll(produced)
+            }
+            return found.take(maxItems)
+        }
+
+        fun runScript(node: Map<String, Any?>, items: List<Any?>): List<Any?> {
+            val values = values(node, items[0], 0)
+            val program = try {
+                parseScript(values["code"].toString())
+            } catch (error: ScriptError) {
+                fail(error.message ?: "")
+            }
+            val interp = JsInterpreter(now, shared.random, clock, deadline)
+            val scriptItems = items.map { fromJson(it) }
+            val vars = fromJson(variables)
+            val stamp = isoTime(now)
+            val sharedValues = linkedMapOf(
+                "\$trigger" to fromJson(triggerItem), "\$vars" to vars, "\$now" to stamp, "\$today" to stamp.take(10),
+                "\$workflow" to fromJson(linkedMapOf("id" to workflowId, "name" to (workflow["name"] as? String ?: ""))),
+                "\$utils" to WorkflowActions.utilsObject(interp),
+            )
+            val itemsArray = JsArray(scriptItems)
+            val out = ArrayList<Any?>()
+            val nextVariables: Any?
+            try {
+                if (values["mode"] == "each") {
+                    for ((index, item) in scriptItems.withIndex()) {
+                        val current = LinkedHashMap<String, Any?>(sharedValues)
+                        current["items"] = itemsArray
+                        current["item"] = item
+                        current["\$json"] = item
+                        current["\$index"] = index.toDouble()
+                        current["\$node"] = fromJson(context(items[index], index)["node"])
+                        current["\$input"] = scriptInput(itemsArray, item)
+                        out.addAll(unwrapItems(interp.run(program, current), item))
+                    }
+                } else {
+                    val current = LinkedHashMap<String, Any?>(sharedValues)
+                    current["items"] = itemsArray
+                    current["\$node"] = fromJson(context(items[0], 0)["node"])
+                    current["\$input"] = scriptInput(itemsArray, null)
+                    out.addAll(unwrapItems(interp.run(program, current), itemsArray))
+                }
+                nextVariables = toJsonValue(vars)
+            } catch (error: ScriptError) {
+                fail(error.message ?: "")
+            } catch (error: ScriptLimit) {
+                fail(error.message ?: "")
+            } finally {
+                if (interp.logs.isNotEmpty()) logs[node["id"].toString()] = ArrayList(interp.logs)
+            }
+            variables = if (nextVariables is MutableMap<*, *>) nextVariables as MutableMap<String, Any?> else LinkedHashMap()
+            return out
+        }
+
+        fun scriptInput(scriptItems: JsArray, current: Any?): JsObject {
+            fun wrap(item: Any?): JsObject = JsObject().also { it["json"] = item }
+            val out = JsObject()
+            out["all"] = native("all") { _, _ -> JsArray(scriptItems.map { wrap(it) }) }
+            out["first"] = native("first") { _, _ -> if (scriptItems.isNotEmpty()) wrap(scriptItems[0]) else Undefined }
+            out["last"] = native("last") { _, _ -> if (scriptItems.isNotEmpty()) wrap(scriptItems[scriptItems.size - 1]) else Undefined }
+            if (current != null) out["item"] = wrap(current)
+            return out
+        }
+
+        fun report(id: String, out: Map<String, List<Any?>>, started: Long, error: String): Map<String, Any?> {
             val entry = linkedMapOf<String, Any?>(
                 "status" to "success", "ms" to (clock() - started).coerceAtLeast(0),
                 "outputs" to out.entries.associateTo(LinkedHashMap()) { (name, items) ->
@@ -893,6 +1223,7 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
                 },
             )
             if (error.isNotEmpty()) entry["error"] = error
+            logs[id]?.let { entry["logs"] = it }
             return entry
         }
 
@@ -910,7 +1241,7 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
                 val node = byId.getValue(id)
                 val type = node["type"].toString()
                 val started = clock()
-                if (failed.isNotEmpty()) {
+                if (failed.isNotEmpty() || stopped.isNotEmpty()) {
                     nodeReports[id] = linkedMapOf("status" to "skipped")
                     continue
                 }
@@ -940,6 +1271,11 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
                 }
                 val out = try {
                     runNode(node, items)
+                } catch (stop: WorkflowStop) {
+                    outputs[id] = stop.out
+                    nodeReports[id] = report(id, stop.out, started, "")
+                    stopped = node["name"].toString()
+                    continue
                 } catch (error: WorkflowNodeError) {
                     val message = error.message ?: ""
                     if (node["continueOnFail"] == true) {
@@ -947,18 +1283,22 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
                         for (name in outputsFor(type)) failedOut[name] = emptyList()
                         failedOut[outputsFor(type)[0]] = listOf(linkedMapOf("error" to message))
                         outputs[id] = failedOut
-                        nodeReports[id] = report(failedOut, started, message)
+                        nodeReports[id] = report(id, failedOut, started, message)
                         continue
                     }
-                    nodeReports[id] = linkedMapOf("status" to "error", "error" to message, "ms" to (clock() - started).coerceAtLeast(0))
+                    val entry = linkedMapOf<String, Any?>("status" to "error", "error" to message, "ms" to (clock() - started).coerceAtLeast(0))
+                    logs[id]?.let { entry["logs"] = it }
+                    nodeReports[id] = entry
                     failed = node["name"].toString() + ": " + message
                     continue
                 }
                 outputs[id] = out
-                nodeReports[id] = report(out, started, "")
+                nodeReports[id] = report(id, out, started, "")
             }
-            return linkedMapOf("status" to if (failed.isNotEmpty()) "error" else "success", "error" to failed,
-                               "requests" to requests.toLong(), "nodes" to nodeReports)
+            val result = linkedMapOf<String, Any?>("status" to if (failed.isNotEmpty()) "error" else "success", "error" to failed,
+                                                   "requests" to shared.requests.toLong(), "nodes" to nodeReports)
+            if (stopped.isNotEmpty()) result["stopped"] = stopped
+            return result
         }
     }
 }

@@ -22,6 +22,10 @@ EXPORT_TYPES = {
     "core.limit": ("limit", 1),
     "core.split": ("splitOut", 1),
     "core.noop": ("noOp", 1),
+    "core.code": ("code", 2),
+    "core.wait": ("wait", 1.1),
+    "core.dedupe": ("removeDuplicates", 1),
+    "core.sort": ("sort", 1),
 }
 IMPORT_TYPES = {
     "manualTrigger": "core.manual",
@@ -39,6 +43,13 @@ IMPORT_TYPES = {
     "splitOut": "core.split",
     "itemLists": "core.split",
     "noOp": "core.noop",
+    "code": "core.code",
+    "function": "core.code",
+    "functionItem": "core.code",
+    "wait": "core.wait",
+    "removeDuplicates": "core.dedupe",
+    "sort": "core.sort",
+    "aggregate": "core.combineItems",
 }
 SKIPPED_TYPES = {"stickyNote"}
 N8N_APP_ALIASES = {
@@ -89,6 +100,8 @@ OPERATORS_TO_N8N = {
     "isNotEmpty": ("string", "notEmpty"),
     "isTrue": ("boolean", "true"),
     "isFalse": ("boolean", "false"),
+    "matches": ("string", "regex"),
+    "notMatches": ("string", "notRegex"),
 }
 OPERATORS_FROM_N8N = {
     "equals": "equals", "equal": "equals", "notEquals": "notEquals",
@@ -100,10 +113,12 @@ OPERATORS_FROM_N8N = {
     "empty": "isEmpty", "isEmpty": "isEmpty", "notEmpty": "isNotEmpty",
     "isNotEmpty": "isNotEmpty", "true": "isTrue", "false": "isFalse",
     "exists": "isNotEmpty", "notExists": "isEmpty",
+    "regex": "matches", "notRegex": "notMatches",
 }
 LEGACY_NODE_RE = re.compile(r"\$\(\s*(['\"])(.+?)\1\s*\)\.(?:item|first\(\))\.json")
 SCHEDULE_UNITS = {"seconds": 1 / 60, "minutes": 1, "hours": 60, "days": 1440,
                   "weeks": 10080}
+WAIT_UNITS = {"seconds": 1, "minutes": 60, "hours": 3600, "days": 86400}
 
 
 class FormatError(ValueError):
@@ -215,6 +230,24 @@ def _n8n_parameters(node):
         return {"maxItems": engine._int(params.get("max"), 10)}
     if node_type == "core.split":
         return {"fieldToSplitOut": params.get("field") or "", "options": {}}
+    if node_type == "core.code":
+        return {"mode": "runOnceForEachItem" if params.get("mode") == "each"
+                else "runOnceForAllItems", "jsCode": params.get("code") or ""}
+    if node_type == "core.wait":
+        return {"resume": "timeInterval", "unit": "seconds",
+                "amount": engine._int(params.get("seconds"), 5)}
+    if node_type == "core.dedupe":
+        if not params.get("by"):
+            return {}
+        return {"compare": "selectedFields",
+                "fieldsToCompare": params.get("by")}
+    if node_type == "core.sort":
+        order = params.get("order") or "ascending"
+        if order == "shuffle":
+            return {"type": "random"}
+        return {"sortFieldsUi": {"sortField": [
+            {"fieldName": params.get("by") or "",
+             "order": "descending" if order == "descending" else "ascending"}]}}
     return {}
 
 
@@ -446,7 +479,98 @@ def _core_params(core_type, params, warnings, name):
         return {"max": str(engine._int(params.get("maxItems"), 1) or 1)}
     if core_type == "core.split":
         return {"field": str(params.get("fieldToSplitOut") or "items")}
+    if core_type == "core.code":
+        return _code_params(params, warnings, name)
+    if core_type == "core.wait":
+        return _wait_params(params, warnings, name)
+    if core_type == "core.dedupe":
+        return _dedupe_params(params)
+    if core_type == "core.sort":
+        return _sort_params(params)
+    if core_type == "core.combineItems":
+        return _aggregate_params(params)
     return {}
+
+
+def _code_params(params, warnings, name):
+    if params.get("language") == "python" or params.get("pythonCode"):
+        warnings.append(name + ": Python code cannot run here; rewrite it in "
+                        "JavaScript")
+        return {"mode": "all", "code": str(params.get("pythonCode") or "")}
+    code = params.get("jsCode") or params.get("functionCode") or ""
+    each = params.get("mode") == "runOnceForEachItem" or "functionCode" not in \
+        params and "jsCode" not in params
+    if "functionCode" in params:
+        each = False
+    warnings.append(name + ": check the script; scripts here run a JavaScript "
+                    "subset without libraries or network access")
+    return {"mode": "each" if each else "all", "code": str(code)}
+
+
+def _wait_params(params, warnings, name):
+    if params.get("resume") not in (None, "", "timeInterval"):
+        warnings.append(name + ": only waiting for a time is available, kept "
+                        "as a short wait")
+    try:
+        amount = float(params.get("amount", 1))
+    except (TypeError, ValueError):
+        amount = 1.0
+    seconds = amount * WAIT_UNITS.get(str(params.get("unit") or "hours"), 3600)
+    limit = engine.actions.MAX_WAIT_SECONDS
+    if seconds > limit:
+        warnings.append(name + ": waits at most " + str(limit) + " seconds")
+        seconds = limit
+    seconds = max(0.0, seconds)
+    return {"seconds": str(int(seconds)) if float(seconds).is_integer()
+            else str(seconds)}
+
+
+def _first_text(value):
+    if isinstance(value, str):
+        return value.split(",")[0].strip()
+    if isinstance(value, dict):
+        for item in value.values():
+            found = _first_text(item)
+            if found:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _first_text(item)
+            if found:
+                return found
+    return ""
+
+
+def _dedupe_params(params):
+    if params.get("compare") in ("selectedFields", "allFieldsExcept") or \
+            params.get("fieldsToCompare"):
+        by = _first_text(params.get("fieldsToCompare"))
+        if by and params.get("compare") != "allFieldsExcept":
+            return {"by": by}
+    return {}
+
+
+def _sort_params(params):
+    if params.get("type") == "random":
+        return {"order": "shuffle"}
+    fields = ((params.get("sortFieldsUi") or {}).get("sortField") or [])
+    first = fields[0] if fields and isinstance(fields[0], dict) else {}
+    return {"by": str(first.get("fieldName") or ""),
+            "order": "descending" if first.get("order") == "descending"
+            else "ascending"}
+
+
+def _aggregate_params(params):
+    if params.get("aggregate") == "aggregateAllItemData":
+        return {"field": str(params.get("destinationFieldName") or "data")}
+    fields = ((params.get("fieldsToAggregate") or {}).get(
+        "fieldToAggregate") or [])
+    first = fields[0] if fields and isinstance(fields[0], dict) else {}
+    source = str(first.get("fieldToAggregate") or "")
+    if not source:
+        return {"field": "data"}
+    return {"value": "{{ $json." + source + " }}",
+            "field": str(first.get("outputFieldName") or source)}
 
 
 def _app_for(short):

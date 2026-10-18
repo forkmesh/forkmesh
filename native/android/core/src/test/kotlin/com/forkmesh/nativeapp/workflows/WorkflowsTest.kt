@@ -25,12 +25,16 @@ class WorkflowsTest {
         for (item in maps(cases["runs"])) {
             val replies = maps(item["responses"]).map { WorkflowReply((it["status"] as Number).toInt(), it["text"].toString()) }.toMutableList()
             val sent = mutableListOf<Map<String, Any?>>()
+            val waits = mutableListOf<Long>()
             @Suppress("UNCHECKED_CAST")
             val report = engine.run(
                 WorkflowEngine.Input(
                     item["workflow"], item["payload"], item["credentials"] as Map<String, Any?>, item["trigger"].toString(),
                     cases["workflowId"].toString(), (cases["nowMs"] as Number).toLong(), clock = { 0L },
+                    randoms = (item["randoms"] as? List<*>)?.map { (it as Number).toDouble() } ?: emptyList(),
+                    workflows = maps(item["workflows"]),
                 ),
+                sleep = { waits.add(it) },
             ) { request ->
                 sent.add(request.toJson())
                 if (replies.isEmpty()) WorkflowReply(200, "{\"ok\": true, \"id\": 42, \"items\": [{\"n\": 1}, {\"n\": 2}]}") else replies.removeAt(0)
@@ -41,9 +45,11 @@ class WorkflowsTest {
                 failures.add(item["name"].toString() + "\n  got  " + Json.stringify(withoutMs(report)) + "\n  want " + Json.stringify(withoutMs(expect["report"])))
             } else if (sent != expect["requests"]) {
                 failures.add(item["name"].toString() + " requests\n  got  " + Json.stringify(sent) + "\n  want " + Json.stringify(expect["requests"]))
+            } else if (waits != (expect["waits"] as? List<*>)?.map { (it as Number).toLong() }.orEmpty()) {
+                failures.add(item["name"].toString() + " waits\n  got  " + waits + "\n  want " + expect["waits"])
             }
         }
-        expect(failures.isEmpty(), "${failures.size} cases differ:\n" + failures.take(5).joinToString("\n"))
+        expect(failures.isEmpty(), "${failures.size} cases differ:\n" + failures.take(40).joinToString("\n"))
     }
 
     fun testCleaningUrlsAndTheCatalogMatchTheServer() {
@@ -137,6 +143,45 @@ class WorkflowsTest {
         phone.remove(credential)
         val missing = runner.run(draft, phone.credentials(draft), clock = { 1_000L })
         assertEq("${slack.name}: Choose a Slack credential for this step", missing.error)
+    }
+
+    fun testThePhoneFindsTheWorkflowsARunWorkflowStepCalls() {
+        val childId = "a".repeat(32)
+        val grandchildId = "b".repeat(32)
+        fun graph(name: String, vararg steps: Map<String, Any?>): Map<String, Any?> {
+            val nodes = listOf(mapOf("id" to "t", "type" to "core.manual", "name" to "Start", "params" to emptyMap<String, Any?>())) + steps
+            return mapOf("name" to name, "nodes" to nodes, "connections" to nodes.zipWithNext { a, b -> mapOf("from" to a["id"], "output" to "main", "to" to b["id"]) })
+        }
+        val child = graph("Double it", mapOf("id" to "m", "type" to "core.math", "name" to "Times", "params" to mapOf("a" to "{{ \$json.n }}", "operator" to "multiply", "b" to "2", "field" to "n")),
+            mapOf("id" to "r", "type" to "core.runWorkflow", "name" to "Then", "params" to mapOf("workflow" to grandchildId)))
+        val grandchild = graph("Add one", mapOf("id" to "m", "type" to "core.math", "name" to "Plus", "params" to mapOf("a" to "{{ \$json.n }}", "operator" to "add", "b" to "1", "field" to "n")))
+        val opened = mutableListOf<String>()
+        val api = WorkflowsApi { _, suffix, _ ->
+            when (suffix) {
+                "" -> mapOf("workflows" to listOf(mapOf("id" to childId, "name" to "Double it"), mapOf("id" to grandchildId, "name" to "Add one"), mapOf("id" to "c".repeat(32), "name" to "Unused")))
+                "/$childId" -> mapOf("workflow" to (child + mapOf("id" to childId))).also { opened.add(childId) }
+                "/$grandchildId" -> mapOf("workflow" to (grandchild + mapOf("id" to grandchildId))).also { opened.add(grandchildId) }
+                else -> throw OrgApiException("not_found", "")
+            }
+        }
+        val draft = WorkflowDraft.of(graph("Main", mapOf("id" to "r", "type" to "core.runWorkflow", "name" to "Run", "params" to mapOf("workflow" to " double IT "))))
+        val phone = WorkflowPhoneCredentials(MemorySecretStore())
+        val resolved = WorkflowTargets(api, phone).resolve(draft)
+        assertEq(listOf(childId, grandchildId), opened)
+        assertEq(listOf("Double it", "Add one"), resolved.workflows.map { it["name"] })
+        val runner = WorkflowPhoneRunner(engine, HttpWorkflowTransport("UA", exchange = { _, _, _, _, _, _ -> WorkflowExchange(200, null, ByteArray(0)) }))
+        val run = runner.run(draft, resolved.credentials, payload = mapOf("n" to 20L), clock = { 1_000L }, workflows = resolved.workflows)
+        expect(run.succeeded, run.error)
+        assertEq(listOf(mapOf("n" to 41L)), run.steps(draft).last().outputs.single().third)
+        assertEq(0, WorkflowTargets(api, phone).resolve(WorkflowDraft.BLANK).workflows.size)
+    }
+
+    fun testCodeFieldsAreMonospaceAndMultiline() {
+        val catalog = WorkflowCatalog(engine.catalog())
+        val code = catalog.kind("core.code")!!.fields.first { it.key == "code" }
+        expect(code.mono && code.multiline)
+        val value = catalog.kind("core.variable")!!.fields.first { it.key == "value" }
+        expect(!value.mono && !value.multiline)
     }
 
     fun testTheApiSpeaksTheServerRoutes() {

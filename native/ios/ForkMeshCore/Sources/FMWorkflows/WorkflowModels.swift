@@ -29,7 +29,8 @@ public struct WorkflowField: Equatable, Sendable, Identifiable {
         secret = json.bool("secret")
     }
 
-    public var multiline: Bool { type == "json" || type == "text" }
+    public var multiline: Bool { type == "json" || type == "text" || type == "code" }
+    public var mono: Bool { type == "json" || type == "code" }
 }
 
 public struct WorkflowOperation: Equatable, Sendable, Identifiable {
