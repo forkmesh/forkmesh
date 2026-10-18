@@ -334,3 +334,85 @@ def test_snapshot_without_instance_runner_has_no_control():
     [placeholder] = snapshot["runs"]
     assert placeholder["workflow"] == ".forkmesh/a.yml"
     assert placeholder["event"] == "schedule" and placeholder["commit"] == ""
+
+
+class ControlRequest:
+    def __init__(self, method, body=None, actor="ada"):
+        self.method = method
+        self.body = body
+        self.actor = actor
+
+    async def text(self):
+        return json.dumps(self.body)
+
+
+def control_module(runtime):
+    import importlib
+    sys.modules.pop("repository_actions", None)
+    module = importlib.import_module("repository_actions")
+    audits = []
+
+    async def session(_env, request, _data=None):
+        return "", {"name": request.actor} if request.actor else None
+
+    async def writer(_env, owner, repo, actor):
+        return actor == "ada"
+
+    async def no(*_args):
+        return False
+
+    async def audit(_env, actor, action, kind, target, outcome, details=None):
+        audits.append((actor, action, outcome, details))
+
+    module._bind_runtime({
+        "json_response": lambda data, status=200, **_: {
+            "status": status, "data": data},
+        "method_name": lambda request: request.method,
+        "clean_string": lambda value, limit: str(value or "")[:limit],
+        "MAX_NODE_NAME": 63,
+        "_account_session_record": session,
+        "_account_owns_node": no,
+        "_org_write_allowed": writer,
+        "_audit_sensitive_action": audit,
+    })
+    module._runner_runtime = lambda env: runtime
+    return module, audits
+
+
+def test_the_control_endpoint_dispatches_cancels_and_reruns_locally():
+    runtime, key = setup()
+    add_catalog(runtime, inputs=[{"name": "dry", "type": "boolean"}])
+    module, audits = control_module(runtime)
+    env = type("Env", (), {"ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+
+    def control(body, actor="ada"):
+        return run(module.repository_actions_control_handler(
+            env, ControlRequest("POST", body, actor), "forkmesh", "site"))
+
+    answer = control({"action": "dispatch", "workflow": ".forkmesh/deploy.yml",
+                      "ref": "main", "inputs": {"dry": True},
+                      "sessionToken": "t"})
+    assert answer["status"] == 202 and answer["data"]["runId"] > 0
+    job = answer["data"]["runId"] // 100
+    assert column(runtime, job, "ref") == "refs/heads/main"
+    assert control({"action": "dispatch", "workflow": ".forkmesh/deploy.yml",
+                    "ref": "main", "inputs": {"dry": "x"}})["data"][
+                        "error"] == "input_invalid"
+    assert control({"action": "cancel", "runId": job * 100},
+                   actor="bob")["status"] == 403
+    assert control({"action": "cancel", "runId": job * 100})["status"] == 202
+    assert column(runtime, job, "status") == "cancelled"
+    rerun = control({"action": "rerun", "runId": job * 100})
+    assert rerun["status"] == 202 and rerun["data"]["runId"] > job * 100
+    assert control({"action": "rerun", "runId": rerun["data"]["runId"]})[
+        "data"]["error"] == "run_active"
+    assert control({"action": "bogus"})["status"] == 400
+    assert control({"action": "cancel", "runId": 1}, actor="")[
+        "status"] == 401
+    assert [a[2] for a in audits].count("success") == 3
+    log = run(module.repository_actions_run_log_handler(
+        env, ControlRequest("GET"), "forkmesh", "site", job * 100 + 1))
+    assert log["status"] == 200 and log["data"]["log"] == ""
+    assert run(module.repository_actions_run_log_handler(
+        env, ControlRequest("GET", actor="bob"), "forkmesh", "site",
+        job * 100 + 1))["status"] == 403

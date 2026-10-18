@@ -120,7 +120,7 @@ def test_account_event_push_targets_the_owner_node_durable_object():
 
 
 def test_issue_activity_reaches_the_account_event_relay_topic():
-    source = _function_source("issues_handler")
+    source = _function_source("_accept_issue_submission")
     # Comments and closed-status changes make issue state stale on the owner's
     # clients; notify_account_event fans that topic to both socket and APNs.
     assert 'event_type == "comment"' in source

@@ -260,7 +260,7 @@ def test_issue_mutation_controls_are_delegated_to_handlers():
 def test_structural_issue_events_require_repository_authority():
     handler = _slice(
         ENTRY,
-        "async def issues_handler(env, request, owner, repo):",
+        "async def _accept_issue_submission(",
         "async def discussions_handler",
     )
     assert "owner_event_types = {" in handler
