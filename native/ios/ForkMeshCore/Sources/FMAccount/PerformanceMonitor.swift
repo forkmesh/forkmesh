@@ -101,6 +101,11 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         set { locked { heartbeatLagHandler = newValue } }
     }
 
+    public var screenName: (@MainActor () -> String)? {
+        get { locked { screenSource } }
+        set { locked { screenSource = newValue } }
+    }
+
     /// Bumped (on the main thread) whenever `events` or `stallCount` changes.
     public private(set) var revision = 0
     @ObservationIgnored public let listeners = Listeners()
@@ -110,6 +115,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     @ObservationIgnored private var stallTotal = 0
     @ObservationIgnored private var nextEventId = 0
     @ObservationIgnored private var heartbeatLagHandler: ((Duration) -> Void)?
+    @ObservationIgnored private var screenSource: (@MainActor () -> String)?
     // Monotonic clock; wall-clock time can jump and would fake (or hide) a stall.
     @ObservationIgnored private let origin = DispatchTime.now().uptimeNanoseconds
     @ObservationIgnored private var heartbeatGeneration = 0
@@ -374,6 +380,10 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     ) {
         let floor = kind == .operation ? threshold : stallThreshold
         guard enabled, duration >= floor else { return }
+        var details = details
+        if kind != .operation, details["screen"] == nil, let screen = currentScreen(), !screen.isEmpty {
+            details["screen"] = .string(screen)
+        }
         let event: PerformanceEvent = locked {
             let event = PerformanceEvent(
                 id: nextEventId, kind: kind, name: name, duration: duration, timestamp: now(),
@@ -398,6 +408,11 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     }
 
     // MARK: Helpers
+
+    private func currentScreen() -> String? {
+        guard Thread.isMainThread, let source = locked({ screenSource }) else { return nil }
+        return MainActor.assumeIsolated { source() }
+    }
 
     private func changed() {
         if Thread.isMainThread {

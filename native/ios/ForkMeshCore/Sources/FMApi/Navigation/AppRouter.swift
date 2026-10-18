@@ -90,6 +90,10 @@ public final class AppRouter {
 
     public var currentRoute: Route? { currentPath.last }
 
+    public var screenTitle: String {
+        ([selectedTab.title] + currentPath.map(\.title) + [presented?.title].compactMap { $0 }).joined(separator: " > ")
+    }
+
     public func setPath(_ path: [Route], for tab: AppTab) {
         let capped = Array(path.suffix(AppRouter.maxDepth))
         if paths[tab] ?? [] != capped {

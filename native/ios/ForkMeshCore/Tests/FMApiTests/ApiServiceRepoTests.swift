@@ -325,6 +325,39 @@ final class ApiServiceRepoTests: XCTestCase {
                        [".forkmesh/issues/open/77/issue-77.json"])
     }
 
+    func testIssueRecordsAreParsedOffTheMainThread() async throws {
+        let numbers = Array(1...60)
+        let http = apiRouteByPath { path, query, request in
+            if path.hasSuffix("/tree") && query["path"] == ".forkmesh/issues/open" {
+                return apiJSON(["entries": .array(numbers.map { ["name": .string("\($0)"), "type": "dir"] })])
+            }
+            if path.hasSuffix("/blobs") {
+                var blobs = JSONObject()
+                for pair in request.apiRawQuery.split(separator: "&") where pair.hasPrefix("path=") {
+                    let wanted = String(pair.dropFirst(5)).removingPercentEncoding ?? ""
+                    let number = wanted.split(separator: "/")[3]
+                    blobs[wanted] = ["content": .string(JSON.encode(["number": .string(String(number)), "title": "T"] as JSONValue))]
+                }
+                return apiJSON(["blobs": .object(blobs)])
+            }
+            return nil
+        }
+        let threads = MainThreadTally()
+        let api = ApiService(
+            settings: StaticApiSettings(serverUrl: "ws://test.local/ws"), http: http,
+            clock: FixedClock(epochMillis: apiTestEpochMillis), sleep: { _ in },
+            issueRecord: { number, text in
+                threads.note()
+                return PublishedRecords.issueFromRecordJson(number, text)
+            })
+
+        let issues = try await api.publishedIssues("owner", "repo")
+
+        XCTAssertEqual(issues.map(\.number), numbers.reversed())
+        XCTAssertEqual(threads.calls, 60)
+        XCTAssertEqual(threads.onMain, 0)
+    }
+
     // MARK: Published discussions and pulls
 
     func testPublishedDiscussionsIncludeCategoryAndReplies() async throws {
@@ -822,5 +855,22 @@ final class ApiServiceRepoTests: XCTestCase {
         let api = makeTestApi(http)
         let error = await apiAssertThrows { try await api.rawBytes("owner", "repo", "missing.txt") }
         XCTAssertTrue(error is ApiException, "\(String(describing: error))")
+    }
+}
+
+private final class MainThreadTally: @unchecked Sendable {
+    private let lock = NSLock()
+    private var total = 0
+    private var main = 0
+
+    var calls: Int { lock.withLock { total } }
+    var onMain: Int { lock.withLock { main } }
+
+    func note() {
+        let isMain = Thread.isMainThread
+        lock.withLock {
+            total += 1
+            if isMain { main += 1 }
+        }
     }
 }

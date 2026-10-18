@@ -31,6 +31,7 @@ final class AppNavigator {
         router.activate(project: settings?.relays.activeId ?? "")
         _ = Services.put(navigator)
         _ = Services.put(router)
+        AppServices.current?.monitor.screenName = { [weak router] in router?.screenTitle ?? "" }
         navigator.wireNotifications()
         return navigator
     }

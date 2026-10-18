@@ -211,14 +211,15 @@ extension ApiService {
             let dirs = root.entries.filter(\.isDirectory).sorted { $0.name < $1.name }
             let paths = dirs.map { ".forkmesh/releases/\($0.name)/release.json" }
             let blobs = await self.blobs(owner, name, paths)
-            let items: [RepoRelease?] = paths.map { path in
-                guard let blob = blobs[path], let map = (try? JSON.parse(blob.content))?.objectValue else { return nil }
-                return RepoRelease(json: map, downloads: downloads)
-            }
-            return items.compactMap { $0 }.sorted { a, b in
-                if a.createdAtMs != b.createdAtMs { return a.createdAtMs > b.createdAtMs }
-                return a.tag > b.tag
-            }
+            let manifests = paths.compactMap { blobs[$0]?.content }
+            return await Task.detached(priority: .utility) {
+                manifests.compactMap { text in
+                    (try? JSON.parse(text))?.objectValue.map { RepoRelease(json: $0, downloads: downloads) }
+                }.sorted { a, b in
+                    if a.createdAtMs != b.createdAtMs { return a.createdAtMs > b.createdAtMs }
+                    return a.tag > b.tag
+                }
+            }.value
         }
     }
 
@@ -256,10 +257,11 @@ extension ApiService {
             if dirByNumber.isEmpty { return await self.legacyMarkdownIssues(owner, name) }
             let entries = order.map { ($0, "\(dirByNumber[$0] ?? "")/issue-\($0).json") }
             let blobs = await self.blobs(owner, name, entries.map(\.1))
-            let items: [Issue?] = entries.map { entry in
-                blobs[entry.1].flatMap { PublishedRecords.issueFromRecordJson(entry.0, $0.content) }
-            }
-            return items.compactMap { $0 }.sorted { $0.number > $1.number }
+            let records = entries.compactMap { entry in blobs[entry.1].map { (entry.0, $0.content) } }
+            let parse = self.issueRecord
+            return await Task.detached(priority: .utility) {
+                records.compactMap { parse($0.0, $0.1) }.sorted { $0.number > $1.number }
+            }.value
         }
     }
 

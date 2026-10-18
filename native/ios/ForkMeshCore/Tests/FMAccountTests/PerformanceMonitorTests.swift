@@ -83,6 +83,32 @@ final class PerformanceMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.stallCount, 1)
     }
 
+    @MainActor
+    func testStallsNameTheScreenThatWasShowingAndOperationsDoNot() throws {
+        let lines = Lines()
+        let monitor = PerformanceMonitorService(logSink: { lines.add($0) })
+        var screen = "Code > forkmesh/forkmesh"
+        monitor.screenName = { screen }
+        monitor.recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(324))
+        screen = "Inbox > Shortcuts"
+        monitor.recordFrameDelay(buildDuration: .milliseconds(354), rasterDuration: .zero)
+        monitor.recordSlowEvent(kind: .operation, name: "api.GET /api/tasks", duration: .seconds(1))
+        monitor.recordSlowEvent(kind: .sync, name: "named", duration: .milliseconds(250), details: ["screen": "kept"])
+
+        let events = monitor.events
+        XCTAssertEqual(events.map { $0.details["screen"] }, ["kept", nil, "Inbox > Shortcuts", "Code > forkmesh/forkmesh"])
+        XCTAssertTrue(lines.all.contains { $0.hasPrefix("[stall] frame frame 354ms") && $0.contains("screen=\"Inbox > Shortcuts\"") }, "\(lines.all)")
+    }
+
+    func testAStallRecordedOffTheMainThreadSkipsTheScreen() async {
+        let monitor = PerformanceMonitorService(logSink: { _ in })
+        await MainActor.run { monitor.screenName = { "Agents" } }
+        await Task.detached {
+            monitor.recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(300))
+        }.value
+        XCTAssertNil(monitor.events.first?.details["screen"])
+    }
+
     func testEventsAreCappedNewestFirstAndClearable() {
         let monitor = PerformanceMonitorService(maxEvents: 3, logSink: { _ in })
         for i in 0..<5 {
