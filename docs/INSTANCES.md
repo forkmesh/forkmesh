@@ -369,6 +369,13 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
 - **Logo:** a `data:` URL (PNG, JPEG, WebP or SVG, 200 KB max, type detected
   from bytes, unsafe SVG refused). The brand tool writes it over the logo and
   favicon assets and the web manifest; `INSTANCE_LOGO` points email at it.
+  The logo always lives at `/instance-logo.<png|jpg|webp|svg>`, and the web
+  manifest (`/favicon/site.webmanifest`) lists it, so the phone apps can find
+  it on an instance whose `/api/instance` has no `logo` field yet. An SVG
+  logo also gets a 512 px `/instance-logo.png`, drawn with `rsvg-convert`
+  (the installer installs `librsvg2-bin`), listed first in the manifest; when
+  it exists `INSTANCE_LOGO` names the PNG, because phones and most mail
+  clients cannot draw SVG. Web pages keep the SVG.
 - **Theme** (`app/src/instance_theme.py`): one `instance_settings` row
   (`k = 'theme'`) holding `{"dark": {...}, "light": {...}}` of known token
   names to `#rrggbb` colours, max 8 KB, no raw CSS. Served as

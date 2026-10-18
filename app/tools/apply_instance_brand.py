@@ -7,6 +7,7 @@ import html
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +30,8 @@ LOGO_SVG = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">'
     '<image href="data:%s;base64,%s" width="256" height="256" preserveAspectRatio="xMidYMid meet"/></svg>\n')
 LOGO_SVG_TARGETS = ("assets/logo.svg", "favicon/favicon.svg")
+RASTER = "instance-logo.png"
+RASTER_SIZE = 512
 
 
 def logo_kind(data: bytes) -> str:
@@ -47,6 +50,22 @@ def logo_svg(data: bytes, kind: str) -> bytes:
     if kind == "svg":
         return data
     return (LOGO_SVG % (LOGO_TYPES[kind], base64.b64encode(data).decode("ascii"))).encode("ascii")
+
+
+def logo_raster(dist: Path, data: bytes) -> str:
+    tool = shutil.which("rsvg-convert")
+    if not tool:
+        return ""
+    size = str(RASTER_SIZE)
+    try:
+        png = subprocess.run([tool, "--width", size, "--height", size, "--keep-aspect-ratio"],
+                             input=data, capture_output=True, check=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if logo_kind(png) != "png":
+        return ""
+    (dist / RASTER).write_bytes(png)
+    return RASTER
 
 
 def icon_links(logo: str) -> str:
@@ -87,6 +106,10 @@ def install_logo(dist: Path, name: str, source: Path) -> str:
         old.unlink()
     target = "instance-logo." + kind
     (dist / target).write_bytes(data)
+    icons = [{"src": "/" + target, "sizes": "any", "type": LOGO_TYPES[kind]}]
+    raster = logo_raster(dist, data) if kind == "svg" else ""
+    if raster:
+        icons.insert(0, {"src": "/" + raster, "sizes": "%dx%d" % (RASTER_SIZE, RASTER_SIZE), "type": "image/png"})
     for relative in LOGO_SVG_TARGETS:
         path = dist / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,8 +120,7 @@ def install_logo(dist: Path, name: str, source: Path) -> str:
             app = json.loads(manifest.read_text(encoding="utf-8"))
         except ValueError:
             app = {}
-        app.update({"name": name, "short_name": name,
-                    "icons": [{"src": "/" + target, "sizes": "any", "type": LOGO_TYPES[kind]}]})
+        app.update({"name": name, "short_name": name, "icons": icons})
         manifest.write_text(json.dumps(app, separators=(",", ":")), encoding="utf-8")
     return "/" + target
 

@@ -72,8 +72,9 @@ struct ChooseInstanceView: View {
 
     private func connect() async {
         let logoUrl: String = model.result?.logoUrl ?? ""
+        let branded: Bool = model.result?.branded ?? false
         guard await model.attach() else { return }
-        await ProjectImages.shared.adoptInstanceLogo(project.id, logoUrl: logoUrl)
+        await ProjectImages.shared.adoptInstanceLogo(project.id, logoUrl: logoUrl, branded: branded)
         onClose()
     }
 }

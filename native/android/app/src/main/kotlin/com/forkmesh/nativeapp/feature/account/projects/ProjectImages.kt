@@ -140,8 +140,9 @@ object ProjectImages {
         }
     }
 
-    fun fetch(origin: String, logoUrl: String = ""): Bitmap? {
-        val urls = listOf(logoUrl).filter { it.isNotEmpty() } + listOf("/favicon.ico", "/favicon/favicon.ico").map { origin + it }
+    fun fetch(origin: String, logoUrl: String = "", favicon: Boolean = true): Bitmap? {
+        val favicons = if (favicon) listOf("/favicon.ico", "/favicon/favicon.ico").map { origin + it } else emptyList()
+        val urls = listOf(logoUrl).filter { it.isNotEmpty() } + favicons
         for (url in urls) {
             val response = runCatching { HttpClient.Request.get(url).timeouts(8_000, 10_000).send() }.getOrNull() ?: continue
             if (response.status != 200 || response.body.isEmpty()) continue
