@@ -74,20 +74,21 @@ struct DjPeopleStrip: View {
             let crowd = model.crowd
             let effects = model.effects
             let moving = !reduceMotion && (model.shareMotion || crowd.contains { $0.energy > 0.01 })
-            TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !moving)) { timeline in
-                let progress = timeline.date.timeIntervalSince(model.crowdDate) / 1.5
-                ScrollView(vertical ? .vertical : .horizontal, showsIndicators: false) {
-                    let layout = vertical ? AnyLayout(VStackLayout(spacing: size * 0.35)) : AnyLayout(HStackLayout(spacing: size * 0.35))
-                    layout {
-                        ForEach(jam.members) { (member: DjJamMember) in
-                            icon(member, mine: member.name == jam.me, seen: crowd.first { $0.name == member.name }, effects: effects, progress: progress)
+            ScrollView(vertical ? .vertical : .horizontal, showsIndicators: false) {
+                let layout = vertical ? AnyLayout(VStackLayout(spacing: size * 0.35)) : AnyLayout(HStackLayout(spacing: size * 0.35))
+                layout {
+                    ForEach(jam.members) { (member: DjJamMember) in
+                        let seen = crowd.first { $0.name == member.name }
+                        TimelineView(.animation(minimumInterval: 1.0 / 24, paused: !moving)) { timeline in
+                            let progress = timeline.date.timeIntervalSince(model.crowdDate) / 1.5
+                            icon(member, mine: member.name == jam.me, seen: seen, effects: effects, progress: progress)
                         }
                     }
-                    .padding(.vertical, size * 0.2)
-                    .padding(.horizontal, size * 0.3)
                 }
-                .scrollClipDisabled()
+                .padding(.vertical, size * 0.2)
+                .padding(.horizontal, size * 0.3)
             }
+            .scrollClipDisabled()
         }
     }
 

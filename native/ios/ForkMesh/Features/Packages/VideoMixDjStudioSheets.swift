@@ -18,6 +18,7 @@ struct DjSheetView: View {
                 case .crate: DjCrateSheet(model: model)
                 case let .song(id): DjSongEditor(model: model, id: id)
                 case let .similar(side): DjSimilarSheet(model: model, side: side)
+                case .diagnostics: DjDiagnosticsSheet(model: model)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
