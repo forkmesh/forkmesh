@@ -332,4 +332,7 @@ step (the launch page has a fixed step list) and only warns on failure.
 `app/tests/test_instance_actions.py`, `app/tests/test_actions_cron.py`,
 `app/tests/test_actions_job_api.py`, `app/tests/test_actions_secrets_api.py`,
 `app/tests/test_mirror_gateway_runner_grants.py`,
-`app/tests/test_install_instance_script.py`.
+`app/tests/test_install_instance_script.py`,
+`app/tests/test_install_runner_script.py`,
+`app/tests/test_repo_actions_tab_frontend.py`,
+`app/tests/test_forkmesh_actions_helper.py`.
