@@ -522,7 +522,28 @@
     }
   }
 
+  function appsPluginsToInstall() {
+    const rows = appsPluginRows();
+    const ids = new Set(appsPlugins.market.map((row) => row?.id));
+    return rows.filter((row) => appsPlugins.installed.get(row.id) !== true
+      && row.type !== "agent"
+      && row.type !== "theme"
+      && !ids.has(appsPluginDependencies(row)[0]));
+  }
+
+  function renderAppsPluginsInstallAll() {
+    const button = $("[data-apps-plugins-install-all]");
+    if (!button) return;
+    const remaining = appsPlugins.error ? 0 : appsPluginsToInstall().length;
+    const label = button.querySelector("[data-apps-plugins-install-all-label]");
+    const text = !appsPlugins.loaded || appsPlugins.error ? "Install all" : remaining ? `Install all (${remaining})` : "All installed";
+    if (label) label.textContent = text;
+    button.disabled = appsPlugins.busy || remaining === 0;
+    button.setAttribute("aria-label", text);
+  }
+
   function renderAppsPlugins() {
+    renderAppsPluginsInstallAll();
     const box = $("[data-apps-plugins]");
     if (!box) return;
     box.textContent = "";
@@ -613,6 +634,42 @@
     renderAppsPlugins();
   }
 
+  async function installAllAppsPlugins() {
+    if (appsPlugins.busy) return;
+    const pending = appsPluginsToInstall();
+    if (!pending.length) return;
+    const noun = pending.length === 1 ? "plugin" : "plugins";
+    if (!window.confirm(`Install ${pending.length} ${noun} for your account? They show on the web, the desktop app and the mobile app, and you can remove any of them later.`)) return;
+    appsPlugins.busy = true;
+    renderAppsPlugins();
+    const changed = new Set();
+    const failed = [];
+    for (const row of pending) {
+      if (appsPlugins.installed.get(row.id) === true) continue;
+      try {
+        const payload = await appsRequest("POST", `/api/plugins/@account/${encodeURIComponent(row.id)}/install`, {});
+        appsPluginsFrom(payload);
+        for (const id of Array.isArray(payload.changed) ? payload.changed.map(String) : [row.id]) changed.add(id);
+      } catch (error) {
+        failed.push(row.name || row.id);
+      }
+    }
+    if (changed.size) appsPluginsChanged([...changed]);
+    const installed = `Installed ${changed.size}`;
+    setAppsNotice("[data-apps-plugins-notice]", failed.length ? `${installed}, ${failed.length} failed: ${failed.join(", ")}.` : `${installed}.`, failed.length > 0);
+    appsPlugins.busy = false;
+    renderAppsPlugins();
+  }
+
+  async function runAppsInstallAllRequest() {
+    const params = new URLSearchParams(location.search);
+    if (!params.has("installAll") || appsPlugins.error) return;
+    params.delete("installAll");
+    const query = params.toString();
+    history.replaceState(null, "", `${location.pathname}${query ? `?${query}` : ""}${location.hash}`);
+    await installAllAppsPlugins();
+  }
+
   async function loadAppsPlugins() {
     if (!$("[data-apps-plugins]")) return;
     try {
@@ -656,6 +713,9 @@
       setAppsNotice("[data-apps-plugins-notice]", "");
       void loadAppsPlugins();
     });
+    $("[data-apps-plugins-install-all]")?.addEventListener("click", () => {
+      void installAllAppsPlugins();
+    });
     $("[data-apps-plugins-search]")?.addEventListener("input", (event) => {
       appsPlugins.query = event.target.value;
       if (appsPlugins.query.trim()) appsPlugins.category = "";
@@ -674,7 +734,7 @@
         renderAppsPlugins();
       });
     }
-    void loadAppsPlugins();
+    void loadAppsPlugins().then(runAppsInstallAllRequest);
     void loadInstalledApps();
     void loadAppDirectory();
     void loadAppReviewQueue().then(() => {

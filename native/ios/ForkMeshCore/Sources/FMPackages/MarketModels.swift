@@ -620,6 +620,28 @@ public enum MarketCardAction: Equatable, Sendable {
     case busy
 }
 
+public struct MarketInstallAllPlan: Equatable, Sendable {
+    public var targets: [MarketPackage]
+    public var skipped: Int
+
+    public init(targets: [MarketPackage], skipped: Int) {
+        self.targets = targets
+        self.skipped = skipped
+    }
+}
+
+public struct MarketInstallAllResult: Equatable, Sendable {
+    public var installed: Int
+    public var skipped: Int
+    public var failed: Int
+
+    public init(installed: Int, skipped: Int, failed: Int) {
+        self.installed = installed
+        self.skipped = skipped
+        self.failed = failed
+    }
+}
+
 public enum MarketUninstall: Equatable, Sendable {
     case account
     case device

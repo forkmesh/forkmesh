@@ -314,4 +314,49 @@ final class MarketListTests: XCTestCase {
         XCTAssertTrue(old.free)
         XCTAssertEqual(old.publisher, "")
     }
+
+    @MainActor func testInstallAllInstallsEveryTopLevelPackageThePhoneCanAndSkipsTheRest() async {
+        await withSettings { _ in
+            let transport = FakePackagesTransport()
+            var agent = row("gemma", type: "agent", accountSync: true).objectValue!
+            agent["type"] = .string("agent")
+            var child = row("tasks-board", accountSync: true).objectValue!
+            child["dependencies"] = .array([.string("tasks")])
+            transport.on("GET", "/api/market/packages", ["packages": [
+                row("tasks", accountSync: true), row("notes", accountSync: true), row("done", accountSync: true),
+                .object(child), .object(agent), row("skin", type: "theme", accountSync: true),
+                row("aquarium"), row("crm", scope: "organization"),
+            ]])
+            transport.on("GET", "/api/plugins/@account", ["packages": [
+                ["id": "tasks", "installed": false], ["id": "notes", "installed": false], ["id": "done", "installed": true],
+            ]])
+            transport.on("POST", "/api/plugins/@account/tasks/install", ["packages": [["id": "tasks", "installed": true]]])
+            transport.on("POST", "/api/plugins/@account/notes/install", status: 500, ["error": "boom"])
+            let store = AccountPackagesStore(
+                client: PackagesClient(transport: transport), prefs: InMemoryKeyValueStore(), signedIn: { true })
+            let model = MarketModel(client: PackagesClient(transport: transport), account: store)
+            await model.refresh(organizations: [])
+            let plan = model.installAllPlan(signedIn: true)
+            XCTAssertEqual(Set(plan.targets.map(\.id)), ["tasks", "notes", "aquarium"])
+            XCTAssertEqual(plan.skipped, 1)
+            var switched: [String] = []
+            let result = await model.installAll(signedIn: true) { switched.append($0.id) }
+            XCTAssertEqual(result, MarketInstallAllResult(installed: 2, skipped: 1, failed: 1))
+            XCTAssertEqual(switched, ["aquarium"])
+            XCTAssertTrue(model.isInstalled(model.package("tasks")!))
+            XCTAssertFalse(model.isInstalled(model.package("notes")!))
+        }
+    }
+
+    @MainActor func testInstallAllSignedOutSkipsAccountPackages() async {
+        await withSettings { _ in
+            let transport = FakePackagesTransport()
+            transport.on("GET", "/api/market/packages", ["packages": [row("tasks", accountSync: true)]])
+            let model = MarketModel(client: PackagesClient(transport: transport))
+            await model.refresh(organizations: [])
+            let plan = model.installAllPlan(signedIn: false)
+            XCTAssertTrue(plan.targets.isEmpty)
+            XCTAssertEqual(plan.skipped, 1)
+        }
+    }
 }

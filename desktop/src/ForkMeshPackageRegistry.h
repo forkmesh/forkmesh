@@ -207,6 +207,7 @@ public:
     const QList<PackageGuide> &guides() const { return m_guides; }
     const PackagePack *pack(const QString &id) const;
     const PackageGuide *guide(const QString &id) const;
+    QStringList installAllPackages() const;
     QStringList packPackages(const QString &packId) const;
     QStringList guidePackages(const QString &guideId) const;
     bool statusMonitorShows(const QString &systemId) const;

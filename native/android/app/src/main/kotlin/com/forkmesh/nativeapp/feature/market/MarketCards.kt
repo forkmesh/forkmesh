@@ -3,6 +3,8 @@ package com.forkmesh.nativeapp.feature.market
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.alpha
+import com.forkmesh.nativeapp.market.InstallAllPlan
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,6 +55,25 @@ import com.forkmesh.nativeapp.ui.theme.FmRadius
 internal val MARKET_LIST_TAIL = 72.dp
 private val THUMB_WIDTH = 96.dp
 private val ACTION_WIDTH = 84.dp
+
+@Composable
+internal fun MarketInstallAll(plan: InstallAllPlan, busy: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val label = when {
+            busy -> "Installing…"
+            plan.count == 0 -> "All installed"
+            else -> "Install all (${plan.count})"
+        }
+        MarketChip(label, selected = plan.count > 0, icon = "download", enabled = plan.count > 0 && !busy, onClick = onClick)
+        if (plan.skipped > 0) {
+            Text("${plan.skipped} need a desktop or organization", color = Fm.colors.textSecondary, style = Fm.text.bodySmall)
+        }
+    }
+}
 
 @Composable
 internal fun MarketControls(model: MarketModel, version: Int, onChanged: () -> Unit) {
@@ -123,7 +144,7 @@ internal fun MarketControls(model: MarketModel, version: Int, onChanged: () -> U
 }
 
 @Composable
-private fun MarketChip(label: String, selected: Boolean, icon: String? = null, dropdown: Boolean = false, onClick: () -> Unit) {
+private fun MarketChip(label: String, selected: Boolean, icon: String? = null, dropdown: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val c = Fm.colors
     val shape = RoundedCornerShape(FmRadius.full)
     val tint = if (selected) c.accent else c.textSecondary
@@ -133,7 +154,8 @@ private fun MarketChip(label: String, selected: Boolean, icon: String? = null, d
             .clip(shape)
             .background(if (selected) c.accent.copy(alpha = .14f) else c.bgBase)
             .border(1.dp, if (selected) c.accent else c.border, shape)
-            .clickable(role = Role.Button, onClick = onClick)
+            .alpha(if (enabled) 1f else .5f)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(start = if (icon != null) 8.dp else 12.dp, end = if (dropdown) 6.dp else 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),

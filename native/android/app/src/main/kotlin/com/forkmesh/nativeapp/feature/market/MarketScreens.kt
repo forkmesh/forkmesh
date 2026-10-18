@@ -178,6 +178,9 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
     private var reload by mutableIntStateOf(1)
     private val installing = mutableStateMapOf<String, Boolean>()
     private val failures = mutableStateMapOf<String, String>()
+    private var confirmInstallAll by mutableStateOf(false)
+    private var installAllBusy by mutableStateOf(false)
+    private var installAllNote by mutableStateOf("")
 
     @Composable
     override fun Content(navigator: Navigator) {
@@ -250,7 +253,52 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
             }
         }
 
+        fun installAll() {
+            val plan = model.installAllPlan()
+            if (installAllBusy || plan.count == 0) return
+            installAllBusy = true
+            installAllNote = ""
+            scope.launch {
+                plan.phone.forEach { PackageGateFeature.setDeviceSwitch(it.id, true) }
+                val store = StatusPageFeature.store
+                var added = plan.phone.size
+                val failed = ArrayList<String>()
+                var problem: String? = null
+                if (plan.account.isNotEmpty() && store == null) {
+                    problem = PackagesException.sentence("sign_in_required")
+                } else if (store != null) {
+                    for (pkg in plan.account) {
+                        installing[pkg.id] = true
+                        withContext(Dispatchers.IO) { runCatching { store.install(pkg.id) } }
+                            .fold({ StatusPageFeature.adopt(it); added++ }, { failed.add(pkg.name); problem = PackagesException.describe(it) })
+                        installing.remove(pkg.id)
+                        version++
+                    }
+                }
+                installAllNote = when {
+                    failed.isNotEmpty() -> "Installed $added, but ${failed.joinToString(", ")} could not be installed. ${problem.orEmpty()}".trim()
+                    problem != null -> problem.orEmpty()
+                    else -> ""
+                }
+                installAllBusy = false
+                version++
+            }
+        }
+
         uninstaller.Dialog()
+        if (confirmInstallAll) {
+            val plan = model.installAllPlan()
+            FmConfirmDialog(
+                title = "Install ${plan.count} ${if (plan.count == 1) "package" else "packages"}?",
+                body = "Installs every package this phone and your account can use. Agents and themes are left out; install those on their own.",
+                confirmLabel = "Install all",
+                onConfirm = {
+                    confirmInstallAll = false
+                    installAll()
+                },
+                onDismissRequest = { confirmInstallAll = false },
+            )
+        }
         Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
             ToolsAppBar("Market", navigator) {
                 FmIconButton("refresh", "Refresh", onPressed = { reload++ }, color = Fm.colors.textPrimary)
@@ -270,6 +318,13 @@ class MarketScreen(private val initialFilter: MarketFilter) : Screen() {
                         Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 4.dp),
                         hint = "Search packages",
                     )
+                }
+                item(key = "install-all") {
+                    @Suppress("UNUSED_EXPRESSION") version
+                    Column {
+                        MarketInstallAll(model.installAllPlan(), installAllBusy, onClick = { confirmInstallAll = true })
+                        ErrorLine(installAllNote)
+                    }
                 }
                 item(key = "controls") {
                     MarketControls(model, version, onChanged = { version++ })

@@ -44926,7 +44926,7 @@
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agents": "/dashboard-page-agents.js?v=0ec627084c94",
-    "apps": "/dashboard-page-apps.js?v=5e46b3032a2f",
+    "apps": "/dashboard-page-apps.js?v=8e695c33eb03",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=f3f31e10bb77",
     "challenges": "/dashboard-page-challenges.js?v=2c09240bdb95",

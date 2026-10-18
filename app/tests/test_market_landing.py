@@ -244,3 +244,10 @@ def test_desktop_publish_button_opens_the_market_guide():
     assert 'Open the Market publishing instructions' in publish_button
     assert 'QUrl(QStringLiteral("https://forkmesh.com/market"))' in publish_button
     assert "marketplace/README.md" not in publish_button
+
+
+def test_market_page_offers_install_all_through_the_web_dashboard():
+    assert (
+        'id="market-install-all" '
+        'href="https://app.forkmesh.com/dashboard/apps?installAll=1"'
+    ) in MARKET_HTML

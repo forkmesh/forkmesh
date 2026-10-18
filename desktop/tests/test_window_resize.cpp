@@ -18639,6 +18639,42 @@ else:
         QApplication::processEvents();
         QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
+    {
+        auto *installAll = window.findChild<QPushButton *>(
+            QStringLiteral("marketInstallAllButton"));
+        const QStringList everything = window.testInstallAllPackages();
+        QStringList installedBefore;
+        for (const QString &id : everything) {
+            if (window.testPackageInstalled(id))
+                installedBefore << id;
+        }
+        const bool incomplete = installedBefore.size() < everything.size();
+        const bool enabledBefore = installAll && installAll->isEnabled();
+        if (installAll && installAll->isEnabled())
+            installAll->click();
+        QApplication::processEvents();
+        QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        bool allInstalled = !everything.isEmpty();
+        for (const QString &id : everything)
+            allInstalled = allInstalled && window.testPackageInstalled(id);
+        auto *installAllAfter = window.findChild<QPushButton *>(
+            QStringLiteral("marketInstallAllButton"));
+        check(installAll && incomplete == enabledBefore && allInstalled &&
+                  installAllAfter && !installAllAfter->isEnabled() &&
+                  installAllAfter->text() == QStringLiteral("All installed"),
+              QStringLiteral("Market's Install all button installs every "
+                             "installable package and then reads All installed "
+                             "(packages=%1, before=%2, button=\"%3\")")
+                  .arg(everything.size())
+                  .arg(installedBefore.size())
+                  .arg(installAllAfter ? installAllAfter->text() : QString()));
+        for (const QString &id : everything) {
+            if (!installedBefore.contains(id))
+                window.testSetPackageInstalled(id, false);
+        }
+        QApplication::processEvents();
+        QApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    }
     check(previewDecodesFirstOpen > 0 &&
               previewDecodesFirstOpen <= packageCards.size() &&
               window.testMarketPreviewDecodes() == previewDecodesFirstOpen,
