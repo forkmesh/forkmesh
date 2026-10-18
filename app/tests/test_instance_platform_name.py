@@ -169,7 +169,7 @@ def test_rename_keeps_forkmesh_com_and_technical_names():
 def test_repository_page_head_uses_the_instance_name():
     page = APP_RUNTIME.split("    async def _serve_repo_page(", 1)[1].split("\n    async def ", 1)[0]
     assert "site_name = _html_escape(\n                instance_features.display_name(self.env))" in page
-    assert 'title = "%s/%s - %s" % (owner, repo, site_name)' in page
+    assert 'title = _html_escape("%s - " % shown) + site_name' in page
     assert '<meta property=\\"og:site_name\\" content=\\"%s\\">' in page
     assert 'content=\\"ForkMesh\\"' not in page
     assert '"<head>", "<head>" + short_metas' in page
