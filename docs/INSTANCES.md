@@ -82,13 +82,13 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
 |---|---|
 | `system` | supported Debian/Ubuntu, x86_64 or arm64, at least 1 GB RAM and 6 GB disk, ports 80/443 free |
 | `packages` | swap on small machines; git, Python, Node, Caddy, sqlite3, age; service users |
-| `source` | shallow clone into `/opt/forkmesh-instance/src` |
-| `build` | venv and `python -m forkmesh_host build` without ForkMesh-only packages (`FORKMESH_EXCLUDED_PLUGINS`), then `app/tools/apply_instance_brand.py` |
+| `source` | shallow clone into `/opt/forkmesh-instance/src`; on `--update`, a shallow fetch of `sourceRef` from `sourceUrl` into that checkout (nothing is checked out yet) |
+| `build` | venv and `python -m forkmesh_host build` without ForkMesh-only packages (`FORKMESH_EXCLUDED_PLUGINS`), then `app/tools/apply_instance_brand.py`; on a running instance this happens in `src.next` beside the live tree (below) |
 | `configure` | `/etc/forkmesh-instance/app.env` with fresh `DATA_KEY`, `ADMIN_PASS` and router keys (kept on re-runs) and `instance.json` without secrets |
 | `database` | migrations into a single-node SQLite database |
 | `services` | `forkmesh-instance.service` (uvicorn on loopback, sandboxed) |
 | `https` | Caddyfile for the app and the Git gateway paths, HSTS; waits for DNS |
-| `admin` | installs the signed Git node daemon and runs `instance-bootstrap` |
+| `admin` | installs the Git node daemon (below) and runs `instance-bootstrap` |
 | `repo` | waits for `<owner>/forkmesh` to answer `info/refs`, then installs the Actions runner (setting `actions`) |
 | `done` | prints the final URL |
 
@@ -101,7 +101,8 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   Full (strict). Caddy trusts `Cf-Connecting-Ip` only from Cloudflare's
   published ranges.
 - `--update` pulls, rebuilds, migrates and restarts, keeping secrets, data
-  and admin; local source changes are saved to a patch file first.
+  and admin; local source changes are saved to a patch file first. See
+  [Updates build beside the running version](#updates-build-beside-the-running-version).
 - **Actions** (setting `actions`, a boolean, default `true`, kept in
   `instance.json`): the `packages` step adds jq, build-essential, unzip and
   nftables for jobs; `app.env` gets `RUNNER_POOL_TARGET_NODES=forkmesh`,
@@ -129,6 +130,79 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   request and status paths. See
   [app/server-update.md](app/server-update.md).
   `--config FILE` takes the same JSON as the page for a manual install.
+
+## Updates build beside the running version
+
+Until October 2026 `--update` checked the new commit out in
+`/opt/forkmesh-instance/src`, installed Python packages into the live venv and
+rebuilt `app/dist` in place while the app kept serving from those same files.
+A build that failed half way left the running app serving half-built assets
+and, on its next restart, new code that was never built. Now:
+
+1. **Fetch.** The `source` step fetches the target commit into the running
+   checkout without touching the work tree. The checkout's `origin` is set to
+   `sourceUrl` first (or to `FORKMESH_INSTANCE_SOURCE_DIR` for that run), so
+   changing `sourceUrl` in `instance.json` is enough to switch sources; the
+   step says so when it changes. A `sourceUrl` on the instance's own domain
+   is fetched with `http.curloptResolve=<domain>:443:127.0.0.1`, through the
+   local Caddy, so the update does not depend on public DNS or a proxy
+   hairpin.
+2. **Stage.** When anything has to be built, the build happens in
+   `/opt/forkmesh-instance/src.next`. That tree is the previous release
+   (`src.prev`) recycled, or a copy of the running tree the first time; it
+   fetches the target commit from the running checkout
+   (`refs/forkmesh/build`) and checks it out. When `requirements.txt`
+   changed (the venv records its digest in `.forkmesh-requirements`), the
+   packages go into `venv.next` (the recycled `venv.prev`, or a copy), with
+   `python -m pip`, because a moved venv's script shebangs point at the old
+   path. A failed build stops here: the live tree, venv, `build-info.json`
+   and `build.stamp` are untouched and the app keeps serving. The failed
+   tree stays in `src.next` and is reused by the next attempt.
+3. **Switch.** `activate_source` renames `src` to `src.prev` and `src.next`
+   to `src` (the same for the venv when one was staged), then writes
+   `build-info.json` and the stamp. Nothing is deleted: the two trees take
+   turns, so the disk holds at most two copies (about 0.9 GB for ForkMesh).
+4. **Roll back.** If anything fails after the switch and before the app is
+   answering again (settings, migrations, the restart), the `EXIT` trap moves
+   the new tree back to `src.next`, `src.prev` back to `src`, restores the
+   venv, `build-info.json` and the stamp, and restarts the app if it had been
+   restarted. Migrations are not reversed: they are additive, and the old
+   code keeps working on the migrated database. Once the app answers
+   (`SOURCE_COMMITTED`), later steps (HTTPS, git node, runner) no longer roll
+   back.
+
+Between the switch and the restart (a few seconds of settings and migrations)
+the running process sees the new files on disk, as it did during the whole
+build before.
+
+### The git node program
+
+The server has no Go toolchain, and the coordinator of an instance that runs
+its own fork supplies the git node program it built
+(`FORKMESH_INSTANCE_DAEMON=/path/to/forkmesh-mirror-node`). An update without
+that variable used to download the signed ForkMesh release instead, which on
+such an instance silently replaced the fork's program with upstream's. Now:
+
+- With `FORKMESH_INSTANCE_DAEMON`, the binary is installed (atomically) and
+  `/opt/forkmesh-instance/daemon-build.json` records `from: supplied`, the
+  commit and the tree id of `server/` at that commit.
+- An update of an instance whose `sourceUrl` is not the ForkMesh release
+  source keeps the installed program.
+- Only an instance that follows `https://app.forkmesh.com/forkmesh/forkmesh`
+  still fetches the signed release on update (`from: release`).
+- `build-info.json` gets `daemon: {state, builtTree, sourceTree,
+  builtCommit}`. `state` is `current` when the recorded `server/` tree equals
+  the running source's, `stale` when `server/` changed since, `release` or
+  `unknown`. The installer warns on `stale`.
+
+Building on the server was rejected: a 1 GB instance would need a ~250 MB
+pinned Go toolchain and a memory-hungry build in the middle of an unattended
+update, and a broken build would have to be undone while serving. Keeping a
+known-good binary and flagging it never breaks the running node; the node
+keeps serving with the older program until the operator rebuilds it
+(`cd server && go build -trimpath -o forkmesh-mirror-node ./cmd/forkmesh-mirror-node`
+from the running commit on a build machine, copy it over, run
+`FORKMESH_INSTANCE_DAEMON=<binary> bash install-instance.sh --update`).
 
 ## Bootstrap (`instance_bootstrap.py`)
 
@@ -159,8 +233,9 @@ Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
 
 `<owner>/forkmesh` (catalog owner `forkmesh`, the instance's git node) is a
 read-only mirror of the upstream repository, https://forkmesh.com/forkmesh/forkmesh
-by default (the installer's `sourceUrl` with its `app.` host prefix and
-`.git` dropped). Nothing typed on the instance can change it: changes go
+by default (the installer's `platformUrl`, else `sourceUrl` unless that is a
+repository on the instance itself, with its `app.` host prefix and `.git`
+dropped). Nothing typed on the instance can change it: changes go
 upstream, or into a fork.
 
 How it stays current (`server/upstreamwatch.go`, `docs/server/README.md`):
@@ -474,6 +549,8 @@ to every provider.
 ## Tests
 
 `app/tests/test_instance_launch.py`, `test_install_instance_script.py`,
+`test_install_instance_staged_build.py` (staged build, rollback, source
+switch, git node program),
 `test_start_instance_page.py`, `test_instance_white_label.py`,
 `test_instance_theme.py`, `test_instance_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
