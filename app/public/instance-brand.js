@@ -16,7 +16,8 @@
       .concat(["[data-instance-legal-consent]:not([data-instance-legal])", "[data-instance-legal-group]:not([data-instance-legal])"])
       .join(", ") + " { display: none !important; }";
 
-  const swap = (value) => value.replace(BRAND, name);
+  const DESKTOP = /(?<![A-Za-z0-9_.-])ForkMesh (?=[Dd]esktop)/g;
+  const swap = (value) => value.replace(DESKTOP, "").replace(BRAND, name);
 
   const USER_CONTENT =
     "[data-instance-powered-by], [class*='readme'], [class*='markdown'], [class*='commit'], " +

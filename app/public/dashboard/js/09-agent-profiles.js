@@ -14,7 +14,7 @@
     terminal_limit: "Six terminals are already running on that desktop. End one first.",
     terminal_failed: "The desktop could not open a terminal.",
     unsupported: "That desktop cannot open terminals.",
-    unsupported_method: "Update the ForkMesh desktop app to do this from the web.",
+    unsupported_method: `Update the ${desktopBrand()}desktop app to do this from the web.`,
     unknown_terminal: "That terminal has ended.",
     not_owner: "That desktop is signed in to another account.",
   });
@@ -87,7 +87,7 @@
     list.replaceChildren();
     if (!agentProfilesView.nodes.size) {
       list.append(runnersEl("p", "text-sm text-muted-foreground", agentProfilesView.loaded
-        ? "No ForkMesh desktop app is linked to your account yet. Install it and sign in, and its Claude Code and Codex accounts show up here."
+        ? `No ${desktopBrand()}desktop app is linked to your account yet. Install it and sign in, and its Claude Code and Codex accounts show up here.`
         : "Loading desktops…"));
       return;
     }
@@ -237,7 +237,7 @@
         }, { disabled: !entry.repo, title: entry.repo ? "" : "Check out a repository on the desktop first." }));
       }
     } else if (agentProfileHas(entry, "terminal.agents") || !accounts) {
-      actions.append(runnersEl("span", "text-xs text-muted-foreground", "Update the ForkMesh desktop app to log in and out from here."));
+      actions.append(runnersEl("span", "text-xs text-muted-foreground", `Update the ${desktopBrand()}desktop app to log in and out from here.`));
     }
     if (accounts) {
       actions.append(agentProfileButton("Rename", () => {

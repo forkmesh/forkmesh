@@ -1819,10 +1819,18 @@
     return String(brand?.dataset?.instanceName || "").trim() || "ForkMesh";
   }
 
+  function desktopBrand() {
+    return dashboardOnInstance() ? "" : "ForkMesh ";
+  }
+
   function applyPlatformName(root = document) {
     const name = platformName();
     root?.querySelectorAll?.("[data-platform-name]").forEach((element) => {
       if (element.textContent !== name) element.textContent = name;
+    });
+    const desktop = desktopBrand();
+    root?.querySelectorAll?.("[data-desktop-brand]").forEach((element) => {
+      if (element.textContent !== desktop) element.textContent = desktop;
     });
   }
 
@@ -7845,7 +7853,7 @@
     const label = reconnect.querySelector("[data-node-reconnect-label]");
     if (label) label.textContent = offline.length > 1 ? "Desktops offline" : "Desktop offline";
     const message = (offline.length > 1 ? "Your desktop nodes " + names + " are" : "Your desktop node " + names + " is") +
-      " offline. Open the ForkMesh desktop app on that machine to reconnect it.";
+      ` offline. Open the ${desktopBrand()}desktop app on that machine to reconnect it.`;
     reconnect.title = message;
     reconnect.setAttribute("aria-label", message);
   }
@@ -13011,7 +13019,7 @@
     return [
       nodeName
         ? `Make sure ${mono(nodeName)} is online and still linked to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`
-        : `Install the ForkMesh desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
+        : `Install the ${desktopBrand()}desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
       `Open the desktop node's ${ui("Repos")} page, click ${ui("+ Add")}, then choose ${ui("Remote clone URL")}.`,
       `${original ? `Paste ${mono(original)}` : "Paste the repository's clone URL"} and name it ${mono(name)}.`,
       `Publish — the node clones and hosts the mirror.`,
@@ -13032,7 +13040,7 @@
       subtitle: node
         ? `${node} is not an eligible mirror node for this account yet, so no request was recorded.`
         : "This account has no linked desktop node, so there is nothing to volunteer yet.",
-      intro: "Mirroring runs on a ForkMesh desktop node; the browser only lists the repository. Nothing has been requested yet. Complete these steps:",
+      intro: `Mirroring runs on a ${desktopBrand()}desktop node; the browser only lists the repository. Nothing has been requested yet. Complete these steps:`,
     });
     window.setTimeout(() => $("[data-new-repo-close]")?.focus(), 0);
     window.lucide?.createIcons();
@@ -13188,14 +13196,14 @@
   }
 
   const NEW_REPO_STEPS_INTRO =
-    "The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ForkMesh desktop node:";
+    `The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ${desktopBrand()}desktop node:`;
 
   const NEW_REPO_SUBTITLE =
-    "Mirror an existing repository. Your ForkMesh desktop node finishes creating and signing it.";
+    `Mirror an existing repository. Your ${desktopBrand()}desktop node finishes creating and signing it.`;
   // The provider tab imports provider records only. Say so before the import
   // starts, so "complete" is never read as "mirrored" afterwards (issue #678).
   const NEW_REPO_PROVIDER_SUBTITLE =
-    "Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ForkMesh desktop node.";
+    `Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ${desktopBrand()}desktop node.`;
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
@@ -13334,7 +13342,7 @@
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ForkMesh desktop node.`;
+      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ${desktopBrand()}desktop node.`;
     } else if (source === "local") {
       if (value) value.placeholder = localRepositoryPlaceholder();
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
@@ -13363,7 +13371,7 @@
     const sourceValue = details.sourceValue
       ? ` (<span class="font-mono text-foreground">${escapeHtml(details.sourceValue)}</span>)` : "";
     const steps = [
-      `Open the ForkMesh desktop node and go to the <span class="text-foreground">Repos</span> page.`,
+      `Open the ${desktopBrand()}desktop node and go to the <span class="text-foreground">Repos</span> page.`,
       `Click <span class="text-foreground">+ Add</span>, then choose <span class="text-foreground">${sourceLabel}</span>.`,
       `${pick}${sourceValue} and name it <span class="font-mono text-foreground">${escapeHtml(details.name)}</span>.`,
       `Set visibility to <span class="text-foreground">${details.visibility === "private" ? "Private" : "Public"}</span>${details.description ? ` and add your description` : ""}.`,
@@ -13396,8 +13404,8 @@
     const intro = $("[data-new-repo-steps-intro]");
     if (intro) {
       intro.textContent = urls.length === 1
-        ? "Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so this repository is listed as external until a ForkMesh desktop node hosts it:"
-        : "Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so these repositories stay external until a ForkMesh desktop node hosts each one:";
+        ? `Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so this repository is listed as external until a ${desktopBrand()}desktop node hosts it:`
+        : `Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so these repositories stay external until a ${desktopBrand()}desktop node hosts each one:`;
     }
     panel.classList.remove("hidden");
     window.lucide?.createIcons();
@@ -22282,7 +22290,7 @@
     let token = loadMcpConnectorToken();
     if (options?.replaceToken) {
       const entered = window.prompt(
-        "Paste the connector token this node already published (ForkMesh desktop app -> Settings -> MCP). Leave it empty to generate a fresh one instead - the copied prompt tells the agent how to install it.",
+        `Paste the connector token this node already published (${desktopBrand()}desktop app -> Settings -> MCP). Leave it empty to generate a fresh one instead - the copied prompt tells the agent how to install it.`,
         token,
       );
       if (entered === null) return token;
@@ -22341,7 +22349,7 @@
           `FORKMESH_MCP_TOKEN above is a connector token minted for this prompt. Activate it before step 1: if ${connectorFile} does not exist, create it (mode 0600) containing {"version": 1, "token": "${connectorToken}", "node": "", "label": "copied MCP prompt", "created_ms": <epoch milliseconds>} - the same record the desktop app writes. If that file already exists, leave it exactly as it is and use its own "token" value in the configuration above instead - the node already published a connector and overwriting it would revoke every other agent.`,
           "Treat the token as a secret - never print it in logs, commits, pull requests, or chat.",
         ].join("\n")
-      : `FORKMESH_MCP_TOKEN above is a placeholder: replace ${MCP_CONNECTOR_TOKEN_PLACEHOLDER} with the connector token the ForkMesh desktop app mints under Settings -> MCP -> Generate token, otherwise the write tools stay read-only. Treat it as a secret - never print it in logs, commits, pull requests, or chat.`;
+      : `FORKMESH_MCP_TOKEN above is a placeholder: replace ${MCP_CONNECTOR_TOKEN_PLACEHOLDER} with the connector token the ${desktopBrand()}desktop app mints under Settings -> MCP -> Generate token, otherwise the write tools stay read-only. Treat it as a secret - never print it in logs, commits, pull requests, or chat.`;
     return [
       `Work ${platformName()} issue #${number} in ${repoSlug} end to end through the "forkmesh" MCP server.`,
       "",
@@ -25632,7 +25640,7 @@
               <summary class="inline-flex h-8 cursor-pointer list-none items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</summary>
               <div class="fm-popover absolute right-0 top-full z-30 mt-1 w-72 p-3 text-[12px] leading-5 text-muted-foreground">
                 <p class="font-semibold text-foreground">Start it from the desktop app</p>
-                <p class="mt-1">Discussions are signed by your node before they reach the mirrors, so new ones are created from the ForkMesh desktop app.</p>
+                <p class="mt-1">Discussions are signed by your node before they reach the mirrors, so new ones are created from the ${desktopBrand()}desktop app.</p>
               </div>
             </details>
           </div>
@@ -28227,7 +28235,7 @@
           <i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>
           Owner-device encrypted
         </div>
-        <p class="leading-5 text-muted-foreground">This session, its transcript, and its prompts can be opened only by the owner's ForkMesh desktop key. The browser and relay do not have that key.</p>
+        <p class="leading-5 text-muted-foreground">This session, its transcript, and its prompts can be opened only by the owner's ${desktopBrand()}desktop key. The browser and relay do not have that key.</p>
         <a href="/desktop" class="inline-flex h-8 w-fit items-center gap-1.5 rounded-md bg-cta px-3 font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="monitor-down" class="h-3.5 w-3.5"></i>Open desktop downloads</a>
       </div>`;
   }
@@ -29114,7 +29122,7 @@
     const pre = $("[data-repo-agent-transcript]");
     if (!pre || !repo || !agentId) return;
     pre.textContent =
-      "Open this transcript in the ForkMesh desktop app on the owner device.";
+      `Open this transcript in the ${desktopBrand()}desktop app on the owner device.`;
   }
 
   async function requestRepoAgentsList(repo) {
@@ -31922,7 +31930,7 @@
     if (hint) {
       hint.className = "text-[11px] text-muted-foreground";
       hint.textContent =
-        "Send prompts from the ForkMesh desktop app; this browser has no owner encryption key.";
+        `Send prompts from the ${desktopBrand()}desktop app; this browser has no owner encryption key.`;
     }
   }
 
@@ -42534,7 +42542,7 @@
     terminal_limit: "Six terminals are already running on that desktop. End one first.",
     terminal_failed: "The desktop could not open a terminal.",
     unsupported: "That desktop cannot open terminals.",
-    unsupported_method: "Update the ForkMesh desktop app to do this from the web.",
+    unsupported_method: `Update the ${desktopBrand()}desktop app to do this from the web.`,
     unknown_terminal: "That terminal has ended.",
     not_owner: "That desktop is signed in to another account.",
   });
@@ -42607,7 +42615,7 @@
     list.replaceChildren();
     if (!agentProfilesView.nodes.size) {
       list.append(runnersEl("p", "text-sm text-muted-foreground", agentProfilesView.loaded
-        ? "No ForkMesh desktop app is linked to your account yet. Install it and sign in, and its Claude Code and Codex accounts show up here."
+        ? `No ${desktopBrand()}desktop app is linked to your account yet. Install it and sign in, and its Claude Code and Codex accounts show up here.`
         : "Loading desktops…"));
       return;
     }
@@ -42757,7 +42765,7 @@
         }, { disabled: !entry.repo, title: entry.repo ? "" : "Check out a repository on the desktop first." }));
       }
     } else if (agentProfileHas(entry, "terminal.agents") || !accounts) {
-      actions.append(runnersEl("span", "text-xs text-muted-foreground", "Update the ForkMesh desktop app to log in and out from here."));
+      actions.append(runnersEl("span", "text-xs text-muted-foreground", `Update the ${desktopBrand()}desktop app to log in and out from here.`));
     }
     if (accounts) {
       actions.append(agentProfileButton("Rename", () => {
@@ -44642,7 +44650,7 @@
     url.searchParams.set("app", minted.appUrl);
     stopRunnerSetupTimers();
     runnerSetup.token = { id: minted.id, runner: minted.runner, expiresAt: minted.expiresAt };
-    runnerSetupStatus(`Opening ForkMesh Desktop → Hosts. Click Install there; it signs in over SSH from your computer. Waiting for ${minted.runner} to register…`);
+    runnerSetupStatus(`Opening ${desktopBrand()}Desktop → Hosts. Click Install there; it signs in over SSH from your computer. Waiting for ${minted.runner} to register…`);
     pollRunnerSetupToken();
     window.location.href = url.href;
   }
@@ -44708,7 +44716,7 @@
       if (verify) verify.hidden = true;
       runnerSetup.ssh = null;
       runnerSetupStatus(error.code === "ssh_setup_unavailable"
-        ? `${platformName()} cannot connect for you here. Use ForkMesh Desktop, or the one command.`
+        ? `${platformName()} cannot connect for you here. Use ${desktopBrand()}Desktop, or the one command.`
         : `Could not check the server: ${error.message}`, "bad");
     }
   }
@@ -45187,7 +45195,7 @@
   // this bundle; the stubs where the modules were load it on first use.
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
-    "agents": "/dashboard-page-agents.js?v=0ec627084c94",
+    "agents": "/dashboard-page-agents.js?v=01286bc2cfba",
     "apps": "/dashboard-page-apps.js?v=8e695c33eb03",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=1ebcd099794e",
@@ -45206,6 +45214,7 @@
     MD_BODY_CLASS,
     blobText,
     copyTextToClipboard,
+    desktopBrand,
     desktopControlErrorText,
     desktopControlHub,
     escapeHtml,

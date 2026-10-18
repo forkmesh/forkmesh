@@ -2857,7 +2857,7 @@
     const label = reconnect.querySelector("[data-node-reconnect-label]");
     if (label) label.textContent = offline.length > 1 ? "Desktops offline" : "Desktop offline";
     const message = (offline.length > 1 ? "Your desktop nodes " + names + " are" : "Your desktop node " + names + " is") +
-      " offline. Open the ForkMesh desktop app on that machine to reconnect it.";
+      ` offline. Open the ${desktopBrand()}desktop app on that machine to reconnect it.`;
     reconnect.title = message;
     reconnect.setAttribute("aria-label", message);
   }

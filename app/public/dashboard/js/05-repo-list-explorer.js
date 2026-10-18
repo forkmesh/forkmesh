@@ -1769,7 +1769,7 @@
     return [
       nodeName
         ? `Make sure ${mono(nodeName)} is online and still linked to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`
-        : `Install the ForkMesh desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
+        : `Install the ${desktopBrand()}desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
       `Open the desktop node's ${ui("Repos")} page, click ${ui("+ Add")}, then choose ${ui("Remote clone URL")}.`,
       `${original ? `Paste ${mono(original)}` : "Paste the repository's clone URL"} and name it ${mono(name)}.`,
       `Publish — the node clones and hosts the mirror.`,
@@ -1790,7 +1790,7 @@
       subtitle: node
         ? `${node} is not an eligible mirror node for this account yet, so no request was recorded.`
         : "This account has no linked desktop node, so there is nothing to volunteer yet.",
-      intro: "Mirroring runs on a ForkMesh desktop node; the browser only lists the repository. Nothing has been requested yet. Complete these steps:",
+      intro: `Mirroring runs on a ${desktopBrand()}desktop node; the browser only lists the repository. Nothing has been requested yet. Complete these steps:`,
     });
     window.setTimeout(() => $("[data-new-repo-close]")?.focus(), 0);
     window.lucide?.createIcons();
@@ -1946,14 +1946,14 @@
   }
 
   const NEW_REPO_STEPS_INTRO =
-    "The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ForkMesh desktop node:";
+    `The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ${desktopBrand()}desktop node:`;
 
   const NEW_REPO_SUBTITLE =
-    "Mirror an existing repository. Your ForkMesh desktop node finishes creating and signing it.";
+    `Mirror an existing repository. Your ${desktopBrand()}desktop node finishes creating and signing it.`;
   // The provider tab imports provider records only. Say so before the import
   // starts, so "complete" is never read as "mirrored" afterwards (issue #678).
   const NEW_REPO_PROVIDER_SUBTITLE =
-    "Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ForkMesh desktop node.";
+    `Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ${desktopBrand()}desktop node.`;
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
@@ -2092,7 +2092,7 @@
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ForkMesh desktop node.`;
+      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ${desktopBrand()}desktop node.`;
     } else if (source === "local") {
       if (value) value.placeholder = localRepositoryPlaceholder();
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
@@ -2121,7 +2121,7 @@
     const sourceValue = details.sourceValue
       ? ` (<span class="font-mono text-foreground">${escapeHtml(details.sourceValue)}</span>)` : "";
     const steps = [
-      `Open the ForkMesh desktop node and go to the <span class="text-foreground">Repos</span> page.`,
+      `Open the ${desktopBrand()}desktop node and go to the <span class="text-foreground">Repos</span> page.`,
       `Click <span class="text-foreground">+ Add</span>, then choose <span class="text-foreground">${sourceLabel}</span>.`,
       `${pick}${sourceValue} and name it <span class="font-mono text-foreground">${escapeHtml(details.name)}</span>.`,
       `Set visibility to <span class="text-foreground">${details.visibility === "private" ? "Private" : "Public"}</span>${details.description ? ` and add your description` : ""}.`,
@@ -2154,8 +2154,8 @@
     const intro = $("[data-new-repo-steps-intro]");
     if (intro) {
       intro.textContent = urls.length === 1
-        ? "Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so this repository is listed as external until a ForkMesh desktop node hosts it:"
-        : "Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so these repositories stay external until a ForkMesh desktop node hosts each one:";
+        ? `Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so this repository is listed as external until a ${desktopBrand()}desktop node hosts it:`
+        : `Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so these repositories stay external until a ${desktopBrand()}desktop node hosts each one:`;
     }
     panel.classList.remove("hidden");
     window.lucide?.createIcons();

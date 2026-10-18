@@ -65,8 +65,8 @@
                     </div>
                     <div id="runnerSetupSsh" data-runner-setup-pane="ssh" role="tabpanel" hidden class="grid gap-4">
                       <div class="grid gap-2">
-                        <p class="text-xs text-foreground"><span class="font-semibold">Recommended: from ForkMesh Desktop.</span> The desktop connects over SSH from your own computer, so your password or key never leaves it.</p>
-                        <div><button data-runner-setup-desktop type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1 text-xs font-medium text-foreground hover:bg-[rgb(var(--dashboard-subtle-rgb))] transition-colors"><i data-lucide="monitor" class="w-3.5 h-3.5 text-muted-foreground"></i>Open in ForkMesh Desktop</button></div>
+                        <p class="text-xs text-foreground"><span class="font-semibold">Recommended: from <span data-desktop-brand>ForkMesh </span>Desktop.</span> The desktop connects over SSH from your own computer, so your password or key never leaves it.</p>
+                        <div><button data-runner-setup-desktop type="button" class="inline-flex items-center gap-1.5 rounded-md border border-border bg-secondary px-3 py-1 text-xs font-medium text-foreground hover:bg-[rgb(var(--dashboard-subtle-rgb))] transition-colors"><i data-lucide="monitor" class="w-3.5 h-3.5 text-muted-foreground"></i>Open in <span data-desktop-brand>ForkMesh </span>Desktop</button></div>
                       </div>
                       <form data-runner-ssh-form class="grid gap-3 border-t border-border pt-4" autocomplete="off">
                         <p class="text-xs text-muted-foreground">No desktop? <span data-platform-name>ForkMesh</span> can connect for you from its servers. It checks the server's host key first, then uses your password or key once, in memory, to run the installer. The password or key is sent over HTTPS, never stored, logged or shown again, and this form is cleared when you press Install.</p>

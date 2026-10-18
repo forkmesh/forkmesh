@@ -854,7 +854,7 @@
     url.searchParams.set("app", minted.appUrl);
     stopRunnerSetupTimers();
     runnerSetup.token = { id: minted.id, runner: minted.runner, expiresAt: minted.expiresAt };
-    runnerSetupStatus(`Opening ForkMesh Desktop → Hosts. Click Install there; it signs in over SSH from your computer. Waiting for ${minted.runner} to register…`);
+    runnerSetupStatus(`Opening ${desktopBrand()}Desktop → Hosts. Click Install there; it signs in over SSH from your computer. Waiting for ${minted.runner} to register…`);
     pollRunnerSetupToken();
     window.location.href = url.href;
   }
@@ -920,7 +920,7 @@
       if (verify) verify.hidden = true;
       runnerSetup.ssh = null;
       runnerSetupStatus(error.code === "ssh_setup_unavailable"
-        ? `${platformName()} cannot connect for you here. Use ForkMesh Desktop, or the one command.`
+        ? `${platformName()} cannot connect for you here. Use ${desktopBrand()}Desktop, or the one command.`
         : `Could not check the server: ${error.message}`, "bad");
     }
   }

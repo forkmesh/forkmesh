@@ -1442,10 +1442,18 @@
     return String(brand?.dataset?.instanceName || "").trim() || "ForkMesh";
   }
 
+  function desktopBrand() {
+    return dashboardOnInstance() ? "" : "ForkMesh ";
+  }
+
   function applyPlatformName(root = document) {
     const name = platformName();
     root?.querySelectorAll?.("[data-platform-name]").forEach((element) => {
       if (element.textContent !== name) element.textContent = name;
+    });
+    const desktop = desktopBrand();
+    root?.querySelectorAll?.("[data-desktop-brand]").forEach((element) => {
+      if (element.textContent !== desktop) element.textContent = desktop;
     });
   }
 

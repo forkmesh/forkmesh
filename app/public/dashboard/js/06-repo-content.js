@@ -6117,7 +6117,7 @@
     let token = loadMcpConnectorToken();
     if (options?.replaceToken) {
       const entered = window.prompt(
-        "Paste the connector token this node already published (ForkMesh desktop app -> Settings -> MCP). Leave it empty to generate a fresh one instead - the copied prompt tells the agent how to install it.",
+        `Paste the connector token this node already published (${desktopBrand()}desktop app -> Settings -> MCP). Leave it empty to generate a fresh one instead - the copied prompt tells the agent how to install it.`,
         token,
       );
       if (entered === null) return token;
@@ -6176,7 +6176,7 @@
           `FORKMESH_MCP_TOKEN above is a connector token minted for this prompt. Activate it before step 1: if ${connectorFile} does not exist, create it (mode 0600) containing {"version": 1, "token": "${connectorToken}", "node": "", "label": "copied MCP prompt", "created_ms": <epoch milliseconds>} - the same record the desktop app writes. If that file already exists, leave it exactly as it is and use its own "token" value in the configuration above instead - the node already published a connector and overwriting it would revoke every other agent.`,
           "Treat the token as a secret - never print it in logs, commits, pull requests, or chat.",
         ].join("\n")
-      : `FORKMESH_MCP_TOKEN above is a placeholder: replace ${MCP_CONNECTOR_TOKEN_PLACEHOLDER} with the connector token the ForkMesh desktop app mints under Settings -> MCP -> Generate token, otherwise the write tools stay read-only. Treat it as a secret - never print it in logs, commits, pull requests, or chat.`;
+      : `FORKMESH_MCP_TOKEN above is a placeholder: replace ${MCP_CONNECTOR_TOKEN_PLACEHOLDER} with the connector token the ${desktopBrand()}desktop app mints under Settings -> MCP -> Generate token, otherwise the write tools stay read-only. Treat it as a secret - never print it in logs, commits, pull requests, or chat.`;
     return [
       `Work ${platformName()} issue #${number} in ${repoSlug} end to end through the "forkmesh" MCP server.`,
       "",
@@ -9467,7 +9467,7 @@
               <summary class="inline-flex h-8 cursor-pointer list-none items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</summary>
               <div class="fm-popover absolute right-0 top-full z-30 mt-1 w-72 p-3 text-[12px] leading-5 text-muted-foreground">
                 <p class="font-semibold text-foreground">Start it from the desktop app</p>
-                <p class="mt-1">Discussions are signed by your node before they reach the mirrors, so new ones are created from the ForkMesh desktop app.</p>
+                <p class="mt-1">Discussions are signed by your node before they reach the mirrors, so new ones are created from the ${desktopBrand()}desktop app.</p>
               </div>
             </details>
           </div>
@@ -12062,7 +12062,7 @@
           <i data-lucide="shield-check" class="h-4 w-4 text-muted-foreground"></i>
           Owner-device encrypted
         </div>
-        <p class="leading-5 text-muted-foreground">This session, its transcript, and its prompts can be opened only by the owner's ForkMesh desktop key. The browser and relay do not have that key.</p>
+        <p class="leading-5 text-muted-foreground">This session, its transcript, and its prompts can be opened only by the owner's ${desktopBrand()}desktop key. The browser and relay do not have that key.</p>
         <a href="/desktop" class="inline-flex h-8 w-fit items-center gap-1.5 rounded-md bg-cta px-3 font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="monitor-down" class="h-3.5 w-3.5"></i>Open desktop downloads</a>
       </div>`;
   }
@@ -12949,7 +12949,7 @@
     const pre = $("[data-repo-agent-transcript]");
     if (!pre || !repo || !agentId) return;
     pre.textContent =
-      "Open this transcript in the ForkMesh desktop app on the owner device.";
+      `Open this transcript in the ${desktopBrand()}desktop app on the owner device.`;
   }
 
   async function requestRepoAgentsList(repo) {
@@ -15757,7 +15757,7 @@
     if (hint) {
       hint.className = "text-[11px] text-muted-foreground";
       hint.textContent =
-        "Send prompts from the ForkMesh desktop app; this browser has no owner encryption key.";
+        `Send prompts from the ${desktopBrand()}desktop app; this browser has no owner encryption key.`;
     }
   }
 
