@@ -77,6 +77,8 @@ class InboxTest {
         assertEq(Route.Commit(repo, "abcdef1"), InboxRoutes.route("code_push", "/fm/app/commit/abcdef1", emptyMap(), ""))
         assertEq(Route.Commits(repo, "dev"), InboxRoutes.route("code_push", "/fm/app/commits/dev", emptyMap(), ""))
         assertEq(Route.LaunchedAgent(repo, "7"), InboxRoutes.route("agent_finished", "/fm/app/agents/7", emptyMap(), ""))
+        assertEq(Route.Run(repo, "41"), InboxRoutes.route("desktop_ping", "/fm/app/actions/runs/41", mapOf("runId" to "41"), "fm/app"))
+        assertEq(Route.Repo(repo, RepoSection.Actions), InboxRoutes.route("repo_activity", "/fm/app/actions", emptyMap(), ""))
         assertEq(Route.Pull(repo, 3, PullTab.Conversation), InboxRoutes.route("pull_submitted", "", mapOf("number" to 3L), "fm/app"))
         assertEq(Route.Repo(repo, RepoSection.Issues), InboxRoutes.route("issue_opened", "", emptyMap(), "fm/app"))
         assertEq(Route.Repo(repo, RepoSection.Releases), InboxRoutes.route("release_published", "", emptyMap(), "fm/app"))

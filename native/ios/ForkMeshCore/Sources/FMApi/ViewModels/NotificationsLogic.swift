@@ -418,6 +418,8 @@ public func pingOpenLabel(_ target: NotificationTapTarget) -> String? {
         case .commits where !link.reference.isEmpty: return "Open commit \(link.reference.prefix(7))"
         case .commits where !link.branch.isEmpty: return "Open commits on \(link.branch)"
         case .releases: return "Open releases"
+        case .actions where !link.reference.isEmpty: return "Open run #\(link.reference)"
+        case .agents where link.number > 0: return "Open agent #\(link.number)"
         default: return "Open \(link.repo.owner)/\(link.repo.name)"
         }
     }

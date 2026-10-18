@@ -296,6 +296,10 @@ object PushFeature {
             navigator.push(AgentsFeature.sessionScreen(link.repo, link.session))
             return
         }
+        if (link.initialTab == RepoDetailTab.Actions && link.run > 0) {
+            navigator.push(CodeFeature.actionRunScreen(link.repo, link.run))
+            return
+        }
         navigator.push(CodeFeature.repoDetailScreen(link.repo, link.initialTab, link))
     }
 

@@ -193,8 +193,8 @@ public enum InboxRoutes {
         case .mirrors: return .repo(ref, section: .mirrors)
         case .releases: return .repo(ref, section: .releases)
         case .about: return .repo(ref, section: .about)
-        case .actions: return .repo(ref, section: .actions)
-        case .agents: return .repo(ref, section: .agents)
+        case .actions: return link.reference.isEmpty ? .repo(ref, section: .actions) : .run(ref, id: link.reference)
+        case .agents: return link.number > 0 ? .agent(id: String(link.number)) : .repo(ref, section: .agents)
         case .worktrees: return .repo(ref, section: .worktrees)
         }
     }

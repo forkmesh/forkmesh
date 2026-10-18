@@ -3418,6 +3418,7 @@ async def _apns_ping_alert(env, record):
     if record.get("kind") == "desktop_ping" and isinstance(meta, dict):
         alert["category"] = clean_string(meta.get("category", ""), 40)
         alert["sessionId"] = clean_string(meta.get("sessionId", ""), 12)
+        alert["runId"] = clean_string(meta.get("runId", ""), 12)
         alert["alarm"] = clean_string(meta.get("alarm", ""), 20)
     return alert
 
@@ -38605,29 +38606,21 @@ def _push_alert_item(it, aliases=None, avatars=None):
         # guessing which inbox row woke the phone. Same address the digest
         # email links to: the numbered record when the ping names one, else
         # the site path the ping stored for itself.
-        "href": ((item_path + _notification_code_push_tail(
+        "href": ((item_path + _notification_stored_tail(
                      it, stored_repo, number)) if item_path
                  else _notification_stored_path(it.get("href", ""))),
     }
 
 
-def _notification_code_push_tail(it, stored_repo, number=0):
-    """The "/commits/<branch>" a code-push ping stored after its repo path.
-
-    Every other kind lands on the repository (or its numbered record) by the
-    display identity; a code push lands on the branch that moved, so its
-    tail is kept while the owner/repo prefix is still rewritten to the public
-    identity — an alias-fronted push must not name its backing node.
-    """
-    if number > 0 or clean_string(
-            (it or {}).get("kind", ""), 60) != "code_push":
+def _notification_stored_tail(it, stored_repo, number=0):
+    if number > 0:
         return ""
     href = _notification_stored_path((it or {}).get("href", ""))
     owner, _, name = (stored_repo or "").partition("/")
     if not href or not owner or not name:
         return ""
     prefix = "/" + quote(owner, safe="") + "/" + quote(name, safe="")
-    if not href.lower().startswith(prefix.lower() + "/commits"):
+    if not href.lower().startswith(prefix.lower() + "/"):
         return ""
     tail = href[len(prefix):]
     return tail if NOTIFICATION_HREF_RE.match(tail) else ""
@@ -38679,8 +38672,9 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
     segment, number = _notification_item_record(it, repo)
     # The record path when the ping names one, else whatever exact
     # address it recorded for itself.
-    path = (_notification_item_path(repo, segment, number)
-            or _notification_stored_path(it.get("href", "")))
+    path = _notification_item_path(repo, segment, number)
+    path = ((path + _notification_stored_tail(it, stored_repo, number))
+            if path else _notification_stored_path(it.get("href", "")))
     url = _notification_item_url(base_url, path)
     when = _format_email_ts(it.get("ts"))
     # "[owner/repo] #42 Title", falling back gracefully as each piece is

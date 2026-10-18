@@ -179,6 +179,45 @@ def test_a_plain_ping_carries_no_agent_fields_and_a_body_only_ping_is_titled():
     assert "sessionId" not in kwargs["meta"]
 
 
+def _run_body(**overrides):
+    body = _body(kind="action", category="ci-failed", sessionId="",
+                 runId="41", warning=True, title="Workflow build failed",
+                 body="Step test exited 1")
+    body.update(overrides)
+    return body
+
+
+def test_a_failed_action_ping_opens_its_run():
+    module, calls = _load()
+    response = _post(module, _run_body(), SIGNED)
+    assert response["status"] == 200
+    fields = module.desktop_ping_fields(_run_body())
+    assert calls["verified"] == [
+        ("jett", "proof", module.desktop_ping_canonical("jett", "123", fields))]
+    [(_, _, _, kwargs)] = calls["enqueued"]
+    assert kwargs["href"] == "/jett/forkmesh/actions/runs/41"
+    assert kwargs["meta"]["runId"] == "41"
+    assert kwargs["meta"]["category"] == "ci-failed"
+
+
+def test_desktop_signs_the_same_run_canonical():
+    module, _ = _load()
+    test = (DESKTOP / "tests" / "test_desktop_ping_forward.cpp").read_text(
+        encoding="utf-8")
+    fields = module.desktop_ping_fields(_run_body())
+    expected = module.desktop_ping_canonical("jett", "123", fields).decode()
+    literal = "".join(re.findall(
+        r'"((?:[^"\\]|\\.)*)"',
+        test.split("check(canonical(")[2].split("the run canonical matches")[0]))
+    assert literal.endswith(expected.replace("\n", "\\n")), literal
+
+
+def test_a_ping_without_a_run_signs_the_old_canonical():
+    module, _ = _load()
+    with_run = module.desktop_ping_fields(_body())
+    assert "\n12\njett/forkmesh\n" in module.desktop_ping_resource(with_run)
+
+
 def test_a_power_loss_ping_is_an_alarm_that_rings_through_quiet_hours():
     module, calls = _load()
     response = _post(module, _body(kind="power-battery", category="",
@@ -219,6 +258,7 @@ def test_refusals():
     module, calls = _load()
     for bad in (dict(pingId="../x"), dict(node="a b"), dict(kind="x" * 41),
                 dict(category="pr-review"), dict(sessionId="s1"),
+                dict(runId="0"), dict(runId="r1"), dict(runId=41),
                 dict(repo="not a repo"), dict(warning="yes"),
                 dict(title="x" * 161), dict(body="x" * 501),
                 dict(title=" ", body="")):
@@ -237,6 +277,7 @@ def test_the_apns_banner_names_the_category_and_session():
     assert 'record.get("kind") == "desktop_ping"' in source
     assert 'alert["category"]' in source
     assert 'alert["sessionId"]' in source
+    assert 'alert["runId"]' in source
 
 
 def _delete_body(**overrides):

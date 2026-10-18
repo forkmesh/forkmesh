@@ -64,4 +64,13 @@ class NotificationDeepLinkTest {
         assertEq(42, link.session)
         assertEq(0, NotificationDeepLink.parse("/a/b/agents")!!.session)
     }
+
+    fun testARunLinkCarriesTheRun() {
+        val link = NotificationDeepLink.parse("/a/b/actions/runs/41")!!
+        assertEq(RepoDetailTab.Actions, link.initialTab)
+        assertEq(41, link.run)
+        assertEq(0, NotificationDeepLink.parse("/a/b/actions")!!.run)
+        assertEq(0, NotificationDeepLink.parse("/a/b/actions/runs/x")!!.run)
+        assertEq(0, NotificationDeepLink.parse("/a/b/actions/runs/-3")!!.run)
+    }
 }
