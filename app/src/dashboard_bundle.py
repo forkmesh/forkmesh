@@ -33,6 +33,7 @@ FRAGMENTS = (
     "06-repo-actions.js",
     "06-repo-content.js",
     "07-repo-compose-branch.js",
+    "07-repo-pull-batch.js",
     "08-repo-detail-network.js",
     "09-achievements.js",
     "09-ads.js",
