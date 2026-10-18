@@ -2612,7 +2612,7 @@ def test_direct_https_gateway_routes_live_repository_branches():
         '"tree": frozenset({"path", "ref"})',
         # The Calendar reads every branch and tag over a time range, so the
         # history route accepts that scope alongside a single ref.
-        '"history": frozenset({"ref", "all", "since", "until"})',
+        '"history": frozenset({"ref", "all", "since", "until", "path"})',
     ):
         assert marker in gateway
     assert REPO_HOST_ROUTE_RE in URLS_TEXT
