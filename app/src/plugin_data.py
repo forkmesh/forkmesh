@@ -28,6 +28,7 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import instance_features
 from plugin_registry import PLUGINS as REGISTRY
 
 
@@ -407,6 +408,11 @@ def _cutoff_ms(value):
     return int(moment.timestamp() * 1000)
 
 
+def _instance_created_at(runtime, created_at):
+    env = getattr(runtime, "env", None)
+    return 0 if env is not None and instance_features.branded(env) else created_at
+
+
 def _created_ms(created_at):
     try:
         return int(created_at or 0)
@@ -519,6 +525,7 @@ async def account_package_installed(runtime, account_bi, plugin, created_at=None
     if not account_bi or plugin not in _synced():
         return False
     rows = await _account_rows(runtime, account_bi)
+    created_at = _instance_created_at(runtime, created_at)
     lookup = getattr(runtime, "account_created_at", None)
     if created_at is None and lookup is not None and _needs_created_at([plugin], rows):
         created_at = await lookup(account_bi)
@@ -677,7 +684,7 @@ async def _handle_account(runtime, path):
     if not account_bi or not actor:
         return _response(runtime, {"error": "invalid_session"}, 401)
     account_bi = str(account_bi)
-    created_at = (record or {}).get("created_at")
+    created_at = _instance_created_at(runtime, (record or {}).get("created_at"))
     if not action:
         return _response(runtime, _account_payload(
             *await _account_state(runtime, account_bi, created_at)))
@@ -864,7 +871,8 @@ async def handle(runtime, path):
         if not account_bi or not record:
             return _response(runtime, {"error": "invalid_session"}, 401)
         name = " ".join(str(record.get("name") or "").split())[:64].lower()
-        return await _visible(runtime, str(account_bi), name, record.get("created_at"))
+        return await _visible(runtime, str(account_bi), name,
+                              _instance_created_at(runtime, record.get("created_at")))
     route = _route(path)
     if route is None:
         return _response(runtime, {"error": "not_found"}, 404)
