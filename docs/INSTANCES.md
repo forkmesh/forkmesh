@@ -415,6 +415,30 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   change.
 - **Pages** (`app/src/instance_pages.py`): an instance renders its own
   `/desktop` and `/docs` guide pages.
+- **Legal pages** (`app/src/instance_legal.py`): Terms, Privacy and Security
+  are separate settings, all off on a new instance: the links are hidden
+  everywhere (sidebar, header menu, footers, the sign-up agreement), `/terms`,
+  `/privacy` and `/security-report` answer the instance's 404 page, and there
+  is no `/.well-known/security.txt`. An admin turns each one on from Platform
+  → Legal pages, as Markdown served at `/terms`, `/privacy` or `/security`
+  (sanitized by the host's README renderer) or as a link to another site;
+  Security on also publishes `security.txt`. `GET /api/instance` reports them
+  as `legal`. The optional install setting `legalPages` turns pages on at
+  setup:
+
+  ```json
+  "legalPages": {
+    "terms": {"markdown": "# Terms of use\n\n..."},
+    "privacy": "https://example.org/privacy",
+    "security": {"url": "https://example.org/security", "contact": "security@example.org"}
+  }
+  ```
+
+  Each page takes `markdown` or `url` (a string is a URL), `null`/`false` or
+  nothing for off; only `security` takes `contact` (email or https). The
+  bootstrap writes it once (`ON CONFLICT DO NOTHING`); `--update` ignores it
+  and never turns a page on. forkmesh.com keeps its own pages and links.
+  Details: [app/instance-legal-pages.md](app/instance-legal-pages.md).
 
 ## Dashboard on an instance
 
@@ -475,7 +499,8 @@ to every provider.
 
 `app/tests/test_instance_launch.py`, `test_install_instance_script.py`,
 `test_start_instance_page.py`, `test_instance_white_label.py`,
-`test_instance_theme.py`, `test_instance_pages.py`, `test_server_update.py`,
+`test_instance_theme.py`, `test_instance_pages.py`,
+`test_instance_legal_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
 `test_instance_node_reconnect_frontend.py`,
 `test_instance_served_by_frontend.py`, `test_repo_canonical_addresses.py`,
