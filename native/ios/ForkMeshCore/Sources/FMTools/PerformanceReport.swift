@@ -35,6 +35,7 @@ public enum PerformanceReport {
             Part("", header(telemetry, monitor, events, context, now, timeZone), rank: headerRank),
             Part("Metrics (5m | 1h)", metricTable(telemetry), rank: 10),
             Part("Stalls by name", eventGroups(events.filter(\.isStall), lastSeen: timeZone), rank: 9),
+            Part("Stalls by screen", eventGroups(events.filter(\.isStall), lastSeen: timeZone, key: stallScreen), rank: 8),
             Part("Slow operations by name", eventGroups(events.filter { !$0.isStall }), rank: 8),
             Part("In flight or finished during stalls", stallCulprits(events), rank: 7),
             Part("HTTP endpoints, last \(minutes) min", endpoints(telemetry.log, now), rank: 6),
@@ -191,10 +192,16 @@ public enum PerformanceReport {
         var last = ""
     }
 
-    static func eventGroups(_ events: [PerformanceEvent], lastSeen timeZone: TimeZone? = nil) -> String {
+    static func stallScreen(_ event: PerformanceEvent) -> String {
+        event.details["screen"].map(PerformanceLogText.dartText) ?? "not recorded"
+    }
+
+    static func eventGroups(
+        _ events: [PerformanceEvent], lastSeen timeZone: TimeZone? = nil, key: (PerformanceEvent) -> String = eventKey
+    ) -> String {
         var groups: [String: EventGroup] = [:]
         for event in events {
-            let key = eventKey(event)
+            let key = key(event)
             var group = groups[key] ?? EventGroup(key: key)
             if group.last.isEmpty, let timeZone {
                 group.last = AppLogEntry(timestamp: event.timestamp, category: .perf, message: "").stamp(timeZone: timeZone)

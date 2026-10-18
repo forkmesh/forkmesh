@@ -63,6 +63,7 @@ public final class ApiService {
     @ObservationIgnored let performanceMonitor: PerformanceMonitorService?
     @ObservationIgnored let clock: Clock
     @ObservationIgnored let sleeper: @Sendable (TimeInterval) async throws -> Void
+    @ObservationIgnored let issueRecord: @Sendable (String, String) -> Issue?
 
     /// Supplies the logged-in account's signed session token, or "" when logged out. Wire it to
     /// `AuthService.session?.sessionToken`. When present it is sent as `Authorization: Bearer`.
@@ -127,13 +128,15 @@ public final class ApiService {
         clock: Clock = SystemClock(),
         sleep: @escaping @Sendable (TimeInterval) async throws -> Void = { seconds in
             try await Task.sleep(nanoseconds: UInt64(max(0, seconds) * 1_000_000_000))
-        }
+        },
+        issueRecord: @escaping @Sendable (String, String) -> Issue? = PublishedRecords.issueFromRecordJson
     ) {
         self.settings = settings
         self.http = http
         self.performanceMonitor = performanceMonitor
         self.clock = clock
         self.sleeper = sleep
+        self.issueRecord = issueRecord
     }
 
     // MARK: Session

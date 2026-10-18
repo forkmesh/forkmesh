@@ -31,10 +31,19 @@ characters, lowest-ranked sections are trimmed first and say so):
   `eventLoop ui-isolate blocked` is the heartbeat catching a blocked main
   thread, `frame` a late display callback, `sync <name>` a `timeSync`
   section that names its culprit. `last` is the clock time of the newest.
-- `Slow operations by name`: `track`ed awaits over 500 ms. Their time
-  includes waiting for the main actor between hops, so an operation far
-  slower than the same endpoint in `HTTP endpoints` points at a busy main
-  thread, not at the server.
+- `Stalls by screen` (since 2026-10-17): the same stalls grouped by the
+  tab and navigation stack showing when each was recorded
+  (`AppRouter.screenTitle`, the `screen` detail, also in `stalls.log`
+  lines). `not recorded` is a stall from an older build or one caught off
+  the main thread. A screen that was left can still own the work: a load
+  it started keeps running in `ApiService`'s caches after it is popped.
+- `Slow operations by name`: `track`ed awaits over 500 ms, over every
+  event kept (`events kept N/100`), while `HTTP endpoints` covers only
+  the last 5 minutes, so compare the same window. An operation that sits
+  near 8 s (`/api/repo/` reads) or 12 s (other GETs) is the request
+  timeout of `getJson`, not the main thread. Waiting for the main actor
+  between hops adds at most about the `LOOP` max per hop; it explains an
+  operation a few hundred ms slower than its endpoint, not seconds.
 - `In flight or finished during stalls`: requests open while a stall was
   recorded. Correlation, not cause: a request that is in flight in many
   stalls usually marks the burst the stalls happen in (resume, a ring, a
@@ -52,6 +61,30 @@ characters, lowest-ranked sections are trimmed first and say so):
 Newest first. Each entry: date and branch; what the bundle showed; the
 cause; the fix; what was ruled out; what the bundle lacked.
 
+- 2026-10-17, `2214-slow-ios-app-performance` (1.4.1 (275), iPhone16,2,
+  Inbox tab, screen Shortcuts after forkmesh/forkmesh). Showed: "froze
+  for 0.3 s": an event-loop stall of 324 ms and a 354 ms frame at
+  22:58:36, 17 stalls in the hour; at 22:58:15 the repository overview
+  listed `.forkmesh/issues/open` (746 ms), which starts the issue read;
+  `FRAME` avg 51 ms and `LOOP` avg 24 ms; a DJ jam presence POST every
+  4.5 s with a deck playing behind other screens; slow operations of 8 s
+  and 9-15 s. Cause: `ApiService.publishedIssues` fetched the issue
+  records in batches of 50 (parsed off the main actor, being over 16 KB)
+  and then parsed every record's JSON (forkmesh/forkmesh has had 730
+  issue numbers) on the main actor in one pass. That pass is the stall. It lands after
+  the user has left the overview, because the read runs in the issues
+  cache. Fix: the records are parsed and sorted in a detached task
+  (`issueRecord`, injectable so a test sees the thread), and so are the
+  release manifests the same overview reads. Ruled out: the
+  8 s and 12 s operations are request timeouts (tree reads failed 2 of 5),
+  not a busy main thread; the Shortcuts screen reads the phone's copy in a
+  detached task; the presence reply and the 30 Hz now-playing chip are
+  steady small work, not a 300 ms block (not measured; a deck playing off
+  screen keeps the studio's poll, player ticks and AUTOMIX loop running,
+  so the earlier "the DJ studio's animations stop" holds only when no deck
+  plays). Bundle gaps closed: every stall records the screen showing
+  (`PerformanceMonitorService.screenName`) and the report groups stalls
+  by screen. Still missing: symbolicated stacks.
 - 2026-10-17, `2194-slow-ios-app-performance` (1.4.1 (268), iPhone16,2,
   Agents tab). Showed: 21 stalls in an hour (up to 620 ms), none in the last
   5 minutes; `/api/orgs` in flight in 8 of them, with chat channels, direct
@@ -70,8 +103,9 @@ cause; the fix; what was ruled out; what the bundle lacked.
   owner-sealed unsealing (already off the main actor), the Agents list
   polling (it has none; rings are debounced), the DJ studio (its
   animations stop when no deck plays). Bundle gaps closed: stalls get their
-  own section with the time of the newest, and `RELAY` is wired. Still
-  missing: which screen was showing at each stall, and symbolicated stacks.
+  own section with the time of the newest, and `RELAY` is wired. (Its
+  operations of 3-5 s were read as main-thread waits; see "Slow
+  operations" above for why that reading overstated it.)
 - 2026-10-16, `2158-slow-ios-app-performance`: Home's count refresh flooded
   a hot phone; counts now follow `NavigatorCountPlan` (fresh for 60 s, 300 s
   when warm, three reads at a time).

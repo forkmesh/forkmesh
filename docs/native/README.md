@@ -220,6 +220,9 @@ avatar movement but does not silently change that saved feedback preference.
 
 - Parse API replies of 16 KB or more off the main actor
   (`decodeResponseAsync`, `ApiParse.parseAsync`, `ApiParse.modelAsync`).
+  The documents inside a reply count too: repository files read in
+  batches (issue records, release manifests) are parsed in a detached
+  task, not one by one on the main actor (`publishedIssues`).
 - Write `@Observable` properties only when the value changes; every write
   notifies, equal or not. This includes refreshes that rerun on every return
   to the app: `AccountPackagesStore`, `HubPackageState`,

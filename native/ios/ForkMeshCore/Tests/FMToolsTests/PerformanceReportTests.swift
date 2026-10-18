@@ -146,6 +146,21 @@ final class PerformanceReportTests: XCTestCase {
     }
 
     @MainActor
+    func testStallsAreGroupedByTheScreenThatWasShowing() async {
+        let (telemetry, clock) = fixture()
+        let monitor = telemetry.monitor!
+        monitor.recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(250))
+        clock.advance(30)
+        monitor.recordSlowEvent(
+            kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(324), details: ["screen": "Inbox > Shortcuts"])
+        monitor.recordSlowEvent(kind: .frame, name: "frame", duration: .milliseconds(354), details: ["screen": "Inbox > Shortcuts"])
+        let text = PerformanceReport.text(telemetry: telemetry, now: clock.now, timeZone: utc)
+        XCTAssertTrue(text.contains(
+            "## Stalls by screen\n2x     total 678ms max 354ms last 12:00:30 Inbox > Shortcuts\n"
+                + "1x     total 250ms max 250ms last 12:00:00 not recorded\n"), text)
+    }
+
+    @MainActor
     func testStallsKeepTheirOwnSectionWhenOperationsCrowdTheReport() async {
         let (telemetry, clock) = fixture()
         let monitor = telemetry.monitor!

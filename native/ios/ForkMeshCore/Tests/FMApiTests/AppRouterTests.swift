@@ -12,6 +12,14 @@ final class AppRouterTests: XCTestCase {
         XCTAssertTrue(router.currentPath.isEmpty)
     }
 
+    @MainActor func testScreenTitleNamesTheTabAndItsStack() async {
+        let router = AppRouter()
+        XCTAssertEqual(router.screenTitle, "Agents")
+        router.select(.inbox)
+        router.setPath([.repo(repo, section: nil), .shortcuts(nil)], for: .inbox)
+        XCTAssertEqual(router.screenTitle, "Inbox > forkmesh/app > Shortcuts")
+    }
+
     @MainActor func testReselectPopsThenScrollsToTop() async {
         let router = AppRouter()
         router.select(.code)
