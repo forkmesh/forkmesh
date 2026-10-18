@@ -57,6 +57,15 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   listens on loopback. `request_guard.py` rejects unknown hosts and oversized
   bodies and verifies the homepage Worker's signed visitor header
   (`deploy/core/edge_client.md`), once per request.
+- **Static headers without a fleet Caddy.** A single-server instance
+  (`install-instance.sh`) proxies everything to the app, so the app's
+  `StaticAssets` serves the static pages itself. It applies the dist's
+  `_headers` rules to those responses (security headers, the Turnstile CSP of
+  `/forgot-password`, cache lifetimes), the way the fleet's generated Caddy
+  routes do, and never serves `_headers`, `_redirects` or `_routes.json`.
+  Before this, `/forgot-password` and `/login` on an instance carried no CSP
+  or frame policy and `/_headers` was downloadable. `env.ASSETS.fetch` from
+  the Worker gets the plain file; the Worker sets its own headers.
 - **Block rules and rate limit.** The app and world names point straight at
   the cores, so the cores enforce what a CDN WAF would:
   - enabled `request_block_rules` (`user_agent_keyword`, `ip`, `cidr`,
