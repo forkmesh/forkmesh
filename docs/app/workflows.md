@@ -15,6 +15,7 @@ or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
 | --- | --- |
 | Engine (graph, expressions, execution) | `app/src/workflows.py` |
 | Scripting, text, number, list and date steps | `app/src/workflow_actions.py` |
+| Desktop steps, the preinstalled Free disk space workflow, desktop run records | `app/src/workflow_desktop.py` |
 | Script interpreter (Run script) | `app/src/workflow_script.py` |
 | Integrations, declared as data | `app/src/workflow_integrations.py` |
 | Routes, encrypted storage, credentials, triggers | `app/src/workflows_runtime.py` |
@@ -24,7 +25,7 @@ or one of 100 integrations (Slack, GitHub, Notion, Stripe, Claude, OpenAI,
 | Page script | `app/public/dashboard/js/09-workflows.js` (rebuild with `app/tools/build_dashboard_assets.py`) |
 | Plug-in and nested packages | `marketplace/packages/workflows`, `workflows-pack-*`, `workflows-examples`, `workflows-repository-files` |
 | Tables | `workflows`, `workflow_runs`, `workflow_credentials` (migration `0251_workflows.sql`) |
-| Tests | `app/tests/test_workflows.py`, `test_workflow_actions.py`, `test_workflow_script.py`, `test_workflow_formats.py`, `test_workflow_files.py` |
+| Tests | `app/tests/test_workflows.py`, `test_workflow_actions.py`, `test_workflow_script.py`, `test_workflow_formats.py`, `test_workflow_files.py`, `test_workflow_desktop.py` |
 | Phone engine and bundle | `marketplace/packages/workflows/content/mobile/workflow-engine.js`, `marketplace/tools/workflows_mobile_bundle.py` |
 
 ## Building a workflow
@@ -82,14 +83,60 @@ Writes need a user session. Errors are `{"ok": false, "error": "<code>"}`.
 | `GET /api/workflows/catalog` | Core nodes, integrations, operators (public) |
 | `GET`/`POST /api/workflows` | List / create `{name, active, nodes, connections}` |
 | `GET`/`POST /api/workflows/<id>` | Read / replace (`rotateHook: true` issues a new webhook token) |
-| `POST /api/workflows/<id>/run` | Run now (`payload` overrides trigger test data) |
+| `POST /api/workflows/<id>/run` | Run now (`payload` overrides trigger test data); `runs_on_desktop` (409) for a workflow with desktop steps |
+| `POST /api/workflows/<id>/record` | Store a run the browser drove on the desktop: `{startedAt, finishedAt, nodes, output: {freedBytes, freeBytes, totalBytes}}` |
 | `POST /api/workflows/<id>/delete` | Delete with its runs |
-| `GET /api/workflows/<id>/runs[/<runId>]` | Last 30 runs; per-node report |
+| `GET /api/workflows/<id>/runs[/<runId>]` | Last 30 runs, each with its `output`; per-node report |
 | `GET`/`POST /api/workflows/credentials`, `POST .../<id>/delete` | Masked list / create / delete |
 | `GET /api/workflows/templates[/<key>]` | Examples |
 | `POST /api/workflows/export`, `/convert`, `/import-url` | File format conversion |
 | `POST /api/workflows/files/parse`, `/files/render`, `/files/new`; `GET /api/workflows/package-files` | Repository files |
 | `GET`/`POST`/`PUT`/`PATCH /api/workflows/hook/<id>/<token>` | Webhook trigger, no session; item `{method, query, body}` |
+
+## Run output
+
+Every run has an `output` `{text, metrics: [{label, value}]}`, stored in the
+run report and returned by `/runs`, so the recent runs list shows a little
+window on each row. A server run's output is `workflows.run_output`: the
+item count of its last steps (the steps nothing connects onward from, or the
+Stop step) and a short preview of the first item, its `output`, `text`,
+`message`, `result` or `status` field, or else its first three plain fields.
+A failed run's output is its error. A desktop run's output is the bytes freed
+and the free space after (`workflow_desktop.disk_output`).
+
+## Desktop steps
+
+The **Desktop** group (`workflow_desktop.NODES`, `runsOn: "desktop"`) holds
+steps that only the user's own desktop can run: the six parts of
+`tools/free_disk_space.py` ([../tools/free-disk-space.md](../tools/free-disk-space.md)),
+one step type each so each has its own icon.
+
+- **Who runs them.** Not the server and not the phones: the server engine and
+  both phone engines fail such a step with its `refusal` text, and
+  `POST /<id>/run` answers `runs_on_desktop`. **Run workflow** in the browser
+  (`wfRunOnDesktop`) connects to the first linked desktop through
+  `desktopControlHub()` ([desktop-agents-web.md](desktop-agents-web.md)), then
+  for each step in graph order sends `diag.prepare` and `diag.run` with action
+  `freeDiskSpace` and waits for the desktop's answer (up to 20 minutes a step).
+  Then it posts the per-step report to `/<id>/record`, which checks every node
+  id, status and duration (`workflow_desktop.clean_report`) and stores it as a
+  `desktop` run.
+- **Rules.** A workflow with a desktop step must start from Manual run and may
+  hold only desktop steps besides No operation and notes (`desktop_needs_manual`,
+  `desktop_steps_only`): schedules and webhooks have no browser to drive them,
+  and server steps cannot run in the same pass.
+- **Preinstalled.** Listing workflows (`_list`) adds **Free disk space** to an
+  account that has never had it: Manual run and the six steps in a row, saved
+  like a workflow the user built. Its id is derived from the account
+  (`seed_id`). Deleting it keeps an ownerless, empty row under that id so it
+  is not added again, and needs no new table.
+- **The progress rail.** Under the canvas of a workflow with desktop steps,
+  `wfRenderRail` draws a bar whose full width is the longest recorded run. A
+  thin line marks how long each other run took, with the time under it. While a
+  run goes, the bar fills in the accent colour and the running step's icon
+  slides along it with the elapsed time, redrawn every 250 ms. Each finished
+  step's icon stays where that step ended, ringed in green or red. A selected
+  past run places its step icons at their cumulative times.
 
 ## Limits
 

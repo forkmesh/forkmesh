@@ -496,7 +496,8 @@ export function createDesktopConnection({
       entry.resolve(message.result && typeof message.result === "object" ? message.result : {});
     } else {
       const code = String(message.error || "failed");
-      entry.reject(new DesktopControlError(code === "unsupported" ? "unsupported_method" : code));
+      const text = typeof message.message === "string" ? message.message.trim() : "";
+      entry.reject(new DesktopControlError(code === "unsupported" ? "unsupported_method" : code, code === "unsupported" ? "" : text));
     }
   }
 

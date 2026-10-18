@@ -65,7 +65,7 @@ def test_every_valid_repository_action_keeps_its_meaning_and_comments():
 
 
 def test_simple_actions_round_trip_byte_for_byte():
-    for name in ("deploy.yml", "release.yml", "deploy-nodes.yml", "free-disk-space.yml"):
+    for name in ("deploy.yml", "release.yml", "deploy-nodes.yml"):
         path = ".forkmesh/" + name
         if (PROJECT / path).exists():
             text, out, _ = _round_trip(path)
@@ -118,9 +118,12 @@ def test_action_graph_order_follows_connections():
 
 
 def test_sandbox_off_round_trips_and_needs_manual_runs_only():
-    path = ".forkmesh/free-disk-space.yml"
-    text = (PROJECT / path).read_text(encoding="utf-8")
+    path = ".forkmesh/host-step.yml"
+    text = ("name: Host step\non: [workflow_dispatch]\nsandbox: false\nfetch-depth: 1\n"
+            "jobs:\n  host:\n    steps:\n      - name: Measure the disk\n        run: |\n"
+            "          df -h\n")
     document, _ = files.parse_file(path, text)
+    assert files.render_file(document)[0] == text
     trigger = document["nodes"][0]
     assert trigger["params"]["sandbox"] == "false"
     assert trigger["params"]["events"] == ["workflow_dispatch"]

@@ -138,6 +138,7 @@ LAZY_MODULES = {
     "challenges_runtime.py",
     "workflows.py",
     "workflow_actions.py",
+    "workflow_desktop.py",
     "workflow_script.py",
     "workflow_integrations.py",
     "workflows_runtime.py",

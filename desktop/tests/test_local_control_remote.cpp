@@ -443,6 +443,47 @@ static void testDiagnostics()
               .isEmpty(),
           "bad session refused");
     check(diag::subjectFor(QStringLiteral("kill"), {}).isEmpty(), "unknown diag action");
+    check(diag::mutatingActions().contains(QStringLiteral("freeDiskSpace")),
+          "disk cleanup needs a confirmation token");
+    check(diag::subjectFor(QStringLiteral("freeDiskSpace"), {{QStringLiteral("step"), QStringLiteral("agents")}}) ==
+              QStringLiteral("agents"),
+          "disk cleanup step subject");
+    {
+        QString why;
+        check(diag::subjectFor(QStringLiteral("freeDiskSpace"),
+                               {{QStringLiteral("step"), QStringLiteral("rm -rf /")}}, &why)
+                      .isEmpty() &&
+                  why == QStringLiteral("bad_step"),
+              "unknown disk cleanup step refused");
+    }
+    check(diag::actionSummary(QStringLiteral("freeDiskSpace"), QStringLiteral("caches"), {})
+              .contains(QStringLiteral("pip and npm caches")),
+          "disk cleanup summary names the step");
+    check(diag::freeDiskSpaceArguments(QStringLiteral("/home/u/src"), QStringLiteral("tests")) ==
+              QStringList{QStringLiteral("-u"), QStringLiteral("/home/u/src/tools/free_disk_space.py"),
+                          QStringLiteral("--execute"), QStringLiteral("--step"),
+                          QStringLiteral("tests"), QStringLiteral("--repo"),
+                          QStringLiteral("/home/u/src"), QStringLiteral("--json")},
+          "disk cleanup runs one step of the checkout's tool");
+    {
+        const QJsonObject reply = diag::freeDiskSpaceReply(
+            QStringLiteral("agents"),
+            "del    1.0 GB  /tmp/fm123  (agent 123 finished)\n\nFreed 1.0 GB from 1 items.\n"
+            "::result::{\"freeBytes\": 5, \"freedBytes\": 1073741824, \"items\": 1, "
+            "\"step\": \"agents\", \"totalBytes\": 9}\n",
+            1500);
+        check(reply.value(QStringLiteral("freedBytes")).toDouble() == 1073741824.0 &&
+                  reply.value(QStringLiteral("freeBytes")).toDouble() == 5.0 &&
+                  reply.value(QStringLiteral("ms")).toDouble() == 1500.0,
+              "disk cleanup result parsed");
+        check(reply.value(QStringLiteral("lines")).toArray().size() == 2,
+              "disk cleanup lines kept without the result line or blanks");
+        QString why;
+        check(diag::freeDiskSpaceReply(QStringLiteral("tests"), "::result::{\"step\": \"agents\"}", 1, &why)
+                      .isEmpty() &&
+                  why == QStringLiteral("cleanup_failed"),
+              "a result for another step is refused");
+    }
 
     check(diag::processPid({{QStringLiteral("pid"), 4242}}) == 4242, "process pid read");
     check(diag::processPid({{QStringLiteral("pid"), 0}}) == 0 &&

@@ -343,12 +343,13 @@ The full description is in
 
 A sandboxed step runs as uid 65534 with a fresh home and `/tmp`, its own
 `/proc`, and no view of the user's files (`ActionRunner::sandboxArguments`).
-A workflow that has to work on this computer itself, such as
-`.forkmesh/free-disk-space.yml` ([../tools/free-disk-space.md](../tools/free-disk-space.md)),
-sets a top-level `sandbox: false` (`no`, `off` and `0` work too):
+A workflow that has to work on this computer itself sets a top-level
+`sandbox: false` (`no`, `off` and `0` work too). The disk cleanup that first
+used it moved to the Workflows page on 2026-10-18
+([../tools/free-disk-space.md](../tools/free-disk-space.md)).
 
 ```yaml
-name: Free disk space
+name: Host step
 on: [workflow_dispatch]
 sandbox: false
 ```

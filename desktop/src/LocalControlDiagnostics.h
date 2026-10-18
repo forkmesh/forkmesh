@@ -103,6 +103,16 @@ QString subjectFor(const QString &action, const QJsonObject &params,
 QString actionSummary(const QString &action, const QString &subject,
                       const QString &label);
 
+inline constexpr int kFreeDiskSpaceTimeoutMs = 20 * 60 * 1000;
+inline constexpr int kFreeDiskSpaceMaxLines = 200;
+inline constexpr int kFreeDiskSpaceMaxLineChars = 300;
+QStringList freeDiskSpaceSteps();
+QString freeDiskSpaceStepLabel(const QString &step);
+QString freeDiskSpaceScript();
+QStringList freeDiskSpaceArguments(const QString &checkout, const QString &step);
+QJsonObject freeDiskSpaceReply(const QString &step, const QByteArray &output, qint64 ms,
+                               QString *error = nullptr);
+
 struct BackupSnapshotFacts {
     qint64 takenAtMs = 0;
     qint64 bytes = 0;
