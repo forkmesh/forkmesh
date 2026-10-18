@@ -44,6 +44,12 @@ UPDATE_REQUEST_DIR="$VAR/update"
 UPDATE_UNIT="/etc/systemd/system/forkmesh-instance-update.service"
 UPDATE_PATH_UNIT="/etc/systemd/system/forkmesh-instance-update.path"
 PACKAGES=(ca-certificates curl git openssl python3 python3-venv python3-pip nodejs npm caddy sqlite3 iproute2 age)
+ACTIONS_PACKAGES=(git curl jq python3-venv nodejs npm build-essential unzip nftables)
+RUNNER_INSTALLER="www/public/install-runner.sh"
+RUNNER_ETC="/etc/forkmesh-runner"
+RUNNER_STATE="/var/lib/forkmesh-runner"
+RUNNER_JOB_USER="forkmesh-job"
+RUNNER_NAME="$NODE_NAME-runner"
 CERT_WAIT_SECONDS="${FORKMESH_CERT_WAIT_SECONDS:-300}"
 PROXY_WAIT_SECONDS="${FORKMESH_PROXY_WAIT_SECONDS:-60}"
 CLOUDFLARE_RANGES="173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32"
@@ -224,6 +230,10 @@ if values["mailProvider"] != "none" and not update and not values["mailApiKey"]:
 if values["mailProvider"] == "mailgun" and not values["mailgunDomain"]:
     sys.exit("Setting mailgunDomain is missing.")
 values["domainProvided"] = "1" if c.get("domainProvided", True) else "0"
+actions = c.get("actions", True)
+if not isinstance(actions, bool):
+    sys.exit("Setting actions must be true or false.")
+values["actions"] = "1" if actions else "0"
 values["logoType"] = values["logoData"] = ""
 logo = str(c.get("logo") or "").strip()
 if logo and not update:
@@ -280,6 +290,10 @@ if [ "$CONFIG_MODE" != "update" ]; then
   ADMIN_PASSWORD="$(printf '%s' "$RAW_CONFIG" | python3 -c 'import json,sys; print(json.loads(sys.stdin.read()).get("adminPassword") or "")')"
   OWNERS_JSON="$(printf '%s' "$RAW_CONFIG" | python3 -c 'import json,sys; print(json.dumps(json.loads(sys.stdin.read()).get("owners") or []))')"
 fi
+if [ "$CFG_actions" = "1" ]; then
+  PACKAGES+=("${ACTIONS_PACKAGES[@]}")
+fi
+RUNNER_UNIT="forkmesh-runner@$CFG_ownerName.service"
 DOMAIN="$CFG_domain"
 ORIGIN="https://$DOMAIN"
 REPO_URL="$ORIGIN/$CFG_ownerName/forkmesh"
@@ -468,6 +482,8 @@ capture_first_login_baseline() {
   fi
   id -u "$APP_USER" >/dev/null 2>&1 || : > "$CLEANUP_DIR/created-app-user"
   id -u "$NODE_USER" >/dev/null 2>&1 || : > "$CLEANUP_DIR/created-node-user"
+  id -u "$RUNNER_JOB_USER" >/dev/null 2>&1 || : > "$CLEANUP_DIR/created-job-user"
+  [ -e "$RUNNER_ETC" ] || [ -e "$RUNNER_STATE" ] || : > "$CLEANUP_DIR/created-runner-root"
 }
 
 ensure_swap() {
@@ -645,13 +661,18 @@ env_value() {
 
 write_settings() {
   begin configure "Saving your settings"
-  local data_key admin_pass seed public_key mail_key env_before login_deadline
+  local data_key admin_pass seed public_key mail_key env_before login_deadline bot_seed
   env_before="$(files_digest "$APP_ENV")"
   data_key="$(env_value DATA_KEY)"
   admin_pass="$(env_value ADMIN_PASS)"
   seed="$(env_value MIRROR_ROUTER_SIGNING_SEED)"
   public_key="$(env_value MIRROR_ROUTER_PUBLIC_KEY)"
   login_deadline="$(env_value INSTANCE_LOGIN_DEADLINE)"
+  bot_seed="$(env_value ACTIONS_BOT_SEED)"
+  [[ "$bot_seed" =~ ^[0-9a-f]{64}$ ]] || bot_seed=""
+  if [ -z "$bot_seed" ] && [ "$CFG_actions" = "1" ]; then
+    bot_seed="$(openssl rand -hex 32)"
+  fi
   [ -n "$data_key" ] || data_key="$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n')"
   [ -n "$admin_pass" ] || admin_pass="$(openssl rand -base64 24 | tr '+/' '-_' | tr -d '=\n')"
   if [ -z "$seed" ] || [ -z "$public_key" ]; then
@@ -707,7 +728,13 @@ print(encode(seed), encode(public))
     echo "HOSTED_GIT_CORE_NODES=$NODE_NAME"
     echo "HOSTED_IMPORT_HOSTS=github.com,gitlab.com,codeberg.org,app.forkmesh.com"
     echo "HOSTED_REPO_MAX_BYTES=1073741824"
-    echo "RUNNER_POOL_TARGET_NODES="
+    if [ "$CFG_actions" = "1" ]; then
+      echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"
+      echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"
+    else
+      echo "RUNNER_POOL_TARGET_NODES="
+    fi
+    if [ -n "$bot_seed" ]; then echo "ACTIONS_BOT_SEED=$bot_seed"; fi
     echo "MAIL_LOG_OWNER=$CFG_adminUsername"
     echo "ADMIN_ALERT_EMAILS=$CFG_adminEmail"
     echo "SECURITY_EMAIL=$CFG_adminEmail"
@@ -735,16 +762,17 @@ print(encode(seed), encode(public))
 import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
-        "sourceUrl", "sourceRef", "plugins"]
+        "sourceUrl", "sourceRef", "plugins", "actions"]
 values = dict(zip(keys, sys.argv[1:]))
 values["domainProvided"] = values["domainProvided"] == "1"
+values["actions"] = values["actions"] == "1"
 values["plugins"] = [p for p in values["plugins"].split(",") if p]
 values["installerVersion"] = sys.argv[-1]
 print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "$CFG_actions" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -1345,6 +1373,46 @@ start_git_node() {
   warn "$REPO_URL is still copying; it appears on its own when the copy finishes."
 }
 
+setup_actions_runner() {
+  if [ "$CFG_actions" != "1" ]; then
+    if systemctl is-enabled --quiet "$RUNNER_UNIT" 2>/dev/null; then
+      systemctl disable --now "$RUNNER_UNIT" >/dev/null 2>&1 || true
+      say "Actions are off: stopped the runner $RUNNER_NAME."
+    fi
+    return 0
+  fi
+  say "Installing the Actions runner $RUNNER_NAME next to the git node"
+  [ -f "$SRC/$RUNNER_INSTALLER" ] || { warn "this ForkMesh source has no $RUNNER_INSTALLER; Actions stay off"; return 0; }
+  if [ "$NEW_INSTANCE" = "1" ]; then
+    install -d -m 0700 "$CLEANUP_DIR"
+    printf '%s\n' "$CFG_ownerName" > "$CLEANUP_DIR/created-runner"
+  fi
+  if [ -f "$SRC/tools/forkmesh-actions.sh" ]; then
+    install -m 0755 "$SRC/tools/forkmesh-actions.sh" /usr/local/bin/forkmesh-actions
+  fi
+  local output runner_key result
+  if ! output="$(HOME=/root bash "$SRC/$RUNNER_INSTALLER" --preregistered \
+      --name "$RUNNER_NAME" --owner "$CFG_ownerName" --app "$ORIGIN" \
+      --providers none --job-user "$RUNNER_JOB_USER" --binary "$DAEMON" </dev/null 2>&1)"; then
+    printf '%s\n' "$output" | tail -n 15 | lines
+    warn "the Actions runner did not install; workflows wait until it does (run --update to retry)"
+    return 0
+  fi
+  runner_key="$(printf '%s\n' "$output" | sed -n 's/^FM_RUNNER_PUBLIC_KEY=//p' | tail -n 1)"
+  if ! [[ "$runner_key" =~ ^[A-Za-z0-9_-]{43}$ ]]; then
+    warn "the Actions runner has no public key; workflows wait until it does"
+    return 0
+  fi
+  if ! result="$(cd "$SRC/app/host" && host_cli instance-runner --name "$RUNNER_NAME" \
+      --public-key "$runner_key" --owner "$CFG_ownerName" 2>&1)"; then
+    printf '%s\n' "$result" | tail -n 5 | lines
+    warn "could not register the Actions runner $RUNNER_NAME with the app"
+    return 0
+  fi
+  systemctl restart "$RUNNER_UNIT" >/dev/null 2>&1 || true
+  say "The Actions runner $RUNNER_NAME runs workflows for $CFG_ownerName as $RUNNER_JOB_USER."
+}
+
 write_first_login_cleanup() {
   install -d -m 0700 "$CLEANUP_DIR"
   install -m 0700 "$SRC/tools/forkmesh-safe-rm.sh" "$CLEANUP_DIR/safe-rm.sh"
@@ -1362,13 +1430,33 @@ if [ -e "$MARKER" ]; then
   rm -f "$CLEANUP_DIR/caddyfile.before" "$CLEANUP_DIR/caddyfile.absent" \
     "$CLEANUP_DIR/new-instance" "$CLEANUP_DIR/created-app-user" \
     "$CLEANUP_DIR/created-node-user" "$CLEANUP_DIR/created-swap" \
-    "$CLEANUP_DIR/ufw-80" "$CLEANUP_DIR/ufw-443"
+    "$CLEANUP_DIR/ufw-80" "$CLEANUP_DIR/ufw-443" \
+    "$CLEANUP_DIR/created-runner" "$CLEANUP_DIR/created-runner-root" \
+    "$CLEANUP_DIR/created-job-user"
   systemctl disable --now forkmesh-instance-first-login-cleanup.timer >/dev/null 2>&1 || true
   systemctl daemon-reload
   systemctl restart forkmesh-instance.service
   exit 0
 fi
 systemctl disable --now forkmesh-instance.service forkmesh-mirror-node.service forkmesh-instance-update.path >/dev/null 2>&1 || true
+RUNNER_OWNER=""
+if [ -s "$CLEANUP_DIR/created-runner" ]; then
+  RUNNER_OWNER="$(head -n 1 "$CLEANUP_DIR/created-runner")"
+  [[ "$RUNNER_OWNER" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || RUNNER_OWNER=""
+fi
+if [ -n "$RUNNER_OWNER" ]; then
+  systemctl disable --now "forkmesh-runner@$RUNNER_OWNER.service" >/dev/null 2>&1 || true
+  fm_safe_rm_tree /etc/forkmesh-runner/accounts "/etc/forkmesh-runner/accounts/$RUNNER_OWNER"
+  fm_safe_rm_tree /var/lib/forkmesh-runner/accounts "/var/lib/forkmesh-runner/accounts/$RUNNER_OWNER"
+fi
+if [ -e "$CLEANUP_DIR/created-runner-root" ]; then
+  systemctl disable --now forkmesh-runner-firewall.service >/dev/null 2>&1 || true
+  nft delete table inet forkmesh_runner >/dev/null 2>&1 || true
+  fm_safe_rm_tree /etc /etc/forkmesh-runner
+  fm_safe_rm_tree /var/lib /var/lib/forkmesh-runner
+  rm -f /etc/systemd/system/forkmesh-runner@.service \
+    /etc/systemd/system/forkmesh-runner-firewall.service
+fi
 if [ -e "$CLEANUP_DIR/caddyfile.before" ]; then
   install -m 0644 "$CLEANUP_DIR/caddyfile.before" /etc/caddy/Caddyfile
 elif [ -e "$CLEANUP_DIR/caddyfile.absent" ]; then
@@ -1379,7 +1467,7 @@ fm_safe_rm_tree /etc /etc/forkmesh-instance /etc/forkmesh
 fm_safe_rm_tree /var/lib /var/lib/forkmesh-instance /var/lib/forkmesh /var/lib/forkmesh-instance-update
 fm_safe_rm_tree /usr/local/share/forkmesh /usr/local/share/forkmesh/tools
 fm_safe_rm_tree /usr/local/lib /usr/local/lib/forkmesh-instance-update
-rm -f /usr/local/bin/forkmesh-mirror-node \
+rm -f /usr/local/bin/forkmesh-mirror-node /usr/local/bin/forkmesh-actions \
   /etc/systemd/system/forkmesh-instance.service \
   /etc/systemd/system/forkmesh-mirror-node.service \
   /etc/systemd/system/forkmesh-instance-update.service \
@@ -1395,10 +1483,13 @@ if [ -e "$CLEANUP_DIR/created-swap" ]; then
 fi
 if [ -e "$CLEANUP_DIR/created-app-user" ]; then userdel "$APP_USER" 2>/dev/null || true; fi
 if [ -e "$CLEANUP_DIR/created-node-user" ]; then userdel "$NODE_USER" 2>/dev/null || true; fi
+if [ -e "$CLEANUP_DIR/created-job-user" ]; then userdel forkmesh-job 2>/dev/null || true; fi
 rm -f "$CLEANUP_DIR/caddyfile.before" "$CLEANUP_DIR/caddyfile.absent" \
   "$CLEANUP_DIR/new-instance" "$CLEANUP_DIR/created-app-user" \
   "$CLEANUP_DIR/created-node-user" "$CLEANUP_DIR/created-swap" \
-  "$CLEANUP_DIR/ufw-80" "$CLEANUP_DIR/ufw-443"
+  "$CLEANUP_DIR/ufw-80" "$CLEANUP_DIR/ufw-443" \
+  "$CLEANUP_DIR/created-runner" "$CLEANUP_DIR/created-runner-root" \
+  "$CLEANUP_DIR/created-job-user"
 systemctl daemon-reload
 systemctl reload caddy >/dev/null 2>&1 || systemctl restart caddy >/dev/null 2>&1 || true
 EOF
@@ -1461,6 +1552,7 @@ start_app
 setup_https
 if [ "$CONFIG_MODE" = "update" ]; then update_admin; else create_admin; fi
 start_git_node
+setup_actions_runner
 finish
 exit 0
 }

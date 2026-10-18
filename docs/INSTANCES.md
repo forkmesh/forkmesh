@@ -85,7 +85,7 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
 | `services` | `forkmesh-instance.service` (uvicorn on loopback, sandboxed) |
 | `https` | Caddyfile for the app and the Git gateway paths, HSTS; waits for DNS |
 | `admin` | installs the signed Git node daemon and runs `instance-bootstrap` |
-| `repo` | waits for `<owner>/forkmesh` to answer `info/refs` |
+| `repo` | waits for `<owner>/forkmesh` to answer `info/refs`, then installs the Actions runner (setting `actions`) |
 | `done` | prints the final URL |
 
 - The setup runs as a detached systemd service; the SSH session only follows
@@ -98,6 +98,24 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   published ranges.
 - `--update` pulls, rebuilds, migrates and restarts, keeping secrets, data
   and admin; local source changes are saved to a patch file first.
+- **Actions** (setting `actions`, a boolean, default `true`, kept in
+  `instance.json`): the `packages` step adds jq, build-essential, unzip and
+  nftables for jobs; `app.env` gets `RUNNER_POOL_TARGET_NODES=forkmesh`,
+  `ACTIONS_INSTANCE_RUNNER=forkmesh-runner` and a kept `ACTIONS_BOT_SEED`
+  (64 hex). After the git node is up, `install-runner.sh --preregistered`
+  from the instance's own source installs the runner `forkmesh-runner` with
+  the core's daemon binary under `/etc/forkmesh-runner/accounts/<owner>` and
+  `/var/lib/forkmesh-runner/accounts/<owner>` (unit
+  `forkmesh-runner@<owner>.service`, jobs as `forkmesh-job`), and
+  `python -m forkmesh_host instance-runner --name forkmesh-runner
+  --public-key <key> --owner <owner>` registers it. A runner that fails to
+  install or register only warns: the instance works without Actions and
+  `--update` retries. `--update` re-runs the runner installer (same key,
+  restarted on the new binary); `actions: false` stops it. An unclaimed new
+  instance removes the runner it installed (only its own account folders,
+  and the runner roots, firewall unit and `forkmesh-job` user when the
+  install created them). See
+  [server/instance-actions.md](server/instance-actions.md).
 - An admin can run the same update from the admin console (Platform →
   Update ForkMesh). The `services` step installs
   `forkmesh-instance-update.path` and `.service` and the helper
@@ -120,6 +138,16 @@ app does not redirect Git clients to its own origin.
 The bootstrap also switches Issues, Pull requests and Discussions off on the
 `<owner>/forkmesh` mirror; the owner can turn them back on in the
 repository's Settings tab ([app/repo-features.md](app/repo-features.md)).
+With `ACTIONS_BOT_SEED` in its environment (or the app env) it also creates
+the Actions bot `<owner>-actions` (a node account holding the Ed25519 key
+derived from the seed, organization role `maintainer`), and
+`python -m forkmesh_host instance-runner --name N --public-key K --owner O`
+registers the instance's own trusted pool runner; see
+[server/instance-actions.md](server/instance-actions.md). The Actions tab of
+a public repository lists its runs to everyone (workflow, event, branch,
+commit, actor, status, times); logs, live log tails and the Run, Cancel and
+Re-run controls stay with the owner and organization writers, and a private
+repository's runs stay hidden ("Public run summary" there).
 Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
 → Repository addresses ([app/server-update.md](app/server-update.md)).
 
