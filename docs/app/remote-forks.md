@@ -93,6 +93,18 @@ Pull requests have no dependency field. The `Depends on: #N` line is the same
 convention issues use (`issueDependencyNumbers`), but the pull request page
 shows it as part of the description, not as a relationship list.
 
+### Comparing with the other instance's branch, not this one's
+
+A fork whose own `main` has moved away from the other instance's `main` (an
+instance's platform repository carrying local changes) can't compare its
+branches with its own `main`: the diff is the whole divergence and the mirror
+times out (`mirror_unavailable`). The batch file may then be an object
+`{"compareBase": "<branch>", "pulls": [...]}`, or a row may carry its own
+`compareBase`. Rows are compared with that branch (a copy of the other
+instance's `main`) while the signed pull request still targets `base`. A row's
+own `compareBase` wins over the shared one, and either wins over a single
+`dependsOn`.
+
 ### Each stacked pull request carries only its own commits
 
 A row with exactly one `dependsOn` branch is compared with that branch, not

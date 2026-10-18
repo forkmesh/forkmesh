@@ -56,6 +56,7 @@
     }
     const list = Array.isArray(data) ? data : Array.isArray(data?.pulls) ? data.pulls : null;
     if (!list) return { entries: [], error: `${PULL_BATCH_FILE} must be a list of pull requests.` };
+    const sharedCompareBase = Array.isArray(data) ? "" : pullBatchBranchName(data?.compareBase);
     const entries = [];
     const seen = new Set();
     for (const item of list.slice(0, PULL_BATCH_MAX_ROWS)) {
@@ -69,6 +70,7 @@
         title: pullBatchCleanTitle(item.title),
         body: pullBatchCleanBody(item.body ?? item.description),
         dependsOn: pullBatchDependencyList(item.dependsOn ?? item.depends_on).filter((name) => name !== branch),
+        compareBase: pullBatchBranchName(item.compareBase) || sharedCompareBase,
       });
     }
     return { entries, error: "" };
@@ -263,6 +265,7 @@
   }
 
   function pullBatchCompareBase(row) {
+    if (row?.compareBase) return row.compareBase;
     const branches = Array.isArray(row?.dependsOn)
       ? row.dependsOn.filter((dependency) => !String(dependency).startsWith("#"))
       : [];
