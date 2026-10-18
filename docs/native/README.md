@@ -190,6 +190,12 @@ emails a tap-to-install link ([MAC_BUILD.md](MAC_BUILD.md)). Details in
 - The **Phone Security** package (`phone-security`) is the phones' checkup,
   the counterpart of the desktop's Security package; checks, rules and code
   are in [../marketplace/phone-security.md](../marketplace/phone-security.md).
+- The **Router** package (`openwrt`) manages an OpenWrt router on the phone's
+  Wi-Fi (route `openWrtRouter`, web path `/dashboard/openwrt`). Logic is in
+  `FMPackages/OpenWrt*.swift` and core `openwrt/`; screens in
+  `ForkMesh/Features/Router/` and `feature/openwrt/`. How it reaches the
+  router past ATS and Android's cleartext policy is in
+  [../marketplace/openwrt.md](../marketplace/openwrt.md#phones).
 
 ## Traps
 

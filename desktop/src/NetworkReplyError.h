@@ -227,6 +227,19 @@ inline bool networkReplyTransportFailureIsExpected(const QNetworkReply *reply)
     return !code.isValid() || code.toInt() <= 0;
 }
 
+inline constexpr QNetworkRequest::Attribute kPrivatePayloadAttribute =
+    static_cast<QNetworkRequest::Attribute>(QNetworkRequest::User + 7);
+
+inline void markPrivatePayload(QNetworkRequest &request)
+{
+    request.setAttribute(kPrivatePayloadAttribute, true);
+}
+
+inline bool networkRequestPayloadIsPrivate(const QNetworkRequest &request)
+{
+    return request.attribute(kPrivatePayloadAttribute).toBool();
+}
+
 inline bool networkLogQueryKeyIsSensitive(const QString &key)
 {
     QString normalized = key.trimmed().toLower();
