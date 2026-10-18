@@ -178,6 +178,32 @@ public enum ShellBarWidth: String, CaseIterable, Codable, Sendable {
     }
 }
 
+public enum ShellBarRows: String, CaseIterable, Codable, Sendable {
+    case single
+    case double
+
+    public var title: String {
+        switch self {
+        case .single: return "Single"
+        case .double: return "Double"
+        }
+    }
+
+    public var symbol: String {
+        switch self {
+        case .single: return "rectangle"
+        case .double: return "rectangle.split.1x2"
+        }
+    }
+
+    public var count: Int {
+        switch self {
+        case .single: return 1
+        case .double: return 2
+        }
+    }
+}
+
 public struct ShellBarMetrics: Equatable, Sendable {
     public let slot: Double
     public let height: Double
@@ -185,14 +211,23 @@ public struct ShellBarMetrics: Equatable, Sendable {
     public let padding: Double
     public let width: Double
     public let scrolls: Bool
+    public let rows: Int
+    public let columns: Int
+    public let rowGap: Double
 
-    public init(slot: Double, height: Double, gap: Double, padding: Double, width: Double, scrolls: Bool) {
+    public init(
+        slot: Double, height: Double, gap: Double, padding: Double, width: Double, scrolls: Bool, rows: Int = 1,
+        columns: Int = 1, rowGap: Double = 0
+    ) {
         self.slot = slot
         self.height = height
         self.gap = gap
         self.padding = padding
         self.width = width
         self.scrolls = scrolls
+        self.rows = rows
+        self.columns = columns
+        self.rowGap = rowGap
     }
 }
 
@@ -216,12 +251,13 @@ public struct ShellBarStyle: Equatable, Codable, Sendable {
     public var showActivity: Bool = true
     public var highlightFrequent: Bool = false
     public var marks: ShellBarMarks = .home
+    public var rows: ShellBarRows = .single
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
         case shape, fill, icons, size, labels, selection, width, corner, spacing, limit, showCounts, showActivity
-        case highlightFrequent, marks
+        case highlightFrequent, marks, rows
     }
 
     public init(from decoder: Decoder) throws {
@@ -242,6 +278,7 @@ public struct ShellBarStyle: Equatable, Codable, Sendable {
         highlightFrequent =
             (try? values.decodeIfPresent(Bool.self, forKey: .highlightFrequent)) ?? base.highlightFrequent
         marks = (try? values.decodeIfPresent(ShellBarMarks.self, forKey: .marks)) ?? base.marks
+        rows = (try? values.decodeIfPresent(ShellBarRows.self, forKey: .rows)) ?? base.rows
     }
 
     public static func unit(_ value: Double) -> Double {
@@ -280,6 +317,19 @@ public struct ShellBarStyle: Equatable, Codable, Sendable {
 
     public var isDefault: Bool { self == ShellBarStyle() }
 
+    public var capacity: Int { limit * rows.count }
+
+    public func columns(_ count: Int) -> Int {
+        let lines: Int = rows.count
+        return max(1, (max(1, count) + lines - 1) / lines)
+    }
+
+    public func rowSplit<Element>(_ elements: [Element]) -> [[Element]] {
+        guard rows == .double, elements.count > 1 else { return [elements] }
+        let across: Int = columns(elements.count)
+        return [Array(elements.prefix(across)), Array(elements.dropFirst(across))]
+    }
+
     public var gap: Double {
         shape.separate ? 4 + 12 * spacing : 2 + 10 * spacing
     }
@@ -307,8 +357,11 @@ public struct ShellBarStyle: Equatable, Codable, Sendable {
     }
 
     public func metrics(available: Double, count: Int, cell: Double, height base: Double) -> ShellBarMetrics {
-        let n: Double = Double(max(1, count))
+        let lines: Int = count > 1 ? rows.count : 1
+        let across: Int = columns(count)
+        let n: Double = Double(across)
         let pad: Double = ShellBarStyle.padding
+        let rowGap: Double = self.gap
         var gap: Double = self.gap
         let height: Double = cellHeight(base)
         let room: Double = max(0, available - 2 * pad - gap * (n - 1)) / n
@@ -323,13 +376,14 @@ public struct ShellBarStyle: Equatable, Codable, Sendable {
             side = height
         }
         var content: Double = 2 * pad + n * slot + gap * (n - 1)
-        if available > 0, width == .full, shape.separate, count > 1, content < available {
+        if available > 0, width == .full, shape.separate, across > 1, content < available {
             gap = (available - 2 * pad - n * slot) / (n - 1)
             content = available
         }
         let shown: Double = available > 0 ? (width == .full ? available : min(available, content)) : content
         return ShellBarMetrics(
             slot: slot.rounded(.down), height: side.rounded(.down), gap: gap, padding: pad, width: shown,
-            scrolls: available > 0 && content > available + 0.5)
+            scrolls: available > 0 && content > available + 0.5, rows: lines, columns: across,
+            rowGap: lines > 1 ? rowGap : 0)
     }
 }

@@ -58,8 +58,9 @@ sidebar), the **You hub** (the avatar, §4) and a More tab (Home replaces it).
 pages that load in place.
 
 **Bottom bar** (`ShellBottomBar`). One Liquid Glass bar at the screen's
-bottom edge holding up to `ShellBarStyle.limit` slots (3 to 8, default 6; a
-folder is one slot); Home is always one of them (`ShellBarPrefs.keep`).
+bottom edge holding up to `ShellBarStyle.capacity` slots: `limit` (3 to 8,
+default 6; a folder is one slot) per row, times one or two rows. Home is always
+one of them (`ShellBarPrefs.keep`).
 
 - Every pick runs through `ShellBottomBar.run`, which records the use and acts
   with animations disabled, so pages appear in place.
@@ -83,8 +84,16 @@ folder is one slot); Home is always one of them (`ShellBarPrefs.keep`).
   `ShellBarSettingsSheet`): shape (capsule, panel, squares, circles, icons
   only), background (glass, clear, tinted, solid), corners, spacing, width,
   icon style and size, labels, selected-icon mark, slot count, counts,
-  activity, badge look (`ShellBarMarks`) and frequent-use glow. The default
-  writes no key.
+  activity, badge look (`ShellBarMarks`), frequent-use glow and height. The
+  default writes no key.
+- **Height** (`ShellBarStyle.rows`, `ShellBarRows`). `single` (default) is one
+  row. `double` makes the bar twice as tall: the slots fill two rows, the first
+  row taking the extra one when the count is odd (`rowSplit`), so it holds twice
+  the slot count without scrolling. Both rows scroll sideways together. Rows
+  sit `gap` apart; a full-width squares or circles bar spreads each row across
+  the bar. A double capsule turns into a rounded rectangle with a one-row
+  capsule's corner radius, and only the four corner slots take the outer
+  radius, so the glass does not clip the icons. One slot keeps a single row.
 - **Badge look** (`ShellBarStyle.marks`). `home` (default) draws bar badges
   and activity exactly as `ShellHomeIcon` does, so the bar matches the grid
   above it: solid accent `ShellHomeCountMark` pills anchored inside the icon's

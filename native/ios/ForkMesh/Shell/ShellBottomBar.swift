@@ -198,7 +198,7 @@ final class ShellBarPrefs {
         next.save(store)
     }
 
-    private var limit: Int { barStyle.limit }
+    private var limit: Int { barStyle.capacity }
 
     func styleHome(_ edit: (inout ShellHomeStyle) -> Void) {
         var next: ShellHomeStyle = home
@@ -504,7 +504,7 @@ struct ShellBottomBar: View {
         let entries: [ShellBarEntry] = shown
         let metrics: ShellBarMetrics = style.metrics(
             available: Double(available), count: entries.count, cell: Double(cellWidth), height: Double(cellHeight))
-        let barShape: AnyShape = ShellBarShapes.bar(style, height: CGFloat(metrics.height))
+        let barShape: AnyShape = ShellBarShapes.bar(style, height: CGFloat(metrics.height), rows: metrics.rows)
         return container {
             VStack(spacing: 0) {
                 carousel(entries, metrics: metrics)
@@ -582,13 +582,21 @@ struct ShellBottomBar: View {
         let warmth: [String: Double] = heat
         return ScrollViewReader { (proxy: ScrollViewProxy) in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: CGFloat(metrics.gap)) {
-                    ForEach(entries) { (entry: ShellBarEntry) in
-                        slot(
-                            entry, metrics: metrics, first: entry.id == entries.first?.id,
-                            last: entry.id == entries.last?.id, heat: warmth
-                        )
-                        .id(entry.id)
+                let lines: [[ShellBarEntry]] = style.rowSplit(entries)
+                VStack(alignment: .leading, spacing: CGFloat(metrics.rowGap)) {
+                    ForEach(Array(lines.enumerated()), id: \.offset) {
+                        (line: (offset: Int, element: [ShellBarEntry])) in
+                        HStack(spacing: CGFloat(metrics.gap)) {
+                            ForEach(line.element) { (entry: ShellBarEntry) in
+                                slot(
+                                    entry, metrics: metrics, first: entry.id == line.element.first?.id,
+                                    last: entry.id == line.element.last?.id && line.element.count == metrics.columns,
+                                    top: line.offset == 0,
+                                    bottom: line.offset == lines.count - 1, heat: warmth
+                                )
+                                .id(entry.id)
+                            }
+                        }
                     }
                 }
                 .padding(CGFloat(metrics.padding))
@@ -618,11 +626,12 @@ struct ShellBottomBar: View {
     }
 
     @ViewBuilder private func slot(
-        _ entry: ShellBarEntry, metrics: ShellBarMetrics, first: Bool, last: Bool, heat: [String: Double]
+        _ entry: ShellBarEntry, metrics: ShellBarMetrics, first: Bool, last: Bool, top: Bool, bottom: Bool,
+        heat: [String: Double]
     ) -> some View {
         let side: CGFloat = CGFloat(metrics.height)
         let width: CGFloat = CGFloat(metrics.slot)
-        let shape: AnyShape = ShellBarShapes.cell(style, side: side, first: first, last: last)
+        let shape: AnyShape = ShellBarShapes.cell(style, side: side, first: first, last: last, top: top, bottom: bottom)
         switch entry.slot {
         case let .item(item):
             cell(item, shape: shape, width: width, height: side, heat: heat[item.id] ?? 0)
