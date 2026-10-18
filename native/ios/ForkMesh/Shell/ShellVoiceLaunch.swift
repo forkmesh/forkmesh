@@ -78,7 +78,9 @@ final class ShellVoiceLaunch {
     private(set) var openedAt: Date = .distantPast
     private(set) var heardAt: Date?
     private(set) var sentAt: Date = .distantPast
+    private(set) var held: Bool = false
     @ObservationIgnored var orb: CGRect = .zero
+    @ObservationIgnored private var pressing: Bool = false
     @ObservationIgnored private var dictation: PromptDictation?
     @ObservationIgnored private var attempt: Int = 0
     @ObservationIgnored private var onSend: ((String) -> Void)?
@@ -92,7 +94,34 @@ final class ShellVoiceLaunch {
         return nil
     }
 
+    func prime() {
+        let recognizer: PromptDictation = dictation ?? PromptDictation()
+        recognizer.quick = true
+        dictation = recognizer
+        recognizer.prime()
+    }
+
+    func press() {
+        pressing = true
+    }
+
+    func letGo() {
+        pressing = false
+        guard held else { return }
+        held = false
+        guard phase == .listening else { return }
+        if heard.isEmpty && !DictationMeter.shared.voicing {
+            dictation?.keepListening()
+            return
+        }
+        dictation?.finishSpeaking()
+        phase = .sending
+        FmHaptics.impact(.rigid)
+    }
+
     func open(from frame: CGRect, onSend: @escaping (String) -> Void) {
+        let pressed: Bool = pressing
+        pressing = false
         guard phase == .closed else { return }
         attempt += 1
         let mine: Int = attempt
@@ -101,11 +130,14 @@ final class ShellVoiceLaunch {
         heardAt = nil
         openedAt = Date()
         self.onSend = onSend
+        held = pressed
         phase = .waking
         FmHaptics.impact(.medium)
-        let lead: Double = VoiceLaunchSounds.shared.play(.summon)
+        prime()
+        let chime: Double = VoiceLaunchSounds.shared.play(.summon)
+        let lead: Double = pressed ? ShellVoiceLaunch.shortestLead : min(max(chime, ShellVoiceLaunch.shortestLead), ShellVoiceLaunch.longestLead)
         Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(min(max(lead, ShellVoiceLaunch.shortestLead), ShellVoiceLaunch.longestLead)))
+            try? await Task.sleep(for: .seconds(lead))
             guard let self = self, self.attempt == mine, self.phase == .waking else { return }
             self.listen(mine)
         }
@@ -120,6 +152,7 @@ final class ShellVoiceLaunch {
         guard isOpen, phase != .leaving, phase != .sent, phase != .sending else { return }
         let wasHearing: Bool = phase == .listening
         attempt += 1
+        held = false
         if wasHearing {
             dictation?.stop()
         }
@@ -138,8 +171,9 @@ final class ShellVoiceLaunch {
     }
 
     func dismiss() {
-        let wasHearing: Bool = phase == .listening
+        let wasHearing: Bool = dictation?.listening == true
         attempt += 1
+        held = false
         if wasHearing {
             dictation?.stop()
         }
@@ -149,6 +183,8 @@ final class ShellVoiceLaunch {
     private func listen(_ mine: Int) {
         let recognizer: PromptDictation = dictation ?? PromptDictation()
         recognizer.pause = ShellVoiceLaunch.pause
+        recognizer.quick = true
+        recognizer.holds = held
         dictation = recognizer
         phase = .listening
         FmHaptics.impact(.soft)
@@ -156,7 +192,7 @@ final class ShellVoiceLaunch {
         Task { @MainActor in
             _ = await recognizer.start(
                 onWords: { [weak self] (spoken: String) in
-                    guard let self = self, self.attempt == mine, self.phase == .listening else { return }
+                    guard let self = self, self.attempt == mine, self.phase == .listening || self.phase == .sending else { return }
                     if spoken != self.words {
                         self.words = spoken
                         self.heardAt = Date()
@@ -168,14 +204,17 @@ final class ShellVoiceLaunch {
     }
 
     private func ended(_ mine: Int) {
-        guard attempt == mine, phase == .listening else { return }
+        guard attempt == mine, phase == .listening || phase == .sending else { return }
+        held = false
         let text: String = heard
         guard !text.isEmpty else {
             miss("I didn't hear anything. Hold the button and try again.", mine, closes: true)
             return
         }
-        phase = .sending
-        FmHaptics.impact(.rigid)
+        if phase == .listening {
+            phase = .sending
+            FmHaptics.impact(.rigid)
+        }
         onSend?(text)
     }
 
@@ -322,7 +361,7 @@ private struct ShellVoiceStage: View {
     private func orb(diameter: CGFloat) -> some View {
         ZStack {
             ShellVoiceCorona(
-                meter: meter, accent: accent, diameter: diameter, hearing: hearing, quietSince: voice.heardAt,
+                meter: meter, accent: accent, diameter: diameter, hearing: hearing, quietSince: voice.held ? nil : voice.heardAt,
                 waiting: phase == .sending, still: reduceMotion)
                 .frame(width: diameter * 2, height: diameter * 2)
                 .opacity(phase == .waking ? 0.35 : 1)
@@ -398,6 +437,7 @@ private struct ShellVoiceStage: View {
     @ViewBuilder private var hint: some View {
         let line: String? = {
             switch phase {
+            case .listening where voice.held: return voice.heard.isEmpty ? "Say what the agent should do · let go to send" : "Let go to send"
             case .listening: return voice.heard.isEmpty ? "Say what the agent should do" : "Pause to send · tap the orb to send now"
             case .sending: return "Starting your agent…"
             case .sent: return "On its way"

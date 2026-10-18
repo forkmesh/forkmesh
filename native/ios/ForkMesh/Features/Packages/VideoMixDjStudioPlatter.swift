@@ -106,24 +106,13 @@ struct DjRecord: View {
     let d: CGFloat
 
     var body: some View {
-        let r = d * 0.82
         ZStack {
-            DjVinyl(d: r).equatable()
-            TimelineView(.animation(paused: !deck.moving)) { _ in
-                let angle = Angle.degrees(DjStudio.turnDegrees(deck.turned()))
-                ZStack {
-                    if let artwork = deck.artwork {
-                        Image(uiImage: artwork)
-                            .resizable()
-                            .interpolation(.medium)
-                            .frame(width: r, height: r)
-                            .modifier(DjGainOpacity(model: model, side: deck.side))
-                            .rotationEffect(angle)
-                    }
-                    DjRimDots(d: d).equatable().rotationEffect(angle)
-                    DjLabel(d: d).equatable().rotationEffect(angle)
-                }
-            }
+            DjVinyl(d: d * 0.82).equatable()
+            DjSpinner(
+                deck: deck, d: d, artwork: deck.artwork, gain: DjStudio.gain(deck.side, crossfader: model.crossfader),
+                moving: deck.moving, scratching: deck.scratching, rate: deck.effectiveRate)
+                .frame(width: d, height: d)
+                .allowsHitTesting(false)
         }
         .frame(width: d, height: d)
     }
@@ -145,15 +134,6 @@ struct DjDropRing: View {
             .animation(.easeOut(duration: 0.15), value: dragging)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-    }
-}
-
-struct DjGainOpacity: ViewModifier {
-    let model: DjStudioModel
-    let side: DjDeckSide
-
-    func body(content: Content) -> some View {
-        content.opacity(0.4 + 0.6 * DjStudio.gain(side, crossfader: model.crossfader))
     }
 }
 
@@ -194,43 +174,6 @@ struct DjVinyl: View, Equatable {
             }
         }
         .frame(width: d, height: d)
-    }
-}
-
-struct DjRimDots: View, Equatable {
-    let d: CGFloat
-
-    var body: some View {
-        Canvas { context, size in
-            let centre = CGPoint(x: size.width / 2, y: size.height / 2)
-            let radius = size.width * 0.435
-            let dot = max(1.2, size.width * 0.007)
-            var path = Path()
-            for index in 0..<110 {
-                let angle = Double(index) / 110 * 2 * Double.pi
-                let point = CGPoint(x: centre.x + CGFloat(cos(angle)) * radius, y: centre.y + CGFloat(sin(angle)) * radius)
-                path.addEllipse(in: CGRect(x: point.x - dot / 2, y: point.y - dot / 2, width: dot, height: dot))
-            }
-            context.fill(path, with: .color(.white.opacity(0.55)))
-        }
-        .frame(width: d, height: d)
-        .allowsHitTesting(false)
-    }
-}
-
-struct DjLabel: View, Equatable {
-    let d: CGFloat
-
-    var body: some View {
-        ZStack {
-            Circle().fill(Color.white.opacity(0.24)).frame(width: d * 0.27, height: d * 0.27)
-            Circle().fill(Color.white.opacity(0.35)).frame(width: d * 0.018, height: d * 0.018).offset(x: d * 0.09, y: -d * 0.03)
-            Circle()
-                .fill(RadialGradient(colors: [DjTheme.rgb(0xD9DCE0), DjTheme.rgb(0x6D7178)], center: .center, startRadius: 0, endRadius: d * 0.014))
-                .frame(width: d * 0.026, height: d * 0.026)
-        }
-        .frame(width: d, height: d)
-        .allowsHitTesting(false)
     }
 }
 
