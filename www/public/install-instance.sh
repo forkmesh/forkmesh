@@ -923,7 +923,10 @@ write_caddyfile() {
 $DOMAIN {
 $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 	encode zstd gzip
-	header Strict-Transport-Security "max-age=31536000"
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000"
+	}
 	@gateway path /v1/* /health /forkmesh-mirror.json /.well-known/forkmesh-mirror.json
 	@cloudflare remote_ip $CLOUDFLARE_RANGES
 	handle @gateway {
