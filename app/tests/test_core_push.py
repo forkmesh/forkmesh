@@ -175,7 +175,8 @@ def module():
     async def ensure_schema(_env):
         return None
 
-    def json_response(data, status=200, **_kwargs):
+    def json_response(data, status=200, extra_headers=None, **_kwargs):
+        state["headers"] = extra_headers
         return {"status": status, "data": data}
 
     class _RouteHandlers:
@@ -217,6 +218,7 @@ def module():
         "bounded_json_request": bounded_json_request,
         "ensure_schema": ensure_schema,
         "json_response": json_response,
+        "EXPECTED_DEGRADED_HEADERS": {"x-forkmesh-expected-degraded": "1"},
         "method_name": lambda request: request.method,
         "clean_string": lambda value, maximum=240: str(value or "")[:maximum],
         "safe_segment": lambda value: value if value and "/" not in value
@@ -474,6 +476,7 @@ def test_branch_deletes_refuse_non_owners_bad_signatures_and_protected_refs(
     unavailable = _delete(loaded, body)
     assert unavailable["status"] == 503
     assert unavailable["data"]["error"] == "cores_unavailable"
+    assert ctx["state"]["headers"] == {"x-forkmesh-expected-degraded": "1"}
 
 
 def _sign_trash(module, pubkey, owner, repo, ts=NOW):
@@ -546,6 +549,7 @@ def test_branch_trash_refuses_everyone_but_the_owners(module):
     unavailable = _trash(loaded, body)
     assert unavailable["status"] == 503
     assert unavailable["data"]["error"] == "cores_unavailable"
+    assert ctx["state"]["headers"] == {"x-forkmesh-expected-degraded": "1"}
     ctx["state"]["session"] = "mdkaifansari04"
     ctx["state"]["trash"] = {"entries": [], "truncated": False,
                              "cores": ["fmnext-n1"], "unanswered": []}
