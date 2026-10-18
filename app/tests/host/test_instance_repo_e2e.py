@@ -289,3 +289,93 @@ def test_a_bundle_fills_a_new_repository_and_bad_input_is_refused(
         "elsewhere", "--name", "cli-made", "--from", str(source),
         "--hosted-root", str(instance["hosted"]))
     assert code == 1 and not other_org["ok"]
+
+
+def test_fork_of_records_the_parent_like_the_web_fork(instance, source, web):
+    client, headers = web["client"], web["headers"]
+    code, parent = _repo_cli(instance, source)
+    assert code == 0, parent
+    code, result = _repo_cli(instance, source, "--fork-of", "acme/cli-made",
+                             name="platform-fork")
+    assert code == 0, result
+    assert result["forkedFrom"] == "acme/cli-made"
+    listed = client.get("/api/repositories?fresh=1", headers=headers).json()
+    record = next(r for r in listed["repositories"]
+                  if r.get("owner") == "alice" and r["name"] == "platform-fork")
+    assert record["forkedFrom"] == "acme/cli-made"
+    forks = client.get("/api/repo/acme/cli-made/forks", headers=headers)
+    assert forks.status_code == 200, forks.text
+    assert [f["name"] for f in forks.json()["forks"]] == ["platform-fork"]
+    code, again = _repo_cli(instance, source, "--fork-of", "acme/cli-made",
+                            name="platform-fork")
+    assert code == 0 and again["forkedFrom"] == "unchanged"
+    code, pushed = _repo_cli(instance, source, name="platform-fork")
+    assert code == 0, pushed
+    listed = client.get("/api/repositories?fresh=1", headers=headers).json()
+    record = next(r for r in listed["repositories"]
+                  if r.get("owner") == "alice" and r["name"] == "platform-fork")
+    assert record["forkedFrom"] == "acme/cli-made"
+
+
+def test_fork_of_is_validated(instance, source, web):
+    del web
+    env = instance["env"]
+    unrelated = instance["tmp"] / "unrelated"
+    unrelated.mkdir()
+    _git(unrelated, "init", "-q", "-b", "main", env=env)
+    (unrelated / "x.txt").write_text("x\n")
+    _git(unrelated, "add", ".", env=env)
+    _git(unrelated, "commit", "-q", "-m", "unrelated", env=env)
+    code, refused = _repo_cli(instance, unrelated, "--fork-of",
+                              "acme/cli-made", name="not-a-fork")
+    assert code == 1 and "shares no history" in refused["error"]
+    assert not _rows(instance, "SELECT 1 FROM org_repos WHERE repo=?",
+                     "not-a-fork")
+    code, missing = _repo_cli(instance, source, "--fork-of", "acme/nothing",
+                              name="orphan")
+    assert code == 1 and "no such repository" in missing["error"]
+    code, itself = _repo_cli(instance, source, "--fork-of", "acme/cli-made")
+    assert code == 1 and "itself" in itself["error"]
+
+
+def test_protection_and_actions_switches_are_set_and_enforced(
+        instance, source, web):
+    client, headers = web["client"], web["headers"]
+    code, result = _repo_cli(instance, source, "--protect-default-branch",
+                             "--actions", "off", name="guarded")
+    assert code == 0, result
+    assert result["settings"] == {"protectDefaultBranch": True,
+                                  "actions": False}
+    about = client.get("/api/repo/acme/guarded/about", headers=headers).json()
+    assert about["features"]["protectDefaultBranch"] is True
+    assert about["features"]["actions"] is False
+    commit = _git(source, "rev-parse", "main")
+    refused = client.post("/api/repo/acme/guarded/branches/ops", headers=headers,
+                          json={"op": "update", "branch": "main",
+                                "expectedOid": commit, "base": "feature"})
+    assert refused.status_code == 403, refused.text
+    assert refused.json()["error"] == "branch_protected"
+    merge = client.post("/api/repo/acme/guarded/branches/ops", headers=headers,
+                        json={"op": "merge", "branch": "feature",
+                              "base": "main", "expectedOid": commit,
+                              "baseOid": commit})
+    assert merge.status_code == 403, merge.text
+    bot = client.post("/api/repo/acme/guarded/branches/ops", headers=headers,
+                      json={"op": "create", "branch": "forkmesh/pulls",
+                            "startOid": commit})
+    assert bot.status_code in (400, 403), bot.text
+    allowed = client.post("/api/repo/acme/guarded/branches/ops",
+                          headers=headers,
+                          json={"op": "create", "branch": "topic",
+                                "startOid": commit, "queue": True})
+    assert allowed.status_code != 403, allowed.text
+    turned_off = client.post("/api/repo/acme/guarded/about", headers=headers,
+                             json={"features": {"protectDefaultBranch": False}})
+    assert turned_off.status_code == 200, turned_off.text
+    assert turned_off.json()["features"]["protectDefaultBranch"] is False
+    audits = _rows(instance, "SELECT action, outcome FROM sensitive_audit_log "
+                   "WHERE action='repository.protection_settings'")
+    assert len(audits) == 2
+    code, again = _repo_cli(instance, source, "--protect-default-branch",
+                            name="guarded")
+    assert code == 0 and again["settings"] == {"protectDefaultBranch": True}
