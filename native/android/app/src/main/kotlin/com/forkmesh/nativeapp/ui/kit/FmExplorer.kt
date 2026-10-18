@@ -393,7 +393,12 @@ fun FmToneButton(
         tone == FmTone.Neutral -> colors.bgOverlay
         else -> color.copy(alpha = if (colors.dark) .20f else .13f)
     }
-    val foreground = if (filled) (if (tone == FmTone.Warning) FmColors.darkBgBase else Color.White) else color
+    val foreground = when {
+        !filled -> color
+        tone == FmTone.Warning -> FmColors.darkBgBase
+        tone == FmTone.Accent -> colors.onAccent
+        else -> Color.White
+    }
     val shape = RoundedCornerShape(FmRadius.md)
     val button: @Composable () -> Unit = {
         Row(
@@ -512,6 +517,7 @@ fun FmDialogActions(
     val colors = Fm.colors
     val haptics = FmHaptics.current
     val tone = if (destructive) colors.danger else colors.accent
+    val label = if (destructive) Color.White else colors.onAccent
     Row(
         modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
@@ -540,14 +546,14 @@ fun FmDialogActions(
             shape = RoundedCornerShape(FmRadius.md),
             colors = ButtonDefaults.buttonColors(
                 containerColor = tone,
-                contentColor = Color.White,
+                contentColor = label,
                 disabledContainerColor = tone.copy(alpha = .45f),
-                disabledContentColor = Color(0xB3FFFFFF),
+                disabledContentColor = label.copy(alpha = .7f),
             ),
             contentPadding = PaddingValues(horizontal = FmSpace.x5),
         ) {
             if (busy) {
-                FmCircularProgressIndicator(Modifier.size(18.dp), color = Color.White, strokeWidth = 2.dp)
+                FmCircularProgressIndicator(Modifier.size(18.dp), color = label, strokeWidth = 2.dp)
             } else {
                 Text(confirmLabel)
             }

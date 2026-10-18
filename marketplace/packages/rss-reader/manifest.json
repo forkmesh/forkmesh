@@ -52,6 +52,11 @@
       "id": "files.opml.readwrite",
       "label": "Import and export your subscriptions as an OPML file you pick",
       "risk": "low"
+    },
+    {
+      "id": "chat.messages.share",
+      "label": "Send an article's title and link to a person or channel you pick in chat",
+      "risk": "low"
     }
   ],
   "dependencies": [],

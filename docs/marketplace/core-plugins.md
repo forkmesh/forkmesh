@@ -27,10 +27,15 @@ state on the ForkMesh account and follow every device.
   `design-system`, `status-page`, `logs`, `diagnostics`, `speech`, `glasses-alert`.
 - **Installed before 2026-10-14, account-synced:** `workflows` (its
   `workflows-*` packs nest under it).
+- **Installed before 2026-10-19, account-synced:** `files` (the file
+  explorer, [files.md](files.md)).
 - **No `installedBefore`, account-synced:** `timers`, `vault`, `calories`,
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
   only), `phone-security` (mobile only, [phone-security.md](phone-security.md)),
-  `eye-control` (mobile only, [eye-control.md](eye-control.md)).
+  `eye-control` (mobile only, [eye-control.md](eye-control.md)),
+  `strata`, `ember`, `synapse` (mobile and desktop since 1.1.0; desktop
+  installs from before are carried to the account,
+  [codebase-analysis.md](codebase-analysis.md#on-phones)).
 - **Per device:** `sign-in` (installed before 2026-10-11); `code-map` and
   `size-map`, the repository screen's Code map button and Size map tab
   (installed before 2026-10-17, desktop only,

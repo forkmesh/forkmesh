@@ -162,6 +162,20 @@ final class MarketTests: XCTestCase {
         XCTAssertNil(PackageRoutes.route(for: aquarium))
     }
 
+    @MainActor func testCaptureIsSwitchedPerDeviceAndStartsOn() {
+        let settings = SettingsService.create(prefs: InMemoryKeyValueStore(), secureStore: InMemorySecureStore())
+        XCTAssertEqual(PhonePackages.isOn(PhonePackages.capture, settings: settings), true)
+        XCTAssertTrue(settings.captureOn)
+        PhonePackages.set(PhonePackages.capture, on: false, settings: settings)
+        XCTAssertEqual(PhonePackages.isOn("capture", settings: settings), false)
+        XCTAssertFalse(settings.captureOn)
+        XCTAssertTrue(PhonePackages.deviceSwitched.contains("capture"))
+        let capture = MarketPackage(id: "capture", name: "Capture", desktop: true, bundled: true, defaultOn: true)
+        XCTAssertEqual(capture.phoneSurface, .native("capture"))
+        XCTAssertNil(PackageRoutes.route(for: capture))
+        XCTAssertFalse(PhonePackages.canRemove(capture))
+    }
+
     @MainActor func testAquariumReadsAsNotInstalledUntilTurnedOn() {
         let prefs = InMemoryKeyValueStore()
         let settings = SettingsService.create(prefs: prefs, secureStore: InMemorySecureStore())

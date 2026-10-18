@@ -118,6 +118,18 @@ public enum RSSReaderText {
 
     public static func lastCheckFailed(_ code: String) -> String { "Last check failed: \(feedError(code))" }
 
+    public static let shareMessageLimit = 4_000
+
+    public static func shareMessage(title: String, link: String, feed: String = "", comment: String = "") -> String {
+        let note = RSSText.strip(comment)
+        let headline = RSSText.clean(title, 300)
+        let source = RSSText.clean(feed, 120)
+        var heading = headline.isEmpty ? "Untitled" : headline
+        if !source.isEmpty && source != headline { heading += " \u{2014} \(source)" }
+        let lines = [note, heading, RSSURL.http(link)].filter { !$0.isEmpty }
+        return RSSText.prefix(lines.joined(separator: "\n"), shareMessageLimit)
+    }
+
     static func isCJK(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.value {
         case 0x1100...0x11FF, 0x2E80...0x2FDF, 0x3041...0x309F, 0x30A1...0x30FA, 0x3130...0x318F, 0x31F0...0x31FF,
@@ -219,8 +231,8 @@ public struct RSSPageStyle: Equatable, Sendable {
             out += "@media (prefers-color-scheme: dark){:root{\(variables(colors(dark: true)))}}"
         }
         out += """
-        html{-webkit-text-size-adjust:100%;}
-        body{margin:0;padding:16px 20px 120px;background:var(--bg);color:var(--fg);font-family:\(font.css);font-size:\(size)px;line-height:1.55;word-wrap:break-word;overflow-wrap:anywhere;}
+        html{-webkit-text-size-adjust:100%;overflow-x:hidden;}
+        body{margin:0;padding:16px 20px 120px;background:var(--bg);color:var(--fg);font-family:\(font.css);font-size:\(size)px;line-height:1.55;word-wrap:break-word;overflow-wrap:anywhere;overflow-x:clip;}
         a{color:var(--accent);text-decoration:none;}
         .byline{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
         .byline-text{display:flex;flex-direction:column;min-width:0;font-family:-apple-system,system-ui,sans-serif;font-size:15px;line-height:1.3;}
@@ -288,9 +300,33 @@ public enum RSSArticlePage {
         return out
     }
 
+    public static func sameLink(_ text: String) -> String {
+        var parts = RSSURL.split(RSSText.strip(RSSEntities.decode(RSSEntities.decode(text))))
+        parts.scheme = parts.scheme.lowercased()
+        if parts.scheme == "http" { parts.scheme = "https" }
+        let host = parts.host
+        var port = ""
+        if case .some(.some(let number)) = parts.port, number != 80, number != 443 { port = ":\(number)" }
+        var path = parts.path
+        while path.hasSuffix("/") { path.removeLast() }
+        let query = (parts.query ?? "").isEmpty ? "" : "?" + (parts.query ?? "")
+        let fragment = (parts.fragment ?? "").isEmpty ? "" : "#" + (parts.fragment ?? "")
+        return "\(parts.scheme)://\(host)\(port)\(path)\(query)\(fragment)"
+    }
+
+    public static func linksTo(_ html: String, _ target: String) -> Bool {
+        let wanted = sameLink(target)
+        for token in RSSHTMLTokenizer.tokens(html) {
+            guard case let .start(name, attributes, _) = token, name == "a",
+                  let href = attributes.first(where: { $0.name == "href" })?.value, !href.isEmpty else { continue }
+            if sameLink(href) == wanted { return true }
+        }
+        return false
+    }
+
     public static func html(
         article: RSSArticle, body: RSSArticleBody, feed: RSSFeed?, settings: RSSReaderSettings, reader: Bool,
-        timeZone: TimeZone = .current, locale: Locale = .current
+        icon: Data? = nil, timeZone: TimeZone = .current, locale: Locale = .current
     ) -> String {
         let style = RSSPageStyle(settings: settings)
         let link = RSSURL.http(article.link)
@@ -311,9 +347,10 @@ public enum RSSArticlePage {
             ? "<span class=\"feed\">\(feedLabel)</span>"
             : "<a class=\"feed\" href=\"\(RSSText.escape(site, quote: true))\">\(feedLabel)</a>"
         let author = article.author.isEmpty ? "" : "<span class=\"author\">\(RSSText.escape(article.author, quote: false))</span>"
-        let icon = RSSURL.upgraded(RSSURL.http(feed?.iconAddress ?? ""))
-        let tile = style.remoteImages && !icon.isEmpty
-            ? "<div class=\"tile\"><img src=\"\(RSSText.escape(icon, quote: true))\" alt=\"\" referrerpolicy=\"no-referrer\"></div>"
+        let inlined = RSSFeedIcons.inline(icon)
+        let iconSource = inlined.isEmpty ? RSSURL.upgraded(RSSURL.http(feed?.iconAddress ?? "")) : inlined
+        let tile = style.remoteImages && !iconSource.isEmpty
+            ? "<div class=\"tile\"><img src=\"\(RSSText.escape(iconSource, quote: true))\" alt=\"\" referrerpolicy=\"no-referrer\"></div>"
             : "<div class=\"tile\">\(RSSText.escape(RSSText.letter(feedName), quote: false))</div>"
         let titleText = RSSText.escape(article.title.isEmpty ? "Untitled" : article.title, quote: false)
         let title = link.isEmpty ? titleText : "<a href=\"\(RSSText.escape(link, quote: true))\">\(titleText)</a>"
@@ -322,7 +359,7 @@ public enum RSSArticlePage {
         let language = RSSLanguage.tag(article.language.isEmpty ? feed?.language ?? "" : article.language)
         let langAttribute = language.isEmpty ? "" : " lang=\"\(RSSText.escape(language, quote: true))\""
         let comments = RSSURL.http(body.commentsUrl)
-        let commentsMarkup = comments.isEmpty ? "" : "<p class=\"comments\"><a href=\"\(RSSText.escape(comments, quote: true))\">Comments</a></p>"
+        let commentsMarkup = comments.isEmpty || linksTo(content, comments) ? "" : "<p class=\"comments\"><a href=\"\(RSSText.escape(comments, quote: true))\">Comments</a></p>"
         return """
         <!DOCTYPE html><html\(langAttribute) dir="\(RSSLanguage.direction(language))"><head><meta charset="utf-8">\
         <meta http-equiv="Content-Security-Policy" content="\(style.policy)">\

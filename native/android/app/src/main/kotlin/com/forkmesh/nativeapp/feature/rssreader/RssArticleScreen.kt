@@ -1,6 +1,11 @@
 package com.forkmesh.nativeapp.feature.rssreader
 
+import android.annotation.SuppressLint
 import android.content.Context
+import android.view.MotionEvent
+import android.view.VelocityTracker
+import android.view.ViewConfiguration
+import android.view.animation.DecelerateInterpolator
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -12,7 +17,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,29 +29,39 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.forkmesh.nativeapp.feature.account.AccountFeature
+import com.forkmesh.nativeapp.feature.chat.ChatSendResult
+import com.forkmesh.nativeapp.feature.chat.ChatShare
+import com.forkmesh.nativeapp.feature.chat.composeChatShare
+import com.forkmesh.nativeapp.feature.chat.pickChatShareTarget
 import com.forkmesh.nativeapp.rssreader.RssArticlePage
+import com.forkmesh.nativeapp.rssreader.RssFormat
 import com.forkmesh.nativeapp.rssreader.RssPageStyle
 import com.forkmesh.nativeapp.rssreader.RssScope
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmTextButton
+import com.forkmesh.nativeapp.ui.kit.LocalFmMessenger
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmMotion
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 
 internal class RssArticleScreen(
     initialScope: RssScope,
@@ -79,6 +93,9 @@ internal class RssArticleScreen(
         val version by service.version.collectAsState()
         val context = LocalContext.current
         val coroutines = rememberCoroutineScope()
+        val messenger = LocalFmMessenger.current
+        val requireAccount = AccountFeature.rememberRequireAccount()
+        var shareMenu by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) { service.load() }
         LaunchedEffect(currentId) {
             service.load()
@@ -132,9 +149,31 @@ internal class RssArticleScreen(
                         )
                     }
                 }
-                FmIconButton("share", "Share", onPressed = article?.let { a ->
-                    { shareText(context, a.title, listOf(a.title, a.link).filter { it.isNotEmpty() }.joinToString("\n")) }
-                }, color = accent)
+                Box {
+                    FmIconButton("share", "Share", onPressed = article?.let { { shareMenu = true } }, color = accent)
+                    FmDropdownMenu(expanded = shareMenu, onDismissRequest = { shareMenu = false }) {
+                        FmDropdownMenuItem("Send in Chat", icon = "send_outlined", onClick = {
+                            shareMenu = false
+                            article?.let { a ->
+                                coroutines.launch {
+                                    val text = RssFormat.shareText(a)
+                                    val target = pickChatShareTarget(messenger, "Send Article to") ?: return@launch
+                                    val message = composeChatShare(messenger, target, text) ?: return@launch
+                                    when (val result = ChatShare.send(target, message)) {
+                                        ChatSendResult.Sent -> status.show("Sent to ${target.title}.")
+                                        ChatSendResult.Empty -> {}
+                                        is ChatSendResult.NeedsAccount -> requireAccount(result.action)
+                                        is ChatSendResult.Failed -> status.error(result.message)
+                                    }
+                                }
+                            }
+                        })
+                        FmDropdownMenuItem("Share to Other Apps", icon = "share", onClick = {
+                            shareMenu = false
+                            article?.let { a -> shareText(context, a.title, RssFormat.shareText(a)) }
+                        })
+                    }
+                }
             },
         ) {
             when {
@@ -177,9 +216,20 @@ internal class RssArticleScreen(
                             )
                         }
                         val background = Fm.colors.bgBase.toArgb()
-                        var swipeDistance by remember(id) { mutableStateOf(0f) }
+                        val canPage by rememberUpdatedState { direction: Int ->
+                            if (direction > 0) index >= 0 && index < order.size - 1 else index > 0
+                        }
+                        val pageTo by rememberUpdatedState { direction: Int ->
+                            if (direction > 0 && index >= 0 && index < order.size - 1) open(order[index + 1], 1)
+                            else if (direction < 0 && index > 0) open(order[index - 1], -1)
+                        }
                         AndroidView(
-                            factory = { ctx -> articleWebView(ctx) },
+                            factory = { ctx ->
+                                articleWebView(ctx).also { view ->
+                                    view.canPage = { canPage(it) }
+                                    view.onPage = { pageTo(it) }
+                                }
+                            },
                             update = { view ->
                                 view.settings.blockNetworkImage = !settings.loadRemoteImages
                                 view.setBackgroundColor(background)
@@ -189,21 +239,7 @@ internal class RssArticleScreen(
                                 }
                             },
                             onRelease = { it.destroy() },
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .pointerInput(order, index) {
-                                    detectHorizontalDragGestures(
-                                        onHorizontalDrag = { _, distance -> swipeDistance += distance },
-                                        onDragEnd = {
-                                            when {
-                                                swipeDistance <= -72 && index >= 0 && index < order.size - 1 -> open(order[index + 1], 1)
-                                                swipeDistance >= 72 && index > 0 -> open(order[index - 1], -1)
-                                            }
-                                            swipeDistance = 0f
-                                        },
-                                        onDragCancel = { swipeDistance = 0f },
-                                    )
-                                },
+                            modifier = Modifier.fillMaxSize(),
                         )
                     }
                 }
@@ -272,7 +308,130 @@ internal class RssArticleScreen(
     private fun hex(argb: Int): String = String.format("#%06X", argb and 0xFFFFFF)
 }
 
-private fun articleWebView(context: Context): WebView = WebView(context).apply {
+internal class RssArticleWebView(context: Context) : WebView(context) {
+    var canPage: (Int) -> Boolean = { false }
+    var onPage: (Int) -> Unit = {}
+    private val density = resources.displayMetrics.density
+    private val lockDistance = 4f * density
+    private val pageDistance = 72f * density
+    private val flingSpeed = 500f * density
+    private var downX = 0f
+    private var downY = 0f
+    private var downRawX = 0f
+    private var downRawY = 0f
+    private var axis = AXIS_NONE
+    private var velocity: VelocityTracker? = null
+
+    private fun track(event: MotionEvent) {
+        val raw = MotionEvent.obtain(event)
+        raw.setLocation(event.rawX, event.rawY)
+        velocity?.addMovement(raw)
+        raw.recycle()
+    }
+
+    private fun pass(event: MotionEvent): Boolean {
+        val locked = MotionEvent.obtain(event)
+        locked.setLocation(downX, event.y)
+        val handled = super.onTouchEvent(locked)
+        locked.recycle()
+        return handled
+    }
+
+    private fun cancelContent(event: MotionEvent) {
+        val cancel = MotionEvent.obtain(event)
+        cancel.action = MotionEvent.ACTION_CANCEL
+        cancel.setLocation(downX, downY)
+        super.onTouchEvent(cancel)
+        cancel.recycle()
+    }
+
+    private fun offset(dx: Float): Float = if (canPage(if (dx < 0) 1 else -1)) dx else dx * 0.25f
+
+    private fun settle() {
+        animate().translationX(0f).setDuration(180).setInterpolator(DecelerateInterpolator()).start()
+    }
+
+    private fun release(event: MotionEvent) {
+        track(event)
+        velocity?.computeCurrentVelocity(1000)
+        val speed = velocity?.xVelocity ?: 0f
+        val dx = event.rawX - downRawX
+        val direction = if (dx < 0) 1 else -1
+        val far = abs(dx) >= pageDistance || (abs(speed) >= flingSpeed && (speed < 0) == (dx < 0) && abs(dx) >= lockDistance * 3)
+        if (far && canPage(direction)) onPage(direction) else settle()
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                animate().cancel()
+                translationX = 0f
+                downX = event.x
+                downY = event.y
+                downRawX = event.rawX
+                downRawY = event.rawY
+                axis = AXIS_NONE
+                velocity?.recycle()
+                velocity = VelocityTracker.obtain()
+                track(event)
+                parent?.requestDisallowInterceptTouchEvent(true)
+                return pass(event)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                track(event)
+                val dx = event.rawX - downRawX
+                val dy = event.rawY - downRawY
+                if (axis == AXIS_FREE) return super.onTouchEvent(event)
+                if (axis == AXIS_NONE && event.eventTime - event.downTime >= ViewConfiguration.getLongPressTimeout()) {
+                    axis = AXIS_FREE
+                    return super.onTouchEvent(event)
+                }
+                if (axis == AXIS_NONE && (abs(dx) >= lockDistance || abs(dy) >= lockDistance)) {
+                    axis = if (abs(dx) > abs(dy)) AXIS_HORIZONTAL else AXIS_VERTICAL
+                    if (axis == AXIS_HORIZONTAL) cancelContent(event)
+                }
+                if (axis == AXIS_HORIZONTAL) {
+                    translationX = offset(dx)
+                    return true
+                }
+                return pass(event)
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                val was = axis
+                axis = AXIS_NONE
+                return when {
+                    was == AXIS_HORIZONTAL -> {
+                        if (event.actionMasked == MotionEvent.ACTION_UP) release(event) else settle()
+                        true
+                    }
+                    was == AXIS_FREE -> super.onTouchEvent(event)
+                    else -> pass(event)
+                }
+            }
+            else -> return when (axis) {
+                AXIS_HORIZONTAL -> true
+                AXIS_FREE -> super.onTouchEvent(event)
+                else -> pass(event)
+            }
+        }
+    }
+
+    override fun onDetachedFromWindow() {
+        velocity?.recycle()
+        velocity = null
+        super.onDetachedFromWindow()
+    }
+
+    private companion object {
+        const val AXIS_NONE = 0
+        const val AXIS_HORIZONTAL = 1
+        const val AXIS_VERTICAL = 2
+        const val AXIS_FREE = 3
+    }
+}
+
+private fun articleWebView(context: Context): RssArticleWebView = RssArticleWebView(context).apply {
     settings.javaScriptEnabled = false
     settings.javaScriptCanOpenWindowsAutomatically = false
     settings.allowFileAccess = false
@@ -283,7 +442,14 @@ private fun articleWebView(context: Context): WebView = WebView(context).apply {
     settings.mediaPlaybackRequiresUserGesture = true
     settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
     settings.cacheMode = WebSettings.LOAD_DEFAULT
+    settings.setSupportZoom(false)
+    settings.builtInZoomControls = false
+    settings.displayZoomControls = false
+    settings.useWideViewPort = false
+    settings.loadWithOverviewMode = false
     isVerticalScrollBarEnabled = true
+    isHorizontalScrollBarEnabled = false
+    isHorizontalFadingEdgeEnabled = false
     webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
             openInBrowser(view.context, request.url.toString())

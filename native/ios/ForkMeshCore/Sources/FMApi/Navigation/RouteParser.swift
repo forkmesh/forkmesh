@@ -260,7 +260,11 @@ public enum RouteParser {
         case "glasses-alert": return [.glassesAlert]
         case "phone-security": return [.phoneSecurity]
         case "eye-control": return [.eyeControl]
+        case "ember": return tail.isEmpty ? [.ember(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
+        case "strata": return tail.isEmpty ? [.strata(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
+        case "synapse": return tail.isEmpty ? [.synapse(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "openwrt": return tail.isEmpty ? [.openWrtRouter] : nil
+        case "files": return tail.isEmpty ? [.fileExplorer] : nil
         case "face-changer": return [.faceChanger]
         case "video-mix-dj-studio": return [.videoMixDjStudio]
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil

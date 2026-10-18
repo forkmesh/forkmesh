@@ -40,7 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.forkmesh.nativeapp.settings.AccentChoice
+import com.forkmesh.nativeapp.settings.AppTheme
+import com.forkmesh.nativeapp.settings.ThemeToken
 import com.forkmesh.nativeapp.ui.SoundCue
 import com.forkmesh.nativeapp.ui.kit.FmMessengerScope
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
@@ -119,10 +120,10 @@ object FmColors {
     val darkTextTertiary = Color(0x80F4F4F5)
     val darkTextDisabled = Color(0x4DF4F4F5)
 
-    val accent = Color(0xFF6161F2)
-    val accentSubtle = Color(0x1A6161F2)
-    val accentOnDark = Color(0xFF6C63FF)
-    val accentSubtleOnDark = Color(0x332F2A74)
+    val accent = Color(0xFF0066CC)
+    val accentSubtle = Color(0x1A0066CC)
+    val accentOnDark = Color(0xFF409CFF)
+    val accentSubtleOnDark = Color(0x33164A8C)
     val success = Color(0xFF0F7A3B)
     val successOnDark = Color(0xFF46E07F)
     val successBtn = textPrimary
@@ -204,6 +205,7 @@ data class FmPalette(
     val codeFunction: Color,
     val editorGutter: Color,
     val editorCurrentLine: Color,
+    val onAccent: Color = Color.White,
 ) {
     val activeUnderline: Color get() = if (dark) Color.White else textPrimary
 
@@ -214,7 +216,7 @@ data class FmPalette(
     val editorActiveLine: Color get() = editorCurrentLine
 }
 
-val LightPalette = FmPalette(
+private val LightBasePalette = FmPalette(
     dark = false,
     bgBase = FmColors.bgBase, bgRaised = FmColors.bgRaised, bgOverlay = FmColors.bgOverlay,
     bgElevated = FmColors.bgElevated,
@@ -229,7 +231,7 @@ val LightPalette = FmPalette(
     editorGutter = FmColors.bgOverlay, editorCurrentLine = FmColors.bgOverlay.copy(alpha = .72f),
 )
 
-val DarkPalette = FmPalette(
+private val DarkBasePalette = FmPalette(
     dark = true,
     bgBase = FmColors.darkBgBase, bgRaised = FmColors.darkBgRaised, bgOverlay = FmColors.darkBgOverlay,
     bgElevated = FmColors.darkBgElevated,
@@ -242,6 +244,34 @@ val DarkPalette = FmPalette(
     codeComment = FmColors.codeComment, codeNumber = FmColors.codeNumber, codeFunction = FmColors.codeFunction,
     editorGutter = FmColors.editorGutter, editorCurrentLine = FmColors.editorCurrentLine,
 )
+
+fun fmPaletteFor(theme: AppTheme, dark: Boolean): FmPalette {
+    val resolved = theme.resolve(dark)
+    fun color(token: ThemeToken) = Color(resolved[token])
+    return (if (dark) DarkBasePalette else LightBasePalette).copy(
+        bgBase = color(ThemeToken.bgBase),
+        bgRaised = color(ThemeToken.bgRaised),
+        bgOverlay = color(ThemeToken.bgOverlay),
+        bgElevated = color(ThemeToken.bgElevated),
+        textPrimary = color(ThemeToken.textPrimary),
+        textSecondary = color(ThemeToken.textSecondary),
+        textTertiary = color(ThemeToken.textTertiary),
+        textDisabled = Color(resolved.textDisabled),
+        accent = color(ThemeToken.accent),
+        accentSubtle = Color(resolved.accentSubtle),
+        onAccent = color(ThemeToken.onAccent),
+        success = color(ThemeToken.success),
+        danger = color(ThemeToken.danger),
+        warning = color(ThemeToken.warning),
+        border = color(ThemeToken.border),
+    )
+}
+
+val LightPalette = fmPaletteFor(AppTheme.standard, dark = false)
+
+val DarkPalette = fmPaletteFor(AppTheme.standard, dark = true)
+
+val LocalFmAppTheme = staticCompositionLocalOf { AppTheme.standard }
 
 val LocalFmPalette = staticCompositionLocalOf { LightPalette }
 
@@ -375,7 +405,7 @@ private fun fmColorScheme(p: FmPalette): ColorScheme {
         primary = p.textPrimary,
         onPrimary = if (p.dark) p.bgBase else Color.White,
         primaryContainer = p.accent,
-        onPrimaryContainer = Color.White,
+        onPrimaryContainer = p.onAccent,
         inversePrimary = FmColors.accentOnDark,
         secondary = p.accent,
         onSecondary = Color.Black,
@@ -437,15 +467,11 @@ private fun readReducedMotion(resolver: ContentResolver): Boolean =
 @Composable
 fun ForkMeshTheme(
     dark: Boolean = isSystemInDarkTheme(),
-    accent: AccentChoice? = null,
+    theme: AppTheme = LocalFmAppTheme.current,
     messenger: Boolean = true,
     content: @Composable () -> Unit,
 ) {
-    val palette = remember(dark, accent) {
-        val base = if (dark) DarkPalette else LightPalette
-        if (accent == null) base
-        else base.copy(accent = Color(accent.accent(dark)), accentSubtle = Color(accent.accentSubtle(dark)))
-    }
+    val palette = remember(dark, theme) { fmPaletteFor(theme, dark) }
     val reducedMotion = rememberReducedMotion()
     val textTheme = remember(palette) { fmTypography(palette.textPrimary, palette.textSecondary, palette.textTertiary) }
     val scheme = remember(palette) { fmColorScheme(palette) }
@@ -453,6 +479,7 @@ fun ForkMeshTheme(
         TextSelectionColors(handleColor = palette.accent, backgroundColor = palette.accent.copy(alpha = .28f))
     }
     CompositionLocalProvider(
+        LocalFmAppTheme provides theme,
         LocalFmPalette provides palette,
         LocalFmTextTheme provides textTheme,
         LocalFmReducedMotion provides reducedMotion,

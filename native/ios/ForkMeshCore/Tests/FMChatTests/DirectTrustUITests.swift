@@ -256,6 +256,8 @@ extension DirectMessagesTests {
         let conversation = service.conversations[0]
         hub.select(conversation)
         XCTAssertEqual(hub.conversationSubtitle, "Offline")
+        XCTAssertFalse(hub.conversationPeerOnline)
+        XCTAssertTrue(hub.conversationStatusLine.hasPrefix("Offline"))
         XCTAssertEqual(hub.directRows.first { $0.conversation == conversation }?.online, false)
 
         try await harness.sendProtected([
@@ -265,6 +267,9 @@ extension DirectMessagesTests {
         let online = await waitUntil { hub.conversationSubtitle == "Online" }
         XCTAssertTrue(online, "the DM names the account; any of its nodes on the relay makes it online")
         XCTAssertEqual(hub.peerPresence(conversation), .online)
+        XCTAssertTrue(hub.conversationPeerOnline)
+        XCTAssertFalse(hub.conversationStatusLine.contains("Online"))
+        XCTAssertTrue(hub.conversationDetailLine.hasPrefix("Online"))
         XCTAssertEqual(hub.directRows.first { $0.conversation == conversation }?.online, true)
         XCTAssertEqual(hub.conversationPeerGroup?.account, "pat")
         await service.closeAll()

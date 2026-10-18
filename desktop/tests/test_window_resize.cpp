@@ -9183,6 +9183,28 @@ void checkHomeGridPage(MainWindow &window)
               .arg(keys.join(QStringLiteral(", "))));
     check(board->visibleCount() == keys.size(),
           QStringLiteral("the board places every tile"));
+    {
+        const auto codeTile = [&window] {
+            for (const HomeGroup &group : window.testHomeGridGroups())
+                for (const HomeTile &tile : group.tiles)
+                    if (tile.key == QLatin1String("code"))
+                        return tile;
+            return HomeTile();
+        };
+        window.testSetRepoTabLoadedCounts(0, 3);
+        const HomeTile withPulls = codeTile();
+        check(withPulls.key == QLatin1String("code") && withPulls.badge == 3 &&
+                  withPulls.detail == QStringLiteral("3 open pulls"),
+              QStringLiteral("the repository's Home icon shows its open pull "
+                             "requests (%1, badge %2, \"%3\")")
+                  .arg(withPulls.key)
+                  .arg(withPulls.badge)
+                  .arg(withPulls.detail));
+        window.testSetRepoTabLoadedCounts(0, 0);
+        check(codeTile().badge == 0,
+              QStringLiteral("the repository's Home icon drops the count when "
+                             "no pull request is open"));
+    }
     check(!window.testHomeGridHeadline().isEmpty(),
           QStringLiteral("Home leads with a one-line summary"));
     check(!window.testHomeGridSearchShown(),

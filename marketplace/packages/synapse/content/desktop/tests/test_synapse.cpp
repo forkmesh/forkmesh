@@ -5,14 +5,22 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QDirIterator>
 #include <QLineF>
 #include <QElapsedTimer>
+#include <QFile>
 #include <QFileInfo>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QProcess>
 #include <QSet>
+#include <QTemporaryDir>
 #include <QThread>
 
 #include <cmath>
+#include <cstdio>
 
 using namespace forkmesh::synapse;
 using forkmesh::insight::FileInfo;
@@ -356,6 +364,190 @@ void testFeature()
     check(distinctColours(render(feature)) > 200, QStringLiteral("cycle view renders"));
 }
 
+bool runGit(const QString &dir, const QStringList &args)
+{
+    QProcess process;
+    process.setWorkingDirectory(dir);
+    process.start(QStringLiteral("git"), args);
+    return process.waitForFinished(60000) && process.exitCode() == 0;
+}
+
+QJsonArray vectorJson(const QVector3D &v)
+{
+    return QJsonArray{double(v.x()), double(v.y()), double(v.z())};
+}
+
+QJsonArray positionsJson(const QVector<QVector3D> &positions)
+{
+    QJsonArray out;
+    for (const QVector3D &p : positions)
+        out.append(vectorJson(p));
+    return out;
+}
+
+QJsonArray pathsJson(const Snapshot &snapshot, const QVector<int> &files)
+{
+    QJsonArray out;
+    for (int file : files)
+        out.append(snapshot.files.at(file).path);
+    return out;
+}
+
+QJsonObject depthsJson(const Snapshot &snapshot, const QHash<int, int> &depths)
+{
+    QJsonObject out;
+    for (auto it = depths.constBegin(); it != depths.constEnd(); ++it)
+        out.insert(snapshot.files.at(it.key()).path, it.value());
+    return out;
+}
+
+QJsonObject graphJson(const SnapshotPtr &snapshot, bool includeIsolated)
+{
+    const Snapshot &s = *snapshot;
+    const Graph graph = buildGraph(snapshot, includeIsolated);
+    const auto nodePath = [&](int node) { return s.files.at(graph.nodes.at(node).file).path; };
+    QJsonArray lobes;
+    for (const Lobe &lobe : graph.lobes) {
+        QJsonArray nodes;
+        for (int node : lobe.nodes)
+            nodes.append(nodePath(node));
+        lobes.append(QJsonObject{{QStringLiteral("name"), lobe.name},
+                                 {QStringLiteral("path"), lobe.path},
+                                 {QStringLiteral("layer"), lobe.layer},
+                                 {QStringLiteral("hemisphere"), lobe.hemisphere},
+                                 {QStringLiteral("anchor"), vectorJson(lobe.anchor)},
+                                 {QStringLiteral("nodes"), nodes}});
+    }
+    QJsonArray nodes;
+    for (const Node &node : graph.nodes)
+        nodes.append(QJsonObject{{QStringLiteral("path"), s.files.at(node.file).path},
+                                 {QStringLiteral("lobe"), node.lobe},
+                                 {QStringLiteral("hemisphere"), node.hemisphere},
+                                 {QStringLiteral("size"), double(node.size)},
+                                 {QStringLiteral("fanIn"), node.fanIn},
+                                 {QStringLiteral("fanOut"), node.fanOut},
+                                 {QStringLiteral("cycle"), node.cycle},
+                                 {QStringLiteral("seed"), double(node.seed)}});
+    QJsonArray edges;
+    for (const Edge &edge : graph.edges)
+        edges.append(QJsonObject{{QStringLiteral("from"), nodePath(edge.from)},
+                                 {QStringLiteral("to"), nodePath(edge.to)},
+                                 {QStringLiteral("cycle"), edge.cycle},
+                                 {QStringLiteral("seed"), double(edge.seed)}});
+    QJsonArray cycles;
+    for (const CycleInfo &info : graph.cycles) {
+        QJsonArray cycleEdges;
+        for (int e : info.edges)
+            cycleEdges.append(QJsonArray{nodePath(graph.edges.at(e).from), nodePath(graph.edges.at(e).to)});
+        cycles.append(QJsonObject{{QStringLiteral("index"), info.index},
+                                  {QStringLiteral("files"), pathsJson(s, info.files)},
+                                  {QStringLiteral("edges"), cycleEdges},
+                                  {QStringLiteral("path"), pathsJson(s, info.path)}});
+    }
+    QJsonArray layouts;
+    for (int iterations : {1, 10, 60, 300}) {
+        LayoutOptions options;
+        options.iterations = iterations;
+        const QVector<QVector3D> positions = runLayout(graph, options);
+        layouts.append(QJsonObject{{QStringLiteral("iterations"), iterations},
+                                   {QStringLiteral("positions"), positionsJson(positions)},
+                                   {QStringLiteral("lobeCentres"), positionsJson(lobeCentres(graph, positions))}});
+    }
+    return QJsonObject{{QStringLiteral("includesIsolated"), graph.includesIsolated},
+                       {QStringLiteral("imports"), graph.imports},
+                       {QStringLiteral("spacing"), double(graph.spacing)},
+                       {QStringLiteral("iterations"), layoutIterations(graph, LayoutOptions())},
+                       {QStringLiteral("lobes"), lobes},
+                       {QStringLiteral("nodes"), nodes},
+                       {QStringLiteral("edges"), edges},
+                       {QStringLiteral("cycles"), cycles},
+                       {QStringLiteral("seeds"), positionsJson(seedPositions(graph))},
+                       {QStringLiteral("layouts"), layouts}};
+}
+
+int writeGolden(const QString &fixture)
+{
+    QTemporaryDir temp;
+    const QString repo = temp.path() + QStringLiteral("/repo");
+    QDirIterator it(fixture + QStringLiteral("/repo"), QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString source = it.next();
+        const QString target = repo + source.mid(fixture.size() + 5);
+        QDir().mkpath(QFileInfo(target).absolutePath());
+        QFile::copy(source, target);
+    }
+    qputenv("GIT_CEILING_DIRECTORIES", temp.path().toUtf8());
+    qputenv("GIT_AUTHOR_NAME", "Fixture");
+    qputenv("GIT_AUTHOR_EMAIL", "fixture@example.com");
+    qputenv("GIT_COMMITTER_NAME", "Fixture");
+    qputenv("GIT_COMMITTER_EMAIL", "fixture@example.com");
+    if (!runGit(repo, {QStringLiteral("init"), QStringLiteral("-q")})
+        || !runGit(repo, {QStringLiteral("add"), QStringLiteral("-A")})
+        || !runGit(repo, {QStringLiteral("commit"), QStringLiteral("-q"), QStringLiteral("-m"), QStringLiteral("fixture")})) {
+        std::fprintf(stderr, "git setup failed\n");
+        return 1;
+    }
+    forkmesh::insight::Options options;
+    options.history = false;
+    const SnapshotPtr base = forkmesh::insight::analyze(repo, options);
+    if (!base || !base->error.isEmpty()) {
+        std::fprintf(stderr, "analysis failed\n");
+        return 1;
+    }
+    QFile logFile(fixture + QStringLiteral("/history.log"));
+    logFile.open(QIODevice::ReadOnly);
+    auto history = std::make_shared<Snapshot>(*base);
+    forkmesh::insight::applyHistory(*history, logFile.readAll(), forkmesh::insight::Options(), 1792000000);
+    for (FileInfo &file : history->files) {
+        QStringList issues;
+        file.health = forkmesh::insight::computeHealth(file, &issues);
+        file.healthIssues = issues;
+    }
+    forkmesh::insight::computeHotspots(*history);
+    const Snapshot &s = *history;
+    QJsonArray cycles;
+    for (const QVector<int> &members : s.cycles) {
+        const QVector<int> path = cyclePath(s, members);
+        cycles.append(QJsonObject{{QStringLiteral("files"), pathsJson(s, members)},
+                                  {QStringLiteral("path"), pathsJson(s, path)},
+                                  {QStringLiteral("text"), cycleText(s, path)}});
+    }
+    QJsonArray neighbourhoods;
+    for (int file = 0; file < s.files.size(); ++file) {
+        for (int hops = 1; hops <= 3; ++hops) {
+            const Neighbourhood both = neighbourhood(s, file, hops, Direction::Both);
+            neighbourhoods.append(QJsonObject{{QStringLiteral("file"), s.files.at(file).path},
+                                              {QStringLiteral("hops"), hops},
+                                              {QStringLiteral("imports"), depthsJson(s, both.imports)},
+                                              {QStringLiteral("importers"), depthsJson(s, both.importers)}});
+        }
+    }
+    QJsonArray hashes;
+    for (const QString &text : {QString(), QStringLiteral("a"), QStringLiteral("src/core/engine.cpp"),
+                                QStringLiteral("C++"), QStringLiteral("star-a-7"), QStringLiteral("é→✓")})
+        hashes.append(QJsonObject{{QStringLiteral("text"), text}, {QStringLiteral("hash"), double(stableHash(text))}});
+    const int most = mostConnected(s);
+    const QJsonObject root{
+        {QStringLiteral("fixture"), QStringLiteral("native/fixtures/insight")},
+        {QStringLiteral("files"), int(s.files.size())},
+        {QStringLiteral("importCount"), importCount(s)},
+        {QStringLiteral("orphans"), pathsJson(s, orphans(s))},
+        {QStringLiteral("leaves"), pathsJson(s, leaves(s))},
+        {QStringLiteral("mostImported"), pathsJson(s, mostImported(s, 10))},
+        {QStringLiteral("mostImporting"), pathsJson(s, mostImporting(s, 10))},
+        {QStringLiteral("mostImportedAll"), pathsJson(s, mostImported(s, -1))},
+        {QStringLiteral("mostImportingAll"), pathsJson(s, mostImporting(s, -1))},
+        {QStringLiteral("mostConnected"), most >= 0 ? s.files.at(most).path : QString()},
+        {QStringLiteral("cycles"), cycles},
+        {QStringLiteral("neighbourhoods"), neighbourhoods},
+        {QStringLiteral("hashes"), hashes},
+        {QStringLiteral("graphs"), QJsonObject{{QStringLiteral("connected"), graphJson(history, false)},
+                                               {QStringLiteral("withOrphans"), graphJson(history, true)}}}};
+    const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    std::fwrite(json.constData(), 1, size_t(json.size()), stdout);
+    return 0;
+}
+
 int preview(const QString &root, const QString &out)
 {
     qApp->setPalette(Theme::applicationPalette(true));
@@ -413,6 +605,11 @@ int preview(const QString &root, const QString &out)
 
 int main(int argc, char **argv)
 {
+    const QString golden = qEnvironmentVariable("FORKMESH_SYNAPSE_GOLDEN");
+    if (!golden.isEmpty()) {
+        QCoreApplication app(argc, argv);
+        return writeGolden(QDir(golden).absolutePath());
+    }
     QApplication app(argc, argv);
     const QString root = qEnvironmentVariable("FORKMESH_INSIGHT_PREVIEW_ROOT");
     const QString out = qEnvironmentVariable("FORKMESH_INSIGHT_PREVIEW_OUT");

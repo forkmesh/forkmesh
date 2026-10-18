@@ -218,6 +218,48 @@ void vaultClientFlow()
     VaultClient spent(bridge.requestAs(QStringLiteral("alice")));
     spent.recover(recoveryCode, QStringLiteral("y"), [](const QString &code, const QString &) { check(code == QLatin1String("wrong_recovery_code"), "a spent recovery code is refused"); });
 
+    const QByteArray appleCsv =
+        "\xEF\xBB\xBFTitle,URL,Username,Password,Notes,OTPAuth\r\n"
+        "Mail,https://www.mail.example/login,me@mail.example,\"pa,ss\"\"word\",\"line one\nline two\",otpauth://totp/Mail?secret=JBSWY3DPEHPK3PXP\r\n"
+        ",https://shop.example,me,shop-pass,,\r\n"
+        "Mail again,https://mail.example,ME@mail.example,\"pa,ss\"\"word\",,\r\n"
+        "Empty,https://nothing.example,,,,\r\n";
+    ImportFile imported;
+    QString importCode;
+    check(VaultClient::readImportCsv(appleCsv, &imported, &importCode) && imported.source == QLatin1String("applePasswords")
+              && imported.sourceLabel == QLatin1String("Apple Passwords"),
+          "an Apple Passwords export is recognised");
+    check(imported.logins.size() == 3 && imported.skippedRows == 1, "a row without a username or password is left out");
+    check(imported.logins.first().password == QLatin1String("pa,ss\"word") && imported.logins.first().notes == QLatin1String("line one\nline two"),
+          "quoted commas, quotes and line breaks survive");
+    ImportReport first;
+    recovered.importLogins(imported.logins, {}, [&](const ImportReport &report) { first = report; });
+    check(first.added == 2 && first.duplicates == 1 && first.remaining == 0 && first.stoppedBy.isEmpty()
+              && recovered.items().size() == 4,
+          "an import saves each new login once");
+    const auto titled = [&](const char *title) {
+        for (const VaultItem &item : recovered.items())
+            if (item.field("title") == QLatin1String(title))
+                return item;
+        return VaultItem();
+    };
+    check(titled("Mail").field("notes") == QLatin1String("line one\nline two\n\notpauth://totp/Mail?secret=JBSWY3DPEHPK3PXP"),
+          "a one-time code rides in the notes");
+    check(titled("shop.example").field("password") == QLatin1String("shop-pass"), "an untitled login is named after its site");
+    ImportReport second;
+    recovered.importLogins(imported.logins, {}, [&](const ImportReport &report) { second = report; });
+    check(second.added == 0 && second.duplicates == 3 && recovered.items().size() == 4, "importing the same file again adds nothing");
+    check(!QJsonDocument(bridge.control(QStringLiteral("dump"))).toJson().contains("shop-pass"), "the database never sees an imported password");
+    ImportFile chrome;
+    check(VaultClient::readImportCsv("name,url,username,password,note\nBank,https://bank.example,me,pw,\n", &chrome, nullptr)
+              && chrome.source == QLatin1String("chrome") && chrome.logins.first().title == QLatin1String("Bank"),
+          "a Chrome export is recognised");
+    check(!VaultClient::readImportCsv("Name,Site\nx,y\n", nullptr, &importCode) && importCode == QLatin1String("csv_unknown_columns"),
+          "a file without a password column is refused");
+    check(!VaultClient::readImportCsv("Title,URL,Username,Password\n", nullptr, &importCode) && importCode == QLatin1String("csv_no_logins"),
+          "a file with only a header is refused");
+    check(!VaultClient::readImportCsv("", nullptr, &importCode) && importCode == QLatin1String("csv_empty"), "an empty file is refused");
+
     recovered.lock();
     check(!recovered.unlocked() && recovered.items().isEmpty(), "a locked client holds nothing");
     recovered.save({{QStringLiteral("title"), QStringLiteral("x")}}, QString(), [](const QString &code, const QString &) { check(code == QLatin1String("vault_locked"), "a locked client cannot save"); });

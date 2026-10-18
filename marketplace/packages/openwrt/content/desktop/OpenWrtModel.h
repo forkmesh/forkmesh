@@ -196,6 +196,8 @@ QList<StorageDisk> storageDisks(const QList<BlockDevice> &blocks, const QList<Mo
 QString mountPathProblem(const QString &path);
 QString suggestedMountPath(const BlockDevice &block);
 QStringList usbStoragePackages();
+QStringList networkSharingPackages();
+QString shareUrl(const QString &routerHost, const QString &shareName);
 
 struct StorageCheck {
     bool packagesKnown = false;

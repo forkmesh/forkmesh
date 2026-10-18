@@ -32,6 +32,7 @@ namespace forkmesh::rssreader {
 class ArticleBrowser;
 class FetchQueue;
 struct FetchResult;
+struct IconSearch;
 class SourceDelegate;
 class TimelineDelegate;
 class TimelineModel;
@@ -88,6 +89,8 @@ public:
     void updateSettings(const std::function<void(Settings &)> &change, bool timeline, bool article);
     void showReaderView();
     void saveNow();
+    QList<forkmesh::market::NativePackageChatTarget> shareTargets() const;
+    QString shareArticle(const ArticleRef &ref, const QString &target);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -122,6 +125,7 @@ private:
     void moveSelection(int delta);
     void openInBrowser();
     void copyLink();
+    void showShareDialog(const ArticleRef &ref);
     bool handleKey(QKeyEvent *event);
     void sourceContextMenu(const QPoint &position);
     void timelineContextMenu(const QPoint &position);
@@ -153,7 +157,9 @@ private:
     QPixmap feedIcon(const QString &feedId, int side) const;
     QPixmap letterTile(const QString &name, int side) const;
     void fetchMissingIcons();
-    void fetchIcon(const QString &feedId, QStringList candidates);
+    void fetchIcon(const std::shared_ptr<IconSearch> &search);
+    void fetchIconPage(const std::shared_ptr<IconSearch> &search);
+    void storeIcon(const QString &feedId, const QImage &image);
     QVariant articleResource(int type, const QUrl &url);
     void fetchImage(const QString &url);
     QString keptKey(const ArticleRef &ref) const;
@@ -225,6 +231,7 @@ private:
     QToolButton *m_readerButton = nullptr;
     QToolButton *m_openButton = nullptr;
     QToolButton *m_copyButton = nullptr;
+    QToolButton *m_shareButton = nullptr;
     QTimer *m_saveTimer = nullptr;
     QTimer *m_renderTimer = nullptr;
     QTimer *m_countsTimer = nullptr;

@@ -174,11 +174,15 @@ object RouteCodec {
             Route.Kind.Calories -> Route.Calories
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.PhoneSecurity -> Route.PhoneSecurity
+            Route.Kind.Ember -> Route.Ember(repo)
+            Route.Kind.Strata -> Route.Strata(repo)
+            Route.Kind.Synapse -> Route.Synapse(repo)
             Route.Kind.OpenWrtRouter -> Route.OpenWrtRouter
             Route.Kind.FaceChanger -> Route.FaceChanger
             Route.Kind.AppStoreStatus -> Route.AppStoreStatus
             Route.Kind.RssReader -> Route.RssReader
             Route.Kind.SecureDrive -> Route.SecureDrive
+            Route.Kind.Files -> Route.Files
             Route.Kind.Workflows -> Route.Workflows
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity

@@ -1794,6 +1794,209 @@ QList<QUrl> discoverFeedLinks(const QString &html, const QUrl &base)
     return links;
 }
 
+namespace {
+
+QUrl webOrigin(const QUrl &url)
+{
+    const QString scheme = url.scheme().toLower();
+    if (!url.isValid() || url.host().isEmpty() ||
+        (scheme != QLatin1String("http") && scheme != QLatin1String("https")))
+        return {};
+    QUrl origin;
+    origin.setScheme(scheme);
+    origin.setHost(url.host().toLower());
+    origin.setPort(url.port());
+    return origin;
+}
+
+int iconSidePenalty(int side)
+{
+    if (side >= 32 && side <= 180)
+        return qAbs(side - 64);
+    if (side > 180)
+        return 150 + qMin(side - 180, 1000) / 8;
+    return 200 + (32 - side) * 4;
+}
+
+int iconPenalty(const QString &sizes, bool touch, bool svg)
+{
+    if (svg)
+        return 130;
+    int best = -1;
+    for (const QString &entry : sizes.toLower().split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts)) {
+        const qsizetype cross = entry.indexOf(QLatin1Char('x'));
+        if (cross <= 0)
+            continue;
+        bool widthOk = false;
+        bool heightOk = false;
+        const int width = entry.left(cross).toInt(&widthOk);
+        const int height = entry.mid(cross + 1).toInt(&heightOk);
+        if (!widthOk || !heightOk || width <= 0 || height <= 0)
+            continue;
+        const int penalty = iconSidePenalty(qMax(width, height)) + (width != height ? 100 : 0);
+        best = best < 0 ? penalty : qMin(best, penalty);
+    }
+    if (best >= 0)
+        return best;
+    return touch ? iconSidePenalty(180) : 120;
+}
+
+QString comparableLink(const QString &link)
+{
+    const QUrl url(link.trimmed(), QUrl::TolerantMode);
+    if (!url.isValid() || url.host().isEmpty())
+        return {};
+    QString path = url.path(QUrl::FullyEncoded);
+    while (path.endsWith(QLatin1Char('/')))
+        path.chop(1);
+    return url.host().toLower() + QLatin1Char(':') + QString::number(url.port(-1)) + path + QLatin1Char('?') +
+           url.query(QUrl::FullyEncoded) + QLatin1Char('#') + url.fragment(QUrl::FullyEncoded);
+}
+
+}
+
+QStringList discoverIconLinks(const QString &html, const QUrl &base, bool allowSvg)
+{
+    struct Candidate {
+        int penalty = 0;
+        QString url;
+    };
+    QUrl documentBase = base;
+    QList<Candidate> found;
+    for (const HtmlToken &token : tokenizeHtml(html)) {
+        if (token.kind != HtmlToken::Start)
+            continue;
+        if (token.name == QLatin1String("base")) {
+            for (const auto &attribute : token.attributes) {
+                if (attribute.first == QLatin1String("href")) {
+                    const QUrl candidate(resolveUrl(base, attribute.second));
+                    if (candidate.isValid())
+                        documentBase = candidate;
+                }
+            }
+            continue;
+        }
+        if (token.name == QLatin1String("body"))
+            break;
+        if (token.name != QLatin1String("link"))
+            continue;
+        QString rel;
+        QString type;
+        QString href;
+        QString sizes;
+        for (const auto &attribute : token.attributes) {
+            if (attribute.first == QLatin1String("rel"))
+                rel = attribute.second.toLower();
+            else if (attribute.first == QLatin1String("type"))
+                type = attribute.second.trimmed().toLower();
+            else if (attribute.first == QLatin1String("href"))
+                href = attribute.second;
+            else if (attribute.first == QLatin1String("sizes"))
+                sizes = attribute.second;
+        }
+        const QStringList rels = rel.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+        const bool touch = rels.contains(QStringLiteral("apple-touch-icon")) ||
+                           rels.contains(QStringLiteral("apple-touch-icon-precomposed"));
+        if (!touch && !rels.contains(QStringLiteral("icon")))
+            continue;
+        const QString url = safeUrl(documentBase, href, false);
+        if (url.isEmpty())
+            continue;
+        const QString path = QUrl(url).path().toLower();
+        const bool svg = type == QLatin1String("image/svg+xml") || path.endsWith(QStringLiteral(".svg")) ||
+                         path.endsWith(QStringLiteral(".svgz"));
+        if (svg && !allowSvg)
+            continue;
+        found.append({iconPenalty(sizes, touch, svg), url});
+    }
+    std::stable_sort(found.begin(), found.end(),
+                     [](const Candidate &a, const Candidate &b) { return a.penalty < b.penalty; });
+    QStringList links;
+    for (const Candidate &entry : found) {
+        if (!links.contains(entry.url))
+            links.append(entry.url);
+        if (links.size() >= kMaxIconLinks)
+            break;
+    }
+    return links;
+}
+
+QStringList fallbackIconUrls(const QUrl &homePage, const QUrl &feedUrl)
+{
+    QList<QUrl> origins;
+    for (const QUrl &source : {homePage, feedUrl}) {
+        const QUrl origin = webOrigin(source);
+        if (!origin.isEmpty() && !origins.contains(origin))
+            origins.append(origin);
+    }
+    QStringList list;
+    for (const char *path : {"/favicon.ico", "/apple-touch-icon.png"}) {
+        for (const QUrl &origin : origins) {
+            QUrl candidate = origin;
+            candidate.setPath(QString::fromLatin1(path));
+            list.append(candidate.toString());
+        }
+    }
+    return list;
+}
+
+QUrl iconPageUrl(const Feed &feed)
+{
+    const QUrl home(feed.homePage.trimmed(), QUrl::TolerantMode);
+    if (!webOrigin(home).isEmpty())
+        return home;
+    QUrl origin = webOrigin(QUrl(feed.url));
+    if (origin.isEmpty())
+        return {};
+    origin.setPath(QStringLiteral("/"));
+    return origin;
+}
+
+QString iconSourceKey(const Feed &feed)
+{
+    return feed.iconUrl + QLatin1Char('\n') + webOrigin(QUrl(feed.homePage.trimmed())).toString() +
+           QLatin1Char('\n') + webOrigin(QUrl(feed.url)).toString();
+}
+
+bool iconFetchDue(const Feed &feed, bool hasIcon, qint64 nowMs)
+{
+    if (feed.iconKey != iconSourceKey(feed))
+        return true;
+    if (hasIcon)
+        return false;
+    return feed.iconCheckedMs <= 0 || nowMs < feed.iconCheckedMs || nowMs - feed.iconCheckedMs >= kDayMs;
+}
+
+bool htmlLinksTo(const QString &html, const QString &target, const QUrl &base)
+{
+    const QString wanted = comparableLink(target);
+    if (wanted.isEmpty())
+        return false;
+    for (const HtmlToken &token : tokenizeHtml(html)) {
+        if (token.kind != HtmlToken::Start || token.name != QLatin1String("a"))
+            continue;
+        for (const auto &attribute : token.attributes) {
+            if (attribute.first != QLatin1String("href"))
+                continue;
+            const QString url = safeUrl(base, attribute.second, false);
+            if (!url.isEmpty() && comparableLink(url) == wanted)
+                return true;
+        }
+    }
+    return false;
+}
+
+QString shareMessage(const QString &title, const QString &link)
+{
+    const QString heading = collapseWhitespace(title);
+    const QString address = link.trimmed();
+    if (address.isEmpty())
+        return heading;
+    if (heading.isEmpty())
+        return address;
+    return heading + QLatin1Char('\n') + address;
+}
+
 QList<QUrl> fallbackFeedUrls(const QUrl &address)
 {
     if (!address.isValid() || address.host().isEmpty())
@@ -3451,6 +3654,16 @@ void Store::updateFeedMeta(const QString &feedId, const QString &homePage)
     markExportDirty();
 }
 
+void Store::recordIconAttempt(const QString &feedId, qint64 nowMs)
+{
+    Feed *target = mutableFeed(feedId);
+    if (!target)
+        return;
+    target->iconCheckedMs = nowMs;
+    target->iconKey = iconSourceKey(*target);
+    m_stateDirty = true;
+}
+
 void Store::logError(qint64 nowMs, const QString &text)
 {
     appendLog(m_errorLog, nowMs, text);
@@ -3489,6 +3702,8 @@ QJsonObject Store::stateJson() const
             {QStringLiteral("excludeFromUnread"), candidate.excludeFromUnread},
             {QStringLiteral("language"), candidate.language},
             {QStringLiteral("previousUrls"), QJsonArray::fromStringList(candidate.previousUrls)},
+            {QStringLiteral("iconChecked"), double(candidate.iconCheckedMs)},
+            {QStringLiteral("iconKey"), candidate.iconKey},
         });
     }
     QJsonArray folders;
@@ -3549,6 +3764,9 @@ bool Store::loadState(const QJsonObject &state)
             if (previous.isString() && !previous.toString().isEmpty())
                 loaded.previousUrls.append(previous.toString());
         }
+        loaded.iconCheckedMs = qint64(object.value(QStringLiteral("iconChecked")).toDouble());
+        loaded.iconKey = object.contains(QStringLiteral("iconKey")) ? object.value(QStringLiteral("iconKey")).toString()
+                                                                     : iconSourceKey(loaded);
         m_feeds.append(loaded);
         m_articles.insert(loaded.id, {});
         m_unread.insert(loaded.id, 0);

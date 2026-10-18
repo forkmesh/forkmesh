@@ -118,6 +118,10 @@ private:
     void stopSharing();
     void installStorageSupport();
     void installStoragePackages(QStringList remaining, QStringList failed);
+    void installNetworkSharing();
+    void installPackageList(QStringList remaining, QStringList failed, QString firstFailure,
+                            const std::function<void(const QStringList &, const QString &)> &done);
+    void browseShare();
     void createFstab(const std::function<void()> &then);
     void checkStorage(bool keepLog = false);
     void appendStorageLog(const QString &text);
@@ -254,6 +258,8 @@ private:
     QPlainTextEdit *m_storageLog = nullptr;
     QTreeWidget *m_shareTree = nullptr;
     QLabel *m_shareNote = nullptr;
+    QPushButton *m_shareInstall = nullptr;
+    QPushButton *m_shareBrowse = nullptr;
 
     QTreeWidget *m_packageTree = nullptr;
     QLineEdit *m_packageFilter = nullptr;

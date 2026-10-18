@@ -40,7 +40,7 @@ public enum SettingsCatalog {
     public static let entries: [SettingsSectionEntry] = [
         .init(id: .quickSetup, title: "Quick setup", icon: "task_alt", keywords: ["start", "onboarding", "first run", "pair"]),
         .init(id: .profile, title: "Profile", icon: "person_outline", keywords: ["name", "display name", "status", "away", "avatar", "node id"]),
-        .init(id: .general, title: "General", icon: "tune", keywords: ["appearance", "theme", "dark", "light", "accent", "color", "haptics", "vibration", "vibrate", "sounds", "audio", "mute", "silent", "noise", "volume", "beep", "click", "genie", "spider", "hide spider", "home screen", "icons", "icon style", "categories", "sort", "highlight", "frequently used"]),
+        .init(id: .general, title: "General", icon: "tune", keywords: ["appearance", "theme", "dark", "light", "accent", "color", "colour", "surfaces", "contrast", "theme editor", "shuffle", "haptics", "vibration", "vibrate", "sounds", "audio", "mute", "silent", "noise", "volume", "beep", "click", "genie", "spider", "hide spider", "home screen", "icons", "icon style", "categories", "sort", "highlight", "frequently used"]),
         .init(id: .repos, title: "Repositories on this phone", icon: "folder_outlined", keywords: ["commit", "author", "email", "branch", "local", "clone"]),
         .init(id: .agents, title: "Agents", icon: "smart_toy_outlined", keywords: ["provider", "model", "claude", "codex", "desktop", "default"]),
         .init(id: .voice, title: "Voice", icon: "tune_rounded", keywords: ["dictation", "speech", "language", "microphone", "listen", "speech to text", "on-device"]),

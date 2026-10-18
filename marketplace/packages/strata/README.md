@@ -31,3 +31,11 @@ ForkMesh reads.
 
 The full rule table and the layout algorithm are in
 [docs/marketplace/strata.md](../../../docs/marketplace/strata.md).
+
+## On phones
+
+Also on iPhone and Android: open it from Home → Insights, a repository's
+menu, or a repository copied onto the phone. The phone analyses a copy of the
+repository fetched into the app (or the copy already on the phone) with a
+port of the desktop engine, so the numbers are the same. See
+`docs/marketplace/codebase-analysis.md#on-phones`.

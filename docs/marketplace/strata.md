@@ -197,3 +197,40 @@ the module in a cycle with the most edges and saves a PNG.
 `FORKMESH_INSIGHT_PREVIEW_VIEW` picks `dashboard`, `graph` (default),
 `matrix`, `scatter`, `metrics`, `rules` or `drill`;
 `FORKMESH_INSIGHT_PREVIEW_DEPTH` sets the module depth.
+
+## On phones
+
+Strata runs on iPhone and Android with the desktop's numbers; the shared parts
+are in [codebase-analysis.md](codebase-analysis.md#on-phones).
+
+| Platform | Model | Page |
+| --- | --- | --- |
+| iOS | `FMCodeInsight/Strata{Types,Rules,Layout,Drill,Html,Inspect}.swift` | `ForkMesh/Features/CodeInsight/Strata*.swift` |
+| Android | `core/.../codeinsight/Strata*.kt` | `app/.../feature/codeinsight/Strata*.kt` |
+
+The models port `StrataModel` (rules, debt, ratings, gates, layered layout,
+drill-down graphs, matrix order, treemap, the HTML report) and are checked
+against `native/fixtures/insight/strata.json`, written by
+`FORKMESH_STRATA_GOLDEN=<fixture> forkmesh-strata-tests`: four models (the
+fixture at Auto depth and depth 2, without history, and the synthetic
+snapshot) with every rule, violation, score, gate, metric, cycle, module,
+edge, matrix order, layer, layout, drill-down, treemap and the full report
+string.
+
+On the phone:
+
+- The views (Dashboard, Graph, Matrix, Scatter, Treemap, Rules) are chips;
+  **Modules** (Auto, 1 to 4) and **Export report** sit in the toolbar. The
+  report is written to the app's cache and handed to the share sheet
+  (Android through the `code-insight-share` FileProvider path).
+- One search box filters the rules and module lists and dims what does not
+  match in the graph, scatter and treemap.
+- The graph and treemap pinch and pan; a tap selects (with a haptic), a
+  double tap drills into a module, opens a file or fits the view. The matrix
+  keeps its row and column headers frozen while it scrolls.
+- Rules has a severity filter (not on the desktop); a violation opens its
+  file.
+- Details open in a bottom sheet with every fact of the desktop panel; names
+  are links that move within the sheet, and module details add an **All
+  files** list. Every module and file is reachable from lists, so nothing
+  needs the canvases.

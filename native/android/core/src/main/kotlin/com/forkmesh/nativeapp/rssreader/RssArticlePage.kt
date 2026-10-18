@@ -37,6 +37,9 @@ object RssFormat {
     }
 
     fun plural(count: Int, word: String): String = "$count $word${if (count == 1) "" else "s"}"
+
+    fun shareText(article: RssArticle): String =
+        listOf(RssText.clean(article.title, 300), article.link.trim()).filter { it.isNotEmpty() }.distinct().joinToString("\n")
 }
 
 data class RssPageStyle(
@@ -77,6 +80,25 @@ object RssArticlePage {
         return if (loadRemoteImages) RssSanitizer.withAltCaptions(html) else RssSanitizer.withoutRemoteMedia(html)
     }
 
+    fun linksTo(html: String, url: String): Boolean {
+        val target = RssUrls.linkKey(url)
+        if (target.isEmpty() || html.isEmpty()) return false
+        var found = false
+        val finder = object : RssHtmlHandler {
+            override fun start(tag: String, attrs: List<Pair<String, String>>, selfClosing: Boolean) {
+                if (found || tag != "a") return
+                val href = attrs.firstOrNull { it.first == "href" }?.second ?: return
+                if (RssUrls.linkKey(href) == target) found = true
+            }
+
+            override fun end(tag: String) {}
+
+            override fun text(text: String) {}
+        }
+        runCatching { RssHtml.tokenize(html, finder) }
+        return found
+    }
+
     fun readingTime(article: RssArticle, reader: Boolean): String {
         val minutes = RssRules.readingMinutes(RssSanitizer.plainText(source(article, reader), Int.MAX_VALUE))
         return if (minutes > 0) "$minutes min read" else ""
@@ -104,11 +126,16 @@ object RssArticlePage {
                 else -> "<p><a href=\"$src\">${e(if (enclosure.type.isNotEmpty()) "Download ${enclosure.type.substringBefore('/')} (${enclosure.type})" else "Download attachment")}</a></p>"
             }
         }
-        val comments = if (article.commentsUrl.isNotEmpty()) "<p class=\"comments\"><a href=\"${e(article.commentsUrl)}\">Comments</a></p>" else ""
+        val content = body(article, reader, style.loadRemoteImages)
+        val comments = if (article.commentsUrl.isNotEmpty() && !linksTo(content, article.commentsUrl)) {
+            "<p class=\"comments\"><a href=\"${e(article.commentsUrl)}\">Comments</a></p>"
+        } else {
+            ""
+        }
         val author = if (article.author.isNotEmpty()) "<div class=\"author\">${e(article.author)}</div>" else ""
         val css = """
             :root { color-scheme: ${if (style.dark) "dark" else "light"}; }
-            html, body { margin: 0; padding: 0; background: $background; color: $text; }
+            html, body { margin: 0; padding: 0; background: $background; color: $text; max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; touch-action: pan-y; }
             body { font-family: ${family(style.font)}; font-size: ${style.textSize}px; line-height: 1.55; padding: 16px 20px 48px; word-wrap: break-word; overflow-wrap: anywhere; }
             a { color: $accent; }
             .head { display: flex; align-items: flex-start; gap: 12px; }
@@ -121,16 +148,17 @@ object RssArticlePage {
             h1.title { font-size: 1.55em; line-height: 1.2; margin: 0 0 8px; font-weight: 700; }
             h1.title a { color: $text; text-decoration: none; }
             .date { color: $muted; font-size: 0.72em; letter-spacing: 0.04em; text-transform: uppercase; margin-bottom: 18px; }
-            img, video { max-width: 100%; height: auto; }
+            .content, .content * { max-width: 100%; box-sizing: border-box; }
+            img, video, iframe, embed, object, svg, canvas { max-width: 100%; height: auto; }
             audio { width: 100%; }
             pre, code { font-family: ${family(RssFont.MONO)}; font-size: 0.88em; }
             code { white-space: pre-wrap; }
-            pre { white-space: pre; overflow-x: auto; overflow-wrap: normal; word-wrap: normal; padding: 10px; background: ${muted}22; border-radius: 6px; }
-            pre code { white-space: pre; font-size: 1em; }
+            pre { white-space: pre-wrap; overflow-x: hidden; overflow-wrap: anywhere; padding: 10px; background: ${muted}22; border-radius: 6px; }
+            pre code { white-space: pre-wrap; font-size: 1em; }
             .alt-caption { display: block; color: $muted; font-size: 0.8em; line-height: 1.35; margin: 4px 0 10px; }
             blockquote { margin: 0 0 0 4px; padding-left: 12px; border-left: 3px solid ${muted}66; color: $muted; }
-            table { border-collapse: collapse; max-width: 100%; display: block; overflow-x: auto; }
-            td, th { border: 1px solid ${muted}44; padding: 4px 6px; }
+            table { border-collapse: collapse; width: 100%; max-width: 100%; table-layout: fixed; }
+            td, th { border: 1px solid ${muted}44; padding: 4px 6px; overflow-wrap: anywhere; }
             figure { margin: 1em 0; }
             figcaption { color: $muted; font-size: 0.85em; }
         """.trimIndent()
@@ -139,7 +167,7 @@ object RssArticlePage {
             append("<!DOCTYPE html><html")
             if (language.isNotEmpty()) append(" lang=\"").append(e(language)).append('"')
             append(" dir=\"").append(RssRules.direction(language)).append("\"><head><meta charset=\"utf-8\">")
-            append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
+            append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no\">")
             val remote = if (style.loadRemoteImages) "https: http: data:" else "data:"
             val mediaSrc = if (style.loadRemoteImages) "https: http:" else "'none'"
             append("<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'none'; img-src $remote; media-src $mediaSrc; style-src 'unsafe-inline'\">")
@@ -149,7 +177,7 @@ object RssArticlePage {
             append("<h1 class=\"title\">").append(title).append("</h1>")
             val dateLine = listOf(RssFormat.articleDate(article.published), readingTime(article, reader)).filter { it.isNotEmpty() }.joinToString(" · ")
             append("<div class=\"date\">").append(e(dateLine)).append("</div>")
-            append("<div class=\"content\">").append(body(article, reader, style.loadRemoteImages)).append("</div>")
+            append("<div class=\"content\">").append(content).append("</div>")
             append(media).append(comments)
             append("</body></html>")
         }

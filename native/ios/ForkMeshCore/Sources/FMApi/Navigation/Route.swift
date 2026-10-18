@@ -189,6 +189,7 @@ public enum Route: Codable, Hashable, Sendable {
     case phoneSecurity
     case eyeControl
     case openWrtRouter
+    case fileExplorer
     case faceChanger
     case videoMixDjStudio
     case appStoreStatus
@@ -200,6 +201,9 @@ public enum Route: Codable, Hashable, Sendable {
     case activity
     case logs
     case diagnostics
+    case ember(RepoRef?)
+    case strata(RepoRef?)
+    case synapse(RepoRef?)
     // Insights and admin (WS20)
     case stats
     case status
@@ -303,6 +307,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .phoneSecurity: return .phoneSecurity
         case .eyeControl: return .eyeControl
         case .openWrtRouter: return .openWrtRouter
+        case .fileExplorer: return .fileExplorer
         case .faceChanger: return .faceChanger
         case .videoMixDjStudio: return .videoMixDjStudio
         case .appStoreStatus: return .appStoreStatus
@@ -314,6 +319,9 @@ public enum Route: Codable, Hashable, Sendable {
         case .activity: return .activity
         case .logs: return .logs
         case .diagnostics: return .diagnostics
+        case .ember: return .ember
+        case .strata: return .strata
+        case .synapse: return .synapse
         case .stats: return .stats
         case .status: return .status
         case .admin: return .admin
@@ -340,7 +348,8 @@ public enum Route: Codable, Hashable, Sendable {
         case notes, note, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, faceChanger, videoMixDjStudio, appStoreStatus, rssReader, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, fileExplorer, faceChanger, videoMixDjStudio, appStoreStatus, rssReader, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
+        case ember, strata, synapse
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
 
@@ -369,7 +378,7 @@ public enum Route: Codable, Hashable, Sendable {
                 .ledger:
                 return "WS19"
             case .vault, .coves, .cove: return "WS21"
-            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .eyeControl, .openWrtRouter, .faceChanger, .videoMixDjStudio, .rssReader, .secureDrive, .spiderRoom, .workflows, .localAI, .orgs,
+            case .calories, .steps, .water, .sleep, .sugarBreak, .stretch, .foodGuide, .speech, .glassesAlert, .phoneSecurity, .eyeControl, .openWrtRouter, .fileExplorer, .faceChanger, .videoMixDjStudio, .rssReader, .secureDrive, .spiderRoom, .workflows, .localAI, .ember, .strata, .synapse, .orgs,
                 .org:
                 return "existing"
             case .projects, .projectAccess: return "WS1"

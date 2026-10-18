@@ -473,9 +473,12 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   confirmation (`PackageUninstall.swift`). Android mirrors it with the same
   rules (`MarketModel.uninstallAction`, `PackageUninstall.kt`).
   The package page's ⋯ menu also has "Send feedback or report a bug".
-- **Plugin pages** (iOS): every installed plugin's own screen has a ⋯ menu at
-  the top right (accessibility id `plugin-more`) with "Rate <name>", "Send
-  feedback or report a bug" and, when this phone can remove it, Uninstall.
+- **Plugin pages** (iOS): every installed plugin's own screen has a ⋯ button
+  at the top right (accessibility id `plugin-more`). It opens one small popup
+  (`PluginQuickSheet`, user request 2026-10-18) instead of a menu of separate
+  pages: the plugin's name, a row of stars, one text box, "Send to agent" and
+  "Send", and, when this phone can remove the plugin, Uninstall under a
+  divider (one row per organization for an organization package).
   `RouteDestinationView` applies `pluginMenu(for:)` (`PluginMenuViews.swift`)
   to every route `PluginMenu.packageId(for:)` (FMPackages) names: the home
   screen of each package with a phone screen. Detail screens (a contact, a
@@ -483,17 +486,29 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   tour get none. To decide whether Uninstall is offered, opening a plugin page
   loads only the catalog, the account's packages and your organizations'
   installs (`MarketModel.refreshInstalls`, without the install counts and
-  ratings the Market shows); the package's reviews load when the rating sheet
-  opens. Rate opens the same
-  `RatePackageSheet` as the Market; feedback opens `ReportBugSheet` titled
-  "Feedback on <name>", which sends `package` to `POST /api/bug-reports` so
-  the issue is tagged with the plugin. It is offered whether or not the
-  Report a bug package is installed, since it is about the plugin, not the
-  floating bug button. Uninstall uses the Market's confirmation and rules;
-  once it is done the page closes (after the data export is saved, for an
-  organization package).
+  ratings the Market shows); the package's reviews load when the popup opens.
+  `PluginFeedback` (FMPackages) holds what the popup sends:
+  - **Send** saves the rating when a star was tapped and files the text as
+    feedback when there is any; either alone is enough. Five stars need no
+    words. Below five, the Market's review rules still apply, so the text box
+    is the review's "what didn't work" and a second box, "What would make it
+    five stars?", appears for the improvement; the field errors show under
+    each box. The text goes to `POST /api/bug-reports` with `package`, so the
+    issue is tagged with the plugin, whether or not the Report a bug package
+    is installed. A short thanks shows on the plugin page after.
+  - **Send to agent** closes the popup and opens the composer
+    (`SurfaceRouter.open(.compose(...))`) with a prompt naming the plugin,
+    its package id and the screen, then the text (and the stars, if tapped).
+    Nothing is filed with ForkMesh unless you also press Send.
+  - **Uninstall** closes the popup, then asks with the Market's confirmation
+    and rules; once it is done the page closes (after the data export is
+    saved, for an organization package).
+  The full rating form (`RatePackageSheet`) and the full report form
+  (`ReportBugSheet`, with severity and files) stay on the Market's package
+  page.
   One ⋯ per screen: a screen that already has its own ⋯ menu adds
-  `PluginMenuItems()` to the end of that menu instead, and
+  `PluginMenuItems()` (one "Rate, report or uninstall…" row that opens the
+  same popup) to the end of that menu instead, and
   `PluginMenu.screenOwnsMenu` lists those routes so the shared button stays
   off them (CRM, Special Agents, and Coves for a repository; Coves without a
   repository is the repository picker and gets the shared button).

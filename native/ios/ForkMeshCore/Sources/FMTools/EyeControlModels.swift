@@ -139,11 +139,18 @@ public enum EyeGaze {
     public static let forward: EyeVector = EyeVector(0, 0, 1)
 
     public static func screenPoint(face: EyeTransform, leftEye: EyeTransform, rightEye: EyeTransform, screen: EyeScreen) -> EyePoint? {
-        let origin: EyeVector = (face.point(leftEye.position) + face.point(rightEye.position)) * 0.5
-        let summed: EyeVector = face.direction(leftEye.direction(forward)) + face.direction(rightEye.direction(forward))
-        guard let direction = summed.normalized, origin.z < 0, direction.z > 1e-6 else { return nil }
-        let hit: EyeVector = origin + direction * (-origin.z / direction.z)
-        return EyePoint(screen.camera.x + hit.x * screen.pointsPerMeter, screen.camera.y - hit.y * screen.pointsPerMeter)
+        let eyes: [EyeTransform] = [leftEye, rightEye]
+        let hits: [EyeVector] = eyes.compactMap { (eye: EyeTransform) in
+            hit(origin: face.point(eye.position), direction: face.direction(eye.direction(forward)))
+        }
+        guard hits.count == eyes.count else { return nil }
+        let mean: EyeVector = hits.reduce(EyeVector.zero, +) * (1 / Double(hits.count))
+        return EyePoint(screen.camera.x + mean.x * screen.pointsPerMeter, screen.camera.y - mean.y * screen.pointsPerMeter)
+    }
+
+    static func hit(origin: EyeVector, direction: EyeVector) -> EyeVector? {
+        guard let direction = direction.normalized, origin.z < 0, direction.z > 1e-6 else { return nil }
+        return origin + direction * (-origin.z / direction.z)
     }
 
     public static func distance(face: EyeTransform) -> Double {
@@ -152,46 +159,90 @@ public enum EyeGaze {
 }
 
 public struct EyeCalibration: Equatable, Sendable, Codable {
+    public static let curveScale: Double = 1000
+    public static let curveRidge: Double = 0.05
+
     public var a: Double
     public var b: Double
     public var c: Double
     public var d: Double
     public var e: Double
     public var f: Double
+    public var qx: [Double]?
+    public var qy: [Double]?
 
-    public init(a: Double, b: Double, c: Double, d: Double, e: Double, f: Double) {
+    public init(a: Double, b: Double, c: Double, d: Double, e: Double, f: Double, qx: [Double]? = nil, qy: [Double]? = nil) {
         self.a = a
         self.b = b
         self.c = c
         self.d = d
         self.e = e
         self.f = f
+        self.qx = qx
+        self.qy = qy
     }
 
     public static let identity: EyeCalibration = EyeCalibration(a: 1, b: 0, c: 0, d: 0, e: 1, f: 0)
 
+    public var curved: Bool { qx != nil || qy != nil }
+
     public func apply(_ p: EyePoint) -> EyePoint {
-        EyePoint(a * p.x + b * p.y + c, d * p.x + e * p.y + f)
+        var x: Double = a * p.x + b * p.y + c
+        var y: Double = d * p.x + e * p.y + f
+        if curved {
+            let terms: [Double] = Array(Self.features(p, curved: true)[3...])
+            x += zip(qx ?? [], terms).reduce(0) { $0 + $1.0 * $1.1 }
+            y += zip(qy ?? [], terms).reduce(0) { $0 + $1.0 * $1.1 }
+        }
+        return EyePoint(x, y)
     }
 
-    public static func fit(raw: [EyePoint], targets: [EyePoint]) -> EyeCalibration? {
-        guard raw.count == targets.count, raw.count >= 3 else { return nil }
-        var m: [[Double]] = Array(repeating: Array(repeating: 0, count: 3), count: 3)
-        var rx: [Double] = [0, 0, 0]
-        var ry: [Double] = [0, 0, 0]
-        for (point, target) in zip(raw, targets) {
-            let row: [Double] = [point.x, point.y, 1]
-            for i in 0..<3 {
-                for j in 0..<3 {
-                    m[i][j] += row[i] * row[j]
+    public func shifted(by offset: EyePoint) -> EyeCalibration {
+        var moved: EyeCalibration = self
+        moved.c += offset.x
+        moved.f += offset.y
+        return moved
+    }
+
+    public static func fit(raw: [EyePoint], targets: [EyePoint], weights: [Double]? = nil, curved: Bool = false) -> EyeCalibration? {
+        let size: Int = curved ? 6 : 3
+        guard raw.count == targets.count, raw.count >= size, (weights?.count ?? raw.count) == raw.count else { return nil }
+        var m: [[Double]] = Array(repeating: Array(repeating: 0, count: size), count: size)
+        var rx: [Double] = Array(repeating: 0, count: size)
+        var ry: [Double] = Array(repeating: 0, count: size)
+        var total: Double = 0
+        for index in raw.indices {
+            let weight: Double = weights?[index] ?? 1
+            guard weight > 0, weight.isFinite else { continue }
+            let row: [Double] = features(raw[index], curved: curved)
+            for i in 0..<size {
+                for j in 0..<size {
+                    m[i][j] += weight * row[i] * row[j]
                 }
-                rx[i] += row[i] * target.x
-                ry[i] += row[i] * target.y
+                rx[i] += weight * row[i] * targets[index].x
+                ry[i] += weight * row[i] * targets[index].y
+            }
+            total += weight
+        }
+        guard total > 0 else { return nil }
+        if curved {
+            for i in 3..<size {
+                m[i][i] += curveRidge * total
             }
         }
         guard let xs = solve(m, rx), let ys = solve(m, ry) else { return nil }
-        let fitted: EyeCalibration = EyeCalibration(a: xs[0], b: xs[1], c: xs[2], d: ys[0], e: ys[1], f: ys[2])
-        return [fitted.a, fitted.b, fitted.c, fitted.d, fitted.e, fitted.f].allSatisfy(\.isFinite) ? fitted : nil
+        let s: Double = curveScale
+        let fitted: EyeCalibration = EyeCalibration(
+            a: xs[0] / s, b: xs[1] / s, c: xs[2], d: ys[0] / s, e: ys[1] / s, f: ys[2],
+            qx: curved ? Array(xs[3...]) : nil, qy: curved ? Array(ys[3...]) : nil)
+        let all: [Double] = [fitted.a, fitted.b, fitted.c, fitted.d, fitted.e, fitted.f] + (fitted.qx ?? []) + (fitted.qy ?? [])
+        return all.allSatisfy(\.isFinite) ? fitted : nil
+    }
+
+    static func features(_ p: EyePoint, curved: Bool) -> [Double] {
+        let u: Double = p.x / curveScale
+        let v: Double = p.y / curveScale
+        return curved ? [u, v, 1, u * u, u * v, v * v] : [u, v, 1]
     }
 
     public static func decode(_ wire: String?) -> EyeCalibration? {
@@ -399,8 +450,38 @@ public enum EyeCursorEvent: Equatable, Sendable {
 public struct EyeCursorEngine: Sendable {
     public static let historySeconds: Double = 1
     public static let leadSeconds: Double = 0.12
+    public static let spreadSeconds: Double = 0.3
+    public static let fixationSeconds: Double = 0.25
+    public static let fixationDispersion: Double = 40
+    public static let dwellSeconds: Double = 0.9
+    public static let learnSeconds: Double = 0.4
+    public static let learnFrames: Int = 5
+    public static let learnableSize: Double = 140
+    public static let roughAccuracy: Double = 60
+    public static let minSigma: Double = 14
+    public static let maxSigma: Double = 90
+    public static let magnet: Double = 0.6
+
+    struct Frame: Sendable {
+        var time: Double
+        var point: EyePoint
+        var mapped: EyePoint
+        var raw: EyePoint
+        var target: EyeTarget?
+    }
 
     public var calibration: EyeCalibration
+    public var accuracy: Double?
+    public var targets: [EyeTarget] = []
+    public var snapping: Bool = true {
+        didSet {
+            if !snapping {
+                snapper.reset()
+                snapped = nil
+            }
+        }
+    }
+    public var learning: Bool = true
     public var smoothing: EyeSmoothing {
         didSet { applySmoothing() }
     }
@@ -408,10 +489,17 @@ public struct EyeCursorEngine: Sendable {
         didSet { blink.length = blinkLength }
     }
     public private(set) var cursor: EyePoint?
+    public private(set) var snapped: EyeTarget?
+    public private(set) var sigma: Double = roughAccuracy
+    public private(set) var fixating: Bool = false
     public private(set) var blink: EyeBlinkDetector
     private var filterX: EyeOneEuro
     private var filterY: EyeOneEuro
-    private var history: [(time: Double, point: EyePoint)] = []
+    private var snapper: EyeSnapper = EyeSnapper()
+    private var history: [Frame] = []
+    private var samples: [EyeCalibrationSample] = []
+    private var fixationSince: Double?
+    private var dwelled: Int?
 
     public init(calibration: EyeCalibration = .identity, smoothing: EyeSmoothing = .defaultValue, blinkLength: EyeBlinkLength = .defaultValue) {
         self.calibration = calibration
@@ -424,9 +512,34 @@ public struct EyeCursorEngine: Sendable {
 
     public var frozen: Bool { blink.closing }
 
+    public var display: EyePoint? {
+        guard let cursor else { return nil }
+        guard let snapped else { return cursor }
+        let pull: EyePoint = snapped.clickPoint(for: cursor)
+        return EyePoint(cursor.x + (pull.x - cursor.x) * Self.magnet, cursor.y + (pull.y - cursor.y) * Self.magnet)
+    }
+
+    public var confidence: Double {
+        guard let cursor, let snapped else { return 0 }
+        let reach: Double = snapped.frame.distance(to: cursor) / sigma
+        return exp(-0.5 * reach * reach)
+    }
+
+    public mutating func takeSamples() -> [EyeCalibrationSample] {
+        defer { samples = [] }
+        return samples
+    }
+
     public mutating func reset() {
         cursor = nil
+        snapped = nil
+        fixating = false
+        fixationSince = nil
+        dwelled = nil
+        sigma = Self.roughAccuracy
         history = []
+        samples = []
+        snapper.reset()
         blink.reset()
         filterX.reset()
         filterY.reset()
@@ -434,22 +547,88 @@ public struct EyeCursorEngine: Sendable {
 
     public mutating func update(time: Double, raw: EyePoint?, blinkLeft: Double, blinkRight: Double, screen: EyeScreen) -> EyeCursorEvent? {
         let event: EyeBlinkEvent? = blink.update(time: time, left: blinkLeft, right: blinkRight)
-        if event == .click, let target = clickTarget() {
-            return .click(target)
+        if event == .click, let frame = clickFrame() {
+            learn(clicked: frame)
+            return .click(frame.target?.clickPoint(for: frame.point) ?? frame.point)
         }
         guard !blink.closing, let raw else { return nil }
         let mapped: EyePoint = screen.clamp(calibration.apply(raw))
         let smoothed: EyePoint = screen.clamp(EyePoint(filterX.filter(mapped.x, at: time), filterY.filter(mapped.y, at: time)))
         cursor = smoothed
-        history.append((time, smoothed))
+        history.append(Frame(time: time, point: smoothed, mapped: mapped, raw: raw, target: nil))
         history.removeAll { time - $0.time > Self.historySeconds }
+        let jitter: Double = Self.spread(history.filter { time - $0.time <= Self.spreadSeconds }.map(\.mapped))
+        let accuracy: Double = self.accuracy ?? Self.roughAccuracy
+        sigma = min(max((0.25 * jitter * jitter + accuracy * accuracy).squareRoot(), Self.minSigma), Self.maxSigma)
+        trackFixation(time: time)
+        snapped = snapping ? snapper.update(time: time, gaze: smoothed, sigma: sigma, targets: targets) : nil
+        history[history.count - 1].target = snapped
+        learnFromDwell(time: time)
         return nil
     }
 
-    private func clickTarget() -> EyePoint? {
-        guard let last = history.last else { return cursor }
+    private mutating func trackFixation(time: Double) {
+        let recent: [EyePoint] = history.filter { time - $0.time <= Self.fixationSeconds }.map(\.point)
+        let covered: Bool = (history.first?.time ?? time) <= time - Self.fixationSeconds
+        fixating = covered && Self.dispersion(recent) <= Self.fixationDispersion
+        if fixating {
+            if fixationSince == nil { fixationSince = time - Self.fixationSeconds }
+        } else {
+            fixationSince = nil
+            dwelled = nil
+        }
+    }
+
+    private mutating func learnFromDwell(time: Double) {
+        guard learning, let since = fixationSince, time - since >= Self.dwellSeconds,
+            let target = snapped, Self.learnable(target), dwelled != target.id,
+            let raw = rawGaze(on: target, from: max(since, time - Self.learnSeconds), to: time)
+        else { return }
+        dwelled = target.id
+        samples.append(EyeCalibrationSample(raw: raw, target: target.frame.center, source: .dwell))
+    }
+
+    private mutating func learn(clicked frame: Frame) {
+        guard learning, let target = frame.target, Self.learnable(target),
+            let raw = rawGaze(on: target, from: frame.time - Self.learnSeconds, to: frame.time)
+        else { return }
+        samples.append(EyeCalibrationSample(raw: raw, target: target.frame.center, source: .click))
+    }
+
+    private func rawGaze(on target: EyeTarget, from start: Double, to end: Double) -> EyePoint? {
+        let frames: [Frame] = history.filter { $0.time >= start && $0.time <= end && $0.target?.id == target.id }
+        guard frames.count >= Self.learnFrames, Self.dispersion(frames.map(\.point)) <= Self.fixationDispersion * 1.5 else { return nil }
+        return EyeStats.median(frames.map(\.raw))
+    }
+
+    static func learnable(_ target: EyeTarget) -> Bool {
+        !target.precise && target.frame.width <= learnableSize && target.frame.height <= learnableSize
+    }
+
+    static func spread(_ points: [EyePoint]) -> Double {
+        guard points.count > 1 else { return 0 }
+        let n: Double = Double(points.count)
+        let mx: Double = points.reduce(0) { $0 + $1.x } / n
+        let my: Double = points.reduce(0) { $0 + $1.y } / n
+        let squares: Double = points.reduce(0) { $0 + ($1.x - mx) * ($1.x - mx) + ($1.y - my) * ($1.y - my) }
+        return (squares / n).squareRoot()
+    }
+
+    static func dispersion(_ points: [EyePoint]) -> Double {
+        guard let first = points.first else { return 0 }
+        var low: EyePoint = first
+        var high: EyePoint = first
+        for point in points {
+            low = EyePoint(min(low.x, point.x), min(low.y, point.y))
+            high = EyePoint(max(high.x, point.x), max(high.y, point.y))
+        }
+        return (high.x - low.x) + (high.y - low.y)
+    }
+
+    private func clickFrame() -> Frame? {
+        guard let last = history.last else { return nil }
         let before: Double = last.time - Self.leadSeconds
-        return history.last { $0.time <= before }?.point ?? history.first?.point ?? last.point
+        return history.last { $0.time <= before } ?? history.first ?? last
     }
 
     private mutating func applySmoothing() {
@@ -461,15 +640,18 @@ public struct EyeCursorEngine: Sendable {
 public struct EyeCalibrationRun: Sendable {
     public static let settleSeconds: Double = 0.8
     public static let collectSeconds: Double = 1.0
+    public static let maxCollectSeconds: Double = 2.0
+    public static let wantedSamples: Int = 20
+    public static let outlierSpread: Double = 2.5
     public static let minimumTargets: Int = 5
 
     public let targets: [EyePoint]
     public private(set) var index: Int = 0
     public private(set) var finished: Bool = false
+    public private(set) var dotProgress: Double = 0
+    public private(set) var samples: [EyeCalibrationSample] = []
     private var startedAt: Double?
-    private var samples: [EyePoint] = []
-    private var raw: [EyePoint] = []
-    private var hits: [EyePoint] = []
+    private var gathered: [EyePoint] = []
 
     public init(screen: EyeScreen, inset: Double = 0.12) {
         let xs: [Double] = [inset, 0.5, 1 - inset].map { $0 * screen.width }
@@ -487,29 +669,56 @@ public struct EyeCalibrationRun: Sendable {
         startedAt = start
         let elapsed: Double = time - start
         if elapsed >= Self.settleSeconds, let point {
-            samples.append(point)
+            gathered.append(point)
         }
-        guard elapsed >= Self.settleSeconds + Self.collectSeconds else { return }
-        if let median = Self.median(samples) {
-            raw.append(median)
-            hits.append(targets[index])
+        dotProgress = min(max((elapsed - Self.settleSeconds) / Self.collectSeconds, 0), 1)
+        let enough: Bool = gathered.count >= Self.wantedSamples || elapsed >= Self.settleSeconds + Self.maxCollectSeconds
+        guard elapsed >= Self.settleSeconds + Self.collectSeconds, enough else { return }
+        if let center = Self.robustCenter(gathered) {
+            samples.append(EyeCalibrationSample(raw: center, target: targets[index], source: .dot))
         }
-        samples = []
+        gathered = []
         startedAt = nil
+        dotProgress = 0
         index += 1
         finished = index >= targets.count
     }
 
-    public var calibration: EyeCalibration? {
-        guard finished, raw.count >= Self.minimumTargets else { return nil }
-        return EyeCalibration.fit(raw: raw, targets: hits)
+    public var live: EyeLiveCalibration? {
+        guard finished, samples.count >= Self.minimumTargets else { return nil }
+        let fitted: EyeLiveCalibration = EyeLiveCalibration(dots: samples)
+        return fitted.model == .rough ? nil : fitted
+    }
+
+    public var calibration: EyeCalibration? { live?.calibration }
+
+    static func median(_ points: [EyePoint]) -> EyePoint? {
+        EyeStats.median(points)
+    }
+
+    static func robustCenter(_ points: [EyePoint]) -> EyePoint? {
+        guard let middle = EyeStats.median(points) else { return nil }
+        let distances: [Double] = points.map { $0.distance(to: middle) }
+        let mad: Double = EyeStats.median(distances) ?? 0
+        let limit: Double = max(outlierSpread * 1.4826 * mad, 4)
+        let kept: [EyePoint] = points.filter { $0.distance(to: middle) <= limit }
+        guard !kept.isEmpty else { return middle }
+        let n: Double = Double(kept.count)
+        return EyePoint(kept.reduce(0) { $0 + $1.x } / n, kept.reduce(0) { $0 + $1.y } / n)
+    }
+}
+
+enum EyeStats {
+    static func median(_ values: [Double]) -> Double? {
+        guard !values.isEmpty else { return nil }
+        let sorted: [Double] = values.sorted()
+        let middle: Int = sorted.count / 2
+        return sorted.count % 2 == 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
     }
 
     static func median(_ points: [EyePoint]) -> EyePoint? {
-        guard !points.isEmpty else { return nil }
-        let xs: [Double] = points.map(\.x).sorted()
-        let ys: [Double] = points.map(\.y).sorted()
-        return EyePoint(xs[xs.count / 2], ys[ys.count / 2])
+        guard let x = median(points.map(\.x)), let y = median(points.map(\.y)) else { return nil }
+        return EyePoint(x, y)
     }
 }
 
@@ -517,4 +726,6 @@ public enum EyeControlPrefs {
     public static let smoothing: String = "eyeControl.smoothing"
     public static let blinkLength: String = "eyeControl.blinkLength"
     public static let calibration: String = "eyeControl.calibration"
+    public static let snapping: String = "eyeControl.snapping"
+    public static let learning: String = "eyeControl.learning"
 }

@@ -130,6 +130,49 @@ int main(int argc, char **argv)
               QStringLiteral("spans clamp to 1..2 and idless entries drop"));
     }
 
+    {
+        StatsTileData data;
+        data.value = QStringLiteral("12");
+        data.note = QStringLiteral("open");
+        data.status = StatsTileStatus::Warning;
+        data.trend = StatsTrendPolarity::DownIsGood;
+        for (int index = 0; index < 75; ++index) {
+            data.series.labels.append(QString::number(index));
+            data.series.values.append(index);
+        }
+        data.series.tones = {StatsTileStatus::Good};
+        const QJsonObject tile = StatsDashboard::tileToJson(
+            {QStringLiteral("issues-open"), QStringLiteral("Open issues"),
+             QStringLiteral("Issues & pulls"), QStringLiteral("hint")},
+            data);
+        const QJsonObject series = tile.value(QStringLiteral("series")).toObject();
+        const QJsonArray values = series.value(QStringLiteral("values")).toArray();
+        check(tile.value(QStringLiteral("id")).toString() == QLatin1String("issues-open") &&
+                  tile.value(QStringLiteral("group")).toString() == QLatin1String("Issues & pulls") &&
+                  tile.value(QStringLiteral("value")).toString() == QLatin1String("12") &&
+                  tile.value(QStringLiteral("status")).toString() == QLatin1String("warning") &&
+                  tile.value(QStringLiteral("trend")).toString() == QLatin1String("down") &&
+                  tile.value(QStringLiteral("available")).toBool(),
+              QStringLiteral("tileToJson carries the reading for a phone"));
+        check(values.size() == StatsDashboard::kMaxRemoteSeriesPoints &&
+                  values.first().toDouble() == 15 && values.last().toDouble() == 74 &&
+                  series.value(QStringLiteral("labels")).toArray().first().toString() ==
+                      QLatin1String("15") &&
+                  !series.contains(QStringLiteral("tones")),
+              QStringLiteral("tileToJson keeps the newest points and drops tones it cannot align"));
+        StatsTileData empty;
+        empty.available = false;
+        empty.note = QString(500, QLatin1Char('x'));
+        const QJsonObject missing = StatsDashboard::tileToJson(
+            {QStringLiteral("cpu"), QStringLiteral("CPU"), QStringLiteral("This machine"), {}},
+            empty);
+        check(!missing.value(QStringLiteral("available")).toBool() &&
+                  !missing.contains(QStringLiteral("series")) &&
+                  missing.value(QStringLiteral("note")).toString().size() ==
+                      StatsDashboard::kMaxRemoteNoteChars,
+              QStringLiteral("tileToJson sends an unavailable tile with its clipped reason"));
+    }
+
     // Number formatting.
     check(StatsDashboard::compactNumber(1284) == QLatin1String("1,284"),
           QStringLiteral("compactNumber keeps thousands separators under 10K"));

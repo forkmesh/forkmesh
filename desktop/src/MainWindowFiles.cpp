@@ -5,6 +5,7 @@
 #include "FileTreeSupport.h"
 #include "GlobalSearchMatch.h"
 #include "MainWindowInternal.h"
+#include "NetworkFilesPanel.h"
 
 #include <QCheckBox>
 #include <QClipboard>
@@ -695,6 +696,7 @@ struct FilesHeaderParts {
     QWidget *home = nullptr;
     QWidget *repo = nullptr;
     QWidget *coves = nullptr;
+    QWidget *network = nullptr;
     QWidget *choose = nullptr;
     QWidget *refresh = nullptr;
     QWidget *open = nullptr;
@@ -723,7 +725,7 @@ void arrangeFilesHeader(const FilesHeaderParts &parts, bool next)
         parts.heading->addStretch();
         for (QWidget *widget :
              {parts.hidden, parts.size, parts.up, parts.home, parts.repo,
-              parts.coves, parts.choose, parts.refresh, parts.open})
+              parts.coves, parts.network, parts.choose, parts.refresh, parts.open})
             parts.heading->addWidget(widget);
         parts.toolbar->addWidget(parts.path);
         return;
@@ -738,6 +740,7 @@ void arrangeFilesHeader(const FilesHeaderParts &parts, bool next)
     };
     parts.toolbar->addWidget(parts.repo);
     parts.toolbar->addWidget(parts.coves);
+    parts.toolbar->addWidget(parts.network);
     addRule(parts.sourceRule);
     for (QWidget *widget : {parts.up, parts.home, parts.choose})
         parts.toolbar->addWidget(widget);
@@ -882,6 +885,17 @@ QWidget *MainWindow::buildFilesSection()
             [this] { showFilesCoveTree(); });
     heading->addWidget(m_filesCoveTreeButton);
 
+    m_filesNetworkTreeButton = new QPushButton(QStringLiteral("Network"));
+    m_filesNetworkTreeButton->setObjectName(QStringLiteral("ghostButton"));
+    m_filesNetworkTreeButton->setCheckable(true);
+    m_filesNetworkTreeButton->setCursor(Qt::PointingHandCursor);
+    m_filesNetworkTreeButton->setToolTip(QStringLiteral(
+        "Browse folders shared on your network by a router, NAS or computer (SMB)"));
+    setOcticon(m_filesNetworkTreeButton, "server", 14);
+    connect(m_filesNetworkTreeButton, &QPushButton::clicked, this,
+            [this] { showFilesNetworkTree(); });
+    heading->addWidget(m_filesNetworkTreeButton);
+
     auto *chooseButton = new QPushButton(QStringLiteral("Choose"));
     chooseButton->setObjectName(QStringLiteral("ghostButton"));
     chooseButton->setCursor(Qt::PointingHandCursor);
@@ -901,7 +915,9 @@ QWidget *MainWindow::buildFilesSection()
     refreshButton->setToolTip(QStringLiteral("Re-read whichever tree is showing"));
     setOcticon(refreshButton, "sync", 14);
     connect(refreshButton, &QPushButton::clicked, this, [this] {
-        if (m_filesTreeStack && m_filesTreeStack->currentIndex() == 2)
+        if (m_filesTreeStack && m_filesTreeStack->currentIndex() == 3 && m_networkFilesPanel)
+            m_networkFilesPanel->reload();
+        else if (m_filesTreeStack && m_filesTreeStack->currentIndex() == 2)
             loadCoveExplorer();
         else if (m_filesTreeStack && m_filesTreeStack->currentIndex() == 1)
             loadRepoFileTree();
@@ -1064,6 +1080,8 @@ QWidget *MainWindow::buildFilesSection()
     QTreeWidget *coveTree = m_filesTreeStack->widget(2)->findChild<QTreeWidget *>(
         QStringLiteral("fileTree"));
     installFilesTreeDelegate(coveTree, true);
+    m_filesTreeStack->addWidget(buildFilesNetworkPanel());
+    installFilesTreeDelegate(m_networkFilesPanel->tree(), true);
     splitter->addWidget(m_filesTreeStack);
     splitter->addWidget(buildFilesEditorColumn());
 
@@ -1126,6 +1144,7 @@ QWidget *MainWindow::buildFilesSection()
     parts.home = homeButton;
     parts.repo = m_filesRepoTreeButton;
     parts.coves = m_filesCoveTreeButton;
+    parts.network = m_filesNetworkTreeButton;
     parts.choose = chooseButton;
     parts.refresh = refreshButton;
     parts.open = openButton;
@@ -1138,7 +1157,8 @@ QWidget *MainWindow::buildFilesSection()
         if (*arranged != int(next)) {
             *arranged = int(next);
             arrangeFilesHeader(parts, next);
-            for (QTreeWidget *tree : {m_fileExplorerTree, m_repoFileTree, coveTree}) {
+            for (QTreeWidget *tree : {m_fileExplorerTree, m_repoFileTree, coveTree,
+                                      m_networkFilesPanel->tree()}) {
                 if (!tree)
                     continue;
                 tree->setIndentation(next ? kFilesTreeIndent
@@ -1592,6 +1612,8 @@ void MainWindow::showFilesRepoTree()
         m_filesRepoTreeButton->setChecked(true);
     if (m_filesCoveTreeButton)
         m_filesCoveTreeButton->setChecked(false);
+    if (m_filesNetworkTreeButton)
+        m_filesNetworkTreeButton->setChecked(false);
     if (m_fileExplorerStatus)
         m_fileExplorerStatus->setText(
             repoGitDir().isEmpty()
@@ -1610,6 +1632,8 @@ void MainWindow::showFilesCoveTree()
         m_filesRepoTreeButton->setChecked(false);
     if (m_filesCoveTreeButton)
         m_filesCoveTreeButton->setChecked(true);
+    if (m_filesNetworkTreeButton)
+        m_filesNetworkTreeButton->setChecked(false);
     if (m_fileExplorerStatus) {
         QString repository;
         if (m_repoDetailIndex >= 0 && m_repoDetailIndex < m_repositories.size()) {
@@ -1631,6 +1655,8 @@ void MainWindow::showFilesDiskTree()
         m_filesRepoTreeButton->setChecked(false);
     if (m_filesCoveTreeButton)
         m_filesCoveTreeButton->setChecked(false);
+    if (m_filesNetworkTreeButton)
+        m_filesNetworkTreeButton->setChecked(false);
 }
 
 // The size column is column 1 on both trees (name is 0), so one toggle covers
@@ -1656,6 +1682,8 @@ void MainWindow::refreshFilesPage()
         loadCoveExplorer();
         return;
     }
+    if (m_filesTreeStack && m_filesTreeStack->currentIndex() == 3)
+        return;
     if (QDir(m_fileExplorerRoot).exists()) {
         if (m_fileExplorerTree->topLevelItemCount() == 0)
             setFileExplorerRoot(m_fileExplorerRoot);
@@ -3063,14 +3091,44 @@ void MainWindow::showFileExplorerMenu(const QPoint &pos)
               : menu.addAction(QStringLiteral("Open with the desktop app"));
     QAction *reveal = menu.addAction(
         QStringLiteral("Show in desktop file manager"));
+    const bool onItem = item != nullptr;
+    const QString folder = isDir ? path : info.absolutePath();
+    menu.addSeparator();
+    QAction *copy = onItem ? menu.addAction(QStringLiteral("Copy")) : nullptr;
+    QAction *move = onItem ? menu.addAction(QStringLiteral("Move")) : nullptr;
+    QAction *paste = menu.addAction(
+        isDir && onItem ? QStringLiteral("Paste into %1").arg(info.fileName())
+                        : QStringLiteral("Paste"));
+    paste->setEnabled(!forkmesh::smb::fileClipboard().items.isEmpty());
+    QAction *rename = onItem ? menu.addAction(QStringLiteral("Rename…")) : nullptr;
+    QAction *trash = onItem ? menu.addAction(QStringLiteral("Move to trash…")) : nullptr;
+    menu.addSeparator();
+    QAction *newFolder = menu.addAction(QStringLiteral("New folder"));
+    QAction *newFile = menu.addAction(QStringLiteral("New file"));
+    QAction *copyIn = menu.addAction(QStringLiteral("Copy files here…"));
     menu.addSeparator();
     QAction *copyPath = menu.addAction(QStringLiteral("Copy path"));
     QAction *copyName = menu.addAction(QStringLiteral("Copy name"));
+    QAction *details = menu.addAction(QStringLiteral("Info"));
 
     QAction *chosen = menu.exec(m_fileExplorerTree->viewport()->mapToGlobal(pos));
     if (!chosen)
         return;
-    if (chosen == open) {
+    if (chosen == copy || chosen == move) {
+        copyLocalFilesToClipboard({info.absoluteFilePath()}, chosen == move);
+    } else if (chosen == paste) {
+        pasteIntoLocalFolder(folder);
+    } else if (chosen == rename) {
+        renameLocalEntry(info.absoluteFilePath());
+    } else if (chosen == trash) {
+        trashLocalEntries({info.absoluteFilePath()});
+    } else if (chosen == newFolder || chosen == newFile) {
+        createLocalEntry(folder, chosen == newFolder);
+    } else if (chosen == copyIn) {
+        uploadIntoLocalFolder(folder);
+    } else if (chosen == details) {
+        showLocalEntryInfo(info.absoluteFilePath());
+    } else if (chosen == open) {
         if (isDir)
             setFileExplorerRoot(path);
         else
