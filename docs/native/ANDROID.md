@@ -648,6 +648,12 @@ default in new projects except the chosen starter pack
   the desktop's **iOS App Store status** shortcut to run
   ([App Store Status](../marketplace/app-store-status.md)). TestFlight public
   links open in the browser, and only `https://` links are offered.
+- **Usage.** `A/feature/usage/` draws `/dashboard/usage` natively (Insights
+  group, route `usage`, package `usage`) from the desktop's `agentops.usage`
+  through `AgentUsageModel`, with the account actions (use for new agents,
+  add, rename, delete, log in and out, terminal as an account) and the
+  agent-in-a-terminal form; tapping the Usage card on Desktop agents opens it
+  ([Usage on Android](../marketplace-usage-feed-mastodon.md#usage-on-android)).
 - **Shortcut steps.** `C/teammates/ShortcutsStore.kt` decodes the optional
   `steps` of each `insights.shortcuts` entry into `ShortcutStep` (name, and
   `shortcut` when the step runs another shortcut). Decoding is lenient: a

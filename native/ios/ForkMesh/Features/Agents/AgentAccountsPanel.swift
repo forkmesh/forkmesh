@@ -16,12 +16,11 @@ enum AgentAccountsRoute: Hashable, Identifiable {
     }
 }
 
-struct AgentAccountsSheet: View {
+struct AgentAccountsPanel: View {
     @Environment(\.fmPalette) private var fm
     let usage: AgentUsageModel
     let runnerAccounts: RunnerAccountsModel?
     @State private var route: AgentAccountsRoute?
-    @State private var detent: PresentationDetent = .medium
     @State private var terminals: Bool = false
     @State private var accountTerminals: Bool = false
     @State private var accountActions: Bool = false
@@ -33,38 +32,42 @@ struct AgentAccountsSheet: View {
     @State private var renameTarget: (provider: String, account: UsageAccount)?
     @State private var renaming: Bool = false
     @State private var draft: String = ""
+    @State private var deleteTarget: (provider: String, account: UsageAccount)?
+    @State private var deleting: Bool = false
 
     private var center: AgentControlCenter? { HostsFeature.agents }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: FmSpace.x3) {
-                    content
-                    if let runnerAccounts = runnerAccounts, runnerAccounts.visible {
-                        RunnerAccountsPanel(
-                            model: runnerAccounts, attention: Services.get(RunnerAttentionModel.self), titled: true)
-                            .padding(.top, FmSpace.x2)
-                    }
-                }
-                .padding(FmSpace.x4)
-            }
-            .fmPreGlassBackground(fm.bgBase)
-            .navigationTitle("Accounts and usage")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if usage.loading || busy {
-                        ProgressView().controlSize(.small)
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: FmSpace.x3) {
+                desktopLine
+                content
+                if let runnerAccounts = runnerAccounts, runnerAccounts.visible {
+                    RunnerAccountsPanel(
+                        model: runnerAccounts, attention: Services.get(RunnerAttentionModel.self), titled: true)
+                        .padding(.top, FmSpace.x2)
                 }
             }
-            .navigationDestination(item: $route) { (route: AgentAccountsRoute) in
-                destination(route)
-            }
-            .fmRefreshable { await refresh() }
+            .padding(FmSpace.x4)
         }
-        .presentationDetents([.medium, .large], selection: $detent)
+        .fmPreGlassBackground(fm.bgBase)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if usage.loading || busy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    FmIconButton(icon: "refresh", label: "Refresh", onPressed: {
+                        Task { await refresh() }
+                    })
+                    .accessibilityIdentifier("usage-refresh")
+                }
+            }
+        }
+        .navigationDestination(item: $route) { (route: AgentAccountsRoute) in
+            destination(route)
+                .shellPageClearance()
+        }
+        .fmRefreshable { await refresh() }
         .alert("Add a \(agentProviderLabel(addingProvider)) account", isPresented: $adding) {
             TextField("Account name", text: $draft)
                 .textInputAutocapitalization(.words)
@@ -79,10 +82,17 @@ struct AgentAccountsSheet: View {
             Button("Rename") { rename() }
             Button("Cancel", role: .cancel) {}
         }
-        .onChange(of: route) { (_: AgentAccountsRoute?, next: AgentAccountsRoute?) in
-            if next != nil {
-                detent = .large
-            } else {
+        .confirmationDialog(
+            "Delete the \(agentProviderLabel(deleteTarget?.provider ?? "")) account \"\(deleteTarget?.account.label ?? "")\"?",
+            isPresented: $deleting, titleVisibility: .visible
+        ) {
+            Button("Delete account", role: .destructive) { delete() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The desktop forgets the account and signs it out. Agents running as it stop being able to sign in. Its agent history stays on the desktop.")
+        }
+        .onChange(of: route) { (previous: AgentAccountsRoute?, next: AgentAccountsRoute?) in
+            if previous != nil && next == nil {
                 Task { await usage.refresh() }
             }
         }
@@ -93,8 +103,20 @@ struct AgentAccountsSheet: View {
         }
     }
 
+    @ViewBuilder private var desktopLine: some View {
+        if let hub = HostsFeature.hub, hub.desktop != nil {
+            Label(hub.reach.label, systemImage: "desktopcomputer")
+                .fmText(.bodySmall, color: hub.reach.isConnected ? fm.textSecondary : fm.warning)
+                .accessibilityIdentifier("usage-desktop")
+        }
+    }
+
     @ViewBuilder private var content: some View {
         if let summary = usage.summary {
+            if summary.providers.isEmpty {
+                Text("The desktop reports no Claude Code or Codex accounts yet.")
+                    .fmText(.bodySmall, color: fm.textSecondary)
+            }
             ForEach(summary.providers) { (provider: UsageProviderMeter) in
                 providerCard(provider)
             }
@@ -125,6 +147,10 @@ struct AgentAccountsSheet: View {
                 HStack(spacing: FmSpace.x2) {
                     Text(provider.label)
                         .fmText(.titleSmall)
+                    if let summary = usage.summary, summary.providers.count > 1, summary.activeProvider == provider.id {
+                        Text("Used for new agents")
+                            .fmText(.labelSmall, color: fm.textSecondary)
+                    }
                     Spacer(minLength: FmSpace.x2)
                     if terminals && center != nil {
                         FmToneButton(label: "New terminal", icon: "add", tone: .accent, filled: true) {
@@ -247,6 +273,14 @@ struct AgentAccountsSheet: View {
                         Label("Rename…", systemImage: "pencil")
                     }
                 }
+                if accountActions && account.id != "default" {
+                    Button(role: .destructive) {
+                        deleteTarget = (provider.id, account)
+                        deleting = true
+                    } label: {
+                        Label("Delete…", systemImage: "trash")
+                    }
+                }
             } label: {
                 Image(systemName: "ellipsis.circle")
                     .font(.system(size: 17))
@@ -343,6 +377,21 @@ struct AgentAccountsSheet: View {
             } else {
                 notice = FmNotice("Added \(label). Sign it in on the desktop.")
             }
+        }
+    }
+
+    private func delete() {
+        guard let target = deleteTarget, !busy else {
+            return
+        }
+        busy = true
+        noticeProvider = target.provider
+        notice = nil
+        Task {
+            let error: String = await usage.deleteAccount(provider: target.provider, account: target.account.id)
+            busy = false
+            deleteTarget = nil
+            notice = error.isEmpty ? FmNotice("Deleted \(target.account.label)") : FmNotice.error(error)
         }
     }
 

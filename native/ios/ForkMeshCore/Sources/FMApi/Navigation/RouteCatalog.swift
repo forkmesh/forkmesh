@@ -182,6 +182,7 @@ public enum RouteCatalog {
         case .faceChanger: return "Face Changer"
         case .videoMixDjStudio: return "Video Mix DJ Studio"
         case .appStoreStatus: return "App Store Status"
+        case .usage: return "Usage"
         case .rssReader: return "RSS Reader"
         case .secureDrive: return "Secure Drive"
         case .spiderRoom: return "Spider Room"
@@ -267,6 +268,7 @@ public enum RouteCatalog {
         case .faceChanger: return "theatermasks"
         case .videoMixDjStudio: return "music.note.list"
         case .appStoreStatus: return "app.badge"
+        case .usage: return "gauge.with.dots.needle.33percent"
         case .rssReader: return "dot.radiowaves.up.forward"
         case .secureDrive: return "lock.shield"
         case .spiderRoom: return "arkit"
@@ -415,6 +417,7 @@ public enum HubCatalog {
         .destination(.stats),
         .destination(.status),
         .destination(.appStoreStatus),
+        .destination(.usage),
         .destination(.ember(nil)),
         .destination(.strata(nil)),
         .destination(.synapse(nil)),

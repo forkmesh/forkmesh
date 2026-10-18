@@ -79,6 +79,19 @@ class DesktopAgentTerminalTest {
         }
     }
 
+    fun testAnAccountSignInStartsInLoginModeForThatAccount() {
+        val desk = Desk { answering(it) }
+        val terminal = DesktopAgentTerminal(desk.hub, provider = "codex", mode = "login", account = "n1", notifyDelayMs = 0)
+        expect(terminal.statusText.startsWith("Starting Codex sign-in"), terminal.statusText)
+        terminal.start(40, 10)
+        expect(waitUntil { desk.requests("terminal.start").isNotEmpty() }, terminal.statusText)
+        val sent = desk.requests("terminal.start").single()
+        assertEq("codex", sent["provider"])
+        assertEq("login", sent["mode"])
+        assertEq("n1", sent["account"])
+        terminal.detach()
+    }
+
     fun testStartFeedsTheScreenTypesInOrderAndEndsOnExit() {
         val desk = Desk { answering(it) }
         var started: DesktopTerminalInfo? = null
@@ -95,6 +108,7 @@ class DesktopAgentTerminalTest {
         assertEq("claude-code", sent["provider"])
         assertEq(40, (sent["cols"] as Number).toInt())
         assertEq(10, (sent["rows"] as Number).toInt())
+        expect(!sent.containsKey("mode") && !sent.containsKey("account"), "$sent")
         assertEq(id, terminal.terminalId)
         assertEq("Pixel", started?.device)
         assertEq("Claude Code · app", terminal.title)

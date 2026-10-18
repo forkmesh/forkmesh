@@ -531,6 +531,12 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   again, and that shortcut's detail page links here
   ([App Store Status](../marketplace/app-store-status.md)). Android:
   `Route.AppStoreStatus`, `AppStoreStatus.kt`, `feature/appstorestatus/`.
+- **Usage** (`.usage`, `/dashboard/usage`, Insights group): the paired
+  desktop's Claude Code and Codex accounts, usage windows and credits, with
+  the account actions and terminals (`UsageScreen.swift`, body
+  `AgentAccountsPanel`), drawn natively instead of the package's web page.
+  The Agents usage bars push it too
+  ([Usage](../marketplace-usage-feed-mastodon.md#usage-on-ios)).
 - **RSS Reader** (`.rssReader`, `/dashboard/rss`, `forkmesh://rss-reader`,
   Personal group): a local-only feed reader laid out after NetNewsWire. Feeds
   are fetched, parsed and stored on the phone (`RSSReader*.swift` in

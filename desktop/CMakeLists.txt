@@ -490,6 +490,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowAgents.cpp
     src/MainWindowAgentSync.cpp
     src/MainWindowAgentUsage.cpp
+    src/MainWindowAgentUsagePage.cpp
     src/MainWindowAgentList.cpp
     src/MainWindowAgentFolders.cpp
     src/MainWindowAgentDetail.cpp

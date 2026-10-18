@@ -590,8 +590,6 @@ struct AgentUsageBars: View {
     @Environment(\.fmPalette) private var fm
     let client: AgentOpsClient
     @State private var model: AgentUsageModel
-    @State private var showing: Bool = false
-    @State private var runnerAccounts: RunnerAccountsModel? = Services.get(RunnerAccountsModel.self)
 
     init(client: AgentOpsClient) {
         self.client = client
@@ -607,8 +605,9 @@ struct AgentUsageBars: View {
     }
 
     var body: some View {
-        Button {
-            showing = true
+        NavigationLink {
+            UsageScreen(usage: model)
+                .shellPageClearance()
         } label: {
             HStack(alignment: .bottom, spacing: 3) {
                 if let meter = meter {
@@ -628,10 +627,7 @@ struct AgentUsageBars: View {
         .buttonStyle(ShellBarButtonStyle())
         .accessibilityLabel(Text(label))
         .accessibilityIdentifier("agents-usage")
-        .accessibilityHint(Text("Accounts, usage, sign-in and new terminals"))
-        .sheet(isPresented: $showing) {
-            AgentAccountsSheet(usage: model, runnerAccounts: runnerAccounts)
-        }
+        .accessibilityHint(Text("Opens Usage: accounts, sign-in and new terminals"))
         .task { await load() }
     }
 

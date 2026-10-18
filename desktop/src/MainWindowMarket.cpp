@@ -3296,6 +3296,10 @@ void MainWindow::syncNativePackagePages()
         host.openNetworkShare = [this](const QString &url, bool guest) {
             openNetworkShareLocation(url, guest);
         };
+        if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
+            host.agentUsagePage = [this](QWidget *parent) {
+                return buildAgentUsagePage(parent);
+            };
         if (permissionIds.contains(QStringLiteral("repository.read"))) {
             host.repositories = [this] { return nativePackageRepositories(); };
             host.currentRepository = [this] { return currentNativePackageRepository(); };

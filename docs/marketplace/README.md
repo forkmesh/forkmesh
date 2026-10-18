@@ -78,7 +78,11 @@ CLI, never listed in Agents) and, for packages declaring `desktop.agents.run`,
 `specialAgents()` / `specialAgentAction(...)`, and for packages declaring
 `repository.read`, `repositories()`, `currentRepository()` and
 `openRepositoryFile(repository, path, line)`
-([codebase-analysis.md](codebase-analysis.md#host-contract)). `request` waits out the
+([codebase-analysis.md](codebase-analysis.md#host-contract)), and for packages
+declaring `desktop.models.usage.read`, `agentUsagePage(parent)`: the window's
+own Usage page with this desktop's Claude Code and Codex accounts and their
+controls, which the Usage package embeds
+([../desktop/agents-ui.md](../desktop/agents-ui.md)). `request` waits out the
 network manager's host-wide cooldown (after a 5xx or 429 on any `/api/`
 route) and resends GETs up to four times before reporting "the ForkMesh relay
 is restarting or unreachable".

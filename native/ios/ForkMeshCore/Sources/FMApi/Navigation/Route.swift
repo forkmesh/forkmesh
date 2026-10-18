@@ -193,6 +193,7 @@ public enum Route: Codable, Hashable, Sendable {
     case faceChanger
     case videoMixDjStudio
     case appStoreStatus
+    case usage
     case rssReader
     case secureDrive
     case spiderRoom
@@ -311,6 +312,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .faceChanger: return .faceChanger
         case .videoMixDjStudio: return .videoMixDjStudio
         case .appStoreStatus: return .appStoreStatus
+        case .usage: return .usage
         case .rssReader: return .rssReader
         case .secureDrive: return .secureDrive
         case .spiderRoom: return .spiderRoom
@@ -348,7 +350,7 @@ public enum Route: Codable, Hashable, Sendable {
         case notes, note, tasks, task, calendar, event, timers
         case desktops, desktop, hosts, host, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, ads, ledger
-        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, fileExplorer, faceChanger, videoMixDjStudio, appStoreStatus, rssReader, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
+        case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, fileExplorer, faceChanger, videoMixDjStudio, appStoreStatus, usage, rssReader, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
         case ember, strata, synapse
         case stats, status, admin
         case settings, orgs, org, projects, projectAccess, tour, updateRequired
@@ -356,7 +358,7 @@ public enum Route: Codable, Hashable, Sendable {
         /// The workstream that builds this destination (NAVIGATION.md §8.1), for the placeholder.
         public var owner: String {
             switch self {
-            case .agents, .agent, .approval, .agentLogin: return "WS10"
+            case .agents, .agent, .approval, .agentLogin, .usage: return "WS10"
             case .compose: return "WS3"
             case .agentWatch: return "WS4"
             case .teammates, .teammate, .teammateEditor, .shortcuts: return "WS17"

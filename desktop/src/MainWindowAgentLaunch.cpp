@@ -2607,6 +2607,7 @@ void MainWindow::showAgentQueueLimitMenu()
 
 void MainWindow::refreshAgentToolbarAccountButtons()
 {
+    scheduleAgentUsagePagesRefresh();
     if (!m_agentUsageButton)
         return;
     m_agentUsageProvider = agentIsCodexProvider(defaultAgentProvider())
@@ -2629,8 +2630,8 @@ void MainWindow::refreshAgentToolbarAccountButtons()
             tip += QLatin1Char('\n') + lines.join(QLatin1Char('\n'));
     }
     tip += QStringLiteral("\n\nClick to open the Usage page with every account's "
-                          "usage. Right-click to open Claude Code or Codex in a "
-                          "terminal or switch accounts.");
+                          "usage, terminals and account controls. Right-click "
+                          "for the quick menu.");
     m_agentUsageButton->setToolTip(tip);
     m_agentUsageButton->setAccessibleDescription(tip);
     m_agentUsageButton->update();

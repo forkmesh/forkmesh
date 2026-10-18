@@ -52,8 +52,10 @@ import com.forkmesh.nativeapp.agents.ops.UsageState
 import com.forkmesh.nativeapp.agents.ops.UsageWindowMeter
 import com.forkmesh.nativeapp.code.ConflictResolution
 import com.forkmesh.nativeapp.feature.code.FmOutlinedButton
+import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.model.AgentSession
 import com.forkmesh.nativeapp.model.Repository
+import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.ui.kit.FmCard
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
@@ -64,6 +66,7 @@ import com.forkmesh.nativeapp.ui.kit.FmTone
 import com.forkmesh.nativeapp.ui.kit.FmToneButton
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.theme.Fm
+import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmRadius
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import com.forkmesh.nativeapp.ui.theme.FmType
@@ -144,10 +147,14 @@ internal fun AgentUsageCard(navigator: Navigator? = null) {
     tick.let { }
     val summary = model.summary ?: return
     if (summary.providers.isEmpty() && summary.totalSpendUsd == null) return
-    FmCard(Modifier.fillMaxWidth(), radius = FmRadius.lg) {
+    val openUsage = { if (navigator != null) navigator.push(NavigationFeature.screen(Route.Usage)) else NavigationFeature.open(Route.Usage) }
+    FmCard(Modifier.fillMaxWidth(), onTap = openUsage, radius = FmRadius.lg) {
         Column(verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
-            FmSectionHeader("Usage", icon = "speed", trailing = summary.totalSpendUsd?.let { spend ->
-                { Text(UsageFormat.usd(spend), style = Fm.text.bodySmall.copy(color = c.textSecondary)) }
+            FmSectionHeader("Usage", icon = "speed", trailing = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    summary.totalSpendUsd?.let { spend -> Text(UsageFormat.usd(spend), style = Fm.text.bodySmall.copy(color = c.textSecondary)) }
+                    FmIcon("chevron_right", size = 16.dp, tint = c.textTertiary)
+                }
             })
             for (provider in summary.providers) UsageProviderBlock(provider, model.nowMs)
             if (model.errorText.isNotEmpty()) Text(model.errorText, style = Fm.text.bodySmall.copy(color = c.danger))
@@ -167,33 +174,44 @@ private fun UsageProviderBlock(provider: UsageProviderMeter, nowMs: Long) {
             listOfNotNull(provider.label, account).joinToString(" · "),
             style = Fm.text.bodyMedium.copy(color = c.textPrimary, fontWeight = FmType.emphasis),
         )
-        for (window in provider.windows) {
-            val tone = when (window.state) {
-                UsageState.Exhausted -> c.danger
-                UsageState.High -> c.warning
-                UsageState.Ok -> c.success
-                UsageState.Unknown -> c.textTertiary
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(window.label, style = Fm.text.bodySmall.copy(color = c.textSecondary), modifier = Modifier.width(88.dp))
-                UsagePaceBar(window, nowMs, tone, Modifier.weight(1f))
-                Spacer(Modifier.width(FmSpace.x2))
-                Text(
-                    listOf(window.usedPercent?.let { "$it%" } ?: "—", window.resetLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · "),
-                    style = Fm.text.labelSmall.copy(color = c.textSecondary),
-                )
-            }
-            val pace = listOf(window.periodLabel(nowMs), window.paceLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · ")
-            if (pace.isNotEmpty()) {
-                Text(pace, style = Fm.text.labelSmall.copy(color = c.textTertiary), modifier = Modifier.padding(start = 88.dp))
-            }
-        }
+        UsageWindowRows(provider.windows, nowMs)
         provider.credits?.let { Text(it.label, style = Fm.text.labelSmall.copy(color = c.textSecondary)) }
     }
 }
 
 @Composable
-private fun UsagePaceBar(window: UsageWindowMeter, nowMs: Long, tone: Color, modifier: Modifier) {
+internal fun usageTone(state: UsageState): Color {
+    val c = Fm.colors
+    return when (state) {
+        UsageState.Exhausted -> c.danger
+        UsageState.High -> c.warning
+        UsageState.Ok -> c.success
+        UsageState.Unknown -> c.textTertiary
+    }
+}
+
+@Composable
+internal fun UsageWindowRows(windows: List<UsageWindowMeter>, nowMs: Long) {
+    val c = Fm.colors
+    for (window in windows) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(window.label, style = Fm.text.bodySmall.copy(color = c.textSecondary), modifier = Modifier.width(88.dp))
+            UsagePaceBar(window, nowMs, usageTone(window.state), Modifier.weight(1f))
+            Spacer(Modifier.width(FmSpace.x2))
+            Text(
+                listOf(window.usedPercent?.let { "$it%" } ?: "—", window.resetLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · "),
+                style = Fm.text.labelSmall.copy(color = c.textSecondary),
+            )
+        }
+        val pace = listOf(window.periodLabel(nowMs), window.paceLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · ")
+        if (pace.isNotEmpty()) {
+            Text(pace, style = Fm.text.labelSmall.copy(color = c.textTertiary), modifier = Modifier.padding(start = 88.dp))
+        }
+    }
+}
+
+@Composable
+internal fun UsagePaceBar(window: UsageWindowMeter, nowMs: Long, tone: Color, modifier: Modifier) {
     val c = Fm.colors
     val elapsed = window.elapsedFraction(nowMs)
     val segments = if (elapsed == null) 1 else window.segments
