@@ -113,6 +113,7 @@ CORE_RESERVED_ROUTE_PREFIXES = frozenset({
     "pitch-deck",
     "v1",
     "ws",
+    "profile",
 })
 
 RESERVED_ROUTE_PREFIXES = CORE_RESERVED_ROUTE_PREFIXES | PLUGIN_WWW_SITE_ROUTES
@@ -177,6 +178,17 @@ DASHBOARD_PAGE_ASSETS = {
     **PLUGIN_DASHBOARD_PAGE_ASSETS,
 }
 
+DASHBOARD_PAGE_SEGMENTS = frozenset(
+    route.split("/")[2] for route in DASHBOARD_PAGE_ASSETS
+    if route.startswith("/dashboard/")) | frozenset({
+        "repos", "settings", "profile", "workflows", "tasks", "calendar",
+        "notes"})
+
+SHORT_NAME_RESERVED = (
+    RESERVED_ROUTE_PREFIXES | DASHBOARD_PAGE_SEGMENTS
+    | frozenset(route.strip("/").split("/")[0] for route in DASHBOARD_PAGE_ASSETS)
+    | frozenset({"explore", "forgot", "profile"}))
+
 # The repo-detail document, fetched by the Worker for every /owner/repo[...]
 # route. Deliberately not a navigable asset path of its own.
 DASHBOARD_REPO_ASSET = "dashboard/repo.html"
@@ -218,7 +230,36 @@ def dashboard_section_redirect(path, query):
 LEGACY_PAGE_PATHS = {
     "/referrals": "/referral",
     "/referrals/": "/referral",
+    "/explore": "/dashboard/repos",
+    "/explore/": "/dashboard/repos",
+    "/forgot": "/forgot-password",
+    "/forgot/": "/forgot-password",
 }
+
+PROFILE_NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+PROFILE_PATH_RE = re.compile(
+    r"^(?:/dashboard)?/profile/([^/]+)(/repositories)?/?$")
+
+
+def profile_page_redirect(path, query):
+    match = PROFILE_PATH_RE.match(str(path or ""))
+    if not match:
+        return None
+    name = unquote(match.group(1)).lower().lstrip("@")
+    if not PROFILE_NAME_RE.match(name) or name == "repositories":
+        return None
+    target = "/@" + name + (match.group(2) or "")
+    return target + ("?" + query if query else "")
+
+
+def account_page_name(path):
+    parts = path_parts(path)
+    if len(parts) != 1:
+        return ""
+    name = unquote(parts[0]).lower()
+    if name in SHORT_NAME_RESERVED or not PROFILE_NAME_RE.match(name):
+        return ""
+    return name
 
 
 def legacy_page_redirect(path, query):
@@ -235,6 +276,7 @@ def legacy_page_redirect(path, query):
 # redirects above these are permanent 308s, so an alias is never removed; see
 # www/docs/terminology.json for the full compatibility table.
 REPO_ROUTE_ALIASES = {
+    "commit": "commits",
     "pull": "pulls",
     "pull-requests": "pulls",
     "merge_requests": "pulls",
@@ -392,6 +434,9 @@ def dashboard_repo_redirect(path):
     if not str(path or "").startswith("/dashboard/"):
         return None
     rest = path[len("/dashboard"):]
+    if path_parts(rest)[:1] and unquote(
+            path_parts(rest)[0]).lower() in DASHBOARD_PAGE_SEGMENTS:
+        return None
     if (rest.startswith("//") or "\\" in rest
             or any(ord(ch) < 32 or ord(ch) == 127 for ch in rest)):
         return None

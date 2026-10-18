@@ -196,6 +196,39 @@ listed, turning canonical mode on made `/admin` render an empty repository
 page named "admin" and the admin console unreachable. A repository whose name
 is reserved keeps its `/<owner>/<repo>` address.
 
+Short addresses also skip the dashboard page names (`repos`, `settings`,
+`agents`, `runners`, ... from `DASHBOARD_PAGE_ASSETS`), `profile`, and the
+forge page names `explore` and `forgot`
+(`static_routes.SHORT_NAME_RESERVED`, sent to the browser as `reserved`).
+They are reserved only for short addresses, not as owner names, so an account
+with one of these names keeps its `/<name>/<repo>` pages on the shared site.
+
+Page addresses that used to fall into the short-repository router or the
+JSON 404 (seen on an instance in October 2026):
+
+- `/dashboard/profile/<name>` was bounced by `dashboard_repo_redirect` to
+  `/profile/<name>`, which canonical mode read as the repository `profile`.
+  `/dashboard/profile/<name>` and `/profile/<name>` (browsers cached the old
+  308) now 308 to `/@<name>` (`profile_page_redirect`), and
+  `dashboard_repo_redirect` never turns `/dashboard/<page>/...` into a
+  repository path.
+- `/<name>` of an organization or an active, non-node account 302s to its
+  profile `/@<name>` (`_account_page_redirect`).
+- `/explore` 308s to `/dashboard/repos` and `/forgot` to `/forgot-password`
+  (`LEGACY_PAGE_PATHS`).
+- `/<owner>/<repo>/commit/<sha>` and `/<repo>/commit/<sha>` 308 to
+  `.../commits/<sha>` (`REPO_ROUTE_ALIASES`, `repo_short_urls.alias_redirect`).
+  The repository page opens that commit's detail from the URL, and a click
+  on a commit pushes the same URL so it can be shared.
+- A short address whose repository the visitor cannot read (missing, or
+  private to someone else) still gets the repository page, which says
+  "Repository not found", but with status 404. The check is
+  `_repository_access_context` for the visitor, so a reader of a private
+  repository keeps status 200 and nobody else learns that it exists.
+- A route nothing owns answers the styled 404 page to a browser page load
+  (`_is_page_navigation`) and the JSON `{"error": "not_found"}` to API and
+  other clients.
+
 Internal accounts are node accounts (`_account_kind` = `node`): the git
 node `forkmesh`, the Actions bot `<org>-actions`. They keep their
 organization role (the bot stays a maintainer so workflows can push), but the

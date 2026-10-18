@@ -235,6 +235,14 @@
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {
+      "id": "repo-commit-singular",
+      "kind": "route",
+      "resolver": "repo_alias_redirect",
+      "alias": "/OWNER/REPOSITORY/commit/NUMBER",
+      "canonical": "/OWNER/REPOSITORY/commits/NUMBER",
+      "policy": "Permanent 308 that keeps the query; never removed. The commit page of a hash is /OWNER/REPOSITORY/commits/HASH."
+    },
+    {
       "id": "repo-pull-requests",
       "kind": "route",
       "resolver": "repo_alias_redirect",
@@ -288,6 +296,22 @@
       "resolver": "legacy_page_redirect",
       "alias": "/referrals",
       "canonical": "/referral",
+      "policy": "Permanent 308 that keeps the query; never removed."
+    },
+    {
+      "id": "forge-explore",
+      "kind": "route",
+      "resolver": "legacy_page_redirect",
+      "alias": "/explore",
+      "canonical": "/dashboard/repos",
+      "policy": "Permanent 308 that keeps the query; never removed."
+    },
+    {
+      "id": "forge-forgot",
+      "kind": "route",
+      "resolver": "legacy_page_redirect",
+      "alias": "/forgot",
+      "canonical": "/forgot-password",
       "policy": "Permanent 308 that keeps the query; never removed."
     },
     {

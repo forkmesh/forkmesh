@@ -2187,7 +2187,8 @@ def test_dashboard_commit_history_opens_live_commit_detail_not_inbox_route():
         "data-repo-commit-files",
         "data-repo-commit-diff",
         "renderRepoCommitDiff(data.diff, data.imageDiffs)",
-        "loadRepoCommitDetail(state.selectedRepo, commitButton.dataset.dashboardCommitHash || \"\")",
+        "const commitHash = commitButton.dataset.dashboardCommitHash || \"\";",
+        "loadRepoCommitDetail(state.selectedRepo, commitHash);",
     ):
         assert marker in dashboard_js
 

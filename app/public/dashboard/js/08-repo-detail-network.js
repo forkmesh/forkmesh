@@ -120,6 +120,9 @@
           : "conversation",
       }
       : null;
+    const commitHash = routeKind === "commits" && /^[0-9a-f]{7,64}$/i.test(recordNumber)
+      ? recordNumber
+      : "";
     state.repoRecordSection = recordRoute ? recordRoute.section : "conversation";
     const actionsRunId = routeKind === "actions" && routeParts[3] === "runs" && /^[1-9]\d{0,11}$/.test(routeParts[4] || "")
       ? Number(routeParts[4])
@@ -130,6 +133,8 @@
     const compareRoute = routeMatchesRepo ? parseRepoCompareRoute(routeParts) : null;
     const detailPath = recordRoute
       ? repoRecordUrl(repo, recordRoute.kind, recordRoute.number, recordRoute.section)
+      : commitHash
+        ? repoCommitUrl(repo, commitHash)
       : compareRoute
         ? repoCompareUrl(repo, compareRoute.base, compareRoute.head)
         : actionsRunId && repoTabRoutesFor(repo).includes("actions")
@@ -562,7 +567,7 @@
     if (initialTab !== "code" || ((routeKind === "tree" || routeKind === "blob") && routePath)) {
       refreshServedCounts(repo);
     }
-    loadRepoFeaturePanels(repo, recordRoute, compareRoute);
+    loadRepoFeaturePanels(repo, recordRoute, compareRoute, commitHash);
     loadRepoStarState(repo, $("[data-repo-action-star]"));
     loadRepoForks(repo);
   }
@@ -2705,11 +2710,15 @@
           state.loadedRepoTabs.commits = true;
           activateRepoTab("commits");
         }
-        loadRepoCommitDetail(state.selectedRepo, commitButton.dataset.dashboardCommitHash || "");
+        const commitHash = commitButton.dataset.dashboardCommitHash || "";
+        if (commitHash) navigateHistory(repoCommitUrl(state.selectedRepo, commitHash));
+        loadRepoCommitDetail(state.selectedRepo, commitHash);
         return;
       }
 
       if (event.target.closest("[data-repo-commit-back]") && state.selectedRepo) {
+        navigateHistory(`${repoLinkUrl(state.selectedRepo)}/commits`);
+        state.repoCommitDetail = null;
         loadRepoCommits(state.selectedRepo);
         return;
       }
@@ -4257,6 +4266,14 @@
           // Feature tab (issues, pulls, etc.): restore without re-loading
           // records since they cache in state.
           setRepoTab(kind);
+          if (kind === "commits") {
+            const commitHash = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
+            if (/^[0-9a-f]{7,64}$/i.test(commitHash)) loadRepoCommitDetail(repo, commitHash);
+            else if (state.repoCommitDetail) {
+              state.repoCommitDetail = null;
+              loadRepoCommits(repo);
+            }
+          }
           // Step Back/Forward between a record detail (/pulls/4), one of its
           // sections (/pulls/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
