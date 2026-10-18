@@ -241,3 +241,63 @@ extension DirectMessagesTests {
         await harness.close()
     }
 }
+
+extension DirectMessagesTests {
+    @MainActor func testAServerDirectMessageShowsThePersonOnlineFromTheRoster() async throws {
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let service = makeService(api: api, ws: ws)
+        await service.refresh()
+        let harness = try await RelayHarness.start()
+        let mesh = LocalMeshService(
+            settings: harness.device.settings, identity: harness.device.identity, secureStore: harness.device.secure)
+        let hub = ChatHub(relay: harness.relay, mesh: mesh)
+        hub.direct = service
+        let conversation = service.conversations[0]
+        hub.select(conversation)
+        XCTAssertEqual(hub.conversationSubtitle, "Offline")
+        XCTAssertEqual(hub.directRows.first { $0.conversation == conversation }?.online, false)
+
+        try await harness.sendProtected([
+            "type": "hello", "id": "hello-1", "senderId": "pat-laptop", "sender": "Pat", "ownerUser": "Pat",
+            "ts": .int(Date().epochMillis),
+        ])
+        let online = await waitUntil { hub.conversationSubtitle == "Online" }
+        XCTAssertTrue(online, "the DM names the account; any of its nodes on the relay makes it online")
+        XCTAssertEqual(hub.peerPresence(conversation), .online)
+        XCTAssertEqual(hub.directRows.first { $0.conversation == conversation }?.online, true)
+        XCTAssertEqual(hub.conversationPeerGroup?.account, "pat")
+        await service.closeAll()
+        await harness.close()
+    }
+
+    @MainActor func testAServerDirectMessageMatchesTheTrustedDeviceNode() async throws {
+        let api = preparedApi()
+        let ws = FakeWebSocketConnector()
+        let service = makeService(api: api, ws: ws)
+        await service.refresh()
+        let harness = try await RelayHarness.start()
+        let mesh = LocalMeshService(
+            settings: harness.device.settings, identity: harness.device.identity, secureStore: harness.device.secure)
+        let hub = ChatHub(relay: harness.relay, mesh: mesh)
+        hub.direct = service
+        let conversation = service.conversations[0]
+        hub.select(conversation)
+        _ = await service.open(conversation)
+        let connection = try XCTUnwrap(ws.lastConnection)
+        let crypto = await roomCrypto()
+        let pat = try peerSeal("peer")
+        _ = await teach(pat, from: connection, crypto)
+        connection.receive(text: JSON.encode(try crypto.encrypt(pat.keyFrame())))
+        let known = await waitUntil { service.deviceKeys(conversation) == [pat.keyId] }
+        XCTAssertTrue(known)
+        XCTAssertEqual(hub.conversationSubtitle, "Offline")
+        try await harness.sendProtected([
+            "type": "hello", "id": "hello-2", "senderId": "pat-node", "sender": "Patricia", "ts": .int(Date().epochMillis),
+        ])
+        let online = await waitUntil { hub.conversationSubtitle == "Online" }
+        XCTAssertTrue(online, "a roster node with no owner still matches the device the DM trusts")
+        await service.closeAll()
+        await harness.close()
+    }
+}

@@ -77,6 +77,11 @@ public struct PushChatRequest: Equatable, Sendable {
         }
     }
 
+    public var directRoom: String? {
+        guard case .direct(let id) = kind, keyVersion > 0 else { return nil }
+        return "chat-direct:\(id):v\(keyVersion)"
+    }
+
     public var deliveredPath: String? {
         guard case .direct(let id) = kind else { return nil }
         return "\(PushChatRequest.directEndpoint)/\(id)/delivered?ref=\(ref)"
@@ -97,6 +102,37 @@ public struct PushChatMessage: Equatable, Sendable {
     public let fileName: String
     public let channel: String
     public let isReply: Bool
+    public var media: PushChatMedia = .none
+}
+
+public enum PushChatMedia: Equatable, Sendable {
+    case none, photo, voice, video, viewOnceVideo, viewOnceVoice, file
+
+    public var label: String {
+        switch self {
+        case .none, .file: return ""
+        case .photo: return "\u{1F4F7} Photo"
+        case .voice: return "\u{1F3A4} Voice message"
+        case .video: return "\u{1F3AC} Video"
+        case .viewOnceVideo: return "\u{1F3AC} Video message"
+        case .viewOnceVoice: return "\u{1F3A4} Voice message"
+        }
+    }
+
+    public static func of(_ plain: JSONObject) -> PushChatMedia {
+        if let once = plain["viewOnce"]?.objectValue {
+            switch once["kind"]?.text ?? "" {
+            case "video": return .viewOnceVideo
+            case "voice": return .viewOnceVoice
+            default: return .none
+            }
+        }
+        let mime = (plain["fileMime"]?.text ?? "").lowercased()
+        if mime.hasPrefix("image/") { return .photo }
+        if mime.hasPrefix("audio/") { return .voice }
+        if mime.hasPrefix("video/") { return .video }
+        return (plain["fileName"]?.text ?? "").isEmpty ? .none : .file
+    }
 }
 
 public struct PushPreview: Equatable, Sendable {
@@ -117,6 +153,19 @@ public final class PushRoomKeys: @unchecked Sendable {
 
     public static func cacheId(room: String, passphrase: String) -> String {
         Sha256.hex(Array("forkmesh-push-room-key\n\(room)\n\(passphrase)".utf8))
+    }
+
+    public static func roomId(_ room: String) -> String {
+        Sha256.hex(Array("forkmesh-push-room\n\(room)".utf8))
+    }
+
+    public func cached(room: String) -> RoomCrypto? {
+        let id = PushRoomKeys.roomId(room)
+        lock.lock()
+        defer { lock.unlock() }
+        guard let entry = entries().last(where: { $0.room == id }), let bytes = B64.decodeOrNil(entry.key), bytes.count == 32
+        else { return nil }
+        return RoomCrypto.withKey(Array(bytes))
     }
 
     public func cached(room: String, passphrase: String) -> [UInt8]? {
@@ -140,10 +189,15 @@ public final class PushRoomKeys: @unchecked Sendable {
         let id = PushRoomKeys.cacheId(room: room, passphrase: passphrase)
         lock.lock()
         defer { lock.unlock() }
-        var list = entries().filter { $0.id != id }
-        list.append((id: id, key: B64.encode(key)))
+        let roomId = PushRoomKeys.roomId(room)
+        var list = entries().filter { $0.id != id && $0.room != roomId }
+        list.append((id: id, key: B64.encode(key), room: roomId))
         if list.count > PushRoomKeys.maxEntries { list.removeFirst(list.count - PushRoomKeys.maxEntries) }
-        let values: [JSONValue] = list.map { .object(["id": .string($0.id), "key": .string($0.key)]) }
+        let values: [JSONValue] = list.map { entry in
+            var object: JSONObject = ["id": .string(entry.id), "key": .string(entry.key)]
+            if !entry.room.isEmpty { object["r"] = .string(entry.room) }
+            return .object(object)
+        }
         store.set(JSON.encodeData(.object(["v": 1, "entries": .array(values)])), PushRoomKeys.item)
     }
 
@@ -151,13 +205,13 @@ public final class PushRoomKeys: @unchecked Sendable {
         store.remove(PushRoomKeys.item)
     }
 
-    private func entries() -> [(id: String, key: String)] {
+    private func entries() -> [(id: String, key: String, room: String)] {
         guard let data = store.data(PushRoomKeys.item) else { return [] }
         let root = JSON.parseObject(data)
         return (root["entries"]?.objects ?? []).compactMap { entry in
             let id = entry["id"]?.text ?? ""
             let key = entry["key"]?.text ?? ""
-            return id.isEmpty || key.isEmpty ? nil : (id: id, key: key)
+            return id.isEmpty || key.isEmpty ? nil : (id: id, key: key, room: entry["r"]?.text ?? "")
         }
     }
 }
@@ -199,9 +253,25 @@ public enum PushChatOpener {
         } else {
             envelope = JSON.parseObject(pending["frame"]?.stringValue ?? "")
         }
-        guard !envelope.isEmpty, let crypto = keys.crypto(room: room, passphrase: passphrase),
-            let framed = crypto.decrypt(envelope)
+        guard !envelope.isEmpty, let crypto = keys.crypto(room: room, passphrase: passphrase) else { return .unavailable }
+        return open(envelope, room: room, crypto: crypto, request: request, secureStore: secureStore, now: now)
+    }
+
+    public static func openPushed(
+        _ pushed: JSONObject, request: PushChatRequest, secureStore: SecureStore?, keys: PushRoomKeys,
+        now: Int64 = Date().epochMillis
+    ) -> PushChatOpened {
+        guard let room = request.directRoom, let envelope = pushed["frame"]?.objectValue, !envelope.isEmpty,
+            let crypto = keys.cached(room: room)
         else { return .unavailable }
+        return open(envelope, room: room, crypto: crypto, request: request, secureStore: secureStore, now: now)
+    }
+
+    static func open(
+        _ envelope: JSONObject, room: String, crypto: RoomCrypto, request: PushChatRequest, secureStore: SecureStore?,
+        now: Int64
+    ) -> PushChatOpened {
+        guard let framed = crypto.decrypt(envelope) else { return .unavailable }
         let plain: JSONObject
         if RoomSeal.isSealedFrame(framed) {
             guard let secureStore else { return .unavailable }
@@ -253,11 +323,12 @@ public enum PushChatOpener {
         }
         let text = (plain["text"]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let fileName = String((plain["fileName"]?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
-        if text.count > maxTextChars || (text.isEmpty && fileName.isEmpty) { return nil }
+        let media = PushChatMedia.of(plain)
+        if text.count > maxTextChars || (text.isEmpty && fileName.isEmpty && media == .none) { return nil }
         return PushChatMessage(
             id: id, sender: String((plain["sender"]?.text ?? "").trimmingCharacters(in: .whitespaces).prefix(maxNameChars)),
             senderId: String((plain["senderId"]?.text ?? "").prefix(maxIdChars)), text: text, fileName: fileName,
-            channel: channel, isReply: type == "thread-reply")
+            channel: channel, isReply: type == "thread-reply", media: media)
     }
 }
 
@@ -295,7 +366,8 @@ public enum PushPreviewText {
     }
 
     public static func body(_ message: PushChatMessage) -> String {
-        let text = message.text.isEmpty ? "\u{1F4CE} \(message.fileName)" : message.text
+        let attached = message.media.label.isEmpty ? "\u{1F4CE} \(message.fileName)" : message.media.label
+        let text = message.text.isEmpty ? attached : message.text
         if text.count <= maxBodyChars { return text }
         return String(text.prefix(maxBodyChars - 1)) + "\u{2026}"
     }

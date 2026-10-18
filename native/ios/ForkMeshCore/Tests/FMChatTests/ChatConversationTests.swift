@@ -184,6 +184,84 @@ final class ChatConversationTests: XCTestCase {
         await h.close()
     }
 
+    @MainActor func testAnOwnBackgroundCoversTheSharedOneOnThisPhoneOnly() async throws {
+        let (hub, h) = try await hub()
+        try await h.sendProtected(peerFrame("hello", ["to": .string(h.relay.selfId)], sender: "peer-9"))
+        let known = await waitUntil { h.relay.roster().contains { $0.id == "peer-9" } }
+        XCTAssertTrue(known)
+        func shareFromPeer(_ preset: String, _ id: String) async throws {
+            try await h.sendProtected(
+                peerFrame(
+                    "look",
+                    ["field": "background", "preset": .string(preset), "conversation": .string("@\(h.relay.selfId)"),
+                     "to": .string(h.relay.selfId)],
+                    id: id, sender: "peer-9"))
+        }
+        try await shareFromPeer("beach", "look-beach")
+        let applied = await waitUntil { hub.extras.look(for: "@peer-9").backgroundPreset == "beach" }
+        XCTAssertTrue(applied)
+        hub.select("@peer-9")
+        XCTAssertFalse(hub.conversationOwnBackground)
+        let sentBefore = h.openFrames().filter { $0["type"]?.text == "look" }.count
+
+        hub.setOwnBackground(ChatLookChange(field: .background, preset: "ocean"))
+        XCTAssertTrue(hub.conversationOwnBackground)
+        XCTAssertEqual(hub.conversationLook.backgroundPreset, "ocean")
+        XCTAssertEqual(hub.conversationSharedLook.backgroundPreset, "beach")
+        XCTAssertEqual(h.openFrames().filter { $0["type"]?.text == "look" }.count, sentBefore, "nothing is sent")
+
+        try await shareFromPeer("forest", "look-forest")
+        let shared = await waitUntil { hub.conversationSharedLook.backgroundPreset == "forest" }
+        XCTAssertTrue(shared)
+        XCTAssertEqual(hub.conversationLook.backgroundPreset, "ocean", "a new shared background stays covered")
+
+        let picture = Data(repeating: 4, count: 200)
+        hub.setOwnBackground(ChatLookChange(field: .background, image: picture))
+        XCTAssertEqual(hub.conversationLook.backgroundImage, picture)
+        XCTAssertEqual(hub.conversationLook.backgroundPreset, "")
+        hub.setOwnBackground(ChatLookChange(field: .background))
+        XCTAssertTrue(hub.conversationOwnBackground)
+        XCTAssertFalse(hub.conversationLook.hasBackground, "no background just for me")
+        XCTAssertTrue(hub.conversationSharedLook.hasBackground)
+        hub.setOwnBackground(ChatLookChange(field: .background, preset: "rose"))
+
+        let restored = try XCTUnwrap(ChatHistoryCodec.decode(ChatHistoryCodec.encode(hub.historySnapshot())))
+        XCTAssertEqual(restored.looks["@peer-9"]?.shown.backgroundPreset, "rose")
+        XCTAssertEqual(restored.looks["@peer-9"]?.backgroundPreset, "forest")
+        let fresh = ChatExtras()
+        fresh.restoreLooks(restored.looks, events: restored.lookEvents)
+        XCTAssertEqual(fresh.look(for: "@peer-9").shown.backgroundPreset, "rose")
+        let early = ChatExtras()
+        var arrived = ChatLook()
+        arrived.backgroundPreset = "sky"
+        arrived.stamps["background"] = ChatLookStamp(ts: 99, id: "x")
+        early.restoreLooks(["@peer-9": arrived], events: [])
+        early.restoreLooks(restored.looks, events: [])
+        XCTAssertEqual(early.look(for: "@peer-9").backgroundPreset, "sky", "a live shared look is kept")
+        XCTAssertEqual(early.look(for: "@peer-9").shown.backgroundPreset, "rose", "and the saved own one still covers it")
+
+        hub.setOwnBackground(nil)
+        XCTAssertFalse(hub.conversationOwnBackground)
+        XCTAssertEqual(hub.conversationLook.backgroundPreset, "forest")
+        await h.close()
+    }
+
+    @MainActor func testSharingABackgroundDropsTheOwnOne() async throws {
+        let (hub, h) = try await hub()
+        try await h.sendProtected(peerFrame("presence", [:]))
+        let peerKnown = await waitUntil { h.relay.roster().count > 1 }
+        XCTAssertTrue(peerKnown)
+        guard let channel = hub.extras.createPrivateChannel("crew") else { return XCTFail("channel") }
+        hub.select(channel)
+        hub.setOwnBackground(ChatLookChange(field: .background, preset: "ember"))
+        XCTAssertEqual(hub.conversationLook.backgroundPreset, "ember")
+        let sent = await hub.setLook(ChatLookChange(field: .background, preset: "mint"))
+        XCTAssertTrue(sent)
+        XCTAssertFalse(hub.conversationOwnBackground)
+        XCTAssertEqual(hub.conversationLook.backgroundPreset, "mint")
+        await h.close()
+    }
+
     @MainActor func testChangingTheBackgroundAndGroupNameSendsSealedLookFrames() async throws {
         let (hub, h) = try await hub()
         try await h.sendProtected(peerFrame("presence", [:]))

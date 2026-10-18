@@ -39,6 +39,8 @@ final class NotificationService: UNNotificationServiceExtension {
     /// deliberate fallback instead of being cut off mid-flight.
     private static let fetchTimeout: TimeInterval = 8
     private static let receiptTimeout: TimeInterval = 5
+    private static let fetchRetries = 1
+    private static let retryDelay: TimeInterval = 1
 
     /// Alert ids already rendered by an earlier invocation, newest last. Two
     /// pings landing seconds apart otherwise both read "the newest unread row"
@@ -108,10 +110,18 @@ final class NotificationService: UNNotificationServiceExtension {
                 deliver(content)
                 return
             }
-            guard let chat, let credentials,
-                let url = Self.pendingURL(origin: credentials.origin, path: chat.pendingPath)
-            else {
+            guard let chat, let credentials else {
                 deliver(content)
+                return
+            }
+            let chatStore = PushCredentialStore.chatStore(deviceKeyName: credentials.deviceKeyName)
+            let local = PushChatOpener.openPushed(pushed, request: chat, secureStore: chatStore, keys: Self.roomKeys)
+            if local.message != nil {
+                show(local, chat: chat, mode: mode, content: content, origin: origin)
+                return
+            }
+            guard let url = Self.pendingURL(origin: credentials.origin, path: chat.pendingPath) else {
+                show(local, chat: chat, mode: mode, content: content, origin: origin)
                 return
             }
             var fetch = URLRequest(url: url)
@@ -120,29 +130,15 @@ final class NotificationService: UNNotificationServiceExtension {
             fetch.setValue("Bearer " + credentials.session, forHTTPHeaderField: "Authorization")
             fetch.setValue("application/json", forHTTPHeaderField: "Accept")
             fetch.cachePolicy = .reloadIgnoringLocalCacheData
-            let chatStore = PushCredentialStore.chatStore(deviceKeyName: credentials.deviceKeyName)
-            task = URLSession.shared.dataTask(with: fetch) { data, response, _ in
-                var opened = PushChatOpened.unavailable
-                if let data, (response as? HTTPURLResponse)?.statusCode == 200 {
+            fetchPending(fetch, retries: Self.fetchRetries) { data in
+                var opened = local
+                if let data {
                     opened = PushChatOpener.open(
                         PushChatOpener.withPushedFrame(JSON.parseObject(data), pushed: pushed), request: chat,
                         secureStore: chatStore, keys: Self.roomKeys)
                 }
-                if let preview = PushPreviewText.preview(opened, request: chat, mode: mode) {
-                    content.title = preview.title
-                    content.subtitle = ""
-                    content.body = preview.body
-                }
-                guard let message = opened.message else {
-                    self.deliver(content)
-                    return
-                }
-                var info = content.userInfo
-                info["messageId"] = message.id
-                content.userInfo = info
-                self.attachPortrait(to: content, origin: origin, sender: message.sender)
+                self.show(opened, chat: chat, mode: mode, content: content, origin: origin)
             }
-            task?.resume()
             return
         }
 
@@ -188,6 +184,41 @@ final class NotificationService: UNNotificationServiceExtension {
             self.deliver(content)
         }
         task?.resume()
+    }
+
+    private func fetchPending(_ fetch: URLRequest, retries: Int, done: @escaping (Data?) -> Void) {
+        task = URLSession.shared.dataTask(with: fetch) { data, response, _ in
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            if status == 200, let data {
+                done(data)
+            } else if retries > 0 && (status == 0 || status == 429 || status >= 500) {
+                DispatchQueue.global().asyncAfter(deadline: .now() + Self.retryDelay) {
+                    self.fetchPending(fetch, retries: retries - 1, done: done)
+                }
+            } else {
+                done(nil)
+            }
+        }
+        task?.resume()
+    }
+
+    private func show(
+        _ opened: PushChatOpened, chat: PushChatRequest, mode: PushPreviewMode, content: UNMutableNotificationContent,
+        origin: String
+    ) {
+        if let preview = PushPreviewText.preview(opened, request: chat, mode: mode) {
+            content.title = preview.title
+            content.subtitle = ""
+            content.body = preview.body
+        }
+        guard let message = opened.message else {
+            deliver(content)
+            return
+        }
+        var info = content.userInfo
+        info["messageId"] = message.id
+        content.userInfo = info
+        attachPortrait(to: content, origin: origin, sender: message.sender)
     }
 
     private func sendDeliveryReceipt(_ chat: PushChatRequest?, credentials: PushCredentials?) {

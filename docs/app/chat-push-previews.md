@@ -25,6 +25,13 @@ sender or the channel name. Home page: [app/README.md](README.md). Related:
    or unknown device keeps "New message".
 4. On any failure the fallback alert stays.
 
+Since 2026-10-17 the iPhone opens a DM push that carries its frame without any
+request when it already holds that room's key from an earlier push (the room
+name is `chat-direct:<id>:v<keyVersion>`, cached only as a hash), and retries
+the pending fetch once on a network error, 429 or 5xx. A photo, voice, video
+or view-once message with no text says what arrived instead of "New message".
+Details: [native/ios/docs/FMChat.md](../../native/ios/docs/FMChat.md).
+
 Why the sender and channel left the payload (2026-10-16, chat protocol v3,
 [chat-protocol-v3.md](chat-protocol-v3.md#push-notifications)): the alert
 text and custom keys reach Apple in the clear, so "Direct message from X",

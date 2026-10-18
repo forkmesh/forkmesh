@@ -214,6 +214,15 @@ public final class ChatExtras {
 
     public func look(for conversation: String) -> ChatLook { looks[conversation] ?? ChatLook() }
 
+    public func setOwnBackground(_ conversation: String, _ change: ChatLookChange?) {
+        guard !conversation.isEmpty, !hiddenChannels.contains(conversation) else { return }
+        let current = look(for: conversation)
+        if change == nil && !current.ownBackground { return }
+        let next = current.overriding(change)
+        looks[conversation] = next.isEmpty ? nil : next
+        changed()
+    }
+
     public func lookEvents(in conversation: String) -> [ChatLookEvent] { lookEventLists[conversation] ?? [] }
 
     public func typingNames(in conversation: String) -> [String] {
@@ -838,8 +847,17 @@ public final class ChatExtras {
 
     public func restoreLooks(_ restored: [String: ChatLook], events: [ChatLookEvent]) {
         var touched = false
-        for (conversation, look) in restored where looks[conversation] == nil && !hiddenChannels.contains(conversation) {
-            looks[conversation] = look
+        for (conversation, look) in restored where !hiddenChannels.contains(conversation) {
+            if let current = looks[conversation] {
+                guard look.ownBackground, !current.ownBackground else { continue }
+                var merged = current
+                merged.ownBackground = true
+                merged.ownBackgroundPreset = look.ownBackgroundPreset
+                merged.ownBackgroundImage = look.ownBackgroundImage
+                looks[conversation] = merged
+            } else {
+                looks[conversation] = look
+            }
             touched = true
         }
         for event in events where !hiddenChannels.contains(event.conversation) {

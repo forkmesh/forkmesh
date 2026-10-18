@@ -109,7 +109,7 @@ public enum DirectLiveFrames {
     public static let budgetKind = "forkmesh-live"
     public static let maxEnvelopeBytes = 16 * 1024
     public static let minIntervalMs: Int64 = 80
-    public static let fallbackIntervalMs: Int64 = 2_500
+    public static let fallbackIntervalMs: Int64 = 120
     public static let maxY = 2.5
     public static let maxMotion = 8.0
     public static let maxTapsPerFrame = 12

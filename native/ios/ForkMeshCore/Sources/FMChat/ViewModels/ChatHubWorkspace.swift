@@ -301,7 +301,7 @@ extension ChatHub {
         var out: [ChatDirectRow] = []
         let roster = relay.roster()
         for record in direct?.records ?? [] where !workspace.isBlocked(record.otherUser) {
-            let online = roster.contains { !$0.isSelf && $0.online && $0.owner.lowercased() == record.otherUser }
+            let online = peerPresence(record.conversation) != .offline
             let last = direct?.messages(record.conversation).last?.timestamp
                 ?? (record.updatedAt > 0 ? Date(epochMillis: record.updatedAt) : nil)
             if workspace.isRemoved(record.conversation, lastActivity: last) { continue }
@@ -317,7 +317,7 @@ extension ChatHub {
             if workspace.isBlocked(member?.owner ?? "") || workspace.isBlocked(String(label.dropFirst())) { continue }
             out.append(
                 ChatDirectRow(
-                    conversation: conversation, name: String(label.dropFirst()), online: member?.online ?? false,
+                    conversation: conversation, name: String(label.dropFirst()), online: peerPresence(conversation) != .offline,
                     unread: relay.unreadCountFor(conversation), lastAt: last))
         }
         out.sort { ($0.lastAt ?? .distantPast) > ($1.lastAt ?? .distantPast) }
