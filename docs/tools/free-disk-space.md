@@ -1,49 +1,63 @@
 # Freeing disk space
 
 `tools/free_disk_space.py` turns the hand-run disk sweeps of 2026-08 to
-2026-10 into one command. It is a dry run unless given `--execute`. The
-**Free disk space** Actions workflow (`.forkmesh/free-disk-space.yml`) runs
-it with `--execute`, one part per step, so the desktop's Actions page and the
-phones' Actions screens show each part as it runs. It replaced the
-`free-disk-space.sh` shortcut, which is gone from the shortcut list.
+2026-10 into one command. It is a dry run unless given `--execute`. Every
+account's Workflows list has a **Free disk space** workflow that runs it on
+the desktop with `--execute`, one part per step, on the graphical canvas
+(2026-10-18). It replaced the `.forkmesh/free-disk-space.yml` Actions
+workflow, which replaced the `free-disk-space.sh` shortcut; both are gone.
 
 ```sh
 python3 tools/free_disk_space.py                # list what would go
 python3 tools/free_disk_space.py --execute      # delete it
 python3 tools/free_disk_space.py --step agents  # one part only
+python3 tools/free_disk_space.py --step agents --json  # and end with ::result::{...}
 ```
 
 ## The workflow
 
-Start it with **Run workflow** on the repository's Actions page, or under
-**Run by hand** in the iPhone or Android app (the phone asks the paired
-desktop to run it). It is manual-only and runs on the desktop outside the
-Actions sandbox (`sandbox: false`): a sandboxed step runs as uid 65534 with a
-fresh home and `/tmp` and its own `/proc`, so it could not see, let alone
-delete, anything this tool cleans. The rules for such workflows are in
-[../desktop/README.md](../desktop/README.md#actions-outside-the-sandbox).
+Open **Free disk space** on the Workflows page and press **Run workflow**
+while the ForkMesh desktop app is open and signed in. The browser runs each
+step on the desktop over the encrypted desktop control channel and records the
+run; the server cannot run these steps (see
+[../app/workflows.md](../app/workflows.md#desktop-steps)). Each step is its own
+**Desktop** step type with its own icon:
 
-| Step | `--step` | What it does |
-| --- | --- | --- |
-| Measure the disk | `usage` | free space on `/` and `/tmp`, registered worktree count |
-| Remove agent leftovers | `agents` | scratch, `builds/agent-NNN*`, `/tmp/fmNNN*`, `~/.cache/fmNNN*` |
-| Remove test and Actions leftovers | `tests` | pytest temp dirs, stranded Actions sandboxes, Qt test temp dirs |
-| Prune old Claude versions, backups and Trash | `versions` | old Claude Code versions, backups past the 3 newest, trashed cleanup items |
-| Clear the pip and npm caches | `caches` | `pip cache purge`, `npm cache clean --force` (skipped with `--no-caches`) |
-| Report what is left | `report` | free space after, and the large folders left for the user |
+| Step | Step type | `--step` | What it does |
+| --- | --- | --- | --- |
+| Measure the disk | `desktop.diskUsage` | `usage` | free space on `/` and `/tmp`, registered worktree count |
+| Remove agent leftovers | `desktop.cleanAgents` | `agents` | scratch, `builds/agent-NNN*`, `/tmp/fmNNN*`, `~/.cache/fmNNN*` |
+| Remove test leftovers | `desktop.cleanTests` | `tests` | pytest temp dirs, stranded Actions sandboxes, Qt test temp dirs |
+| Prune old versions and Trash | `desktop.cleanVersions` | `versions` | old Claude Code versions, backups past the 3 newest, trashed cleanup items |
+| Clear pip and npm caches | `desktop.cleanCaches` | `caches` | `pip cache purge`, `npm cache clean --force` (skipped with `--no-caches`) |
+| Report free space | `desktop.diskReport` | `report` | free space after, and the large folders left for the user |
 
-- Every step passes `--repo "$FORKMESH_LOCAL_CHECKOUT"`, the repository's
-  local checkout on the desktop, and fails before deleting anything when the
-  run has none. The tool keeps agent leftovers by matching them to
-  `git worktree list` of `--repo`; run from the Actions clone (its default),
-  it would see none of the agent worktrees and treat every live agent's
-  builds as orphaned.
+- The desktop answers `diag.prepare` / `diag.run` with action
+  `freeDiskSpace` and the step name, one step at a time (another step while
+  one runs gets `busy`), and runs
+  `python3 -u <checkout>/tools/free_disk_space.py --execute --step <step>
+  --repo <checkout> --json` with a 20-minute limit
+  (`MainWindow::runLocalControlFreeDiskSpace`). `<checkout>` is the
+  desktop's local checkout of `forkmesh/forkmesh`, or else the first checkout
+  that has the tool; with none the step fails with `no_checkout` before
+  anything is deleted. The tool keeps agent leftovers by matching them to
+  `git worktree list` of `--repo`, so it must be the primary checkout, never
+  the app's own build clone.
+- Only the desktop owner's own browser or paired phone can ask: the `diag.`
+  family is owner-only, the step name must be one of the six, and each step
+  needs a fresh one-use `diag.prepare` token. Nothing else reaches the
+  desktop's shell this way.
+- `--json` ends the output with one `::result::` line: `step`, `freedBytes`
+  (the sizes removed; for `caches` the free space gained), `items` removed,
+  and `freeBytes` / `totalBytes` of the home file system. The desktop
+  returns it with the step's output lines (the last 200), which become the
+  step's log on the canvas.
+- The run's output, shown in the run's little window in the recent runs list,
+  is the bytes all steps freed and the free space the last step measured:
+  "Freed 3.2 GB · 120.4 GB free".
 - Each step re-reads `git worktree list` and `/proc`, so a worktree or
   process that appears between steps is still respected. A candidate holding
   the tool's own working directory, or its parent shell's, counts as in use.
-- A run needs 1 GiB free for its checkout. Below that, run
-  `python3 tools/free_disk_space.py --execute` by hand from the primary
-  checkout.
 - Without `--step` the tool does every part in one pass, as before.
 
 ## What is removed

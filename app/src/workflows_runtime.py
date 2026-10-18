@@ -4,6 +4,7 @@ import re
 from urllib.parse import parse_qsl, urlparse
 
 import workflow_files as files
+import workflow_desktop as desktop
 import workflow_formats as formats
 import workflow_integrations as integrations
 import workflow_templates as templates
@@ -35,7 +36,7 @@ LIMITS = {
 SCHEDULED_PER_TICK = 3
 HEX32 = r"[0-9a-f]{32}"
 WORKFLOW_RE = re.compile(
-    r"^/api/workflows/(" + HEX32 + r")(?:/(run|delete|runs))?/?$")
+    r"^/api/workflows/(" + HEX32 + r")(?:/(run|delete|runs|record))?/?$")
 RUN_RE = re.compile(
     r"^/api/workflows/(" + HEX32 + r")/runs/(" + HEX32 + r")/?$")
 CREDENTIAL_RE = re.compile(
@@ -201,7 +202,30 @@ async def _load(env, workflow_id, owner_bi=None):
     return row, record
 
 
-async def _list(env, owner_bi):
+async def _seed(env, owner_bi, now):
+    workflow_id = desktop.seed_id(owner_bi)
+    if await d1_first(env, "SELECT workflow_id FROM workflows WHERE "
+                      "workflow_id=?", workflow_id):
+        return
+    count = await d1_first(
+        env, "SELECT COUNT(*) AS n FROM workflows WHERE owner_bi=?", owner_bi)
+    if int((count or {}).get("n") or 0) >= MAX_WORKFLOWS:
+        return
+    workflow, error = engine.clean_workflow(desktop.seed_workflow())
+    if error:
+        return
+    workflow["hookToken"] = _ap_uuid() + _ap_uuid()
+    await d1_run(
+        env, "INSERT INTO workflows (workflow_id,owner_bi,active,"
+        "schedule_minutes,next_run_at,last_run_at,last_status,created_at,"
+        "updated_at,data) VALUES (?,?,0,0,0,0,'',?,?,?) "
+        "ON CONFLICT(workflow_id) DO NOTHING",
+        workflow_id, owner_bi, now, now, await encrypt_row(env, workflow))
+
+
+async def _list(env, owner_bi, now=0):
+    if now:
+        await _seed(env, owner_bi, now)
     rows = await d1_all(
         env, "SELECT * FROM workflows WHERE owner_bi=? "
         "ORDER BY updated_at DESC LIMIT ?", owner_bi, MAX_WORKFLOWS)
@@ -273,8 +297,13 @@ async def _delete(env, owner_bi, workflow_id):
         return _error("not_found", 404)
     await d1_run(env, "DELETE FROM workflow_runs WHERE workflow_id=?",
                  workflow_id)
-    await d1_run(env, "DELETE FROM workflows WHERE workflow_id=? "
-                 "AND owner_bi=?", workflow_id, owner_bi)
+    if workflow_id == desktop.seed_id(owner_bi):
+        await d1_run(env, "UPDATE workflows SET owner_bi='',active=0,"
+                     "schedule_minutes=0,next_run_at=0,data='' WHERE "
+                     "workflow_id=? AND owner_bi=?", workflow_id, owner_bi)
+    else:
+        await d1_run(env, "DELETE FROM workflows WHERE workflow_id=? "
+                     "AND owner_bi=?", workflow_id, owner_bi)
     return _ok({"deleted": workflow_id})
 
 
@@ -360,7 +389,13 @@ async def _execute(env, row, record, kind, trigger_item, now):
         record, trigger_item, _http, credentials, max_requests,
         now + budget_ms, _now, now, workflow_id,
         load_workflow=_workflow_loader(env, owner_bi))
-    finished = _now()
+    report["output"] = engine.run_output(record, report)
+    return await _store_run(env, row, kind, report, now, _now())
+
+
+async def _store_run(env, row, kind, report, now, finished):
+    owner_bi = row["owner_bi"]
+    workflow_id = row["workflow_id"]
     run_id = _ap_uuid()
     report["trigger"] = kind
     await d1_run(
@@ -405,10 +440,30 @@ async def _run_manual(env, owner_bi, workflow_id, data, now):
         return _error("not_found", 404)
     if not engine.trigger_node(record):
         return _error("no_trigger", 400)
+    if desktop.has_desktop_steps(record):
+        return _error("runs_on_desktop", 409)
     if await _runs_last_hour(env, owner_bi, now) >= RUNS_PER_HOUR:
         return _error("rate_limited", 429)
     run = await _execute(env, row, record, "manual",
                          _manual_payload(record, data), now)
+    return _ok({"run": run})
+
+
+async def _record_run(env, owner_bi, workflow_id, data, now):
+    row, record = await _load(env, workflow_id, owner_bi)
+    if not row:
+        return _error("not_found", 404)
+    if not desktop.has_desktop_steps(record):
+        return _error("not_a_desktop_workflow", 400)
+    cleaned, error = desktop.clean_report(
+        record, data, engine._summarize_items, now)
+    if error:
+        return _error(error, 400)
+    if await _runs_last_hour(env, owner_bi, now) >= RUNS_PER_HOUR:
+        return _error("rate_limited", 429)
+    report, started, finished = cleaned
+    run = await _store_run(env, row, desktop.RUNS_ON, report, started,
+                           finished)
     return _ok({"run": run})
 
 
@@ -417,13 +472,19 @@ async def _runs(env, owner_bi, workflow_id):
     if not row:
         return _error("not_found", 404)
     rows = await d1_all(
-        env, "SELECT run_id,trigger_kind,status,started_at,finished_at FROM "
-        "workflow_runs WHERE workflow_id=? ORDER BY started_at DESC LIMIT ?",
-        workflow_id, RUNS_KEPT)
-    return _ok({"runs": [{
-        "id": r["run_id"], "trigger": r["trigger_kind"], "status": r["status"],
-        "startedAt": int(r["started_at"] or 0),
-        "finishedAt": int(r["finished_at"] or 0)} for r in rows or []]})
+        env, "SELECT run_id,trigger_kind,status,started_at,finished_at,data "
+        "FROM workflow_runs WHERE workflow_id=? ORDER BY started_at DESC "
+        "LIMIT ?", workflow_id, RUNS_KEPT)
+    runs = []
+    for r in rows or []:
+        report = await decrypt_row(env, r.get("data")) or {}
+        output = report.get("output") if isinstance(report, dict) else None
+        runs.append({
+            "id": r["run_id"], "trigger": r["trigger_kind"],
+            "status": r["status"], "startedAt": int(r["started_at"] or 0),
+            "finishedAt": int(r["finished_at"] or 0),
+            "output": output if isinstance(output, dict) else None})
+    return _ok({"runs": runs})
 
 
 async def _run_detail(env, owner_bi, workflow_id, run_id):
@@ -690,7 +751,7 @@ async def api_handler(env, request, path):
         return _ok({"files": await _package_files(env, owner_bi)})
     if path in (PREFIX, PREFIX + "/"):
         if method == "GET":
-            return _ok({"workflows": await _list(env, owner_bi)})
+            return _ok({"workflows": await _list(env, owner_bi, now)})
         return await _create(env, owner_bi, data, now)
     if path.startswith(PREFIX + "/files/"):
         if method != "POST":
@@ -742,4 +803,6 @@ async def api_handler(env, request, path):
         return _not_allowed("POST")
     if action == "run":
         return await _run_manual(env, owner_bi, workflow_id, data, now)
+    if action == "record":
+        return await _record_run(env, owner_bi, workflow_id, data, now)
     return await _delete(env, owner_bi, workflow_id)

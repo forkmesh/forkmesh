@@ -6781,6 +6781,7 @@ var ForkMeshWorkflows = (function () {
       var limit = fieldValues(fieldsFor(type, params), params, this.context({}, 0));
       return { main: items.slice(0, Math.max(0, Math.trunc(limit.max))) };
     }
+    if (has(coreNodes(), type) && coreNodes()[type].runsOn === "desktop") fail(coreNodes()[type].refusal);
     if (has(ACTION_TYPES, type)) return yield* this.runAction(node, items.slice(0, LIMITS.maxItems));
     var out = {};
     outputsFor(type).forEach(function (name) { out[name] = []; });

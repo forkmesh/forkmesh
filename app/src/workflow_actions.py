@@ -484,7 +484,7 @@ NODES = {
 }
 
 GROUP_ORDER = ("Triggers", "Core", "Flow", "Scripting", "Text", "Numbers",
-               "Lists", "Dates")
+               "Lists", "Dates", "Desktop")
 
 
 class NodeError(Exception):

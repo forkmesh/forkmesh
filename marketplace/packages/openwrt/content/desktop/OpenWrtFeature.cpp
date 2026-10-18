@@ -99,6 +99,18 @@ QLineEdit *makeField(const QString &placeholder = {})
     return field;
 }
 
+using Step = std::function<void(const std::function<void()> &)>;
+
+void runInOrder(const QList<Step> &steps, const std::function<void()> &done)
+{
+    if (steps.isEmpty()) {
+        done();
+        return;
+    }
+    const QList<Step> rest = steps.mid(1);
+    steps.first()([rest, done] { runInOrder(rest, done); });
+}
+
 void fillChoices(QComboBox *combo, const QList<Choice> &choices)
 {
     combo->clear();
@@ -377,6 +389,10 @@ QWidget *OpenWrtFeature::buildManager()
     connect(review, &QPushButton::clicked, this, [this] { reviewChanges(); });
     connect(m_discardButton, &QPushButton::clicked, this, [this] { discardChanges(); });
     connect(m_applyButton, &QPushButton::clicked, this, [this] { applyChanges(); });
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
+        if (index == StorageTab && m_client.signedIn() && m_disks.isEmpty() && m_storageLog->toPlainText().isEmpty())
+            checkStorage();
+    });
     return page;
 }
 
@@ -685,10 +701,13 @@ QWidget *OpenWrtFeature::buildStorage()
     m_autoMount->setToolTip(QStringLiteral("Disks without their own entry are mounted at /mnt/<device> as soon as they are plugged in."));
     auto *mountAll = makeButton(QStringLiteral("Mount disks now"));
     auto *install = makeButton(QStringLiteral("Install USB storage support"));
+    auto *checkUsb = makeButton(QStringLiteral("Check USB storage"));
+    checkUsb->setToolTip(QStringLiteral("Ask the router what it sees in its USB port, which drivers are installed, and why a disk does not show or mount."));
     top->addWidget(m_autoMount);
     top->addStretch();
     top->addWidget(mountAll);
     top->addWidget(install);
+    top->addWidget(checkUsb);
     layout->addLayout(top);
     m_storageTree = makeTree(QStringLiteral("openWrtStorage"),
                              {QStringLiteral("Disk"), QStringLiteral("Filesystem"), QStringLiteral("Size"), QStringLiteral("Free"), QStringLiteral("Mounted at"), QStringLiteral("At boot")},
@@ -705,6 +724,12 @@ QWidget *OpenWrtFeature::buildStorage()
     actions->addWidget(share);
     actions->addStretch();
     layout->addLayout(actions);
+    m_storageLog = new QPlainTextEdit;
+    m_storageLog->setReadOnly(true);
+    m_storageLog->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    m_storageLog->setAccessibleName(QStringLiteral("USB storage diagnostics"));
+    m_storageLog->setPlaceholderText(QStringLiteral("Press Check USB storage to see what the router finds in its USB port. Installing USB storage support shows its progress here."));
+    layout->addWidget(m_storageLog, 1);
     layout->addWidget(sectionTitle(QStringLiteral("Network shares")));
     m_shareNote = mutedLabel();
     layout->addWidget(m_shareNote);
@@ -721,6 +746,7 @@ QWidget *OpenWrtFeature::buildStorage()
     connect(m_autoMount, &QCheckBox::clicked, this, [this](bool on) { setAutoMount(on); });
     connect(mountAll, &QPushButton::clicked, this, [this] { this->mountAll(); });
     connect(install, &QPushButton::clicked, this, [this] { installStorageSupport(); });
+    connect(checkUsb, &QPushButton::clicked, this, [this] { checkStorage(); });
     connect(boot, &QPushButton::clicked, this, [this] { mountAtBoot(); });
     connect(noBoot, &QPushButton::clicked, this, [this] { stopMountAtBoot(); });
     connect(unmount, &QPushButton::clicked, this, [this] { unmountDisk(); });
@@ -1100,6 +1126,9 @@ void OpenWrtFeature::signOut()
     m_mounts.clear();
     m_disks.clear();
     m_storageProblem.clear();
+    m_missingConfigs.clear();
+    m_storageBusy = false;
+    m_storageLog->clear();
     m_packages.clear();
     m_packageTool = -1;
     m_advancedConfigs.clear();
@@ -1166,6 +1195,10 @@ void OpenWrtFeature::loadConfig(const QString &config)
             showStatus(QStringLiteral("Could not read the %1 settings: %2").arg(config, result.error), true);
             return;
         }
+        if (result.ok)
+            m_missingConfigs.remove(config);
+        else
+            m_missingConfigs.insert(config);
         m_configs.insert(config, result.data.value(QStringLiteral("values")).toObject());
         if (config == QStringLiteral("network") || config == QStringLiteral("dhcp")) {
             renderNetwork();
@@ -1294,7 +1327,7 @@ void OpenWrtFeature::loadAdvancedConfigs()
 }
 
 void OpenWrtFeature::stage(const QString &config, const QString &section, const QJsonObject &values,
-                           const QStringList &removed, const QString &what)
+                           const QStringList &removed, const QString &what, const Client::Done &after)
 {
     QStringList existing;
     if (const std::optional<UciSection> current = this->section(config, section)) {
@@ -1303,13 +1336,15 @@ void OpenWrtFeature::stage(const QString &config, const QString &section, const 
                 existing << option;
         }
     }
-    const auto finish = [this, config, what](const RpcResult &result) {
+    const auto finish = [this, config, what, after](const RpcResult &result) {
         loadConfig(config);
         loadChanges();
         if (result.ok)
             showStatus(QStringLiteral("%1 saved. Apply to make it take effect.").arg(what));
         else
             showStatus(result.error, true);
+        if (after)
+            after(result);
     };
     const auto removeThen = [this, config, section, existing, finish](const RpcResult &previous) {
         if (!previous.ok || existing.isEmpty()) {
@@ -1331,15 +1366,17 @@ void OpenWrtFeature::stage(const QString &config, const QString &section, const 
 }
 
 void OpenWrtFeature::addSection(const QString &config, const QString &type, const QString &name, const QJsonObject &values,
-                                const QString &what)
+                                const QString &what, const Client::Done &after)
 {
     QJsonObject args{{QStringLiteral("config"), config}, {QStringLiteral("type"), type}, {QStringLiteral("values"), values}};
     if (!name.isEmpty())
         args.insert(QStringLiteral("name"), name);
-    m_client.call(QStringLiteral("uci"), QStringLiteral("add"), args, [this, config, what](const RpcResult &result) {
+    m_client.call(QStringLiteral("uci"), QStringLiteral("add"), args, [this, config, what, after](const RpcResult &result) {
         loadConfig(config);
         loadChanges();
         report(result, QStringLiteral("%1 added. Apply to make it take effect.").arg(what));
+        if (after)
+            after(result);
     });
 }
 
@@ -2043,12 +2080,12 @@ void OpenWrtFeature::renderStorage()
     if (!m_storageProblem.isEmpty())
         m_storageNote->setText(QStringLiteral("The router cannot list its disks (%1). Install USB storage support, which adds block-mount and the USB and filesystem drivers.").arg(m_storageProblem));
     else if (m_disks.isEmpty())
-        m_storageNote->setText(QStringLiteral("No USB disk or memory card is attached. Plug one in and press Refresh; if it still does not show, install USB storage support."));
+        m_storageNote->setText(QStringLiteral("No USB disk or memory card is listed. Plug one in and press Refresh; if it still does not show, press Check USB storage to see why."));
     else
         m_storageNote->setText(QStringLiteral("%1 attached. Mounted disks can be shared on your network.").arg(m_disks.size() == 1 ? QStringLiteral("1 disk") : QStringLiteral("%1 disks").arg(m_disks.size())));
     const QList<UciSection> globals = sections(QStringLiteral("fstab"), QStringLiteral("global"));
     m_autoMount->setChecked(!globals.isEmpty() && globals.first().flag(QStringLiteral("anon_mount")));
-    m_autoMount->setEnabled(m_configs.contains(QStringLiteral("fstab")));
+    m_autoMount->setEnabled(m_client.signedIn() && !m_storageBusy);
 
     const QString config = shareConfig(m_advancedConfigs);
     m_shareTree->clear();
@@ -2137,12 +2174,183 @@ void OpenWrtFeature::mountAll()
 
 void OpenWrtFeature::setAutoMount(bool on)
 {
+    if (m_missingConfigs.contains(QStringLiteral("fstab"))) {
+        if (on)
+            createFstab([this] { setAutoMount(true); });
+        else
+            renderStorage();
+        return;
+    }
     const QJsonObject values{{QStringLiteral("anon_mount"), on ? QStringLiteral("1") : QStringLiteral("0")}, {QStringLiteral("auto_mount"), QStringLiteral("1")}};
     const QList<UciSection> globals = sections(QStringLiteral("fstab"), QStringLiteral("global"));
+    const auto after = [this, on](const RpcResult &result) {
+        if (result.ok) {
+            showStatus(on ? QStringLiteral("Automatic mounting saved. Apply the change, then press Mount disks now.")
+                          : QStringLiteral("Automatic mounting turned off. Apply to make it take effect."));
+            return;
+        }
+        showStatus(QStringLiteral("Could not change automatic mounting: %1").arg(result.error), true);
+        checkStorage();
+    };
     if (globals.isEmpty())
-        addSection(QStringLiteral("fstab"), QStringLiteral("global"), {}, values, QStringLiteral("Automatic mounting"));
+        addSection(QStringLiteral("fstab"), QStringLiteral("global"), {}, values, QStringLiteral("Automatic mounting"), after);
     else
-        stage(QStringLiteral("fstab"), globals.first().name, values, {}, QStringLiteral("Automatic mounting"));
+        stage(QStringLiteral("fstab"), globals.first().name, values, {}, QStringLiteral("Automatic mounting"), after);
+}
+
+void OpenWrtFeature::createFstab(const std::function<void()> &then)
+{
+    if (m_storageBusy)
+        return;
+    m_storageBusy = true;
+    renderStorage();
+    showStatus(QStringLiteral("The router has no storage settings file (/etc/config/fstab) yet. Creating it…"));
+    m_client.exec(QStringLiteral("/sbin/block"), {QStringLiteral("detect")}, [this, then](const RpcResult &detect) {
+        if (!detect.ok) {
+            m_storageBusy = false;
+            renderStorage();
+            showStatus(QStringLiteral("Automatic mounting needs block-mount, and the router could not run it (%1). Press Install USB storage support first.").arg(detect.error), true);
+            checkStorage();
+            return;
+        }
+        const QJsonObject args{{QStringLiteral("path"), kFstabPath},
+                               {QStringLiteral("data"), fstabFromDetect(detect.data.value(QStringLiteral("stdout")).toString())},
+                               {QStringLiteral("mode"), 0644}};
+        m_client.call(QStringLiteral("file"), QStringLiteral("write"), args, [this, then](const RpcResult &written) {
+            if (!written.ok) {
+                m_storageBusy = false;
+                renderStorage();
+                showStatus(QStringLiteral("The router has no /etc/config/fstab and did not let ForkMesh create it (%1). Reinstall block-mount, which creates it, or run \"block detect > /etc/config/fstab\" on the router.").arg(written.error), true);
+                return;
+            }
+            m_client.call(QStringLiteral("uci"), QStringLiteral("get"), {{QStringLiteral("config"), QStringLiteral("fstab")}}, [this, then](const RpcResult &loaded) {
+                m_storageBusy = false;
+                if (!loaded.ok) {
+                    renderStorage();
+                    showStatus(QStringLiteral("ForkMesh created /etc/config/fstab, but the router cannot read it: %1").arg(loaded.error), true);
+                    return;
+                }
+                m_missingConfigs.remove(QStringLiteral("fstab"));
+                m_configs.insert(QStringLiteral("fstab"), loaded.data.value(QStringLiteral("values")).toObject());
+                appendStorageLog(QStringLiteral("Created /etc/config/fstab on the router."));
+                then();
+            });
+        });
+    }, 60000);
+}
+
+void OpenWrtFeature::appendStorageLog(const QString &text)
+{
+    m_storageLog->appendPlainText(text);
+}
+
+void OpenWrtFeature::checkStorage(bool keepLog)
+{
+    if (m_storageBusy || !m_client.signedIn())
+        return;
+    m_storageBusy = true;
+    renderStorage();
+    if (keepLog)
+        appendStorageLog(QStringLiteral("\nChecking USB storage…"));
+    else
+        m_storageLog->setPlainText(QStringLiteral("Checking USB storage…"));
+    auto check = std::make_shared<StorageCheck>();
+    QList<Step> steps;
+    steps << [this](const std::function<void()> &next) {
+        if (m_packageTool < 0) {
+            next();
+            return;
+        }
+        const PackageTool tool = packageTools().at(m_packageTool);
+        m_client.exec(tool.program, packageArguments(tool, QStringLiteral("list")), [this, next](const RpcResult &result) {
+            if (result.ok) {
+                m_packages = parseInstalledPackages(result.data.value(QStringLiteral("stdout")).toString());
+                renderPackages();
+            }
+            next();
+        });
+    };
+    steps << [this, check](const std::function<void()> &next) {
+        m_client.call(QStringLiteral("file"), QStringLiteral("stat"), {{QStringLiteral("path"), QStringLiteral("/sbin/block")}}, [check, next](const RpcResult &result) {
+            check->blockTool = result.ok;
+            next();
+        });
+    };
+    steps << [this, check](const std::function<void()> &next) {
+        m_client.call(QStringLiteral("uci"), QStringLiteral("get"), {{QStringLiteral("config"), QStringLiteral("fstab")}}, [this, check, next](const RpcResult &result) {
+            check->fstabExists = result.ok;
+            if (result.ok || result.status == UbusNotFound) {
+                if (result.ok)
+                    m_missingConfigs.remove(QStringLiteral("fstab"));
+                else
+                    m_missingConfigs.insert(QStringLiteral("fstab"));
+                m_configs.insert(QStringLiteral("fstab"), result.data.value(QStringLiteral("values")).toObject());
+            }
+            next();
+        });
+    };
+    steps << [this, check](const std::function<void()> &next) {
+        m_client.call(QStringLiteral("file"), QStringLiteral("list"), {{QStringLiteral("path"), QStringLiteral("/sys/bus/usb/devices")}}, [this, check, next](const RpcResult &result) {
+            check->usbKnown = result.ok;
+            QStringList entries;
+            for (const QJsonValue &entry : result.data.value(QStringLiteral("entries")).toArray())
+                entries << entry.toObject().value(QStringLiteral("name")).toString();
+            check->usbControllers = usbControllerCount(entries);
+            QList<Step> reads;
+            for (const QString &entry : usbDeviceEntries(entries).mid(0, 8)) {
+                reads << [this, check, entry](const std::function<void()> &done) {
+                    m_client.call(QStringLiteral("file"), QStringLiteral("read"), {{QStringLiteral("path"), QStringLiteral("/sys/bus/usb/devices/%1/product").arg(entry)}},
+                                  [check, entry, done](const RpcResult &product) {
+                                      const QString name = product.ok ? product.data.value(QStringLiteral("data")).toString().trimmed() : QString();
+                                      check->usbDevices << (name.isEmpty() ? entry : QStringLiteral("%1 (%2)").arg(name, entry));
+                                      done();
+                                  });
+                };
+            }
+            runInOrder(reads, next);
+        });
+    };
+    steps << [this, check](const std::function<void()> &next) {
+        m_client.call(QStringLiteral("file"), QStringLiteral("read"), {{QStringLiteral("path"), QStringLiteral("/proc/partitions")}}, [check, next](const RpcResult &result) {
+            check->partitionsKnown = result.ok;
+            check->partitions = parsePartitions(result.data.value(QStringLiteral("data")).toString());
+            next();
+        });
+    };
+    steps << [this](const std::function<void()> &next) {
+        m_client.call(QStringLiteral("luci"), QStringLiteral("getBlockDevices"), {}, [this, next](const RpcResult &result) {
+            m_blocks = result.ok ? parseBlockDevices(result.data) : QList<BlockDevice>();
+            m_storageProblem = result.ok ? QString() : result.error;
+            m_client.call(QStringLiteral("luci"), QStringLiteral("getMountPoints"), {}, [this, next](const RpcResult &mounts) {
+                m_mounts = mounts.ok ? parseMountPoints(mounts.data) : QList<MountPoint>();
+                next();
+            });
+        });
+    };
+    steps << [this, check](const std::function<void()> &next) {
+        m_client.exec(QStringLiteral("/bin/dmesg"), {QStringLiteral("-r")}, [check, next](const RpcResult &result) {
+            check->kernelLines = storageKernelLines(result.data.value(QStringLiteral("stdout")).toString());
+            next();
+        });
+    };
+    runInOrder(steps, [this, check, keepLog] {
+        m_storageBusy = false;
+        renderStorage();
+        check->packagesKnown = m_packageTool >= 0;
+        for (const Package &package : m_packages)
+            check->installed << package.name;
+        check->disks = int(m_disks.size());
+        check->mounted = int(std::count_if(m_disks.begin(), m_disks.end(), [](const StorageDisk &disk) { return disk.mounted(); }));
+        check->listProblem = m_storageProblem;
+        const QList<UciSection> globals = sections(QStringLiteral("fstab"), QStringLiteral("global"));
+        check->autoMount = !globals.isEmpty() && globals.first().flag(QStringLiteral("anon_mount"));
+        check->autoMountPending = m_changes.contains(QStringLiteral("fstab"));
+        const QString report = storageReport(*check);
+        if (keepLog)
+            appendStorageLog(report);
+        else
+            m_storageLog->setPlainText(report);
+    });
 }
 
 void OpenWrtFeature::shareDisk()
@@ -2191,12 +2399,61 @@ void OpenWrtFeature::stopSharing()
 
 void OpenWrtFeature::installStorageSupport()
 {
+    if (m_storageBusy)
+        return;
     const QStringList packages = usbStoragePackages();
-    if (!confirm(QStringLiteral("Install USB storage support?"), QStringLiteral("This installs %1. The router needs internet access to download them.").arg(packages.join(QStringLiteral(", "))),
+    if (m_packageTool < 0) {
+        showStatus(QStringLiteral("The router does not let ForkMesh run its package manager, so USB storage support cannot be installed from here. Install luci-app-package-manager (or luci-app-opkg on older releases) on the router."), true);
+        checkStorage();
+        return;
+    }
+    if (!confirm(QStringLiteral("Install USB storage support?"), QStringLiteral("This updates the router's package lists and installs %1. The router needs internet access to download them.").arg(packages.join(QStringLiteral(", "))),
                  QStringLiteral("Install")))
         return;
-    m_tabs->setCurrentIndex(PackagesTab);
-    packageAction(QStringLiteral("install"), packages.join(QLatin1Char(' ')));
+    const PackageTool tool = packageTools().at(m_packageTool);
+    m_storageBusy = true;
+    renderStorage();
+    showStatus(QStringLiteral("Installing USB storage support…"));
+    m_storageLog->setPlainText(QStringLiteral("Updating the router's package lists…"));
+    m_client.exec(tool.program, packageArguments(tool, QStringLiteral("update")), [this, packages](const RpcResult &result) {
+        if (result.ok) {
+            appendStorageLog(QStringLiteral("Package lists updated."));
+        } else {
+            appendStorageLog(QStringLiteral("Updating the package lists failed; the router may have no internet connection. Trying to install anyway."));
+            for (const QString &line : outputTail(result.error))
+                appendStorageLog(QStringLiteral("  ") + line);
+        }
+        installStoragePackages(packages, {});
+    }, 300000);
+}
+
+void OpenWrtFeature::installStoragePackages(QStringList remaining, QStringList failed)
+{
+    if (remaining.isEmpty() || m_packageTool < 0) {
+        m_storageBusy = false;
+        if (failed.isEmpty() && remaining.isEmpty())
+            showStatus(QStringLiteral("USB storage support installed."));
+        else
+            showStatus(QStringLiteral("Some storage packages could not be installed: %1. The log on the Storage tab says why.").arg((failed + remaining).join(QStringLiteral(", "))), true);
+        loadAdvancedConfigs();
+        checkStorage(true);
+        return;
+    }
+    const QString name = remaining.takeFirst();
+    const PackageTool tool = packageTools().at(m_packageTool);
+    appendStorageLog(QStringLiteral("Installing %1…").arg(name));
+    m_client.exec(tool.program, packageArguments(tool, QStringLiteral("install"), {name}), [this, remaining, failed, name](const RpcResult &result) mutable {
+        if (result.ok) {
+            appendStorageLog(QStringLiteral("  %1 is installed.").arg(name));
+        } else {
+            failed << name;
+            appendStorageLog(QStringLiteral("  %1 failed:").arg(name));
+            const QString output = (result.data.value(QStringLiteral("stdout")).toString() + QLatin1Char('\n') + result.data.value(QStringLiteral("stderr")).toString()).trimmed();
+            for (const QString &line : outputTail(output.isEmpty() ? result.error : output))
+                appendStorageLog(QStringLiteral("    ") + line);
+        }
+        installStoragePackages(remaining, failed);
+    }, 300000);
 }
 
 void OpenWrtFeature::renderServices()

@@ -83,7 +83,16 @@ can be done with them:
   (`mountPathProblem`), so a typo cannot mount a disk over `/etc`.
 - **Mount any disk when it is plugged in** sets the fstab `global` section's
   `anon_mount` (and `auto_mount`), which mounts unknown disks at
-  `/mnt/<device>`.
+  `/mnt/<device>`. rpcd's `uci add` and `uci set` fail with "not found" when
+  `/etc/config/fstab` does not exist, which used to leave the switch unable to
+  turn on with no visible reason (the iPhone Storage screen showed no status
+  line). `uci get fstab` answering not found marks the config missing
+  (`missingConfigs`); switching on then runs `/sbin/block detect` and writes
+  its output (`fstabFromDetect`, falling back to fstools' default `global`
+  section) to `/etc/config/fstab` with `file write`, rereads it and stages
+  `anon_mount` on the new section. If `block` cannot run, or the router's
+  ACLs refuse the write, the message says so and what to do. A failed change
+  runs the USB check below.
 - **Mount disks now** runs `/sbin/block mount`; it mounts what is saved, so
   the page warns when fstab changes are still waiting. **Unmount** runs
   `/bin/umount <mount point>` after a confirmation. LuCI's Mount Points page
@@ -93,9 +102,34 @@ can be done with them:
   disk can be shared with or without guest access (`read_only no`,
   `create_mask 0666`, `dir_mask 0777`). Without one, the page names the
   packages to install.
-- **Install USB storage support** installs `kmod-usb-storage`,
-  `kmod-usb-storage-uas`, `block-mount`, `kmod-fs-ext4`, `kmod-fs-vfat` and
-  `kmod-fs-exfat` through the package tool in one command.
+- **Install USB storage support** first updates the package lists (opkg
+  keeps them in `/tmp`, so after a reboot every install fails with "Unknown
+  package"), then installs `kmod-usb-storage`, `kmod-usb-storage-uas`,
+  `block-mount`, `kmod-fs-ext4`, `kmod-fs-vfat` and `kmod-fs-exfat` one at a
+  time, so a package the release lacks does not stop the others. Progress and
+  the tail of each failure's output go to the Storage tab's log (it used to
+  show only on the Packages screen), then the page reloads and runs the USB
+  check.
+- **Check USB storage** (`checkStorage` in each client, `storageFindings` and
+  `storageReport` in each model) runs on demand, when the Storage tab or
+  screen opens with no disk listed, after an install and after a failed
+  switch. It reads the installed packages, `file stat /sbin/block`, `uci get
+  fstab`, `file list /sys/bus/usb/devices` (`usbN` entries are controllers,
+  `N-M[.K]` entries are devices; each device's `product` names it),
+  `/proc/partitions` (the disks the kernel made, with or without
+  block-mount), `luci getBlockDevices` / `getMountPoints` and the USB and
+  disk lines of `/bin/dmesg -r` (LuCI's system log ACL names exactly that
+  command). The findings, in order: no USB controller driver; nothing in the
+  port; a device but no disk (driver missing or the device failed); a disk
+  but no block-mount; a disk with no readable filesystem (naming missing
+  `kmod-fs-*`); no fstab; missing packages; and what to press for unmounted
+  disks. The details below them list every value read, so a user can paste
+  the report when asking for help. Reads the router's ACLs refuse leave their
+  part as unknown rather than failing the check.
+- The phones' Storage screen shows the status line, a progress indicator,
+  the check's log and, while changes are waiting, **Apply and mount disks**
+  (apply, then `block mount`, then the check), because disks mount by
+  themselves only once `anon_mount` is applied.
 - Formatting is not offered: `mkfs` is in no LuCI ACL, and erasing a disk from
   a phone is too easy to get wrong.
 

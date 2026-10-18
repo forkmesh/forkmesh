@@ -415,6 +415,8 @@ void MainWindow::handleLocalControlDiagnosticsRequest(int connectionId, int requ
                     label = item.issueTitle.trimmed().isEmpty()
                                 ? item.prompt.section(QLatin1Char('\n'), 0, 0).trimmed().left(120)
                                 : item.issueTitle.trimmed().left(120);
+        } else if (action == QLatin1String("freeDiskSpace")) {
+            label = diagctl::freeDiskSpaceStepLabel(subject);
         } else {
             if (m_stallLog.isEmpty() || stallReportRepoIndex() < 0) {
                 server->respondError(connectionId, requestId, QStringLiteral("nothing_to_send"));
@@ -624,6 +626,10 @@ void MainWindow::runLocalControlDiagnosticsAction(int connectionId, int requestI
     if (!server)
         return;
     const QString who = localControlDeviceLabel(connectionId);
+    if (action == QLatin1String("freeDiskSpace")) {
+        runLocalControlFreeDiskSpace(connectionId, requestId, subject, who);
+        return;
+    }
     if (action == QLatin1String("stopAgent")) {
         const int session = subject.toInt();
         if (!isStoppableAgentSession(session) || !stopAgentSessionById(session)) {
@@ -676,4 +682,99 @@ void MainWindow::runLocalControlDiagnosticsAction(int connectionId, int requestI
                      {QStringLiteral("subject"), subject},
                      {QStringLiteral("message"), QStringLiteral("An agent is working on it.")}});
     server->broadcast(QStringLiteral("agents.changed"));
+}
+
+void MainWindow::runLocalControlFreeDiskSpace(int connectionId, int requestId,
+                                              const QString &step, const QString &who)
+{
+    LocalControlServer *server = m_localControl;
+    if (!server)
+        return;
+    const QString processName = QStringLiteral("forkmeshFreeDiskSpaceProcess");
+    if (findChild<QProcess *>(processName, Qt::FindDirectChildrenOnly)) {
+        server->respondError(connectionId, requestId, QStringLiteral("busy"),
+                             QStringLiteral("Another disk cleanup step is still running on "
+                                            "the desktop."));
+        return;
+    }
+    QString root;
+    for (const RepositoryRecord &repo : std::as_const(m_repositories)) {
+        const QString dir = writableRecordFor(repo).localPath.trimmed();
+        if (dir.isEmpty() ||
+            !QFileInfo(QDir(dir).filePath(diagctl::freeDiskSpaceScript())).isFile())
+            continue;
+        if (repo.owner == QLatin1String("forkmesh") && repo.name == QLatin1String("forkmesh")) {
+            root = dir;
+            break;
+        }
+        if (root.isEmpty())
+            root = dir;
+    }
+    if (root.isEmpty()) {
+        server->respondError(connectionId, requestId, QStringLiteral("no_checkout"),
+                             QStringLiteral("Add the forkmesh/forkmesh repository with a local "
+                                            "checkout on this desktop: the cleanup runs its "
+                                            "tools/free_disk_space.py."));
+        return;
+    }
+    const QString python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+    if (python.isEmpty()) {
+        server->respondError(connectionId, requestId, QStringLiteral("no_python"),
+                             QStringLiteral("python3 is not installed on the desktop."));
+        return;
+    }
+    auto *process = new QProcess(this);
+    process->setObjectName(processName);
+    process->setWorkingDirectory(root);
+    process->setProcessChannelMode(QProcess::MergedChannels);
+    auto *timer = new QTimer(process);
+    timer->setSingleShot(true);
+    connect(timer, &QTimer::timeout, process, [process] { process->kill(); });
+    QPointer<LocalControlServer> guard(server);
+    const qint64 startedMs = QDateTime::currentMSecsSinceEpoch();
+    logSystem(QStringLiteral("Free disk space: %1, started from %2.")
+                  .arg(diagctl::freeDiskSpaceStepLabel(step), who));
+    connect(process, &QProcess::finished, this,
+            [this, process, guard, connectionId, requestId, step,
+             startedMs](int exitCode, QProcess::ExitStatus status) {
+                process->setObjectName(QString());
+                process->deleteLater();
+                const QByteArray output = process->readAllStandardOutput();
+                QString error;
+                const QJsonObject reply =
+                    status == QProcess::NormalExit && exitCode == 0
+                        ? diagctl::freeDiskSpaceReply(
+                              step, output, QDateTime::currentMSecsSinceEpoch() - startedMs,
+                              &error)
+                        : QJsonObject();
+                if (reply.isEmpty()) {
+                    const QString last =
+                        QString::fromUtf8(output).trimmed().section(QLatin1Char('\n'), -1).trimmed();
+                    const QString message =
+                        last.isEmpty() ? QStringLiteral("The cleanup step stopped before it finished.")
+                                       : last.left(diagctl::kFreeDiskSpaceMaxLineChars);
+                    logSystem(QStringLiteral("Free disk space: %1 failed: %2")
+                                  .arg(diagctl::freeDiskSpaceStepLabel(step), message));
+                    if (guard)
+                        guard->respondError(connectionId, requestId,
+                                            QStringLiteral("cleanup_failed"), message);
+                    return;
+                }
+                if (!guard)
+                    return;
+                guard->respond(connectionId, requestId, reply);
+                guard->broadcast(QStringLiteral("diag.changed"));
+            });
+    connect(process, &QProcess::errorOccurred, this,
+            [process, guard, connectionId, requestId](QProcess::ProcessError error) {
+                if (error != QProcess::FailedToStart)
+                    return;
+                process->setObjectName(QString());
+                process->deleteLater();
+                if (guard)
+                    guard->respondError(connectionId, requestId, QStringLiteral("cleanup_failed"),
+                                        QStringLiteral("python3 could not start."));
+            });
+    timer->start(diagctl::kFreeDiskSpaceTimeoutMs);
+    process->start(python, diagctl::freeDiskSpaceArguments(root, step));
 }

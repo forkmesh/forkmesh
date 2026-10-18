@@ -194,6 +194,13 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
 
 - The repository comes from `resolveAgentRepositoryIndex` for local and cloud
   runs. Phones expose the same switches through `agents.start`.
+- A run's worktree is added by `agentwt::addScript`, retried three times. A
+  `git worktree add -b` that fails after making the branch (for example with
+  the disk full) leaves `<id>-<slug>` behind, so the script checks the branch
+  out when it already exists and creates it only when it does not. Before
+  2026-10-18 every retry then failed with "a branch named … already exists"
+  (runs 2256 and 2257). The error shown keeps the first attempt's output
+  when it differs from the last, so the real cause is not hidden.
 - Dragging the strip moves the composer; dragging it out tears it off into a
   frameless window (`tearOffPromptOverlay`). Double-click docks it.
 - Notices are inline in the page, never floating (see

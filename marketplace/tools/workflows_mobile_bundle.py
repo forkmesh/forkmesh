@@ -286,6 +286,7 @@ def flow_cases() -> list[dict]:
     add("required field", [{"id": "s", "type": "app.slack", "name": "Slack", "credential": CREDENTIAL_ID,
                             "params": {"operation": "postMessage", "channel": "  "}}],
         credentials={CREDENTIAL_ID: {"integration": "slack", "values": {"token": "tok"}}})
+    add("a desktop step refuses to run off the desktop", [_n("d", "desktop.diskUsage", "Measure the disk")])
     add("unknown operation falls back to the first", [{"id": "s", "type": "app.wikipedia", "name": "Wiki",
                                                        "params": {"operation": "nope", "title": "Ada"}}],
         responses=[OK_RESPONSE])

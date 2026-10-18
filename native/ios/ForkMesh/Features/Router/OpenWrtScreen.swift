@@ -687,16 +687,35 @@ struct OpenWrtStorageScreen: View {
     var body: some View {
         let disks = model.snapshot.disks
         List {
+            if !model.message.isEmpty { OpenWrtMessage(model: model) }
+            if model.snapshot.pendingCount > 0 {
+                Section {
+                    Text(model.snapshot.pendingCount == 1 ? "1 change is waiting. Disks mount by themselves only after it is applied."
+                         : "\(model.snapshot.pendingCount) changes are waiting. Disks mount by themselves only after they are applied.")
+                    Button("Apply and mount disks") { Task { await model.applyAndMount() } }
+                        .disabled(model.busy || model.storageBusy)
+                }
+            }
             Section {
                 Toggle("Mount any disk when it is plugged in", isOn: Binding(
                     get: { model.snapshot.autoMount },
                     set: { on in Task { await model.setAutoMount(on) } }))
+                    .disabled(model.storageBusy)
                 Button("Mount disks now") { Task { await model.mountAll() } }
-                Button("Install USB storage support") { confirmInstall = true }
+                Button("Install USB storage support") { confirmInstall = true }.disabled(model.storageBusy)
+                Button("Check USB storage") { Task { await model.checkStorage() } }.disabled(model.storageBusy)
             } footer: {
                 Text(!model.snapshot.storageProblem.isEmpty
                      ? "The router cannot list its disks (\(model.snapshot.storageProblem)). Install USB storage support, which adds block-mount and the USB and filesystem drivers."
-                     : disks.isEmpty ? "No USB disk or memory card is attached. Plug one in and pull to refresh." : "Unmount a disk before you unplug it.")
+                     : disks.isEmpty ? "No USB disk or memory card is listed. Plug one in and pull to refresh, or press Check USB storage to see why." : "Unmount a disk before you unplug it.")
+            }
+            if !model.storageLog.isEmpty {
+                Section("USB storage check") {
+                    Text(model.storageLog)
+                        .font(.caption.monospaced())
+                        .textSelection(.enabled)
+                        .accessibilityIdentifier("openwrt-storage-log")
+                }
             }
             Section("Disks") {
                 ForEach(disks) { disk in
@@ -727,6 +746,10 @@ struct OpenWrtStorageScreen: View {
         }
         .navigationTitle("Storage")
         .refreshable { await model.refresh() }
+        .overlay { if model.storageBusy { ProgressView() } }
+        .task {
+            if model.snapshot.disks.isEmpty && model.storageLog.isEmpty { await model.checkStorage() }
+        }
         .alert("Mount at boot", isPresented: Binding(get: { bootDisk != nil }, set: { if !$0 { bootDisk = nil } })) {
             TextField("/mnt/usb", text: $bootPath).textInputAutocapitalization(.never).autocorrectionDisabled()
             Button("Save") {
@@ -752,9 +775,9 @@ struct OpenWrtStorageScreen: View {
             Text("Shares and programs using the disk lose access. Afterwards it can be unplugged safely.")
         }
         .confirmationDialog("Install USB storage support?", isPresented: $confirmInstall, titleVisibility: .visible) {
-            Button("Install") { Task { await model.packageAction("install", OpenWrtModel.usbStoragePackages) } }
+            Button("Install") { Task { await model.installStorageSupport() } }
         } message: {
-            Text("This installs \(OpenWrtModel.usbStoragePackages.joined(separator: ", ")). The router needs internet access to download them.")
+            Text("This updates the router's package lists and installs \(OpenWrtModel.usbStoragePackages.joined(separator: ", ")). The router needs internet access to download them.")
         }
     }
 
