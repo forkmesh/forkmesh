@@ -216,7 +216,18 @@ struct ShellSparkleField: View {
     }
 }
 
+@MainActor
+final class ShellNewAgentPress {
+    var down: Bool = false
+    var moved: Bool = false
+    var held: Bool = false
+    var timer: Task<Void, Never>?
+}
+
 struct ShellNewAgentButton: View {
+    static let holdSeconds: Double = 0.35
+    static let slop: CGFloat = 10
+
     @Environment(\.fmPalette) var fm
     @Environment(\.accessibilityReduceTransparency) var reduceTransparency
     @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -234,6 +245,8 @@ struct ShellNewAgentButton: View {
     @State private var feeling: Bool = false
     @State private var bornAt: Double = 0
     @State private var place: CGRect = .zero
+    @State private var press: ShellNewAgentPress = ShellNewAgentPress()
+    @GestureState private var touching: Bool = false
     private var running: Int { ShellCounts.shared.agents }
 
     var body: some View {
@@ -261,12 +274,9 @@ struct ShellNewAgentButton: View {
 
     private var pressable: some View {
         face
-            .onTapGesture {
-                FmHaptics.tap()
-                onNewAgent()
-            }
-            .onLongPressGesture(minimumDuration: 0.35, maximumDistance: 10) {
-                hold()
+            .gesture(touch)
+            .onChange(of: touching) { (_: Bool, now: Bool) in
+                if !now { released(cancelled: true) }
             }
             .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { (next: CGRect) in
                 place = next
@@ -319,6 +329,51 @@ struct ShellNewAgentButton: View {
 
     private var accent: Color { tint ?? fm.accent }
 
+    private var touch: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .updating($touching) { (_: DragGesture.Value, state: inout Bool, _: inout Transaction) in state = true }
+            .onChanged { (value: DragGesture.Value) in pressed(value.translation) }
+            .onEnded { (_: DragGesture.Value) in released(cancelled: false) }
+    }
+
+    private func pressed(_ moved: CGSize) {
+        guard press.down else {
+            press.down = true
+            press.moved = false
+            press.held = false
+            if onVoice != nil {
+                ShellVoiceLaunch.shared.prime()
+            }
+            let press: ShellNewAgentPress = self.press
+            press.timer = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(ShellNewAgentButton.holdSeconds))
+                guard !Task.isCancelled, press.down, !press.moved, !press.held else { return }
+                press.held = true
+                hold()
+            }
+            return
+        }
+        if !press.held, !press.moved, hypot(moved.width, moved.height) > ShellNewAgentButton.slop {
+            press.moved = true
+            press.timer?.cancel()
+        }
+    }
+
+    private func released(cancelled: Bool) {
+        guard press.down else { return }
+        press.down = false
+        press.timer?.cancel()
+        press.timer = nil
+        if press.held {
+            if onVoice != nil {
+                ShellVoiceLaunch.shared.letGo()
+            }
+        } else if !press.moved && !cancelled {
+            FmHaptics.tap()
+            onNewAgent()
+        }
+    }
+
     private func hold() {
         guard let onVoice = onVoice else {
             FmHaptics.palette()
@@ -326,6 +381,7 @@ struct ShellNewAgentButton: View {
             return
         }
         voiceTip.invalidate(reason: .actionPerformed)
+        ShellVoiceLaunch.shared.press()
         onVoice(place)
     }
 

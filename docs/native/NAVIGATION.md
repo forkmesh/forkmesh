@@ -38,8 +38,8 @@ returns to the repository in use, remembered across launches
 (`CurrentRepoMemory`, key `code/current-repo`); with none yet it shows the list
 and says so inline. Android follows `CodeButton.plan`.
 
-The **new agent button** opens the composer (tap) or the voice prompt (long
-press, §2.3; Android still opens the command palette). On iPhone it is a 44 pt circle left of the avatar in the top bar and the
+The **new agent button** opens the composer (tap) or the voice prompt (touch
+and hold, listening until the finger lifts, §2.3; Android still opens the command palette). On iPhone it is a 44 pt circle left of the avatar in the top bar and the
 chat room header (`ShellNewAgentButton`); the DM and group conversation header
 leaves it and the avatar out to make room for the name, and opening the channel
 list brings the top bar back. It shows one
@@ -490,6 +490,30 @@ Holding the new agent button starts an agent by voice, without the keyboard.
 `ShellVoiceLaunch` (`Shell/ShellVoiceLaunch.swift`) runs it and
 `ShellVoiceLaunchOverlay` draws it over the whole shell.
 
+- **Hold to talk** (2026-10-17). The button tracks the finger itself with one
+  `DragGesture` (`ShellNewAgentPress`) instead of a tap plus a long press,
+  because a long press ends the moment it is recognized and so could not tell
+  when the finger lifts. Lifting before 0.35 s (`ShellNewAgentButton.holdSeconds`)
+  is a tap and opens the composer; moving more than 10 pt first does nothing.
+  After 0.35 s the voice prompt opens and listens for as long as the finger
+  stays down: pauses no longer send (`PromptDictation.holds` skips the quiet
+  timers, the two-minute limit stays). Letting go sends. The microphone keeps
+  recording for another 0.25 s so the last word is not clipped, then the
+  recognizer is told the audio has ended (`finishSpeaking`: `endAudio`, or
+  `finalizeAndFinishThroughEndOfInput` on iOS 26) and the words go out once its
+  final result arrives (at most 2 s later). The orb shows the sending state at
+  once. Letting go before the microphone opens, or before anything was heard or
+  the meter saw a voice, falls back to the hands-free mode below (send after a
+  pause or a tap on the orb). The VoiceOver action also opens it hands-free.
+- **Faster start.** Touching the button already prepares the recognizer
+  (`PromptDictation.prime`: on iOS 26 it builds the `SpeechAnalyzer` and calls
+  `prepareToAnalyze`, so the model is loaded before the microphone opens), and
+  a held press opens the microphone after the summon chime's 0.42 s
+  (`VoiceLaunchChime.summonSeconds`) instead of waiting up to 0.8 s for the
+  chime's tail. The voice prompt's transcriber asks for fast results
+  (`.fastResults` with `.volatileResults`), so words appear while they are
+  being said; the composer's dictation keeps the default.
+
 - **Open.** The button's sparkle circle springs out of the top bar into a large
   orb in the upper middle of a dimmed, blurred screen, with the
   `VoiceLaunchChime.summon` chime (`FMAgentWatch/VoiceLaunchChimes.swift`) and
@@ -500,7 +524,8 @@ Holding the new agent button starts an agent by voice, without the keyboard.
   `DictationMeter`, ripples speed up with the voice, and the words appear
   under the orb as they are recognized. When the voice stops, a white arc
   fills around the orb over the pause.
-- **Send.** After 3 s of quiet (`ShellVoiceLaunch.pause`), or a tap on the orb,
+- **Send.** On letting go of a held press, or, hands-free, after 3 s of quiet
+  (`ShellVoiceLaunch.pause`) or a tap on the orb,
   the words go to `QuickAgentLauncher.send(prompt:images:)`: the same
   launcher as the composer, so the run uses the repository, destination,
   agent and model last used there. The screen does not switch the repository

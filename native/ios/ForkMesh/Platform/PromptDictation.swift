@@ -29,6 +29,11 @@ final class PromptDictation {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var cancelAnalysis: (() -> Void)?
+    private var closeAnalysis: (() -> Void)?
+    private var priming: Task<Void, Never>?
+    private var primed: AnyObject?
+    private var primedFor: String = ""
+    private var closing: Bool = false
     private var silence: Task<Void, Never>?
     private var limit: Task<Void, Never>?
     private var onDone: ((Bool) -> Void)?
@@ -43,6 +48,8 @@ final class PromptDictation {
     private static weak var overhearing: PromptDictation?
     var pause: UInt64 = 4
     var ambient: Bool = false
+    var holds: Bool = false
+    var quick: Bool = false
 
     static var allowed: Bool {
         SFSpeechRecognizer.authorizationStatus() == .authorized && AVAudioApplication.shared.recordPermission == .granted
@@ -101,11 +108,17 @@ final class PromptDictation {
             return false
         }
         let identifier: String = Self.localeIdentifier()
-        if #available(iOS 26.0, *), let analysis = await PromptSpeechAnalysis.ready(identifier: identifier) {
+        if #available(iOS 26.0, *) {
+            var analysis: PromptSpeechAnalysis? = await takePrimed(identifier)
+            if analysis == nil {
+                analysis = await PromptSpeechAnalysis.ready(identifier: identifier, quick: quick)
+            }
             guard attempt == generation else {
                 return false
             }
-            return beginAnalysis(analysis, onWords: onWords, onError: onError)
+            if let analysis = analysis {
+                return beginAnalysis(analysis, onWords: onWords, onError: onError)
+            }
         }
         guard attempt == generation else {
             return false
@@ -117,6 +130,80 @@ final class PromptDictation {
         generation += 1
         request?.endAudio()
         finish()
+    }
+
+    func prime() {
+        guard #available(iOS 26.0, *) else { return }
+        guard !listening, priming == nil, Self.allowed else { return }
+        let identifier: String = Self.localeIdentifier()
+        if primed != nil, primedFor == identifier { return }
+        let quick: Bool = self.quick
+        priming = Task { @MainActor [weak self] in
+            let analysis: PromptSpeechAnalysis? = await PromptSpeechAnalysis.ready(identifier: identifier, quick: quick)
+            await analysis?.prepare()
+            guard let self = self else { return }
+            self.priming = nil
+            self.primed = analysis
+            self.primedFor = identifier
+        }
+    }
+
+    func finishSpeaking() {
+        closing = true
+        if listening {
+            closeSoon()
+        }
+    }
+
+    func keepListening() {
+        holds = false
+        guard listening, !closing else { return }
+        armSilence(seconds: heard ? pause : 8)
+    }
+
+    @available(iOS 26.0, *)
+    private func takePrimed(_ identifier: String) async -> PromptSpeechAnalysis? {
+        if let running: Task<Void, Never> = priming {
+            await running.value
+        }
+        let ready: PromptSpeechAnalysis? = primedFor == identifier ? primed as? PromptSpeechAnalysis : nil
+        primed = nil
+        return ready
+    }
+
+    private func closeSoon() {
+        silence?.cancel()
+        let attempt: Int = generation
+        silence = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled, let self = self, self.generation == attempt, self.listening else { return }
+            self.endInput()
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled, self.generation == attempt, self.listening else { return }
+            self.stop()
+        }
+    }
+
+    private func endInput() {
+        stopEngine()
+        request?.endAudio()
+        let close: (() -> Void)? = closeAnalysis
+        closeAnalysis = nil
+        close?()
+    }
+
+    private func stopEngine() {
+        if let engine {
+            if engine.isRunning {
+                engine.stop()
+            }
+            engine.inputNode.removeTap(onBus: 0)
+        }
+        engine = nil
+        if let meter = metered {
+            DictationMeter.shared.end(meter)
+        }
+        metered = nil
     }
 
     static func modelStatus() async -> PromptSpeechModel {
@@ -150,6 +237,7 @@ final class PromptDictation {
         markListening()
         let attempt: Int = generation
         cancelAnalysis = { analysis.cancel() }
+        closeAnalysis = { analysis.close() }
         analysis.run(
             onWords: { [weak self] (words: String) in
                 guard let self = self, self.listening, self.generation == attempt else {
@@ -254,7 +342,11 @@ final class PromptDictation {
         } else {
             Self.isListening = true
         }
-        armSilence(seconds: ambient ? 55 : 8)
+        if closing {
+            closeSoon()
+        } else if !holds {
+            armSilence(seconds: ambient ? 55 : 8)
+        }
         limit = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 120 * 1_000_000_000)
             if !Task.isCancelled {
@@ -265,7 +357,9 @@ final class PromptDictation {
 
     private func heardWords() {
         heard = true
-        armSilence(seconds: pause)
+        if !holds && !closing {
+            armSilence(seconds: pause)
+        }
     }
 
     private func armSilence(seconds: UInt64) {
@@ -284,20 +378,11 @@ final class PromptDictation {
         limit?.cancel()
         silence = nil
         limit = nil
-        if let engine {
-            if engine.isRunning {
-                engine.stop()
-            }
-            engine.inputNode.removeTap(onBus: 0)
-        }
-        engine = nil
-        if let meter = metered {
-            DictationMeter.shared.end(meter)
-        }
-        metered = nil
+        stopEngine()
         task?.cancel()
         task = nil
         request = nil
+        closeAnalysis = nil
         let cancelAnalysis: (() -> Void)? = self.cancelAnalysis
         self.cancelAnalysis = nil
         cancelAnalysis?()
@@ -310,8 +395,9 @@ final class PromptDictation {
             }
         }
         listening = false
-        let quiet: Bool = settled
+        let quiet: Bool = settled || (closing && heard)
         settled = false
+        closing = false
         heard = false
         let done: ((Bool) -> Void)? = onDone
         onDone = nil
@@ -359,6 +445,7 @@ final class PromptSpeechAnalysis {
     private let transcriber: SpeechTranscriber
     private let analyzer: SpeechAnalyzer
     private let stream: AsyncStream<AnalyzerInput>
+    private let format: AVAudioFormat
     private var tasks: [Task<Void, Never>] = []
     private static var installing: Task<PromptSpeechModel, Never>?
 
@@ -367,10 +454,11 @@ final class PromptSpeechAnalysis {
         analyzer = SpeechAnalyzer(modules: [transcriber])
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
         self.stream = stream
+        self.format = format
         feed = PromptAnalyzerFeed(continuation: continuation, format: format)
     }
 
-    static func ready(identifier: String) async -> PromptSpeechAnalysis? {
+    static func ready(identifier: String, quick: Bool = false) async -> PromptSpeechAnalysis? {
         guard let locale: Locale = await locale(identifier) else {
             return nil
         }
@@ -380,7 +468,7 @@ final class PromptSpeechAnalysis {
             }
             return nil
         }
-        let transcriber: SpeechTranscriber = makeTranscriber(locale)
+        let transcriber: SpeechTranscriber = makeTranscriber(locale, quick: quick)
         guard let format: AVAudioFormat = try? await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
             return nil
         }
@@ -473,6 +561,18 @@ final class PromptSpeechAnalysis {
         })
     }
 
+    func prepare() async {
+        try? await analyzer.prepareToAnalyze(in: format)
+    }
+
+    func close() {
+        feed.finish()
+        let analyzer: SpeechAnalyzer = self.analyzer
+        tasks.append(Task { @MainActor in
+            try? await analyzer.finalizeAndFinishThroughEndOfInput()
+        })
+    }
+
     func cancel() {
         feed.finish()
         for task in tasks {
@@ -485,8 +585,10 @@ final class PromptSpeechAnalysis {
         }
     }
 
-    private static func makeTranscriber(_ locale: Locale) -> SpeechTranscriber {
-        SpeechTranscriber(locale: locale, transcriptionOptions: [], reportingOptions: [.volatileResults], attributeOptions: [])
+    private static func makeTranscriber(_ locale: Locale, quick: Bool = false) -> SpeechTranscriber {
+        SpeechTranscriber(
+            locale: locale, transcriptionOptions: [], reportingOptions: quick ? [.volatileResults, .fastResults] : [.volatileResults],
+            attributeOptions: [])
     }
 
     private static func locale(_ identifier: String) async -> Locale? {

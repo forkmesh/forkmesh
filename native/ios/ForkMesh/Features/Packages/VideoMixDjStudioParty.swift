@@ -249,7 +249,7 @@ struct DjReactionLayer: View {
     var body: some View {
         let effects = model.effects
         let emojis = Array(Set(effects.map(\.reaction.emoji))).sorted()
-        TimelineView(.animation(paused: effects.isEmpty)) { timeline in
+        TimelineView(.animation(minimumInterval: DjTheme.frame, paused: effects.isEmpty)) { timeline in
             Canvas { context, size in
                 for effect in effects {
                     DjEffectDrawing.draw(effect, context, size, now: timeline.date, reduced: reduceMotion)
