@@ -246,7 +246,7 @@ def test_starting_again_skips_finished_steps_and_follows_a_running_setup():
     assert 'rm -f "$CONFIG_FILE"' in TEXT.split('if [ "$DETACHED" = "1" ] && [ "$CONFIG_FILE" = "$SETUP_RUN_DIR/settings.json" ]', 1)[1].split("\n", 1)[0]
     assert "The system packages are already installed." in function("install_packages")
     assert "The source is already at the latest" in function("fetch_source")
-    assert '[ "$(cat "$BUILD_STAMP")" = "$(build_stamp)" ]' in function("build_app")
+    assert '[ "$(cat "$BUILD_STAMP")" = "$(build_stamp "$SRC")" ]' in function("build_app")
     assert "The app is already running this version" in function("start_app")
     assert "is already live over HTTPS." in function("setup_https")
     assert "already installed" in function("install_daemon_binary")
@@ -513,7 +513,7 @@ def test_the_build_records_its_version_and_commit(tmp_path):
                                                        shlex.quote(str(info))))
     script = tmp_path / "harness.sh"
     script.write_text("set -euo pipefail\n" + function("release_version")
-                      + function("write_build_info") + body)
+                      + function("write_build_info") + "write_daemon_state() { :; }\n" + body)
     result = subprocess.run(["bash", str(script)], env=env, capture_output=True,
                             text=True, timeout=60)
     assert result.returncode == 0, result.stderr
