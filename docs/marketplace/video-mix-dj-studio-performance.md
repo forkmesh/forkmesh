@@ -53,7 +53,7 @@ performance report (see the app-wide page) if there is room.
   scripts` count from the moment the app-wide studio model started (at launch
   when a set resumes) with the studio open or closed, so divide them by that
   span, not by the seconds of frames. Only `waveform draw` and `record step`
-  run solely on screen.
+  run solely on screen, and so does the `App work` section.
 - `## Frames`: frames per second, dropped frames, hitch ms a second and the
   worst frame in the last 10 s, the last 60 s and everything measured. The
   worst-frame series is one number per second, oldest first (`.` = not
@@ -63,20 +63,41 @@ performance report (see the app-wide page) if there is room.
   frames means the main thread is the bottleneck, so find the work; well under
   that with dropped frames means the frames were lost elsewhere (the render
   server, the GPU, the web view's processes, or iOS throttling a hot phone).
+  The average hides bursts: long frames whose busy time equals their length
+  mean the main thread was blocked, even at 450 ms/s. `of it layout and
+  drawing ms/s` (since the `2289` check) is the part from just before UIKit's
+  pre-commit handler to the run loop's sleep (a third observer at order
+  1,998,000; UIKit's handler is at 1,999,000, Core Animation's commit at
+  2,000,000): view layout, SwiftUI's pending updates and Canvas drawing. The
+  rest of the busy time is run-loop sources, timers, display-link callbacks
+  and main-actor tasks. If SwiftUI updates outside that commit on some iOS
+  version, they show as the rest. `main thread busy each second` is one number
+  per second, like the worst-frame series.
 - `## Long frames`: each frame of 50 ms or more, how much of it the main
-  thread was busy, the studio work that finished inside it (`inside:`, items
-  of 1 ms or more) and the moments recorded within half a second before it
-  (`around:`). A busy main thread with an empty `inside:` means the time went
-  to something the studio does not measure yet (SwiftUI layout and drawing,
-  the web view's layer updates, another part of the app): measure it. A long
+  thread was busy and how much of that was layout and drawing, the work that
+  finished inside it (`inside:`, items of 1 ms or more: studio kinds, and
+  since the `2289` check the app's named main-actor sections as `app <name>`) and the
+  moments recorded within half a second before it (`around:`). A busy frame
+  that is mostly layout and drawing is SwiftUI or Core Animation work; a busy
+  frame with neither layout nor an `inside:` item is unnamed main-actor work
+  (a task, a notification, a network reply): wrap the suspect in
+  `PerformanceMonitorService.section` and it shows here next time. A long
   frame with the main thread mostly idle was not lost on the main thread.
 - `## Main-thread work`: count, average, maximum and how many went over 4 ms,
   per kind (`DjWork`): `player tick` and `player event` (`DjStudioModel.handle`),
   `waveform draw` (the Canvas in `DjWaveform`; divided by the seconds on
   screen it is the rate the moving waveforms were actually redrawn, against
-  the `pace` asked for), `record step` (one `DjSpinView.step`), `crossfade step` (one frame of `fade`), `automix step`,
+  the `pace` asked for; it times recording the drawing, the pixels are drawn
+  later in the commit), `record step` (one `DjSpinView.step`; before the `2289` check
+  it committed its own Core Animation transaction, so its maximum could hold
+  the whole window's layout and drawing), `crossfade step` (one frame of `fade`), `automix step`,
   `scratch move`, `jam reply` (`receive`) and `state save` (building the saved
   state; encoding runs on `DjStore`'s queue).
+- `## App work on the main thread while the studio was on screen` (since
+  check 3): the app's named sections (`PerformanceMonitorService.section`,
+  forwarded through `watchSections` while the probe runs, 1 ms or more) by
+  total time: count, average, maximum, total. Sections nest, so an outer
+  name includes its inner ones.
 - `## Player ticks`: per deck, ticks seen, the longest gap while playing, how
   many were late, the largest drift and how many corrections snapped (over
   0.3 s). Late ticks with smooth frames point at the web view or YouTube, not
@@ -84,8 +105,11 @@ performance report (see the app-wide page) if there is room.
 - `## Web view scripts`: `evaluateJavaScript` calls sent since launch and the
   round trip of one call in 16. A slow round trip during a fade or a scratch
   is the bridge working hard.
-- `## Recent moments`: what the user and the studio did (start, pause, stop,
-  load, scratch, fade begin and end, sheet, jam, waveform read), newest first.
+- `## Recent moments`: what the user and the studio did, newest first: start,
+  pause, stop, load, scratch and release, fade and fade done, audio read and
+  BPM, player errors, pace changes, and since the `2289` check each sheet opened or
+  closed. Jam replies are not moments (see `jam reply`). A deck that was
+  already playing when the studio opened has no `START`.
 - `## Studio and device`: both decks (playing, rate, waveform bars, scratch
   audio), the `pace` the animations asked for (and whether it was eased),
   crossfader, AUTOMIX, jam, motion sharing, reactions, the audio
@@ -148,8 +172,78 @@ performance report (see the app-wide page) if there is room.
   trip); jam replies (0.09 ms); the app's own stalls (400-600 ms on the
   Agents screen during presence and repo-tree requests), which came before
   the studio opened, while its worst frame inside the studio was 182 ms.
-  Not yet confirmed on a device: whether 60 Hz is enough on a hot phone;
-  the next bundle's busy line answers it.
+  Not yet confirmed on a device: whether 60 Hz is enough on a hot phone
+  (the next bundle, below, came from a cool one).
+- 2026-10-18, `2289-fixing-video-mix-dj`: 1.4.1 build 284 (commit
+  d11bec0, the studio code of the check above), iPhone 15 Pro Max, iOS 27.2,
+  portrait, thermal state nominal, no Low Power Mode. Deck B was playing
+  (already playing when the studio opened) and Deck A was stopped. AUTOMIX
+  was off, and the user was in a jam of two sharing motion. Nobody touched
+  anything: the only moments are Deck B's audio read and BPM in the first
+  6 s.
+  Evidence: 52.7 fps against the 60 Hz probe over 58 s, 383 dropped frames,
+  110 ms of hitches a second, worst frame 376 ms. The worst-frame series
+  comes in bursts of one to three bad seconds (150-376 ms) every 3-8 s, with
+  17 ms seconds between them. The main thread was busy 452 ms a second, and
+  every long frame was busy for all of its length (233 of 233 ms, 182 of
+  182), so this time the main thread was the bottleneck, not the render
+  server. The studio's measured work adds up to about 6 ms a second (record
+  steps 242 ms, waveform draws 115 ms, ticks and jam replies 16 ms in 58 s),
+  so almost all the busy time was unmeasured. The app report agrees: 8
+  stalls of 215-352 ms on `Agents > Video Mix DJ Studio`, with no named
+  section in them but a 16 ms `relay.send.presence`, and stalls of the same
+  size on the Agents and Inbox screens in the minutes before the studio
+  opened. Deck B's one late tick (a 0.62 s gap, 0.35 s drift, one snap) is
+  a tick held behind one of those blocks.
+  `record step` had a maximum of 129.9 ms, 6 steps over 4 ms, and one 20.7 ms
+  step inside a 56 ms frame. `DjSpinView.step` is a few lines of arithmetic.
+  It can only take that long because it wrapped its layer change in its own
+  `CATransaction.begin`/`commit`. Called from a display link, that is the
+  outermost transaction, so its commit flushed the whole window there and
+  then: view layout, SwiftUI's pending update and drawing, then a second
+  commit later in the same frame. Deck A, stopped, did this 15 times a
+  second to set the angle it already had.
+  Cause: the 100-376 ms blocks are main-thread work the studio does not do
+  and the bundle could not name. It is unnamed main-actor work or SwiftUI
+  updates (see Ruled out for what it is not). The studio's own share was
+  the record step's forced commits, which pulled other work into the
+  record's step and committed twice a frame.
+  Candidates for the blocks, read in the code but not proven by the bundle:
+  - `SurfacesCoordinator.publish`, 400 ms after every change to the agent
+    rows (7 agents were running), on the main actor: a synchronous snapshot
+    file read, encode and write, widget reloads, the Live Activity, and App
+    Shortcuts parameters. It was not wrapped in a section.
+  - SwiftUI's own updates.
+  Fix: `DjRecordMotion` (`FMPackages`) decides each step: `none`, `turn` or
+  `spin`. A record that has not moved is not touched, and a steady spin keeps
+  its one animation. `DjSpinView` writes into the run loop's implicit
+  transaction, with the disc's `transform` action turned off instead of an
+  explicit transaction, so each frame commits once
+  (`DjRecordMotionTests.testAStoppedRecordIsDrawnOnceNotOnEveryStep`: 150
+  steps, 1 write, against 150 before). `surfaces.publish` is now a named
+  section.
+  Gaps closed: busy time split into layout and drawing and the rest, per
+  second and per long frame; a busy series per second; the app's named
+  sections inside long frames and summed while the studio is on screen
+  (`PerformanceMonitorService.watchSections`); a moment for each sheet. Next
+  check: if the long frames are mostly layout and drawing, look at SwiftUI
+  (what invalidated the studio's views); if an `app` item fills them, that
+  code; if neither, wrap the next suspect (the PR watcher's tree reads in
+  `ApiService.publishedPulls`, `ShellCounts` writes) or add stack samples.
+  Ruled out:
+  - player ticks (277, 0.04 ms average) and web view scripts (8 sent);
+  - waveform draws (0.04 ms, 50 a second for the one moving deck against the
+    60 asked);
+  - jam replies (0.16 ms average, 1.3 ms at most) and state saves;
+  - heat (nominal);
+  - the Agents screen itself: it stops its list, Eagle feed and watch
+    500 ms after the studio is pushed over it;
+  - the PR watcher (`ShellPullsWatch`, every 20 s, the 86 tree reads) as one
+    block: by reading, its main-actor hops are each under 2 ms, an estimate;
+  - the diagnostics sheet, opened at the end to send the bundle.
+  Not explained: frames of 56, 58, 70 and 74 ms, not multiples of 16.7 ms,
+  with no touch. Something kept the screen above 60 Hz for a while, perhaps
+  the web view's video or the people icons' timelines.
 
 ## Adding a check
 

@@ -200,6 +200,45 @@ public final class MarketModel {
         installErrors[package.id] = nil
     }
 
+    public func installAllPlan(signedIn: Bool) -> MarketInstallAllPlan {
+        var targets: [MarketPackage] = []
+        var skipped = 0
+        for package in packages where marketParent(of: package) == nil && package.type != "agent" && package.type != "theme" {
+            if isInstalled(package) { continue }
+            switch cardAction(package, signedIn: signedIn) {
+            case .installAccount, .installPhone, .installDevice: targets.append(package)
+            default: skipped += 1
+            }
+        }
+        return MarketInstallAllPlan(targets: targets, skipped: skipped)
+    }
+
+    @discardableResult
+    public func installAll(signedIn: Bool, device: (MarketPackage) -> Void) async -> MarketInstallAllResult {
+        let plan = installAllPlan(signedIn: signedIn)
+        var result = MarketInstallAllResult(installed: 0, skipped: plan.skipped, failed: 0)
+        for package in plan.targets {
+            if isInstalled(package) { continue }
+            switch cardAction(package, signedIn: signedIn) {
+            case .installAccount:
+                if await installForAccount(package) { result.installed += 1 } else { result.failed += 1 }
+            case .installPhone:
+                if package.accountSync {
+                    if await installForAccount(package) { result.installed += 1 } else { result.failed += 1 }
+                } else {
+                    PhonePackages.setRemoved(package.id, removed: false)
+                    result.installed += 1
+                }
+            case .installDevice:
+                device(package)
+                result.installed += 1
+            default:
+                result.skipped += 1
+            }
+        }
+        return result
+    }
+
     public func marketParent(of package: MarketPackage) -> String? {
         guard let parent = package.dependencies.first, parent != package.id,
               packages.contains(where: { $0.id == parent }) else { return nil }

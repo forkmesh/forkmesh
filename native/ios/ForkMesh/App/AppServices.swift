@@ -85,7 +85,11 @@ final class AppServices {
         let monitor: PerformanceMonitorService = PerformanceMonitorService(
             stallLog: StallLogFile.forDevice(build: config.build))
         let frameSource: DisplayLinkFrameSource = DisplayLinkFrameSource()
-        monitor.installStallMonitors(frameSource: frameSource, lifecycleState: .resumed)
+        let lifecycle: AppLifecycle = AppLifecycle.shared
+        monitor.installStallMonitors(frameSource: frameSource, lifecycleState: lifecycle.state)
+        lifecycle.observe { (state: AppLifecycleState) in
+            monitor.appLifecycleChanged(state)
+        }
 
         monitor.timeSync("startup.freshInstall") {
             StartupMaintenance.eraseLeftoversOfADeletedApp()
@@ -532,7 +536,6 @@ final class AppServices {
     }
 
     private func lifecycleChanged(_ state: AppLifecycleState) {
-        monitor.appLifecycleChanged(state)
         accountEvents.appLifecycleChanged(state)
         if state == .paused || state == .hidden {
             vault.appPaused()

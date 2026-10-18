@@ -199,6 +199,10 @@ data class MarketOptions(
     fun cleared(): MarketOptions = MarketOptions(sort = sort)
 }
 
+data class InstallAllPlan(val account: List<MarketPackage>, val phone: List<MarketPackage>, val skipped: Int) {
+    val count: Int get() = account.size + phone.size
+}
+
 enum class MarketCardAction { OPEN, INSTALLED, INSTALL, INSTALL_ON_PHONE, PICK_ORGANIZATION, NEEDS_ORGANIZATION, DESKTOP }
 
 sealed class MarketUninstall {
@@ -591,6 +595,20 @@ class MarketModel(
                 }
             }
         }
+    }
+
+    fun installAllPlan(): InstallAllPlan {
+        val account = ArrayList<MarketPackage>()
+        val phone = ArrayList<MarketPackage>()
+        var skipped = 0
+        roots.filter { it.type != "agent" && it.type != "theme" && !isInstalled(it) }.forEach { pkg ->
+            when {
+                installMode(pkg) == PackageInstallMode.ACCOUNT -> account.add(pkg)
+                cardAction(pkg, false) == MarketCardAction.INSTALL_ON_PHONE -> phone.add(pkg)
+                else -> skipped++
+            }
+        }
+        return InstallAllPlan(account, phone, skipped)
     }
 
     fun uninstallAction(pkg: MarketPackage, signedIn: Boolean): MarketUninstall? {

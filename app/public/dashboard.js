@@ -1952,7 +1952,7 @@
   function repoTabRoutesFor(repo) {
     const routes = REPO_TAB_ROUTES.slice();
     if (repo && sessionCanAssignAgent(repo)) routes.push("agents");
-    if (repo && sessionOwnsRepo(repo)) routes.push("settings");
+    if (repo && sessionAdministersRepo(repo)) routes.push("settings");
     return routes;
   }
 
@@ -3607,7 +3607,7 @@
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 
-  async function submitRemotePullOpen(repo, remote, title, body, base, head) {
+  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "") {
     const origin = String(remote?.origin || "").toLowerCase();
     const owner = String(remote?.owner || "");
     const name = String(remote?.name || "");
@@ -3615,7 +3615,7 @@
       throw new Error("invalid_remote_fork");
     }
     const signedHead = `${location.host}/${repoDisplayKey(repo)}:${head}`;
-    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead);
+    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase);
     let response;
     try {
       response = await fetch(`${origin}/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls`, {
@@ -3641,7 +3641,7 @@
     return { ...data, pull, remote };
   }
 
-  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead) {
+  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "") {
     // The comparison is the first thing that can fail, and it fails BEFORE
     // anything is signed or sent - a mirror answers 404 for a branch name it
     // cannot resolve yet, which is the common case for a branch that was just
@@ -3652,7 +3652,7 @@
     let comparison;
     try {
       comparison = await fetchRepoJson(repoLiveUrl(repo, "compare", {
-        base,
+        base: compareBase || base,
         head,
         ref: "",
       }));
@@ -14398,7 +14398,8 @@
     const rawUrl = escapeHtml(meta.rawUrl);
     let media = "";
     if (meta.kind === "image") {
-      media = `<img data-repo-image class="max-h-[34rem] max-w-full rounded-sm object-contain" src="${rawUrl}" alt="${name}" />`;
+      const source = meta.mime === "image/svg+xml" ? "data-repo-svg-src" : "src";
+      media = `<img data-repo-image class="max-h-[34rem] max-w-full rounded-sm object-contain" ${source}="${rawUrl}" alt="${name}" />`;
     } else if (meta.kind === "video") {
       media = `<video data-repo-video controls preload="metadata" class="max-h-[34rem] w-full max-w-5xl rounded-md bg-black"><source src="${rawUrl}" type="${mime}" />This browser cannot play this video.</video>`;
     } else if (meta.kind === "audio") {
@@ -15244,6 +15245,11 @@
         selectedRunId: 0, pending: [], notice: null, loading: false,
         branchesAsked: false, logs: {},
       });
+    }
+    const initialRun = state.repoActionsInitialRun;
+    if (initialRun && initialRun.key === key) {
+      view.selectedRunId = initialRun.runId;
+      state.repoActionsInitialRun = null;
     }
     if (view.loading) return;
     if (view.treeWorkflows === null) void loadRepoActionsTreeWorkflows(repo);
@@ -16118,9 +16124,12 @@
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
     const hint = /#w=(\d{1,4})$/.exec(url);
-    const source = mdImageSource(hint ? url.slice(0, hint.index) : url, context);
+    const target = hint ? url.slice(0, hint.index) : url;
+    const source = mdImageSource(target, context);
     if (!source) return alt;
-    return `<img src="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
+    const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
+      && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
+    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
       + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" />';
   }
 
@@ -17902,6 +17911,133 @@
     if (!commit) throw new Error("pull_metadata_absent");
     return commit;
   }
+
+  const REPO_OPTIONAL_TREE_MISS_MS = 10 * 60 * 1000;
+  const repoOptionalTreeListings = new Map();
+
+  function repoOptionalTreeScope(repo) {
+    return `${repoKey(repo)}@${repoSelectedBranch(repo)}#${repoDataVersion(repo) || ""}`;
+  }
+
+  function repoOptionalTreeMissKey(repo, path) {
+    return `forkmesh.repoTreeMiss:${repoOptionalTreeScope(repo)}:${path}`;
+  }
+
+  function repoOptionalTreeMissed(repo, path) {
+    try {
+      const at = Number(sessionStorage.getItem(repoOptionalTreeMissKey(repo, path)) || 0);
+      return at > 0 && Date.now() - at < REPO_OPTIONAL_TREE_MISS_MS;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function rememberRepoOptionalTreeMiss(repo, path) {
+    try {
+      sessionStorage.setItem(repoOptionalTreeMissKey(repo, path), String(Date.now()));
+    } catch (_) {}
+  }
+
+  function repoRootTreeFolders(repo) {
+    const view = state.repoTreeView;
+    if (!view || view.path || !view.repo || repoKey(view.repo) !== repoKey(repo)) return null;
+    return new Set((Array.isArray(view.entries) ? view.entries : [])
+      .filter((entry) => entry?.type === "tree")
+      .map((entry) => String(entry.name || "")));
+  }
+
+  async function repoOptionalTreeParentHas(repo, path, fresh) {
+    const parts = String(path).split("/");
+    const name = parts.pop();
+    const parent = parts.join("/");
+    const root = repoRootTreeFolders(repo);
+    if (root && !root.has(parts[0] || name)) return false;
+    if (!parent || fresh) return true;
+    const key = `${repoOptionalTreeScope(repo)}:${parent}`;
+    if (!repoOptionalTreeListings.has(key)) {
+      const pending = fetchRepoOptionalTree(repo, parent).then((tree) => (tree
+        ? new Set((Array.isArray(tree.entries) ? tree.entries : [])
+          .filter((entry) => entry?.type === "tree")
+          .map((entry) => String(entry.name || "")))
+        : null));
+      pending.catch(() => repoOptionalTreeListings.delete(key));
+      repoOptionalTreeListings.set(key, pending);
+    }
+    const folders = await repoOptionalTreeListings.get(key);
+    return Boolean(folders && folders.has(name));
+  }
+
+  async function fetchRepoOptionalTree(repo, path, { fresh = false } = {}) {
+    if (!fresh && repoOptionalTreeMissed(repo, path)) return null;
+    if (!(await repoOptionalTreeParentHas(repo, path, fresh))) return null;
+    try {
+      return await fetchRepoJson(repoLiveUrl(repo, "tree", { path }));
+    } catch (error) {
+      if (Number(error?.status) !== 404 && !isMissingMirrorFolder(error)) throw error;
+      rememberRepoOptionalTreeMiss(repo, path);
+      return null;
+    }
+  }
+
+  const REPO_SVG_IMAGE_MAX_BYTES = 1024 * 1024;
+
+  function isRepoRawSvgUrl(url) {
+    try {
+      const parsed = new URL(String(url || ""), location.origin);
+      return parsed.origin === location.origin
+        && /^\/api\/repo\/[^/]+\/[^/]+\/raw$/.test(parsed.pathname)
+        && /\.svg$/i.test(parsed.searchParams.get("path") || "");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function svgDataUrl(bytes) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(new Blob([bytes], { type: "image/svg+xml" }));
+    });
+  }
+
+  async function hydrateRepoSvgImage(image) {
+    const source = image.getAttribute("data-repo-svg-src") || "";
+    image.removeAttribute("data-repo-svg-src");
+    if (!isRepoRawSvgUrl(source)) return;
+    try {
+      const response = await fetch(source, { credentials: "same-origin" });
+      if (!response.ok) return;
+      const bytes = await response.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > REPO_SVG_IMAGE_MAX_BYTES) return;
+      const head = new TextDecoder().decode(bytes.slice(0, 4096));
+      if (!/<svg[\s>]/i.test(head)) return;
+      const dataUrl = await svgDataUrl(bytes);
+      if (dataUrl.startsWith("data:image/svg+xml") && image.isConnected) image.src = dataUrl;
+    } catch (_) {}
+  }
+
+  function hydrateRepoSvgImages(root) {
+    const scope = root?.querySelectorAll ? root : document;
+    scope.querySelectorAll("img[data-repo-svg-src]").forEach((image) => { hydrateRepoSvgImage(image); });
+  }
+
+  function watchRepoSvgImages() {
+    if (!document.body || typeof MutationObserver !== "function") return;
+    hydrateRepoSvgImages(document);
+    new MutationObserver((records) => {
+      records.forEach((record) => {
+        record.addedNodes.forEach((node) => {
+          if (node.nodeType !== 1) return;
+          if (node.matches?.("img[data-repo-svg-src]")) hydrateRepoSvgImage(node);
+          else if (node.querySelector?.("img[data-repo-svg-src]")) hydrateRepoSvgImages(node);
+        });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.body) watchRepoSvgImages();
+  else document.addEventListener("DOMContentLoaded", watchRepoSvgImages, { once: true });
 
   // An authoritative "the repository does not hold this" answer, as opposed to
   // "nothing could answer". Mirrors report a missing tree path as 404
@@ -23544,7 +23680,10 @@
     } catch (_) {
       if (state.repoRemoteForks.key === key) state.repoRemoteForks.loaded = true;
     }
-    if (repoAboutStillCurrent(repo)) renderRepoRemoteForks();
+    if (repoAboutStillCurrent(repo)) {
+      renderRepoRemoteForks();
+      syncRepoPullBatchEntry(repo);
+    }
     return state.repoRemoteForks.forks;
   }
 
@@ -24359,7 +24498,8 @@
         // List the git tree under .forkmesh/issues/ (which also reveals the
         // open//closed/ status subdirs), then read one issue-${number}.json
         // blob for each issue from wherever it lives.
-        tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/issues" }));
+        tree = await fetchRepoOptionalTree(repo, ".forkmesh/issues", { fresh: true });
+        if (!tree) throw Object.assign(new Error("not_found"), { status: 404, code: "not_found" });
       } catch (error) {
         if (isMissingMirrorFolder(error)) {
           // No issues have been committed to the mirror yet - which is the
@@ -25429,6 +25569,8 @@
     if (kind === "pulls") {
       delete state.repoPullMetadataCommits[repoPullMetadataCacheKey(repo)];
       syncPullQueryBox();
+      syncRepoPullBatchEntry(repo);
+      if (state.session?.nodeName && !repoReadOnlyMirror(repo)) void loadRepoRemoteForks(repo);
     }
     // Drop the previous repo's cache up front so a failed load can never leave
     // the page filter re-rendering rows that are no longer on screen.
@@ -25499,7 +25641,53 @@
   // re-checks the account name against owner/admin status (no password,
   // adhoc #225), so this is only the client-side gate for showing the checkbox.
   function sessionCanAssignAgent(repo) {
-    return sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+    return sessionAdministersRepo(repo) || Boolean(state.session?.isAdmin);
+  }
+
+  const repoViewerPermissions = new Map();
+
+  function repoViewerPermissionKey(value) {
+    const key = typeof value === "string" ? value : repositoryViewKey(value);
+    const viewer = String(state.session?.nodeName || "").toLowerCase();
+    return viewer && key ? `${viewer}|${String(key).toLowerCase()}` : "";
+  }
+
+  function sessionAdministersRepo(repo) {
+    if (sessionOwnsRepo(repo)) return true;
+    const known = repoViewerPermissions.get(repoViewerPermissionKey(repo));
+    return Boolean(known && typeof known === "object" && known.viewerCanAdmin === true);
+  }
+
+  function loadRepoViewerPermission(target) {
+    const key = repoViewerPermissionKey(target);
+    const publicKey = typeof target === "string" ? target : repositoryViewKey(target);
+    const [owner, name] = String(publicKey || "").split("/");
+    if (!key || !owner || !name) return Promise.resolve(null);
+    if (typeof target !== "string" && sessionOwnsRepo(target)) return Promise.resolve(null);
+    const known = repoViewerPermissions.get(key);
+    if (known) return Promise.resolve(known);
+    const headers = { accept: "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const request = fetch(
+      `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/viewer-permission`,
+      { headers, credentials: "same-origin", cache: "no-store" },
+    )
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        const answer = {
+          permission: String(body?.permission || ""),
+          viewerCanAdmin: body?.viewerCanAdmin === true,
+        };
+        repoViewerPermissions.set(key, answer);
+        return answer;
+      })
+      .catch(() => {
+        repoViewerPermissions.delete(key);
+        return null;
+      });
+    repoViewerPermissions.set(key, request);
+    return request;
   }
 
   function setRepoAboutEditing(on) {
@@ -25807,7 +25995,7 @@
       const suggestions = Array.isArray(body?.suggestions)
         ? body.suggestions
         : [];
-      const mayReview = sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+      const mayReview = sessionAdministersRepo(repo) || Boolean(state.session?.isAdmin);
       target.innerHTML = suggestions.length
         ? suggestions
             .map((suggestion) => {
@@ -26093,7 +26281,7 @@
 
   async function loadRepoDigestPreview(repo) {
     const target = $("[data-repo-digest-preview]");
-    if (!target || !sessionOwnsRepo(repo) || repo.isPrivate) return;
+    if (!target || !sessionAdministersRepo(repo) || repo.isPrivate) return;
     target.textContent = "Loading preview…";
     try {
       const token = state.session?.sessionToken || "";
@@ -26253,7 +26441,7 @@
 
   async function loadRepoWebhooks(repo) {
     const list = $("[data-repo-webhooks-list]");
-    if (!list || !sessionOwnsRepo(repo)) return;
+    if (!list || !sessionAdministersRepo(repo)) return;
     try {
       const body = await repoWebhookRequest(repo, { action: "list" });
       if (!repoAboutStillCurrent(repo)) return;
@@ -26583,7 +26771,7 @@
 
   async function loadRepoProviderMirror(repo) {
     const holder = $("[data-repo-forge-mirror-body]");
-    if (!holder || !sessionOwnsRepo(repo)) return;
+    if (!holder || !sessionAdministersRepo(repo)) return;
     const mirrorState = repoForgeMirrorState(repo);
     try {
       const body = await repoForgeMirrorRequest(repo, { action: "get" });
@@ -26658,7 +26846,7 @@
     }
     const card = event.target.closest("[data-repo-forge-mirror-card]");
     const repo = state.selectedRepo;
-    if (!card || !repo || !sessionOwnsRepo(repo)) return false;
+    if (!card || !repo || !sessionAdministersRepo(repo)) return false;
     const mirrorState = repoForgeMirrorState(repo);
     const providerButton = event.target.closest("[data-repo-forge-mirror-provider]");
     if (providerButton) {
@@ -26776,7 +26964,7 @@
     if (!form) return false;
     event.preventDefault();
     const repo = state.selectedRepo;
-    if (!repo || !sessionOwnsRepo(repo)) return true;
+    if (!repo || !sessionAdministersRepo(repo)) return true;
     const mirrorState = repoForgeMirrorState(repo);
     const submit = form.querySelector('button[type="submit"]');
     if (submit) submit.disabled = true;
@@ -26833,7 +27021,7 @@
       return;
     }
     holder.innerHTML = pullRulesEditorHtml(policy, {
-      editable: sessionOwnsRepo(repo),
+      editable: sessionAdministersRepo(repo),
       saveLabel: `Commit rules to ${branch}`,
     });
     window.lucide?.createIcons();
@@ -27025,12 +27213,9 @@
     try {
       let tree;
       try {
-        tree = await fetchRepoJson(repoLiveUrl(
-          repo,
-          "tree",
-          { path: ".forkmesh/releases" },
-        ));
+        tree = await fetchRepoOptionalTree(repo, ".forkmesh/releases");
       } catch (_) { return; }
+      if (!tree) return;
       const channels = (Array.isArray(tree?.entries) ? tree.entries : [])
         .filter((entry) => entry.type === "tree" && entry.name)
         .map((entry) => String(entry.name));
@@ -32517,9 +32702,7 @@
     } catch (error) {
       setSubmitBusy(submit, false);
       console.error("[forkmesh] remote pull request submission failed", error);
-      setHint(String(error?.message || "") === "remote_unreachable"
-        ? `Nothing was delivered: ${remote.host} could not be reached, or it runs a ForkMesh version that does not take pull requests from other instances yet.`
-        : webPullSubmitErrorText(error, base, head, where), "bad");
+      setHint(remotePullSubmitErrorText(error, remote, base, head), "bad");
     }
   }
 
@@ -33728,19 +33911,10 @@
       // Release manifests live in the git tree at .forkmesh/releases/<channel>/release.json
       // (issue #304). List the channels, then batch-read every manifest in one
       // tunnel round-trip so opening the tab doesn't fan out N blob requests.
-      let tree;
-      try {
-        tree = await fetchRepoJson(repoLiveUrl(
-          repo,
-          "tree",
-          { path: ".forkmesh/releases" },
-        ));
-      } catch (error) {
-        if (isMissingMirrorFolder(error)) {
-          container.innerHTML = empty;
-          return;
-        }
-        throw error;
+      const tree = await fetchRepoOptionalTree(repo, ".forkmesh/releases");
+      if (!tree) {
+        container.innerHTML = empty;
+        return;
       }
       const channels = (Array.isArray(tree.entries) ? tree.entries : [])
         .filter((entry) => entry.type === "tree" && entry.name)
@@ -34114,6 +34288,8 @@
       // instead of the list; Back to the list loads it lazily from there.
       if (recordRoute && recordRoute.kind === active && recordRoute.number) {
         loadRepoRecordDetail(repo, active, recordRoute.number);
+      } else if (active === "pulls" && pullBatchRouteActive(repo)) {
+        void openPullBatch(repo, { navigate: false });
       } else if (active === "pulls" && compareRoute) {
         // A comparison deep link (/owner/repo/compare/base...head) opens the
         // diff viewer directly; Back to the list loads it lazily from there.
@@ -35669,7 +35845,10 @@
                     ${PULL_VIEWS.map((view) => `<option value="${view.id}">${escapeHtml(view.label)}</option>`).join("")}
                   </select>
                 </div>
-                <button type="button" data-repo-pull-new class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
+                <div class="flex flex-wrap items-center gap-2">
+                  <a data-repo-pull-batch-open href="${escapeHtml(pullBatchUrl(repo))}" class="hidden h-8 items-center gap-1.5 rounded-md border border-border px-3 text-[14px] font-medium text-foreground hover:bg-secondary"><i data-lucide="send" class="h-3.5 w-3.5 text-muted-foreground"></i>Send pull requests</a>
+                  <button type="button" data-repo-pull-new class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
+                </div>
               </div>
               ${pullContributionTipDismissed(repo) ? "" : `
               <aside data-repo-pull-contribution-tip class="fm-flash relative mb-4 flex-wrap">
@@ -35707,6 +35886,672 @@
     } catch (_) {
       return false;
     }
+  }
+
+  const PULL_BATCH_FILE = ".forkmesh/pull-batch.json";
+  const PULL_BATCH_MAX_ROWS = 100;
+  const PULL_BATCH_TITLE_MAX = 240;
+  const PULL_BATCH_BODY_MAX_BYTES = 60 * 1024;
+  const PULL_BATCH_STOP_CODES = new Set([
+    "remote_unreachable", "inbox_full", "author_quota", "rate_limited", "bad_signature",
+  ]);
+  const PULL_BATCH_DEPENDENCY_LINE = /^\s*(?:[-*+]\s+)?(?:\*\*)?depends?\s+on(?:\*\*)?\s*:(?:\*\*)?.*#[1-9].*$/gim;
+
+  function pullBatchCleanTitle(value) {
+    return Array.from(String(value ?? "")
+      .replace(/[\u0000-\u001f\u007f​-‏‪-‮⁦-⁩﻿]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim())
+      .slice(0, PULL_BATCH_TITLE_MAX)
+      .join("")
+      .trim();
+  }
+
+  function pullBatchCleanBody(value) {
+    return String(value ?? "")
+      .replace(/\r\n?/g, "\n")
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f‪-‮⁦-⁩﻿]/g, "")
+      .replace(/[ \t]+$/gm, "")
+      .replace(/^\n+/, "")
+      .replace(/\s+$/, "");
+  }
+
+  function pullBatchBranchName(value) {
+    const name = String(value ?? "").trim().replace(/^refs\/heads\//, "");
+    if (!name || name.length > 255) return "";
+    if (!/^[A-Za-z0-9._\/-]+$/.test(name)) return "";
+    if (/^[-/.]|\/$|\.\.|\/\/|\.lock$|@\{/.test(name)) return "";
+    return name;
+  }
+
+  function pullBatchDependencyList(value) {
+    const values = Array.isArray(value) ? value : value === undefined || value === null || value === "" ? [] : [value];
+    const out = [];
+    values.slice(0, 20).forEach((item) => {
+      const text = String(item ?? "").trim();
+      const number = /^#?([1-9]\d{0,8})$/.exec(text);
+      const dependency = number ? `#${number[1]}` : pullBatchBranchName(text);
+      if (dependency && !out.includes(dependency)) out.push(dependency);
+    });
+    return out;
+  }
+
+  function parsePullBatchFile(text, defaultBranch = "main") {
+    let data;
+    try {
+      data = JSON.parse(String(text || ""));
+    } catch (_) {
+      return { entries: [], error: `${PULL_BATCH_FILE} is not valid JSON.` };
+    }
+    const list = Array.isArray(data) ? data : Array.isArray(data?.pulls) ? data.pulls : null;
+    if (!list) return { entries: [], error: `${PULL_BATCH_FILE} must be a list of pull requests.` };
+    const entries = [];
+    const seen = new Set();
+    for (const item of list.slice(0, PULL_BATCH_MAX_ROWS)) {
+      if (!item || typeof item !== "object") continue;
+      const branch = pullBatchBranchName(item.branch || item.head);
+      if (!branch || seen.has(branch)) continue;
+      seen.add(branch);
+      entries.push({
+        branch,
+        base: pullBatchBranchName(item.base) || defaultBranch,
+        title: pullBatchCleanTitle(item.title),
+        body: pullBatchCleanBody(item.body ?? item.description),
+        dependsOn: pullBatchDependencyList(item.dependsOn ?? item.depends_on).filter((name) => name !== branch),
+      });
+    }
+    return { entries, error: "" };
+  }
+
+  function pullBatchTitleFromBranch(branch, prefix) {
+    const tail = prefix && branch.startsWith(prefix) ? branch.slice(prefix.length) : branch;
+    const words = tail.split(/[\/_-]+/).filter(Boolean).join(" ");
+    return words ? words[0].toUpperCase() + words.slice(1) : "";
+  }
+
+  function buildPullBatchRows(entries, branchNames, defaultBranch, prefix) {
+    const names = new Set(branchNames);
+    const rows = [];
+    const listed = new Set();
+    entries.forEach((entry) => {
+      if (prefix && !entry.branch.startsWith(prefix)) return;
+      listed.add(entry.branch);
+      rows.push({ ...entry, include: true, fromFile: true, missing: !names.has(entry.branch) });
+    });
+    branchNames
+      .filter((name) => name !== defaultBranch && !listed.has(name) && (!prefix || name.startsWith(prefix)))
+      .sort((a, b) => a.localeCompare(b))
+      .forEach((name) => {
+        rows.push({
+          branch: name,
+          base: defaultBranch,
+          title: pullBatchTitleFromBranch(name, prefix),
+          body: "",
+          dependsOn: [],
+          include: true,
+          fromFile: false,
+          missing: false,
+        });
+      });
+    return rows;
+  }
+
+  function orderPullBatchRows(rows) {
+    const byBranch = new Map(rows.map((row, index) => [row.branch, { row, index }]));
+    const ordered = [];
+    const looped = new Set();
+    const mark = new Map();
+    const visit = (row, trail) => {
+      const seen = mark.get(row.branch);
+      if (seen === "done") return;
+      if (seen === "visiting") {
+        trail.slice(trail.indexOf(row.branch)).forEach((name) => looped.add(name));
+        return;
+      }
+      mark.set(row.branch, "visiting");
+      row.dependsOn
+        .map((name) => byBranch.get(name))
+        .filter(Boolean)
+        .sort((a, b) => a.index - b.index)
+        .forEach((dependency) => visit(dependency.row, [...trail, row.branch]));
+      mark.set(row.branch, "done");
+      ordered.push(row);
+    };
+    rows.forEach((row) => visit(row, []));
+    return { rows: ordered, looped };
+  }
+
+  function pullBatchPlan(rows, sent, outcome = {}) {
+    const { rows: ordered, looped } = orderPullBatchRows(rows);
+    const byBranch = new Map(ordered.map((row) => [row.branch, row]));
+    const plan = new Map();
+    const blocked = (row, reason, waitsFor = []) => ({ state: "blocked", reason, waitsFor, numbers: [] });
+    ordered.forEach((row) => {
+      const done = sent[row.branch];
+      if (done?.number) {
+        plan.set(row.branch, { state: "sent", number: done.number, waitsFor: [], numbers: [] });
+        return;
+      }
+      if (outcome[row.branch]?.empty) {
+        plan.set(row.branch, { state: "empty", waitsFor: [], numbers: [] });
+        return;
+      }
+      if (outcome[row.branch]?.error) {
+        plan.set(row.branch, { state: "failed", reason: outcome[row.branch].error, waitsFor: [], numbers: [] });
+        return;
+      }
+      if (!row.include) {
+        plan.set(row.branch, { state: "skipped", waitsFor: [], numbers: [] });
+        return;
+      }
+      if (row.missing) {
+        plan.set(row.branch, blocked(row, `${row.branch} is not a branch of this repository.`));
+        return;
+      }
+      if (looped.has(row.branch)) {
+        plan.set(row.branch, blocked(row, "Its dependencies form a loop."));
+        return;
+      }
+      if (!row.title) {
+        plan.set(row.branch, blocked(row, "Needs a title."));
+        return;
+      }
+      if (new TextEncoder().encode(row.body).byteLength > PULL_BATCH_BODY_MAX_BYTES) {
+        plan.set(row.branch, blocked(row, "The description is too long."));
+        return;
+      }
+      const numbers = [];
+      const waitsFor = [];
+      const stuck = [];
+      const why = [];
+      row.dependsOn.forEach((dependency) => {
+        if (dependency.startsWith("#")) {
+          numbers.push(Number(dependency.slice(1)));
+          return;
+        }
+        if (sent[dependency]?.number) {
+          numbers.push(Number(sent[dependency].number));
+          return;
+        }
+        if (outcome[dependency]?.empty) return;
+        const earlier = plan.get(dependency);
+        if (byBranch.has(dependency) && earlier && ["ready", "after"].includes(earlier.state)) {
+          waitsFor.push(dependency);
+          return;
+        }
+        stuck.push(dependency);
+        why.push(!byBranch.has(dependency)
+          ? `${dependency}, which is not in this list and has not been sent`
+          : earlier?.state === "failed"
+            ? `${dependency}, which could not be sent`
+            : earlier?.state === "skipped"
+              ? `${dependency}, which is not selected`
+              : `${dependency}, which cannot be sent yet`);
+      });
+      if (stuck.length) {
+        plan.set(row.branch, blocked(row, `Waits for ${why.join("; ")}.`, stuck));
+        return;
+      }
+      plan.set(row.branch, waitsFor.length
+        ? { state: "after", waitsFor, numbers }
+        : { state: "ready", waitsFor: [], numbers });
+    });
+    return { order: ordered, plan };
+  }
+
+  function pullBatchBody(body, numbers) {
+    const clean = pullBatchCleanBody(body);
+    const unique = [...new Set(numbers.map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+    if (!unique.length) return clean;
+    const refs = unique.map((n) => `#${n}`).join(", ");
+    const lead = [
+      `Depends on: ${refs}`,
+      "",
+      `This branch builds on ${refs}, so until ${unique.length === 1 ? "that pull request merges" : "those pull requests merge"} it also carries ${unique.length === 1 ? "its" : "their"} commits. Merge ${refs} first: commits already on the base branch are skipped when this one is merged.`,
+    ].join("\n");
+    const rest = clean.replace(PULL_BATCH_DEPENDENCY_LINE, "").replace(/^\n+/, "").replace(/\n{3,}/g, "\n\n");
+    return rest ? `${lead}\n\n${rest}` : lead;
+  }
+
+  function pullBatchStorageKey(repo, remote) {
+    return `forkmesh.pullBatch.v1:${location.host}/${repoDisplayKey(repo)}>${String(remote?.url || "").toLowerCase()}`;
+  }
+
+  function loadPullBatchSent(repo, remote) {
+    try {
+      const data = JSON.parse(localStorage.getItem(pullBatchStorageKey(repo, remote)) || "{}");
+      const sent = {};
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        Object.entries(data).forEach(([branch, value]) => {
+          const number = Number(value?.number);
+          if (pullBatchBranchName(branch) && Number.isInteger(number) && number > 0) {
+            sent[branch] = { number, at: Number(value.at) || 0 };
+          }
+        });
+      }
+      return sent;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function savePullBatchSent(repo, remote, sent) {
+    try {
+      localStorage.setItem(pullBatchStorageKey(repo, remote), JSON.stringify(sent));
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function remotePullSubmitErrorText(error, remote, base, head) {
+    const where = `${remote.owner}/${remote.name} on ${remote.host}`;
+    return String(error?.message || "") === "remote_unreachable"
+      ? `Nothing was delivered: ${remote.host} could not be reached, or it runs a ForkMesh version that does not take pull requests from other instances yet.`
+      : webPullSubmitErrorText(error, base, head, where);
+  }
+
+  function pullBatchCompareBase(row) {
+    return Array.isArray(row?.dependsOn) && row.dependsOn.length === 1 ? row.dependsOn[0] : "";
+  }
+
+  async function runPullBatch(batch, { send = submitRemotePullOpen, onChange = () => {} } = {}) {
+    const { repo, remote } = batch;
+    batch.running = true;
+    batch.stopRequested = false;
+    batch.notice = "";
+    batch.outcome = Object.fromEntries(Object.entries(batch.outcome || {}).filter(([, value]) => value?.empty));
+    batch.sending = "";
+    let sentNow = 0;
+    onChange(batch);
+    try {
+      for (;;) {
+        if (batch.stopRequested) {
+          batch.notice = "Stopped. Press Send all to continue with the rest.";
+          break;
+        }
+        const { order, plan } = pullBatchPlan(batch.rows, batch.sent, batch.outcome);
+        const row = order.find((candidate) => plan.get(candidate.branch).state === "ready");
+        if (!row) break;
+        const step = plan.get(row.branch);
+        batch.sending = row.branch;
+        onChange(batch);
+        try {
+          const result = await send(repo, remote, row.title, pullBatchBody(row.body, step.numbers), row.base, row.branch, pullBatchCompareBase(row));
+          const number = Number(result?.number || 0);
+          if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
+          batch.sent = { ...batch.sent, [row.branch]: { number, at: Date.now() } };
+          savePullBatchSent(repo, remote, batch.sent);
+          sentNow += 1;
+        } catch (error) {
+          const code = String(error?.code || error?.message || "");
+          if (code === "no_changes") {
+            batch.outcome[row.branch] = { empty: true };
+          } else {
+            batch.outcome[row.branch] = { error: remotePullSubmitErrorText(error, remote, row.base, row.branch) };
+            if (PULL_BATCH_STOP_CODES.has(code) || Number(error?.status) === 429) {
+              batch.notice = `Stopped after ${row.branch}: ${batch.outcome[row.branch].error}`;
+              break;
+            }
+          }
+        }
+      }
+    } finally {
+      batch.running = false;
+      batch.sending = "";
+      onChange(batch);
+    }
+    return sentNow;
+  }
+
+  function pullBatchRouteActive(repo) {
+    const parts = repoRouteParts();
+    return Boolean(repo) && parts[2] === "pulls" && parts[3] === "send";
+  }
+
+  function pullBatchUrl(repo) {
+    return `${repoLinkUrl(repo)}/pulls/send`;
+  }
+
+  function syncRepoPullBatchEntry(repo = state.selectedRepo) {
+    const data = state.repoRemoteForks;
+    const show = Boolean(repo && data.canManage && data.forks.length
+      && data.key === repoKey(repo).toLowerCase() && !repoReadOnlyMirror(repo));
+    $$("[data-repo-pull-batch-open]").forEach((link) => {
+      link.classList.toggle("hidden", !show);
+      link.classList.toggle("inline-flex", show);
+      if (repo) link.setAttribute("href", pullBatchUrl(repo));
+    });
+  }
+
+  async function loadPullBatchFile(repo, defaultBranch) {
+    try {
+      const data = await fetchRepoJson(repoLiveUrl(repo, "blob", { path: PULL_BATCH_FILE, ref: defaultBranch }));
+      if (typeof data?.content !== "string") return { entries: [], error: "", found: false };
+      let text = data.content;
+      if (String(data.encoding || "").toLowerCase() === "base64") {
+        text = new TextDecoder().decode(Uint8Array.from(atob(text.replace(/\s+/g, "")), (c) => c.charCodeAt(0)));
+      }
+      return { ...parsePullBatchFile(text, defaultBranch), found: true };
+    } catch (_) {
+      return { entries: [], error: "", found: false };
+    }
+  }
+
+  function pullBatchStatusHtml(batch, row, step) {
+    const remote = batch.remote;
+    if (batch.sending === row.branch) {
+      return `<span class="inline-flex items-center gap-1.5 text-foreground">${loadingHtml("Comparing, signing and sending…")}</span>`;
+    }
+    const link = (number) => `<a href="${escapeHtml(`${remote.url}/pulls/${number}`)}" target="_blank" rel="noopener noreferrer" class="font-medium text-accent hover:underline">#${number}</a>`;
+    switch (step.state) {
+      case "sent":
+        return `<span class="text-success">Sent as</span> ${link(step.number)}`;
+      case "empty":
+        return `<span class="text-muted-foreground">Nothing to send: ${escapeHtml(row.branch)} has no changes that are not on ${escapeHtml(row.base)}.</span>`;
+      case "failed":
+        return `<span class="text-destructive">${escapeHtml(step.reason)}</span>`;
+      case "skipped":
+        return `<span class="text-muted-foreground">Not selected.</span>`;
+      case "blocked":
+        return `<span class="text-attention">${escapeHtml(step.reason)}</span>`;
+      case "after":
+        return `<span class="text-muted-foreground">Ready after ${escapeHtml(step.waitsFor.join(", "))} is sent; it will say which pull request it depends on.</span>`;
+      default:
+        return step.numbers.length
+          ? `<span class="text-muted-foreground">Ready. Depends on ${step.numbers.map((n) => link(n)).join(", ")}.</span>`
+          : `<span class="text-muted-foreground">Ready.</span>`;
+    }
+  }
+
+  function pullBatchRowHtml(batch, row, step, index) {
+    const id = `pull-batch-${index}`;
+    const locked = batch.running || step.state === "sent";
+    const dependsOn = row.dependsOn.length
+      ? `<span class="text-[11px] text-muted-foreground">after ${escapeHtml(row.dependsOn.join(", "))}</span>`
+      : "";
+    return `
+      <li data-pull-batch-row="${escapeHtml(row.branch)}" class="border-t border-border px-4 py-3 first:border-t-0">
+        <div class="flex items-start gap-3">
+          <input id="${id}" data-pull-batch-include type="checkbox" ${row.include ? "checked" : ""} ${locked ? "disabled" : ""} aria-label="Send ${escapeHtml(row.branch)}" class="mt-1 h-4 w-4 shrink-0 rounded border-border" />
+          <div class="grid min-w-0 flex-1 gap-1">
+            <label for="${id}" data-pull-batch-label class="min-w-0 break-words text-sm font-medium text-foreground">${row.title ? escapeHtml(row.title) : '<span class="text-muted-foreground">Untitled</span>'}</label>
+            <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span class="break-all font-mono text-[11px] text-foreground">${escapeHtml(row.branch)}</span>
+              <span class="text-[11px] text-muted-foreground">into ${escapeHtml(row.base)}</span>
+              ${dependsOn}
+            </div>
+            <p data-pull-batch-status class="text-[12px] leading-5">${pullBatchStatusHtml(batch, row, step)}</p>
+            <details data-pull-batch-edit class="min-w-0">
+              <summary class="cursor-pointer select-none text-[12px] font-medium text-accent">Edit title and description</summary>
+              <div class="mt-2 grid gap-2">
+                <input data-pull-batch-title type="text" maxlength="${PULL_BATCH_TITLE_MAX}" value="${escapeHtml(row.title)}" ${locked ? "disabled" : ""} aria-label="Title for ${escapeHtml(row.branch)}" class="h-control w-full min-w-0 rounded-control border border-border bg-background px-3 text-[16px] text-foreground outline-none focus:border-accent sm:text-control" />
+                <textarea data-pull-batch-body rows="6" ${locked ? "disabled" : ""} aria-label="Description for ${escapeHtml(row.branch)}" class="w-full min-w-0 rounded-control border border-border bg-background px-3 py-2 text-[16px] text-foreground outline-none focus:border-accent sm:text-control">${escapeHtml(row.body)}</textarea>
+              </div>
+            </details>
+          </div>
+        </div>
+      </li>`;
+  }
+
+  function pullBatchSummary(batch, order, plan) {
+    const counts = {};
+    order.forEach((row) => {
+      const key = plan.get(row.branch).state;
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    const ready = (counts.ready || 0) + (counts.after || 0);
+    const parts = [`${ready} to send`];
+    if (counts.sent) parts.push(`${counts.sent} sent`);
+    if (counts.blocked) parts.push(`${counts.blocked} waiting`);
+    if (counts.failed) parts.push(`${counts.failed} failed`);
+    if (counts.empty) parts.push(`${counts.empty} with nothing to send`);
+    return { ready, text: parts.join(" · ") };
+  }
+
+  function renderPullBatchRows(batch, { full = true } = {}) {
+    const view = document.querySelector("[data-pull-batch]");
+    if (!view || view._batch !== batch) return;
+    const { order, plan } = pullBatchPlan(batch.rows, batch.sent, batch.outcome);
+    const list = view.querySelector("[data-pull-batch-list]");
+    const open = new Set(Array.from(view.querySelectorAll("[data-pull-batch-edit][open]"))
+      .map((node) => node.closest("[data-pull-batch-row]")?.dataset.pullBatchRow));
+    if (list && !full) {
+      list.querySelectorAll("[data-pull-batch-row]").forEach((node) => {
+        const row = order.find((candidate) => candidate.branch === node.dataset.pullBatchRow);
+        if (!row) return;
+        const status = node.querySelector("[data-pull-batch-status]");
+        if (status) status.innerHTML = pullBatchStatusHtml(batch, row, plan.get(row.branch));
+        const label = node.querySelector("[data-pull-batch-label]");
+        if (label) label.innerHTML = row.title ? escapeHtml(row.title) : '<span class="text-muted-foreground">Untitled</span>';
+      });
+    } else if (list) {
+      list.innerHTML = order.length
+        ? order.map((row, index) => pullBatchRowHtml(batch, row, plan.get(row.branch), index)).join("")
+        : `<li class="px-4 py-6 text-center text-sm text-muted-foreground">No branches match${batch.prefix ? ` <span class="font-mono text-foreground">${escapeHtml(batch.prefix)}</span>` : ""}.</li>`;
+      list.querySelectorAll("[data-pull-batch-row]").forEach((node) => {
+        if (open.has(node.dataset.pullBatchRow)) node.querySelector("[data-pull-batch-edit]")?.setAttribute("open", "");
+      });
+    }
+    const summary = pullBatchSummary(batch, order, plan);
+    const line = view.querySelector("[data-pull-batch-summary]");
+    if (line) line.textContent = summary.text;
+    const notice = view.querySelector("[data-pull-batch-notice]");
+    if (notice) {
+      notice.textContent = batch.notice || "";
+      notice.classList.toggle("hidden", !batch.notice);
+    }
+    const sendAll = view.querySelector("[data-pull-batch-send]");
+    if (sendAll) {
+      if (batch.running) {
+        setSubmitBusy(sendAll, true, `Sending ${batch.sending || "…"}`);
+      } else {
+        setSubmitBusy(sendAll, false);
+        sendAll.disabled = !summary.ready;
+      }
+    }
+    view.querySelector("[data-pull-batch-stop]")?.classList.toggle("hidden", !batch.running);
+    view.querySelectorAll("[data-pull-batch-target], [data-pull-batch-prefix]").forEach((control) => {
+      control.disabled = batch.running;
+    });
+  }
+
+  function pullBatchMessageHtml(repo, text) {
+    return `
+      <section data-pull-batch-message class="grid gap-3 border-t border-border bg-background p-4">
+        <button type="button" data-repo-pull-cancel class="inline-flex h-8 w-fit items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to pull requests</button>
+        <p class="text-sm text-muted-foreground">${text}</p>
+      </section>`;
+  }
+
+  function pullBatchRebuildRows(batch) {
+    const names = batch.branches.map((branch) => branch.name);
+    const before = new Map((batch.rows || []).map((row) => [row.branch, row]));
+    batch.rows = buildPullBatchRows(batch.entries, names, batch.defaultBranch, batch.prefix).map((row) => {
+      const kept = before.get(row.branch);
+      return kept ? { ...row, title: kept.title, body: kept.body, include: kept.include } : row;
+    });
+  }
+
+  function pullBatchSelectTarget(batch, url) {
+    const remote = batch.forks.find((fork) => fork.url === url) || batch.forks[0];
+    batch.remote = remote;
+    batch.sent = loadPullBatchSent(batch.repo, remote);
+    batch.outcome = {};
+    batch.notice = "";
+  }
+
+  async function openPullBatch(repo, { navigate = true } = {}) {
+    const container = $("[data-repo-pulls]");
+    if (!container || !repo) return;
+    state.repoCompare = null;
+    state.repoRecordDetail = null;
+    stopRepoPullActivityRefresh();
+    setRepoRecordOpen("pulls", true);
+    if (navigate) navigateHistory(pullBatchUrl(repo));
+    if (!state.session?.nodeName) {
+      container.innerHTML = pullBatchMessageHtml(repo, `<a href="/login?next=${escapeHtml(encodeURIComponent(location.pathname))}" class="font-medium text-accent hover:underline">Sign in</a> as the repository's owner to send pull requests to its forks on other instances.`);
+      window.lucide?.createIcons();
+      return;
+    }
+    const current = state.repoPullBatch;
+    if (current?.running && repoKey(current.repo) === repoKey(repo)) {
+      paintPullBatch(container, current);
+      return;
+    }
+    container.innerHTML = `<div class="border-t border-border px-4 py-6 text-sm text-muted-foreground">${loadingHtml("Reading branches and forks…")}</div>`;
+    const token = {};
+    state.repoPullBatchLoad = token;
+    let branches = [];
+    let forks = [];
+    try {
+      [forks, branches] = await Promise.all([
+        loadRepoRemoteForks(repo, { force: true }),
+        fetchRepoBranches(repo, { refresh: true }),
+      ]);
+    } catch (_) {
+      branches = [];
+    }
+    if (state.repoPullBatchLoad !== token || !pullBatchRouteActive(repo)) return;
+    if (!state.repoRemoteForks.canManage) {
+      container.innerHTML = pullBatchMessageHtml(repo, "Only the repository's owner, or an owner of its organization, can send its branches as pull requests to forks on other instances.");
+      window.lucide?.createIcons();
+      return;
+    }
+    if (!forks.length) {
+      container.innerHTML = pullBatchMessageHtml(repo, "Save a fork on another instance first: open <span class=\"font-medium text-foreground\">Fork</span> at the top of the repository and add its address under forks on other instances.");
+      window.lucide?.createIcons();
+      return;
+    }
+    if (!branches.length) {
+      container.innerHTML = pullBatchMessageHtml(repo, "The branch list could not be read from a live mirror. Try again in a moment.");
+      window.lucide?.createIcons();
+      return;
+    }
+    const defaultBranch = repoDefaultBranch(repo);
+    const file = await loadPullBatchFile(repo, defaultBranch);
+    if (state.repoPullBatchLoad !== token || !pullBatchRouteActive(repo)) return;
+    const prefix = branches.some((branch) => branch.name.startsWith("pr/")) ? "pr/" : "";
+    const batch = {
+      repo,
+      forks,
+      branches,
+      defaultBranch,
+      entries: file.entries,
+      fileError: file.error,
+      fileFound: file.found,
+      prefix,
+      rows: [],
+      sent: {},
+      outcome: {},
+      notice: "",
+      running: false,
+      sending: "",
+    };
+    pullBatchSelectTarget(batch, forks[0].url);
+    pullBatchRebuildRows(batch);
+    state.repoPullBatch = batch;
+    paintPullBatch(container, batch);
+  }
+
+  function paintPullBatch(container, batch) {
+    const repo = batch.repo;
+    const fileLine = batch.fileError
+      ? `<span class="text-destructive">${escapeHtml(batch.fileError)}</span>`
+      : batch.fileFound
+        ? `Titles, descriptions and order come from <a href="${escapeHtml(repoLinkUrl(repo, "blob", PULL_BATCH_FILE))}" class="font-mono text-accent hover:underline">${escapeHtml(PULL_BATCH_FILE)}</a> on ${escapeHtml(batch.defaultBranch)}.`
+        : `Commit <span class="font-mono text-foreground">${escapeHtml(PULL_BATCH_FILE)}</span> to ${escapeHtml(batch.defaultBranch)} to fill in titles, descriptions and dependencies.`;
+    container.innerHTML = `
+      <form data-pull-batch class="grid gap-4 border-t border-border bg-background p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <button type="button" data-repo-pull-cancel class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to pull requests</button>
+        </div>
+        <header class="grid gap-1">
+          <h2 class="text-[20px] font-semibold leading-8 text-foreground">Send pull requests</h2>
+          <p class="text-[13px] text-muted-foreground">Each branch becomes its own pull request on the fork you pick: compared with the branch it depends on (or its base), so it carries only its own commits, then signed in this browser and sent in order. Pull requests already sent to that fork are skipped, so you can press Send all again to finish.</p>
+          <p class="text-[12px] text-muted-foreground">${fileLine}</p>
+        </header>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">Send to
+            <select data-pull-batch-target class="h-control w-full min-w-0 rounded-control border border-border bg-background px-2 text-[16px] text-foreground outline-none focus:border-accent sm:text-control">${batch.forks.map((fork) => `<option value="${escapeHtml(fork.url)}" ${fork.url === batch.remote.url ? "selected" : ""}>${escapeHtml(`${fork.owner}/${fork.name}`)} on ${escapeHtml(fork.host)}</option>`).join("")}</select>
+          </label>
+          <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">Branches starting with
+            <input data-pull-batch-prefix type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="${escapeHtml(batch.prefix)}" placeholder="any branch" class="h-control w-full min-w-0 rounded-control border border-border bg-background px-3 font-mono text-[16px] text-foreground outline-none focus:border-accent sm:text-control" />
+          </label>
+        </div>
+        <div class="overflow-hidden rounded-md border border-border">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-2">
+            <span class="text-xs font-medium text-foreground">Branches</span>
+            <span data-pull-batch-summary class="text-[11px] text-muted-foreground"></span>
+          </div>
+          <ol data-pull-batch-list></ol>
+        </div>
+        <p data-pull-batch-notice role="status" class="hidden text-[12px] text-attention"></p>
+        <div class="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background py-3">
+          ${composeIdentityHtml(state.session, "Signing")}
+          <button type="button" data-pull-batch-stop class="hidden h-9 items-center rounded-md border border-border px-3 text-sm font-medium text-foreground hover:bg-secondary">Stop</button>
+          <button type="submit" data-pull-batch-send class="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-50 sm:flex-none"><i data-lucide="send" class="h-4 w-4"></i>Send all</button>
+        </div>
+      </form>`;
+    const view = container.querySelector("[data-pull-batch]");
+    view._batch = batch;
+    bindPullBatchView(view, batch);
+    renderPullBatchRows(batch);
+    window.lucide?.createIcons();
+  }
+
+  function bindPullBatchView(view, batch) {
+    const rowOf = (node) => batch.rows.find((row) => row.branch === node.closest("[data-pull-batch-row]")?.dataset.pullBatchRow);
+    view.addEventListener("change", (event) => {
+      const target = event.target;
+      if (batch.running) return;
+      if (target.matches("[data-pull-batch-target]")) {
+        pullBatchSelectTarget(batch, target.value);
+        renderPullBatchRows(batch);
+      } else if (target.matches("[data-pull-batch-include]")) {
+        const row = rowOf(target);
+        if (row) row.include = target.checked;
+        renderPullBatchRows(batch, { full: false });
+      } else if (target.matches("[data-pull-batch-title], [data-pull-batch-body]")) {
+        renderPullBatchRows(batch, { full: false });
+      }
+    });
+    view.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && event.target.matches("input")) event.preventDefault();
+    });
+    view.addEventListener("input", (event) => {
+      if (batch.running) return;
+      if (event.target.matches("[data-pull-batch-prefix]")) {
+        batch.prefix = String(event.target.value || "").trim();
+        pullBatchRebuildRows(batch);
+        renderPullBatchRows(batch);
+        return;
+      }
+      const row = rowOf(event.target);
+      if (!row) return;
+      if (event.target.matches("[data-pull-batch-title]")) row.title = pullBatchCleanTitle(event.target.value);
+      if (event.target.matches("[data-pull-batch-body]")) row.body = pullBatchCleanBody(event.target.value);
+    });
+    view.addEventListener("click", (event) => {
+      if (event.target.closest("[data-pull-batch-stop]")) batch.stopRequested = true;
+    });
+    view.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (batch.running) return;
+      let wakeLock = null;
+      try {
+        wakeLock = await navigator.wakeLock?.request?.("screen");
+      } catch (_) {
+        wakeLock = null;
+      }
+      try {
+        await runPullBatch(batch, { onChange: renderPullBatchRows });
+      } finally {
+        try {
+          await wakeLock?.release?.();
+        } catch (_) {}
+      }
+    });
   }
   function setRepoForkMenuOpen(opening) {
     $("[data-repo-fork-menu]")?.classList.toggle("hidden", !opening);
@@ -35753,6 +36598,12 @@
     const detail = $("[data-repo-detail]");
     if (!detail || !repo) return;
     state.selectedRepo = repo;
+    if (state.session?.nodeName && !sessionAdministersRepo(repo)
+        && !repoViewerPermissions.has(repoViewerPermissionKey(repo))) {
+      loadRepoViewerPermission(repo).then((answer) => {
+        if (answer?.viewerCanAdmin && state.selectedRepo === repo) renderRepoDetail(repo);
+      });
+    }
     rememberAgentVisitedRepository(repo);
     recordRepositoryView(repo);
     state.repoCollectionPages = { issues: 1, pulls: 1 };
@@ -35825,6 +36676,10 @@
       }
       : null;
     state.repoRecordSection = recordRoute ? recordRoute.section : "conversation";
+    const actionsRunId = routeKind === "actions" && routeParts[3] === "runs" && /^[1-9]\d{0,11}$/.test(routeParts[4] || "")
+      ? Number(routeParts[4])
+      : 0;
+    state.repoActionsInitialRun = actionsRunId ? { key: repoKey(repo), runId: actionsRunId } : null;
     // /owner/repo/compare/<base>...<head> opens the branch diff viewer on the
     // Pull requests tab (the Agents tab links an agent's branch there).
     const compareRoute = routeMatchesRepo ? parseRepoCompareRoute(routeParts) : null;
@@ -35832,9 +36687,13 @@
       ? repoRecordUrl(repo, recordRoute.kind, recordRoute.number, recordRoute.section)
       : compareRoute
         ? repoCompareUrl(repo, compareRoute.base, compareRoute.head)
-        : repoTabRoutesFor(repo).includes(routeKind)
-          ? `${repoLinkUrl(repo)}/${routeKind}`
-          : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
+        : actionsRunId && repoTabRoutesFor(repo).includes("actions")
+          ? `${repoLinkUrl(repo)}/actions/runs/${actionsRunId}`
+          : routeKind === "pulls" && routeParts[3] === "send"
+            ? pullBatchUrl(repo)
+            : repoTabRoutesFor(repo).includes(routeKind)
+              ? `${repoLinkUrl(repo)}/${routeKind}`
+              : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
     navigateHistory(detailPath);
     const branch = repoSelectedBranch(repo);
     const issuesCount = repoCount(repo, ["issueCount", "issues", "issuesCount", "openIssues"]);
@@ -35843,7 +36702,7 @@
     const commitsCount = repoCount(repo, ["commits", "commitCount", "commitHistory"]);
     const mirrorsCount = repoCount(repo, ["mirrors", "mirrorCount", "hosts"]);
     renderHeaderContext("explore");
-    const canEditAbout = sessionOwnsRepo(repo);
+    const canEditAbout = sessionAdministersRepo(repo);
     const readmePath = "README.md";
     const readmeHref = repoLinkUrl(repo, "blob", readmePath);
     const tabMeta = {
@@ -37530,6 +38389,9 @@
     }
     // findRepository needs the catalog (alias/canonical grouping), so this page
     // does wait on the shared fetch before rendering the detail body.
+    const viewerPermissionReady = requested && state.session?.nodeName
+      ? loadRepoViewerPermission(requested)
+      : null;
     await (repositoriesReady || loadRepositories());
     let repo = requested ? findRepository(requested) : null;
     if (
@@ -37568,9 +38430,13 @@
       const routeParts = repoRouteParts();
       if (
         (routeParts[2] === "agents" && !sessionCanAssignAgent(repo)) ||
-        (routeParts[2] === "settings" && !sessionOwnsRepo(repo))
+        (routeParts[2] === "settings" && !sessionAdministersRepo(repo))
       ) {
         await (canonicalProfileReady || Promise.resolve());
+      }
+      await (viewerPermissionReady || Promise.resolve());
+      if (state.session?.nodeName && !sessionAdministersRepo(repo)) {
+        await loadRepoViewerPermission(repo);
       }
       renderRepoDetail(repo);
       return;
@@ -38174,7 +39040,7 @@
       }
 
       const aboutEditButton = event.target.closest("[data-repo-about-edit]");
-      if (aboutEditButton && state.selectedRepo && sessionOwnsRepo(state.selectedRepo)) {
+      if (aboutEditButton && state.selectedRepo && sessionAdministersRepo(state.selectedRepo)) {
         setRepoAboutStatus("");
         setRepoAboutEditing(true);
         return;
@@ -38183,7 +39049,7 @@
       const digestPreviewButton = event.target.closest(
         "[data-repo-digest-preview-refresh]");
       if (digestPreviewButton && state.selectedRepo
-          && sessionOwnsRepo(state.selectedRepo)) {
+          && sessionAdministersRepo(state.selectedRepo)) {
         loadRepoDigestPreview(state.selectedRepo);
         return;
       }
@@ -38200,7 +39066,7 @@
       if (
         webhookRow &&
         state.selectedRepo &&
-        sessionOwnsRepo(state.selectedRepo)
+        sessionAdministersRepo(state.selectedRepo)
       ) {
         const repo = state.selectedRepo;
         const id = webhookRow.dataset.repoWebhookId || "";
@@ -38256,7 +39122,7 @@
       if (
         deleteRepoButton &&
         state.selectedRepo &&
-        sessionOwnsRepo(state.selectedRepo)
+        sessionAdministersRepo(state.selectedRepo)
       ) {
         const repo = state.selectedRepo;
         const expected = repoKey(repo);
@@ -38287,7 +39153,7 @@
           if (status) {
             status.textContent =
               code === "not_authorized"
-                ? "Only the source node owner can delete this repository."
+                ? "Only the repository owner or an organization owner or admin can delete this repository."
                 : code === "account_required"
                   ? "Sign in as the source node owner first."
                   : "Repository deletion failed. Please try again.";
@@ -38613,6 +39479,13 @@
           return;
         }
         openPullCompose(state.selectedRepo);
+        return;
+      }
+
+      const pullBatchOpen = event.target.closest("[data-repo-pull-batch-open]");
+      if (pullBatchOpen && state.selectedRepo && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+        event.preventDefault();
+        void openPullBatch(state.selectedRepo);
         return;
       }
 
@@ -39369,7 +40242,7 @@
         const code = String(error?.message || "");
         setRepoSettingsStatus(
           code === "not_authorized"
-            ? "Only the source node owner can change repository settings."
+            ? "Only the repository owner or an organization owner or admin can change repository settings."
             : code === "account_required"
               ? "Sign in as the source node owner first."
               : "Could not save repository settings.",
@@ -39422,7 +40295,7 @@
       } catch (error) {
         const code = String(error?.message || "");
         setRepoAboutStatus(
-          code === "not_authorized" ? "Only the source node owner can edit About."
+          code === "not_authorized" ? "Only the repository owner or an organization owner or admin can edit About."
             : code === "account_required" ? "Sign in as the source node owner first."
             : code === "logo_too_large" ? "Logo must be a PNG up to 256 KB."
             : code === "banner_too_large" ? "Banner must be a PNG up to 1 MB."
@@ -39943,7 +40816,9 @@
           // sections (/pulls/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
-            if (/^\d+$/.test(recordNumber)) {
+            if (kind === "pulls" && recordNumber === "send") {
+              void openPullBatch(repo, { navigate: false });
+            } else if (/^\d+$/.test(recordNumber)) {
               const section = kind === "pulls"
                 ? normalizeRepoRecordSection(parts[4])
                 : "conversation";
@@ -39955,7 +40830,7 @@
               if (sameRecord) setRepoRecordSection(section);
               else loadRepoRecordDetail(repo, kind, recordNumber);
             } else if (state.repoRecordDetail?.kind === kind
-                || (kind === "pulls" && state.repoCompare)) {
+                || (kind === "pulls" && (state.repoCompare || document.querySelector("[data-pull-batch], [data-pull-batch-message]")))) {
               if (kind === "pulls") stopRepoPullActivityRefresh();
               state.repoRecordDetail = null;
               // Stepping back from a comparison lands on the list it left.
@@ -44051,7 +44926,7 @@
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
     "agents": "/dashboard-page-agents.js?v=0ec627084c94",
-    "apps": "/dashboard-page-apps.js?v=5e46b3032a2f",
+    "apps": "/dashboard-page-apps.js?v=8e695c33eb03",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=f3f31e10bb77",
     "challenges": "/dashboard-page-challenges.js?v=2c09240bdb95",

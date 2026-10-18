@@ -43,6 +43,12 @@
     const detail = $("[data-repo-detail]");
     if (!detail || !repo) return;
     state.selectedRepo = repo;
+    if (state.session?.nodeName && !sessionAdministersRepo(repo)
+        && !repoViewerPermissions.has(repoViewerPermissionKey(repo))) {
+      loadRepoViewerPermission(repo).then((answer) => {
+        if (answer?.viewerCanAdmin && state.selectedRepo === repo) renderRepoDetail(repo);
+      });
+    }
     rememberAgentVisitedRepository(repo);
     recordRepositoryView(repo);
     state.repoCollectionPages = { issues: 1, pulls: 1 };
@@ -115,6 +121,10 @@
       }
       : null;
     state.repoRecordSection = recordRoute ? recordRoute.section : "conversation";
+    const actionsRunId = routeKind === "actions" && routeParts[3] === "runs" && /^[1-9]\d{0,11}$/.test(routeParts[4] || "")
+      ? Number(routeParts[4])
+      : 0;
+    state.repoActionsInitialRun = actionsRunId ? { key: repoKey(repo), runId: actionsRunId } : null;
     // /owner/repo/compare/<base>...<head> opens the branch diff viewer on the
     // Pull requests tab (the Agents tab links an agent's branch there).
     const compareRoute = routeMatchesRepo ? parseRepoCompareRoute(routeParts) : null;
@@ -122,9 +132,13 @@
       ? repoRecordUrl(repo, recordRoute.kind, recordRoute.number, recordRoute.section)
       : compareRoute
         ? repoCompareUrl(repo, compareRoute.base, compareRoute.head)
-        : repoTabRoutesFor(repo).includes(routeKind)
-          ? `${repoLinkUrl(repo)}/${routeKind}`
-          : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
+        : actionsRunId && repoTabRoutesFor(repo).includes("actions")
+          ? `${repoLinkUrl(repo)}/actions/runs/${actionsRunId}`
+          : routeKind === "pulls" && routeParts[3] === "send"
+            ? pullBatchUrl(repo)
+            : repoTabRoutesFor(repo).includes(routeKind)
+              ? `${repoLinkUrl(repo)}/${routeKind}`
+              : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
     navigateHistory(detailPath);
     const branch = repoSelectedBranch(repo);
     const issuesCount = repoCount(repo, ["issueCount", "issues", "issuesCount", "openIssues"]);
@@ -133,7 +147,7 @@
     const commitsCount = repoCount(repo, ["commits", "commitCount", "commitHistory"]);
     const mirrorsCount = repoCount(repo, ["mirrors", "mirrorCount", "hosts"]);
     renderHeaderContext("explore");
-    const canEditAbout = sessionOwnsRepo(repo);
+    const canEditAbout = sessionAdministersRepo(repo);
     const readmePath = "README.md";
     const readmeHref = repoLinkUrl(repo, "blob", readmePath);
     const tabMeta = {
@@ -1820,6 +1834,9 @@
     }
     // findRepository needs the catalog (alias/canonical grouping), so this page
     // does wait on the shared fetch before rendering the detail body.
+    const viewerPermissionReady = requested && state.session?.nodeName
+      ? loadRepoViewerPermission(requested)
+      : null;
     await (repositoriesReady || loadRepositories());
     let repo = requested ? findRepository(requested) : null;
     if (
@@ -1858,9 +1875,13 @@
       const routeParts = repoRouteParts();
       if (
         (routeParts[2] === "agents" && !sessionCanAssignAgent(repo)) ||
-        (routeParts[2] === "settings" && !sessionOwnsRepo(repo))
+        (routeParts[2] === "settings" && !sessionAdministersRepo(repo))
       ) {
         await (canonicalProfileReady || Promise.resolve());
+      }
+      await (viewerPermissionReady || Promise.resolve());
+      if (state.session?.nodeName && !sessionAdministersRepo(repo)) {
+        await loadRepoViewerPermission(repo);
       }
       renderRepoDetail(repo);
       return;
@@ -2464,7 +2485,7 @@
       }
 
       const aboutEditButton = event.target.closest("[data-repo-about-edit]");
-      if (aboutEditButton && state.selectedRepo && sessionOwnsRepo(state.selectedRepo)) {
+      if (aboutEditButton && state.selectedRepo && sessionAdministersRepo(state.selectedRepo)) {
         setRepoAboutStatus("");
         setRepoAboutEditing(true);
         return;
@@ -2473,7 +2494,7 @@
       const digestPreviewButton = event.target.closest(
         "[data-repo-digest-preview-refresh]");
       if (digestPreviewButton && state.selectedRepo
-          && sessionOwnsRepo(state.selectedRepo)) {
+          && sessionAdministersRepo(state.selectedRepo)) {
         loadRepoDigestPreview(state.selectedRepo);
         return;
       }
@@ -2490,7 +2511,7 @@
       if (
         webhookRow &&
         state.selectedRepo &&
-        sessionOwnsRepo(state.selectedRepo)
+        sessionAdministersRepo(state.selectedRepo)
       ) {
         const repo = state.selectedRepo;
         const id = webhookRow.dataset.repoWebhookId || "";
@@ -2546,7 +2567,7 @@
       if (
         deleteRepoButton &&
         state.selectedRepo &&
-        sessionOwnsRepo(state.selectedRepo)
+        sessionAdministersRepo(state.selectedRepo)
       ) {
         const repo = state.selectedRepo;
         const expected = repoKey(repo);
@@ -2577,7 +2598,7 @@
           if (status) {
             status.textContent =
               code === "not_authorized"
-                ? "Only the source node owner can delete this repository."
+                ? "Only the repository owner or an organization owner or admin can delete this repository."
                 : code === "account_required"
                   ? "Sign in as the source node owner first."
                   : "Repository deletion failed. Please try again.";
@@ -2903,6 +2924,13 @@
           return;
         }
         openPullCompose(state.selectedRepo);
+        return;
+      }
+
+      const pullBatchOpen = event.target.closest("[data-repo-pull-batch-open]");
+      if (pullBatchOpen && state.selectedRepo && !event.metaKey && !event.ctrlKey && !event.shiftKey) {
+        event.preventDefault();
+        void openPullBatch(state.selectedRepo);
         return;
       }
 
@@ -3659,7 +3687,7 @@
         const code = String(error?.message || "");
         setRepoSettingsStatus(
           code === "not_authorized"
-            ? "Only the source node owner can change repository settings."
+            ? "Only the repository owner or an organization owner or admin can change repository settings."
             : code === "account_required"
               ? "Sign in as the source node owner first."
               : "Could not save repository settings.",
@@ -3712,7 +3740,7 @@
       } catch (error) {
         const code = String(error?.message || "");
         setRepoAboutStatus(
-          code === "not_authorized" ? "Only the source node owner can edit About."
+          code === "not_authorized" ? "Only the repository owner or an organization owner or admin can edit About."
             : code === "account_required" ? "Sign in as the source node owner first."
             : code === "logo_too_large" ? "Logo must be a PNG up to 256 KB."
             : code === "banner_too_large" ? "Banner must be a PNG up to 1 MB."
@@ -4233,7 +4261,9 @@
           // sections (/pulls/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
-            if (/^\d+$/.test(recordNumber)) {
+            if (kind === "pulls" && recordNumber === "send") {
+              void openPullBatch(repo, { navigate: false });
+            } else if (/^\d+$/.test(recordNumber)) {
               const section = kind === "pulls"
                 ? normalizeRepoRecordSection(parts[4])
                 : "conversation";
@@ -4245,7 +4275,7 @@
               if (sameRecord) setRepoRecordSection(section);
               else loadRepoRecordDetail(repo, kind, recordNumber);
             } else if (state.repoRecordDetail?.kind === kind
-                || (kind === "pulls" && state.repoCompare)) {
+                || (kind === "pulls" && (state.repoCompare || document.querySelector("[data-pull-batch], [data-pull-batch-message]")))) {
               if (kind === "pulls") stopRepoPullActivityRefresh();
               state.repoRecordDetail = null;
               // Stepping back from a comparison lands on the list it left.

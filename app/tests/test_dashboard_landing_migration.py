@@ -1180,7 +1180,7 @@ def test_dashboard_repository_detail_keeps_code_comments_issues_shell():
 def test_dashboard_release_probes_use_the_committed_forkmesh_directory():
     dashboard_js = _read(PUBLIC / "dashboard.js")
 
-    assert dashboard_js.count('{ path: ".forkmesh/releases" }') == 2
+    assert dashboard_js.count('fetchRepoOptionalTree(repo, ".forkmesh/releases")') == 2
     assert '{ path: "releases" }' not in dashboard_js
 
 
@@ -1397,7 +1397,7 @@ def test_dashboard_about_links_readme_activity_and_owner_edit():
     ]
 
     for marker in (
-        "const canEditAbout = sessionOwnsRepo(repo);",
+        "const canEditAbout = sessionAdministersRepo(repo);",
         "data-repo-about-edit",
         "data-repo-about-form",
         "data-repo-about-description",
@@ -1417,7 +1417,7 @@ def test_dashboard_about_links_readme_activity_and_owner_edit():
     for marker in (
         "saveRepoAboutFromWeb(state.selectedRepo, description, media)",
         "applyRepoAboutDescription(state.selectedRepo, body.description ?? description)",
-        "Only the source node owner can edit About.",
+        "Only the repository owner or an organization owner or admin can edit About.",
     ):
         assert marker in submit_handler
 

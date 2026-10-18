@@ -41,6 +41,7 @@ last push, else the rendezvous-first live core; the others replicate from it.
 
 import hashlib
 import hmac
+import json
 import re
 
 import hosted_repos as _hosted_repos
@@ -60,6 +61,8 @@ HOSTED_PUSH_PASSWORD_RE = re.compile(
     r"^fmp1\.([A-Za-z0-9_-]{24,64})\.([0-9]{10,16})\.([0-9a-f]{64})$")
 # The same character set the create modal validates client-side.
 HOSTED_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+HOSTED_BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
+HOSTED_HEAD_MAX_BYTES = 2 * 1024 * 1024
 
 
 def _bind_runtime(runtime):
@@ -228,7 +231,7 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
 
 
 async def record_hosted_push_state(env, owner, repo, endpoint=None,
-                                   pusher=""):
+                                   pusher="", state="", notify=True):
     """Pin the refs digest the hosting node signs after a hosted push.
 
     A public read is routed only against an authenticated refs attestation
@@ -266,30 +269,92 @@ async def record_hosted_push_state(env, owner, repo, endpoint=None,
             await _note_core_push(env, key_bi, endpoint.get("node", ""))
         except Exception:
             pass
-    # A pin-less context asks for the proof itself: a signed, healthy,
-    # available proof whose digest simply does not match a pin yet reports
-    # ``refs_mismatch``, which is precisely the state a first push leaves.
-    details = {}
-    await _https_mirror_repository_proof(
-        env,
-        endpoint,
-        {"owner": owner, "repo": repo, "routeOwner": owner,
-         "pins": frozenset()},
-        "git-upload-pack",
-        force_refresh=True,
-        details=details,
-    )
-    digest = clean_string(details.get("refsSha256", ""), 64).strip().lower()
-    if (
-        details.get("reason") not in ("verified", "refs_mismatch")
-        or not re.fullmatch(r"[0-9a-f]{64}", digest)
-    ):
-        return ""
+    digest = clean_string(state, 64).strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{64}", digest):
+        # A pin-less context asks for the proof itself: a signed, healthy,
+        # available proof whose digest simply does not match a pin yet reports
+        # ``refs_mismatch``, which is precisely the state a first push leaves.
+        details = {}
+        await _https_mirror_repository_proof(
+            env,
+            endpoint,
+            {"owner": owner, "repo": repo, "routeOwner": owner,
+             "pins": frozenset()},
+            "git-upload-pack",
+            force_refresh=True,
+            details=details,
+        )
+        digest = clean_string(
+            details.get("refsSha256", ""), 64).strip().lower()
+        if (
+            details.get("reason") not in ("verified", "refs_mismatch")
+            or not re.fullmatch(r"[0-9a-f]{64}", digest)
+        ):
+            return ""
     if record.get("stateHash") == digest:
         return digest
+    head = await _hosted_head(env, endpoint, owner, repo)
+    if head:
+        record["branch"], record["commit"] = head
     return await _pin_hosted_state(
-        env, owner, repo, key_bi, row, record, digest, notify=True,
+        env, owner, repo, key_bi, row, record, digest, notify=notify,
         pusher=pusher)
+
+
+async def _hosted_head(env, endpoint, owner, repo):
+    try:
+        target = https_routing.masked_target_url(
+            endpoint["baseUrl"], owner, repo, "branches")
+        router_public_key = _https_mirror_router_public_key(env)
+        router_seed = _https_mirror_router_seed(env)
+        if not target or not router_public_key or not router_seed:
+            return None
+        path = urlparse(target).path
+        request_id = _b64url_encode(_random_bytes(18))
+        issued_at = int(Date.now())
+        body_digest = hashlib.sha256(b"").hexdigest()
+        message = https_routing.request_message(
+            endpoint["node"], "GET", path, body_digest, request_id,
+            issued_at)
+        signature = await ed25519_sign(
+            router_public_key, router_seed, message.encode("utf-8"))
+        if not message or not signature:
+            return None
+        upstream = await js_fetch_with_timeout(
+            target,
+            {"method": "GET", "redirect": "manual", "headers": {
+                "X-ForkMesh-Node": endpoint["node"],
+                "X-ForkMesh-Request-Id": request_id,
+                "X-ForkMesh-Issued-At": str(issued_at),
+                "X-ForkMesh-Body-Sha256": body_digest,
+                "X-ForkMesh-Signature": signature,
+            }},
+            HTTPS_MIRROR_FETCH_TIMEOUT_SECONDS,
+        )
+        if int(getattr(upstream, "status", 0) or 0) != 200:
+            return None
+        raw = str(await upstream.text())
+        if len(raw) > HOSTED_HEAD_MAX_BYTES:
+            return None
+        return hosted_head_from_branches(json.loads(raw))
+    except Exception:
+        return None
+
+
+def hosted_head_from_branches(listing):
+    if not isinstance(listing, dict) or listing.get("ok") is not True:
+        return None
+    branch = str(listing.get("defaultBranch") or "")
+    if not HOSTED_BRANCH_RE.fullmatch(branch):
+        return None
+    for item in listing.get("branches") or []:
+        if not isinstance(item, dict) or item.get("name") != branch:
+            continue
+        commit = str(item.get("commit") or "").lower()
+        if re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit):
+            return branch, commit
+        return None
+    return None
 
 
 async def _pin_hosted_state(env, owner, repo, key_bi, row, record, digest,

@@ -70,7 +70,7 @@ final class DjVitalsTests: XCTestCase {
         XCTAssertEqual(long?.work.map(\.kind), [.wave])
         XCTAssertEqual(long?.marks.map(\.text), ["start A"])
         let report = vitals.report(now: now, alert: .none, context: [])
-        XCTAssertTrue(report.contains("80 ms, main thread busy 0 ms; inside: waveform draw 62.0 ms; around: start A"), report)
+        XCTAssertTrue(report.contains("80 ms, main thread busy 0 ms, layout and drawing 0 ms; inside: waveform draw 62.0 ms; around: start A"), report)
     }
 
     func testLongFramesTellAMainThreadThatWasBusyFromOneThatWasWaiting() {
@@ -97,6 +97,66 @@ final class DjVitalsTests: XCTestCase {
         XCTAssertTrue(report.contains("70 ms, main thread busy 60 ms"), report)
         XCTAssertTrue(report.contains("70 ms, main thread busy 12 ms"), report)
         XCTAssertTrue(report.contains("main thread busy ms/s"), report)
+    }
+
+    func testBusyTimeIsSplitIntoLayoutAndDrawingAndTheRest() {
+        var vitals = DjVitals()
+        vitals.begin(at: 0)
+        var now = run(&vitals, from: 0, frames: 60)
+        vitals.awake(at: now + 0.001)
+        vitals.committing(at: now + 0.041)
+        vitals.asleep(at: now + 0.061)
+        now += 0.07
+        vitals.frame(at: now, period: period)
+        vitals.committing(at: now + 0.002)
+        vitals.awake(at: now + 0.003)
+        vitals.asleep(at: now + 0.005)
+        now += period
+        vitals.frame(at: now, period: period)
+        XCTAssertEqual(vitals.longFrames.last?.busyMs ?? 0, 60, accuracy: 0.01)
+        XCTAssertEqual(vitals.longFrames.last?.commitMs ?? 0, 20, accuracy: 0.01)
+        XCTAssertEqual(vitals.commitMs, 20, accuracy: 0.01)
+        XCTAssertEqual(vitals.window(10, now: now).commitMs, 20, accuracy: 0.01)
+        let report = vitals.report(now: now, alert: .none, context: [])
+        XCTAssertTrue(report.contains("70 ms, main thread busy 60 ms, layout and drawing 20 ms"), report)
+        XCTAssertTrue(report.contains("of it layout and drawing ms/s"), report)
+    }
+
+    func testTheReportHasTheBusyTimeOfEachSecond() {
+        var vitals = DjVitals()
+        vitals.begin(at: 100)
+        var now = 100.0
+        for second in 0..<3 {
+            for _ in 0..<60 {
+                vitals.awake(at: now + 0.001)
+                vitals.asleep(at: now + 0.001 + Double(second + 1) * 0.002)
+                now += period
+                vitals.frame(at: now, period: period)
+            }
+        }
+        let report = vitals.report(now: now, alert: .none, context: [])
+        let line = report.split(separator: "\n").first { $0.hasPrefix("main thread busy each second") }.map(String.init) ?? ""
+        XCTAssertTrue(line.hasSuffix(" 120 240 360") || line.hasSuffix(" 120 240 360 ."), line)
+    }
+
+    func testAppWorkInsideALongFrameIsNamedAndSummed() {
+        var vitals = DjVitals()
+        vitals.begin(at: 0)
+        var now = run(&vitals, from: 0, frames: 60)
+        vitals.section("surfaces.publish", ms: 120, at: now + 0.13)
+        vitals.section("agents.eagle", ms: 0.5, at: now + 0.131)
+        now += 0.14
+        vitals.frame(at: now, period: period)
+        vitals.section("surfaces.publish", ms: 30, at: now + 0.01)
+        XCTAssertEqual(vitals.longFrames.last?.work.map(\.name), ["app surfaces.publish"])
+        XCTAssertEqual(vitals.appWork["surfaces.publish"]?.count, 2)
+        XCTAssertEqual(vitals.appWork["surfaces.publish"]?.maxMs ?? 0, 120, accuracy: 0.01)
+        XCTAssertNil(vitals.work[.app])
+        let report = vitals.report(now: now, alert: .none, context: [])
+        XCTAssertTrue(report.contains("inside: app surfaces.publish 120.0 ms"), report)
+        XCTAssertTrue(report.contains("## App work on the main thread while the studio was on screen"), report)
+        XCTAssertTrue(report.contains("surfaces.publish: 2, 75.00, 120.0, 150"), report)
+        XCTAssertTrue(report.contains("agents.eagle: 1, 0.50, 0.5, 1"), report)
     }
 
     func testTheReportSaysWhatTheCountersCover() {
@@ -192,7 +252,8 @@ final class DjVitalsTests: XCTestCase {
         vitals.scriptReturned(ms: 12)
         let report = vitals.report(now: now, alert: DjVitalsAlert(reason: "x"), context: [("decks", "A playing")])
         for heading in ["# DJ studio vitals", "alert: x", "## Frames", "## Long frames", "## Main-thread work", "## Player ticks",
-                        "## Web view scripts", "## Recent moments", "## Studio and device", "decks: A playing"] {
+                        "## Web view scripts", "## Recent moments", "## Studio and device", "decks: A playing",
+                        "## App work on the main thread"] {
             XCTAssertTrue(report.contains(heading), heading)
         }
         XCTAssertTrue(report.contains("probe 60 Hz"), report)

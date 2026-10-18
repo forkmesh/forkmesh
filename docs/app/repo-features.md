@@ -1,6 +1,8 @@
 # Repository features: issues, pull requests, discussions
 
-The repository owner can switch Issues, Pull requests and Discussions off in
+A repository administrator (the owner, or an organization owner or admin of a
+linked repository, [repo-settings-access.md](repo-settings-access.md)) can
+switch Issues, Pull requests and Discussions off in
 the repository's Settings tab (the Features group above the ActivityPub
 switches).
 

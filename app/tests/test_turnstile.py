@@ -422,3 +422,27 @@ def test_signup_page_refreshes_a_stale_token_before_submitting():
     assert 'if (!fresh) useBackupCheck("stale");' in submit
     assert "challengeAt = challengeToken ? Date.now() : 0;" in SIGNUP_JS
     assert '"visibilitychange"' in SIGNUP_JS
+
+
+def test_an_instance_accepts_its_own_address_without_a_hostname_list():
+    env = live_env(INSTANCE_NAME="Acme Code", APP_ORIGIN="https://code.example.org")
+    assert T.allowed_hostnames(env) == frozenset({"code.example.org"})
+    fake = FakeSiteverify()
+    fake.payload["hostname"] = "code.example.org"
+    assert verify(env, "tok", fetcher=fake) == ("", "")
+    fake = FakeSiteverify()
+    fake.payload["hostname"] = "app.forkmesh.com"
+    assert verify(env, "tok", fetcher=fake) == (T.FAILED, "hostname_mismatch")
+    listed = live_env(INSTANCE_NAME="Acme Code", APP_ORIGIN="https://code.example.org",
+                      TURNSTILE_HOSTNAMES="other.example")
+    assert T.allowed_hostnames(listed) == frozenset({"other.example"})
+    assert T.allowed_hostnames(live_env(APP_ORIGIN="https://app.forkmesh.com")) == \
+        frozenset(T.DEFAULT_HOSTNAMES)
+
+
+def test_instance_origin_hostname_parsing_uses_the_url_host():
+    env = live_env(INSTANCE_NAME="Acme Code",
+                   APP_ORIGIN="https://user@example.org:8443/path")
+    assert T.allowed_hostnames(env) == frozenset({"example.org"})
+    env = live_env(INSTANCE_NAME="Acme Code", APP_ORIGIN="https://[::1")
+    assert T.allowed_hostnames(env) == frozenset(T.DEFAULT_HOSTNAMES)

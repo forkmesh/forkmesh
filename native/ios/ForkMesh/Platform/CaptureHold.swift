@@ -17,6 +17,7 @@ enum CaptureHold {
     private static let guide: CaptureHoldGuide = CaptureHoldGuide()
     private static let menu: CaptureHoldMenu = CaptureHoldMenu()
     private static var handledAt: Date = .distantPast
+    private static weak var touchedTop: UIView?
     private static var overlay: CaptureOverlay?
     private static var starting: Bool = false
 
@@ -40,8 +41,13 @@ enum CaptureHold {
         window.addGestureRecognizer(hold)
     }
 
+    static func touched(in window: UIWindow) {
+        touchedTop = topView(in: window)
+    }
+
     static func shouldBegin(at point: CGPoint, in window: UIWindow) -> Bool {
         guard isOn, isIdle, Date().timeIntervalSince(handledAt) > handledGrace else { return false }
+        guard let top = touchedTop, top === topView(in: window) else { return false }
         return isBlank(at: point, in: window)
     }
 
@@ -142,7 +148,11 @@ final class CaptureHoldGuide: NSObject, UIGestureRecognizerDelegate {
     }
 
     func gestureRecognizer(_ recognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
-        CaptureHold.isOn && CaptureHold.isIdle
+        guard CaptureHold.isOn, CaptureHold.isIdle else { return false }
+        if let window = recognizer.view as? UIWindow {
+            CaptureHold.touched(in: window)
+        }
+        return true
     }
 
     func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {

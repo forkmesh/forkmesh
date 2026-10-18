@@ -45,8 +45,6 @@ final class DjSpinTicker: NSObject {
 @MainActor
 final class DjSpinView: UIView {
     static let key = "spin"
-    static let settled = 0.0005
-    static let slip = 0.01
 
     var deck: DjDeck
     private let disc = CALayer()
@@ -58,9 +56,7 @@ final class DjSpinView: UIView {
     private var drawnFor: CGFloat = 0
     private var drawnScale: CGFloat = 0
     private var shownArt: UIImage?
-    private var free: Double?
-    private var freeAngle: Double = 0
-    private var freeSince: CFTimeInterval = 0
+    private var motion = DjRecordMotion()
 
     init(deck: DjDeck) {
         self.deck = deck
@@ -70,6 +66,7 @@ final class DjSpinView: UIView {
         backgroundColor = .clear
         art.contentsGravity = .resizeAspectFill
         art.isHidden = true
+        disc.actions = ["transform": NSNull()]
         disc.addSublayer(art)
         disc.addSublayer(marks)
         layer.addSublayer(disc)
@@ -138,33 +135,21 @@ final class DjSpinView: UIView {
         let began = CACurrentMediaTime()
         defer { DjVitalsRecorder.shared.work(.spin, from: began, to: CACurrentMediaTime()) }
         let angle = DjStudio.turnDegrees(deck.turned(at: now)) * Double.pi / 180
-        if let speed = steadySpeed() {
-            run(at: DjPace.idle)
-            if let free, disc.animation(forKey: Self.key) != nil, abs(Self.wrapped(angle - freeAngle - free * (now - freeSince))) < Self.slip {
-                return
-            }
-            spinFreely(angle, at: now, speed: speed)
+        let speed = DjRecordMotion.steadySpeed(playing: deck.playing, scratching: deck.scratching, drive: deck.effectiveRate, motor: deck.spin.motor)
+        run(at: speed != nil ? DjPace.idle : deck.moving || deck.scratching ? pace.touched : DjPace.idle)
+        if motion.spinning, disc.animation(forKey: Self.key) == nil { motion.forget() }
+        switch motion.step(angle: angle, at: now, steady: speed) {
+        case .none:
             return
+        case let .turn(angle):
+            disc.removeAnimation(forKey: Self.key)
+            disc.setAffineTransform(CGAffineTransform(rotationAngle: angle))
+        case let .spin(angle, speed):
+            spinFreely(angle, at: now, speed: speed)
         }
-        run(at: deck.moving || deck.scratching ? pace.touched : DjPace.idle)
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        loose()
-        disc.setAffineTransform(CGAffineTransform(rotationAngle: angle))
-        CATransaction.commit()
-    }
-
-    private func steadySpeed() -> Double? {
-        guard deck.playing, !deck.scratching else { return nil }
-        let drive = deck.effectiveRate
-        let motor = deck.spin.motor
-        guard drive > 0.05, abs(motor - drive) < Self.settled else { return nil }
-        return motor * 2 * Double.pi / DjStudio.secondsPerTurn
     }
 
     private func spinFreely(_ angle: Double, at time: CFTimeInterval, speed: Double) {
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
         disc.removeAnimation(forKey: Self.key)
         disc.setAffineTransform(CGAffineTransform(rotationAngle: angle))
         let spin = CABasicAnimation(keyPath: "transform.rotation.z")
@@ -175,16 +160,12 @@ final class DjSpinView: UIView {
         spin.beginTime = disc.convertTime(time, from: nil)
         spin.preferredFrameRateRange = Self.range(pace.steady)
         disc.add(spin, forKey: Self.key)
-        CATransaction.commit()
-        free = speed
-        freeAngle = angle
-        freeSince = time
     }
 
     private func loose() {
-        guard free != nil else { return }
+        guard motion.spinning else { return }
         disc.removeAnimation(forKey: Self.key)
-        free = nil
+        motion.forget()
     }
 
     private func run(at range: DjPace.Range) {
@@ -207,13 +188,6 @@ final class DjSpinView: UIView {
         marks.contents = Self.marks(side, scale: scale)
         marks.contentsScale = scale
         CATransaction.commit()
-    }
-
-    static func wrapped(_ radians: Double) -> Double {
-        let turn = 2 * Double.pi
-        var value = radians.truncatingRemainder(dividingBy: turn)
-        if value > Double.pi { value -= turn } else if value < -Double.pi { value += turn }
-        return value
     }
 
     static func marks(_ d: CGFloat, scale: CGFloat) -> CGImage? {

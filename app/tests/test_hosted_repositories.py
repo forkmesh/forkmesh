@@ -895,3 +895,71 @@ def test_local_path_placeholder_matches_the_users_platform():
     assert "C:\\\\Users\\\\you\\\\code\\\\my-project" in REPO_LIST_JS
     assert "/home/you/code/my-project" in REPO_LIST_JS
     assert "value.placeholder = localRepositoryPlaceholder();" in REPO_LIST_JS
+
+
+def test_a_new_pin_moves_the_catalog_head_to_the_default_branch_tip():
+    recorder = _Recorder()
+    module = _install(recorder=recorder, stored=_hosted_record(
+        branch="main", commit="1" * 40, stateHash="c" * 64))
+    reads = []
+
+    async def head(_env, endpoint, owner, repo):
+        reads.append((endpoint["node"], owner, repo))
+        return "main", "2" * 40
+
+    module._hosted_head = head
+    assert asyncio.run(module.record_hosted_push_state(
+        _Env(), "alice", "app", dict(WRITE_NODE))) == "d" * 64
+    written = recorder.rows[0][3]
+    assert (written["stateHash"], written["branch"], written["commit"]) == (
+        "d" * 64, "main", "2" * 40)
+    assert reads == [(WRITE_NODE["node"], "alice", "app")]
+
+
+def test_an_admitted_state_pins_without_a_second_proof_or_notifications():
+    recorder = _Recorder()
+    module = _install(recorder=recorder, stored=_hosted_record(
+        branch="main", commit="1" * 40), proof=("mirror_unhealthy", ""))
+
+    async def head(_env, _endpoint, _owner, _repo):
+        return "main", "3" * 40
+
+    module._hosted_head = head
+    assert asyncio.run(module.record_hosted_push_state(
+        _Env(), "alice", "app", dict(WRITE_NODE), state="e" * 64,
+        notify=False)) == "e" * 64
+    written = recorder.rows[0][3]
+    assert (written["stateHash"], written["commit"]) == ("e" * 64, "3" * 40)
+    assert recorder.webhook_events == []
+
+
+def test_an_unreadable_head_still_pins_the_state_and_keeps_the_commit():
+    recorder = _Recorder()
+    module = _install(recorder=recorder, stored=_hosted_record(
+        branch="main", commit="1" * 40))
+
+    async def head(_env, _endpoint, _owner, _repo):
+        return None
+
+    module._hosted_head = head
+    asyncio.run(module.record_hosted_push_state(
+        _Env(), "alice", "app", dict(WRITE_NODE)))
+    written = recorder.rows[0][3]
+    assert (written["stateHash"], written["commit"]) == ("d" * 64, "1" * 40)
+
+
+@pytest.mark.parametrize("listing, head", [
+    ({"ok": True, "defaultBranch": "main", "branches": [
+        {"name": "dev", "commit": "4" * 40},
+        {"name": "main", "commit": "5" * 40}]}, ("main", "5" * 40)),
+    ({"ok": True, "defaultBranch": "main", "branches": [
+        {"name": "dev", "commit": "4" * 40}]}, None),
+    ({"ok": True, "defaultBranch": "main", "branches": [
+        {"name": "main", "commit": "not-an-oid"}]}, None),
+    ({"ok": True, "defaultBranch": "../x", "branches": []}, None),
+    ({"ok": False}, None),
+    ([], None),
+])
+def test_the_head_comes_only_from_a_well_formed_branch_listing(listing, head):
+    module = _install(recorder=_Recorder())
+    assert module.hosted_head_from_branches(listing) == head

@@ -24,6 +24,9 @@ struct MarketScreen: View {
     @State private var uninstallRequest: PackageUninstallRequest?
     @State private var exportURL: URL?
     @State private var exporting = false
+    @State private var confirmInstallAll = false
+    @State private var installingAll = false
+    @State private var installAllSummary = ""
 
     init(client: PackagesClient, filter: MarketFilter) {
         self.client = client
@@ -42,6 +45,10 @@ struct MarketScreen: View {
                     }
                     .padding(.horizontal, FmSpace.x4)
                     .padding(.vertical, FmSpace.x2)
+                    Divider()
+                }
+                if !model.packages.isEmpty {
+                    installAllBar
                     Divider()
                 }
                 let rows: [MarketPackage] = model.visible
@@ -92,6 +99,15 @@ struct MarketScreen: View {
         } message: { (action: AccountPackageAction) in
             Text(action.message)
         }
+        .confirmationDialog(
+            "Install every package?", isPresented: $confirmInstallAll, titleVisibility: .visible
+        ) {
+            Button("Install all") { Task { await installAll() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            let count: Int = model.installAllPlan(signedIn: PackagesFeature.signedIn).targets.count
+            Text("Installs \(count) \(count == 1 ? "package" : "packages") on this phone. Models and themes are left out.")
+        }
         .packageUninstall($uninstallRequest, market: model) { (removal: PackageRemoval) in
             exportURL = PackageUninstallRequest.exportFile(removal)
             exporting = removal.export != nil
@@ -100,6 +116,58 @@ struct MarketScreen: View {
             isPresented: $exporting, document: model.removed?.export.map(PackageExportDocument.init(data:)), contentType: .json,
             defaultFilename: exportURL?.lastPathComponent
         ) { _ in model.dismissRemoval() }
+    }
+
+    private var installAllBar: some View {
+        let signedIn: Bool = PackagesFeature.signedIn
+        let remaining: Int = model.installAllPlan(signedIn: signedIn).targets.count
+        return VStack(alignment: .leading, spacing: FmSpace.x1) {
+            HStack {
+                Text(remaining == 0 ? "Everything this phone can install is installed" : "\(remaining) not installed")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button {
+                    if signedIn {
+                        confirmInstallAll = true
+                    } else {
+                        Task { _ = await AccountFeature.requireAccount(action: "install every package") }
+                    }
+                } label: {
+                    if installingAll {
+                        ProgressView()
+                    } else {
+                        Text(remaining == 0 && signedIn ? "All installed" : "Install all")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .disabled(installingAll || (signedIn && remaining == 0))
+                .accessibilityIdentifier("market-install-all")
+                .accessibilityLabel(remaining == 0 && signedIn ? "All packages installed" : "Install all packages")
+            }
+            if !installAllSummary.isEmpty {
+                Text(installAllSummary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, FmSpace.x4)
+        .padding(.vertical, FmSpace.x2)
+    }
+
+    private func installAll() async {
+        installingAll = true
+        defer { installingAll = false }
+        let result: MarketInstallAllResult = await model.installAll(signedIn: PackagesFeature.signedIn) { (package: MarketPackage) in
+            PackageGateSync.setOnDevice(package.id, on: true)
+        }
+        PackageGateSync.publish()
+        FmHaptics.commit()
+        var parts: [String] = ["Installed \(result.installed)"]
+        if result.failed > 0 { parts.append("\(result.failed) failed") }
+        if result.skipped > 0 { parts.append("\(result.skipped) need a choice or your desktop") }
+        installAllSummary = parts.joined(separator: ", ")
     }
 
     @ViewBuilder private var emptyState: some View {

@@ -169,6 +169,41 @@ core push does (`_admit_core_push_state`), then wakes the repository's
 mirrors. A job that pushed nothing re-records the current digest, which is
 harmless; a failed proof leaves the report untouched.
 
+The terminal report alone left a gap: a deploy step after the commit-back
+kept the job running for minutes, and every clone in that window still
+answered 503 (job 57, 2026-10-18: pushed at about 05:06, clones failed until
+it finished at 05:07:45). The app therefore also admits the state at the
+first read that meets it. When a read through the app finds a node whose
+proof is signed, healthy and intact and differs from the pins only in its
+refs digest (`signed_refs_lag`), and no second node agrees on that digest,
+the app admits that node's state (`_actions_push_admitted`) only if all of
+these hold:
+
+- the repository is held by the hosting cores and the node is one of them
+  (`HOSTED_GIT_CORE_NODES`), the same test a web push to a core passes;
+- a trusted Actions job for that repository is active on that node right now
+  (`runner_actions.pushing`: status leased, running or cancelling, a job
+  token and lease still set, `expires_at` not passed, `target_node` equal to
+  the node). That is exactly the job that holds an `actions-push` grant for
+  the node, and the gateway lets that grant only fast-forward the one branch
+  it names.
+
+It then records the node's state through the same `_admit_core_push_state`
+the terminal report uses (a fresh, forced, signed proof, the hosted catalog
+head, the mirror wake) and serves the read. This grants no trust the terminal
+report did not already grant: it moves the moment of admission from the end
+of the job to the first clone after its push. A lagging node with no such job
+(a different node, a mirror, a node after the job ended or expired) is still
+refused, so an arbitrary node cannot move the pins, and a push never rides a
+lagging proof. Health and monitoring probes do not admit. The terminal-report
+admission stays as the fallback for a job whose push no one reads before it
+ends.
+
+Rejected alternatives: a gateway-to-app notice after a runner push needs a
+new signed node-to-app channel and key on every git node; an interim runner
+report needs the runner to detect a push made by an arbitrary workflow step
+and a runner rebuild. Both would still end in the same proof read.
+
 The runner masks the job token and the push grant as well as the secrets.
 
 ### Which commit runs
@@ -241,7 +276,10 @@ App side (`app/src/actions_job_api.py`, routed for `/api/actions/job/*` in
 `app_runtime.py`): the token's SHA-256 must match `token_hash` of a job in
 `leased`, `running` or `cancelling`. The bot key is derived from
 `ACTIONS_BOT_SEED` (64 hex characters, the raw Ed25519 seed; WebCrypto
-imports it as PKCS#8 and exports the public half). Each change is a v2
+imports it as PKCS#8 and exports it as a JWK; `to_py()` turns the JWK into a
+dict on both Pyodide and the host, so `x` and `d` are read as keys, which
+keeps the `test_host_js_surface` inventory free of attribute chains on it).
+Each change is a v2
 issue event (`forkmesh-issue-event-v2\n<owner>/<repo>\n...`, owner being the
 repository's node owner) with `authorName: <org>-actions`, handed to
 `_accept_issue_submission` in `entry.py` — the same validation, inbox row and

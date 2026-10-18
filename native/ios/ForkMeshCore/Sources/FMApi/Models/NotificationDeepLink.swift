@@ -97,8 +97,14 @@ public struct NotificationDeepLink: Equatable, Hashable, Sendable {
             case "mirrors": tab = .mirrors
             case "releases": tab = .releases
             case "about": tab = .about
-            case "actions": tab = .actions
-            case "agents": tab = .agents
+            case "actions":
+                tab = .actions
+                if parts.count >= 5, parts[3] == "runs", (DartCore.intTryParse(parts[4]) ?? 0) > 0 {
+                    reference = parts[4]
+                }
+            case "agents":
+                tab = .agents
+                number = Self.number(parts)
             case "worktrees": tab = .worktrees
             default: tab = .code
             }

@@ -335,17 +335,11 @@ func (d *Daemon) requeueCollaboration(repo, kind string) {
 	d.collaborationPending[key][kind] = true
 }
 
-// The gateway exposes the same physical bare repository through both the
-// source owner and the node owner. Catch-up must drain it once, using the
-// source alias when one exists, so rows land at the repository URL users see.
 func (d *Daemon) preferredCollaborationAlias(repo Repository) bool {
-	if !strings.EqualFold(repo.Owner, d.config.PublishOwner) {
-		return true
-	}
 	for _, candidate := range d.gateway.Repositories {
 		if candidate.GitDir == repo.GitDir &&
 			!strings.EqualFold(candidate.Owner, d.config.PublishOwner) {
-			return false
+			return repositoryKey(candidate) == repositoryKey(repo)
 		}
 	}
 	return true

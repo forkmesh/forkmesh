@@ -59,6 +59,14 @@ final class InboxFeedTests: XCTestCase {
         XCTAssertEqual(InboxRoutes.route(kind: "desktop_ping", href: "/acme/app/agents/12", meta: ["sessionId": "12"], repo: "acme/app"),
                        .agent(id: "12"))
         XCTAssertEqual(InboxRoutes.route(kind: "desktop_ping", href: "", meta: [:], repo: "acme/app"), .repo(repo, section: nil))
+        XCTAssertEqual(InboxRoutes.route(kind: "desktop_ping", href: "/acme/app/actions/runs/41", meta: ["runId": "41"], repo: "acme/app"),
+                       .run(repo, id: "41"))
+        XCTAssertEqual(InboxRoutes.route(kind: "repo_activity", href: "/acme/app/actions", meta: [:], repo: ""),
+                       .repo(repo, section: .actions))
+        XCTAssertEqual(InboxRoutes.route(kind: "repo_activity", href: "/acme/app/agents/12", meta: [:], repo: ""), .agent(id: "12"))
+        XCTAssertEqual(
+            NotificationActionRouter.route(for: NotificationPayload(category: "", fields: ["href": "/acme/app/actions/runs/41"])),
+            .run(repo, id: "41"))
         XCTAssertEqual(InboxRoutes.approvalParts("s:1/a.2")?.approvalId, "a.2")
         XCTAssertNil(InboxRoutes.approvalParts("nope"))
         XCTAssertNil(InboxRoutes.route(kind: "credits_refilled", href: "https://evil.example", meta: [:], repo: ""))

@@ -119,7 +119,7 @@ final class SurfacesCoordinator {
         publishTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 400_000_000)
             guard !Task.isCancelled else { return }
-            self?.publish()
+            PerformanceMonitorService.section("surfaces.publish") { self?.publish() }
         }
     }
 

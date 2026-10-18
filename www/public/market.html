@@ -44,6 +44,7 @@
       }
       .market-lede { font-size: 18px; color: var(--muted); max-width: 62ch; line-height: 1.6; }
       .market-cta { display: flex; gap: 12px; flex-wrap: wrap; margin: 26px 0 10px; }
+      .market-install-all-note { margin: 0 0 10px; max-width: 62ch; color: var(--muted); font-size: 14px; line-height: 1.55; }
 
       .market-toc {
         display: flex; flex-wrap: wrap; gap: 8px;
@@ -502,7 +503,14 @@
       <div class="market-cta">
         <a class="primary-button" href="#create">Create a package</a>
         <a class="secondary-button" href="/desktop">Get the desktop app</a>
+        <a class="secondary-button" id="market-install-all" href="https://app.forkmesh.com/dashboard/apps?installAll=1">Install all</a>
       </div>
+      <p class="market-install-all-note">
+        <strong>Install all</strong> adds every package your account can run
+        &mdash; agents, themes and local AI models stay out. In the desktop,
+        iPhone and Android apps, open <strong>Market</strong> and press
+        <strong>Install all</strong> there.
+      </p>
 
       <div class="market-promises">
         <div class="market-promise">
@@ -1978,6 +1986,7 @@
             <li data-risk="low">Check the feeds you subscribe to straight from this device, and fetch an article page when you ask for reader view<span class="market-risk">low</span></li>
             <li data-risk="low">Keep your subscriptions, articles and read state on this device only; nothing is sent to ForkMesh<span class="market-risk">low</span></li>
             <li data-risk="low">Import and export your subscriptions as an OPML file you pick<span class="market-risk">low</span></li>
+            <li data-risk="low">Send an article&#x27;s title and link to a person or channel you pick in chat<span class="market-risk">low</span></li>
           </ul>
           <p class="market-trust">
             <span>Verified creator</span>
@@ -5474,7 +5483,7 @@
         <article class="market-item" data-market-package="strata" data-market-shelf="Extensions" data-market-name="Strata">
           <header class="market-item-head">
             <h3>Strata</h3>
-            <span class="market-version">v1.0.0</span>
+            <span class="market-version">v1.1.0</span>
           </header>
           <p class="market-badges">
             <span class="market-badge">Desktop extension</span>
@@ -5506,11 +5515,13 @@
             <dt>Licence</dt>
             <dd>Free &amp; open source · MIT</dd>
             <dt>Runs in</dt>
-            <dd>Desktop app, Settings</dd>
+            <dd>Android, Desktop app, Ios, Settings</dd>
+            <dt>Shows on</dt>
+            <dd>Phone and Desktop; you choose where</dd>
           </dl>
           <p class="market-perm-title">Asks for</p>
           <ul class="market-perms">
-            <li data-risk="low">Read the source files and git history of the repository you pick, on this computer<span class="market-risk">low</span></li>
+            <li data-risk="low">Read the source files and git history of the repository you pick, from its folder or a copy fetched onto the phone<span class="market-risk">low</span></li>
             <li data-risk="low">Add a Strata button to the desktop rail<span class="market-risk">low</span></li>
           </ul>
           <p class="market-trust">
@@ -5529,7 +5540,7 @@
         <article class="market-item" data-market-package="ember" data-market-shelf="Extensions" data-market-name="Ember">
           <header class="market-item-head">
             <h3>Ember</h3>
-            <span class="market-version">v1.0.0</span>
+            <span class="market-version">v1.1.0</span>
           </header>
           <p class="market-badges">
             <span class="market-badge">Desktop extension</span>
@@ -5561,11 +5572,13 @@
             <dt>Licence</dt>
             <dd>Free &amp; open source · MIT</dd>
             <dt>Runs in</dt>
-            <dd>Desktop app, Settings</dd>
+            <dd>Android, Desktop app, Ios, Settings</dd>
+            <dt>Shows on</dt>
+            <dd>Phone and Desktop; you choose where</dd>
           </dl>
           <p class="market-perm-title">Asks for</p>
           <ul class="market-perms">
-            <li data-risk="low">Read the source files and git history of the repository you pick, on this computer<span class="market-risk">low</span></li>
+            <li data-risk="low">Read the source files and git history of the repository you pick, from its folder or a copy fetched onto the phone<span class="market-risk">low</span></li>
             <li data-risk="low">Add an Ember button to the desktop rail<span class="market-risk">low</span></li>
           </ul>
           <p class="market-trust">
@@ -5584,7 +5597,7 @@
         <article class="market-item" data-market-package="synapse" data-market-shelf="Extensions" data-market-name="Synapse">
           <header class="market-item-head">
             <h3>Synapse</h3>
-            <span class="market-version">v1.0.0</span>
+            <span class="market-version">v1.1.0</span>
           </header>
           <p class="market-badges">
             <span class="market-badge">Desktop extension</span>
@@ -5615,11 +5628,13 @@
             <dt>Licence</dt>
             <dd>Free &amp; open source · MIT</dd>
             <dt>Runs in</dt>
-            <dd>Desktop app, Settings</dd>
+            <dd>Android, Desktop app, Ios, Settings</dd>
+            <dt>Shows on</dt>
+            <dd>Phone and Desktop; you choose where</dd>
           </dl>
           <p class="market-perm-title">Asks for</p>
           <ul class="market-perms">
-            <li data-risk="low">Read the source files of the repository you pick, on this computer<span class="market-risk">low</span></li>
+            <li data-risk="low">Read the source files of the repository you pick, from its folder or a copy fetched onto the phone<span class="market-risk">low</span></li>
             <li data-risk="low">Add a Synapse button to the desktop rail<span class="market-risk">low</span></li>
             <li data-risk="low">Draw the brain with the graphics card when one is available<span class="market-risk">low</span></li>
           </ul>

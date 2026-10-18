@@ -190,6 +190,115 @@ def test_plugins_list_lets_the_user_choose_where_a_plugin_shows(tmp_path):
     assert out["placesRequests"] == 1
 
 
+INSTALL_ALL_HARNESS = r"""
+const fs = require("node:fs");
+const source = fs.readFileSync(process.argv[2], "utf8");
+class Node {
+  constructor(tag) { this.tag = tag; this.children = []; this.dataset = {}; this.attributes = {}; this.listeners = {}; this.className = ""; this.text = ""; this.disabled = false; this.hidden = false; this.checked = false; }
+  get textContent() { return this.text + this.children.map((child) => child.textContent).join(""); }
+  set textContent(value) { this.text = String(value); this.children = []; }
+  append(...nodes) { this.children.push(...nodes); }
+  setAttribute(name, value) { this.attributes[name] = String(value); }
+  addEventListener(type, listener) { this.listeners[type] = listener; }
+  querySelector() { return label; }
+  all() { return [this, ...this.children.flatMap((child) => child.all())]; }
+}
+const box = new Node("div");
+const notice = new Node("p");
+const button = new Node("button");
+const label = new Node("span");
+const requests = [];
+const confirms = [];
+const events = [];
+let installed = { workflows: true, notes: false, tasks: false, crm: false, "notes-ai": false, gemma: false, skin: false };
+const market = [
+  { id: "workflows", name: "Workflows", accountSync: true, type: "extension" },
+  { id: "notes", name: "Notes", accountSync: true, type: "extension" },
+  { id: "tasks", name: "Tasks", accountSync: true, type: "extension" },
+  { id: "crm", name: "CRM", accountSync: true, type: "extension" },
+  { id: "notes-ai", name: "Notes AI", accountSync: true, type: "extension", dependencies: ["notes"] },
+  { id: "gemma", name: "Gemma", accountSync: true, type: "agent" },
+  { id: "skin", name: "Skin", accountSync: true, type: "theme" },
+  { id: "desktop-only", name: "Desktop only", accountSync: false, type: "extension" },
+];
+const rows = () => ({ ok: true, packages: Object.entries(installed).map(([id, on]) => ({ id, installed: on })) });
+const fetch = async (path, init) => {
+  requests.push({ path, method: init.method });
+  const id = path.split("/")[4];
+  if (path.endsWith("/install")) {
+    if (id === "crm") return { ok: false, status: 500, json: async () => ({ ok: false, error: "boom" }) };
+    installed[id] = true;
+    return { ok: true, status: 200, json: async () => ({ ...rows(), changed: id === "tasks" ? ["tasks", "notes"] : [id] }) };
+  }
+  if (path === "/api/market/packages") return { ok: true, status: 200, json: async () => ({ ok: true, packages: market }) };
+  return { ok: true, status: 200, json: async () => rows() };
+};
+const $ = (selector) => ({
+  "[data-apps-plugins]": box,
+  "[data-apps-plugins-notice]": notice,
+  "[data-apps-plugins-install-all]": button,
+})[selector] || null;
+const window = {
+  ForkMeshAPI: { rememberPlugin: () => null, refreshPlugins: async () => null },
+  dispatchEvent: (event) => events.push(event.type),
+  confirm: (message) => { confirms.push(message); return true; },
+};
+const document = { createElement: (tag) => new Node(tag) };
+class CustomEvent { constructor(type, init) { this.type = type; this.detail = init?.detail; } }
+const state = { session: { nodeName: "alice", sessionToken: "cookie" } };
+const location = { pathname: "/dashboard/apps", search: "?installAll=1&tab=x", hash: "#plugins" };
+const replaced = [];
+const history = { replaceState: (_s, _t, url) => replaced.push(url) };
+const api = new Function("$", "state", "window", "document", "fetch", "CustomEvent", "location", "history",
+  source + "\nreturn { loadAppsPlugins, installAllAppsPlugins, runAppsInstallAllRequest };")($, state, window, document, fetch, CustomEvent, location, history);
+(async () => {
+  const out = {};
+  await api.loadAppsPlugins();
+  out.before = [label.textContent, button.disabled];
+  await api.runAppsInstallAllRequest();
+  out.replaced = replaced;
+  out.installs = requests.filter((item) => item.path.endsWith("/install")).map((item) => item.path.split("/")[4]);
+  out.confirm = confirms;
+  out.notice = notice.textContent;
+  out.events = events;
+  out.after = [label.textContent, button.disabled];
+  installed.crm = true;
+  await api.loadAppsPlugins();
+  out.done = [label.textContent, button.disabled];
+  console.log(JSON.stringify(out));
+})();
+"""
+
+
+def test_plugins_list_installs_every_account_plugin_in_one_click(tmp_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    harness = tmp_path / "install_all.js"
+    harness.write_text(INSTALL_ALL_HARNESS, encoding="utf-8")
+    result = subprocess.run(
+        [node, str(harness), str(DASHBOARD / "js" / "09-apps.js")],
+        capture_output=True, text=True, timeout=30, check=True,
+    )
+    out = json.loads(result.stdout.strip().splitlines()[-1])
+    assert out["before"] == ["Install all (3)", False]
+    assert out["confirm"] == [
+        "Install 3 plugins for your account? They show on the web, the desktop app and the mobile app, and you can remove any of them later."
+    ]
+    assert out["replaced"] == ["/dashboard/apps?tab=x#plugins"]
+    assert out["installs"] == ["notes", "tasks", "crm"]
+    assert out["notice"] == "Installed 2, 1 failed: CRM."
+    assert out["events"] == ["forkmesh:plugins-changed"]
+    assert out["after"] == ["Install all (1)", False]
+    assert out["done"] == ["All installed", True]
+
+
+def test_install_all_button_sits_in_the_plugins_toolbar():
+    view = (DASHBOARD / "partials" / "views" / "apps.html").read_text(encoding="utf-8")
+    assert "data-apps-plugins-install-all" in view
+    assert "cta" not in view[view.index("data-apps-plugins-install-all"):view.index("data-apps-plugins-refresh")]
+
+
 def test_plugins_list_disables_the_last_place_and_keeps_installs_plain():
     assert 'input.disabled = appsPlugins.busy || (input.checked && chosen.length === 1);' in APPS_JS
     assert '`/api/plugins/@account/${encodeURIComponent(row.id)}/places`, { places }' in APPS_JS

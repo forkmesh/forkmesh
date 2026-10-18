@@ -323,8 +323,9 @@ def _catalog_delete_handler(
         "clean_string": _clean_string,
         "_authed_account_name": (
             lambda env, request: _text_result(session_actor)),
-        "_account_owns_node": (
-            lambda env, actor, owner: _bool_result(session_owns)),
+        "_repo_admin_allowed": (
+            lambda env, actor, owner, repo: _bool_result(session_owns)),
+        "_org_repo_node": lambda env, owner, repo: _text_result(""),
         "Date": _Date,
         "LOGIN_MAX_SKEW_MS": 300_000,
         "blind_index": lambda env, value: _text_result("bi:" + value),

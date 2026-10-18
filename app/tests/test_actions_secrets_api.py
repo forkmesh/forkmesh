@@ -6,6 +6,8 @@ import re
 import sqlite3
 import sys
 
+from _org_repo_admin_stubs import REPO_ADMIN_FUNCTIONS, entry_functions
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -30,6 +32,10 @@ def load():
     db.execute("CREATE TABLE org_repos (org_bi TEXT, repo TEXT, "
                "node_owner TEXT)")
     db.execute("INSERT INTO org_repos VALUES ('org:acme','site','forkmesh')")
+    db.execute("CREATE TABLE org_teams (org_bi TEXT, team TEXT, "
+               "permission TEXT)")
+    db.execute("CREATE TABLE org_team_members (org_bi TEXT, team TEXT, "
+               "member_bi TEXT)")
     roles = {("org:acme", "ada"): "admin", ("org:acme", "bob"): "member"}
     audits = []
 
@@ -71,7 +77,12 @@ def load():
     async def encrypt(_env, value):
         return "sealed:" + json.dumps(value)
 
+    repo_admin = entry_functions(
+        [name for name in REPO_ADMIN_FUNCTIONS if name != "_org_role"], {
+            "d1_all": d1_all, "_org_role": org_role,
+            "_account_owns_node": owns})
     module._bind_runtime({
+        "_repo_admin_allowed": repo_admin["_repo_admin_allowed"],
         "json_response": lambda data, status=200, **_: {
             "status": status, "data": data},
         "method_name": lambda request: request.method,

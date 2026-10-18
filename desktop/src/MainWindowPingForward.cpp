@@ -78,6 +78,7 @@ QString MainWindow::forwardPingToPhones(const AppNotification &item)
     source.kind = item.kind;
     source.linkKind = item.link.kind;
     source.linkNumber = item.link.number;
+    source.runId = item.runId;
     source.repo = item.repo;
     source.warning = item.warning;
     source.title = item.title;

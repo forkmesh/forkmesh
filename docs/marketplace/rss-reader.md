@@ -109,12 +109,24 @@ unread count.
   when reader view finds no text. On phones the ForkMesh shell header and
   navigation stay hidden from feeds through the timeline and article detail;
   a horizontal swipe moves the full article page to the previous or next
-  article. On iOS a swipe that starts sideways locks the page's vertical
-  scroll until the finger lifts, so the page slides one way only (a pan on
-  the web view that the scroll view's pan waits on). The swipe follows the
-  finger from the first movement and changes article past about a fifth of
-  the width (Android: 72 dp) or on a flick, springing back otherwise and
-  resisting at the first or last article. Vertical scrolling never moves the
+  article, and a tap on the right half of the page goes to the next article
+  and on the left half to the previous one. A tap on a link, button or
+  player, on selected text, or one that stops a scroll does not turn the
+  page (iOS asks the page what sits under the finger from the app's own
+  script world, since page JavaScript is off, and falls back to waiting
+  0.3 s for a link to open; Android waits 200 ms and checks the WebView hit
+  test and whether a link opened). On iOS a swipe that starts sideways locks
+  the page's vertical scroll until the finger lifts, so the page slides one
+  way only (a pan on the pager that every page's scroll view waits on). The
+  iOS pager keeps the previous and next articles loaded in their own web
+  views beside the current one, so the neighbouring page slides in with the
+  finger already drawn instead of loading after the swipe; a release springs
+  on from the finger's speed, and a new swipe or tap during the slide
+  finishes it at once. Toolbar arrows and Next Unread slide the same way. The
+  swipe follows the finger from the first movement and changes article past
+  about a sixth of the width (at least 50 pt; Android: 72 dp) or on a flick,
+  springing back otherwise and resisting at the first or last article; a
+  zoomed-in page pans instead of swiping. Vertical scrolling never moves the
   page sideways. On iOS, while the page is not zoomed, horizontal bounce is
   off and the horizontal offset is pinned. Android picks the direction after
   4 dp, freezes the horizontal position while scrolling, turns zoom off and

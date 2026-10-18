@@ -1339,6 +1339,7 @@ smtp_mail = _LazyModule("smtp_mail")
 mail_providers = _LazyModule("mail_providers")
 instance_features = _LazyModule("instance_features")
 instance_pages = _LazyModule("instance_pages")
+instance_legal = _LazyModule("instance_legal")
 instance_theme = _LazyModule("instance_theme")
 mail_tracking = _LazyModule("mail_tracking")
 marketing_email = _LazyModule("marketing_email")
@@ -3418,6 +3419,7 @@ async def _apns_ping_alert(env, record):
     if record.get("kind") == "desktop_ping" and isinstance(meta, dict):
         alert["category"] = clean_string(meta.get("category", ""), 40)
         alert["sessionId"] = clean_string(meta.get("sessionId", ""), 12)
+        alert["runId"] = clean_string(meta.get("runId", ""), 12)
         alert["alarm"] = clean_string(meta.get("alarm", ""), 20)
     return alert
 
@@ -16271,6 +16273,48 @@ def _committed_repository_logo_url(record, owner, repo):
     )
 
 
+_COMMITTED_LOGO_PROBES = {}
+_COMMITTED_LOGO_PROBE_LIMIT = 512
+
+
+def _repository_root_listing(record):
+    source = record if isinstance(record, dict) else {}
+    metadata = source.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = source.get("logoMetadata")
+    listed = metadata.get("fileStructure") if isinstance(
+        metadata, dict) else None
+    return listed if isinstance(listed, list) else []
+
+
+async def _verified_committed_logo_url(env, request, record, owner, repo,
+                                       url):
+    if not url or _repository_root_listing(record):
+        return url
+    commit = clean_string((record or {}).get("commit", ""), 64).lower()
+    key = (str(owner or "").lower(), str(repo or "").lower(), commit)
+    if key in _COMMITTED_LOGO_PROBES:
+        return url if _COMMITTED_LOGO_PROBES[key] else ""
+    try:
+        import directory_about
+        directory_about._bind_runtime(globals())
+        status, data = await directory_about.read_blobs(
+            env, request, owner, repo, ["logo.png"], commit, False)
+    except Exception:
+        return url
+    if status == 200:
+        found = isinstance(((data or {}).get("blobs") or {}).get("logo.png"),
+                           dict)
+    elif status == 404:
+        found = False
+    else:
+        return url
+    while len(_COMMITTED_LOGO_PROBES) >= _COMMITTED_LOGO_PROBE_LIMIT:
+        del _COMMITTED_LOGO_PROBES[next(iter(_COMMITTED_LOGO_PROBES))]
+    _COMMITTED_LOGO_PROBES[key] = found
+    return url if found else ""
+
+
 # A repository's social header belongs to the repository, so it ships inside
 # it: `.forkmesh/banner.png`, alongside the rest of a project's ForkMesh
 # metadata. Nothing here falls back to the ForkMesh brand banner — that image
@@ -16447,10 +16491,13 @@ async def native_repository_logo_handler(
         # flagship repo lost its profile picture (adhoc #122).
         committed_logo_url = (
             "" if logo_url
-            else _committed_repository_logo_url(
-                record,
-                await _public_repository_owner(env, request, owner, repo),
-                repo))
+            else await _verified_committed_logo_url(
+                env, request, record, owner, repo,
+                _committed_repository_logo_url(
+                    record,
+                    await _public_repository_owner(
+                        env, request, owner, repo),
+                    repo)))
         params = parse_qs(urlparse(request.url).query)
         if params.get("image", [""])[0] == "1":
             if logo_url or committed_logo_url:
@@ -16500,7 +16547,7 @@ async def native_repository_logo_handler(
             candidate
             and (
                 await _repository_import_moderator(env, candidate)
-                or await _account_owns_node(env, candidate, owner)
+                or await _repo_admin_allowed(env, candidate, owner, repo)
             )
         )
 
@@ -16778,8 +16825,7 @@ async def repo_about_handler(env, request, owner, repo):
             owner_key_authed = True
     if not actor or (
             not owner_key_authed
-            and not await _account_owns_node(env, actor, owner)
-            and not await _org_owner_of_linked_repo(env, owner, repo, actor)):
+            and not await _repo_admin_allowed(env, actor, owner, repo)):
         return json_response({"error": "not_authorized"}, status=403)
     if not await _owner_pubkey(env, owner):
         return json_response({"error": "account_required"}, status=403)
@@ -27954,6 +28000,63 @@ async def _org_owner_of_linked_repo(env, node, repo, actor):
         return False
 
 
+async def _org_linked_repo_permission(env, node, repo, actor):
+    if not node or not repo or not actor:
+        return ""
+    try:
+        rows = await d1_all(
+            env, "SELECT org_bi FROM org_repos WHERE node_owner=? AND repo=?",
+            str(node).lower(), str(repo).lower())
+        best = ""
+        for row in rows or []:
+            perm = await _org_permission(
+                env, str(row.get("org_bi") or ""), str(actor).lower())
+            if team_permission_rank(perm) > team_permission_rank(best):
+                best = perm
+        return best
+    except Exception:
+        return ""
+
+
+async def _org_admin_of_linked_repo(env, node, repo, actor):
+    return await _org_linked_repo_permission(
+        env, node, repo, actor) == "admin"
+
+
+async def _repo_admin_allowed(env, actor, node, repo):
+    actor = str(actor or "").strip().lower()
+    node = str(node or "").strip().lower()
+    if not actor or not node or not repo:
+        return False
+    if await _account_owns_node(env, actor, node):
+        return True
+    return await _org_admin_of_linked_repo(env, node, repo, actor)
+
+
+async def repo_viewer_permission_handler(env, request, owner, repo):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control="no-store")
+    await ensure_schema(env)
+    actor = clean_string(
+        await _authed_account_name(env, request) or "",
+        MAX_NODE_NAME).strip().lower()
+    permission = ""
+    if actor:
+        if await _account_owns_node(env, actor, owner):
+            permission = "admin"
+        else:
+            permission = await _org_linked_repo_permission(
+                env, owner, repo, actor)
+    return json_response({
+        "ok": True,
+        "viewer": actor,
+        "permission": permission,
+        "viewerCanAdmin": permission == "admin",
+    }, cache_control="private, no-store")
+
+
 async def verify_org_push_token(env, pusher, owner, repo, ts, sig):
     # Org-team write gate for git push (issue #388): a member of an org team
     # with write+ permission on a linked repo may run receive-pack against it,
@@ -35805,9 +35908,7 @@ async def _authorize_repo_owner_web(env, request, owner, repo, data):
     the same trust gate as the About editor / ap-publish, with a distinct
     canonical so a signed token can't be replayed onto another endpoint."""
     actor = await _authed_account_name(env, request, data)
-    if actor and (
-            await _account_owns_node(env, actor, owner)
-            or await _org_owner_of_linked_repo(env, owner, repo, actor)):
+    if actor and await _repo_admin_allowed(env, actor, owner, repo):
         return True
     if data.get("ownerSig") and data.get("ts"):
         ts = str(data.get("ts", "") or "")
@@ -38605,29 +38706,21 @@ def _push_alert_item(it, aliases=None, avatars=None):
         # guessing which inbox row woke the phone. Same address the digest
         # email links to: the numbered record when the ping names one, else
         # the site path the ping stored for itself.
-        "href": ((item_path + _notification_code_push_tail(
+        "href": ((item_path + _notification_stored_tail(
                      it, stored_repo, number)) if item_path
                  else _notification_stored_path(it.get("href", ""))),
     }
 
 
-def _notification_code_push_tail(it, stored_repo, number=0):
-    """The "/commits/<branch>" a code-push ping stored after its repo path.
-
-    Every other kind lands on the repository (or its numbered record) by the
-    display identity; a code push lands on the branch that moved, so its
-    tail is kept while the owner/repo prefix is still rewritten to the public
-    identity — an alias-fronted push must not name its backing node.
-    """
-    if number > 0 or clean_string(
-            (it or {}).get("kind", ""), 60) != "code_push":
+def _notification_stored_tail(it, stored_repo, number=0):
+    if number > 0:
         return ""
     href = _notification_stored_path((it or {}).get("href", ""))
     owner, _, name = (stored_repo or "").partition("/")
     if not href or not owner or not name:
         return ""
     prefix = "/" + quote(owner, safe="") + "/" + quote(name, safe="")
-    if not href.lower().startswith(prefix.lower() + "/commits"):
+    if not href.lower().startswith(prefix.lower() + "/"):
         return ""
     tail = href[len(prefix):]
     return tail if NOTIFICATION_HREF_RE.match(tail) else ""
@@ -38679,8 +38772,9 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
     segment, number = _notification_item_record(it, repo)
     # The record path when the ping names one, else whatever exact
     # address it recorded for itself.
-    path = (_notification_item_path(repo, segment, number)
-            or _notification_stored_path(it.get("href", "")))
+    path = _notification_item_path(repo, segment, number)
+    path = ((path + _notification_stored_tail(it, stored_repo, number))
+            if path else _notification_stored_path(it.get("href", "")))
     url = _notification_item_url(base_url, path)
     when = _format_email_ts(it.get("ts"))
     # "[owner/repo] #42 Title", falling back gracefully as each piece is
@@ -39421,6 +39515,15 @@ async def _authorized_mirror_issue_signing_key(env, request, owner, repo):
             safe_segment(original.group(1)) if original else owner)
         public_repo = (
             safe_segment(original.group(2)) if original else repo)
+        backing_owner = str(owner or "").strip().lower()
+        if (
+            str(public_owner or "").lower() != backing_owner
+            and str(public_repo or "").lower()
+            == str(repo or "").strip().lower()
+            and await _org_repo_node(env, public_owner, public_repo)
+            == backing_owner
+        ):
+            public_owner, public_repo = backing_owner, repo
         flagship_owner = (
             await _org_repo_node(env, "forkmesh", "forkmesh")
             or "forkmesh"
@@ -50994,9 +51097,14 @@ async def _https_mirror_proxy(
                 proof_details.get("refsSha256") or "").lower()
             lagging_refs_endpoints.setdefault(lagging_digest, {})[
                 str(endpoint.get("node") or "").lower()] = endpoint
+            admit_actions_push = globals().get("_actions_push_admitted")
             if not https_routing.mismatch_is_servable(
                     operation, endpoint.get("node"), proof_details,
-                    lagging_refs_quorum):
+                    lagging_refs_quorum) and not (
+                        not monitoring and callable(admit_actions_push)
+                        and await admit_actions_push(
+                            env, context, endpoint, operation,
+                            proof_details)):
                 if probe_quarantine is not None:
                     probe_quarantine.add(
                         str(endpoint.get("node") or "").lower())
@@ -51591,6 +51699,13 @@ async def _admit_core_push_state(env, owner, repo, endpoint, alias=""):
         state = await _record_core_push_state(env, context, endpoint, alias)
     except Exception:
         state = ""
+    if state:
+        try:
+            await record_hosted_push_state(
+                env, context["owner"], context["repo"], endpoint,
+                state=state, notify=False)
+        except Exception:
+            pass
     generation = int(Date.now()) if state else 0
     try:
         scheduled = await schedule_repo_mirror_wake(
@@ -51603,6 +51718,34 @@ async def _admit_core_push_state(env, owner, repo, endpoint, alias=""):
     except Exception:
         pass
     return state
+
+
+async def _actions_push_admitted(env, context, endpoint, operation, details):
+    if operation == "git-receive-pack":
+        return False
+    lagging = https_routing.signed_refs_lag(operation, details)
+    node = str((endpoint or {}).get("node") or "").strip().lower()
+    owner = str(context.get("owner") or "").strip().lower()
+    cores = _core_push_nodes(env)
+    if not lagging or not node or node not in cores or owner not in cores:
+        return False
+    try:
+        import runner_actions
+        import runner_leases
+        runner_leases._bind_runtime(globals())
+        if not await runner_actions.pushing(
+                runner_leases.WorkerRuntime(env, None), owner,
+                context["repo"], node):
+            return False
+    except Exception:
+        return False
+    try:
+        state = await _admit_core_push_state(
+            env, owner, context["repo"], endpoint,
+            alias=str(context.get("routeOwner") or ""))
+    except Exception:
+        return False
+    return bool(state)
 
 
 async def _record_core_push_state(env, context, endpoint, alias):
