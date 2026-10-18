@@ -240,7 +240,11 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   `branchCount`, `commitCount`, `rootCommit`, `sizeBytes`, state history),
   and `core_push.record_accepted_push` with the ref updates (default branch
   first, 40 listed): one `git.push` audit row per ref, and, unless
-  `--no-hooks`, the push webhooks, code-push ping and Actions queue.
+  `--no-hooks`, the push webhooks, code-push ping and Actions queue. An
+  import that creates the default branch queues one Actions push job, for
+  that branch only (the rule is in
+  [server/instance-actions.md](server/instance-actions.md#queue-lease-report));
+  before this rule an import queued one job per branch.
 - **Idempotent.** A second run finds the `hosted_repos` row and only moves
   refs; with nothing new it records nothing (`refsUpdated: 0`). A repository
   that exists under another organization, or a catalog name a node
