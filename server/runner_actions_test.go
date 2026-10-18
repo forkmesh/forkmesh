@@ -559,7 +559,8 @@ func TestRunnerActionsReportsProgressWhileRunning(t *testing.T) {
 	io.WriteString(live, "==> Step 1/1: build\n")
 	stop, done := make(chan struct{}), make(chan struct{})
 	job := runnerActionsJob{JobID: 4, LeaseID: "l", catalog: []runnerActionsCatalogEntry{{Path: ".forkmesh/ci.yml", Name: "CI"}}}
-	go a.tickReports(context.Background(), job, []*runnerActionsRun{run}, "c", run, live, stop, done)
+	cancelled := false
+	go a.tickReports(context.Background(), func() { cancelled = true }, job, []*runnerActionsRun{run}, "c", run, live, stop, done)
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		mu.Lock()
@@ -581,6 +582,107 @@ func TestRunnerActionsReportsProgressWhileRunning(t *testing.T) {
 		!strings.Contains(first["log"].(string), "Step 1/1") || !strings.Contains(first["logTail"].(string), "Step 1/1") ||
 		len(bodies[0]["catalog"].([]any)) != 1 {
 		t.Fatalf("progress %v", bodies[0])
+	}
+	if _, resent := bodies[1]["runs"].([]any)[0].(map[string]any)["log"]; resent || cancelled {
+		t.Fatalf("an unchanged log must not be sent again: %v", bodies[1])
+	}
+}
+
+func TestRunnerActionsStopsWhenTheAppCancels(t *testing.T) {
+	a := newTestRunnerActions(t)
+	a.tick = 5 * time.Millisecond
+	a.post = func(context.Context, []byte) (int, []byte, error) {
+		return 200, []byte(`{"ok":true,"cancel":true}`), nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	run := &runnerActionsRun{Workflow: "CI", Status: actionRunning}
+	stop, done := make(chan struct{}), make(chan struct{})
+	go a.tickReports(ctx, cancel, runnerActionsJob{JobID: 5, LeaseID: "l"}, []*runnerActionsRun{run}, "c", run,
+		&runnerActionsLog{}, stop, done)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("progress reports did not stop")
+	}
+	if ctx.Err() == nil {
+		t.Fatal("cancel: true must cancel the job")
+	}
+	if !a.report(context.Background(), runnerActionsJob{JobID: 5, LeaseID: "l"}, "running", nil, "", "") {
+		t.Fatal("report must return the cancel answer")
+	}
+
+	files := map[string]string{".forkmesh/t.yml": "on: [push]\nsteps:\n  - name: slow\n    run: sleep 60\n  - name: after\n    if: always()\n    run: echo after\n"}
+	repo := newRunnerActionsTestRepo(t)
+	repo.commit(files)
+	cache := filepath.Join(repo.dir, ".git")
+	b := newTestRunnerActions(t)
+	runCtx, stopRun := context.WithCancel(context.Background())
+	var calls int
+	b.step = func(stepCtx context.Context, _ string, _ []string, _ string, _ io.Writer) (int, error) {
+		calls++
+		stopRun()
+		<-stepCtx.Done()
+		return -1, nil
+	}
+	runs, commit, _, _ := b.plan(context.Background(), cache, runnerActionsJob{Branch: "main"})
+	live := &runnerActionsLog{}
+	status := b.runWorkflow(runCtx, runnerActionsJob{JobID: 6, RepositoryOwner: "alice", RepositoryName: "proj",
+		Branch: "main", CloneURL: "https://core1.test/v1/runner/alice/proj.git"}, cache, &sync.Mutex{}, commit, 0, runs[0], live)
+	if status != actionCancelled || calls != 1 || !strings.Contains(live.String(), "Cancelled.") {
+		t.Fatalf("status %s calls %d\n%s", status, calls, live.String())
+	}
+}
+
+func TestRunnerActionsReportBodyCarriesPathsAndBoundsLogs(t *testing.T) {
+	a := newTestRunnerActions(t)
+	big := strings.Repeat("x", 3<<20)
+	runs := []*runnerActionsRun{
+		{Workflow: "Old", WorkflowPath: ".forkmesh/old.yml", StartedAt: 1, Log: big},
+		{Workflow: "Mid", WorkflowPath: ".forkmesh/mid.yml", StartedAt: 2, Log: big},
+		{Workflow: "New", WorkflowPath: ".forkmesh/new.yml", StartedAt: 3, Log: big},
+		{Workflow: "Same", WorkflowPath: ".forkmesh/same.yml", StartedAt: 4, Log: "done", sentLog: "done"},
+	}
+	body, sent, err := a.reportBody(runnerActionsJob{JobID: 1, LeaseID: "l"}, "running", runs, "c", "")
+	if err != nil || len(body) > 8<<20 {
+		t.Fatalf("body %d %v", len(body), err)
+	}
+	var decoded struct {
+		Runs []map[string]any `json:"runs"`
+	}
+	_ = json.Unmarshal(body, &decoded)
+	var withLog []string
+	for _, run := range decoded.Runs {
+		if run["workflowPath"] == "" {
+			t.Fatalf("run without workflowPath %v", run["workflow"])
+		}
+		if _, ok := run["log"]; ok {
+			withLog = append(withLog, run["workflow"].(string))
+		}
+	}
+	if strings.Join(withLog, ",") != "Mid,New" || len(sent) != 2 {
+		t.Fatalf("logs sent for %v", withLog)
+	}
+	markRunnerActionsLogsSent(sent)
+	_, sent, _ = a.reportBody(runnerActionsJob{JobID: 1, LeaseID: "l"}, "completed", runs, "c", "")
+	if len(sent) != 1 || sent[0].run != runs[0] {
+		t.Fatalf("the dropped log must follow in the next report: %v", sent)
+	}
+}
+
+func TestRunnerActionsPushJobNamingAWorkflowRunsOnlyThatOne(t *testing.T) {
+	repo := newRunnerActionsTestRepo(t)
+	repo.commit(map[string]string{
+		".forkmesh/a.yml": "name: A\non:\n  push:\n    paths: [\"nothing/**\"]\nsteps:\n  - run: echo a\n",
+		".forkmesh/b.yml": "name: B\non: push\nsteps:\n  - run: echo b\n",
+	})
+	first := repo.git("rev-parse", "HEAD")
+	repo.commit(map[string]string{"x.txt": "x\n"})
+	a := newTestRunnerActions(t)
+	runs, _, _, problem := a.plan(context.Background(), filepath.Join(repo.dir, ".git"),
+		runnerActionsJob{Branch: "main", Before: first, Workflow: ".forkmesh/a.yml"})
+	if problem != "" || len(runs) != 1 || runs[0].Workflow != "A" || runs[0].WorkflowPath != ".forkmesh/a.yml" {
+		t.Fatalf("re-run plan %q %+v", problem, runs)
 	}
 }
 
