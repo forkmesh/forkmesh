@@ -1054,7 +1054,7 @@
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 
-  async function submitRemotePullOpen(repo, remote, title, body, base, head) {
+  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "") {
     const origin = String(remote?.origin || "").toLowerCase();
     const owner = String(remote?.owner || "");
     const name = String(remote?.name || "");
@@ -1062,7 +1062,7 @@
       throw new Error("invalid_remote_fork");
     }
     const signedHead = `${location.host}/${repoDisplayKey(repo)}:${head}`;
-    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead);
+    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase);
     let response;
     try {
       response = await fetch(`${origin}/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls`, {
@@ -1088,7 +1088,7 @@
     return { ...data, pull, remote };
   }
 
-  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead) {
+  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "") {
     // The comparison is the first thing that can fail, and it fails BEFORE
     // anything is signed or sent - a mirror answers 404 for a branch name it
     // cannot resolve yet, which is the common case for a branch that was just
@@ -1099,7 +1099,7 @@
     let comparison;
     try {
       comparison = await fetchRepoJson(repoLiveUrl(repo, "compare", {
-        base,
+        base: compareBase || base,
         head,
         ref: "",
       }));

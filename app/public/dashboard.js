@@ -3388,7 +3388,7 @@
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 
-  async function submitRemotePullOpen(repo, remote, title, body, base, head) {
+  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "") {
     const origin = String(remote?.origin || "").toLowerCase();
     const owner = String(remote?.owner || "");
     const name = String(remote?.name || "");
@@ -3396,7 +3396,7 @@
       throw new Error("invalid_remote_fork");
     }
     const signedHead = `${location.host}/${repoDisplayKey(repo)}:${head}`;
-    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead);
+    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase);
     let response;
     try {
       response = await fetch(`${origin}/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls`, {
@@ -3422,7 +3422,7 @@
     return { ...data, pull, remote };
   }
 
-  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead) {
+  async function signWebPull(repo, signingRepo, title, body, base, head, signedHead, compareBase = "") {
     // The comparison is the first thing that can fail, and it fails BEFORE
     // anything is signed or sent - a mirror answers 404 for a branch name it
     // cannot resolve yet, which is the common case for a branch that was just
@@ -3433,7 +3433,7 @@
     let comparison;
     try {
       comparison = await fetchRepoJson(repoLiveUrl(repo, "compare", {
-        base,
+        base: compareBase || base,
         head,
         ref: "",
       }));
@@ -35690,6 +35690,10 @@
       : webPullSubmitErrorText(error, base, head, where);
   }
 
+  function pullBatchCompareBase(row) {
+    return Array.isArray(row?.dependsOn) && row.dependsOn.length === 1 ? row.dependsOn[0] : "";
+  }
+
   async function runPullBatch(batch, { send = submitRemotePullOpen, onChange = () => {} } = {}) {
     const { repo, remote } = batch;
     batch.running = true;
@@ -35712,7 +35716,7 @@
         batch.sending = row.branch;
         onChange(batch);
         try {
-          const result = await send(repo, remote, row.title, pullBatchBody(row.body, step.numbers), row.base, row.branch);
+          const result = await send(repo, remote, row.title, pullBatchBody(row.body, step.numbers), row.base, row.branch, pullBatchCompareBase(row));
           const number = Number(result?.number || 0);
           if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
           batch.sent = { ...batch.sent, [row.branch]: { number, at: Date.now() } };
@@ -36003,7 +36007,7 @@
         </div>
         <header class="grid gap-1">
           <h2 class="text-[20px] font-semibold leading-8 text-foreground">Send pull requests</h2>
-          <p class="text-[13px] text-muted-foreground">Each branch becomes its own pull request on the fork you pick: compared with its base here, signed in this browser and sent in order. Pull requests already sent to that fork are skipped, so you can press Send all again to finish.</p>
+          <p class="text-[13px] text-muted-foreground">Each branch becomes its own pull request on the fork you pick: compared with the branch it depends on (or its base), so it carries only its own commits, then signed in this browser and sent in order. Pull requests already sent to that fork are skipped, so you can press Send all again to finish.</p>
           <p class="text-[12px] text-muted-foreground">${fileLine}</p>
         </header>
         <div class="grid gap-3 sm:grid-cols-2">
