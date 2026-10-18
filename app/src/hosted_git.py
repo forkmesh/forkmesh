@@ -959,7 +959,7 @@ async def core_repository_target(env, runtime, actor, owner, name,
                     "maintain permission there."), None
         if await d1_first(
                 env, "SELECT 1 AS one FROM org_repos WHERE org_bi=? AND repo=?",
-                org_bi, name):
+                org_bi, name.lower()):
             return ("repository_exists", 409, ""), None
         count_row = await d1_first(
             env, "SELECT COUNT(*) AS n FROM org_repos WHERE org_bi=?", org_bi)

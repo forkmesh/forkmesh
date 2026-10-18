@@ -88,6 +88,16 @@ The repository is stored under the creator's namespace, linked in `org_repos`
 so `/<org>/<name>` works, and pushes use organization roles (write or better;
 private reads need read or better).
 
+`org_repos.repo` is always the lowercase name: every reader (the git and API
+alias rewrite, org read and push permissions) looks it up lowercased, and the
+organization link endpoint stores it that way. Hosted creation used to store
+the name as typed, so a mixed-case repository such as `Bolt` had a link no
+lookup could find: `/<org>/Bolt.git` and the short `/Bolt.git` answered
+`not_found` and organization members other than the creator could not push.
+`link_organization` now stores the lowercase name and renames an existing
+mixed-case link of the same repository, and re-running `instance-repo` on an
+existing repository relinks it, which repairs a link written before the fix.
+
 ### Imports
 
 The primary fetches heads and tags from an allowed `https` host (no
