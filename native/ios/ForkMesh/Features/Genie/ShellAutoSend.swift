@@ -22,6 +22,7 @@ final class ShellAutoSend {
     @ObservationIgnored private let pace: GenieAutoSendPace
     @ObservationIgnored private(set) var skipped: Set<String> = []
     @ObservationIgnored private var queue: [GenieAutoSendReceipt] = []
+    @ObservationIgnored private let status: ShellMailStatus = ShellMailStatus.shared
 
     init(prefs: KeyValueStore? = Services.get(KeyValueStore.self)) {
         pace = GenieAutoSendPace(store: prefs)
@@ -33,10 +34,10 @@ final class ShellAutoSend {
         setOn(!on)
         if on {
             FmHaptics.impact(.heavy)
-            GenieHub.shared.show(line: "Auto-send is on: sending the first email now, then up to \(GenieAutoSendPace.perDay) a day through Zoho Mail, one about every \(Int((GenieAutoSendPace.every / 60).rounded())) minutes while the app is open. Long-press the picture to stop.")
+            status.say("Auto-send is on: sending the first email now, then up to \(GenieAutoSendPace.perDay) a day through Zoho Mail, one about every \(Int((GenieAutoSendPace.every / 60).rounded())) minutes while the app is open. Long-press the picture to stop.")
         } else {
             FmHaptics.success()
-            GenieHub.shared.show(line: "Auto-send is off. \(sentToday == 1 ? "1 email" : "\(sentToday) emails") sent today.")
+            status.say("Auto-send is off. \(sentToday == 1 ? "1 email" : "\(sentToday) emails") sent today.")
         }
     }
 
@@ -74,14 +75,21 @@ final class ShellAutoSend {
             return
         }
         sending = true
-        defer { sending = false }
+        defer {
+            sending = false
+            status.finish()
+        }
         for _ in 0..<ShellAutoSend.tries {
             guard on else { return }
+            status.set(.finding)
             guard let pick: GenieOutreachPick = await toolbox.outreachBest(skip: skipped, only: .email, zohoOnly: true) else {
                 pause("Nobody is left to email in a CRM with Zoho Mail connected.")
                 return
             }
-            switch await toolbox.outreachAutoSend(pick, writers: GenieFeature.outreachWriters()) {
+            let outcome: GenieAutoSendOutcome = await toolbox.outreachAutoSend(pick, writers: GenieFeature.outreachWriters()) {
+                [status] (stage: GenieAutoSendStage) in status.set(stage)
+            }
+            switch outcome {
             case .sent(let receipt):
                 skipped.insert(pick.contact.id)
                 pace.sent(at: Date())
@@ -102,6 +110,10 @@ final class ShellAutoSend {
         } else {
             pace.held(at: Date())
         }
+    }
+
+    func countdown(now: Date) -> DateInterval? {
+        sending ? nil : pace.countdown(now: now)
     }
 
     func next() {
@@ -135,6 +147,6 @@ final class ShellAutoSend {
         guard pausedFor != reason else { return }
         pausedFor = reason
         FmHaptics.warning()
-        GenieHub.shared.show(line: "Auto-send is waiting: \(reason)")
+        status.say("Auto-send is waiting: \(reason)", isError: true)
     }
 }
