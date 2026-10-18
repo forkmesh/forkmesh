@@ -19,6 +19,34 @@ extension DjStudioModel {
             + crate.tracks.filter { !played.contains($0.id) }.reversed()
     }
 
+    func refreshSmart() {
+        crate.categorize(librarySongs, library: library, now: Date().timeIntervalSince1970)
+    }
+
+    func similarSongs(_ side: DjDeckSide) -> [DjSimilarSong] {
+        let deck = deck(side)
+        guard deck.loaded else { return [] }
+        let loaded = Set([a, b].map(\.videoId))
+        return DjSmart.similar(to: song(deck.videoId), among: librarySongs.filter { !loaded.contains($0.id) }, playlists: crate.playlists)
+    }
+
+    func toggleShuffle(_ id: String) {
+        let track = song(id)
+        let on = !crate.shuffles(id)
+        guard crate.setShuffles(id, on, title: track.title, author: track.author) else {
+            show("The library is full: remove a song first.")
+            return
+        }
+        saveCrate()
+        let name = track.title.isEmpty ? "This song" : track.title
+        show(on ? "\(name) is back in the shuffle." : "\(name) will not come up in shuffle.")
+    }
+
+    func saveSmart(_ id: String) {
+        guard let list = crate.smartList(id) else { return }
+        newPlaylist(list.name, with: list.songs.map(\.id))
+    }
+
     func editSong(_ id: String) {
         guard DjStudio.isVideoId(id) else { return }
         sheet = .song(id)

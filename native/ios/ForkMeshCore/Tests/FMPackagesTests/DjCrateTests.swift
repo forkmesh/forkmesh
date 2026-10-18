@@ -241,4 +241,35 @@ final class DjCrateTests: XCTestCase {
         XCTAssertEqual(crate.fileName(.tag("deep house")), "Tag deep house")
         XCTAssertEqual(crate.fileName(.everything), "DJ Playlists")
     }
+
+    func testDontShuffleSongsAreLeftOutOfShuffledPicksButPlayInOrder() throws {
+        var crate = DjCrate()
+        crate.createPlaylist("Set", id: "p")
+        crate.add([DjTrack(id: one), DjTrack(id: two), DjTrack(id: three)], to: "p")
+        XCTAssertTrue(crate.setShuffles(two, false))
+        XCTAssertTrue(crate.setShuffles(four, false, title: "Saved"))
+        XCTAssertEqual(crate.track(four)?.title, "Saved")
+        XCTAssertFalse(crate.shuffles(two))
+        XCTAssertEqual(crate.unshuffled, [two, four])
+        let library = [DjPlayedSong(id: one, title: "", author: ""), DjPlayedSong(id: two, title: "", author: "")]
+        XCTAssertEqual(Set(crate.pool(library).map(\.id)), [one, three])
+        for seed in 0..<20 as Range<UInt64> {
+            XCTAssertNotEqual(crate.next(library, loaded: [], playing: [], seed: seed)?.id, two)
+        }
+        crate.setFocus(.playlist("p"))
+        crate.shuffle = false
+        XCTAssertEqual(crate.pool([]).map(\.id), [one, two, three])
+        XCTAssertEqual(crate.next([], loaded: [one], playing: [], seed: 0)?.id, two)
+        let saved = DjCrate.decode(crate.encoded())
+        XCTAssertEqual(saved.unshuffled, [two, four])
+        let exported = try XCTUnwrap(String(data: crate.exported(.everything), encoding: .utf8))
+        XCTAssertEqual(exported.components(separatedBy: "noShuffle").count - 1, 2)
+        var other = DjCrate()
+        other.merge(try XCTUnwrap(DjCrate.parse(crate.exported(.everything))), name: "In")
+        XCTAssertEqual(other.unshuffled, [two, four])
+        XCTAssertTrue(crate.setShuffles(two, true))
+        XCTAssertTrue(crate.shuffles(two))
+        crate.removeTrack(four)
+        XCTAssertTrue(crate.unshuffled.isEmpty)
+    }
 }

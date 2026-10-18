@@ -241,6 +241,7 @@ BI_COLUMNS = {
     "mirror_https_endpoints": ("node_bi",),
     "mirror_repository_integrity": ("repo_bi", "node_bi"),
     "nodes": ("node_bi", "user_bi"),
+    "note_events": ("actor_bi",),
     "note_shares": ("principal_bi", "added_by_bi"),
     "note_versions": ("author_bi",),
     "notes": ("owner_bi",),
@@ -305,6 +306,7 @@ BI_COLUMNS = {
     "repo_alert_settings": ("repo_bi",),
     "repo_deletions": ("repo_bi", "owner_bi"),
     "repo_device_mirrors": ("repo_bi",),
+    "repo_feature_settings": ("repo_bi",),
     "repo_first_hosted": ("repo_bi",),
     "repo_forks": ("parent_bi", "fork_bi", "account_bi"),
     "repo_media": ("repo_bi",),
@@ -464,7 +466,7 @@ BI_PREFIXES = (
     "ap-context:", "ap-comment:", "ap-digest:", "audit:database_request:",
     "reward-operator:", "reward-recipient:", "ssh-public-key:",
     "private-repo-device:", "admin-signup-referral-code-v1:",
-    "repo-alert-settings:", "ap-repo-settings:", "remote-fork-url:", "issue-inbox-claim:",
+    "repo-alert-settings:", "repo-feature-settings:", "ap-repo-settings:", "remote-fork-url:", "issue-inbox-claim:",
     "collaboration-inbox-claim:discussion_inbox:",
     "collaboration-inbox-claim:pull_inbox:",
     "password-reset-requester-v1\n", "agent-guestbook-rate-v1\n",
@@ -472,7 +474,7 @@ BI_PREFIXES = (
     "ap-actor:org:",
 )
 # "<owner>/<repo>" families.
-REPO_PREFIXES = ("", "repo-alert-settings:", "ap-repo-settings:", "ap-digest:", "remote-forks:")
+REPO_PREFIXES = ("", "repo-alert-settings:", "repo-feature-settings:", "ap-repo-settings:", "ap-digest:", "remote-forks:")
 # Families whose argument embeds another blind index.
 NESTED_PREFIXES = (
     "password-change-v1\n", "password-reset-account-v1\n", "login-source:",

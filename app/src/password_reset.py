@@ -1,5 +1,9 @@
 """Request-lazy password-reset abuse controls and first-step handler."""
 
+import hmac
+import re
+import secrets
+
 
 def _bind_runtime(runtime):
     namespace = globals()
@@ -90,9 +94,12 @@ async def _account_forgot_password(env, request):
         return json_response({"error": "invalid_json"}, status=400)
     # Turnstile first (turnstile.py): its refusal says nothing about whether
     # the identifier exists, so the opaque {"ok": true} contract holds.
-    refused = await _turnstile_gate(
-        env, request, data, _turnstile.ACTION_PASSWORD_RESET,
-        "/forgot-password")
+    if isinstance(data, dict) and data.get(_turnstile.BACKUP_FIELD):
+        refused = await _password_reset_backup_gate(env, request, data)
+    else:
+        refused = await _turnstile_gate(
+            env, request, data, _turnstile.ACTION_PASSWORD_RESET,
+            "/forgot-password")
     if refused is not None:
         return refused
     identifier = clean_string(
@@ -131,6 +138,71 @@ async def _account_forgot_password(env, request):
     return json_response(
         {"ok": True},
         cache_control="no-store, max-age=0, must-revalidate")
+
+
+async def _password_reset_backup_signature(env, body):
+    return (await blind_index(
+        env, PASSWORD_RESET_BACKUP_RATE_KEY + "\ncdata\n" + body))[:32]
+
+
+async def _password_reset_backup_cdata(env):
+    body = "%x-%s" % (int(Date.now()) // 1000, secrets.token_hex(8))
+    return body + "-" + await _password_reset_backup_signature(env, body)
+
+
+async def _password_reset_backup_cdata_valid(env, cdata):
+    parts = str(cdata or "").split("-")
+    if len(parts) != 3 or not all(
+            re.fullmatch(r"[0-9a-f]{1,32}", part) for part in parts):
+        return False
+    signature = await _password_reset_backup_signature(
+        env, parts[0] + "-" + parts[1])
+    if not hmac.compare_digest(signature, parts[2]):
+        return False
+    age_ms = int(Date.now()) - int(parts[0], 16) * 1000
+    return (-_turnstile.TOKEN_FUTURE_SKEW_MS <= age_ms
+            <= PASSWORD_RESET_BACKUP_CDATA_TTL_MS)
+
+
+async def _account_forgot_password_challenge(env, request):
+    settings = _turnstile.config(env)
+    try:
+        cdata = await _password_reset_backup_cdata(env)
+    except Exception:
+        cdata = ""
+    return json_response(
+        {"siteKey": settings["siteKey"],
+         "enabled": settings["mode"] != "unavailable",
+         "cdata": cdata},
+        cache_control="no-store, max-age=0, must-revalidate")
+
+
+async def _password_reset_backup_gate(env, request, data):
+    proof = data.get(_turnstile.BACKUP_FIELD)
+    cdata = str(proof.get("cdata") or "")[:128] if isinstance(
+        proof, dict) else ""
+    code, _detail = _turnstile.verify_backup(env, proof, cdata)
+    if not code and not await _password_reset_backup_cdata_valid(
+            env, cdata):
+        code = _turnstile.EXPIRED
+    if code:
+        return json_response(
+            _turnstile.refusal_payload(code, "/forgot-password"),
+            status=_turnstile.STATUS.get(code, 403),
+            cache_control="no-store, max-age=0, must-revalidate")
+    budgets = [(PASSWORD_RESET_BACKUP_RATE_KEY,
+                PASSWORD_RESET_BACKUP_MAX_PER_WINDOW)]
+    requester = _password_reset_requester_bucket(
+        _account_session_client_ip(request))
+    if requester:
+        budgets.insert(0, (await blind_index(
+            env, PASSWORD_RESET_BACKUP_RATE_KEY + "\n" + requester),
+            PASSWORD_RESET_BACKUP_MAX_PER_IP))
+    for key, limit in budgets:
+        throttled = await signup_rate_check(env, key, limit)
+        if throttled is not None:
+            return throttled
+    return None
 
 
 # --- Authenticated password change (issue #648) ------------------------------
