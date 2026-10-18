@@ -124,10 +124,43 @@ tooltip lists every step.
 name's, lists the steps. The right-click menu has **Go to linked <file>** for
 each linked shortcut, which selects that row.
 
-**Progress.** Cards do not mark which step is running. The script runs as one
-`bash` process, so the desktop has no reliable signal for the current step
-(output varies, and nested `bash .forkmesh/shortcuts/...` runs are not seen).
-The run's overall progress bar is unchanged.
+**Progress.** The script runs as one `bash` process, so the desktop cannot
+tell from the output alone which step is running (output varies, and nested
+`bash .forkmesh/shortcuts/...` runs are not seen). A script reports its step
+itself by printing a marker line as each step starts:
+
+```sh
+# step: Remove agent leftovers
+echo "::step::Remove agent leftovers"
+python3 tools/free_disk_space.py --execute --step agents
+```
+
+- A marker is a whole output line `::step::<name>` (surrounding whitespace,
+  a trailing `\r` and ANSI colour codes ignored). `<name>` is matched against
+  the parsed step names without regard to case, with whitespace collapsed; a
+  number `1`..`N` also works. Anything else, including a marker with text
+  before it, is ignored. The last marker seen wins, so a step can be marked
+  again or out of order.
+- While the run is going, steps before the current one get a green dot, the
+  current one an accent dot with a halo and a bold name, later ones keep
+  their usual dot. The output bar's status reads
+  `running <file>… step K of N: <name>`.
+- When the run ends, a success marks every step done; a failure marks the
+  current step red; a stopped run greys it. The card keeps that picture for
+  the newest of the last 20 runs (in memory only), so the step that failed
+  stays visible after the run.
+- If the current step is hidden behind `+N more`, that row reads
+  `+N more · step K: <name>` in the step's colour.
+- A script without markers shows no per-step progress; the overall progress
+  bar is unchanged either way.
+- Phone run rows (`insights.shortcutRun`, `insights.shortcutOutput`) carry
+  `step` (0-based, -1 before the first marker) and `stepCount` when the
+  script has steps.
+
+Code: `shortcutStepMarker` and `trackShortcutStep` in
+`desktop/src/LocalControlInsights.cpp` (tested in
+`desktop/tests/test_local_control_teammates.cpp`), `ShortcutStepList::setProgress`
+in `desktop/src/MainWindowShortcuts.cpp`.
 
 **Phones.** Each `insights.shortcuts` entry with at least one step carries
 `"steps": [{"name": "Reset build numbers to 1"}, {"name": "Deploy Android build",

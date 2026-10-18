@@ -101,6 +101,9 @@ final class ProjectRuntime: ProjectActivator {
         ShellCounts.shared.agentsTotal = 0
         ShellCounts.shared.runnerAgents = [:]
         ShellCounts.shared.swimmers = []
+        ShellCounts.shared.pulls = []
+        ShellCounts.shared.pullsSlug = ""
+        ShellCounts.shared.newPulls = 0
     }
 
     func erase(_ project: RelayProfile) {

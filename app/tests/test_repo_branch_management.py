@@ -118,8 +118,9 @@ def _harness(body=None, actor="alice", authorized=True, method="POST",
         def now():
             return 1_700_000_000_000
 
-    def json_response(data, status=200, **_kwargs):
-        return {"status": status, "data": data}
+    def json_response(data, status=200, extra_headers=None, **_kwargs):
+        return {"status": status, "data": data,
+                "headers": extra_headers or {}}
 
     async def ensure_schema(_env):
         return None
@@ -228,6 +229,7 @@ def _harness(body=None, actor="alice", authorized=True, method="POST",
         "__builtins__": dict(vars(builtins), __import__=_import),
         "Date": _Date,
         "json_response": json_response,
+        "EXPECTED_DEGRADED_HEADERS": {"x-forkmesh-expected-degraded": "1"},
         "ensure_schema": ensure_schema,
         "bounded_json_request": bounded_json_request,
         "blind_index": blind_index,
@@ -865,6 +867,21 @@ def test_a_core_still_working_answers_202_and_queues_nothing():
                                                  cores=cores)
     assert response["status"] == 202
     assert response["data"]["status"] == "processing"
+    assert rows == []
+
+    assert response["headers"] == {}
+
+
+def test_a_result_still_pending_is_a_quiet_retryable_503():
+    cores = _Cores((503, {
+        "ok": False, "executed": True, "status": "failed",
+        "error": "merge_status_pending", "op": "merge", "branch": "feature",
+        "retryable": True, "message": "The result is not known yet."}))
+    response, rows, _audits, _notes, _ns = _post(dict(MERGE_BODY),
+                                                 cores=cores)
+    assert response["status"] == 503
+    assert response["data"]["error"] == "merge_status_pending"
+    assert response["headers"] == {"x-forkmesh-expected-degraded": "1"}
     assert rows == []
 
 

@@ -431,7 +431,8 @@ async def branch_deletes_handler(env, request):
         return json_response(
             {"error": "cores_unavailable", "retryable": True,
              "message": "No core answered; the branch was not deleted."},
-            status=503, cache_control="no-store")
+            status=503, cache_control="no-store",
+            extra_headers=EXPECTED_DEGRADED_HEADERS)
     return response
 
 
@@ -479,7 +480,8 @@ async def branch_trash_handler(env, request):
             return json_response(
                 {"error": "cores_unavailable", "retryable": True,
                  "message": "No core answered; nothing is known deleted."},
-                status=503, cache_control="no-store")
+                status=503, cache_control="no-store",
+                extra_headers=EXPECTED_DEGRADED_HEADERS)
         if len(_BRANCH_TRASH_CACHE) >= BRANCH_TRASH_CACHE_MAX:
             _BRANCH_TRASH_CACHE.clear()
         cached = (now, listing)

@@ -134,7 +134,7 @@ struct InboxToolbarMenu: View {
     private func square(
         _ icon: String, color: Color, tint: Color? = nil, label: String, action: @escaping () -> Void
     ) -> some View {
-        Button(action: action) {
+        FmHoldButton(label, action: action) {
             InboxSquare(icon: icon, color: color)
         }
         .buttonStyle(.plain)
@@ -154,6 +154,7 @@ struct InboxToolbarMenu: View {
             InboxSquare(icon: model.isPaused ? "bell.slash" : "moon.zzz", color: model.isPaused ? fm.warning : fm.textPrimary)
         }
         .inboxGlass(InboxSquare.shape, tint: nil, fallback: fm.bgRaised)
+        .fmHoldName(model.isPaused ? "Pings paused" : "Pause pings")
         .accessibilityLabel(model.isPaused ? "Pings paused" : "Pause pings")
     }
 
@@ -266,32 +267,60 @@ struct InboxFilterBar: View {
             .padding(.horizontal, FmSpace.x2)
             .padding(.vertical, FmSpace.x1 + 2)
         }
+        .overlayPreferenceValue(InboxBadgeKey.self) { (badges: [InboxBadge]) in
+            GeometryReader { (proxy: GeometryProxy) in
+                ForEach(badges, id: \.filter) { (badge: InboxBadge) in
+                    let rect: CGRect = proxy[badge.anchor]
+                    Color.clear
+                        .frame(width: rect.width, height: rect.height)
+                        .overlay(alignment: .topTrailing) { badgeLabel(badge.count) }
+                        .position(x: rect.midX, y: rect.midY)
+                }
+            }
+            .allowsHitTesting(false)
+        }
     }
 
     private func chip(_ filter: InboxFilter, count: Int) -> some View {
         let selected: Bool = model.filter == filter
-        return Button {
+        return FmHoldButton(filter.label, action: {
             model.filter = filter
-        } label: {
+        }) {
             InboxSquare(icon: filter.icon, color: selected ? fm.accent : fm.textPrimary)
         }
         .buttonStyle(.plain)
         .inboxGlass(InboxSquare.shape, tint: selected ? fm.accent : nil, fallback: selected ? fm.accentSubtle : fm.bgRaised)
-        .overlay(alignment: .topTrailing) {
-            if count > 0 {
-                Text(count > 99 ? "99+" : "\(count)")
-                    .font(.system(size: 9, weight: .bold).monospacedDigit())
-                    .foregroundStyle(Color.white)
-                    .padding(.horizontal, 3)
-                    .frame(minWidth: 14, minHeight: 14)
-                    .background(fm.count, in: Capsule())
-                    .offset(x: 5, y: -5)
-                    .allowsHitTesting(false)
-            }
+        .anchorPreference(key: InboxBadgeKey.self, value: .bounds) { (anchor: Anchor<CGRect>) in
+            count > 0 ? [InboxBadge(filter: filter, count: count, anchor: anchor)] : []
         }
         .accessibilityLabel(filter.label)
         .accessibilityValue(count > 0 ? "\(count) unread" : "")
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private func badgeLabel(_ count: Int) -> some View {
+        Text(count > 99 ? "99+" : "\(count)")
+            .font(.system(size: 9, weight: .bold).monospacedDigit())
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 3)
+            .frame(minWidth: 14, minHeight: 14)
+            .background(fm.count, in: Capsule())
+            .fixedSize()
+            .offset(x: 5, y: -5)
+    }
+}
+
+struct InboxBadge {
+    let filter: InboxFilter
+    let count: Int
+    let anchor: Anchor<CGRect>
+}
+
+struct InboxBadgeKey: PreferenceKey {
+    static var defaultValue: [InboxBadge] { [] }
+
+    static func reduce(value: inout [InboxBadge], nextValue: () -> [InboxBadge]) {
+        value.append(contentsOf: nextValue())
     }
 }
 

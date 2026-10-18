@@ -161,6 +161,44 @@ destination, in sections, with counts and activity:
   the bar and the page's Open chip all count a pull as open unless it is
   closed or merged (`PullStatusFilter.open`). The operator asked for the
   count on the mobile Pull requests icon on 2026-10-16.
+- The repository behind those icons and the **Code** button follows the
+  composer: picking a repository there (or the one it settles on at launch)
+  moves `ShellCounts.currentRepo` and `code/current-repo` to it
+  (`CodeCurrentRepo.follow`, from `AgentStartTarget.ref`), so Pull requests
+  opens that repository's pulls and shows its open count. Opening a
+  repository in Code still moves them too, and the composer picks that
+  repository the next time it opens there. The operator asked for the
+  repository icons to follow the composer on 2026-10-18.
+- **New pull requests show at once.** `ShellPullsWatch` (iOS) is the one
+  reader of the current repository's pull list. It reads it when the
+  repository changes, when the app comes back to the foreground, when the
+  account event channel reconnects, and the moment the relay pushes a `pulls`
+  event frame (sent to the repository owner's channel by `notify_repo_host`
+  whenever a pull is submitted or changes). Repositories whose
+  owner is someone else get no frame, so the watch also polls every 20 s on a
+  cool phone, every 5 minutes when warm or in Low Power Mode, and not at all
+  when critical (`NewPullsMarker.pollEvery`). The Pull requests page takes
+  the watch's list instead of reading its own (`RepoPullsModel.adopt`),
+  supports pull to refresh, re-reads after the New PR sheet closes, and keeps
+  the list on screen when a refresh fails. Before 2026-10-18 the page read
+  its list once on open and the shell never re-read it, so a new pull did not
+  appear until the page was reopened; the operator asked for it to show
+  instantly.
+- **Unread badges on Pull requests, RSS Reader and Tasks.** The Pull
+  requests icon (and the Code icon beside Repos, whose count is the open
+  pulls) carries a solid accent badge with the number of open pulls newer
+  than the user last saw (`NewPullsMarker`, FMCode, `shell/pulls-seen`: the
+  highest pull number seen per repository, 40 repositories kept). A
+  repository seen for the first time records its highest number without a
+  badge, so a fresh install does not flag every open pull; the page clears
+  the badge while it is open. RSS Reader shows its unread article count, the
+  same number as its Unread smart feed, read from the reader's saved library
+  (`RSSReaderFeature.loaded`, cached by model revision); Home's count refresh
+  also refreshes the feeds that are due. Tasks shows the open tasks assigned
+  to the signed-in user (`TasksListModel.mineOpen`), refreshed with Home's
+  counts, on every `pings` frame (an assignment arrives as a ping) and
+  whenever the Tasks page reloads (`ShellNavigatorCounts.adoptTasks`). The
+  operator asked for the three badges on 2026-10-18.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
 - **Update dot.** A plugin tile whose Market package changed version since
   the user last opened it shows a small accent dot at the icon's bottom right
@@ -390,6 +428,10 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   sit in a ⋯ menu (mark all read, unread only, pause pings, discard unsynced
   changes, ping settings, delete all) are squares in the same bar, so every
   control is one tap. A phone too narrow for the bar scrolls it sideways.
+  Holding a square shows its name in a small popover (`FmHoldName`), and the
+  tap it ends with is dropped. The unread badges are drawn over the whole bar
+  (`InboxBadgeKey` anchors) rather than on each square, because on iOS 26 the
+  glass container composited the squares above their own badges (2026-10-18).
 - **Market** (`MarketScreen`): one slim navigation bar line with no
   background: back, the search field (`MarketSearchField`, in the title's
   place), then a sort menu and a filter menu (`MarketSortMenu`,
@@ -664,13 +706,16 @@ Each tile pushes `RepoSectionScreen`. Android matches it (`RepoDetailScreen`,
 ## 4. The You hub
 
 The avatar drops a panel down from the top bar (`hubDropdown`, `YouHubSheet`,
-`ShellHubUnroll`; at most 380 x 640 pt over a scrim). Choosing an item closes
-it and pushes the destination onto the current tab. On iPad the same items are
+`ShellHubUnroll`). On iOS it is one small floating gray card (`sheetSurface`,
+320 pt wide, as tall as its contents and at most 640 pt, scrolling only past
+that) over a light scrim, with no title, Done button, recents or project
+switcher: tapping outside it or choosing an item closes it, and choosing an
+item pushes the destination onto the current tab. On iPad the same items are
 sidebar sections (§7).
 
 | Group | Items |
 |---|---|
-| Header | Avatar, name, status; project switcher; account switcher; Pocket mode; Suggestion mode |
+| Header | Avatar, name, status and a small Set a status button on the same row; Pocket mode, Suggestion mode and the Diagnostics switch as compact rows |
 | Workspace | Notes, Tasks, Calendar, Timers |
 | Operate | Desktops, Special agents (teammates), Shortcuts, Hosts & fleet, Network & nodes |
 | Business | Market, CRM, Marketing, Analytics, Competitors, Ad review (reviewers only), Ledger |
@@ -678,16 +723,18 @@ sidebar sections (§7).
 | Insights | Stats, Status, Admin (admins only) |
 | App | Settings, Organizations, People, Docs, Design, Report a bug, Tour, World, Workflows (native, [WORKFLOWS.md](WORKFLOWS.md)), Sign in/out |
 
-Items follow the package gate (§2.0.2). The hub shows up to five recent
-destinations. On iPhone, where Home and the bar hold the links, the hub keeps
-the header, recents and an Account group (Settings, Sign in or Sign out).
+Items follow the package gate (§2.0.2). On iPhone, where Home and the bar hold
+the links, the hub keeps the header rows and the Account items (Settings, Sign
+in or Sign out) as small side-by-side buttons; projects are switched from the
+command palette's Switch project (and the iPad sidebar).
 
-- **Diagnostics switch** (top-leading, `hub-diagnostics-strip`;
+- **Diagnostics switch** (under Suggestion mode, `hub-diagnostics-strip`;
   `diagnostics/showStrip`, on by default) shows or hides the telemetry strip and
   the profile footer.
-- **Version row** (last row; iOS `YouHubSheet.versionRow`, Android
-  `HubVersionRow`): "Version x (build)" opening **What's new** from the bundled
-  changelog ([MAC_BUILD.md](MAC_BUILD.md)), and a **Send diagnostics** capsule
+- **Version row** (last row; iOS `YouHubSheet.versionRow`, one small darker
+  rectangle; Android `HubVersionRow`): "Version x (build)" and **What's new**
+  side by side, opening the bundled changelog in a sheet
+  ([MAC_BUILD.md](MAC_BUILD.md)), and a compact **Send diagnostics** capsule
   that turns red ("Slow, send report") when `PerformanceAlert.evaluate` finds,
   since the last send, an OS diagnostic in 24 h, a main-thread stall of 250 ms
   or more in 10 min, or five or more dropped-frame stalls in 10 min.

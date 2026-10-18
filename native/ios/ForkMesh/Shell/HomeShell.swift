@@ -109,7 +109,7 @@ struct HomeShell: View {
     static let offlineGrace: TimeInterval = 4
     static let barMargin: CGFloat = FmSpace.x6
     static let hubDrop: CGFloat = 54
-    static let hubWidth: CGFloat = 380
+    static let hubWidth: CGFloat = 320
     static let hubHeight: CGFloat = 640
 
     private var usesSplit: Bool {
@@ -206,7 +206,8 @@ struct HomeShell: View {
             let repo: RepoRef? = counts.currentRepo
             items.insert(
                 ShellBarItem(
-                    id: "currentRepo", title: "Code", symbol: "chevron.left.forwardslash.chevron.right", badge: 0,
+                    id: "currentRepo", title: "Code", symbol: "chevron.left.forwardslash.chevron.right",
+                    badge: counts.newPullsBadge,
                     selected: page == nil && router.selectedTab == .code && !router.path(for: .code).isEmpty,
                     kind: .action, count: counts.repoCount(.pulls),
                     action: { openCurrentRepo(repo) }),
@@ -255,7 +256,8 @@ struct HomeShell: View {
             let entry: (RepoSection, String, String)? = RepoOverviewModel.order.first { $0.0 == section }
             return ShellBarItem(
                 id: "repo-\(section.rawValue)", title: entry?.1 ?? RouteCatalog.sectionTitle(section),
-                symbol: entry?.2 ?? "folder", badge: 0, selected: open == Route.repo(repo, section: section), kind: .action,
+                symbol: entry?.2 ?? "folder", badge: section == .pulls ? counts.newPullsBadge : 0,
+                selected: open == Route.repo(repo, section: section), kind: .action,
                 count: counts.repoCount(section), action: { openRepoSection(repo, section) })
         }
         return [ShellMenuGroup(id: "repo", title: repo.name, items: items)]
@@ -640,11 +642,12 @@ struct HomeShell: View {
                             onAction: { (action: HubItem.Action) in hubAction(action) },
                             onClose: { showHub = false },
                             onSendDiagnostics: { (prompt: String) async -> String? in await diagnosticsLaunch(prompt) })
-                            .frame(
-                                width: min(HomeShell.hubWidth, proxy.size.width - FmSpace.x3 * 2),
-                                height: max(240, min(HomeShell.hubHeight, proxy.size.height - HomeShell.hubDrop - FmSpace.x4)))
-                            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                            .frame(width: min(HomeShell.hubWidth, proxy.size.width - FmSpace.x3 * 2))
+                            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .shadow(color: Color.black.opacity(0.28), radius: 24, y: 10)
+                            .frame(
+                                maxHeight: max(240, min(HomeShell.hubHeight, proxy.size.height - HomeShell.hubDrop - FmSpace.x4)),
+                                alignment: .top)
                             .accessibilityAddTraits(.isModal)
                             .transition(
                                 reduceMotion
@@ -721,6 +724,11 @@ struct HomeShell: View {
                     onAction: { hub.setSpiderHidden(false) })
             }
             .runnerSignInPresenter(runnerAttention)
+            .onChange(of: composer.launcher.repository?.ref) { (_: RepoRef?, ref: RepoRef?) in
+                if let ref {
+                    CodeCurrentRepo.follow(ref)
+                }
+            }
             .onChange(of: runnerAttention?.request == nil) { (_: Bool, closed: Bool) in
                 if closed {
                     let launcher: QuickAgentLauncher = composer.launcher
@@ -733,9 +741,12 @@ struct HomeShell: View {
                 await loadRepoCounts()
                 if !Task.isCancelled {
                     loadingRepoCounts = false
+                    await ShellPullsWatch.shared.refresh()
                 }
             }
+            .task { await ShellPullsWatch.shared.poll() }
             .task { await ShellSuggestions.shared.run() }
+            .modifier(ShellAutoSendPresenter())
             .task { DjStudioHub.shared.relaunch() }
             .task {
                 try? await Task.sleep(for: .seconds(2))
@@ -752,8 +763,19 @@ struct HomeShell: View {
             }
     }
 
+    private var pushScreen: PushScreen {
+        let covered: Bool = page != nil || showHub || showPalette || showTour || showProjects || showAgentForm
+            || showContextPicker || showDeviceSetup || showGemmaSetup || genie.sheetShown || pocket.locked
+            || router.presented != nil
+        return PushScreen(
+            tab: router.selectedTab, route: router.currentRoute, covered: covered, conversation: model.conversation)
+    }
+
     private func routeChanges<Content: View>(_ content: Content) -> some View {
         content
+            .onChange(of: pushScreen, initial: true) { (_: PushScreen, screen: PushScreen) in
+                push?.screen = screen
+            }
             .onChange(of: push?.pendingOpen) { (_: PushOpen?, next: PushOpen?) in
                 if next != nil {
                     Task { await routePushOpen() }
@@ -839,6 +861,7 @@ struct HomeShell: View {
                 if let accountPackages = accountPackages {
                     Task { await accountPackages.refreshIfStale() }
                 }
+                Task { await ShellPullsWatch.shared.refresh() }
                 if let fleet = fleet, statusPageOn, diagnosticsEnabled {
                     Task { await fleet.refresh() }
                 }
@@ -851,6 +874,7 @@ struct HomeShell: View {
             }
             .onDisappear {
                 savedNavigation = router.archiveData()
+                push?.screen = nil
             }
             .fmInterfaceSounds(router: router)
     }

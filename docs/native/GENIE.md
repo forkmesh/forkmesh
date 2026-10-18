@@ -40,7 +40,7 @@ tested on Linux); views and platform glue are in
 | Touch play (`GenieTouchPlay`) | `FMAssistant/GenieTouchPlay.swift`; `Features/Genie/GenieTouchCoach.swift` | `GenieTouchPlayTests` |
 | Sounds (`GenieChime`, `GenieMoveVoice`) | `FMAgentWatch/GenieChimes.swift`; `Features/Genie/GenieSounds.swift` | `GenieChimeTests` |
 | CRM outreach (`GenieOutreach`, `GenieOutreachWriter`, `GenieOutreachLog`) | `FMAssistant/GenieOutreach.swift`; `Features/Genie/GenieOutreachCoach.swift` | `GenieOutreachTests` |
-| Suggestion and pocket mode | `Features/Genie/ShellSuggestions.swift`, `Shell/ShellPocket.swift`, `FMPackages/MarketingAttention.swift` | `GenieOutreachTests`, `MarketingWorkspaceTests` |
+| Suggestion mode, auto-send and pocket mode | `Features/Genie/ShellSuggestions.swift`, `Features/Genie/ShellAutoSend.swift`, `Features/Genie/ShellAutoSendReview.swift`, `FMAssistant/GenieAutoSend.swift`, `Shell/ShellPocket.swift` | `GenieOutreachTests`, `GenieAutoSendTests` |
 | Aquarium fish on the phone | `FMAssistant/Aquarium{Fish,Tank}.swift`, `Features/Aquarium/AquariumLayer.swift` | `AquariumTests` |
 | Overlay, gestures, menu, hub | `Features/Genie/GenieSpiderLayer.swift`, `GenieCrawler.swift`, `GenieHub.swift`, `GenieBubbles.swift` | parse only |
 | Motion, avatar, window, speech, Apple engine, shell bridge | `Features/Genie/GenieMotion.swift`, `GenieAvatar.swift`, `GenieSheet.swift`, `GenieSpeechVoice.swift`, `AppleGenieEngine.swift`, `GenieShellBridge.swift` | parse only |
@@ -273,8 +273,38 @@ contacted, with a tap to draft an email or a Mastodon post.
 - **Suggestion mode** (`shell/suggestion_mode`, Settings > General or the You
   hub): `ShellSuggestions` refreshes every 10 minutes and shows the best
   contact (`GenieOutreach.best`: deal value, next step, email before Mastodon,
-  oldest) and the marketing channel needing attention
-  (`MarketingChannelAttention.next`) in the top bar.
+  oldest) in the top bar: a plain 44 pt portrait (the bar's full height, no
+  Liquid Glass capsule) with a small email or Mastodon mark. Tap it and the
+  Genie writes to them. The marketing-channel megaphone that used to sit
+  beside it was removed (2026-10-18): it was a second, unrelated control in a
+  slot meant for one glance. VoiceOver actions: auto-send on/off, Not now,
+  Open the CRM.
+- **Auto-send** (`ShellAutoSend`, `shell/auto_send`): touch and hold the
+  portrait to turn it on or off. While on, the portrait has an accent ring, it
+  shows the next email recipient in a CRM with Zoho Mail connected
+  (`outreachBest(only: .email, zohoOnly: true)`), and the app sends one email
+  every 864 s, 100 a day (`GenieAutoSendPace`), through the CRM's
+  `POST /outreach/auto`, the same route as **Send AI email** on the web and
+  desktop, so it goes out from the Zoho mailbox with the tracked logo in the
+  signature. Organizations without Zoho are skipped rather than sent through
+  Mailtrap. A contact the CRM refuses (`recently_emailed`, `contact_closed`,
+  no email) is skipped for the session and the next one is tried, up to five
+  per turn; anything else (daily cap, Zoho needs a reconnect, not on the
+  outreach team) pauses until the next turn and the Spider says why. When the
+  server has no model, the phone's own outreach writers answer the server's
+  prompt and the draft is posted back (`GenieAutoSend.write`).
+  Sending only happens while the app is open (iOS has no background slot for
+  it and the CRM package has no cron); the pace is kept across launches, so
+  reopening never bursts.
+- **Count on the icon**: the badge at the top right is today's auto-sends
+  (local day, `shell/auto_send_day`/`_count`), accent while on, grey after.
+- **Review popup** (`ShellAutoSendReview`): every sent email opens a sheet with
+  recipient, sender, Zoho, the writer, subject and body. Pick 1-5 stars and,
+  optionally, write a line on what to change; **Save** posts
+  `POST /outreach/rate`, and the CRM feeds ratings and notes into the next
+  email's prompt (`marketplace/packages/crm/README.md`, "Ratings"). Sends that
+  arrive while a sheet is open queue up behind it ("Sent · 2 more"). Each send
+  also files "Auto-sent to <name>" in the device-local Pings.
 - **Pocket mode** (You hub row `hub-pocket-mode`): `PocketLockScreen`, a
   full-screen cover with the time, the Glasses Alert radar, unread pings and
   walking state (`WalkActivityController.moving`). Only `PocketUnlockSlider`

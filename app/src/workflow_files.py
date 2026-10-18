@@ -22,7 +22,7 @@ RUN_SHORTCUT_RE = re.compile(
 MAX_STEP_NAME = 80
 ACTION_EVENTS = ("push", "pull_request", "release", "workflow_dispatch")
 ACTION_TOP_KEYS = ("name", "on", "runs-on", "needs", "env", "checkout",
-                   "fetch-depth", "steps", "jobs")
+                   "sandbox", "fetch-depth", "steps", "jobs")
 SCHEDULE_MODES = ("on-demand", "continuous", "hourly", "daily", "weekly",
                   "weekdays", "custom", "events")
 TASK_TYPES = ("on-demand", "scheduled", "new-issues", "new-pulls",
@@ -79,6 +79,11 @@ FILE_NODES = {
                    options=_opts(("", "true", "false"),
                                  {"": "Default (yes)", "true": "Yes",
                                   "false": "No"})),
+            _field("sandbox", "Where the steps run", "select",
+                   options=_opts(("", "false"),
+                                 {"": "In the Actions sandbox",
+                                  "false": "On the desktop, outside the "
+                                           "sandbox (manual runs only)"})),
             _field("fetchDepth", "Fetch depth", "number"),
             _field("env", "Environment (JSON object)", "json",
                    placeholder='{"CI": "1"}'),
@@ -737,6 +742,7 @@ def parse_action(path, text):
             if env_node.values[index].kind == "scalar":
                 env[key] = env_node.values[index].scalar
     checkout = root.get("checkout")
+    sandbox = root.get("sandbox")
     depth = root.get("fetch-depth")
     name_node = root.get("name")
     key_comments = {key: parser.comments_before(root.lines[i])
@@ -752,6 +758,8 @@ def parse_action(path, text):
         "checkout": "" if checkout is None else (
             "false" if checkout.scalar.strip().lower() in (
                 "false", "no", "off", "0") else "true"),
+        "sandbox": "false" if sandbox is not None and sandbox.scalar.strip().lower() in (
+            "false", "no", "off", "0") else "",
         "fetchDepth": depth.scalar.strip() if depth is not None else "",
         "env": json.dumps(env, indent=2) if env else "",
         "notes": head,
@@ -917,6 +925,10 @@ def render_action(nodes, chain, meta):
         keyed("needs", ["needs: " + _flow(needs)])
     if t.get("checkout") in ("true", "false"):
         keyed("checkout", ["checkout: " + t["checkout"]])
+    if t.get("sandbox") == "false":
+        if events != ["workflow_dispatch"]:
+            raise FileError("sandbox_needs_manual_run")
+        keyed("sandbox", ["sandbox: false"])
     if str(t.get("fetchDepth") or "").strip():
         depth = _int(t["fetchDepth"], -1)
         if depth < 0:

@@ -318,7 +318,18 @@ public:
                             shortcutStepsTooltip(m_steps)));
     }
 
+    enum class Progress { None, Running, Succeeded, Failed, Stopped };
+
     std::function<void(const QString &)> onLinkClicked;
+
+    void setProgress(Progress progress, int current)
+    {
+        if (progress == m_progress && current == m_current)
+            return;
+        m_progress = progress;
+        m_current = current;
+        update();
+    }
 
     QSize sizeHint() const override { return QSize(220, rowCount() * rowHeight() + 2); }
     QSize minimumSizeHint() const override { return QSize(80, rowCount() * rowHeight() + 2); }
@@ -333,6 +344,8 @@ protected:
         line.setAlpha(140);
         const QColor text = Theme::nextOr(Theme::Role::Fg, palette().color(QPalette::Text));
         const QColor link = Theme::nextOr(Theme::Role::Accent, palette().color(QPalette::Link));
+        const QColor success = Theme::nextOr(Theme::Role::Success, QColor(QStringLiteral("#3fb950")));
+        const QColor danger = Theme::nextOr(Theme::Role::Danger, QColor(QStringLiteral("#f85149")));
         const int rows = rowCount();
         const int height = rowHeight();
         painter.setPen(QPen(line, 1.2));
@@ -346,22 +359,62 @@ protected:
                 painter.setBrush(muted);
                 for (int dot = -1; dot <= 1; ++dot)
                     painter.drawEllipse(QPointF(kDotX, centre.y() + dot * 3.5), 1.1, 1.1);
-                painter.setPen(muted);
+                const StepState hidden =
+                    m_current >= shownSteps() && m_current < m_steps.size()
+                        ? stepState(m_current)
+                        : StepState::Pending;
+                const QString rest = QStringLiteral("+%1 more").arg(m_steps.size() - shownSteps());
+                const QString label =
+                    hidden == StepState::Pending || hidden == StepState::Done
+                        ? rest
+                        : QStringLiteral("%1 · step %2: %3")
+                              .arg(rest)
+                              .arg(m_current + 1)
+                              .arg(m_steps.at(m_current).name);
+                painter.setPen(hidden == StepState::Active   ? link
+                               : hidden == StepState::Failed ? danger
+                                                             : muted);
                 painter.drawText(rowTextRect(row), Qt::AlignLeft | Qt::AlignVCenter,
-                                 QStringLiteral("+%1 more").arg(m_steps.size() - shownSteps()));
+                                 fontMetrics().elidedText(label, Qt::ElideRight,
+                                                          rowTextRect(row).width()));
                 continue;
             }
             const Step &step = m_steps.at(row);
             const bool linked = !step.shortcut.isEmpty();
-            painter.setPen(QPen(linked ? link : muted, 1.4));
-            painter.setBrush(linked ? QBrush(link) : QBrush(Qt::NoBrush));
-            painter.drawEllipse(centre, kDotRadius, kDotRadius);
+            const StepState state = stepState(row);
+            if (state == StepState::Done) {
+                painter.setPen(QPen(success, 1.4));
+                painter.setBrush(success);
+                painter.drawEllipse(centre, kDotRadius, kDotRadius);
+            } else if (state == StepState::Active || state == StepState::Failed ||
+                       state == StepState::Halted) {
+                const QColor tone = state == StepState::Active   ? link
+                                    : state == StepState::Failed ? danger
+                                                                 : muted;
+                QColor halo = tone;
+                halo.setAlpha(70);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(halo);
+                painter.drawEllipse(centre, kDotRadius + 2.5, kDotRadius + 2.5);
+                painter.setPen(QPen(tone, 1.4));
+                painter.setBrush(tone);
+                painter.drawEllipse(centre, kDotRadius, kDotRadius);
+            } else {
+                painter.setPen(QPen(linked ? link : muted, 1.4));
+                painter.setBrush(linked ? QBrush(link) : QBrush(Qt::NoBrush));
+                painter.drawEllipse(centre, kDotRadius, kDotRadius);
+            }
             QRect nameRect;
             QRect linkRect;
             layoutRow(row, &nameRect, &linkRect);
-            painter.setPen(text);
+            QFont nameFont = font();
+            nameFont.setBold(state == StepState::Active || state == StepState::Failed);
+            painter.setFont(nameFont);
+            painter.setPen(state == StepState::Failed ? danger : text);
             painter.drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
-                             fontMetrics().elidedText(step.name, Qt::ElideRight, nameRect.width()));
+                             QFontMetrics(nameFont).elidedText(step.name, Qt::ElideRight,
+                                                               nameRect.width()));
+            painter.setFont(font());
             if (!linked || linkRect.width() <= 0)
                 continue;
             QFont linkFont = font();
@@ -420,6 +473,23 @@ protected:
     }
 
 private:
+    enum class StepState { Pending, Done, Active, Failed, Halted };
+
+    StepState stepState(int row) const
+    {
+        if (m_progress == Progress::None)
+            return StepState::Pending;
+        if (m_progress == Progress::Succeeded)
+            return StepState::Done;
+        if (row < m_current)
+            return StepState::Done;
+        if (row > m_current)
+            return StepState::Pending;
+        return m_progress == Progress::Running  ? StepState::Active
+               : m_progress == Progress::Failed ? StepState::Failed
+                                                : StepState::Halted;
+    }
+
     static constexpr int kDotX = 6;
     static constexpr qreal kDotRadius = 3.5;
     static constexpr int kTextX = 16;
@@ -480,9 +550,34 @@ private:
     QList<Step> m_steps;
     QHash<QString, QString> m_titles;
     int m_maxRows = 6;
+    Progress m_progress = Progress::None;
+    int m_current = -1;
     int m_hoverRow = -1;
     int m_pressedRow = -1;
 };
+
+ShortcutStepList::Progress shortcutStepProgress(
+    const forkmesh::localcontrol::insights::ShortcutRun &run)
+{
+    if (run.running)
+        return ShortcutStepList::Progress::Running;
+    if (run.ok)
+        return ShortcutStepList::Progress::Succeeded;
+    return run.stopped ? ShortcutStepList::Progress::Stopped : ShortcutStepList::Progress::Failed;
+}
+
+QString shortcutRunStatusText(const forkmesh::localcontrol::insights::ShortcutRun &run)
+{
+    if (!run.running)
+        return QStringLiteral("%1 — %2").arg(run.file, run.message);
+    if (run.step < 0 || run.step >= run.steps.size())
+        return QStringLiteral("running %1…").arg(run.file);
+    return QStringLiteral("running %1… step %2 of %3: %4")
+        .arg(run.file)
+        .arg(run.step + 1)
+        .arg(run.steps.size())
+        .arg(run.steps.at(run.step).name);
+}
 
 bool locateShortcutFile(QStackedWidget *stack, QTableWidget *table, ShortcutCardGrid *grid,
                         const QString &file)
@@ -1724,6 +1819,13 @@ void MainWindow::loadShortcutsPanel()
             auto *steps = new ShortcutStepList(entry.meta.steps, shortcutTitles,
                                                kMaxCardStepRows);
             steps->onLinkClicked = revealLinkedShortcut;
+            steps->setProperty("shortcutPath", path);
+            for (auto run = m_shortcutRuns.crbegin(); run != m_shortcutRuns.crend(); ++run) {
+                if (run->filePath == path) {
+                    steps->setProgress(shortcutStepProgress(*run), run->step);
+                    break;
+                }
+            }
             cardLayout->addSpacing(2);
             cardLayout->addWidget(steps);
         }
@@ -1942,10 +2044,13 @@ bool MainWindow::runShortcut(QString filePath, int repoIndex,
     run.id = runId;
     run.repo = record.owner + QLatin1Char('/') + record.name;
     run.file = name;
-    run.name = shortcutMeta(filePath).name;
+    const ShortcutMeta meta = shortcutMeta(filePath);
+    run.name = meta.name;
     run.running = true;
     run.startedAtMs = startedAtMs;
     run.expectedMs = shortcutRunStats(usageKey).lastMs;
+    run.filePath = filePath;
+    run.steps = meta.steps;
     m_shortcutRuns.append(run);
     for (qsizetype i = 0; m_shortcutRuns.size() > kKeptShortcutRuns && i < m_shortcutRuns.size();) {
         if (m_shortcutRuns.at(i).running)
@@ -1984,6 +2089,7 @@ bool MainWindow::runShortcut(QString filePath, int repoIndex,
             lastLine = forkmesh::localcontrol::insights::lastOutputLine(run->output);
             run->running = false;
             run->ok = ok;
+            run->stopped = process->property("shortcutStopRequested").toBool();
             run->message = message;
         }
         appendShortcutOutput(runId, message + QLatin1Char('\n'));
@@ -2046,6 +2152,16 @@ void MainWindow::appendShortcutOutput(int runId, const QString &chunk)
     run->output = insightctl::appendShortcutOutput(run->output, chunk, kMaxShortcutOutputChars);
     if (m_shortcutOutput && runId == m_shortcutShownRun)
         m_shortcutOutput->appendPlainText(chunk.trimmed());
+    if (insightctl::trackShortcutStep(*run, chunk)) {
+        if (m_shortcutRunStatus && runId == m_shortcutShownRun)
+            m_shortcutRunStatus->setText(shortcutRunStatusText(*run));
+        if (m_shortcutCardsHost)
+            for (QWidget *steps : m_shortcutCardsHost->findChildren<QWidget *>(
+                     QStringLiteral("shortcutStepList")))
+                if (steps->property("shortcutPath").toString() == run->filePath)
+                    static_cast<ShortcutStepList *>(steps)->setProgress(
+                        shortcutStepProgress(*run), run->step);
+    }
     if (!m_localControl)
         return;
     QJsonObject event = insightctl::shortcutRunRow(*run, false);
@@ -2062,10 +2178,7 @@ void MainWindow::showShortcutRun(int runId)
         m_shortcutOutput->moveCursor(QTextCursor::End);
     }
     if (m_shortcutRunStatus)
-        m_shortcutRunStatus->setText(
-            !run           ? QString()
-            : run->running ? QStringLiteral("running %1…").arg(run->file)
-                           : QStringLiteral("%1 — %2").arg(run->file, run->message));
+        m_shortcutRunStatus->setText(run ? shortcutRunStatusText(*run) : QString());
     if (m_shortcutStopButton)
         m_shortcutStopButton->setVisible(run && run->running);
     refreshShortcutRunPicker();

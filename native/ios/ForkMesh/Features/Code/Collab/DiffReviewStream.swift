@@ -480,21 +480,23 @@ struct DiffReviewStream<Header: View>: View {
 
     private var toolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 2) {
-                Button(action: {
+            HStack(spacing: Self.toolGap) {
+                FmHoldButton("File list: \(model.viewedLabel)", action: {
                     FmHaptics.selection(.open)
                     showFiles = true
                 }) {
                     HStack(spacing: 4) {
-                        FmIcon("format_list_bulleted", size: 16, color: fm.textSecondary)
+                        FmIcon("format_list_bulleted", size: 18, color: fm.textSecondary)
                         Text("\(model.seen)/\(model.files.count)")
-                            .fmMono(size: 12, weight: FmType.emphasis,
+                            .fmMono(size: 13, weight: FmType.emphasis,
                                     color: model.seen == model.files.count && !model.files.isEmpty ? fm.success : fm.textPrimary)
                     }
-                    .padding(.horizontal, 6)
-                    .frame(height: 30)
+                    .padding(.horizontal, 8)
+                    .frame(minWidth: Self.toolSide, minHeight: Self.toolSide)
+                    .contentShape(Self.toolShape)
                 }
                 .buttonStyle(.plain)
+                .inboxGlass(Self.toolShape, tint: nil, fallback: fm.bgRaised)
                 .accessibilityLabel(Text("\(model.viewedLabel). Files"))
                 .accessibilityIdentifier("diff-files")
                 .accessibilityActions {
@@ -505,56 +507,54 @@ struct DiffReviewStream<Header: View>: View {
                         Button("Smaller diff text") { settings.setFontSize(settings.fontSize - 1) }
                     }
                 }
-                separator
-                tiny("search", "Find in diff", active: finding, cue: finding ? .close : .open, id: "diff-find") {
+                tool("search", "Find in diff", active: finding, cue: finding ? .close : .open, id: "diff-find") {
                     finding.toggle()
                     if !finding { model.query = "" }
                 }
-                tiny(
+                tool(
                     settings.layoutToggleIcon, settings.layoutToggleLabel, active: settings.split, cue: .toggle(!settings.split),
                     id: "diff-layout-toggle"
                 ) {
                     settings.split.toggle()
                 }
-                tiny("wrap_text", "Wrap lines", active: settings.wrap, cue: .toggle(!settings.wrap), id: "diff-wrap") {
+                tool("wrap_text", "Wrap lines", active: settings.wrap, cue: .toggle(!settings.wrap), id: "diff-wrap") {
                     settings.wrap.toggle()
                 }
-                tiny("code", "Syntax highlighting", active: settings.syntax, cue: .toggle(!settings.syntax), id: "diff-syntax") {
+                tool("code", "Syntax highlighting", active: settings.syntax, cue: .toggle(!settings.syntax), id: "diff-syntax") {
                     settings.syntax.toggle()
                 }
-                tiny(
+                tool(
                     "flag_outlined", "Show findings on lines", active: settings.findings, cue: .toggle(!settings.findings),
                     id: "diff-findings"
                 ) {
                     settings.findings.toggle()
                 }
-                tiny(
+                tool(
                     settings.autoViewed ? "visibility_outlined" : "visibility_off_outlined",
                     "Automatically mark files as viewed while scrolling", active: settings.autoViewed,
                     cue: .toggle(!settings.autoViewed), id: "diff-auto-viewed"
                 ) {
                     settings.autoViewed.toggle()
                 }
-                tiny(
+                tool(
                     settings.scrollSound ? "volume_up_outlined" : "volume_off_outlined", "Click sound while scrolling",
                     active: settings.scrollSound, cue: .toggle(!settings.scrollSound), id: "diff-scroll-sound"
                 ) {
                     settings.scrollSound.toggle()
                 }
-                tiny(
+                tool(
                     settings.scrollHaptic ? "vibration_outlined" : "mobile_off_outlined", "Haptic while scrolling",
                     active: settings.scrollHaptic, cue: .toggle(!settings.scrollHaptic), id: "diff-scroll-haptic"
                 ) {
                     settings.scrollHaptic.toggle()
                 }
-                tiny(
+                tool(
                     "unfold_more", "Page up and down buttons", active: settings.pageButtons,
                     cue: .toggle(!settings.pageButtons), id: "diff-page-buttons-toggle"
                 ) {
                     settings.pageButtons.toggle()
                 }
                 if !extra.isEmpty {
-                    separator
                     Menu {
                         ForEach(extra.indices, id: \.self) { (index: Int) in
                             Button(action: extra[index].action) {
@@ -562,19 +562,44 @@ struct DiffReviewStream<Header: View>: View {
                             }
                         }
                     } label: {
-                        FmIcon("more_horiz", size: 18, color: fm.textSecondary)
-                            .frame(width: 30, height: 30)
+                        FmIcon("more_horiz", size: 20, color: fm.textSecondary)
+                            .frame(width: Self.toolSide, height: Self.toolSide)
+                            .contentShape(Self.toolShape)
                     }
+                    .inboxGlass(Self.toolShape, tint: nil, fallback: fm.bgRaised)
+                    .fmHoldName("More")
                     .accessibilityLabel(Text("More"))
                 }
             }
-            .padding(.horizontal, 4)
+            .padding(.horizontal, FmSpace.x2)
+            .padding(.vertical, FmSpace.x1)
         }
-        .frame(height: 36)
-        .shellGlass(Capsule())
-        .padding(.horizontal, FmSpace.x2)
-        .padding(.vertical, FmSpace.x1)
+        .scrollClipDisabled()
         .accessibilityIdentifier("diff-toolbar")
+    }
+
+    private static var toolSide: CGFloat { 36 }
+    private static var toolGap: CGFloat { 6 }
+    private static var toolShape: RoundedRectangle { RoundedRectangle(cornerRadius: 9, style: .continuous) }
+
+    private func tool(
+        _ icon: String, _ label: String, active: Bool = false, cue: FmCue = .click, id: String,
+        _ action: @escaping () -> Void
+    ) -> some View {
+        FmHoldButton(label, action: {
+            FmHaptics.selection(cue)
+            ratchet.mute()
+            action()
+        }) {
+            FmIcon(icon, size: 20, color: active ? fm.accent : fm.textSecondary)
+                .frame(width: Self.toolSide, height: Self.toolSide)
+                .contentShape(Self.toolShape)
+        }
+        .buttonStyle(.plain)
+        .inboxGlass(Self.toolShape, tint: active ? fm.accent : nil, fallback: active ? fm.accentSubtle : fm.bgRaised)
+        .accessibilityLabel(Text(label))
+        .accessibilityAddTraits(active ? .isSelected : [])
+        .accessibilityIdentifier(id)
     }
 
     private var pinch: some Gesture {
@@ -595,13 +620,6 @@ struct DiffReviewStream<Header: View>: View {
             .onEnded { (_: MagnifyGesture.Value) in
                 pinchBase = nil
             }
-    }
-
-    private var separator: some View {
-        Rectangle()
-            .fill(fm.border)
-            .frame(width: 1, height: 18)
-            .padding(.horizontal, 3)
     }
 
     private func tiny(

@@ -414,6 +414,12 @@ final class AppServices {
             if topic == "pings" || topic == "issues" {
                 Task { await notifications.refresh(silent: true) }
             }
+            if topic == "pings" {
+                Task { await ShellNavigatorCounts.shared.refreshAssignedTasks() }
+            }
+            if topic == "pulls" {
+                ShellPullsWatch.shared.ring()
+            }
             // A desktop pushed a changed agent-session snapshot.
             if topic == "agents" || topic == "cloud-agents" {
                 agentList.ring()
@@ -426,6 +432,7 @@ final class AppServices {
             Task { await notifications.refresh(silent: true, catchUp: true) }
             // A run started while the socket was down rang no bell.
             agentList.ring()
+            Task { await ShellPullsWatch.shared.refresh() }
         }
 
         vaultAccount = auth.session?.nodeName ?? ""

@@ -51,6 +51,12 @@ least one paired phone of this account is connected or connected within 30 days
 account's Pings settings apply (the "Pings from your desktop" mute, pause and
 quiet hours). The desktop's own pause and quiet hours do not hold the phone.
 
+### Already on screen
+
+A ping is not forwarded while the desktop window is active and shows it: an
+agent ping while the agent list is visible, any ping while the Pings page is
+open ([PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md)). Power alarms always go.
+
 ### Duplicates and storms
 
 `pingforward::Gate` drops a ping that repeats one forwarded in the last 15

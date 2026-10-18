@@ -46,6 +46,8 @@ public struct AgentStartTarget: Equatable, Identifiable, Sendable {
     public var isOnMesh: Bool { !owner.isEmpty && !name.isEmpty }
     public var isMirrored: Bool { record != nil }
 
+    public var ref: RepoRef? { isOnMesh ? RepoRef(owner: owner, name: name) : nil }
+
     /// The repository by its public name. `owner` is the node serving it (a
     /// mirror, for the flagship), and that is the relay's business.
     public var label: String {

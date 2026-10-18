@@ -302,3 +302,101 @@ def test_zoho_sends_teach_the_next_email_like_mailtrap_ones():
     sent = _send(runtime, second)
     assert sent["status"] == 201
     assert sent["data"]["learning"]["sent"] == 1
+
+
+GMAIL_PROXY = "Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)"
+
+
+class VisitorRuntime(AiRuntime):
+    def __init__(self, drafts=None, ip="66.249.84.10", agent=GMAIL_PROXY, rdap=True):
+        super().__init__(drafts)
+        self.visitor = {"ip": ip, "agent": agent}
+        self.rdap = rdap
+
+    def request_visitor(self):
+        return dict(self.visitor)
+
+    async def outbound_json(self, url, method="GET", headers=None, body=""):
+        if url.startswith(crm.WHOIS_RDAP):
+            self.outbound_calls.append((url, method, dict(headers or {}), body))
+            if not self.rdap:
+                return {"ok": False, "error": "outbound_unavailable"}
+            return {"ok": True, "status": 200, "data": {
+                "name": "GOOGLE", "country": "us",
+                "cidr0_cidrs": [{"v4prefix": "66.249.64.0", "length": 19}],
+                "entities": [
+                    {"roles": ["abuse"], "vcardArray": ["vcard", [["fn", {}, "text", "Abuse"]]]},
+                    {"roles": ["registrant"], "vcardArray": ["vcard", [
+                        ["version", {}, "text", "4.0"], ["fn", {}, "text", "Google LLC"]]]}]}}
+        return await super().outbound_json(url, method, headers, body)
+
+
+def test_the_first_open_ping_names_the_whois_owner_and_the_mail_client():
+    runtime = VisitorRuntime([_draft("Hello")])
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="customers")
+    _send(runtime, sam)
+    opener, _ = _tracking_urls(runtime.mailtrap_calls[-1][1]["html"])
+    runtime.pings.clear()
+    _visit(runtime, opener)
+    _visit(runtime, opener)
+    pings = [ping for ping in runtime.pings if ping["recipient"] == "alice"]
+    assert len(pings) == 1
+    body = pings[0]["body"].split("\n")
+    assert body[0] == "“Hello”"
+    assert body[1] == "Whois 66.249.84.10: Google LLC (GOOGLE, 66.249.64.0/19, US)"
+    assert body[2] == "Agent: Gmail image proxy · " + GMAIL_PROXY
+    assert [call[0] for call in runtime.outbound_calls] == [crm.WHOIS_RDAP + "66.249.84.10"]
+
+
+def test_a_private_address_is_never_looked_up_and_a_failed_lookup_still_pings():
+    runtime = VisitorRuntime([_draft("Hello"), _draft("Again")], ip="10.0.0.5",
+                             agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) "
+                                   "AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148")
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="customers")
+    _send(runtime, sam)
+    opener, _ = _tracking_urls(runtime.mailtrap_calls[-1][1]["html"])
+    runtime.pings.clear()
+    _visit(runtime, opener)
+    assert runtime.outbound_calls == []
+    assert runtime.pings[-1]["body"].split("\n")[1].startswith("Agent: iPhone · Apple Mail · ")
+
+    runtime.visitor = {"ip": "2001:4860:4860::8888", "agent": ""}
+    runtime.rdap = False
+    ann = _contact(runtime, name="Ann", email="ann@example.com", flow="customers")
+    _send(runtime, ann)
+    opener, _ = _tracking_urls(runtime.mailtrap_calls[-1][1]["html"])
+    _visit(runtime, opener)
+    assert runtime.pings[-1]["body"] == "“Again”\nWhois 2001:4860:4860::8888: no answer"
+
+
+def test_a_rating_and_note_reach_the_next_prompt():
+    runtime = AiRuntime([_draft("Quick idea for your repos"), _draft("Second")])
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="customers")
+    send_id = _send(runtime, sam)["data"]["email"]["id"]
+    rate = lambda actor, **body: call(runtime.use("POST", actor, body), "/api/crm/acme/outreach/rate")
+    assert rate("alice", emailId=send_id, rating=0)["data"]["error"] == "rating_invalid"
+    assert rate("alice", emailId="f" * 32, rating=3)["status"] == 404
+    assert rate("charlie", emailId=send_id, rating=3)["status"] == 403
+    rated = rate("alice", emailId=send_id, rating=2, note="  Too long, and   drop the jargon. ")
+    assert rated["status"] == 200, rated
+    assert rated["data"]["email"]["rating"] == 2
+    assert rated["data"]["email"]["ratingNote"] == "Too long, and drop the jargon."
+    assert runtime.audits[-1][0][1] == "crm.outreach.rate"
+
+    ann = _contact(runtime, name="Ann", email="ann@example.com", flow="customers")
+    assert _send(runtime, ann)["status"] == 201
+    prompt = runtime.prompts[-1]
+    assert "The sender rated these 1 or 2 stars (do not write like these):" in prompt
+    assert '- 2/5 for "Quick idea for your repos": Too long, and drop the jargon.' in prompt
+
+
+def test_manual_sends_cannot_be_rated():
+    runtime = AiRuntime()
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="customers")
+    logged = call(runtime.use("POST", body={
+        "contactId": sam, "to": "sam@example.com", "subject": "Hi",
+        "externalId": "provider-1", "status": "delivered"}),
+        "/api/crm/acme/emails")["data"]["email"]["id"]
+    refused = call(runtime.use("POST", body={"emailId": logged, "rating": 5}),
+                   "/api/crm/acme/outreach/rate")
+    assert refused["data"]["error"] == "email_not_automated"

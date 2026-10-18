@@ -317,6 +317,12 @@ final class CollabModelsTests: XCTestCase {
         api.pulls = []
         await pulls.start()
         XCTAssertEqual(pulls.state.value, [])
+        pulls.adopt([PublishedPull(number: 8, title: "Pushed live")])
+        XCTAssertEqual(pulls.state.value?.map(\.number), [8])
+        api.failure = ApiException("HTTP 503 for /api/repo/owner/repo/pulls")
+        await pulls.load()
+        XCTAssertEqual(pulls.state.value?.map(\.number), [8])
+        api.failure = nil
         let discussions = RepoDiscussionsModel(repo: collabRepo, api: api)
         await discussions.start()
         XCTAssertEqual(discussions.state.value?.map(\.title), ["Mobile maintainer workflow"])

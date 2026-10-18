@@ -422,6 +422,38 @@ static void testShortcutSteps()
     check(insights::parseShortcutSteps(QStringLiteral("# step:   \necho\n")).isEmpty(),
           "an empty step name is not a step");
 
+    check(insights::shortcutStepMarker(QStringLiteral("::step::Deploy Android build"), steps) == 2,
+          "a marker names its step");
+    check(insights::shortcutStepMarker(QStringLiteral("  ::step::  deploy   android BUILD \r"),
+                                       steps) == 2,
+          "markers match case-insensitively, whitespace collapsed");
+    check(insights::shortcutStepMarker(QStringLiteral("\x1b[1m::step::4\x1b[0m"), steps) == 3,
+          "a marker can give the step's number");
+    check(insights::shortcutStepMarker(QStringLiteral("::step::9"), steps) == -1 &&
+              insights::shortcutStepMarker(QStringLiteral("::step::Nope"), steps) == -1 &&
+              insights::shortcutStepMarker(QStringLiteral("echo ::step::Prepare"), steps) == -1,
+          "unknown steps and text before the marker are ignored");
+    insights::ShortcutRun tracked;
+    tracked.steps = steps;
+    check(!insights::trackShortcutStep(tracked, QStringLiteral("output\n::step::Pre")) &&
+              tracked.step == -1,
+          "a marker split across chunks waits for its line end");
+    check(insights::trackShortcutStep(tracked, QStringLiteral("pare\nmore\n")) && tracked.step == 0,
+          "the joined marker moves the run to its step");
+    check(insights::trackShortcutStep(tracked,
+                                      QStringLiteral("::step::2\nx\n::step::Bad link\n")) &&
+              tracked.step == 4,
+          "the last marker in a chunk wins");
+    check(!insights::trackShortcutStep(tracked, QStringLiteral("::step::Bad link\n")),
+          "repeating the current step is no change");
+    check(insights::shortcutRunRow(tracked, false).value(QStringLiteral("step")).toInt() == 4 &&
+              insights::shortcutRunRow(tracked, false).value(QStringLiteral("stepCount")).toInt() ==
+                  5,
+          "run rows carry the current step");
+    check(!insights::shortcutRunRow(insights::ShortcutRun{}, false)
+               .contains(QStringLiteral("step")),
+          "runs without steps have no step key");
+
     const insights::ShortcutMeta meta =
         insights::parseShortcutMeta(QStringLiteral("deploy.sh"), script);
     check(meta.description.isEmpty() ||

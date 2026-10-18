@@ -378,8 +378,10 @@ One-off sponsorship, investment, partnership, support and follow-up asks from
 the organization's default sender, through the host's Mailtrap capability.
 Owners and admins can always send and manage the roster; other members must be
 on the outreach team (`POST /api/crm/<org>/outreach/team`, audited).
-`GET /outreach` returns access, templates, sender, the per-sender daily cap and
-recent sends; `POST /outreach/send` sends one email. Every attempt is written to
+`GET /outreach` returns access, templates, sender, the per-sender daily cap
+(`OUTREACH_DAILY_LIMIT`, 100 in a rolling 24 hours, shared with automated
+emails; it was 50 until 1.38.0, when the iPhone's auto-send was paced at 100 a
+day) and recent sends; `POST /outreach/send` sends one email. Every attempt is written to
 `crm_outreach_log` with recipient and subject sealed.
 
 ## Automated outreach email
@@ -472,13 +474,43 @@ secret, else the caller's https origin, else `https://app.forkmesh.com`.
   after sending (`TRACK_QUIET_MS`) are ignored: mail gateways scan links and
   images as the message arrives.
 - The first open and the first click ping the sender: "📬 <name> opened your
-  email" and "🔗 <name> clicked the link in your email".
+  email" and "🔗 <name> clicked the link in your email". Since 1.38.0 the
+  ping's body adds, under the subject, who the reader's address belongs to
+  and the client that loaded the logo or link:
+  `Whois 66.249.84.10: Google LLC (GOOGLE, 66.249.64.0/19, US)` and
+  `Agent: Gmail image proxy · <user agent, first 200 characters>`. The host
+  hands the tracking route the request's `cf-connecting-ip` and `User-Agent`
+  (`request_visitor()`, nothing else). A public address is looked up once, on
+  that first hit, through RDAP (`https://rdap.org/ip/<ip>`, which redirects to
+  the registry; the five registries are in `outboundOrigins`): the
+  registrant's name, the network name, its CIDR (or start – end range) and
+  country. Private, loopback and reserved addresses are never looked up; a
+  failed lookup still pings with "no answer". `_mail_agent_label` names the
+  Gmail and Yahoo image proxies, Outlook, Thunderbird, Zoho, Superhuman,
+  Proton and Apple Mail (WebKit without Safari), else device and browser.
+  Neither the address nor the agent is stored: they live only in the ping.
+  Gmail, Yahoo and Apple Mail Privacy Protection load images through their
+  own servers, so for those readers the whois names the provider, not the
+  reader.
 - Email rows (`GET /emails`, the contact's emails) carry `opens`, `clicks`,
   `openedAt`, `clickedAt`, `automated` and `linkKind`; the web detail card
   shows "Sent by AI · 2 opens · 1 click".
 - Opens are a hint, not proof: Apple Mail Privacy Protection loads images for
   the reader, and clients that block images never report one. Clicks are the
   stronger signal, and the lessons weigh them first.
+
+### Ratings
+
+`POST /api/crm/<org>/outreach/rate {emailId, rating: 1-5, note?}` (1.38.0)
+stores the sender's rating and a short note (300 characters) on an automated
+send. Only automated sends can be rated (`409 email_not_automated`), by
+their sender or an owner or admin (`403 rating_forbidden`); it is audited as
+`crm.outreach.rate`. Email rows carry `rating` and `ratingNote`. The next
+automated email's "What our past emails taught us" adds up to three emails
+rated 4-5 (write like these) and three rated 1-2 (do not), and the five newest
+notes, which the model is told outrank the open and click numbers. The
+iPhone's auto-send review popup is the first client
+(`docs/native/GENIE.md`, "Suggestion mode and pocket mode").
 
 Tests: `tests/test_auto_email.py`.
 
