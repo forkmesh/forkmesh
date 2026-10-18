@@ -1,0 +1,67 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "eye-control",
+  "name": "Eye Control",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Utilities",
+  "version": "1.0.0",
+  "summary": "Experimental: steer a cursor around the iPhone app with your eyes, using the TrueDepth front and infrared cameras, and blink firmly to tap whatever you are looking at. Camera frames stay on the phone.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "Eye Control on a phone: a cursor following the user's gaze onto a button, with the Stop eye control button below"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "ios": "builtin:eye-control",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "device.camera.read",
+      "label": "Use the TrueDepth and infrared front cameras to follow your eyes while Eye Control is on; frames stay on this phone",
+      "risk": "high"
+    },
+    {
+      "id": "app.input.control",
+      "label": "Tap buttons, switches and fields inside ForkMesh where you look when you blink",
+      "risk": "sensitive"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false,
+    "sync": "account",
+    "places": ["mobile"]
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": false
+  }
+}
