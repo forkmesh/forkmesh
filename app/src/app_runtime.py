@@ -3938,7 +3938,7 @@ class Default:
             canonical_target = await self._repo_canonical_redirect(
                 request, url)
             if canonical_target:
-                return Response("", status=301, headers={
+                return Response("", status=308, headers={
                     "location": canonical_target,
                     "cache-control": "no-store"})
             return await self._serve_repo_page(request, url)
@@ -4256,8 +4256,10 @@ class Default:
         name = repo_short_urls.first_name(url.path)
         if repo_short_urls.OWNER_RE.fullmatch(name):
             try:
-                if (await _account_row(self.env, name))[1] or \
-                        (await _org_row(self.env, name))[1]:
+                account = (await _account_row(self.env, name))[1]
+                if (await _org_row(self.env, name))[1] or (account and not (
+                        setting.get("canonical")
+                        and _account_kind(account) == "node")):
                     return None
             except Exception:
                 return None

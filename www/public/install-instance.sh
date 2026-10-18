@@ -238,6 +238,12 @@ powered_by = c.get("poweredBy", True)
 if not isinstance(powered_by, bool):
     sys.exit("Setting poweredBy must be true or false.")
 values["poweredBy"] = "1" if powered_by else "0"
+single = c.get("singleOrganization", False)
+if not isinstance(single, bool):
+    sys.exit("Setting singleOrganization must be true or false.")
+if single and values["ownerType"] != "org":
+    sys.exit("Setting singleOrganization needs ownerType org.")
+values["singleOrganization"] = "1" if single else "0"
 values["logoType"] = values["logoData"] = ""
 logo = str(c.get("logo") or "").strip()
 if logo and not update:
@@ -301,6 +307,7 @@ RUNNER_UNIT="forkmesh-runner@$CFG_ownerName.service"
 DOMAIN="$CFG_domain"
 ORIGIN="https://$DOMAIN"
 REPO_URL="$ORIGIN/$CFG_ownerName/forkmesh"
+if [ "${CFG_singleOrganization:-0}" = "1" ]; then REPO_URL="$ORIGIN/forkmesh"; fi
 NEW_INSTANCE=0
 if [ "$CONFIG_MODE" != "update" ] && { [ ! -e "$INSTANCE_JSON" ] || [ -e "$CLEANUP_DIR/new-instance" ]; }; then
   NEW_INSTANCE=1
@@ -1316,8 +1323,9 @@ print(json.dumps({
     "adminPassword": sys.stdin.read(), "ownerType": sys.argv[3],
     "ownerName": sys.argv[4], "projectName": sys.argv[5],
     "nodePublicKey": sys.argv[6], "owners": owners,
-    "theme": json.loads(sys.argv[7]) if sys.argv[7].startswith("{") else sys.argv[7]}))
-' "$CFG_adminUsername" "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_projectName" "$NODE_PUBLIC_KEY" "$CFG_theme" \
+    "theme": json.loads(sys.argv[7]) if sys.argv[7].startswith("{") else sys.argv[7],
+    "singleOrganization": sys.argv[8] == "1"}))
+' "$CFG_adminUsername" "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_projectName" "$NODE_PUBLIC_KEY" "$CFG_theme" "$CFG_singleOrganization" \
       | host_cli instance-bootstrap 2>&1 | tail -n 1
   )" || true
   ADMIN_PASSWORD=""

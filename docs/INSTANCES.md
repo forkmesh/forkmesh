@@ -155,6 +155,20 @@ repository's runs stay hidden ("Public run summary" there).
 Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
 → Repository addresses ([app/server-update.md](app/server-update.md)).
 
+**Single-organization instances** (opt in, off by default). With
+`"singleOrganization": true` in the install settings (only with `ownerType`
+`org`), the bootstrap writes the `repo_paths` row
+`{"canonical":true,"owner":"<org>","short":true}` when it creates the
+organization, so every repository of the instance shows only as
+`https://<domain>/<repo>`, the platform mirror included
+(`https://<domain>/forkmesh`), and the installer reports that address. The
+row is written with `ON CONFLICT DO NOTHING` and only when the organization
+is new, so a re-run never overrides an admin's choice, and `--update` never
+runs the bootstrap. Without the setting nothing changes. An installed
+instance is converted with `python -m forkmesh_host instance-single-org --org
+<org>` (idempotent, `--off` to switch back); the full command and the rules
+are in [app/server-update.md](app/server-update.md).
+
 ## Importing a repository on the server (`instance_repo.py`)
 
 `python -m forkmesh_host instance-repo` creates a hosted repository on the
@@ -359,7 +373,8 @@ to every provider.
 `test_instance_theme.py`, `test_instance_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
 `test_instance_node_reconnect_frontend.py`,
-`test_instance_served_by_frontend.py`, and
+`test_instance_served_by_frontend.py`, `test_repo_canonical_addresses.py`,
+`test_single_org_contributors.py`, and
 `app/host/tests_unit/test_ssh_helper.py`, `test_instance_bootstrap.py`,
 `test_instance_repo.py`, and `app/tests/host/test_instance_repo_e2e.py`
 (a served app with a temporary SQLite database: a repository created from

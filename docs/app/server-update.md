@@ -128,10 +128,11 @@ treated like the organization address.
 
 | Request | Answer |
 | --- | --- |
-| `GET`/`HEAD /<owner>/<repo>[/tab/...]` | `301` to `/<repo>[/...]`, query kept, `cache-control: no-store` so turning the switch off takes effect at once |
-| `GET /<creator>/<repo>[/...]`, the repository linked to the owner | the same `301`, for a public repository only (a redirect for a private one would tell a visitor that it exists) |
+| `GET`/`HEAD /<owner>/<repo>[/tab/...]` | `308` to `/<repo>[/...]`, query kept, `cache-control: no-store` so turning the switch off takes effect at once |
+| `GET /<creator>/<repo>[/...]`, the repository linked to the owner (the creating account, or the `forkmesh` node for the platform mirror) | the same `308`, for a public repository only (a redirect for a private one would tell a visitor that it exists) |
 | `/<owner>/<repo>/info/refs`, `git-upload-pack`, `git-receive-pack`, `/api/repo/...` | unchanged at both addresses; git and the API are never redirected |
-| a name that is reserved, looks like a file, ends in `.git`, equals the owner, or is an account or organization | keeps `/<owner>/<repo>` (the short rewrite refuses those names, so the full address is the only one that works) |
+| a name that is reserved, looks like a file, ends in `.git`, equals the owner, or is a person's account or an organization | keeps `/<owner>/<repo>` (the short rewrite refuses those names, so the full address is the only one that works) |
+| a name that is only an internal node account (`forkmesh`, `<org>-actions`) | goes to the root: in this mode internal accounts have no address of their own, so the instance's platform mirror is `/forkmesh` |
 
 Where the short form is produced:
 
@@ -174,6 +175,18 @@ Where the short form is produced:
   through `_git_request_path`. The instance host's 256 MiB push body limit
   (`request_guard.GIT_PUSH_RE`) also matches the one-segment push path.
 
+Internal accounts are node accounts (`_account_kind` = `node`): the git
+node `forkmesh`, the Actions bot `<org>-actions`. They keep their
+organization role (the bot stays a maintainer so workflows can push), but the
+organization roster (`GET /api/orgs/<org>/members`) leaves them out while
+the mode is on (`_org_internal_members`). The organization owners shown are
+the people configured at install.
+
+Signing up and contributing are not affected: `/signup` is unchanged, and
+opening an issue, pull request or discussion on an organization repository
+needs only a signed event and the feature switch (`_repo_feature_off`), not
+organization membership (`app/tests/test_single_org_contributors.py`).
+
 The owner's repository names and creator links are read from `org_repos`
 and the owner's `repositories` rows and cached for five minutes per process
 (`_repo_short_links`); a save on the admin page clears it. A new repository
@@ -186,9 +199,28 @@ skipped for one-segment paths), ActivityPub actor URLs and the fediverse
 profile, `og:title`, mirror and runner clone URLs on other hosts, and the
 materialized public catalog snapshot on the cores (instances do not use it).
 
-To turn it on for an existing instance, use the admin page (Platform →
-Repository addresses, both switches, owner = the organization), or write the
-row directly:
+New instances opt in with `"singleOrganization": true` in the install
+settings (default `false`, organization owners only); see
+[../INSTANCES.md](../INSTANCES.md). To turn it on for an existing instance,
+run the operator command as the app user, from the instance's source:
+
+```sh
+cd /opt/forkmesh-instance/src/app/host && runuser -u forkmesh-app -- \
+  env HOME=/var/lib/forkmesh-instance /opt/forkmesh-instance/venv/bin/python \
+  -m forkmesh_host instance-single-org --org acme-bolt \
+  --env-file /etc/forkmesh-instance/app.env \
+  --db sqlite:/var/lib/forkmesh-instance/app.db \
+  --data-dir /var/lib/forkmesh-instance/data
+```
+
+It writes the `repo_paths` row, links the `forkmesh` platform mirror to the
+organization if that alias is missing, prints the repositories now served at
+the root, and is safe to run again (`"changed": false`). `--off` sets
+`canonical` back to `false`. No catalog row is rewritten: stored `cloneUrl`
+values are signed identity data the server reads, so the short form is
+applied to answers instead. The admin page (Platform → Repository addresses,
+both switches, owner = the organization) does the same as the command
+without the alias repair, or the row can be written directly:
 
 ```sql
 INSERT INTO instance_settings (k, doc, updated_at)

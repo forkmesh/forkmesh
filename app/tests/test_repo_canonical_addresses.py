@@ -166,7 +166,7 @@ def test_the_route_redirects_before_serving_the_full_address_page():
     block = block.split("        if url.path == \"/dashboard\"", 1)[0]
     assert block.index("_repo_canonical_redirect(") < block.index(
         "return await self._serve_repo_page(request, url)")
-    assert '"location": canonical_target' in block and "status=301" in block
+    assert '"location": canonical_target' in block and "status=308" in block
     assert route.index("project_target = await self._repo_projects_redirect(url)") < \
         route.index("if looks_like_repo_route(url.path):")
     assert route.index("git_info = GIT_INFO_RE.match(url.path)") < \
@@ -184,7 +184,8 @@ PRIVATE = {("drew", "secret")}
 CANON = {"short": True, "owner": "acme-bolt", "canonical": True}
 
 
-def entry_namespace(setting_doc, accounts=(), rows=None, records=()):
+def entry_namespace(setting_doc, accounts=(), rows=None, records=(),
+                    nodes=("forkmesh", "acme-bolt-actions")):
     tree = ast.parse(ENTRY, filename=str(ENTRY_PATH))
     names = {"_git_request_path", "_repo_short_setting_row",
              "_repo_name_is_account", "_repo_canonical_path",
@@ -215,10 +216,12 @@ def entry_namespace(setting_doc, accounts=(), rows=None, records=()):
         return "bi:" + value
 
     async def account_row(_env, name):
+        if name in nodes:
+            return "bi", {"name": name, "kind": "node"}
         return "bi", ({"name": name} if name in accounts else None)
 
     async def org_row(_env, name):
-        return "bi", None
+        return "bi", ({"name": name} if name == "acme-bolt" else None)
 
     async def org_repo_node(_env, org, repo):
         return (rows if rows is not None else ALIASES).get(
@@ -235,7 +238,8 @@ def entry_namespace(setting_doc, accounts=(), rows=None, records=()):
                  "decrypt_row": decrypt_row, "blind_index": blind_index,
                  "_account_row": account_row, "_org_row": org_row,
                  "_org_repo_node": org_repo_node,
-                 "_repo_is_private": repo_is_private, "queries": queries}
+                 "_repo_is_private": repo_is_private, "queries": queries,
+                 "_account_kind": lambda rec: rec.get("kind", "user")}
     exec(compile(ast.Module(body=selected, type_ignores=[]),
                  str(ENTRY_PATH), "exec"), namespace)
     return namespace
@@ -265,6 +269,18 @@ def test_creator_and_organization_page_paths_redirect_to_the_short_form():
         dict(CANON, canonical=False)), accounts={"drew"})
     assert asyncio.run(ns["_repo_canonical_path"](
         None, "/drew/Bolt")) is None
+
+
+def test_the_platform_mirror_owned_by_the_node_account_moves_to_the_root():
+    ns = entry_namespace(repo_short_urls.dump(CANON),
+                         rows={("acme-bolt", "forkmesh"): "forkmesh"})
+    path = ns["_repo_canonical_path"]
+    assert asyncio.run(path(None, "/forkmesh/forkmesh")) == "/forkmesh"
+    assert asyncio.run(path(None, "/acme-bolt/forkmesh/issues")) == (
+        "/forkmesh/issues")
+    assert asyncio.run(ns["_repo_clone_url"](
+        None, "https://code.example.org", "acme-bolt", "forkmesh")) == (
+        "https://code.example.org/forkmesh.git")
 
 
 def test_names_of_accounts_keep_the_owner():
@@ -306,18 +322,20 @@ def test_clone_urls_stay_long_without_the_canonical_switch():
 
 def test_the_link_table_hides_private_repositories_from_the_browser():
     ns = entry_namespace(
-        repo_short_urls.dump(CANON), accounts={"drew", "forkmesh"},
+        repo_short_urls.dump(CANON), accounts={"drew", "bolt-team"},
         rows={("acme-bolt", "bolt"): "drew",
               ("acme-bolt", "secret"): "drew",
               ("acme-bolt", "docs"): "drew",
-              ("acme-bolt", "forkmesh"): "forkmesh"},
+              ("acme-bolt", "forkmesh"): "forkmesh",
+              ("acme-bolt", "bolt-team"): "drew"},
         records=[{"name": "Own", "visibility": "public"}])
     links = asyncio.run(ns["_repo_short_links"](None, "acme-bolt"))
     assert links["aliases"] == {"bolt": "drew", "docs": "drew",
-                                "forkmesh": "forkmesh"}
+                                "forkmesh": "forkmesh",
+                                "bolt-team": "drew"}
     assert links["links"]["secret"] == "drew"
-    assert links["keep"] == ["docs", "forkmesh"]
-    assert links["allKeep"] == ["docs", "forkmesh"]
+    assert links["keep"] == ["bolt-team", "docs"]
+    assert links["allKeep"] == ["bolt-team", "docs"]
     count = len(ns["queries"])
     assert asyncio.run(ns["_repo_short_links"](None, "acme-bolt")) == links
     assert len(ns["queries"]) == count

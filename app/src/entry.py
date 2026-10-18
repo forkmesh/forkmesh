@@ -28989,13 +28989,19 @@ async def org_members_handler(env, request, org):
         for r in team_rows or []:
             teams_by_member.setdefault(
                 str(r.get("name") or ""), []).append(str(r.get("team") or ""))
+        hidden_members = globals().get("_org_internal_members")
+        hidden = (await hidden_members(
+            env, org_name, [str(r.get("name") or "") for r in rows or []])
+            if callable(hidden_members) else set())
         return json_response({"ok": True, "visibility": access["offices"],
                               "members": [
             {"name": str(r.get("name") or ""),
              "role": str(r.get("role") or ""),
              "since": int(r.get("created_at") or 0),
              "teams": teams_by_member.get(str(r.get("name") or ""), [])}
-            for r in rows or []]}, cache_control="no-store")
+            for r in rows or []
+            if str(r.get("name") or "") not in hidden]},
+            cache_control="no-store")
     if method not in ("POST", "DELETE"):
         return json_response({"error": "method_not_allowed"}, status=405)
     try:
@@ -51244,15 +51250,35 @@ async def _repo_short_setting_row(env):
         repo_short_urls.parse((row or {}).get("doc") or ""), now)
 
 
-async def _repo_name_is_account(env, name):
+async def _repo_name_is_account(env, name, internal_ok=False):
     name = str(name or "").lower()
     if not repo_short_urls.OWNER_RE.fullmatch(name):
         return False
     try:
-        return bool((await _account_row(env, name))[1]
-                    or (await _org_row(env, name))[1])
+        if (await _org_row(env, name))[1]:
+            return True
+        account = (await _account_row(env, name))[1]
+        if internal_ok and account and _account_kind(account) == "node":
+            return False
+        return bool(account)
     except Exception:
         return True
+
+
+async def _org_internal_members(env, org, names):
+    setting = await _repo_short_setting_row(env)
+    if not repo_short_urls.canonical_owner(setting) or \
+            repo_short_urls.canonical_owner(setting) != str(org or "").lower():
+        return set()
+    hidden = set()
+    for name in names:
+        try:
+            account = (await _account_row(env, name))[1]
+        except Exception:
+            continue
+        if account and _account_kind(account) == "node":
+            hidden.add(name)
+    return hidden
 
 
 async def _repo_canonical_path(env, path, query="", public_only=True):
@@ -51272,7 +51298,7 @@ async def _repo_canonical_path(env, path, query="", public_only=True):
             return None
         path = "/" + "/".join([quote(owner, safe="")] + parts[1:])
     hit = repo_short_urls.canonical_redirect(path, query, setting)
-    if hit is None or await _repo_name_is_account(env, hit[1]):
+    if hit is None or await _repo_name_is_account(env, hit[1], True):
         return None
     return hit[0]
 
@@ -51321,7 +51347,7 @@ async def _repo_short_links(env, owner):
                     "", rec.get("visibility") != "public"))
         taken = []
         for name in repo_short_urls.owner_candidates(rows, owner):
-            if await _repo_name_is_account(env, name):
+            if await _repo_name_is_account(env, name, True):
                 taken.append(name)
     except Exception:
         return None
