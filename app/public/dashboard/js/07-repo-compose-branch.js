@@ -2156,19 +2156,10 @@
       // Release manifests live in the git tree at .forkmesh/releases/<channel>/release.json
       // (issue #304). List the channels, then batch-read every manifest in one
       // tunnel round-trip so opening the tab doesn't fan out N blob requests.
-      let tree;
-      try {
-        tree = await fetchRepoJson(repoLiveUrl(
-          repo,
-          "tree",
-          { path: ".forkmesh/releases" },
-        ));
-      } catch (error) {
-        if (isMissingMirrorFolder(error)) {
-          container.innerHTML = empty;
-          return;
-        }
-        throw error;
+      const tree = await fetchRepoOptionalTree(repo, ".forkmesh/releases");
+      if (!tree) {
+        container.innerHTML = empty;
+        return;
       }
       const channels = (Array.isArray(tree.entries) ? tree.entries : [])
         .filter((entry) => entry.type === "tree" && entry.name)
