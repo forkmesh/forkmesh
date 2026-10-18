@@ -314,6 +314,28 @@ it is about as soft as a webcam image, and a faint per-frame grain (±0.6%)
 is added to the stand-in so it does not look cleaner than the video around
 it.
 
+**Skin tone (2026-10-18).** Skin used to take the full ratio of the caller's
+blurred skin colour to the stand-in's (clamped 0.3-3x) and was then clipped
+at white. A pale caller wearing a darker stand-in pushed the face up to 3x:
+the highlights blew out and the stand-in lost its own complexion; a darker
+caller turned a fair stand-in muddy grey. The overall difference is now split
+from the local lighting pattern: the pattern (`local / global`, 0.6-1.6) still
+follows the caller's light, but only part of the overall gap is applied
+(level^`SKIN_LEVEL` 0.4, hue^`SKIN_HUE` 0.6, clamped to `SKIN_RANGE`
+0.55-1.8), because a camera's auto exposure already evens out exposure and most of
+what remains is complexion. A soft shoulder above `HIGHLIGHT_KNEE` (0.82)
+replaces the hard clip. On the test composites a Kofi stand-in on a pale
+caller went from the caller's skin (RGB 166/147/141) to 131/107/98, against
+111/83/70 in Kofi's photo.
+
+**Halo (2026-10-18).** With no background chosen, a large ellipse around the
+head showed a blurred, inpainted plate instead of the real room, to hide the
+caller's own head outline. The inpainting smears nearby colours, so every
+head carried a dirty-glass ring of brown and green smudges. The blurred
+backdrop now carries the background-visibility weight in its alpha, and the
+halo only blurs where that weight says the caller's body was
+(`HALO_CLEAR` 0.45-0.92); the real background around it stays sharp.
+
 **Pushed frames.** `stage.pushFrame(image, reply, time)` renders a frame
 whose landmark reply was computed elsewhere (`{regions, mask}` in the
 image's pixels), used by the iOS TrueDepth camera.
@@ -468,6 +490,22 @@ the noisiest, at about -42 dB. What remains there is time aliasing of the
 STFT warp, which a shorter lifter would fix only by blurring formant
 positions.
 
+- **Full-period mark correlation (2026-10-18).** Each pulse mark was placed by
+  correlating half a period on each side of the last mark. On recorded
+  speech (CMU ARCTIC, three male and two female speakers) mark spacing jumped
+  0.45-0.57 semitones from one cycle to the next for male voices (about 3%,
+  where a healthy voice is under 1%), and grains are spaced by the mark
+  period, so the output carried 1.6-3.4% cycle-to-cycle jitter and sounded
+  hoarse. The window is now a full period on each side: mark jitter roughly
+  halves for male voices, output jitter drops about 30% (Maya from a male
+  voice 1.57% to 1.14%, Theo 2.50% to 1.72%, Kofi 3.39% to 2.56%), the
+  periodicity of female-to-Kofi rises from 0.965 to 0.977 and the spectral
+  distance of the female targets falls (for example 3.26 to 2.87 dB). Smoothing the
+  period across neighbouring marks was tried and rejected: an exponential
+  glide lagged pitch glides (half-semitone accuracy fell from 95% to 82%),
+  and a centred average rarely has the next mark in time without more
+  latency.
+
 `test_chat_call_voice_realism.py` checks each of these points. On steady
 vowels it measures inter-harmonic noise (at most -40 dB), the harmonic ratio
 against the planned ratio, and the second formant against the planned tract
@@ -568,6 +606,23 @@ web view. It owns everything a face change needs, and calls reuse it:
   and Android sets `previewing` before running the page's `preview`, so the
   WebView is attached from the start (the same rule the old iOS call
   preview learned on 2026-10-14).
+- **The camera video must be on the page too (2026-10-18).** The face stage
+  read the camera through a `<video>` it never added to the document.
+  WebKit (every iPhone browser, `WKWebView`, Safari) does not play a
+  `MediaStream` in a detached, `display:none` or off-screen video, so the
+  stage never got a frame: `play()` never settled, the stage drew nothing and
+  the screen stayed on its spinner over black. This hit iPhones without
+  TrueDepth, the fallback when the TrueDepth frames do not arrive, and the
+  web page in Safari. The stage now adds that video to the page as a 1 px,
+  transparent, fixed element (`CAMERA_STYLE`), calls `play()` again if WebKit
+  pauses it, and removes it on `stop()`. Chromium never needed it.
+- **The preview does not wait on the voice.** The page's `preview` used to
+  return only after the voice worklet started, and `addModule` has no time
+  limit of its own, so a slow or stuck worklet kept the native screens
+  spinning until their watchdog fired. `preview` now waits at most
+  `VOICE_READY_MS` (2.5 s); the voice carries on starting and reports itself
+  with the `voice` event. `createVoiceStage` gives `addModule` 6 s
+  (`MODULE_TIMEOUT_MS`).
 - **Calls.** `DirectCallEngine` takes the plug-in's look instead of keeping its
   own copy and listens to it: a change made in the plug-in, or from the call
   screen's Face, Background and Voice controls (the plug-in's own controls),

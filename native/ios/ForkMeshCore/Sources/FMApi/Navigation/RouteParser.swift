@@ -261,6 +261,7 @@ public enum RouteParser {
         case "phone-security": return [.phoneSecurity]
         case "eye-control": return [.eyeControl]
         case "openwrt": return tail.isEmpty ? [.openWrtRouter] : nil
+        case "files": return tail.isEmpty ? [.fileExplorer] : nil
         case "face-changer": return [.faceChanger]
         case "video-mix-dj-studio": return [.videoMixDjStudio]
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil

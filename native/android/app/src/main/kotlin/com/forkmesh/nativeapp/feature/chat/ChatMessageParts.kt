@@ -53,6 +53,17 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.forkmesh.nativeapp.api.ApiService
@@ -203,8 +214,8 @@ fun ChatReactionChips(chips: List<ReactionChip>, onToggle: (String) -> Unit) {
             Row(
                 Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .background(if (chip.mine) colors.accentSubtle else colors.bgRaised)
-                    .border(0.5.dp, if (chip.mine) colors.accent else colors.border, RoundedCornerShape(12.dp))
+                    .background(if (chip.mine) colors.accentSubtle else colors.bgOverlay)
+                    .border(1.dp, if (chip.mine) colors.accent else colors.textPrimary.copy(alpha = if (colors.dark) .20f else .14f), RoundedCornerShape(12.dp))
                     .clickable { onToggle(chip.value) }
                     .heightIn(min = 32.dp)
                     .padding(horizontal = FmSpace.x2, vertical = 2.dp)
@@ -542,24 +553,94 @@ fun ChatSenderAvatar(message: ChatMessage) {
 @Composable
 fun ChatQuickReactions(onPick: (String) -> Unit, onMore: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = FmSpace.x3, vertical = FmSpace.x2),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        Modifier.fillMaxWidth().padding(horizontal = FmSpace.x2, vertical = FmSpace.x2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         for (value in ReactionCatalog.quick) {
-            Box(
-                Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(Fm.colors.bgRaised)
-                    .clickable { onPick(value) }
-                    .semantics { contentDescription = ReactionCatalog.label(value) },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(ReactionCatalog.emoji(value), style = Fm.text.titleMedium)
+            ChatReactionBubble(ReactionCatalog.label(value), Modifier.weight(1f), onTap = { onPick(value) }) {
+                Text(ReactionCatalog.emoji(value), fontSize = 20.sp)
             }
         }
-        FmIconButton(icon = "add_reaction_outlined", label = "More reactions", onPressed = onMore)
+        ChatReactionBubble("More reactions", Modifier.weight(1f), onTap = onMore) {
+            FmIcon("add_reaction_outlined", size = 20.dp, tint = Fm.colors.textSecondary)
+        }
+    }
+}
+
+@Composable
+private fun ChatReactionBubble(label: String, modifier: Modifier, onTap: () -> Unit, content: @Composable () -> Unit) {
+    val colors = Fm.colors
+    Box(modifier, contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(42.dp)
+                .clip(CircleShape)
+                .background(colors.textPrimary.copy(alpha = if (colors.dark) .10f else .06f))
+                .border(1.dp, colors.textPrimary.copy(alpha = if (colors.dark) .20f else .14f), CircleShape)
+                .clickable(onClick = onTap)
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+fun ChatReactionPicker(modifier: Modifier = Modifier, onPick: (String) -> Unit) {
+    val colors = Fm.colors
+    val groups = ReactionCatalog.groups
+    val grid = rememberLazyGridState()
+    val scope = rememberCoroutineScope()
+    val starts = remember(groups) { groups.runningFold(0) { at, group -> at + 1 + group.emoji.size }.dropLast(1) }
+    val current by remember(starts) { derivedStateOf { starts.indexOfLast { it <= grid.firstVisibleItemIndex }.coerceAtLeast(0) } }
+    Column(modifier) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = FmSpace.x2, vertical = FmSpace.x1)) {
+            groups.forEachIndexed { index, group ->
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(FmRadius.md))
+                        .background(if (index == current) colors.accentSubtle else Color.Transparent)
+                        .clickable { scope.launch { grid.animateScrollToItem(starts[index]) } }
+                        .semantics { contentDescription = group.title },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(group.emoji.first(), fontSize = 18.sp)
+                }
+            }
+        }
+        HorizontalDivider(thickness = 1.dp, color = colors.border)
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(44.dp),
+            state = grid,
+            modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+            contentPadding = PaddingValues(horizontal = FmSpace.x2, vertical = FmSpace.x1),
+        ) {
+            for (group in groups) {
+                item(key = "title:${group.title}", span = { GridItemSpan(maxLineSpan) }) {
+                    Text(
+                        group.title,
+                        modifier = Modifier.padding(start = FmSpace.x1, top = FmSpace.x2, bottom = FmSpace.x1),
+                        style = Fm.text.labelSmall.copy(color = colors.textTertiary),
+                    )
+                }
+                items(group.emoji, key = { it }) { emoji ->
+                    val value = ReactionCatalog.valueForEmoji(emoji)
+                    Box(
+                        Modifier
+                            .aspectRatio(1f)
+                            .clip(RoundedCornerShape(FmRadius.md))
+                            .clickable { onPick(value) }
+                            .semantics { contentDescription = ReactionCatalog.label(value) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(emoji, fontSize = 24.sp)
+                    }
+                }
+            }
+        }
     }
 }
 

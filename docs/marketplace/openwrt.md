@@ -100,8 +100,23 @@ can be done with them:
 - **Network shares.** When the router has a `ksmbd` (preferred) or `samba4`
   configuration, its `share` / `sambashare` sections are listed and a mounted
   disk can be shared with or without guest access (`read_only no`,
-  `create_mask 0666`, `dir_mask 0777`). Without one, the page names the
-  packages to install.
+  `create_mask 0666`, `dir_mask 0777`). Without one, the note names the
+  packages and offers **Install network sharing** (the user asked for a
+  button instead of a trip to the Packages screen). It confirms, then runs
+  the same path as the USB install below: update the package lists, install
+  `ksmbd-server`, then `luci-app-ksmbd`, one at a time, with progress in the
+  Storage log ("Installing ksmbd-server and luci-app-ksmbd…", "Could not
+  install <package>: <output tail>"), and reloads so the shares list appears
+  ("Network sharing is installed. Share a mounted disk below."). The package
+  names live in one place per model (`networkSharingPackages()` on the
+  desktop, `shareSupportPackages` on iOS and Android). Every listed share has
+  **Browse files**, which opens the [Files](files.md) explorer on
+  `smb://<router>/<share>/` (the share name percent-encoded, IPv6 hosts in
+  brackets), signing in as a guest when the share has `guest_ok`. The
+  desktop page reaches the window through
+  `NativePackageHost::openNetworkShare(url, guest)` and hides the button when
+  the host lacks it; the phones also hand the router's shares to Files, which
+  lists them under Network shares as suggestions.
 - **Install USB storage support** first updates the package lists (opkg
   keeps them in `/tmp`, so after a reboot every install fails with "Unknown
   package"), then installs `kmod-usb-storage`, `kmod-usb-storage-uas`,

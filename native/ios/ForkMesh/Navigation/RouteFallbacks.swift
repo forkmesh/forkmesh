@@ -130,6 +130,7 @@ enum NavigationRoutes {
         fallback(routes, .phoneSecurity) { _ in AnyView(PhoneSecurityScreen()) }
         fallback(routes, .eyeControl) { _ in AnyView(EyeControlScreen()) }
         fallback(routes, .openWrtRouter) { _ in AnyView(OpenWrtScreen()) }
+        fallback(routes, .fileExplorer) { _ in AnyView(FilesScreen()) }
         fallback(routes, .faceChanger) { _ in AnyView(FaceChangerScreen()) }
         fallback(routes, .videoMixDjStudio) { _ in AnyView(VideoMixDjStudioScreen()) }
         fallback(routes, .appStoreStatus) { _ in AnyView(AppStoreStatusScreen()) }

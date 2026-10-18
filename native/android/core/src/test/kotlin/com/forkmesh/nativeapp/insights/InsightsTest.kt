@@ -234,6 +234,63 @@ class InsightsTest {
         expect(!StatsTiles.desktop(DesktopHealth()).getValue("desktopMemory").available)
     }
 
+    private val desktopTilesJson: Map<String, Any?> = mapOf(
+        "sampledAt" to 77L,
+        "tiles" to listOf(
+            mapOf(
+                "id" to "issues-open", "value" to "12", "note" to "open", "status" to "warning", "trend" to "down",
+                "series" to mapOf("labels" to (0 until 70).map { "w$it" }, "values" to (0 until 70).map { it.toDouble() }, "categorical" to false),
+            ),
+            mapOf("id" to "cpu", "available" to false, "note" to "Sampling"),
+            mapOf("id" to "from-a-newer-desktop", "value" to "1"),
+            mapOf("value" to "no id"),
+        ),
+    )
+
+    fun testDesktopTilesReplyKeepsEveryReadingUnderItsBoardId() {
+        val reply = DesktopTiles.fromJson(desktopTilesJson)
+        assertEq(77L, reply.sampledAt)
+        assertEq(setOf("desktop.issues-open", "desktop.cpu", "desktop.from-a-newer-desktop"), reply.offered)
+        val issues = reply.tiles.getValue("desktop.issues-open")
+        assertEq("12", issues.value)
+        assertEq(StatsTone.Warning, issues.status)
+        assertEq(StatsTrendPolarity.DownIsGood, issues.trend)
+        assertEq(DesktopTiles.MAX_SERIES, issues.series.values.size)
+        assertEq("w10", issues.series.labels.first())
+        val cpu = reply.tiles.getValue("desktop.cpu")
+        expect(!cpu.available)
+        assertEq("Sampling", cpu.note)
+        expect(DesktopTiles.ids.size >= 100)
+        expect(DesktopTiles.ids.all { it in StatsCatalog.entries.map { entry -> entry.id } })
+        expect(StatsCatalog.entries.map { it.id }.toSet().size == StatsCatalog.entries.size)
+        assertEq(2, DesktopTiles.defaults.first { it.id == "desktop.cpu" }.width)
+        val client = DesktopStatsClient(FakeStatsChannel().apply { replies[DesktopStatsMethod.TILES] = desktopTilesJson })
+        assertEq("12", client.tiles().tiles.getValue("desktop.issues-open").value)
+    }
+
+    fun testBoardShowsOnlyTheDesktopTilesTheDesktopOffers() {
+        val prefs = MemoryPrefStore()
+        val transport = FakeTransport()
+        val model = StatsBoardModel(transport, StatsLayoutStore(prefs), desktopTiles = { DesktopTiles.fromJson(desktopTilesJson) })
+        expect(model.visible.none { DesktopTiles.isDesktopTile(it.id) })
+        expect(model.addable.none { DesktopTiles.isDesktopTile(it.id) })
+        model.reload()
+        assertEq(listOf("desktop.issues-open", "desktop.cpu"), model.visible.map { it.id }.filter { DesktopTiles.isDesktopTile(it) })
+        assertEq("12", model.data("desktop.issues-open")!!.value)
+        expect(model.data("desktop.from-a-newer-desktop") == null)
+        model.remove("desktop.cpu")
+        assertEq(listOf("desktop.cpu"), model.addable.map { it.id }.filter { DesktopTiles.isDesktopTile(it) })
+        expect(model.layout.any { it.id == "desktop.repos" } && model.visible.none { it.id == "desktop.repos" })
+        val reopened = StatsBoardModel(transport, StatsLayoutStore(prefs), desktopTiles = { throw LocalControlException("timeout") })
+        assertEq(listOf("desktop.issues-open"), reopened.visible.map { it.id }.filter { DesktopTiles.isDesktopTile(it) })
+        reopened.reload()
+        assertEq("Your desktop took too long to answer. Refresh to try again.", reopened.data("desktop.issues-open")!!.note)
+        val old = StatsBoardModel(transport, StatsLayoutStore(prefs), desktopTiles = { throw LocalControlException("unsupported") })
+        old.reload()
+        expect(old.visible.none { DesktopTiles.isDesktopTile(it.id) })
+        assertEq("Update ForkMesh on your desktop to see all of its stats here.", old.desktopTilesNote)
+    }
+
     fun testBoardServerTilesFillWhileTheDesktopIsStillAnswering() {
         val transport = FakeTransport()
         transport.replies["/api/network/stats"] = mapOf("repos" to 3L, "hosts" to 1L, "onlineNodes" to listOf("a"))
@@ -273,7 +330,7 @@ class InsightsTest {
         val model = StatsBoardModel(transport, StatsLayoutStore(MemoryPrefStore()), desktop = { throw LocalControlException("not_paired") }) { clock }
         model.reload()
         assertEq("10", model.data("repos")!!.value)
-        assertEq(listOf("activity"), model.failures)
+        assertEq(listOf("activity", "releases"), model.failures)
         assertEq("Your desktop is not reachable right now.", model.desktopNote)
         expect(!model.data("agents")!!.available)
         assertEq(5L, model.updatedAtMs)

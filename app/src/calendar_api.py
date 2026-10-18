@@ -366,7 +366,9 @@ async def handle(runtime, path):
     if method in ("POST", "PATCH", "DELETE"):
         try:
             data = await runtime.json()
-        except Exception:
+        except (ValueError, TypeError):
+            return _response(runtime, {"error": "invalid_json"}, 400)
+        if not isinstance(data, dict):
             return _response(runtime, {"error": "invalid_json"}, 400)
     account_bi, actor = await _actor(runtime, data)
     if not actor:

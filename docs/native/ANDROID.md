@@ -591,9 +591,16 @@ default in new projects except the chosen starter pack
   this phone, and the organization-wide removal stays on the package page's
   Organizations section.
 - **Plugin ⋯ menu.** Every plugin's own screens carry the same ⋯ at the top
-  right of their app bar (user request, 2026-10-15): Rate <name> (or Edit
-  your rating), Send feedback or report a bug, a divider, then Uninstall (one
-  row per organization for organization packages). A screen opened through
+  right of their app bar (user request, 2026-10-15). Since 2026-10-18 it
+  opens one small popup instead of a menu of separate pages (user request):
+  the plugin's name, a row of stars, one text box, "Send to agent" and
+  "Send", then Uninstall under a divider (one row per organization for
+  organization packages). The rules match iOS (`docs/native/NAVIGATION.md`,
+  Plugin pages) and live in `C/market/PluginFeedback.kt`: Send saves a tapped
+  rating and files any text as package-tagged feedback; below five stars the
+  text is the review's problem and a second box asks how to improve it; Send
+  to agent opens the composer (`NavigationFeature.compose`) with a prompt
+  naming the plugin and carrying the text, and files nothing. A screen opened through
   `NavigationFeature.screen(route)` is tagged with its package
   (`Screen.pluginPackage`, from `C/market/PackageMenu.kt`, which reuses
   `PackageGate.ROUTE_KINDS`); `NavigatorHost` and the shell's tab stacks
@@ -604,14 +611,14 @@ default in new projects except the chosen starter pack
   Chat), the composer and the shared repository page reached through commit
   links are not tagged. Screens that already had a ⋯ (note editor, event,
   CRM, CRM contact, Coves, Special agents) pass `pluginMenu = false` and add
-  `PluginMenu.Items(divided = true)` under their own items, so each screen
+  `PluginMenu.Items(divided = true)` (one "Rate, report or uninstall…" row
+  that opens the popup) under their own items, so each screen
   keeps one ⋯. Screens a plugin pushes directly (not by route) carry no menu;
   the plugin's entry screen does. `A/feature/market/PluginMenu.kt` loads the
-  catalog and the viewer's review only when the menu first opens, pushes
-  `RateScreen` (which loads the review page itself when it was not loaded),
-  and opens `ReportBugSheet` with the package: the sheet is titled "Feedback
-  on <name>" and `POST /api/bug-reports` carries `package` (left out when
-  there is none) so the public issue is tagged with the plugin. Feedback
+  catalog and the viewer's review only when the popup first opens, and the
+  feedback it sends goes to `POST /api/bug-reports` with `package` (left out
+  when there is none) so the public issue is tagged with the plugin. The full
+  `RateScreen` and `ReportBugSheet` stay on the Market's package page. Feedback
   never depends on the Bug reports package being installed. After a
   successful uninstall the plugin screen pops; an organization removal waits
   for its export to be saved first, and a failure shows a dialog.
@@ -715,6 +722,17 @@ default in new projects except the chosen starter pack
   the target's author; early ones are held (128 targets, 8 frames each).
   Deletes also go into the persisted hidden-message list and send
   `forkmesh-superseded`.
+- **Message long press** (`messageActionsFlow` in `A/feature/chat/ChatSheets.kt`):
+  a row of quick-reaction circles, then 44 dp action rows in three groups
+  (thread, edit, copy, select; prompt, issue, profile; delete) that scroll
+  when the sheet hits its 9/16-screen cap. The old 60 dp rows with chevrons
+  cut off Delete on small phones. The circles and the reaction chips under
+  messages are a translucent `textPrimary` wash with a border: their old
+  `bgRaised` fill was invisible on the white sheet in light mode.
+- **More reactions** (`ChatReactionPicker`, list in `ReactionCatalog.groups`):
+  about 320 emoji in seven tabbed groups. The 18 catalog emoji are sent as
+  their slug (`valueForEmoji`); any other is sent as the literal emoji, which
+  desktop, iOS and web already accept and show as text (up to 16 code points).
 - **Chat list** (`A/feature/chat/ChatChannelList.kt`): server DMs listed newest
   first with unread pills and avatars; each row has a last-line preview built
   only from messages on the phone (`C/chat/ChatListPreview.kt`).

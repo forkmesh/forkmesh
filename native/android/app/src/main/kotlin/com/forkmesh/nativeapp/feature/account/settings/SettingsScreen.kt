@@ -289,7 +289,7 @@ class SettingsScreen : AccountScreen() {
             }
             item {
                 Section("Appearance") {
-                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) { AppearanceCard() }
+                    FmCard(modifier = Modifier.fillMaxWidth(), radius = FmRadius.lg) { AppearanceCard(navigator) }
                 }
             }
             item {
