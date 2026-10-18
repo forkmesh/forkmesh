@@ -124,8 +124,8 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   `Strict-Transport-Security: max-age=31536000; includeSubDomains` to its
   HTML responses (`_BROWSER_SECURITY_HEADERS`). The Caddyfile used to add its
   own `max-age=31536000` with a plain `header` line, so instance pages carried
-  the header twice. The Caddyfile now sets it in a `header { defer ... }`
-  block, which replaces any upstream value when the response is written, the
+  the header twice. The Caddyfile now sets that same value in a `header { defer
+  ... }` block, which replaces any upstream value when the response is written, the
   same way the core nodes' `(security_headers)` snippet does in
   `deploy/core/render.py`. Every response, including the Git gateway paths,
   carries exactly one value. The `https` step rewrites the Caddyfile and
