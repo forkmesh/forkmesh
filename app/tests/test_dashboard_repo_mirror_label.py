@@ -121,11 +121,14 @@ console.log(JSON.stringify({ before, changed, unchanged, after: repoBranchManage
     assert second == {"before": True, "changed": True, "unchanged": False, "after": False, "lazy": True}
 
 
-def test_provenance_sits_above_the_tab_strip_in_the_page_gutter():
+def test_provenance_sits_above_the_latest_commit_row_not_in_the_header():
     header = _slice(DETAIL, "<div data-repo-github-header", 'role="tablist"')
-    assert "repoProvenanceHtml(repo)" in header
-    assert "data-repo-provenance" in header
-    assert "px-3" in header and "sm:px-6" in header
+    assert "repoProvenanceHtml(repo)" not in header
+    assert "data-repo-provenance" not in header
+    code = _slice(DETAIL, "<div data-repo-code-main", "<div data-repo-commit-summary")
+    assert "repoProvenanceHtml(repo)" in code
+    assert "<div data-repo-provenance" in code
+    assert code.index("data-repo-provenance") < code.index("data-repo-tree-panel")
 
 
 def test_about_response_marks_the_mirror_and_regates_rendered_controls():

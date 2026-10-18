@@ -185,7 +185,7 @@ Labelling and read-only:
   "synced" can read up to about twenty minutes old while the mirror is
   current; any upstream change republishes at once.
 - The repository page shows "Mirror of forkmesh.com/forkmesh/forkmesh ·
-  synced <time>" above the tabs (hovering the time shows the date and the
+  synced <time>" in the Code tab, just above the latest-commit row, so the header stays compact (hovering the time shows the date and the
   served commit), the notice "Read-only. Send changes upstream or into a
   fork." and a Fork button that opens the existing fork menu. The label comes
   from the about answer, not the address, so it reads the same at

@@ -259,10 +259,6 @@
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">
-          ${(() => {
-            const provenance = repoProvenanceHtml(repo);
-            return `<div data-repo-provenance class="${provenance ? "" : "hidden "}flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 pt-2 text-xs text-muted-foreground sm:px-6">${provenance}</div>`;
-          })()}
           <div class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
             ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
               const meta = tabMeta[tab];
@@ -327,6 +323,10 @@
 		                  <div data-repo-explorer-tree class="max-h-[35rem] overflow-auto py-2"></div>
 		                </aside>
 		                <div data-repo-code-main class="min-w-0">
+		                  ${(() => {
+		                    const provenance = repoProvenanceHtml(repo);
+		                    return `<div data-repo-provenance class="${provenance ? "" : "hidden "}mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">${provenance}</div>`;
+		                  })()}
 		                  <div data-repo-tree-panel data-repo-file-table class="overflow-hidden rounded-lg border border-border bg-background">
 	                    <div data-repo-commit-summary class="grid gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
 	                      <div class="flex min-w-0 items-center gap-2">
