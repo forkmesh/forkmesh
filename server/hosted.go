@@ -296,7 +296,7 @@ func (r *hostedReplicator) copyState(ctx context.Context, id string) hostedCopyS
 	if !state.Empty {
 		state.Digest, _ = routingRefsSHA256(ctx, gitDir)
 	}
-	state.SizeBytes = hostedDirectoryBytes(gitDir)
+	state.SizeBytes = hostedRepositoryBytes(ctx, gitDir)
 	return state
 }
 
@@ -499,6 +499,9 @@ func (r *hostedReplicator) ensureBare(ctx context.Context, item hostedDesired, g
 	if err := os.Chmod(target, 0o700); err != nil {
 		return false, err
 	}
+	if err := ensureHostedMaintenanceFiles(ctx, target); err != nil {
+		return false, err
+	}
 	if err := os.Rename(target, gitDir); err != nil {
 		return false, err
 	}
@@ -654,6 +657,11 @@ func hostedSourceURLAllowed(raw string) bool {
 func (r *hostedReplicator) boundedGit(ctx context.Context, gitDir string, args, env []string) error {
 	ctx, cancel := context.WithTimeout(ctx, hostedFetchTimeout)
 	defer cancel()
+	stored := hostedRepositoryBytes(ctx, gitDir)
+	baseline := hostedDirectoryBytes(gitDir)
+	tooLarge := func() bool {
+		return stored+hostedDirectoryBytes(gitDir)-baseline > r.cfg.MaxRepositoryBytes
+	}
 	command := exec.CommandContext(ctx, "git", args...)
 	command.Env = env
 	var output strings.Builder
@@ -672,12 +680,12 @@ func (r *hostedReplicator) boundedGit(ctx context.Context, gitDir string, args, 
 			if err != nil {
 				return fmt.Errorf("git: %s", boundedText([]byte(output.String()), 200))
 			}
-			if hostedDirectoryBytes(gitDir) > r.cfg.MaxRepositoryBytes {
+			if tooLarge() {
 				return errors.New("repository is larger than the hosted limit")
 			}
 			return nil
 		case <-ticker.C:
-			if hostedDirectoryBytes(gitDir) > r.cfg.MaxRepositoryBytes {
+			if tooLarge() {
 				cancel()
 				<-done
 				return errors.New("repository is larger than the hosted limit")

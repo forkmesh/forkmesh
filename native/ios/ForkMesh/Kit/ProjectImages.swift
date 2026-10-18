@@ -136,11 +136,12 @@ final class ProjectImages {
         missing.insert(key)
     }
 
-    func adoptInstanceLogo(_ projectId: String, logoUrl: String) async {
+    func adoptInstanceLogo(_ projectId: String, logoUrl: String, branded: Bool = false) async {
         guard let relays = Services.get(SettingsService.self)?.relays,
             let project = relays.byId(projectId), project.hasInstance, project.logo.isEmpty
         else { return }
-        let candidates: [String] = [logoUrl] + ["/favicon.ico", "/favicon/favicon.ico"].map { project.httpOrigin + $0 }
+        let favicons: [String] = branded ? [] : ["/favicon.ico", "/favicon/favicon.ico"].map { project.httpOrigin + $0 }
+        let candidates: [String] = [logoUrl] + favicons
         for url in candidates.filter({ !$0.isEmpty }).compactMap({ URL(string: $0) }) {
             guard let data = await ProjectImages.fetchData(url),
                 let name = await ProjectLogoStore.save(data, projectKey: project.id)

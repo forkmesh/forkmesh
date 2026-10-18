@@ -33,7 +33,7 @@
   };
 
   function agentsSessionHref(owner, repo, id) {
-    const base = `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/agents`;
+    const base = `${repoPathUrl({ owner, name: repo })}/agents`;
     return id ? `${base}?session=${encodeURIComponent(id)}` : base;
   }
 
@@ -104,7 +104,7 @@
   }
 
   function agentsRepoLabel(row) {
-    return row.owner && row.repo ? `${row.owner}/${row.repo}` : row.repo || "";
+    return row.owner && row.repo ? repoPublicKey(`${row.owner}/${row.repo}`) : row.repo || "";
   }
 
   function agentsMatchStatus(row, wanted) {
@@ -120,7 +120,7 @@
   function agentsFilteredRows(rows = agentsRows()) {
     const { status, repo, node } = agentsPageView.filters;
     return rows.filter((row) => agentsMatchStatus(row, status)
-      && (!repo || agentsRepoLabel(row).toLowerCase() === repo)
+      && (!repo || [agentsRepoLabel(row), `${row.owner}/${row.repo}`].some((value) => value.toLowerCase() === repo))
       && (!node || row.node.toLowerCase() === node));
   }
 

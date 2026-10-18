@@ -98,6 +98,7 @@
     projectsView: { filter: "open", mode: "gantt", items: [] },
     claimNode: { pendingNodeId: "" },
     linkGrant: null,
+    linkedNodePresence: {},
     repoMirrors: [],
     // Mirrors tab filter: hide nodes that are not serving this repository
     // right now. Off by default so the tab opens on the full published mesh.
@@ -1219,7 +1220,8 @@
   // machine currently serving the bytes: cloning forkmesh/forkmesh must keep
   // working after the mirror that answered today goes away.
   function cloneUrl(repo) {
-    return `${publicSiteOrigin()}${repoLinkUrl(repo)}`;
+    const link = repoLinkUrl(repo);
+    return `${publicSiteOrigin()}${link}${link.split("/").length === 2 ? ".git" : ""}`;
   }
 
   function repoKey(repo) {
@@ -1380,6 +1382,8 @@
     } catch (_) {}
     path = path.split("?")[0].split("#")[0].replace(/^\/+|\/+$/g, "");
     const parts = path.split("/").filter(Boolean);
+    const addresses = parts.length === 1 && isThisSiteUrl(raw) ? repoAddresses() : null;
+    if (addresses) parts.unshift(addresses.owner);
     if (parts.length < 2) return null;
     const owner = normalizeRepoSegment(safeDecodeURIComponent(parts[parts.length - 2] || ""));
     let name = normalizeRepoSegment(safeDecodeURIComponent(parts[parts.length - 1] || ""));
@@ -1712,6 +1716,10 @@
     return origins;
   }
 
+  function dashboardOnInstance() {
+    return Boolean(document?.querySelector?.("script[data-instance-brand]"));
+  }
+
   const DIRECT_MIRROR_ORIGINS_KEY = "forkmesh.directMirrorOrigins.v1";
 
   function preconnectDirectMirrorOrigins(origins) {
@@ -1804,10 +1812,110 @@
     ).trim();
   }
 
+  const REPO_ADDRESSES_STORE = "forkmesh.repoAddresses";
+  const REPO_CORE_HOSTS = ["app.forkmesh.com", "forkmesh.com", "world.forkmesh.com"];
+  const REPO_SHORT_NAME_RE = /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/;
+  const REPO_SHORT_FILE_RE = /\.(?:php\d?|txt|xml|json|ico|png|jpe?g|gif|svg|js|mjs|css|map|env|html?|aspx?|jsp|cgi|zip|gz|tgz|tar|sql|bak|ya?ml|ini|log|webmanifest|woff2?|ttf|pdf)$/i;
+
+  function normalizeRepoAddresses(value) {
+    const owner = String(value?.owner || "").trim().toLowerCase();
+    if (!value || value.canonical !== true || !owner) return null;
+    const names = (list) => new Set((Array.isArray(list) ? list : []).map((name) => String(name || "").toLowerCase()));
+    const aliases = new Map(Object.entries(value.aliases && typeof value.aliases === "object" ? value.aliases : {})
+      .map(([name, creator]) => [String(name).toLowerCase(), String(creator || "").toLowerCase()]));
+    return { owner, keep: names(value.keep), reserved: names(value.reserved), aliases };
+  }
+
+  const REPO_ADDRESSES_SAVED_STORE = "forkmesh.repoAddressesSavedAt";
+  const REPO_ADDRESSES_TTL_MS = 10 * 60 * 1000;
+
+  function repoAddressesSignature(addresses) {
+    if (!addresses) return "";
+    return JSON.stringify([
+      addresses.owner,
+      [...addresses.keep].sort(),
+      [...addresses.reserved].sort(),
+      [...addresses.aliases.entries()].sort(),
+    ]);
+  }
+
+  function repoAddresses() {
+    if (state.repoAddresses !== undefined) return state.repoAddresses;
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(REPO_ADDRESSES_STORE) || "null");
+    } catch (_) {}
+    let addresses = normalizeRepoAddresses(stored);
+    const pageOwner = String(document.querySelector('meta[name="forkmesh-repo-canonical"]')?.content || "").toLowerCase();
+    if (pageOwner && addresses?.owner !== pageOwner) {
+      addresses = normalizeRepoAddresses({ owner: pageOwner, canonical: true });
+    }
+    state.repoAddresses = addresses;
+    return addresses;
+  }
+
+  function applyRepoAddresses(value) {
+    const used = state.repoAddresses !== undefined;
+    const before = used ? repoAddressesSignature(state.repoAddresses) : "";
+    state.repoAddresses = normalizeRepoAddresses(value);
+    try {
+      localStorage.setItem(REPO_ADDRESSES_STORE, JSON.stringify(value || null));
+      localStorage.setItem(REPO_ADDRESSES_SAVED_STORE, String(Date.now()));
+    } catch (_) {}
+    if (used && before !== repoAddressesSignature(state.repoAddresses)) {
+      state.repoAddressesChanged = true;
+      try {
+        window.dispatchEvent(new CustomEvent("forkmesh:repo-addresses"));
+      } catch (_) {}
+    }
+    return state.repoAddresses;
+  }
+
+  async function loadRepoAddresses() {
+    if (REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())) return null;
+    try {
+      const response = await fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } });
+      const data = response.ok ? await response.json() : null;
+      if (data && typeof data === "object" && data.ok !== false) return applyRepoAddresses(data.repoAddresses || null);
+    } catch (_) {}
+    return repoAddresses();
+  }
+
+  function repoAddressesKnown() {
+    try {
+      if (localStorage.getItem(REPO_ADDRESSES_STORE) === null) return false;
+      const savedAt = Number(localStorage.getItem(REPO_ADDRESSES_SAVED_STORE)) || 0;
+      const age = Date.now() - savedAt;
+      return age >= 0 && age < REPO_ADDRESSES_TTL_MS;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function repoShortName(owner, name) {
+    const addresses = repoAddresses();
+    const value = String(name || "");
+    const lowered = value.toLowerCase();
+    const lowerOwner = String(owner || "").toLowerCase();
+    if (!addresses || !value || !lowerOwner) return false;
+    if (lowerOwner !== addresses.owner && addresses.aliases.get(lowered) !== lowerOwner) return false;
+    if (lowered === addresses.owner || addresses.keep.has(lowered) || addresses.reserved.has(lowered)) return false;
+    return REPO_SHORT_NAME_RE.test(value) && !lowered.endsWith(".git") && !REPO_SHORT_FILE_RE.test(value);
+  }
+
   function repoPathUrl(repo, kind = "tree", path = "") {
     const owner = encodeURIComponent(repo.owner || "");
     const name = encodeURIComponent(repo.name || "");
     const suffix = path ? `/${kind}/${path.split("/").map(encodeURIComponent).join("/")}` : "";
+    let publicOwner = "";
+    try {
+      publicOwner = repoPublicOwner(repo);
+    } catch (_) {}
+    if (repoShortName(repo.owner, repo.name) || (publicOwner && repoShortName(publicOwner, repo.name))) {
+      if (!state.repoShortNames) state.repoShortNames = new Map();
+      state.repoShortNames.set(String(repo.name).toLowerCase(), { name: String(repo.name), owner: repoAddresses().owner });
+      return `/${name}${suffix}`;
+    }
     return `/${owner}/${name}${suffix}`;
   }
 
@@ -1852,17 +1960,128 @@
   // route prefix (e.g. /dashboard/owner/repo/issues -> ["owner","repo","issues"])
   // so repo-route parsing sees the same clean owner/repo/tab shape regardless
   // of whether the browser landed here directly or via the 404.html bounce.
-  function repoShortRoute() {
+  function repoPublicHref(href) {
+    const value = String(href || "");
+    if (!value.startsWith("/") || value.startsWith("//")) return value;
+    const [path, ...tail] = value.split(/(?=[?#])/);
+    const parts = path.split("/").filter(Boolean);
+    if (parts.length < 2) return value;
+    const owner = safeDecodeURIComponent(parts[0]);
+    const name = safeDecodeURIComponent(parts[1]);
+    const rest = parts.slice(2);
+    if (rest.length && ![...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0])) return value;
+    if (!repoShortName(owner, name)) return value;
+    return [repoPathUrl({ owner, name }), ...rest].join("/") + tail.join("");
+  }
+
+  function repoPublicKey(key) {
+    const [owner, name, ...extra] = String(key || "").split("/");
+    return owner && name && !extra.length && repoShortName(owner, name) ? name : String(key || "");
+  }
+
+  function repoHasShortAddress(repo) {
+    const name = String(repo?.name || "");
+    if (!name || !repoAddresses()) return false;
+    const owners = [repo.owner];
+    try {
+      owners.push(repoPublicOwner(repo), repoDisplayOwner(repo));
+    } catch (_) {}
+    return owners.some((owner) => owner && repoShortName(owner, name));
+  }
+
+  function repoDisplayName(repo, longLabel) {
+    if (typeof repo === "string") return repoPublicKey(repo);
+    if (!repo) return "";
+    if (repoHasShortAddress(repo)) return String(repo.name);
+    return longLabel === undefined ? repoDisplayKey(repo) : String(longLabel);
+  }
+
+  function repoPublicText(text) {
+    const value = String(text || "");
+    if (!value || !repoAddresses()) return value;
+    return value.replace(/(^|[^A-Za-z0-9._\/@-])([A-Za-z0-9_-][A-Za-z0-9._-]*)\/([A-Za-z0-9_-][A-Za-z0-9._-]*)(?![A-Za-z0-9_\/-])/g,
+      (match, lead, owner, name) => {
+        const trimmed = name.replace(/\.+$/, "");
+        const dots = name.slice(trimmed.length);
+        return repoShortName(owner, trimmed) ? `${lead}${trimmed}${dots}` : match;
+      });
+  }
+
+  function repoReferenceLabel(repo, number) {
+    const label = repoDisplayName(repo);
+    return Number(number) ? `${label}#${Number(number)}` : label;
+  }
+
+  function groupDisplayName(group) {
+    const origin = sourceOfTruth(group);
+    const name = String(origin?.name || "");
+    const organization = groupOrganizationAlias(group);
+    if (repoHasShortAddress(origin) || (organization && repoShortName(organization, name))) return name;
+    return `${groupDisplayOwner(group) || origin?.owner || ""}/${name}`;
+  }
+
+  function repoLabelParts(label) {
+    const text = String(label || "");
+    const slash = text.indexOf("/");
+    return slash < 0 ? { owner: "", name: text } : { owner: text.slice(0, slash), name: text.slice(slash + 1) };
+  }
+
+  function repoShortHrefTarget(href) {
+    const value = String(href || "");
+    if (!value.startsWith("/") || value.startsWith("//")) return value;
+    const shortened = repoPublicHref(value);
+    if (shortened !== value) return shortened;
+    const [path, ...tail] = value.split(/(?=[?#])/);
+    const parts = path.split("/").filter(Boolean);
+    if (!parts.length) return value;
+    const known = state.repoShortNames?.get(safeDecodeURIComponent(parts[0]).toLowerCase());
+    if (!known || repoShortName(known.owner, known.name)) return value;
+    const rest = parts.slice(1);
+    return `${repoPathUrl({ owner: known.owner, name: known.name })}${rest.length ? `/${rest.join("/")}` : ""}${tail.join("")}`;
+  }
+
+  function refreshRepoLinks(root) {
+    const scope = root || document;
+    let changed = 0;
+    for (const link of scope.querySelectorAll ? scope.querySelectorAll("a[href^='/']") : []) {
+      const href = link.getAttribute("href");
+      const target = repoShortHrefTarget(href);
+      if (target !== href) {
+        link.setAttribute("href", target);
+        changed += 1;
+      }
+    }
+    return changed;
+  }
+
+  function replaceLongRepoLocation() {
+    const current = `${location.pathname}${location.search}${location.hash}`;
+    const target = repoShortHrefTarget(current);
+    if (target === current) return false;
+    try {
+      window.history.replaceState(window.history.state, "", target);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function repoShortRoute(first = "") {
     const name = document.querySelector('meta[name="forkmesh-repo-short"]')?.content || "";
     const owner = document.querySelector('meta[name="forkmesh-repo-owner"]')?.content || "";
+    if (name && owner && (!first || first.toLowerCase() === name.toLowerCase())) return { name, owner };
+    const known = first ? state.repoShortNames?.get(first.toLowerCase()) : null;
+    if (known && repoShortName(known.owner, known.name)) return known;
     return name && owner ? { name, owner } : null;
   }
 
   function repoRouteParts() {
     let parts = location.pathname.split("/").filter(Boolean);
-    if (parts[0] === "dashboard") parts = parts.slice(1);
-    const short = repoShortRoute();
-    if (short && parts.length && decodeURIComponent(parts[0]) === short.name) {
+    const prefixed = parts[0] === "dashboard";
+    if (prefixed) parts = parts.slice(1);
+    const first = parts.length ? safeDecodeURIComponent(parts[0]) : "";
+    const short = prefixed ? null : repoShortRoute(first);
+    if (short && parts.length && first.toLowerCase() === short.name.toLowerCase()) {
       const rest = parts.slice(1);
       const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
       return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
@@ -7048,6 +7267,18 @@
       || "home";
   }
 
+  function repoDocumentTitle(label, title) {
+    const text = String(title || "");
+    const at = text.lastIndexOf(" - ");
+    return `${label}${at >= 0 ? text.slice(at) : ""}`;
+  }
+
+  function restoreDocumentTitle() {
+    if (state.documentTitleBase === undefined) return;
+    document.title = state.documentTitleBase;
+    state.documentTitleBase = undefined;
+  }
+
   function renderHeaderContext(section = currentSection()) {
     const headerContext = $("[data-dashboard-header-context]");
     if (!headerContext) return;
@@ -7063,16 +7294,28 @@
       // user's or organization's /@name page, the name opens the repository.
       // repoDisplayKey(repo) stays the single source of both labels.
       const [owner, ...nameParts] = repoDisplayKey(repo).split("/");
-      const repoLink = `<a href="${escapeHtml(repoLinkUrl(repo))}" class="hover:underline">${escapeHtml(nameParts.join("/"))}</a>`;
-      headerContext.innerHTML = owner
+      const repoHref = repoLinkUrl(repo);
+      const shortAddress = repoHref.split("/").filter(Boolean).length === 1;
+      const repoLink = `<a href="${escapeHtml(repoHref)}" class="hover:underline">${escapeHtml(nameParts.join("/"))}</a>`;
+      headerContext.innerHTML = owner && !shortAddress
         ? `<a href="${escapeHtml(publicProfileUrl(owner))}" data-repo-header-owner class="hover:underline">${escapeHtml(owner)}</a><span class="px-1 font-normal text-muted-foreground" aria-hidden="true">/</span>${repoLink}`
         : repoLink;
+      if (shortAddress) {
+        if (state.documentTitleBase === undefined) state.documentTitleBase = document.title;
+        document.title = repoDocumentTitle(nameParts.join("/"), document.title);
+      } else {
+        restoreDocumentTitle();
+      }
       repoMeta?.classList.add("sm:flex");
       if (repoVisibility) {
         repoVisibility.textContent = repo.isPrivate ? "private" : "public";
       }
       if (repoTerms) repoTerms.innerHTML = repositoryTermsBadge(repo, true);
-      if (repoAvailability) {
+      if (repoAvailability && dashboardOnInstance()) {
+        repoAvailability.textContent = "";
+        repoAvailability.classList.add("hidden");
+      } else if (repoAvailability) {
+        repoAvailability.classList.remove("hidden");
         const servedBy = String(state.repoServedBy?.name || "").trim();
         repoAvailability.textContent = servedBy
           ? `served by ${servedBy}`
@@ -7086,6 +7329,7 @@
       }
       return;
     }
+    restoreDocumentTitle();
     repoMeta?.classList.remove("sm:flex");
     if (repoVisibility) repoVisibility.textContent = "";
     if (repoTerms) repoTerms.innerHTML = "";
@@ -7424,9 +7668,54 @@
     // A guest has nothing to reconnect; a node-kind session IS the node.
     const signedIn = Boolean(session && (session.nodeName || session.email));
     if (!signedIn || session.kind === "node") return false;
+    if (dashboardOnInstance()) return offlineLinkedNodes(session).length > 0;
     // Only flag when the account affirmatively has zero linked nodes. An absent
     // list means "unknown" (older payload), not "none" — stay quiet then.
     return Array.isArray(session.nodes) && session.nodes.length === 0;
+  }
+
+  function linkedNodeNames(session) {
+    const nodes = Array.isArray(session?.nodes) ? session.nodes : [];
+    return [...new Set(nodes.map((node) => String(node || "").trim().toLowerCase()).filter(Boolean))];
+  }
+
+  function offlineLinkedNodes(session) {
+    const presence = state.linkedNodePresence || {};
+    return linkedNodeNames(session).filter((node) => presence[node] === false);
+  }
+
+  let linkedNodePresenceKey = "";
+
+  async function refreshLinkedNodePresence(session) {
+    if (!dashboardOnInstance()) return;
+    const nodes = linkedNodeNames(session).slice(0, 8);
+    const key = nodes.join(",");
+    if (key === linkedNodePresenceKey) return;
+    linkedNodePresenceKey = key;
+    const presence = {};
+    await Promise.all(nodes.map(async (node) => {
+      const body = await fetchJson("/api/accounts/" + encodeURIComponent(node), { fresh: true }).catch(() => null);
+      if (body && body.exists !== false && body.kind === "node") presence[node] = body.online === true;
+    }));
+    if (linkedNodePresenceKey !== key) return;
+    state.linkedNodePresence = presence;
+    renderNodeReconnect(state.session);
+  }
+
+  function renderNodeReconnect(session) {
+    const reconnect = $("[data-node-reconnect]");
+    if (!reconnect) return;
+    const show = nodeNeedsReconnect(session);
+    reconnect.classList.toggle("hidden", !show);
+    if (!show || !dashboardOnInstance()) return;
+    const offline = offlineLinkedNodes(session);
+    const names = offline.join(", ");
+    const label = reconnect.querySelector("[data-node-reconnect-label]");
+    if (label) label.textContent = offline.length > 1 ? "Desktops offline" : "Desktop offline";
+    const message = (offline.length > 1 ? "Your desktop nodes " + names + " are" : "Your desktop node " + names + " is") +
+      " offline. Open the ForkMesh desktop app on that machine to reconnect it.";
+    reconnect.title = message;
+    reconnect.setAttribute("aria-label", message);
   }
 
   function setEmailVerificationHint(message, kind = "") {
@@ -7581,10 +7870,8 @@
     // affirmatively tell there are zero linked nodes (session.nodes present and
     // empty) for a user-like account — never for a node session or when the
     // link state is simply unknown, to avoid a false alarm.
-    const reconnect = $("[data-node-reconnect]");
-    if (reconnect) {
-      reconnect.classList.toggle("hidden", !nodeNeedsReconnect(session));
-    }
+    renderNodeReconnect(session);
+    void refreshLinkedNodePresence(session);
     renderEmailVerificationBanner(session);
     renderProfileModal(session);
     renderProfilePage(session);
@@ -8416,10 +8703,10 @@
 
   function profileContributionRepositoryUrl(repository) {
     const supplied = String(repository?.url || "");
-    if (supplied.startsWith("/") && !supplied.startsWith("//")) return supplied;
+    if (supplied.startsWith("/") && !supplied.startsWith("//")) return repoPublicHref(supplied);
     const owner = String(repository?.owner || "").trim();
     const name = String(repository?.name || "").trim();
-    return owner && name ? `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}` : "/dashboard/repos";
+    return owner && name ? repoPathUrl({ owner, name }) : "/dashboard/repos";
   }
 
   function renderProfileActivity(data) {
@@ -8433,7 +8720,9 @@
       const category = PROFILE_CONTRIBUTION_CATEGORIES.find((item) => item.key === event?.kind) || PROFILE_CONTRIBUTION_CATEGORIES[0];
       const count = profileContributionCount(event?.count);
       const repository = event?.repository || {};
-      const repoLabel = [repository.owner, repository.name].filter(Boolean).join("/") || "Public repository";
+      const repoLabel = repository.owner && repository.name
+        ? repoPublicKey(`${repository.owner}/${repository.name}`)
+        : [repository.owner, repository.name].filter(Boolean).join("/") || "Public repository";
       const date = profileContributionDate(event?.date);
       const dateLabel = date
         ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date)
@@ -10510,7 +10799,7 @@
       // A node linked while this page was open (or since the click) clears it,
       // so the marker never outlives the problem it describes.
       const linked = Array.isArray(session?.nodes) && session.nodes.length > 0;
-      const show = !linked &&
+      const show = !linked && !dashboardOnInstance() &&
         (nodeNeedsReconnect(session) || arrivedFromNodeReconnect());
       callout.classList.toggle("hidden", !show);
     }
@@ -11094,7 +11383,7 @@
         >
           <i data-lucide="book-marked" class="h-3.5 w-3.5 text-muted-foreground"></i>
           <span class="min-w-0">
-            <span class="block truncate font-medium text-foreground">${escapeHtml(`${groupDisplayOwner(group)}/${repo.name || ""}`)}</span>
+            <span class="block truncate font-medium text-foreground">${escapeHtml(groupDisplayName(group))}</span>
             <span class="block truncate text-xs text-muted-foreground">${escapeHtml(globalSearchRepoSummary(group, repo))}</span>
           </span>
         </button>`;
@@ -11486,19 +11775,22 @@
     const origin = sourceOfTruth(group);
     const repo = group.primary;
     const key = repoKey(origin);
-    const displayOwner = groupDisplayOwner(group);
-    const servedNote = displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
+    const label = repoLabelParts(groupDisplayName(group));
+    const displayOwner = label.owner;
+    const servedNote = displayOwner && displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
       ? ` (published from ${origin.owner || "a node"})`
       : "";
+    const fullLabel = displayOwner ? `${displayOwner}/${origin.name || "repository"}` : String(origin.name || "repository");
     const live = repoIsLive(origin);
     const viaMirror = repoServedByMirror(origin);
     const visibility = origin.isPrivate ? "private" : "public";
     const statusClass = live ? "text-success" : "text-muted-foreground";
     const nodeCount = group.members.length;
     const liveCount = group.members.reduce((n, m) => n + (repoIsLive(m) ? 1 : 0), 0);
+    const onInstance = dashboardOnInstance();
     const statusText = nodeCount > 1
       ? `${liveCount} of ${nodeCount} nodes`
-      : (viaMirror ? "via mirror" : live ? "online" : "offline");
+      : (viaMirror && !onInstance ? "via mirror" : live ? "online" : "offline");
     const metrics = [
       repoMetricStat("Issues", "circle-dot", groupRepoMetric(group, ["issueCount", "issues", "issuesCount", "openIssues"])),
       repoMetricStat("Commits", "git-commit-horizontal", groupRepoMetric(group, ["commitCount", "commits", "commitHistory"])),
@@ -11509,14 +11801,14 @@
     const activityWeeks = groupActivityWeeks(group);
     const language = repoLanguage(origin);
     return `
-      <div data-repo="${escapeHtml(key.toLowerCase())}" data-dashboard-open-repo="${escapeHtml(key)}" data-clone-url="${escapeHtml(cloneUrl(origin))}" role="link" tabindex="0" aria-label="Open ${escapeHtml(`${displayOwner || "owner"}/${origin.name || "repository"}`)}" class="repo-card group cursor-pointer px-4 py-3 hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
+      <div data-repo="${escapeHtml(key.toLowerCase())}" data-dashboard-open-repo="${escapeHtml(key)}" data-clone-url="${escapeHtml(cloneUrl(origin))}" role="link" tabindex="0" aria-label="Open ${escapeHtml(fullLabel)}" class="repo-card group cursor-pointer px-4 py-3 hover:bg-secondary/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
         <div class="repo-layout grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(10rem,12rem)] md:items-center">
           <div class="flex min-w-0 items-start gap-3">
             ${nativeRepositoryLogoMarkup(origin)}
             <div class="min-w-0 flex-1">
             <div class="flex min-w-0 items-center gap-2">
-              <p class="min-w-0 truncate text-sm font-medium text-foreground" title="${escapeHtml(`${displayOwner || "owner"}/${origin.name || "repository"}${servedNote}`)}">
-                <span class="text-muted-foreground">${escapeHtml(displayOwner || "owner")}/</span>${escapeHtml(origin.name || "repository")}
+              <p class="min-w-0 truncate text-sm font-medium text-foreground" title="${escapeHtml(`${fullLabel}${servedNote}`)}">
+                ${displayOwner ? `<span class="text-muted-foreground">${escapeHtml(displayOwner)}/</span>` : ""}${escapeHtml(origin.name || "repository")}
               </p>
               <span class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-mono ${statusClass}">
                 ${statusText}
@@ -11536,9 +11828,9 @@
               <span class="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <i data-lucide="${origin.isPrivate ? "lock" : "globe-2"}" class="h-3 w-3"></i>${escapeHtml(visibility)}
               </span>
-              <span class="flex items-center gap-1 text-xs text-muted-foreground">
+              ${onInstance ? "" : `<span data-repo-card-served-by class="flex items-center gap-1 text-xs text-muted-foreground">
                 <i data-lucide="radio" class="w-3 h-3"></i>${nodeCount > 1 ? `${nodeCount} mirrors` : (viaMirror ? "served by mirror" : live ? "mirror online" : "mirror offline")}
-              </span>
+              </span>`}
               <span class="text-xs text-muted-foreground font-mono">updated ${escapeHtml(formatDate(repo.updatedAt || repo.lastSync))}</span>
               ${metrics}
             </div>
@@ -11626,7 +11918,7 @@
     const language = profileRepositoryLanguage(group);
     const license = String(repo.license || repo.licenseName || "").trim();
     const description = String(repo.description || "").trim();
-    const displayOwner = groupDisplayOwner(group);
+    const displayOwner = repoLabelParts(groupDisplayName(group)).owner;
     const publishedFrom = displayOwner && repo.owner &&
       displayOwner.toLowerCase() !== String(repo.owner).toLowerCase()
       ? `<p class="mb-1 text-xs text-muted-foreground">Published from ${escapeHtml(repo.owner)}/${escapeHtml(repo.name || "repository")}</p>`
@@ -11745,18 +12037,15 @@
     const entries = [
       ...organizationRepositories.map((repo) => ({
         repo,
-        key: `${repo.owner}/${repo.name}`,
-        href: `/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+        key: repoHasShortAddress(repo) ? String(repo.name) : `${repo.owner}/${repo.name}`,
+        href: repoPathUrl(repo),
         organization: true,
       })),
       ...groups.map((group) => {
         const repo = sourceOfTruth(group);
         return {
           repo,
-          // Dedupe on the label, so a repo already listed under its
-          // organization does not come back a second time under the node that
-          // publishes it.
-          key: `${groupDisplayOwner(group)}/${repo.name || ""}`,
+          key: groupDisplayName(group),
           href: groupLinkUrl(group),
           organization: false,
         };
@@ -11773,10 +12062,11 @@
     list.innerHTML = entries.slice(0, 6).map((entry) => {
       const repo = entry.repo;
       const live = repoIsLive(repo);
+      const label = repoLabelParts(entry.key);
       return `
-        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo">
+        <a href="${escapeHtml(entry.href)}" class="dashboard-nav-repo" data-sidebar-repo="${escapeHtml(entry.key)}">
           <span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>
-          <span class="min-w-0 flex-1 truncate"><span class="text-muted-foreground">${escapeHtml(repoDisplayOwner(repo) || "owner")}/</span><span class="text-foreground">${escapeHtml(repo.name || "repository")}</span></span>
+          <span class="min-w-0 flex-1 truncate">${label.owner ? `<span class="text-muted-foreground">${escapeHtml(label.owner)}/</span>` : ""}<span class="text-foreground">${escapeHtml(label.name || repo.name || "repository")}</span></span>
           ${repositoryTermsBadge(repo, true)}
           ${entry.organization ? '<span class="shrink-0 rounded border border-border px-1 py-0.5 font-mono text-[8px] uppercase text-muted-foreground">org</span>' : ""}
           <i data-lucide="arrow-right" class="dashboard-nav-repo-arrow"></i>
@@ -11836,17 +12126,17 @@
         ? state.homeOrganizationRepositories
         : []).map((repo) => ({
           repo,
-          href: `/${encodeURIComponent(repo.owner)}/${encodeURIComponent(repo.name)}`,
+          href: repoPathUrl(repo),
           organization: true,
         })),
       ...mergeGroupsByPublicAddress(groupRepositories(state.repositories || [])).map((group) => {
         const repo = sourceOfTruth(group);
-        return { repo, href: groupLinkUrl(group), organization: false };
+        return { repo, label: groupDisplayName(group), href: groupLinkUrl(group), organization: false };
       }),
-    ].filter((entry, index, values) =>
-      values.findIndex((candidate) =>
-        repoDisplayKey(candidate.repo).toLowerCase() ===
-        repoDisplayKey(entry.repo).toLowerCase()) === index)
+    ].map((entry) => ({ ...entry, label: entry.label || repoDisplayName(entry.repo) }))
+      .filter((entry, index, values) =>
+        values.findIndex((candidate) =>
+          candidate.label.toLowerCase() === entry.label.toLowerCase()) === index)
       .sort((a, b) => homeRepositoryLastViewedAt(b) - homeRepositoryLastViewedAt(a));
   }
 
@@ -11856,6 +12146,7 @@
     const status = live
       ? (repoServedByMirror(repo) ? "served by mirror" : "live host")
       : "offline";
+    const statusHtml = dashboardOnInstance() ? "" : `<span data-home-repo-served-by class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>`;
     const logo = nativeRepositoryLogoMarkup(repo, "h-8 w-8")
       || '<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary text-muted-foreground"><i data-lucide="book-marked" class="h-4 w-4"></i></span>';
     const description = String(repo.description || "").trim();
@@ -11863,10 +12154,10 @@
     return `<a href="${escapeHtml(entry.href)}" data-home-repo-row class="flex min-w-0 items-start gap-2.5 rounded-md px-2 py-2 text-left text-sm text-muted-foreground hover:bg-secondary hover:text-foreground">
       ${logo}
       <span class="min-w-0 flex-1">
-        <span class="block truncate font-medium text-foreground" title="${escapeHtml(repoDisplayKey(repo))}">${escapeHtml(repoDisplayKey(repo))}</span>
+        <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${escapeHtml(entry.label || repoDisplayName(repo))}</span>
         ${description ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full ${live ? "bg-success" : "bg-muted-foreground/40"}"></span>${status}</span>
+          ${statusHtml}
           ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
           ${views ? `<span data-home-repo-views class="inline-flex items-center gap-1"><i data-lucide="eye" class="h-3 w-3"></i>${escapeHtml(formatCount(views))} ${views === 1 ? "view" : "views"}</span>` : ""}
           ${repositoryTermsBadge(repo, true)}
@@ -11926,20 +12217,20 @@
   }
 
   function homeFeedCard(item) {
-    const href = String(item?.href || "").trim();
+    const href = repoPublicHref(String(item?.href || "").trim());
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
       `@${homeFeedActor(item)}`,
       notificationTimeLabel(item.ts),
-      item.repo || "",
+      item.repo ? repoPublicKey(item.repo) : "",
     ].filter(Boolean).map(escapeHtml).join(" · ");
     return `
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
         <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(item.title || "ForkMesh activity")}</span>
-          ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(item.body)}</span>` : ""}
+          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "ForkMesh activity")}</span>
+          ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
           <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
         </span>
       </${tag}>
@@ -12109,7 +12400,7 @@
     const repo = String(session.repo || "").trim();
     const repoLabel = owner && repo ? `${owner}/${repo}` : repo;
     const href = owner && repo
-      ? `/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/agents`
+      ? `${repoPathUrl({ owner, name: repo })}/agents`
       : "";
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
@@ -12227,8 +12518,7 @@
     const merged = new Map();
     for (const group of groups) {
       const origin = sourceOfTruth(group);
-      const key = `${groupDisplayOwner(group) || origin.owner || ""}/${origin.name || ""}`
-        .toLowerCase();
+      const key = groupDisplayName(group).toLowerCase();
       const seen = merged.get(key);
       if (!seen) {
         merged.set(key, group);
@@ -12287,7 +12577,7 @@
     const provider = String(repository?.attribution?.provider || repository?.provider || "Provider");
     const original = String(repository?.originalUrl || "");
     const forkmeshUrl = hosted
-      ? `/${encodeURIComponent(repository.targetOwner)}/${encodeURIComponent(repository.name)}`
+      ? repoPathUrl({ owner: repository.targetOwner, name: repository.name })
       : original;
     const canVolunteer = Boolean(state.session?.sessionToken) &&
       !["actively_mirrored", "archived"].includes(String(repository?.status || ""));
@@ -13157,7 +13447,7 @@
 
   function renderNewRepoPush(repository, push, hosting = null) {
     const repoLabel = $("[data-new-repo-push-repo]");
-    if (repoLabel) repoLabel.textContent = repoKey(repository || {});
+    if (repoLabel) repoLabel.textContent = repoPublicKey(repoKey(repository || {}));
     const intro = $("[data-new-repo-push-intro]");
     if (intro) {
       intro.textContent = hosting?.importing
@@ -14514,7 +14804,7 @@
             return;
           }
           updateRepoFileStatus(viewer, proposal
-            ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayKey(repo))
+            ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayName(repo))
             : repoFileEditError(error), "bad");
         }
         return;
@@ -15824,7 +16114,7 @@
     }
     const path = normalized.join("/");
     const kind = !target || target.endsWith("/") || !path ? "tree" : "blob";
-    const href = path ? repoLinkUrl(context.repo, kind, path) : `/${context.repo.owner}/${context.repo.name}`;
+    const href = path ? repoLinkUrl(context.repo, kind, path) : repoLinkUrl(context.repo);
     const anchor = hash ? mdHeadingSlug(hash.slice(1)) : "";
     return `<a href="${escapeHtml(href)}${hash}" data-repo-markdown-link="${kind}" data-repo-markdown-path="${escapeHtml(path)}"${anchor ? ` data-repo-markdown-anchor="${anchor}"` : ""} class="${linkClass}">${labelHtml}</a>`;
   }
@@ -21841,7 +22131,7 @@
     // only records the contributor as a "<node>:" prefix on head. A fork keeps
     // the repository name, so the contributor's namespace plus this repo's name
     // names the source repository.
-    const baseRepoLabel = `${repo.owner || "owner"}/${repo.name || "repo"}`;
+    const baseRepoLabel = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`);
     const headOwner = headRef.includes(":")
       ? headRef.slice(0, headRef.lastIndexOf(":")).trim()
       : "";
@@ -23148,8 +23438,8 @@
   // disclosure, not an action.
   function repoForkPath(rawUrl, owner, name) {
     return /^\/[^/\\]/.test(rawUrl) && !/[\u0000-\u0020\\]/.test(rawUrl)
-      ? rawUrl
-      : `/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+      ? repoPublicHref(rawUrl)
+      : repoPathUrl({ owner, name });
   }
 
   function repoForkRowHtml(fork) {
@@ -27182,7 +27472,7 @@
       const commit = immutableGitCommit(data.commit);
       const refParams = commit ? { ref: commit } : {};
       window.ForkMeshCodeMap.open({
-        title: `${repoPublicOwner(repo) || repo.owner || ""}/${repo.name || ""}`,
+        title: repoDisplayName(repo, `${repoPublicOwner(repo) || repo.owner || ""}/${repo.name || ""}`),
         root: data,
         theme: document.documentElement.dataset.dashboardTheme === "light" ? "light" : "dark",
         formatSize,
@@ -27677,7 +27967,7 @@
       repoKey(repo).toLowerCase() === previous) ||
       agentModalPreferredRepo(choices);
     repoSelect.innerHTML = choices.length
-      ? choices.map((repo) => `<option value="${escapeHtml(repoKey(repo))}"${repo === preferred ? " selected" : ""}>${escapeHtml(repoDisplayKey(repo))}</option>`).join("")
+      ? choices.map((repo) => `<option value="${escapeHtml(repoKey(repo))}"${repo === preferred ? " selected" : ""}>${escapeHtml(repoDisplayName(repo))}</option>`).join("")
       : '<option value="">No repositories you belong to</option>';
     repoSelect.disabled = !choices.length;
   }
@@ -31997,8 +32287,8 @@
     setRepoRecordOpen("pulls", true);
     const parent = repoForkParent(repo);
     const targetRepo = pullRequestTargetRepo(repo);
-    const sourceLabel = repoDisplayKey(repo);
-    const targetLabel = parent?.key || repoDisplayKey(targetRepo);
+    const sourceLabel = repoDisplayName(repo);
+    const targetLabel = parent?.key ? repoDisplayName(parent.key) : repoDisplayName(targetRepo);
     const branches = repoBranchList(repo);
     const defaultBranch = repoDefaultBranch(repo);
     const presetBase = String(preset?.base || "").trim();
@@ -32332,7 +32622,7 @@
       setSubmitBusy(submit, false);
       const detailUrl = repoRecordUrl(targetRepo, "pulls", number, "conversation");
       if (crossFork) {
-        setHint(`Created #${number}; opening it in ${repoDisplayKey(targetRepo)}…`, "good");
+        setHint(`Created #${number}; opening it in ${repoDisplayName(targetRepo)}…`, "good");
         window.location.assign(detailUrl);
         return;
       }
@@ -32343,7 +32633,7 @@
       console.error("[forkmesh] pull request submission failed", error);
       setHint(
         webPullSubmitErrorText(
-          error, base, head, repoDisplayKey(pullRequestTargetRepo(repo))),
+          error, base, head, repoDisplayName(pullRequestTargetRepo(repo))),
         "bad");
     }
   }
@@ -32444,7 +32734,7 @@
             <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(commit.author || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Date</dt><dd>${escapeHtml(commit.date || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Parents</dt><dd class="font-mono">${parents.length ? parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ") : "root commit"}</dd></div>
-            <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repo.owner || "owner")}/${escapeHtml(repo.name || "repo")}</dd></div>
+            <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</dd></div>
           </dl>
         </header>
         <section class="overflow-hidden rounded-lg border border-border">
@@ -33212,7 +33502,7 @@
       if (onlineMirrors.length) {
         repo.cloneOnline = true;
         const availability = $("[data-repo-availability-status]");
-        if (availability) {
+        if (availability && !dashboardOnInstance()) {
           availability.textContent = repo.liveHost
             ? "mirror online"
             : "served by mirror";
@@ -35299,7 +35589,7 @@
 
   function renderIssueContributionTip(repo) {
     if (issueContributionTipDismissed(repo)) return "";
-    const repository = `${repo.owner || "owner"}/${repo.name || "repository"}`;
+    const repository = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repository"}`);
     return `
       <aside data-repo-issue-contribution-tip class="fm-flash relative mb-4 flex-wrap">
         <i data-lucide="heart-handshake"></i>
@@ -35369,7 +35659,7 @@
           </div>
         </section>`;
     }
-    const repository = `${repo.owner || "owner"}/${repo.name || "repository"}`;
+    const repository = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repository"}`);
     return `
       <section data-dashboard-repo-tab-panel="pulls" class="hidden">
         <div data-repo-collection-layout="pulls" data-views-collapsed="${issueViewsCollapsed() ? "true" : "false"}" class="mt-2 grid min-w-0 gap-6">
@@ -35913,14 +36203,14 @@
               </div>
               <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5"></div>
             </div>
-            <div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+            ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
                 <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
               <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
-            </div>
+            </div>`}
             ${repo.isPrivate ? "" : `
             <details data-repo-logo-workflow class="mt-4 border-t border-border pt-4">
               <summary class="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold text-foreground">
@@ -36093,7 +36383,7 @@
   }
 
   function formatRepoContextCopyPath(repo, path) {
-    const repoLabel = repoDisplayKey(repo) || repoKey(repo) || "repo";
+    const repoLabel = repoDisplayName(repo) || repoKey(repo) || "repo";
     return path ? `${repoLabel}/${path}` : repoLabel;
   }
 
@@ -36578,8 +36868,8 @@
         <div class="flex items-start gap-2">
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(item.body || item.repo || "ForkMesh update")}</p>
+            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
+            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || "ForkMesh update")}</p>
           </div>
           <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
@@ -36601,15 +36891,15 @@
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
         </span>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-foreground">${escapeHtml(item.title || "Ping")}</p>
-          <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(item.repo)}` : ""}</p>
+          <p class="text-sm font-semibold text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
+          <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(item.body || "ForkMesh notification")}</p>
+      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(repoPublicText(item.body) || "ForkMesh notification")}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(item.href)}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+        ${item.href ? `<a href="${escapeHtml(repoPublicHref(item.href))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
@@ -37242,7 +37532,7 @@
     const requested = requestedRepoKey();
     const detail = $("[data-repo-detail]");
     const headerContext = $("[data-dashboard-header-context]");
-    if (headerContext && requested) headerContext.textContent = requested;
+    if (headerContext && requested) headerContext.textContent = repoPublicKey(requested);
     // A node that reads the repository locally sends the page with its first
     // view already rendered (app/host/forkmesh_host/repo_ssr.py); keep that
     // on screen until the full interface replaces it.
@@ -37307,7 +37597,7 @@
   // happened and offer the ways out (adhoc #1642). The name is echoed back
   // escaped: it is whatever was in the URL bar.
   function renderRepoNotFound(detail, requested) {
-    const name = escapeHtml(requested || "");
+    const name = escapeHtml(repoPublicKey(requested || ""));
     detail.innerHTML = `
       <section class="flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-16 text-center">
         <p class="font-mono text-4xl font-semibold text-muted-foreground">404</p>
@@ -43771,7 +44061,7 @@
   // this bundle; the stubs where the modules were load it on first use.
   const DASHBOARD_CHUNK_URLS = {
     "achievements": "/dashboard-page-achievements.js?v=6b27528e2439",
-    "agents": "/dashboard-page-agents.js?v=228adef39c05",
+    "agents": "/dashboard-page-agents.js?v=0ec627084c94",
     "apps": "/dashboard-page-apps.js?v=5e46b3032a2f",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
     "calendar": "/dashboard-page-calendar.js?v=f3f31e10bb77",
@@ -43779,9 +44069,9 @@
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=915f8761c02c",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=0617eb425d63",
+    "notes": "/dashboard-page-notes.js?v=4a3cfce15160",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "tasks": "/dashboard-page-tasks.js?v=d19aedd4b98f",
+    "tasks": "/dashboard-page-tasks.js?v=516c5c5cbd2d",
     "workflows": "/dashboard-page-workflows.js?v=b1f9fc87fe2b",
   };
   const dashboardChunkScope = {
@@ -43816,6 +44106,8 @@
     repoIsLive,
     repoLinkUrl,
     repoLiveUrl,
+    repoPathUrl,
+    repoPublicKey,
     sendTextToPrompt,
     sourceOfTruth,
     state,
@@ -44042,8 +44334,26 @@
     },
   });
 
+  function refreshRepoAddressViews() {
+    const steps = [
+      () => (Array.isArray(state.repositories)
+        ? applyRepositoryFilter()
+        : renderSidebarRepositories(state.session)),
+      () => renderHeaderContext(),
+      () => refreshRepoLinks(document),
+      () => replaceLongRepoLocation(),
+    ];
+    for (const step of steps) {
+      try {
+        step();
+      } catch (_) {}
+    }
+  }
+
   async function bootDashboard() {
     const startupStartedAt = 0;
+    window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
+    const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
     watchGenieSetting();
     watchHomeRedirectSetting();
@@ -44052,6 +44362,9 @@
     void ensurePortableControllerSession();
     await hydratePortableMirrorSession();
     await restoreControllerSession();
+    if (!repoAddressesKnown()) {
+      await Promise.race([repoAddressesLoaded, new Promise((resolve) => setTimeout(resolve, 1500))]);
+    }
     initDailyInterface();
     if (initSharedChrome()) {
       startAccountSessionWatch();
@@ -44062,6 +44375,7 @@
       initDashboardUpdateNotice();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
+      if (state.repoAddressesChanged) refreshRepoAddressViews();
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

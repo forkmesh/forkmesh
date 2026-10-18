@@ -124,6 +124,11 @@ async def prepare(runtime, spec):
         if (not isinstance(record, dict)
                 or record.get("source") != hosted_git.HOSTED_SOURCE):
             raise RepoError("%s/%s is not a hosted repository" % (owner, name))
+        if spec["organization"]:
+            org_bi, _ = await entry._org_row(env, spec["organization"])
+            await hosted_repos.link_organization(
+                replica, org_bi, name, owner, int(entry.Date.now()))
+            entry._ORG_ALIAS_MEMO.clear()
         endpoint = await _endpoint(hosted_git, env, row["id"],
                                    str(row.get("pushed_by") or ""))
         return {"id": row["id"], "created": False,

@@ -7844,6 +7844,7 @@ async def network_leaderboards(env):
     ]
 
     funds = await _funds_received_boards(env)
+    short_board = globals().get("_short_repo_board")
 
     resp = json_response(
         {"ok": True,
@@ -7853,7 +7854,8 @@ async def network_leaderboards(env):
          "repos": repo_board[:LEADERBOARD_LIMIT],
          "mirrors": mirror_board[:LEADERBOARD_LIMIT],
          "hosted": hosted_board[:LEADERBOARD_LIMIT],
-         "largest": largest_board[:LEADERBOARD_LIMIT],
+         "largest": await short_board(env, largest_board[:LEADERBOARD_LIMIT])
+         if short_board else largest_board[:LEADERBOARD_LIMIT],
          "dataHosted": data_board[:LEADERBOARD_LIMIT],
          "contributors": contrib_board,
          "fundsMainnodes": funds["mainnode"][:LEADERBOARD_LIMIT],
@@ -29088,13 +29090,19 @@ async def org_members_handler(env, request, org):
         for r in team_rows or []:
             teams_by_member.setdefault(
                 str(r.get("name") or ""), []).append(str(r.get("team") or ""))
+        hidden_members = globals().get("_org_internal_members")
+        hidden = (await hidden_members(
+            env, org_name, [str(r.get("name") or "") for r in rows or []])
+            if callable(hidden_members) else set())
         return json_response({"ok": True, "visibility": access["offices"],
                               "members": [
             {"name": str(r.get("name") or ""),
              "role": str(r.get("role") or ""),
              "since": int(r.get("created_at") or 0),
              "teams": teams_by_member.get(str(r.get("name") or ""), [])}
-            for r in rows or []]}, cache_control="no-store")
+            for r in rows or []
+            if str(r.get("name") or "") not in hidden]},
+            cache_control="no-store")
     if method not in ("POST", "DELETE"):
         return json_response({"error": "method_not_allowed"}, status=405)
     try:
@@ -36332,6 +36340,9 @@ async def enqueue_notification(env, recipient, kind, title, body="", repo="",
             muted, paused = set(), False
         if kind in muted:
             return False
+    public_href = globals().get("_repo_public_href")
+    if callable(public_href):
+        href = await public_href(env, href)
     payload = notification_payload(
         kind, title, body=body, repo=repo, href=href, actor=actor,
         source=source, ts=now, meta=meta)
@@ -50773,12 +50784,12 @@ async def _https_mirror_proxy(
     # under the untouched public organization identity. The rewrite preserves
     # request.url, so recover only an alias that D1 verifies maps to that node.
     try:
-        original_url = urlparse(str(getattr(request, "url", "") or ""))
+        original_path = _git_request_path(request)
         original_match = (
-            GIT_INFO_RE.match(original_url.path)
-            or GIT_PACK_RE.match(original_url.path)
-            or RELEASE_BLOB_RE.match(original_url.path)
-            or REPO_HOST_RE.match(original_url.path)
+            GIT_INFO_RE.match(original_path)
+            or GIT_PACK_RE.match(original_path)
+            or RELEASE_BLOB_RE.match(original_path)
+            or REPO_HOST_RE.match(original_path)
         )
         route_owner = (
             safe_segment(original_match.group(1)) if original_match else "")
@@ -51317,10 +51328,163 @@ async def _hosted_git_write_endpoint(env):
     return endpoint
 
 
-async def _git_push_alias_owner(env, request, owner, repo):
+def _git_request_path(request):
     try:
         path = urlparse(str(request.url)).path
     except Exception:
+        return ""
+    setting = repo_short_urls.cached(int(Date.now())) or {}
+    if setting.get("short"):
+        hit = repo_short_urls.rewrite(path, setting.get("owner"))
+        if hit is not None and not hit[1]:
+            return hit[0]
+    return path
+
+
+async def _repo_short_setting_row(env):
+    now = int(Date.now())
+    setting = repo_short_urls.cached(now)
+    if setting is not None:
+        return setting
+    try:
+        row = await d1_first(
+            env, "SELECT doc FROM instance_settings WHERE k=?",
+            repo_short_urls.SETTING_KEY)
+    except Exception:
+        row = None
+    return repo_short_urls.remember(
+        repo_short_urls.parse((row or {}).get("doc") or ""), now)
+
+
+async def _repo_name_is_account(env, name, internal_ok=False):
+    name = str(name or "").lower()
+    if not repo_short_urls.OWNER_RE.fullmatch(name):
+        return False
+    try:
+        if (await _org_row(env, name))[1]:
+            return True
+        account = (await _account_row(env, name))[1]
+        if internal_ok and account and _account_kind(account) == "node":
+            return False
+        return bool(account)
+    except Exception:
+        return True
+
+
+async def _org_internal_members(env, org, names):
+    setting = await _repo_short_setting_row(env)
+    if not repo_short_urls.canonical_owner(setting) or \
+            repo_short_urls.canonical_owner(setting) != str(org or "").lower():
+        return set()
+    hidden = set()
+    for name in names:
+        try:
+            account = (await _account_row(env, name))[1]
+        except Exception:
+            continue
+        if account and _account_kind(account) == "node":
+            hidden.add(name)
+    return hidden
+
+
+async def _repo_canonical_path(env, path, query="", public_only=True):
+    setting = await _repo_short_setting_row(env)
+    owner = repo_short_urls.canonical_owner(setting)
+    parts = [p for p in str(path or "").split("/") if p]
+    if not owner or len(parts) < 2:
+        return None
+    first = unquote(parts[0]).lower()
+    if first != owner:
+        name = unquote(parts[1])
+        if not repo_short_urls.OWNER_RE.fullmatch(first):
+            return None
+        if await _org_repo_node(env, owner, name) != first:
+            return None
+        if public_only and await _repo_is_private(env, first, name):
+            return None
+        path = "/" + "/".join([quote(owner, safe="")] + parts[1:])
+    hit = repo_short_urls.canonical_redirect(path, query, setting)
+    if hit is None or await _repo_name_is_account(env, hit[1], True):
+        return None
+    return hit[0]
+
+
+async def _short_repo_board(env, rows):
+    shown = []
+    for row in rows:
+        owner, _, name = str(row.get("name") or "").partition("/")
+        if owner and name and "/" not in name:
+            try:
+                path = await _repo_canonical_path(
+                    env, "/%s/%s" % (quote(owner, safe=""), quote(name, safe="")))
+            except Exception:
+                path = None
+            if path and path.count("/") == 1:
+                row = dict(row, name=unquote(path[1:]))
+        shown.append(row)
+    return shown
+
+
+async def _repo_public_path(env, owner, name):
+    path = "/%s/%s" % (quote(str(owner or ""), safe=""),
+                       quote(str(name or ""), safe=""))
+    return await _repo_canonical_path(env, path, public_only=False) or path
+
+
+async def _repo_public_href(env, href):
+    href = str(href or "")
+    if not href.startswith("/") or href.startswith("//"):
+        return href
+    path, _, query = href.partition("?")
+    try:
+        return await _repo_canonical_path(
+            env, path, query, public_only=False) or href
+    except Exception:
+        return href
+
+
+async def _repo_short_links(env, owner):
+    now = int(Date.now())
+    links = repo_short_urls.cached_keep(owner, now)
+    if links is not None:
+        return links
+    rows = {}
+    try:
+        org_bi = await blind_index(env, "org:" + owner)
+        for row in await d1_all(
+                env, "SELECT repo, node_owner FROM org_repos WHERE org_bi=?",
+                org_bi) or []:
+            name = str(row.get("repo") or "")
+            creator = str(row.get("node_owner") or "").lower()
+            if name:
+                rows[name] = (creator, await _repo_is_private(
+                    env, creator or owner, name))
+        owner_bi = await blind_index(env, owner)
+        for row in await d1_all(
+                env, "SELECT data FROM repositories WHERE owner_bi=?",
+                owner_bi) or []:
+            rec = await decrypt_row(env, row.get("data"))
+            if rec and rec.get("name"):
+                rows.setdefault(str(rec["name"]), (
+                    "", rec.get("visibility") != "public"))
+        taken = []
+        for name in repo_short_urls.owner_candidates(rows, owner):
+            if await _repo_name_is_account(env, name, True):
+                taken.append(name)
+    except Exception:
+        return None
+    return repo_short_urls.remember_keep(
+        owner, repo_short_urls.links_doc(rows, owner, taken), now)
+
+
+async def _repo_clone_url(env, origin, owner, name):
+    path = await _repo_public_path(env, owner, name)
+    return origin + path + (".git" if path.count("/") == 1 else "")
+
+
+async def _git_push_alias_owner(env, request, owner, repo):
+    path = _git_request_path(request)
+    if not path:
         return ""
     match = GIT_INFO_RE.match(path) or GIT_RECEIVE_RE.match(path)
     if not match:

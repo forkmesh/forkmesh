@@ -7,6 +7,7 @@ import html
 import json
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,6 +30,8 @@ LOGO_SVG = (
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">'
     '<image href="data:%s;base64,%s" width="256" height="256" preserveAspectRatio="xMidYMid meet"/></svg>\n')
 LOGO_SVG_TARGETS = ("assets/logo.svg", "favicon/favicon.svg")
+RASTER = "instance-logo.png"
+RASTER_SIZE = 512
 
 
 def logo_kind(data: bytes) -> str:
@@ -49,13 +52,29 @@ def logo_svg(data: bytes, kind: str) -> bytes:
     return (LOGO_SVG % (LOGO_TYPES[kind], base64.b64encode(data).decode("ascii"))).encode("ascii")
 
 
+def logo_raster(dist: Path, data: bytes) -> str:
+    tool = shutil.which("rsvg-convert")
+    if not tool:
+        return ""
+    size = str(RASTER_SIZE)
+    try:
+        png = subprocess.run([tool, "--width", size, "--height", size, "--keep-aspect-ratio"],
+                             input=data, capture_output=True, check=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if logo_kind(png) != "png":
+        return ""
+    (dist / RASTER).write_bytes(png)
+    return RASTER
+
+
 def icon_links(logo: str) -> str:
     kind = LOGO_TYPES[logo.rsplit(".", 1)[1]]
     return ('<link rel="icon" href="%s" type="%s" data-instance-logo />'
             '<link rel="apple-touch-icon" href="%s" data-instance-logo />') % (logo, kind, logo)
 
 
-def brand_page(text: str, name: str, logo: str = "") -> str:
+def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
     escaped = html.escape(name, quote=True)
     text = OLD_TAG_RE.sub("", text)
     text = text.replace(THEME_TAG, "")
@@ -68,7 +87,8 @@ def brand_page(text: str, name: str, logo: str = "") -> str:
         lambda match: match.group(1) + match.group(2).replace("ForkMesh", escaped) + match.group(3),
         text, count=1)
     text = META_RE.sub(lambda match: match.group(1) + escaped + match.group(2), text)
-    tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s" %s></script>' % (escaped, MARKER)
+    off = ' data-instance-powered-by="off"' if not powered_by else ""
+    tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
     lower = text.lower()
     index = lower.rfind("</head>")
     if index == -1:
@@ -87,6 +107,10 @@ def install_logo(dist: Path, name: str, source: Path) -> str:
         old.unlink()
     target = "instance-logo." + kind
     (dist / target).write_bytes(data)
+    icons = [{"src": "/" + target, "sizes": "any", "type": LOGO_TYPES[kind]}]
+    raster = logo_raster(dist, data) if kind == "svg" else ""
+    if raster:
+        icons.insert(0, {"src": "/" + raster, "sizes": "%dx%d" % (RASTER_SIZE, RASTER_SIZE), "type": "image/png"})
     for relative in LOGO_SVG_TARGETS:
         path = dist / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,13 +121,12 @@ def install_logo(dist: Path, name: str, source: Path) -> str:
             app = json.loads(manifest.read_text(encoding="utf-8"))
         except ValueError:
             app = {}
-        app.update({"name": name, "short_name": name,
-                    "icons": [{"src": "/" + target, "sizes": "any", "type": LOGO_TYPES[kind]}]})
+        app.update({"name": name, "short_name": name, "icons": icons})
         manifest.write_text(json.dumps(app, separators=(",", ":")), encoding="utf-8")
     return "/" + target
 
 
-def apply(dist: Path, name: str, logo: Path | None = None) -> int:
+def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = True) -> int:
     if not NAME_RE.fullmatch(name):
         raise SystemExit("instance name: letters, numbers, spaces and ._&+- only, up to 40")
     if not dist.is_dir():
@@ -113,7 +136,7 @@ def apply(dist: Path, name: str, logo: Path | None = None) -> int:
     changed = 0
     for page in sorted(dist.rglob("*.html")):
         original = page.read_text(encoding="utf-8", errors="surrogateescape")
-        branded = brand_page(original, name, logo_path)
+        branded = brand_page(original, name, logo_path, powered_by)
         if branded != original:
             page.write_text(branded, encoding="utf-8", errors="surrogateescape")
             changed += 1
@@ -125,8 +148,10 @@ def main(argv=None) -> int:
     parser.add_argument("--name", required=True, help="the instance's project name")
     parser.add_argument("--dist", default=str(APP / "dist"), help="the built app directory")
     parser.add_argument("--logo", help="the instance's logo: a PNG, JPEG, WebP or SVG file")
+    parser.add_argument("--no-powered-by", action="store_true", help="leave out the Powered by ForkMesh badge")
     args = parser.parse_args(argv)
-    changed = apply(Path(args.dist), " ".join(args.name.split()), Path(args.logo) if args.logo else None)
+    changed = apply(Path(args.dist), " ".join(args.name.split()), Path(args.logo) if args.logo else None,
+                    powered_by=not args.no_powered_by)
     print("branded %d pages as %s" % (changed, args.name))
     return 0
 

@@ -60,13 +60,16 @@ def test_short_addresses_map_onto_the_owner():
 
 
 def test_short_address_setting_is_validated_and_cached():
-    assert repo_short_urls.parse("") == {"short": False, "owner": ""}
+    assert repo_short_urls.parse("") == {"short": False, "owner": "",
+                                         "canonical": False}
     assert repo_short_urls.parse('{"short":true,"owner":"Acme"}') == {
-        "short": True, "owner": "acme"}
+        "short": True, "owner": "acme", "canonical": False}
     assert repo_short_urls.parse('{"short":true,"owner":"bad name"}') == {
-        "short": False, "owner": ""}
-    assert repo_short_urls.parse("[1]") == {"short": False, "owner": ""}
-    assert repo_short_urls.clean(True, "@Acme") == {"short": True, "owner": "acme"}
+        "short": False, "owner": "", "canonical": False}
+    assert repo_short_urls.parse("[1]") == {"short": False, "owner": "",
+                                            "canonical": False}
+    assert repo_short_urls.clean(True, "@Acme") == {
+        "short": True, "owner": "acme", "canonical": False}
     with pytest.raises(repo_short_urls.SettingError):
         repo_short_urls.clean(True, "")
     with pytest.raises(repo_short_urls.SettingError):
@@ -318,8 +321,13 @@ def test_repository_addresses_are_saved_for_an_existing_owner(tmp_path, monkeypa
     assert "notice=owner_invalid" in post(short="1", owner="").headers["location"]
     answer = post(short="1", owner="Acme")
     assert answer.headers["location"].endswith("view=repo-addresses&notice=addresses_saved")
-    assert saved[-1][:2] == ("repo_paths", '{"owner":"acme","short":true}')
+    assert saved[-1][:2] == (
+        "repo_paths", '{"canonical":false,"owner":"acme","short":true}')
     assert repo_short_urls.cached(NOW) is None
+    post(short="1", owner="acme", canonical="1")
+    assert saved[-1][1] == '{"canonical":true,"owner":"acme","short":true}'
+    post(owner="acme", canonical="1")
+    assert saved[-1][1] == '{"canonical":false,"owner":"acme","short":false}'
 
 
 def test_the_console_links_both_pages():

@@ -129,6 +129,9 @@ QWidget *MainWindow::buildHomeGridSection()
         });
     m_homeGridBoard->setOnActivate(
         [this](const QString &key) { activateHomeGridTile(key); });
+    m_homeGridBoard->setTileMenu([this](QMenu *menu, const QString &key) {
+        addHomeTilePackageActions(menu, key);
+    });
     m_homeGridBoard->setSavedPages(HomeLayout::fromJson(
         QSettings().value(kHomePagesSetting).toString()));
     m_homeGridBoard->setOnLayoutChanged([](const HomeLayout::Pages &pages) {
@@ -419,10 +422,10 @@ void MainWindow::refreshHomeGridPage()
         m_homeGridTimer->start();
 }
 
-bool MainWindow::activateHomeGridTile(const QString &key)
+QWidget *MainWindow::railWidgetForKey(const QString &key) const
 {
     if (key.isEmpty() || !m_appNavigationRailLayout)
-        return false;
+        return nullptr;
     QList<QWidget *> railWidgets;
     for (int i = 0; i < m_appNavigationRailLayout->count(); ++i) {
         QWidget *widget = m_appNavigationRailLayout->itemAt(i)->widget();
@@ -432,15 +435,19 @@ bool MainWindow::activateHomeGridTile(const QString &key)
             railWidgets.append(widget);
     }
     for (QWidget *widget : std::as_const(railWidgets)) {
-        if (widget->property("forkmeshRailKey").toString() != key)
-            continue;
-        auto *button = qobject_cast<QAbstractButton *>(widget);
-        if (!button || !button->isEnabled())
-            return false;
-        button->click();
-        return true;
+        if (widget->property("forkmeshRailKey").toString() == key)
+            return widget;
     }
-    return false;
+    return nullptr;
+}
+
+bool MainWindow::activateHomeGridTile(const QString &key)
+{
+    auto *button = qobject_cast<QAbstractButton *>(railWidgetForKey(key));
+    if (!button || !button->isEnabled())
+        return false;
+    button->click();
+    return true;
 }
 
 #ifdef FORKMESH_WINDOW_TESTS

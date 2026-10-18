@@ -42,15 +42,17 @@ public struct RelayProbeResult: Equatable, Sendable {
     public let knownAs: RelayProfile?
     public let instanceName: String
     public let logoUrl: String
+    public let branded: Bool
 
     public init(
         status: RelayProbeStatus, profile: RelayProfile? = nil, rev: String = "", version: String = "",
         statusCode: Int = 0, features: RelayFeatureSet = .undeclared(), knownAs: RelayProfile? = nil,
-        instanceName: String = "", logoUrl: String = ""
+        instanceName: String = "", logoUrl: String = "", branded: Bool = false
     ) {
         self.knownAs = knownAs
         self.instanceName = instanceName
         self.logoUrl = logoUrl
+        self.branded = branded
         self.status = status
         self.profile = profile
         self.rev = rev
@@ -238,8 +240,25 @@ public struct RelayProbe: Sendable {
             statusCode: response.status,
             features: features,
             instanceName: instanceName,
-            logoUrl: RelayProbe.logoUrl(candidate, RelayProbe.dartText(instance["logo"])))
+            logoUrl: await logoUrl(candidate, instance),
+            branded: instance["branded"]?.boolValue == true)
     }
+
+    private func logoUrl(_ candidate: RelayProfile, _ instance: JSONValue) async -> String {
+        if instance["logo"] != nil { return RelayProbe.logoUrl(candidate, RelayProbe.dartText(instance["logo"])) }
+        guard instance["branded"]?.boolValue == true,
+            let url = URL(string: "\(candidate.httpOrigin)/favicon/site.webmanifest"),
+            case .success(let response) = await send(url, follow: true), response.status == 200
+        else { return "" }
+        let sources: [String] = (response.jsonObject["icons"]?.arrayValue ?? []).compactMap {
+            $0["src"]?.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        guard let logo = sources.first(where: { $0.range(of: RelayProbe.instanceLogo, options: .regularExpression) != nil })
+        else { return "" }
+        return candidate.httpOrigin + logo
+    }
+
+    static let instanceLogo: String = #"^/instance-logo\.(png|jpg|webp)$"#
 
     private func describe(_ candidate: RelayProfile) async -> JSONValue {
         guard let url = URL(string: "\(candidate.httpOrigin)/api/instance"),

@@ -95,7 +95,14 @@ Shortcuts (`.forkmesh/shortcuts/`):
   Name field so a new project or relay is saved under the instance's name, not
   its host. Attaching an instance to a project with no logo (or creating a
   project or relay on one without picking a logo) saves the instance's `logo`,
-  else its favicon, as the project logo.
+  else its favicon, as the project logo. An instance from before the `logo`
+  field (it answers `branded: true` with no `logo` key) is asked for
+  `/favicon/site.webmanifest`, and its first `/instance-logo.png|jpg|webp`
+  icon is used. A branded instance never gives its favicon: that is the stock
+  ForkMesh icon, which the brand tool does not replace, so a branded instance
+  with no logo keeps the letter icon. Phones cannot draw SVG, which is why the
+  brand tool keeps a PNG copy of an SVG logo (see
+  [INSTANCES.md](../INSTANCES.md#white-label)).
 - **Relay features.** `/api/version` declares a `features` list; the core
   (`accounts`, `repositories`, `repoRead`) is required, every other feature
   gates its own UI, and a missing one leaves the UI absent rather than broken.

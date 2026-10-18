@@ -612,6 +612,33 @@ def test_organization_owner_needs_maintain():
     assert create(module, {"organization": "nope"}).status == 404
 
 
+def test_organization_alias_of_a_mixed_case_name_is_stored_lowercase():
+    world = World(org_roles={"acme": "maintainer"})
+    module = install(world)
+    response = create(module, {"name": "Bolt", "organization": "acme"})
+    assert response.status == 201, response.data
+    assert response.data["repository"]["cloneUrl"] == \
+        "https://app.next.test/acme/Bolt"
+    link = world.db.execute("SELECT * FROM org_repos").fetchall()
+    assert [tuple(row)[:3] for row in link] == [("bi:org:acme", "bolt", "alice")]
+    assert create(module, {"name": "bolt", "organization": "acme"}).status == 409
+
+
+def test_linking_again_repairs_a_mixed_case_organization_alias():
+    world = World(org_roles={"acme": "maintainer"})
+    module = install(world)
+    world.db.execute("INSERT INTO org_repos VALUES (?,?,?,?)",
+                     ("bi:org:acme", "Bolt", "alice", NOW))
+    runtime = module._ReplicaRuntime(Env())
+    asyncio.run(hosted_repos.link_organization(
+        runtime, "bi:org:acme", "Bolt", "alice", NOW + 1))
+    asyncio.run(hosted_repos.link_organization(
+        runtime, "bi:org:acme", "Bolt", "alice", NOW + 2))
+    link = world.db.execute("SELECT * FROM org_repos").fetchall()
+    assert [tuple(row) for row in link] == [
+        ("bi:org:acme", "bolt", "alice", NOW)]
+
+
 def test_settings_describe_core_hosting():
     world = World(org_roles={"acme": "admin", "club": "member"})
     module = install(world)

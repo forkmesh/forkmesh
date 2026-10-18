@@ -488,14 +488,14 @@
               </div>
               <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5"></div>
             </div>
-            <div data-repo-live-summary class="mt-3 border-t border-border pt-3">
+            ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Direct access</h4>
                 <span class="font-mono text-[11px] text-muted-foreground"><span data-dashboard-repo-count="mirrors">${tabCountLabel(mirrorsCount)}</span> online</span>
               </div>
               <p class="mt-1 text-[11px] leading-4 text-muted-foreground">If the controller is unavailable, open this repository on any listed public mirror.</p>
               <div data-repo-live-mirror-list class="-mx-2 mt-2 grid"></div>
-            </div>
+            </div>`}
             ${repo.isPrivate ? "" : `
             <details data-repo-logo-workflow class="mt-4 border-t border-border pt-4">
               <summary class="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-semibold text-foreground">
@@ -668,7 +668,7 @@
   }
 
   function formatRepoContextCopyPath(repo, path) {
-    const repoLabel = repoDisplayKey(repo) || repoKey(repo) || "repo";
+    const repoLabel = repoDisplayName(repo) || repoKey(repo) || "repo";
     return path ? `${repoLabel}/${path}` : repoLabel;
   }
 
@@ -1153,8 +1153,8 @@
         <div class="flex items-start gap-2">
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(item.body || item.repo || "ForkMesh update")}</p>
+            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
+            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || "ForkMesh update")}</p>
           </div>
           <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
@@ -1176,15 +1176,15 @@
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
         </span>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-foreground">${escapeHtml(item.title || "Ping")}</p>
-          <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(item.repo)}` : ""}</p>
+          <p class="text-sm font-semibold text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
+          <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(item.body || "ForkMesh notification")}</p>
+      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(repoPublicText(item.body) || "ForkMesh notification")}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
-        ${item.href ? `<a href="${escapeHtml(item.href)}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
+        ${item.href ? `<a href="${escapeHtml(repoPublicHref(item.href))}" class="inline-flex h-9 items-center justify-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary transition-colors">Open context</a>` : ""}
         ${pingTurnOffLinkHtml(item)}
       </div>
     `;
@@ -1817,7 +1817,7 @@
     const requested = requestedRepoKey();
     const detail = $("[data-repo-detail]");
     const headerContext = $("[data-dashboard-header-context]");
-    if (headerContext && requested) headerContext.textContent = requested;
+    if (headerContext && requested) headerContext.textContent = repoPublicKey(requested);
     // A node that reads the repository locally sends the page with its first
     // view already rendered (app/host/forkmesh_host/repo_ssr.py); keep that
     // on screen until the full interface replaces it.
@@ -1882,7 +1882,7 @@
   // happened and offer the ways out (adhoc #1642). The name is echoed back
   // escaped: it is whatever was in the URL bar.
   function renderRepoNotFound(detail, requested) {
-    const name = escapeHtml(requested || "");
+    const name = escapeHtml(repoPublicKey(requested || ""));
     detail.innerHTML = `
       <section class="flex flex-col items-center gap-4 rounded-lg border border-border bg-card px-6 py-16 text-center">
         <p class="font-mono text-4xl font-semibold text-muted-foreground">404</p>

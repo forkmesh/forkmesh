@@ -43,7 +43,7 @@ UPDATE_STATE="/var/lib/forkmesh-instance-update"
 UPDATE_REQUEST_DIR="$VAR/update"
 UPDATE_UNIT="/etc/systemd/system/forkmesh-instance-update.service"
 UPDATE_PATH_UNIT="/etc/systemd/system/forkmesh-instance-update.path"
-PACKAGES=(ca-certificates curl git openssl python3 python3-venv python3-pip nodejs npm caddy sqlite3 iproute2 age)
+PACKAGES=(ca-certificates curl git openssl python3 python3-venv python3-pip nodejs npm caddy sqlite3 iproute2 age librsvg2-bin)
 ACTIONS_PACKAGES=(git curl jq python3-venv nodejs npm build-essential unzip nftables)
 RUNNER_INSTALLER="www/public/install-runner.sh"
 RUNNER_ETC="/etc/forkmesh-runner"
@@ -234,6 +234,16 @@ actions = c.get("actions", True)
 if not isinstance(actions, bool):
     sys.exit("Setting actions must be true or false.")
 values["actions"] = "1" if actions else "0"
+powered_by = c.get("poweredBy", True)
+if not isinstance(powered_by, bool):
+    sys.exit("Setting poweredBy must be true or false.")
+values["poweredBy"] = "1" if powered_by else "0"
+single = c.get("singleOrganization", False)
+if not isinstance(single, bool):
+    sys.exit("Setting singleOrganization must be true or false.")
+if single and values["ownerType"] != "org":
+    sys.exit("Setting singleOrganization needs ownerType org.")
+values["singleOrganization"] = "1" if single else "0"
 values["logoType"] = values["logoData"] = ""
 logo = str(c.get("logo") or "").strip()
 if logo and not update:
@@ -297,6 +307,7 @@ RUNNER_UNIT="forkmesh-runner@$CFG_ownerName.service"
 DOMAIN="$CFG_domain"
 ORIGIN="https://$DOMAIN"
 REPO_URL="$ORIGIN/$CFG_ownerName/forkmesh"
+if [ "${CFG_singleOrganization:-0}" = "1" ]; then REPO_URL="$ORIGIN/forkmesh"; fi
 NEW_INSTANCE=0
 if [ "$CONFIG_MODE" != "update" ] && { [ ! -e "$INSTANCE_JSON" ] || [ -e "$CLEANUP_DIR/new-instance" ]; }; then
   NEW_INSTANCE=1
@@ -597,7 +608,7 @@ save_logo() {
 
 build_stamp() {
   printf '%s\n' "$(git -C "$SRC" rev-parse HEAD)" "$INSTANCE_INSTALLER_VERSION" "$EXCLUDED_PACKAGES" "$CFG_projectName" \
-    "$(files_digest "$SRC/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")"
+    "$(files_digest "$SRC/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}"
 }
 
 release_version() {
@@ -642,6 +653,7 @@ build_app() {
   local brand_args=(--name "$CFG_projectName" --dist "$SRC/app/dist") logo
   logo="$(logo_file)"
   if [ -n "$logo" ]; then brand_args+=(--logo "$logo"); fi
+  if [ "$CFG_poweredBy" = "0" ]; then brand_args+=(--no-powered-by); fi
   "$VENV/bin/python" "$SRC/app/tools/apply_instance_brand.py" "${brand_args[@]}"
   chmod -R a+rX "$SRC" "$VENV"
   write_build_info
@@ -710,6 +722,7 @@ print(encode(seed), encode(public))
     echo "INSTANCE_FLAGSHIP_NODE=$NODE_NAME"
     echo "INSTANCE_OWNER=$CFG_ownerName"
     echo "INSTANCE_UPSTREAM=$(upstream_page)"
+    echo "INSTANCE_POWERED_BY=$CFG_poweredBy"
     echo "INSTANCE_LOGIN_MARKER=$LOGIN_MARKER"
     echo "INSTANCE_LOGIN_DEADLINE=$login_deadline"
     echo "INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request"
@@ -717,7 +730,8 @@ print(encode(seed), encode(public))
     echo "BUILD_INFO_FILE=$BUILD_INFO"
     echo "BUILD_REV=$(git -C "$SRC" rev-parse HEAD)"
     echo "APP_VERSION=$(release_version)"
-    if [ -n "$(logo_file)" ]; then echo "INSTANCE_LOGO=/instance-logo.$(logo_file | sed 's/.*\.//')"; fi
+    if [ -s "$SRC/app/dist/instance-logo.png" ] && [ -n "$(logo_file)" ]; then echo "INSTANCE_LOGO=/instance-logo.png"
+    elif [ -n "$(logo_file)" ]; then echo "INSTANCE_LOGO=/instance-logo.$(logo_file | sed 's/.*\.//')"; fi
     echo "PUBLIC_BASE_URL=$ORIGIN"
     echo "API_ORIGIN=$ORIGIN"
     echo "APP_ORIGIN=$ORIGIN"
@@ -762,8 +776,9 @@ print(encode(seed), encode(public))
 import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
-        "sourceUrl", "sourceRef", "plugins", "actions"]
+        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy"]
 values = dict(zip(keys, sys.argv[1:]))
+values["poweredBy"] = values["poweredBy"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
 values["plugins"] = [p for p in values["plugins"].split(",") if p]
@@ -772,7 +787,7 @@ print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$CFG_actions" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "$CFG_actions" "$CFG_poweredBy" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -1327,8 +1342,9 @@ print(json.dumps({
     "adminPassword": sys.stdin.read(), "ownerType": sys.argv[3],
     "ownerName": sys.argv[4], "projectName": sys.argv[5],
     "nodePublicKey": sys.argv[6], "owners": owners,
-    "theme": json.loads(sys.argv[7]) if sys.argv[7].startswith("{") else sys.argv[7]}))
-' "$CFG_adminUsername" "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_projectName" "$NODE_PUBLIC_KEY" "$CFG_theme" \
+    "theme": json.loads(sys.argv[7]) if sys.argv[7].startswith("{") else sys.argv[7],
+    "singleOrganization": sys.argv[8] == "1"}))
+' "$CFG_adminUsername" "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_projectName" "$NODE_PUBLIC_KEY" "$CFG_theme" "$CFG_singleOrganization" \
       | host_cli instance-bootstrap 2>&1 | tail -n 1
   )" || true
   ADMIN_PASSWORD=""

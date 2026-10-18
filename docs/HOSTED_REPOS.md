@@ -31,7 +31,10 @@ repositories. There are no personal access tokens and no SSH access.
 **Quotas** (`app/wrangler.toml [vars]`): `HOSTED_REPO_MAX_PER_ACCOUNT`
 (default 10) and `HOSTED_REPO_MAX_BYTES` (default 200 MiB, compared with the
 largest copy any core reports; over it a push answers
-`413 repository_quota_exceeded`). Push bodies are streamed, up to
+`413 repository_quota_exceeded`). A core reports `git count-objects -v`
+`size` plus `size-pack` (loose and packed object bytes), not the directory
+size, and [maintenance](#maintenance) keeps duplicate packs from counting
+for long. Push bodies are streamed, up to
 `FORKMESH_MAX_GIT_PUSH_BODY_BYTES` (256 MiB). The creating account must have a
 verified email.
 
@@ -88,6 +91,16 @@ The repository is stored under the creator's namespace, linked in `org_repos`
 so `/<org>/<name>` works, and pushes use organization roles (write or better;
 private reads need read or better).
 
+`org_repos.repo` is always the lowercase name: every reader (the git and API
+alias rewrite, org read and push permissions) looks it up lowercased, and the
+organization link endpoint stores it that way. Hosted creation used to store
+the name as typed, so a mixed-case repository such as `Bolt` had a link no
+lookup could find: `/<org>/Bolt.git` and the short `/Bolt.git` answered
+`not_found` and organization members other than the creator could not push.
+`link_organization` now stores the lowercase name and renames an existing
+mixed-case link of the same repository, and re-running `instance-repo` on an
+existing repository relinks it, which repairs a link written before the fix.
+
 ### Imports
 
 The primary fetches heads and tags from an allowed `https` host (no
@@ -137,6 +150,51 @@ the primary, and the daemon reports `pushMirrors` results (`revision`,
   `app.env`. An empty list makes the create form fall back to the node flow.
 - Rollout order: node files (`files,start`), then daemon, then the app
   release, one core at a time.
+
+## Maintenance
+
+Every accepted push (web, `git push` through the app, Actions commit-back
+pushes on the runner route `/v1/runner/<owner>/<repo>.git`) is received by
+`tools/mirror_gateway.py` with `receive.unpackLimit=0`, so each one adds a
+pack, and replica fetches add more. Nothing compacted hosted repositories
+before 2026-10-17: git's own `gc --auto` waits for 50 packs, and on the Bolt
+instance the size check tripped on duplicate packs first. The git node now
+maintains them (`server/hosted_maintenance.go`):
+
+- **Trigger.** After a push that moved refs the gateway touches
+  `<id>.git/forkmesh-maintenance-due` (only in a repository that has the
+  maintenance lock file, which the node creates, so configured mirrors are
+  left alone). `instance-repo` touches it after a fill. A goroutine of the
+  node daemon looks for the marker every minute, and every 15 minutes also
+  scans each hosted repository for more than 4 packs or 256 loose objects.
+  The work never runs on the request path.
+- **What runs.** `git repack -d -l -q --geometric=2`: small packs and loose
+  objects are rolled up while the large pack stays untouched, and two packs
+  of similar size (a duplicate history) are merged into one, each object
+  written once. `-d` removes only packs and loose objects the new pack made
+  redundant; nothing unreachable is pruned, so git's default grace is kept
+  and a concurrent push never loses a base object
+  ([destructive actions](engineering/destructive-actions.md)).
+- **Low cost.** The command runs under `nice -n 19` and `ionice -c 3` when
+  they exist, with `pack.threads=1`, `pack.windowMemory=64m`,
+  `pack.deltaCacheSize=16m`, `core.deltaBaseCacheLimit=16m` and a 256 MiB
+  pack window limit, so it fits beside the app on a 1 GB server, and is
+  stopped after 30 minutes. The node also sets `receive.autogc=false` and
+  `maintenance.auto=false` in each hosted repository, so neither a push nor a
+  replica fetch starts an unbounded `gc --auto` of its own.
+- **Lock.** `<id>.git/forkmesh-maintenance.lock`. The gateway holds a shared
+  `flock` on it while `receive-pack` runs; maintenance takes it exclusively
+  and non-blocking, so it never starts while a push is being received and
+  retries on the next tick. A push that arrives during a repack waits for it,
+  up to `MAINTENANCE_LOCK_WAIT_SECONDS` (120 s), and then proceeds: git's
+  repack removes only the packs it rewrote, so a pack written meanwhile is
+  safe. A repack that fails puts the marker back.
+- **Replica fetches.** The fetch guard in `boundedGit` compares the stored
+  object bytes at the start plus what the directory grew by during the fetch
+  with `hosted.maxRepositoryBytes`, so old duplicate packs no longer stop a
+  replica from catching up.
+- **Logs.** `hosted maintenance <id>.git: <before> -> <after> bytes in <time>`
+  in the node's journal.
 
 ## Known gaps
 

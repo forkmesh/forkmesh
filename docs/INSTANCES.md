@@ -3,8 +3,12 @@
 Anyone can start their own ForkMesh instance, a white-label Git host on their
 own server, from `forkmesh.com/start`. The app connects to the server over
 SSH, runs `www/public/install-instance.sh`, streams progress to the page, and
-finishes on the new `<owner>/forkmesh` repository. Every instance shows a
-"Powered by ForkMesh" badge.
+finishes on the new `<owner>/forkmesh` repository. Instances show a
+"Powered by ForkMesh" badge by default; the `poweredBy` setting (`false`)
+leaves it out. The installer then writes `INSTANCE_POWERED_BY=0`, passes
+`--no-powered-by` to `app/tools/apply_instance_brand.py` (which marks the brand
+script with `data-instance-powered-by="off"`), and `/api/instance` answers
+`poweredBy: null`.
 
 ## Start page (`app/public/start.html`, `start.js`)
 
@@ -240,6 +244,20 @@ New installs get all of this from the installer. `--update` rewrites
 predates `mirrorOf` fails `--check` with it, so the installer then writes the
 config without it and says so; the website labelling and refusals still
 apply.
+**Single-organization instances** (opt in, off by default). With
+`"singleOrganization": true` in the install settings (only with `ownerType`
+`org`), the bootstrap writes the `repo_paths` row
+`{"canonical":true,"owner":"<org>","short":true}` when it creates the
+organization, so every repository of the instance shows only as
+`https://<domain>/<repo>`, the platform mirror included
+(`https://<domain>/forkmesh`), and the installer reports that address. The
+row is written with `ON CONFLICT DO NOTHING` and only when the organization
+is new, so a re-run never overrides an admin's choice, and `--update` never
+runs the bootstrap. Without the setting nothing changes. An installed
+instance is converted with `python -m forkmesh_host instance-single-org --org
+<org>` (idempotent, `--off` to switch back); the full command and the rules
+are in [app/server-update.md](app/server-update.md).
+
 ## Importing a repository on the server (`instance_repo.py`)
 
 `python -m forkmesh_host instance-repo` creates a hosted repository on the
@@ -369,6 +387,13 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
 - **Logo:** a `data:` URL (PNG, JPEG, WebP or SVG, 200 KB max, type detected
   from bytes, unsafe SVG refused). The brand tool writes it over the logo and
   favicon assets and the web manifest; `INSTANCE_LOGO` points email at it.
+  The logo always lives at `/instance-logo.<png|jpg|webp|svg>`, and the web
+  manifest (`/favicon/site.webmanifest`) lists it, so the phone apps can find
+  it on an instance whose `/api/instance` has no `logo` field yet. An SVG
+  logo also gets a 512 px `/instance-logo.png`, drawn with `rsvg-convert`
+  (the installer installs `librsvg2-bin`), listed first in the manifest; when
+  it exists `INSTANCE_LOGO` names the PNG, because phones and most mail
+  clients cannot draw SVG. Web pages keep the SVG.
 - **Theme** (`app/src/instance_theme.py`): one `instance_settings` row
   (`k = 'theme'`) holding `{"dark": {...}, "light": {...}}` of known token
   names to `#rrggbb` colours, max 8 KB, no raw CSS. Served as
@@ -390,6 +415,34 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   change.
 - **Pages** (`app/src/instance_pages.py`): an instance renders its own
   `/desktop` and `/docs` guide pages.
+
+## Dashboard on an instance
+
+The dashboard knows it runs on an instance from the
+`<script data-instance-brand>` tag that `apply_instance_brand.py` writes into
+every page (`dashboardOnInstance()` in `02-helpers.js`). forkmesh.com pages
+never carry it.
+
+- **Reconnect node.** On forkmesh.com the header shows "Reconnect node" to a
+  signed-in account with no linked node, because nothing else drains its web
+  writes. On an instance the instance's own git node serves every repository,
+  so a web-only account (no linked node) is never told to reconnect, and the
+  Settings > Nodes "No node is linked" callout stays hidden. The header only
+  shows "Desktop offline" when the account has linked a node of its own and
+  that node's public profile (`GET /api/accounts/<node>`, from its heartbeat)
+  says it is offline; the title names the node. An unknown presence stays
+  quiet.
+- **Served by.** On forkmesh.com a repository can be answered by any of
+  several mirrors, so the header pill ("served by <node>", "served by
+  mirror", "mirror online/offline"), the repository card's mirror label, the
+  home list's serving status and the About rail's "Direct access" mirror list
+  say which one answered and where else to go; that is real routing
+  information there, so they stay. On an instance one node serves
+  everything, so those elements are not rendered (the header pill gets
+  `hidden`) and the card reads "online"/"offline" instead of "via mirror".
+  The Mirrors tab stays as the full diagnostic view. The "Powered by
+  ForkMesh" badge is not a served-by label and stays (see the top of this
+  page).
 
 ## Directory
 
@@ -423,7 +476,10 @@ to every provider.
 `app/tests/test_instance_launch.py`, `test_install_instance_script.py`,
 `test_start_instance_page.py`, `test_instance_white_label.py`,
 `test_instance_theme.py`, `test_instance_pages.py`, `test_server_update.py`,
-`test_instance_directory.py`, `test_instance_git_routing.py`, and
+`test_instance_directory.py`, `test_instance_git_routing.py`,
+`test_instance_node_reconnect_frontend.py`,
+`test_instance_served_by_frontend.py`, `test_repo_canonical_addresses.py`,
+`test_single_org_contributors.py`, and
 `app/host/tests_unit/test_ssh_helper.py`, `test_instance_bootstrap.py`,
 `test_instance_repo.py`, and `app/tests/host/test_instance_repo_e2e.py`
 (a served app with a temporary SQLite database: a repository created from

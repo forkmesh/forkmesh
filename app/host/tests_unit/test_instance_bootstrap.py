@@ -38,6 +38,8 @@ class Entry:
                 PRIMARY KEY (org_bi, repo));
             CREATE TABLE repo_feature_settings (repo_bi TEXT PRIMARY KEY,
                 data TEXT NOT NULL, updated_at INTEGER NOT NULL);
+            CREATE TABLE instance_settings (k TEXT PRIMARY KEY,
+                doc TEXT NOT NULL, updated_at INTEGER NOT NULL);
         """)
         self.Date = SimpleNamespace(now=lambda: 1_700_000_000_000)
         self.touched = []
@@ -91,6 +93,9 @@ class Entry:
     async def d1_run(self, _env, sql, *args):
         return self.db.execute(sql, args)
 
+    async def d1_all(self, _env, sql, *args):
+        return [dict(row) for row in self.db.execute(sql, args).fetchall()]
+
 
 def run(entry, raw):
     runtime = SimpleNamespace(entry=entry, env=object())
@@ -125,7 +130,8 @@ def test_admin_org_node_and_alias_are_created_once():
     assert result == {"ok": True, "admin": "ada", "adminCreated": True,
                       "owner": "acme", "ownerType": "org", "orgCreated": True,
                       "owners": [], "node": "forkmesh",
-                      "repository": "acme/forkmesh"}
+                      "repository": "acme/forkmesh",
+                      "singleOrganization": False}
     admin = user(entry, "ada")
     assert admin["is_admin"] == 1 and admin["email_bi"] == "bi:ada@example.com"
     assert admin["data"]["email_verified"] is True
@@ -269,3 +275,79 @@ def test_instance_runner_registers_a_trusted_pool_runner():
     assert (row["public_key"], row["scope"], row["allowed_owners"],
             row["status"], row["actions_trusted"]) == (
         "C" * 43, "pool", '["acme"]', "active", 1)
+
+
+def repo_paths(entry):
+    row = entry.db.execute(
+        "SELECT doc FROM instance_settings WHERE k='repo_paths'").fetchone()
+    return json.loads(row["doc"]) if row else None
+
+
+def test_addresses_stay_as_they_are_unless_the_install_opts_in():
+    entry = Entry()
+    assert boot.read_spec(spec())["singleOrganization"] is False
+    assert run(entry, spec())["singleOrganization"] is False
+    assert repo_paths(entry) is None
+    with pytest.raises(boot.BootstrapError):
+        boot.read_spec(spec(singleOrganization="yes"))
+    with pytest.raises(boot.BootstrapError):
+        boot.read_spec(spec(singleOrganization=True, ownerType="user"))
+
+
+def test_a_single_organization_install_starts_with_canonical_addresses():
+    entry = Entry()
+    assert run(entry, spec(singleOrganization=True))["singleOrganization"] is True
+    assert repo_paths(entry) == {"canonical": True, "owner": "acme",
+                                 "short": True}
+    entry.db.execute("UPDATE instance_settings SET doc=? WHERE k='repo_paths'",
+                     ('{"short":false,"owner":"acme"}',))
+    again = run(entry, spec(singleOrganization=True))
+    assert again["singleOrganization"] is False
+    assert repo_paths(entry) == {"short": False, "owner": "acme"}
+
+
+def test_an_existing_address_setting_is_kept_at_first_install():
+    entry = Entry()
+    entry.db.execute(
+        "INSERT INTO instance_settings (k, doc, updated_at) VALUES "
+        "('repo_paths', '{\"short\":false,\"owner\":\"\"}', 1)")
+    run(entry, spec(singleOrganization=True))
+    assert repo_paths(entry) == {"short": False, "owner": ""}
+
+
+def convert(entry, org="acme", enable=True):
+    runtime = SimpleNamespace(entry=entry, env=object())
+    return asyncio.run(boot.single_org(runtime, org, enable))
+
+
+def test_an_installed_instance_is_converted_once_and_can_switch_back():
+    entry = Entry()
+    run(entry, spec())
+    entry.db.execute("DELETE FROM org_repos")
+    entry.db.execute(
+        "INSERT INTO org_repos VALUES ('bi:org:acme', 'bolt', 'drew', 1)")
+    first = convert(entry)
+    assert first["changed"] is True and first["linkedForkmesh"] is True
+    assert first["repositories"] == ["/bolt", "/forkmesh"]
+    assert repo_paths(entry) == {"canonical": True, "owner": "acme",
+                                 "short": True}
+    again = convert(entry)
+    assert again["changed"] is False and again["linkedForkmesh"] is False
+    assert entry.db.execute("SELECT COUNT(*) FROM org_repos").fetchone()[0] == 2
+    off = convert(entry, enable=False)
+    assert off["changed"] is True and off["singleOrganization"] is False
+    assert repo_paths(entry) == {"canonical": False, "owner": "acme",
+                                 "short": True}
+    with pytest.raises(boot.BootstrapError):
+        convert(entry, org="nobody")
+
+
+def test_the_conversion_command_is_registered():
+    import argparse
+    parser = argparse.ArgumentParser()
+    sub = parser.add_subparsers()
+    boot.add_parser(sub, lambda command: None)
+    args = parser.parse_args(["instance-single-org", "--org", "acme-bolt"])
+    assert args.func is boot.cmd_instance_single_org and args.off is False
+    args = parser.parse_args(["instance-single-org", "--org", "x", "--off"])
+    assert args.off is True
