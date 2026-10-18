@@ -82,6 +82,18 @@ struct DjStudioView: View {
         .preferredColorScheme(.dark)
         .onAppear { model.appear() }
         .onDisappear { model.disappear() }
+        .onReceive(NotificationCenter.default.publisher(for: .fmDeviceShaken)) { _ in model.shakeMix() }
+    }
+}
+
+extension Notification.Name {
+    static let fmDeviceShaken = Notification.Name("fm.deviceShaken")
+}
+
+extension UIWindow {
+    override open func motionEnded(_ motion: UIEvent.EventSubtype, with event: UIEvent?) {
+        if motion == .motionShake { NotificationCenter.default.post(name: .fmDeviceShaken, object: self) }
+        super.motionEnded(motion, with: event)
     }
 }
 
