@@ -47,6 +47,7 @@ type runnerActionsJob struct {
 	LeaseID         string `json:"leaseId"`
 	RepositoryOwner string `json:"repositoryOwner"`
 	RepositoryName  string `json:"repositoryName"`
+	Organization    string `json:"organization"`
 	Branch          string `json:"branch"`
 	Commit          string `json:"commit"`
 	CloneURL        string `json:"cloneUrl"`
@@ -190,7 +191,14 @@ func (a *runnerActions) validate(job runnerActionsJob) string {
 	if problem := validRunnerActionsExtras(job); problem != "" {
 		return problem
 	}
-	if len(a.b.cfg.AllowedOwners) != 0 && !containsString(a.b.cfg.AllowedOwners, owner) {
+	organization := strings.ToLower(job.Organization)
+	if organization == "" {
+		organization = owner
+	}
+	if !nodePattern.MatchString(organization) {
+		return "Malformed or unsafe Actions job."
+	}
+	if len(a.b.cfg.AllowedOwners) != 0 && !containsString(a.b.cfg.AllowedOwners, organization) {
 		return "This runner does not accept jobs for that owner."
 	}
 	read, ok := parseRunnerGrantToken(job.ReadGrant)

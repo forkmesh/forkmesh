@@ -27,6 +27,8 @@ RUN_STATUSES = ("queued", "running", "success", "failed", "cancelled",
                 "skipped")
 JOB_STATUSES = ("running", "completed", "failed")
 ACTIVE_STATUSES = ("leased", "running", "cancelling")
+ENDED_STATUSES = {"failed": "failed", "expired": "failed",
+                  "cancelled": "cancelled"}
 EVENTS = ("push", "schedule", "workflow_dispatch", "issues",
           "issue_comment", "pull_request")
 INPUT_TYPES = ("string", "choice", "boolean")
@@ -133,11 +135,34 @@ async def owner_has_runner(runtime, owner):
     return False
 
 
+async def identity(runtime, owner, repo):
+    owner = str(owner or "").strip().lower()
+    repo = str(repo or "").strip()
+    if not NAME_RE.fullmatch(owner) or not REPO_RE.fullmatch(repo):
+        return owner, owner
+    try:
+        rows = await runtime.d1_all(
+            "SELECT r.node_owner AS node_owner,o.name AS name FROM org_repos r "
+            "JOIN orgs o ON o.org_bi=r.org_bi WHERE r.repo=? "
+            "AND (r.node_owner=? OR o.name=?) LIMIT 4",
+            repo.lower(), owner, owner)
+    except Exception:
+        rows = []
+    pairs = {(str(row.get("node_owner") or "").strip().lower(),
+              str(row.get("name") or "").strip().lower())
+             for row in rows or []}
+    if len(pairs) == 1:
+        storage, public = pairs.pop()
+        if NAME_RE.fullmatch(storage) and NAME_RE.fullmatch(public):
+            return storage, public
+    return owner, owner
+
+
 async def enqueue(runtime, owner, repo, branch, commit="", node="",
                   pusher="", event="push", workflow="", payload=None,
                   before="", trusted=True, ref="", inputs=None):
-    owner = str(owner or "").strip().lower()
     repo = str(repo or "").strip()
+    owner, _public = await identity(runtime, owner, repo)
     branch = str(branch or "").strip()
     commit = str(commit or "").strip().lower()
     node = str(node or "").strip().lower()
@@ -200,10 +225,11 @@ async def enqueue(runtime, owner, repo, branch, commit="", node="",
 
 async def enqueue_catalog(runtime, owner, repo, event, branch, payload,
                           actor="", trusted=True):
+    repo = str(repo or "").strip()
+    owner, _public = await identity(runtime, owner, repo)
     rows = await runtime.d1_all(
         "SELECT path,events FROM repo_action_workflows WHERE owner=? "
-        "AND repo=? ORDER BY path", str(owner or "").strip().lower(),
-        str(repo or "").strip())
+        "AND repo=? ORDER BY path", owner, repo)
     queued = []
     for row in rows or []:
         if event not in _json(row.get("events"), []):
@@ -256,20 +282,22 @@ async def _target(runtime, preferred, pool):
 async def secrets_for(runtime, owner, repo, organization):
     rows = await runtime.d1_all(
         "SELECT owner,repo,name,value FROM repo_action_secrets "
-        "WHERE (owner=? AND repo=?) OR (owner=? AND repo='')",
-        owner, repo, organization)
-    shared, own = {}, {}
+        "WHERE (owner IN (?,?) AND repo=?) OR (owner=? AND repo='')",
+        owner, organization, repo, organization)
+    shared, linked, own = {}, {}, {}
     for row in rows or []:
         record = await _open(runtime, row.get("value"))
         value = record.get("value")
         if not isinstance(value, str) or not SECRET_NAME_RE.fullmatch(
                 str(row.get("name") or "")):
             continue
-        if row.get("repo"):
+        if not row.get("repo"):
+            shared[str(row["name"])] = value
+        elif row.get("owner") == owner:
             own[str(row["name"])] = value
         else:
-            shared[str(row["name"])] = value
-    merged = {**shared, **own}
+            linked[str(row["name"])] = value
+    merged = {**shared, **linked, **own}
     return dict(sorted(merged.items())[:SECRET_LIMIT])
 
 
@@ -317,10 +345,9 @@ async def lease(runtime, runner, requested, maximum):
         branch = str(row.get("branch") or "")
         event = str(row.get("event") or "push")
         workflow = str(row.get("workflow") or "")
-        public_owner = await runner_leases._gateway_owner(runtime, owner, repo)
-        if not (runner_leases._owner_allowed(runner, owner, requested)
-                or runner_leases._owner_allowed(
-                    runner, public_owner, requested)):
+        owner, public_owner = await identity(runtime, owner, repo)
+        if not (runner_leases._owner_allowed(runner, public_owner, requested)
+                or runner_leases._owner_allowed(runner, owner, requested)):
             continue
         target, base = await _target(
             runtime, str(row.get("target_node") or ""), pool)
@@ -333,7 +360,7 @@ async def lease(runtime, runner, requested, maximum):
         expires_at = now + JOB_TIMEOUT_MS
         read_grant = await runner_leases._grant(
             runtime, target, repo, "read", "", runner["name"],
-            runtime.new_id(), now, expires_at, owner=owner)
+            runtime.new_id(), now, expires_at, owner=public_owner)
         if not read_grant:
             continue
         push_grant = ""
@@ -342,7 +369,7 @@ async def lease(runtime, runner, requested, maximum):
             push_grant = await runner_leases._grant(
                 runtime, target, repo, "actions-push", "refs/heads/" + branch,
                 runner["name"], runtime.new_id(), now, expires_at,
-                owner=owner)
+                owner=public_owner)
             token = runtime.new_id() + runtime.new_id()
         await runtime.d1_run(
             "UPDATE repo_action_jobs SET status='leased',lease_id=?,runner=?,"
@@ -369,13 +396,13 @@ async def lease(runtime, runner, requested, maximum):
             "kind": "actions",
             "jobId": job_id,
             "leaseId": lease_id,
-            "repositoryOwner": owner,
+            "repositoryOwner": public_owner,
             "repositoryName": repo,
-            "organization": owner,
+            "organization": public_owner,
             "branch": branch,
             "commit": str(row.get("commit_oid") or ""),
-            "cloneUrl": (base.rstrip("/") + "/v1/runner/" + owner + "/"
-                         + repo + ".git"),
+            "cloneUrl": (base.rstrip("/") + "/v1/runner/" + public_owner
+                         + "/" + repo + ".git"),
             "readGrant": read_grant,
             "grantExpiresAt": expires_at,
             "timeoutMs": JOB_TIMEOUT_MS,
@@ -513,6 +540,7 @@ def clean_catalog(value):
 
 
 async def store_catalog(runtime, owner, repo, catalog, commit, now):
+    owner, _public = await identity(runtime, owner, repo)
     paths = [item["path"] for item in catalog]
     if paths:
         await runtime.d1_run(
@@ -537,6 +565,7 @@ async def store_catalog(runtime, owner, repo, catalog, commit, now):
 
 
 async def catalog(runtime, owner, repo):
+    owner, _public = await identity(runtime, owner, repo)
     rows = await runtime.d1_all(
         "SELECT path,name,events,schedules,inputs FROM repo_action_workflows "
         "WHERE owner=? AND repo=? ORDER BY path LIMIT %d" % CATALOG_LIMIT,
@@ -567,18 +596,16 @@ async def report(runtime, runner, data):
     status = str(data.get("status") or "").lower()
     if status not in JOB_STATUSES:
         return runtime.response({"error": "invalid_status"}, 400)
-    import runner_leases
     now = runtime.now()
-    owner, repo = str(row["owner"]), str(row["repo"])
+    repo = str(row["repo"])
+    owner, public = await identity(runtime, str(row["owner"]), repo)
     cancelling = row.get("status") == "cancelling"
     terminal = status != "running"
     record = await _open(runtime, row.get("payload"))
     masks = []
     if record.get("token"):
         masks.append(record["token"])
-    secrets = await secrets_for(
-        runtime, owner, repo,
-        await runner_leases._gateway_owner(runtime, owner, repo))
+    secrets = await secrets_for(runtime, owner, repo, public)
     masks.extend(secrets.values())
     commit = str(data.get("commit") or "").strip().lower()
     runs, logs = _runs(job_id, data.get("runs"), now, masks,
@@ -619,6 +646,7 @@ async def report(runtime, runner, data):
 
 
 async def cancel(runtime, owner, repo, run_id):
+    owner, _public = await identity(runtime, owner, repo)
     job_id = _int(run_id) // RUN_ID_STRIDE
     row = await runtime.d1_first(
         "SELECT id,status FROM repo_action_jobs WHERE id=? AND owner=? "
@@ -640,6 +668,7 @@ async def cancel(runtime, owner, repo, run_id):
 
 
 async def rerun(runtime, owner, repo, run_id, actor):
+    owner, _public = await identity(runtime, owner, repo)
     run_id = _int(run_id)
     job_id = run_id // RUN_ID_STRIDE
     row = await runtime.d1_first(
@@ -718,6 +747,7 @@ async def dispatch(runtime, owner, repo, workflow, ref, inputs, actor):
     ref = "refs/heads/" + branch
     if not valid_branch(branch):
         return 0, "ref_not_found", "The branch is not valid."
+    owner, _public = await identity(runtime, owner, repo)
     entry = next((item for item in await catalog(runtime, owner, repo)
                   if item["path"] == workflow), None)
     if entry is None:
@@ -738,6 +768,7 @@ async def dispatch(runtime, owner, repo, workflow, ref, inputs, actor):
 
 
 async def run_log(runtime, owner, repo, run_id):
+    owner, _public = await identity(runtime, owner, repo)
     run_id = _int(run_id)
     job_id = run_id // RUN_ID_STRIDE
     index = run_id % RUN_ID_STRIDE - 1
@@ -757,14 +788,15 @@ async def run_log(runtime, owner, repo, run_id):
             "updatedAt": int(row.get("updated_at") or 0)}
 
 
-async def snapshot(runtime, owner, repo):
-    owner = str(owner or "").strip().lower()
+async def snapshot(runtime, owner, repo, always=False):
     repo = str(repo or "").strip()
+    owner, public = await identity(runtime, owner, repo)
     rows = await runtime.d1_all(
         "SELECT id,runner,status,commit_oid,branch,data,created_at,updated_at,"
-        "event,workflow,ref FROM repo_action_jobs WHERE owner=? AND repo=? "
+        "event,workflow,ref,note FROM repo_action_jobs WHERE owner=? AND repo=? "
         "ORDER BY id DESC LIMIT %d" % SNAPSHOT_JOBS, owner, repo)
-    if not rows and not await owner_has_runner(runtime, owner):
+    if not rows and not always and not await owner_has_runner(
+            runtime, public) and not await owner_has_runner(runtime, owner):
         return None
     now = runtime.now()
     runs = []
@@ -778,8 +810,10 @@ async def snapshot(runtime, owner, repo):
             for run in stored:
                 if isinstance(run, dict):
                     runs.append({"event": event, **run})
-        elif str(row.get("status") or "") in ("queued",) + ACTIVE_STATUSES:
+        elif str(row.get("status") or "") in (
+                ("queued",) + ACTIVE_STATUSES + tuple(ENDED_STATUSES)):
             commit = str(row.get("commit_oid") or "")
+            ended = row["status"] in ENDED_STATUSES
             runs.append({
                 "id": int(row["id"]) * RUN_ID_STRIDE,
                 "workflow": str(row.get("workflow") or "")
@@ -787,12 +821,14 @@ async def snapshot(runtime, owner, repo):
                 "commit": commit if OID_RE.fullmatch(commit) else "",
                 "ref": str(row.get("ref") or "")
                 or "refs/heads/" + str(row.get("branch") or ""),
-                "status": "running" if row["status"] in ACTIVE_STATUSES[1:]
+                "status": ENDED_STATUSES[row["status"]] if ended
+                else "running" if row["status"] in ACTIVE_STATUSES[1:]
                 else "queued",
                 "createdAt": int(row.get("created_at") or 0),
                 "startedAt": 0,
-                "finishedAt": 0,
-                "logTail": "",
+                "finishedAt": int(row.get("updated_at") or 0) if ended else 0,
+                "logTail": _log_tail(_line(row.get("note"), 300) + "\n")
+                if ended and row.get("note") else "",
                 "event": event,
             })
         if len(runs) >= RUN_LIMIT:
