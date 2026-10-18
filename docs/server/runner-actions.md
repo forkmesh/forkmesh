@@ -102,6 +102,16 @@ offered for runner runs.
 - A desktop that is open but lost its node-events socket counts as offline.
 - A hosted repository's pin alone queues nothing; only accepted pushes do.
 
+## Instances
+
+With `ACTIONS_INSTANCE_RUNNER` set (a self-hosted instance), every pushed
+branch queues a job whether or not a desktop is online, jobs carry other
+events, secrets, a push grant and a job token, and runs can be dispatched,
+cancelled and re-run from the web: [instance-actions.md](instance-actions.md).
+Coalescing is per branch; the one-active-job rule is per workflow (push jobs
+share one). The Actions report body may be up to 8 MiB and its answer
+carries `cancel`.
+
 ## Related docs
 
 [actions-runner.md](actions-runner.md), [../RUNNERS.md](../RUNNERS.md),

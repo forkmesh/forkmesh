@@ -150,3 +150,7 @@ capitals.
 `CHUNK_PAGES` / `LAZY_CHUNKS` and the `builtinPage` allowlists in `10-boot.js`).
 The runs column is `trigger_kind`. Locally `plugin_registry.py` is empty, so
 every package counts as installed.
+
+The `actions-schedule` cron phase (every minute) is a different mechanism:
+it queues `.forkmesh/*.yml` workflows with an `on.schedule` cron on an
+instance's own runner ([../server/instance-actions.md](../server/instance-actions.md)).
