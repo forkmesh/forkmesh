@@ -51640,6 +51640,13 @@ async def _admit_core_push_state(env, owner, repo, endpoint, alias=""):
         state = await _record_core_push_state(env, context, endpoint, alias)
     except Exception:
         state = ""
+    if state:
+        try:
+            await record_hosted_push_state(
+                env, context["owner"], context["repo"], endpoint,
+                state=state, notify=False)
+        except Exception:
+            pass
     generation = int(Date.now()) if state else 0
     try:
         scheduled = await schedule_repo_mirror_wake(
