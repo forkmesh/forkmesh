@@ -7,12 +7,14 @@ public enum PhonePackages {
     public static let designSystem = "design-system"
     public static let tour = "tour"
     public static let aquarium = "aquarium"
+    public static let capture = "capture"
     public static let signIn = "sign-in"
-    nonisolated public static let deviceSwitched: Set<String> = ["aquarium", "sign-in"]
+    nonisolated public static let deviceSwitched: Set<String> = ["aquarium", "capture", "sign-in"]
 
     public static func isOn(_ id: String, settings: SettingsService? = Services.get(SettingsService.self)) -> Bool? {
         switch id {
         case aquarium: return settings?.aquariumOn ?? false
+        case capture: return settings?.captureOn ?? true
         case signIn: return settings?.signInOn ?? true
         default: return nil
         }
@@ -41,6 +43,7 @@ public enum PhonePackages {
     public static func set(_ id: String, on: Bool, settings: SettingsService? = Services.get(SettingsService.self)) {
         switch id {
         case aquarium: settings?.setAquariumOn(on)
+        case capture: settings?.setCaptureOn(on)
         case signIn: settings?.setSignInOn(on)
         default: return
         }
