@@ -347,8 +347,9 @@ class ControlRequest:
         return json.dumps(self.body)
 
 
-def control_module(runtime, public=()):
+def control_module(runtime, public=(), actions_off=False):
     import importlib
+    from types import SimpleNamespace
     sys.modules.pop("repository_actions", None)
     module = importlib.import_module("repository_actions")
     audits = []
@@ -368,6 +369,9 @@ def control_module(runtime, public=()):
     async def private(_env, owner, repo):
         return (owner, repo.lower()) not in set(public)
 
+    async def off(_env, owner, repo):
+        return actions_off
+
     module._bind_runtime({
         "json_response": lambda data, status=200, **_: {
             "status": status, "data": data},
@@ -379,6 +383,7 @@ def control_module(runtime, public=()):
         "_org_write_allowed": writer,
         "_audit_sensitive_action": audit,
         "_repo_is_private": private,
+        "_branch_protection": SimpleNamespace(actions_off=off),
     })
     module._runner_runtime = lambda env: runtime
     return module, audits
@@ -808,3 +813,48 @@ def test_the_worker_admits_the_signed_state_of_the_job_target_node(
     assert run(worker.admit_push_state("forkmesh", "site", "absent")) == ""
     assert run(worker.admit_push_state("forkmesh", "gone", "forkmesh")) == ""
     assert calls == [("forkmesh", "site", "forkmesh")]
+
+
+def test_a_repository_with_actions_off_queues_and_leases_nothing():
+    runtime, key = setup()
+    queued = enqueue(runtime)
+    off = {"value": True}
+
+    async def actions_off(owner, repo):
+        return off["value"] and (owner, repo) == ("forkmesh", "site")
+    runtime.actions_off = actions_off
+    assert enqueue(runtime, commit=COMMIT_B) == 0
+    assert enqueue(runtime, branch="topic", commit=COMMIT_C) == 0
+    assert lease(runtime, key) == []
+    assert column(runtime, queued, "status") == "cancelled"
+    off["value"] = False
+    assert enqueue(runtime, branch="topic", commit=COMMIT_C) != 0
+
+
+def test_a_protected_branch_gets_no_actions_push_grant():
+    runtime, key = setup()
+
+    async def branch_protected(owner, repo, branch):
+        return branch == "main"
+    runtime.branch_protected = branch_protected
+    enqueue(runtime)
+    [job] = lease(runtime, key)
+    assert job["trusted"] is True and job["jobToken"]
+    assert "pushGrant" not in job and "pushRef" not in job
+    runtime.db.execute("UPDATE repo_action_jobs SET status='completed'")
+    enqueue(runtime, branch="topic", commit=COMMIT_C)
+    [job] = lease(runtime, key)
+    assert job["pushRef"] == "refs/heads/topic"
+
+
+def test_the_control_endpoint_refuses_runs_when_actions_are_off():
+    runtime, _key = setup()
+    add_catalog(runtime)
+    module, _audits = control_module(runtime, actions_off=True)
+    env = type("Env", (), {"ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+    answer = run(module.repository_actions_control_handler(
+        env, ControlRequest("POST", {
+            "action": "dispatch", "workflow": ".forkmesh/deploy.yml",
+            "ref": "main", "sessionToken": "t"}, "ada"), "forkmesh", "site"))
+    assert answer["status"] == 403
+    assert answer["data"]["error"] == "actions_disabled"

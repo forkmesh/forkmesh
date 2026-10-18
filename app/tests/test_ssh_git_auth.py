@@ -17,6 +17,7 @@ import time
 from types import SimpleNamespace
 
 import pytest
+from protection_fakes import UNPROTECTED  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -83,7 +84,7 @@ def _load_entry(*names, extra_globals=None):
     ]
     found = {node.name for node in selected}
     assert found == set(names), "missing: %s" % sorted(set(names) - found)
-    namespace = dict(extra_globals or {})
+    namespace = {"_branch_protection": UNPROTECTED, **(extra_globals or {})}
     exec(
         compile(
             ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[])),

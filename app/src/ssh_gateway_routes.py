@@ -452,7 +452,8 @@ async def ssh_gateway_authorize_handler(env, request):
                 owns_repo
                 or await _org_write_allowed(
                     env, canonical_owner, repo, account)
-            )
+            ) and not await _branch_protection.is_protected(
+                env, canonical_owner, repo)
         else:
             allowed = bool(
                 (public_record and not authoritative_private)

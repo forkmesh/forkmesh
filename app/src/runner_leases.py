@@ -990,6 +990,16 @@ class WorkerRuntime:
     def now(self):
         return int(Date.now())  # noqa: F821
 
+    async def actions_off(self, owner, repo):
+        return await _branch_protection.actions_off(  # noqa: F821
+            self.env, owner, repo)
+
+    async def branch_protected(self, owner, repo, branch):
+        protection = _branch_protection  # noqa: F821
+        refs, problem = await protection.push_protection(
+            self.env, owner, repo)
+        return bool(problem) or protection.branch_is_protected(branch, refs)
+
     def stopping(self):
         event = getattr(self.env, "HOST_STOPPING", None)
         return event is not None and event.is_set()

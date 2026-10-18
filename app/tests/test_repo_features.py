@@ -50,9 +50,11 @@ def test_features_default_on_and_follow_the_org_alias():
                   "bi:repo-feature-settings:ada/tools": "not json"},
                  aliases={("acme", "forkmesh"): "forkmesh"})
     off = asyncio.run(ns["_repo_features_get"](None, "Acme", "ForkMesh"))
-    assert off == {"issues": False, "pulls": False, "discussions": False}
+    assert off == {"issues": False, "pulls": False, "discussions": False,
+                   "actions": True, "protectDefaultBranch": False}
     assert asyncio.run(ns["_repo_features_get"](None, "ada", "tools")) == {
-        "issues": True, "pulls": True, "discussions": True}
+        "issues": True, "pulls": True, "discussions": True, "actions": True,
+        "protectDefaultBranch": False}
     refused = asyncio.run(ns["_repo_feature_off"](None, "acme", "forkmesh", "pulls"))
     assert refused == {"data": {"error": "feature_disabled", "feature": "pulls"},
                        "status": 403}

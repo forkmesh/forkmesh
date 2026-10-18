@@ -13480,7 +13480,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "bd23d448215d983ffe1f306a258fa0c4918fb74df8b099c19f7632986f37a6b5"
+    "b757172124ea52f42581b43e267268ba4e227b53eb8dffa9b561f308dfb3c1b9"
 )
 
 
@@ -16782,7 +16782,8 @@ async def repo_about_handler(env, request, owner, repo):
             and not await _account_owns_node(env, actor, owner)
             and not await _org_owner_of_linked_repo(env, owner, repo, actor)):
         return json_response({"error": "not_authorized"}, status=403)
-    if not await _owner_pubkey(env, owner):
+    if not await _owner_pubkey(env, owner) and not (
+            await _branch_protection.settings_only(env, data, owner, repo)):
         return json_response({"error": "account_required"}, status=403)
 
     # Absent = unchanged, so a settings-only save (Qt fediverse switches)
@@ -16927,6 +16928,18 @@ async def repo_about_handler(env, request, owner, repo):
         for key in REPO_FEATURE_DEFAULTS:
             if key in feature_data:
                 features[key] = bool(feature_data.get(key))
+        guarded = [key for key in _branch_protection.CONFIG_KEYS
+                   if features.get(key) != current_features.get(key)]
+        if guarded and not await _branch_protection.may_configure(
+                env, actor, owner, repo):
+            return json_response(
+                {"error": "not_authorized", "features": guarded},
+                status=403)
+        if guarded:
+            await _audit_sensitive_action(
+                env, actor, "repository.protection_settings", "repository",
+                str(owner).lower() + "/" + str(repo),
+                "success", {key: features.get(key) for key in guarded})
         if features != current_features:
             await d1_run(
                 env,
@@ -34590,7 +34603,8 @@ AP_REPO_SETTING_DEFAULTS = {
     "acceptComments": True,  # remote replies ingested as federated comments
 }
 
-REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True}
+REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True,
+                         "actions": True, "protectDefaultBranch": False}
 
 
 async def _repo_features_bi(env, owner, repo):
@@ -40252,6 +40266,24 @@ async def issues_handler(env, request, owner, repo):
     return json_response({"error": "method_not_allowed"}, status=405)
 
 
+async def _record_pull_review(env, request, data, owner, repo, number, event):
+    try:
+        token, _cookie = _request_account_session_token(
+            request, data if isinstance(data, dict) else {})
+        if str(token or "").startswith("fmat_"):
+            return
+        _, reviewer_record = await _account_session_record(env, request, data)
+        reviewer = clean_string(
+            (reviewer_record or {}).get("name", ""), MAX_NODE_NAME
+        ).strip().lower()
+        if reviewer:
+            await _branch_protection.record_review(
+                env, owner, repo, number, reviewer,
+                str(event.get("state") or ""))
+    except Exception:
+        pass
+
+
 async def _fill_signer_author_name(env, record):
     if not isinstance(record, dict):
         return
@@ -40418,6 +40450,9 @@ async def pulls_handler(env, request, owner, repo):
             await _record_contributor(
                 env, event.get("author", ""), "pulls",
                 event.get("authorName", ""))
+            if event.get("type") == "review":
+                await _record_pull_review(
+                    env, request, data, owner, repo, number, event)
             actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
             await notify_pending_inbox(env, owner, repo, "pull", actor, "", number,
                                        text=event.get("body", ""))
@@ -50742,6 +50777,7 @@ async def _repo_merge_jobs_make_room(env, repo_bi, now):
 
 repository_pull_merge_handler = _route_handlers.export("repository_pull_merge_handler")
 _pull_rules = _LazyModule("pull_rules")
+_branch_protection = _LazyModule("branch_protection")
 repo_pull_rules_handler = _pull_rules.export("repo_pull_rules_handler")
 org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")
@@ -51873,6 +51909,14 @@ async def _https_mirror_push_send(
     if tag_moves:
         query = {"tagMoves": " ".join(
             ref + ":" + target for ref, target in sorted(tag_moves.items()))}
+    if method == "POST":
+        protected, protection_problem = (
+            await _branch_protection.push_protection(
+                env, alias_owner or owner, repo))
+        if protection_problem:
+            return None, None
+        if protected:
+            query = dict(query or {}, protect=" ".join(protected))
     for endpoint in candidates:
         if body_stream is not None and endpoint is not candidates[0]:
             # A streamed pack is consumed by its first upstream attempt; the

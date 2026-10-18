@@ -9952,14 +9952,17 @@
     probe.src = url;
   }
 
-  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions"];
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
 
   function applyRepoFeatures(features) {
     if (!features || typeof features !== "object") return;
-    REPO_FEATURE_TABS.forEach((key) => {
+    REPO_FEATURE_SWITCHES.forEach((key) => {
       if (!(key in features)) return;
       const on = Boolean(features[key]);
-      $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      if (REPO_FEATURE_TABS.includes(key)) {
+        $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      }
       const box = $(`[data-repo-feature="${key}"]`);
       if (box) box.checked = on;
     });

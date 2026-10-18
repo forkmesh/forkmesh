@@ -25957,14 +25957,17 @@
     probe.src = url;
   }
 
-  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions"];
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
 
   function applyRepoFeatures(features) {
     if (!features || typeof features !== "object") return;
-    REPO_FEATURE_TABS.forEach((key) => {
+    REPO_FEATURE_SWITCHES.forEach((key) => {
       if (!(key in features)) return;
       const on = Boolean(features[key]);
-      $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      if (REPO_FEATURE_TABS.includes(key)) {
+        $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      }
       const box = $(`[data-repo-feature="${key}"]`);
       if (box) box.checked = on;
     });
@@ -35893,6 +35896,8 @@
               <label class="inline-flex items-start gap-2"><input data-repo-feature="issues" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Issues</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="pulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Pull requests</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="discussions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Discussions</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="actions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Actions (run this repository's workflows)</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="protectDefaultBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Protect the default branch: it changes only by merging a pull request an organization owner or admin approved</label>
             </fieldset>
             <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
               <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">ActivityPub federation</legend>
@@ -39368,7 +39373,7 @@
             broadcastEvents: Boolean(settingsForm.querySelector("[data-repo-ap-broadcast]")?.checked),
             acceptComments: Boolean(settingsForm.querySelector("[data-repo-ap-comments]")?.checked),
           },
-          features: Object.fromEntries(REPO_FEATURE_TABS.map((key) => [
+          features: Object.fromEntries(REPO_FEATURE_SWITCHES.map((key) => [
             key, Boolean(settingsForm.querySelector(`[data-repo-feature="${key}"]`)?.checked),
           ])),
         });

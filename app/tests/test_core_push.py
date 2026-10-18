@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from protection_fakes import UNPROTECTED  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -650,7 +651,8 @@ def test_a_main_push_queues_runner_actions_only_while_the_desktop_is_offline(
 
     for name in ("runner_leases", "runner_actions"):
         sys.modules.pop(name, None)
-    loaded._bind_runtime({"_node_events_object_holds_node": holds})
+    loaded._bind_runtime({"_node_events_object_holds_node": holds,
+                          "_branch_protection": UNPROTECTED})
     env = type("Env", (), {"RUNNER_POOL_TARGET_NODES": "fmnext-n1,fmnext-n2"})()
 
     def push(ref, new, node="fmnext-n1", owner="forkmesh"):
@@ -697,7 +699,8 @@ def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pu
 
     for name in ("runner_leases", "runner_actions"):
         sys.modules.pop(name, None)
-    loaded._bind_runtime({"_node_events_object_holds_node": holds})
+    loaded._bind_runtime({"_node_events_object_holds_node": holds,
+                          "_branch_protection": UNPROTECTED})
     env = type("Env", (), {"RUNNER_POOL_TARGET_NODES": "forkmesh",
                            "ACTIONS_INSTANCE_RUNNER": "box-runner"})()
 
