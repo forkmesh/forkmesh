@@ -124,6 +124,10 @@ def test_ios_decks_play_together_and_keep_playing_in_the_background(tmp_path):
     assert "func reset()" in player
     assert "didEnterBackgroundNotification" in player
     assert "willEnterForegroundNotification" in player
+    assert 'run("fmAway(1)")' in player and 'run("fmAway(0)")' in player
+    assert "function fmAway(on)" in host and "away:L" in host
+    assert "function standby(v,a)" in frame
+    assert "if(w.gain>=0.999&&Math.abs(d)<0.03){swap(v,a,true);return}" in frame
     node = shutil.which("node")
     if node:
         script = re.search(r"<script>(.*?)</script>", host, re.S).group(1)
