@@ -144,6 +144,7 @@ repo_webhooks_handler = _repository_webhooks.export("repo_webhooks_handler")
 queue_repo_webhook_event = _repository_webhooks.export("queue_event")
 drain_repo_webhook_outbox = _repository_webhooks.export("drain_outbox")
 _repository_provider_mirror = _LazyModule("repository_provider_mirror")
+_read_only_mirrors = _LazyModule("read_only_mirrors")
 repo_provider_mirror_handler = _repository_provider_mirror.export(
     "repo_provider_mirror_handler")
 provider_mirror_note_event = _repository_provider_mirror.export("note_event")
@@ -235,6 +236,9 @@ HOST_RATE_MAX_PER_WINDOW = 200
 # {"type":"event","topic"} frames so a node reconciles the named repository
 # or inbox the moment its source changes instead of waiting out the safety pass.
 NODE_EVENT_MAX_SOCKETS = 64
+NODE_WATCH_MAX_SOCKETS = 512
+NODE_EVENTS_OBJECT_RE = re.compile(
+    r"nodes:[a-z0-9._:-]{1,120}|watch:[a-z0-9][a-z0-9-]{0,62}/[a-z0-9._-]{1,100}")
 # App-level keepalive cadence is ~4 min on the client; protocol pings keep the
 # TCP path alive without waking the Durable Object between beats.
 NODE_SOCKET_STALE_MS = 15 * 60 * 1000
@@ -3117,6 +3121,8 @@ async def schedule_public_snapshot_republish(env, paths):
 _node_events_runtime = _LazyModule("node_events_runtime")
 schedule_repo_mirror_wake = _node_events_runtime.export("schedule_repo_mirror_wake")
 _node_events_do_name = _node_events_runtime.export("_node_events_do_name")
+_repo_watch_do_name = _node_events_runtime.export("_repo_watch_do_name")
+notify_repo_watchers = _node_events_runtime.export("notify_repo_watchers")
 notify_repo_host = _node_events_runtime.export("notify_repo_host")
 notify_repo_mirrors = _node_events_runtime.export("notify_repo_mirrors")
 remember_node_commit_event = _node_events_runtime.export(
@@ -4004,6 +4010,39 @@ async def _node_events_object_holds_node(env, name):
         return False
 
 
+async def _node_events_watch_object(env, request):
+    params = parse_qs(urlparse(request.url).query)
+    if "watch" not in params:
+        return "", None
+    if (request.headers.get("upgrade") or "").lower() != "websocket":
+        return "", json_response({"error": "upgrade_required"}, status=426)
+    owner, _, repo = str(params.get("watch", [""])[0] or "").partition("/")
+    owner = (safe_segment(owner) or "").lower()
+    repo = (safe_segment(repo) or "").lower()
+    if not valid_node_name(owner) or not repo:
+        return "", json_response({"error": "invalid_watch"}, status=400)
+    owner = (await _org_repo_node(env, owner, repo) or owner).lower()
+    try:
+        context = await _https_mirror_public_context(env, owner, repo)
+    except Exception:
+        return "", json_response(
+            {"error": "unavailable"}, status=503,
+            extra_headers=EXPECTED_DEGRADED_HEADERS)
+    if not context:
+        return "", json_response({"error": "not_found"}, status=404)
+    return _repo_watch_do_name(owner, repo), None
+
+
+async def _node_events_object(env, request):
+    watch_object, rejection = await _node_events_watch_object(env, request)
+    if rejection is not None or watch_object:
+        return watch_object, rejection
+    owner, rejection = await _node_events_authorization(env, request)
+    if rejection is not None:
+        return "", rejection
+    return _node_events_do_name(owner), None
+
+
 async def _node_events_authorization(env, request):
     """Authorize one node socket before selecting its owner-named object."""
     upgrade = (request.headers.get("upgrade") or "").lower()
@@ -4054,10 +4093,10 @@ async def node_events_handler(env, request):
     # replies from those same handlers; holding it grants no write authority,
     # and no repository bytes use this transport (the retired-tunnel contracts
     # in test_https_mirror_routing_integration.py are unaffected).
-    owner, rejection = await _node_events_authorization(env, request)
+    object_name, rejection = await _node_events_object(env, request)
     if rejection is not None:
         return rejection
-    node_id = env.FORKMESH_NODES.idFromName(_node_events_do_name(owner))
+    node_id = env.FORKMESH_NODES.idFromName(object_name)
     # Same retry-twice guard as the chat room router: a platform abort of the
     # DO is transient, and the upgrade request carries no body so re-driving
     # durable_object_request is safe.
@@ -16493,6 +16532,50 @@ def _repository_logo_image_response(logo, public=True):
     }))
 
 
+async def _repo_catalog_record(env, owner, repo):
+    key_bi = await blind_index(env, owner + "/" + repo)
+    row = await d1_first(
+        env, "SELECT data FROM repositories WHERE key_bi=?", key_bi)
+    if not row:
+        return None
+    try:
+        return await decrypt_row(env, row.get("data"))
+    except Exception:
+        return None
+
+
+async def _read_only_mirror_fields(env, owner, repo, record=None):
+    if record is None:
+        record = await _repo_catalog_record(env, owner, repo)
+    return _read_only_mirrors.mirror_fields(
+        record, str(getattr(env, "INSTANCE_UPSTREAM", "") or ""),
+        _instance_solo_flagship_node(env), owner, repo)
+
+
+async def read_only_mirror_refusal(env, request, owner, repo, path):
+    if not owner or not repo or not _read_only_mirrors.is_write_request(
+            method_name(request), path):
+        return None
+    fields = await _read_only_mirror_fields(env, owner, repo)
+    if not fields["readOnly"]:
+        return None
+    return json_response(
+        _read_only_mirrors.refusal_body(fields["mirrorOf"]), status=403,
+        cache_control="no-store")
+
+
+async def read_only_mirror_push_refusal(env, owner, repo):
+    if not owner or not repo:
+        return None
+    fields = await _read_only_mirror_fields(env, owner, repo)
+    if not fields["readOnly"]:
+        return None
+    return Response(
+        _read_only_mirrors.refusal_message(fields["mirrorOf"]) + "\n",
+        status=403, headers={"content-type": "text/plain; charset=utf-8",
+                             "cache-control": "no-store"})
+
+
 async def _repo_about_public(env, request, owner, repo):
     # Public About/branding card + fediverse stats: the repo page's social
     # badge header and Watch button read this. No auth — same visibility as
@@ -16643,7 +16726,9 @@ async def _repo_about_public(env, request, owner, repo):
             "followersList": followers_list,
             "settings": ap_settings,
         },
-        "features": await _repo_features_get(env, owner, repo),
+        **_read_only_mirrors.about_fields(
+            await _repo_features_get(env, owner, repo),
+            await _read_only_mirror_fields(env, owner, repo, rec or {})),
     }, cache_control="public, max-age=600")
 
 
@@ -52371,14 +52456,18 @@ async def _node_events_direct_fetch(env, request):
         "/api/nodes/events/authorization")
     if int(getattr(authorized, "status", 500) or 500) != 204:
         return authorized
-    owner = safe_segment(
-        authorized.headers.get("x-forkmesh-authorized-owner") or "")
-    if not owner:
+    object_name = str(
+        authorized.headers.get("x-forkmesh-authorized-object") or "")
+    if not object_name:
+        owner = safe_segment(
+            authorized.headers.get("x-forkmesh-authorized-owner") or "")
+        object_name = _node_events_do_name(owner) if owner else ""
+    if not NODE_EVENTS_OBJECT_RE.fullmatch(object_name):
         return json_response(
             {"error": "authorization_unavailable"}, status=503,
             extra_headers=EXPECTED_DEGRADED_HEADERS,
         )
-    node_id = env.FORKMESH_NODES.idFromName(_node_events_do_name(owner))
+    node_id = env.FORKMESH_NODES.idFromName(object_name)
     last_error = None
     for _attempt in range(2):
         try:
@@ -54083,14 +54172,16 @@ class ForkMeshCronRunner(DurableObject):
                 # and the outer dispatcher returns marked retryable pressure.
                 return await self.ctx.blockConcurrencyWhile(handle_git_read)
             if purpose == APP_INGRESS_NODE_AUTH_PURPOSE:
-                owner, rejection = await _node_events_authorization(
+                object_name, rejection = await _node_events_object(
                     self.env, request)
                 if rejection is not None:
                     return rejection
-                return Response(
-                    None, status=204,
-                    headers={"x-forkmesh-authorized-owner": owner},
-                )
+                authorized_headers = {
+                    "x-forkmesh-authorized-object": object_name}
+                if object_name.startswith("nodes:"):
+                    authorized_headers["x-forkmesh-authorized-owner"] = \
+                        object_name[len("nodes:"):]
+                return Response(None, status=204, headers=authorized_headers)
             if purpose == APP_INGRESS_WEBSOCKET_AUTH_PURPOSE:
                 return await _websocket_handoff_authorization(
                     self.env, request)
@@ -55413,8 +55504,9 @@ class ForkMeshNodes(DurableObject):
                 ),
             })
 
-        if len(self._live_node_sockets(close_stale=True)) >= \
-                NODE_EVENT_MAX_SOCKETS:
+        watching = "watch" in parse_qs(parsed_url.query)
+        if len(self._live_node_sockets(close_stale=True)) >= (
+                NODE_WATCH_MAX_SOCKETS if watching else NODE_EVENT_MAX_SOCKETS):
             return json_response({"error": "too_many_nodes"}, status=429)
 
         client, server = WebSocketPair.new().object_values()
@@ -55426,8 +55518,8 @@ class ForkMeshNodes(DurableObject):
         # ?owner=&ts=&sig= drain token. Recording which one arrived is what
         # lets a terminal frame reach the opposite side of one account's own
         # stream; both roles are the same authenticated owner either way.
-        role = "browser" if parse_qs(parsed_url.query).get(
-            "ticket", [""])[0] else "node"
+        role = "watch" if watching else "browser" if parse_qs(
+            parsed_url.query).get("ticket", [""])[0] else "node"
         server.serializeAttachment(to_js({
             "id": new_socket_id(), "last": int(Date.now()), "role": role,
         }))
@@ -55435,8 +55527,10 @@ class ForkMeshNodes(DurableObject):
         # writes this relay knows how to take off the socket. A node that never
         # sees its frame named keeps using the signed HTTPS route.
         hello = json.dumps({
-            "type": "hello", "accepts": list(NODE_FRAME_ACCEPTS),
-            "relays": list(NODE_FRAME_RELAYS), "role": role,
+            "type": "hello",
+            "accepts": [] if watching else list(NODE_FRAME_ACCEPTS),
+            "relays": [] if watching else list(NODE_FRAME_RELAYS),
+            "role": role,
             "controlBudget": {
                 "windowMs": NODE_CONTROL_MSG_WINDOW_MS,
                 "max": NODE_CONTROL_MSG_MAX_PER_WINDOW,
@@ -55582,6 +55676,9 @@ class ForkMeshNodes(DurableObject):
         except Exception:
             decoded = None
         kind = decoded.get("type") if isinstance(decoded, dict) else None
+        if str(_ws_attr(ws, "role", "node") or "node") == "watch" and \
+                kind != "ping":
+            return
         # Terminal frames are metered on their own window (see
         # NODE_TERMINAL_MSG_MAX_PER_WINDOW): a login session's keystrokes and
         # redraws must not spend the budget that keeps this socket's event

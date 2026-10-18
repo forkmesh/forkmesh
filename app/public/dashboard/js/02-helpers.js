@@ -1142,6 +1142,65 @@
     return { owner, name, key: `${owner}/${name}` };
   }
 
+  function repoMirrorOf(repo) {
+    const value = String(repo?.mirrorOf || "").trim();
+    return /^https?:\/\/[^\s"'<>]+$/i.test(value) ? value : "";
+  }
+
+  function repoReadOnlyMirror(repo) {
+    return Boolean(repoMirrorOf(repo)) || repo?.readOnly === true;
+  }
+
+  function repoMirrorUpstreamPath(url) {
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      return parts.length >= 2 ? `${parsed.host.replace(/^app\./i, "")}/${parts[0]}/${parts[1].replace(/\.git$/i, "")}` : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function repoMirrorSyncedAt(repo) {
+    const value = Number(repo?.lastSyncedAt || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  const REPO_READ_ONLY_MIRROR_HINT = "This repository is a read-only mirror. Fork it to make changes.";
+
+  function rememberRepoMirrorAbout(repo, body) {
+    if (!repo || !body || typeof body !== "object") return false;
+    const before = `${repoMirrorOf(repo)}|${repoReadOnlyMirror(repo)}|${repoMirrorSyncedAt(repo)}|${repo.upstreamCommit || ""}`;
+    if ("mirrorOf" in body) repo.mirrorOf = String(body.mirrorOf || "");
+    if ("readOnly" in body) repo.readOnly = body.readOnly === true;
+    if (Number(body.lastSyncedAt) > 0) repo.lastSyncedAt = Number(body.lastSyncedAt);
+    if (body.upstreamCommit) repo.upstreamCommit = String(body.upstreamCommit);
+    return before !== `${repoMirrorOf(repo)}|${repoReadOnlyMirror(repo)}|${repoMirrorSyncedAt(repo)}|${repo.upstreamCommit || ""}`;
+  }
+
+  function repoProvenanceHtml(repo) {
+    const mirrorOf = repoMirrorOf(repo);
+    const parent = mirrorOf ? null : repoForkParent(repo);
+    if (!mirrorOf && !parent) return "";
+    const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
+    if (!mirrorOf) {
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(parent.key)}</a></span>`;
+    }
+    const syncedAt = repoMirrorSyncedAt(repo);
+    const commit = String(repo?.upstreamCommit || "").trim();
+    const syncedTitle = [
+      syncedAt ? new Date(syncedAt).toLocaleString() : "",
+      commit ? `serving ${commit.slice(0, 12)}` : "",
+    ].filter(Boolean).join(" · ");
+    const synced = syncedAt
+      ? `<span data-repo-mirror-synced${syncedTitle ? ` title="${escapeHtml(syncedTitle)}"` : ""} class="shrink-0 text-muted-foreground">· synced ${escapeHtml(formatTimeAgo(syncedAt))}</span>`
+      : "";
+    const notice = `<span data-repo-mirror-notice class="min-w-0 text-[11px] text-muted-foreground">Read-only. Send changes <a href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="dashboard-accent-link hover:underline">upstream</a> or into a fork.</span>`;
+    const fork = `<button type="button" data-repo-mirror-fork title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-fork"></i>Fork</button>`;
+    const line = `<span data-repo-provenance-line="mirror" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="refresh-cw" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">Mirror of</span><a data-repo-provenance-link href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="${linkClass}">${escapeHtml(repoMirrorUpstreamPath(mirrorOf) || mirrorOf)}</a>${synced}</span>`;
+    return `${line}${notice}${fork}`;
+  }
+
   function repoGroupKey(repo) {
     // A fork can have the same root commit as its parent for its entire useful
     // lifetime. Folding solely by rootCommit therefore made a freshly-created

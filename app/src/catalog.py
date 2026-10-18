@@ -14,6 +14,9 @@ from urllib.parse import unquote, urlsplit
 
 MAX_REPO_SEGMENT = 80
 ROOM_NAME_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
+MIRROR_OF_RE = re.compile(
+    r"^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~-]+){1,8}$")
+UPSTREAM_COMMIT_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 
 
 def safe_segment(value, max_length=MAX_REPO_SEGMENT):
@@ -435,4 +438,15 @@ def safe_catalog_record(data):
                 agent_providers.append(provider)
     if agent_providers:
         record["agentProviders"] = agent_providers
+    mirror_of = data.get("mirrorOf")
+    if isinstance(mirror_of, str) and MIRROR_OF_RE.fullmatch(mirror_of):
+        record["mirrorOf"] = mirror_of
+        upstream_commit = data.get("upstreamCommit")
+        if isinstance(upstream_commit, str) and UPSTREAM_COMMIT_RE.fullmatch(
+                upstream_commit):
+            record["upstreamCommit"] = upstream_commit
+        synced_at = data.get("lastSyncedAt")
+        if isinstance(synced_at, str) and re.fullmatch(
+                r"[1-9][0-9]{0,15}", synced_at):
+            record["lastSyncedAt"] = synced_at
     return record

@@ -632,6 +632,12 @@ build_app() {
   build_stamp > "$BUILD_STAMP"
 }
 
+upstream_page() {
+  local url="${CFG_sourceUrl%.git}"
+  url="${url%/}"
+  printf '%s\n' "$url" | sed -E 's#^https://app\.#https://#'
+}
+
 env_value() {
   [ -r "$APP_ENV" ] || return 0
   awk -F= -v key="$1" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$APP_ENV"
@@ -682,6 +688,7 @@ print(encode(seed), encode(public))
     echo "INSTANCE_PLUGINS=$CFG_plugins"
     echo "INSTANCE_FLAGSHIP_NODE=$NODE_NAME"
     echo "INSTANCE_OWNER=$CFG_ownerName"
+    echo "INSTANCE_UPSTREAM=$(upstream_page)"
     echo "INSTANCE_LOGIN_MARKER=$LOGIN_MARKER"
     echo "INSTANCE_LOGIN_DEADLINE=$login_deadline"
     echo "INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request"
@@ -1199,10 +1206,16 @@ print((manifest.get("endpoint") or {}).get("origin", ""))
       --router-public-key "$ROUTER_PUBLIC_KEY" >/dev/null
     mv "$DAEMON_CONFIG.init" "$DAEMON_CONFIG"
   fi
-  python3 - "$DAEMON_CONFIG" "$ORIGIN" "$version" "$ROUTER_PUBLIC_KEY" "$CFG_ownerName" <<'PY'
-import json, os, sys
-path, origin, version, router_key, owner = sys.argv[1:6]
+  python3 - "$DAEMON_CONFIG" "$ORIGIN" "$version" "$ROUTER_PUBLIC_KEY" "$CFG_ownerName" "$(upstream_page)" <<'PY'
+import json, os, re, sys
+path, origin, version, router_key, owner, upstream_page = sys.argv[1:7]
 cfg = json.load(open(path))
+upstreams = (cfg.get("upstreams") or {}).get("forkmesh/forkmesh") or []
+if upstreams and re.fullmatch(r"https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~-]+){1,8}", upstream_page):
+    cfg["mirrorOf"] = {"forkmesh/forkmesh": upstream_page}
+    driven = [item for item in cfg.get("eventDrivenUpstreams") or [] if item in upstreams]
+    if not driven:
+        cfg["eventDrivenUpstreams"] = [upstreams[0]]
 cfg.update({
     "role": "core",
     "mirrorUrl": origin,
@@ -1249,20 +1262,25 @@ if gateway and os.path.exists(gateway):
         os.replace(gateway + ".new", gateway)
 with open(path + ".new", "w") as handle:
     handle.write(json.dumps(cfg, indent=2) + "\n")
+cfg.pop("mirrorOf", None)
+with open(path + ".nomirror", "w") as handle:
+    handle.write(json.dumps(cfg, indent=2) + "\n")
 cfg.pop("role", None)
 cfg.pop("hosted", None)
 with open(path + ".norole", "w") as handle:
     handle.write(json.dumps(cfg, indent=2) + "\n")
 PY
-  chown "$NODE_USER:$NODE_USER" "$DAEMON_CONFIG.new" "$DAEMON_CONFIG.norole"
+  chown "$NODE_USER:$NODE_USER" "$DAEMON_CONFIG.new" "$DAEMON_CONFIG.nomirror" "$DAEMON_CONFIG.norole"
   if runuser -u "$NODE_USER" -- "$DAEMON" --config "$DAEMON_CONFIG.new" --check >/dev/null 2>&1; then
     mv "$DAEMON_CONFIG.new" "$DAEMON_CONFIG"
-    rm -f "$DAEMON_CONFIG.norole"
+  elif runuser -u "$NODE_USER" -- "$DAEMON" --config "$DAEMON_CONFIG.nomirror" --check >/dev/null 2>&1; then
+    say "This ForkMesh release does not label the read-only forkmesh mirror yet; the website still labels it and refuses writes."
+    mv "$DAEMON_CONFIG.nomirror" "$DAEMON_CONFIG"
   else
     warn "this ForkMesh release does not know the core role yet; the git node runs without it"
     mv "$DAEMON_CONFIG.norole" "$DAEMON_CONFIG"
-    rm -f "$DAEMON_CONFIG.new"
   fi
+  rm -f "$DAEMON_CONFIG.new" "$DAEMON_CONFIG.nomirror" "$DAEMON_CONFIG.norole"
   NODE_PUBLIC_KEY="$(runuser -u "$NODE_USER" -- "$DAEMON" --config "$DAEMON_CONFIG" --public-key | tr -d '[:space:]')"
   [[ "$NODE_PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || die "The git node has no identity key."
   chmod -R go-rwx /etc/forkmesh /var/lib/forkmesh

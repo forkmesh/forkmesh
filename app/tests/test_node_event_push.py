@@ -63,6 +63,10 @@ NAMES = {
     "remember_node_commit_event",
     "replay_node_commit_events",
     "_node_events_authorization",
+    "_node_events_watch_object",
+    "_node_events_object",
+    "_repo_watch_do_name",
+    "notify_repo_watchers",
     "_node_events_object_holds_node",
     "node_events_handler",
     "_node_events_do_name",
@@ -81,6 +85,7 @@ CONSTANTS = {
     "DURABLE_OBJECT_TRAFFIC_FLUSH_BYTES",
     "DURABLE_OBJECT_TRAFFIC_MAX",
     "NODE_EVENT_MAX_SOCKETS",
+    "NODE_WATCH_MAX_SOCKETS",
     "NODE_SOCKET_STALE_MS",
     "NODE_EVENT_MSG_WINDOW_MS",
     "NODE_EVENT_MSG_MAX_PER_WINDOW",
@@ -1582,3 +1587,119 @@ def test_do_drops_a_malformed_control_frame():
                 _control_frame(data="not base64!")):
         asyncio.run(do.webSocketMessage(phone, json.dumps(bad)))
     assert desktop.sent == []
+
+
+def _watch_request(target="forkmesh/forkmesh", upgrade="websocket"):
+    headers = {"upgrade": upgrade} if upgrade else {}
+    return _Request(
+        "https://forkmesh.com/api/nodes/events?watch=" + quote(target, safe=""),
+        headers)
+
+
+def _watch_globals(public=True):
+    async def context(_env, owner, repo):
+        return {"owner": owner, "repo": repo} if public else None
+
+    async def org_repo_node(_env, owner, repo):
+        return "forkmesh" if (owner, repo) == ("acme", "forkmesh") else ""
+
+    async def durable_object_request(request):
+        return request
+
+    async def deny(*_args):
+        raise AssertionError("a watch socket never presents an owner token")
+
+    return {
+        **_base_globals(),
+        "_https_mirror_public_context": context,
+        "_org_repo_node": org_repo_node,
+        "durable_object_request": durable_object_request,
+        "_authorize_owner": deny,
+        "valid_node_name": lambda value: bool(
+            re.fullmatch(r"[a-z][a-z0-9-]{0,62}", str(value or ""))),
+    }
+
+
+def test_public_upstream_watch_joins_the_repository_object_unsigned():
+    ids, fetches = [], []
+    env = SimpleNamespace(FORKMESH_NODES=_nodes_binding(
+        ids, fetches, fetch_result={"status": 101}))
+    ns = _load(_watch_globals())
+    result = asyncio.run(ns["node_events_handler"](
+        env, _watch_request("ForkMesh/ForkMesh")))
+    assert result == {"status": 101}
+    assert ids == ["watch:forkmesh/forkmesh"]
+    ids.clear()
+    asyncio.run(ns["node_events_handler"](env, _watch_request("acme/forkmesh")))
+    assert ids == ["watch:forkmesh/forkmesh"]
+
+
+def test_upstream_watch_refuses_private_malformed_and_plain_requests():
+    ids, fetches = [], []
+    env = SimpleNamespace(FORKMESH_NODES=_nodes_binding(ids, fetches))
+    hidden = _load(_watch_globals(public=False))
+    assert asyncio.run(hidden["node_events_handler"](
+        env, _watch_request()))["status"] == 404
+    ns = _load(_watch_globals())
+    for target in ("forkmesh", "/forkmesh", "-x/forkmesh", "a/b/c"):
+        assert asyncio.run(ns["node_events_handler"](
+            env, _watch_request(target)))["status"] in (400, 404)
+    assert asyncio.run(ns["node_events_handler"](
+        env, _watch_request(upgrade=None)))["status"] == 426
+    assert ids == [] and fetches == []
+
+
+def test_watch_sockets_get_no_write_capabilities_and_only_pong():
+    ns = _load(_base_globals())
+    do = _make_do(ns)
+    result = asyncio.run(do.fetch(_Request(
+        "https://forkmesh.com/api/nodes/events?watch=forkmesh%2Fforkmesh",
+        {"upgrade": "websocket"})))
+    assert result["status"] == 101
+    (_tags, accepted), = do.ctx.tagged
+    assert accepted.attachment.role == "watch"
+    hello = json.loads(accepted.sent[0])
+    assert hello["accepts"] == [] and hello["relays"] == []
+    assert hello["role"] == "watch"
+    for frame in ({"type": "heartbeat", "ts": "1"},
+                  {"type": "endpoint", "issuedAt": "1"},
+                  {"type": "terminal", "action": "input"},
+                  {"type": "control"}):
+        accepted.sent.clear()
+        asyncio.run(do.webSocketMessage(accepted, json.dumps(frame)))
+        assert accepted.sent == []
+    asyncio.run(do.webSocketMessage(accepted, json.dumps({"type": "ping"})))
+    assert json.loads(accepted.sent[-1]) == {"type": "pong"}
+    for _ in range(ns["NODE_EVENT_MAX_SOCKETS"]):
+        do.ctx.tagged.append(
+            (["node"], _Sock(SimpleNamespace(id="w", last=NOW, role="watch"))))
+    more = asyncio.run(do.fetch(_Request(
+        "https://forkmesh.com/api/nodes/events?watch=forkmesh%2Fforkmesh",
+        {"upgrade": "websocket"})))
+    assert more["status"] == 101
+
+
+def test_commit_notifications_also_wake_upstream_watchers():
+    ids, fetches = [], []
+    env = SimpleNamespace(FORKMESH_NODES=_nodes_binding(ids, fetches))
+
+    async def context(_env, owner, repo):
+        return {"nodes": set()}
+
+    ns = _load({
+        **_base_globals(),
+        "_https_mirror_public_context": context,
+        "valid_node_name": lambda value: bool(
+            re.fullmatch(r"[a-z][a-z0-9-]{0,62}", str(value or ""))),
+    })
+    state = "c" * 64
+    asyncio.run(ns["notify_repo_mirrors"](
+        env, "ForkMesh", "ForkMesh", "commits", state, 77))
+    assert ids == ["watch:forkmesh/forkmesh"]
+    query = parse_qs(urlparse(fetches[0]).query)
+    assert query == {"topic": ["commits"], "repo": ["forkmesh/forkmesh"],
+                     "state": [state], "generation": ["77"]}
+    ids.clear()
+    asyncio.run(ns["notify_repo_mirrors"](
+        env, "forkmesh", "forkmesh", "issues"))
+    assert ids == []

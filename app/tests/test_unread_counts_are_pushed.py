@@ -277,8 +277,10 @@ def test_event_ticket_is_minted_from_a_session_and_accepted_on_upgrade():
     # The signed node token remains the other way in, and either path is
     # checked BEFORE a Durable Object is selected.
     assert "_authorize_owner(env, request, owner)" in authorization
-    assert "_node_events_authorization(env, request)" in events
-    assert events.index("_node_events_authorization") < events.index(
+    selector = _function_source("_node_events_object")
+    assert "_node_events_authorization(env, request)" in selector
+    assert "_node_events_object(env, request)" in events
+    assert events.index("_node_events_object") < events.index(
         "env.FORKMESH_NODES.idFromName")
     assert '"/api/accounts/event-ticket"' in APP_RUNTIME_TEXT
 
