@@ -771,49 +771,6 @@ def access_log_snippet():
     return out
 
 
-def logs_settings(fleet):
-    logs = dict(fleet.get("logs") or {})
-    key = str(logs.get("reader_public_key", "") or "").strip()
-    if key and not LOGREAD_PUBLIC_KEY.match(key):
-        raise RenderError("logs.reader_public_key must be the one-line "
-                          "ssh-ed25519 public key ending in fmnext-logread "
-                          "(tools/next_fleet.py logread-key)")
-    logs["reader_public_key"] = key
-    access = logs.get("access_log", False)
-    if not isinstance(access, bool):
-        raise RenderError("logs.access_log must be true or false")
-    logs["access_log"] = access
-    return logs
-
-
-def logread_fingerprint(public_key):
-    match = LOGREAD_PUBLIC_KEY.match(public_key or "")
-    if not match:
-        return ""
-    digest = hashlib.sha256(base64.b64decode(match.group(1))).digest()
-    return "SHA256:" + base64.b64encode(digest).decode().rstrip("=")
-
-
-def logread_authorized_line(public_key):
-    return ('restrict,command="/usr/bin/python3 -I %s" %s\n'
-            % (LOGREAD_PROGRAM, public_key))
-
-
-def without_logs(fleet):
-    stripped = copy.deepcopy(fleet)
-    stripped.pop("logs", None)
-    return stripped
-
-
-def add_logread_files(fleet, add):
-    key = logs_settings(fleet)["reader_public_key"]
-    if not key:
-        return False
-    add(LOGREAD_PROGRAM, (HERE / "logread.py").read_text("utf-8"), 0o755)
-    add(LOGREAD_AUTHORIZED_KEY, logread_authorized_line(key), 0o600)
-    return True
-
-
 def ids_enabled(fleet):
     return ids_settings(fleet)["enabled"]
 

@@ -49,6 +49,12 @@ struct Source {
     QString body;
 };
 
+struct Screen {
+    bool active = false;
+    bool agentList = false;
+    bool pingsPage = false;
+};
+
 QString proof();
 QString deleteProof();
 QString path();
@@ -65,6 +71,7 @@ QString fitText(const QString &text, int max, bool singleLine);
 QString nodeToken(const QString &node);
 Ping pingFor(const Source &source);
 bool valid(const Ping &ping);
+bool seenOnScreen(const Screen &screen, const Source &source);
 QString resource(const Ping &ping);
 QString canonical(const QString &user, const Ping &ping, const QString &ts);
 QJsonObject body(const Ping &ping);

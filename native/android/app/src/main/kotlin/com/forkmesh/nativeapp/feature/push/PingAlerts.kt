@@ -86,8 +86,9 @@ object PingAlerts {
             result
         }
         for (id in decision.cancel) PingNotifier.cancel(context, projectId, id)
-        for (ping in decision.post) PingNotifier.post(context, projectId, projectLabel, multipleProjects, ping)
-        return decision.post.size
+        val shown = decision.post.filterNot { PushScreens.shows(projectId, it) }
+        for (ping in shown) PingNotifier.post(context, projectId, projectLabel, multipleProjects, ping)
+        return shown.size
     }
 
     fun notificationContent(context: Context): NotificationContent =
