@@ -45,6 +45,7 @@
   const emailInput = $("#acct-email");
   const passwordInput = $("#acct-pass");
   const termsAgree = $("#terms-agree");
+  const termsAccepted = () => termsAgree.checked || Boolean(termsAgree.closest("[hidden]"));
   const updatesAgree = $("#updates-agree");
   const createButton = $("#signup-create");
   const nameHint = $("#name-hint");
@@ -417,7 +418,7 @@
       || signupReferralCodeField.hidden
       || Boolean(signupReferralCodeInput.value.trim());
     createButton.disabled = !(nameOk && validEmail(email) && password.length >= 8
-      && termsAgree.checked && referralCodeOk);
+      && termsAccepted() && referralCodeOk);
   }
 
   async function api(path, options) {
@@ -533,8 +534,10 @@
       setSignupHint("Password must be at least 8 characters.", "bad");
       return;
     }
-    if (!termsAgree.checked) {
-      setSignupHint("Accept the Terms and Privacy policy to continue.", "bad");
+    if (!termsAccepted()) {
+      setSignupHint(termsAgree.closest("[data-instance-legal]")
+        ? "Tick the agreement box to continue."
+        : "Accept the Terms and Privacy policy to continue.", "bad");
       return;
     }
     if (signupIntentStale() && !(await renewSignupPage())) {
