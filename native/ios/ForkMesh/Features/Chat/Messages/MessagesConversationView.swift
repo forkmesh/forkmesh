@@ -175,6 +175,9 @@ struct MessagesConversationView<Drawer: View>: View {
             .onTapGesture(coordinateSpace: .local) { (location: CGPoint) in transcriptTapped(at: location) }
             .onAppear { scrollToEnd(proxy, items, animated: false) }
             .onChange(of: items.last?.id ?? "") { _, _ in scrollToEnd(proxy, items, animated: true) }
+            .chatFollowsOwnSend(hub.rows) {
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(MessagesConversationView.endId, anchor: .bottom) }
+            }
             .onChange(of: typing.isEmpty) { _, empty in
                 if !empty { withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(MessagesConversationView.endId, anchor: .bottom) } }
             }

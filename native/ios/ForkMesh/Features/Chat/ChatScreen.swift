@@ -542,6 +542,11 @@ private struct ChatTranscript<Drawer: View>: View {
                 .onTapGesture { composerFocused = false }
                 .onAppear { scrollToEnd(proxy, rows, animated: false) }
                 .onChange(of: rows.last?.id ?? "") { _, _ in scrollToEnd(proxy, rows, animated: true) }
+                .chatFollowsOwnSend(rows) {
+                    if let last: ChatRow = rows.last {
+                        withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
                 .chatKeepsEndInView(focused: composerFocused) {
                     if let last: ChatRow = rows.last {
                         withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last.id, anchor: .bottom) }
@@ -1299,8 +1304,27 @@ private struct ChatKeepsEndInView: ViewModifier {
     }
 }
 
+private struct ChatFollowsOwnSend: ViewModifier {
+    let newest: Date
+    let scroll: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: newest) { (old: Date, new: Date) in
+                guard new > old else { return }
+                DispatchQueue.main.async { scroll() }
+            }
+    }
+}
+
 extension View {
     func chatKeepsEndInView(focused: Bool, scroll: @escaping () -> Void) -> some View {
         modifier(ChatKeepsEndInView(focused: focused, scroll: scroll))
+    }
+
+    func chatFollowsOwnSend(_ rows: [ChatRow], scroll: @escaping () -> Void) -> some View {
+        modifier(
+            ChatFollowsOwnSend(
+                newest: rows.last(where: { $0.message.isSelf })?.message.timestamp ?? .distantPast, scroll: scroll))
     }
 }

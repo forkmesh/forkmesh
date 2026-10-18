@@ -103,6 +103,11 @@ private struct ChatThreadBody: View {
             .onChange(of: hub.threadRows(rootId).last?.id ?? "") { _, last in
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(last, anchor: .bottom) }
             }
+            .chatFollowsOwnSend(hub.threadRows(rootId)) {
+                if let last: ChatRow = hub.threadRows(rootId).last {
+                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last.id, anchor: .bottom) }
+                }
+            }
             .chatKeepsEndInView(focused: focused) {
                 if let last: ChatRow = hub.threadRows(rootId).last {
                     withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo(last.id, anchor: .bottom) }
