@@ -1396,7 +1396,7 @@ struct HomeShell: View {
             if let session = session {
                 genieRun(.open(LaunchedSessions.remember(repo, session)))
             }
-        case .queuedWithoutSession, .desktop:
+        case .queuedWithoutSession, .desktop, .done:
             FmHaptics.send(.success)
         case .device(let record, let text, let images, let credentials):
             Services.get(AgentPromptHandoff.self)?.offer(images: images, credentials: credentials)
@@ -1434,6 +1434,8 @@ struct HomeShell: View {
             return message
         case .ignored:
             return "There was nothing to send."
+        case .done:
+            return nil
         }
     }
 
@@ -1491,6 +1493,9 @@ struct HomeShell: View {
                 FmHaptics.error()
                 voiceToComposer(text)
                 composer.message = message
+            case .done(let message):
+                voice.sent()
+                notice = FmNotice(message)
             case .ignored:
                 voice.dismiss()
             }
@@ -1595,6 +1600,10 @@ struct HomeShell: View {
             FmHaptics.send(.success)
             finishSend(sent)
             agentStarted(message)
+        case .done(let message):
+            FmHaptics.send(.success)
+            finishSend(sent)
+            notice = FmNotice(message)
         case .needsFix(let fix, let message):
             FmHaptics.error()
             composer.fix = fix
