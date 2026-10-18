@@ -1132,6 +1132,19 @@ class WorkerRuntime:
             return ""
         return edge_routing.normalize_base_url(row.get("base_url")) or ""
 
+    async def admit_push_state(self, owner, repo, node):
+        node = str(node or "").strip().lower()
+        context = await _https_mirror_public_context(  # noqa: F821
+            self.env, owner, repo)
+        if not context or not node:
+            return ""
+        for endpoint in await _https_mirror_request_candidates(  # noqa: F821
+                self.env, context, ""):
+            if str(endpoint.get("node") or "").strip().lower() == node:
+                return await _admit_core_push_state(  # noqa: F821
+                    self.env, owner, repo, endpoint)
+        return ""
+
     async def apply_result(self, target_node, repo, job_id, data):
         return await _route_handlers._apply_org_agent_job_result(  # noqa: F821
             self.env, target_node, repo, job_id, data)
