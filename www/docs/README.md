@@ -47,6 +47,7 @@ Developer documentation per subsystem is in the [developer docs index](../../doc
 | Stock Git operations and known limits | [Git compatibility matrix](git-compatibility.md) |
 | Provider-independent dependencies for Git, pip, npm, Go and Cargo | [Dependency workflows](dependency-workflows.md) |
 | Versioned HTTP, event, CLI and webhook contract | [Integration contract](integrations.md) |
+| An About box and logo for a folder (monorepo projects) | [Folder About boxes](folder-about.md) |
 | Public repository search, ranking and moderation | [Searchable repository index](repository-index.md) |
 | One synchronization status model for every client | [Synchronization status](sync-status.md) |
 | Availability proof and repository risk | [Availability proof](availability-proof.md) |

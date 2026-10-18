@@ -1806,6 +1806,13 @@ class Default:
                 repository_file_edits._bind_runtime(globals())
                 return await repository_file_edits.route(
                     self.env, request, owner, repo, action)
+            if action in ("dir-about", "dir-logo"):
+                import directory_about
+                directory_about._bind_runtime(globals())
+                return await directory_about.route(
+                    self.env, request, owner, repo, action,
+                    projects=self._repo_projects_setting,
+                    short=self._repo_short_setting)
 
         # Public clone traffic uses signed, masked HTTPS. Private/missing paths
         # fail closed in _git_host. Private clients use only the identity-free
