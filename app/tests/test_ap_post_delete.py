@@ -140,6 +140,9 @@ def _env(log, *, authed_owner=False, enabled=True, objects=None, followers=None)
             "ensure_schema": ensure_schema,
             "_authed_account_name": _authed_account_name,
             "_account_owns_node": _account_owns_node,
+        "_repo_admin_allowed": (
+            lambda env, actor, owner, repo: _account_owns_node(
+                env, actor, owner)),
             "_is_admin": _is_admin,
             "_owner_pubkey": _owner_pubkey,
             "ed25519_verify": ed25519_verify,

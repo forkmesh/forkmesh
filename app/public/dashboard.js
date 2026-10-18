@@ -1952,7 +1952,7 @@
   function repoTabRoutesFor(repo) {
     const routes = REPO_TAB_ROUTES.slice();
     if (repo && sessionCanAssignAgent(repo)) routes.push("agents");
-    if (repo && sessionOwnsRepo(repo)) routes.push("settings");
+    if (repo && sessionAdministersRepo(repo)) routes.push("settings");
     return routes;
   }
 
@@ -25636,7 +25636,53 @@
   // re-checks the account name against owner/admin status (no password,
   // adhoc #225), so this is only the client-side gate for showing the checkbox.
   function sessionCanAssignAgent(repo) {
-    return sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+    return sessionAdministersRepo(repo) || Boolean(state.session?.isAdmin);
+  }
+
+  const repoViewerPermissions = new Map();
+
+  function repoViewerPermissionKey(value) {
+    const key = typeof value === "string" ? value : repositoryViewKey(value);
+    const viewer = String(state.session?.nodeName || "").toLowerCase();
+    return viewer && key ? `${viewer}|${String(key).toLowerCase()}` : "";
+  }
+
+  function sessionAdministersRepo(repo) {
+    if (sessionOwnsRepo(repo)) return true;
+    const known = repoViewerPermissions.get(repoViewerPermissionKey(repo));
+    return Boolean(known && typeof known === "object" && known.viewerCanAdmin === true);
+  }
+
+  function loadRepoViewerPermission(target) {
+    const key = repoViewerPermissionKey(target);
+    const publicKey = typeof target === "string" ? target : repositoryViewKey(target);
+    const [owner, name] = String(publicKey || "").split("/");
+    if (!key || !owner || !name) return Promise.resolve(null);
+    if (typeof target !== "string" && sessionOwnsRepo(target)) return Promise.resolve(null);
+    const known = repoViewerPermissions.get(key);
+    if (known) return Promise.resolve(known);
+    const headers = { accept: "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const request = fetch(
+      `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/viewer-permission`,
+      { headers, credentials: "same-origin", cache: "no-store" },
+    )
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        const answer = {
+          permission: String(body?.permission || ""),
+          viewerCanAdmin: body?.viewerCanAdmin === true,
+        };
+        repoViewerPermissions.set(key, answer);
+        return answer;
+      })
+      .catch(() => {
+        repoViewerPermissions.delete(key);
+        return null;
+      });
+    repoViewerPermissions.set(key, request);
+    return request;
   }
 
   function setRepoAboutEditing(on) {
@@ -25944,7 +25990,7 @@
       const suggestions = Array.isArray(body?.suggestions)
         ? body.suggestions
         : [];
-      const mayReview = sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+      const mayReview = sessionAdministersRepo(repo) || Boolean(state.session?.isAdmin);
       target.innerHTML = suggestions.length
         ? suggestions
             .map((suggestion) => {
@@ -26230,7 +26276,7 @@
 
   async function loadRepoDigestPreview(repo) {
     const target = $("[data-repo-digest-preview]");
-    if (!target || !sessionOwnsRepo(repo) || repo.isPrivate) return;
+    if (!target || !sessionAdministersRepo(repo) || repo.isPrivate) return;
     target.textContent = "Loading preview…";
     try {
       const token = state.session?.sessionToken || "";
@@ -26390,7 +26436,7 @@
 
   async function loadRepoWebhooks(repo) {
     const list = $("[data-repo-webhooks-list]");
-    if (!list || !sessionOwnsRepo(repo)) return;
+    if (!list || !sessionAdministersRepo(repo)) return;
     try {
       const body = await repoWebhookRequest(repo, { action: "list" });
       if (!repoAboutStillCurrent(repo)) return;
@@ -26720,7 +26766,7 @@
 
   async function loadRepoProviderMirror(repo) {
     const holder = $("[data-repo-forge-mirror-body]");
-    if (!holder || !sessionOwnsRepo(repo)) return;
+    if (!holder || !sessionAdministersRepo(repo)) return;
     const mirrorState = repoForgeMirrorState(repo);
     try {
       const body = await repoForgeMirrorRequest(repo, { action: "get" });
@@ -26795,7 +26841,7 @@
     }
     const card = event.target.closest("[data-repo-forge-mirror-card]");
     const repo = state.selectedRepo;
-    if (!card || !repo || !sessionOwnsRepo(repo)) return false;
+    if (!card || !repo || !sessionAdministersRepo(repo)) return false;
     const mirrorState = repoForgeMirrorState(repo);
     const providerButton = event.target.closest("[data-repo-forge-mirror-provider]");
     if (providerButton) {
@@ -26913,7 +26959,7 @@
     if (!form) return false;
     event.preventDefault();
     const repo = state.selectedRepo;
-    if (!repo || !sessionOwnsRepo(repo)) return true;
+    if (!repo || !sessionAdministersRepo(repo)) return true;
     const mirrorState = repoForgeMirrorState(repo);
     const submit = form.querySelector('button[type="submit"]');
     if (submit) submit.disabled = true;
@@ -26970,7 +27016,7 @@
       return;
     }
     holder.innerHTML = pullRulesEditorHtml(policy, {
-      editable: sessionOwnsRepo(repo),
+      editable: sessionAdministersRepo(repo),
       saveLabel: `Commit rules to ${branch}`,
     });
     window.lucide?.createIcons();
@@ -35878,6 +35924,12 @@
     const detail = $("[data-repo-detail]");
     if (!detail || !repo) return;
     state.selectedRepo = repo;
+    if (state.session?.nodeName && !sessionAdministersRepo(repo)
+        && !repoViewerPermissions.has(repoViewerPermissionKey(repo))) {
+      loadRepoViewerPermission(repo).then((answer) => {
+        if (answer?.viewerCanAdmin && state.selectedRepo === repo) renderRepoDetail(repo);
+      });
+    }
     rememberAgentVisitedRepository(repo);
     recordRepositoryView(repo);
     state.repoCollectionPages = { issues: 1, pulls: 1 };
@@ -35974,7 +36026,7 @@
     const commitsCount = repoCount(repo, ["commits", "commitCount", "commitHistory"]);
     const mirrorsCount = repoCount(repo, ["mirrors", "mirrorCount", "hosts"]);
     renderHeaderContext("explore");
-    const canEditAbout = sessionOwnsRepo(repo);
+    const canEditAbout = sessionAdministersRepo(repo);
     const readmePath = "README.md";
     const readmeHref = repoLinkUrl(repo, "blob", readmePath);
     const tabMeta = {
@@ -37661,6 +37713,9 @@
     }
     // findRepository needs the catalog (alias/canonical grouping), so this page
     // does wait on the shared fetch before rendering the detail body.
+    const viewerPermissionReady = requested && state.session?.nodeName
+      ? loadRepoViewerPermission(requested)
+      : null;
     await (repositoriesReady || loadRepositories());
     let repo = requested ? findRepository(requested) : null;
     if (
@@ -37699,9 +37754,13 @@
       const routeParts = repoRouteParts();
       if (
         (routeParts[2] === "agents" && !sessionCanAssignAgent(repo)) ||
-        (routeParts[2] === "settings" && !sessionOwnsRepo(repo))
+        (routeParts[2] === "settings" && !sessionAdministersRepo(repo))
       ) {
         await (canonicalProfileReady || Promise.resolve());
+      }
+      await (viewerPermissionReady || Promise.resolve());
+      if (state.session?.nodeName && !sessionAdministersRepo(repo)) {
+        await loadRepoViewerPermission(repo);
       }
       renderRepoDetail(repo);
       return;
@@ -38305,7 +38364,7 @@
       }
 
       const aboutEditButton = event.target.closest("[data-repo-about-edit]");
-      if (aboutEditButton && state.selectedRepo && sessionOwnsRepo(state.selectedRepo)) {
+      if (aboutEditButton && state.selectedRepo && sessionAdministersRepo(state.selectedRepo)) {
         setRepoAboutStatus("");
         setRepoAboutEditing(true);
         return;
@@ -38314,7 +38373,7 @@
       const digestPreviewButton = event.target.closest(
         "[data-repo-digest-preview-refresh]");
       if (digestPreviewButton && state.selectedRepo
-          && sessionOwnsRepo(state.selectedRepo)) {
+          && sessionAdministersRepo(state.selectedRepo)) {
         loadRepoDigestPreview(state.selectedRepo);
         return;
       }
@@ -38331,7 +38390,7 @@
       if (
         webhookRow &&
         state.selectedRepo &&
-        sessionOwnsRepo(state.selectedRepo)
+        sessionAdministersRepo(state.selectedRepo)
       ) {
         const repo = state.selectedRepo;
         const id = webhookRow.dataset.repoWebhookId || "";
@@ -38387,7 +38446,7 @@
       if (
         deleteRepoButton &&
         state.selectedRepo &&
-        sessionOwnsRepo(state.selectedRepo)
+        sessionAdministersRepo(state.selectedRepo)
       ) {
         const repo = state.selectedRepo;
         const expected = repoKey(repo);
@@ -38418,7 +38477,7 @@
           if (status) {
             status.textContent =
               code === "not_authorized"
-                ? "Only the source node owner can delete this repository."
+                ? "Only the repository owner or an organization owner or admin can delete this repository."
                 : code === "account_required"
                   ? "Sign in as the source node owner first."
                   : "Repository deletion failed. Please try again.";
@@ -39500,7 +39559,7 @@
         const code = String(error?.message || "");
         setRepoSettingsStatus(
           code === "not_authorized"
-            ? "Only the source node owner can change repository settings."
+            ? "Only the repository owner or an organization owner or admin can change repository settings."
             : code === "account_required"
               ? "Sign in as the source node owner first."
               : "Could not save repository settings.",
@@ -39553,7 +39612,7 @@
       } catch (error) {
         const code = String(error?.message || "");
         setRepoAboutStatus(
-          code === "not_authorized" ? "Only the source node owner can edit About."
+          code === "not_authorized" ? "Only the repository owner or an organization owner or admin can edit About."
             : code === "account_required" ? "Sign in as the source node owner first."
             : code === "logo_too_large" ? "Logo must be a PNG up to 256 KB."
             : code === "banner_too_large" ? "Banner must be a PNG up to 1 MB."

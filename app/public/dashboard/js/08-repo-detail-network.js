@@ -43,6 +43,12 @@
     const detail = $("[data-repo-detail]");
     if (!detail || !repo) return;
     state.selectedRepo = repo;
+    if (state.session?.nodeName && !sessionAdministersRepo(repo)
+        && !repoViewerPermissions.has(repoViewerPermissionKey(repo))) {
+      loadRepoViewerPermission(repo).then((answer) => {
+        if (answer?.viewerCanAdmin && state.selectedRepo === repo) renderRepoDetail(repo);
+      });
+    }
     rememberAgentVisitedRepository(repo);
     recordRepositoryView(repo);
     state.repoCollectionPages = { issues: 1, pulls: 1 };
@@ -139,7 +145,7 @@
     const commitsCount = repoCount(repo, ["commits", "commitCount", "commitHistory"]);
     const mirrorsCount = repoCount(repo, ["mirrors", "mirrorCount", "hosts"]);
     renderHeaderContext("explore");
-    const canEditAbout = sessionOwnsRepo(repo);
+    const canEditAbout = sessionAdministersRepo(repo);
     const readmePath = "README.md";
     const readmeHref = repoLinkUrl(repo, "blob", readmePath);
     const tabMeta = {
@@ -1826,6 +1832,9 @@
     }
     // findRepository needs the catalog (alias/canonical grouping), so this page
     // does wait on the shared fetch before rendering the detail body.
+    const viewerPermissionReady = requested && state.session?.nodeName
+      ? loadRepoViewerPermission(requested)
+      : null;
     await (repositoriesReady || loadRepositories());
     let repo = requested ? findRepository(requested) : null;
     if (
@@ -1864,9 +1873,13 @@
       const routeParts = repoRouteParts();
       if (
         (routeParts[2] === "agents" && !sessionCanAssignAgent(repo)) ||
-        (routeParts[2] === "settings" && !sessionOwnsRepo(repo))
+        (routeParts[2] === "settings" && !sessionAdministersRepo(repo))
       ) {
         await (canonicalProfileReady || Promise.resolve());
+      }
+      await (viewerPermissionReady || Promise.resolve());
+      if (state.session?.nodeName && !sessionAdministersRepo(repo)) {
+        await loadRepoViewerPermission(repo);
       }
       renderRepoDetail(repo);
       return;
@@ -2470,7 +2483,7 @@
       }
 
       const aboutEditButton = event.target.closest("[data-repo-about-edit]");
-      if (aboutEditButton && state.selectedRepo && sessionOwnsRepo(state.selectedRepo)) {
+      if (aboutEditButton && state.selectedRepo && sessionAdministersRepo(state.selectedRepo)) {
         setRepoAboutStatus("");
         setRepoAboutEditing(true);
         return;
@@ -2479,7 +2492,7 @@
       const digestPreviewButton = event.target.closest(
         "[data-repo-digest-preview-refresh]");
       if (digestPreviewButton && state.selectedRepo
-          && sessionOwnsRepo(state.selectedRepo)) {
+          && sessionAdministersRepo(state.selectedRepo)) {
         loadRepoDigestPreview(state.selectedRepo);
         return;
       }
@@ -2496,7 +2509,7 @@
       if (
         webhookRow &&
         state.selectedRepo &&
-        sessionOwnsRepo(state.selectedRepo)
+        sessionAdministersRepo(state.selectedRepo)
       ) {
         const repo = state.selectedRepo;
         const id = webhookRow.dataset.repoWebhookId || "";
@@ -2552,7 +2565,7 @@
       if (
         deleteRepoButton &&
         state.selectedRepo &&
-        sessionOwnsRepo(state.selectedRepo)
+        sessionAdministersRepo(state.selectedRepo)
       ) {
         const repo = state.selectedRepo;
         const expected = repoKey(repo);
@@ -2583,7 +2596,7 @@
           if (status) {
             status.textContent =
               code === "not_authorized"
-                ? "Only the source node owner can delete this repository."
+                ? "Only the repository owner or an organization owner or admin can delete this repository."
                 : code === "account_required"
                   ? "Sign in as the source node owner first."
                   : "Repository deletion failed. Please try again.";
@@ -3665,7 +3678,7 @@
         const code = String(error?.message || "");
         setRepoSettingsStatus(
           code === "not_authorized"
-            ? "Only the source node owner can change repository settings."
+            ? "Only the repository owner or an organization owner or admin can change repository settings."
             : code === "account_required"
               ? "Sign in as the source node owner first."
               : "Could not save repository settings.",
@@ -3718,7 +3731,7 @@
       } catch (error) {
         const code = String(error?.message || "");
         setRepoAboutStatus(
-          code === "not_authorized" ? "Only the source node owner can edit About."
+          code === "not_authorized" ? "Only the repository owner or an organization owner or admin can edit About."
             : code === "account_required" ? "Sign in as the source node owner first."
             : code === "logo_too_large" ? "Logo must be a PNG up to 256 KB."
             : code === "banner_too_large" ? "Banner must be a PNG up to 1 MB."

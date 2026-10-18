@@ -64,6 +64,7 @@ class _Relay:
         self.deleted_scoped = []
         self.deleted_named = []
         self.admin_canonicals = []
+        self.org_aliases = {}
 
     # --- D1 -------------------------------------------------------------
     async def d1_run(self, env, sql, *args):
@@ -105,6 +106,12 @@ class _Relay:
 
         async def account_owns_node(env, actor, node):
             return bool(actor)
+
+        async def repo_admin_allowed(env, actor, node, repo):
+            return await account_owns_node(env, actor, node)
+
+        async def org_repo_node(env, org, repo):
+            return relay.org_aliases.get((org, repo), "")
 
         async def blind_index(env, value):
             return "bi:" + str(value)
@@ -173,6 +180,8 @@ class _Relay:
             "clean_string": lambda value, limit=0: str(value or "")[:limit or None],
             "_authed_account_name": authed_account_name,
             "_account_owns_node": account_owns_node,
+            "_repo_admin_allowed": repo_admin_allowed,
+            "_org_repo_node": org_repo_node,
             "_owner_signing_pubkeys": owner_signing_pubkeys,
             "_audit_sensitive_action": noop,
             "blind_index": blind_index,
@@ -273,6 +282,43 @@ def test_website_delete_records_a_tombstone():
     assert response.payload == {"ok": True, "deleted": True}
     assert relay.repos == {}
     assert "bi:alice/demo" in relay.tombstones
+
+
+def test_website_delete_through_an_organization_address_reaches_the_node_row():
+    relay = _Relay(session_owner="carol")
+    relay.org_aliases[("acme", "demo")] = "alice"
+    seen = []
+    namespace = _handlers(relay)
+
+    async def repo_admin_allowed(env, actor, node, repo):
+        seen.append((actor, node, repo))
+        return actor == "carol" and node == "alice"
+
+    namespace["_repo_admin_allowed"] = repo_admin_allowed
+    request = SimpleNamespace(
+        method="DELETE",
+        url="https://code.example.org/api/repositories?owner=acme&name=demo",
+        headers={})
+    response = _run(namespace["catalog_handler"](None, request))
+    assert response.payload == {"ok": True, "deleted": True}
+    assert seen == [("carol", "alice", "demo")]
+    assert relay.repos == {}
+    assert "bi:alice/demo" in relay.tombstones
+
+
+def test_website_delete_refuses_a_session_without_repository_admin():
+    relay = _Relay(session_owner="mallory")
+    namespace = _handlers(relay)
+
+    async def repo_admin_allowed(env, actor, node, repo):
+        return False
+
+    namespace["_repo_admin_allowed"] = repo_admin_allowed
+    response = _run(namespace["catalog_handler"](None, _delete_request()))
+    assert response.status == 403
+    assert response.payload == {"error": "not_authorized"}
+    assert "bi:alice/demo" in relay.repos
+    assert relay.tombstones == {}
 
 
 def test_tombstone_is_recorded_even_when_the_row_is_already_gone():

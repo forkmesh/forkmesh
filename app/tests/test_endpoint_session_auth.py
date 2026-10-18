@@ -43,7 +43,7 @@ FUNCS = {
     "valid_node_name", "clean_string",
     "_owner_pubkey", "_catalog_record_matches_identity",
     "_repo_identity_from_clone_url", "safe_segment", "method_name",
-    "_account_owns_node", "_owned_nodes",
+    "_account_owns_node", "_owned_nodes", "_repo_admin_allowed",
 }
 
 
@@ -110,7 +110,9 @@ class _ApStub:
         return "%s.%s" % (owner, repo)
 
 
-def _harness(accounts, notifications=None, repositories=None):
+def _harness(accounts, notifications=None, repositories=None,
+             org_admins=None):
+    org_admins = set(org_admins or ())
     notifications = list(notifications or [])   # {recipient_bi, dedupe_bi, ts, read_at, data}
     repositories = list(repositories or [])     # {key_bi, data(dict), is_private}
     now = [1_000_000_000]
@@ -255,12 +257,13 @@ def _harness(accounts, notifications=None, repositories=None):
             return
         raise AssertionError("unexpected d1_run: " + sql)
 
-    async def _org_owner_of_linked_repo(_env, _node, _repo, _actor):
-        return False
+    async def _org_admin_of_linked_repo(_env, node, repo, actor):
+        return (str(node).lower(), str(repo).lower(),
+                str(actor).lower()) in org_admins
 
     ns = _load_functions({
         "Date": _DateStub,
-        "_org_owner_of_linked_repo": _org_owner_of_linked_repo,
+        "_org_admin_of_linked_repo": _org_admin_of_linked_repo,
         "json_response": json_response,
         "ensure_schema": ensure_schema,
         "blind_index": blind_index,
@@ -540,3 +543,35 @@ def test_repo_about_allows_user_who_owns_the_node():
         "laptop", "proj"))
     assert nope["status"] == 403
     assert repos[0]["data"]["description"] == "owned via node link"
+
+
+def test_repo_about_allows_an_organization_admin_of_the_linked_repo():
+    accounts = {"alice": _user(), "carol": _user(), "mallory": _user()}
+    repos = [_repo_row("alice", "proj")]
+    ns = _harness(accounts, repositories=repos,
+                  org_admins={("alice", "proj", "carol")})
+    env = object()
+    url = "https://code.example.org/api/repo/acme/proj/about"
+
+    ok = asyncio.run(ns["repo_about_handler"](
+        env, _Request("POST", url, body={
+            "description": "set by the organization",
+            "sessionToken": ns["_account_session_token"](env, "carol")}),
+        "alice", "proj"))
+    assert ok["status"] == 200
+    assert repos[0]["data"]["description"] == "set by the organization"
+
+    nope = asyncio.run(ns["repo_about_handler"](
+        env, _Request("POST", url, body={
+            "description": "defaced",
+            "sessionToken": ns["_account_session_token"](env, "mallory")}),
+        "alice", "proj"))
+    assert nope["status"] == 403
+    assert repos[0]["data"]["description"] == "set by the organization"
+
+    creator = asyncio.run(ns["repo_about_handler"](
+        env, _Request("POST", url, body={
+            "description": "creator edit",
+            "sessionToken": ns["_account_session_token"](env, "alice")}),
+        "alice", "proj"))
+    assert creator["status"] == 200

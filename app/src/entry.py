@@ -16547,7 +16547,7 @@ async def native_repository_logo_handler(
             candidate
             and (
                 await _repository_import_moderator(env, candidate)
-                or await _account_owns_node(env, candidate, owner)
+                or await _repo_admin_allowed(env, candidate, owner, repo)
             )
         )
 
@@ -16825,8 +16825,7 @@ async def repo_about_handler(env, request, owner, repo):
             owner_key_authed = True
     if not actor or (
             not owner_key_authed
-            and not await _account_owns_node(env, actor, owner)
-            and not await _org_owner_of_linked_repo(env, owner, repo, actor)):
+            and not await _repo_admin_allowed(env, actor, owner, repo)):
         return json_response({"error": "not_authorized"}, status=403)
     if not await _owner_pubkey(env, owner):
         return json_response({"error": "account_required"}, status=403)
@@ -28001,6 +28000,63 @@ async def _org_owner_of_linked_repo(env, node, repo, actor):
         return False
 
 
+async def _org_linked_repo_permission(env, node, repo, actor):
+    if not node or not repo or not actor:
+        return ""
+    try:
+        rows = await d1_all(
+            env, "SELECT org_bi FROM org_repos WHERE node_owner=? AND repo=?",
+            str(node).lower(), str(repo).lower())
+        best = ""
+        for row in rows or []:
+            perm = await _org_permission(
+                env, str(row.get("org_bi") or ""), str(actor).lower())
+            if team_permission_rank(perm) > team_permission_rank(best):
+                best = perm
+        return best
+    except Exception:
+        return ""
+
+
+async def _org_admin_of_linked_repo(env, node, repo, actor):
+    return await _org_linked_repo_permission(
+        env, node, repo, actor) == "admin"
+
+
+async def _repo_admin_allowed(env, actor, node, repo):
+    actor = str(actor or "").strip().lower()
+    node = str(node or "").strip().lower()
+    if not actor or not node or not repo:
+        return False
+    if await _account_owns_node(env, actor, node):
+        return True
+    return await _org_admin_of_linked_repo(env, node, repo, actor)
+
+
+async def repo_viewer_permission_handler(env, request, owner, repo):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control="no-store")
+    await ensure_schema(env)
+    actor = clean_string(
+        await _authed_account_name(env, request) or "",
+        MAX_NODE_NAME).strip().lower()
+    permission = ""
+    if actor:
+        if await _account_owns_node(env, actor, owner):
+            permission = "admin"
+        else:
+            permission = await _org_linked_repo_permission(
+                env, owner, repo, actor)
+    return json_response({
+        "ok": True,
+        "viewer": actor,
+        "permission": permission,
+        "viewerCanAdmin": permission == "admin",
+    }, cache_control="private, no-store")
+
+
 async def verify_org_push_token(env, pusher, owner, repo, ts, sig):
     # Org-team write gate for git push (issue #388): a member of an org team
     # with write+ permission on a linked repo may run receive-pack against it,
@@ -35852,9 +35908,7 @@ async def _authorize_repo_owner_web(env, request, owner, repo, data):
     the same trust gate as the About editor / ap-publish, with a distinct
     canonical so a signed token can't be replayed onto another endpoint."""
     actor = await _authed_account_name(env, request, data)
-    if actor and (
-            await _account_owns_node(env, actor, owner)
-            or await _org_owner_of_linked_repo(env, owner, repo, actor)):
+    if actor and await _repo_admin_allowed(env, actor, owner, repo):
         return True
     if data.get("ownerSig") and data.get("ts"):
         ts = str(data.get("ts", "") or "")
