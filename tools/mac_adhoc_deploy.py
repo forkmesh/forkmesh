@@ -54,6 +54,10 @@ FAILURE_HINTS = (
     (re.compile(r"\.swift:\d+:\d+: error:"),
      "Swift does not compile at this commit. Fix it on main (docs/native/MAC_BUILD.md, "
      "\"Swift rules the Mac archive enforces\") and run the shortcut again."),
+    (re.compile(r"compiler crash:"),
+     "The compiler crashed in both archive attempts. Run the shortcut again; if it crashes "
+     "again at this commit, change the code of the function the stack names "
+     "(docs/native/MAC_BUILD.md, \"Compiler crashes\")."),
     (re.compile(r"early EOF|index-pack failed|promisor remote|could not fetch"),
      "The Mac could not fetch the commit from the cores. Run the shortcut again; if it "
      "repeats, check the source publisher (docs/tools/source-publisher.md)."),

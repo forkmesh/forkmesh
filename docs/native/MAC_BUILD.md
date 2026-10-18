@@ -207,6 +207,7 @@ build on the Mac. It runs `tools/mac_adhoc_deploy.py --execute` (without
   `CoreSimulator/Volumes` mounts as before (about 7 s on the office Mac) and
   archives once more. A second failure stops the build with a `Fix:` to run
   again or reboot the Mac.
+- Compiler crashes: see the section below.
 - The same text goes to the admins as an operator Ping (`notify_failure`, key
   `mac-adhoc-failure`, `POST /api/accounts/admin-operator-alert` on the
   `MAC_BUILD_GIT_URL` host, signed with this desktop's node identity like
@@ -214,6 +215,27 @@ build on the Mac. It runs `tools/mac_adhoc_deploy.py --execute` (without
   the fix, the commit, the Mac, the Mac run folder, the log and
   `--status`. Stop, Ctrl-C, a cancelled run and a dry run send nothing; a Ping
   that cannot be sent is logged and does not change the exit code.
+
+### Compiler crashes
+
+The 2026-10-18 03:24 ad hoc build of `7feff82345c7` failed after 19 minutes
+because `swift-frontend` (Swift 6.3.3, Xcode 26.6) crashed while optimizing the
+whole-module `ForkMesh` compile: LLVM's `lower-expect` pass on the value
+witness of `AgentRunActionChip` (`AgentRunScreen.swift`) called a garbage
+address. That file had not changed since the 02:23 build of `390f439cc869`,
+which passed, and an unsigned archive of the same tree right after succeeded
+in 13 minutes: the crash does not repeat. A crash prints no `error:` line, so the step's "Every error"
+grep found nothing and the Ping showed only `!! Archive … failed`.
+
+- The signed archive step looks for the crash banner (`submit a bug report …
+  crash backtrace`, Swift's and Clang's), prints the stack's numbered lines
+  (`Apple Swift version`, `Running pass … on function …`), keeps the log as
+  `xcodebuild-archive-crash.log` and archives once more. The compilation cache
+  replays every other module, so the retry recompiles only the crashed one.
+- A failed archive (signed or unsigned) prints those lines as
+  `ERROR: compiler crash: …`, which the tool keeps as the cause, and
+  `FAILURE_HINTS` adds the fix: run again, and if the same commit crashes
+  again, rewrite the function the stack names.
 
 ## The macOS desktop shortcut
 
