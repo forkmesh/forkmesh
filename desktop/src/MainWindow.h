@@ -107,6 +107,7 @@
 #include "TimersFeature.h"
 
 namespace forkmesh::ui { class LogActivityLights; }
+namespace forkmesh::smb { class NetworkFilesPanel; }
 namespace forkmesh::ui { struct DiffHealthReport; }
 namespace forkmesh::ui { class SecretDiffBanner; }
 namespace forkmesh::ui { struct DiffFileMenuTarget; }
@@ -5910,6 +5911,7 @@ private:
     bool homeGridOnScreen() const;
     QVector<HomeGroup> homeGridGroups() const;
     QString homeGridTileDetail(const QString &key, QWidget *widget) const;
+    int repoOpenPullCount() const;
     QString homeGridHeadline() const;
     bool activateHomeGridTile(const QString &key);
     void showHomeGridSearch(const QString &typed = QString());
@@ -6030,6 +6032,18 @@ private:
     void showFilesRepoTree();
     void showFilesCoveTree();
     void showFilesDiskTree();
+    void showFilesNetworkTree();
+    QWidget *buildFilesNetworkPanel();
+    void openNetworkFileTab(const QString &url, const QString &title,
+                            const QString &text, bool editable);
+    void openNetworkShareLocation(const QString &url, bool guest);
+    void copyLocalFilesToClipboard(const QStringList &paths, bool move);
+    void pasteIntoLocalFolder(const QString &folder);
+    void createLocalEntry(const QString &folder, bool folderEntry);
+    void renameLocalEntry(const QString &path);
+    void trashLocalEntries(const QStringList &paths);
+    void uploadIntoLocalFolder(const QString &folder);
+    void showLocalEntryInfo(const QString &path);
     // Show or hide the byte-size column on both explorer trees; off by default.
     void setFilesSizeColumnVisible(bool on);
     void openLocalFileTab(const QString &path);
@@ -13269,6 +13283,8 @@ private:
     QStackedWidget *m_filesTreeStack = nullptr; // 0 filesystem, 1 repository, 2 coves
     QPushButton *m_filesRepoTreeButton = nullptr; // -> the repository's tree
     QPushButton *m_filesCoveTreeButton = nullptr; // -> encrypted Cove documents
+    QPushButton *m_filesNetworkTreeButton = nullptr;
+    forkmesh::smb::NetworkFilesPanel *m_networkFilesPanel = nullptr;
     QTreeWidget *m_fileExplorerTree = nullptr;
     QPlainTextEdit *m_fileExplorerPreview = nullptr;
     QLineEdit *m_fileExplorerPath = nullptr;

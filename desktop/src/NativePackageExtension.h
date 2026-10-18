@@ -76,6 +76,7 @@ struct NativePackageHost {
         openRepositoryFile;
     std::function<QList<NativePackageChatTarget>()> chatTargets;
     std::function<bool(const QString &, const QString &)> sendChatMessage;
+    std::function<void(const QString &, bool)> openNetworkShare;
 };
 
 struct NativePackagePromptTarget {

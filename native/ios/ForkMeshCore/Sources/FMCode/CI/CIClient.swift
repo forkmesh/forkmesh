@@ -119,4 +119,19 @@ extension ApiService: CIClient {
                 "author": .string(account),
             ])
     }
+
+    public func announcePost(
+        _ repo: RepoRef, title: String, body: String, account: String, identity: DeviceIdentity, nowMillis: Int64
+    ) async throws {
+        let ts = String(nowMillis)
+        let sig = identity.sign(Array(Utf8.encode(CIRequests.announceCanonical(account: account, ts: ts))))
+        _ = try await ciSend(
+            "POST", CIRequests.repoPath(repo, "ap-publish"),
+            query: [("owner", account), ("ts", ts), ("sig", sig)],
+            body: [
+                "kind": "discussion", "eventType": "open", "manual": true,
+                "title": .string(String(title.prefix(240))), "body": .string(String(body.prefix(4000))),
+                "author": .string(account),
+            ])
+    }
 }

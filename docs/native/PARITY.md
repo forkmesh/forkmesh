@@ -116,11 +116,14 @@ widgets, the share extension and Live Activities belong to
   `#8F5A0A`, `offline` `#5F6672` (`offlineOnLight`, light only).
   `textDisabled` stays 25%. Accents suit buttons and larger text, not small
   captions.
-- **Accents.** Twelve accents (blue, cyan, teal, green, lime, amber, orange,
-  red, pink, violet, purple, graphite), stored by name in `appearance/accent`;
-  unknown names fall back to blue. Light-mode accents are 600-700 shades under
-  white labels; dark-mode accents are 300-400 shades under the near-black
-  `onPrimary` label.
+- **Accents and themes.** Twelve accents (blue, cyan, teal, green, lime,
+  amber, orange, red, pink, violet, purple, graphite) or a custom colour,
+  stored by name in `appearance/accent`; unknown names fall back to blue.
+  Every preset clears 4.5:1 on `bgBase`, `bgRaised` and `bgOverlay` (the
+  default blue is `#0066CC` light, `#409CFF` dark since October 2026), under
+  white labels in light mode and the near-black `onPrimary` label in dark.
+  Surface families, the readable-colours rule, Shuffle and the per-colour
+  theme editor are in [THEMES.md](THEMES.md).
 - **Background image (iOS).** Downscaled to 2800 px, saved as JPEG in
   Application Support `wallpapers/`, named in `appearance/backgroundImage`;
   `appearance/backgroundDim` (0 to 90%, default 40%) lays `bgBase` over it.

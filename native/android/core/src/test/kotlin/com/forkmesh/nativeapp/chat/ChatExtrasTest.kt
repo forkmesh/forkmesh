@@ -275,6 +275,16 @@ class ChatExtrasTest {
         assertEq("Done", ReactionCatalog.label("check"))
     }
 
+    fun testReactionGroupsOfferEveryCatalogEmojiOnce() {
+        val all = ReactionCatalog.groups.flatMap { it.emoji }
+        expect(all.size >= 300, "the picker offers a few hundred reactions")
+        assertEq(all.size, all.map(ReactionCatalog::withoutVariationSelectors).toSet().size)
+        for (emoji in all) expect(emoji.codePointCount(0, emoji.length) in 1..16, emoji)
+        val bare = all.map(ReactionCatalog::withoutVariationSelectors).toSet()
+        for (entry in ReactionCatalog.entries) expect(ReactionCatalog.withoutVariationSelectors(entry.emoji) in bare, entry.value)
+        assertEq("love", ReactionCatalog.valueForEmoji(all.first { ReactionCatalog.withoutVariationSelectors(it) == "❤" }))
+    }
+
     fun testReplyTargetsResolveWithoutSwitching() {
         val (hub, relay) = hubWith()
         relay.peers.add(Member(id = "peer-9", name = "pat", online = true, owner = "pat", nodeName = "pat-laptop"))

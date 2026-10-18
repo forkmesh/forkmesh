@@ -205,7 +205,7 @@ object StatsCatalog {
         StatsTileCatalogEntry("desktopMemory", "Desktop memory", "Desktop", "Memory in use on your paired desktop", "sd_storage_outlined"),
         StatsTileCatalogEntry("agents", "Agents running", "Desktop", "Agents running and queued on your paired desktop", "auto_awesome"),
         StatsTileCatalogEntry("stalls", "Desktop stalls", "Desktop", "UI stalls your desktop recorded", "hourglass_empty"),
-    )
+    ) + LiveReleases.catalog + DesktopTiles.catalog
 
     val defaults: List<StatsTilePlacement> = listOf(
         StatsTilePlacement("nodes"), StatsTilePlacement("repos"),
@@ -213,7 +213,7 @@ object StatsCatalog {
         StatsTilePlacement("nodeHours", width = 2), StatsTilePlacement("agents"),
         StatsTilePlacement("desktopLoad"), StatsTilePlacement("hosts"),
         StatsTilePlacement("incidents"),
-    )
+    ) + LiveReleases.defaults + DesktopTiles.defaults
 
     fun entry(id: String): StatsTileCatalogEntry? = entries.firstOrNull { it.id == id }
 }
@@ -242,8 +242,20 @@ class StatsLayoutStore(private val store: PrefStore, private val scope: String =
         store.remove(key(LAYOUT_KEY))
     }
 
+    fun loadDesktopTiles(): Set<String> = store.getString(key(DESKTOP_TILES_KEY))
+        ?.let { runCatching { Json.parse(it) }.getOrNull() as? List<*> }
+        ?.map { it.toString() }
+        ?.filter { it in DesktopTiles.ids }
+        ?.toSet()
+        .orEmpty()
+
+    fun saveDesktopTiles(ids: Set<String>) {
+        store.putString(key(DESKTOP_TILES_KEY), Json.stringify(ids.sorted()))
+    }
+
     companion object {
         const val LAYOUT_KEY = "insights/stats/layout.v1"
         const val OFFERED_KEY = "insights/stats/offered.v1"
+        const val DESKTOP_TILES_KEY = "insights/stats/desktop-tiles.v1"
     }
 }

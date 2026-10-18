@@ -9,6 +9,8 @@ import UIKit
 @Observable
 final class EyeTracker: NSObject {
     static let shared: EyeTracker = EyeTracker()
+    static let scanSeconds: Double = 0.25
+    static let progressStep: Double = 0.04
 
     private(set) var running: Bool = false
     private(set) var faceVisible: Bool = false
@@ -17,7 +19,10 @@ final class EyeTracker: NSObject {
     private(set) var calibrating: Bool = false
     private(set) var calibrationTarget: EyePoint?
     private(set) var calibrationStep: Int = 0
+    private(set) var calibrationDotProgress: Double = 0
     private(set) var clicks: Int = 0
+    private(set) var accuracy: Double?
+    private(set) var learned: Int = 0
     var smoothing: EyeSmoothing = .defaultValue {
         didSet {
             engine.smoothing = smoothing
@@ -30,10 +35,26 @@ final class EyeTracker: NSObject {
             prefs?.set(blinkLength.rawValue, forKey: EyeControlPrefs.blinkLength)
         }
     }
+    var snapping: Bool = true {
+        didSet {
+            engine.snapping = snapping
+            if !snapping { engine.targets = [] }
+            scannedAt = -.infinity
+            prefs?.set(snapping, forKey: EyeControlPrefs.snapping)
+        }
+    }
+    var learning: Bool = true {
+        didSet {
+            engine.learning = learning
+            prefs?.set(learning, forKey: EyeControlPrefs.learning)
+        }
+    }
 
     @ObservationIgnored private var session: ARSession?
     @ObservationIgnored private var engine: EyeCursorEngine = EyeCursorEngine()
     @ObservationIgnored private var run: EyeCalibrationRun?
+    @ObservationIgnored private var live: EyeLiveCalibration = EyeLiveCalibration()
+    @ObservationIgnored private var scannedAt: Double = -.infinity
     @ObservationIgnored private let overlay: EyeCursorOverlay = EyeCursorOverlay()
     @ObservationIgnored private var orientation: UIInterfaceOrientation = .portrait
     @ObservationIgnored private var idleBefore: Bool = false
@@ -45,9 +66,12 @@ final class EyeTracker: NSObject {
         if let prefs = Services.get(KeyValueStore.self) {
             smoothing = EyeSmoothing.of(prefs.string(forKey: EyeControlPrefs.smoothing))
             blinkLength = EyeBlinkLength.of(prefs.string(forKey: EyeControlPrefs.blinkLength))
-            let saved: EyeCalibration? = EyeCalibration.decode(prefs.string(forKey: EyeControlPrefs.calibration))
-            calibrated = saved != nil
-            engine = EyeCursorEngine(calibration: saved ?? .identity, smoothing: smoothing, blinkLength: blinkLength)
+            snapping = prefs.bool(forKey: EyeControlPrefs.snapping) ?? true
+            learning = prefs.bool(forKey: EyeControlPrefs.learning) ?? true
+            engine = EyeCursorEngine(smoothing: smoothing, blinkLength: blinkLength)
+            engine.snapping = snapping
+            engine.learning = learning
+            adopt(EyeLiveCalibration.decode(prefs.string(forKey: EyeControlPrefs.calibration)) ?? EyeLiveCalibration(), save: false)
         }
     }
 
@@ -97,6 +121,7 @@ final class EyeTracker: NSObject {
         run = EyeCalibrationRun(screen: screen)
         calibrating = true
         calibrationStep = 0
+        calibrationDotProgress = 0
         calibrationTarget = run?.target
         overlay.setCursorHidden(true)
     }
@@ -106,9 +131,28 @@ final class EyeTracker: NSObject {
     }
 
     func resetCalibration() {
-        engine.calibration = .identity
-        calibrated = false
+        adopt(EyeLiveCalibration(), save: false)
         prefs?.remove(EyeControlPrefs.calibration)
+    }
+
+    private func adopt(_ next: EyeLiveCalibration, save: Bool) {
+        live = next
+        engine.calibration = next.calibration
+        engine.accuracy = next.error
+        calibrated = next.calibrated
+        accuracy = next.error
+        learned = next.live.count
+        if save { prefs?.set(next.encoded, forKey: EyeControlPrefs.calibration) }
+    }
+
+    private func absorb(_ samples: [EyeCalibrationSample]) {
+        guard learning, !samples.isEmpty else { return }
+        var next: EyeLiveCalibration = live
+        var changed: Bool = false
+        for sample in samples {
+            if next.learn(sample) { changed = true }
+        }
+        if changed { adopt(next, save: true) }
     }
 
     private func endCalibration() {
@@ -160,7 +204,7 @@ final class EyeTracker: NSObject {
         let screen: EyeScreen = currentScreen()
         guard let face, face.isTracked else {
             if faceVisible { faceVisible = false }
-            overlay.update(cursor: engine.cursor, closing: false, tracked: false)
+            overlay.update(cursor: engine.display, target: nil, confidence: 0, closing: false, tracked: false)
             return
         }
         if !faceVisible { faceVisible = true }
@@ -176,25 +220,31 @@ final class EyeTracker: NSObject {
             if current.index != calibrationStep {
                 calibrationStep = current.index
                 calibrationTarget = current.target
+                calibrationDotProgress = 0
+            } else if abs(current.dotProgress - calibrationDotProgress) >= Self.progressStep || (current.dotProgress >= 1 && calibrationDotProgress < 1) {
+                calibrationDotProgress = current.dotProgress
             }
             if current.finished { finishCalibration(current) }
             return
         }
         let left: Double = face.blendShapes[.eyeBlinkLeft]?.doubleValue ?? 0
         let right: Double = face.blendShapes[.eyeBlinkRight]?.doubleValue ?? 0
+        if snapping, time - scannedAt >= Self.scanSeconds {
+            scannedAt = time
+            engine.targets = EyeClicker.targets() + [overlay.stopTarget()].compactMap { $0 }
+        }
         let event: EyeCursorEvent? = engine.update(time: time, raw: raw, blinkLeft: left, blinkRight: right, screen: screen)
-        overlay.update(cursor: engine.cursor, closing: engine.frozen, tracked: raw != nil)
+        absorb(engine.takeSamples())
+        overlay.update(cursor: engine.display, target: engine.snapped, confidence: engine.confidence, closing: engine.frozen, tracked: raw != nil)
         if case .click(let point)? = event {
             click(at: CGPoint(x: point.x, y: point.y))
         }
     }
 
     private func finishCalibration(_ finished: EyeCalibrationRun) {
-        if let fitted = finished.calibration {
-            engine.calibration = fitted
+        if let fitted = finished.live {
+            adopt(fitted, save: true)
             engine.reset()
-            calibrated = true
-            prefs?.set(fitted.encoded, forKey: EyeControlPrefs.calibration)
             FmHaptics.success()
         } else {
             problem = "Calibration didn't see your eyes on enough dots. Hold the phone at reading distance with your face in view, then try again."
@@ -253,9 +303,13 @@ final class EyePassthroughWindow: UIWindow {
 @MainActor
 final class EyeCursorOverlay {
     static let cursorSize: CGFloat = 30
+    static let highlightPadding: CGFloat = 4
+    static let highlightRadius: CGFloat = 12
 
     private var window: EyePassthroughWindow?
     private let cursor: UIView = UIView()
+    private let highlight: UIView = UIView()
+    private var highlighted: EyeTarget?
     private let stopButton: UIButton = UIButton(type: .system)
     private var cursorHidden: Bool = false
 
@@ -267,6 +321,13 @@ final class EyeCursorOverlay {
         let root: UIViewController = UIViewController()
         root.view.backgroundColor = .clear
         window.rootViewController = root
+
+        highlight.layer.borderWidth = 2.5
+        highlight.layer.borderColor = UIColor.systemBlue.cgColor
+        highlight.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.12)
+        highlight.isUserInteractionEnabled = false
+        highlight.alpha = 0
+        root.view.addSubview(highlight)
 
         cursor.frame = CGRect(x: 0, y: 0, width: Self.cursorSize, height: Self.cursorSize)
         cursor.layer.cornerRadius = Self.cursorSize / 2
@@ -308,24 +369,75 @@ final class EyeCursorOverlay {
         window?.rootViewController = nil
         window = nil
         cursor.removeFromSuperview()
+        highlight.removeFromSuperview()
+        highlighted = nil
         stopButton.removeFromSuperview()
     }
 
     func setCursorHidden(_ hidden: Bool) {
         cursorHidden = hidden
         cursor.isHidden = hidden
+        highlight.isHidden = hidden
         stopButton.isHidden = hidden
     }
 
-    func update(cursor point: EyePoint?, closing: Bool, tracked: Bool) {
+    func update(cursor point: EyePoint?, target: EyeTarget?, confidence: Double, closing: Bool, tracked: Bool) {
         guard !cursorHidden, let point else {
             cursor.alpha = 0
+            show(target: nil, confidence: 0, closing: false)
             return
         }
         cursor.center = CGPoint(x: point.x, y: point.y)
         cursor.alpha = tracked ? 1 : 0.35
-        cursor.transform = closing ? CGAffineTransform(scaleX: 0.6, y: 0.6) : .identity
+        let scale: CGFloat = closing ? 0.6 : (target == nil ? 1 : 0.75)
+        cursor.transform = CGAffineTransform(scaleX: scale, y: scale)
         cursor.backgroundColor = UIColor.systemBlue.withAlphaComponent(closing ? 0.7 : 0.18)
+        show(target: tracked ? target : nil, confidence: confidence, closing: closing)
+    }
+
+    func stopTarget() -> EyeTarget? {
+        guard let root = window?.rootViewController?.view, !stopButton.isHidden else { return nil }
+        let frame: CGRect = stopButton.convert(stopButton.bounds, to: root)
+        return EyeTarget(id: -1, frame: EyeRect(x: Double(frame.minX), y: Double(frame.minY), width: Double(frame.width), height: Double(frame.height)))
+    }
+
+    private func show(target: EyeTarget?, confidence: Double, closing: Bool) {
+        guard let target else {
+            if highlighted != nil {
+                highlighted = nil
+                UIView.animate(withDuration: 0.15, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                    self.highlight.alpha = 0
+                }
+            }
+            return
+        }
+        let frame: CGRect = CGRect(x: target.frame.x, y: target.frame.y, width: target.frame.width, height: target.frame.height)
+            .insetBy(dx: -Self.highlightPadding, dy: -Self.highlightPadding)
+        let alpha: CGFloat = closing ? 1 : CGFloat(0.5 + 0.5 * min(max(confidence, 0), 1))
+        highlight.layer.cornerRadius = min(Self.highlightRadius, frame.height / 2)
+        highlight.backgroundColor = UIColor.systemBlue.withAlphaComponent(closing ? 0.28 : 0.12)
+        if highlighted == nil {
+            highlight.layer.removeAllAnimations()
+            place(frame)
+            highlight.transform = CGAffineTransform(scaleX: 1.08, y: 1.08)
+            UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) {
+                self.highlight.transform = .identity
+                self.highlight.alpha = alpha
+            }
+        } else if highlighted?.frame != target.frame {
+            UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseOut]) {
+                self.place(frame)
+                self.highlight.alpha = alpha
+            }
+        } else {
+            highlight.alpha = alpha
+        }
+        highlighted = target
+    }
+
+    private func place(_ frame: CGRect) {
+        highlight.bounds = CGRect(origin: .zero, size: frame.size)
+        highlight.center = CGPoint(x: frame.midX, y: frame.midY)
     }
 
     func stopContains(_ point: CGPoint) -> Bool {

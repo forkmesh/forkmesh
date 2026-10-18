@@ -133,6 +133,7 @@ public enum QuickLaunchOutcome: Equatable, Sendable {
     case needsFix(QuickLaunchFix, message: String)
     /// Not sent; the relay or the network said why.
     case failed(String)
+    case done(String)
 }
 
 @MainActor
@@ -205,6 +206,7 @@ public final class QuickAgentLauncher {
     @ObservationIgnored public var attachmentStore: AgentAttachmentStore = .shared
     @ObservationIgnored public var sentPhotos: AgentSentPhotos = .shared
     @ObservationIgnored public var desktop: QuickLaunchDesktop?
+    @ObservationIgnored public var actions: QuickPromptActions?
 
     /// Where the next send goes; nil until known, or when nowhere can take it.
     public private(set) var destination: QuickLaunchDestination?
@@ -215,6 +217,12 @@ public final class QuickAgentLauncher {
     /// Loading the repositories or asking the relay about one.
     public private(set) var preparing = false
     @ObservationIgnored private var prepared = false
+    public private(set) var chosenAction: QuickPromptAction?
+    public private(set) var actionChosen: Bool
+    public private(set) var defaultsToBugReport = false
+    public private(set) var taskPeople: QuickTaskPeople?
+    public private(set) var taskAssignee: String
+    public private(set) var loadingTaskPeople = false
 
     public init(form: AgentStartModel, prefs: KeyValueStore?, account: @escaping () -> String = { "" }) {
         self.form = form
@@ -224,6 +232,67 @@ public final class QuickAgentLauncher {
         self.model = NodeModelPreference.read(prefs)
         self.mode = AgentPermissionMode.read(prefs)
         self.runOptions = QuickLaunchRunOptions.read(prefs)
+        let storedAction = prefs?.string(forKey: QuickPromptAction.storeKey)
+        self.actionChosen = storedAction != nil
+        self.chosenAction = storedAction.flatMap { QuickPromptAction(rawValue: $0) }
+        self.taskAssignee = prefs?.string(forKey: QuickPromptAction.assigneeKey) ?? ""
+    }
+
+    public var action: QuickPromptAction? {
+        guard actions != nil else { return nil }
+        if actionChosen { return chosenAction }
+        return defaultsToBugReport ? .bugReport : nil
+    }
+
+    public var chip: AgentModelChoice { action?.choice ?? model }
+
+    public var hasAgent: Bool {
+        if !form.signedIn { return false }
+        switch destination {
+        case .none: return false
+        case .some(.device):
+            return model.runsOnDevice ? form.onDeviceGemmaReadiness.isReady : form.deviceCredentials != nil
+        case .some(.node), .some(.desktop): return true
+        }
+    }
+
+    func settleDefault() {
+        if form.plan?.loading ?? false { return }
+        defaultsToBugReport = !hasAgent
+    }
+
+    public func choose(action: QuickPromptAction) {
+        rememberAction(action)
+        if action == .task && taskPeople == nil {
+            Task { await loadTaskPeople() }
+        }
+    }
+
+    private func rememberAction(_ action: QuickPromptAction?) {
+        chosenAction = action
+        actionChosen = true
+        prefs?.set(action?.rawValue ?? "", forKey: QuickPromptAction.storeKey)
+    }
+
+    public func loadTaskPeople() async {
+        guard let actions, !loadingTaskPeople else { return }
+        loadingTaskPeople = true
+        defer { loadingTaskPeople = false }
+        if let people = try? await actions.taskPeople() {
+            taskPeople = people
+        }
+    }
+
+    public var taskAssignees: [String] { [""] + (taskPeople?.names ?? (taskAssignee.isEmpty ? [] : [taskAssignee])) }
+
+    public func taskAssigneeLabel(_ name: String) -> String {
+        if name.isEmpty { return "Unassigned" }
+        return name == taskPeople?.actor ? "@\(name) (you)" : "@\(name)"
+    }
+
+    public func choose(assignee: String) {
+        taskAssignee = assignee
+        prefs?.set(assignee, forKey: QuickPromptAction.assigneeKey)
     }
 
     // MARK: Context
@@ -232,6 +301,15 @@ public final class QuickAgentLauncher {
 
     /// "owner/repo · mirror35", for the line on the composer.
     public var contextLine: String {
+        switch action {
+        case .some(.bugReport): return "Bug report · ForkMesh team"
+        case .some(.task): return "Task for \(taskAssigneeLabel(taskAssignee))"
+        case .some(.note): return "Note · your account"
+        case .some(.issue), .some(.activityPub):
+            if form.targets == nil || (preparing && repository == nil) { return "Finding a repository…" }
+            return repository?.label ?? "Choose a repository"
+        case .none: break
+        }
         if form.targets == nil || (preparing && repository == nil) { return "Finding a repository…" }
         guard let target = repository else { return "Choose a repository" }
         if form.plan?.loading ?? false { return "\(target.label) · checking…" }
@@ -282,7 +360,7 @@ public final class QuickAgentLauncher {
 
     /// The models the chip offers.
     public var modelChoices: [AgentModelChoice] {
-        form.nodeModelChoices + (form.offersOnDeviceGemma ? [AgentModelCatalog.onDeviceGemma] : [])
+        (actions == nil ? [] : QuickPromptAction.allCases.map(\.choice)) + form.nodeModelChoices + (form.offersOnDeviceGemma ? [AgentModelCatalog.onDeviceGemma] : [])
     }
 
     /// Load the repositories once and settle the defaults. `currentRepo` is
@@ -306,6 +384,8 @@ public final class QuickAgentLauncher {
             await form.refreshOptions()
         }
         destination = resolveDestination()
+        settleDefault()
+        if action == .task && taskPeople == nil { await loadTaskPeople() }
     }
 
     public static let optionsFreshFor: TimeInterval = 15
@@ -319,6 +399,7 @@ public final class QuickAgentLauncher {
         default: kept = true
         }
         if !kept { destination = resolveDestination() }
+        settleDefault()
     }
 
     static func mostRecent(_ targets: [AgentStartTarget], account: String) -> AgentStartTarget? {
@@ -343,6 +424,7 @@ public final class QuickAgentLauncher {
         memory.remember(repoKey: target.key)
         await form.selectTarget(target)
         destination = resolveDestination()
+        settleDefault()
     }
 
     public var baseBranches: [String] { form.branchOptions }
@@ -350,6 +432,7 @@ public final class QuickAgentLauncher {
     public var baseBranch: String { form.baseBranchLabel }
 
     public var offersBaseBranch: Bool {
+        if action != nil { return false }
         if case .some(.node) = destination { return form.branchOptions.count > 1 }
         return false
     }
@@ -362,6 +445,7 @@ public final class QuickAgentLauncher {
     public func choose(_ destination: QuickLaunchDestination) {
         self.destination = destination
         if let key = repository?.key { memory.remember(repoKey: key, destination: destination) }
+        settleDefault()
     }
 
     public func prefer(_ destination: QuickLaunchDestination) {
@@ -371,6 +455,11 @@ public final class QuickAgentLauncher {
     /// The chip chose a model; a node that cannot run its provider is
     /// reconsidered.
     public func choose(model: AgentModelChoice) {
+        if let action = QuickPromptAction(choice: model) {
+            choose(action: action)
+            return
+        }
+        rememberAction(nil)
         let wasOnDevice = self.model.runsOnDevice
         self.model = model
         NodeModelPreference.write(model, to: prefs)
@@ -387,6 +476,7 @@ public final class QuickAgentLauncher {
     }
 
     public var takesMode: Bool {
+        if action != nil { return false }
         if case .some(.desktop) = destination { return AgentPermissionMode.providerTakesMode(model.provider) }
         return false
     }
@@ -397,6 +487,7 @@ public final class QuickAgentLauncher {
     }
 
     public var takesRunOptions: Bool {
+        if action != nil { return false }
         if case .some(.desktop) = destination { return true }
         return false
     }
@@ -418,6 +509,7 @@ public final class QuickAgentLauncher {
     public func credentialsChanged() {
         form.reloadCredentials()
         if destination == nil { destination = resolveDestination() }
+        settleDefault()
     }
 
     /// The default for the chosen repository (see the header).
@@ -450,6 +542,55 @@ public final class QuickAgentLauncher {
     /// Start the run now. On anything but success the caller keeps the text.
     public func send(prompt: String, images: [PromptAttachment]) async -> QuickLaunchOutcome {
         if prompt.dartTrimmed.isEmpty && images.isEmpty { return .ignored }
+        if action == nil && (!prepared || form.targetsNeedLoading) { await prepare() }
+        if let action { return await send(action, prompt: prompt, images: images) }
+        return await sendAgent(prompt: prompt, images: images)
+    }
+
+    private func send(_ action: QuickPromptAction, prompt: String, images: [PromptAttachment]) async -> QuickLaunchOutcome {
+        guard let actions else { return .failed("\(action.label) is unavailable in this build.") }
+        let text = prompt.dartTrimmed
+        if text.isEmpty {
+            return .failed(action == .bugReport ? "Describe what went wrong." : "Type something first.")
+        }
+        if !action.takesPhotos && !images.isEmpty {
+            return .failed("\(action.label) cannot include photos yet. Remove them, or send a bug report.")
+        }
+        if action.needsAccount && !form.signedIn {
+            return .needsFix(.signInAccount, message: "Sign in to use \(action.label).")
+        }
+        let parts = QuickPromptAction.titleAndBody(text)
+        do {
+            switch action {
+            case .bugReport:
+                try await actions.reportBug(text, photos: images)
+                return .done("Sent to the ForkMesh team as a bug report.")
+            case .task:
+                let repo = repository.map { "\($0.owner)/\($0.name)" } ?? ""
+                try await actions.createTask(title: parts.title, details: text, assignee: taskAssignee, repository: repo)
+                return .done(taskAssignee.isEmpty ? "Created an unassigned task on General." : "Created a task for @\(taskAssignee).")
+            case .note:
+                try await actions.takeNote(title: parts.title, markdown: parts.body)
+                return .done("Saved as a note.")
+            case .issue, .activityPub:
+                if !prepared || form.targetsNeedLoading { await prepare() }
+                guard let repo = repository?.repo else {
+                    return .needsFix(.chooseRepository, message: "Choose a published repository for \(action.label).")
+                }
+                if action == .issue {
+                    try await actions.createIssue(owner: repo.owner, name: repo.name, title: parts.title, body: parts.body)
+                    return .done("Filed an issue on \(repo.owner)/\(repo.name).")
+                }
+                try await actions.postToActivityPub(
+                    owner: repo.owner, name: repo.name, title: String(parts.title.prefix(240)), body: String(parts.body.prefix(4000)))
+                return .done("Published to ActivityPub for \(repo.owner)/\(repo.name).")
+            }
+        } catch {
+            return .failed((error as? QuickActionError)?.message ?? "\(action.label) did not go through. Try again.")
+        }
+    }
+
+    private func sendAgent(prompt: String, images: [PromptAttachment]) async -> QuickLaunchOutcome {
         if !prepared || form.targetsNeedLoading { await prepare() }
         if !form.signedIn {
             return .needsFix(.signInAccount, message: "Sign in and the prompt goes straight to a mirror of the repository.")
@@ -561,7 +702,7 @@ public final class QuickAgentLauncher {
                 return .failed("Agents for \(repository?.label ?? "this repository") run on your iPhone. Start this one there.")
             }
         }
-        return await send(prompt: prompt, images: [])
+        return await sendAgent(prompt: prompt, images: [])
     }
 
     static func named(_ targets: [AgentStartTarget], _ wanted: String) -> AgentStartTarget? {

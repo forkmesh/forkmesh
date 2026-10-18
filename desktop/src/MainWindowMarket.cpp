@@ -3238,6 +3238,9 @@ void MainWindow::syncNativePackagePages()
                        m_officeChannelMirror->sendMessage(conversation, text);
             };
         }
+        host.openNetworkShare = [this](const QString &url, bool guest) {
+            openNetworkShareLocation(url, guest);
+        };
         if (permissionIds.contains(QStringLiteral("repository.read"))) {
             host.repositories = [this] { return nativePackageRepositories(); };
             host.currentRepository = [this] { return currentNativePackageRepository(); };

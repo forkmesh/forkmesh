@@ -727,6 +727,8 @@ object OpenWrtModel {
         return "/mnt/" + name.ifEmpty { block.name }
     }
 
+    val networkSharePackages = listOf("ksmbd-server", "luci-app-ksmbd")
+
     val usbStoragePackages = listOf("kmod-usb-storage", "kmod-usb-storage-uas", "block-mount", "kmod-fs-ext4", "kmod-fs-vfat", "kmod-fs-exfat")
 
     const val FSTAB_PATH = "/etc/config/fstab"

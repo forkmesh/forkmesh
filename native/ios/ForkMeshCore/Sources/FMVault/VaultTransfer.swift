@@ -188,9 +188,9 @@ public enum VaultTransfer {
         let names = Set(header.map(normalized))
         if names.contains("login_uri") || names.contains("login_password") { return .bitwarden }
         if names.contains("httprealm") || names.contains("formactionorigin") || names.contains("guid") { return .firefox }
+        if names.contains("archived") || names.contains("one-time password") { return .onePassword }
         if names.contains("otpauth") { return .applePasswords }
         if names.isSuperset(of: ["name", "url", "username", "password", "note"]) { return .chrome }
-        if names.contains("archived") || names.contains("one-time password") { return .onePassword }
         if names.isSuperset(of: ["title", "url", "username", "password", "notes"]) { return .duckDuckGo }
         return .other
     }
