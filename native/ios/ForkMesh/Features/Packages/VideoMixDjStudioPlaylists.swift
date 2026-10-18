@@ -1,0 +1,155 @@
+import FMPackages
+import Foundation
+
+extension DjStudioModel {
+    func song(_ id: String) -> DjTrack {
+        if let track = crate.track(id) { return track }
+        if let played = library.first(where: { $0.id == id }) { return DjTrack(id: id, title: played.title, author: played.author) }
+        if let item = history.first(where: { $0.id == id }) { return DjTrack(id: id, title: item.title, author: item.author) }
+        if let deck = [a, b].first(where: { $0.videoId == id }) { return DjTrack(id: id, title: deck.title, author: deck.author) }
+        if let item = shownQueue.first(where: { $0.videoId == id }) { return DjTrack(id: id, title: item.title, author: item.author) }
+        if let result = searchResults.first(where: { $0.id == id }) { return DjTrack(id: id, title: result.title, author: result.author) }
+        return DjTrack(id: id)
+    }
+
+    var librarySongs: [DjTrack] {
+        let kept = Dictionary(crate.tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let played = Set(library.map(\.id))
+        return library.map { kept[$0.id] ?? DjTrack(id: $0.id, title: $0.title, author: $0.author) }
+            + crate.tracks.filter { !played.contains($0.id) }.reversed()
+    }
+
+    func editSong(_ id: String) {
+        guard DjStudio.isVideoId(id) else { return }
+        sheet = .song(id)
+    }
+
+    func addTags(_ raw: String, to id: String) {
+        let known = song(id)
+        guard !DjCrate.tagNames(raw).isEmpty else { return }
+        guard crate.tag(id, raw, title: known.title, author: known.author) else {
+            show("The library is full: remove a song to tag another.")
+            return
+        }
+        saveCrate()
+    }
+
+    func toggleTag(_ name: String, on id: String) {
+        if crate.track(id)?.tags.contains(name) == true {
+            crate.untag(id, name)
+            saveCrate()
+        } else {
+            addTags(name, to: id)
+        }
+    }
+
+    func renameTag(_ old: String, to raw: String) {
+        guard crate.renameTag(old, to: raw) else { return }
+        saveCrate()
+    }
+
+    func deleteTag(_ name: String) {
+        crate.deleteTag(name)
+        saveCrate()
+        show("Removed the #\(name) tag.")
+    }
+
+    func inPlaylist(_ id: String, _ playlist: String) -> Bool {
+        crate.playlist(playlist)?.songs.contains(id) == true
+    }
+
+    func toggle(_ id: String, in playlist: String) {
+        guard let list = crate.playlist(playlist) else { return }
+        if list.songs.contains(id) {
+            crate.remove(id, from: playlist)
+            show("Removed from \(list.name).")
+        } else if crate.add([song(id)], to: playlist) > 0 {
+            show("Added to \(list.name).")
+        } else {
+            show(list.songs.count >= DjCrate.playlistSongLimit ? "\(list.name) is full." : "The library is full: remove a song first.")
+        }
+        saveCrate()
+    }
+
+    @discardableResult
+    func newPlaylist(_ name: String, with ids: [String] = []) -> String? {
+        guard let id = crate.createPlaylist(name) else {
+            show("You already have \(DjCrate.playlistLimit) playlists.")
+            return nil
+        }
+        crate.add(ids.map { song($0) }, to: id)
+        saveCrate()
+        show("Created \(crate.label(.playlist(id))).")
+        return id
+    }
+
+    func renamePlaylist(_ id: String, _ name: String) {
+        crate.renamePlaylist(id, name)
+        saveCrate()
+    }
+
+    func deletePlaylist(_ id: String) {
+        let name = crate.label(.playlist(id))
+        crate.deletePlaylist(id)
+        saveCrate()
+        show("Deleted \(name).")
+    }
+
+    func removeSongs(_ offsets: IndexSet, from playlist: String) {
+        crate.removeSongs(at: offsets, from: playlist)
+        saveCrate()
+    }
+
+    func moveSongs(in playlist: String, from offsets: IndexSet, to destination: Int) {
+        crate.moveSongs(in: playlist, from: offsets, to: destination)
+        saveCrate()
+    }
+
+    func removeSong(_ id: String) {
+        crate.removeTrack(id)
+        saveCrate()
+        forgetPlayed(id)
+    }
+
+    func addLink(_ text: String, to playlist: String) -> Bool {
+        let id = DjStudio.videoId(text)
+        guard !id.isEmpty else { return false }
+        if !inPlaylist(id, playlist) { toggle(id, in: playlist) }
+        return true
+    }
+
+    func setShuffle(_ on: Bool) {
+        crate.shuffle = on
+        saveCrate()
+    }
+
+    func focusAutomix(_ focus: DjFocus, start: Bool) {
+        crate.setFocus(focus)
+        saveCrate()
+        if start, !automixOn { setAutomix(true) }
+        refocusAutomix()
+        let label = crate.focus == .everything ? "everything you have played and saved" : crate.label(crate.focus) + (crate.shuffle ? ", shuffled" : " in order")
+        show(automixOn ? "AUTOMIX plays \(label)." : "AUTOMIX will play \(label).")
+    }
+
+    func queueAll(_ focus: DjFocus, shuffled: Bool) {
+        var songs = crate.songs(focus)
+        if shuffled { songs.shuffle() }
+        enqueueAll(songs)
+    }
+
+    func loadTrack(_ track: DjTrack, on side: DjDeckSide) {
+        load(side, id: track.id, title: track.title, author: track.author)
+        sheet = nil
+    }
+
+    func importData(_ data: Data, name: String) {
+        guard let found = DjCrate.parse(data) else {
+            show("No YouTube songs were found to import.")
+            return
+        }
+        let report = crate.merge(found, name: name.isEmpty ? "Imported" : name)
+        saveCrate()
+        show(report.summary)
+    }
+}

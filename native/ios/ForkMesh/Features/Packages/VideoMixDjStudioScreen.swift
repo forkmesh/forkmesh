@@ -74,7 +74,7 @@ struct DjStudioView: View {
         .confirmationDialog("Reset everything?", isPresented: $model.confirmingReset, titleVisibility: .visible) {
             Button("Reset All", role: .destructive) { model.resetAll() }
         } message: {
-            Text("Stops and unloads both decks, and clears cues, loops, tempo, BPM, levels, the crossfader and sampler sections. Recently Played is kept.")
+            Text("Stops and unloads both decks, and clears cues, loops, tempo, BPM, levels, the crossfader and sampler sections. Recently Played, playlists and tags are kept.")
         }
         .statusBarHidden(false)
         .persistentSystemOverlays(.hidden)
@@ -266,6 +266,7 @@ struct DjUtilityRow: View {
         HStack(spacing: 14 * u) {
             DjInfoButton(model: model, size: 28 * u)
             DjPadsButton(model: model, size: 26 * u)
+            DjCrateButton(model: model, size: 26 * u)
             DjAutomixButton(model: model, u: u)
                 .fixedSize()
             DjReactButton(model: model, size: 26 * u)

@@ -37,6 +37,34 @@ extension DjStudioModel {
         save()
     }
 
+    func enqueueAll(_ songs: [DjTrack]) {
+        guard !songs.isEmpty else {
+            show("There are no songs to queue.")
+            return
+        }
+        if let jam, jam.joined {
+            let room = max(0, DjStudio.queueLimit - jam.queue.count)
+            let picked = Array(songs.prefix(room))
+            show(picked.isEmpty ? "The jam queue is full." : "Queueing \(picked.count) songs for the jam.")
+            Task {
+                for song in picked {
+                    let reply = await jamRequest("POST", "/jams/\(jam.id)/queue", [
+                        "videoId": .string(song.id), "title": .string(song.title), "author": .string(song.author),
+                    ])
+                    receive(reply)
+                    if reply == nil { break }
+                }
+            }
+            return
+        }
+        let room = max(0, DjStudio.queueLimit - queue.count)
+        let added = songs.prefix(room).map { DjQueueItem(id: UUID().uuidString, videoId: $0.id, title: $0.title, author: $0.author) }
+        queue += added
+        show(added.isEmpty ? "The queue is full. Play or remove a video first."
+            : added.count < songs.count ? "Queued \(added.count) songs: the queue is full." : added.count == 1 ? "Queued 1 song." : "Queued \(added.count) songs.")
+        save()
+    }
+
     func playFromQueue(_ item: DjQueueItem, on side: DjDeckSide) {
         load(side, id: item.videoId, title: item.title, author: item.author)
         removeFromQueue(item)

@@ -151,6 +151,7 @@ struct DjQueueThumb: View {
             .confirmationDialog(item.title.isEmpty ? "YouTube video" : item.title, isPresented: $choosing, titleVisibility: .visible) {
                 Button("Load on Deck A") { model.playFromQueue(item, on: .a) }
                 Button("Load on Deck B") { model.playFromQueue(item, on: .b) }
+                Button("Tags and Playlists…") { model.editSong(item.videoId) }
                 Button("Remove from Queue", role: .destructive) { model.removeFromQueue(item) }
             } message: {
                 Text("Or hold the thumbnail and drag it onto a deck.")

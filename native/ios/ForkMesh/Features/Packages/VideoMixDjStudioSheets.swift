@@ -15,6 +15,8 @@ struct DjSheetView: View {
                 case .pads: DjPadsSheet(model: model)
                 case .info: DjInfoSheet(model: model)
                 case .jam: DjJamSheet(model: model)
+                case .crate: DjCrateSheet(model: model)
+                case let .song(id): DjSongEditor(model: model, id: id)
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -24,7 +26,7 @@ struct DjSheetView: View {
                 }
             }
         }
-        .presentationDetents(sheet == .pads ? [.medium] : [.medium, .large])
+        .presentationDetents(sheet == .pads ? [.medium] : sheet == .crate ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(.regularMaterial)
         .preferredColorScheme(.dark)
@@ -146,6 +148,10 @@ struct DjLoadSheet: View {
                 ?? model.shownQueue.contains { $0.videoId == result.id }, plays: plays)
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            DjPlaylistMenu(model: model, id: result.id)
+            Button("Tags and Playlists…", systemImage: "tag") { model.editSong(result.id) }
+        }
     }
 }
 
@@ -232,6 +238,9 @@ struct DjDeckSheet: View {
             .disabled(!deck.loaded)
             Section {
                 Button("Load another video") { model.openLoad(deck.side) }
+                if deck.loaded {
+                    Button("Tags and Playlists…") { model.editSong(deck.videoId) }
+                }
                 if deck.loaded {
                     Button("Eject Deck \(deck.side.label)", role: .destructive) {
                         model.eject(deck.side)
@@ -358,8 +367,9 @@ struct DjInfoSheet: View {
                 Label("Push the tempo fader up to speed a deck up; double-tap it to reset.", systemImage: "slider.vertical.3")
                 Label("Tap the BPM box on the beat, then press SYNC.", systemImage: "metronome")
                 Label("Hold − or + to nudge a deck’s tempo.", systemImage: "plusminus")
-                Label("AUTOMIX on plays the queue, then songs you have played, one after another with an 8-second crossfade; hold it to mix to the other deck now.", systemImage: "arrow.left.arrow.right")
+                Label("AUTOMIX on plays the queue, then songs you have played (or the playlist or tag chosen in Playlists), one after another with an 8-second crossfade; hold it to mix to the other deck now.", systemImage: "arrow.left.arrow.right")
                 Label("Shake the phone to mix into the next song.", systemImage: "iphone.radiowaves.left.and.right")
+                Label("Playlists (the list button) keeps playlists and tagged songs, exports and imports them, and chooses what AUTOMIX plays: everything, one playlist or one tag. Hold a song in the loader to tag it or add it to a playlist.", systemImage: "music.note.list")
                 Label("Back closes the studio; playing decks keep going and show in the top bar.", systemImage: "chevron.left")
                 Label("Reset All (the circular arrow at the bottom) unloads both decks and puts every setting back to the start.", systemImage: "arrow.counterclockwise")
             }

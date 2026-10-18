@@ -754,7 +754,7 @@ struct DjAutomixButton: View {
             model.automix()
         } label: {
             HStack(spacing: 6 * u) {
-                Image(systemName: model.automixing ? "arrow.left.arrow.right" : "shuffle")
+                Image(systemName: model.automixing ? "arrow.left.arrow.right" : model.crate.focus != .everything ? "scope" : "shuffle")
                     .font(.system(size: 12 * u, weight: .bold))
                     .frame(width: 14 * u)
                 Text("AUTOMIX")
@@ -779,12 +779,24 @@ struct DjAutomixButton: View {
         .buttonStyle(DjPressStyle())
         .contextMenu {
             Button(model.automixing ? "Stop the Fade" : "Mix to the Other Deck Now", systemImage: "arrow.left.arrow.right") { model.mixNow() }
+            Menu {
+                Button("Everything") { model.focusAutomix(.everything, start: false) }
+                ForEach(model.crate.playlists) { (list: DjPlaylist) in
+                    Button(list.name) { model.focusAutomix(.playlist(list.id), start: false) }
+                }
+                ForEach(model.crate.tagCounts) { (tag: DjTagCount) in
+                    Button("#\(tag.name)") { model.focusAutomix(.tag(tag.name), start: false) }
+                }
+            } label: {
+                Label("Plays \(model.crate.label(model.crate.focus))", systemImage: "scope")
+            }
+            Button("Playlists…", systemImage: "music.note.list") { model.sheet = .crate }
         }
         .animation(.easeOut(duration: 0.2), value: on)
         .accessibilityLabel("Automix")
-        .accessibilityValue(on ? "On" : "Off")
+        .accessibilityValue((on ? "On" : "Off") + (model.crate.focus == .everything ? "" : ", playing \(model.crate.label(model.crate.focus))"))
         .accessibilityAddTraits(on ? .isSelected : [])
-        .accessibilityHint("When on, queued songs, then songs you have played, play one after another with an eight-second crossfade")
+        .accessibilityHint("When on, queued songs, then songs you have played or the chosen playlist or tag, play one after another with an eight-second crossfade")
         .accessibilityAction(named: "Mix to the other deck now") { model.mixNow() }
     }
 }

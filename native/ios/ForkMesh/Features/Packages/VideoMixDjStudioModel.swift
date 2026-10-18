@@ -12,6 +12,8 @@ enum DjSheet: Identifiable, Equatable {
     case pads
     case info
     case jam
+    case crate
+    case song(String)
 
     var id: String {
         switch self {
@@ -20,6 +22,8 @@ enum DjSheet: Identifiable, Equatable {
         case .pads: return "pads"
         case .info: return "info"
         case .jam: return "jam"
+        case .crate: return "crate"
+        case let .song(id): return "song-\(id)"
         }
     }
 }
@@ -166,6 +170,7 @@ final class DjStudioModel {
     var searchProblem = ""
     var history: [DjHistoryItem] = []
     var library: [DjPlayedSong] = []
+    var crate = DjCrate()
     var flashedPad: DjDrumPad?
     var leavingAfterSheet = false
     var confirmingReset = false
@@ -236,6 +241,7 @@ final class DjStudioModel {
         history = saved.history
         library = saved.library
         queue = saved.queue
+        crate = DjCrate.decode(defaults.data(forKey: DjCrate.storageKey))
         shareMotion = defaults.object(forKey: Self.motionKey) as? Bool ?? true
         resumeAutomix = saved.automix
         host.onEvent = { [weak self] side, event in
@@ -579,6 +585,10 @@ final class DjStudioModel {
                 }
                 if library.contains(where: { $0.id == deck.videoId }) {
                     library = DjStudio.retitled(library, id: deck.videoId, title: title, author: author)
+                }
+                if crate.track(deck.videoId) != nil {
+                    crate.keep(deck.videoId, title: title, author: author)
+                    saveCrate()
                 }
                 save()
             }
@@ -999,11 +1009,12 @@ final class DjStudioModel {
 
     func automix() {
         setAutomix(!automixOn)
-        show(automixOn
-            ? (!shownQueue.isEmpty ? "AUTOMIX on: the queue plays one song after another."
-                : library.isEmpty ? "AUTOMIX on: queue songs and they play one after another."
-                : "AUTOMIX on: with the queue empty it shuffles the songs you have played.")
-            : "AUTOMIX off.")
+        let focus = crate.label(crate.focus) + (crate.shuffle ? ", shuffled" : " in order")
+        show(!automixOn ? "AUTOMIX off."
+            : crate.focus != .everything ? (shownQueue.isEmpty ? "AUTOMIX on: playing \(focus)." : "AUTOMIX on: the queue, then \(focus).")
+            : !shownQueue.isEmpty ? "AUTOMIX on: the queue plays one song after another."
+            : library.isEmpty && crate.tracks.isEmpty ? "AUTOMIX on: queue songs and they play one after another."
+            : "AUTOMIX on: with the queue empty it shuffles the songs you have played.")
     }
 
     func setAutomix(_ on: Bool) {
@@ -1032,7 +1043,7 @@ final class DjStudioModel {
     private func automixStep() {
         guard automixOn, !automixing, !a.scratching, !b.scratching else { return }
         let favoured: DjDeckSide = crossfader <= 0 ? .a : .b
-        switch DjAutomix.step(a: snapshot(a), b: snapshot(b), favoured: favoured, queued: !shownQueue.isEmpty || !library.isEmpty) {
+        switch DjAutomix.step(a: snapshot(a), b: snapshot(b), favoured: favoured, queued: !shownQueue.isEmpty || !crate.pool(library, skip: unplayable).isEmpty) {
         case .wait:
             break
         case let .preload(side):
@@ -1076,11 +1087,22 @@ final class DjStudioModel {
 
     private func replay() -> DjPlayedSong? {
         let decks = [a, b].filter(\.loaded)
-        return DjAutomix.next(
-            library.filter { !unplayable.contains($0.id) },
+        let song = crate.next(
+            library,
             loaded: Set(decks.map(\.videoId)),
             playing: Set(decks.filter(\.playing).map(\.videoId)),
+            skip: unplayable,
             seed: UInt64.random(in: .min ... .max))
+        if song != nil, crate.focus != .everything { saveCrate() }
+        return song
+    }
+
+    func refocusAutomix() {
+        guard automixOn, !automixing, shownQueue.isEmpty, crate.focus != .everything else { return }
+        let pool = Set(crate.pool(library, skip: unplayable).map(\.id))
+        let favoured: DjDeckSide = crossfader <= 0 ? .a : .b
+        let idle = [deck(favoured), deck(favoured.other)].filter { !$0.playing && !$0.scratching && !pool.contains($0.videoId) }
+        for deck in idle where pool.count > 1 || deck.side == favoured || a.playing || b.playing { preload(deck.side) }
     }
 
     private func mix(from outgoing: DjDeck, to incoming: DjDeck, seconds: Double) {
@@ -1287,6 +1309,10 @@ final class DjStudioModel {
         return nil
     }
 
+    func saveCrate() {
+        store.write(crate)
+    }
+
     func save(now: Bool = false) {
         saveTask?.cancel()
         guard !now else {
@@ -1339,6 +1365,12 @@ final class DjStore: @unchecked Sendable {
     func write(_ saved: DjSaved) {
         queue.async {
             if let data = saved.encoded() { self.defaults.set(data, forKey: DjStudio.storageKey) }
+        }
+    }
+
+    func write(_ crate: DjCrate) {
+        queue.async {
+            if let data = crate.encoded() { self.defaults.set(data, forKey: DjCrate.storageKey) }
         }
     }
 
