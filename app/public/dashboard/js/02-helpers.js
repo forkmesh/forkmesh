@@ -1278,6 +1278,10 @@
     return origins;
   }
 
+  function dashboardOnInstance() {
+    return Boolean(document?.querySelector?.("script[data-instance-brand]"));
+  }
+
   const DIRECT_MIRROR_ORIGINS_KEY = "forkmesh.directMirrorOrigins.v1";
 
   function preconnectDirectMirrorOrigins(origins) {
