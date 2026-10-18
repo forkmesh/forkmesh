@@ -70,6 +70,21 @@ git clone ─► app ─► public: a core whose signed refs proof matches the p
 - **Routing pin:** public reads go only to cores whose signed proof matches
   the pinned `stateHash`, recorded after each push or web merge
   (`record_hosted_push_state`).
+- **Catalog head:** the record's `branch` and `commit` (what the logo,
+  banner, About and README lookups read) move with the pin. Whenever
+  `record_hosted_push_state` pins a new `stateHash`, it reads the default
+  branch tip from the hosting core with a router-signed `branches` request
+  (`_hosted_head`). If that read fails, the pin is still written and the old
+  commit stays until the next push. `_admit_core_push_state` calls it too,
+  with the state it just verified and no notifications. That covers pushes
+  that never pass through the push proxy, such as an Actions commit-back from
+  the runner route (`runner_actions.report` → `admit_push_state`). Before this,
+  only the push proxy wrote `stateHash` and only an instance import wrote
+  `commit`. A self-hosted instance whose workflows commit every few minutes
+  kept a commit hours old, so its logo and About lookups read stale files.
+  Tests: `test_a_new_pin_moves_the_catalog_head_to_the_default_branch_tip` and
+  the tests after it in `app/tests/test_hosted_repositories.py`,
+  `test_an_admitted_core_push_moves_the_hosted_catalog_head`.
 
 ### Private repositories
 

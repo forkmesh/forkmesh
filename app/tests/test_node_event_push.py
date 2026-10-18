@@ -455,7 +455,7 @@ def test_a_non_core_source_is_still_not_woken_and_adds_no_cores():
         "fmnext-n1", {"fmnext-n1", "mirror2"}, ()) == ["mirror2"]
 
 
-def _admit_core_push_state_with(record):
+def _admit_core_push_state_with(record, hosted=None):
     tree = ast.parse(ENTRY.read_text(encoding="utf-8"), filename=str(ENTRY))
     node = next(
         item for item in tree.body
@@ -480,6 +480,8 @@ def _admit_core_push_state_with(record):
         "notify_repo_mirrors": notify,
         "Date": SimpleNamespace(now=lambda: NOW),
     }
+    if hosted is not None:
+        namespace["record_hosted_push_state"] = hosted
     exec(compile(ast.fix_missing_locations(
         ast.Module(body=[node], type_ignores=[])), str(ENTRY), "exec"),
         namespace)
@@ -503,6 +505,32 @@ def test_a_core_push_wakes_the_cores_even_when_its_state_is_not_admitted():
     for record in (unverified, failing):
         assert _admit_core_push_state_with(record) == (
             "", [("fmnext-n1", "forkmesh", "commits", "", 0)])
+
+
+def test_an_admitted_core_push_moves_the_hosted_catalog_head():
+    pinned = []
+
+    async def admitted(_env, _context, _endpoint, _alias):
+        return "e" * 64
+
+    async def unverified(_env, _context, _endpoint, _alias):
+        return ""
+
+    async def hosted(_env, owner, repo, endpoint, state="", notify=True):
+        pinned.append((owner, repo, endpoint["node"], state, notify))
+        return state
+
+    assert _admit_core_push_state_with(admitted, hosted)[0] == "e" * 64
+    assert pinned == [("fmnext-n1", "forkmesh", "fmnext-n2", "e" * 64, False)]
+    pinned.clear()
+    assert _admit_core_push_state_with(unverified, hosted)[0] == ""
+    assert pinned == []
+
+    async def broken(*_args, **_kwargs):
+        raise RuntimeError("catalog unavailable")
+
+    assert _admit_core_push_state_with(admitted, broken) == (
+        "e" * 64, [("fmnext-n1", "forkmesh", "commits", "e" * 64, NOW)])
 
 
 def test_merge_paths_wake_the_cores_whether_or_not_the_state_was_admitted():
