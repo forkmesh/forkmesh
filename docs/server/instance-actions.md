@@ -499,6 +499,18 @@ guard, a push report whose `X-ForkMesh-Ref-Updates` document has
 way it learns agent-branch pushes: from the gateway's own hosted-push record
 and refresh cycle.
 
+### Where runs are shown to run
+
+The instance's own runner is registered as `<git node>-runner` (for the
+`forkmesh` git node, `forkmesh-runner`), so its name reads as if jobs ran on
+forkmesh.com although it runs on the instance's own server. The snapshot
+therefore reports `local: true` and `host` (the host of `APP_ORIGIN`) when the
+jobs ran on the runner named by `ACTIONS_INSTANCE_RUNNER`, and the Actions tab
+says "Runs on this server <host>" instead of the runner name. `local` and
+`host` are in the public summary too: the host is the site's own address.
+Any other runner keeps "Runs on runner <name>" for members and no name in the
+public summary.
+
 ## Install
 
 `install-instance.sh` installs a runner on the instance by default (setting

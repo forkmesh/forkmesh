@@ -843,9 +843,12 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
             })
         if len(runs) >= RUN_LIMIT:
             break
+    local = _local_runner(runtime, node)
     return {
         "ok": True,
         "node": node or "runner",
+        "local": local,
+        "host": _site_host(runtime) if local else "",
         "updatedAt": now,
         "expiresAt": now + SNAPSHOT_TTL_MS,
         "runs": runs[:RUN_LIMIT],
@@ -853,6 +856,17 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
         "controlAvailable": bool(runtime.setting("ACTIONS_INSTANCE_RUNNER")),
         "workflows": await catalog(runtime, owner, repo),
     }
+
+
+def _site_host(runtime):
+    origin = runtime.runner_app_url() if hasattr(runtime, "runner_app_url") else ""
+    host = origin.split("://", 1)[-1].split("/", 1)[0]
+    return host if re.fullmatch(r"[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?", host) else ""
+
+
+def _local_runner(runtime, node):
+    own = runtime.setting("ACTIONS_INSTANCE_RUNNER").lower()
+    return bool(own) and (not node or node.lower() == own)
 
 
 def public_summary(full):
@@ -866,6 +880,8 @@ def public_summary(full):
         "ok": True,
         "access": "public",
         "node": "",
+        "local": bool(full.get("local")),
+        "host": str(full.get("host") or "") if full.get("local") else "",
         "updatedAt": full.get("updatedAt", 0),
         "expiresAt": full.get("expiresAt", 0),
         "runs": runs,
