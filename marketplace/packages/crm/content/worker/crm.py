@@ -10,6 +10,7 @@ import csv
 import hashlib
 import hmac
 import io
+import ipaddress
 import json
 import re
 from datetime import datetime, timezone
@@ -253,7 +254,7 @@ PLUGIN_ID = "crm"
 # spam cannon.
 OUTREACH_FROM_EMAIL = "founders@forkmesh.com"
 OUTREACH_FROM_NAME = "ForkMesh Founders"
-OUTREACH_DAILY_LIMIT = 50
+OUTREACH_DAILY_LIMIT = 100
 MESSAGE_BRIEF_LIMIT = 8000
 OUTREACH_MAX_SUBJECT = 200
 OUTREACH_MAX_BODY = 10000
@@ -286,6 +287,8 @@ AUTO_EMAIL_MESSAGE_CHARS = 700
 AUTO_EMAIL_NOTES_CHARS = 1500
 AUTO_EMAIL_FIELDS = 30
 AUTO_EMAIL_UNSENT = frozenset({"draft", "sending", "failed", "reject"})
+AUTO_EMAIL_RATED_NOTES = 5
+AUTO_EMAIL_NOTE_CHARS = 300
 AUTO_EMAIL_PLACEHOLDER_RE = re.compile(
     r"\[[^\]\n]{1,60}\]|\{\{|\}\}|<(?:name|first name|company|link|url)>|lorem ipsum",
     re.IGNORECASE)
@@ -348,6 +351,14 @@ TRACK_HOME = "https://forkmesh.com"
 TRACK_QUIET_MS = 30 * 1000
 TRACK_PATH_RE = re.compile(
     r"/api/crm/-/t/(o|c)/([0-9a-f]{32})\.([0-9a-f]{24})(?:\.png)?")
+TRACK_AGENT_CHARS = 200
+WHOIS_RDAP = "https://rdap.org/ip/"
+WHOIS_DEPTH = 3
+MAIL_AGENTS = (
+    ("googleimageproxy", "Gmail image proxy"), ("yahoomailproxy", "Yahoo Mail proxy"),
+    ("outlook", "Outlook"), ("ms-office", "Outlook"), ("microsoft office", "Outlook"),
+    ("thunderbird", "Thunderbird"), ("zoho", "Zoho Mail"), ("superhuman", "Superhuman"),
+    ("protonmail", "Proton Mail"))
 DECK_PAGE_TITLES = (
     "Cover", "Problem", "Why now", "Product", "Proof", "Roadmap",
     "Customer & go-to-market", "Market", "Business model", "Competition",
@@ -1037,7 +1048,7 @@ def _route(path):
     match = re.fullmatch(
         r"/api/crm/([a-z][a-z0-9-]{0,62})"
         r"(?:/(contacts|emails|mail|settings|views|outreach|decks|zoho)"
-        r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|lookup|link|copy|order|team|bulk|merge"
+        r"(?:/([0-9a-f]{32}|import|grants|export|send|auto|rate|lookup|link|copy|order|team|bulk|merge"
         r"|toots|toot"
         r"|duplicates|evidence|activity|note"
         r"|connect|exchange"
@@ -1286,6 +1297,8 @@ async def _email_project(runtime, row, include_content=True):
         "clickedAt": _integer(row.get("clicked_at")),
         "automated": bool(data.get("auto")),
         "linkKind": _clean(data.get("linkKind"), 20),
+        "rating": _integer(data.get("rating")),
+        "ratingNote": _clean(data.get("ratingNote"), AUTO_EMAIL_NOTE_CHARS),
     }
     if include_content:
         result.update({
@@ -5687,6 +5700,8 @@ async def _auto_email_history(runtime, org_bi, now):
             "clicked": clicked,
             "opened": clicked or _integer(row.get("opens")) > 0 or status == "open",
             "settled": now - _integer(row.get("sent_at")) >= AUTO_EMAIL_SETTLE_MS,
+            "rating": _integer(data.get("rating")),
+            "note": _clean(data.get("ratingNote"), AUTO_EMAIL_NOTE_CHARS),
         })
     return sends
 
@@ -5737,6 +5752,21 @@ def _auto_email_lessons(sends):
         if items:
             lines += ["", title] + [_auto_email_example(item)
                                     for item in items[:AUTO_EMAIL_EXAMPLES]]
+    rated = [item for item in sends if 1 <= item.get("rating", 0) <= 5]
+    for title, items in (
+            ("The sender rated these 4 or 5 stars (write more like these):",
+             [item for item in rated if item["rating"] >= 4]),
+            ("The sender rated these 1 or 2 stars (do not write like these):",
+             [item for item in rated if item["rating"] <= 2])):
+        if items:
+            lines += ["", title] + [_auto_email_example(item)
+                                    for item in items[:AUTO_EMAIL_EXAMPLES]]
+    notes = [item for item in rated if item.get("note")][:AUTO_EMAIL_RATED_NOTES]
+    if notes:
+        lines += ["", "The sender's notes on recent emails, newest first. Follow them: "
+                      "they outrank the numbers above."]
+        lines += ["- %d/5 for \"%s\": %s" % (item["rating"], item["subject"], item["note"])
+                  for item in notes]
     lines += ["", "Follow the subject style, length and opening of the emails that got "
                   "clicks and avoid what the unopened ones share. Change one small thing "
                   "(the subject or the ask) so we keep learning."]
@@ -6058,6 +6088,33 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
     }, 201)
 
 
+async def _auto_email_rate(runtime, org_bi, actor, role, data):
+    send_id = _clean(data.get("emailId"), 64).lower()
+    if not CONTACT_ID_RE.fullmatch(send_id):
+        return _response(runtime, {"error": "email_required"}, 400)
+    rating = _integer(data.get("rating"))
+    if not 1 <= rating <= 5:
+        return _response(runtime, {"error": "rating_invalid"}, 400)
+    row = await _email_row(runtime, org_bi, send_id)
+    if not row:
+        return _response(runtime, {"error": "email_not_found"}, 404)
+    envelope = await runtime.open(row.get("data"))
+    envelope = envelope if isinstance(envelope, dict) else {}
+    if not envelope.get("auto"):
+        return _response(runtime, {"error": "email_not_automated"}, 409)
+    if str(row.get("sender_name") or "") != actor and role not in ("owner", "admin"):
+        return _response(runtime, {"error": "rating_forbidden"}, 403)
+    envelope.update(rating=rating, ratedBy=actor, ratedAt=runtime.now(),
+                    ratingNote=_clean(data.get("note"), AUTO_EMAIL_NOTE_CHARS))
+    await runtime.d1_run(
+        "UPDATE crm_email_sends SET data=? WHERE org_bi=? AND send_id=?",
+        await runtime.seal(envelope), org_bi, send_id)
+    await runtime.audit(actor, "crm.outreach.rate", "crm_email_send", send_id,
+                        details={"rating": rating, "note": bool(envelope["ratingNote"])})
+    return _response(runtime, {"ok": True, "email": await _email_project(
+        runtime, await _email_row(runtime, org_bi, send_id))})
+
+
 def _track_miss(runtime, action):
     if action == "o":
         return _redirect(runtime, TRACK_LOGO)
@@ -6080,11 +6137,13 @@ async def _track(runtime, action, token):
         "WHERE send_id=?", send_id)
     now = runtime.now()
     if row and now - _integer(row.get("sent_at")) >= TRACK_QUIET_MS:
-        await _record_track(runtime, row, send_id, "open" if action == "o" else "click", now)
+        visitor = getattr(runtime, "request_visitor", None)
+        await _record_track(runtime, row, send_id, "open" if action == "o" else "click", now,
+                            visitor() if visitor else {})
     return _redirect(runtime, TRACK_LOGO if action == "o" else target)
 
 
-async def _record_track(runtime, row, send_id, event, now):
+async def _record_track(runtime, row, send_id, event, now, visitor=None):
     org_bi = str(row.get("org_bi") or "")
     count, stamp = ("opens", "opened_at") if event == "open" else ("clicks", "clicked_at")
     before = await runtime.d1_first(
@@ -6112,11 +6171,100 @@ async def _record_track(runtime, row, send_id, event, now):
         contact = opened if isinstance(opened, dict) else contact
     label = _contact_label(contact)
     subject = _clean(data.get("subject"), 140)
+    lines = ["“%s”" % subject] if subject else []
+    lines += await _track_visitor_lines(runtime, visitor)
     await notify(sender, "plugin_activity",
                  ("📬 %s opened your email" if event == "open"
                   else "🔗 %s clicked the link in your email") % label,
-                 body="“%s”" % subject if subject else "", href=CRM_PAGE_PATH,
+                 body="\n".join(lines), href=CRM_PAGE_PATH,
                  dedupe="crm-email-%s:%s" % (event, send_id))
+
+
+def _public_ip(text):
+    try:
+        address = ipaddress.ip_address(str(text or "").strip())
+    except ValueError:
+        return ""
+    return str(address) if address.is_global else ""
+
+
+def _whois_name(entity):
+    card = entity.get("vcardArray")
+    if isinstance(card, list) and len(card) > 1 and isinstance(card[1], list):
+        for item in card[1]:
+            if isinstance(item, list) and len(item) > 3 and item[0] == "fn":
+                return _clean(item[3], 120)
+    return ""
+
+
+def _whois_names(entities, depth=0):
+    found = []
+    for entity in entities if isinstance(entities, list) else []:
+        if not isinstance(entity, dict):
+            continue
+        roles = entity.get("roles") if isinstance(entity.get("roles"), list) else []
+        name = _whois_name(entity)
+        if name:
+            found.append(([str(role) for role in roles], name))
+        if depth < WHOIS_DEPTH:
+            found += _whois_names(entity.get("entities"), depth + 1)
+    return found
+
+
+def _whois_range(data):
+    for item in data.get("cidr0_cidrs") if isinstance(data.get("cidr0_cidrs"), list) else []:
+        if isinstance(item, dict):
+            prefix = _clean(item.get("v4prefix") or item.get("v6prefix"), 45)
+            if prefix and item.get("length") is not None:
+                return "%s/%d" % (prefix, _integer(item.get("length")))
+    start = _clean(data.get("startAddress"), 45)
+    end = _clean(data.get("endAddress"), 45)
+    return "%s – %s" % (start, end) if start and end else ""
+
+
+async def _whois(runtime, address):
+    outbound = getattr(runtime, "outbound_json", None)
+    if outbound is None or not address:
+        return {}
+    result = await outbound(WHOIS_RDAP + address,
+                            headers={"accept": "application/rdap+json"}) or {}
+    data = result.get("data") if result.get("ok") and _integer(result.get("status")) == 200 else None
+    if not isinstance(data, dict):
+        return {}
+    names = _whois_names(data.get("entities"))
+    owner = next((name for roles, name in names if "registrant" in roles), "") or next(
+        (name for roles, name in names
+         if not {"abuse", "technical", "noc"} & set(roles)), "")
+    return {"owner": owner, "network": _clean(data.get("name"), 80),
+            "range": _whois_range(data), "country": _clean(data.get("country"), 2).upper()}
+
+
+def _mail_agent_label(agent):
+    text = agent.lower()
+    for marker, label in MAIL_AGENTS:
+        if marker in text:
+            return label
+    if "applewebkit" in text and "safari/" not in text and "chrome/" not in text:
+        device = "iPhone" if "iphone" in text else "iPad" if "ipad" in text else "Mac"
+        return device + " · Apple Mail"
+    return _agent_label(agent) or "Unknown client"
+
+
+async def _track_visitor_lines(runtime, visitor):
+    visitor = visitor if isinstance(visitor, dict) else {}
+    lines = []
+    address = _public_ip(visitor.get("ip"))
+    if address:
+        whois = await _whois(runtime, address)
+        details = ", ".join(part for part in (
+            whois.get("network"), whois.get("range"), whois.get("country")) if part)
+        lines.append("Whois %s: %s%s" % (
+            address, whois.get("owner") or ("no owner listed" if whois else "no answer"),
+            " (%s)" % details if details else ""))
+    agent = _clean(visitor.get("agent"), 512)
+    if agent:
+        lines.append("Agent: %s · %s" % (_mail_agent_label(agent), agent[:TRACK_AGENT_CHARS]))
+    return lines
 
 
 # --- investor deck links -------------------------------------------------------
@@ -6581,7 +6729,7 @@ ACTIVITY_NAMED_ITEMS = frozenset({
     "import", "grants", "lookup", "bulk", "merge", "delete-column", "evidence",
     "send", "link", "note",
     "toot", "toots", "copy", "order", "activity", "team", "connect", "exchange",
-    "auto"})
+    "auto", "rate"})
 ACTIVITY_PINGS = {
     ("contacts", "", "POST"): ("New CRM contact", "team", False),
     ("contacts", "import", "POST"): ("CRM contacts imported", "others", True),
@@ -6748,7 +6896,7 @@ async def handle(runtime, path):
         allowed = ("POST",)
     elif resource == "views" and item == "activity":
         allowed = ("GET", "POST")
-    elif resource == "outreach" and item in ("send", "team", "auto"):
+    elif resource == "outreach" and item in ("send", "team", "auto", "rate"):
         allowed = ("POST",)
     elif resource == "decks" and item:
         allowed = ("GET", "DELETE") if DECK_TOKEN_RE.fullmatch(item) else ()
@@ -6908,6 +7056,8 @@ async def _organization_resource(runtime, method, org_bi, org_name, role, accoun
         if item == AUTO_EMAIL_TEMPLATE:
             return await _auto_email(
                 runtime, org_bi, org_name, account_bi, actor, data)
+        if item == "rate":
+            return await _auto_email_rate(runtime, org_bi, actor, role, data)
         return await _outreach_send(
             runtime, org_bi, org_name, account_bi, actor, data)
     if resource == "decks":

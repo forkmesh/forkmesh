@@ -564,6 +564,26 @@
       "drills": []
     },
     {
+      "id": "crm-whois-rdap",
+      "name": "RDAP whois for CRM email open pings",
+      "categories": ["infrastructure"],
+      "components": ["marketplace-package", "app-worker"],
+      "necessity": "optional",
+      "hosts": ["rdap.org", "rdap.arin.net", "rdap.db.ripe.net", "rdap.apnic.net", "rdap.lacnic.net", "rdap.afrinic.net"],
+      "configuredHosts": [],
+      "credentials": [],
+      "observes": "The App's egress IP and the public IP address that first opened or clicked a tracked CRM email (often the mail provider's image proxy).",
+      "retention": "Set by each regional internet registry and by rdap.org.",
+      "jurisdiction": "rdap.org (United Kingdom); ARIN (United States), RIPE NCC (Netherlands), APNIC (Australia), LACNIC (Uruguay), AFRINIC (Mauritius).",
+      "canonicalData": "The registries are canonical for IP allocation records; nothing is stored by ForkMesh.",
+      "outage": "The open or click ping says the whois had no answer; tracking and the ping still work.",
+      "recovery": "None needed; the next email's first open looks up again.",
+      "alternative": "Remove the RDAP origins from the CRM manifest and the ping shows only the user agent.",
+      "gap": "No drill covers RDAP being unreachable beyond the package test of a failed lookup.",
+      "evidence": ["marketplace/packages/crm/content/worker/crm.py", "marketplace/packages/crm/manifest.json", "app/src/entry.py"],
+      "drills": []
+    },
+    {
       "id": "ipify",
       "name": "ipify public IP lookup in the installer",
       "categories": ["infrastructure"],

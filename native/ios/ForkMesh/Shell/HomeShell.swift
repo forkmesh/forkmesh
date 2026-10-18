@@ -736,6 +736,7 @@ struct HomeShell: View {
                 }
             }
             .task { await ShellSuggestions.shared.run() }
+            .modifier(ShellAutoSendPresenter())
             .task { DjStudioHub.shared.relaunch() }
             .task {
                 try? await Task.sleep(for: .seconds(2))

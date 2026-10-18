@@ -153,6 +153,16 @@ extension PackagesClient {
         try await call("POST", try crmPath(organization, "/outreach/send"), body: draft.outreachBody).int("sentToday")
     }
 
+    public func autoCrmEmail(_ organization: String, body: JSONObject) async throws -> PackagesReply {
+        try await transport.send("POST", try crmPath(organization, "/outreach/auto"), query: [], body: body)
+    }
+
+    public func rateCrmAutoEmail(_ organization: String, emailId: String, rating: Int, note: String) async throws {
+        try await call(
+            "POST", try crmPath(organization, "/outreach/rate"),
+            body: ["emailId": .string(try Self.item(emailId)), "rating": .int(Int64(rating)), "note": .string(note)])
+    }
+
     public func updateCrmOutreachTeam(_ organization: String, add: Bool, name: String) async throws -> [CrmOutreachMember] {
         try await call(
             "POST", try crmPath(organization, "/outreach/team"),

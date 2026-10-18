@@ -232,8 +232,12 @@ public enum GenieOutreach {
         return offer(contact, in: data, sender: sender)
     }
 
-    public static func best(_ organizations: [CrmOrganizationData], skip: Set<String> = [], sender: String = "") -> GenieOutreachPick? {
-        let pool = organizations.flatMap { data in candidates(data, skip: skip).map { (data, $0) } }
+    public static func best(
+        _ organizations: [CrmOrganizationData], skip: Set<String> = [], sender: String = "", only: GenieOutreachChannel? = nil
+    ) -> GenieOutreachPick? {
+        let pool = organizations.flatMap { data in
+            candidates(data, skip: skip).filter { only == nil || channel($0) == only }.map { (data, $0) }
+        }
         guard let (data, contact) = pool.min(by: { ranksAhead($0.1, of: $1.1) }) else { return nil }
         return offer(contact, in: data, sender: sender)
     }
@@ -556,9 +560,10 @@ extension ForkMeshToolbox {
         return GenieOutreach.pick(loaded, skip: skip, sender: sources.account()?.username ?? "", random: random)
     }
 
-    public func outreachBest(skip: Set<String>) async -> GenieOutreachPick? {
+    public func outreachBest(skip: Set<String>, only: GenieOutreachChannel? = nil, zohoOnly: Bool = false) async -> GenieOutreachPick? {
         guard let loaded = await outreachOrganizations() else { return nil }
-        return GenieOutreach.best(loaded, skip: skip, sender: sources.account()?.username ?? "")
+        let reachable = zohoOnly ? loaded.filter(\.settings.zoho.connected) : loaded
+        return GenieOutreach.best(reachable, skip: skip, sender: sources.account()?.username ?? "", only: only)
     }
 
     private func outreachOrganizations() async -> [CrmOrganizationData]? {

@@ -11785,6 +11785,13 @@ class _PluginApiRuntime(_WorldCommunityRuntime):
         """
         return _request_origin(self.request) if self.request is not None else ""
 
+    def request_visitor(self):
+        if self.request is None:
+            return {"ip": "", "agent": ""}
+        headers = self.request.headers
+        return {"ip": str(headers.get("cf-connecting-ip") or "").strip()[:64],
+                "agent": str(headers.get("user-agent") or "")[:512]}
+
     async def organization(self, name, account_bi):
         org_bi, record = await _org_row(self.env, name)
         if not org_bi or not record:
