@@ -10,6 +10,7 @@ sys.path.insert(0, str(TESTS.parent / "src"))
 
 import edge_routing  # noqa: E402
 import runner_actions  # noqa: E402
+import runner_leases  # noqa: E402
 from test_runner_leases import (  # noqa: E402
     FakeRuntime, Key, NOW, call, decode_grant, signed)
 
@@ -728,3 +729,82 @@ def test_another_runner_is_not_shown_as_this_server():
     full = run(runner_actions.snapshot(runtime, "forkmesh", "site"))
     assert full["local"] is False and full["host"] == ""
     assert runner_actions.public_summary(full)["host"] == ""
+
+
+def test_a_finished_trusted_job_admits_the_state_its_push_left():
+    runtime, key = setup()
+    admitted = []
+
+    async def admit(owner, repo, node):
+        admitted.append((owner, repo, node))
+        return "e" * 64
+
+    runtime.admit_push_state = admit
+    job_id = enqueue(runtime)
+    [job] = lease(runtime, key)
+    body = {"jobId": job_id, "leaseId": job["leaseId"], "status": "running",
+            "runs": []}
+    assert report(runtime, key, body)["status"] == 200
+    assert admitted == []
+    assert report(runtime, key, dict(body, status="completed"))[
+        "status"] == 200
+    assert admitted == [("forkmesh", "site", "forkmesh")]
+
+
+def test_an_untrusted_job_admits_nothing_and_a_failed_admission_is_ignored():
+    runtime, key = setup(trusted=False)
+    admitted = []
+
+    async def admit(owner, repo, node):
+        admitted.append(node)
+        return ""
+
+    runtime.admit_push_state = admit
+    job_id = enqueue(runtime)
+    [job] = lease(runtime, key)
+    report(runtime, key, {"jobId": job_id, "leaseId": job["leaseId"],
+                          "status": "completed", "runs": []})
+    assert admitted == []
+    runtime, key = setup()
+
+    async def broken(owner, repo, node):
+        raise RuntimeError("proof unavailable")
+
+    runtime.admit_push_state = broken
+    job_id = enqueue(runtime)
+    [job] = lease(runtime, key)
+    assert report(runtime, key, {
+        "jobId": job_id, "leaseId": job["leaseId"], "status": "completed",
+        "runs": []})["data"] == {"ok": True, "cancel": False}
+    assert column(runtime, job_id, "status") == "completed"
+
+
+def test_the_worker_admits_the_signed_state_of_the_job_target_node(
+        monkeypatch):
+    env = object()
+    calls = []
+    endpoints = [{"node": "mirror-a"}, {"node": "forkmesh"}]
+
+    async def context_of(given, owner, repo):
+        assert given is env
+        return {"owner": owner, "repo": repo, "repoBi": "bi"} if (
+            repo == "site") else None
+
+    async def candidates(given, context, region):
+        return endpoints
+
+    async def admit(given, owner, repo, endpoint):
+        calls.append((owner, repo, endpoint["node"]))
+        return "e" * 64
+
+    for name, value in (("_https_mirror_public_context", context_of),
+                        ("_https_mirror_request_candidates", candidates),
+                        ("_admit_core_push_state", admit)):
+        monkeypatch.setattr(runner_leases, name, value, raising=False)
+    worker = runner_leases.WorkerRuntime(env, None)
+    assert run(worker.admit_push_state("forkmesh", "site", "ForkMesh")) == (
+        "e" * 64)
+    assert calls == [("forkmesh", "site", "forkmesh")]
+    assert run(worker.admit_push_state("forkmesh", "site", "absent")) == ""
+    assert run(worker.admit_push_state("forkmesh", "gone", "forkmesh")) == ""
+    assert calls == [("forkmesh", "site", "forkmesh")]
