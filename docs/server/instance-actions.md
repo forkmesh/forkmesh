@@ -277,6 +277,20 @@ Node.js and build tools for jobs. Jobs run as `forkmesh-job` in a systemd
 scope (memory, CPU and task limits) and cannot reach loopback or private
 addresses, so they talk to the instance only through its public origin.
 
+Installer details: the job packages are added to the `packages` step only
+when `actions` is on; `ACTIONS_BOT_SEED` is `openssl rand -hex 32`, kept
+across runs; the runner is `<node>-runner` (`forkmesh-runner`) under
+`/etc/forkmesh-runner/accounts/<owner>` and
+`/var/lib/forkmesh-runner/accounts/<owner>`, unit
+`forkmesh-runner@<owner>.service`. `install-runner.sh --preregistered`
+prints `FM_RUNNER_PUBLIC_KEY=<key>` (base64url, no padding, of the raw 32-byte
+Ed25519 public key, 43 characters, the same form `runner_nodes.public_key`
+holds) and the installer passes that value to `instance-runner`, run through
+the same `host_cli` wrapper as `instance-bootstrap` (so it also receives
+`--env-file`, `--db` and `--data-dir`). The runner step runs inside the `repo`
+step (the launch page has a fixed step list) and only warns on failure.
+`--update` keeps `actions` from `instance.json` (absent counts as `true`).
+
 ## Tests
 
 `server/actions_workflow_test.go`, `server/actions_expr_test.go`,

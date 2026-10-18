@@ -519,3 +519,110 @@ def test_the_build_records_its_version_and_commit(tmp_path):
     assert value["version"] == "1.4.2" and value["subject"] == 'Ship "notes"'
     assert len(value["commit"]) == 40 and value["ref"] == "main"
     assert oct(info.stat().st_mode & 0o777) == "0o644"
+
+
+def test_actions_default_on_and_must_be_a_boolean(tmp_path):
+    found = values(parse(tmp_path, settings()).stdout)
+    assert found["CFG_actions"] == "1"
+    found = values(parse(tmp_path, settings(actions=False)).stdout)
+    assert found["CFG_actions"] == "0"
+    result = parse(tmp_path, settings(actions="yes"))
+    assert result.returncode == 2
+    assert "Setting actions must be true or false." in result.stdout
+
+
+def test_actions_install_job_tools_and_configure_the_app():
+    packages = TEXT.split("ACTIONS_PACKAGES=(", 1)[1].split(")", 1)[0].split()
+    for name in ("git", "curl", "jq", "python3-venv", "nodejs", "npm",
+                 "build-essential", "unzip"):
+        assert name in packages
+    assert 'PACKAGES+=("${ACTIONS_PACKAGES[@]}")' in TEXT
+    writer = function("write_settings")
+    assert 'bot_seed="$(openssl rand -hex 32)"' in writer
+    assert 'bot_seed="$(env_value ACTIONS_BOT_SEED)"' in writer
+    assert 'echo "ACTIONS_BOT_SEED=$bot_seed"' in writer
+    assert 'echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"' in writer
+    assert 'echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"' in writer
+    assert '"plugins", "actions"]' in writer
+    assert 'RUNNER_NAME="$NODE_NAME-runner"' in TEXT
+
+
+def test_the_actions_runner_is_preregistered_after_the_git_node():
+    main = TEXT.rsplit("\ncheck_system\n", 1)[1]
+    assert main.index("start_git_node") < main.index("setup_actions_runner") < main.index("finish")
+    runner = function("setup_actions_runner")
+    assert '"$SRC/$RUNNER_INSTALLER" --preregistered' in runner
+    assert '--name "$RUNNER_NAME" --owner "$CFG_ownerName" --app "$ORIGIN"' in runner
+    assert '--binary "$DAEMON"' in runner
+    assert "host_cli instance-runner --name \"$RUNNER_NAME\"" in runner
+    assert '--public-key "$runner_key" --owner "$CFG_ownerName"' in runner
+    assert "FM_RUNNER_PUBLIC_KEY=" in runner
+    assert '[[ "$runner_key" =~ ^[A-Za-z0-9_-]{43}$ ]]' in runner
+    assert 'systemctl disable --now "$RUNNER_UNIT"' in runner
+    assert 'RUNNER_INSTALLER="www/public/install-runner.sh"' in TEXT
+    assert 'RUNNER_UNIT="forkmesh-runner@$CFG_ownerName.service"' in TEXT
+
+
+def test_an_unclaimed_instance_also_removes_its_runner():
+    cleanup = function("write_first_login_cleanup")
+    assert 'fm_safe_rm_tree /etc/forkmesh-runner/accounts "/etc/forkmesh-runner/accounts/$RUNNER_OWNER"' in cleanup
+    assert 'fm_safe_rm_tree /var/lib/forkmesh-runner/accounts "/var/lib/forkmesh-runner/accounts/$RUNNER_OWNER"' in cleanup
+    assert "fm_safe_rm_tree /etc /etc/forkmesh-runner" in cleanup
+    assert "fm_safe_rm_tree /var/lib /var/lib/forkmesh-runner" in cleanup
+    assert 'systemctl disable --now "forkmesh-runner@$RUNNER_OWNER.service"' in cleanup
+    assert "userdel forkmesh-job" in cleanup
+    assert cleanup.count('"$CLEANUP_DIR/created-runner-root"') >= 3
+    baseline = function("capture_first_login_baseline")
+    assert ': > "$CLEANUP_DIR/created-runner-root"' in baseline
+    assert ': > "$CLEANUP_DIR/created-job-user"' in baseline
+
+
+def test_the_first_login_cleanup_removes_only_what_the_install_created(tmp_path):
+    cleanup = function("write_first_login_cleanup")
+    script = cleanup.split("<<'EOF'\n", 1)[1].split("\nEOF\n", 1)[0]
+    part = 'RUNNER_OWNER=""\n' + script.split('RUNNER_OWNER=""\n', 1)[1].split(
+        'if [ -e "$CLEANUP_DIR/caddyfile.before" ]', 1)[0]
+    root = tmp_path / "root"
+    for path in ("/etc/forkmesh-runner", "/var/lib/forkmesh-runner",
+                 "/etc/systemd/system"):
+        part = part.replace(path, str(root) + path)
+    assert part.count(str(root)) >= 8
+    assert "fm_safe_rm_tree /etc " + str(root) in part
+    part = part.replace("fm_safe_rm_tree /etc ", "fm_safe_rm_tree %s/etc " % root)
+    part = part.replace("fm_safe_rm_tree /var/lib ", "fm_safe_rm_tree %s/var/lib " % root)
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    calls = tmp_path / "calls"
+    for tool in ("systemctl", "nft"):
+        (bin_dir / tool).write_text(
+            "#!/bin/bash\nprintf '%%s %%s\\n' %s \"$*\" >> %s\n" % (tool, calls))
+        (bin_dir / tool).chmod(0o755)
+    cleanup_dir = tmp_path / "cleanup"
+    cleanup_dir.mkdir()
+    (cleanup_dir / "created-runner").write_text("acme\n")
+    for name in ("acme", "other"):
+        for base in ("etc/forkmesh-runner/accounts", "var/lib/forkmesh-runner/accounts"):
+            (root / base / name).mkdir(parents=True)
+            (root / base / name / "keep").write_text("x")
+    harness = tmp_path / "cleanup.sh"
+    harness.write_text("set -euo pipefail\nCLEANUP_DIR=%s\nsource %s\n%s" % (
+        cleanup_dir, REPO / "tools/forkmesh-safe-rm.sh", part))
+    env = sandbox_env(tmp_path)
+    env["PATH"] = "%s:%s" % (bin_dir, env["PATH"])
+    result = subprocess.run(["bash", str(harness)], capture_output=True, text=True,
+                            env=env, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (root / "etc/forkmesh-runner/accounts/acme").exists()
+    assert not (root / "var/lib/forkmesh-runner/accounts/acme").exists()
+    assert (root / "etc/forkmesh-runner/accounts/other/keep").exists()
+    assert (root / "var/lib/forkmesh-runner/accounts/other/keep").exists()
+    log = calls.read_text()
+    assert "disable --now forkmesh-runner@acme.service" in log
+    assert "forkmesh-runner-firewall" not in log
+    (cleanup_dir / "created-runner-root").write_text("")
+    result = subprocess.run(["bash", str(harness)], capture_output=True, text=True,
+                            env=env, timeout=60)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not (root / "etc/forkmesh-runner").exists()
+    assert not (root / "var/lib/forkmesh-runner").exists()
+    assert "forkmesh-runner-firewall" in calls.read_text()
