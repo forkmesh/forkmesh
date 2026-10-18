@@ -444,6 +444,16 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 - **Shortcuts** (`.shortcuts(RepoRef?)`): the desktop's shortcuts and skills
   for the repository in use (`ShortcutsStore.load(preferred:)`); prompt
   shortcuts can also run on the iPhone (`PhoneShortcuts`, `ShortcutMirror`).
+  A shortcut whose `insights.shortcuts` entry carries `steps` (at most 32,
+  each `{name, shortcut?}`; `ShortcutStep.list` drops anything malformed)
+  reads as a workflow: its row adds an "N steps" line under the description,
+  leaving the play button alone, and its detail page shows a numbered step
+  timeline above the file text. A step whose `shortcut` names another
+  shortcut of the same scope in the catalog (`ShortcutCatalog.linked`) is a
+  row in the accent colour with the file name and a chevron that opens that
+  shortcut's detail page; VoiceOver reads it as "Step 2 of 7, Deploy Android
+  build, opens shortcut". A link to a shortcut the catalog lacks shows the
+  file name in grey and does not open anything.
 - **Desktops**: paired desktops, the office MacBook (with buttons that run the
   Mac shortcuts), runners and core nodes.
 - **Pocket mode** and **Suggestion mode**: see [GENIE.md](GENIE.md).

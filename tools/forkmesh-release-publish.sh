@@ -20,7 +20,7 @@
 #   tools/forkmesh-release-publish.sh [--channel latest] [--tag vX.Y.Z] \
 #       [--tag-commit GIT_COMMIT] [--build-commit GIT_COMMIT] \
 #       [--cas-dir DIR] [--repo owner/repo] [--signing-key PRIVATE_KEY.pem] \
-#       BINARY [BINARY ...]
+#       [--build N --asset-commit GIT_COMMIT] BINARY [BINARY ...]
 #
 #   --channel   Release channel directory under .forkmesh/releases/ (default: latest, or
 #               $RELEASE_CHANNEL).
@@ -47,6 +47,10 @@
 #               $FORKMESH_RELEASE_SIGNING_KEY. Publishing fails closed when it
 #               is absent: release metadata is executable supply-chain input,
 #               not an optional authenticity hint.
+#   --build, --asset-commit
+#               Mark the BINARYs as build N of this version, built from
+#               GIT_COMMIT (a per-platform rebuild). Other assets keep their
+#               own build and commit; the manifest's build_commit is unchanged.
 #
 # Each BINARY should already be named the way install.sh resolves per platform:
 #   forkmesh-<os>-<arch>[.exe]   (os: linux|macos|windows, arch: x86_64|arm64)
@@ -59,6 +63,8 @@ repo="${FORKMESH_REPO:-forkmesh/forkmesh}"
 tag_commit="${FORKMESH_TAG_COMMIT:-}"
 build_commit="${FORKMESH_BUILD_COMMIT:-}"
 signing_key="${FORKMESH_RELEASE_SIGNING_KEY:-}"
+asset_build=""
+asset_commit=""
 bins=()
 
 while [ $# -gt 0 ]; do
@@ -70,7 +76,9 @@ while [ $# -gt 0 ]; do
     --cas-dir) cas_dir="$2"; shift 2 ;;
     --repo)    repo="$2"; shift 2 ;;
     --signing-key) signing_key="$2"; shift 2 ;;
-    -h|--help) sed -n '2,40p' "$0"; exit 0 ;;
+    --build) asset_build="$2"; shift 2 ;;
+    --asset-commit) asset_commit="$2"; shift 2 ;;
+    -h|--help) sed -n '2,45p' "$0"; exit 0 ;;
     --) shift; while [ $# -gt 0 ]; do bins+=("$1"); shift; done ;;
     -*) echo "Unknown option: $1" >&2; exit 2 ;;
     *)  bins+=("$1"); shift ;;
@@ -125,6 +133,14 @@ if ! printf '%s' "$build_commit" |
     grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$'; then
   echo "Error: --build-commit must identify the binary's exact 40- or 64-hex Git commit." >&2
   exit 2
+fi
+if [ -n "$asset_build" ] || [ -n "$asset_commit" ]; then
+  asset_commit="$(printf '%s' "$asset_commit" | tr 'A-F' 'a-f')"
+  if ! printf '%s' "$asset_build" | grep -Eq '^[1-9][0-9]{0,3}$' ||
+     ! printf '%s' "$asset_commit" | grep -Eq '^([0-9a-f]{40}|[0-9a-f]{64})$'; then
+    echo "Error: --build needs a number from 1 to 9999 and --asset-commit an exact 40- or 64-hex Git commit." >&2
+    exit 2
+  fi
 fi
 [ -n "$signing_key" ] || {
   echo "Error: --signing-key (or FORKMESH_RELEASE_SIGNING_KEY) is required." >&2
@@ -237,6 +253,8 @@ for asset in manifest.get("assets", []):
         str(asset.get("size", "")),
         str(asset.get("os", "")),
         str(asset.get("arch", "")),
+        str(asset.get("build", "")),
+        str(asset.get("commit", "")),
     )
     if (
         not re.fullmatch(r"[0-9a-f]{64}", values[0])
@@ -244,6 +262,9 @@ for asset in manifest.get("assets", []):
         or any("\t" in value or "\n" in value or "\r" in value for value in values)
         or not values[2].isdigit()
         or int(values[2]) <= 0
+        or not re.fullmatch(r"(?:[1-9][0-9]{0,3})?", values[5])
+        or not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})?", values[6])
+        or bool(values[5]) != bool(values[6])
     ):
         raise SystemExit("Error: existing release.json contains an invalid asset")
     print("\t".join(values))
@@ -263,8 +284,9 @@ for bin in "${bins[@]}"; do
   mkdir -p "$(dirname "$blob")"
   [ -f "$blob" ] || cp "$bin" "$blob"
 
-  printf '%s\t%s\t%s\t%s\t%s\n' \
-    "$hash" "$name" "$size" "$asset_os" "$asset_arch" >> "$records_file"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$hash" "$name" "$size" "$asset_os" "$asset_arch" \
+    "$asset_build" "$asset_commit" >> "$records_file"
   echo "Staged $name ($size bytes) -> ${blob}"
 done
 
@@ -278,7 +300,7 @@ records, sums, assets_path = sys.argv[1:]
 assets = {}
 with open(records, encoding="utf-8") as handle:
     for line in handle:
-        digest, name, size, os_name, arch = line.rstrip("\n").split("\t")
+        digest, name, size, os_name, arch, build, commit = line.rstrip("\n").split("\t")
         assets[name] = {
             "name": name,
             "blob_sha256": digest,
@@ -286,6 +308,9 @@ with open(records, encoding="utf-8") as handle:
             "os": os_name,
             "arch": arch,
         }
+        if build:
+            assets[name]["build"] = int(build)
+            assets[name]["commit"] = commit
 ordered = [assets[name] for name in sorted(assets)]
 with open(sums, "w", encoding="utf-8") as handle:
     for asset in ordered:

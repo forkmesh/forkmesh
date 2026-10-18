@@ -57,8 +57,8 @@ def _manifest(tag, names):
 
 
 def test_version_code_increases_with_every_release():
-    assert tool.android_version_code("v0.8.7") == 807
-    assert tool.android_version_code("0.8.10") == 810
+    assert tool.android_version_code("v0.8.7") == 80701
+    assert tool.android_version_code("0.8.10") == 81001
     codes = [tool.android_version_code(t) for t in ("v0.8.7", "v0.8.8", "v0.9.0", "v1.0.0")]
     assert codes == sorted(codes) and len(set(codes)) == len(codes)
     # v0.8.6's hand-built APK carried versionCode 4; the next one must exceed it.
@@ -304,7 +304,7 @@ def test_the_apk_badging_names_the_package_and_version_code():
 
 def test_the_native_apk_takes_the_release_version():
     assert tool.android_version_name("v1.2.5") == "1.2.5"
-    assert tool.android_version_code("v1.2.5") == 10205
+    assert tool.android_version_code("v1.2.5") == 1020501
     assert tool.android_version_code("v1.2.5") > tool.android_version_code("v1.2.4")
     with pytest.raises(tool.CompletionError):
         tool.android_version_name("latest")

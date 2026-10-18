@@ -253,10 +253,71 @@ ShortcutMeta parseShortcutMeta(const QString &fileName, const QString &text)
             meta.agent = line.mid(8).trimmed().toLower();
         else if (line.startsWith(QLatin1String("# model:")))
             meta.model = line.mid(8).trimmed();
-        else if (meta.description.isEmpty() && line.startsWith(QLatin1Char('#')))
+        else if (meta.description.isEmpty() && line.startsWith(QLatin1Char('#')) &&
+                 !isShortcutStepLine(line))
             meta.description = line.mid(1).trimmed();
     }
     return meta;
+}
+
+bool isShortcutStepLine(const QString &line)
+{
+    static const QRegularExpression step(QStringLiteral("^#\\s*step:"));
+    return step.match(line).hasMatch();
+}
+
+QList<ShortcutStep> parseShortcutSteps(const QString &text)
+{
+    static const QRegularExpression stepName(QStringLiteral("^#\\s*step:\\s*(.+?)\\s*$"));
+    static const QRegularExpression link(QStringLiteral(
+        "^\\s*bash\\s+\\.forkmesh/shortcuts/([A-Za-z0-9._-]{1,96})(?:\\s|$)"));
+    static const QRegularExpression header(
+        QStringLiteral("^#\\s*(name|description|agent|model):"));
+    QStringList lines = text.split(QLatin1Char('\n'));
+    for (QString &line : lines)
+        if (line.endsWith(QLatin1Char('\r')))
+            line.chop(1);
+    qsizetype index = !lines.isEmpty() && lines.first().startsWith(QLatin1String("#!")) ? 1 : 0;
+    while (index < lines.size() && index < 20 && header.match(lines.at(index)).hasMatch())
+        ++index;
+    QList<ShortcutStep> steps;
+    while (index < lines.size() && steps.size() < kMaxShortcutSteps) {
+        while (index < lines.size() && lines.at(index).trimmed().isEmpty())
+            ++index;
+        if (index >= lines.size())
+            break;
+        const qsizetype start = index;
+        while (index < lines.size() && !lines.at(index).trimmed().isEmpty())
+            ++index;
+        const QRegularExpressionMatch named = stepName.match(lines.at(start));
+        if (!named.hasMatch())
+            continue;
+        ShortcutStep step;
+        step.name = named.captured(1).simplified().left(kMaxShortcutStepName);
+        if (step.name.isEmpty())
+            continue;
+        for (qsizetype line = start + 1; line < index; ++line) {
+            const QRegularExpressionMatch linked = link.match(lines.at(line));
+            if (linked.hasMatch()) {
+                step.shortcut = linked.captured(1);
+                break;
+            }
+        }
+        steps.append(step);
+    }
+    return steps;
+}
+
+QJsonArray shortcutStepRows(const QList<ShortcutStep> &steps)
+{
+    QJsonArray rows;
+    for (const ShortcutStep &step : steps) {
+        QJsonObject row{{QStringLiteral("name"), step.name}};
+        if (!step.shortcut.isEmpty())
+            row.insert(QStringLiteral("shortcut"), step.shortcut);
+        rows.append(row);
+    }
+    return rows;
 }
 
 QString shortcutPrompt(const QString &text)

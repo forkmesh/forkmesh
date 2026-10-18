@@ -51,6 +51,15 @@ connections; each step runs once per item it receives.
   through `POST /api/repo/<owner>/<repo>/file-edit` with the read blob oid (a
   concurrent change is a 409). Packages can ship such files through the
   `content.*` sockets ([marketplace docs](../marketplace/README.md#protocols-and-interfaces)).
+  A shortcut script's body is split into blocks on blank lines. A block
+  whose first non-empty line is `# step: <name>` is a named step and the
+  canvas shows that name (at most 80 characters) instead of "Commands N". A
+  block with a line `bash .forkmesh/shortcuts/<file> ...` becomes a
+  `shortcut.run` node ("Run shortcut", blue): it reads "Runs <file>" and its
+  Open link loads that shortcut on the canvas; the first such line wins. The
+  desktop and phone apps parse the same rules. Only the block text is saved,
+  so the file round-trips byte for byte (a missing final newline is kept in
+  `meta.finalNewline`), and editing the link away just saves the text.
 - **Import/export**: Download writes n8n workflow JSON (plus `forkmeshType` /
   `forkmeshParams` for exact round trips). Upload and Import from URL accept
   n8n files, n8n template pages, GitHub blobs and Gists; unknown steps become

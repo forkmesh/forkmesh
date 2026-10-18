@@ -229,4 +229,67 @@ class ShortcutsTest {
         run = run.absorb(mapOf("id" to 7L, "running" to false, "ok" to true, "message" to "done (exit 0)"), nowMs = 13_000)
         assertEq(null, run.progress(13_000))
     }
+
+    fun testStepsDecodeAndLinkToShortcutsInTheSameScope() {
+        val catalog = ShortcutCatalog.from(
+            mapOf(
+                "repo" to "f/r",
+                "entries" to listOf(
+                    mapOf(
+                        "file" to "deploy.sh", "scope" to "shortcut", "name" to "Deploy new version", "kind" to "script",
+                        "steps" to listOf(
+                            mapOf("name" to "Cut the new version"),
+                            mapOf("name" to " Deploy Android build ", "shortcut" to "deploy-build-android.sh"),
+                            mapOf("name" to "Deploy Linux build", "shortcut" to "deploy-build-linux"),
+                            mapOf("name" to "Deploy iOS build", "shortcut" to "deploy-build-ios.sh"),
+                            mapOf("name" to "Run itself", "shortcut" to "deploy.sh"),
+                        ),
+                    ),
+                    mapOf("file" to "deploy-build-android.sh", "scope" to "shortcut", "name" to "Android", "kind" to "script"),
+                    mapOf("file" to "deploy-build-linux.sh", "scope" to "shortcut", "name" to "Linux", "kind" to "script"),
+                    mapOf("file" to "deploy-build-ios.sh", "scope" to "repository", "name" to "iOS skill"),
+                ),
+            ),
+        )
+        val deploy = catalog.entries.first { it.file == "deploy.sh" }
+        assertEq(5, deploy.steps.size)
+        assertEq("5 steps", deploy.stepsText)
+        assertEq(ShortcutStep("Cut the new version"), deploy.steps[0])
+        assertEq(ShortcutStep("Deploy Android build", "deploy-build-android.sh"), deploy.steps[1])
+        assertEq(false, deploy.steps[0].linked)
+        assertEq(null, catalog.target(deploy, deploy.steps[0]))
+        assertEq("deploy-build-android.sh", catalog.target(deploy, deploy.steps[1])?.file)
+        assertEq("deploy-build-linux.sh", catalog.target(deploy, deploy.steps[2])?.file)
+        assertEq(null, catalog.target(deploy, deploy.steps[3]))
+        assertEq(null, catalog.target(deploy, deploy.steps[4]))
+        assertEq("Step 2 of 7, Deploy Android build, opens shortcut", deploy.steps[1].spoken(1, 7, true))
+        assertEq("Step 1 of 7, Cut the new version", deploy.steps[0].spoken(0, 7, false))
+        assertEq("", catalog.entries.first { it.file == "deploy-build-android.sh" }.stepsText)
+    }
+
+    fun testStepsTolerateAbsenceAndGarbage() {
+        assertEq(emptyList<ShortcutStep>(), ShortcutEntry.from(mapOf("file" to "a.sh", "scope" to "shortcut")).steps)
+        assertEq(emptyList<ShortcutStep>(), ShortcutEntry.from(mapOf("file" to "a.sh", "steps" to "Plan, build")).steps)
+        assertEq(emptyList<ShortcutStep>(), ShortcutEntry.from(mapOf("file" to "a.sh", "steps" to mapOf("name" to "x"))).steps)
+        val messy = ShortcutEntry.from(
+            mapOf(
+                "file" to "a.sh",
+                "steps" to listOf(
+                    "Plan",
+                    42L,
+                    null,
+                    mapOf("name" to "   "),
+                    mapOf("name" to 7L),
+                    mapOf("shortcut" to "b.sh"),
+                    mapOf("name" to "Build", "shortcut" to listOf("b.sh")),
+                    mapOf("name" to "Check", "shortcut" to "  "),
+                ),
+            ),
+        )
+        assertEq(listOf(ShortcutStep("b.sh", "b.sh"), ShortcutStep("Build"), ShortcutStep("Check")), messy.steps)
+        assertEq("1 step", ShortcutEntry.from(mapOf("steps" to listOf(mapOf("name" to "Only")))).stepsText)
+        val many = ShortcutEntry.from(mapOf("steps" to (1..40).map { mapOf("name" to "Step $it") }))
+        assertEq(ShortcutStep.MAX, many.steps.size)
+        assertEq("Step 32", many.steps.last().name)
+    }
 }

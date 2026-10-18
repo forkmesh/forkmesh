@@ -49,30 +49,27 @@ struct ShortcutMeta
     QString description;
     QString agent;
     QString model;
+    QList<forkmesh::localcontrol::insights::ShortcutStep> steps;
 };
 
 ShortcutMeta shortcutMeta(const QString &filePath)
 {
+    namespace insightctl = forkmesh::localcontrol::insights;
+    constexpr qint64 kMaxShortcutReadBytes = 64 * 1024;
     ShortcutMeta meta;
-    meta.name = QFileInfo(filePath).fileName();
+    const QString fileName = QFileInfo(filePath).fileName();
+    meta.name = fileName;
     QFile file(filePath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (!file.open(QIODevice::ReadOnly))
         return meta;
-    for (int i = 0; i < 20 && !file.atEnd(); ++i) {
-        const QString line = QString::fromUtf8(file.readLine()).trimmed();
-        if (line.startsWith(QLatin1String("#!")))
-            continue;
-        if (line.startsWith(QLatin1String("# name:")))
-            meta.name = line.mid(7).trimmed();
-        else if (line.startsWith(QLatin1String("# description:")))
-            meta.description = line.mid(14).trimmed();
-        else if (line.startsWith(QLatin1String("# agent:")))
-            meta.agent = line.mid(8).trimmed().toLower();
-        else if (line.startsWith(QLatin1String("# model:")))
-            meta.model = line.mid(8).trimmed();
-        else if (meta.description.isEmpty() && line.startsWith(QLatin1Char('#')))
-            meta.description = line.mid(1).trimmed();
-    }
+    const QString text = QString::fromUtf8(file.read(kMaxShortcutReadBytes));
+    const insightctl::ShortcutMeta parsed = insightctl::parseShortcutMeta(fileName, text);
+    meta.name = parsed.name;
+    meta.description = parsed.description;
+    meta.agent = parsed.agent;
+    meta.model = parsed.model;
+    if (shortcutIsScript(filePath))
+        meta.steps = insightctl::parseShortcutSteps(text);
     return meta;
 }
 
@@ -140,6 +137,29 @@ constexpr int kShortcutPathRole = Qt::UserRole + 1;
 constexpr int kShortcutScopeRole = Qt::UserRole + 2;
 constexpr int kShortcutIsSkillRole = Qt::UserRole + 3;
 constexpr int kShortcutActionRole = Qt::UserRole + 4;
+constexpr int kShortcutLinksRole = Qt::UserRole + 5;
+constexpr int kMaxCardStepRows = 6;
+
+QString shortcutStepsTooltip(const QList<forkmesh::localcontrol::insights::ShortcutStep> &steps)
+{
+    QStringList lines;
+    for (int index = 0; index < steps.size(); ++index)
+        lines << (steps.at(index).shortcut.isEmpty()
+                      ? QStringLiteral("%1. %2").arg(index + 1).arg(steps.at(index).name)
+                      : QStringLiteral("%1. %2 → %3")
+                            .arg(index + 1)
+                            .arg(steps.at(index).name, steps.at(index).shortcut));
+    return lines.join(QLatin1Char('\n'));
+}
+
+QStringList shortcutStepLinks(const QList<forkmesh::localcontrol::insights::ShortcutStep> &steps)
+{
+    QStringList links;
+    for (const auto &step : steps)
+        if (!step.shortcut.isEmpty() && !links.contains(step.shortcut))
+            links << step.shortcut;
+    return links;
+}
 
 QTableWidgetItem *shortcutTimeItem(const QDateTime &when)
 {
@@ -224,6 +244,14 @@ public:
         m_columns = 0;
     }
 
+    QWidget *cardForFile(const QString &fileName) const
+    {
+        for (QWidget *card : m_cards)
+            if (card->property("shortcutFile").toString() == fileName)
+                return card;
+        return nullptr;
+    }
+
     void addCard(QWidget *card)
     {
         card->setParent(this);
@@ -270,6 +298,262 @@ private:
     int m_columns = 0;
     int m_lastRowCount = 0;
 };
+
+class ShortcutStepList final : public QWidget
+{
+public:
+    using Step = forkmesh::localcontrol::insights::ShortcutStep;
+
+    ShortcutStepList(const QList<Step> &steps, const QHash<QString, QString> &titles,
+                     int maxRows, QWidget *parent = nullptr)
+        : QWidget(parent), m_steps(steps), m_titles(titles), m_maxRows(qMax(2, maxRows))
+    {
+        setObjectName(QStringLiteral("shortcutStepList"));
+        setAttribute(Qt::WA_TranslucentBackground);
+        setMouseTracking(true);
+        setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        setToolTip(QStringLiteral("%1 step%2\n%3")
+                       .arg(m_steps.size())
+                       .arg(m_steps.size() == 1 ? QString() : QStringLiteral("s"),
+                            shortcutStepsTooltip(m_steps)));
+    }
+
+    std::function<void(const QString &)> onLinkClicked;
+
+    QSize sizeHint() const override { return QSize(220, rowCount() * rowHeight() + 2); }
+    QSize minimumSizeHint() const override { return QSize(80, rowCount() * rowHeight() + 2); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        const QColor muted = Theme::nextOr(Theme::Role::FgMuted, QColor(Theme::kTextTertiary));
+        QColor line = muted;
+        line.setAlpha(140);
+        const QColor text = Theme::nextOr(Theme::Role::Fg, palette().color(QPalette::Text));
+        const QColor link = Theme::nextOr(Theme::Role::Accent, palette().color(QPalette::Link));
+        const int rows = rowCount();
+        const int height = rowHeight();
+        painter.setPen(QPen(line, 1.2));
+        for (int row = 0; row + 1 < rows; ++row)
+            painter.drawLine(QPointF(kDotX, row * height + height / 2.0 + kDotRadius + 1.5),
+                             QPointF(kDotX, (row + 1) * height + height / 2.0 - kDotRadius - 1.5));
+        for (int row = 0; row < rows; ++row) {
+            const QPointF centre(kDotX, row * height + height / 2.0);
+            if (row >= shownSteps()) {
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(muted);
+                for (int dot = -1; dot <= 1; ++dot)
+                    painter.drawEllipse(QPointF(kDotX, centre.y() + dot * 3.5), 1.1, 1.1);
+                painter.setPen(muted);
+                painter.drawText(rowTextRect(row), Qt::AlignLeft | Qt::AlignVCenter,
+                                 QStringLiteral("+%1 more").arg(m_steps.size() - shownSteps()));
+                continue;
+            }
+            const Step &step = m_steps.at(row);
+            const bool linked = !step.shortcut.isEmpty();
+            painter.setPen(QPen(linked ? link : muted, 1.4));
+            painter.setBrush(linked ? QBrush(link) : QBrush(Qt::NoBrush));
+            painter.drawEllipse(centre, kDotRadius, kDotRadius);
+            QRect nameRect;
+            QRect linkRect;
+            layoutRow(row, &nameRect, &linkRect);
+            painter.setPen(text);
+            painter.drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter,
+                             fontMetrics().elidedText(step.name, Qt::ElideRight, nameRect.width()));
+            if (!linked || linkRect.width() <= 0)
+                continue;
+            QFont linkFont = font();
+            linkFont.setUnderline(row == m_hoverRow);
+            painter.setFont(linkFont);
+            painter.setPen(link);
+            painter.drawText(linkRect, Qt::AlignLeft | Qt::AlignVCenter,
+                             QFontMetrics(linkFont).elidedText(linkText(step), Qt::ElideRight,
+                                                               linkRect.width()));
+            painter.setFont(font());
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        const int row = linkRowAt(event->position().toPoint());
+        if (row != m_hoverRow) {
+            m_hoverRow = row;
+            update();
+        }
+        QWidget::mouseMoveEvent(event);
+    }
+
+    void leaveEvent(QEvent *event) override
+    {
+        if (m_hoverRow >= 0) {
+            m_hoverRow = -1;
+            update();
+        }
+        QWidget::leaveEvent(event);
+    }
+
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        m_pressedRow = event->button() == Qt::LeftButton
+                           ? linkRowAt(event->position().toPoint())
+                           : -1;
+        if (m_pressedRow < 0) {
+            event->ignore();
+            return;
+        }
+        event->accept();
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        const int pressed = m_pressedRow;
+        m_pressedRow = -1;
+        if (pressed < 0) {
+            event->ignore();
+            return;
+        }
+        event->accept();
+        if (pressed == linkRowAt(event->position().toPoint()) && onLinkClicked)
+            onLinkClicked(m_steps.at(pressed).shortcut);
+    }
+
+private:
+    static constexpr int kDotX = 6;
+    static constexpr qreal kDotRadius = 3.5;
+    static constexpr int kTextX = 16;
+
+    int rowHeight() const { return fontMetrics().height() + 5; }
+
+    int shownSteps() const
+    {
+        return m_steps.size() > m_maxRows ? m_maxRows - 1 : int(m_steps.size());
+    }
+
+    int rowCount() const { return qMin(int(m_steps.size()), m_maxRows); }
+
+    QRect rowTextRect(int row) const
+    {
+        return QRect(kTextX, row * rowHeight(), qMax(0, width() - kTextX), rowHeight());
+    }
+
+    QString linkText(const Step &step) const
+    {
+        const QString title = m_titles.value(step.shortcut);
+        return QStringLiteral("→ %1").arg(title.isEmpty() ? step.shortcut : title);
+    }
+
+    void layoutRow(int row, QRect *nameRect, QRect *linkRect) const
+    {
+        const QRect area = rowTextRect(row);
+        const Step &step = m_steps.at(row);
+        if (step.shortcut.isEmpty()) {
+            *nameRect = area;
+            *linkRect = QRect();
+            return;
+        }
+        constexpr int kGap = 8;
+        QFont linkFont = font();
+        linkFont.setUnderline(true);
+        const int linkWanted = QFontMetrics(linkFont).horizontalAdvance(linkText(step)) + 2;
+        const int nameWanted = fontMetrics().horizontalAdvance(step.name) + 2;
+        const int available = qMax(0, area.width() - kGap);
+        int linkWidth = qMin(linkWanted, qMax(available / 2, available - nameWanted));
+        const int nameWidth = qMin(nameWanted, available - linkWidth);
+        linkWidth = qMin(linkWanted, available - nameWidth);
+        *nameRect = QRect(area.left(), area.top(), nameWidth, area.height());
+        *linkRect = QRect(area.left() + nameWidth + kGap, area.top(), linkWidth, area.height());
+    }
+
+    int linkRowAt(const QPoint &point) const
+    {
+        const int row = point.y() / qMax(1, rowHeight());
+        if (point.y() < 0 || row >= shownSteps() || m_steps.at(row).shortcut.isEmpty())
+            return -1;
+        QRect nameRect;
+        QRect linkRect;
+        layoutRow(row, &nameRect, &linkRect);
+        return linkRect.contains(point) ? row : -1;
+    }
+
+    QList<Step> m_steps;
+    QHash<QString, QString> m_titles;
+    int m_maxRows = 6;
+    int m_hoverRow = -1;
+    int m_pressedRow = -1;
+};
+
+bool locateShortcutFile(QStackedWidget *stack, QTableWidget *table, ShortcutCardGrid *grid,
+                        const QString &file)
+{
+    if (stack && table && stack->currentWidget() == table) {
+        for (int row = 0; row < table->rowCount(); ++row) {
+            const QTableWidgetItem *item = table->item(row, ShortcutNameColumn);
+            if (!item || item->data(kShortcutIsSkillRole).toBool() ||
+                QFileInfo(item->data(kShortcutPathRole).toString()).fileName() != file)
+                continue;
+            table->selectRow(row);
+            table->scrollToItem(item, QAbstractItemView::PositionAtCenter);
+            return true;
+        }
+        return false;
+    }
+    QWidget *card = grid ? grid->cardForFile(file) : nullptr;
+    if (!card)
+        return false;
+    const QColor accent = Theme::nextOr(Theme::Role::Accent, card->palette().color(QPalette::Link));
+    card->setStyleSheet(QStringLiteral("QPushButton#shortcutCard { border: 2px solid %1; }")
+                            .arg(accent.name()));
+    card->setProperty("shortcutHighlighted", true);
+    QTimer::singleShot(0, card, [card] {
+        for (QWidget *parent = card->parentWidget(); parent; parent = parent->parentWidget())
+            if (auto *area = qobject_cast<QScrollArea *>(parent)) {
+                area->ensureWidgetVisible(card, 0, 24);
+                break;
+            }
+    });
+    QTimer::singleShot(1800, card, [card] {
+        card->setStyleSheet(QString());
+        card->setProperty("shortcutHighlighted", false);
+    });
+    return true;
+}
+
+void revealShortcutFile(QObject *context, QStackedWidget *stack, QTableWidget *table,
+                        ShortcutCardGrid *grid, QLineEdit *search, QComboBox *filter,
+                        std::function<void()> reload,
+                        std::function<void(const QString &)> notice, const QString &file)
+{
+    QPointer<QStackedWidget> stackGuard(stack);
+    QPointer<QTableWidget> tableGuard(table);
+    QPointer<QLineEdit> searchGuard(search);
+    QPointer<QComboBox> filterGuard(filter);
+    QPointer<ShortcutCardGrid> gridGuard(grid);
+    QTimer::singleShot(0, context, [=] {
+        if (locateShortcutFile(stackGuard, tableGuard, gridGuard, file))
+            return;
+        const bool narrowed =
+            (searchGuard && !searchGuard->text().isEmpty()) ||
+            (filterGuard && filterGuard->currentData().toString() == QLatin1String("skills"));
+        if (narrowed) {
+            if (searchGuard) {
+                const QSignalBlocker blocker(searchGuard.data());
+                searchGuard->clear();
+            }
+            if (filterGuard) {
+                const QSignalBlocker blocker(filterGuard.data());
+                filterGuard->setCurrentIndex(
+                    qMax(0, filterGuard->findData(QStringLiteral("all"))));
+            }
+            reload();
+            if (locateShortcutFile(stackGuard, tableGuard, gridGuard, file))
+                return;
+        }
+        notice(QStringLiteral("%1 is not in this repository's .forkmesh/shortcuts folder.")
+                   .arg(file));
+    });
+}
 
 } // namespace
 
@@ -396,7 +680,8 @@ QWidget *MainWindow::buildShortcutsTab()
     // Card titles share one rule here rather than a sheet per card on reload.
     m_shortcutCardsHost->setStyleSheet(Theme::remapSheet(QStringLiteral(
         "QLabel#shortcutCardTitle "
-        "{ font-weight:600; font-size:14px; background:transparent; }")));
+        "{ font-weight:600; font-size:14px; background:transparent; }"
+        "#shortcutStepList { font-size:12px; }")));
     auto *scroll = new QScrollArea;
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
@@ -468,6 +753,7 @@ QWidget *MainWindow::buildShortcutsTab()
                 const bool isSkill = item->data(kShortcutIsSkillRole).toBool();
                 const QString action = item->data(kShortcutActionRole).toString();
                 QMenu menu(m_shortcutsTable);
+                const QStringList links = item->data(kShortcutLinksRole).toStringList();
                 if (action == QLatin1String("run"))
                     menu.addAction(QStringLiteral("Run"),
                                    [activateShortcutRow, row] {
@@ -485,6 +771,24 @@ QWidget *MainWindow::buildShortcutsTab()
                                    [activateShortcutRow, row] {
                                        activateShortcutRow(row);
                                    });
+                if (!links.isEmpty()) {
+                    menu.addSeparator();
+                    for (const QString &link : links)
+                        menu.addAction(QStringLiteral("Go to linked %1").arg(link),
+                                       [this, link] {
+                                           revealShortcutFile(
+                                               this, m_shortcutsViewStack, m_shortcutsTable,
+                                               static_cast<ShortcutCardGrid *>(
+                                                   m_shortcutCardsHost),
+                                               m_shortcutsSearch, m_shortcutsFilter,
+                                               [this] { loadShortcutsPanel(); },
+                                               [this](const QString &message) {
+                                                   setRepoDetailNotice(message, true);
+                                               },
+                                               link);
+                                       });
+                    menu.addSeparator();
+                }
                 menu.addAction(isSkill ? QStringLiteral("Edit skill")
                                        : QStringLiteral("Edit shortcut"),
                                [this, path, isSkill] {
@@ -951,6 +1255,7 @@ void MainWindow::loadShortcutsPanel()
         m_skillsScope->setEnabled(wantSkills);
 
     QList<PanelEntry> entries;
+    QHash<QString, QString> shortcutTitles;
     int shortcutTotal = 0;
     int skillTotal = 0;
     QStringList unavailable;
@@ -983,6 +1288,7 @@ void MainWindow::loadShortcutsPanel()
                 stampFileTimes(entry, info);
                 entry.uses = shortcutUsageCount(
                     shortcutUsageKey(entry.path, entry.scope));
+                shortcutTitles.insert(info.fileName(), entry.title);
                 if (matches(entry))
                     entries.append(entry);
             }
@@ -1064,6 +1370,12 @@ void MainWindow::loadShortcutsPanel()
                 draftShortcutPrompt(path, scope);
         });
     };
+    const auto revealLinkedShortcut = [this, cardsGrid](const QString &file) {
+        revealShortcutFile(
+            this, m_shortcutsViewStack, m_shortcutsTable, cardsGrid, m_shortcutsSearch,
+            m_shortcutsFilter, [this] { loadShortcutsPanel(); },
+            [this](const QString &message) { setRepoDetailNotice(message, true); }, file);
+    };
     const bool tableView =
         m_shortcutsView &&
         m_shortcutsView->currentData().toString() == QLatin1String("table");
@@ -1127,11 +1439,22 @@ void MainWindow::loadShortcutsPanel()
                 m_shortcutsTable->setCellWidget(row, ShortcutRunButtonColumn, runButton);
             }
 
-            m_shortcutsTable->setItem(
-                row, ShortcutTypeColumn,
-                new SortTableWidgetItem(dedicated && !entry.meta.model.isEmpty()
-                                            ? entry.meta.model
-                                            : entry.kind));
+            name->setData(kShortcutLinksRole, shortcutStepLinks(entry.meta.steps));
+            const QString typeText =
+                dedicated && !entry.meta.model.isEmpty() ? entry.meta.model : entry.kind;
+            auto *type = new SortTableWidgetItem(
+                entry.meta.steps.isEmpty()
+                    ? typeText
+                    : QStringLiteral("%1 · %2 step%3")
+                          .arg(typeText)
+                          .arg(entry.meta.steps.size())
+                          .arg(entry.meta.steps.size() == 1 ? QString() : QStringLiteral("s")));
+            if (!entry.meta.steps.isEmpty()) {
+                const QString steps = shortcutStepsTooltip(entry.meta.steps);
+                type->setToolTip(steps);
+                name->setToolTip(entry.title + QStringLiteral("\n") + steps);
+            }
+            m_shortcutsTable->setItem(row, ShortcutTypeColumn, type);
             m_shortcutsTable->setItem(
                 row, ShortcutScopeColumn,
                 new SortTableWidgetItem(
@@ -1229,6 +1552,9 @@ void MainWindow::loadShortcutsPanel()
         card->setProperty("shortcutTitle", entry.title);
         card->setProperty("shortcutUses", entry.uses);
         card->setProperty("shortcutIsSkill", entry.isSkill);
+        card->setProperty("shortcutStepCount", int(entry.meta.steps.size()));
+        if (!entry.isSkill)
+            card->setProperty("shortcutFile", QFileInfo(path).fileName());
         card->setCursor(Qt::PointingHandCursor);
         card->setToolTip(
             script ? QStringLiteral("Run %1").arg(QFileInfo(path).fileName())
@@ -1392,6 +1718,14 @@ void MainWindow::loadShortcutsPanel()
             desc->setWordWrap(true);
             desc->setAttribute(Qt::WA_TransparentForMouseEvents);
             cardLayout->addWidget(desc);
+        }
+
+        if (!entry.meta.steps.isEmpty()) {
+            auto *steps = new ShortcutStepList(entry.meta.steps, shortcutTitles,
+                                               kMaxCardStepRows);
+            steps->onLinkClicked = revealLinkedShortcut;
+            cardLayout->addSpacing(2);
+            cardLayout->addWidget(steps);
         }
 
         // When it last ran, how often it worked, and how long that took.

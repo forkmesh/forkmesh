@@ -641,6 +641,24 @@ default in new projects except the chosen starter pack
   the desktop's **iOS App Store status** shortcut to run
   ([App Store Status](../marketplace/app-store-status.md)). TestFlight public
   links open in the browser, and only `https://` links are offered.
+- **Shortcut steps.** `C/teammates/ShortcutsStore.kt` decodes the optional
+  `steps` of each `insights.shortcuts` entry into `ShortcutStep` (name, and
+  `shortcut` when the step runs another shortcut). Decoding is lenient: a
+  missing or non-list `steps`, non-object items and items with no string
+  name are dropped (a step with only a `shortcut` is named after it), and at
+  most 32 are kept, the desktop's own limit ([shortcuts](../desktop/shortcuts.md)).
+  `ShortcutCatalog.target` resolves a link to an entry in the same scope (the
+  exact file, else the file without its extension) and never to the shortcut
+  itself, so a step pointing nowhere shows as plain text. In
+  `A/feature/teammates/ShortcutsScreen.kt` a row with steps shows `N steps`
+  under its details, leaving the Run button where it was. The shortcut
+  detail (the section below the list) draws the steps as a numbered
+  timeline. Circles are sized in `sp`, so they grow with the font scale. Rows
+  are at least 48 dp tall, and names wrap rather than truncate on narrow
+  phones. A linked step is drawn in `accent` with a chevron. Tapping it opens
+  the linked shortcut's detail and scrolls to it, two frames after the text
+  loads so the list has been laid out. TalkBack reads each step as one node,
+  for example "Step 2 of 7, Deploy Android build, opens shortcut".
 - **RSS Reader** (`rss-reader`, route `rssReader`, Personal group;
   `/dashboard/rss`, `forkmesh://rss`, `forkmesh://rss-reader`). Local only:
   `C/rssreader/` holds everything testable on the host JVM (parsing, the
