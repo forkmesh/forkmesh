@@ -8,6 +8,7 @@ public struct OpenWrtSnapshot: Equatable, Sendable {
     public var wirelessStatus: JSONObject = JSONObject()
     public var configs: [String: JSONObject] = [:]
     public var configNames: [String] = []
+    public var missingConfigs: Set<String> = []
     public var changes: JSONObject = JSONObject()
     public var leases: [OpenWrtLease] = []
     public var services: [OpenWrtService] = []
@@ -48,6 +49,7 @@ public struct OpenWrtSnapshot: Equatable, Sendable {
     public var shareConfig: String { OpenWrtModel.shareConfig(configNames) }
     public var shares: [OpenWrtShare] { shareConfig.isEmpty ? [] : OpenWrtModel.parseShares(sections(shareConfig)) }
     public var autoMount: Bool { sections("fstab", type: "global").first?.flag("anon_mount") ?? false }
+    public var fstabMissing: Bool { missingConfigs.contains("fstab") }
 
     public func dhcpSection(for interface: String) -> UciSection? {
         sections("dhcp", type: "dhcp").first { $0.option("interface") == interface }
@@ -107,6 +109,7 @@ extension OpenWrtClient {
             let result = await call("uci", "get", ["config": .string(config)])
             if result.ok || result.status == UbusStatus.notFound.rawValue {
                 snapshot.configs[config] = result.data.obj("values")
+                if !result.ok { snapshot.missingConfigs.insert(config) }
             } else {
                 snapshot.problems.append("Could not read the \(config) settings: \(result.error)")
             }
@@ -195,6 +198,61 @@ extension OpenWrtClient {
             }
             return .failed("The change could not be confirmed (\(confirm.error)). The router will put the old settings back by itself.")
         }
+    }
+
+    public func createFstab() async -> OpenWrtResult {
+        let detect = await exec("/sbin/block", ["detect"], timeout: 60)
+        guard detect.ok else {
+            return .failure("Automatic mounting needs block-mount, and the router could not run it (\(detect.error)). Press Install USB storage support first.")
+        }
+        let written = await call("file", "write", ["path": .string(OpenWrtModel.fstabPath), "data": .string(OpenWrtModel.fstabFromDetect(detect.data.str("stdout"))), "mode": .int(0o644)])
+        guard written.ok else {
+            return .failure("The router has no /etc/config/fstab and did not let ForkMesh create it (\(written.error)). Reinstall block-mount, which creates it, or run \"block detect > /etc/config/fstab\" on the router.")
+        }
+        return written
+    }
+
+    public func checkStorage(_ current: OpenWrtSnapshot) async -> (check: OpenWrtStorageCheck, snapshot: OpenWrtSnapshot) {
+        var snapshot = current
+        var check = OpenWrtStorageCheck()
+        if let tool = snapshot.packageTool {
+            let listed = await listPackages(preferred: tool)
+            if listed.tool != nil { snapshot.packages = listed.packages }
+            check.packagesKnown = true
+        }
+        check.installed = snapshot.packages.map(\.name)
+        check.blockTool = await call("file", "stat", ["path": "/sbin/block"]).ok
+        let fstab = await call("uci", "get", ["config": "fstab"])
+        check.fstabExists = fstab.ok
+        if fstab.ok || fstab.status == UbusStatus.notFound.rawValue {
+            snapshot.configs["fstab"] = fstab.data.obj("values")
+            if fstab.ok { snapshot.missingConfigs.remove("fstab") } else { snapshot.missingConfigs.insert("fstab") }
+        }
+        let usb = await call("file", "list", ["path": "/sys/bus/usb/devices"])
+        check.usbKnown = usb.ok
+        let entries = usb.data.maps("entries").map { $0.str("name") }
+        check.usbControllers = OpenWrtModel.usbControllerCount(entries)
+        for entry in OpenWrtModel.usbDeviceEntries(entries).prefix(8) {
+            let product = await call("file", "read", ["path": .string("/sys/bus/usb/devices/\(entry)/product")])
+            let name = product.ok ? product.data.str("data").trimmingCharacters(in: .whitespacesAndNewlines) : ""
+            check.usbDevices.append(name.isEmpty ? entry : "\(name) (\(entry))")
+        }
+        let partitions = await call("file", "read", ["path": "/proc/partitions"])
+        check.partitionsKnown = partitions.ok
+        check.partitions = OpenWrtModel.parsePartitions(partitions.data.str("data"))
+        let blocks = await call("luci", "getBlockDevices")
+        snapshot.blocks = blocks.ok ? OpenWrtModel.parseBlockDevices(blocks.data) : []
+        snapshot.storageProblem = blocks.ok ? "" : blocks.error
+        snapshot.mounts = OpenWrtModel.parseMountPoints(await call("luci", "getMountPoints").data)
+        snapshot.changes = await call("uci", "changes").data.obj("changes")
+        check.kernelLines = OpenWrtModel.storageKernelLines(await exec("/bin/dmesg", ["-r"]).data.str("stdout"))
+        let disks = snapshot.disks
+        check.disks = disks.count
+        check.mounted = disks.filter(\.mounted).count
+        check.listProblem = snapshot.storageProblem
+        check.autoMount = snapshot.autoMount
+        check.autoMountPending = snapshot.changes.contains("fstab")
+        return (check, snapshot)
     }
 
     public func packageAction(_ tool: OpenWrtPackageTool, action: String, names: [String]) async -> OpenWrtResult {

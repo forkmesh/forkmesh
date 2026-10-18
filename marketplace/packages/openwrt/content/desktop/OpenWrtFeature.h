@@ -7,6 +7,7 @@
 #include <QHash>
 #include <QJsonObject>
 #include <QList>
+#include <QSet>
 #include <QString>
 
 #include <functional>
@@ -72,9 +73,9 @@ private:
     void loadAdvancedConfigs();
 
     void stage(const QString &config, const QString &section, const QJsonObject &values,
-               const QStringList &removed, const QString &what);
+               const QStringList &removed, const QString &what, const Client::Done &after = {});
     void addSection(const QString &config, const QString &type, const QString &name, const QJsonObject &values,
-                    const QString &what);
+                    const QString &what, const Client::Done &after = {});
     void deleteSection(const QString &config, const QString &section, const QString &what);
     void reviewChanges();
     void applyChanges();
@@ -116,6 +117,10 @@ private:
     void shareDisk();
     void stopSharing();
     void installStorageSupport();
+    void installStoragePackages(QStringList remaining, QStringList failed);
+    void createFstab(const std::function<void()> &then);
+    void checkStorage(bool keepLog = false);
+    void appendStorageLog(const QString &text);
     void packageAction(const QString &action, const QString &name);
     void detectPackageTool(int index);
     void saveHostname();
@@ -157,6 +162,8 @@ private:
     QList<MountPoint> m_mounts;
     QList<StorageDisk> m_disks;
     QString m_storageProblem;
+    QSet<QString> m_missingConfigs;
+    bool m_storageBusy = false;
     QList<Package> m_packages;
     int m_packageTool = -1;
     QStringList m_advancedConfigs;
@@ -244,6 +251,7 @@ private:
     QLabel *m_storageNote = nullptr;
     QCheckBox *m_autoMount = nullptr;
     QTreeWidget *m_storageTree = nullptr;
+    QPlainTextEdit *m_storageLog = nullptr;
     QTreeWidget *m_shareTree = nullptr;
     QLabel *m_shareNote = nullptr;
 

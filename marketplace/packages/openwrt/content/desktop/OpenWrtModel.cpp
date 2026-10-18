@@ -774,6 +774,164 @@ QStringList usbStoragePackages()
             QStringLiteral("kmod-fs-ext4"), QStringLiteral("kmod-fs-vfat"), QStringLiteral("kmod-fs-exfat")};
 }
 
+QStringList parsePartitions(const QString &text)
+{
+    QStringList names;
+    for (const QString &line : text.split(QLatin1Char('\n'))) {
+        const QStringList fields = line.simplified().split(QLatin1Char(' '));
+        if (fields.size() == 4 && isStorageDevice(fields.at(3)) && !names.contains(fields.at(3)))
+            names << fields.at(3);
+    }
+    return names;
+}
+
+int usbControllerCount(const QStringList &entries)
+{
+    static const QRegularExpression pattern(QStringLiteral("^usb\\d+$"));
+    return int(std::count_if(entries.begin(), entries.end(), [](const QString &entry) { return pattern.match(entry).hasMatch(); }));
+}
+
+QStringList usbDeviceEntries(const QStringList &entries)
+{
+    static const QRegularExpression pattern(QStringLiteral("^\\d+-\\d+(\\.\\d+)*$"));
+    QStringList devices;
+    for (const QString &entry : entries) {
+        if (pattern.match(entry).hasMatch())
+            devices << entry;
+    }
+    devices.sort();
+    return devices;
+}
+
+QStringList storageKernelLines(const QString &dmesg, int limit)
+{
+    static const QRegularExpression priority(QStringLiteral("^<\\d+>"));
+    static const QRegularExpression wanted(QStringLiteral("usb|uas|scsi|xhci|ehci|ohci|\\bsd[a-z]+\\d*\\b|exfat|ext4|vfat|fat-fs|mmc\\d|i/o error"),
+                                           QRegularExpression::CaseInsensitiveOption);
+    QStringList lines;
+    for (QString line : dmesg.split(QLatin1Char('\n'))) {
+        line = line.remove(priority).trimmed();
+        if (!line.isEmpty() && wanted.match(line).hasMatch())
+            lines << line;
+    }
+    return lines.mid(std::max(0, int(lines.size()) - limit));
+}
+
+QStringList missingStoragePackages(const QStringList &installed)
+{
+    QStringList missing;
+    for (const QString &name : usbStoragePackages()) {
+        if (!installed.contains(name))
+            missing << name;
+    }
+    return missing;
+}
+
+QString fstabFromDetect(const QString &output)
+{
+    static const QRegularExpression global(QStringLiteral("^config\\s+'?global'?\\s*$"), QRegularExpression::MultilineOption);
+    if (global.match(output).hasMatch())
+        return output.endsWith(QLatin1Char('\n')) ? output : output + QLatin1Char('\n');
+    return QStringLiteral("config global\n\toption anon_swap '0'\n\toption anon_mount '0'\n\toption auto_swap '1'\n\toption auto_mount '1'\n\toption delay_root '5'\n\toption check_fs '0'\n");
+}
+
+QStringList outputTail(const QString &text, int count)
+{
+    QStringList lines;
+    for (const QString &line : text.split(QLatin1Char('\n'))) {
+        if (!line.trimmed().isEmpty())
+            lines << line.trimmed();
+    }
+    return lines.mid(std::max(0, int(lines.size()) - count));
+}
+
+QStringList storageFindings(const StorageCheck &check)
+{
+    QStringList findings;
+    const QString devices = check.usbDevices.join(QStringLiteral(", "));
+    const QString partitions = check.partitions.join(QStringLiteral(", "));
+    const QStringList missing = missingStoragePackages(check.installed);
+    if (!check.listProblem.isEmpty())
+        findings << QStringLiteral("The router could not list its disks: %1").arg(check.listProblem);
+    if (check.usbKnown && check.usbControllers == 0 && check.partitions.isEmpty()) {
+        findings << QStringLiteral("The router has no USB controller driver running, so it cannot see anything in its USB port. Install the driver for this router (usually kmod-usb2 or kmod-usb3), or check that the model has a USB port.");
+    } else if (check.usbKnown && check.usbDevices.isEmpty() && check.partitions.isEmpty()) {
+        findings << QStringLiteral("The router sees nothing plugged into its USB port. Push the drive in fully, try another port or cable, and give a hard disk that needs more power a powered USB hub.");
+    } else if (check.partitionsKnown && check.partitions.isEmpty() && !check.usbDevices.isEmpty()) {
+        if (check.packagesKnown && !check.installed.contains(QStringLiteral("kmod-usb-storage")))
+            findings << QStringLiteral("A USB device is plugged in (%1), but the USB storage driver (kmod-usb-storage) is not installed, so no disk appears. Press Install USB storage support.").arg(devices);
+        else
+            findings << QStringLiteral("A USB device is plugged in (%1), but no disk appeared for it. Unplug it and plug it back in, or restart the router; the kernel messages below may say why.").arg(devices);
+    }
+    if (!check.partitions.isEmpty() && !check.blockTool) {
+        findings << QStringLiteral("The router sees the disk (%1), but block-mount is not installed, so it cannot list or mount it. Press Install USB storage support.").arg(partitions);
+    } else if (!check.partitions.isEmpty() && check.disks == 0 && check.listProblem.isEmpty()) {
+        QStringList drivers;
+        for (const QString &name : missing) {
+            if (name.startsWith(QStringLiteral("kmod-fs-")))
+                drivers << name;
+        }
+        QString text = QStringLiteral("The router sees the disk (%1), but found no filesystem it can read on it. Format it on a computer as ext4, exFAT or FAT32.").arg(partitions);
+        if (check.packagesKnown && !drivers.isEmpty())
+            text += QStringLiteral(" These filesystem drivers are not installed: %1.").arg(drivers.join(QStringLiteral(", ")));
+        findings << text;
+    }
+    if (check.blockTool && !check.fstabExists)
+        findings << QStringLiteral("The router has no storage settings file (/etc/config/fstab) yet. Turning on Mount any disk when it is plugged in creates it.");
+    if (!check.packagesKnown)
+        findings << QStringLiteral("ForkMesh cannot run the router's package manager, so it cannot tell which drivers are installed.");
+    else if (!missing.isEmpty())
+        findings << QStringLiteral("Not installed: %1.").arg(missing.join(QStringLiteral(", ")));
+    const int unmounted = check.disks - check.mounted;
+    if (unmounted > 0) {
+        const QString count = unmounted == 1 ? QStringLiteral("1 disk is not mounted.") : QStringLiteral("%1 disks are not mounted.").arg(unmounted);
+        if (!check.autoMount)
+            findings << count + QStringLiteral(" Turn on Mount any disk when it is plugged in and apply, or choose Mount at boot for the disk; then press Mount disks now.");
+        else if (check.autoMountPending)
+            findings << count + QStringLiteral(" Apply your changes, then press Mount disks now.");
+        else
+            findings << count + QStringLiteral(" Press Mount disks now; if it stays unmounted, its filesystem driver may be missing.");
+    } else if (check.disks > 0) {
+        findings << (check.disks == 1 ? QStringLiteral("The disk is mounted.") : QStringLiteral("All %1 disks are mounted.").arg(check.disks));
+    }
+    if (findings.isEmpty())
+        findings << QStringLiteral("No problem found.");
+    return findings;
+}
+
+QString storageReport(const StorageCheck &check)
+{
+    QStringList lines;
+    for (const QString &finding : storageFindings(check))
+        lines << QStringLiteral("• ") + finding;
+    lines << QString();
+    if (check.usbKnown) {
+        lines << QStringLiteral("USB controllers: %1").arg(check.usbControllers);
+        lines << QStringLiteral("USB devices: %1").arg(check.usbDevices.isEmpty() ? QStringLiteral("none") : check.usbDevices.join(QStringLiteral(", ")));
+    } else {
+        lines << QStringLiteral("USB devices: the router did not list them");
+    }
+    lines << QStringLiteral("Disks the kernel sees: %1").arg(!check.partitionsKnown ? QStringLiteral("could not read /proc/partitions")
+                                                            : check.partitions.isEmpty() ? QStringLiteral("none") : check.partitions.join(QStringLiteral(", ")));
+    lines << QStringLiteral("Disks with a readable filesystem: %1, mounted: %2").arg(check.disks).arg(check.mounted);
+    lines << QStringLiteral("block-mount: %1").arg(check.blockTool ? QStringLiteral("installed") : QStringLiteral("not installed"));
+    lines << QStringLiteral("Storage settings (/etc/config/fstab): %1").arg(check.fstabExists ? QStringLiteral("present") : QStringLiteral("missing"));
+    lines << QStringLiteral("Mount any disk when it is plugged in: %1%2").arg(check.autoMount ? QStringLiteral("on") : QStringLiteral("off"),
+                                                                               check.autoMountPending ? QStringLiteral(", waiting to be applied") : QString());
+    const QStringList missing = missingStoragePackages(check.installed);
+    lines << (!check.packagesKnown ? QStringLiteral("Storage packages: unknown")
+              : missing.isEmpty() ? QStringLiteral("Storage packages: all installed")
+                                  : QStringLiteral("Storage packages missing: %1").arg(missing.join(QStringLiteral(", "))));
+    if (check.kernelLines.isEmpty()) {
+        lines << QStringLiteral("Recent kernel messages: none about USB or disks");
+    } else {
+        lines << QStringLiteral("Recent kernel messages:");
+        for (const QString &line : check.kernelLines)
+            lines << QStringLiteral("  ") + line;
+    }
+    return lines.join(QLatin1Char('\n'));
+}
+
 QString shareConfig(const QStringList &configs)
 {
     if (configs.contains(QStringLiteral("ksmbd")))

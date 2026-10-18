@@ -12,12 +12,14 @@ final class FakeRouterState: @unchecked Sendable {
     private var expireNextBoard = false
     private var calls: [[JSONValue]] = []
     private var confirmFailures = 0
+    private var fstabMissing = false
 
     var logins: Int { lock.withLock { loginCount } }
     var session: String { lock.withLock { sessionValue } }
 
     func expireOnce() { lock.withLock { expireNextBoard = true } }
     func failConfirm(times: Int) { lock.withLock { confirmFailures = times } }
+    func removeFstab() { lock.withLock { fstabMissing = true } }
 
     func last(_ object: String, _ method: String) -> [JSONValue]? {
         lock.withLock { calls.last { $0.count > 2 && $0[1].text == object && $0[2].text == method } }
@@ -73,6 +75,7 @@ final class FakeRouterState: @unchecked Sendable {
                     "wan": [".name": "wan", ".type": "interface", ".index": 2, "proto": "dhcp"],
                 ]]])
             case "fstab":
+                if lock.withLock({ fstabMissing }) { return reply([4]) }
                 return reply([0, ["values": ["cfg01": [".name": "cfg01", ".type": "global", ".anonymous": true, ".index": 0, "anon_mount": "1"]]]])
             case "ksmbd":
                 return reply([0, ["values": ["cfg02": [".name": "cfg02", ".type": "share", ".index": 0, "name": "Media", "path": "/mnt/sda1", "guest_ok": "yes"]]]])
@@ -91,8 +94,22 @@ final class FakeRouterState: @unchecked Sendable {
             switch args.str("command") {
             case "/bin/false": return reply([0, ["code": 1, "stderr": "nope"]])
             case "/bin/opkg": return reply([0, ["code": 0, "stdout": "base-files - 1-r1\nluci - git-24\n"]])
+            case "/sbin/block": return reply([0, ["code": 0, "stdout": "config 'global'\n\toption\tanon_mount\t'0'\n"]])
+            case "/bin/dmesg": return reply([0, ["code": 0, "stdout": "<6>[    5.1] usb 1-1: new high-speed USB device number 2\n<5>[    6.0] random: crng init done\n"]])
             default: return reply([6])
             }
+        }
+        if object == "file" && method == "write" {
+            guard args.str("path") == "/etc/config/fstab", args.str("data").contains("global") else { return reply([6]) }
+            lock.withLock { fstabMissing = false }
+            return reply([0])
+        }
+        if object == "file" && method == "list" && args.str("path") == "/sys/bus/usb/devices" {
+            return reply([0, ["entries": [["name": "usb1"], ["name": "1-1"], ["name": "1-1:1.0"]]]])
+        }
+        if object == "file" && method == "read" && args.str("path") == "/sys/bus/usb/devices/1-1/product" { return reply([0, ["data": "Flash Disk\n"]]) }
+        if object == "file" && method == "read" && args.str("path") == "/proc/partitions" {
+            return reply([0, ["data": "major minor  #blocks  name\n\n  31        0       1024 mtdblock0\n   8        0   64000000 sda\n   8        1   63999000 sda1\n"]])
         }
         if object == "uci" && method == "changes" { return reply([0, ["changes": .object(JSONObject())]]) }
         return reply([0])
@@ -259,6 +276,49 @@ final class OpenWrtModelTests: XCTestCase {
         XCTAssertNotNil(OpenWrtModel.shareNameProblem("a/b"))
         XCTAssertTrue(OpenWrtModel.usbStoragePackages.contains("block-mount"))
     }
+
+    func testStorageCheck() {
+        XCTAssertEqual(OpenWrtModel.parsePartitions("major minor  #blocks  name\n\n  31 0 1024 mtdblock0\n 8 0 100 sda\n 8 1 99 sda1\n 179 0 50 mmcblk0\n"), ["sda", "sda1", "mmcblk0"])
+        let entries = ["usb1", "usb2", "1-1", "1-1:1.0", "2-1.4"]
+        XCTAssertEqual(OpenWrtModel.usbControllerCount(entries), 2)
+        XCTAssertEqual(OpenWrtModel.usbDeviceEntries(entries), ["1-1", "2-1.4"])
+        XCTAssertEqual(OpenWrtModel.storageKernelLines("<6>[1.0] usb 1-1: new device\n<6>[1.1] eth0: link up\n<3>[2.0] sd 0:0:0:0: [sda] No Caching mode page found\n"),
+                       ["[1.0] usb 1-1: new device", "[2.0] sd 0:0:0:0: [sda] No Caching mode page found"])
+        XCTAssertEqual(OpenWrtModel.missingStoragePackages(["block-mount", "kmod-usb-storage"]).count, OpenWrtModel.usbStoragePackages.count - 2)
+        XCTAssertTrue(OpenWrtModel.fstabFromDetect("config 'global'\n\toption\tanon_mount\t'0'").hasSuffix("'0'\n"))
+        XCTAssertTrue(OpenWrtModel.fstabFromDetect("").hasPrefix("config global\n"))
+        XCTAssertEqual(OpenWrtModel.outputTail("a\n\nb\nc\n", count: 2), ["b", "c"])
+
+        var empty = OpenWrtStorageCheck()
+        empty.packagesKnown = true
+        empty.usbKnown = true
+        empty.usbControllers = 1
+        empty.partitionsKnown = true
+        XCTAssertTrue(OpenWrtModel.storageFindings(empty)[0].contains("sees nothing plugged into its USB port"))
+        var noHost = empty
+        noHost.usbControllers = 0
+        XCTAssertTrue(OpenWrtModel.storageFindings(noHost)[0].contains("no USB controller driver"))
+        var noDriver = empty
+        noDriver.usbDevices = ["Flash Disk (1-1)"]
+        XCTAssertTrue(OpenWrtModel.storageFindings(noDriver)[0].contains("kmod-usb-storage"))
+        var noBlock = noDriver
+        noBlock.installed = ["kmod-usb-storage"]
+        noBlock.partitions = ["sda", "sda1"]
+        XCTAssertTrue(OpenWrtModel.storageFindings(noBlock)[0].contains("block-mount is not installed"))
+        var noFstab = noBlock
+        noFstab.blockTool = true
+        noFstab.disks = 1
+        let findings = OpenWrtModel.storageFindings(noFstab)
+        XCTAssertTrue(findings.joined(separator: "\n").contains("/etc/config/fstab"))
+        XCTAssertTrue(findings.last?.contains("Turn on Mount any disk") ?? false)
+        var ready = noFstab
+        ready.fstabExists = true
+        ready.installed = OpenWrtModel.usbStoragePackages
+        ready.mounted = 1
+        XCTAssertEqual(OpenWrtModel.storageFindings(ready), ["The disk is mounted."])
+        XCTAssertTrue(OpenWrtModel.storageReport(ready).hasPrefix("• The disk is mounted."))
+        XCTAssertTrue(OpenWrtModel.storageReport(ready).contains("Storage packages: all installed"))
+    }
 }
 
 final class OpenWrtClientTests: XCTestCase {
@@ -337,6 +397,33 @@ final class OpenWrtClientTests: XCTestCase {
 
         let refused = await router.packageAction(OpenWrtModel.packageTools[3], action: "install", names: ["a;reboot"])
         XCTAssertFalse(refused.ok)
+    }
+
+    func testMissingFstabIsCreatedAndStorageChecked() async {
+        let state = FakeRouterState()
+        state.removeFstab()
+        let (router, _) = client(state)
+        _ = await router.signIn(user: "root", password: "secret")
+        let snapshot = await router.loadSnapshot(now: 0)
+        XCTAssertTrue(snapshot.fstabMissing)
+        XCTAssertTrue(snapshot.problems.isEmpty)
+
+        let created = await router.createFstab()
+        XCTAssertTrue(created.ok)
+        XCTAssertEqual(state.last("file", "write")?[3].str("path"), "/etc/config/fstab")
+        XCTAssertTrue(state.last("file", "write")?[3].str("data").hasPrefix("config 'global'") ?? false)
+
+        let (check, fresh) = await router.checkStorage(snapshot)
+        XCTAssertFalse(fresh.fstabMissing)
+        XCTAssertTrue(check.fstabExists)
+        XCTAssertTrue(check.packagesKnown)
+        XCTAssertEqual(check.usbControllers, 1)
+        XCTAssertEqual(check.usbDevices, ["Flash Disk (1-1)"])
+        XCTAssertEqual(check.partitions, ["sda", "sda1"])
+        XCTAssertEqual(check.disks, 1)
+        XCTAssertEqual(check.mounted, 1)
+        XCTAssertEqual(check.kernelLines, ["[    5.1] usb 1-1: new high-speed USB device number 2"])
+        XCTAssertTrue(OpenWrtModel.storageReport(check).contains("USB devices: Flash Disk (1-1)"))
     }
 }
 

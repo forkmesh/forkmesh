@@ -196,6 +196,35 @@ QList<StorageDisk> storageDisks(const QList<BlockDevice> &blocks, const QList<Mo
 QString mountPathProblem(const QString &path);
 QString suggestedMountPath(const BlockDevice &block);
 QStringList usbStoragePackages();
+
+struct StorageCheck {
+    bool packagesKnown = false;
+    QStringList installed;
+    bool blockTool = false;
+    bool fstabExists = false;
+    bool autoMount = false;
+    bool autoMountPending = false;
+    bool usbKnown = false;
+    int usbControllers = 0;
+    QStringList usbDevices;
+    bool partitionsKnown = false;
+    QStringList partitions;
+    int disks = 0;
+    int mounted = 0;
+    QString listProblem;
+    QStringList kernelLines;
+};
+
+inline const QString kFstabPath = QStringLiteral("/etc/config/fstab");
+QStringList parsePartitions(const QString &text);
+int usbControllerCount(const QStringList &entries);
+QStringList usbDeviceEntries(const QStringList &entries);
+QStringList storageKernelLines(const QString &dmesg, int limit = 20);
+QStringList missingStoragePackages(const QStringList &installed);
+QString fstabFromDetect(const QString &output);
+QStringList outputTail(const QString &text, int count = 4);
+QStringList storageFindings(const StorageCheck &check);
+QString storageReport(const StorageCheck &check);
 QString shareConfig(const QStringList &configs);
 QString shareSectionType(const QString &config);
 QList<Share> parseShares(const QList<UciSection> &sections);
