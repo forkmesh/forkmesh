@@ -221,3 +221,19 @@ def test_the_release_binary_is_only_fetched_for_the_release_source():
                        "SOURCE_COMMITTED=\"1\"") >= 0
     assert "rollback_source || true" in function("on_exit")
     assert 'APP_RESTARTED="1"\n  systemctl restart forkmesh-instance.service' in function("start_app")
+
+
+def test_a_new_source_is_recorded_even_when_nothing_is_rebuilt(tmp_path):
+    env, upstream, opt, first = setup(tmp_path)
+    first_build(tmp_path, env, opt, upstream)
+    built = json.loads((opt / "build-info.json").read_text())
+    own = tmp_path / "own"
+    subprocess.run(["git", "clone", "-q", "--bare", str(upstream), str(own)],
+                   env=env, check=True)
+    result = harness(tmp_path, env, opt, own,
+                     "fetch_source\nbuild_app\nactivate_source\nSOURCE_COMMITTED=1\n")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "already built" in result.stdout
+    info = json.loads((opt / "build-info.json").read_text())
+    assert info["source"] == "file://%s" % own and info["ref"] == "main"
+    assert info["builtAt"] == built["builtAt"] and info["commit"] == first

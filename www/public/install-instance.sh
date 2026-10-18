@@ -762,7 +762,7 @@ write_daemon_state() {
   [ -s "$BUILD_INFO" ] || return 0
   python3 -c '
 import json, os, sys
-path, record, tree = sys.argv[1], sys.argv[2], sys.argv[3]
+path, record, tree, source, ref = sys.argv[1:6]
 try:
     with open(path, encoding="utf-8") as handle:
         info = json.load(handle)
@@ -787,11 +787,13 @@ else:
     state = "stale"
 info["daemon"] = {"state": state, "builtTree": built_tree, "sourceTree": tree,
                   "builtCommit": str(built.get("commit") or "")}
+info["source"], info["ref"] = source, ref
 with open(path + ".new", "w", encoding="utf-8") as handle:
     json.dump(info, handle, sort_keys=True)
 os.chmod(path + ".new", 0o644)
 os.replace(path + ".new", path)
-' "$BUILD_INFO" "$DAEMON_BUILD" "$(git -C "$SRC" rev-parse HEAD:server 2>/dev/null || true)"
+' "$BUILD_INFO" "$DAEMON_BUILD" "$(git -C "$SRC" rev-parse HEAD:server 2>/dev/null || true)" \
+    "$CFG_sourceUrl" "$CFG_sourceRef"
 }
 
 build_app() {
@@ -801,7 +803,7 @@ build_app() {
       [ "$(git -C "$SRC" rev-parse HEAD)" = "$TARGET_COMMIT" ] &&
       [ "$(cat "$BUILD_STAMP")" = "$(build_stamp "$SRC")" ]; then
     say "The app is already built from $(git -C "$SRC" rev-parse --short HEAD) for $CFG_projectName."
-    [ -s "$BUILD_INFO" ] || write_build_info
+    if [ -s "$BUILD_INFO" ]; then write_daemon_state; else write_build_info; fi
     return 0
   fi
   APP_CHANGED="1"
