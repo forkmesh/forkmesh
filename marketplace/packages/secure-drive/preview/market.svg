@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <rect width="960" height="540" fill="#0d1117"/>
+  <g font-family="sans-serif" fill="#c9d1d9">
+    <text x="24" y="40" font-size="22" font-weight="bold">Secure Drive</text>
+    <text x="190" y="40" font-size="13" fill="#8b949e">An encrypted shared folder on your router's USB drive. The drive holds only ciphertext.</text>
+    <rect x="24" y="58" width="300" height="30" rx="6" fill="#161b22" stroke="#30363d"/>
+    <text x="36" y="78" font-size="13">Team share  ·  \\router\usb\team</text>
+    <rect x="336" y="58" width="92" height="30" rx="6" fill="#21262d" stroke="#30363d"/>
+    <text x="350" y="78" font-size="13">New drive…</text>
+    <rect x="436" y="58" width="104" height="30" rx="6" fill="#21262d" stroke="#30363d"/>
+    <text x="450" y="78" font-size="13">Join a drive…</text>
+    <text x="24" y="114" font-size="12" fill="#8b949e">Verified: 214 signed activity records from 3 approved computers, none missing or altered. 61 encrypted objects on the drive.</text>
+    <text x="24" y="146" font-size="14" font-weight="bold" fill="#58a6ff">Files</text>
+    <rect x="22" y="152" width="40" height="2" fill="#58a6ff"/>
+    <text x="84" y="146" font-size="14" fill="#8b949e">Activity</text>
+    <text x="164" y="146" font-size="14" fill="#8b949e">Computers</text>
+    <rect x="24" y="166" width="62" height="28" rx="6" fill="#238636"/>
+    <text x="40" y="185" font-size="13" fill="#ffffff">New</text>
+    <rect x="94" y="166" width="94" height="28" rx="6" fill="#21262d" stroke="#30363d"/>
+    <text x="106" y="185" font-size="13">Add files…</text>
+    <rect x="196" y="166" width="740" height="28" rx="6" fill="#0d1117" stroke="#30363d"/>
+    <text x="208" y="185" font-size="13" fill="#6e7681">Filter files</text>
+    <rect x="24" y="206" width="912" height="28" fill="#161b22"/>
+    <g font-size="12" fill="#8b949e">
+      <text x="34" y="224">Name</text><text x="380" y="224">Type</text><text x="500" y="224">Size</text>
+      <text x="580" y="224">Modified</text><text x="730" y="224">By</text>
+    </g>
+    <g font-size="13">
+      <rect x="24" y="236" width="912" height="30" fill="#1f6feb" fill-opacity="0.18"/>
+      <text x="34" y="256">Budget 2027.csv</text><text x="380" y="256">Spreadsheet</text><text x="500" y="256">18 KB</text><text x="580" y="256">Today 09:41</text><text x="730" y="256">Front desk</text>
+      <text x="34" y="290">Floor plan.svg</text><text x="380" y="290">Drawing</text><text x="500" y="290">42 KB</text><text x="580" y="290">Yesterday</text><text x="730" y="290">Office laptop</text>
+      <text x="34" y="324">Meeting notes.html</text><text x="380" y="324">Document</text><text x="500" y="324">6 KB</text><text x="580" y="324">Yesterday</text><text x="730" y="324">Office laptop</text>
+      <text x="34" y="358">Contract scan.pdf</text><text x="380" y="358">PDF file</text><text x="500" y="358">2.4 MB</text><text x="580" y="358">Mon</text><text x="730" y="358">Spare tablet</text>
+      <text x="34" y="392">Product photos.zip</text><text x="380" y="392">ZIP file</text><text x="500" y="392">310 MB</text><text x="580" y="392">Mon</text><text x="730" y="392">Front desk</text>
+    </g>
+    <rect x="24" y="420" width="912" height="96" rx="8" fill="#161b22" stroke="#30363d"/>
+    <text x="40" y="446" font-size="13" font-weight="bold">What the router sees</text>
+    <g font-family="monospace" font-size="12" fill="#8b949e">
+      <text x="40" y="470">3f9c1a0e7b2d48c6a1f05e93d7b6c204.fmsd   a8d27e45c1b9f0367e2d4a91c5f80b13.fmsd</text>
+      <text x="40" y="490">c04e91b7d2a6f8350e1c9b4d7a2f6e08.fmsd   5e7a0c3f19d8b2e4a6c1f097d3b5e821.fmsd   …</text>
+    </g>
+    <text x="40" y="508" font-size="11" fill="#6e7681">Names, contents, sizes (padded) and the access log are all encrypted; keys are X25519 + ML-KEM-768 per computer.</text>
+  </g>
+</svg>

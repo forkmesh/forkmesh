@@ -224,6 +224,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   features): see [core-plugins.md](core-plugins.md).
 - **Productivity and data:** `notes`, `tasks`, `calendar`, `timers`, `crm`,
   `competitor`, `ledger`, `vault` (end-to-end encrypted, suite `fmv1`),
+  `secure-drive` (an end-to-end encrypted shared folder on a router's USB
+  drive or any network share, suite `fmsd1`, desktop only;
+  [secure-drive.md](secure-drive.md)),
   `rss-reader` (a local-only feed reader on iPhone, Android and the desktop,
   [rss-reader.md](rss-reader.md)),
   `docs` (the `www/docs` library on desktop and phones), `workflows` with its
