@@ -62,6 +62,7 @@ window.ForkMeshDashboard.registerPage("vault", ({
     csv_unknown_columns: "That file has no Password column. Export a CSV from Apple Passwords, Chrome, Firefox, DuckDuckGo, Bitwarden or 1Password.",
     csv_no_logins: "That file has no logins in it.",
     zip_unreadable: "That ZIP file could not be read.",
+    zip_encrypted: "That ZIP file is password-protected. Export it again without a password.",
     zip_unsupported: "That ZIP file is compressed in a way this browser cannot open. Unzip it and import the CSV inside.",
     zip_no_csv: "That ZIP file has no CSV export in it.",
   };

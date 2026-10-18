@@ -123,6 +123,96 @@ repository's Settings tab ([app/repo-features.md](app/repo-features.md)).
 Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
 → Repository addresses ([app/server-update.md](app/server-update.md)).
 
+## The platform source mirror (`<owner>/forkmesh`)
+
+`<owner>/forkmesh` (catalog owner `forkmesh`, the instance's git node) is a
+read-only mirror of the upstream repository, https://forkmesh.com/forkmesh/forkmesh
+by default (the installer's `sourceUrl` with its `app.` host prefix and
+`.git` dropped). Nothing typed on the instance can change it: changes go
+upstream, or into a fork.
+
+How it stays current (`server/upstreamwatch.go`, `docs/server/README.md`):
+
+- The git node fetches `https://app.forkmesh.com/forkmesh/forkmesh` (the
+  `upstreams` entry of `/etc/forkmesh/mirror-node.json`).
+- Because that upstream is listed in `eventDrivenUpstreams` and is served by
+  another relay than the instance's own catalog, the node opens a public
+  watch socket on the upstream relay:
+  `wss://app.forkmesh.com/api/nodes/events?watch=forkmesh/forkmesh`. It is
+  unsigned and read-only: the upstream relay accepts it for public
+  repositories only, advertises no writable frames on it, and sends the same
+  payload-free `commits` doorbell (refs digest and generation, no repository
+  bytes) it sends its own mirrors when the source publishes. The node answers
+  every doorbell, and every reconnect, with an immediate fetch.
+- The configured `syncInterval` (15 s) remains a poll of the upstream as the
+  fallback for a lost doorbell or a down socket.
+
+Until 2026-10-17 `eventDrivenUpstreams` only told the node "this upstream is
+announced on your own relay's socket". On an instance that socket is the
+instance's own relay, which never hears of a push to forkmesh.com, and the
+listing also replaced the 15 s poll with the 30-minute relay safety cadence.
+The live instance therefore updated only when some unrelated wake-up (a
+reconnect catch-up, a collaboration event) happened to run a fetch: minutes
+in practice, up to 30 minutes in the worst case.
+
+Latency now: an upstream push reaches the mirror after the source node
+publishes its new refs to forkmesh.com (seconds), the doorbell fan-out
+(about 25 ms queueing), and one fetch from the upstream (one or two seconds
+for a typical push), so usually within 2 to 5 seconds. With the watch socket
+down, or a doorbell lost, the 15 s poll bounds it at about 15 s plus the
+fetch. The upstream side needs the watch channel deployed on forkmesh.com
+(`app/src/entry.py` `_node_events_watch_object`, `ForkMeshNodes`,
+`notify_repo_watchers`); until then the watch upgrade is refused, the node
+logs `upstream watch ...` with a backoff of up to five minutes, and the 15 s
+poll alone keeps the mirror current. `curl -s 127.0.0.1:8791/v1/status`
+reports `upstreamWatches` and the journal logs each connect and disconnect.
+
+Labelling and read-only:
+
+- The node config carries `mirrorOf: {"forkmesh/forkmesh":
+  "https://forkmesh.com/forkmesh/forkmesh"}`. The node then publishes
+  `mirrorOf`, `upstreamCommit` (the served HEAD) and `lastSyncedAt` (ms of the
+  last successful fetch) in its signed catalog record, and drops the write
+  operations (`merge-pull`, `update-pull-branch`, the agent-branch merges,
+  `git-receive-pack`) from every gateway entry of that Git directory,
+  including the `<owner>/forkmesh` alias.
+- `app.env` carries `INSTANCE_UPSTREAM`. The website treats the flagship
+  node's `forkmesh` repository as a read-only mirror of it even when the
+  node is a release that does not publish `mirrorOf` yet.
+- `GET /api/repo/<owner>/forkmesh/about` returns `mirrorOf`, `readOnly`,
+  `lastSyncedAt` and `upstreamCommit`. The catalog record is republished at
+  least every ten minutes and the about answer is cached for ten, so
+  "synced" can read up to about twenty minutes old while the mirror is
+  current; any upstream change republishes at once.
+- The repository page shows "Mirror of forkmesh.com/forkmesh/forkmesh ·
+  synced <time>" in the Code tab, just above the latest-commit row, so the header stays compact (hovering the time shows the date and the
+  served commit), the notice "Read-only. Send changes upstream or into a
+  fork." and a Fork button that opens the existing fork menu. The label comes
+  from the about answer, not the address, so it reads the same at
+  `/<owner>/forkmesh` and, in single-organization mode, at `/forkmesh`. File
+  editing is disabled and branch creation, merging and new pull requests are
+  hidden there. Issues, Pull requests and Discussions stay off: the bootstrap
+  writes them off, and the about answer reports them off for any read-only
+  mirror even if an admin turned one on.
+- A node never labels a repository as a mirror of a page on its own relay
+  (`mirrorOfFor` checks `sameRelay`), so a forkmesh.com fleet node that copied
+  an instance config cannot mark the canonical repository read-only there.
+- The app refuses writes with HTTP 403 `read_only_mirror` (`file-edit`,
+  `branches/ops`, `pulls`, `pulls/<n>/merge|update`), and a `git push` gets
+  `remote: This repository is a read-only mirror of
+  https://forkmesh.com/forkmesh/forkmesh. Send changes upstream there, or
+  fork this repository and change your fork.` (git prints a `text/plain`
+  error body as `remote:` lines). The node gateway no longer offers
+  `git-receive-pack` for that Git directory either, so an SSH push is refused
+  by authorization too, without the explanatory text.
+
+New installs get all of this from the installer. `--update` rewrites
+`mirror-node.json` (adds `mirrorOf` and `eventDrivenUpstreams`), `app.env`
+(`INSTANCE_UPSTREAM`) and restarts the changed services. A node release that
+predates `mirrorOf` fails `--check` with it, so the installer then writes the
+config without it and says so; the website labelling and refusals still
+apply.
+
 ## White label
 
 - `INSTANCE_NAME` names the instance: email sender and card, page titles,
@@ -147,6 +237,13 @@ Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
   pages and others) are off on an instance unless listed in
   `INSTANCE_PLUGINS`. A disabled plugin's routes answer 404 before any other
   route; tagged UI (`data-instance-plugin`) is hidden.
+- **Market packages:** every account on an instance has the
+  pre-marketplace packages (repository tabs, Chat, Network, Agents, ...)
+  installed until it removes one itself, because an instance has no Market
+  onboarding; see "Account state" in
+  [marketplace/core-plugins.md](marketplace/core-plugins.md). Nothing is
+  stored, so existing accounts get them as soon as the app restarts with the
+  change.
 - **Pages** (`app/src/instance_pages.py`): an instance renders its own
   `/desktop` and `/docs` guide pages.
 

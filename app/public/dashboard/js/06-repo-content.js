@@ -738,7 +738,7 @@
               <span data-repo-file-status class="min-w-0 font-mono text-[10px] text-muted-foreground">Code view - highlighted source.</span>
             </div>
             <div class="flex items-center gap-1.5">
-              <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="Edit file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="${repoReadOnlyMirror(repo) ? escapeHtml(REPO_READ_ONLY_MIRROR_HINT) : "Edit file"}"${repoReadOnlyMirror(repo) ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
               <button type="button" data-repo-file-action="raw" class="fm-btn fm-btn-sm">Raw</button>
               <button type="button" data-repo-file-action="copy" aria-label="Copy file contents" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="copy" class="h-3.5 w-3.5"></i></button>
               <button type="button" data-repo-file-action="download" aria-label="Download file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>
@@ -1756,6 +1756,7 @@
       const error = new Error(code || `HTTP ${response.status}`);
       error.status = response.status;
       error.code = code;
+      error.data = data;
       // A body that is not the API's JSON (an edge error page, an isolate
       // crash) says nothing about the submission itself.
       error.transient = !data || response.status >= 500
@@ -5768,6 +5769,7 @@
         checks_required: "This repository requires signed status checks, and the head being merged has no fresh passing result from a runner the base branch trusts. Run the checks, or change .forkmesh/required-checks.json on the base branch.",
         unsupported_pull: "This pull request cannot be merged on the web; merge it from the desktop client.",
         pull_not_found: "The mirror could not read this pull request's record.",
+        read_only_mirror: payload?.message || REPO_READ_ONLY_MIRROR_HINT,
       };
       parsed.pullMerge = {
         state: "failed",
@@ -9966,6 +9968,11 @@
     try {
       const body = await fetchRepoJson(`${repoApiBase(repo)}/about`);
       if (!repoAboutStillCurrent(repo) || !body?.ok) return;
+      const mirrorChanged = [repo, state.selectedRepo]
+        .filter((item, index, list) => item && list.indexOf(item) === index)
+        .map((item) => rememberRepoMirrorAbout(item, body))
+        .some(Boolean);
+      if (mirrorChanged) applyRepoReadOnlyMirror(state.selectedRepo);
       const followers = Number(body.fediverse?.followers || 0);
       $$("[data-repo-watch-count], [data-repo-watch-followers], [data-repo-social-followers]").forEach((el) => {
         el.textContent = formatCount(followers);

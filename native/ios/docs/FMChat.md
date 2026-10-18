@@ -248,19 +248,29 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   retention and encryption summary; leave a relay private channel; delete history locally.
 - **Live touch, direction and drawing** in direct messages: `DirectLiveEngine` batches taps,
   strokes and motion samples into sealed `live` frames at the relay-announced pace (wire format
-  in `docs/app/chat-private-rooms.md`). The phone samples motion at 30 Hz
-  (`DirectLiveMotionFeed.rate`) and, before the relay's `forkmesh-live` budget arrives or over
+  in `docs/app/chat-private-rooms.md`). The phone samples motion at 100 Hz
+  (`DirectLiveMotionFeed.rate`, 60 Hz until 2026-10-18; a frame still holds under the
+  40-sample cap at the relay's pace) and, before the relay's `forkmesh-live` budget arrives or over
   the mesh alone, paces at 120 ms (`DirectLiveFrames.fallbackIntervalMs`, under the relay's 150
   frames per 10 s). The partner's phone icon redraws at 60 fps while they share. Until
   2026-10-17 the fallback was 2.5 s and the feed 20 Hz, so the icon could move in jumps seconds
   behind the real phone. While a direct conversation is visible, its motion feed
-  shares phone direction automatically and an impact sends a centred taptic tap. The header
-  keeps the peer's normal avatar still and shows their direction on a separate icon
-  (`MessagesLivePartnerPhone`): a small phone with their avatar on its screen that tilts and
-  turns with their phone, with a pink rim that brightens on a jolt (grey while they are not
-  sharing). Tapping it opens a menu with **Floating 3D Face** (stored in
-  `chat/live/floatingFace`): their face then lifts off the screen, bobs above it with a shadow
-  and turns in 3D with the tilt. A short tap anywhere on a direct conversation's transcript sends
+  shares phone direction automatically and an impact sends a centred taptic tap. In a direct
+  conversation the header capsule shows the peer's phone (`MessagesLivePartnerPhone`) where the
+  round avatar used to be, 76 pt tall (twice the old avatar), hanging out of the capsule. It is
+  a 3D phone with their avatar on its screen, drawn from the full gravity pose
+  (`DirectLivePhonePose` in FMChat): the outline is the projected silhouette of a phone with
+  real thickness, and the screen is mapped onto its front with an affine transform, so a phone
+  lying flat on a table is seen edge-on as a thin pink line and a tilt is never clamped. Every
+  bump moves it: the user acceleration is turned into screen space and offsets and scales the
+  phone, and the strongest kick of the last 260 ms (`kickHoldMs`) is held and faded, so a
+  one-sample bounce on a table still shows for several frames. The pink rim brightens with the
+  kick; the phone is grey and upright while they are not sharing. The phone has no tap, long
+  press or menu, and it swallows touches so the capsule's glass does not bounce under it (the
+  Floating 3D Face menu and its idle bob were removed on 2026-10-18). When the peer is online
+  the line under the name drops the word "Online" for a blinking green light
+  (`MessagesOnlineLight`, steady with Reduce Motion; `ChatHub.conversationStatusLine` and
+  `conversationPeerOnline`); VoiceOver still reads "Online". A short tap anywhere on a direct conversation's transcript sends
   a tap at that spot (`transcriptTapped`); with the keyboard up the first tap only closes it. There
   is no tap button any more, so VoiceOver gets a "Send a tap" action on the phone icon. The pencil
   in the header, beside the phone icon, opens the coloured drawing canvas, where a short tap also sends a tap and a drag

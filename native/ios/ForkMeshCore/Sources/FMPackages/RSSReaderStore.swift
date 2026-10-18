@@ -122,6 +122,7 @@ public final class RSSReaderStore {
     public static let libraryFile = "library.json"
     public static func headsFile(_ feedId: String) -> String { "articles-\(feedId).json" }
     public static func bodiesFile(_ feedId: String) -> String { "bodies-\(feedId).json" }
+    public static func iconFile(_ feedId: String) -> String { "icon-\(feedId)" }
 
     public init(
         disk: RSSReaderDisk = RSSReaderMemoryDisk(), now: @escaping () -> Int64 = { SystemClock().nowMillis },
@@ -163,6 +164,7 @@ public final class RSSReaderStore {
         for feedId in removed {
             disk.remove(Self.headsFile(feedId))
             disk.remove(Self.bodiesFile(feedId))
+            disk.remove(Self.iconFile(feedId))
         }
         removed.removeAll()
         for feedId in dirtyHeads {
@@ -452,6 +454,26 @@ public final class RSSReaderStore {
         bodies[feed.id] = [:]
         touchLibrary()
         return feed
+    }
+
+    public func iconData(_ feedId: String) -> Data? {
+        guard let feed = feed(feedId), !feed.iconFound.isEmpty else { return nil }
+        return disk.read(Self.iconFile(feedId))
+    }
+
+    public func setIcon(_ feedId: String, url: String, data: Data?, source: String, at stamp: Int64) {
+        guard feed(feedId) != nil else { return }
+        let found = data == nil ? "" : RSSURL.http(url)
+        updateFeed(feedId) { feed in
+            feed.iconFound = found
+            feed.iconSource = source
+            feed.iconCheckedAt = stamp
+        }
+        if let data, !found.isEmpty {
+            disk.write(Self.iconFile(feedId), data)
+        } else {
+            disk.remove(Self.iconFile(feedId))
+        }
     }
 
     public func renameFeed(_ id: String, to rawTitle: String) {

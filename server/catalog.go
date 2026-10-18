@@ -41,6 +41,8 @@ type CatalogPublisher struct {
 	// DisableAgents withholds agentProviders when this node does not claim
 	// website agent jobs.
 	DisableAgents bool
+	MirrorOf      string
+	LastSyncedAt  time.Time
 }
 
 // EndpointPublisher renews the account-bound HTTPS routing lease.
@@ -255,6 +257,13 @@ func (p *CatalogPublisher) record(ctx context.Context, repo Repository, stateHas
 	}
 	if providers := p.agentProviders(); len(providers) > 0 {
 		record["agentProviders"] = providers
+	}
+	if p.MirrorOf != "" {
+		record["mirrorOf"] = p.MirrorOf
+		record["upstreamCommit"] = commit
+		if !p.LastSyncedAt.IsZero() {
+			record["lastSyncedAt"] = strconv.FormatInt(p.LastSyncedAt.UnixMilli(), 10)
+		}
 	}
 	if forkParentPattern.MatchString(repo.ForkedFrom) &&
 		!strings.EqualFold(repo.ForkedFrom, p.Owner+"/"+repo.Name) {

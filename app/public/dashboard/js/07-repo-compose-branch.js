@@ -323,6 +323,7 @@
       }
       return `Nothing was sent: these branches could not be compared on a live mirror (${webSubmissionErrorDetail(cause || error)}). Try again in a moment.`;
     }
+    if (code === "read_only_mirror") return String(error?.data?.message || REPO_READ_ONLY_MIRROR_HINT);
     if (code === "inbox_full") return "The maintainer's inbox is full. Try again later.";
     if (code === "author_quota") return "You've reached the submission limit for this repository.";
     if (code === "pull_too_large") return "The submission is too large.";
@@ -803,7 +804,7 @@
         <button type="button" data-repo-compare-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to pull requests</button>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" data-repo-compare-refresh class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
-          <button type="button" data-repo-compare-pull class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>Create pull request</button>
+          <button type="button" data-repo-compare-pull class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>Create pull request</button>
         </div>
       </div>
       <header class="grid gap-1 rounded-lg border border-border bg-secondary/30 p-4">
@@ -2952,7 +2953,7 @@
   }
 
   function repoBranchManageAllowed(repo) {
-    return repo ? state.repoBranchManage[repoKey(repo)] === true : false;
+    return repo && !repoReadOnlyMirror(repo) ? state.repoBranchManage[repoKey(repo)] === true : false;
   }
 
   function repoBranchBusy(repo) {
@@ -3260,7 +3261,7 @@
   }
 
   async function openRepoBranchMergeDialog(repo, branch, base, preview = null) {
-    if (!repo || !branch || !base || branch === base) return;
+    if (!repo || !branch || !base || branch === base || repoReadOnlyMirror(repo)) return;
     const dialog = ensureRepoBranchMergeDialog();
     const defaultBranch = repoDefaultBranch(repo);
     const intoOther = branch === defaultBranch;
@@ -3654,7 +3655,8 @@
         return { ok: true, executed: false, held: true, data: error.data || {} };
       }
       announceRepoBranchOp(
-        REPO_BRANCH_OP_ERRORS[error?.code]
+        (error?.code === "read_only_mirror" && error?.data?.message)
+          || REPO_BRANCH_OP_ERRORS[error?.code]
           || "The branch operation could not be queued.",
         true,
       );
@@ -4088,7 +4090,7 @@
                     ${PULL_VIEWS.map((view) => `<option value="${view.id}">${escapeHtml(view.label)}</option>`).join("")}
                   </select>
                 </div>
-                <button type="button" data-repo-pull-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
+                <button type="button" data-repo-pull-new class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
               </div>
               ${pullContributionTipDismissed(repo) ? "" : `
               <aside data-repo-pull-contribution-tip class="fm-flash relative mb-4 flex-wrap">

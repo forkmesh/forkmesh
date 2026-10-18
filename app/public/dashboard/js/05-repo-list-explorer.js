@@ -3495,6 +3495,7 @@
   }
 
   function repoFileEditError(error) {
+    if (error?.code === "read_only_mirror") return error?.data?.message || REPO_READ_ONLY_MIRROR_HINT;
     if (error?.code === "conflict" || error?.status === 409) {
       return "The file changed while you were editing. Reload and try again.";
     }
@@ -3806,6 +3807,10 @@
       if (action === "raw") {
         setRepoFileMode(viewer, "raw", lines, path, meta);
       } else if (action === "edit") {
+        if (repoReadOnlyMirror(repo)) {
+          updateRepoFileStatus(viewer, REPO_READ_ONLY_MIRROR_HINT, "bad");
+          return;
+        }
         if (!state.session?.nodeName) {
           updateRepoFileStatus(viewer, "Sign in to edit this file.", "bad");
           location.href = repoFileSignInUrl();

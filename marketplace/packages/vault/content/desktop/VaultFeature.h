@@ -67,6 +67,7 @@ private:
     void copyField(const QString &id, const char *field, const QString &label);
     void openSite(const QString &id);
     void showRecoveryCode(const QString &code);
+    void importPasswords();
     void openSettings();
     bool newPasswordFrom(QLineEdit *first, QLineEdit *second, QString *password);
 
@@ -76,6 +77,7 @@ private:
     QLabel *m_status = nullptr;
     QPushButton *m_lockButton = nullptr;
     QPushButton *m_settingsButton = nullptr;
+    QPushButton *m_importButton = nullptr;
     QLineEdit *m_setupPassword = nullptr;
     QLineEdit *m_setupConfirm = nullptr;
     QPushButton *m_setupButton = nullptr;

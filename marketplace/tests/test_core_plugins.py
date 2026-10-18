@@ -41,7 +41,7 @@ def _ms(day):
 
 
 OLD = _ms("2025-03-01")
-NEW = _ms("2026-10-15")
+NEW = _ms("2026-10-20")
 
 
 def _registry():
@@ -417,3 +417,43 @@ def test_an_older_install_table_gains_the_places_column(hooks):
     assert state["calories"]["installed"] and state["calories"]["places"] == ["mobile", "desktop", "web"]
     plugin_data._ACCOUNT_SCHEMA_READY = False
     assert installed(runtime)["calories"]
+
+
+class InstanceRuntime(Runtime):
+    def __init__(self, created_at=None, name="Acme Code"):
+        super().__init__(created_at)
+        self.env = types.SimpleNamespace(INSTANCE_NAME=name)
+
+
+REPO_TABS = ("code", "issues", "pull-requests", "branches", "commits", "releases",
+             "discussions", "actions", "agents")
+
+
+def test_a_new_account_on_a_branded_instance_gets_every_dated_package(hooks):
+    runtime = InstanceRuntime(NEW)
+    state = installed(runtime)
+    for plugin in NEW_SYNCED + MOBILE_SYNCED + CONVERTED_LEGACY:
+        assert state[plugin] is True, plugin
+    for plugin in CONVERTED_OFF:
+        assert state[plugin] is False, plugin
+    visible = call(runtime, "/api/plugins")["data"]["plugins"]
+    assert set(REPO_TABS) <= set(visible)
+    assert runtime.lookups == 0
+    assert asyncio.run(plugin_data.account_package_installed(runtime, "bi:alice", "actions"))
+    assert runtime.lookups == 0
+
+
+def test_forkmesh_com_keeps_the_cutoff_for_new_accounts(hooks):
+    for runtime in (Runtime(NEW), InstanceRuntime(NEW, name="  ")):
+        state = installed(runtime)
+        assert not any(state[plugin] for plugin in REPO_TABS)
+        assert not set(REPO_TABS) & set(call(runtime, "/api/plugins")["data"]["plugins"])
+
+
+def test_an_instance_account_can_still_remove_a_repository_tab(hooks):
+    runtime = InstanceRuntime(NEW)
+    call(runtime, "/api/plugins/@account/actions/uninstall", "POST")
+    state = installed(runtime)
+    assert state["actions"] is False and state["code"] is True
+    assert "actions" not in call(runtime, "/api/plugins")["data"]["plugins"]
+    assert not asyncio.run(plugin_data.account_package_installed(runtime, "bi:alice", "actions"))

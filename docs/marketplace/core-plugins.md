@@ -32,7 +32,10 @@ state on the ForkMesh account and follow every device.
 - **No `installedBefore`, account-synced:** `timers`, `vault`, `calories`,
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
   only), `phone-security` (mobile only, [phone-security.md](phone-security.md)),
-  `eye-control` (mobile only, [eye-control.md](eye-control.md)).
+  `eye-control` (mobile only, [eye-control.md](eye-control.md)),
+  `strata`, `ember`, `synapse` (mobile and desktop since 1.1.0; desktop
+  installs from before are carried to the account,
+  [codebase-analysis.md](codebase-analysis.md#on-phones)).
 - **Per device:** `sign-in` (installed before 2026-10-11); `code-map` and
   `size-map`, the repository screen's Code map button and Size map tab
   (installed before 2026-10-17, desktop only,
@@ -114,6 +117,22 @@ The account-level install state of one package, in order:
    (`dataLifecycle.scope: "account"`) without `installedBefore`: installed
    when the package's `account_installed` hook says the account set it up
    through its own install panel.
+
+On a self-hosted instance (`INSTANCE_NAME` set, `instance_features.branded`)
+step 2 counts every account as created before every date
+(`_instance_created_at` in `plugin_data.py`), so an account there starts with
+the whole pre-marketplace set: the repository tabs (Code, Issues, Pull
+requests, Branches, Commits, Releases, Discussions, Actions, Agents) and the
+navigation entries (Chat, Network, Agents and the rest). Why: the cut-off
+only exists so that new forkmesh.com accounts pick features in the Market
+onboarding; an instance has no onboarding, every account on a new instance
+(its admins included) is created after the date, and the web hides every
+`data-plugin-entry` the account does not have, so signed-in users saw fewer
+repository tabs than signed-out visitors. Removing a package still stores an
+`installed: false` row, which wins as in step 1. ForkMesh-company surfaces
+among them (World, the ledger) stay hidden by the instance's own plugin
+switch (`INSTANCE_PLUGINS`, see [INSTANCES.md](../INSTANCES.md)).
+forkmesh.com is unchanged.
 
 The server marks answers from steps 2 and 3 with `"legacy": true`
 (`_legacy_only` in `plugin_data.py`). "Created before the date" means the

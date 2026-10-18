@@ -77,7 +77,8 @@ def test_the_settings_save_and_the_about_card_carry_the_switches():
     assert "INSERT INTO repo_feature_settings" in about
     assert 'result["features"] = features' in about
     public = ENTRY_TEXT.split("async def _repo_about_public(", 1)[1].split("\nasync def ", 1)[0]
-    assert '"features": await _repo_features_get(env, owner, repo)' in public
+    assert "await _repo_features_get(env, owner, repo)" in public
+    assert "_read_only_mirrors.about_fields(" in public
     purge = ENTRY_TEXT.split("async def _delete_repo_named_state(", 1)[1]
     assert '("repo-feature-settings:", "repo_feature_settings")' in purge.split("\nasync def ", 1)[0]
     js = (ROOT / "public" / "dashboard.js").read_text(encoding="utf-8")

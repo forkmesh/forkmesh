@@ -234,8 +234,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
 - **Code analysis:** `code-map`, `size-map` (built-in features as
   switches), `strata` (architecture and complexity), `ember` (file-level
   hotspots) and `synapse` (the import graph as a 3D brain), sharing the
-  engine in `desktop/src/RepoInsight`; see
-  [codebase-analysis.md](codebase-analysis.md).
+  engine in `desktop/src/RepoInsight`; the last three also run on iPhone and
+  Android through ports of that engine (`FMCodeInsight`, core `codeinsight`);
+  see [codebase-analysis.md](codebase-analysis.md).
 - **Health:** `calories`, `steps`, `water`, `sleep`, `sugar-break`,
   `stretch`, `food-guide` (account-scoped, sealed per account).
 - **Operations:** `analytics`, `marketing`, `status-page` and its

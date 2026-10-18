@@ -91,7 +91,10 @@ class RepoOverviewTest {
         }
         expect("Shortcuts" !in titles, "Shortcuts lives in the navigator")
         assertEq(titles.size, titles.toSet().size)
-        assertEq(23, tiles.size)
+        assertEq(26, tiles.size)
+        for (tool in listOf("Ember", "Strata", "Synapse")) expect(tool in titles, "missing $tool")
+        val gated = com.forkmesh.nativeapp.market.PackageSurfaces.of { it != "strata" }.repoSections
+        expect(RepoHubSection.Strata in gated && RepoHubSection.Ember !in gated && RepoHubSection.Synapse !in gated, "Strata hides when its package is removed")
     }
 
     fun testCountText() {

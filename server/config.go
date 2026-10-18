@@ -32,14 +32,18 @@ type Config struct {
 	GatewayProbe   string              `json:"gatewayProbe"`
 	Upstreams      map[string][]string `json:"upstreams"`
 	// EventDrivenUpstreams lists exact configured upstream URLs whose changes
-	// are announced on the relay WebSocket. They use the bounded safety fetch
-	// cadence instead of the operator polling interval.
-	EventDrivenUpstreams []string `json:"eventDrivenUpstreams,omitempty"`
-	PublishOwner         string   `json:"publishOwner"`
-	CanonicalOwner       string   `json:"canonicalOwner,omitempty"`
-	Version              string   `json:"version"`
-	DisableCatalog       bool     `json:"disableCatalog"`
-	DisableCloudflared   bool     `json:"disableCloudflared"`
+	// are announced on a relay WebSocket. One served by this node's own relay
+	// uses the bounded safety fetch cadence instead of the operator polling
+	// interval; one served by another relay gets a public upstream watch
+	// socket on that relay and keeps the operator polling interval as its
+	// fallback (docs/INSTANCES.md).
+	EventDrivenUpstreams []string          `json:"eventDrivenUpstreams,omitempty"`
+	MirrorOf             map[string]string `json:"mirrorOf,omitempty"`
+	PublishOwner         string            `json:"publishOwner"`
+	CanonicalOwner       string            `json:"canonicalOwner,omitempty"`
+	Version              string            `json:"version"`
+	DisableCatalog       bool              `json:"disableCatalog"`
+	DisableCloudflared   bool              `json:"disableCloudflared"`
 	// Keeps the node strictly read-only: the gateway then advertises no
 	// merge-pull / update-pull-branch capability and the Worker never selects
 	// this mirror for an owner-authorized web merge.
@@ -176,6 +180,8 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
+var mirrorPagePattern = regexp.MustCompile(`^https://[A-Za-z0-9.-]+(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~-]+){1,8}$`)
+
 var releaseVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // UpdateConfigVersion changes only the node's public release identity while
@@ -276,6 +282,14 @@ func (c *Config) validate() error {
 		}
 		seenEventUpstreams[upstream] = struct{}{}
 	}
+	for key, page := range c.MirrorOf {
+		if len(c.Upstreams[key]) == 0 {
+			return errors.New("mirrorOf must name repositories with configured upstreams")
+		}
+		if !mirrorPagePattern.MatchString(page) {
+			return errors.New("mirrorOf must map to a credential-free HTTPS repository page")
+		}
+	}
 	c.AgentOwner = strings.ToLower(strings.TrimSpace(c.AgentOwner))
 	if c.AgentOwner != "" && !nodePattern.MatchString(c.AgentOwner) {
 		return errors.New("agentOwner must be a valid account name")
@@ -332,7 +346,7 @@ func (c *Config) applyRole() error {
 		if c.Runner == nil {
 			c.Runner = &RunnerConfig{}
 		}
-		if len(c.Upstreams) != 0 || len(c.EventDrivenUpstreams) != 0 {
+		if len(c.Upstreams) != 0 || len(c.EventDrivenUpstreams) != 0 || len(c.MirrorOf) != 0 {
 			return errors.New("a runner keeps no repositories, so upstreams must be empty")
 		}
 		c.DisableCatalog = true

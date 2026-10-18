@@ -39,7 +39,7 @@ object PackageGate {
         "hosts" to "hosts", "network" to "network",
         "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
-        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "rssReader" to "rss-reader", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
+        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "rssReader" to "rss-reader", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
         "tour" to "tour", "world" to "world", "people" to "people", "docs" to "docs", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
@@ -75,6 +75,9 @@ object PackageGate {
         put("calories", Route.Kind.Calories)
         put("glasses-alert", Route.Kind.GlassesAlert)
         put("phone-security", Route.Kind.PhoneSecurity)
+        put("ember", Route.Kind.Ember)
+        put("strata", Route.Kind.Strata)
+        put("synapse", Route.Kind.Synapse)
         put("openwrt", Route.Kind.OpenWrtRouter)
         put("face-changer", Route.Kind.FaceChanger)
         put("app-store-status", Route.Kind.AppStoreStatus)
@@ -99,6 +102,7 @@ object PackageGate {
         RepoHubSection.Issues to ISSUES, RepoHubSection.Board to ISSUES, RepoHubSection.Backlog to ISSUES,
         RepoHubSection.Commits to COMMITS, RepoHubSection.Branches to BRANCHES, RepoHubSection.Actions to ACTIONS,
         RepoHubSection.Releases to RELEASES, RepoHubSection.Discussions to DISCUSSIONS, RepoHubSection.Agents to AGENTS,
+        RepoHubSection.Ember to "ember", RepoHubSection.Strata to "strata", RepoHubSection.Synapse to "synapse",
     )
 
     val GATED: Set<String> = HUB_ITEMS.values.toSet() + ROUTE_KINDS.values + TABS.values + REPO_SECTIONS.values + CODE

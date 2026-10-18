@@ -104,7 +104,7 @@ def test_a_mirror_on_the_apps_own_origin_is_proxied_not_redirected():
 
 def test_the_installer_names_the_flagship_node_and_aliases_the_owner():
     assert 'echo "INSTANCE_FLAGSHIP_NODE=$NODE_NAME"' in INSTALLER
-    merge = INSTALLER.split('"$ROUTER_PUBLIC_KEY" "$CFG_ownerName" <<\'PY\'', 1)[1].split(
+    merge = INSTALLER.split('"$CFG_ownerName" "$(upstream_page)" <<\'PY\'', 1)[1].split(
         "\nPY\n", 1)[0]
     assert 'alias["owner"] = owner' in merge
     assert '("forkmesh", "forkmesh")' in merge

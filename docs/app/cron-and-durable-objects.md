@@ -9,7 +9,7 @@ are kept in rqlite.
 | Binding | Class | Source | Role |
 | --- | --- | --- | --- |
 | `FORKMESH_MAINNODE_ROOM` | `ForkMeshRoom` | `app/src/entry.py` | Encrypted chat rooms and relay WebSockets |
-| `FORKMESH_NODES` | `ForkMeshNodes` | `app/src/entry.py` | One object per account holding the event sockets of its desktops, mirrors and phones; carries payload-free frames |
+| `FORKMESH_NODES` | `ForkMeshNodes` | `app/src/entry.py` | One object per account holding the event sockets of its desktops, mirrors and phones; carries payload-free frames. `watch:<owner>/<repo>` objects hold the unsigned, ping-only watch sockets of other relays' mirrors of a public repository and receive its `commits` doorbells ([../INSTANCES.md](../INSTANCES.md#the-platform-source-mirror-ownerforkmesh)) |
 | `FORKMESH_NOTE_ROOM` | `ForkMeshNoteRoom` | `app/src/entry.py` | Live shared notes |
 | `FORKMESH_WORLD` | `ForkMeshWorld` | `world/src/world_durable_objects.py` | World presence |
 | `FORKMESH_OFFICE_ROOM` | `ForkMeshOfficeRoom` | `world/src/world_durable_objects.py` | Office meeting rooms |

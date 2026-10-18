@@ -128,7 +128,10 @@ writes on iPhone. The iPhone app reads the same files (see On the phone).
   falls back to Latin-1, and `readLoginsCsv(text)` matches columns by header
   name. The only column it needs is a password one. Rows with neither a
   username nor a password (secure notes, cards) are counted and left out.
-  Files over 16 MB are refused.
+  Files over 16 MB are refused, and so is a ZIP entry that inflates past
+  16 MB, whatever size it claims: the inflate stream is cut off there. A
+  password-protected entry is refused as `zip_encrypted`, and an entry whose
+  length or CRC-32 does not match its header as `zip_unreadable`.
 - The header also names the app for the review: Bitwarden's `login_*`,
   Firefox's `guid`, 1Password's `Archived` (checked before `OTPAuth`, which
   1Password's export has too), Apple's `OTPAuth`, Chrome's `note`, then
@@ -152,6 +155,15 @@ writes on iPhone. The iPhone app reads the same files (see On the phone).
 
 `tests/transfer_check.js` reads each app's format, Latin-1 and ZIP files;
 `tests/e2e_client.js` imports an Apple export against the real Worker module.
+
+The desktop rail page has the same import (**Import…** in its toolbar), with
+C++ twins in `VaultClient`: `readImportCsv(bytes)` (the same columns, app
+detection and 16 MB cap, UTF-8 with a Latin-1 fallback), `planImport`,
+`importFields`, and `importLogins`, which saves one login at a time and stops
+at the first error with the same report. It reads CSV files only: a Safari ZIP
+is unzipped first and its `Passwords.csv` chosen. The page zeroes its copy of
+the file once parsed. `tests/test_vault_client_flow.cpp` imports an Apple
+export against the real Worker module.
 
 ## On the desktop
 

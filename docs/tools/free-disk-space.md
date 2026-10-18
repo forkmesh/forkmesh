@@ -62,6 +62,12 @@ run; the server cannot run these steps (see
   process that appears between steps is still respected. A candidate holding
   the tool's own working directory, or its parent shell's, counts as in use.
 - Without `--step` the tool does every part in one pass, as before.
+- Selecting a step shows it as **Part of a script**: the command, the dry
+  run, and the functions of this tool that step runs, with a viewer for their
+  source ([../app/workflows.md](../app/workflows.md#step-details-and-scripts)).
+  The functions each step lists are `workflow_desktop.FUNCTIONS`; when you
+  rename or split a function here, update that map, or
+  `test_each_desktop_step_names_the_part_of_the_script_it_runs` fails.
 
 ## What is removed
 
