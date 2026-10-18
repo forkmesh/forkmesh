@@ -992,7 +992,7 @@
         throw new Error("number_unavailable");
       }
       const targetRepo = result.targetRepo || repo;
-      const crossFork = Boolean(pullRequestParent(repo));
+      const crossFork = targetRepo !== repo;
       const item = {
         number,
         title,

@@ -1055,8 +1055,15 @@
       : head;
     const pull = await signWebPull(repo, targetRepo, title, body, base, head, signedHead);
     const payload = { owner: targetRepo.owner, repo: targetRepo.name, pull };
-    const data = await fetchRepoMutation(targetRepo, "pulls", payload);
-    return { ...data, pull, targetRepo };
+    try {
+      const data = await fetchRepoMutation(targetRepo, "pulls", payload);
+      return { ...data, pull, targetRepo };
+    } catch (error) {
+      if (targetRepo === repo || String(error?.code || error?.message || "") !== "read_only_mirror") throw error;
+    }
+    const ownPull = await signWebPull(repo, repo, title, body, base, head, head);
+    const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull: ownPull });
+    return { ...data, pull: ownPull, targetRepo: repo };
   }
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;

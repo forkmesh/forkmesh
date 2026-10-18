@@ -49,4 +49,11 @@ def test_compose_and_submit_use_the_pull_parent():
         ISSUES_IO, "submitWebPullOpen")
     assert "const parent = pullRequestParent(repo);" in function_source(
         COMPOSE, "openPullCompose")
-    assert "const crossFork = Boolean(pullRequestParent(repo));" in COMPOSE
+    assert "const crossFork = targetRepo !== repo;" in COMPOSE
+
+
+def test_a_read_only_refusal_from_the_parent_reopens_the_pull_on_the_fork():
+    submit = function_source(ISSUES_IO, "submitWebPullOpen")
+    assert '!== "read_only_mirror") throw error;' in submit
+    assert "signWebPull(repo, repo, title, body, base, head, head)" in submit
+    assert "targetRepo: repo };" in submit
