@@ -55,7 +55,7 @@ def icon_links(logo: str) -> str:
             '<link rel="apple-touch-icon" href="%s" data-instance-logo />') % (logo, kind, logo)
 
 
-def brand_page(text: str, name: str, logo: str = "") -> str:
+def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
     escaped = html.escape(name, quote=True)
     text = OLD_TAG_RE.sub("", text)
     text = text.replace(THEME_TAG, "")
@@ -68,7 +68,8 @@ def brand_page(text: str, name: str, logo: str = "") -> str:
         lambda match: match.group(1) + match.group(2).replace("ForkMesh", escaped) + match.group(3),
         text, count=1)
     text = META_RE.sub(lambda match: match.group(1) + escaped + match.group(2), text)
-    tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s" %s></script>' % (escaped, MARKER)
+    off = ' data-instance-powered-by="off"' if not powered_by else ""
+    tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
     lower = text.lower()
     index = lower.rfind("</head>")
     if index == -1:
@@ -103,7 +104,7 @@ def install_logo(dist: Path, name: str, source: Path) -> str:
     return "/" + target
 
 
-def apply(dist: Path, name: str, logo: Path | None = None) -> int:
+def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = True) -> int:
     if not NAME_RE.fullmatch(name):
         raise SystemExit("instance name: letters, numbers, spaces and ._&+- only, up to 40")
     if not dist.is_dir():
@@ -113,7 +114,7 @@ def apply(dist: Path, name: str, logo: Path | None = None) -> int:
     changed = 0
     for page in sorted(dist.rglob("*.html")):
         original = page.read_text(encoding="utf-8", errors="surrogateescape")
-        branded = brand_page(original, name, logo_path)
+        branded = brand_page(original, name, logo_path, powered_by)
         if branded != original:
             page.write_text(branded, encoding="utf-8", errors="surrogateescape")
             changed += 1
@@ -125,8 +126,10 @@ def main(argv=None) -> int:
     parser.add_argument("--name", required=True, help="the instance's project name")
     parser.add_argument("--dist", default=str(APP / "dist"), help="the built app directory")
     parser.add_argument("--logo", help="the instance's logo: a PNG, JPEG, WebP or SVG file")
+    parser.add_argument("--no-powered-by", action="store_true", help="leave out the Powered by ForkMesh badge")
     args = parser.parse_args(argv)
-    changed = apply(Path(args.dist), " ".join(args.name.split()), Path(args.logo) if args.logo else None)
+    changed = apply(Path(args.dist), " ".join(args.name.split()), Path(args.logo) if args.logo else None,
+                    powered_by=not args.no_powered_by)
     print("branded %d pages as %s" % (changed, args.name))
     return 0
 

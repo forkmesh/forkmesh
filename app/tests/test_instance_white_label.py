@@ -346,3 +346,19 @@ def test_genie_spider_asks_the_instance_before_it_builds():
     assert 'querySelector?.("script[data-instance-brand]")' in spider
     assert 'plugin.id === "genie" && plugin.enabled' in spider
     assert "return !hidden() && instanceAllows();" in spider
+
+
+def test_powered_by_badge_can_be_switched_off(tmp_path):
+    page = tmp_path / "index.html"
+    page.write_text("<!doctype html><html><head><title>ForkMesh</title></head><body></body></html>")
+    assert apply_instance_brand.apply(tmp_path, "Acme Code", powered_by=False) == 1
+    assert 'data-instance-powered-by="off"' in page.read_text()
+    assert apply_instance_brand.apply(tmp_path, "Acme Code") == 1
+    assert 'data-instance-powered-by="off"' not in page.read_text()
+    assert page.read_text().count("/instance-brand.js") == 1
+    assert 'script.dataset.instancePoweredBy === "off"' in BRAND_JS
+    assert 'INSTANCE_POWERED_BY' in APP_RUNTIME
+    installer = (ROOT.parent / "www" / "public" / "install-instance.sh").read_text()
+    assert 'c.get("poweredBy", True)' in installer
+    assert "--no-powered-by" in installer
+    assert 'echo "INSTANCE_POWERED_BY=$CFG_poweredBy"' in installer

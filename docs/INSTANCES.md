@@ -3,8 +3,12 @@
 Anyone can start their own ForkMesh instance, a white-label Git host on their
 own server, from `forkmesh.com/start`. The app connects to the server over
 SSH, runs `www/public/install-instance.sh`, streams progress to the page, and
-finishes on the new `<owner>/forkmesh` repository. Every instance shows a
-"Powered by ForkMesh" badge.
+finishes on the new `<owner>/forkmesh` repository. Instances show a
+"Powered by ForkMesh" badge by default; the `poweredBy` setting (`false`)
+leaves it out. The installer then writes `INSTANCE_POWERED_BY=0`, passes
+`--no-powered-by` to `app/tools/apply_instance_brand.py` (which marks the brand
+script with `data-instance-powered-by="off"`), and `/api/instance` answers
+`poweredBy: null`.
 
 ## Start page (`app/public/start.html`, `start.js`)
 
