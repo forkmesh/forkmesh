@@ -384,7 +384,7 @@ export class PitchShifter {
     const voiced = period >= 16;
     const step = voiced ? Math.floor(period + 0.5) : this.unvoiced;
     const half = voiced ? Math.min(step, this.maxHalf) : this.unvoiced;
-    const reach = Math.max(8, Math.floor(half / 2));
+    const reach = Math.max(8, half);
     const smooth = this.smooth;
     const mask = this.mask;
     for (;;) {
