@@ -130,10 +130,7 @@
   }
 
   function isUserSession(session) {
-    return Boolean(
-      session?.nodeName && session.kind !== "node" &&
-      (session.kind === "user" || session.email),
-    );
+    return Boolean(session?.nodeName && session.kind !== "node");
   }
 
   function accountKey(session) {
@@ -2413,6 +2410,7 @@
     composer.inline = Boolean(slot);
     if (slot) {
       composer.root.dataset.inline = "1";
+      slot.hidden = false;
       slot.replaceChildren(composer.root);
     } else {
       document.body.append(composer.root);
@@ -2425,6 +2423,11 @@
     const idle = !document.activeElement || document.activeElement === document.body;
     const startOpen = composer.inline || Boolean(composer.stored.open);
     setOpen(startOpen, { focus: idle && startOpen });
+  }
+
+  function releaseSlot() {
+    const slot = document.querySelector("[data-composer-slot]");
+    if (slot && !slot.querySelector("[data-composer]")) slot.hidden = true;
   }
 
   window.ForkMeshComposer = Object.freeze({
@@ -2487,6 +2490,7 @@
   window.addEventListener("forkmesh:composer-host", () => {
     if (!composer.root) {
       mount();
+      if (!composer.root) releaseSlot();
       return;
     }
     composer.session = readSession() || composer.session;
