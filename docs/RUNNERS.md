@@ -50,6 +50,14 @@ Code: `server/runner.go`, `sandbox.go`, `runnergrant.go`, `jobhome.go`,
 `runner_setup.py`, `runner_ssh_setup.py`, `runner_auth.py`; dashboard
 `/dashboard/runners`; gateway route in `tools/mirror_gateway.py`.
 
+An instance installs one runner next to its core with
+`install-runner.sh --preregistered --name <name> --owner <owner> --binary
+<daemon>`: no token handshake (the instance registers it with
+`python -m forkmesh_host instance-runner`), `enableActions: true`, job user
+`forkmesh-job` unless `--job-user` says otherwise, and the last output line
+`FM_RUNNER_PUBLIC_KEY=<base64url raw Ed25519 key>`
+([server/instance-actions.md](server/instance-actions.md)).
+
 ## Security model
 
 A runner can read the one leased repository for the lease lifetime,

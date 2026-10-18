@@ -38,6 +38,10 @@ CONFIG=""
 UNIT=""
 RUNNER_LABEL=""
 MAC_LOG=""
+PREREGISTERED="0"
+PREREG_OWNER=""
+JOB_USER_OVERRIDE=""
+ENABLE_ACTIONS="0"
 
 say() { printf '%s\n' "$*"; }
 step() { printf '\n==> %s\n' "$*"; }
@@ -57,6 +61,11 @@ Options:
   --app URL        ForkMesh app origin (default https://app.forkmesh.com)
   --providers P    agent CLIs to install: claude, codex, claude,codex or none (default claude)
   --binary PATH    use this forkmesh-mirror-node binary instead of the signed release
+  --preregistered  install-instance.sh only: skip the token registration (the instance
+                   registers the runner itself), lease Actions jobs, and print the
+                   runner's public key as FM_RUNNER_PUBLIC_KEY=<key>; needs --owner and --binary
+  --owner O        the one account the runner serves (--preregistered)
+  --job-user U     job user name (--preregistered, default forkmesh-job)
 
 What it installs: /usr/local/bin/forkmesh-mirror-node (run as a runner, it serves no
 repositories), a forkmesh-runner@<account> service, an unprivileged job user of its own for
@@ -85,13 +94,30 @@ while [ $# -gt 0 ]; do
     --providers=*) PROVIDERS="${1#*=}"; shift ;;
     --binary) BINARY="${2:-}"; shift 2 ;;
     --binary=*) BINARY="${1#*=}"; shift ;;
+    --preregistered) PREREGISTERED="1"; shift ;;
+    --owner) PREREG_OWNER="${2:-}"; shift 2 ;;
+    --owner=*) PREREG_OWNER="${1#*=}"; shift ;;
+    --job-user) JOB_USER_OVERRIDE="${2:-}"; shift 2 ;;
+    --job-user=*) JOB_USER_OVERRIDE="${1#*=}"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (see --help)" 2 ;;
   esac
 done
 
-[[ "$TOKEN" =~ ^fmrt_[0-9a-f]{64}$ ]] ||
-  die "--token must be the one-time token shown on the Runners page." 2
+if [ "$PREREGISTERED" = "1" ]; then
+  [ -z "$TOKEN" ] || die "--preregistered takes no --token." 2
+  [[ "$PREREG_OWNER" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] ||
+    die "--preregistered needs --owner, the account the runner serves." 2
+  [ -n "$BINARY" ] || die "--preregistered needs --binary." 2
+  [ -n "$JOB_USER_OVERRIDE" ] || JOB_USER_OVERRIDE="forkmesh-job"
+  [[ "$JOB_USER_OVERRIDE" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$JOB_USER_OVERRIDE" != "root" ] ||
+    die "--job-user must be a plain user name." 2
+  ENABLE_ACTIONS="1"
+else
+  [ -z "$PREREG_OWNER$JOB_USER_OVERRIDE" ] || die "--owner and --job-user need --preregistered." 2
+  [[ "$TOKEN" =~ ^fmrt_[0-9a-f]{64}$ ]] ||
+    die "--token must be the one-time token shown on the Runners page." 2
+fi
 [[ "$NAME" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]] ||
   die "--name must be lowercase letters, digits and dashes, starting with a letter." 2
 APP_URL="${APP_URL%/}"
@@ -418,6 +444,9 @@ choose_job_user() {
   local id owner name user rest
   JOB_USER="$INSTANCE_JOB_USER"
   if [ -z "$JOB_USER" ]; then
+    JOB_USER="$JOB_USER_OVERRIDE"
+  fi
+  if [ -z "$JOB_USER" ]; then
     JOB_USER="$(job_user_for "$OWNER")"
   fi
   [[ "$JOB_USER" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || die "Could not derive a job user name for $OWNER."
@@ -535,6 +564,10 @@ ensure_base_dirs() {
 
 ensure_binary() {
   step "Installing forkmesh-mirror-node"
+  if [ -n "$BINARY" ] && [ "$BINARY" -ef "$BIN" ]; then
+    say "Using the installed $BIN"
+    return 0
+  fi
   if [ -n "$BINARY" ]; then
     install -m 0755 "$BINARY" "$BIN"
     say "Installed $BIN from $BINARY"
@@ -617,7 +650,21 @@ ensure_identity() {
   [[ "$PUBLIC_KEY" =~ ^[A-Za-z0-9_-]{43}$ ]] || die "Could not read the runner's public key."
 }
 
+use_preregistration() {
+  step "Runner $NAME for $PREREG_OWNER (registered by the instance)"
+  OWNER="$PREREG_OWNER"
+  if [ -n "$INSTANCE_OWNER" ] && [ "$INSTANCE_OWNER" != "$OWNER" ]; then
+    die "Runner $NAME on this machine belongs to $INSTANCE_OWNER, not $OWNER."
+  fi
+  OWNERS_JSON="[\"$OWNER\"]"
+  say "Skipping the token registration; the instance registers $NAME."
+}
+
 register_runner() {
+  if [ "$PREREGISTERED" = "1" ]; then
+    use_preregistration
+    return 0
+  fi
   step "Registering $NAME with ForkMesh"
   local ts digest message_file signature body answer
   ts="$(python3 -c 'import time; print(int(time.time() * 1000))')"
@@ -663,7 +710,8 @@ write_config() {
   step "Writing the runner configuration"
   FM_NAME="$NAME" FM_KEY="$PUBLIC_KEY" FM_IDENTITY="$IDENTITY" FM_CONFIG="$CONFIG" \
   FM_KEYFILE="$KEY" FM_APP="$APP_URL" FM_OWNERS="$OWNERS_JSON" FM_WORK="$WORK" \
-  FM_JOB_USER="$JOB_USER" FM_PREFIX="$PREFIX" FM_LISTEN="$LISTEN" FM_PROBE="$PROBE" python3 - <<'PY'
+  FM_JOB_USER="$JOB_USER" FM_PREFIX="$PREFIX" FM_LISTEN="$LISTEN" FM_PROBE="$PROBE" \
+  FM_ACTIONS="$ENABLE_ACTIONS" python3 - <<'PY'
 import json, os
 def write(path, doc):
     tmp = path + ".new"
@@ -679,7 +727,7 @@ write(os.environ["FM_IDENTITY"], {
     "node": {"name": os.environ["FM_NAME"], "publicKey": os.environ["FM_KEY"]},
     "repositories": [],
 })
-write(os.environ["FM_CONFIG"], {
+config = {
     "schemaVersion": 1,
     "role": "runner",
     "listen": os.environ["FM_LISTEN"],
@@ -693,7 +741,10 @@ write(os.environ["FM_CONFIG"], {
         "allowedOwners": json.loads(os.environ["FM_OWNERS"]),
         "jobUser": os.environ["FM_JOB_USER"],
     },
-})
+}
+if os.environ["FM_ACTIONS"] == "1":
+    config["enableActions"] = True
+write(os.environ["FM_CONFIG"], config)
 PY
   say "Wrote $CONFIG"
 }
@@ -1086,6 +1137,12 @@ write_units
 install_providers
 check_and_start
 
+if [ "$PREREGISTERED" = "1" ]; then
+  say ""
+  say "Done. $NAME runs Actions jobs for $OWNER as $JOB_USER."
+  printf 'FM_RUNNER_PUBLIC_KEY=%s\n' "$PUBLIC_KEY"
+  exit 0
+fi
 say ""
 say "Done. $NAME is registered as your private runner; its jobs run as $JOB_USER."
 say "Other accounts' runners on this machine keep running next to it, each with its own user."
