@@ -737,3 +737,8 @@ def test_the_first_login_cleanup_removes_only_what_the_install_created(tmp_path)
     assert not (root / "etc/forkmesh-runner").exists()
     assert not (root / "var/lib/forkmesh-runner").exists()
     assert "forkmesh-runner-firewall" in calls.read_text()
+
+def test_the_installer_writes_and_keeps_the_turnstile_hostname():
+    writer = function("write_settings")
+    assert "grep -qE '^TURNSTILE_HOSTNAMES=.' \"$APP_ENV\"" in writer
+    assert 'echo "TURNSTILE_HOSTNAMES=$DOMAIN"' in writer
