@@ -5003,7 +5003,11 @@ async def _branch_op_on_cores(env, request, owner, repo, repo_bi, target,
              "base": payload.get("base", ""), "cores": True,
              "outcome": outcome, "error": payload.get("error", "")})
     payload["results"] = await _branch_op_results_recent(env, repo_bi)
-    return json_response(payload, status=status, cache_control="no-store")
+    return json_response(
+        payload, status=status, cache_control="no-store",
+        extra_headers=(EXPECTED_DEGRADED_HEADERS
+                       if status == 503 and payload.get("retryable") is True
+                       else None))
 
 
 async def repository_branch_ops_handler(env, request, owner, repo):
