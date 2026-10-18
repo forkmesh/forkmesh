@@ -48,6 +48,7 @@ struct ShellTopBar: View {
     let onOpenHub: () -> Void
     let onOpenSearch: () -> Void
     let onSignIn: () -> Void
+    var onHome: () -> Void = {}
     var onNewAgent: (() -> Void)? = nil
     var onPalette: () -> Void = {}
     var onVoice: ((CGRect) -> Void)? = nil
@@ -118,7 +119,7 @@ struct ShellTopBar: View {
             TelemetryStrip()
                 .padding(.horizontal, 64)
             HStack(spacing: FmSpace.x3) {
-                ShellProjectSlot()
+                ShellProjectSlot(onHome: onHome)
                     .genieKeepsClear()
                 HStack(spacing: FmSpace.x2) {
                     DjNowPlayingChip()
@@ -146,9 +147,13 @@ struct ShellTopBar: View {
 }
 
 struct ShellProjectSlot: View {
+    static let holdSeconds: Double = 0.5
+
     @Environment(\.fmPalette) var fm
     @State private var settings: SettingsService? = Services.get(SettingsService.self)
     @State private var switching: Bool = false
+    @State private var held: Bool = false
+    var onHome: () -> Void = {}
 
     var body: some View {
         if let settings = settings {
@@ -159,8 +164,13 @@ struct ShellProjectSlot: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(ShellBarButtonStyle())
+            .simultaneousGesture(LongPressGesture(minimumDuration: ShellProjectSlot.holdSeconds).onEnded { _ in
+                held = true
+                goHome()
+            })
             .accessibilityLabel(Text("Project \(project.label), \(project.displayOrigin)"))
-            .accessibilityHint(Text("Switch project or add a new one"))
+            .accessibilityHint(Text("Switch project or add a new one. Touch and hold to go Home"))
+            .accessibilityAction(named: Text("Go Home")) { goHome() }
             .accessibilityIdentifier("home-project-slot")
             .projectDrawer(isPresented: $switching)
         } else {
@@ -169,14 +179,28 @@ struct ShellProjectSlot: View {
                 .scaledToFit()
                 .frame(width: 40, height: 40)
                 .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+                .onLongPressGesture(minimumDuration: ShellProjectSlot.holdSeconds) { goHome() }
                 .accessibilityLabel(Text("ForkMesh"))
+                .accessibilityHint(Text("Touch and hold to go Home"))
+                .accessibilityAction(named: Text("Go Home")) { goHome() }
                 .accessibilityIdentifier("home-project-slot")
         }
     }
 
     private func openSwitcher() {
+        if held {
+            held = false
+            return
+        }
         FmHaptics.tap()
         switching = true
+    }
+
+    private func goHome() {
+        CaptureHold.noteHandled()
+        FmHaptics.selection()
+        onHome()
     }
 }
 

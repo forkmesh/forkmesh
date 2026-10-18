@@ -154,6 +154,7 @@ struct FmListRow: View {
         guard let onLongPress = onLongPress else {
             return
         }
+        CaptureHold.noteHandled()
         FmHaptics.commit(.open)
         onLongPress()
     }
