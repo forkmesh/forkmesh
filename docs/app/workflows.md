@@ -240,9 +240,15 @@ Clicking **Workflows** on the desktop rail opens a native page
 (`builtin:workflows`, API prefix `/api/workflows`, proof
 `forkmesh-workflows-request-v1`) instead of the browser. It calls the same
 routes as the web canvas through the host's `request`, which sends the
-account session as a Bearer token, so the desktop must be signed in; a 401 or
-403 `plugin_not_installed` shows as a sentence in the status line
-(`errorText` maps every server error code).
+account session as a Bearer token or, when the desktop holds no session for
+the server, signs the request with the account key (`node`, `ts`, `sig` over
+the proof, method, path and the body's SHA-256). The server accepts either:
+`_session_account` falls back to `_plugin_scope_signed_session` with
+`REQUEST_PROOF`, as Notes does. Before 2026-10-18 it took only the session, so
+a desktop without one got a 401 on the list while the public catalog loaded,
+and the phones showed workflows the desktop did not. A 401 or 403
+`plugin_not_installed` shows as a sentence in the status line (`errorText`
+maps every server error code).
 
 - **Dashboard.** Stats: workflows (and their step total), active (scheduled,
   webhook, manual), runs (today), success rate (succeeded and failed),
