@@ -291,6 +291,35 @@ def test_the_installer_refuses_every_built_in_address():
     assert needed <= listed
 
 
+def test_the_launch_page_makes_a_fresh_random_path():
+    page = (APP / "public" / "start.html").read_text(encoding="utf-8")
+    script = (APP / "public" / "start.js").read_text(encoding="utf-8")
+    assert 'name="adminPath"' in page
+    assert "data-start-admin-path-copy" in page
+    assert "data-start-admin-path-new" in page
+    assert "Save it now" in page
+    assert "data-start-config-zip" in page
+    assert "crypto.getRandomValues(new Uint8Array(32))" in script
+    assert "byte < 252" in script and "`/admin-${chars.join(\"\")}`" in script
+    maker = script.split("const newAdminPath = () => {", 1)[1].split("\n  };", 1)[0]
+    assert "Math.random" not in maker
+    assert 'if (!field("adminPath").value) field("adminPath").value = newAdminPath();' in script
+    assert "settings.adminPath = newAdminPath();" in script
+    assert "withAdminPath(await response.text())" in script
+    assert script.count("withAdminPath(") >= 3
+    assert "adminPath" not in script.split("SECRET_FIELDS = [", 1)[1].split("]", 1)[0]
+    assert '"adminPath"' in script.split("CONFIG_FIELDS = [", 1)[1].split("]", 1)[0]
+    assert "localStorage" not in script and "sessionStorage" not in script
+
+
+def test_the_browser_zip_writer_matches_the_zip_format():
+    script = (APP / "public" / "start.js").read_text(encoding="utf-8")
+    writer = script.split("const storedZip = (files) => {", 1)[1].split("\n  };", 1)[0]
+    for signature in ("0x04034b50", "0x02014b50", "0x06054b50"):
+        assert signature in writer
+    assert "0xedb88320" in script
+
+
 def test_admin_notifications_link_to_the_console_helper():
     entry = (SRC / "entry.py").read_text(encoding="utf-8")
     assert entry.count("_admin_path_rules.notification_href(") == 3

@@ -14,6 +14,29 @@
   let clockTimer = 0;
   let startedAt = 0;
   let redirectTimer = 0;
+  let launchedAdminPath = "";
+  const ADMIN_PATH_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+  const ADMIN_PATH_RE = /^\/[A-Za-z0-9_-]{8,64}$/;
+  const newAdminPath = () => {
+    const chars = [];
+    while (chars.length < 20) {
+      for (const byte of crypto.getRandomValues(new Uint8Array(32))) {
+        if (byte < 252 && chars.length < 20) chars.push(ADMIN_PATH_ALPHABET[byte % 36]);
+      }
+    }
+    return `/admin-${chars.join("")}`;
+  };
+  const copyText = async (button, text, label) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Copied";
+    } catch {
+      button.textContent = "Select and copy it";
+    }
+    setTimeout(() => {
+      button.textContent = label;
+    }, 2000);
+  };
 
   const params = new URLSearchParams(location.search);
   const plot = (params.get("plot") || "").replace(/[^0-9A-Za-z-]/g, "").slice(0, 12);
@@ -468,7 +491,7 @@
     "projectName", "logo", "theme", "host", "sshUser", "port", "sshPassword", "sshPrivateKey", "sshPassphrase",
     "hostKeyFingerprint", "domain", "adminUsername", "adminEmail", "adminPassword", "ownerType",
     "ownerName", "owners", "mailProvider", "mailApiKey", "mailFrom", "mailgunDomain", "mailgunRegion",
-    "ownWorld", "listOnHomepage",
+    "ownWorld", "listOnHomepage", "adminPath",
   ];
   const configFile = $("[data-start-config-file]");
   const configDrop = $("[data-start-config-drop]");
@@ -708,12 +731,115 @@
     readConfig(event.dataTransfer.files[0]);
   });
   configLaunch.addEventListener("click", () => form.requestSubmit());
+  if (!field("adminPath").value) field("adminPath").value = newAdminPath();
+  $("[data-start-admin-path-new]").addEventListener("click", () => {
+    field("adminPath").value = newAdminPath();
+  });
+  $("[data-start-admin-path-copy]").addEventListener("click", (event) =>
+    copyText(event.currentTarget, field("adminPath").value.trim(), "Copy"),
+  );
+  $("[data-start-admin-path-note-copy]").addEventListener("click", (event) =>
+    copyText(event.currentTarget, $("[data-start-admin-path-url]").textContent, "Copy"),
+  );
+
+  const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc32 = (bytes) => {
+    let c = 0xffffffff;
+    for (const byte of bytes) c = CRC_TABLE[(c ^ byte) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const storedZip = (files) => {
+    const parts = [];
+    const central = [];
+    let offset = 0;
+    for (const file of files) {
+      const name = new TextEncoder().encode(file.name);
+      const crc = crc32(file.bytes);
+      const local = new DataView(new ArrayBuffer(30));
+      local.setUint32(0, 0x04034b50, true);
+      local.setUint16(4, 20, true);
+      local.setUint16(8, 0, true);
+      local.setUint32(14, crc, true);
+      local.setUint32(18, file.bytes.length, true);
+      local.setUint32(22, file.bytes.length, true);
+      local.setUint16(26, name.length, true);
+      parts.push(new Uint8Array(local.buffer), name, file.bytes);
+      const entry = new DataView(new ArrayBuffer(46));
+      entry.setUint32(0, 0x02014b50, true);
+      entry.setUint16(4, 20, true);
+      entry.setUint16(6, 20, true);
+      entry.setUint32(16, crc, true);
+      entry.setUint32(20, file.bytes.length, true);
+      entry.setUint32(24, file.bytes.length, true);
+      entry.setUint16(28, name.length, true);
+      entry.setUint32(42, offset, true);
+      central.push(new Uint8Array(entry.buffer), name);
+      offset += 30 + name.length + file.bytes.length;
+    }
+    const size = central.reduce((total, part) => total + part.length, 0);
+    const end = new DataView(new ArrayBuffer(22));
+    end.setUint32(0, 0x06054b50, true);
+    end.setUint16(8, files.length, true);
+    end.setUint16(10, files.length, true);
+    end.setUint32(12, size, true);
+    end.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, new Uint8Array(end.buffer)], { type: "application/zip" });
+  };
+  const saveBlob = (blob, name) => {
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  };
+  const withAdminPath = (text) => {
+    const settings = JSON.parse(text);
+    settings.adminPath = newAdminPath();
+    return `${JSON.stringify(settings, null, 2)}\n`;
+  };
+  $("[data-start-config-zip]").addEventListener("click", async (event) => {
+    const link = event.currentTarget;
+    event.preventDefault();
+    try {
+      const response = await fetch(link.getAttribute("href"), { cache: "no-store" });
+      if (!response.ok) throw new Error(String(response.status));
+      const zip = zipEntries(new Uint8Array(await response.arrayBuffer()));
+      if (!zip) throw new Error("zip");
+      const files = [];
+      for (const entry of zip.entries) {
+        if (entry.path.endsWith("/")) continue;
+        let bytes = await zipRead(zip, entry, MAX_ZIP_BYTES);
+        if (extension(entry.path) === "json") bytes = new TextEncoder().encode(withAdminPath(new TextDecoder().decode(bytes)));
+        files.push({ name: entry.path, bytes });
+      }
+      saveBlob(storedZip(files), link.getAttribute("download"));
+    } catch {
+      location.assign(link.getAttribute("href"));
+    }
+  });
+  $("[data-start-config-example]").addEventListener("click", async (event) => {
+    const link = event.currentTarget;
+    event.preventDefault();
+    try {
+      const response = await fetch(link.getAttribute("href"), { cache: "no-store" });
+      if (!response.ok) throw new Error(String(response.status));
+      saveBlob(new Blob([withAdminPath(await response.text())], { type: "application/json" }), link.getAttribute("download"));
+    } catch {
+      location.assign(link.getAttribute("href"));
+    }
+  });
   $("[data-start-config-copy]").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     try {
       const response = await fetch($("[data-start-config-example]").getAttribute("href"), { cache: "no-store" });
       if (!response.ok) throw new Error(String(response.status));
-      await navigator.clipboard.writeText(await response.text());
+      await navigator.clipboard.writeText(withAdminPath(await response.text()));
       button.textContent = "Copied";
     } catch {
       button.textContent = "Could not copy: use Download example";
@@ -749,6 +875,9 @@
     if (!/^[a-z][a-z0-9-]*$/.test(body.adminUsername)) return ["Pick an admin username: lowercase letters, numbers and dashes.", "adminUsername"];
     if (!body.adminEmail.includes("@")) return ["Enter the admin's email address.", "adminEmail"];
     if (body.adminPassword.length < 10) return ["The admin password needs at least 10 characters.", "adminPassword"];
+    if (!ADMIN_PATH_RE.test(body.adminPath)) {
+      return ["The admin console address is a / and then 8 to 64 letters, numbers, - or _. Press New for a fresh one.", "adminPath"];
+    }
     if (body.ownerType === "org" && !/^[a-z][a-z0-9-]*$/.test(body.ownerName)) return ["Name the organization: lowercase letters, numbers and dashes.", "ownerName"];
     const names = new Set([body.adminUsername, body.ownerName]);
     const emails = new Set([body.adminEmail.toLowerCase()]);
@@ -786,6 +915,7 @@
       adminUsername: value("adminUsername").trim().toLowerCase(),
       adminEmail: value("adminEmail").trim(),
       adminPassword: value("adminPassword"),
+      adminPath: value("adminPath").trim(),
       ownerType,
       ownerName: value("ownerName").trim().toLowerCase(),
       owners: ownerType === "org"
@@ -870,6 +1000,11 @@
       return;
     }
     clearSecrets();
+    launchedAdminPath = typeof data.adminPath === "string" && ADMIN_PATH_RE.test(data.adminPath) ? data.adminPath : "";
+    if (launchedAdminPath && data.domain) {
+      $("[data-start-admin-path-url]").textContent = `https://${data.domain}${launchedAdminPath}`;
+      $("[data-start-admin-path-note]").hidden = false;
+    }
     history.replaceState(null, "", `${location.pathname}?launch=${data.id}${plot ? `&plot=${plot}` : ""}`);
     showProgress({ ...data, projectName: body.projectName, state: "running", log: "" });
     poll(data.id);
@@ -951,8 +1086,12 @@
     const done = $("[data-start-done]");
     done.hidden = false;
     $("[data-start-open]").href = url;
-    $("[data-start-done-text]").textContent = `Sign in as @${launch.admin || "your admin"}. Taking you to ${url} in 5 seconds…`;
     clearTimeout(redirectTimer);
+    if (launchedAdminPath) {
+      $("[data-start-done-text]").textContent = `Sign in as @${launch.admin || "your admin"}. Save the admin console address above, then open ${url}.`;
+      return;
+    }
+    $("[data-start-done-text]").textContent = `Sign in as @${launch.admin || "your admin"}. Taking you to ${url} in 5 seconds…`;
     redirectTimer = setTimeout(() => location.assign(url), 5000);
   };
 
@@ -990,6 +1129,8 @@
     stop();
     clearTimeout(redirectTimer);
     progress.hidden = true;
+    $("[data-start-admin-path-note]").hidden = true;
+    launchedAdminPath = "";
     $("[data-start-failed]").hidden = true;
     $("[data-start-done]").hidden = true;
     form.hidden = false;
