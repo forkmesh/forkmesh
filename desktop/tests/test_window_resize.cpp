@@ -9259,6 +9259,31 @@ void checkHomeGridPage(MainWindow &window)
     check(board->visibleCount() == keys.size(),
           QStringLiteral("the board places every tile"));
     {
+        const auto uninstallFor = [board](const QString &key) -> QString {
+            const QRect rect = board->tileRect(key);
+            if (rect.isEmpty())
+                return QString();
+            std::unique_ptr<QMenu> menu(board->contextMenuFor(rect.center()));
+            auto *action = menu->findChild<QAction *>(
+                QStringLiteral("packageUninstallAction"));
+            return action && action->isEnabled() ? action->text() : QString();
+        };
+        QStringList uninstallable;
+        for (const QString &key : board->visibleKeys())
+            if (!uninstallFor(key).isEmpty())
+                uninstallable << key;
+        check(uninstallFor(QStringLiteral("chat")).isEmpty() &&
+                  uninstallFor(QStringLiteral("settings")).isEmpty(),
+              QStringLiteral("right-clicking a built-in page on Home offers "
+                             "no uninstall"));
+        check(!uninstallable.isEmpty() &&
+                  uninstallFor(uninstallable.first())
+                      .startsWith(QStringLiteral("Uninstall ")),
+              QStringLiteral("right-clicking a plugin on Home offers to "
+                             "uninstall it (%1)")
+                  .arg(uninstallable.join(QStringLiteral(", "))));
+    }
+    {
         const auto codeTile = [&window] {
             for (const HomeGroup &group : window.testHomeGridGroups())
                 for (const HomeTile &tile : group.tiles)
@@ -19608,7 +19633,7 @@ else:
         window.testPackageRailMenuActions(QStringLiteral("builtin:timers"));
     check(timersRailMenu.contains(QStringLiteral("Timers settings")) &&
               timersRailMenu.contains(QString::fromUtf8("Export data\xE2\x80\xA6")) &&
-              timersRailMenu.contains(QString::fromUtf8("Remove Timers\xE2\x80\xA6")),
+              timersRailMenu.contains(QString::fromUtf8("Uninstall Timers\xE2\x80\xA6")),
           QStringLiteral("right-clicking a package offers its settings, a data "
                          "export and removal"));
     QTemporaryDir timersExportDir;
@@ -19653,7 +19678,7 @@ else:
 
     window.testTriggerPackageRailAction(
         QStringLiteral("builtin:timers"),
-        QString::fromUtf8("Remove Timers\xE2\x80\xA6"));
+        QString::fromUtf8("Uninstall Timers\xE2\x80\xA6"));
     const bool timersRemoved = answerPackageDialog(
         QStringLiteral("packageRemoveConfirm"),
         QStringLiteral("packageRemoveConfirmButton"));

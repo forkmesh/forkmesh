@@ -77,6 +77,10 @@ public:
     {
         m_onActivate = std::move(handler);
     }
+    void setTileMenu(std::function<void(QMenu *, const QString &)> handler)
+    {
+        m_tileMenu = std::move(handler);
+    }
     void setOnLayoutChanged(
         std::function<void(const HomeLayout::Pages &)> handler)
     {
@@ -175,6 +179,7 @@ private:
     QTimer *m_pulse = nullptr;
     std::function<QPixmap(const QString &, const QColor &, int)> m_iconProvider;
     std::function<void(const QString &)> m_onActivate;
+    std::function<void(QMenu *, const QString &)> m_tileMenu;
     std::function<void(const HomeLayout::Pages &)> m_onLayoutChanged;
     std::function<void(int, int)> m_onPagesChanged;
     std::function<void()> m_onPull;

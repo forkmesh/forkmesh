@@ -2434,16 +2434,7 @@ void MainWindow::installPackageFromSavedCopy(const QString &id)
 QMenu *MainWindow::buildPackageRailMenu(const QString &entrypoint,
                                         QWidget *parent)
 {
-    if (!m_packageRegistry || !m_packageRegistry->isReady())
-        return nullptr;
-    const PackageManifest *manifest = nullptr;
-    for (const PackageManifest &candidate : m_packageRegistry->packages()) {
-        if (candidate.desktopEntrypoint == entrypoint &&
-            m_packageRegistry->isInstalled(candidate.id)) {
-            manifest = &candidate;
-            break;
-        }
-    }
+    const PackageManifest *manifest = installedPackageForEntrypoint(entrypoint);
     if (!manifest)
         return nullptr;
     const QString id = manifest->id;
@@ -2490,16 +2481,61 @@ QMenu *MainWindow::buildPackageRailMenu(const QString &entrypoint,
     }
     addPackageFeedbackActions(menu, id);
     menu->addSeparator();
-    QAction *remove = menu->addAction(
-        QStringLiteral("Remove %1…").arg(name), this,
-        [this, id] { requestPackageRemoval(id, true); });
-    if (manifest->managedExternally) {
-        remove->setEnabled(false);
-        remove->setToolTip(
-            QStringLiteral("External packages are removed with marketctl"));
-    }
+    addPackageUninstallAction(menu, id);
     addButtonPlacementActions(menu, parent);
     return menu;
+}
+
+const PackageManifest *
+MainWindow::installedPackageForEntrypoint(const QString &entrypoint) const
+{
+    if (entrypoint.isEmpty() || !m_packageRegistry ||
+        !m_packageRegistry->isReady())
+        return nullptr;
+    for (const PackageManifest &candidate : m_packageRegistry->packages()) {
+        if (candidate.desktopEntrypoint == entrypoint &&
+            m_packageRegistry->isInstalled(candidate.id))
+            return &candidate;
+    }
+    return nullptr;
+}
+
+void MainWindow::addHomeTilePackageActions(QMenu *menu, const QString &key)
+{
+    QWidget *widget = railWidgetForKey(key);
+    const PackageManifest *manifest =
+        widget ? installedPackageForEntrypoint(
+                     widget->property("forkmeshPackageEntrypoint").toString())
+               : nullptr;
+    if (!menu || !manifest)
+        return;
+    const QString id = manifest->id;
+    menu->addAction(QStringLiteral("%1 settings").arg(manifest->name), this,
+                    [this, id] {
+                        showSection(kMarketSectionIndex);
+                        showPackageSettings(id);
+                    });
+    addPackageUninstallAction(menu, id);
+}
+
+void MainWindow::addPackageUninstallAction(QMenu *menu, const QString &id)
+{
+    const PackageManifest *manifest =
+        m_packageRegistry ? m_packageRegistry->package(id) : nullptr;
+    if (!menu || !manifest)
+        return;
+    const QString name = manifest->name.isEmpty() ? id : manifest->name;
+    QAction *uninstall = menu->addAction(
+        QString::fromUtf8("Uninstall %1\xE2\x80\xA6").arg(name), this,
+        [this, id] { requestPackageRemoval(id, true); });
+    uninstall->setObjectName(QStringLiteral("packageUninstallAction"));
+    if (manifest->managedExternally) {
+        uninstall->setEnabled(false);
+        uninstall->setToolTip(
+            QStringLiteral("External packages are removed with marketctl"));
+    } else if (!m_packageRegistry->isInstalled(id)) {
+        uninstall->setEnabled(false);
+    }
 }
 
 void MainWindow::addPackageFeedbackActions(QMenu *menu, const QString &id)
@@ -2540,23 +2576,12 @@ QMenu *MainWindow::buildPackageActionsMenu(const QString &id, QWidget *parent)
         m_packageRegistry ? m_packageRegistry->package(id) : nullptr;
     if (!manifest)
         return nullptr;
-    const QString name = manifest->name.isEmpty() ? id : manifest->name;
     auto *menu = new QMenu(parent);
     menu->setObjectName(QStringLiteral("packageActionsMenu"));
     menu->setToolTipsVisible(true);
     addPackageFeedbackActions(menu, id);
     menu->addSeparator();
-    QAction *uninstall = menu->addAction(
-        QString::fromUtf8("Uninstall %1\xE2\x80\xA6").arg(name), this,
-        [this, id] { requestPackageRemoval(id, true); });
-    uninstall->setObjectName(QStringLiteral("packageUninstallAction"));
-    if (manifest->managedExternally) {
-        uninstall->setEnabled(false);
-        uninstall->setToolTip(
-            QStringLiteral("External packages are removed with marketctl"));
-    } else if (!m_packageRegistry->isInstalled(id)) {
-        uninstall->setEnabled(false);
-    }
+    addPackageUninstallAction(menu, id);
     return menu;
 }
 

@@ -672,6 +672,10 @@ QMenu *HomeBoard::contextMenuFor(const QPoint &pos)
                 applyLayout(HomeLayout::moveWithinPage(m_pages, key, index + 1));
             });
         }
+        if (m_tileMenu) {
+            menu->addSeparator();
+            m_tileMenu(menu, key);
+        }
         menu->addSeparator();
     }
     if (browsing) {

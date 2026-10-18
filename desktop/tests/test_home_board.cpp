@@ -186,6 +186,22 @@ int main(int argc, char *argv[])
     click(&board, QPoint(2, 2));
     check(activated.isEmpty(), "clicking the gap activates nothing");
 
+    QString uninstalled;
+    board.setTileMenu([&uninstalled](QMenu *menu, const QString &key) {
+        if (key != QLatin1String("git"))
+            return;
+        QAction *action = menu->addAction(QStringLiteral("Uninstall Git"));
+        action->setObjectName(QStringLiteral("packageUninstallAction"));
+        QObject::connect(action, &QAction::triggered,
+                         [&uninstalled, key] { uninstalled = key; });
+    });
+    check(trigger(&board, QStringLiteral("git"), "packageUninstallAction") &&
+              uninstalled == QLatin1String("git"),
+          "a tile's right-click menu carries the actions the host adds for it");
+    check(!trigger(&board, QStringLiteral("agents"), "packageUninstallAction"),
+          "the host adds nothing to tiles it has no actions for");
+    board.setTileMenu(nullptr);
+
     HomeLayout::Pages saved;
     int layoutChanges = 0;
     board.setOnLayoutChanged([&](const HomeLayout::Pages &pages) {
