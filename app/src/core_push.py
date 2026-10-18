@@ -12,6 +12,8 @@ PROTECTED_BRANCHES = ("main", "master", "HEAD")
 TAG_MOVE_TTL_MS = 15 * 60 * 1000
 TAG_MOVE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000
 MAX_TAG_MOVES_PER_PUSH = 8
+ACTIONS_PUSH_BRANCH_MAX = 5
+ACTIONS_PUSH_CREATED_MAX = 3
 OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 TAG_REF_RE = re.compile(r"^refs/tags/[A-Za-z0-9._/-]{1,180}$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]{1,200}$")
@@ -239,14 +241,33 @@ async def queue_runner_actions(env, owner, repo, commit, node="", pusher="",
         return 0
 
 
+def _created(item):
+    old = str(item.get("old") or "")
+    return not old or _zero(old)
+
+
+def instance_action_updates(updates, default):
+    default_ref = "refs/heads/" + default
+    heads = [item for item in updates
+             if str(item.get("ref") or "").startswith("refs/heads/")
+             and not _zero(item.get("new"))]
+    head = next((item for item in heads if item["ref"] == default_ref), None)
+    others = [item for item in heads if item is not head]
+    created = [item for item in others if _created(item)]
+    if (head is not None and _created(head)) or (
+            len(created) > ACTIONS_PUSH_CREATED_MAX):
+        others = [item for item in others if not _created(item)]
+    return ([head] if head is not None else []) + (
+        others[:ACTIONS_PUSH_BRANCH_MAX])
+
+
 async def _queue_pushed_actions(env, owner, repo, node, account, updates):
     if _instance_actions(env):
-        for item in updates:
-            ref = str(item.get("ref") or "")
-            if ref.startswith("refs/heads/") and not _zero(item["new"]):
-                await queue_runner_actions(
-                    env, owner, repo, item["new"], node, account,
-                    ref[len("refs/heads/"):], item.get("old") or "")
+        default = await _default_branch(env, owner, repo)
+        for item in instance_action_updates(updates, default):
+            await queue_runner_actions(
+                env, owner, repo, item["new"], node, account,
+                item["ref"][len("refs/heads/"):], item.get("old") or "")
         return
     default = await _default_branch(env, owner, repo)
     head = next((item for item in updates

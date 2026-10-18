@@ -189,6 +189,37 @@ func TestRunnerActionsReportsAndRefusesALeaseThatIsNotItsOwn(t *testing.T) {
 	}
 }
 
+func TestRunnerActionsAllowedOwnersMatchTheOrganization(t *testing.T) {
+	a := newTestRunnerActions(t)
+	a.b.cfg.AllowedOwners = []string{"acme-bolt"}
+	now := time.Now().UnixMilli()
+	lease := func(owner, organization string) runnerActionsJob {
+		return runnerActionsJob{Kind: "actions", JobID: 3, LeaseID: "lease", RepositoryOwner: owner,
+			RepositoryName: "Bolt", Organization: organization, Branch: "main",
+			ReadGrant: mintGrant(t, runnerGrant{Node: "forkmesh", Owner: owner, Repository: "Bolt",
+				Access: "read", Runner: "fmnext-r1", GrantID: "grant-0000000003", IssuedAt: now,
+				ExpiresAt: now + 3600_000}),
+			CloneURL: "https://core1.test/v1/runner/" + owner + "/Bolt.git"}
+	}
+	if problem := a.validate(lease("acme-bolt", "acme-bolt")); problem != "" {
+		t.Fatalf("an organization job was refused: %s", problem)
+	}
+	if problem := a.validate(lease("drew", "acme-bolt")); problem != "" {
+		t.Fatalf("a creator-hosted organization job was refused: %s", problem)
+	}
+	if problem := a.validate(lease("acme-bolt", "")); problem != "" {
+		t.Fatalf("a job without an organization falls back to its owner: %s", problem)
+	}
+	for _, job := range []runnerActionsJob{lease("drew", ""), lease("acme-bolt", "someone")} {
+		if problem := a.validate(job); problem != "This runner does not accept jobs for that owner." {
+			t.Fatalf("job for %s/%s: %q", job.RepositoryOwner, job.Organization, problem)
+		}
+	}
+	if a.validate(lease("acme-bolt", "Bad Org")) == "" {
+		t.Fatal("a malformed organization must be refused")
+	}
+}
+
 func TestTailBufferKeepsTheEnd(t *testing.T) {
 	tail := &tailBuffer{limit: 8}
 	io.WriteString(tail, "abcdef")
