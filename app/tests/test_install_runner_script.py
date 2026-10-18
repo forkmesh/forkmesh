@@ -361,3 +361,72 @@ def test_macos_installs_a_launch_daemon_and_a_pf_anchor(tmp_path):
     assert "pfctl -F" not in firewall and "pf.conf" not in firewall
 
 
+
+
+def preregistered(tmp_path, *extra, name="forkmesh-runner", owner="acme", env=None):
+    return run(tmp_path, "--preregistered", "--name", name, "--owner", owner,
+               "--app", "https://code.example.com", "--providers", "none",
+               "--binary", str(fake_binary(tmp_path)), *extra, env=env)
+
+
+def test_preregistered_mode_skips_the_handshake_and_leases_actions(tmp_path):
+    result = preregistered(tmp_path)
+    assert result.returncode == 0, result.stderr
+    root = tmp_path / "root"
+    config = read_json(root / "etc/forkmesh-runner/accounts/acme/runner.json")
+    assert config["role"] == "runner"
+    assert config["enableActions"] is True
+    assert config["runner"]["allowedOwners"] == ["acme"]
+    assert config["runner"]["appUrl"] == "https://code.example.com"
+    assert config["runner"]["jobUser"] == "forkmesh-job"
+    identity = read_json(root / "var/lib/forkmesh-runner/accounts/acme/gateway/config.json")
+    assert identity["node"]["name"] == "forkmesh-runner"
+    key = identity["node"]["publicKey"]
+    assert len(key) == 43 and len(unb64(key)) == 32
+    assert result.stdout.splitlines()[-1] == "FM_RUNNER_PUBLIC_KEY=" + key
+    assert "Registering" not in result.stdout
+    nft = (root / "etc/forkmesh-runner/jobs.nft").read_text()
+    assert 'meta skuid "forkmesh-job"' in nft
+    again = preregistered(tmp_path)
+    assert again.returncode == 0, again.stderr
+    assert "Reusing the runner key" in again.stdout
+    assert again.stdout.splitlines()[-1] == "FM_RUNNER_PUBLIC_KEY=" + key
+
+
+def test_a_token_runner_has_no_actions_flag(tmp_path):
+    app = App()
+    try:
+        assert install(tmp_path, app, "alice-box").returncode == 0
+    finally:
+        app.close()
+    assert "enableActions" not in read_json(tmp_path / "root" / ALICE_ETC / "runner.json")
+
+
+def test_preregistered_arguments_are_checked(tmp_path):
+    binary = str(fake_binary(tmp_path))
+    for args in (
+        ["--preregistered", "--name", "box", "--binary", binary],
+        ["--preregistered", "--name", "box", "--owner", "Bad", "--binary", binary],
+        ["--preregistered", "--name", "box", "--owner", "acme"],
+        ["--preregistered", "--name", "box", "--owner", "acme", "--binary", binary,
+         "--token", TOKEN],
+        ["--preregistered", "--name", "box", "--owner", "acme", "--binary", binary,
+         "--job-user", "root"],
+        ["--token", TOKEN, "--name", "box", "--owner", "acme"],
+    ):
+        result = run(tmp_path, *args)
+        assert result.returncode == 2, (args, result.stderr)
+    assert not (tmp_path / "root").exists()
+
+
+def test_preregistered_mode_reuses_the_installed_binary(tmp_path):
+    env = sandbox_env(tmp_path)
+    binary = tmp_path / "root/usr/local/bin/forkmesh-mirror-node"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!/bin/sh\nexit 0\n")
+    binary.chmod(0o755)
+    result = run(tmp_path, "--preregistered", "--name", "forkmesh-runner",
+                 "--owner", "acme", "--app", "https://code.example.com",
+                 "--providers", "none", "--binary", str(binary), env=env)
+    assert result.returncode == 0, result.stderr
+    assert "Using the installed" in result.stdout
