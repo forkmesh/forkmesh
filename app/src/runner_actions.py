@@ -586,7 +586,8 @@ async def report(runtime, runner, data):
     job_id = _int(data.get("jobId"))
     lease_id = str(data.get("leaseId") or "")[:64]
     row = await runtime.d1_first(
-        "SELECT id,owner,repo,branch,status,event,payload FROM "
+        "SELECT id,owner,repo,branch,status,event,payload,target_node,"
+        "token_hash FROM "
         "repo_action_jobs WHERE id=? AND runner=? AND lease_id=? "
         "AND lease_id!='' AND status IN " + _ACTIVE_SQL,
         job_id, runner["name"], lease_id) if job_id and lease_id else None
@@ -644,7 +645,20 @@ async def report(runtime, runner, data):
         status, sealed, note, stored["commit"], stored["commit"],
         "" if terminal else lease_id, now, pushed, pushed,
         1 if terminal else 0, job_id, lease_id)
+    if terminal and row.get("token_hash"):
+        await _admit_pushed_state(runtime, owner, repo,
+                                  str(row.get("target_node") or ""))
     return runtime.response({"ok": True, "cancel": cancelling})
+
+
+async def _admit_pushed_state(runtime, owner, repo, node):
+    admit = getattr(runtime, "admit_push_state", None)
+    if not callable(admit) or not node:
+        return ""
+    try:
+        return await admit(owner, repo, node) or ""
+    except Exception:
+        return ""
 
 
 async def cancel(runtime, owner, repo, run_id):
