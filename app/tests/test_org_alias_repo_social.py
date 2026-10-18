@@ -12,6 +12,7 @@ import ast
 import asyncio
 import html
 import re
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,8 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+import instance_features  # noqa: E402
 ENTRY = ROOT / "src" / "entry.py"
 ENTRY_TEXT = (
     # entry.py + its lazily-split domain modules
@@ -61,6 +64,7 @@ def _load_function(name, namespace):
         and node.name == name
     )
     scope = dict(namespace)
+    scope.setdefault("instance_features", instance_features)
     exec(compile(ast.fix_missing_locations(
         ast.Module(body=[function], type_ignores=[])),
         str(ENTRY), "exec"), scope)
@@ -83,6 +87,7 @@ def _load_default_method(name, namespace):
         decorator_list=[],
     )
     scope = dict(namespace)
+    scope.setdefault("instance_features", instance_features)
     exec(compile(ast.fix_missing_locations(
         ast.Module(body=[subject], type_ignores=[])),
         str(ENTRY), "exec"), scope)

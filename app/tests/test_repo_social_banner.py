@@ -76,6 +76,7 @@ def _load(*names, extra_globals=None):
     missing = set(names) - {node.name for node in selected}
     assert not missing, "missing functions: %s" % sorted(missing)
     namespace = dict(extra_globals or {})
+    namespace.setdefault("instance_features", instance_features)
     exec(compile(ast.fix_missing_locations(ast.Module(
         body=_constant_nodes(tree) + selected, type_ignores=[])),
         str(ENTRY), "exec"), namespace)
@@ -95,6 +96,7 @@ def _load_method(class_name, name, extra_globals=None):
         name="_Subject", bases=[], keywords=[], body=[method],
         decorator_list=[])
     namespace = dict(extra_globals or {})
+    namespace.setdefault("instance_features", instance_features)
     exec(compile(ast.fix_missing_locations(ast.Module(
         body=_constant_nodes(tree) + [subject], type_ignores=[])),
         str(ENTRY), "exec"), namespace)
