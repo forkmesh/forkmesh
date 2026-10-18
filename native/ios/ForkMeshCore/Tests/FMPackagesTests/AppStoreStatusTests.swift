@@ -322,6 +322,45 @@ final class AppStoreStatusTests: XCTestCase {
         XCTAssertEqual(desktopCalls, 2)
     }
 
+    static let withoutScreenshots = docExample.replacingOccurrences(
+        of: "\"screenshots\": [{\"id\": \"3f1c2a9b8d7e6f5a4b3c2d1e\", \"width\": 1179, \"height\": 2556}]",
+        with: "\"screenshots\": []")
+
+    func testSnapshotLacksScreenshotsOnlyWhenNoReportHasOne() throws {
+        XCTAssertFalse(try snapshot().lacksScreenshots)
+        XCTAssertTrue(try snapshot(Self.withoutScreenshots).lacksScreenshots)
+        XCTAssertFalse(try snapshot("{\"feedback\": [{\"kind\": \"crash\"}]}").lacksScreenshots)
+        XCTAssertFalse(try snapshot("{}").lacksScreenshots)
+    }
+
+    @MainActor func testModelAsksTheDesktopWhenTheServerSnapshotPredatesScreenshots() async {
+        var desktopCalls = 0
+        let server = JSON.parseObject(
+            "{\"ok\": true, \"publishedAt\": 1760000300000, \"snapshot\": \(Self.withoutScreenshots)}")
+        let fresh = JSON.parseObject(
+            "{\"ok\": true, \"source\": \"desktop\", \"publishedAt\": 1760000400000, \"snapshot\": \(Self.docExample)}")
+        let stale = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { server }, desktop: { desktopCalls += 1; return fresh }))
+        await stale.load()
+        XCTAssertEqual(desktopCalls, 1)
+        XCTAssertEqual(stale.response?.fromDesktop, true)
+        XCTAssertEqual(stale.snapshot?.feedback.first?.screenshots.map(\.id), [Self.shotId])
+
+        let oldDesktop = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { server },
+            desktop: { JSON.parseObject("{\"ok\": true, \"source\": \"desktop\", \"snapshot\": \(Self.withoutScreenshots)}") }))
+        await oldDesktop.load()
+        XCTAssertEqual(oldDesktop.response?.fromDesktop, false)
+        XCTAssertEqual(oldDesktop.response?.publishedAt, 1_760_000_300_000)
+
+        let failing = AppStoreStatusModel(api: AppStoreStatusAPI(
+            fetch: { server }, desktop: { throw OrgApiException("not_connected", "Not connected.") }))
+        await failing.load()
+        XCTAssertEqual(failing.response?.fromDesktop, false)
+        XCTAssertEqual(failing.refreshError, "")
+        XCTAssertTrue(failing.snapshot?.lacksScreenshots ?? false)
+    }
+
     @MainActor func testModelExplainsWhenTheDesktopCannotFetchItEither() async {
         let failing: () async throws -> JSONObject = {
             throw OrgApiException("app_store_report_failed", "missing App Store Connect credential ASC_KEY_ID.")

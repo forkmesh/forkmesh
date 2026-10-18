@@ -379,6 +379,11 @@ public struct AppStoreSnapshot: Decodable, Equatable, Sendable {
 
     public func unavailable(_ section: AppStoreSection) -> String? { unavailable[section.rawValue] }
 
+    public var lacksScreenshots: Bool {
+        let reports = feedback.filter { $0.kind == "screenshot" }
+        return !reports.isEmpty && reports.allSatisfy { $0.screenshots.isEmpty }
+    }
+
     public var sortedGroups: [AppStoreGroup] {
         groups.enumerated().sorted { lhs, rhs in
             if lhs.element.isInternal != rhs.element.isInternal { return lhs.element.isInternal }
@@ -484,6 +489,9 @@ public enum AppStoreStatusText {
 
     public static let screenshotMissing =
         "This screenshot has not been uploaded yet. Run the \(shortcutName) shortcut on your desktop again."
+
+    public static let screenshotsNotPublished =
+        "Tester screenshots appear once the \(shortcutName) shortcut runs again on your desktop."
 
     static let screenshotMissingCodes: Set<String> = ["screenshot_not_found", "http_404", "screenshot_not_in_snapshot"]
 
@@ -711,17 +719,18 @@ public final class AppStoreStatusModel {
             serverError = error
         }
         let missing = server.map { $0.snapshot == nil } ?? serverError.map(AppStoreStatusText.isMissing) ?? false
+        let stale = server?.snapshot?.lacksScreenshots ?? false
         var desktopNote = ""
-        if missing, let desktop = api.desktop {
+        if missing || stale, let desktop = api.desktop {
             do {
                 let reply = try AppStoreStatusResponse.decode(try await desktop())
-                if reply.snapshot != nil {
+                if let snapshot = reply.snapshot, !stale || !snapshot.lacksScreenshots {
                     response = reply
                     error = ""
                     return
                 }
             } catch {
-                desktopNote = AppStoreStatusText.desktopMessage(for: error)
+                if missing { desktopNote = AppStoreStatusText.desktopMessage(for: error) }
             }
         }
         if let server {
