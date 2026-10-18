@@ -377,6 +377,9 @@ QString VaultFeature::explain(const QString &code) const
         {QStringLiteral("csv_unknown_columns"), QStringLiteral("That file has no Password column. Choose the CSV that Apple Passwords or another password manager exported.")},
         {QStringLiteral("csv_no_logins"), QStringLiteral("That file has no logins in it.")},
         {QStringLiteral("invalid_session"), QStringLiteral("Sign in to your ForkMesh account on this device to open your vault.")},
+        {QStringLiteral("no_vault"), QStringLiteral("There is no Password Vault on this account yet. Open Vault to create one.")},
+        {QStringLiteral("vault_busy"), QStringLiteral("The Password Vault is busy. Try again in a moment.")},
+        {QStringLiteral("invalid_url"), QStringLiteral("That login has no web address the vault can match.")},
     };
     const QString known = words.value(code);
     if (!known.isEmpty())
@@ -540,6 +543,156 @@ void VaultFeature::lockVault(const QString &note)
         showPanel(UnlockPanel);
         setStatus(note.isEmpty() ? QStringLiteral("The vault is locked.") : note);
     }
+}
+
+void VaultFeature::unlockFor(const QString &purpose, QWidget *asker, const QString &error, bool checked,
+                            std::function<void(const QString &)> then)
+{
+    if (m_client->unlocked()) {
+        then(QString());
+        return;
+    }
+    if (m_busy) {
+        then(QStringLiteral("vault_busy"));
+        return;
+    }
+    if (!checked && (!m_loaded || !m_client->installed())) {
+        m_client->status([this, purpose, asker = QPointer<QWidget>(asker), then](const QString &code) {
+            m_loaded = true;
+            if (!code.isEmpty()) {
+                showPanel(UnlockPanel);
+                setStatus(explain(code), true);
+                then(code);
+                return;
+            }
+            showPanel(m_client->installed() ? UnlockPanel : SetupPanel);
+            unlockFor(purpose, asker, QString(), true, then);
+        });
+        return;
+    }
+    if (!m_client->installed()) {
+        then(QStringLiteral("no_vault"));
+        return;
+    }
+    QDialog dialog(asker ? asker->window() : window());
+    dialog.setWindowTitle(QStringLiteral("Unlock Password Vault"));
+    dialog.setMinimumWidth(420);
+    auto *layout = new QVBoxLayout(&dialog);
+    layout->addWidget(mutedLabel(purpose));
+    if (!error.isEmpty()) {
+        auto *problem = mutedLabel(error);
+        problem->setObjectName(QStringLiteral("errorLabel"));
+        layout->addWidget(problem);
+    }
+    auto *password = passwordEdit(QStringLiteral("Master password"));
+    password->setAccessibleName(QStringLiteral("Master password"));
+    layout->addWidget(password);
+    auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    buttons->button(QDialogButtonBox::Ok)->setText(QStringLiteral("Unlock"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    password->setFocus();
+    if (dialog.exec() != QDialog::Accepted || password->text().isEmpty()) {
+        password->clear();
+        then(QStringLiteral("cancelled"));
+        return;
+    }
+    const QString typed = password->text();
+    password->clear();
+    setBusy(true);
+    setStatus(QStringLiteral("Unlocking…"));
+    m_client->unlock(typed, [this, purpose, asker = QPointer<QWidget>(asker), then](const QString &code) {
+        setBusy(false);
+        if (code == QLatin1String("wrong_password")) {
+            setStatus(explain(code), true);
+            unlockFor(purpose, asker, explain(code), true, then);
+            return;
+        }
+        if (!code.isEmpty()) {
+            setStatus(explain(code), true);
+            then(code);
+            return;
+        }
+        showPanel(AppPanel);
+        touch();
+        then(QString());
+    });
+}
+
+void VaultFeature::saveLogin(const forkmesh::market::NativePackageLogin &login, const QString &requester, QWidget *asker,
+                             forkmesh::market::NativePackageLoginHandler done)
+{
+    if (VaultClient::loginOrigin(login.url).isEmpty() || login.password.isEmpty()) {
+        done({false, false, explain(QStringLiteral("invalid_url")), {}});
+        return;
+    }
+    const QString purpose = QStringLiteral("%1 asks to save the password for %2 in your Password Vault. Type your master password to unlock it.")
+                                .arg(requester, login.url);
+    unlockFor(purpose, asker, QString(), false, [this, login, done](const QString &code) {
+        if (code == QLatin1String("cancelled")) {
+            done({false, true, QString(), {}});
+            return;
+        }
+        if (!code.isEmpty()) {
+            done({false, false, explain(code), {}});
+            return;
+        }
+        const QString title = login.title.trimmed().isEmpty() ? QUrl::fromUserInput(login.url).host() : login.title;
+        const QJsonObject fields{{QStringLiteral("title"), title}, {QStringLiteral("url"), login.url},
+                                 {QStringLiteral("username"), login.username}, {QStringLiteral("password"), login.password},
+                                 {QStringLiteral("notes"), QString()}};
+        m_client->rememberLogin(fields, [this, login, done](const QString &saved, const QString &, bool changed) {
+            renderItems();
+            if (m_searchIndexChanged)
+                m_searchIndexChanged();
+            touch();
+            if (!saved.isEmpty()) {
+                setStatus(explain(saved), true);
+                done({false, false, explain(saved), {}});
+                return;
+            }
+            setStatus(changed ? QStringLiteral("Saved the login for %1.").arg(login.url)
+                              : QStringLiteral("The login for %1 was already saved.").arg(login.url));
+            done({true, false, QString(), {{login.title, login.url, login.username, QString()}}});
+        });
+    });
+}
+
+void VaultFeature::findLogins(const QString &url, const QString &requester, QWidget *asker,
+                              forkmesh::market::NativePackageLoginHandler done)
+{
+    if (VaultClient::loginOrigin(url).isEmpty()) {
+        done({false, false, explain(QStringLiteral("invalid_url")), {}});
+        return;
+    }
+    const QString purpose = QStringLiteral("%1 asks for the password you saved for %2. Type your master password to unlock your Password Vault.")
+                                .arg(requester, url);
+    unlockFor(purpose, asker, QString(), false, [this, url, done](const QString &code) {
+        if (code == QLatin1String("cancelled")) {
+            done({false, true, QString(), {}});
+            return;
+        }
+        if (!code.isEmpty()) {
+            done({false, false, explain(code), {}});
+            return;
+        }
+        m_client->load([this, url, done](const QString &loaded) {
+            renderItems();
+            if (m_searchIndexChanged)
+                m_searchIndexChanged();
+            touch();
+            if (!loaded.isEmpty()) {
+                setStatus(explain(loaded), true);
+                done({false, false, explain(loaded), {}});
+                return;
+            }
+            QList<forkmesh::market::NativePackageLogin> logins;
+            for (const VaultItem *item : m_client->loginsFor(url))
+                logins.append({item->field("title"), item->field("url"), item->field("username"), item->field("password")});
+            done({true, false, QString(), logins});
+        });
+    });
 }
 
 void VaultFeature::touch()

@@ -62,7 +62,9 @@ validation sits next to its tests rather than in the views.
 - **State.** iOS keeps an `@Observable` `OpenWrtRouterModel` per Router
   screen; Android a process-wide `OpenWrtState.shared` its sub-screens share.
   The address, user and pinned fingerprints are stored (`UserDefaults`, and the
-  `market.packages.openwrt` shared preferences); the password is not.
+  `market.packages.openwrt` shared preferences); the password is not, and the
+  phones do not offer saving it in the Password Vault yet (the desktop does,
+  see Safety).
 - **Apply.** The same rollback loop as the desktop, with real sleeps injected
   by the app (`apply(rollback:wait:)`); the tests pass a recorder instead.
 
@@ -198,9 +200,26 @@ signed-in account has.
   every address is private, link-local, unique-local or loopback. The root
   password must never be typed into a page that sends it across the internet.
 - **Password.** Kept in memory by `Client` for session renewal, cleared on
-  sign-out, never written to settings. Only the address, user and pinned
-  certificate fingerprints are stored, under
+  sign-out, never written to settings. Only the address, user, pinned
+  certificate fingerprints and the `saveLogin` tick are stored, under
   `market/packages/openwrt/data/`.
+- **Saving it in the Password Vault (desktop).** When a login store is
+  installed (the host's `loginStoreName()` is not empty; see
+  [README.md](README.md#architecture), **Login store**), the sign-in form
+  shows **Save the password in Password Vault** (ticked by default) and **Use
+  saved password**. After a successful sign-in with a typed password, the page
+  calls `saveLogin` with the title `OpenWrt router (<host>)`, the router's
+  origin (`http://192.168.1.1`), the user and the password; a router password
+  changed on the System tab is saved the same way. The Vault encrypts it on
+  this device (suite `fmv1`) before anything is uploaded, so the password is
+  stored only as ciphertext the master password opens. A locked vault asks for
+  its master password in its own dialog, which names the Router and the
+  address; dismissing it leaves the router signed in with the password unsaved.
+  **Use saved password** calls `findLogins` for the typed address, prefers the
+  login for the typed user (and asks which account when there are several),
+  fills the form and connects; a password that came from the vault is not
+  saved back. Only a successful sign-in saves, so a mistyped password never
+  reaches the vault. The manifest permission is `desktop.logins.use`.
 - **HTTPS.** OpenWrt's `luci-ssl` certificate is self-signed. On a TLS error
   the client reports the leaf certificate's SHA-256; the page shows it and
   **Trust this certificate** pins it per host and port. A pinned certificate

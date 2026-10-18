@@ -39,6 +39,23 @@ struct NativePackageChatTarget {
     bool person = false;
 };
 
+struct NativePackageLogin {
+    QString title;
+    QString url;
+    QString username;
+    QString password;
+};
+
+struct NativePackageLoginReply {
+    bool ok = false;
+    bool cancelled = false;
+    QString error;
+    QList<NativePackageLogin> logins;
+};
+
+using NativePackageLoginHandler =
+    std::function<void(const NativePackageLoginReply &)>;
+
 struct NativePackageHost {
     // Manifest metadata is supplied by the generic host. A package can adapt
     // its own UI without reaching into MainWindow or assuming its catalog id.
@@ -77,6 +94,12 @@ struct NativePackageHost {
     std::function<QList<NativePackageChatTarget>()> chatTargets;
     std::function<bool(const QString &, const QString &)> sendChatMessage;
     std::function<void(const QString &, bool)> openNetworkShare;
+    std::function<QString()> loginStoreName;
+    std::function<void(const NativePackageLogin &, QWidget *,
+                       NativePackageLoginHandler)>
+        saveLogin;
+    std::function<void(const QString &, QWidget *, NativePackageLoginHandler)>
+        findLogins;
 };
 
 struct NativePackagePromptTarget {
@@ -156,6 +179,17 @@ public:
     virtual void openRailTile(const QString &) {}
     virtual void packageChanged() {}
     virtual void repositoryChanged() {}
+    virtual bool storesLogins() const { return false; }
+    virtual void saveLogin(const NativePackageLogin &, const QString &,
+                           QWidget *, NativePackageLoginHandler done)
+    {
+        done({});
+    }
+    virtual void findLogins(const QString &, const QString &, QWidget *,
+                            NativePackageLoginHandler done)
+    {
+        done({});
+    }
 };
 
 using NativePackageFactory =

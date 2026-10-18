@@ -4251,6 +4251,7 @@ private:
     void showNativePackage(const QString &id);
     void openNativePackageLink(const QString &id);
     QUrl nativePackageLinkUrl(const QString &id) const;
+    forkmesh::market::NativePackageWidget *nativeLoginStore(QString *name) const;
     forkmesh::market::NativePackageWidget *quickAddPackagePromptTarget() const;
     bool submitQuickAddToPackage();
     void openNativePackageWindow(const QString &id);

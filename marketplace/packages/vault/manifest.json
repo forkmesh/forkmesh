@@ -88,6 +88,11 @@
       "id": "notifications.ping",
       "label": "Ping a person when a login is shared with them, without naming the login",
       "risk": "low"
+    },
+    {
+      "id": "desktop.logins.store",
+      "label": "On the desktop, keep a password another package hands you, such as the Router's, and give it back for its address",
+      "risk": "high"
     }
   ],
   "dependencies": [],

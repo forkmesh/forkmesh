@@ -45,9 +45,15 @@ With "Undo automatically if the router stops answering" on, ForkMesh confirms
 the router still answers after applying; if it cannot within 90 seconds, the
 router puts the old settings back by itself.
 
+On the desktop, if you use Password Vault, tick **Save the password in
+Password Vault** when you sign in: the password is encrypted on your computer
+with your vault's master password before it is stored, so ForkMesh cannot read
+it. Next time, **Use saved password** fills it in from the vault and connects.
+Changing the router password on the System tab updates the saved one.
+
 ForkMesh only connects to routers on your own network (private, link-local or
-`.lan`-style addresses), keeps the password in memory for the session only, and
-the desktop's network log records the size of router traffic but never its
+`.lan`-style addresses), keeps the password in memory for the session only
+unless you save it in your vault, and the desktop's network log records the size of router traffic but never its
 contents. The router needs `uhttpd-mod-ubus` and `rpcd`, which every OpenWrt
 image with LuCI includes; a few features use LuCI's access lists (see
 [docs/marketplace/openwrt.md](../../../docs/marketplace/openwrt.md)).
