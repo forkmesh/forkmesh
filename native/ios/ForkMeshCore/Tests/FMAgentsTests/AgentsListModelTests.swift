@@ -703,6 +703,8 @@ final class AgentStartModelTests: XCTestCase {
         XCTAssertEqual(flagship.owner, "mirror35")
         XCTAssertEqual(flagship.publicOwner, "forkmesh")
         XCTAssertEqual(flagship.detail, "On the mesh · 4 mirrors · not on this device yet")
+        XCTAssertEqual(flagship.ref, RepoRef(owner: "mirror35", name: "forkmesh"))
+        XCTAssertNil(AgentStartTarget(record: LocalRepoRecord(name: "x", path: "/x", createdAt: Date())).ref)
         XCTAssertEqual(
             AgentStartTarget(repo: Repository(owner: "bob", name: "x", mirrors: 0)).detail,
             "On the mesh · not on this device yet")

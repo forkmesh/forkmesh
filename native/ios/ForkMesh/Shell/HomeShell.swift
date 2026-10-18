@@ -721,6 +721,11 @@ struct HomeShell: View {
                     onAction: { hub.setSpiderHidden(false) })
             }
             .runnerSignInPresenter(runnerAttention)
+            .onChange(of: composer.launcher.repository?.ref) { (_: RepoRef?, ref: RepoRef?) in
+                if let ref {
+                    CodeCurrentRepo.follow(ref)
+                }
+            }
             .onChange(of: runnerAttention?.request == nil) { (_: Bool, closed: Bool) in
                 if closed {
                     let launcher: QuickAgentLauncher = composer.launcher
