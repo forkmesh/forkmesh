@@ -253,6 +253,79 @@ class LocalControlTest {
         LocalScratch.delete(dir)
     }
 
+    private class ProbedHosts : ControlHostSource {
+        override val displayName: String = "phone"
+        var provider: (() -> List<String>)? = null
+
+        override fun controlHosts(): List<MeshControlHost> = emptyList()
+
+        override fun addListener(listener: () -> Unit) {}
+
+        override fun removeListener(listener: () -> Unit) {}
+
+        override fun setRememberedTargets(provider: () -> List<String>) {
+            this.provider = provider
+        }
+    }
+
+    private fun waitFor(done: () -> Boolean): Boolean {
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (!done() && System.nanoTime() < deadline) Thread.sleep(10)
+        return done()
+    }
+
+    fun testTheDesktopsLastAddressIsProbedUntilItIsBack() {
+        val desktop = FakeDesktop()
+        val (server, _) = serve(desktop)
+        val prefs = MemoryPrefStore()
+        val identity = Identity.fromSeed(ByteArray(32) { 6 })
+        val dir = LocalScratch.create("control-probe")
+        val mesh = ProbedHosts()
+        val service = LocalControlService(identity, prefs, mesh, "p/x/", filesDirectory = { File(dir, "in") })
+        service.connect(MeshControlHost("", "127.0.0.1", server.localPort, name = "desk"))
+        expect(waitFor { service.connected })
+        expect(prefs.getString("p/x/" + LocalControlService.LAN_ADDRESSES_KEY)!!.contains(desktop.key))
+        assertEq(emptyList<String>(), mesh.provider!!())
+        expect(!service.lanPending)
+
+        service.disconnect(hold = false)
+        expect(waitFor { service.status == LocalControlStatus.Idle })
+        expect(!service.lanPending)
+        assertEq(listOf("127.0.0.1"), mesh.provider!!())
+        expect(service.lanPending)
+
+        service.disconnect()
+        expect(waitFor { mesh.provider!!().isEmpty() })
+        service.dispose()
+        server.close()
+        LocalScratch.delete(dir)
+    }
+
+    fun testDesktopRowsShowBeforeTheCloudAnswers() {
+        val release = CountDownLatch(1)
+        val transport = HttpTransport {
+            release.await(5, TimeUnit.SECONDS)
+            HttpClient.Response(200, emptyMap(), """{"sessions":[{"id":"run","status":"running","updatedAt":1700000003000}],"finishedBefore":0}""".toByteArray())
+        }
+        val queue = AgentQueueApi({ "https://x" }, { "t" }, transport)
+        val desktop = FakeDesktop()
+        val identity = Identity.fromSeed(ByteArray(32) { 5 })
+        val hub = DesktopControlHub(
+            null,
+            { target -> RelayControlConnection.open(LoopChannel(desktop), identity, target.key, target.name, timeoutMs = 5000) },
+            accountDesktopsLoader = { listOf(PairedDesktop(desktop.key, "studio", "alice")) },
+        ) { emptyList() }
+        val center = AgentControlCenter(hub, queue)
+        center.refreshAsync()
+        expect(waitFor { center.rows.isNotEmpty() })
+        assertEq(listOf("desktop:5"), center.rows.map { it.id })
+        release.countDown()
+        expect(waitFor { center.rows.size == 2 })
+        assertEq(setOf("desktop:5", "node:run"), center.rows.map { it.id }.toSet())
+        center.dispose()
+        hub.disconnectRelay()
+    }
+
     private class FixedHosts(val hosts: List<MeshControlHost>) : ControlHostSource {
         override val displayName: String = "phone"
 

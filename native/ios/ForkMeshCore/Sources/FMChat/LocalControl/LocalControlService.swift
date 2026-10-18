@@ -352,6 +352,8 @@ public final class LocalControlService {
     /// Whether paired desktops may run requests on this phone's on-device model (Bool, default
     /// false). New for the native app.
     nonisolated public static let serveLocalAIKey = "localControl/serveLocalAI"
+    nonisolated public static let lanAddressesKey = "localControl/lanAddresses"
+    nonisolated static let lanProbeWindowMs: Int64 = 1_500
 
     @ObservationIgnored let mesh: LocalMeshService
     @ObservationIgnored let identity: DeviceIdentity
@@ -405,6 +407,7 @@ public final class LocalControlService {
     @ObservationIgnored private var aiTasks: [Int64: Task<Void, Never>] = [:]
     @ObservationIgnored private var eventTaps: [UUID: @MainActor (String, JSONObject) -> Void] = [:]
     @ObservationIgnored private var epoch = 0
+    @ObservationIgnored private var lanProbeMs: Int64 = 0
 
     public init(
         mesh: LocalMeshService,
@@ -431,6 +434,7 @@ public final class LocalControlService {
         meshToken = mesh.addListener { [weak self] in
             MainActor.assumeIsolated { self?.onMeshChanged() }
         }
+        mesh.rememberedBeaconTargets = { [weak self] in self?.lanProbeTargets() ?? [] }
         loadPaired()
     }
 
@@ -446,6 +450,41 @@ public final class LocalControlService {
     }
 
     public var connected: Bool { status == .connected }
+
+    public var lanPending: Bool {
+        if connected || autoConnectHeld { return false }
+        if dialQueued || status == .connecting { return true }
+        return clock.nowMillis - lanProbeMs < LocalControlService.lanProbeWindowMs
+    }
+
+    private func rememberedAddresses() -> [String: String] {
+        let raw = prefs.string(forKey: LocalControlService.lanAddressesKey) ?? ""
+        guard !raw.isEmpty, case .object(let map)? = try? JSON.parse(raw) else { return [:] }
+        var out: [String: String] = [:]
+        for (key, value) in map {
+            if let address = value.stringValue { out[key] = address }
+        }
+        return out
+    }
+
+    private func rememberAddress(_ key: String, _ address: String) {
+        if key.isEmpty || address.isEmpty { return }
+        var map = rememberedAddresses()
+        if map[key] == address { return }
+        map[key] = address
+        let stored = JSONObject(map.sorted { $0.key < $1.key }.map { ($0.key, JSONValue.string($0.value)) })
+        prefs.set(JSON.encode(.object(stored)), forKey: LocalControlService.lanAddressesKey)
+    }
+
+    private func lanProbeTargets() -> [MeshAddress] {
+        if connected || autoConnectHeld || disposed { return [] }
+        let heard = Set(mesh.controlHosts().map(\.nodeId))
+        let targets = rememberedAddresses()
+            .filter { isKnown($0.key) && !heard.contains($0.key) }
+            .values.compactMap { MeshAddress($0) }
+        if !targets.isEmpty { lanProbeMs = clock.nowMillis }
+        return targets
+    }
 
     public func isPaired(_ key: String) -> Bool { paired.contains { $0.key == key } }
 
@@ -658,6 +697,7 @@ public final class LocalControlService {
             if data["paired"] == .bool(true) {
                 pairingCode = ""
                 rememberPaired()
+                if let host { rememberAddress(desktopKey, host.address.address) }
                 setStatus(.connected)
                 announceCapabilities()
                 Task { await self.refreshAgents() }

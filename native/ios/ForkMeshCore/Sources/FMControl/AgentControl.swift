@@ -664,19 +664,28 @@ public final class AgentControlCenter: AgentControlling {
             let desk: [UnifiedAgentRow]
             let nodes: [UnifiedAgentRow]
             if withCloud {
-                async let desktopRows = loadDesktop(started)
-                async let cloudRows = loadCloud(started)
-                (desk, nodes) = await (desktopRows, cloudRows)
+                let cloudRows = Task { await self.loadCloud(started) }
+                desk = await loadDesktop(started)
+                if started != epoch {
+                    cloudRows.cancel()
+                    return
+                }
+                publish(desk, cloudSessions.map(UnifiedAgentRow.fromCloud))
+                nodes = await cloudRows.value
             } else {
                 desk = await loadDesktop(started)
                 nodes = cloudSessions.map(UnifiedAgentRow.fromCloud)
             }
             if started != epoch { return }
-            let merged = PerformanceMonitorService.section("agents.mergeRows") {
-                mergeAgentRows(desktop: desk, cloud: nodes, desktopName: hub.currentLink?.desktopName ?? "")
-            }
-            if merged != rows { rows = merged }
+            publish(desk, nodes)
         }
+    }
+
+    private func publish(_ desk: [UnifiedAgentRow], _ nodes: [UnifiedAgentRow]) {
+        let merged = PerformanceMonitorService.section("agents.mergeRows") {
+            mergeAgentRows(desktop: desk, cloud: nodes, desktopName: hub.currentLink?.desktopName ?? "")
+        }
+        if merged != rows { rows = merged }
     }
 
     public func stream(

@@ -445,6 +445,9 @@ class LocalMeshRoom(
     private var beaconCount = 0
 
     @Volatile
+    var rememberedBeaconTargets: (() -> List<InetAddress>)? = null
+
+    @Volatile
     var discoveryPort = MESH_DISCOVERY_PORT
 
     @Volatile
@@ -1093,12 +1096,18 @@ class LocalMeshRoom(
     }
 
     private fun sendUnicastBeacons(interfaces: List<MeshInterface>) {
+        val remembered = rememberedBeaconTargets?.let { provider -> runCatching(provider).getOrNull() } ?: emptyList()
         val plan = loop.call {
             val socket = discovery
             if (!isRunning || socket == null) return@call null
             val sweepEvery = if (links.isEmpty()) ADDRESS_SWEEP_EVERY_BEATS_ALONE else ADDRESS_SWEEP_EVERY_BEATS
             val sweep = addressSweepEnabled && beaconCount++ % sweepEvery == 0
             val targets = LinkedHashMap<String, InetAddress>()
+            val linked = peers.filter { linkForPeer(it.key) != null }.mapNotNull { it.value.address?.hostAddress }.toSet()
+            for (address in remembered) {
+                val key = address.hostAddress ?: continue
+                if (key !in linked) targets[key] = address
+            }
             for ((id, peer) in peers) {
                 val address = peer.address ?: continue
                 if (linkForPeer(id) != null) continue

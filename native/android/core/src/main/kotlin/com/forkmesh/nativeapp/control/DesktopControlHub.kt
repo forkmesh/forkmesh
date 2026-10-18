@@ -78,6 +78,9 @@ class DesktopControlHub(
 
     @Volatile
     private var warmDelayMs = 2_000L
+
+    @Volatile
+    var lanGraceMs: Long = 1_500
     private val localListener: () -> Unit = { localChanged() }
 
     @Volatile
@@ -152,6 +155,12 @@ class DesktopControlHub(
                 return current
             }
         }
+        lanLink?.let { lan ->
+            if (awaitLan(lan)) {
+                attachTaps(lan)
+                return lan
+            }
+        }
         synchronized(lock) {
             while (opening) lock.wait()
         }
@@ -200,6 +209,20 @@ class DesktopControlHub(
                 lock.notifyAll()
             }
         }
+    }
+
+    private fun awaitLan(lan: LanControlLink): Boolean {
+        val service = local ?: return lan.isOpen
+        val deadline = System.nanoTime() + lanGraceMs * 1_000_000
+        while (!lan.isOpen && service.lanPending && System.nanoTime() < deadline) {
+            try {
+                Thread.sleep(20)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                break
+            }
+        }
+        return lan.isOpen
     }
 
     fun request(method: String, params: Map<String, Any?> = emptyMap(), timeoutMs: Long = 20_000): Map<String, Any?> =

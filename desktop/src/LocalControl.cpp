@@ -807,6 +807,15 @@ bool LocalControlServer::needsAccountCheck(const Connection &conn) const
     return it->approval.isEmpty() && conn.relayed();
 }
 
+bool LocalControlServer::admitsBeforeCheck(const Connection &conn) const
+{
+    if (!accountDeviceCheck || conn.relayed())
+        return false;
+    const auto it = m_devices.constFind(conn.device.key);
+    return it != m_devices.cend() && it->approval == accountApproval() &&
+           QDateTime::currentMSecsSinceEpoch() - it->accountCheckedMs < kAccountGraceMs;
+}
+
 void LocalControlServer::recheckAccount(int connectionId)
 {
     Connection *conn = connection(connectionId);
@@ -1017,6 +1026,13 @@ void LocalControlServer::handleAuth(Connection &conn, const QByteArray &payload)
     if (!browser && m_devices.contains(conn.device.key) &&
         !needsAccountCheck(conn)) {
         admitStored(conn);
+    } else if (!browser && admitsBeforeCheck(conn)) {
+        const int id = conn.id;
+        admitStored(conn);
+        if (onDevicesChanged)
+            onDevicesChanged();
+        recheckAccount(id);
+        return;
     } else if (accountDeviceCheck) {
         conn.state = State::Checking;
         conn.accountCheckInFlight = true;
