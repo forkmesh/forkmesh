@@ -44,6 +44,7 @@
 #include "ProjectStore.h"
 #include "PullStore.h"
 #include "PullReviewModel.h"
+#include "PullMergeAll.h"
 #include "MergeQueue.h"
 #include "CoveStore.h"
 #include "ActionStore.h"
@@ -3845,6 +3846,7 @@ private:
     void runLocalControlMergeQueueAction(int connectionId, int requestId, int index,
                                          const QString &action, int number, int delta);
     forkmesh::localcontrol::hosts::ConfirmationStore m_mergeQueueConfirmations;
+    forkmesh::localcontrol::hosts::ConfirmationStore m_pullsConfirmations;
     void handleLocalControlFleetRequest(int connectionId, int requestId,
                                       const QString &method, const QJsonObject &params); // fleet. WS16
     QJsonObject localControlFleetSummary();
@@ -6246,6 +6248,7 @@ private:
     void buildPullConversation();
     QHBoxLayout *buildPullSubTabs(QWidget *checksPage, QWidget *filesPage);
     PullStore pullStoreForCurrentRepo() const;
+    PullStore pullStoreForRepoIndex(int index) const;
     void reloadPulls();
     void reloadPullsInBackground();
     void applyLoadedPulls(const PullStore &store, QList<PullRequest> pulls,
@@ -6519,6 +6522,7 @@ private:
     void sendPullRevisionToAgent();                 // re-queue the linked agent with revision feedback
     void submitPullReview(const QString &state);    // approve / request changes
     bool currentAccountOwnsPullRepository();
+    bool accountOwnsPullRepositoryAt(int index);
     void promptNewPull();
     void importPatchAsPull(); // read a .patch/.diff file and open it as a PR
     void promptNewPullFromDirectory();
@@ -6603,6 +6607,23 @@ private:
     void deleteCurrentPullAndBranch();
     void mergeAndDeleteCurrentPull();
     void deleteAllClosedAndMergedPullsAndBranches();
+    void mergeAllPullsWithAgent();
+    QString pullMergeAllBlocker(int repoIndex);
+    static QList<PullRequest> openPullsToMergeAll(const QList<PullRequest> &pulls);
+    void startPullMergeAll(const QString &owner, const QString &name,
+                           const QList<PullRequest> &open, bool switchToTab,
+                           std::function<void(const forkmesh::pullmergeall::Launch &)> done);
+    forkmesh::pullmergeall::Launch launchPullMergeAllAgent(
+        const QString &owner, const QString &name,
+        const QList<forkmesh::pullmergeall::Target> &targets,
+        const QStringList &skipped, bool switchToTab);
+    void handleLocalControlPullsRequest(int connectionId, int requestId,
+                                        const QString &method, const QJsonObject &params);
+    void runLocalControlPullsMergeAll(int connectionId, int requestId, int index);
+    void finishPullMergeAllRun(int sessionId);
+    void loadPullMergeAllRuns();
+    void savePullMergeAllRuns();
+    int activePullMergeAllSession(const QString &owner, const QString &name);
     void deletePullAndBranchAsync(int number, const QString &head, bool haveBranch,
                                   bool rewriteHistory, bool propagate,
                                   std::function<void()> onDone = {});
@@ -13370,6 +13391,11 @@ private:
     QPushButton *m_pullShowAllButton = nullptr;
     int m_pullRegisteredCount = -1; // live code-branch + pull-ledger union
     QPushButton *m_pullDeleteClosedAndMergedButton = nullptr;
+    QPushButton *m_pullMergeAllAiButton = nullptr;
+    QHash<int, forkmesh::pullmergeall::Run> m_pullMergeAllRuns;
+    bool m_pullMergeAllRunsLoaded = false;
+    bool m_pullMergeAllPreparing = false;
+    QSet<int> m_pullMergeAllCleaning;
     QWidget *m_pullDetail = nullptr;
     QLabel *m_pullTitle = nullptr;
     QLabel *m_pullStatusBadge = nullptr;

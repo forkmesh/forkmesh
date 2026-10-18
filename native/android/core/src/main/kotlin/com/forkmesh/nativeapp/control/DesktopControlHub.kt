@@ -355,6 +355,7 @@ class DesktopControlHub(
 enum class DesktopControlFamilyName(val prefix: String) {
     AgentOps("agentops."),
     MergeQueue("mergequeue."),
+    Pulls("pulls."),
     Fleet("fleet."),
     FilesBrowse("files.browse."),
     Diagnostics("diag."),

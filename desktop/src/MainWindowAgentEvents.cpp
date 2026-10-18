@@ -2041,6 +2041,7 @@ void MainWindow::notifyAgentDone(int sessionId)
     completeSuccessfulLogMonitorRun(sessionId);
     handleTeammateFinished(sessionId);
     finishTeammateCreatorRun(sessionId);
+    finishPullMergeAllRun(sessionId);
     markTeammateDoneUnseen(sessionId);
 
     QString summary = agentClosingSummary(sessionId).simplified();

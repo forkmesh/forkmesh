@@ -484,6 +484,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowSourceControl.cpp
     src/MainWindowDiscussions.cpp
     src/MainWindowPulls.cpp
+    src/MainWindowPullMergeAll.cpp
     src/MainWindowMergeQueue.cpp
     src/MainWindowAgents.cpp
     src/MainWindowAgentSync.cpp
@@ -534,6 +535,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowPingFixes.cpp
     src/MainWindowSecurityAlarm.cpp
     src/MainWindowLocalControlMergeQueue.cpp
+    src/MainWindowLocalControlPulls.cpp
     src/MainWindowLocalControlFleet.cpp
     src/MainWindowLocalControlFiles.cpp
     src/MainWindowLocalControlDiagnostics.cpp
@@ -858,6 +860,8 @@ set(FORKMESH_APP_SOURCES
     src/LocalControlAgentOps.cpp
     src/LocalControlMergeQueue.h
     src/LocalControlMergeQueue.cpp
+    src/LocalControlPulls.h
+    src/LocalControlPulls.cpp
     src/LocalControlFleet.h
     src/LocalControlFleet.cpp
     src/LocalControlFiles.h
@@ -950,6 +954,8 @@ set(FORKMESH_APP_SOURCES
     src/GitIndexQueue.cpp
     src/PullReviewModel.h
     src/PullReviewModel.cpp
+    src/PullMergeAll.h
+    src/PullMergeAll.cpp
     src/PullAiReview.h
     src/PullAiReview.cpp
     src/MergeQueue.h
@@ -4370,6 +4376,22 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-local-control-agentops-tests
         COMMAND forkmesh-local-control-agentops-tests)
+    qt_add_executable(forkmesh-pull-merge-all-tests
+        tests/test_pull_merge_all.cpp
+        src/PullMergeAll.h
+        src/PullMergeAll.cpp
+        src/LocalControlPulls.h
+        src/LocalControlPulls.cpp
+    )
+    target_include_directories(forkmesh-pull-merge-all-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-pull-merge-all-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-pull-merge-all-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-pull-merge-all-tests
+        COMMAND forkmesh-pull-merge-all-tests)
     qt_add_executable(forkmesh-local-control-mergequeue-tests
         tests/test_local_control_mergequeue.cpp
         src/LocalControlMergeQueue.h

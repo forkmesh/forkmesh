@@ -26076,6 +26076,7 @@ else:
                                           QStringLiteral("Closed"),
                                           QStringLiteral("Merged"),
                                           QStringLiteral("All"),
+                                          QStringLiteral("Merge all"),
                                           QStringLiteral("Delete closed and merged")};
             QStringList captions;
             for (QPushButton *button : buttons)
@@ -26198,6 +26199,13 @@ else:
                           QStringLiteral("Delete closed and merged"),
                   QStringLiteral("the cleanup action names both finished PR "
                                  "states it deletes"));
+            QPushButton *mergeAllAi = window.findChild<QPushButton *>(
+                QStringLiteral("pullMergeAllAiButton"));
+            check(mergeAllAi && mergeAllAi->text() == QStringLiteral("Merge all") &&
+                      mergeAllAi->toolTip().contains(QStringLiteral("security")) &&
+                      mergeAllAi->toolTip().contains(QStringLiteral("deletes")),
+                  QStringLiteral("the pull list offers Merge all with AI, which "
+                                 "reviews, merges and cleans up every open PR"));
             QPushButton *restore = window.findChild<QPushButton *>(
                 QStringLiteral("pullRestoreArchivedButton"));
             check(restore && restore->toolTip().contains(

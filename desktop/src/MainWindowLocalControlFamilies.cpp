@@ -10,6 +10,7 @@
 #include "LocalControlHosts.h"
 #include "LocalControlAgentOps.h"
 #include "LocalControlMergeQueue.h"
+#include "LocalControlPulls.h"
 #include "LocalControlFleet.h"
 #include "LocalControlFiles.h"
 #include "LocalControlDiagnostics.h"
@@ -54,6 +55,8 @@ void MainWindow::registerLocalControlFamilies()
                         &MainWindow::handleLocalControlAgentOpsRequest);
     registerOwnerFamily(forkmesh::localcontrol::mergequeue::familyPrefix(),
                         &MainWindow::handleLocalControlMergeQueueRequest);
+    registerOwnerFamily(forkmesh::localcontrol::pulls::familyPrefix(),
+                        &MainWindow::handleLocalControlPullsRequest);
     registerOwnerFamily(forkmesh::localcontrol::fleet::familyPrefix(),
                         &MainWindow::handleLocalControlFleetRequest);
     registerOwnerFamily(forkmesh::localcontrol::filesbrowse::familyPrefix(),

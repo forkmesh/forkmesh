@@ -931,6 +931,17 @@ QWidget *MainWindow::buildPullListPane(QWidget *page)
                        "and its head branch"));
     m_pullDeleteClosedAndMergedButton->setObjectName(
         QStringLiteral("pullDeleteClosedAndMergedButton"));
+    m_pullMergeAllAiButton = pullActionButton(
+        QStringLiteral("Merge all"), "sparkle",
+        QStringLiteral("Start an AI agent in this repository's own checkout "
+                       "(no branch, no permission prompts) that reviews every "
+                       "open pull request for security issues, bugs and code "
+                       "that does not fit, merges the safe ones into their base "
+                       "cleanly, then deletes the merged pull requests and "
+                       "their branches"));
+    m_pullMergeAllAiButton->setObjectName(QStringLiteral("pullMergeAllAiButton"));
+    connect(m_pullMergeAllAiButton, &QPushButton::clicked, this,
+            &MainWindow::mergeAllPullsWithAgent);
     connect(m_pullImportButton, &QPushButton::clicked, this,
             &MainWindow::importPatchAsPull);
     auto *actionBar = new QFrame;
@@ -947,6 +958,7 @@ QWidget *MainWindow::buildPullListPane(QWidget *page)
     toolbar->addWidget(m_pullShowClosedButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullShowMergedButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullShowAllButton, 0, Qt::AlignTop);
+    toolbar->addWidget(m_pullMergeAllAiButton, 0, Qt::AlignTop);
     toolbar->addWidget(m_pullDeleteClosedAndMergedButton, 0, Qt::AlignTop);
     toolbar->addStretch(1);
     auto *actionBarDivider = new QFrame;
@@ -1970,9 +1982,14 @@ void MainWindow::setPullListLoading(bool loading)
 
 PullStore MainWindow::pullStoreForCurrentRepo() const
 {
-    if (m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size())
+    return pullStoreForRepoIndex(m_repoDetailIndex);
+}
+
+PullStore MainWindow::pullStoreForRepoIndex(int index) const
+{
+    if (index < 0 || index >= m_repositories.size())
         return PullStore(QString(), QString(), &m_profileIdentity, m_userName);
-    const RepositoryRecord &target = m_repositories.at(m_repoDetailIndex);
+    const RepositoryRecord &target = m_repositories.at(index);
     const RepositoryRecord &repo = writableRecordFor(target);
     PullStore store(repo.localPath, repo.mirrorPath, &m_profileIdentity, m_userName);
     store.setSigningRepository(target.owner, target.name);
@@ -1981,10 +1998,15 @@ PullStore MainWindow::pullStoreForCurrentRepo() const
 
 bool MainWindow::currentAccountOwnsPullRepository()
 {
-    if (m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size())
+    return accountOwnsPullRepositoryAt(m_repoDetailIndex);
+}
+
+bool MainWindow::accountOwnsPullRepositoryAt(int index)
+{
+    if (index < 0 || index >= m_repositories.size())
         return false;
     const RepositoryRecord &repository =
-        writableRecordFor(m_repositories.at(m_repoDetailIndex));
+        writableRecordFor(m_repositories.at(index));
     if (PullMergePolicy::repositoryOwnedByAccount(
             repository.owner, accountOwner(), m_profileLinkedNodes)) {
         return true;
@@ -8957,7 +8979,8 @@ static QString pullHeadBranch(const PullRequest &pull)
 // decides it: a branch-backed pull *is* its branch, while a stored-patch pull
 // may keep a stale head name that no longer describes the patch, so there the
 // numbered branch is authoritative and the signed name only a last resort.
-static QString localPullAgentBranch(const QString &gitDir, const PullRequest &pull)
+QString forkmesh::ui::localPullAgentBranch(const QString &gitDir,
+                                          const PullRequest &pull)
 {
     if (gitDir.trimmed().isEmpty() || pull.number <= 0)
         return QString();

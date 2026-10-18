@@ -11,9 +11,11 @@ struct RepoPullsTab: View {
     @Environment(\.fmPalette) private var fm
     @State private var model: RepoPullsModel
     @State private var composing: Bool = false
+    @State private var mergeAll: PullMergeAllFlow
 
     init(repo: Repository) {
         _model = State(initialValue: RepoPullsModel(repo: repo, api: CollabEnv.api))
+        _mergeAll = State(initialValue: PullMergeAllFlow(owner: repo.owner, name: repo.name))
     }
 
     var body: some View {
@@ -37,6 +39,12 @@ struct RepoPullsTab: View {
         .sheet(isPresented: $composing, onDismiss: { Task { await reload() } }) {
             NewPullSheet(repo: model.repo)
         }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                PullMergeAllToolbarButton(flow: mergeAll)
+            }
+        }
+        .pullMergeAllConfirmation(mergeAll)
         .task {
             await model.start()
             viewed()

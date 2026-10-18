@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.code.RepoExplorer
+import com.forkmesh.nativeapp.collab.PullMergeAllRules
 import com.forkmesh.nativeapp.code.RepoHubSection
 import com.forkmesh.nativeapp.feature.code.collab.CollaborationScreens
 import com.forkmesh.nativeapp.feature.code.collab.IssueFilterState
@@ -115,6 +116,15 @@ internal class RepoSectionScreen(
                                 tool.first,
                                 tool.second,
                                 onPressed = { navigator.push(tool.third()) },
+                                color = c.textPrimary,
+                                iconSize = 24.dp,
+                            )
+                        }
+                        if (tab == RepoDetailTab.Pulls) {
+                            FmIconButton(
+                                "auto_awesome",
+                                PullMergeAllRules.TITLE,
+                                onPressed = collaboration::mergeAllPullsWithAi,
                                 color = c.textPrimary,
                                 iconSize = 24.dp,
                             )
