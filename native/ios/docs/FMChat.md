@@ -221,10 +221,26 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
 - **Header** (`MessagesConversationView.header`): back circle, then one glass pill with the
   avatar and, to its right, the name over "Online · N messages on the server", then the call
   buttons. It has no new agent button or own avatar; those stay in the channel list's top bar.
+- **Presence** (`ChatHub.peerPresence`, also used for the online dot of `directRows`): a server
+  DM (`direct:<id>`) finds the person's roster group by the nodes of the devices the DM trusts,
+  then by the account (`otherUser`, case-insensitive); a relay DM (`@<node>`) by that node's
+  group. Any online node of theirs makes them Online (Away when their status says so). Typing, a
+  tap, shared phone direction or a mesh focus report in that DM also counts as Online. Until
+  2026-10-17 only relay DMs looked anyone up, so every server DM said "Offline" even with the
+  person chatting, and the list dot compared the owner to `otherUser` case-sensitively.
 - **Shared look** (`Threads/ChatLook.swift`): background, group name and group photo travel as
   sealed `look` frames, last-writer-wins on `(ts, id)`; each change is shown as an event.
   Pictures are capped at 600 KB because a frame is base64-encoded three times and the room
   WebSocket refuses messages over 2 MiB.
+- **Share or override the background** (`MessagesBackgroundPicker`): a segmented choice,
+  "Share" or "Just for me". Sharing sends the `look`
+  frame as before and drops any own background, so the sender sees what they shared. "Just for
+  me" sends nothing: `ChatHub.setOwnBackground` stores a preset, a picture or "None" in the
+  conversation's `ChatLook` (`ownBackground`, saved in the history file as `ob`, `obp`, `obi`),
+  and `conversationLook` returns `ChatLook.shown`, which puts it over the shared one. Shared
+  changes keep arriving underneath (`conversationSharedLook`) and show again after "Use Shared
+  Background" in Details. Restoring the history file keeps an own background even when a shared
+  look arrived first.
 - **Media**: `ChatHub.sendMedia` caps media at 600 KB; photos are re-encoded as JPEG (longest
   side 1,600), voice messages recorded as 32 kbit/s mono AAC, up to two minutes. Pasted images
   (`ChatTextField`, a UIKit text view so Paste offers images) go through the same path.
@@ -232,7 +248,12 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   retention and encryption summary; leave a relay private channel; delete history locally.
 - **Live touch, direction and drawing** in direct messages: `DirectLiveEngine` batches taps,
   strokes and motion samples into sealed `live` frames at the relay-announced pace (wire format
-  in `docs/app/chat-private-rooms.md`). While a direct conversation is visible, its motion feed
+  in `docs/app/chat-private-rooms.md`). The phone samples motion at 30 Hz
+  (`DirectLiveMotionFeed.rate`) and, before the relay's `forkmesh-live` budget arrives or over
+  the mesh alone, paces at 120 ms (`DirectLiveFrames.fallbackIntervalMs`, under the relay's 150
+  frames per 10 s). The partner's phone icon redraws at 60 fps while they share. Until
+  2026-10-17 the fallback was 2.5 s and the feed 20 Hz, so the icon could move in jumps seconds
+  behind the real phone. While a direct conversation is visible, its motion feed
   shares phone direction automatically and an impact sends a centred taptic tap. The header
   keeps the peer's normal avatar still and shows their direction on a separate icon
   (`MessagesLivePartnerPhone`): a small phone with their avatar on its screen that tilts and
@@ -414,7 +435,14 @@ Logic is in **FMPush** (`ForkMeshCore/Sources/FMPush/PushChat.swift`, deps FMBas
   (`PushPreviewText.preview(opened, request:, mode:)`), and the portrait is fetched for the
   decrypted sender.
 - `PushRoomKeys` caches derived room keys (one keychain item, 32 entries) so only the first push
-  of a room pays the 210,000 PBKDF2 rounds.
+  of a room pays the 210,000 PBKDF2 rounds. Each entry also carries a hash of its room name
+  (`roomId`), so a DM push that carries its frame opens on the phone with no request at all
+  (`PushChatOpener.openPushed`; the room is `chat-direct:<id>:v<keyVersion>`, so a new key
+  version misses and asks the relay). The pending fetch runs only when that fails, and is retried
+  once after 1 s on a transport error, 429 or 5xx.
+- Photos, voice messages, videos and view-once messages with no text read "📷 Photo",
+  "🎤 Voice message", "🎬 Video" and "🎬 Video message" (`PushChatMedia`); before, a view-once
+  message had neither text nor a file name and stayed "New message".
 - `PushPreviewMode` ("Notification content" setting): name and message (default), name only, or
   neither.
 

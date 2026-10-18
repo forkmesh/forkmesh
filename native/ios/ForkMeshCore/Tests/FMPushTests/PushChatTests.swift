@@ -181,6 +181,54 @@ final class PushChatTests: XCTestCase {
         XCTAssertEqual(PushChatOpener.withPushedFrame(gone, pushed: directPayload()), gone)
     }
 
+    func testAPushedFrameOpensOnThePhoneOnceTheRoomKeyIsCached() throws {
+        let keysPair = try pair()
+        let plain: JSONObject = [
+            "type": "chat", "id": "pat-3", "senderId": "pat-node", "sender": "Pat",
+            "channel": .string("direct:\(PushChatTests.directId)"), "text": "on my way", "ts": 3,
+        ]
+        let key = RoomCrypto.derivedKey(PushChatTests.room, passphrase: PushChatTests.passphrase)
+        let crypto = try XCTUnwrap(RoomCrypto.withKey(key))
+        let payload = directPayload(["frame": .object(try crypto.encrypt(try keysPair.peer.seal(plain)))])
+        let request = try XCTUnwrap(PushChatRequest.parse(payload))
+        XCTAssertEqual(request.directRoom, PushChatTests.room)
+        let store = InMemorySharedItemStore()
+        let keys = PushRoomKeys(store: store)
+        XCTAssertEqual(
+            PushChatOpener.openPushed(payload, request: request, secureStore: keysPair.store, keys: keys), .unavailable,
+            "no cached key yet: the phone asks the relay")
+        keys.remember(key, room: PushChatTests.room, passphrase: PushChatTests.passphrase)
+        let opened = try XCTUnwrap(
+            PushChatOpener.openPushed(payload, request: request, secureStore: keysPair.store, keys: keys).message)
+        XCTAssertEqual(opened.text, "on my way")
+        XCTAssertEqual(opened.sender, "Pat")
+        let rotated = try XCTUnwrap(PushChatRequest.parse(directPayload(["keyVersion": 3, "frame": payload["frame"]!])))
+        XCTAssertEqual(
+            PushChatOpener.openPushed(payload, request: rotated, secureStore: keysPair.store, keys: keys), .unavailable,
+            "a new key version is a new room")
+        XCTAssertEqual(
+            PushChatOpener.openPushed(directPayload(), request: request, secureStore: keysPair.store, keys: keys), .unavailable)
+        let raw = String(decoding: try XCTUnwrap(store.data(PushRoomKeys.item)), as: UTF8.self)
+        XCTAssertFalse(raw.contains(PushChatTests.directId), "the room is stored only as a hash")
+    }
+
+    func testPhotosVoiceAndViewOnceMessagesSayWhatArrived() throws {
+        let request = try XCTUnwrap(PushChatRequest.parse(directPayload()))
+        let channel = JSONValue.string("direct:\(PushChatTests.directId)")
+        func body(_ extra: JSONObject) throws -> String {
+            var plain: JSONObject = ["type": "chat", "id": "m", "channel": channel, "sender": "Pat", "text": ""]
+            for (key, value) in extra { plain[key] = value }
+            return PushPreviewText.body(try XCTUnwrap(PushChatOpener.message(plain, request: request)))
+        }
+        XCTAssertEqual(try body(["fileName": "IMG_1.jpg", "fileMime": "image/jpeg"]), "\u{1F4F7} Photo")
+        XCTAssertEqual(try body(["fileName": "voice.m4a", "fileMime": "audio/mp4"]), "\u{1F3A4} Voice message")
+        XCTAssertEqual(try body(["fileName": "notes.pdf", "fileMime": "application/pdf"]), "\u{1F4CE} notes.pdf")
+        XCTAssertEqual(try body(["viewOnce": ["v": 1, "kind": "video"]]), "\u{1F3AC} Video message")
+        XCTAssertEqual(try body(["viewOnce": ["v": 1, "kind": "voice"]]), "\u{1F3A4} Voice message")
+        XCTAssertEqual(try body(["text": "look", "fileName": "a.jpg", "fileMime": "image/jpeg"]), "look")
+        XCTAssertNil(PushChatOpener.message(["type": "chat", "id": "m", "channel": channel, "viewOnce": ["kind": "x"]], request: request))
+    }
+
     func testAPublicChannelFrameIsPlainInsideTheRoomCipher() throws {
         let key = RoomCrypto.derivedKey(PushChatTests.channelRoom, passphrase: PushChatTests.passphrase)
         let crypto = try XCTUnwrap(RoomCrypto.withKey(key))
