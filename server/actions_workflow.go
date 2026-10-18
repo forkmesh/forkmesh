@@ -20,35 +20,63 @@ import (
 	"fmt"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 const (
-	maxWorkflowBytes  = 256 << 10
-	maxWorkflowSteps  = 64
-	maxWorkflowEvents = 8
-	maxWorkflowLabels = 8
-	maxWorkflowDepth  = 16
+	maxWorkflowBytes   = 256 << 10
+	maxWorkflowSteps   = 64
+	maxWorkflowEvents  = 8
+	maxWorkflowLabels  = 8
+	maxWorkflowDepth   = 16
+	maxWorkflowInputs  = 25
+	maxWorkflowCrons   = 8
+	maxWorkflowMinutes = 1440
 )
 
 var (
 	workflowPathPattern = regexp.MustCompile(`^\.forkmesh/[A-Za-z0-9._-]{1,96}\.ya?ml$`)
 	workflowVarPattern  = regexp.MustCompile(`\$\{\{\s*vars\.[A-Za-z_][A-Za-z0-9_]*\s*\}\}`)
+	workflowInputName   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,99}$`)
+	workflowCronField   = regexp.MustCompile(`^(?:\*|[0-9A-Za-z]{1,3}(?:-[0-9A-Za-z]{1,3})?)(?:/[0-9]{1,2})?(?:,(?:\*|[0-9A-Za-z]{1,3}(?:-[0-9A-Za-z]{1,3})?)(?:/[0-9]{1,2})?)*$`)
 )
 
 type workflowStep struct {
-	Name string
-	Run  string
+	Name             string
+	Run              string
+	Job              string
+	JobIf            string
+	If               string
+	Env              [][2]string
+	WorkingDirectory string
+	TimeoutMinutes   int
+}
+
+type workflowInput struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Required    bool     `json:"required"`
+	Default     string   `json:"default"`
+	Type        string   `json:"type"`
+	Options     []string `json:"options"`
 }
 
 type workflow struct {
-	Path         string
-	Name         string
-	Events       []string
-	PushPaths    []string
-	PushBranches []string
-	RunsOn       []string
+	Path           string
+	Name           string
+	Events         []string
+	PushPaths      []string
+	PushBranches   []string
+	Schedules      []string
+	Inputs         []workflowInput
+	IssueTypes     []string
+	CommentTypes   []string
+	PullBranches   []string
+	ContentsWrite  bool
+	TimeoutMinutes int
+	RunsOn         []string
 	// Names of other workflows that must succeed for the same commit first.
 	Needs []string
 	Env   [][2]string
@@ -623,6 +651,22 @@ func parseWorkflow(filePath, content string) (*workflow, error) {
 			result.PushPaths = push.get("paths").strings()
 			result.PushBranches = push.get("branches").strings()
 		}
+		if schedule := on.get("schedule"); schedule != nil && schedule.kind == yamlSeq {
+			for _, item := range schedule.items {
+				if cron := normalizeWorkflowCron(item.get("cron").text()); cron != "" &&
+					len(result.Schedules) < maxWorkflowCrons {
+					result.Schedules = append(result.Schedules, cron)
+				}
+			}
+		}
+		inputs, err := workflowInputs(on.get("workflow_dispatch").get("inputs"))
+		if err != nil {
+			return nil, err
+		}
+		result.Inputs = inputs
+		result.IssueTypes = on.get("issues").get("types").strings()
+		result.CommentTypes = on.get("issue_comment").get("types").strings()
+		result.PullBranches = on.get("pull_request").get("branches").strings()
 	default:
 		result.Events = on.strings()
 	}
@@ -634,14 +678,14 @@ func parseWorkflow(filePath, content string) (*workflow, error) {
 	}
 
 	result.RunsOn = root.get("runs-on").strings()
-	if env := root.get("env"); env != nil && env.kind == yamlMap {
-		for i, key := range env.keys {
-			if env.values[i].kind == yamlScalar {
-				result.Env = append(result.Env, [2]string{key, env.values[i].scalar})
-			}
-		}
+	result.Env = workflowEnv(root.get("env"))
+	result.ContentsWrite = workflowContentsWrite(root.get("permissions"))
+	baseDir, err := workflowWorkingDirectory(root.get("defaults").get("run").get("working-directory"))
+	if err != nil {
+		return nil, err
 	}
-	collect := func(steps *yamlNode) {
+	var collectErr error
+	collect := func(steps *yamlNode, job, jobIf, jobDir string, jobEnv [][2]string) {
 		if steps == nil || steps.kind != yamlSeq {
 			return
 		}
@@ -654,13 +698,27 @@ func parseWorkflow(filePath, content string) (*workflow, error) {
 			if name == "" {
 				name = singleLine(strings.SplitN(strings.TrimSpace(command), "\n", 2)[0], 120)
 			}
-			result.Steps = append(result.Steps, workflowStep{Name: name, Run: command})
+			dir, err := workflowWorkingDirectory(step.get("working-directory"))
+			if dir == "" {
+				dir = jobDir
+			}
+			timeout, timeoutErr := workflowMinutes(step.get("timeout-minutes"))
+			if err == nil {
+				err = timeoutErr
+			}
+			if err != nil && collectErr == nil {
+				collectErr = err
+			}
+			result.Steps = append(result.Steps, workflowStep{Name: name, Run: command, Job: job,
+				JobIf: jobIf, If: strings.TrimSpace(step.get("if").text()),
+				Env: mergeWorkflowEnv(jobEnv, workflowEnv(step.get("env"))), WorkingDirectory: dir,
+				TimeoutMinutes: timeout})
 		}
 	}
-	collect(root.get("steps"))
+	collect(root.get("steps"), "", "", baseDir, nil)
 	needs := root.get("needs").strings()
 	if jobs := root.get("jobs"); jobs != nil && jobs.kind == yamlMap {
-		for _, job := range jobs.values {
+		for jobIndex, job := range jobs.values {
 			// A job may need another job in this file; the jobs are already
 			// flattened in order, so only a name from outside the file is a
 			// dependency on another workflow.
@@ -672,8 +730,27 @@ func parseWorkflow(filePath, content string) (*workflow, error) {
 			if len(result.RunsOn) == 0 {
 				result.RunsOn = job.get("runs-on").strings()
 			}
-			collect(job.get("steps"))
+			if workflowContentsWrite(job.get("permissions")) {
+				result.ContentsWrite = true
+			}
+			jobDir, err := workflowWorkingDirectory(job.get("defaults").get("run").get("working-directory"))
+			if err != nil {
+				return nil, err
+			}
+			if jobDir == "" {
+				jobDir = baseDir
+			}
+			minutes, err := workflowMinutes(job.get("timeout-minutes"))
+			if err != nil {
+				return nil, err
+			}
+			result.TimeoutMinutes = max(result.TimeoutMinutes, minutes)
+			collect(job.get("steps"), jobs.keys[jobIndex], strings.TrimSpace(job.get("if").text()),
+				jobDir, workflowEnv(job.get("env")))
 		}
+	}
+	if collectErr != nil {
+		return nil, collectErr
 	}
 	if len(result.RunsOn) > maxWorkflowLabels {
 		result.RunsOn = result.RunsOn[:maxWorkflowLabels]
@@ -693,6 +770,135 @@ func parseWorkflow(filePath, content string) (*workflow, error) {
 		return nil, errors.New("workflow has too many steps")
 	}
 	return result, nil
+}
+
+func workflowEnv(node *yamlNode) [][2]string {
+	var out [][2]string
+	if node == nil || node.kind != yamlMap {
+		return nil
+	}
+	for i, key := range node.keys {
+		if node.values[i].kind == yamlScalar {
+			out = append(out, [2]string{key, node.values[i].scalar})
+		}
+	}
+	return out
+}
+
+func mergeWorkflowEnv(layers ...[][2]string) [][2]string {
+	var out [][2]string
+	for _, layer := range layers {
+		for _, pair := range layer {
+			replaced := false
+			for i := range out {
+				if out[i][0] == pair[0] {
+					out[i][1], replaced = pair[1], true
+				}
+			}
+			if !replaced {
+				out = append(out, pair)
+			}
+		}
+	}
+	return out
+}
+
+func workflowContentsWrite(node *yamlNode) bool {
+	if node == nil {
+		return false
+	}
+	if node.kind == yamlScalar {
+		return node.scalar == "write-all"
+	}
+	return node.get("contents").text() == "write"
+}
+
+func workflowWorkingDirectory(node *yamlNode) (string, error) {
+	dir := strings.TrimSpace(node.text())
+	if dir == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(dir, "/") || strings.Contains(dir, "..") || strings.ContainsAny(dir, "\\\x00") {
+		return "", errors.New("workflow working-directory must stay inside the checkout")
+	}
+	dir = path.Clean(dir)
+	if dir == "." {
+		return "", nil
+	}
+	return dir, nil
+}
+
+func workflowMinutes(node *yamlNode) (int, error) {
+	text := strings.TrimSpace(node.text())
+	if text == "" {
+		return 0, nil
+	}
+	minutes, err := strconv.Atoi(text)
+	if err != nil || minutes < 1 || minutes > maxWorkflowMinutes {
+		return 0, errors.New("workflow timeout-minutes is not a whole number of minutes")
+	}
+	return minutes, nil
+}
+
+func normalizeWorkflowCron(cron string) string {
+	fields := strings.Fields(cron)
+	switch {
+	case len(fields) == 1:
+		switch fields[0] {
+		case "@hourly", "@daily", "@weekly", "@monthly":
+			return fields[0]
+		}
+		return ""
+	case len(fields) != 5:
+		return ""
+	}
+	for _, field := range fields {
+		if !workflowCronField.MatchString(field) {
+			return ""
+		}
+	}
+	return strings.Join(fields, " ")
+}
+
+func workflowInputs(node *yamlNode) ([]workflowInput, error) {
+	if node == nil || node.kind != yamlMap {
+		return nil, nil
+	}
+	if len(node.keys) > maxWorkflowInputs {
+		return nil, errors.New("workflow has too many inputs")
+	}
+	var out []workflowInput
+	for i, name := range node.keys {
+		if !workflowInputName.MatchString(name) {
+			return nil, errors.New("workflow input name is invalid")
+		}
+		spec := node.values[i]
+		input := workflowInput{Name: name, Description: singleLine(spec.get("description").text(), 240),
+			Default: boundedRunes(spec.get("default").text(), 1024), Type: spec.get("type").text()}
+		switch spec.get("required").text() {
+		case "", "false", "False":
+		case "true", "True":
+			input.Required = true
+		default:
+			return nil, errors.New("workflow input required must be true or false")
+		}
+		switch input.Type {
+		case "":
+			input.Type = "string"
+		case "string", "boolean":
+		case "choice":
+			for _, option := range spec.get("options").strings() {
+				input.Options = append(input.Options, boundedRunes(option, 200))
+			}
+			if len(input.Options) == 0 || len(input.Options) > 64 {
+				return nil, errors.New("workflow choice input needs between 1 and 64 options")
+			}
+		default:
+			return nil, errors.New("workflow input type must be string, choice or boolean")
+		}
+		out = append(out, input)
+	}
+	return out, nil
 }
 
 // substituteWorkflowVars blanks `${{ vars.NAME }}`. A mirror holds no Actions
