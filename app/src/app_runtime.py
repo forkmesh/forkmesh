@@ -1700,6 +1700,45 @@ class Default:
         instance_features.remember(
             instance_features.parse((row or {}).get("doc") or ""), now)
 
+    async def _instance_directory_setting(self):
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_registry.SETTING_KEY)
+        except Exception:
+            row = None
+        if row is None:
+            return None
+        return instance_registry.parse_setting(row.get("doc") or "")
+
+    async def _instance_directory_document(self, request):
+        setting = await self._instance_directory_setting()
+        domain = instance_registry.domain_of(
+            getattr(self.env, "PUBLIC_BASE_URL", "") or "")
+        public_key = _https_mirror_router_public_key(self.env)
+        if setting is None or not domain or not public_key:
+            return json_response({"error": "not_found"}, status=404,
+                                 cache_control="no-store")
+        return self._without_head_body(request, json_response(
+            instance_registry.document(
+                domain, instance_name(self.env),
+                getattr(self.env, "INSTANCE_LOGO", "") or "", setting,
+                "world" in instance_features.enabled_ids(self.env),
+                public_key), cache_control="no-store"))
+
+    async def _instance_directory_links(self):
+        if not instance_branded(self.env):
+            return None
+        setting = await self._instance_directory_setting()
+        if setting is None:
+            return None
+        return {
+            "listed": setting["listed"],
+            "world": setting["world"],
+            "portal": instance_registry.world_portal(
+                setting, "world" in instance_features.enabled_ids(self.env)),
+        }
+
     async def _instance_legal_setting(self):
         if not instance_branded(self.env):
             return instance_legal.default()
@@ -1824,6 +1863,7 @@ class Default:
                     await self._instance_legal_setting(),
                     instance_branded(self.env)),
                 "repoAddresses": await self._repo_addresses_doc(),
+                "directory": await self._instance_directory_links(),
             }, cache_control="public, max-age=60")
         if url.path == "/api/instance/theme" and instance_branded(self.env) \
                 and method_name(request) in ("PUT", "POST"):
@@ -1834,6 +1874,10 @@ class Default:
                 instance_theme.css(await self._instance_theme()), status=200,
                 headers={"content-type": "text/css; charset=utf-8",
                          "cache-control": "public, max-age=60"}))
+        if instance_branded(self.env) and \
+                url.path == instance_registry.DOC_PATH and \
+                method_name(request) in ("GET", "HEAD"):
+            return await self._instance_directory_document(request)
         if instance_branded(self.env):
             legal_page = await self._instance_legal_route(request, url)
             if legal_page is not None:

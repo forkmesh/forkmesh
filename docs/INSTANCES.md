@@ -52,6 +52,7 @@ extra organization owners); optional mail provider; listing choices
 | `GET /api/start/launches/<id>` | state, steps, message, log, URL; the 128-bit id is the capability |
 | `GET /api/start/instances` | public list of listed instances and World slots |
 | `GET /api/start/instances/<id>/logo` | an instance's logo, served with a sandboxing CSP and `nosniff` |
+| `POST /api/start/instances/register` | a self-installed instance joins or leaves the directory ([app/instance-federation.md](app/instance-federation.md)) |
 
 - No account needed. Rate limits per client (stored only as a salted hash)
   and a global concurrency cap.
@@ -510,7 +511,14 @@ never carry it.
 
 After a successful launch, `instance_directory.publish` writes an
 `instance_directory` row keyed by domain (name, URL, logo, choices, World
-slot). The World has 12 instance slots. Cron phase `instance-health` probes
+slot). An instance installed directly with the installer joins the same
+directory from its admin console (Platform → ForkMesh directory) or with the
+install setting `"directory": {"listed": true, "world": true}`: it publishes
+`/.well-known/forkmesh-instance.json` and sends a signed announcement that
+forkmesh.com checks against that document before writing the row, and it
+announces again every six hours; the protocol is in
+[app/instance-federation.md](app/instance-federation.md). The World has 12
+instance slots. Cron phase `instance-health` probes
 `https://<domain>/readyz`; two misses in a row hide the entry, a day offline
 pings the admins once per outage. The admin console's Instances view can
 hide, show or delete entries (CSRF-protected and audited); deleting does not
@@ -529,7 +537,9 @@ to every provider.
   them.
 - Without a fingerprint the first host key is trusted (and shown).
 - SSH credentials pass through the app once, in memory only.
-- The instance app's egress guard refuses forkmesh.com; nothing needs it.
+- The instance app's egress guard refuses forkmesh.com except
+  `app.forkmesh.com` (`FORKMESH_EGRESS_PRODUCTION_ALLOW` in the app unit),
+  which only the directory announcement uses.
 - Brand renaming happens in the browser; plain-text server messages still
   say ForkMesh.
 
@@ -538,7 +548,7 @@ to every provider.
 `app/tests/test_instance_launch.py`, `test_install_instance_script.py`,
 `test_start_instance_page.py`, `test_instance_white_label.py`,
 `test_instance_theme.py`, `test_instance_pages.py`,
-`test_instance_plugins.py`,
+`test_instance_plugins.py`, `test_instance_registry.py`,
 `test_instance_legal_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
 `test_instance_node_reconnect_frontend.py`,

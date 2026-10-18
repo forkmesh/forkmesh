@@ -1340,6 +1340,7 @@ mail_providers = _LazyModule("mail_providers")
 instance_features = _LazyModule("instance_features")
 instance_pages = _LazyModule("instance_pages")
 instance_legal = _LazyModule("instance_legal")
+instance_registry = _LazyModule("instance_registry")
 instance_theme = _LazyModule("instance_theme")
 mail_tracking = _LazyModule("mail_tracking")
 marketing_email = _LazyModule("marketing_email")
@@ -52092,6 +52093,8 @@ def _cron_due_phases(minute_slot):
         phases.append("attribution-maintenance")
     elif hourly == 57:
         phases.append("badge-sweep")
+    elif hourly == 32:
+        phases.append("instance-announce")
     # Once a day, copy the cumulative per-repository clone counters into a
     # dated snapshot; the acquisition dashboard reads per-day clones as the
     # delta between snapshots instead of touching the clone path itself.
@@ -52211,6 +52214,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _distribute_central_fund(env)
     if phase == "instance-health":
         return await _instance_directory_admin.health_cron(env)
+    if phase == "instance-announce":
+        return await _instance_console.announce_cron(env)
     if phase == "chat-prune":
         await chat_history_prune_expired(env)
         return await chat_direct_media_api.sweep(

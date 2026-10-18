@@ -24,6 +24,25 @@ SCHEMA = (
     ON instance_directory(created_at)""",
     """CREATE INDEX IF NOT EXISTS idx_instance_directory_checked
     ON instance_directory(checked_at)""",
+    """CREATE TABLE IF NOT EXISTS instance_registrations (
+    domain TEXT PRIMARY KEY,
+    public_key TEXT NOT NULL,
+    world_url TEXT NOT NULL DEFAULT '',
+    announced_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+)""",
+    """CREATE TABLE IF NOT EXISTS instance_register_attempts (
+    client_key TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    at INTEGER NOT NULL
+)""",
+    """CREATE INDEX IF NOT EXISTS idx_instance_register_attempts_at
+    ON instance_register_attempts(at)""",
+    """CREATE INDEX IF NOT EXISTS idx_instance_register_attempts_client
+    ON instance_register_attempts(client_key, at)""",
+    """CREATE INDEX IF NOT EXISTS idx_instance_register_attempts_domain
+    ON instance_register_attempts(domain, at)""",
 )
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 LOGO_RE = re.compile(
@@ -224,9 +243,12 @@ async def check_health(runtime):
 async def admin_rows(runtime):
     await ensure(runtime)
     rows = await runtime.d1_all(
-        "SELECT domain,id,name,url,world,listed,slot,hidden,failures,"
-        "offline_since,checked_at,pinged_at,created_at FROM instance_directory "
-        "ORDER BY created_at, domain LIMIT ?", MAX_ENTRIES)
+        "SELECT d.domain,d.id,d.name,d.url,d.world,d.listed,d.slot,d.hidden,"
+        "d.failures,d.offline_since,d.checked_at,d.pinged_at,d.created_at,"
+        "r.announced_at AS announced_at,r.public_key AS public_key "
+        "FROM instance_directory d LEFT JOIN instance_registrations r "
+        "ON r.domain=d.domain ORDER BY d.created_at, d.domain LIMIT ?",
+        MAX_ENTRIES)
     return [dict(row) for row in rows or []]
 
 
@@ -253,4 +275,6 @@ async def delete(runtime, entry_id):
     if not row:
         return None
     await runtime.d1_run("DELETE FROM instance_directory WHERE id=?", entry_id)
+    await runtime.d1_run(
+        "DELETE FROM instance_registrations WHERE domain=?", row["domain"])
     return row["domain"]

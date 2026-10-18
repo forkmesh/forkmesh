@@ -393,3 +393,37 @@ def test_install_settings_turn_on_the_named_legal_pages_once():
     assert legal_row(entry) == {}
     with pytest.raises(boot.BootstrapError):
         run(legal_entry(), spec(legalPages={"terms": {"url": "ftp://x"}}))
+
+
+def directory_entry():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+    import instance_registry
+    entry = Entry()
+    entry.instance_registry = instance_registry
+    return entry
+
+
+def directory_row(entry):
+    row = entry.db.execute(
+        "SELECT doc FROM instance_settings WHERE k='directory'").fetchone()
+    return json.loads(row["doc"]) if row else None
+
+
+def test_the_directory_listing_is_written_once_when_the_install_asks():
+    entry = directory_entry()
+    run(entry, spec())
+    assert directory_row(entry) is None
+    run(entry, spec(directory={"listed": True, "world": True}))
+    stored = directory_row(entry)
+    assert stored["listed"] is True and stored["world"] is True
+    assert stored["status"]["state"] == ""
+    entry.db.execute("UPDATE instance_settings SET doc='{\"listed\":false}' "
+                     "WHERE k='directory'")
+    run(entry, spec(directory={"listed": True, "world": True}))
+    assert directory_row(entry) == {"listed": False}
+    with pytest.raises(boot.BootstrapError):
+        run(directory_entry(), spec(directory={"listed": "yes"}))
+    with pytest.raises(boot.BootstrapError):
+        run(directory_entry(), spec(directory={"hidden": True}))
+    with pytest.raises(boot.BootstrapError):
+        boot.read_spec(spec(directory=["listed"]))
