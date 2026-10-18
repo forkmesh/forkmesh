@@ -121,3 +121,43 @@ def test_shortcut_executes_by_default(tmp_path: Path) -> None:
     assert "Freed" in output
     assert not paths["orphan_scratch"].exists()
     assert paths["live_scratch"].exists()
+
+
+def test_step_removes_only_its_group(tmp_path: Path) -> None:
+    paths = _layout(tmp_path)
+    output = _run(paths, "--execute", "--step", "agents")
+    for key in ("orphan_scratch", "orphan_build", "orphan_tmp"):
+        assert not paths[key].exists(), key
+    for key in ("sandbox", "old_claude", "live_scratch"):
+        assert paths[key].exists(), key
+    assert len(list(paths["backups"].iterdir())) == 11
+    assert "Before:" not in output and "After:" not in output
+    _run(paths, "--execute", "--step", "tests")
+    assert not paths["sandbox"].exists()
+    assert paths["old_claude"].exists()
+    _run(paths, "--execute", "--step", "versions")
+    assert not paths["old_claude"].exists()
+    assert paths["new_claude"].exists()
+    assert len(list(paths["backups"].iterdir())) == 7
+
+
+def test_usage_and_report_steps_delete_nothing(tmp_path: Path) -> None:
+    paths = _layout(tmp_path)
+    usage = _run(paths, "--execute", "--step", "usage")
+    report = _run(paths, "--execute", "--step", "report")
+    assert usage.startswith("Before: /")
+    assert "Keeping 2 registered worktrees" in usage
+    assert report.startswith("After: /")
+    assert paths["orphan_scratch"].exists()
+    assert paths["old_claude"].exists()
+
+
+def test_shortcut_announces_every_step_it_declares(tmp_path: Path) -> None:
+    paths = _layout(tmp_path)
+    declared = [line.split(":", 1)[1].strip() for line in SHORTCUT.read_text().splitlines()
+                if line.startswith("# step:")]
+    output = _run(paths, "--dry-run", command=["bash", str(SHORTCUT)])
+    announced = [line[len("::step::"):] for line in output.splitlines() if line.startswith("::step::")]
+    assert len(declared) == 6
+    assert announced == declared
+    assert paths["orphan_scratch"].exists()

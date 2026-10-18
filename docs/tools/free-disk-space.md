@@ -3,13 +3,41 @@
 `tools/free_disk_space.py` turns the hand-run disk sweeps of 2026-08 to
 2026-10 into one command. It is a dry run unless given `--execute`; the
 shortcut **Free disk space** (`.forkmesh/shortcuts/free-disk-space.sh`) runs
-it with `--execute` (pass `--dry-run` to only list).
+it with `--execute` (pass `--dry-run` anywhere on its command line to only
+list).
 
 ```sh
 python3 tools/free_disk_space.py                # list what would go
 python3 tools/free_disk_space.py --execute      # delete it
-.forkmesh/shortcuts/free-disk-space.sh          # same as --execute
+python3 tools/free_disk_space.py --step agents  # one part only
+.forkmesh/shortcuts/free-disk-space.sh          # every part, with --execute
 ```
+
+## Steps you can watch
+
+The shortcut is a stepped workflow: six `# step:` blocks, each running one
+`--step` of the tool and printing a `::step::<name>` marker first, so the
+desktop card lights each step as it starts, shows which one failed, and the
+web canvas draws the same six steps
+([../desktop/shortcuts.md](../desktop/shortcuts.md#steps-and-linked-shortcuts)).
+
+| Step | `--step` | What it does |
+| --- | --- | --- |
+| Measure the disk | `usage` | free space on `/` and `/tmp`, registered worktree count |
+| Remove agent leftovers | `agents` | scratch, `builds/agent-NNN*`, `/tmp/fmNNN*`, `~/.cache/fmNNN*` |
+| Remove test and Actions leftovers | `tests` | pytest temp dirs, stranded Actions sandboxes, Qt test temp dirs |
+| Prune old Claude versions, backups and Trash | `versions` | old Claude Code versions, backups past the 3 newest, trashed cleanup items |
+| Clear the pip and npm caches | `caches` | `pip cache purge`, `npm cache clean --force` (skipped with `--no-caches`) |
+| Report what is left | `report` | free space after, and the large folders left for the user |
+
+Each step re-reads `git worktree list` and `/proc`, so a worktree or process
+that appears between steps is still respected. Without `--step` the tool does
+every part in one pass, as before.
+
+It stays a shortcut rather than a `.forkmesh/*.yml` Actions workflow: Actions
+steps run in a bubblewrap sandbox as uid 65534 with a fresh home and `/tmp`
+and their own `/proc`, so they cannot see, let alone delete, anything this
+tool cleans (`ActionRunner::sandboxArguments` in `desktop/src/ActionRunner.cpp`).
 
 ## What is removed
 
