@@ -386,10 +386,14 @@ async def insert(runtime, repo_id, key_bi, owner_bi, creator_bi, visibility,
 
 async def link_organization(runtime, org_bi, repo, node_owner, now):
     """Link a hosted repository into an organization (org_repos alias)."""
+    repo = str(repo or "").lower()
+    await runtime.d1_run(
+        "UPDATE OR IGNORE org_repos SET repo=? WHERE org_bi=? AND repo<>? "
+        "AND lower(repo)=?", repo, org_bi, repo, repo)
     await runtime.d1_run(
         "INSERT INTO org_repos (org_bi, repo, node_owner, created_at) "
         "VALUES (?,?,?,?) ON CONFLICT(org_bi, repo) DO NOTHING",
-        org_bi, repo, node_owner, now)
+        org_bi, repo, str(node_owner or "").lower(), now)
 
 
 async def note_push(runtime, repo_id, node, now):
