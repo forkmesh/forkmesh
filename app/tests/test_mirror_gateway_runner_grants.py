@@ -682,3 +682,68 @@ def test_commit_back_pulls_rebases_and_pushes_through_the_alias(tmp_path):
         server.server_close()
         thread.join(timeout=5)
         app.close()
+
+
+def test_accepted_push_marks_hosted_maintenance_due(served):
+    app, bare, _commit, _verifier, tmp = served
+    marker = Path(bare) / gateway.MAINTENANCE_MARKER_NAME
+    work, new = new_commit(tmp, bare)
+    assert receive(app, grant(), push_body(
+        [(ZERO, new, AGENT_REF)], pack_for(work, new, ZERO))).status == 200
+    assert not marker.exists()
+
+    (Path(bare) / gateway.MAINTENANCE_LOCK_NAME).write_bytes(b"")
+    run(["git", "fetch", "--quiet", "origin"], work)
+    (work / "next.txt").write_text("next", encoding="utf-8")
+    run(["git", "add", "."], work)
+    run(["git", "commit", "--quiet", "-m", "next"], work)
+    newer = run(["git", "rev-parse", "HEAD"], work)
+    assert receive(app, grant(), push_body(
+        [(new, newer, AGENT_REF)], pack_for(work, newer, new))).status == 200
+    assert marker.is_file()
+
+    marker.unlink()
+    refused = receive(app, grant(), push_body([(newer, ZERO, AGENT_REF)]))
+    assert refused.status == 404 and not marker.exists()
+
+
+def test_push_waits_for_running_maintenance(served, monkeypatch):
+    import fcntl
+    import time
+
+    app, bare, _commit, _verifier, tmp = served
+    lock_path = Path(bare) / gateway.MAINTENANCE_LOCK_NAME
+    lock_path.write_bytes(b"")
+    holder = os.open(lock_path, os.O_RDWR)
+    fcntl.flock(holder, fcntl.LOCK_EX)
+    released = []
+
+    def release():
+        time.sleep(0.6)
+        released.append(time.monotonic())
+        fcntl.flock(holder, fcntl.LOCK_UN)
+
+    thread = threading.Thread(target=release)
+    thread.start()
+    work, new = new_commit(tmp, bare)
+    response = receive(app, grant(), push_body(
+        [(ZERO, new, AGENT_REF)], pack_for(work, new, ZERO)))
+    finished = time.monotonic()
+    thread.join()
+    assert response.status == 200
+    assert released and finished >= released[0]
+
+    monkeypatch.setattr(gateway, "MAINTENANCE_LOCK_WAIT_SECONDS", 0.3)
+    fcntl.flock(holder, fcntl.LOCK_EX)
+    try:
+        run(["git", "fetch", "--quiet", "origin"], work)
+        (work / "late.txt").write_text("late", encoding="utf-8")
+        run(["git", "add", "."], work)
+        run(["git", "commit", "--quiet", "-m", "late"], work)
+        newer = run(["git", "rev-parse", "HEAD"], work)
+        response = receive(app, grant(), push_body(
+            [(new, newer, AGENT_REF)], pack_for(work, newer, new)))
+        assert response.status == 200
+        assert run(["git", "rev-parse", AGENT_REF], bare) == newer
+    finally:
+        os.close(holder)
