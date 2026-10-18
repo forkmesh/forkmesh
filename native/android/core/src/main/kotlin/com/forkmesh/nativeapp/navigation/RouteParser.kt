@@ -247,6 +247,7 @@ object RouteParser {
             "ads" -> listOf(Route.Ads)
             "face-changer" -> listOf(Route.FaceChanger)
             "phone-security" -> listOf(Route.PhoneSecurity)
+            "openwrt" -> listOf(Route.OpenWrtRouter)
             "app-store-status" -> listOf(Route.AppStoreStatus)
             "rss", "rss-reader" -> listOf(Route.RssReader)
             "workflows" -> if (first == null) listOf(Route.Workflows) else null
@@ -299,6 +300,7 @@ object RouteParser {
         "calories" -> listOf(Route.Calories)
         "glasses-alert" -> listOf(Route.GlassesAlert)
         "phone-security" -> listOf(Route.PhoneSecurity)
+        "openwrt" -> listOf(Route.OpenWrtRouter)
         "face-changer" -> listOf(Route.FaceChanger)
         "app-store-status" -> listOf(Route.AppStoreStatus)
         "rss", "rss-reader" -> listOf(Route.RssReader)

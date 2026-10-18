@@ -1,8 +1,9 @@
 # OpenWrt Router
 
-Manage an OpenWrt router on your network from the ForkMesh desktop. Install it
-from the Market to add **Router** to the desktop rail; it is bundled but off by
-default.
+Manage an OpenWrt router on your network from the ForkMesh desktop, iPhone or
+Android phone. Install it from the Market to add **Router** to the desktop rail
+and the phones' Home screen; it is bundled but off by default, and installing
+it on one device installs it on your others.
 
 Sign in with the router's address (ForkMesh fills in your default gateway),
 user (usually `root`) and password. The page then offers:
@@ -20,6 +21,11 @@ user (usually `root`) and password. The page then offers:
 - **Devices**: the devices that have an address from the router, and address
   reservations (add, reserve a connected device's address, remove).
 - **Port forwards**: add, edit, switch off and delete.
+- **Storage**: USB disks and memory cards plugged into the router, with size,
+  free space and filesystem. Mount them at boot in a folder you choose, mount
+  any disk as soon as it is plugged in, unmount before unplugging, share a
+  disk on your network (SMB, with or without a password) and install USB
+  storage support in one step.
 - **Services**: start, stop, restart, and choose whether each starts at boot.
 - **Packages**: list, filter, install and remove packages and update the
   package lists (opkg or apk).
@@ -28,6 +34,9 @@ user (usually `root`) and password. The page then offers:
   and a factory reset.
 - **All settings**: every UCI configuration file, section and option on the
   router, with set, delete and add.
+
+The phones have everything except backups, firmware upgrades and factory
+resets, which stay on the desktop where the files are.
 
 Changes are not live until you apply them: saved edits wait on the router and
 the bar above the tabs lists them, with **Review**, **Discard** and **Apply**.

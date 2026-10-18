@@ -47,6 +47,7 @@ private:
     QWidget *buildWireless();
     QWidget *buildClients();
     QWidget *buildForwards();
+    QWidget *buildStorage();
     QWidget *buildServices();
     QWidget *buildPackages();
     QWidget *buildSystem();
@@ -66,6 +67,7 @@ private:
     void loadChanges();
     void loadLeases();
     void loadServices();
+    void loadStorage();
     void loadPackages();
     void loadAdvancedConfigs();
 
@@ -85,6 +87,7 @@ private:
     void renderClients();
     void renderForwards();
     void renderServices();
+    void renderStorage();
     void renderPackages();
     void renderAdvanced();
     void renderChanges();
@@ -104,6 +107,15 @@ private:
     void saveForward();
     void deleteForward();
     void serviceAction(const QString &action);
+    const StorageDisk *selectedDisk() const;
+    void mountAtBoot();
+    void stopMountAtBoot();
+    void unmountDisk();
+    void mountAll();
+    void setAutoMount(bool on);
+    void shareDisk();
+    void stopSharing();
+    void installStorageSupport();
     void packageAction(const QString &action, const QString &name);
     void detectPackageTool(int index);
     void saveHostname();
@@ -141,6 +153,10 @@ private:
     QJsonObject m_changes;
     QList<Lease> m_leases;
     QList<Service> m_services;
+    QList<BlockDevice> m_blocks;
+    QList<MountPoint> m_mounts;
+    QList<StorageDisk> m_disks;
+    QString m_storageProblem;
     QList<Package> m_packages;
     int m_packageTool = -1;
     QStringList m_advancedConfigs;
@@ -224,6 +240,12 @@ private:
     QPushButton *m_forwardDelete = nullptr;
 
     QTreeWidget *m_serviceTree = nullptr;
+
+    QLabel *m_storageNote = nullptr;
+    QCheckBox *m_autoMount = nullptr;
+    QTreeWidget *m_storageTree = nullptr;
+    QTreeWidget *m_shareTree = nullptr;
+    QLabel *m_shareNote = nullptr;
 
     QTreeWidget *m_packageTree = nullptr;
     QLineEdit *m_packageFilter = nullptr;

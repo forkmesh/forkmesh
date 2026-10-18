@@ -262,8 +262,8 @@ void testModel()
           QStringLiteral("apk list --installed parses"));
     const QList<PackageTool> tools = packageTools();
     check(tools.size() == 4 && tools.first().wrapper, QStringLiteral("LuCI's package wrappers are tried before the package managers"));
-    check(packageArguments(tools.at(2), QStringLiteral("install"), QStringLiteral("nano")) == QStringList({QStringLiteral("add"), QStringLiteral("nano")})
-              && packageArguments(tools.at(3), QStringLiteral("remove"), QStringLiteral("nano")) == QStringList({QStringLiteral("remove"), QStringLiteral("nano")})
+    check(packageArguments(tools.at(2), QStringLiteral("install"), {QStringLiteral("nano"), QStringLiteral("htop")}) == QStringList({QStringLiteral("add"), QStringLiteral("nano"), QStringLiteral("htop")})
+              && packageArguments(tools.at(3), QStringLiteral("remove"), {QStringLiteral("nano")}) == QStringList({QStringLiteral("remove"), QStringLiteral("nano")})
               && packageArguments(tools.at(0), QStringLiteral("list")) == QStringList({QStringLiteral("list-installed")}),
           QStringLiteral("each tool gets its own arguments"));
     check(validPackageName(QStringLiteral("luci-app-sqm")) && !validPackageName(QStringLiteral("-force")) && !validPackageName(QStringLiteral("a;reboot"))
@@ -308,6 +308,44 @@ void testModel()
     check(firmwareProblem(QJsonObject{{QStringLiteral("valid"), true}}).isEmpty()
               && firmwareProblem(QJsonObject{{QStringLiteral("valid"), false}, {QStringLiteral("tests"), QJsonObject{{QStringLiteral("fwtool_device_match"), false}}}}).contains(QStringLiteral("model")),
           QStringLiteral("an image for another model is refused with the reason"));
+    const QJsonObject blocks = QJsonDocument::fromJson(R"({"sda1":{"dev":"/dev/sda1","uuid":"1234-ABCD","label":"Media Disk","type":"exfat","size":64000000000,"mount":"/mnt/sda1"},
+        "sdb1":{"dev":"/dev/sdb1","uuid":"aa-bb","type":"ext4","size":1000},
+        "mtdblock5":{"dev":"/dev/mtdblock5","type":"squashfs","size":4000},
+        "ubiblock0_1":{"dev":"/dev/ubiblock0_1","type":"squashfs"}})").object();
+    const QList<BlockDevice> devices = parseBlockDevices(blocks);
+    check(devices.size() == 2 && devices.first().name == QStringLiteral("sda1") && devices.first().size == 64000000000LL,
+          QStringLiteral("only USB and card disks are listed, not the router's flash"));
+    check(isStorageDevice(QStringLiteral("mmcblk0p1")) && isStorageDevice(QStringLiteral("nvme0n1p2")) && !isStorageDevice(QStringLiteral("zram0")) && !isStorageDevice(QStringLiteral("loop0")),
+          QStringLiteral("storage device names are recognised"));
+    const QList<MountPoint> mountPoints = parseMountPoints(QJsonDocument::fromJson(R"({"result":[{"device":"/dev/sda1","mount":"/mnt/sda1","type":"exfat","size":64000000000,"avail":16000000000},
+        {"device":"overlayfs:/overlay","mount":"/","type":"overlay","size":10,"avail":5}]})").object());
+    check(mountPoints.size() == 2 && mountPoints.first().avail == 16000000000LL, QStringLiteral("mount points carry their free space"));
+    const QList<UciSection> fstab = uciSections(QJsonDocument::fromJson(R"({"cfg01":{".name":"cfg01",".type":"global",".anonymous":true,".index":0,"anon_mount":"1"},
+        "cfg02":{".name":"cfg02",".type":"mount",".anonymous":true,".index":1,"uuid":"aa-bb","target":"/mnt/backup","enabled":"0"}})").object());
+    const QList<StorageDisk> disks = storageDisks(devices, mountPoints, fstab);
+    check(disks.size() == 2 && disks.first().mounted() && disks.first().usageKnown && disks.first().avail == 16000000000LL && disks.first().fstabSection.isEmpty(),
+          QStringLiteral("a mounted disk shows its usage"));
+    check(!disks.at(1).mounted() && disks.at(1).fstabSection == QStringLiteral("cfg02") && disks.at(1).bootTarget == QStringLiteral("/mnt/backup") && !disks.at(1).bootEnabled,
+          QStringLiteral("a disk is matched to its fstab entry by UUID"));
+    check(disks.first().title() == QStringLiteral("Media Disk (sda1)") && suggestedMountPath(devices.first()) == QStringLiteral("/mnt/Media_Disk")
+              && suggestedMountPath(devices.at(1)) == QStringLiteral("/mnt/sdb1"),
+          QStringLiteral("disks get readable titles and mount folders"));
+    check(mountPathProblem(QStringLiteral("/mnt/usb")).isEmpty() && !mountPathProblem(QStringLiteral("/etc")).isEmpty() && !mountPathProblem(QStringLiteral("/mnt/../etc")).isEmpty()
+              && !mountPathProblem(QStringLiteral("/mnt/a b")).isEmpty() && !mountPathProblem(QStringLiteral("/mnt/")).isEmpty(),
+          QStringLiteral("mount folders stay under /mnt-like roots"));
+    const QJsonObject mountValues = mountSectionValues(devices.first(), QStringLiteral("/mnt/media"));
+    check(mountValues.value(QStringLiteral("uuid")).toString() == QStringLiteral("1234-ABCD") && mountValues.value(QStringLiteral("target")).toString() == QStringLiteral("/mnt/media")
+              && mountValues.value(QStringLiteral("enabled")).toString() == QStringLiteral("1") && !mountValues.contains(QStringLiteral("device")),
+          QStringLiteral("a boot mount is keyed by UUID"));
+    check(usbStoragePackages().contains(QStringLiteral("block-mount")) && usbStoragePackages().contains(QStringLiteral("kmod-usb-storage")),
+          QStringLiteral("USB storage support names the driver and mount packages"));
+    check(shareConfig({QStringLiteral("network"), QStringLiteral("samba4")}) == QStringLiteral("samba4") && shareConfig({QStringLiteral("ksmbd"), QStringLiteral("samba4")}) == QStringLiteral("ksmbd")
+              && shareConfig({QStringLiteral("network")}).isEmpty() && shareSectionType(QStringLiteral("samba4")) == QStringLiteral("sambashare"),
+          QStringLiteral("the file server in use is found"));
+    const QList<Share> shares = parseShares(uciSections(QJsonDocument::fromJson(R"({"cfg01":{".name":"cfg01",".type":"globals",".index":0},
+        "cfg02":{".name":"cfg02",".type":"share",".index":1,"name":"Media","path":"/mnt/sda1","read_only":"no","guest_ok":"yes"}})").object()));
+    check(shares.size() == 1 && shares.first().name == QStringLiteral("Media") && shares.first().guests && !shares.first().readOnly, QStringLiteral("shares parse"));
+    check(shareNameProblem(QStringLiteral("Media")).isEmpty() && !shareNameProblem(QStringLiteral("a/b")).isEmpty(), QStringLiteral("share names are checked"));
     check(confirmationPhrase({}) == QStringLiteral("OpenWrt") && confirmationPhrase(QStringLiteral("gw")) == QStringLiteral("gw"), QStringLiteral("a reset is confirmed with the hostname"));
 }
 

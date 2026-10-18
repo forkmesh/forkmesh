@@ -451,6 +451,12 @@ signed with the v3 key (`native/android/README.md`); the default application id
   the device grid (`GlassesCensus`); `GlassesHoming` and `GlassesCompass` drive
   closeness and direction; `GlassesRadarChip` sits in the top bar. Device kinds
   match iOS (`native/ios/docs/FMTools.md`).
+- **Router** (`feature/openwrt/`, core `openwrt/`) talks to an OpenWrt router
+  through `RouterHttp`, a small HTTP/1.0 client on a plain or TLS socket, not
+  `HttpURLConnection`: the network security config forbids cleartext except
+  to the emulator host, and a domain rule cannot name every private address.
+  The socket path is used only for addresses `OpenWrtModel.isLocalHost`
+  accepts ([`docs/marketplace/openwrt.md`](../marketplace/openwrt.md#phones)).
 - **Phone Security** (`feature/phonesecurity/`, core `phonesecurity/`) is the
   local checkup described in
   [`docs/marketplace/phone-security.md`](../marketplace/phone-security.md).

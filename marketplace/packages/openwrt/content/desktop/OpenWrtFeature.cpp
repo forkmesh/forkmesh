@@ -42,7 +42,7 @@ namespace {
 constexpr int kKeyRole = Qt::UserRole;
 constexpr int kSectionRole = Qt::UserRole + 1;
 
-enum Tab { OverviewTab, NetworkTab, WirelessTab, ClientsTab, ForwardsTab, ServicesTab, PackagesTab, SystemTab, AdvancedTab };
+enum Tab { OverviewTab, NetworkTab, WirelessTab, ClientsTab, ForwardsTab, StorageTab, ServicesTab, PackagesTab, SystemTab, AdvancedTab };
 
 const QStringList &criticalServices()
 {
@@ -367,6 +367,7 @@ QWidget *OpenWrtFeature::buildManager()
     m_tabs->addTab(buildWireless(), QStringLiteral("Wi-Fi"));
     m_tabs->addTab(buildClients(), QStringLiteral("Devices"));
     m_tabs->addTab(buildForwards(), QStringLiteral("Port forwards"));
+    m_tabs->addTab(buildStorage(), QStringLiteral("Storage"));
     m_tabs->addTab(buildServices(), QStringLiteral("Services"));
     m_tabs->addTab(buildPackages(), QStringLiteral("Packages"));
     m_tabs->addTab(buildSystem(), QStringLiteral("System"));
@@ -669,6 +670,62 @@ QWidget *OpenWrtFeature::buildForwards()
     connect(save, &QPushButton::clicked, this, [this] { saveForward(); });
     connect(m_forwardDelete, &QPushButton::clicked, this, [this] { deleteForward(); });
     showForward({});
+    return page;
+}
+
+QWidget *OpenWrtFeature::buildStorage()
+{
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 10, 0, 0);
+    m_storageNote = mutedLabel(QStringLiteral("USB disks and memory cards plugged into the router."));
+    layout->addWidget(m_storageNote);
+    auto *top = new QHBoxLayout;
+    m_autoMount = new QCheckBox(QStringLiteral("Mount any disk when it is plugged in"));
+    m_autoMount->setToolTip(QStringLiteral("Disks without their own entry are mounted at /mnt/<device> as soon as they are plugged in."));
+    auto *mountAll = makeButton(QStringLiteral("Mount disks now"));
+    auto *install = makeButton(QStringLiteral("Install USB storage support"));
+    top->addWidget(m_autoMount);
+    top->addStretch();
+    top->addWidget(mountAll);
+    top->addWidget(install);
+    layout->addLayout(top);
+    m_storageTree = makeTree(QStringLiteral("openWrtStorage"),
+                             {QStringLiteral("Disk"), QStringLiteral("Filesystem"), QStringLiteral("Size"), QStringLiteral("Free"), QStringLiteral("Mounted at"), QStringLiteral("At boot")},
+                             QStringLiteral("Disks attached to the router"));
+    layout->addWidget(m_storageTree, 2);
+    auto *actions = new QHBoxLayout;
+    auto *boot = makeButton(QStringLiteral("Mount at boot…"));
+    auto *noBoot = makeButton(QStringLiteral("Don't mount at boot"));
+    auto *unmount = makeButton(QStringLiteral("Unmount"));
+    auto *share = makeButton(QStringLiteral("Share on network…"));
+    actions->addWidget(boot);
+    actions->addWidget(noBoot);
+    actions->addWidget(unmount);
+    actions->addWidget(share);
+    actions->addStretch();
+    layout->addLayout(actions);
+    layout->addWidget(sectionTitle(QStringLiteral("Network shares")));
+    m_shareNote = mutedLabel();
+    layout->addWidget(m_shareNote);
+    m_shareTree = makeTree(QStringLiteral("openWrtShares"), {QStringLiteral("Share"), QStringLiteral("Folder"), QStringLiteral("Access")},
+                           QStringLiteral("Folders the router shares on the network"));
+    layout->addWidget(m_shareTree, 1);
+    auto *shareActions = new QHBoxLayout;
+    auto *unshare = makeButton(QStringLiteral("Stop sharing"));
+    shareActions->addWidget(unshare);
+    shareActions->addStretch();
+    layout->addLayout(shareActions);
+    layout->addWidget(mutedLabel(QStringLiteral("Unmount a disk before you unplug it. Formatting is not offered: format the disk on a computer first (ext4, exFAT or FAT32).")));
+
+    connect(m_autoMount, &QCheckBox::clicked, this, [this](bool on) { setAutoMount(on); });
+    connect(mountAll, &QPushButton::clicked, this, [this] { this->mountAll(); });
+    connect(install, &QPushButton::clicked, this, [this] { installStorageSupport(); });
+    connect(boot, &QPushButton::clicked, this, [this] { mountAtBoot(); });
+    connect(noBoot, &QPushButton::clicked, this, [this] { stopMountAtBoot(); });
+    connect(unmount, &QPushButton::clicked, this, [this] { unmountDisk(); });
+    connect(share, &QPushButton::clicked, this, [this] { shareDisk(); });
+    connect(unshare, &QPushButton::clicked, this, [this] { stopSharing(); });
     return page;
 }
 
@@ -1039,6 +1096,10 @@ void OpenWrtFeature::signOut()
     m_changes = {};
     m_leases.clear();
     m_services.clear();
+    m_blocks.clear();
+    m_mounts.clear();
+    m_disks.clear();
+    m_storageProblem.clear();
     m_packages.clear();
     m_packageTool = -1;
     m_advancedConfigs.clear();
@@ -1061,11 +1122,12 @@ void OpenWrtFeature::refresh()
 void OpenWrtFeature::loadAll()
 {
     loadOverview();
-    for (const QString &config : {QStringLiteral("network"), QStringLiteral("wireless"), QStringLiteral("dhcp"), QStringLiteral("firewall"), QStringLiteral("system")})
+    for (const QString &config : {QStringLiteral("network"), QStringLiteral("wireless"), QStringLiteral("dhcp"), QStringLiteral("firewall"), QStringLiteral("system"), QStringLiteral("fstab")})
         loadConfig(config);
     loadChanges();
     loadLeases();
     loadServices();
+    loadStorage();
     loadPackages();
     loadAdvancedConfigs();
 }
@@ -1115,6 +1177,8 @@ void OpenWrtFeature::loadConfig(const QString &config)
             renderForwards();
         } else if (config == QStringLiteral("system")) {
             renderOverview();
+        } else if (config == QStringLiteral("fstab") || config == shareConfig(m_advancedConfigs)) {
+            renderStorage();
         }
         if (config == m_advancedConfig)
             renderAdvanced();
@@ -1219,6 +1283,9 @@ void OpenWrtFeature::loadAdvancedConfigs()
         m_advancedPicker->addItems(m_advancedConfigs);
         m_advancedPicker->setCurrentText(m_advancedConfig);
         m_advancedPicker->blockSignals(false);
+        if (const QString shares = shareConfig(m_advancedConfigs); !shares.isEmpty())
+            loadConfig(shares);
+        renderStorage();
         if (m_configs.contains(m_advancedConfig))
             renderAdvanced();
         else if (!m_advancedConfig.isEmpty())
@@ -1948,6 +2015,190 @@ void OpenWrtFeature::deleteForward()
     m_selectedForward.clear();
 }
 
+void OpenWrtFeature::loadStorage()
+{
+    m_client.call(QStringLiteral("luci"), QStringLiteral("getBlockDevices"), {}, [this](const RpcResult &result) {
+        m_blocks = result.ok ? parseBlockDevices(result.data) : QList<BlockDevice>();
+        m_storageProblem = result.ok ? QString() : result.error;
+        m_client.call(QStringLiteral("luci"), QStringLiteral("getMountPoints"), {}, [this](const RpcResult &mounts) {
+            m_mounts = mounts.ok ? parseMountPoints(mounts.data) : QList<MountPoint>();
+            renderStorage();
+        });
+    });
+}
+
+void OpenWrtFeature::renderStorage()
+{
+    m_disks = storageDisks(m_blocks, m_mounts, sections(QStringLiteral("fstab")));
+    const QString keep = itemKey(m_storageTree->currentItem());
+    m_storageTree->clear();
+    for (const StorageDisk &disk : m_disks) {
+        const QString boot = disk.fstabSection.isEmpty() ? QStringLiteral("No") : disk.bootEnabled ? disk.bootTarget : QStringLiteral("Off");
+        auto *item = new QTreeWidgetItem(m_storageTree, {disk.title(), disk.block.type.isEmpty() ? QStringLiteral("Unknown") : disk.block.type,
+                                                         disk.size > 0 ? formatBytes(disk.size) : QString(), disk.usageKnown ? formatBytes(disk.avail) : QString(),
+                                                         disk.mounted() ? disk.mount : QStringLiteral("Not mounted"), boot});
+        item->setData(0, kKeyRole, disk.block.name);
+    }
+    selectTreeItem(m_storageTree, keep);
+    if (!m_storageProblem.isEmpty())
+        m_storageNote->setText(QStringLiteral("The router cannot list its disks (%1). Install USB storage support, which adds block-mount and the USB and filesystem drivers.").arg(m_storageProblem));
+    else if (m_disks.isEmpty())
+        m_storageNote->setText(QStringLiteral("No USB disk or memory card is attached. Plug one in and press Refresh; if it still does not show, install USB storage support."));
+    else
+        m_storageNote->setText(QStringLiteral("%1 attached. Mounted disks can be shared on your network.").arg(m_disks.size() == 1 ? QStringLiteral("1 disk") : QStringLiteral("%1 disks").arg(m_disks.size())));
+    const QList<UciSection> globals = sections(QStringLiteral("fstab"), QStringLiteral("global"));
+    m_autoMount->setChecked(!globals.isEmpty() && globals.first().flag(QStringLiteral("anon_mount")));
+    m_autoMount->setEnabled(m_configs.contains(QStringLiteral("fstab")));
+
+    const QString config = shareConfig(m_advancedConfigs);
+    m_shareTree->clear();
+    if (config.isEmpty()) {
+        m_shareNote->setText(QStringLiteral("To share disks with computers and phones on your network, install ksmbd-server and luci-app-ksmbd on the Packages tab."));
+    } else {
+        m_shareNote->setText(QStringLiteral("Shared with the %1 file server (SMB). Shares with guest access need no password; others need a user set up on the router.").arg(config));
+        for (const Share &share : parseShares(sections(config))) {
+            auto *item = new QTreeWidgetItem(m_shareTree, {share.name, share.path,
+                                                           QStringLiteral("%1%2").arg(share.readOnly ? QStringLiteral("Read only") : QStringLiteral("Read and write"),
+                                                                                      share.guests ? QStringLiteral(" · guests allowed") : QString())});
+            item->setData(0, kKeyRole, share.section);
+        }
+    }
+    filterTrees();
+    if (m_searchIndexChanged)
+        m_searchIndexChanged();
+}
+
+const StorageDisk *OpenWrtFeature::selectedDisk() const
+{
+    const QString name = itemKey(m_storageTree->currentItem());
+    for (const StorageDisk &disk : m_disks) {
+        if (disk.block.name == name)
+            return &disk;
+    }
+    return nullptr;
+}
+
+void OpenWrtFeature::mountAtBoot()
+{
+    const StorageDisk *disk = selectedDisk();
+    if (!disk) {
+        showStatus(QStringLiteral("Select a disk first."));
+        return;
+    }
+    bool ok = false;
+    const QString current = disk->bootTarget.isEmpty() ? (disk->mounted() ? disk->mount : suggestedMountPath(disk->block)) : disk->bootTarget;
+    const QString path = QInputDialog::getText(this, QStringLiteral("Mount at boot"), QStringLiteral("Folder on the router where %1 appears:").arg(disk->title()),
+                                               QLineEdit::Normal, current, &ok).trimmed();
+    if (!ok)
+        return;
+    if (const QString problem = mountPathProblem(path); !problem.isEmpty()) {
+        showStatus(problem, true);
+        return;
+    }
+    if (!disk->fstabSection.isEmpty())
+        stage(QStringLiteral("fstab"), disk->fstabSection, {{QStringLiteral("target"), path}, {QStringLiteral("enabled"), QStringLiteral("1")}}, {},
+              QStringLiteral("Mount for %1").arg(disk->title()));
+    else
+        addSection(QStringLiteral("fstab"), QStringLiteral("mount"), {}, mountSectionValues(disk->block, path), QStringLiteral("Mount for %1").arg(disk->title()));
+}
+
+void OpenWrtFeature::stopMountAtBoot()
+{
+    const StorageDisk *disk = selectedDisk();
+    if (!disk || disk->fstabSection.isEmpty())
+        return;
+    deleteSection(QStringLiteral("fstab"), disk->fstabSection, QStringLiteral("Mount for %1").arg(disk->title()));
+}
+
+void OpenWrtFeature::unmountDisk()
+{
+    const StorageDisk *disk = selectedDisk();
+    if (!disk || !disk->mounted())
+        return;
+    const QString mount = disk->mount;
+    if (!confirm(QStringLiteral("Unmount %1?").arg(disk->title()),
+                 QStringLiteral("Shares and programs using %1 lose access. Afterwards the disk can be unplugged safely.").arg(mount), QStringLiteral("Unmount")))
+        return;
+    m_client.exec(QStringLiteral("/bin/umount"), {mount}, [this, mount](const RpcResult &result) {
+        report(result, QStringLiteral("%1 unmounted. You can unplug the disk now.").arg(mount));
+        loadStorage();
+    }, 60000);
+}
+
+void OpenWrtFeature::mountAll()
+{
+    if (m_changes.contains(QStringLiteral("fstab")))
+        showStatus(QStringLiteral("Apply your storage changes first: the router mounts what is saved, not what is waiting."), true);
+    m_client.exec(QStringLiteral("/sbin/block"), {QStringLiteral("mount")}, [this](const RpcResult &result) {
+        report(result, QStringLiteral("The router mounted its disks."));
+        loadStorage();
+    }, 60000);
+}
+
+void OpenWrtFeature::setAutoMount(bool on)
+{
+    const QJsonObject values{{QStringLiteral("anon_mount"), on ? QStringLiteral("1") : QStringLiteral("0")}, {QStringLiteral("auto_mount"), QStringLiteral("1")}};
+    const QList<UciSection> globals = sections(QStringLiteral("fstab"), QStringLiteral("global"));
+    if (globals.isEmpty())
+        addSection(QStringLiteral("fstab"), QStringLiteral("global"), {}, values, QStringLiteral("Automatic mounting"));
+    else
+        stage(QStringLiteral("fstab"), globals.first().name, values, {}, QStringLiteral("Automatic mounting"));
+}
+
+void OpenWrtFeature::shareDisk()
+{
+    const QString config = shareConfig(m_advancedConfigs);
+    const StorageDisk *disk = selectedDisk();
+    if (config.isEmpty()) {
+        showStatus(QStringLiteral("Install ksmbd-server and luci-app-ksmbd on the Packages tab to share disks."), true);
+        return;
+    }
+    if (!disk || !disk->mounted()) {
+        showStatus(QStringLiteral("Select a mounted disk to share."), true);
+        return;
+    }
+    const QString path = disk->mount;
+    bool ok = false;
+    QString fallback = disk->block.label.isEmpty() ? disk->block.name : disk->block.label;
+    fallback.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9._-]")), QStringLiteral("_"));
+    const QString name = QInputDialog::getText(this, QStringLiteral("Share on network"), QStringLiteral("Name others see for %1:").arg(path), QLineEdit::Normal, fallback, &ok).trimmed();
+    if (!ok)
+        return;
+    if (const QString problem = shareNameProblem(name); !problem.isEmpty()) {
+        showStatus(problem, true);
+        return;
+    }
+    const bool guests = QMessageBox::question(this, QStringLiteral("Guest access"),
+                                              QStringLiteral("Let anyone on your network open %1 without a password?").arg(name),
+                                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No) == QMessageBox::Yes;
+    addSection(config, shareSectionType(config), {},
+               {{QStringLiteral("name"), name}, {QStringLiteral("path"), path}, {QStringLiteral("read_only"), QStringLiteral("no")},
+                {QStringLiteral("guest_ok"), guests ? QStringLiteral("yes") : QStringLiteral("no")},
+                {QStringLiteral("create_mask"), QStringLiteral("0666")}, {QStringLiteral("dir_mask"), QStringLiteral("0777")}},
+               QStringLiteral("Share %1").arg(name));
+}
+
+void OpenWrtFeature::stopSharing()
+{
+    const QString config = shareConfig(m_advancedConfigs);
+    QTreeWidgetItem *item = m_shareTree->currentItem();
+    if (config.isEmpty() || !item)
+        return;
+    if (!confirm(QStringLiteral("Stop sharing %1?").arg(item->text(0)), QStringLiteral("The folder stays on the disk; it is just no longer shared once you apply."), QStringLiteral("Stop sharing")))
+        return;
+    deleteSection(config, itemKey(item), QStringLiteral("Share %1").arg(item->text(0)));
+}
+
+void OpenWrtFeature::installStorageSupport()
+{
+    const QStringList packages = usbStoragePackages();
+    if (!confirm(QStringLiteral("Install USB storage support?"), QStringLiteral("This installs %1. The router needs internet access to download them.").arg(packages.join(QStringLiteral(", "))),
+                 QStringLiteral("Install")))
+        return;
+    m_tabs->setCurrentIndex(PackagesTab);
+    packageAction(QStringLiteral("install"), packages.join(QLatin1Char(' ')));
+}
+
 void OpenWrtFeature::renderServices()
 {
     const QString keep = itemKey(m_serviceTree->currentItem());
@@ -2002,7 +2253,8 @@ void OpenWrtFeature::packageAction(const QString &action, const QString &name)
         showStatus(QStringLiteral("The router's package manager is not available to ForkMesh."), true);
         return;
     }
-    if (action != QStringLiteral("update") && !validPackageName(name)) {
+    const QStringList requested = name.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    if (action != QStringLiteral("update") && (requested.isEmpty() || !std::all_of(requested.begin(), requested.end(), validPackageName))) {
         showStatus(name.isEmpty() ? QStringLiteral("Choose a package first.") : QStringLiteral("\"%1\" is not a package name.").arg(name), true);
         return;
     }
@@ -2011,8 +2263,9 @@ void OpenWrtFeature::packageAction(const QString &action, const QString &name)
                     QStringLiteral("Remove"), true))
         return;
     const PackageTool tool = packageTools().at(m_packageTool);
-    m_packageOutput->setPlainText(QStringLiteral("Running %1 %2…").arg(tool.program, packageArguments(tool, action, name).join(QLatin1Char(' '))));
-    m_client.exec(tool.program, packageArguments(tool, action, name), [this, action, name](const RpcResult &result) {
+    const QStringList names = name.isEmpty() ? QStringList() : name.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    m_packageOutput->setPlainText(QStringLiteral("Running %1 %2…").arg(tool.program, packageArguments(tool, action, names).join(QLatin1Char(' '))));
+    m_client.exec(tool.program, packageArguments(tool, action, names), [this, action, name](const RpcResult &result) {
         const QString out = result.data.value(QStringLiteral("stdout")).toString();
         const QString err = result.data.value(QStringLiteral("stderr")).toString();
         QString text = (out + (err.isEmpty() ? QString() : QStringLiteral("\n") + err)).trimmed();
@@ -2027,6 +2280,8 @@ void OpenWrtFeature::packageAction(const QString &action, const QString &name)
             m_packageName->clear();
         if (action != QStringLiteral("update"))
             loadPackages();
+        if (action == QStringLiteral("install") && result.ok)
+            loadStorage();
     }, 300000);
 }
 
@@ -2422,7 +2677,7 @@ void OpenWrtFeature::selectTreeItem(QTreeWidget *tree, const QString &key)
 void OpenWrtFeature::filterTrees()
 {
     const QStringList global{m_query};
-    for (QTreeWidget *tree : {m_interfaceTree, m_wifiTree, m_clientTree, m_forwardTree, m_serviceTree, m_advancedTree})
+    for (QTreeWidget *tree : {m_interfaceTree, m_wifiTree, m_clientTree, m_forwardTree, m_storageTree, m_shareTree, m_serviceTree, m_advancedTree})
         applyFilter(tree, global);
     applyFilter(m_packageTree, {m_query, m_packageFilter ? m_packageFilter->text().trimmed() : QString()});
 }
@@ -2453,6 +2708,9 @@ QList<forkmesh::market::NativePackageSearchHit> OpenWrtFeature::searchHits(const
     for (const UciSection &redirect : sections(QStringLiteral("firewall"), QStringLiteral("redirect")))
         add(QStringLiteral("forward:") + redirect.name, redirect.option(QStringLiteral("name"), redirect.name),
             QStringLiteral("Router port forward · %1 → %2").arg(redirect.option(QStringLiteral("src_dport")), redirect.option(QStringLiteral("dest_ip"))));
+    for (const StorageDisk &disk : m_disks)
+        add(QStringLiteral("storage:") + disk.block.name, disk.title(),
+            QStringLiteral("Router disk · %1").arg(disk.mounted() ? disk.mount : QStringLiteral("not mounted")));
     for (const Service &service : m_services)
         add(QStringLiteral("service:") + service.name, service.name, QStringLiteral("Router service · %1").arg(service.running ? QStringLiteral("running") : QStringLiteral("stopped")));
     for (const Package &package : m_packages)
@@ -2477,6 +2735,9 @@ void OpenWrtFeature::activateSearchHit(const QString &id)
     } else if (kind == QStringLiteral("forward")) {
         m_tabs->setCurrentIndex(ForwardsTab);
         selectTreeItem(m_forwardTree, key);
+    } else if (kind == QStringLiteral("storage")) {
+        m_tabs->setCurrentIndex(StorageTab);
+        selectTreeItem(m_storageTree, key);
     } else if (kind == QStringLiteral("service")) {
         m_tabs->setCurrentIndex(ServicesTab);
         selectTreeItem(m_serviceTree, key);

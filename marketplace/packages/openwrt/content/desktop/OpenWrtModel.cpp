@@ -439,7 +439,7 @@ QList<PackageTool> packageTools()
             {QStringLiteral("/bin/opkg"), false}};
 }
 
-QStringList packageArguments(const PackageTool &tool, const QString &action, const QString &name)
+QStringList packageArguments(const PackageTool &tool, const QString &action, const QStringList &names)
 {
     const bool apk = !tool.wrapper && tool.program.endsWith(QStringLiteral("/apk"));
     if (action == QStringLiteral("list")) {
@@ -450,9 +450,9 @@ QStringList packageArguments(const PackageTool &tool, const QString &action, con
     if (action == QStringLiteral("update"))
         return {QStringLiteral("update")};
     if (action == QStringLiteral("install"))
-        return {apk ? QStringLiteral("add") : QStringLiteral("install"), name};
+        return QStringList{apk ? QStringLiteral("add") : QStringLiteral("install")} + names;
     if (action == QStringLiteral("remove"))
-        return {apk ? QStringLiteral("del") : QStringLiteral("remove"), name};
+        return QStringList{apk ? QStringLiteral("del") : QStringLiteral("remove")} + names;
     return {};
 }
 
@@ -663,6 +663,167 @@ QString choiceLabel(const QList<Choice> &choices, const QString &value)
             return choice.label;
     }
     return value;
+}
+
+bool isStorageDevice(const QString &name)
+{
+    static const QRegularExpression pattern(QStringLiteral("^(sd[a-z]+\\d*|mmcblk\\d+(p\\d+)?|nvme\\d+n\\d+(p\\d+)?|hd[a-z]+\\d*|vd[a-z]+\\d*)$"));
+    return pattern.match(name).hasMatch();
+}
+
+QList<BlockDevice> parseBlockDevices(const QJsonObject &devices)
+{
+    QList<BlockDevice> blocks;
+    for (auto it = devices.begin(); it != devices.end(); ++it) {
+        const QJsonObject raw = it.value().toObject();
+        BlockDevice block;
+        block.device = raw.value(QStringLiteral("dev")).toString(QStringLiteral("/dev/") + it.key());
+        block.name = block.device.section(QLatin1Char('/'), -1);
+        if (!isStorageDevice(block.name))
+            continue;
+        block.uuid = raw.value(QStringLiteral("uuid")).toString();
+        block.label = raw.value(QStringLiteral("label")).toString();
+        block.type = raw.value(QStringLiteral("type")).toString();
+        block.mount = raw.value(QStringLiteral("mount")).toString();
+        block.size = raw.value(QStringLiteral("size")).toVariant().toLongLong();
+        blocks << block;
+    }
+    std::sort(blocks.begin(), blocks.end(), [](const BlockDevice &left, const BlockDevice &right) { return left.name < right.name; });
+    return blocks;
+}
+
+QList<MountPoint> parseMountPoints(const QJsonObject &data)
+{
+    QList<MountPoint> mounts;
+    for (const QJsonValue &value : data.value(QStringLiteral("result")).toArray()) {
+        const QJsonObject raw = value.toObject();
+        MountPoint mount;
+        mount.device = raw.value(QStringLiteral("device")).toString();
+        mount.mount = raw.value(QStringLiteral("mount")).toString();
+        mount.type = raw.value(QStringLiteral("type")).toString();
+        mount.size = raw.value(QStringLiteral("size")).toVariant().toLongLong();
+        mount.avail = raw.value(QStringLiteral("avail")).toVariant().toLongLong();
+        if (!mount.mount.isEmpty())
+            mounts << mount;
+    }
+    return mounts;
+}
+
+QString StorageDisk::title() const
+{
+    return block.label.isEmpty() ? block.name : QStringLiteral("%1 (%2)").arg(block.label, block.name);
+}
+
+QList<StorageDisk> storageDisks(const QList<BlockDevice> &blocks, const QList<MountPoint> &mounts, const QList<UciSection> &fstab)
+{
+    QList<StorageDisk> disks;
+    for (const BlockDevice &block : blocks) {
+        StorageDisk disk;
+        disk.block = block;
+        disk.mount = block.mount;
+        for (const MountPoint &mount : mounts) {
+            if (mount.device == block.device || (!disk.mount.isEmpty() && mount.mount == disk.mount)) {
+                disk.mount = mount.mount;
+                disk.size = mount.size;
+                disk.avail = mount.avail;
+                disk.usageKnown = mount.size > 0;
+                break;
+            }
+        }
+        if (!disk.usageKnown)
+            disk.size = block.size;
+        for (const UciSection &section : fstab) {
+            if (section.type != QStringLiteral("mount"))
+                continue;
+            const QString uuid = section.option(QStringLiteral("uuid"));
+            const QString device = section.option(QStringLiteral("device"));
+            const QString label = section.option(QStringLiteral("label"));
+            if ((!uuid.isEmpty() && uuid.compare(block.uuid, Qt::CaseInsensitive) == 0) || (!device.isEmpty() && device == block.device)
+                || (!label.isEmpty() && label == block.label)) {
+                disk.fstabSection = section.name;
+                disk.bootTarget = section.option(QStringLiteral("target"));
+                disk.bootEnabled = section.flag(QStringLiteral("enabled"), true);
+                break;
+            }
+        }
+        disks << disk;
+    }
+    return disks;
+}
+
+QString mountPathProblem(const QString &path)
+{
+    static const QRegularExpression pattern(QStringLiteral("^/(mnt|media|srv|data)/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$"));
+    if (!pattern.match(path).hasMatch() || path.contains(QStringLiteral("/../")) || path.endsWith(QStringLiteral("/..")) || path.contains(QStringLiteral("/./")))
+        return QStringLiteral("Use a folder under /mnt, /media, /srv or /data, for example /mnt/usb, with letters, digits, dots, dashes and underscores.");
+    return {};
+}
+
+QString suggestedMountPath(const BlockDevice &block)
+{
+    QString name = block.label;
+    name.replace(QRegularExpression(QStringLiteral("[^A-Za-z0-9._-]")), QStringLiteral("_"));
+    while (name.startsWith(QLatin1Char('.')))
+        name.remove(0, 1);
+    return QStringLiteral("/mnt/") + (name.isEmpty() ? block.name : name);
+}
+
+QStringList usbStoragePackages()
+{
+    return {QStringLiteral("kmod-usb-storage"), QStringLiteral("kmod-usb-storage-uas"), QStringLiteral("block-mount"),
+            QStringLiteral("kmod-fs-ext4"), QStringLiteral("kmod-fs-vfat"), QStringLiteral("kmod-fs-exfat")};
+}
+
+QString shareConfig(const QStringList &configs)
+{
+    if (configs.contains(QStringLiteral("ksmbd")))
+        return QStringLiteral("ksmbd");
+    if (configs.contains(QStringLiteral("samba4")))
+        return QStringLiteral("samba4");
+    return {};
+}
+
+QString shareSectionType(const QString &config)
+{
+    if (config == QStringLiteral("ksmbd"))
+        return QStringLiteral("share");
+    if (config == QStringLiteral("samba4"))
+        return QStringLiteral("sambashare");
+    return {};
+}
+
+QList<Share> parseShares(const QList<UciSection> &sections)
+{
+    QList<Share> shares;
+    for (const UciSection &section : sections) {
+        if (section.type != QStringLiteral("share") && section.type != QStringLiteral("sambashare"))
+            continue;
+        const auto yes = [&section](const QString &key) {
+            const QString value = section.option(key).toLower();
+            return value == QStringLiteral("yes") || value == QStringLiteral("1") || value == QStringLiteral("true");
+        };
+        shares << Share{section.name, section.option(QStringLiteral("name"), section.name), section.option(QStringLiteral("path")),
+                        yes(QStringLiteral("read_only")), yes(QStringLiteral("guest_ok"))};
+    }
+    return shares;
+}
+
+QString shareNameProblem(const QString &name)
+{
+    static const QRegularExpression pattern(QStringLiteral("^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$"));
+    if (!pattern.match(name).hasMatch())
+        return QStringLiteral("A share name uses up to 32 letters, digits, dots, dashes and underscores.");
+    return {};
+}
+
+QJsonObject mountSectionValues(const BlockDevice &block, const QString &target)
+{
+    QJsonObject values{{QStringLiteral("target"), target}, {QStringLiteral("enabled"), QStringLiteral("1")}};
+    if (!block.uuid.isEmpty())
+        values.insert(QStringLiteral("uuid"), block.uuid);
+    else
+        values.insert(QStringLiteral("device"), block.device);
+    return values;
 }
 
 QString certificateFingerprint(const QByteArray &der)

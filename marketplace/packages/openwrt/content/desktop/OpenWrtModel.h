@@ -100,7 +100,7 @@ struct PackageTool {
 
 QList<PackageTool> packageTools();
 QList<Package> parseInstalledPackages(const QString &text);
-QStringList packageArguments(const PackageTool &tool, const QString &action, const QString &name = {});
+QStringList packageArguments(const PackageTool &tool, const QString &action, const QStringList &names = {});
 bool validPackageName(const QString &name);
 
 struct Service {
@@ -148,6 +148,59 @@ QList<Choice> encryptionChoices();
 QList<Choice> protocolChoices();
 QList<Choice> forwardProtocolChoices();
 QString choiceLabel(const QList<Choice> &choices, const QString &value);
+
+struct BlockDevice {
+    QString name;
+    QString device;
+    QString uuid;
+    QString label;
+    QString type;
+    QString mount;
+    qint64 size = 0;
+};
+
+struct MountPoint {
+    QString device;
+    QString mount;
+    QString type;
+    qint64 size = 0;
+    qint64 avail = 0;
+};
+
+struct StorageDisk {
+    BlockDevice block;
+    QString mount;
+    qint64 size = 0;
+    qint64 avail = 0;
+    bool usageKnown = false;
+    QString fstabSection;
+    QString bootTarget;
+    bool bootEnabled = false;
+
+    QString title() const;
+    bool mounted() const { return !mount.isEmpty(); }
+};
+
+struct Share {
+    QString section;
+    QString name;
+    QString path;
+    bool readOnly = false;
+    bool guests = false;
+};
+
+bool isStorageDevice(const QString &name);
+QList<BlockDevice> parseBlockDevices(const QJsonObject &devices);
+QList<MountPoint> parseMountPoints(const QJsonObject &data);
+QList<StorageDisk> storageDisks(const QList<BlockDevice> &blocks, const QList<MountPoint> &mounts, const QList<UciSection> &fstab);
+QString mountPathProblem(const QString &path);
+QString suggestedMountPath(const BlockDevice &block);
+QStringList usbStoragePackages();
+QString shareConfig(const QStringList &configs);
+QString shareSectionType(const QString &config);
+QList<Share> parseShares(const QList<UciSection> &sections);
+QString shareNameProblem(const QString &name);
+QJsonObject mountSectionValues(const BlockDevice &block, const QString &target);
 
 QString certificateFingerprint(const QByteArray &der);
 QString firmwareProblem(const QJsonObject &validation);

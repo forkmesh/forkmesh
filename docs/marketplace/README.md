@@ -241,8 +241,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `backups`, `cleanup` ([cleanup.md](cleanup.md)), `computer-security`
   ([computer-security.md](computer-security.md)), `phone-security`, its
   iPhone and Android counterpart ([phone-security.md](phone-security.md)).
-- **Home network:** `openwrt` (manage an OpenWrt router on the user's LAN from
-  the desktop over its ubus JSON-RPC endpoint; [openwrt.md](openwrt.md)).
+- **Home network:** `openwrt` (manage an OpenWrt router and its USB storage on
+  the user's LAN from the desktop, iPhone and Android over its ubus JSON-RPC
+  endpoint; [openwrt.md](openwrt.md)).
 - **Desktop and phone extras:** `capture`, `discord`,
   `browser-extension`, `design-system`, `sign-in`, `speech`, `glasses-alert`,
   `tour`, `people` ([people.md](people.md)), `aquarium`
