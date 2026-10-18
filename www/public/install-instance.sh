@@ -234,6 +234,10 @@ actions = c.get("actions", True)
 if not isinstance(actions, bool):
     sys.exit("Setting actions must be true or false.")
 values["actions"] = "1" if actions else "0"
+powered_by = c.get("poweredBy", True)
+if not isinstance(powered_by, bool):
+    sys.exit("Setting poweredBy must be true or false.")
+values["poweredBy"] = "1" if powered_by else "0"
 values["logoType"] = values["logoData"] = ""
 logo = str(c.get("logo") or "").strip()
 if logo and not update:
@@ -597,7 +601,7 @@ save_logo() {
 
 build_stamp() {
   printf '%s\n' "$(git -C "$SRC" rev-parse HEAD)" "$INSTANCE_INSTALLER_VERSION" "$EXCLUDED_PACKAGES" "$CFG_projectName" \
-    "$(files_digest "$SRC/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")"
+    "$(files_digest "$SRC/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}"
 }
 
 release_version() {
@@ -642,6 +646,7 @@ build_app() {
   local brand_args=(--name "$CFG_projectName" --dist "$SRC/app/dist") logo
   logo="$(logo_file)"
   if [ -n "$logo" ]; then brand_args+=(--logo "$logo"); fi
+  if [ "$CFG_poweredBy" = "0" ]; then brand_args+=(--no-powered-by); fi
   "$VENV/bin/python" "$SRC/app/tools/apply_instance_brand.py" "${brand_args[@]}"
   chmod -R a+rX "$SRC" "$VENV"
   write_build_info
@@ -710,6 +715,7 @@ print(encode(seed), encode(public))
     echo "INSTANCE_FLAGSHIP_NODE=$NODE_NAME"
     echo "INSTANCE_OWNER=$CFG_ownerName"
     echo "INSTANCE_UPSTREAM=$(upstream_page)"
+    echo "INSTANCE_POWERED_BY=$CFG_poweredBy"
     echo "INSTANCE_LOGIN_MARKER=$LOGIN_MARKER"
     echo "INSTANCE_LOGIN_DEADLINE=$login_deadline"
     echo "INSTANCE_UPDATE_REQUEST=$UPDATE_REQUEST_DIR/request"
@@ -763,8 +769,9 @@ print(encode(seed), encode(public))
 import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
-        "sourceUrl", "sourceRef", "plugins", "actions"]
+        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy"]
 values = dict(zip(keys, sys.argv[1:]))
+values["poweredBy"] = values["poweredBy"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
 values["plugins"] = [p for p in values["plugins"].split(",") if p]
@@ -773,7 +780,7 @@ print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$CFG_actions" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "$CFG_actions" "$CFG_poweredBy" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."

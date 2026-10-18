@@ -1735,8 +1735,10 @@ class Default:
                 "branded": instance_branded(self.env),
                 "logo": instance_logo_url(self.env),
                 "loginDeadline": login_deadline,
-                "poweredBy": {"name": "ForkMesh",
-                              "url": "https://forkmesh.com/"},
+                "poweredBy": ({"name": "ForkMesh",
+                               "url": "https://forkmesh.com/"}
+                              if str(getattr(self.env, "INSTANCE_POWERED_BY", "")
+                                     or "1").strip() != "0" else None),
                 "plugins": instance_features.describe(self.env),
                 "offsiteHosts": list(instance_features.OFFSITE_HOSTS),
                 "theme": await self._instance_theme(),
