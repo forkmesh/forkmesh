@@ -228,3 +228,44 @@ def test_an_owner_email_held_by_another_account_is_refused():
     run(entry, spec(owners=[owner()]))
     with pytest.raises(boot.BootstrapError, match="owner linus"):
         run(entry, spec(owners=[owner(username="linus")]))
+
+
+SEED = "11" * 32
+
+
+def test_the_actions_bot_is_derived_from_the_seed_and_joins_the_org():
+    entry = Entry()
+    runtime = SimpleNamespace(entry=entry, env=object())
+    result = asyncio.run(boot.bootstrap(runtime, boot.read_spec(spec()), SEED))
+    assert result["actionsBot"] == "acme-actions"
+    bot = user(entry, "acme-actions")
+    assert bot["data"]["kind"] == "node" and bot["data"]["actionsBot"] is True
+    assert bot["data"]["pubkey"] == boot.bot_public_key(SEED)
+    assert len(bot["data"]["pubkey"]) == 43
+    role = entry.db.execute(
+        "SELECT role FROM org_members WHERE member_bi='bi:acme-actions'"
+    ).fetchone()[0]
+    assert role == "maintainer"
+    assert "actionsBot" not in run(Entry(), spec())
+    with pytest.raises(boot.BootstrapError):
+        asyncio.run(boot.bootstrap(runtime, boot.read_spec(spec()), "xyz"))
+
+
+def test_instance_runner_registers_a_trusted_pool_runner():
+    entry = Entry()
+    entry.db.executescript(
+        (Path(__file__).resolve().parents[2] / "migrations"
+         / "0193_runner_nodes.sql").read_text()
+        .split("-- The runtime schema text changed")[0])
+    entry.db.execute(
+        "ALTER TABLE runner_nodes ADD COLUMN actions_trusted INTEGER "
+        "NOT NULL DEFAULT 0")
+    runtime = SimpleNamespace(entry=entry, env=object())
+    for key in ("B" * 43, "C" * 43):
+        result = asyncio.run(boot.register_runner(
+            runtime, "box-runner", key, "acme"))
+    assert result["actionsTrusted"] is True
+    row = dict(entry.db.execute("SELECT * FROM runner_nodes").fetchone())
+    assert (row["public_key"], row["scope"], row["allowed_owners"],
+            row["status"], row["actions_trusted"]) == (
+        "C" * 43, "pool", '["acme"]', "active", 1)

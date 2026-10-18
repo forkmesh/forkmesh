@@ -1225,7 +1225,8 @@ def test_an_organization_owner_push_to_a_core_admits_and_records_it():
         "_recorded_pushes"]
     assert (owner, repo, node, account) == ("alice", "app", "core-a", "jett")
     assert report == {"total": 2, "updates": [
-        dict(updates["updates"][0]), dict(updates["updates"][1], commits=0)]}
+        dict(updates["updates"][0]), dict(updates["updates"][1], commits=0)],
+        "actions": False}
     assert extra["core"] is True and extra["state"] == "e" * 64
     assert extra["credential"] == "key"
     assert "tagMoves" not in fetches[0][0]
@@ -1305,7 +1306,7 @@ def test_ref_updates_header_is_validated_field_by_field():
     ]})
     assert parse(_Up(raw)) == {"total": 5, "updates": [
         {"ref": "refs/heads/x", "old": "0" * 40, "new": "1" * 40,
-         "commits": 2}]}
+         "commits": 2}], "actions": False}
 
 
 def test_a_key_among_the_owners_signers_still_gets_the_org_write_check():

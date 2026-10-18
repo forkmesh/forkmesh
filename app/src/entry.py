@@ -1126,6 +1126,8 @@ _URL_EXPORT_NAMES = (
     "REPO_PULL_MERGE_RE", "REPO_PULL_UPDATE_RE", "REPO_PULL_RULES_RE",
     "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE",
     "REPO_ACTION_RUNS_RE", "REPO_ACTION_CONTROL_RE", "REPO_DISCUSSIONS_RE",
+    "REPO_ACTION_RUN_LOG_RE", "REPO_ACTION_SECRETS_RE",
+    "ORG_ACTION_SECRETS_RE",
     "REPO_PENDING_RE", "REPO_SUBSCRIBE_RE", "REPO_BOUNTY_RE",
     "REPO_SHARES_RE", "REPO_SECURITY_SCANS_RE", "REPO_MIRRORS_RE",
     "REPO_TRAFFIC_RE",
@@ -50347,6 +50349,8 @@ async def repository_actions_status_handler(env, request, owner, repo):
 _repository_actions = _LazyModule("repository_actions")
 repository_actions_control_handler = _repository_actions.export(
     "repository_actions_control_handler")
+repository_actions_run_log_handler = _repository_actions.export(
+    "repository_actions_run_log_handler")
 
 
 async def _organization_owner_can_merge_repo(
@@ -51263,7 +51267,8 @@ def _ref_updates_from(upstream):
         total = max(len(updates), int(value.get("total") or 0))
     except (TypeError, ValueError, AttributeError):
         total = len(updates)
-    return {"total": total, "updates": updates}
+    actions = isinstance(value, dict) and value.get("actions") is True
+    return {"total": total, "updates": updates, "actions": actions}
 
 
 def _core_push_nodes(env):
@@ -51686,6 +51691,7 @@ def _cron_due_phases(minute_slot):
         "mirror-health",
         "mail-log",
         "self-deploy-pings",
+        "actions-schedule",
     ]
     # Preserve one-minute sampling and low-latency in-product Pings, but do not
     # wake provider/network work 1,440 times a day when its public freshness
@@ -51955,7 +51961,20 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await run_badge_sweep(env)
     if phase == "workflow-schedules":
         return await run_due_workflow_schedules(env)
+    if phase == "actions-schedule":
+        return await _actions_schedule_cron(env, minute)
     raise ValueError("unknown cron phase")
+
+
+async def _actions_schedule_cron(env, minute_slot):
+    if not str(getattr(env, "ACTIONS_INSTANCE_RUNNER", "") or "").strip():
+        return 0
+    await ensure_schema(env)
+    import actions_cron
+    import runner_leases
+    runner_leases._bind_runtime(globals())
+    return await actions_cron.run(
+        runner_leases.WorkerRuntime(env, None), minute_slot)
 
 
 def _cron_tick_phase_order(minute_slot):
