@@ -41,6 +41,8 @@ WORLD_MAX_CONNECTIONS = 64
 # in the room. Keep a separate ceiling so a busy public status page can never
 # consume avatar capacity.
 STATUS_SUBSCRIBER_MAX_CONNECTIONS = 2048
+WORLD_MAX_WATCHERS = 128
+WORLD_WATCH_FRAME_TYPES = frozenset({"join", "presence", "move", "leave"})
 # Town and the original Office remain compact, but marketplace district
 # packages may place their islands thousands of units out (the aquarium Sky
 # Office package sits 14,400 units down its hyperloop axis). Presence still
@@ -133,6 +135,7 @@ WORLD_SPACE_VALUES = frozenset({
     "space-station", "code-planet", "organization-region", "planet-atlas",
     "office-campus", "office-lobby", "office-marketing",
     "office-engineering", "office-infrastructure", "office-rooftop",
+    "visiting",
 })
 # Spaces owned by marketplace district packages are namespaced
 # "pkg-<package-id>-<floor>". The relay never learns which packages exist, so
@@ -191,7 +194,7 @@ WORLD_PUBLIC_FIELDS = (
     "firstSeenMinutes", "joinedAt",
     "accountStatus", "nodeCount", "space",
     "publicDoor", "statusEmoji", "statusNote", "outfitColor",
-    "outfitStyle", "faceImage", "solana",
+    "outfitStyle", "faceImage", "solana", "home",
     "x", "y", "z", "yaw", "lookYaw", "lookPitch", "moving", "updatedAt",
 )
 
@@ -310,7 +313,7 @@ def movement_step_credit(previous, current, observed_at, now, carry=0.0):
         accumulated - steps * WORLD_STEP_LENGTH_UNITS, 4), now
 
 
-def account_presence_key(name):
+def account_presence_key(name, home=""):
     """Fold one ticket-verified account name into a single presence identity.
 
     Two sockets share an identity only when the relay itself verified the same
@@ -321,7 +324,10 @@ def account_presence_key(name):
     clean = clean_display_name(raw, "")
     # Anything that did not survive sanitizing unchanged collapsed onto a
     # generic fallback label; folding on that would combine unrelated people.
-    return clean.casefold() if raw and clean == raw else ""
+    if not raw or clean != raw:
+        return ""
+    home = str(home or "").strip().lower()
+    return clean.casefold() + ("@" + home if home else "")
 
 
 def _emoji_base(character):
@@ -604,6 +610,7 @@ def default_presence(peer_id, now):
         # The chest wallet-QR address. A self-claim like the display name,
         # but only a ticket-authenticated account may wear one.
         "solana": "",
+        "home": "",
         "x": 0.0,
         "y": 0.0,
         "z": 0.0,
@@ -878,7 +885,8 @@ def sanitize_message(payload, current, now, country_source="",
         if "faceImage" in payload:
             state["faceImage"] = (
                 payload.get("faceImage") is True
-                and state.get("accountStatus") != "Guest")
+                and state.get("accountStatus") != "Guest"
+                and not state.get("home"))
         # The chest wallet QR shows an address its owner already chose to
         # publish on their account. It is validated as base58 and gated to
         # authenticated accounts so an anonymous socket cannot dress itself
@@ -888,6 +896,7 @@ def sanitize_message(payload, current, now, country_source="",
             state["solana"] = (
                 raw_solana
                 if state.get("accountStatus") != "Guest"
+                and not state.get("home")
                 and _SOLANA_ADDRESS_RE.fullmatch(raw_solana)
                 else "")
         if "space" in payload:

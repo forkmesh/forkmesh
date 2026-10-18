@@ -38,7 +38,11 @@ import {
   rankedMembersByEngagement,
 } from "../member-engagement.js";
 import { newestMemberName } from "../members-circle.js";
-import { worldCeilingForSpace, worldRadiusForSpace } from "../movement.js";
+import {
+  WORLD_MESH_SPACE,
+  worldCeilingForSpace,
+  worldRadiusForSpace,
+} from "../movement.js";
 import {
   clamp,
   disposeObject3D,
@@ -250,7 +254,9 @@ export function functions({
       ctx.remoteLabels.get(id)?.remove();
       ctx.remoteLabels.delete(id);
     });
-    updateNeighborhoodHomes(players);
+    updateNeighborhoodHomes(
+      players.filter((player) => player?.space !== WORLD_MESH_SPACE),
+    );
   }
 
   function setRemotePlayerMovement(id, movement = {}) {

@@ -244,6 +244,7 @@ LAZY_MODULES = {
     "world_events.py",
     "world_infrastructure.py",
     "world_link_kiosk.py",
+    "world_mesh.py",
     "world_office_tasks.py",
     "world_office_routes.py",
     "world_task_email.py",
