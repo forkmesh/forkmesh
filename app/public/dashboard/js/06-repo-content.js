@@ -2359,7 +2359,7 @@
               ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
@@ -2376,7 +2376,7 @@
               ${item.base && item.head ? `<span class="ml-1 inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 align-[2px] font-mono text-[11px] leading-[18px] text-muted-foreground"><span class="truncate">${escapeHtml(item.base)}</span><i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.head.slice(item.head.lastIndexOf(":") + 1))}</span></span>` : ""}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
+              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
               ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
           </span>
@@ -2903,7 +2903,7 @@
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
             <div class="truncate text-2xl font-bold text-foreground">${escapeHtml(title || "Pull request")}</div>
-            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${escapeHtml(author || "unknown")}</span></div>
+            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${author ? userNameHtml(author) : "unknown"}</span></div>
           </div>
           <div class="flex shrink-0 gap-6">
             ${stat(`+${formatCount(additions)}`, "Additions", "text-success")}
@@ -3159,7 +3159,7 @@
     return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
       ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
       <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${escapeHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${userNameHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
         <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
       </div>
     </article>`;
@@ -4197,7 +4197,7 @@
         <span class="hidden sm:block">${issueActorAvatarHtml(author, ev.author, "h-10 w-10", ev.type === "agent")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-            <span class="font-semibold text-foreground">${escapeHtml(author)}</span>
+            <span class="font-semibold text-foreground">${userNameHtml(author)}</span>
             <span>${ev.type === "review" ? escapeHtml(meta.label) : "commented"}</span>
             <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>
             ${anchor ? `<span class="min-w-0 truncate font-mono text-[12px]">on ${escapeHtml(anchor)}</span>` : ""}
@@ -6017,7 +6017,7 @@
           ${issueActorAvatarHtml(author, item.author, "h-7 w-7")}
           <div class="min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <span class="font-semibold text-foreground">${escapeHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
+              <span class="font-semibold text-foreground">${userNameHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
               <span class="font-mono text-muted-foreground">${escapeHtml(software)}${instance ? ` · ${escapeHtml(instance)}` : ""}</span>
             </div>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-6 ${status ? "italic text-muted-foreground" : "text-foreground"}">${escapeHtml(body)}</p>
@@ -6281,7 +6281,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
@@ -6388,8 +6388,8 @@
               ? `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 font-medium text-foreground"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`
               : `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${statePillTone} px-3 font-medium text-white"><i data-lucide="${stateIcon}" class="h-4 w-4"></i>${escapeHtml(stateLabel)}</span>`}
             <span class="min-w-0">${isPulls
-              ? `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
-              : `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
+              ? `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
+              : `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
           </div>
           ${recordTabs}
         </header>
@@ -6525,7 +6525,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                       ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
@@ -6714,7 +6714,7 @@
               <span class="hidden sm:block">${item ? issueActorAvatarHtml(item.author, item.author, "h-10 w-10") : bar("w-10", "h-10 rounded-full")}</span>
               <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                 <div class="flex items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] text-muted-foreground">
-                  ${item ? `<span><span class="font-semibold text-foreground">${escapeHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
+                  ${item ? `<span><span class="font-semibold text-foreground">${userNameHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
                 </div>
                 <div class="grid gap-2.5 px-4 py-4">
                   ${bar("w-1/4", "h-5")}${bar("w-11/12")}${bar("w-10/12")}${bar("w-7/12")}
@@ -9499,7 +9499,7 @@
           <span aria-hidden="true" class="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-[18px]">${discussionCategoryEmoji(category)}</span>
           <span class="min-w-0">
             <span data-repo-discussion-row-title class="block text-[16px] font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-            <span class="block text-[12px] text-muted-foreground">${escapeHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
+            <span class="block text-[12px] text-muted-foreground">${userNameHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
           </span>
           <span class="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground">
             ${issueActorAvatarHtml(item.author, item.authorKey || item.author, "h-5 w-5", false, false)}

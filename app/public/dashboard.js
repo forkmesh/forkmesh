@@ -435,6 +435,98 @@
     return `${publicSiteOrigin()}/`;
   }
 
+  const USER_NAME_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+  const USER_NAME_BATCH = 50;
+
+  function userNameKey(name) {
+    const key = String(name || "").trim().replace(/^@/, "").toLowerCase();
+    return USER_NAME_RE.test(key) ? key : "";
+  }
+
+  function rememberUserNameCase(name, nameCase) {
+    const key = userNameKey(name);
+    const text = String(nameCase || "").trim();
+    if (!key || text.toLowerCase() !== key) return false;
+    if (!state.userNameCases) state.userNameCases = new Map();
+    const changed = state.userNameCases.get(key) !== text;
+    state.userNameCases.set(key, text);
+    return changed;
+  }
+
+  function userDisplayName(name) {
+    const text = String(name || "").trim();
+    const key = userNameKey(text);
+    if (!key) return text;
+    const known = state.userNameCases?.get(key);
+    if (known) return text.startsWith("@") ? `@${known}` : known;
+    return text;
+  }
+
+  function userNameHtml(name) {
+    const text = String(name || "").trim();
+    const key = userNameKey(text);
+    if (!key) return escapeHtml(text);
+    return `<span data-user-name="${escapeHtml(key)}">${escapeHtml(userDisplayName(text))}</span>`;
+  }
+
+  async function loadUserNameCases(names) {
+    if (!state.userNameCasesAsked) state.userNameCasesAsked = new Set();
+    const wanted = [...new Set((names || []).map(userNameKey).filter(Boolean))]
+      .filter((key) => !state.userNameCasesAsked.has(key) && !state.userNameCases?.has(key));
+    let changed = false;
+    for (let start = 0; start < wanted.length; start += USER_NAME_BATCH) {
+      const batch = wanted.slice(start, start + USER_NAME_BATCH);
+      batch.forEach((key) => state.userNameCasesAsked.add(key));
+      try {
+        const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+          credentials: "omit",
+          headers: { accept: "application/json" },
+        });
+        const data = response.ok ? await response.json() : null;
+        for (const [key, value] of Object.entries(data?.names || {})) {
+          if (rememberUserNameCase(key, value)) changed = true;
+        }
+      } catch (_) {}
+    }
+    return changed;
+  }
+
+  function applyUserNameCases(root) {
+    const scope = root || document;
+    const nodes = scope.querySelectorAll ? [...scope.querySelectorAll("[data-user-name]")] : [];
+    for (const node of nodes) {
+      const key = node.getAttribute("data-user-name");
+      const known = state.userNameCases?.get(key);
+      if (!known) continue;
+      const text = String(node.textContent || "");
+      const at = text.startsWith("@") ? "@" : "";
+      if (text.slice(at.length).toLowerCase() === key && text !== `${at}${known}`) {
+        node.textContent = `${at}${known}`;
+      }
+    }
+    return nodes;
+  }
+
+  async function hydrateUserNames(root) {
+    const nodes = applyUserNameCases(root);
+    const keys = nodes.map((node) => node.getAttribute("data-user-name"));
+    if (await loadUserNameCases(keys)) applyUserNameCases(root);
+  }
+
+  function watchUserNames() {
+    if (state.userNameWatch || typeof MutationObserver === "undefined" || !document.body) return;
+    let timer = 0;
+    state.userNameWatch = new MutationObserver(() => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = 0;
+        void hydrateUserNames(document);
+      }, 50);
+    });
+    state.userNameWatch.observe(document.body, { childList: true, subtree: true });
+    void hydrateUserNames(document);
+  }
+
   function publicProfileUrl(name, suffix = "") {
     const handle = String(name || "").trim().toLowerCase();
     return handle
@@ -4697,9 +4789,11 @@
   }
 
   function sessionFromAccountPayload(body, base = {}) {
+    rememberUserNameCase(body.nodeName || body.name || base.nodeName || "", body.nameCase);
     const nextSession = {
       ...(base || {}),
       nodeName: body.nodeName || body.name || base.nodeName || "",
+      nameCase: body.nameCase ?? base.nameCase ?? "",
       email: body.email ?? base.email ?? "",
       status: body.status || base.status || "active",
       pubkey: body.pubkey || base.pubkey || "",
@@ -6582,6 +6676,7 @@
 
     const memberRows = members.map((member) => {
       const memberName = escapeHtml(member.name || "");
+      rememberUserNameCase(member.name, member.nameCase);
       const controls = canManage
         ? '<select data-org-member-role="' + memberName + '" class="' + ORG_INPUT_CLASS + ' h-8 py-0">' +
             orgOptionTags(ORG_ROLE_OPTIONS, member.role) + "</select>" +
@@ -6591,7 +6686,7 @@
         : orgRoleBadge(member.role);
       return '<div class="rounded-md border border-border bg-card px-3 py-2">' +
         '<div class="flex items-center gap-2">' +
-          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + memberName + "</span>" +
+          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") + "</span>" +
           controls +
         "</div>" +
         orgMemberFloorGroups(member, canManage) +
@@ -7192,7 +7287,7 @@
     const rows = teamMembers.map((member) => {
       const memberName = escapeHtml(member.name || "");
       return '<div class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">' +
-        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + memberName +
+        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") +
           (member.external
             ? ' <small class="ml-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">outside collaborator</small>'
             : "") + "</span>" +
@@ -7336,7 +7431,7 @@
     if (repoAvailability) repoAvailability.textContent = "";
     if (section === "profile-overview" || section === "profile-repositories") {
       const renderedName = ($("[data-profile-page-node-name]")?.textContent || "").trim();
-      headerContext.textContent = state.session?.nodeName || state.session?.email || renderedName || "Profile";
+      headerContext.textContent = (state.session?.nodeName ? userDisplayName(state.session.nodeName) : "") || state.session?.email || renderedName || "Profile";
       return;
     }
     if (section === "profile") {
@@ -7412,7 +7507,7 @@
     profile.nodeName = profile.nodeName || name;
     // Never show a mailbox on someone else's page — the handle is the
     // public identity here.
-    profile.email = "@" + profile.nodeName;
+    profile.email = "@" + userDisplayName(profile.nodeName);
     profile.isFollowing = Boolean(body?.social?.isFollowing);
     state.publicProfile = profile;
     renderProfilePage(profile);
@@ -7610,7 +7705,7 @@
     }
     // Owner-only affordances become a Follow button (or disappear).
     $$("[data-profile-about-edit]").forEach((el) => el.classList.add("hidden"));
-    $$("[data-profile-about-owner]").forEach((el) => { el.textContent = name; });
+    $$("[data-profile-about-owner]").forEach((el) => { el.textContent = userDisplayName(name); });
     $$("[data-profile-sidebar-slot] a[href='/dashboard/settings']").forEach((edit) => {
       const wrap = edit.parentElement;
       edit.remove();
@@ -7830,7 +7925,7 @@
   });
 
   function renderProfile(session) {
-    const name = session?.nodeName || session?.email || "My Profile";
+    const name = session?.nodeName ? userDisplayName(session.nodeName) : (session?.email || "My Profile");
     const nameEl = $("[data-dashboard-profile-name]");
     const statusEl = $("[data-dashboard-profile-status]");
     const avatar = $("[data-dashboard-profile-avatar]");
@@ -8197,7 +8292,7 @@
     const owner = $("[data-profile-about-owner]");
     const label = $("[data-profile-about-label]");
     const body = $("[data-profile-about-body]");
-    const name = String(session?.nodeName || session?.email || "forkmesh").trim() || "forkmesh";
+    const name = userDisplayName(String(session?.nodeName || session?.email || "forkmesh").trim() || "forkmesh");
     if (owner) owner.textContent = name;
     if (label) label.textContent = session?.kind === "node" ? "About this node" : "About yourself";
     if (body) {
@@ -8223,7 +8318,7 @@
     ));
     count.textContent = `${formatCount(total)} credited`;
     const links = names.map((name) =>
-      `<a class="font-medium text-accent hover:underline" href="${escapeHtml(publicProfileUrl(name))}">${escapeHtml(name)}</a>`
+      `<a class="font-medium text-accent hover:underline" href="${escapeHtml(publicProfileUrl(name))}">${userNameHtml(name)}</a>`
     ).join('<span class="text-muted-foreground">, </span>');
     if (!total) {
       list.innerHTML = '<p class="text-center text-sm text-muted-foreground">No credited referrals yet.</p>';
@@ -9769,6 +9864,7 @@
     const renameInput = $("[data-profile-rename-input]");
     const bioInput = $("[data-profile-page-bio]");
     const locationInput = $("[data-profile-page-location]");
+    const nameCaseInput = $("[data-profile-page-name-case]");
     const timezoneInput = $("[data-profile-page-timezone]");
     const mastodonInput = $("[data-profile-page-mastodon]");
     const privateInput = $("[data-profile-page-private]");
@@ -9779,7 +9875,7 @@
     const isNode = session?.kind === "node";
     avatars.forEach((avatar) => applyAvatar(avatar, session));
     nameEls.forEach((nameEl) => {
-      nameEl.textContent = name;
+      nameEl.textContent = session?.nodeName ? userDisplayName(name) : name;
     });
     renderProfileUserStatus(nameEls, session);
     emailEls.forEach((emailEl) => {
@@ -9846,6 +9942,10 @@
     }
     if (locationInput && document.activeElement !== locationInput) {
       locationInput.value = session?.profileLocation || "";
+    }
+    if (nameCaseInput && document.activeElement !== nameCaseInput) {
+      nameCaseInput.value = session?.nameCase || session?.nodeName || "";
+      nameCaseInput.placeholder = session?.nodeName || "username";
     }
     renderProfileTimezoneOptions(session);
     if (timezoneInput && document.activeElement !== timezoneInput) {
@@ -10467,6 +10567,9 @@
           : {}),
         profileBio: ($("[data-profile-page-bio]")?.value || "").trim(),
         profileLocation: ($("[data-profile-page-location]")?.value || "").trim(),
+        ...($("[data-profile-page-name-case]")
+          ? { nameCase: ($("[data-profile-page-name-case]")?.value || "").trim() }
+          : {}),
         profileTimezone: ($("[data-profile-page-timezone]")?.value || "").trim(),
         mastodon: ($("[data-profile-page-mastodon]")?.value || "").trim(),
         profilePrivate: Boolean($("[data-profile-page-private]")?.checked),
@@ -10477,6 +10580,7 @@
     } catch (error) {
       const messages = {
         bad_public_email: "Choose one of your verified email addresses.",
+        bad_name_case: "Name capitalization can only change capital letters of your username.",
         bad_mastodon: "Enter a Mastodon handle like @you@example.social.",
         bad_profile_timezone: "Enter a valid IANA time zone like Asia/Kolkata.",
         bad_profile_links: "Check your profile links and try again.",
@@ -12221,10 +12325,10 @@
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
-      `@${homeFeedActor(item)}`,
-      notificationTimeLabel(item.ts),
-      item.repo ? repoPublicKey(item.repo) : "",
-    ].filter(Boolean).map(escapeHtml).join(" · ");
+      userNameHtml(`@${homeFeedActor(item)}`),
+      escapeHtml(notificationTimeLabel(item.ts)),
+      item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
+    ].filter(Boolean).join(" · ");
     return `
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
         <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
@@ -15614,7 +15718,7 @@
       ? `<span>Logs are shown to the repository owner and organization writers.</span>`
       : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
     const facts = [
-      run.actor ? `Triggered by ${escapeHtml(run.actor)}` : "",
+      run.actor ? `Triggered by ${userNameHtml(run.actor)}` : "",
       run.event ? `on ${escapeHtml(run.event)}` : "",
       run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
     ].filter(Boolean).join(" ");
@@ -15673,7 +15777,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
-        run.actor ? `<span data-repo-actions-run-actor>${escapeHtml(run.actor)}</span>` : "",
+        run.actor ? `<span data-repo-actions-run-actor>${userNameHtml(run.actor)}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `
@@ -18365,7 +18469,7 @@
               ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
@@ -18382,7 +18486,7 @@
               ${item.base && item.head ? `<span class="ml-1 inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 align-[2px] font-mono text-[11px] leading-[18px] text-muted-foreground"><span class="truncate">${escapeHtml(item.base)}</span><i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.head.slice(item.head.lastIndexOf(":") + 1))}</span></span>` : ""}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
+              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
               ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
           </span>
@@ -18909,7 +19013,7 @@
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
             <div class="truncate text-2xl font-bold text-foreground">${escapeHtml(title || "Pull request")}</div>
-            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${escapeHtml(author || "unknown")}</span></div>
+            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${author ? userNameHtml(author) : "unknown"}</span></div>
           </div>
           <div class="flex shrink-0 gap-6">
             ${stat(`+${formatCount(additions)}`, "Additions", "text-success")}
@@ -19165,7 +19269,7 @@
     return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
       ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
       <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${escapeHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${userNameHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
         <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
       </div>
     </article>`;
@@ -20203,7 +20307,7 @@
         <span class="hidden sm:block">${issueActorAvatarHtml(author, ev.author, "h-10 w-10", ev.type === "agent")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-            <span class="font-semibold text-foreground">${escapeHtml(author)}</span>
+            <span class="font-semibold text-foreground">${userNameHtml(author)}</span>
             <span>${ev.type === "review" ? escapeHtml(meta.label) : "commented"}</span>
             <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>
             ${anchor ? `<span class="min-w-0 truncate font-mono text-[12px]">on ${escapeHtml(anchor)}</span>` : ""}
@@ -22023,7 +22127,7 @@
           ${issueActorAvatarHtml(author, item.author, "h-7 w-7")}
           <div class="min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <span class="font-semibold text-foreground">${escapeHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
+              <span class="font-semibold text-foreground">${userNameHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
               <span class="font-mono text-muted-foreground">${escapeHtml(software)}${instance ? ` · ${escapeHtml(instance)}` : ""}</span>
             </div>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-6 ${status ? "italic text-muted-foreground" : "text-foreground"}">${escapeHtml(body)}</p>
@@ -22287,7 +22391,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
@@ -22394,8 +22498,8 @@
               ? `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 font-medium text-foreground"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`
               : `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${statePillTone} px-3 font-medium text-white"><i data-lucide="${stateIcon}" class="h-4 w-4"></i>${escapeHtml(stateLabel)}</span>`}
             <span class="min-w-0">${isPulls
-              ? `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
-              : `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
+              ? `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
+              : `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
           </div>
           ${recordTabs}
         </header>
@@ -22531,7 +22635,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                       ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
@@ -22720,7 +22824,7 @@
               <span class="hidden sm:block">${item ? issueActorAvatarHtml(item.author, item.author, "h-10 w-10") : bar("w-10", "h-10 rounded-full")}</span>
               <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                 <div class="flex items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] text-muted-foreground">
-                  ${item ? `<span><span class="font-semibold text-foreground">${escapeHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
+                  ${item ? `<span><span class="font-semibold text-foreground">${userNameHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
                 </div>
                 <div class="grid gap-2.5 px-4 py-4">
                   ${bar("w-1/4", "h-5")}${bar("w-11/12")}${bar("w-10/12")}${bar("w-7/12")}
@@ -25505,7 +25609,7 @@
           <span aria-hidden="true" class="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-[18px]">${discussionCategoryEmoji(category)}</span>
           <span class="min-w-0">
             <span data-repo-discussion-row-title class="block text-[16px] font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-            <span class="block text-[12px] text-muted-foreground">${escapeHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
+            <span class="block text-[12px] text-muted-foreground">${userNameHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
           </span>
           <span class="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground">
             ${issueActorAvatarHtml(item.author, item.authorKey || item.author, "h-5 w-5", false, false)}
@@ -34173,7 +34277,7 @@
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${escapeHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${userNameHtml(item.author)}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>
@@ -44933,7 +45037,7 @@
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=915f8761c02c",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=4a3cfce15160",
+    "notes": "/dashboard-page-notes.js?v=befe2a1621ea",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "tasks": "/dashboard-page-tasks.js?v=516c5c5cbd2d",
     "workflows": "/dashboard-page-workflows.js?v=b1f9fc87fe2b",
@@ -44976,6 +45080,7 @@
     sourceOfTruth,
     state,
     submitWebIssue,
+    userNameHtml,
     validNodeName,
     get repositoriesReady() { return repositoriesReady; },
   };
@@ -45240,6 +45345,7 @@
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();
+      watchUserNames();
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

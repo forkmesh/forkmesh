@@ -482,7 +482,7 @@
     if (entry.kind === "web") return "";
     const me = String(state.session?.nodeName || "").toLowerCase();
     const actor = String(entry.actor || "");
-    return `<b>${escapeHtml(actor && actor === me ? "You" : actor || "Someone")}</b> `;
+    return `<b>${actor && actor === me ? "You" : actor ? userNameHtml(actor) : "Someone"}</b> `;
   }
 
   function renderNoteActivity() {

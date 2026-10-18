@@ -209,7 +209,7 @@ def test_issue_detail_names_the_opening_author_once():
     assert "issueActorAvatarHtml(author" not in hero
     assert "escapeHtml(author)" not in hero
     assert opening.count("issueActorAvatarHtml(author") == 1
-    assert opening.count("escapeHtml(author)") == 1
+    assert opening.count("userNameHtml(author)") == 1
 
 
 def test_issue_detail_keeps_an_empty_description_compact():
