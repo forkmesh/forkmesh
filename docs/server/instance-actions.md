@@ -205,6 +205,27 @@ Issue changes are signed by the instance's Actions bot account
 (`<owner>-actions`, an organization writer created at install). Issue events
 the bot makes do not trigger workflows.
 
+App side (`app/src/actions_job_api.py`, routed for `/api/actions/job/*` in
+`app_runtime.py`): the token's SHA-256 must match `token_hash` of a job in
+`leased`, `running` or `cancelling`. The bot key is derived from
+`ACTIONS_BOT_SEED` (64 hex characters, the raw Ed25519 seed; WebCrypto
+imports it as PKCS#8 and exports the public half). Each change is a v2
+issue event (`forkmesh-issue-event-v2\n<owner>/<repo>\n...`, owner being the
+repository's node owner) with `authorName: <org>-actions`, handed to
+`_accept_issue_submission` in `entry.py` — the same validation, inbox row and
+side effects as a web submission (it is the former POST body of
+`issues_handler`). The job token is the authority, so structural events
+(labels, status) skip the web's session check. `labels` reads the issue's
+current labels from the repository and sends the full new list. Reading an
+issue goes through the repository's gateway (`blobs` of
+`.forkmesh/issues/{open,closed}/<n>/issue-<n>.json`). A repository whose
+`issues` feature is off refuses every write, like the web.
+
+The bot is a `node`-kind account holding the derived public key, with the
+organization role `maintainer` (repository permission `maintain`, which is at
+least write). A user-owned instance (`ownerType: user`) gets the bot account
+but no membership, and its bot name is `forkmesh-actions`.
+
 `tools/forkmesh-actions.sh` wraps these calls for workflows
 (`forkmesh-actions comment 12 "Thanks!"`); `install-instance.sh` installs it
 as `/usr/local/bin/forkmesh-actions`. Subcommands: `event` (prints
@@ -220,8 +241,13 @@ arguments exit 2. Test: `app/tests/test_forkmesh_actions_helper.py`.
 ## Secrets
 
 `GET/PUT/DELETE /api/repo/<owner>/<repo>/actions/secrets[/<NAME>]` and
-`/api/org/<org>/actions/secrets[/<NAME>]`, for the repository owner or an
-organization admin. Names match `^[A-Z_][A-Z0-9_]{0,63}$`, values are up to
+`/api/org/<org>/actions/secrets[/<NAME>]` (`app/src/actions_secrets.py`),
+for the repository owner (or the account that owns its node) or an owner or
+admin of an organization linked to the repository; organization secrets for
+that organization's owners and admins. `GET` answers
+`{ok, secrets: [{name, updatedAt, updatedBy}]}`, `PUT` takes `{value}` and
+answers `{ok, name, updatedAt}`, `DELETE` takes no body. At most 100 secrets
+per repository or organization. Names match `^[A-Z_][A-Z0-9_]{0,63}$`, values are up to
 48 KiB, encrypted with the `DATA_KEY` envelope (`encrypt_row`), and listed by
 name and update time only. Every change is audited. Repository secrets win
 over organization secrets with the same name. The repository Settings page
@@ -244,12 +270,29 @@ updated_at`), `repo_action_secrets` (`owner, repo` (empty for an
 organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
 (`job_id, run_index, data, updated_at`).
 
-- Push jobs keep the per-commit dedupe and queued coalescing; every other
-  event inserts its own row. At most one leased or running job per
-  `(owner, repo, workflow)`.
+- Jobs are keyed by the repository's node owner (`forkmesh` on an
+  instance), as pushes record them; the lease also accepts a runner whose
+  `allowed_owners` lists the organization the node's repository is linked to,
+  and that organization names the bot and `repository.full_name`.
+- Push jobs keep the per-commit dedupe (also against `pushed_commit`, the
+  loop guard) and queued coalescing, now per branch; every other event
+  inserts its own row and must name a workflow (one path). At most one
+  leased, running or cancelling job per `(owner, repo, workflow)`; push jobs
+  share the empty workflow.
+- A job with an empty `commit` (schedule, dispatch, issues) runs the branch
+  tip; the runner reports the commit it ran.
 - The lease adds to the job object: `event`, `workflow`, `before`,
   `eventPayload`, `inputs`, `secrets`, `pushGrant`, `pushRef`, `jobToken`,
-  `apiUrl`, `trusted`, `botName`, `botEmail`.
+  `apiUrl`, `trusted`, `botName`, `botEmail`, plus `ref` and `actor`.
+  `secrets`, `jobToken`, `apiUrl`, `botName`, `botEmail`, `pushGrant` and
+  `pushRef` are present only when `trusted` is true (the job row's `trusted`,
+  the runner row's `actions_trusted`, and an event other than
+  `pull_request`). A trusted job always gets the push grant; the runner uses
+  it only when the workflow asks for `contents: write`. The grant lives as
+  long as the lease (90 minutes). `apiUrl` is `PUBLIC_BASE_URL` (else
+  `APP_ORIGIN`); `botEmail` is `<org>-actions@users.noreply.<host of
+  apiUrl>`. The token is also kept in the sealed payload so the report can
+  mask it.
 - The report adds `catalog` (`[{path, name, events, schedules, inputs}]`,
   every workflow at the commit that parses, at most 64; each input is
   `{name, description, required, default, type, options}`; stored in
@@ -257,12 +300,40 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   cap: the first 768 KiB and the last 256 KiB with an omitted-bytes line
   between; stored in `repo_action_logs`). `logTail` stays the last 16 KiB.
   The runner reports every 5 seconds while a workflow runs; those progress
-  reports are sent once, without retries.
-- `snapshot` returns `controlAvailable: true` and each run's `event`.
+  reports are sent once, without retries. `/api/runners/actions-report`
+  accepts bodies up to 8 MiB (other runner routes keep 64 KiB). A run
+  without `log` keeps its stored log. The app masks secret values (and each
+  line of a multi-line one) of four or more bytes and the job token in `log`,
+  `logTail` and `message`. Runs may carry `workflowPath`, used by re-run. The
+  catalog is stored only from jobs on the default branch; it replaces the
+  repository's catalog but keeps each workflow's `last_slot`. Schedules that
+  do not parse or fire more often than every 5 minutes are dropped. An
+  optional `pushedCommit` is stored in `pushed_commit`. A terminal report
+  clears `token_hash`. The answer is `{ok: true, cancel}`: `cancel: true`
+  means the job was cancelled from the web and the runner should stop it and
+  send its final report (the job then ends `cancelled`).
+- `snapshot` returns `controlAvailable: true` when `ACTIONS_INSTANCE_RUNNER`
+  is set, each run's `event` and `workflows` (the catalog, inputs as a list
+  of `{name, description, required, default, type, options}`).
+  With `ACTIONS_INSTANCE_RUNNER` set,
   `POST /api/repo/<owner>/<repo>/actions/control` with
   `{action: "dispatch", workflow, ref, inputs}`, `{action: "cancel", runId}`
-  or `{action: "rerun", runId}` is handled locally for runner snapshots.
-  `GET /api/repo/<owner>/<repo>/actions/runs/<id>/log` returns the full log.
+  or `{action: "rerun", runId}` is handled locally (`repository_actions.py`,
+  for the owner or an organization writer; other keys such as
+  `sessionToken` are ignored). `ref` is a branch name or `refs/heads/...`;
+  inputs are strings or booleans, checked against the catalog (required,
+  choice options, `true`/`false`; values up to 64 KiB). Success is
+  `202 {ok, status: "applied", action, runId}`; errors are `{error, message}`
+  with `input_required`, `input_invalid`, `workflow_not_found`, `not_manual`,
+  `ref_not_found`, `run_not_found`, `run_active` (re-run of a run still
+  queued or active) or `not_cancellable`. Dispatch needs the workflow in the
+  catalog, so a workflow becomes dispatchable after the first job on the
+  default branch has reported. Cancel marks a queued job `cancelled` and an
+  active one `cancelling`; re-run copies the job (one workflow when the run
+  names its `workflowPath`). Run ids are `job id × 100 + n` (n from 1; the
+  placeholder of a job with no runs yet is `job id × 100`).
+  `GET /api/repo/<owner>/<repo>/actions/runs/<id>/log` returns
+  `{ok, runId, log, updatedAt}` with the same access as the runs list.
 
 Web UI (`app/public/dashboard/js/06-repo-actions.js`): a runner snapshot
 with `controlAvailable: true` (schema version 1 or 2) turns on the controls.
@@ -293,20 +364,32 @@ Triggers:
 
 | Event | Where |
 | --- | --- |
-| push | `core_push.record_accepted_push` for every branch, with `before` |
-| schedule | cron phase `actions-schedule` (every minute, `app/src/actions_cron.py`) over `repo_action_workflows`, deduped by `last_slot` |
+| push | `core_push.record_accepted_push` for every branch, with `before`, whether or not a desktop is online, when `ACTIONS_INSTANCE_RUNNER` is set (else the old default-branch, desktop-offline rule) |
+| schedule | cron phase `actions-schedule` (every minute, `app/src/actions_cron.py`) over `repo_action_workflows`, deduped by `last_slot` (a compare-and-set claim, and at least 5 minutes between two runs of one workflow); queued on the default branch with an empty commit and payload `{schedule}` |
 | workflow_dispatch | the control endpoint (owner or organization writer) |
-| issues, issue_comment | after an issue event is accepted (`open`, `labels`, `edit`, `title`, `status`, `comment`) |
+| issues, issue_comment | after an issue event is accepted (`open`→`opened`, `labels`→`labeled`/`unlabeled`, `edit`/`title`→`edited`, `status`→`closed`/`reopened`, `comment`→`issue_comment` `created`), one job per catalog workflow listing the event, on the default branch; `types` are filtered by the runner |
+
+Actions-grant pushes go from the runner to the gateway directly and never
+reach `record_accepted_push`, so they cannot queue `push` jobs. As a second
+guard, a push report whose `X-ForkMesh-Ref-Updates` document has
+`"actions": true` queues nothing, and a commit a job reported as
+`pushedCommit` is never queued as a push job. The app learns the new tip the
+way it learns agent-branch pushes: from the gateway's own hosted-push record
+and refresh cycle.
 
 ## Install
 
 `install-instance.sh` installs a runner on the instance by default (setting
 `actions`, default `true`): it runs `install-runner.sh --preregistered` with
 the instance's daemon binary, registers it with
-`python -m forkmesh_host instance-runner` (`scope=pool`,
-`allowed_owners=[<owner>]`, `actions_trusted=1`), sets
+`python -m forkmesh_host instance-runner --name <runner> --public-key <key>
+--owner <owner>` (idempotent upsert of the `runner_nodes` row:
+`scope=pool`, `allowed_owners=[<owner>]`, `registered_by=<owner>`,
+`status=active`, `actions_trusted=1`; it takes the same `--env-file`,
+`--db` and `--data-dir` options as `instance-bootstrap`), sets
 `RUNNER_POOL_TARGET_NODES=<node>` and `ACTIONS_INSTANCE_RUNNER=<runner>`,
-generates `ACTIONS_BOT_SEED`, and installs git, curl, jq, python3-venv,
+generates `ACTIONS_BOT_SEED` (which `instance-bootstrap` reads from its
+environment or the app env to create the bot), and installs git, curl, jq, python3-venv,
 Node.js and build tools for jobs. Jobs run as `forkmesh-job` in a systemd
 scope (memory, CPU and task limits) and cannot reach loopback or private
 addresses, so they talk to the instance only through its public origin.
@@ -330,6 +413,7 @@ step (the launch page has a fixed step list) and only warns on failure.
 `server/actions_workflow_test.go`, `server/actions_expr_test.go`,
 `server/runner_actions_test.go`, `server/runnergrant_test.go`,
 `app/tests/test_instance_actions.py`, `app/tests/test_actions_cron.py`,
+`app/tests/test_core_push.py`, `app/host/tests_unit/test_instance_bootstrap.py`,
 `app/tests/test_actions_job_api.py`, `app/tests/test_actions_secrets_api.py`,
 `app/tests/test_mirror_gateway_runner_grants.py`,
 `app/tests/test_install_instance_script.py`,
