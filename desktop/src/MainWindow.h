@@ -1393,6 +1393,7 @@ public:
     void testShowLogSection() { showSection(4); }
     void testShowMarketSection() { showSection(kMarketSectionIndex); }
     bool testPackageInstalled(const QString &id) const;
+    QStringList testInstallAllPackages() const;
     QString testPackageName(const QString &id) const;
     bool testPackageSurfaceShown(const QString &packageId) const
     {
@@ -4198,6 +4199,7 @@ private:
     void applyMarketSearch();
     QList<const forkmesh::market::PackageManifest *> sortedMarketPackages() const;
     void appendMarketPackCards();
+    void updateMarketInstallAllButton();
     void appendMarketGuideCards();
     void installPackageSet(const QString &label, const QStringList &ids);
     void installPackageFromSavedCopy(const QString &id);
@@ -10824,6 +10826,7 @@ private:
     QLabel *m_marketSearchEmpty = nullptr;
     QString m_marketCategoryFilter;
     QComboBox *m_marketSort = nullptr;
+    QPushButton *m_marketInstallAllButton = nullptr;
     QVBoxLayout *m_marketPacksLayout = nullptr;
     QVBoxLayout *m_marketGuidesLayout = nullptr;
     int m_marketPacksTabIndex = -1;

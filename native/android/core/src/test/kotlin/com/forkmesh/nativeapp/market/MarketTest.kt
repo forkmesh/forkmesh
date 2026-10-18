@@ -98,6 +98,32 @@ class MarketTest {
         assertEq(emptyList<PackageScreenshot>(), MarketPackage.fromJson(mapOf("id" to "crm"))!!.screenshots)
     }
 
+    fun testInstallAllPlanCoversWhatThePhoneCanInstall() {
+        val transport = FakeTransport()
+        transport.answer(
+            "GET", "/api/market/packages",
+            mapOf(
+                "packages" to listOf(
+                    mapOf("id" to "notes", "name" to "Notes", "accountSync" to true, "dataScope" to "account"),
+                    mapOf("id" to "tasks", "name" to "Tasks", "accountSync" to true, "dataScope" to "account", "default" to true),
+                    mapOf("id" to "sign-in", "name" to "Sign in", "surfaces" to mapOf("desktop" to true)),
+                    mapOf("id" to "crm", "name" to "CRM", "dataScope" to "organization", "surfaces" to mapOf("desktop" to true)),
+                    mapOf("id" to "winamp", "name" to "Winamp", "bundled" to true, "surfaces" to mapOf("desktop" to true)),
+                    mapOf("id" to "gemma", "name" to "Gemma", "type" to "agent", "accountSync" to true, "dataScope" to "account"),
+                    mapOf("id" to "skin", "name" to "Skin", "type" to "theme", "accountSync" to true, "dataScope" to "account"),
+                    mapOf("id" to "notes-extra", "name" to "Notes extra", "accountSync" to true, "dataScope" to "account", "dependencies" to listOf("notes")),
+                ),
+            ),
+        )
+        val model = MarketModel(PackagesClient(transport), accountSwitch = { if (it == "tasks") true else if (it == "notes" || it == "gemma" || it == "skin" || it == "notes-extra") false else null }, deviceSwitch = { if (it == "sign-in") false else null })
+        model.refresh(null)
+        val plan = model.installAllPlan()
+        assertEq(listOf("notes"), plan.account.map { it.id })
+        assertEq(listOf("sign-in"), plan.phone.map { it.id })
+        assertEq(2, plan.skipped)
+        assertEq(2, plan.count)
+    }
+
     fun testMarketCatalogFiltersAndInstall() {
         val transport = FakeTransport()
         transport.answer(
