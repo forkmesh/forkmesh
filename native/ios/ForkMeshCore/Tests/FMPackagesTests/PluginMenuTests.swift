@@ -22,6 +22,7 @@ final class PluginMenuTests: XCTestCase {
         XCTAssertEqual(PluginMenu.packageId(for: .phoneSecurity), "phone-security")
         XCTAssertEqual(PluginMenu.packageId(for: .eyeControl), "eye-control")
         XCTAssertEqual(PluginMenu.packageId(for: .openWrtRouter), "openwrt")
+        XCTAssertEqual(PluginMenu.packageId(for: .fileExplorer), "files")
     }
 
     func testEveryHomeKindBelongsToAMarketplacePackage() {

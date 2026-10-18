@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Files</title>
+  <desc id="desc">The Files page with places on the left, this device and a network share on the router, and the share's folders and files listed with their sizes and dates.</desc>
+  <rect width="1200" height="720" fill="#f6f8fb"/>
+  <rect x="42" y="38" width="1116" height="644" rx="18" fill="#ffffff" stroke="#d7dee9" stroke-width="2"/>
+  <path d="M94 104h28l8 9h40v40H94z" fill="#235fdb"/>
+  <text x="196" y="130" fill="#172033" font-family="system-ui, sans-serif" font-size="34" font-weight="700">Files</text>
+  <text x="196" y="164" fill="#62708a" font-family="system-ui, sans-serif" font-size="19">smb://192.168.1.1/usb › Photos › 2026</text>
+  <rect x="92" y="196" width="250" height="440" rx="10" fill="#f6f8fb"/>
+  <g font-family="system-ui, sans-serif" font-size="16" font-weight="650" fill="#64748b">
+    <text x="112" y="232">THIS DEVICE</text>
+    <text x="112" y="380">NETWORK SHARES</text>
+  </g>
+  <g font-family="system-ui, sans-serif" font-size="19" fill="#172033">
+    <text x="112" y="270">Home</text>
+    <text x="112" y="306">Projects</text>
+    <text x="112" y="342">Downloads</text>
+    <rect x="102" y="394" width="230" height="36" rx="8" fill="#eef4ff"/>
+    <text x="112" y="418" fill="#235fdb" font-weight="650">usb on router</text>
+    <text x="112" y="458">media on nas</text>
+    <text x="112" y="496" fill="#235fdb">+ Add network share</text>
+  </g>
+  <g font-family="system-ui, sans-serif" font-size="16" font-weight="650" fill="#64748b">
+    <text x="380" y="232">NAME</text>
+    <text x="800" y="232">SIZE</text>
+    <text x="920" y="232">MODIFIED</text>
+  </g>
+  <g font-family="system-ui, sans-serif" font-size="19" fill="#172033">
+    <text x="380" y="280" font-weight="650">Summer</text>
+    <text x="800" y="280" fill="#62708a">Folder</text>
+    <text x="920" y="280" fill="#62708a">Oct 12</text>
+    <text x="380" y="326" font-weight="650">Trips</text>
+    <text x="800" y="326" fill="#62708a">Folder</text>
+    <text x="920" y="326" fill="#62708a">Sep 30</text>
+    <text x="380" y="372">beach.jpg</text>
+    <text x="800" y="372">4.2 MB</text>
+    <text x="920" y="372">Oct 14</text>
+    <text x="380" y="418">notes.md</text>
+    <text x="800" y="418">3 KB</text>
+    <text x="920" y="418">Oct 17</text>
+    <text x="380" y="464">budget.pdf</text>
+    <text x="800" y="464">812 KB</text>
+    <text x="920" y="464">Oct 2</text>
+    <text x="380" y="510">video.mp4</text>
+    <text x="800" y="510">1.3 GB</text>
+    <text x="920" y="510">Aug 21</text>
+  </g>
+  <g stroke="#e5e9f0" stroke-width="2">
+    <path d="M378 298h730M378 344h730M378 390h730M378 436h730M378 482h730"/>
+  </g>
+  <text x="380" y="630" fill="#62708a" font-family="system-ui, sans-serif" font-size="17">Open, edit, upload, download, copy, move, rename and delete.</text>
+</svg>

@@ -79,6 +79,7 @@ let modules: [Module] = [
     Module(name: "FMCoves", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi"]),
     Module(name: "FMPush", deps: ["FMBase", "FMCrypto"]),
     Module(name: "FMWorkflows", deps: ["FMBase", "FMNet", "FMAccount", "FMApi"], resources: true, assets: true),
+    Module(name: "FMFiles", deps: ["FMBase", "FMCrypto", "FMPackages"]),
     Module(name: "FMAssistant", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMControl", "FMPackages", "FMPlanning", "FMLocalAI"]),
 ]
 

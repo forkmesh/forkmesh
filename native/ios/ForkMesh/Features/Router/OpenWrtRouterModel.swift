@@ -1,4 +1,5 @@
 import FMBase
+import FMFiles
 import FMPackages
 import Foundation
 import Observation
@@ -114,6 +115,7 @@ final class OpenWrtRouterModel {
         storageLog = ""
         storageBusy = false
         routerHost = ""
+        FilesLibrary.shared.routerShares = []
     }
 
     private func dropSession(_ text: String) async {
@@ -139,6 +141,7 @@ final class OpenWrtRouterModel {
             show(problem, error: true)
         }
         snapshot = fresh
+        FilesLibrary.shared.routerShares = fresh.shares.map { RouterShareSuggestion(name: $0.name, host: routerHost, guests: $0.guests) }
     }
 
     func reloadConfig(_ config: String) async {
@@ -305,14 +308,45 @@ final class OpenWrtRouterModel {
     }
 
     func installStorageSupport() async {
-        guard let client, !storageBusy else { return }
-        guard let tool = snapshot.packageTool else {
-            show("The router does not let ForkMesh run its package manager, so USB storage support cannot be installed from here. Install luci-app-package-manager (or luci-app-opkg on older releases) on the router.", error: true)
+        guard !storageBusy else { return }
+        guard let failed = await installPackages(
+            OpenWrtModel.usbStoragePackages, progress: "Installing USB storage support…",
+            noTool: "The router does not let ForkMesh run its package manager, so USB storage support cannot be installed from here. Install luci-app-package-manager (or luci-app-opkg on older releases) on the router.")
+        else {
             await checkStorage()
             return
         }
+        if failed.isEmpty {
+            show("USB storage support installed.")
+        } else {
+            show("Some storage packages could not be installed: \(failed.map { $0.name }.joined(separator: ", ")). The log below says why.", error: true)
+        }
+        await checkStorage(keepLog: true)
+    }
+
+    func installShareSupport() async {
+        guard !storageBusy else { return }
+        guard let failed = await installPackages(
+            OpenWrtModel.shareSupportPackages, progress: "Installing ksmbd-server and luci-app-ksmbd…",
+            noTool: "The router does not let ForkMesh run its package manager, so network sharing cannot be installed from here. Install luci-app-package-manager (or luci-app-opkg on older releases) on the router.")
+        else { return }
+        if let first = failed.first {
+            show("Could not install \(first.name): \(first.tail)", error: true)
+        } else if snapshot.shareConfig.isEmpty {
+            show("The packages are installed, but the router shows no file server settings yet. Pull to refresh in a moment.", error: true)
+        } else {
+            show("Network sharing is installed. Share a mounted disk below.")
+        }
+    }
+
+    private func installPackages(_ names: [String], progress: String, noTool: String) async -> [(name: String, tail: String)]? {
+        guard let client else { return nil }
+        guard let tool = snapshot.packageTool else {
+            show(noTool, error: true)
+            return nil
+        }
         storageBusy = true
-        show("Installing USB storage support…")
+        show(progress)
         storageLog = "Updating the router's package lists…"
         let update = await client.packageAction(tool, action: "update", names: [])
         if update.ok {
@@ -321,27 +355,23 @@ final class OpenWrtRouterModel {
             appendStorageLog("Updating the package lists failed; the router may have no internet connection. Trying to install anyway.")
             OpenWrtModel.outputTail(update.error).forEach { appendStorageLog("  " + $0) }
         }
-        var failed: [String] = []
-        for name in OpenWrtModel.usbStoragePackages {
+        var failed: [(name: String, tail: String)] = []
+        for name in names {
             appendStorageLog("Installing \(name)…")
             let result = await client.packageAction(tool, action: "install", names: [name])
             if result.ok {
                 appendStorageLog("  \(name) is installed.")
             } else {
-                failed.append(name)
                 appendStorageLog("  \(name) failed:")
                 let output = (result.data.str("stdout") + "\n" + result.data.str("stderr")).trimmingCharacters(in: .whitespacesAndNewlines)
-                OpenWrtModel.outputTail(output.isEmpty ? result.error : output).forEach { appendStorageLog("    " + $0) }
+                let tail = OpenWrtModel.outputTail(output.isEmpty ? result.error : output)
+                tail.forEach { appendStorageLog("    " + $0) }
+                failed.append((name, tail.isEmpty ? result.error : tail.joined(separator: " ")))
             }
         }
         storageBusy = false
         await refresh()
-        if failed.isEmpty {
-            show("USB storage support installed.")
-        } else {
-            show("Some storage packages could not be installed: \(failed.joined(separator: ", ")). The log below says why.", error: true)
-        }
-        await checkStorage(keepLog: true)
+        return failed
     }
 
     func applyAndMount() async {
@@ -362,7 +392,7 @@ final class OpenWrtRouterModel {
 
     func share(_ disk: OpenWrtDisk, name: String, guests: Bool) async {
         let config = snapshot.shareConfig
-        guard !config.isEmpty else { return show("Install ksmbd-server and luci-app-ksmbd on the Packages screen to share disks.", error: true) }
+        guard !config.isEmpty else { return show("Install ksmbd-server and luci-app-ksmbd to share disks: press Install network sharing under Network shares.", error: true) }
         if let problem = OpenWrtModel.shareNameProblem(name) { return show(problem, error: true) }
         await add(config, type: OpenWrtModel.shareSectionType(config), values: OpenWrtModel.shareValues(name: name, path: disk.mount, guests: guests), what: "Share \(name)")
     }
