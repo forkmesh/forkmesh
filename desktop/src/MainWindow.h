@@ -5911,6 +5911,7 @@ private:
     bool homeGridOnScreen() const;
     QVector<HomeGroup> homeGridGroups() const;
     QString homeGridTileDetail(const QString &key, QWidget *widget) const;
+    int repoOpenPullCount() const;
     QString homeGridHeadline() const;
     bool activateHomeGridTile(const QString &key);
     void showHomeGridSearch(const QString &typed = QString());
