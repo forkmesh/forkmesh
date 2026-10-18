@@ -29,7 +29,10 @@ state on the ForkMesh account and follow every device.
   `workflows-*` packs nest under it).
 - **No `installedBefore`, account-synced:** `timers`, `vault`, `calories`,
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
-  only), `phone-security` (mobile only, [phone-security.md](phone-security.md)).
+  only), `phone-security` (mobile only, [phone-security.md](phone-security.md)),
+  `strata`, `ember`, `synapse` (mobile and desktop since 1.1.0; desktop
+  installs from before are carried to the account,
+  [codebase-analysis.md](codebase-analysis.md#on-phones)).
 - **Per device:** `sign-in` (installed before 2026-10-11); `code-map` and
   `size-map`, the repository screen's Code map button and Size map tab
   (installed before 2026-10-17, desktop only,

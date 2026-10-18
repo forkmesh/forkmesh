@@ -41,7 +41,7 @@ extension Route {
             let .run(repo, _), let .release(repo, _), let .project(repo, _), let .milestones(repo),
             let .repoSettings(repo, _), let .launchedAgent(repo, _):
             return repo
-        case let .coves(repo), let .shortcuts(repo):
+        case let .coves(repo), let .shortcuts(repo), let .ember(repo), let .strata(repo), let .synapse(repo):
             return repo
         case let .compose(target):
             return target.repo
@@ -173,6 +173,9 @@ public enum RouteCatalog {
         case .speech: return "Speech"
         case .glassesAlert: return "Glasses Alert"
         case .phoneSecurity: return "Phone Security"
+        case .ember: return "Ember"
+        case .strata: return "Strata"
+        case .synapse: return "Synapse"
         case .openWrtRouter: return "Router"
         case .faceChanger: return "Face Changer"
         case .videoMixDjStudio: return "Video Mix DJ Studio"
@@ -252,6 +255,9 @@ public enum RouteCatalog {
         case .speech: return "speaker.wave.2"
         case .glassesAlert: return "eyeglasses"
         case .phoneSecurity: return "checkmark.shield"
+        case .ember: return "flame"
+        case .strata: return "square.3.layers.3d"
+        case .synapse: return "brain"
         case .openWrtRouter: return "wifi.router"
         case .faceChanger: return "theatermasks"
         case .videoMixDjStudio: return "music.note.list"
@@ -400,6 +406,9 @@ public enum HubCatalog {
         .destination(.stats),
         .destination(.status),
         .destination(.appStoreStatus),
+        .destination(.ember(nil)),
+        .destination(.strata(nil)),
+        .destination(.synapse(nil)),
         .destination(.admin(section: nil), needsRegistration: true, adminOnly: true),
     ]
 

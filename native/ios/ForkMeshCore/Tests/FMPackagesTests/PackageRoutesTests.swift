@@ -53,6 +53,23 @@ final class PackageRoutesTests: XCTestCase {
         XCTAssertTrue(PackageGate.shows(Route.phoneSecurity, installed: ["phone-security"]))
         XCTAssertTrue(HubCatalog.personal.contains { $0.route == .phoneSecurity })
         XCTAssertEqual(RouteCatalog.title(.phoneSecurity), "Phone Security")
+        let shop = RepoRef(owner: "a", name: "b")
+        let analysis: [(String, String, Route, Route)] = [
+            ("ember", "Ember", .ember(nil), .ember(shop)), ("strata", "Strata", .strata(nil), .strata(shop)),
+            ("synapse", "Synapse", .synapse(nil), .synapse(shop)),
+        ]
+        for (id, name, route, scoped) in analysis {
+            XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: id, name: name)), route)
+            XCTAssertEqual(PackageRoutes.packageId(forHubItem: id), id)
+            XCTAssertEqual(PackageGate.packageId(for: route), id)
+            XCTAssertEqual(PackageGate.packageId(for: scoped), id)
+            XCTAssertEqual(scoped.repoRef, shop)
+            XCTAssertFalse(PackageGate.shows(route, installed: ["phone-security"]))
+            XCTAssertTrue(PackageGate.shows(route, installed: [id]))
+            XCTAssertTrue(HubCatalog.insights.contains { $0.route == route })
+            XCTAssertEqual(RouteCatalog.title(route.kind), name)
+        }
+        XCTAssertNil(Route.synapse(nil).repoRef)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "openwrt", name: "OpenWrt Router")), .openWrtRouter)
         XCTAssertEqual(PackageRoutes.packageId(forHubItem: "openWrtRouter"), "openwrt")
         XCTAssertEqual(PackageGate.packageId(for: .openWrtRouter), "openwrt")

@@ -20,6 +20,9 @@ final class PluginMenuTests: XCTestCase {
         XCTAssertEqual(PluginMenu.packageId(for: .logs), "logs")
         XCTAssertEqual(PluginMenu.packageId(for: .diagnostics), "diagnostics")
         XCTAssertEqual(PluginMenu.packageId(for: .phoneSecurity), "phone-security")
+        XCTAssertEqual(PluginMenu.packageId(for: .ember(nil)), "ember")
+        XCTAssertEqual(PluginMenu.packageId(for: .strata(RepoRef(owner: "a", name: "b"))), "strata")
+        XCTAssertEqual(PluginMenu.packageId(for: .synapse(nil)), "synapse")
         XCTAssertEqual(PluginMenu.packageId(for: .openWrtRouter), "openwrt")
     }
 

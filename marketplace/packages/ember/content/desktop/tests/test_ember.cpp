@@ -5,14 +5,23 @@
 #include "Theme.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QDirIterator>
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QImage>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QKeyEvent>
+#include <QLocale>
+#include <QProcess>
 #include <QSet>
+#include <QTemporaryDir>
 #include <QThread>
 
 #include <cmath>
+#include <cstdio>
 
 using namespace forkmesh::ember;
 using forkmesh::insight::Coupling;
@@ -591,10 +600,369 @@ void testFeature()
     check(distinctColors(second.grab().toImage()) > 30, QStringLiteral("feature: no-history page renders"));
 }
 
+bool runGit(const QString &dir, const QStringList &args)
+{
+    QProcess process;
+    process.setWorkingDirectory(dir);
+    process.start(QStringLiteral("git"), args);
+    return process.waitForFinished(60000) && process.exitCode() == 0;
+}
+
+QJsonValue colorJson(const QColor &color)
+{
+    if (!color.isValid())
+        return QJsonValue();
+    return QJsonArray{color.redF(), color.greenF(), color.blueF(), color.alphaF()};
+}
+
+QJsonArray circlesJson(const QVector<PackCircle> &circles)
+{
+    QJsonArray out;
+    for (const PackCircle &c : circles)
+        out.append(QJsonArray{c.x, c.y, c.r});
+    return out;
+}
+
+QJsonObject layoutJson(const Snapshot &s, const MapLayout &layout)
+{
+    QJsonArray nodes;
+    for (const MapNode &n : layout.nodes) {
+        QJsonArray children;
+        for (int c : n.children)
+            children.append(c);
+        nodes.append(QJsonObject{{QStringLiteral("name"), n.name},
+                                 {QStringLiteral("path"), n.path},
+                                 {QStringLiteral("parent"), n.parent},
+                                 {QStringLiteral("depth"), n.depth},
+                                 {QStringLiteral("file"), n.file >= 0 ? s.files[n.file].path : QString()},
+                                 {QStringLiteral("children"), children},
+                                 {QStringLiteral("x"), n.x},
+                                 {QStringLiteral("y"), n.y},
+                                 {QStringLiteral("r"), n.r},
+                                 {QStringLiteral("codeLines"), double(n.codeLines)},
+                                 {QStringLiteral("files"), n.files},
+                                 {QStringLiteral("health"), n.health},
+                                 {QStringLiteral("commits"), n.commits}});
+    }
+    QJsonArray nodeOfFile;
+    for (int n : layout.nodeOfFile)
+        nodeOfFile.append(n);
+    return QJsonObject{{QStringLiteral("maxDepth"), layout.maxDepth},
+                       {QStringLiteral("nodes"), nodes},
+                       {QStringLiteral("nodeOfFile"), nodeOfFile}};
+}
+
+QJsonObject viewJson(const ViewTransform &v)
+{
+    return QJsonObject{{QStringLiteral("cx"), v.cx}, {QStringLiteral("cy"), v.cy}, {QStringLiteral("k"), v.k}};
+}
+
+QJsonObject filtersJson(const Filters &f)
+{
+    return QJsonObject{{QStringLiteral("minHealth"), f.minHealth},
+                       {QStringLiteral("maxHealth"), f.maxHealth},
+                       {QStringLiteral("minCommits"), f.minCommits},
+                       {QStringLiteral("author"), f.author},
+                       {QStringLiteral("search"), f.search}};
+}
+
+QJsonArray targetsJson(const Snapshot &s, const QList<Target> &targets)
+{
+    QJsonArray out;
+    for (const Target &t : targets)
+        out.append(QJsonObject{{QStringLiteral("path"), s.files[t.file].path},
+                               {QStringLiteral("rank"), t.rank},
+                               {QStringLiteral("score"), t.score},
+                               {QStringLiteral("reasons"), QJsonArray::fromStringList(t.reasons)}});
+    return out;
+}
+
+QJsonObject coloringJson(const Snapshot &s, const TabColoring &c)
+{
+    QJsonArray files;
+    for (const FileStyle &f : c.files)
+        files.append(QJsonObject{{QStringLiteral("color"), colorJson(f.color)},
+                                 {QStringLiteral("dimmed"), f.dimmed},
+                                 {QStringLiteral("glow"), f.glow},
+                                 {QStringLiteral("rank"), f.rank},
+                                 {QStringLiteral("marked"), f.marked}});
+    QJsonArray legend;
+    for (const LegendEntry &e : c.legend)
+        legend.append(QJsonObject{{QStringLiteral("label"), e.label},
+                                  {QStringLiteral("color"), colorJson(e.color)},
+                                  {QStringLiteral("ring"), e.ring}});
+    return QJsonObject{{QStringLiteral("tab"), tabTitle(c.tab)},
+                       {QStringLiteral("files"), files},
+                       {QStringLiteral("legend"), legend},
+                       {QStringLiteral("scale"), c.scale},
+                       {QStringLiteral("scaleLow"), colorJson(c.scaleLow)},
+                       {QStringLiteral("scaleHigh"), colorJson(c.scaleHigh)},
+                       {QStringLiteral("scaleLowLabel"), c.scaleLowLabel},
+                       {QStringLiteral("scaleHighLabel"), c.scaleHighLabel},
+                       {QStringLiteral("note"), c.note},
+                       {QStringLiteral("targets"), targetsJson(s, c.targets)},
+                       {QStringLiteral("glowing"), c.glowing},
+                       {QStringLiteral("matching"), c.matching}};
+}
+
+int writeEmberGolden(const QString &fixture)
+{
+    QLocale::setDefault(QLocale(QLocale::English, QLocale::UnitedStates));
+    QTemporaryDir temp;
+    const QString repo = temp.path() + QStringLiteral("/repo");
+    QDirIterator it(fixture + QStringLiteral("/repo"), QDir::Files | QDir::Hidden, QDirIterator::Subdirectories);
+    while (it.hasNext()) {
+        const QString source = it.next();
+        const QString target = repo + source.mid(fixture.size() + 5);
+        QDir().mkpath(QFileInfo(target).absolutePath());
+        QFile::copy(source, target);
+    }
+    qputenv("GIT_CEILING_DIRECTORIES", temp.path().toUtf8());
+    qputenv("GIT_AUTHOR_NAME", "Fixture");
+    qputenv("GIT_AUTHOR_EMAIL", "fixture@example.com");
+    qputenv("GIT_COMMITTER_NAME", "Fixture");
+    qputenv("GIT_COMMITTER_EMAIL", "fixture@example.com");
+    if (!runGit(repo, {QStringLiteral("init"), QStringLiteral("-q")})
+        || !runGit(repo, {QStringLiteral("add"), QStringLiteral("-A")})
+        || !runGit(repo, {QStringLiteral("commit"), QStringLiteral("-q"), QStringLiteral("-m"), QStringLiteral("fixture")})) {
+        std::fprintf(stderr, "git setup failed\n");
+        return 1;
+    }
+    forkmesh::insight::Options options;
+    options.history = false;
+    const SnapshotPtr base = forkmesh::insight::analyze(repo, options);
+    if (!base || !base->error.isEmpty()) {
+        std::fprintf(stderr, "analysis failed\n");
+        return 1;
+    }
+    QFile logFile(fixture + QStringLiteral("/history.log"));
+    logFile.open(QIODevice::ReadOnly);
+    Snapshot s = *base;
+    forkmesh::insight::applyHistory(s, logFile.readAll(), forkmesh::insight::Options(), 1792000000);
+    for (FileInfo &file : s.files) {
+        QStringList issues;
+        file.health = forkmesh::insight::computeHealth(file, &issues);
+        file.healthIssues = issues;
+    }
+    forkmesh::insight::computeHotspots(s);
+
+    QJsonArray packing;
+    quint32 seed = 5;
+    for (int count : {1, 2, 3, 4, 7, 25, 120}) {
+        QVector<PackCircle> circles;
+        QJsonArray input;
+        for (int i = 0; i < count; ++i) {
+            seed = seed * 1664525u + 1013904223u;
+            const double r = 1 + double((seed >> 8) % 4000) / 100.0;
+            circles.append({0, 0, r});
+            input.append(r);
+        }
+        const double radius = packSiblings(circles);
+        const PackCircle e = encloseCircles(circles);
+        packing.append(QJsonObject{{QStringLiteral("input"), input},
+                                   {QStringLiteral("output"), circlesJson(circles)},
+                                   {QStringLiteral("radius"), radius},
+                                   {QStringLiteral("enclose"), QJsonArray{e.x, e.y, e.r}}});
+    }
+
+    const MapLayout layout = buildLayout(s);
+    const QSizeF viewport(390, 640);
+    QJsonArray fits;
+    QJsonArray readable;
+    for (int i = 0; i < layout.nodes.size(); ++i) {
+        QJsonObject fit = viewJson(fitTransform(layout.nodes[i], viewport));
+        fit.insert(QStringLiteral("node"), i);
+        fits.append(fit);
+        readable.append(QJsonArray{i, readableFocus(layout, i, viewport)});
+    }
+    QJsonArray interpolate;
+    const int deepNode = layout.nodeOfFile.isEmpty() ? 0 : layout.nodeOfFile.last();
+    const QList<QPair<int, int>> moves = {{0, deepNode}, {deepNode, 0}, {0, 0},
+                                          {layout.nodes.size() > 1 ? 1 : 0, deepNode}};
+    for (const auto &move : moves) {
+        const ViewTransform from = fitTransform(layout.nodes[move.first], viewport);
+        ViewTransform to = fitTransform(layout.nodes[move.second], viewport);
+        if (move.first == move.second)
+            to.k *= 3;
+        for (double t : {0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0}) {
+            QJsonObject v = viewJson(interpolateView(from, to, t, viewport));
+            v.insert(QStringLiteral("from"), move.first);
+            v.insert(QStringLiteral("to"), move.second);
+            v.insert(QStringLiteral("zoom"), move.first == move.second ? 3 : 1);
+            v.insert(QStringLiteral("t"), t);
+            interpolate.append(v);
+        }
+    }
+    QJsonArray ease;
+    for (double t : {-0.5, 0.0, 0.1, 0.3, 0.5, 0.6, 0.9, 1.0, 1.5})
+        ease.append(QJsonArray{t, easeInOut(t)});
+    QJsonArray nodeAt;
+    for (int i = 0; i < layout.nodes.size(); ++i) {
+        const MapNode &n = layout.nodes[i];
+        for (const QPointF &offset : {QPointF(0, 0), QPointF(n.r * 0.9, 0), QPointF(0, -n.r * 1.05)}) {
+            const QPointF p(n.x + offset.x(), n.y + offset.y());
+            nodeAt.append(QJsonArray{p.x(), p.y(), layout.nodeAt(p)});
+        }
+    }
+
+    const CouplingIndex coupling = buildCouplingIndex(s);
+    QJsonArray couplingJson;
+    for (int i = 0; i < coupling.size(); ++i) {
+        QJsonArray refs;
+        for (const CouplingRef &ref : coupling[i])
+            refs.append(QJsonObject{{QStringLiteral("path"), s.files[ref.file].path},
+                                    {QStringLiteral("shared"), ref.shared},
+                                    {QStringLiteral("degree"), ref.degree}});
+        couplingJson.append(refs);
+    }
+
+    QJsonArray tabs;
+    for (Tab tab : allTabs())
+        tabs.append(coloringJson(s, colorize(s, tab, Filters(), coupling)));
+
+    QJsonArray filtered;
+    QList<Filters> filterCases;
+    Filters f;
+    f.minHealth = 4;
+    f.maxHealth = 7.5;
+    filterCases << f;
+    f = Filters();
+    f.minHealth = 8;
+    filterCases << f;
+    f = Filters();
+    f.minCommits = 3;
+    filterCases << f;
+    f = Filters();
+    f.author = topAuthors(s, 1).value(0);
+    filterCases << f;
+    f = Filters();
+    f.author = topAuthors(s, 0).value(2);
+    f.minCommits = 1;
+    filterCases << f;
+    f = Filters();
+    f.search = QStringLiteral("  SRC ");
+    filterCases << f;
+    f = Filters();
+    f.search = QStringLiteral(".py");
+    f.maxHealth = 9.5;
+    filterCases << f;
+    for (const Filters &cf : filterCases) {
+        for (Tab tab : {Tab::CodeHealth, Tab::RefactoringTargets}) {
+            const TabColoring c = colorize(s, tab, cf, coupling);
+            QJsonArray dimmed;
+            for (int i = 0; i < c.files.size(); ++i) {
+                if (c.files[i].dimmed)
+                    dimmed.append(s.files[i].path);
+            }
+            filtered.append(QJsonObject{{QStringLiteral("filters"), filtersJson(cf)},
+                                        {QStringLiteral("active"), cf.active()},
+                                        {QStringLiteral("tab"), tabTitle(tab)},
+                                        {QStringLiteral("dimmed"), dimmed},
+                                        {QStringLiteral("matching"), c.matching}});
+        }
+    }
+
+    const Summary summary = summarize(s);
+    QJsonObject summaryJson{{QStringLiteral("unhealthy"), summary.unhealthy},
+                            {QStringLiteral("problematic"), summary.problematic},
+                            {QStringLiteral("healthy"), summary.healthy},
+                            {QStringLiteral("unhealthyLines"), double(summary.unhealthyLines)},
+                            {QStringLiteral("problematicLines"), double(summary.problematicLines)},
+                            {QStringLiteral("healthyLines"), double(summary.healthyLines)},
+                            {QStringLiteral("topHotspot"),
+                             summary.topHotspot >= 0 ? s.files[summary.topHotspot].path : QString()},
+                            {QStringLiteral("text"), summary.text}};
+
+    QJsonArray plainTabs;
+    for (Tab tab : allTabs()) {
+        const TabColoring c = colorize(*base, tab, Filters(), buildCouplingIndex(*base));
+        plainTabs.append(QJsonObject{{QStringLiteral("tab"), tabTitle(tab)},
+                                     {QStringLiteral("note"), c.note},
+                                     {QStringLiteral("matching"), c.matching},
+                                     {QStringLiteral("legend"), int(c.legend.size())}});
+    }
+    Snapshot plain = *base;
+    plain.git = false;
+
+    QJsonArray span;
+    for (int days : {-3, 0, 1, 2, 30, 44, 45, 90, 200, 329, 330, 365, 600, 800})
+        span.append(QJsonArray{days, spanText(days)});
+    QJsonArray ago;
+    const qint64 now = 1792000000;
+    for (qint64 delta : {qint64(-5), qint64(0), qint64(3600), qint64(86400), qint64(86400 * 2), qint64(86400 * 13),
+                         qint64(86400 * 14), qint64(86400 * 59), qint64(86400 * 60), qint64(86400 * 200),
+                         qint64(86400 * 364), qint64(86400 * 365), qint64(86400 * 600), qint64(86400 * 1000)})
+        ago.append(QJsonArray{double(now - delta), double(now), agoText(now - delta, now)});
+    ago.append(QJsonArray{0, double(now), agoText(0, now)});
+    QJsonArray percent;
+    for (double share : {-0.2, 0.0, 0.004, 0.005, 0.125, 0.5, 0.996, 1.0, 1.7})
+        percent.append(QJsonArray{share, percentText(share)});
+    QJsonArray names;
+    for (const QString &path : {QStringLiteral("a/b/c.kt"), QStringLiteral("top.py"), QStringLiteral("dir/")})
+        names.append(QJsonArray{path, fileNameOf(path), folderOf(path)});
+
+    const auto big = synthetic(400);
+    const MapLayout bigLayout = buildLayout(*big);
+    double sx = 0, sy = 0, sr = 0;
+    for (const MapNode &n : bigLayout.nodes) {
+        sx += n.x;
+        sy += n.y;
+        sr += n.r;
+    }
+
+    const QJsonObject root{
+        {QStringLiteral("now"), 1792000000},
+        {QStringLiteral("name"), s.name},
+        {QStringLiteral("files"), QJsonArray::fromStringList([&s] {
+             QStringList paths;
+             for (const FileInfo &file : s.files)
+                 paths << file.path;
+             return paths;
+         }())},
+        {QStringLiteral("hasHistory"), hasHistory(s)},
+        {QStringLiteral("hasHistoryBase"), hasHistory(*base)},
+        {QStringLiteral("hasHistoryPlain"), hasHistory(plain)},
+        {QStringLiteral("packing"), packing},
+        {QStringLiteral("layout"), layoutJson(s, layout)},
+        {QStringLiteral("views"), QJsonObject{{QStringLiteral("viewport"), QJsonArray{viewport.width(), viewport.height()}},
+                                              {QStringLiteral("fit"), fits},
+                                              {QStringLiteral("readable"), readable},
+                                              {QStringLiteral("interpolate"), interpolate},
+                                              {QStringLiteral("ease"), ease}}},
+        {QStringLiteral("nodeAt"), nodeAt},
+        {QStringLiteral("coupling"), couplingJson},
+        {QStringLiteral("topAuthors"), QJsonArray::fromStringList(topAuthors(s, 0))},
+        {QStringLiteral("topLanguages"), QJsonArray::fromStringList(topLanguages(s, 0))},
+        {QStringLiteral("targets"), targetsJson(s, refactoringTargets(s, coupling, 0))},
+        {QStringLiteral("tabs"), tabs},
+        {QStringLiteral("filtered"), filtered},
+        {QStringLiteral("summary"), summaryJson},
+        {QStringLiteral("noHistory"), plainTabs},
+        {QStringLiteral("text"), QJsonObject{{QStringLiteral("span"), span},
+                                             {QStringLiteral("ago"), ago},
+                                             {QStringLiteral("percent"), percent},
+                                             {QStringLiteral("names"), names}}},
+        {QStringLiteral("synthetic"), QJsonObject{{QStringLiteral("files"), 400},
+                                                  {QStringLiteral("nodes"), int(bigLayout.nodes.size())},
+                                                  {QStringLiteral("maxDepth"), bigLayout.maxDepth},
+                                                  {QStringLiteral("rootRadius"), bigLayout.nodes.value(0).r},
+                                                  {QStringLiteral("sumX"), sx},
+                                                  {QStringLiteral("sumY"), sy},
+                                                  {QStringLiteral("sumR"), sr}}}};
+    const QByteArray json = QJsonDocument(root).toJson(QJsonDocument::Indented);
+    std::fwrite(json.constData(), 1, size_t(json.size()), stdout);
+    return 0;
+}
+
 }
 
 int main(int argc, char **argv)
 {
+    const QString emberGolden = qEnvironmentVariable("FORKMESH_EMBER_GOLDEN");
+    if (!emberGolden.isEmpty()) {
+        QCoreApplication core(argc, argv);
+        return writeEmberGolden(QDir(emberGolden).absolutePath());
+    }
     const QString previewRoot = qEnvironmentVariable("FORKMESH_INSIGHT_PREVIEW_ROOT");
     const QString previewOut = qEnvironmentVariable("FORKMESH_INSIGHT_PREVIEW_OUT");
     if (qEnvironmentVariableIsEmpty("QT_QPA_PLATFORM"))

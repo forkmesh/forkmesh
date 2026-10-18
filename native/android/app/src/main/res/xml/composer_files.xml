@@ -5,4 +5,5 @@
     <cache-path name="face-changer-share" path="face-changer-share/" />
     <cache-path name="bug-report-attachments" path="bug-report-attachments/" />
     <cache-path name="secure-drive-open" path="secure-drive-open/" />
+    <cache-path name="code-insight-share" path="code-insight-share/" />
 </paths>

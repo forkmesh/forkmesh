@@ -37,7 +37,7 @@ let modules: [Module] = [
     Module(name: "FMChat", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMLocalAI"]),
     // Repositories, diffs, highlighting, collaboration, on-device Git, and the
     // node-sync adapter over the on-device repositories (hence FMChat).
-    Module(name: "FMCode", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMGit", "FMDiff", "FMControl"]),
+    Module(name: "FMCode", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMGit", "FMDiff", "FMControl", "FMCodeInsight"]),
     // On-device models (Gemma 4 through MLX in the app target): the model
     // catalog, weight downloads, device fit, and the engine protocol the app
     // implements. No MLX here, so it builds and tests on Linux.
@@ -77,6 +77,8 @@ let modules: [Module] = [
     Module(name: "FMInsights", deps: ["FMBase", "FMNet", "FMAccount", "FMApi", "FMControl"]),
     // Coves (encrypted file vaults) and secrets (WS21).
     Module(name: "FMCoves", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi"]),
+    // Code analysis (Ember, Strata, Synapse): a port of the desktop's RepoInsight engine.
+    Module(name: "FMCodeInsight", deps: []),
     Module(name: "FMPush", deps: ["FMBase", "FMCrypto"]),
     Module(name: "FMWorkflows", deps: ["FMBase", "FMNet", "FMAccount", "FMApi"], resources: true, assets: true),
     Module(name: "FMAssistant", deps: ["FMBase", "FMCrypto", "FMNet", "FMAccount", "FMApi", "FMChat", "FMControl", "FMPackages", "FMPlanning", "FMLocalAI"]),

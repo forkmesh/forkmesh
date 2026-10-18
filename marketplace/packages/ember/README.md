@@ -1,6 +1,6 @@
 # Ember
 
-File-level hotspots for any repository on this computer, our take on
+File-level hotspots for any repository on this computer or phone, our take on
 CodeScene's hotspot map. Every source file is a circle sized by its lines of
 code, nested inside its folders. Tabs colour the circles by code health
 (green, yellow, red), change frequency, refactoring targets, change coupling,
@@ -37,5 +37,13 @@ language.
   changed both.
 
 Without git history only Code health and Languages are available.
+
+## On phones
+
+Also on iPhone and Android: open it from Home → Insights, a repository's
+menu, or a repository copied onto the phone. The phone analyses a copy of the
+repository fetched into the app (or the copy already on the phone) with a
+port of the desktop engine, so the numbers are the same. See
+`docs/marketplace/codebase-analysis.md#on-phones`.
 
 Full documentation: `docs/marketplace/ember.md`.

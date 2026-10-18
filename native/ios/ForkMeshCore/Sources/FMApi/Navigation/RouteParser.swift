@@ -259,6 +259,9 @@ public enum RouteParser {
         case "speech": return [.speech]
         case "glasses-alert": return [.glassesAlert]
         case "phone-security": return [.phoneSecurity]
+        case "ember": return tail.isEmpty ? [.ember(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
+        case "strata": return tail.isEmpty ? [.strata(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
+        case "synapse": return tail.isEmpty ? [.synapse(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "openwrt": return tail.isEmpty ? [.openWrtRouter] : nil
         case "face-changer": return [.faceChanger]
         case "video-mix-dj-studio": return [.videoMixDjStudio]
