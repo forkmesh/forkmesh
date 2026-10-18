@@ -39846,6 +39846,220 @@ async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event):
     return None
 
 
+async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
+                                   repo_keys, actions_job=False):
+    event = data.get("event")
+    if not isinstance(event, dict):
+        return json_response({"error": "event_required"}, status=400)
+    event_type = clean_string(event.get("type", ""), 32)
+    try:
+        number = int(data.get("number", 0))
+    except (TypeError, ValueError):
+        number = 0
+    if len((event.get("body", "") or "").encode("utf-8")) > MAX_ISSUE_BYTES:
+        return json_response({"error": "issue_too_large"}, status=413)
+    if not await verify_issue_event(number, event, repo_keys):
+        return json_response({"error": "bad_signature"}, status=401)
+    await _fill_signer_author_name(env, event)
+    submitter_bi = await blind_index(env, event.get("author", ""))
+    # Clients replay the SAME signed event when an attempt dropped its
+    # response (issue #698: an accepted issue whose side effects outlived
+    # the connection). Answer that replay with the row it already made
+    # instead of reserving a second number and queuing the event twice —
+    # otherwise the submitter is sent to a number that never materializes.
+    queued = await _queued_issue_inbox_event(
+        env, repo_bi, submitter_bi, event)
+    if queued is not None:
+        return json_response(
+            {"ok": True, "number": queued.get("number", number)},
+            status=201)
+    signed_number = number
+    if event_type == "open":
+        reserved = await _forkbot_next_issue_number(
+            env, repo_bi, owner, repo, "issue")
+        # A desktop submission may already carry a usable proposal. A web
+        # open is signed against 0 and needs the relay reservation so the
+        # response can link directly to the issue it just accepted.
+        if reserved > 0:
+            number = reserved
+        elif number <= 0:
+            return json_response(
+                {"error": "number_unavailable"}, status=503)
+    # Match the Qt client's write boundary: visitors can open, comment and
+    # vote, while edits to repository-owned issue state require the source
+    # node owner (or a network admin). A browser signature proves event
+    # integrity, not repository authority, so structural actions also carry
+    # and validate the logged-in account session.
+    owner_event_types = {
+        "edit", "title", "status", "labels", "milestone", "dates",
+        "priority", "progress", "bounty", "assignees", "agent", "delete",
+    }
+    if event_type in owner_event_types and not actions_job:
+        ok, err = await _authorize_issue_manager(env, owner, data, request)
+        if not ok:
+            return err
+    # Self-assignment (issue #570) is the one assignment a public
+    # contributor may make: a "claim" names exactly one account and moves
+    # only that name on or off the list, so it needs no repository
+    # authority — only proof that the caller IS the account being claimed.
+    if event_type == "claim":
+        ok, err = await _authorize_issue_self_claim(env, data, request, event)
+        if not ok:
+            return err
+    # Screenshots the submitter had no working tree to copy in ride along as
+    # base64 bytes, named to match the signed event's attachments list.
+    attachment_data, attach_err = _clean_issue_attachment_data(
+        data.get("attachmentData"))
+    if attach_err:
+        status = 413 if attach_err in (
+            "too_many_attachments", "attachment_too_large") else 400
+        return json_response({"error": attach_err}, status=status)
+    count = await d1_first(
+        env, "SELECT COUNT(*) AS c FROM issue_inbox WHERE repo_bi=?", repo_bi
+    )
+    if count and count.get("c", 0) >= MAX_PENDING_ISSUES:
+        return json_response({"error": "inbox_full"}, status=429)
+    if await _inbox_author_over_quota(env, "issue_inbox", repo_bi, submitter_bi):
+        return json_response({"error": "author_quota"}, status=429)
+    # Issue-level metadata for a new issue (labels/milestone/priority/
+    # assignees). Not signature-bound; the owner applies it on merge. Bounded
+    # to keep a submission small and the lists sane.
+    meta_in = data.get("meta")
+    meta = {}
+    if isinstance(meta_in, dict):
+        labels = meta_in.get("labels")
+        assignees = meta_in.get("assignees")
+        try:
+            priority = int(meta_in.get("priority", 0))
+        except (TypeError, ValueError):
+            priority = 0
+        # "wantsAgent" makes the owner's node start a coding agent on this
+        # issue automatically once merged — unlike the other meta fields
+        # above, that's an immediate, unreviewed side effect, so it's only
+        # honored when the request comes from a privileged account: the repo
+        # owner, or an admin acting on the owner's behalf (adhoc #225).
+        wants_agent = False
+        agent_model = ""
+        agent_provider = ""
+        if meta_in.get("wantsAgent"):
+            ok, err = await _authorize_owner_account(env, owner, data, request)
+            if not ok:
+                return err
+            wants_agent = True
+            # Optional model choice (e.g. "opus"/"sonnet"/"haiku"/"fable" or a
+            # full model id) for the agent the desktop node auto-starts on this
+            # issue; empty leaves the provider's own default. Only meaningful
+            # alongside wantsAgent, so it's not parsed otherwise.
+            agent_model = clean_string(meta_in.get("model", ""), 60)
+            # Optional agent-provider choice from the web dropdown (adhoc #234);
+            # only a known provider is honored, else the node picks its default.
+            provider_in = clean_string(meta_in.get("provider", ""), 40)
+            if provider_in in (
+                    "claude-code", "claude-api", "openai", "local-llama"):
+                agent_provider = provider_in
+        meta = {
+            "labels": [clean_string(x, 60) for x in (labels or [])][:20]
+            if isinstance(labels, list) else [],
+            "milestone": clean_string(meta_in.get("milestone", ""), 120),
+            "project": clean_string(meta_in.get("project", ""), 120),
+            "priority": priority if 0 <= priority <= 99 else 0,
+            "assignees": [clean_string(x, 60) for x in (assignees or [])][:20]
+            if isinstance(assignees, list) else [],
+            "wantsAgent": wants_agent,
+            "model": agent_model,
+            "provider": agent_provider,
+        }
+    item = {
+        "number": number,
+        "signedNumber": signed_number,
+        "titleIfNew": clean_string(data.get("titleIfNew", ""), 240),
+        "event": event,
+        "meta": meta,
+        "attachmentData": attachment_data,
+        "submitter": clean_string(event.get("author", ""), 120),
+        "submittedAt": int(Date.now()),
+    }
+    await d1_run(
+        env,
+        "INSERT INTO issue_inbox (repo_bi, data, submitter_bi) VALUES (?,?,?)",
+        repo_bi, await encrypt_row(env, item), submitter_bi,
+    )
+    await _record_contributor(
+        env, event.get("author", ""), "issues",
+        event.get("authorName", ""))
+    actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
+    await _best_effort_inbox_side_effect(
+        notify_pending_inbox(
+            env, owner, repo, "issue", actor, item.get("titleIfNew", ""),
+            number, opened=event_type == "open",
+            text=(event.get("body", "")
+                  if event_type in ("open", "comment") else "")))
+    await _best_effort_inbox_side_effect(
+        notify_mentions(
+            env, owner, repo, actor, item.get("titleIfNew", ""),
+            event.get("body", ""), repo_web_href(owner, repo), "issue",
+            number=number))
+    assignees = list(meta.get("assignees", [])) if isinstance(meta, dict) else []
+    if isinstance(event.get("assignees"), list):
+        assignees.extend(event.get("assignees"))
+    await _best_effort_inbox_side_effect(
+        notify_issue_assignees(
+            env, owner, repo, assignees, actor, item.get("titleIfNew", ""),
+            number))
+    # Subscriptions (issue #361): tell everyone already following this issue
+    # about the new activity, then auto-subscribe the commenter so they hear
+    # about later replies. Both no-op for a brand-new issue (number 0).
+    await _best_effort_inbox_side_effect(
+        notify_subscribers(
+            env, owner, repo, "issue", number, actor,
+            item.get("titleIfNew", ""), event.get("body", ""),
+            repo_web_href(owner, repo)))
+    await _best_effort_inbox_side_effect(
+        subscribe_thread(env, owner, repo, "issue", number, actor))
+    if event_type == "comment" or (
+            event_type == "status"
+            and event.get("status") == "closed"):
+        await _best_effort_inbox_side_effect(
+            notify_account_event(env, owner, "issues"))
+    await notify_repo_host(env, owner, repo, "issues")
+    # An accepted inbox row is the durable boundary. The source wake is
+    # one small call and stays inline for the fast materialization path;
+    # the full mirror group fan-out is persisted by a doorbell so it never
+    # makes a web submitter wait behind every connected mirror.
+    await schedule_repo_mirror_wake(env, owner, repo, "issues")
+    if event.get("type") in ("open", "comment"):
+        emit_app = globals().get("apps_emit_repo_event")
+        if emit_app is not None:
+            await emit_app(
+                env, owner, repo,
+                "issue.opened" if event.get("type") == "open"
+                else "issue.comment",
+                {"number": number, "title": item.get("titleIfNew", ""),
+                 "author": actor, "body": str(event.get("body", ""))[:2000]},
+                source_actor=actor)
+    # Fediverse: announce content events (opens/comments — never labels or
+    # status flips) to any followers of the repo/author actors.
+    if event.get("type") in ("open", "comment"):
+        await _best_effort_inbox_side_effect(_ap_publish_repo_event(
+            env, request, owner, repo, "issue", event.get("type"),
+            number, item.get("titleIfNew", ""), event.get("body", ""),
+            event.get("authorName", "")))
+    await _best_effort_inbox_side_effect(_queue_issue_actions(
+        env, owner, repo, number, event, item, actions_job))
+    return json_response({"ok": True, "number": number}, status=201)
+
+
+async def _queue_issue_actions(env, owner, repo, number, event, item,
+                               actions_job=False):
+    if actions_job or not str(
+            getattr(env, "ACTIONS_INSTANCE_RUNNER", "") or "").strip():
+        return []
+    import actions_job_api
+    actions_job_api._bind_runtime(globals())
+    return await actions_job_api.queue_issue_event(
+        env, owner, repo, number, event, item)
+
+
 async def issues_handler(env, request, owner, repo):
     await ensure_schema(env)
     method = method_name(request)
@@ -39861,205 +40075,9 @@ async def issues_handler(env, request, owner, repo):
             data = await bounded_json_request(request)
         except Exception:
             return json_response({"error": "invalid_json"}, status=400)
-        event = data.get("event")
-        if not isinstance(event, dict):
-            return json_response({"error": "event_required"}, status=400)
-        event_type = clean_string(event.get("type", ""), 32)
-        try:
-            number = int(data.get("number", 0))
-        except (TypeError, ValueError):
-            number = 0
-        if len((event.get("body", "") or "").encode("utf-8")) > MAX_ISSUE_BYTES:
-            return json_response({"error": "issue_too_large"}, status=413)
-        if not await verify_issue_event(
-                number, event,
-                _event_signing_repo_keys(request, owner, repo)):
-            return json_response({"error": "bad_signature"}, status=401)
-        await _fill_signer_author_name(env, event)
-        submitter_bi = await blind_index(env, event.get("author", ""))
-        # Clients replay the SAME signed event when an attempt dropped its
-        # response (issue #698: an accepted issue whose side effects outlived
-        # the connection). Answer that replay with the row it already made
-        # instead of reserving a second number and queuing the event twice —
-        # otherwise the submitter is sent to a number that never materializes.
-        queued = await _queued_issue_inbox_event(
-            env, repo_bi, submitter_bi, event)
-        if queued is not None:
-            return json_response(
-                {"ok": True, "number": queued.get("number", number)},
-                status=201)
-        signed_number = number
-        if event_type == "open":
-            reserved = await _forkbot_next_issue_number(
-                env, repo_bi, owner, repo, "issue")
-            # A desktop submission may already carry a usable proposal. A web
-            # open is signed against 0 and needs the relay reservation so the
-            # response can link directly to the issue it just accepted.
-            if reserved > 0:
-                number = reserved
-            elif number <= 0:
-                return json_response(
-                    {"error": "number_unavailable"}, status=503)
-        # Match the Qt client's write boundary: visitors can open, comment and
-        # vote, while edits to repository-owned issue state require the source
-        # node owner (or a network admin). A browser signature proves event
-        # integrity, not repository authority, so structural actions also carry
-        # and validate the logged-in account session.
-        owner_event_types = {
-            "edit", "title", "status", "labels", "milestone", "dates",
-            "priority", "progress", "bounty", "assignees", "agent", "delete",
-        }
-        if event_type in owner_event_types:
-            ok, err = await _authorize_issue_manager(env, owner, data, request)
-            if not ok:
-                return err
-        # Self-assignment (issue #570) is the one assignment a public
-        # contributor may make: a "claim" names exactly one account and moves
-        # only that name on or off the list, so it needs no repository
-        # authority — only proof that the caller IS the account being claimed.
-        if event_type == "claim":
-            ok, err = await _authorize_issue_self_claim(env, data, request, event)
-            if not ok:
-                return err
-        # Screenshots the submitter had no working tree to copy in ride along as
-        # base64 bytes, named to match the signed event's attachments list.
-        attachment_data, attach_err = _clean_issue_attachment_data(
-            data.get("attachmentData"))
-        if attach_err:
-            status = 413 if attach_err in (
-                "too_many_attachments", "attachment_too_large") else 400
-            return json_response({"error": attach_err}, status=status)
-        count = await d1_first(
-            env, "SELECT COUNT(*) AS c FROM issue_inbox WHERE repo_bi=?", repo_bi
-        )
-        if count and count.get("c", 0) >= MAX_PENDING_ISSUES:
-            return json_response({"error": "inbox_full"}, status=429)
-        if await _inbox_author_over_quota(env, "issue_inbox", repo_bi, submitter_bi):
-            return json_response({"error": "author_quota"}, status=429)
-        # Issue-level metadata for a new issue (labels/milestone/priority/
-        # assignees). Not signature-bound; the owner applies it on merge. Bounded
-        # to keep a submission small and the lists sane.
-        meta_in = data.get("meta")
-        meta = {}
-        if isinstance(meta_in, dict):
-            labels = meta_in.get("labels")
-            assignees = meta_in.get("assignees")
-            try:
-                priority = int(meta_in.get("priority", 0))
-            except (TypeError, ValueError):
-                priority = 0
-            # "wantsAgent" makes the owner's node start a coding agent on this
-            # issue automatically once merged — unlike the other meta fields
-            # above, that's an immediate, unreviewed side effect, so it's only
-            # honored when the request comes from a privileged account: the repo
-            # owner, or an admin acting on the owner's behalf (adhoc #225).
-            wants_agent = False
-            agent_model = ""
-            agent_provider = ""
-            if meta_in.get("wantsAgent"):
-                ok, err = await _authorize_owner_account(env, owner, data, request)
-                if not ok:
-                    return err
-                wants_agent = True
-                # Optional model choice (e.g. "opus"/"sonnet"/"haiku"/"fable" or a
-                # full model id) for the agent the desktop node auto-starts on this
-                # issue; empty leaves the provider's own default. Only meaningful
-                # alongside wantsAgent, so it's not parsed otherwise.
-                agent_model = clean_string(meta_in.get("model", ""), 60)
-                # Optional agent-provider choice from the web dropdown (adhoc #234);
-                # only a known provider is honored, else the node picks its default.
-                provider_in = clean_string(meta_in.get("provider", ""), 40)
-                if provider_in in (
-                        "claude-code", "claude-api", "openai", "local-llama"):
-                    agent_provider = provider_in
-            meta = {
-                "labels": [clean_string(x, 60) for x in (labels or [])][:20]
-                if isinstance(labels, list) else [],
-                "milestone": clean_string(meta_in.get("milestone", ""), 120),
-                "project": clean_string(meta_in.get("project", ""), 120),
-                "priority": priority if 0 <= priority <= 99 else 0,
-                "assignees": [clean_string(x, 60) for x in (assignees or [])][:20]
-                if isinstance(assignees, list) else [],
-                "wantsAgent": wants_agent,
-                "model": agent_model,
-                "provider": agent_provider,
-            }
-        item = {
-            "number": number,
-            "signedNumber": signed_number,
-            "titleIfNew": clean_string(data.get("titleIfNew", ""), 240),
-            "event": event,
-            "meta": meta,
-            "attachmentData": attachment_data,
-            "submitter": clean_string(event.get("author", ""), 120),
-            "submittedAt": int(Date.now()),
-        }
-        await d1_run(
-            env,
-            "INSERT INTO issue_inbox (repo_bi, data, submitter_bi) VALUES (?,?,?)",
-            repo_bi, await encrypt_row(env, item), submitter_bi,
-        )
-        await _record_contributor(
-            env, event.get("author", ""), "issues",
-            event.get("authorName", ""))
-        actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
-        await _best_effort_inbox_side_effect(
-            notify_pending_inbox(
-                env, owner, repo, "issue", actor, item.get("titleIfNew", ""),
-                number, opened=event_type == "open",
-                text=(event.get("body", "")
-                      if event_type in ("open", "comment") else "")))
-        await _best_effort_inbox_side_effect(
-            notify_mentions(
-                env, owner, repo, actor, item.get("titleIfNew", ""),
-                event.get("body", ""), repo_web_href(owner, repo), "issue",
-                number=number))
-        assignees = list(meta.get("assignees", [])) if isinstance(meta, dict) else []
-        if isinstance(event.get("assignees"), list):
-            assignees.extend(event.get("assignees"))
-        await _best_effort_inbox_side_effect(
-            notify_issue_assignees(
-                env, owner, repo, assignees, actor, item.get("titleIfNew", ""),
-                number))
-        # Subscriptions (issue #361): tell everyone already following this issue
-        # about the new activity, then auto-subscribe the commenter so they hear
-        # about later replies. Both no-op for a brand-new issue (number 0).
-        await _best_effort_inbox_side_effect(
-            notify_subscribers(
-                env, owner, repo, "issue", number, actor,
-                item.get("titleIfNew", ""), event.get("body", ""),
-                repo_web_href(owner, repo)))
-        await _best_effort_inbox_side_effect(
-            subscribe_thread(env, owner, repo, "issue", number, actor))
-        if event_type == "comment" or (
-                event_type == "status"
-                and event.get("status") == "closed"):
-            await _best_effort_inbox_side_effect(
-                notify_account_event(env, owner, "issues"))
-        await notify_repo_host(env, owner, repo, "issues")
-        # An accepted inbox row is the durable boundary. The source wake is
-        # one small call and stays inline for the fast materialization path;
-        # the full mirror group fan-out is persisted by a doorbell so it never
-        # makes a web submitter wait behind every connected mirror.
-        await schedule_repo_mirror_wake(env, owner, repo, "issues")
-        if event.get("type") in ("open", "comment"):
-            emit_app = globals().get("apps_emit_repo_event")
-            if emit_app is not None:
-                await emit_app(
-                    env, owner, repo,
-                    "issue.opened" if event.get("type") == "open"
-                    else "issue.comment",
-                    {"number": number, "title": item.get("titleIfNew", ""),
-                     "author": actor, "body": str(event.get("body", ""))[:2000]},
-                    source_actor=actor)
-        # Fediverse: announce content events (opens/comments — never labels or
-        # status flips) to any followers of the repo/author actors.
-        if event.get("type") in ("open", "comment"):
-            await _best_effort_inbox_side_effect(_ap_publish_repo_event(
-                env, request, owner, repo, "issue", event.get("type"),
-                number, item.get("titleIfNew", ""), event.get("body", ""),
-                event.get("authorName", "")))
-        return json_response({"ok": True, "number": number}, status=201)
+        return await _accept_issue_submission(
+            env, request, owner, repo, repo_bi, data,
+            _event_signing_repo_keys(request, owner, repo))
 
     if method == "GET":
         mirror_intake = (
