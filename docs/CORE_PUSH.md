@@ -97,6 +97,13 @@ first saves the tip under `refs/forkmesh/trash/branch/<b>/<token>` (or
   gateway serves its list only behind a router capability; deleted tips are
   never exposed to ordinary readers. Results are cached 30 s per repository.
   The desktop uses it to delete local branches the cores deleted.
+- A delete still running answers 202 with `requestId`, `node` and `pinBase`;
+  the caller re-posts them until it settles, and a re-post can answer 503
+  `merge_status_pending` or `merge_node_unavailable` (`retryable: true`).
+  Those 503s, and the `cores_unavailable` 503 from both routes, carry
+  `x-forkmesh-expected-degraded`, so they are not logged as API errors: a
+  publisher poll turned red the API row on /status on 2026-10-18. A core
+  that is really down shows on its own /status row.
 - Operator: `python3 tools/next_fleet.py delete-ref nN --repo <owner>/<repo> --ref refs/heads/<b> --expect <sha> --execute`
   (only branches merged into `main`, trash first, run on every core) and
   `delete-refs --from FILE` for many at once.
