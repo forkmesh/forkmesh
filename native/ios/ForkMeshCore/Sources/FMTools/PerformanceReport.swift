@@ -151,6 +151,7 @@ public enum PerformanceReport {
         if let monitor {
             lines.append(
                 "stalls since launch \(monitor.stallCount) (over \(Int(TelemetryCounters.millis(monitor.stallThreshold)))ms), "
+                    + "paused while visible \(monitor.pauseCount) (longest \(Int(TelemetryCounters.millis(monitor.longestPause)))ms), "
                     + "slow ops over \(Int(TelemetryCounters.millis(monitor.threshold)))ms, events kept \(events.count)/\(monitor.maxEvents)")
         } else {
             lines.append("monitor: not wired")

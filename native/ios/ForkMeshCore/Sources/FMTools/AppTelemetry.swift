@@ -634,7 +634,7 @@ public final class AppTelemetry {
     // MARK: Inputs (any thread)
 
     /// Count one rendered frame.
-    public nonisolated func recordFrame(_ totalSpan: Duration) { counters.recordFrame(totalSpan) }
+    public nonisolated func recordFrame(_ totalSpan: Duration) { counters.recordFrame(monitor?.withoutPauses(totalSpan) ?? totalSpan) }
 
     /// A batch of frame timings (the `addTimingsCallback` shape).
     public nonisolated func recordFrames(_ timings: [FrameTiming]) {
