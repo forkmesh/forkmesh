@@ -262,6 +262,21 @@ def test_branded_email_shows_the_instance_logo():
     assert "site + logo)" in brand
 
 
+def test_instance_api_names_the_logo_apps_use_as_the_project_icon():
+    import re
+    names = {"re": re}
+    for helper in ("instance_name", "instance_branded", "instance_logo_path", "instance_logo_url"):
+        source = "def " + helper + "(env):" + ENTRY.split("def " + helper + "(env):", 1)[1].split("\n\n\n", 1)[0]
+        exec(source, names)
+    logo_url = names["instance_logo_url"]
+    assert logo_url(env()) == "/assets/logo-96.png"
+    assert logo_url(env(INSTANCE_NAME="Acme Code")) == ""
+    assert logo_url(env(INSTANCE_NAME="Acme Code", INSTANCE_LOGO="/instance-logo.png")) == "/instance-logo.png"
+    assert logo_url(env(INSTANCE_NAME="Acme Code", INSTANCE_LOGO="/etc/passwd")) == ""
+    route = APP_RUNTIME.split('if url.path in ("/api/instance", "/api/instance/"):', 1)[1].split("cache_control=", 1)[0]
+    assert '"logo": instance_logo_url(self.env)' in route
+
+
 def test_blog_genie_and_status_are_plugins_that_start_off_on_an_instance():
     assert {"blog", "genie", "status"} <= set(instance_features.IDS)
     branded = env(INSTANCE_NAME="Acme Code")

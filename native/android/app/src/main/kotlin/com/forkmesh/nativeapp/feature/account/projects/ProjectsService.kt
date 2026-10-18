@@ -128,6 +128,21 @@ class ProjectsService(
         if (previous.isNotEmpty() && previous != logo) logos.delete(previous)
     }
 
+    suspend fun adoptInstanceLogo(projectId: String, logoUrl: String) {
+        val project = directory.byId(projectId)?.takeIf { it.hasInstance && it.logo.isEmpty() } ?: return
+        val saved = withContext(Dispatchers.IO) {
+            ProjectImages.fetch(project.httpOrigin, logoUrl)?.let { bitmap ->
+                logos.save(ProjectLogoStore.png(bitmap), project.label.ifEmpty { project.host })?.let { it to bitmap }
+            }
+        } ?: return
+        if (directory.byId(projectId)?.logo?.isEmpty() != true) {
+            logos.delete(saved.first)
+            return
+        }
+        ProjectImages.remember(saved.first, saved.second)
+        setLogo(projectId, saved.first)
+    }
+
     fun update(projectId: String, label: String? = null, worldUrl: String? = null) = directory.update(projectId, label, worldUrl)
 
     suspend fun refreshCatalog(onUpdate: (List<ProjectCatalogEntry>) -> Unit): List<ProjectCatalogEntry> =

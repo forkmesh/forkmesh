@@ -169,6 +169,9 @@ private struct AddProjectForm: View {
             return
         }
         if !logo.isEmpty, let logoImage { ProjectImages.shared.setLogo(logo, image: logoImage) }
+        if logo.isEmpty, project.hasInstance {
+            await ProjectImages.shared.adoptInstanceLogo(project.id, logoUrl: model.result?.logoUrl ?? "")
+        }
         if !logo.isEmpty, !previous.isEmpty, previous != logo { ProjectLogoStore.delete(previous) }
         FmHaptics.commit()
         onAdded(project)

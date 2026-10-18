@@ -321,9 +321,9 @@ def test_forgot_password_page_renders_the_widget_from_the_public_key():
     assert "challenges.cloudflare.com/turnstile/v0/api.js?render=explicit" in (
         FORGOT_HTML)
     assert 'id="forgot-turnstile"' in FORGOT_HTML
-    assert 'fetch("/api/turnstile"' in FORGOT_JS
+    assert '"/api/accounts/forgot-password/challenge"' in FORGOT_JS
     assert 'action: "password-reset"' in FORGOT_JS
-    assert "turnstileToken: token" in FORGOT_JS
+    assert "{ turnstileToken: token }" in FORGOT_JS
     route = RUNTIME_TEXT[RUNTIME_TEXT.index('"/api/turnstile"'):]
     route = route[:route.index("\n\n")]
     assert '"siteKey"' in route and "secret" not in route.replace(
@@ -340,9 +340,11 @@ def test_signup_and_reset_handlers_check_the_token_before_any_lookup():
                   "_org_row", "_account_row", "_save_account"):
         assert gate < signup.index(later), later
     assert "_turnstile.signup_cdata(signup_claim" in signup
-    reset = RESET_TEXT[RESET_TEXT.index("async def _account_forgot_password"):]
+    reset = RESET_TEXT[RESET_TEXT.index("async def _account_forgot_password(env, request)"):]
     reset = reset[:reset.index("\n\n\n")]
     assert reset.index("_turnstile_gate(") < reset.index("blind_index")
+    assert reset.index("_password_reset_backup_gate(") < reset.index(
+        "blind_index")
     assert "ACTION_PASSWORD_RESET" in reset
     # Node registration is not gated but a fresh claim spends a per-IP budget.
     reserve = ENTRY_TEXT[ENTRY_TEXT.index("async def _account_reserve"):]
