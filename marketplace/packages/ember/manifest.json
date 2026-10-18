@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Developer tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "summary": "File-level hotspots: a map of every file sized by code and coloured by health, red, yellow or green, with change frequency, refactoring targets, change coupling, knowledge and complexity trends from git history.",
   "screenshots": [
     {
@@ -35,12 +35,14 @@
   },
   "entrypoints": {
     "desktop": "builtin:ember",
+    "ios": "builtin:ember",
+    "android": "builtin:ember",
     "settings": "builtin:package"
   },
   "permissions": [
     {
       "id": "repository.read",
-      "label": "Read the source files and git history of the repository you pick, on this computer",
+      "label": "Read the source files and git history of the repository you pick, from its folder or a copy fetched onto the phone",
       "risk": "low"
     },
     {
@@ -57,7 +59,9 @@
   },
   "install": {
     "bundled": true,
-    "default": false
+    "default": false,
+    "sync": "account",
+    "places": ["mobile", "desktop"]
   },
   "lifecycle": {
     "migrations": []

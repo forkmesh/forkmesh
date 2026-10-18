@@ -82,7 +82,26 @@ unread count.
   Articles. Phone lists lead with the unread marker, headline, author and date;
   feed icons remain available as an opt-in layout setting.
 - Article: feed and author above the title, feed icon, date in small capitals,
-  sanitized content with JavaScript off, enclosures, comments link.
+  sanitized content with JavaScript off, enclosures, comments link. The
+  comments link is added only when the content does not already link to the
+  same address (compared ignoring scheme and host case, http/https, default
+  ports, trailing slashes and `&amp;`; the fragment counts), so feeds such as
+  Hacker News that put a Comments link in the description show it once.
+- **Share to chat**: an article's title and link (with an optional note on
+  phones) can be sent to a person or a channel. This is the only thing the
+  reader ever sends to ForkMesh, and only when the person sends it. iOS has
+  **Send to Chat** next to Share in the article toolbar
+  (`RSSReaderShareSheet.swift`, the chat `ChatRecipientPicker`, sent with
+  `hub.deliver`). On Android the Share button offers **Send in Chat**
+  (`feature/chat/ChatShareSheet.kt`, targets built in
+  `core/.../chat/ChatShareTargets.kt`). The picker lists channels, Office
+  channels, direct messages, people online now and any platform user; the
+  message is sent through `ChatHub.sendText`. The desktop has **Share to
+  Chat…** in the toolbar and the article context menu, which lists the Office
+  channels and direct conversations the signed-in account can post to. The
+  package declares `chat.messages.share`; only then does the window fill
+  `NativePackageHost::chatTargets` and `sendChatMessage` (backed by the Office
+  channel mirror).
 - Toolbar: read/unread, star, next unread (moves on to the next feed with
   unread articles), reader view (on-device extraction of the original page),
   share (on phones) or copy link (desktop). The article title opens the
@@ -92,7 +111,15 @@ unread count.
   a horizontal swipe moves the full article page to the previous or next
   article. On iOS a swipe that starts sideways locks the page's vertical
   scroll until the finger lifts, so the page slides one way only (a pan on
-  the web view that the scroll view's pan waits on).
+  the web view that the scroll view's pan waits on). The swipe follows the
+  finger from the first movement and changes article past about a fifth of
+  the width (Android: 72 dp) or on a flick, springing back otherwise and
+  resisting at the first or last article. Vertical scrolling never moves the
+  page sideways. On iOS, while the page is not zoomed, horizontal bounce is
+  off and the horizontal offset is pinned. Android picks the direction after
+  4 dp, freezes the horizontal position while scrolling, turns zoom off and
+  keeps content inside the width: code blocks wrap and tables are fixed
+  layout, so a sideways drag on them changes article instead of scrolling.
 - Settings: the timeline switches above, article theme (Default, Sepia, Paper,
   High contrast), font and size, load remote images, appearance, Error Log,
   Activity Log, Stats, About.
@@ -140,6 +167,35 @@ The clients share one set of rules so a feed reads the same everywhere:
   last check and a failing one backs off, doubling, up to a day. Clients
   check feeds when the reader opens and on refresh (pull to refresh on
   phones); there are no polling timers.
+- **Feed icons**: candidates are tried in order, and the next one is tried
+  whenever a candidate gives an HTTP or network error, a body that is not an
+  image (checked from its leading bytes, so an HTML page served as
+  `favicon.ico` is skipped) or an image that does not decode. Android also
+  skips banners more than twice as wide as tall. The desktop skips icons
+  under 8 px or fully transparent, and takes the best frame of a multi-size
+  `.ico`:
+  1. the icon the feed declares (RSS `image/url`, Atom `icon` then `logo`,
+     JSON Feed `favicon` then `icon`);
+  2. the icons the home page links (`rel="icon"`, `shortcut icon`,
+     `apple-touch-icon`, `apple-touch-icon-precomposed`), resolved against
+     `<base>` or the page, square 32 to about 180 px first and larger before
+     smaller, SVG skipped unless the platform decodes it;
+  3. `/favicon.ico` on the home page's origin, then the feed's;
+  4. `/apple-touch-icon.png` on the same origins.
+
+  The home page is the feed's site link, or the feed's origin when the link is
+  missing. On phones, a feed proxy (FeedBurner, feedproxy, FeedBlitz,
+  FeedPress, podcast hosts) is never asked for a favicon: the site link's
+  origin (Android: the latest article's) is used instead. A favicon guess is
+  never stored as the feed's declared icon. Each feed records when it was
+  checked and which sources it used. A change of declared icon, site link or
+  feed address starts a new check. A feed with no icon shows its letter tile
+  and is tried again after a day. On phones a found icon is re-checked after
+  30 days, and a check that reached no server is retried at the next refresh.
+  Icons are kept as PNG on the device (desktop `icons/<feedId>.png`, at most
+  64 px; Android at most 192 px; iOS `icon-<feedId>`, also embedded in the
+  article page). The page parsing is `discoverIconLinks` (desktop),
+  `RSSReaderIcons.swift` and `RssIcons.kt`.
 - **Limits**: 500 feeds, 100 folders, the newest 400 articles per feed plus
   every starred one.
 

@@ -2,6 +2,7 @@
 // read history, publish, push and fetch. State and actions: FMCode's
 // LocalRepoScreenModel; this file lays it out.
 
+import FMApi
 import FMBase
 import FMCode
 import SwiftUI
@@ -68,6 +69,7 @@ private struct LocalRepoScreenContent: View {
     @State private var mirrored: PublishOutcome?
     @State private var shownCommit: LocalCommit?
     @State private var confirmingDelete: Bool = false
+    @State private var insightRoute: Route?
 
     private let agentPrompt: String?
     private let agentAutoStart: Bool
@@ -90,6 +92,9 @@ private struct LocalRepoScreenContent: View {
                     if changed { Task { await model.refreshAll() } }
                 })
                 .shellPageClearance()
+            }
+            .navigationDestination(item: $insightRoute) { (route: Route) in
+                AppServices.current?.routes.destination(for: route) ?? AnyView(EmptyView())
             }
             .navigationDestination(item: $agentLaunch) { (launch: LocalAgentLaunch) in
                 AgentScreen(
@@ -246,6 +251,14 @@ private struct LocalRepoScreenContent: View {
                 if model.isPublished {
                     Button("Fetch from ForkMesh") { runFetch() }
                         .disabled(model.isBusy)
+                }
+                ForEach(CodeInsightPlugin.allCases.filter(\.isShown)) { (plugin: CodeInsightPlugin) in
+                    Button {
+                        CodeInsightServices.prepareLocal(model.record)
+                        insightRoute = plugin.route(nil)
+                    } label: {
+                        Label(plugin.title, systemImage: plugin.systemImage)
+                    }
                 }
                 Button(role: .destructive) {
                     startDelete()
