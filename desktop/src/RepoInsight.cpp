@@ -1164,7 +1164,15 @@ void computeWindows(Measured &measured, const QString &noComments)
         if (punctuation)
             continue;
         measured.significant.append(i + 1);
-        hashes.append(quint64(qHash(normalized, 0x51ed270b)) * 0x9e3779b97f4a7c15ULL);
+        quint64 lineHash = 0xcbf29ce484222325ULL;
+        for (const QChar c : std::as_const(normalized)) {
+            lineHash ^= c.unicode();
+            lineHash *= 0x100000001b3ULL;
+        }
+        lineHash ^= lineHash >> 33;
+        lineHash *= 0xff51afd7ed558ccdULL;
+        lineHash ^= lineHash >> 33;
+        hashes.append(lineHash * 0x9e3779b97f4a7c15ULL);
     }
     for (int k = 0; k + kWindow <= hashes.size(); ++k) {
         quint64 h = 0xcbf29ce484222325ULL;

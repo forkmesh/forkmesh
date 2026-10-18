@@ -42,6 +42,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
+import com.forkmesh.nativeapp.feature.files.FilesFeature
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
 import com.forkmesh.nativeapp.json.obj
@@ -713,12 +714,17 @@ class OpenWrtStorageScreen : Screen() {
     private var shareGuests by mutableStateOf(false)
     private var unmountDisk by mutableStateOf<OpenWrtDisk?>(null)
     private var installing by mutableStateOf(false)
+    private var installingSharing by mutableStateOf(false)
 
     @Composable
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
         val snapshot = state.snapshot
         val disks = snapshot.disks
+        if (installingSharing) {
+            Confirm("Install network sharing?", "This updates the router's package lists and installs ${OpenWrtModel.networkSharePackages.joinToString(" and ")}. The router needs internet access to download them.", "Install",
+                { scope.guard { state.installNetworkSharing() } }, { installingSharing = false })
+        }
         bootDisk?.let { disk ->
             Prompt("Mount at boot", "Folder on the router where ${disk.title} appears:",
                 disk.bootTarget.ifEmpty { if (disk.mounted) disk.mount else OpenWrtModel.suggestedMountPath(disk.block) }, "Save",
@@ -796,13 +802,23 @@ class OpenWrtStorageScreen : Screen() {
             item(key = "shares") {
                 Column {
                     Header("Network shares")
-                    Note(if (snapshot.shareConfig.isEmpty()) "To share disks with computers and phones, install ksmbd-server and luci-app-ksmbd on the Packages screen."
-                    else "Shared with the ${snapshot.shareConfig} file server (SMB).")
+                    if (snapshot.shareConfig.isEmpty()) {
+                        Note("To share disks with computers and phones, install ksmbd-server and luci-app-ksmbd.")
+                        Actions {
+                            Button(onClick = { installingSharing = true }, enabled = state.signedIn && !state.storageBusy && !state.busy) { Text("Install network sharing") }
+                        }
+                    } else {
+                        Note("Shared with the ${snapshot.shareConfig} file server (SMB). Shares with guest access need no password; others need a user set up on the router.")
+                    }
                 }
             }
             items(snapshot.shares, key = { "share-${it.section}" }) { share ->
-                Row2(share.name, "${share.path}${if (share.readOnly) " · read only" else ""}${if (share.guests) " · guests" else ""}") {
-                    TextButton(onClick = { scope.guard { state.delete(snapshot.shareConfig, share.section, "Share ${share.name}") } }) { Text("Stop sharing") }
+                Column {
+                    Row2(share.name, "${share.path}${if (share.readOnly) " · read only" else ""}${if (share.guests) " · guests" else ""}", "folder")
+                    Row(Modifier.padding(horizontal = FmSpace.x2)) {
+                        TextButton(onClick = { navigator.push(FilesFeature.browseShare(state.routerHost, share.name, share.guests)) }, enabled = state.routerHost.isNotEmpty()) { Text("Browse files") }
+                        TextButton(onClick = { scope.guard { state.delete(snapshot.shareConfig, share.section, "Share ${share.name}") } }) { Text("Stop sharing", color = Fm.colors.danger) }
+                    }
                 }
             }
         }

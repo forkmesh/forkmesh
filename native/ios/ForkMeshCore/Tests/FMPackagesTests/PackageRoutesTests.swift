@@ -71,6 +71,23 @@ final class PackageRoutesTests: XCTestCase {
         XCTAssertTrue(PackageGate.shows(Route.eyeControl, installed: ["eye-control"]))
         XCTAssertTrue(HubCatalog.personal.contains { $0.route == .eyeControl })
         XCTAssertEqual(RouteCatalog.title(.eyeControl), "Eye Control")
+        let shop = RepoRef(owner: "a", name: "b")
+        let analysis: [(String, String, Route, Route)] = [
+            ("ember", "Ember", .ember(nil), .ember(shop)), ("strata", "Strata", .strata(nil), .strata(shop)),
+            ("synapse", "Synapse", .synapse(nil), .synapse(shop)),
+        ]
+        for (id, name, route, scoped) in analysis {
+            XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: id, name: name)), route)
+            XCTAssertEqual(PackageRoutes.packageId(forHubItem: id), id)
+            XCTAssertEqual(PackageGate.packageId(for: route), id)
+            XCTAssertEqual(PackageGate.packageId(for: scoped), id)
+            XCTAssertEqual(scoped.repoRef, shop)
+            XCTAssertFalse(PackageGate.shows(route, installed: ["phone-security"]))
+            XCTAssertTrue(PackageGate.shows(route, installed: [id]))
+            XCTAssertTrue(HubCatalog.insights.contains { $0.route == route })
+            XCTAssertEqual(RouteCatalog.title(route.kind), name)
+        }
+        XCTAssertNil(Route.synapse(nil).repoRef)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "openwrt", name: "OpenWrt Router")), .openWrtRouter)
         XCTAssertEqual(PackageRoutes.packageId(forHubItem: "openWrtRouter"), "openwrt")
         XCTAssertEqual(PackageGate.packageId(for: .openWrtRouter), "openwrt")
@@ -78,6 +95,13 @@ final class PackageRoutesTests: XCTestCase {
         XCTAssertTrue(PackageGate.shows(Route.openWrtRouter, installed: ["openwrt"]))
         XCTAssertTrue(HubCatalog.personal.contains { $0.route == .openWrtRouter })
         XCTAssertEqual(RouteCatalog.title(.openWrtRouter), "Router")
+        XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "files", name: "Files")), .fileExplorer)
+        XCTAssertEqual(PackageRoutes.packageId(forHubItem: "fileExplorer"), "files")
+        XCTAssertEqual(PackageGate.packageId(for: .fileExplorer), "files")
+        XCTAssertFalse(PackageGate.shows(Route.fileExplorer, installed: ["openwrt"]))
+        XCTAssertTrue(PackageGate.shows(Route.fileExplorer, installed: ["files"]))
+        XCTAssertTrue(HubCatalog.workspace.contains { $0.route == .fileExplorer })
+        XCTAssertEqual(RouteCatalog.title(.fileExplorer), "Files")
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "people", name: "People")), .people)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "docs", name: "Docs")), .docs)
         XCTAssertEqual(PackageRoutes.route(for: MarketPackage(id: "logs", name: "Logs")), .logs)

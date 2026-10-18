@@ -340,6 +340,42 @@ class OpenWrtState {
         checkStorage(keepLog = true)
     }
 
+    suspend fun installNetworkSharing() {
+        val current = client ?: return
+        if (storageBusy) return
+        val tool = snapshot.packageTool
+            ?: return show("The router does not let ForkMesh run its package manager. Install luci-app-package-manager (or luci-app-opkg) on the router.", true)
+        storageBusy = true
+        var failure = ""
+        try {
+            show("Installing ${OpenWrtModel.networkSharePackages.joinToString(" and ")}…")
+            storageLog = "Updating the router's package lists…"
+            val update = withContext(Dispatchers.IO) { current.packageAction(tool, "update", emptyList()) }
+            if (update.ok) {
+                appendStorageLog("Package lists updated.")
+            } else {
+                appendStorageLog("Updating the package lists failed; the router may have no internet connection. Trying to install anyway.")
+                OpenWrtModel.outputTail(update.error).forEach { appendStorageLog("  $it") }
+            }
+            for (name in OpenWrtModel.networkSharePackages) {
+                appendStorageLog("Installing $name…")
+                val result = withContext(Dispatchers.IO) { current.packageAction(tool, "install", listOf(name)) }
+                if (result.ok) {
+                    appendStorageLog("  $name is installed.")
+                } else {
+                    val output = (result.data.str("stdout") + "\n" + result.data.str("stderr")).trim().ifEmpty { result.error }
+                    val tail = OpenWrtModel.outputTail(output)
+                    tail.forEach { appendStorageLog("    $it") }
+                    if (failure.isEmpty()) failure = "Could not install $name: ${tail.joinToString(" ").ifEmpty { result.error }}"
+                }
+            }
+        } finally {
+            storageBusy = false
+        }
+        refresh()
+        if (failure.isEmpty()) show("Network sharing is installed. Share a mounted disk below.") else show(failure, true)
+    }
+
     suspend fun applyAndMount() {
         apply()
         if (snapshot.pendingCount > 0) return

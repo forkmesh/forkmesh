@@ -117,6 +117,9 @@ Everything is in `desktop/`.
   (see [../marketplace/README.md](../marketplace/README.md)).
 - **Home.** A home-screen grid of every rail page, arranged into pages, with
   live counts read from the rail buttons themselves so they never disagree.
+  The open repository's Code icon carries its open pull requests ("3 open
+  pulls"), read from the repository's Pulls tab badge, so the two always
+  match.
 - **Packages.** Many features are Market packages hosted in the desktop and
   can be turned off per project; hiding a package hides its rail button, tabs
   and search hits. Rules: [../marketplace/core-plugins.md](../marketplace/core-plugins.md).

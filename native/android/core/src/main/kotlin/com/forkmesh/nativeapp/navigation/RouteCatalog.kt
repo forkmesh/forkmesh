@@ -146,11 +146,15 @@ object RouteCatalog {
         Route.Kind.Calories -> "Calories"
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.PhoneSecurity -> "Phone Security"
+        Route.Kind.Ember -> "Ember"
+        Route.Kind.Strata -> "Strata"
+        Route.Kind.Synapse -> "Synapse"
         Route.Kind.OpenWrtRouter -> "Router"
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
         Route.Kind.RssReader -> "RSS Reader"
         Route.Kind.SecureDrive -> "Secure Drive"
+        Route.Kind.Files -> "Files"
         Route.Kind.Workflows -> "Workflows"
         Route.Kind.LocalAI -> "On-device AI"
         Route.Kind.Activity -> "Activity"
@@ -215,11 +219,15 @@ object RouteCatalog {
         Route.Kind.Calories -> "restaurant"
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.PhoneSecurity -> "security"
+        Route.Kind.Ember -> "local_fire_department_rounded"
+        Route.Kind.Strata -> "layers"
+        Route.Kind.Synapse -> "polyline"
         Route.Kind.OpenWrtRouter -> "router"
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
         Route.Kind.RssReader -> "feed"
         Route.Kind.SecureDrive -> "lock"
+        Route.Kind.Files -> "folder"
         Route.Kind.Workflows -> "account_tree"
         Route.Kind.LocalAI -> "memory"
         Route.Kind.Activity -> "bolt"
@@ -322,6 +330,7 @@ object HubCatalog {
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
         HubItem.destination(Route.SecureDrive),
+        HubItem.destination(Route.Files),
         HubItem.destination(Route.LocalAI, needsRegistration = true),
         HubItem.destination(Route.Activity),
     )
@@ -330,6 +339,9 @@ object HubCatalog {
         HubItem.destination(Route.Stats, needsRegistration = true),
         HubItem.destination(Route.Status, needsRegistration = true),
         HubItem.destination(Route.AppStoreStatus, needsRegistration = true),
+        HubItem.destination(Route.Ember(null)),
+        HubItem.destination(Route.Strata(null)),
+        HubItem.destination(Route.Synapse(null)),
         HubItem.destination(Route.Admin(null), needsRegistration = true, adminOnly = true),
     )
 

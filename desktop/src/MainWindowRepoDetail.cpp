@@ -1,6 +1,7 @@
 
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "NetworkFilesPanel.h"
 #include "SecretDiffBanner.h"
 #include "ActionStore.h"
 #include "GitRefusal.h"
@@ -2550,12 +2551,13 @@ void MainWindow::updateRepoFileSaveActions()
         w ? w->property("coveDocPath").toString() : QString();
     const bool coveFile =
         w && !w->property("coveId").toString().isEmpty() && !covePath.isEmpty();
+    const bool network = w && !w->property("networkFile").toString().isEmpty();
     const bool anyFile = editor && !path.isEmpty();
-    const bool haveFile = anyFile && !QDir::isAbsolutePath(path);
+    const bool haveFile = anyFile && !QDir::isAbsolutePath(path) && !network;
     // An absolute path belongs to the filesystem explorer rather than the
     // repository tree, but it can still be a writable on-disk text file.
     const bool editable = editor && !editor->isReadOnly();
-    const bool onDisk = w && !w->property("worktreeFile").toString().isEmpty();
+    const bool onDisk = w && (!w->property("worktreeFile").toString().isEmpty() || network);
     const bool coveEditable = coveFile && !coveEditorIsReadOnly(w);
     const bool coveDirectSave =
         coveFile && coveStoreForRepo(m_repoDetailIndex).canWrite();
@@ -2573,7 +2575,9 @@ void MainWindow::updateRepoFileSaveActions()
                                  "repository owner")
                 : coveFile
                       ? QStringLiteral("Save this encrypted Cove document")
-                      : QStringLiteral("Write this file back to the working tree"));
+                      : network
+                            ? QStringLiteral("Write this file back to the network share")
+                            : QStringLiteral("Write this file back to the working tree"));
     }
     if (m_repoFileCommitButton)
         m_repoFileCommitButton->setVisible(!onDisk && !coveFile);
@@ -2621,6 +2625,20 @@ void MainWindow::saveCurrentRepoFile(bool createPull)
     const QString path = w->property("previewPath").toString();
     if (path.isEmpty())
         return;
+    const QString networkFile = w->property("networkFile").toString();
+    if (!networkFile.isEmpty()) {
+        if (!m_networkFilesPanel)
+            return;
+        const QString text = editor->toPlainText();
+        const QPointer<QPlainTextEdit> guard(editor);
+        m_networkFilesPanel->saveText(networkFile, text, [this, guard, text](bool ok, const QString &error) {
+            if (ok && guard && guard->toPlainText() == text)
+                guard->document()->setModified(false);
+            flashMessage(ok ? QStringLiteral("Saved to the network share.") : error, !ok);
+            updateRepoFileSaveActions();
+        });
+        return;
+    }
     const QString worktreeFile = w->property("worktreeFile").toString();
     if (!worktreeFile.isEmpty()) {
         if (saveWorkingTreeFileEdit(worktreeFile, editor->toPlainText()))

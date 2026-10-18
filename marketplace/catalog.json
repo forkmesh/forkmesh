@@ -14,7 +14,7 @@
     ]
   },
   "packages": [
-    { "id": "capture", "version": "1.0.0", "manifest": "packages/capture/manifest.json" },
+    { "id": "capture", "version": "1.1.0", "manifest": "packages/capture/manifest.json" },
     { "id": "ledger", "version": "1.4.0", "manifest": "packages/ledger/manifest.json" },
     { "id": "x-banner-board", "version": "1.0.0", "manifest": "packages/x-banner-board/manifest.json" },
     { "id": "reddit-banner-board", "version": "1.0.0", "manifest": "packages/reddit-banner-board/manifest.json" },
@@ -59,6 +59,7 @@
     { "id": "cleanup", "version": "1.2.0", "manifest": "packages/cleanup/manifest.json" },
     { "id": "computer-security", "version": "1.2.0", "manifest": "packages/computer-security/manifest.json" },
     { "id": "openwrt", "version": "1.0.0", "manifest": "packages/openwrt/manifest.json" },
+    { "id": "files", "version": "1.0.0", "manifest": "packages/files/manifest.json" },
     { "id": "phone-security", "version": "1.0.0", "manifest": "packages/phone-security/manifest.json" },
     { "id": "eye-control", "version": "1.0.0", "manifest": "packages/eye-control/manifest.json" },
     { "id": "status-page", "version": "2.1.0", "manifest": "packages/status-page/manifest.json" },
@@ -134,8 +135,8 @@
     { "id": "sign-in", "version": "1.0.0", "manifest": "packages/sign-in/manifest.json" },
     { "id": "code-map", "version": "1.0.0", "manifest": "packages/code-map/manifest.json" },
     { "id": "size-map", "version": "1.0.0", "manifest": "packages/size-map/manifest.json" },
-    { "id": "strata", "version": "1.0.0", "manifest": "packages/strata/manifest.json" },
-    { "id": "ember", "version": "1.0.0", "manifest": "packages/ember/manifest.json" },
-    { "id": "synapse", "version": "1.0.0", "manifest": "packages/synapse/manifest.json" }
+    { "id": "strata", "version": "1.1.0", "manifest": "packages/strata/manifest.json" },
+    { "id": "ember", "version": "1.1.0", "manifest": "packages/ember/manifest.json" },
+    { "id": "synapse", "version": "1.1.0", "manifest": "packages/synapse/manifest.json" }
   ]
 }

@@ -229,7 +229,39 @@ public final class RSSReaderModel {
         if tally.failed > 0 { text += ", \(tally.failed) failed" }
         store.log("refresh", text)
         refreshing = false
+        iconLookups.removeAll()
         changed()
+    }
+
+    @ObservationIgnored private var iconLookups: Set<String> = []
+
+    public func iconData(_ feedId: String) -> Data? { store.iconData(feedId) }
+
+    public func needsIcon(_ feedId: String, hasImage: Bool) -> Bool {
+        guard let feed = store.feed(feedId) else { return false }
+        if iconLookups.contains(feedId + "|" + RSSFeedIcons.source(feed)) { return false }
+        return RSSFeedIcons.needsLookup(feed, now: store.now, hasImage: hasImage)
+    }
+
+    @discardableResult
+    public func resolveIcon(_ feedId: String, decodes: @escaping @Sendable (Data) -> Bool = { _ in true }) async -> Data? {
+        guard let feed = store.feed(feedId) else { return nil }
+        let source = RSSFeedIcons.source(feed)
+        guard iconLookups.insert(feedId + "|" + source).inserted else { return nil }
+        let outcome = await fetcher.icon(for: feed, decodes: decodes)
+        guard store.feed(feedId) != nil else { return nil }
+        switch outcome {
+        case let .found(url, data):
+            store.setIcon(feedId, url: url, data: data, source: source, at: store.now)
+            changed()
+            return data
+        case .missing:
+            store.setIcon(feedId, url: "", data: nil, source: source, at: store.now)
+            changed()
+            return nil
+        case .unreachable:
+            return nil
+        }
     }
 
     @ObservationIgnored private var tally = (added: 0, failed: 0)
@@ -369,7 +401,7 @@ public final class RSSReaderModel {
         _ = revision
         return RSSArticlePage.html(
             article: article, body: store.body(for: article), feed: store.feed(article.feedId), settings: store.settings,
-            reader: reader)
+            reader: reader, icon: store.settings.loadRemoteImages ? store.iconData(article.feedId) : nil)
     }
 
     public func loadReader(_ id: String) async -> Bool {

@@ -58,6 +58,33 @@ struct ShareOutcome
     QStringList sealedTo, skipped, withoutVault;
 };
 
+struct ImportLogin
+{
+    QString title, url, username, password, notes, otpauth;
+};
+
+struct ImportFile
+{
+    QString source;
+    QString sourceLabel;
+    QList<ImportLogin> logins;
+    int skippedRows = 0;
+};
+
+struct ImportPlan
+{
+    QList<ImportLogin> fresh;
+    int duplicates = 0;
+};
+
+struct ImportReport
+{
+    int added = 0;
+    int duplicates = 0;
+    int remaining = 0;
+    QString stoppedBy;
+};
+
 class VaultClient
 {
 public:
@@ -102,11 +129,20 @@ public:
     void syncPending(std::function<void(const QString &code, int sealed)> done);
     void organizations(std::function<void(const QString &code, const QStringList &)> done);
 
+    void importLogins(const QList<ImportLogin> &logins, std::function<void(int done, int total)> progress,
+                      std::function<void(const ImportReport &)> done);
+
     QString myFingerprint() const;
     void exportData(std::function<void(const QString &code, const QJsonObject &payload)> done);
     void destroy(std::function<void(const QString &code, const QJsonObject &payload)> done);
 
     static QJsonObject cleanFields(const QJsonObject &fields, QString *code);
+
+    static constexpr qint64 kImportMaxBytes = 16 * 1024 * 1024;
+    static QList<QStringList> parseCsv(const QString &text);
+    static bool readImportCsv(const QByteArray &bytes, ImportFile *file, QString *code);
+    static QJsonObject importFields(const ImportLogin &login);
+    static ImportPlan planImport(const QList<ImportLogin> &logins, const QList<VaultItem> &items);
 
 private:
     struct Sealed { QJsonArray grants; QStringList skipped; };

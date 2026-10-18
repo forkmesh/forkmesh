@@ -13,6 +13,7 @@ public enum DesktopStatsMethod {
     public static let ratchetRun = "stats.ratchet.run"
     public static let sentry = "stats.sentry"
     public static let codemagic = "stats.codemagic"
+    public static let tiles = "stats.tiles"
     public static let health = "diag.health"
 }
 
@@ -197,6 +198,10 @@ public final class DesktopStatsClient {
 
     public func health() async throws -> DesktopHealth {
         DesktopHealth(json: try await channel.request(DesktopStatsMethod.health, [:], timeout: 15))
+    }
+
+    public func tiles() async throws -> DesktopTilesReply {
+        DesktopTiles.reply(try await channel.request(DesktopStatsMethod.tiles, [:], timeout: 20))
     }
 
     public func timeline(days: Int = 30) async throws -> LogTimeline {

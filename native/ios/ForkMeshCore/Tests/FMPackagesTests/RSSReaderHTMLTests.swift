@@ -166,4 +166,34 @@ final class RSSReaderHTMLTests: XCTestCase {
         XCTAssertTrue(RSSReaderText.feedError("insecure_http").contains("plain HTTP"))
         XCTAssertEqual(RSSReaderText.feedError("http_404"), "The feed was not found (404).")
     }
+
+    func testCommentsLinkIsNotRepeated() {
+        var article = RSSArticle(feedId: "f", guid: "g")
+        article.title = "Show: a thing"
+        article.url = "https://eng.example.org/thing"
+        let feed = RSSFeed(id: "f", url: "https://news.example.com/rss", title: "News", siteUrl: "https://news.example.com/")
+        let settings = RSSReaderSettings()
+        func page(_ content: String, _ comments: String) -> String {
+            RSSArticlePage.html(
+                article: article, body: RSSArticleBody(contentHtml: content, commentsUrl: comments), feed: feed, settings: settings,
+                reader: false, timeZone: TimeZone(identifier: "UTC")!, locale: Locale(identifier: "en_US"))
+        }
+        let hn = "<p>Article URL: <a href=\"https://eng.example.org/thing\">https://eng.example.org/thing</a></p><p>Comments URL: <a href=\"https://NEWS.example.com/item?id=42&amp;p=1\">https://news.example.com/item?id=42&amp;p=1</a></p>"
+        let deduped = page(hn, "https://news.example.com/item?id=42&p=1")
+        XCTAssertFalse(deduped.contains("class=\"comments\""), deduped)
+        XCTAssertFalse(page("<p><a href=\"http://news.example.com/item/42/\">Discuss</a></p>", "https://news.example.com/item/42").contains("class=\"comments\""))
+        let kept = page("<p>Body with <a href=\"https://news.example.com/item?id=7\">another</a> link</p>", "https://news.example.com/item?id=42")
+        XCTAssertTrue(kept.contains("<p class=\"comments\"><a href=\"https://news.example.com/item?id=42\">Comments</a></p>"), kept)
+        XCTAssertTrue(page("<p>Plain</p>", "https://eng.example.org/thing#comments").contains("class=\"comments\""))
+        XCTAssertTrue(RSSArticlePage.linksTo("<a href=\"https://Example.org/a/?x=1&amp;y=2\">x</a>", "https://example.org/a?x=1&y=2"))
+        XCTAssertFalse(RSSArticlePage.linksTo("<a href=\"https://example.org/a\">x</a>", "https://example.org/a#comments"))
+    }
+
+    func testShareMessage() {
+        XCTAssertEqual(
+            RSSReaderText.shareMessage(title: "  Hello\n world ", link: "https://eng.example.org/p", feed: "Example Engineering", comment: " Worth a read "),
+            "Worth a read\nHello world \u{2014} Example Engineering\nhttps://eng.example.org/p")
+        XCTAssertEqual(RSSReaderText.shareMessage(title: "", link: "javascript:alert(1)"), "Untitled")
+        XCTAssertEqual(RSSReaderText.shareMessage(title: "Same", link: "https://x.example.org/", feed: "Same"), "Same\nhttps://x.example.org/")
+    }
 }

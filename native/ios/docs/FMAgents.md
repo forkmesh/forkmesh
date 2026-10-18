@@ -113,7 +113,7 @@ second form.
   `agent/quick/last-repo` and `agent/quick/target/<repo>`.
 - **Outcomes**: `.queued`, `.queuedWithoutSession`, `.device`, `.desktop`, `.needsFix(...)` (sign
   in, choose a repository, sign a CLI in on the node, set up this device, mirror first; the text
-  stays), `.failed`.
+  stays), `.failed`, and `.done` for the actions below.
 - **Desktop destination** (`.desktop(name)`): sends `agents.start` to the account's desktop over
   the control channel (LAN, else relay), trying the public owner, then the node owner, on
   `no_checkout`. Text only (no photos). `QuickLaunchRunOptions` adds YOLO (remembered under
@@ -124,10 +124,31 @@ second form.
   `agent/node-model-alias`. On-device Gemma (`on-device-gemma`) is offered when the build and
   device can run it; picking it moves the run to the device and checks readiness (`.needsFix
   (.setUpGemma)` opens Settings › On-device AI).
+- **Actions that start no agent** (`QuickPromptActions.swift`): the chip's menu starts with the
+  desktop composer's non-agent rows plus a bug report: **Bug report**, **Task · assign**,
+  **Manual · create issue**, **ActivityPub · post** and **Take a note**. The pick is remembered
+  under `agent/quick/action` (`""` once a model is picked). Until something is picked, the chip
+  shows **Bug report** whenever nothing can run an agent (`hasAgent`: no destination, or this
+  iPhone with no model or key), so someone with no agent installed still has a working Send.
+  Each sends through the app's `ShellPromptActions` and ends in `.done(message)`:
+  - Bug report: `POST /api/bug-reports` (screen `composer`, photos attached), no account needed.
+  - Task: `POST /api/tasks` like the desktop's `createQuickAddOrganizationTask` (first line as
+    the title, up to 160 characters; the whole prompt as details; General; priority 50). The
+    composer shows an **Assign to** menu, and the picker sheet an **Assign to** section, listing
+    you first and then the board's members when you can manage it; the pick is kept under
+    `tasks/composerAssignee`, empty is unassigned.
+  - Manual · create issue: a signed issue on the chosen published repository (InboxService).
+  - ActivityPub · post: `POST /api/repo/<owner>/<repo>/ap-publish` as a manual `discussion`
+    `open`, signed like a release announcement.
+  - Take a note: a private account note (`POST /api/notes`). The desktop keeps its notes on the
+    computer; the phone has no local notes, so it uses the account's.
+  Only the bug report takes photos. A spoken or Watch launch with a named repository always starts
+  an agent, whatever the chip shows.
 
 `PromptPhotoRules` (2048 px, JPEG without metadata, size limits) and `PromptMarkupRules` (the
 PencilKit markup editor geometry; see `docs/native/CAPTURE_MARKUP.md`) back the composer's
-photos.
+photos. `CaptureAreaRules` holds the long-press capture's maths: the dragged box clamped to the
+screen, the 16 pt minimum, the pixel crop and which accessibility elements count as content.
 
 ### Pasting images (`PromptPaste.swift`, app `PromptPasteboard.swift`)
 

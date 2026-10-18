@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.rssreader
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.security.NetworkSecurityPolicy
 import android.util.Base64
@@ -13,6 +14,7 @@ import com.forkmesh.nativeapp.rssreader.RssFetchException
 import com.forkmesh.nativeapp.rssreader.RssFetchOutcome
 import com.forkmesh.nativeapp.rssreader.RssFormat
 import com.forkmesh.nativeapp.rssreader.RssFetcher
+import com.forkmesh.nativeapp.rssreader.RssIcons
 import com.forkmesh.nativeapp.rssreader.RssImportResult
 import com.forkmesh.nativeapp.rssreader.RssLibrary
 import com.forkmesh.nativeapp.rssreader.RssLibraryException
@@ -24,16 +26,19 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -45,7 +50,8 @@ class RssReaderService(context: Context) {
     private var loadedLibrary: RssLibrary? = null
     private var saveJob: Job? = null
     private var refreshJob: Job? = null
-    private val iconAttempts = ConcurrentHashMap.newKeySet<String>()
+    private val iconsInFlight = ConcurrentHashMap.newKeySet<String>()
+    private val iconGate = Semaphore(4)
     private val iconBytes = ConcurrentHashMap<String, ByteArray>()
     private val thumbnails = LruCache<String, ImageBitmap>(MAX_THUMBNAILS)
     private val thumbnailFailures = ConcurrentHashMap.newKeySet<String>()
@@ -54,6 +60,7 @@ class RssReaderService(context: Context) {
     companion object {
         const val MAX_THUMBNAILS = 300
         const val MAX_THUMBNAIL_BYTES = 4 * 1024 * 1024
+        const val ICON_PIXELS = 192
     }
 
     private val versionState = MutableStateFlow(-1L)
@@ -135,7 +142,7 @@ class RssReaderService(context: Context) {
                 }
                 current.markRefreshed(System.currentTimeMillis())
                 changed()
-                fetchIcons(current)
+                scope.launch { fetchIcons(current) }
             } finally {
                 refreshingState.value = false
             }
@@ -144,18 +151,52 @@ class RssReaderService(context: Context) {
         return job
     }
 
-    private fun fetchIcons(current: RssLibrary) {
-        val missing = current.feeds().filter { !iconBytes.containsKey(it.id) && iconAttempts.add(it.id) }
-        if (missing.isEmpty()) return
-        val decoded = HashMap(iconState.value)
-        for (feed in missing) {
-            val bytes = runCatching { fetcher.icon(feed) }.getOrNull() ?: continue
-            val bitmap = decode(bytes) ?: continue
-            iconBytes[feed.id] = bytes
-            runCatching { store.writeIcon(feed.id, bytes) }
-            decoded[feed.id] = bitmap
+    private fun usableIcon(bytes: ByteArray): Boolean {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds) }
+        val width = bounds.outWidth
+        val height = bounds.outHeight
+        if (width <= 0 || height <= 0) return false
+        return maxOf(width, height) <= 2 * minOf(width, height)
+    }
+
+    private fun scaledIcon(bytes: ByteArray): ByteArray? = runCatching {
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return@runCatching null
+        if (maxOf(bitmap.width, bitmap.height) <= ICON_PIXELS * 4 / 3 && bytes.size <= 96 * 1024 && RssIcons.imageType(bytes) != "image/x-icon") return@runCatching bytes
+        val scale = minOf(1f, ICON_PIXELS.toFloat() / maxOf(bitmap.width, bitmap.height))
+        val width = maxOf(1, (bitmap.width * scale).toInt())
+        val height = maxOf(1, (bitmap.height * scale).toInt())
+        val scaled = if (scale < 1f) Bitmap.createScaledBitmap(bitmap, width, height, true) else bitmap
+        val out = ByteArrayOutputStream()
+        scaled.compress(Bitmap.CompressFormat.PNG, 100, out)
+        out.toByteArray()
+    }.getOrNull()
+
+    private suspend fun fetchIcons(current: RssLibrary) {
+        val due = current.iconsDue(System.currentTimeMillis()) { iconBytes.containsKey(it) }.filter { iconsInFlight.add(it.id) }
+        if (due.isEmpty()) return
+        try {
+            coroutineScope {
+                for (feed in due) {
+                    launch {
+                        iconGate.withPermit {
+                            val found = runCatching { fetcher.icon(feed, current.articleLink(feed.id), ::usableIcon) }.getOrNull()
+                            val bytes = found?.let { scaledIcon(it.bytes) }
+                            val bitmap = bytes?.let { decode(it) }
+                            if (bytes != null && bitmap != null) {
+                                iconBytes[feed.id] = bytes
+                                runCatching { store.writeIcon(feed.id, bytes) }
+                                iconState.update { it + (feed.id to bitmap) }
+                            }
+                            current.iconChecked(feed.id, if (bitmap != null) found.url else "", System.currentTimeMillis())
+                        }
+                    }
+                }
+            }
+        } finally {
+            for (feed in due) iconsInFlight.remove(feed.id)
+            changed()
         }
-        iconState.value = decoded
     }
 
     fun cachedThumbnail(url: String): ImageBitmap? = thumbnails.get(url)
@@ -219,14 +260,7 @@ class RssReaderService(context: Context) {
     fun iconDataUri(feedId: String): String {
         val bytes = iconBytes[feedId] ?: return ""
         if (bytes.size > 96 * 1024) return ""
-        val type = when {
-            bytes.size > 4 && bytes[0] == 0x89.toByte() && bytes[1] == 'P'.code.toByte() -> "image/png"
-            bytes.size > 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte() -> "image/jpeg"
-            bytes.size > 3 && bytes[0] == 'G'.code.toByte() && bytes[1] == 'I'.code.toByte() -> "image/gif"
-            bytes.size > 12 && bytes[8] == 'W'.code.toByte() && bytes[9] == 'E'.code.toByte() -> "image/webp"
-            bytes.size > 4 && bytes[0] == 0.toByte() && bytes[2] == 1.toByte() -> "image/x-icon"
-            else -> return ""
-        }
+        val type = RssIcons.imageType(bytes).ifEmpty { return "" }
         return "data:$type;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
     }
 

@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Developer tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "summary": "See how files connect, as a 3D brain: every file is a neuron, every import a lit fibre, circular dependencies glow red. Fly through it, follow a file's imports and importers, and find orphans and cycles.",
   "screenshots": [
     {
@@ -31,12 +31,14 @@
   },
   "entrypoints": {
     "desktop": "builtin:synapse",
+    "ios": "builtin:synapse",
+    "android": "builtin:synapse",
     "settings": "builtin:package"
   },
   "permissions": [
     {
       "id": "repository.read",
-      "label": "Read the source files of the repository you pick, on this computer",
+      "label": "Read the source files of the repository you pick, from its folder or a copy fetched onto the phone",
       "risk": "low"
     },
     {
@@ -58,7 +60,9 @@
   },
   "install": {
     "bundled": true,
-    "default": false
+    "default": false,
+    "sync": "account",
+    "places": ["mobile", "desktop"]
   },
   "lifecycle": {
     "migrations": []
