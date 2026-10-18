@@ -416,3 +416,141 @@ def test_the_control_endpoint_dispatches_cancels_and_reruns_locally():
     assert run(module.repository_actions_run_log_handler(
         env, ControlRequest("GET", actor="bob"), "forkmesh", "site",
         job * 100 + 1))["status"] == 403
+
+
+def org_setup():
+    runtime = FakeRuntime()
+    key = Key()
+    runtime.pool = {"forkmesh"}
+    runtime.gateways = {"forkmesh": "https://git.example.test"}
+    runtime.add_runner("box-runner", key, owners=("acme-bolt",))
+    runtime.db.executescript(
+        "UPDATE runner_nodes SET actions_trusted=1;"
+        "CREATE TABLE orgs (org_bi TEXT PRIMARY KEY, name TEXT);"
+        "CREATE TABLE org_repos (org_bi TEXT, repo TEXT, node_owner TEXT);"
+        "INSERT INTO orgs VALUES ('org-1', 'acme-bolt');"
+        "INSERT INTO org_repos VALUES ('org-1', 'bolt', 'drew');"
+        "INSERT INTO org_repos VALUES ('org-1', 'forkmesh', 'forkmesh');")
+    runtime.db.commit()
+    runtime.settings["ACTIONS_INSTANCE_RUNNER"] = "box-runner"
+    return runtime, key
+
+
+def test_identity_maps_an_organization_repository_both_ways():
+    runtime, _key = org_setup()
+    for owner in ("drew", "acme-bolt", "Acme-Bolt"):
+        assert run(runner_actions.identity(runtime, owner, "Bolt")) == (
+            "drew", "acme-bolt")
+    assert run(runner_actions.identity(runtime, "acme-bolt", "forkmesh")) == (
+        "forkmesh", "acme-bolt")
+    assert run(runner_actions.identity(runtime, "alice", "Bolt")) == (
+        "alice", "alice")
+    assert run(runner_actions.identity(runtime, "drew", "other")) == (
+        "drew", "drew")
+
+
+def test_an_organization_repository_job_is_leased_as_the_organization():
+    runtime, key = org_setup()
+    add_secret(runtime, "acme-bolt", "", "CLOUDFLARE_API_TOKEN", "org-token")
+    add_secret(runtime, "acme-bolt", "", "SHARED", "org-shared")
+    add_secret(runtime, "acme-bolt", "Bolt", "SHARED", "alias-repo")
+    add_secret(runtime, "drew", "Bolt", "OWN", "repo-own")
+    add_secret(runtime, "drew", "", "PERSONAL", "nope")
+    job_id = run(runner_actions.enqueue(
+        runtime, "drew", "Bolt", "main", COMMIT_A, "forkmesh", "drew",
+        before="1" * 40))
+    assert column(runtime, job_id, "owner") == "drew"
+    [job] = lease(runtime, key)
+    assert job["jobId"] == job_id
+    assert job["repositoryOwner"] == "acme-bolt"
+    assert job["organization"] == "acme-bolt"
+    assert job["cloneUrl"] == (
+        "https://git.example.test/v1/runner/acme-bolt/Bolt.git")
+    assert decode_grant(job["readGrant"])[1:5] == [
+        "forkmesh", "acme-bolt", "Bolt", "read"]
+    assert decode_grant(job["pushGrant"])[1:6] == [
+        "forkmesh", "acme-bolt", "Bolt", "actions-push", "refs/heads/main"]
+    assert job["secrets"] == {"CLOUDFLARE_API_TOKEN": "org-token",
+                              "OWN": "repo-own", "SHARED": "alias-repo"}
+    assert job["eventPayload"]["repository"] == {"full_name": "acme-bolt/Bolt"}
+    assert job["botName"] == "acme-bolt-actions"
+    body = {"jobId": job_id, "leaseId": job["leaseId"], "status": "completed",
+            "commit": COMMIT_A,
+            "runs": [{"workflow": "CI", "workflowPath": ".forkmesh/ci.yml",
+                      "commit": COMMIT_A, "ref": "refs/heads/main",
+                      "status": "success", "log": "org-token\n"}],
+            "catalog": [{"path": ".forkmesh/ci.yml", "name": "CI",
+                         "events": ["push", "workflow_dispatch"]}]}
+    assert report(runtime, key, body)["status"] == 200
+    assert run(runner_actions.run_log(
+        runtime, "acme-bolt", "Bolt", job_id * 100 + 1))["log"] == "***\n"
+    for owner in ("acme-bolt", "drew"):
+        snapshot = run(runner_actions.snapshot(runtime, owner, "Bolt"))
+        assert snapshot["source"] == "runner"
+        assert snapshot["controlAvailable"] is True
+        assert [w["path"] for w in snapshot["workflows"]] == [
+            ".forkmesh/ci.yml"]
+        assert [r["status"] for r in snapshot["runs"]] == ["success"]
+    dispatched, reason, _ = run(runner_actions.dispatch(
+        runtime, "acme-bolt", "Bolt", ".forkmesh/ci.yml", "main", {}, "ada"))
+    assert reason == "" and column(runtime, dispatched, "owner") == "drew"
+    assert run(runner_actions.cancel(
+        runtime, "acme-bolt", "Bolt", dispatched * 100)) == ""
+    assert column(runtime, dispatched, "status") == "cancelled"
+
+
+def test_a_job_for_an_owner_the_runner_does_not_serve_is_not_leased():
+    runtime, key = org_setup()
+    run(runner_actions.enqueue(
+        runtime, "alice", "site", "main", COMMIT_A, "forkmesh", "alice"))
+    assert lease(runtime, key) == []
+
+
+def test_a_failed_job_without_runs_shows_its_note_in_the_snapshot():
+    runtime, _key = org_setup()
+    job_id = run(runner_actions.enqueue(
+        runtime, "drew", "Bolt", "main", COMMIT_A, "forkmesh", "jett"))
+    runtime.db.execute(
+        "UPDATE repo_action_jobs SET status='failed',note=?,updated_at=? "
+        "WHERE id=?", ("This runner does not accept jobs for that owner.",
+                       NOW + 5, job_id))
+    runtime.db.commit()
+    [shown] = run(runner_actions.snapshot(runtime, "acme-bolt", "Bolt"))["runs"]
+    assert shown["status"] == "failed" and shown["finishedAt"] == NOW + 5
+    assert shown["logTail"] == (
+        "This runner does not accept jobs for that owner.\n")
+    assert shown["ref"] == "refs/heads/main" and shown["commit"] == COMMIT_A
+
+
+def test_the_instance_status_endpoint_answers_for_the_organization_address():
+    runtime, _key = org_setup()
+    module, audits = control_module(runtime)
+    asked = []
+
+    async def writer(_env, owner, repo, actor):
+        asked.append(owner)
+        return owner == "drew" and actor == "ada"
+
+    module._org_write_allowed = writer
+    env = type("Env", (), {"ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+
+    def status(owner, actor="ada"):
+        return run(module.repository_actions_instance_status_handler(
+            env, ControlRequest("GET", actor=actor), owner, "Bolt"))
+
+    empty = status("acme-bolt")
+    assert empty["status"] == 200
+    assert empty["data"]["source"] == "runner"
+    assert empty["data"]["controlAvailable"] is True
+    assert empty["data"]["runs"] == [] and empty["data"]["workflows"] == []
+    job_id = run(runner_actions.enqueue(
+        runtime, "acme-bolt", "Bolt", "main", COMMIT_A, "forkmesh", "ada"))
+    assert column(runtime, job_id, "owner") == "drew"
+    for owner in ("acme-bolt", "drew"):
+        answer = status(owner)
+        assert answer["status"] == 200
+        assert [r["id"] for r in answer["data"]["runs"]] == [job_id * 100]
+    assert set(asked) == {"drew"}
+    assert status("acme-bolt", actor="bob")["status"] == 403
+    assert status("acme-bolt", actor="")["status"] == 401
+    assert [a[2] for a in audits] == ["success"] * 3 + ["denied"]

@@ -270,10 +270,44 @@ updated_at`), `repo_action_secrets` (`owner, repo` (empty for an
 organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
 (`job_id, run_index, data, updated_at`).
 
-- Jobs are keyed by the repository's node owner (`forkmesh` on an
-  instance), as pushes record them; the lease also accepts a runner whose
-  `allowed_owners` lists the organization the node's repository is linked to,
-  and that organization names the bot and `repository.full_name`.
+- Jobs are keyed by the repository's storage owner: the node owner
+  (`forkmesh` for the platform mirror) or, for an organization repository,
+  the account that created it (Bolt is stored as `drew/Bolt` and linked to
+  `acme-bolt` in `org_repos`). `runner_actions.identity(owner, repo)` maps
+  either address, `acme-bolt/Bolt` or `drew/Bolt`, to the pair
+  `(storage, organization)`; enqueue, the catalog, dispatch, cancel, rerun,
+  run logs, the status snapshot and issue events all go through it, so every
+  address finds the same rows.
+- The lease names the organization everywhere the runner looks:
+  `repositoryOwner`, `organization`, the clone URL
+  (`/v1/runner/<org>/<repo>.git`, which the gateway serves as an alias) and
+  the owner in the read and `actions-push` grants, exactly like agent jobs
+  (`runner_leases._gateway_owner`). The Go runner checks its `allowedOwners`
+  against `organization` (falling back to `repositoryOwner` for a lease
+  without one). Before this, the lease sent the creator account
+  (`drew`), and a runner registered for `acme-bolt` refused every Bolt
+  job with "This runner does not accept jobs for that owner."
+- Secrets for a job: organization secrets (`owner=<org>`, empty repo), then
+  repository secrets stored under the organization address, then those under
+  the storage owner (the settings API is reached through the alias rewrite,
+  so new ones land there); a later group wins on a name clash.
+- `GET /api/repo/<owner>/<repo>/actions/runs` on an instance
+  (`ACTIONS_INSTANCE_RUNNER` set) answers from the runner tables
+  (`repository_actions_instance_status_handler`), for the owner, an account
+  owning the storage node or an organization writer, at either address and
+  for private repositories too. It no longer goes through the public mirror
+  routing context, which had no answer for an imported organization
+  repository, so the page showed no runs, workflows or controls. The answer
+  always has `source: runner`, `controlAvailable` and `workflows`, even with
+  no jobs yet. A job that ended without runs (refused, expired, cancelled)
+  shows as a failed or cancelled run whose log tail is the job's note.
+- Push jobs on an instance (`core_push.instance_action_updates`): the
+  default branch is queued whenever it moved; other branches only up to 5
+  per push. Branch creations are skipped when the same push creates the
+  default branch (an initial import or a first `git push --all`) or when it
+  creates more than 3 other branches (bulk ref creation); moved branches
+  still queue. So an import queues at most the default-branch job, and a
+  push of many new branches cannot flood the queue.
 - Push jobs keep the per-commit dedupe (also against `pushed_commit`, the
   loop guard) and queued coalescing, now per branch; every other event
   inserts its own row and must name a workflow (one path). At most one
