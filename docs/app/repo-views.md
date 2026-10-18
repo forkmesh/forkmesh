@@ -111,7 +111,22 @@ fediverse handle and watcher list are still in the Watchers popover.
 
 Below the list, Languages, Contributors and Direct access are plain sections
 with sentence-case headings. Contributor avatars are neutral initials (the
-name and commit count are in the tooltip), not coloured gradients. Direct
+name and commit count are in the tooltip), not coloured gradients, with the
+contributor's picture drawn over them when one is known:
+
+- `avatarUrl` from the gateway's `stats`: the repository's own
+  `.forkmesh/info.json` contributor list, else a GitHub no-reply commit email
+  (`<id>+<login>@users.noreply.github.com` gives
+  `avatars.githubusercontent.com/u/<id>`, `<login>@users.noreply.github.com`
+  gives `github.com/<login>.png`; `[bot]` logins without an id get none).
+  Only plain `https:` addresses are used, loaded lazily without a referrer; a
+  picture that fails to load is removed and the initials show.
+- otherwise, a contributor name that is a valid account name is looked up on
+  the instance (`/api/accounts/<name>`, the same cached lookup issue actors
+  use) and its avatar replaces the initials when the account exists and is
+  public. Names with spaces keep initials.
+
+Commit emails are not sent to the browser. Direct
 access lists online mirrors as plain rows with no green: the node name, its
 version or, for the node serving the page, the response time, and an
 open-direct icon. The repository-logo suggestion form and the owner's

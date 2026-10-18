@@ -27284,7 +27284,33 @@
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
-    return `<span title="${escapeHtml(title)}" class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(initials)}</span>`;
+    const classes = "relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground";
+    const initialsHtml = `<span>${escapeHtml(initials)}</span>`;
+    const picture = repoContributorAvatarUrl(contributor?.avatarUrl);
+    if (picture) {
+      return `<span title="${escapeHtml(title)}" data-repo-contributor-avatar class="${classes}">${initialsHtml}<img src="${escapeHtml(picture)}" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" /></span>`;
+    }
+    const handle = String(contributor?.name || "").trim().toLowerCase();
+    if (validNodeName(handle)) {
+      watchIssueActorAvatars();
+      return `<span title="${escapeHtml(title)}" data-issue-actor-avatar="${escapeHtml(handle)}" class="${classes}">${initialsHtml}</span>`;
+    }
+    return `<span title="${escapeHtml(title)}" class="${classes}">${initialsHtml}</span>`;
+  }
+
+  function repoContributorAvatarUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function dropBrokenContributorAvatars(list) {
+    list.querySelectorAll("[data-repo-contributor-avatar] img").forEach((image) => {
+      image.addEventListener("error", () => image.remove(), { once: true });
+    });
   }
 
   // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
@@ -27303,6 +27329,7 @@
     const more = (Number(total) || rows.length) - shown.length;
     list.innerHTML = shown.map(repoContributorAvatar).join("") +
       (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
+    dropBrokenContributorAvatars(list);
     section.classList.remove("hidden");
   }
 
