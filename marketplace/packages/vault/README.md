@@ -156,6 +156,15 @@ writes on iPhone. The iPhone app reads the same files (see On the phone).
 `tests/transfer_check.js` reads each app's format, Latin-1 and ZIP files;
 `tests/e2e_client.js` imports an Apple export against the real Worker module.
 
+The desktop rail page has the same import (**Import…** in its toolbar), with
+C++ twins in `VaultClient`: `readImportCsv(bytes)` (the same columns, app
+detection and 16 MB cap, UTF-8 with a Latin-1 fallback), `planImport`,
+`importFields`, and `importLogins`, which saves one login at a time and stops
+at the first error with the same report. It reads CSV files only: a Safari ZIP
+is unzipped first and its `Passwords.csv` chosen. The page zeroes its copy of
+the file once parsed. `tests/test_vault_client_flow.cpp` imports an Apple
+export against the real Worker module.
+
 ## On the desktop
 
 The rail page keeps every secret in memory: no settings key, no log line, no
