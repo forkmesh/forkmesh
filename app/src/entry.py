@@ -1425,6 +1425,7 @@ world_office_tasks = _LazyModule("world_office_tasks")
 world_build_board = _LazyModule("world_build_board")
 world_element_store = _LazyModule("world_element_store")
 world_link_kiosk = _LazyModule("world_link_kiosk")
+world_mesh = _LazyModule("world_mesh")
 
 # Every World route body lives in a sibling module so Cloudflare never
 # parses it during the Worker's Python startup validation; the routes are
@@ -1511,6 +1512,10 @@ world_relay_instances_handler = _world_routes.export(
 world_satellites_handler = _world_routes.export("world_satellites_handler")
 world_social_posts_handler = _world_routes.export("world_social_posts_handler")
 world_ticket_handler = _world_routes.export("world_ticket_handler")
+world_mesh_handler = _world_routes.export("world_mesh_handler")
+world_visa_handler = _world_routes.export("world_visa_handler")
+world_visa_verify_handler = _world_routes.export("world_visa_verify_handler")
+world_mesh_visitor = _world_routes.export("world_mesh_visitor")
 world_visitors_handler = _world_routes.export("world_visitors_handler")
 world_wallet_badge_handler = _world_routes.export("world_wallet_badge_handler")
 

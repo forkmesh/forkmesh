@@ -35,7 +35,9 @@ When the server cannot provide the page, the iPhone asks the paired desktop
 instead, so the desktop's App Store Connect credentials still answer. The phone
 falls back when `GET /api/app-store-status` fails with a "not there" code
 (`not_found`, `http_404`, `method_not_allowed`, `http_405`, or a
-not-installed code) or answers with no snapshot. Other failures (offline, 5xx)
+not-installed code), answers with no snapshot, or answers with a snapshot
+published before screenshots existed (see "A snapshot from before 1.1.0"
+below). Other failures (offline, 5xx)
 do not trigger the fallback. Without a paired desktop the phone does not try.
 
 The request is `stats.appStoreStatus` on the desktop's owner-only `stats.`
@@ -193,6 +195,23 @@ loads them straight from Apple while the links are fresh; every other read
 comes from `GET /screenshots/<id>`. A picture that is not uploaded yet shows a
 broken-picture tile and "This screenshot has not been uploaded yet. Run the
 iOS App Store status shortcut on your desktop again."
+
+### A snapshot from before 1.1.0 (2026-10-18)
+
+The iPhone's bug report asked again for the pictures on 2026-10-18. Apple
+returned a screenshot for every row, and production already ran 1.1.0, but
+the stored snapshot was published on 2026-10-15 by the older report. The
+worker cleans it on read to `screenshots: []` on every row, so no client had
+anything to show until the shortcut ran again.
+
+The iPhone now treats a snapshot as stale when it has screenshot feedback and
+none of those rows has a picture (`AppStoreSnapshot.lacksScreenshots`). It
+then asks the paired desktop the same way as the fallback above and shows the
+desktop's answer if it has pictures. If the desktop is unreachable or its
+answer has no pictures either, the server's page stays, with no error, and a
+line under Tester feedback reads "Tester screenshots appear once the iOS App
+Store status shortcut runs again on your desktop." Crash feedback never has
+pictures, so it does not count.
 
 Viewers: the web page opens a dialog with Previous/Next (and arrow keys) and a
 Save link; the desktop opens a dialog with Previous, Next and Save…; the

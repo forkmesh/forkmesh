@@ -3,29 +3,30 @@ import {
   CONTINUOUS_CITY_CORNER_RADIUS,
   CONTINUOUS_CITY_RADIUS,
   DESERT_PLOT_SURFACE_Y,
-  INSTANCE_HEX_SLOTS,
+  WORLD_MESH_FLOWER_HEXES,
   WORLD_ROAD_CORNER_SEGMENTS,
   WORLD_ROAD_JUNCTION_REACH,
   WORLD_ROAD_SURFACE_Y,
   WORLD_ROAD_WIDTH,
 } from "./layout.js";
 import { makeSharedMaterial } from "./materials.js";
-import { instanceHexCorners, roundedHexagonOutline } from "./movement.js";
+import { hexCorners, roundedHexagonOutline } from "./movement.js";
 import { setShadows } from "./object-utils.js";
-import { roundedHexagonGeometry } from "./town.js";
+import {
+  DESERT_SAND_TILE,
+  desertSandTexture,
+  roundedHexagonGeometry,
+} from "./town.js";
 import * as resources from "./resources.js";
 
-export const INSTANCE_LOGO_PATH = /^\/api\/start\/instances\/[0-9a-f]{32}\/logo\?v=\d+$/;
+export const INSTANCE_LOGO_PATH =
+  /^(?:https:\/\/[a-z0-9.-]+(?::\d{1,5})?)?\/api\/start\/instances\/[0-9a-f]{32}\/logo\?v=\d+$/;
 const LOGO_TEXTURE_SIZE = 256;
 const GROUND_LOGO_SIZE = 150;
 const LANDMARK_INSET = CONTINUOUS_CITY_RADIUS * 0.55;
+const MESH_ROAD_DROP = 0.02;
 
-export function instanceHexSlot(slot) {
-  const index = Number(slot);
-  return Number.isInteger(index) ? INSTANCE_HEX_SLOTS[index] || null : null;
-}
-
-function roadRingGeometry(THREE, tile) {
+function flowerRoadGeometry(THREE) {
   const outer = roundedHexagonOutline(
     CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
     CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
@@ -40,30 +41,35 @@ function roadRingGeometry(THREE, tile) {
   const normals = [];
   const indices = [];
   const count = outer.length;
-  for (let index = 0; index < count; index += 1) {
-    positions.push(inner[index][0], inner[index][1], 0);
-    positions.push(outer[index][0], outer[index][1], 0);
-    normals.push(0, 0, 1, 0, 0, 1);
-    const next = (index + 1) % count;
-    indices.push(index * 2, index * 2 + 1, next * 2 + 1);
-    indices.push(index * 2, next * 2 + 1, next * 2);
-  }
   const fanSegments = 12;
-  instanceHexCorners(tile).forEach((point) => {
-    const corner = { x: point.x - tile.x, y: tile.z - point.z };
+  WORLD_MESH_FLOWER_HEXES.forEach((hex) => {
+    const cx = hex.x;
+    const cy = -hex.z;
     const base = positions.length / 3;
-    positions.push(corner.x, corner.y, 0);
-    normals.push(0, 0, 1);
-    for (let step = 0; step < fanSegments; step += 1) {
-      const angle = (step * Math.PI * 2) / fanSegments;
-      positions.push(
-        corner.x + Math.cos(angle) * WORLD_ROAD_JUNCTION_REACH,
-        corner.y + Math.sin(angle) * WORLD_ROAD_JUNCTION_REACH,
-        0,
-      );
-      normals.push(0, 0, 1);
-      indices.push(base, base + 1 + step, base + 1 + ((step + 1) % fanSegments));
+    for (let index = 0; index < count; index += 1) {
+      positions.push(cx + inner[index][0], cy + inner[index][1], 0);
+      positions.push(cx + outer[index][0], cy + outer[index][1], 0);
+      normals.push(0, 0, 1, 0, 0, 1);
+      const next = (index + 1) % count;
+      indices.push(base + index * 2, base + index * 2 + 1, base + next * 2 + 1);
+      indices.push(base + index * 2, base + next * 2 + 1, base + next * 2);
     }
+    hexCorners(hex).forEach((point) => {
+      const corner = { x: point.x, y: -point.z };
+      const fan = positions.length / 3;
+      positions.push(corner.x, corner.y, 0);
+      normals.push(0, 0, 1);
+      for (let step = 0; step < fanSegments; step += 1) {
+        const angle = (step * Math.PI * 2) / fanSegments;
+        positions.push(
+          corner.x + Math.cos(angle) * WORLD_ROAD_JUNCTION_REACH,
+          corner.y + Math.sin(angle) * WORLD_ROAD_JUNCTION_REACH,
+          0,
+        );
+        normals.push(0, 0, 1);
+        indices.push(fan, fan + 1 + step, fan + 1 + ((step + 1) % fanSegments));
+      }
+    });
   });
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -98,6 +104,7 @@ export function loadInstanceLogo(THREE, url, apply) {
   if (!INSTANCE_LOGO_PATH.test(String(url || ""))) return;
   const image = new Image();
   image.decoding = "async";
+  if (/^https:/.test(String(url))) image.crossOrigin = "anonymous";
   image.onload = () => {
     const width = image.naturalWidth || LOGO_TEXTURE_SIZE;
     const height = image.naturalHeight || LOGO_TEXTURE_SIZE;
@@ -119,12 +126,18 @@ export function loadInstanceLogo(THREE, url, apply) {
   image.src = url;
 }
 
-export function createInstanceHex(THREE, instance, interactive) {
-  const tile = instanceHexSlot(instance.slot);
-  if (!tile) return null;
+export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z: 0 }) {
+  const centerX = Number(instance?.x);
+  const centerZ = Number(instance?.z);
+  if (!Number.isFinite(centerX) || !Number.isFinite(centerZ)) return null;
   const group = new THREE.Group();
   group.name = `forkmesh-instance-hex-${instance.id}`;
-  group.position.set(tile.x, 0, tile.z);
+  group.position.set(centerX, 0, centerZ);
+  const towardX = Number(home.x) - centerX;
+  const towardZ = Number(home.z) - centerZ;
+  const toward = Math.hypot(towardX, towardZ) || 1;
+  const facingX = towardX / toward;
+  const facingZ = towardZ / toward;
 
   const ground = new THREE.Mesh(
     resources.geometry(THREE, "instance-hex-ground", () =>
@@ -144,23 +157,49 @@ export function createInstanceHex(THREE, instance, interactive) {
   ground.userData.ground = true;
   group.add(ground);
 
-  const road = new THREE.Mesh(
-    resources.geometry(THREE, `instance-hex-road:${instance.slot}`, () =>
-      roadRingGeometry(THREE, tile),
+  const sand = new THREE.Mesh(
+    resources.geometry(THREE, "world-mesh-flower-sand", () =>
+      roundedHexagonGeometry(
+        THREE,
+        CONTINUOUS_CITY_RADIUS,
+        CONTINUOUS_CITY_CORNER_RADIUS,
+        WORLD_ROAD_CORNER_SEGMENTS,
+        {
+          centers: WORLD_MESH_FLOWER_HEXES.slice(1).map((hex) => [hex.x, -hex.z]),
+          uvScale: 1 / DESERT_SAND_TILE,
+        },
+      ),
     ),
+    resources.material(THREE, {
+      color: "#f2dfb8",
+      map: desertSandTexture(THREE),
+      roughness: 1,
+      metalness: 0,
+    }, "MeshStandardMaterial"),
+  );
+  sand.name = "forkmesh-instance-hex-sand";
+  sand.rotation.x = -Math.PI / 2;
+  sand.position.y = DESERT_PLOT_SURFACE_Y;
+  sand.receiveShadow = true;
+  sand.userData.ground = true;
+  group.add(sand);
+
+  const road = new THREE.Mesh(
+    resources.geometry(THREE, "world-mesh-flower-road", () => flowerRoadGeometry(THREE)),
     makeSharedMaterial(THREE, "#2b3433", { roughness: 0.92, metalness: 0 }),
   );
   road.name = "forkmesh-instance-hex-road";
   road.rotation.x = -Math.PI / 2;
-  road.position.y = WORLD_ROAD_SURFACE_Y;
+  road.position.y = WORLD_ROAD_SURFACE_Y - MESH_ROAD_DROP;
   road.receiveShadow = true;
   road.userData.ground = true;
   group.add(road);
 
   const pick = (object) => {
     object.userData.interactive = "instance-hexagon";
-    object.userData.url = instance.url;
+    object.userData.url = instance.world;
     object.userData.label = instance.name;
+    object.userData.host = instance.host;
     interactive.push(object);
   };
 
@@ -190,11 +229,11 @@ export function createInstanceHex(THREE, instance, interactive) {
   const landmark = new THREE.Group();
   landmark.name = "forkmesh-instance-hex-landmark";
   landmark.position.set(
-    -tile.normalX * LANDMARK_INSET,
+    facingX * LANDMARK_INSET,
     DESERT_PLOT_SURFACE_Y,
-    -tile.normalZ * LANDMARK_INSET,
+    facingZ * LANDMARK_INSET,
   );
-  landmark.rotation.y = Math.atan2(-tile.normalX, -tile.normalZ);
+  landmark.rotation.y = Math.atan2(facingX, facingZ);
   const stone = makeSharedMaterial(THREE, "#d8d0bf", { roughness: 0.9 });
   const plinth = new THREE.Mesh(
     resources.primitive(THREE, "CylinderGeometry", 7, 8, 1.2, 6),

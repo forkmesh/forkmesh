@@ -2,7 +2,7 @@ import { createInstancedMirrorSet } from "../../world-resource-cache.js";
 import { hashNumber } from "../../world-avatar-face.js";
 import { landmarkById } from "../../world-data.js";
 import { createAgentRobot } from "../agent-bots.js";
-import { createInstanceHex, instanceHexSlot } from "../instance-hexes.js";
+import { createInstanceHex } from "../instance-hexes.js";
 import {
   makeConsentedProfileFace,
   syncAvatarActivity,
@@ -11,7 +11,12 @@ import {
 } from "../avatars.js";
 import { canvasTexture } from "../canvas.js";
 import { makeLabelSprite, updatePlayerLabel } from "../labels.js";
-import { NODE_PLAZA_MAX_RADIUS } from "../layout.js";
+import {
+  CONTINUOUS_CITY_CENTER_Z,
+  NODE_PLAZA_MAX_RADIUS,
+  WORLD_BIKE_LANE_CENTER_X,
+  worldMeshSlotOffset,
+} from "../layout.js";
 import {
   avatarHitProxyMaterial,
   makeMaterial,
@@ -36,7 +41,7 @@ import {
   formatPlatformLimitBytes,
   systemCapacityMetricPairs,
 } from "../office-infrastructure.js";
-import { setInstanceHexTiles } from "../movement.js";
+import { setWorldMeshFlowers, worldMeshOwnerAt } from "../movement.js";
 import { safeRepositoryPath } from "../repositories.js";
 import * as resources from "../resources.js";
 
@@ -536,10 +541,26 @@ export function functions({
     district.userData.federatedInstanceLayer = layer;
   }
 
-  function updateInstanceHexes(instances = []) {
-    const key = JSON.stringify(Array.isArray(instances) ? instances : []);
+  function updateInstanceHexes(worlds = [], selfSlot = -1) {
+    const self = worldMeshSlotOffset(selfSlot);
+    const placed = [];
+    (self && Array.isArray(worlds) ? worlds : []).forEach((world) => {
+      const offset = worldMeshSlotOffset(world?.slot);
+      if (!offset || !world?.id) return;
+      const dx = offset.x - self.x;
+      const dz = offset.z - self.z;
+      if (Math.hypot(dx, dz) < 1) return;
+      placed.push({
+        ...world,
+        dx,
+        dz,
+        x: WORLD_BIKE_LANE_CENTER_X + dx,
+        z: CONTINUOUS_CITY_CENTER_Z + dz,
+      });
+    });
+    const key = JSON.stringify(placed);
     const existing = ctx.world.userData.instanceHexLayer;
-    if (existing && ctx.world.userData.instanceHexKey === key) return;
+    if (existing && ctx.world.userData.instanceHexKey === key) return placed;
     if (existing) {
       ctx.world.remove(existing);
       removeInteractiveObject(ctx.interactive, existing);
@@ -547,18 +568,22 @@ export function functions({
     }
     const layer = new THREE.Group();
     layer.name = "forkmesh-instance-hexes";
-    const tiles = [];
-    (Array.isArray(instances) ? instances : []).forEach((instance) => {
-      const hex = createInstanceHex(THREE, instance, ctx.interactive);
-      if (!hex) return;
-      layer.add(hex);
-      tiles.push(instanceHexSlot(instance.slot));
+    const home = { x: WORLD_BIKE_LANE_CENTER_X, z: CONTINUOUS_CITY_CENTER_Z };
+    placed.forEach((world) => {
+      const hex = createInstanceHex(THREE, world, ctx.interactive, home);
+      if (hex) layer.add(hex);
     });
-    setInstanceHexTiles(tiles);
+    setWorldMeshFlowers(placed);
     ctx.world.add(layer);
     ctx.world.userData.instanceHexLayer = layer;
     ctx.world.userData.instanceHexKey = key;
     ctx.groundSurfaces = null;
+    return placed;
+  }
+
+  function worldMeshOwner(x, z) {
+    const flower = worldMeshOwnerAt(x, z);
+    return flower ? { id: flower.id, dx: flower.dx, dz: flower.dz } : null;
   }
 
   function updateBots(bots = []) {
@@ -1372,6 +1397,7 @@ export function functions({
     focusNetworkNode,
     updateFederatedInstances,
     updateInstanceHexes,
+    worldMeshOwner,
     updateBots,
     updateSystemCapacity,
     updateOrganizations,

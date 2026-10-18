@@ -163,15 +163,52 @@ export const DESERT_HEXES = Object.freeze(
     });
   }),
 );
+const WORLD_MESH_FLOWER_STEP = Object.freeze({
+  x: WORLD_HEX_PITCH * 2.5,
+  z: (WORLD_HEX_PITCH * Math.sqrt(3)) / 2,
+});
+function rotateMeshVector(vector, sixths) {
+  const angle = (sixths * Math.PI) / 3;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return { x: vector.x * cos - vector.z * sin, z: vector.x * sin + vector.z * cos };
+}
+const WORLD_MESH_SLOT_OFFSETS = Object.freeze(
+  [0, 1, 2, 3, 4, 5]
+    .map((side) => rotateMeshVector(WORLD_MESH_FLOWER_STEP, side))
+    .concat(
+      [0, 1, 2, 3, 4, 5].map((side) => {
+        const first = rotateMeshVector(WORLD_MESH_FLOWER_STEP, side);
+        const second = rotateMeshVector(WORLD_MESH_FLOWER_STEP, side + 1);
+        return { x: first.x + second.x, z: first.z + second.z };
+      }),
+    )
+    .map((offset) => Object.freeze(offset)),
+);
+export const WORLD_MESH_FLOWER_HEXES = Object.freeze(
+  [Object.freeze({ x: 0, z: 0 })].concat(
+    [0, 1, 2, 3, 4, 5].map((side) =>
+      Object.freeze({
+        x: Math.cos((side * Math.PI) / 3) * WORLD_HEX_PITCH,
+        z: Math.sin((side * Math.PI) / 3) * WORLD_HEX_PITCH,
+      }),
+    ),
+  ),
+);
+export const WORLD_MESH_FLOWER_REACH = WORLD_HEX_PITCH + CONTINUOUS_CITY_RADIUS * 1.2;
+export function worldMeshSlotOffset(slot) {
+  const index = Number(slot);
+  if (index === -1) return { x: 0, z: 0 };
+  return Number.isInteger(index) ? WORLD_MESH_SLOT_OFFSETS[index] || null : null;
+}
 export const INSTANCE_HEX_SLOTS = Object.freeze(
-  [1, 3, 5, 7, 9, 11, 0, 2, 4, 6, 8, 10].map((step) => {
-    const angle = (step * Math.PI) / 6;
-    const reach = WORLD_HEX_PITCH * (step % 2 ? Math.sqrt(3) : 2);
+  WORLD_MESH_SLOT_OFFSETS.map((offset) => {
+    const reach = Math.hypot(offset.x, offset.z);
     return Object.freeze({
-      x: WORLD_BIKE_LANE_CENTER_X + Math.cos(angle) * reach,
-      z: CONTINUOUS_CITY_CENTER_Z + Math.sin(angle) * reach,
-      normalX: Math.cos(angle),
-      normalZ: Math.sin(angle),
+      x: WORLD_BIKE_LANE_CENTER_X + offset.x,
+      z: CONTINUOUS_CITY_CENTER_Z + offset.z,
+      normalX: offset.x / reach,
+      normalZ: offset.z / reach,
     });
   }),
 );

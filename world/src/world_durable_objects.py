@@ -67,6 +67,20 @@ class ForkMeshWorld(DurableObject):
             )
 
         now = int(Date.now())
+        try:
+            mesh_home = str(
+                request.headers.get("x-forkmesh-world-home") or "")
+            watch = (
+                str(request.headers.get("x-forkmesh-world-watch") or "")
+                == "1")
+        except Exception:
+            mesh_home = ""
+            watch = False
+        if not re.fullmatch(
+                r"[a-z0-9.-]{1,253}(?::[0-9]{1,5})?", mesh_home):
+            mesh_home = ""
+        if watch and mesh_home:
+            return self._watch_socket(now)
         peers = self._live_sockets(cleanup=True)
         if len(peers) >= world_protocol.WORLD_MAX_CONNECTIONS:
             return json_response({"error": "world_full"}, status=429)
@@ -149,7 +163,7 @@ class ForkMeshWorld(DurableObject):
         # can fold two sockets together — a guest may type any display name, so
         # guests are never combined and no unverified name can evict anyone.
         account_key = world_protocol.account_presence_key(
-            trusted_claim.get("name", ""))
+            trusted_claim.get("name", ""), mesh_home)
         if account_key:
             replaced = [
                 peer for peer in peers
@@ -166,6 +180,7 @@ class ForkMeshWorld(DurableObject):
                 peers = self._live_sockets()
 
         state = world_protocol.default_presence(peer_id, now)
+        state["home"] = mesh_home
         blocked_slots = []
         for peer in peers:
             blocked_slots.append(_ws_attr(peer, "arrival_slot", -1))
@@ -239,6 +254,65 @@ class ForkMeshWorld(DurableObject):
 
         return JsResponse.new(
             None, to_js({"status": 101, "webSocket": client}))
+
+    def _watch_socket(self, now):
+        if len(self._live_watchers(cleanup=True)) >= (
+                world_protocol.WORLD_MAX_WATCHERS):
+            return json_response({"error": "world_full"}, status=429)
+        client, server = WebSocketPair.new().object_values()
+        self.ctx.acceptWebSocket(server, to_js(["watch"]))
+        try:
+            server.serializeAttachment(
+                to_js({"channel": "watch", "last": int(now)}))
+        except Exception:
+            pass
+        self._safe_send(server, {
+            "type": "welcome",
+            "id": "",
+            "watch": True,
+            "peers": [
+                world_protocol.public_presence(self._socket_state(peer))
+                for peer in self._live_sockets(cleanup=True)
+            ],
+        })
+        return JsResponse.new(
+            None, to_js({"status": 101, "webSocket": client}))
+
+    def _live_watchers(self, cleanup=False):
+        now = int(Date.now())
+        try:
+            sockets = self.ctx.getWebSockets("watch")
+        except Exception:
+            sockets = []
+        live = []
+        for socket in sockets:
+            if world_protocol.presence_is_stale(
+                    _ws_attr(socket, "last", 0), now):
+                if cleanup:
+                    self._safe_close(socket, 1001, "stale")
+                continue
+            live.append(socket)
+        return live
+
+    def _watch_message(self, ws, message):
+        if not isinstance(message, str) or len(message.encode("utf-8")) > 128:
+            self._safe_close(ws, 1003, "watch sockets only ping")
+            return
+        try:
+            payload = json.loads(message)
+        except Exception:
+            return
+        if not isinstance(payload, dict) or payload.get("type") != "ping":
+            return
+        now = int(Date.now())
+        if now - int(_ws_attr(ws, "last", 0) or 0) < 5000:
+            return
+        try:
+            ws.serializeAttachment(
+                to_js({"channel": "watch", "last": now}))
+        except Exception:
+            pass
+        self._safe_send(ws, {"type": "pong", "serverTimeMs": now})
 
     def _status_socket(self, request):
         """Accept a public, receive-only status-generation signal socket."""
@@ -552,7 +626,8 @@ class ForkMeshWorld(DurableObject):
             # frame; it only lets a later connection from the same verified
             # account retire this socket instead of standing beside it.
             "account_key": (
-                world_protocol.account_presence_key(trusted_fields["name"])
+                world_protocol.account_presence_key(
+                    trusted_fields["name"], state.get("home") or "")
                 if trusted_name else ""),
             # These opaque rotating subjects and authorization bit remain
             # private attachment data. Only `_presence_for_viewer` can project
@@ -722,9 +797,10 @@ class ForkMeshWorld(DurableObject):
         # the socket departed before close prevents webSocketClose from sending
         # the same leave twice.
         if cleanup and stale_ids:
+            watchers = self._live_watchers()
             for stale_id in stale_ids:
                 frame = {"type": "leave", "id": stale_id}
-                for peer in live:
+                for peer in live + watchers:
                     self._safe_send(peer, frame)
         return live
 
@@ -784,6 +860,9 @@ class ForkMeshWorld(DurableObject):
             if isinstance(payload, dict) and payload.get("type") == "ping":
                 self._safe_send(
                     ws, {"type": "pong", "serverTimeMs": int(Date.now())})
+            return
+        if _ws_attr(ws, "channel", "") == "watch":
+            self._watch_message(ws, message)
             return
         if bool(_ws_attr(ws, "departed", False)):
             self._safe_close(ws, 1000, "")
@@ -1006,7 +1085,7 @@ class ForkMeshWorld(DurableObject):
             moderation_subject=ws if kind == "presence" else None)
 
     async def webSocketClose(self, ws, code, reason, was_clean):
-        if _ws_attr(ws, "channel", "") == "status":
+        if _ws_attr(ws, "channel", "") in ("status", "watch"):
             self._safe_close(ws, 1000, "")
             await durable_object_traffic_flush(self, force=True)
             return
@@ -1017,7 +1096,7 @@ class ForkMeshWorld(DurableObject):
         await durable_object_traffic_flush(self, force=True)
 
     async def webSocketError(self, ws, error):
-        if _ws_attr(ws, "channel", "") == "status":
+        if _ws_attr(ws, "channel", "") in ("status", "watch"):
             self._safe_close(ws, 1011, "socket error")
             return
         await self._flush_steps(ws, int(Date.now()), force=True)
@@ -1060,6 +1139,9 @@ class ForkMeshWorld(DurableObject):
                         peer, moderation_subject),
                 }
             self._safe_send(peer, outgoing)
+        if frame.get("type") in world_protocol.WORLD_WATCH_FRAME_TYPES:
+            for watcher in self._live_watchers():
+                self._safe_send(watcher, frame)
 
     def _safe_send(self, ws, frame):
         payload = json.dumps(frame, separators=(",", ":"))

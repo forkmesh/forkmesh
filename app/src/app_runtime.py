@@ -2084,6 +2084,15 @@ class Default:
         if url.path in ("/api/world/ticket", "/api/world/ticket/"):
             return await world_ticket_handler(self.env, request)
 
+        if url.path in ("/api/world/mesh", "/api/world/mesh/"):
+            return await world_mesh_handler(self.env, request)
+
+        if url.path in ("/api/world/visa", "/api/world/visa/"):
+            return await world_visa_handler(self.env, request)
+
+        if url.path in ("/api/world/visa/verify", "/api/world/visa/verify/"):
+            return await world_visa_verify_handler(self.env, request)
+
         if url.path in ("/api/world/client", "/api/world/client/"):
             return await world_client_profile_handler(self.env, request)
 
@@ -2324,21 +2333,37 @@ class Default:
                     status=405,
                     extra_headers={"allow": "GET"},
                 )
-            if not world_websocket_origin_allowed(request, self.env):
-                return json_response({"error": "origin_not_allowed"}, status=403)
             query = parse_qs(url.query, keep_blank_values=False)
-            ticket_values = query.get("ticket") or []
+            mesh_visitor = None
+            if not world_websocket_origin_allowed(request, self.env):
+                visa_values = query.get("visa") or []
+                mesh_visitor = await world_mesh_visitor(
+                    self.env, request,
+                    visa_values[0] if len(visa_values) == 1 else "")
+                if not mesh_visitor:
+                    return json_response(
+                        {"error": "origin_not_allowed"}, status=403)
+                if mesh_visitor.get("error"):
+                    return json_response(
+                        {"error": "invalid_world_session"},
+                        status=401,
+                        cache_control="no-store, max-age=0, must-revalidate",
+                    )
+            ticket_values = (
+                [] if mesh_visitor else (query.get("ticket") or []))
             trusted_claim = (
                 _world_ticket_decode(self.env, ticket_values[0])
                 if len(ticket_values) == 1 else None
             )
+            if mesh_visitor:
+                trusted_claim = mesh_visitor.get("claim") or None
             if ticket_values and not trusted_claim:
                 return json_response(
                     {"error": "invalid_world_session"},
                     status=401,
                     cache_control="no-store, max-age=0, must-revalidate",
                 )
-            if trusted_claim:
+            if trusted_claim and not mesh_visitor:
                 try:
                     account_bi, session_record = (
                         await _account_session_record(
@@ -2392,7 +2417,10 @@ class Default:
                 try:
                     return await world_object.fetch(
                         await world_durable_object_request(
-                            request, trusted_claim, moderation_tokens))
+                            request, trusted_claim, moderation_tokens,
+                            mesh_home=(mesh_visitor or {}).get("home", ""),
+                            watch=bool(mesh_visitor) and (
+                                query.get("watch") or [""])[0] == "1"))
                 except Exception as error:
                     last_error = error
             await log_durable_object_abort(

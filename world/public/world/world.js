@@ -55,6 +55,14 @@ import { buildRepositoryGraphEntities } from "./world-repository-graph.js";
 import { officeFloorsForTeam } from "./world-office-tower.js";
 import { createWorldSocketRecoveryTimers } from "./world-socket-recovery.js";
 import {
+  WORLD_MESH_OUTDOOR_SPACES,
+  WORLD_MESH_SPACE,
+  WORLD_MESH_VISITING_SPACE,
+  WorldMeshLinks,
+  normalizeWorldMesh,
+  worldMeshHost,
+} from "./world-mesh.js";
+import {
   WORLD_DEBUG_LOG_CATEGORIES,
   createWorldDebugLog,
   describeFirstSight,
@@ -2901,9 +2909,13 @@ function sessionSolanaAddress(session) {
   return WORLD_SOLANA_ADDRESS_RE.test(address) ? address : "";
 }
 
+const PRESENCE_COORD_LIMIT = 1900;
+
 function boundedPresenceNumber(value) {
   const number = Number(value);
-  return Number.isFinite(number) ? Math.max(-512, Math.min(512, number)) : 0;
+  return Number.isFinite(number)
+    ? Math.max(-PRESENCE_COORD_LIMIT, Math.min(PRESENCE_COORD_LIMIT, number))
+    : 0;
 }
 
 function boundedYaw(value) {
@@ -2984,9 +2996,13 @@ function remotePlayer(peer) {
       adminGuestNetwork.userAgent = userAgent;
     }
   }
+  const home = worldMeshHost(peer.home);
+  if (home) peer = { ...peer, faceImage: false };
+  const name = sanitizePresenceText(peer.name, "visitor", 32);
   return {
     id: String(peer.id),
-    name: sanitizePresenceText(peer.name, "visitor", 32),
+    name: home && home !== location.host ? `${name}@${home}`.slice(0, 64) : name,
+    home,
     flag: flagEmoji(peer.countryCode),
     countryCode: /^[A-Z]{2}$/.test(String(peer.countryCode || ""))
       ? String(peer.countryCode)
@@ -3016,9 +3032,11 @@ function remotePlayer(peer) {
       { length: Math.max(0, Math.min(6, Number(peer.nodeCount) || 0)) },
       () => "node",
     ),
-    space: knownWorldSpace(String(peer.space || ""))
-      ? String(peer.space)
-      : "town-square",
+    space:
+      knownWorldSpace(String(peer.space || "")) ||
+      peer.space === WORLD_MESH_VISITING_SPACE
+        ? String(peer.space)
+        : "town-square",
     localTime: /^\d{2}:\d{2}$/.test(String(peer.localTime || ""))
       ? String(peer.localTime)
       : "",
@@ -3572,38 +3590,6 @@ function normalizeInactiveWorldPlayers(value) {
       heading: 0,
       persistedInactive: true,
     }));
-}
-
-function normalizeInstanceHexes(value) {
-  const seen = new Set();
-  return (Array.isArray(value?.instances) ? value.instances : [])
-    .map((item) => {
-      const url = safeHTTPURL(item?.url);
-      const slot = Number(item?.slot);
-      if (
-        item?.world !== true ||
-        !url.startsWith("https://") ||
-        !Number.isInteger(slot) ||
-        slot < 0 ||
-        seen.has(slot) ||
-        !/^[a-f0-9]{32}$/.test(String(item?.id || ""))
-      ) {
-        return null;
-      }
-      seen.add(slot);
-      const logo = String(item?.logo || "");
-      return {
-        id: String(item.id),
-        name: sanitizePresenceText(item?.name, "ForkMesh instance", 40),
-        url,
-        host: new URL(url).hostname,
-        logo: /^\/api\/start\/instances\/[0-9a-f]{32}\/logo\?v=\d+$/.test(logo)
-          ? logo
-          : "",
-        slot,
-      };
-    })
-    .filter(Boolean);
 }
 
 function normalizeFederatedInstances(value) {
@@ -6405,7 +6391,9 @@ class ForkMeshWorld extends HTMLElement {
     this.securitySnapshotLoad = null;
     this.nearbyLandmarkId = "";
     this.federatedInstances = [];
-    this.instanceHexes = [];
+    this.worldMesh = { self: null, worlds: [] };
+    this.meshLinks = null;
+    this.meshVisitId = "";
     this.communityPlacement = null;
     this.networkAd = null;
     this.networkAdLoad = null;
@@ -7946,11 +7934,10 @@ class ForkMeshWorld extends HTMLElement {
         onStartWorldSignSelect: (plot) => this.openStartInstance(plot),
         onDrinkWater: () =>
           this.hudNotice("Fresh garden water — hydration restored. 💧"),
-        onInstanceHexagonSelect: ({ url, label }) => {
-          const destination = safeHTTPURL(url);
-          if (!destination.startsWith("https://")) return;
-          this.hudNotice(`Opening ${label || "ForkMesh instance"}…`);
-          window.open(destination, "_blank", "noopener,noreferrer");
+        onInstanceHexagonSelect: ({ label, host }) => {
+          this.hudNotice(
+            `${label || "ForkMesh world"}${host ? ` · ${host}` : ""}: walk onto its hexagon to visit.`,
+          );
         },
         onFederatedWorldTravel: ({ origin, label }) => {
           const destination = safeHTTPURL(origin);
@@ -8139,7 +8126,7 @@ class ForkMeshWorld extends HTMLElement {
           this.world.updateFederatedInstances?.(this.federatedInstances);
           this.celebrateRecentInstance(this.federatedInstances);
         },
-        () => this.world.updateInstanceHexes?.(this.instanceHexes),
+        () => this.placeWorldMesh(),
         () => this.world.updateBots(this.botDirectory),
         () => this.world.updateFediverseDirectory(this.fediverseDirectory),
         () => this.world.updateMediaSpaces?.(this.mediaSpaces, this.mediaRoom),
@@ -9515,8 +9502,10 @@ class ForkMeshWorld extends HTMLElement {
       try {
         this.socket?.close(1000, "page hidden");
       } catch (_) {}
+      this.meshLinks?.update(NaN, NaN, "");
       return;
     }
+    this.syncWorldMeshPosition();
     void this.validateActiveWorldSession();
     void this.checkForWorldUpdate();
     this.startDeployStatusWatch();
@@ -11183,15 +11172,15 @@ class ForkMeshWorld extends HTMLElement {
     } catch (_) {}
     try {
       const payload = await this.fetchJSON(
-        `/api/start/instances?refresh=${Math.floor(Date.now() / 300_000)}`,
+        `/api/world/mesh?refresh=${Math.floor(Date.now() / 300_000)}`,
         {
           auth: false,
           timeout: 5000,
           credentials: "omit",
         },
       );
-      this.instanceHexes = normalizeInstanceHexes(payload);
-      this.world?.updateInstanceHexes?.(this.instanceHexes);
+      this.worldMesh = normalizeWorldMesh(payload);
+      this.placeWorldMesh();
     } catch (_) {}
     try {
       const payload = await this.fetchJSON(
@@ -11213,6 +11202,119 @@ class ForkMeshWorld extends HTMLElement {
     this.instanceDirectoryTimer = window.setInterval(() => {
       if (!document.hidden) void this.refreshInstanceDirectory();
     }, intervalMs);
+  }
+
+  placeWorldMesh() {
+    if (!this.world || this.destroyed) return;
+    const self = this.worldMesh?.self || null;
+    const neighbors = self
+      ? this.worldMesh.worlds.filter((world) => world.id !== self.id)
+      : [];
+    const placed =
+      this.world.updateInstanceHexes?.(neighbors, self ? self.slot : -1) || [];
+    this.worldMeshLinks()?.setNeighbors(placed);
+    this.syncWorldMeshPosition();
+  }
+
+  worldMeshLinks() {
+    if (this.destroyed) return null;
+    if (!this.meshLinks) {
+      this.meshLinks = new WorldMeshLinks({
+        onPeersChanged: () => this.schedulePeerRender(),
+        onPeerMoved: (entry) => {
+          const player = this.meshPlayer(entry);
+          if (!player || !this.world?.setRemotePlayerMovement?.(player.id, player)) {
+            this.schedulePeerRender();
+          }
+        },
+        onVisitChanged: (world, previous) =>
+          this.handleWorldMeshVisit(world, previous),
+        requestVisa: (world) => this.requestWorldVisa(world),
+        presenceFrame: () => this.presencePayload(),
+        moveIntervalMs: MOVEMENT_SEND_INTERVAL_MS,
+      });
+    }
+    return this.meshLinks;
+  }
+
+  syncWorldMeshPosition(movement = this.lastMovement) {
+    if (!this.meshLinks) return;
+    const x = Number(movement?.x);
+    const z = Number(movement?.z);
+    const space = String(movement?.space || this.currentSpace || "town-square");
+    if (
+      document.hidden ||
+      !WORLD_MESH_OUTDOOR_SPACES.has(space) ||
+      !Number.isFinite(x) ||
+      !Number.isFinite(z)
+    ) {
+      this.meshLinks.update(NaN, NaN, "");
+      return;
+    }
+    this.meshLinks.update(x, z, this.world?.worldMeshOwner?.(x, z)?.id || "");
+  }
+
+  handleWorldMeshVisit(world, previous) {
+    this.meshVisitId = world?.id || "";
+    if (this.destroyed) return;
+    if (world) {
+      this.hudNotice(`Entering ${world.name} · ${world.host}`);
+    } else if (previous) {
+      this.hudNotice(`Back in ${this.worldMesh?.self?.name || "your world"}`);
+    }
+    this.sendPresenceNow({ type: "presence" });
+    this.schedulePeerRender();
+  }
+
+  async requestWorldVisa(world) {
+    if (!this.sessionAuthenticated || !world?.world) return "";
+    try {
+      const payload = await this.postJSON(
+        "/api/world/visa",
+        { destination: world.world },
+        { timeout: 5000 },
+      );
+      return typeof payload?.visa === "string" ? payload.visa : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  meshPeerPlayers() {
+    return (this.meshLinks?.peers() || [])
+      .map((entry) => this.meshPlayer(entry))
+      .filter(Boolean);
+  }
+
+  meshPlayer(entry) {
+    const peer = entry?.peer;
+    if (!peer || !WORLD_MESH_OUTDOOR_SPACES.has(String(peer.space || "town-square"))) {
+      return null;
+    }
+    const base = remotePlayer({ ...peer, home: "", x: 0, y: 0, z: 0 });
+    if (!base) return null;
+    const home = worldMeshHost(peer.home) || entry.host;
+    const x = Number(peer.x);
+    const y = Number(peer.y);
+    const z = Number(peer.z);
+    return {
+      ...base,
+      id: `mesh:${entry.worldId}:${base.id}`,
+      name: home === location.host ? base.name : `${base.name}@${home}`.slice(0, 64),
+      home,
+      space: WORLD_MESH_SPACE,
+      x: (Number.isFinite(x) ? x : 0) + entry.dx,
+      y: Number.isFinite(y) ? y : 0,
+      z: (Number.isFinite(z) ? z : 0) + entry.dz,
+      activity: "exploring",
+      category: "hidden",
+      publicDoor: "closed",
+      faceImage: false,
+      moderationHandles: {},
+      adminGuestNetwork: {},
+      solana: "",
+      meshWorld: entry.worldId,
+    };
   }
 
   celebrateRecentInstance(instances = []) {
@@ -31013,6 +31115,7 @@ class ForkMeshWorld extends HTMLElement {
       this.lastMovement,
       movement?.moving === false,
     );
+    this.syncWorldMeshPosition(this.lastMovement);
     this.queueMovementPresence({
       ...this.lastMovement,
       moving: movement?.moving !== false,
@@ -31189,6 +31292,11 @@ class ForkMeshWorld extends HTMLElement {
       ...this.lastCameraLook,
       moving: movement?.moving !== false,
     };
+    if (this.meshVisitId && this.meshLinks) {
+      this.meshLinks.queueMove(this.pendingMovement);
+      this.pendingMovement = null;
+      return;
+    }
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return;
     if (!this.pendingMovement.moving) {
       window.clearTimeout(this.movementSendTimer);
@@ -31814,6 +31922,76 @@ class ForkMeshWorld extends HTMLElement {
     }
   }
 
+  presencePayload() {
+    this.identity.firstVisitAge = firstVisitAge(this.firstVisitAt);
+    this.identity.firstSeenMinutes = firstSeenMinutes(this.firstVisitAt);
+    this.identity.visitCount = this.publicVisitCount;
+    this.identity.activityCategory = presenceActivity(
+      this.settings,
+      this.currentActivityCategory,
+    );
+    const publicStatus = normalizeWorldStatus(
+      this.settings.statusEmoji,
+      this.settings.statusNote,
+    );
+    return {
+      type: "presence",
+      name: sanitizePresenceText(this.identity.name, "visitor", 24),
+      shareName: Boolean(this.settings.privacy.name),
+      shareCountry: Boolean(this.settings.privacy.country),
+      shareNodes: Boolean(this.settings.privacy.nodes),
+      browser: presenceBrowser(this.identity.browser, this.settings.privacy.browser),
+      os: presenceOS(this.identity.os, this.settings.privacy.os),
+      status: presenceStatus(this.settings),
+      localTime: presenceLocalTime(this.settings.privacy.localTime),
+      activityCategory: presenceActivity(
+        this.settings,
+        this.currentActivityCategory,
+      ),
+      inputActive:
+        Boolean(this.settings.privacy.activity) &&
+        this.identity.inputActive === true,
+      visitCount: this.settings.privacy.activity
+        ? Math.max(0, Math.min(999, Number(this.publicVisitCount) || 0))
+        : 0,
+      firstVisitAge: this.settings.privacy.activity
+        ? this.identity.firstVisitAge
+        : "hidden",
+      firstSeenMinutes: this.settings.privacy.activity
+        ? firstSeenMinutes(this.firstVisitAt)
+        : 0,
+      joinedAt: boundedJoinedAt(this.identity.joinedAt),
+      publicDoor: ["closed", "knock", "open"].includes(
+        this.settings.publicDoor,
+      )
+        ? this.settings.publicDoor
+        : "closed",
+      space: knownWorldSpace(this.currentSpace)
+        ? this.currentSpace
+        : "town-square",
+      statusEmoji: publicStatus.emoji,
+      statusNote: publicStatus.note,
+      outfitColor:
+        this.identity.accountStatus === "Supporting member" &&
+        OUTFIT_COLOR_VALUES.has(this.settings.outfitColor)
+          ? this.settings.outfitColor
+          : "",
+      outfitStyle:
+        this.identity.accountStatus === "Supporting member" &&
+        OUTFIT_STYLE_VALUES.has(this.settings.outfitStyle)
+          ? this.settings.outfitStyle
+          : "",
+      faceImage:
+        this.identity.accountStatus !== "Guest" &&
+        this.settings.faceImage === true,
+      solana: WORLD_SOLANA_ADDRESS_RE.test(
+        String(this.identity.solana || ""),
+      )
+        ? String(this.identity.solana)
+        : "",
+    };
+  }
+
   sendPresenceNow(message) {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) return false;
     if (
@@ -31827,73 +32005,11 @@ class ForkMeshWorld extends HTMLElement {
     }
     let safe;
     if (message.type === "presence") {
-      this.identity.firstVisitAge = firstVisitAge(this.firstVisitAt);
-      this.identity.firstSeenMinutes = firstSeenMinutes(this.firstVisitAt);
-      this.identity.visitCount = this.publicVisitCount;
-      this.identity.activityCategory = presenceActivity(
-        this.settings,
-        this.currentActivityCategory,
-      );
-      const publicStatus = normalizeWorldStatus(
-        this.settings.statusEmoji,
-        this.settings.statusNote,
-      );
-      safe = {
-        type: "presence",
-        name: sanitizePresenceText(this.identity.name, "visitor", 24),
-        shareName: Boolean(this.settings.privacy.name),
-        shareCountry: Boolean(this.settings.privacy.country),
-        shareNodes: Boolean(this.settings.privacy.nodes),
-        browser: presenceBrowser(this.identity.browser, this.settings.privacy.browser),
-        os: presenceOS(this.identity.os, this.settings.privacy.os),
-        status: presenceStatus(this.settings),
-        localTime: presenceLocalTime(this.settings.privacy.localTime),
-        activityCategory: presenceActivity(
-          this.settings,
-          this.currentActivityCategory,
-        ),
-        inputActive:
-          Boolean(this.settings.privacy.activity) &&
-          this.identity.inputActive === true,
-        visitCount: this.settings.privacy.activity
-          ? Math.max(0, Math.min(999, Number(this.publicVisitCount) || 0))
-          : 0,
-        firstVisitAge: this.settings.privacy.activity
-          ? this.identity.firstVisitAge
-          : "hidden",
-        firstSeenMinutes: this.settings.privacy.activity
-          ? firstSeenMinutes(this.firstVisitAt)
-          : 0,
-        joinedAt: boundedJoinedAt(this.identity.joinedAt),
-        publicDoor: ["closed", "knock", "open"].includes(
-          this.settings.publicDoor,
-        )
-          ? this.settings.publicDoor
-          : "closed",
-        space: knownWorldSpace(this.currentSpace)
-          ? this.currentSpace
-          : "town-square",
-        statusEmoji: publicStatus.emoji,
-        statusNote: publicStatus.note,
-        outfitColor:
-          this.identity.accountStatus === "Supporting member" &&
-          OUTFIT_COLOR_VALUES.has(this.settings.outfitColor)
-            ? this.settings.outfitColor
-            : "",
-        outfitStyle:
-          this.identity.accountStatus === "Supporting member" &&
-          OUTFIT_STYLE_VALUES.has(this.settings.outfitStyle)
-            ? this.settings.outfitStyle
-            : "",
-        faceImage:
-          this.identity.accountStatus !== "Guest" &&
-          this.settings.faceImage === true,
-        solana: WORLD_SOLANA_ADDRESS_RE.test(
-          String(this.identity.solana || ""),
-        )
-          ? String(this.identity.solana)
-          : "",
-      };
+      safe = this.presencePayload();
+      if (this.meshVisitId) {
+        safe.space = WORLD_MESH_VISITING_SPACE;
+        this.meshLinks?.sendPresence();
+      }
     } else if (message.type === "move") {
       safe = {
         type: "move",
@@ -32455,7 +32571,10 @@ class ForkMeshWorld extends HTMLElement {
     const combined = new Map(
       this.inactivePlayers.map((player) => [player.id, player]),
     );
-    this.remotePlayers.forEach((player, id) => combined.set(id, player));
+    this.remotePlayers.forEach((player, id) => {
+      if (player.space !== WORLD_MESH_VISITING_SPACE) combined.set(id, player);
+    });
+    this.meshPeerPlayers().forEach((player) => combined.set(player.id, player));
     const socketOnline =
       this.socket?.readyState === WebSocket.OPEN && Boolean(this.serverPeerId);
     const reconnectGrace =
@@ -33105,6 +33224,8 @@ class ForkMeshWorld extends HTMLElement {
     if (this.destroyed) return;
     if (this.spawnSelected) this.captureWorldPosition(true);
     this.destroyed = true;
+    this.meshLinks?.destroy();
+    this.meshLinks = null;
     this.stopRunnerAttention();
     this.perfMainThreadObserver?.dispose();
     this.perfMainThreadObserver = null;

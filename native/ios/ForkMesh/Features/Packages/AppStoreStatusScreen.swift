@@ -128,6 +128,12 @@ private struct AppStoreStatusDashboard: View {
             section(.builds, count: snapshot.builds.count) { builds }
             section(.groups, count: snapshot.groups.count) { groups }
             section(.feedback, count: snapshot.feedback.count) { feedback }
+            if snapshot.lacksScreenshots && snapshot.unavailable(.feedback) == nil {
+                Text(AppStoreStatusText.screenshotsNotPublished)
+                    .fmText(.bodySmall, color: fm.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("app-store-status-screenshots-not-published")
+            }
             section(.reviews, count: snapshot.reviews.count) { reviews }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
