@@ -208,6 +208,8 @@ extension DjStudioModel {
 
     func receive(_ reply: JSONObject?, latency: Double = 0) {
         guard let reply else { return }
+        let began = CACurrentMediaTime()
+        defer { DjVitalsRecorder.shared.work(.jam, from: began, to: CACurrentMediaTime()) }
         if let fresh = DjJam.parse(reply) {
             adopt(fresh, latency: latency)
         } else if reply["jam"] == .null {

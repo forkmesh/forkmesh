@@ -101,6 +101,14 @@ final class DiagnosticsBundleTests: XCTestCase {
         }
     }
 
+    func testAnotherLeadKeepsTheScrubAndTheLimit() {
+        let prompt = DiagnosticsBundle.prompt(lead: "Fix the DJ studio.", report: "token=abc123\n" + String(repeating: "x\n", count: 5000),
+                                              includeLogs: true, limit: 2000)
+        XCTAssertTrue(prompt.hasPrefix("Fix the DJ studio.\n\n# Diagnostics bundle\n"))
+        XCTAssertFalse(prompt.contains("abc123"))
+        XCTAssertLessThanOrEqual(prompt.count, 2000)
+    }
+
     func testThePromptFitsTheLimit() {
         let prompt = DiagnosticsBundle.prompt(reason: "x", report: String(repeating: "line of report\n", count: 2000),
                                               includeLogs: true, limit: 8000)
