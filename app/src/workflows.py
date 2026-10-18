@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from urllib.parse import quote, urlencode, urlparse
 
 import workflow_actions as actions
+import workflow_desktop as desktop
 import workflow_integrations as integrations
 import workflow_script as script
 
@@ -164,6 +165,7 @@ CORE_NODES = {
     },
 }
 CORE_NODES.update(actions.NODES)
+CORE_NODES.update(desktop.NODES)
 NodeError = actions.NodeError
 StopRun = actions.StopRun
 
@@ -343,6 +345,9 @@ def clean_workflow(data):
         })
     if triggers > 1:
         return None, "too_many_triggers"
+    desktop_error = desktop.check(nodes, is_trigger)
+    if desktop_error:
+        return None, desktop_error
     by_id = {node["id"]: node for node in nodes}
     connections = []
     seen = set()
@@ -366,6 +371,35 @@ def clean_workflow(data):
     if topological_order(nodes, connections) is None:
         return None, "cycle"
     return {"name": name, "nodes": nodes, "connections": connections}, ""
+
+
+def run_output(workflow, report):
+    if report.get("status") != "success":
+        return {"text": str(report.get("error") or "")[:300], "metrics": []}
+    nodes = workflow.get("nodes") or []
+    connections = workflow.get("connections") or []
+    entries = report.get("nodes") or {}
+    if report.get("stopped"):
+        by_name = {node["name"]: node["id"] for node in nodes}
+        ids = [by_name.get(report["stopped"])]
+    else:
+        sources = {conn["from"] for conn in connections}
+        ids = [node_id for node_id in topological_order(nodes, connections) or []
+               if node_id not in sources]
+    count = 0
+    first = None
+    for node_id in ids:
+        entry = entries.get(node_id) or {}
+        if entry.get("status") != "success":
+            continue
+        for output in (entry.get("outputs") or {}).values():
+            count += int(output.get("count") or 0)
+            if first is None and output.get("items"):
+                first = output["items"][0]
+    label = str(count) + (" item" if count == 1 else " items")
+    preview = desktop.output_preview(first) if first is not None else ""
+    return {"text": preview or label,
+            "metrics": [{"label": "Output", "value": label}]}
 
 
 def topological_order(nodes, connections):
@@ -996,6 +1030,8 @@ class Execution:
             values = field_values(_fields_for(node_type, params), params,
                                   self.context({}, 0))
             return {"main": items[:max(0, int(values["max"]))]}
+        if node_type in desktop.NODES:
+            raise NodeError(desktop.REFUSED)
         if node_type in actions.NODES:
             return await self.run_action(node, items[:MAX_ITEMS])
         out = {name: [] for name in outputs_for(node_type)}
