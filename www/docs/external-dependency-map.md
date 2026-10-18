@@ -67,6 +67,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | [Hosted AI model providers (user-supplied keys)](#ai-providers) | ai-provider | Optional, off unless enabled | desktop, mobile | Prompts the user chooses to send, including issue threads, pull request diffs, and repository context, with the user's own API key; usage and cost queries for that key. Agent CLI install scripts are downloaded from claude.ai and chatgpt.com when the user installs them on a node. |
 | [Vultr server provisioning](#vultr) | infrastructure | Optional, off unless enabled | app-worker, desktop | The user's own Vultr API key and the instance they create, including cloud-init data with the Cloudflare token and payout address they supplied. |
 | [Zoho Mail for the CRM marketplace package](#crm-package-providers) | email, identity | Optional, off unless enabled | marketplace-package, app-worker | For users who install the CRM package and connect Zoho Mail: OAuth tokens and the mail they choose to sync. |
+| [RDAP whois for CRM email open pings](#crm-whois-rdap) | infrastructure | Optional, off unless enabled | marketplace-package, app-worker | The App's egress IP and the public IP address that first opened or clicked a tracked CRM email (often the mail provider's image proxy). |
 | [ipify public IP lookup in the installer](#ipify) | infrastructure | Operator tooling only | installer | The installing host's public IP address. |
 | [OSV vulnerability database](#osv) | package-registry | Operator tooling only | operator-tools | Package names and versions being checked, and the operator's IP address. |
 | [Repository webhook endpoints owners register](#repository-webhook-endpoints) | hosted-runner | Optional, off unless enabled | app-worker | Each registered endpoint receives one signed JSON event per subscribed repository change: the repository's owner and name, its public URLs, the moved refs (branch, before/after commit, refs digest), merged pull numbers and the merging account, released tags and their notes, plus the relay's outbound IP address. Only public repositories emit events. api.codemagic.io is the one endpoint ForkMesh itself registers, for its own repository's mobile builds. |
@@ -99,6 +100,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | Hosted AI model providers (user-supplied keys) | That agent run or assistant action fails with the provider's error. Manual work and local models are unaffected. | Use a local Ollama model or Workers AI; keys stay on the user's device. | **gap** |
 | Vultr server provisioning | One-click mirror host creation fails at that step; existing hosts keep running. | Install the mirror node on any Linux host with install.sh. | **gap** |
 | Zoho Mail for the CRM marketplace package | Mail sync fails inside the CRM package; the rest of ForkMesh is unaffected. | Uninstall the package or use the CRM without a mail connection. | **gap** |
+| RDAP whois for CRM email open pings | The open or click ping says the whois had no answer; tracking and the ping still work. | Remove the RDAP origins from the CRM manifest and the ping shows only the user agent. | **gap** |
 | ipify public IP lookup in the installer | Direct-mirror setup warns and stops at the public-address step. | Set FORKMESH_PUBLIC_ADDRESS so the installer never contacts ipify. | **gap** |
 | OSV vulnerability database | The manual security scan cannot query advisories. No workflow or runtime path depends on it. | Use an offline OSV database export. | **gap** |
 | Repository webhook endpoints owners register | Deliveries retry with capped backoff and are dropped after 6 attempts; the Settings tab shows the failure. Pushes, merges, and releases are unaffected because delivery is queued out of band. | Delete the webhook and poll the public catalog with tools/forkmesh_integration.py watch instead; nothing in ForkMesh depends on an endpoint answering. | tested |
@@ -527,6 +529,24 @@ proves this for clone. Every optional service stays off until its secret is set.
 - **Alternative:** Uninstall the package or use the CRM without a mail connection.
 - **Known gap:** No drill covers Zoho being unreachable.
 - **Evidence:** `marketplace/packages/crm/content/worker/crm.py`, `marketplace/packages/crm/content/desktop/CrmFeature.cpp`, `app/src/entry.py`
+
+<a id="crm-whois-rdap"></a>
+
+### RDAP whois for CRM email open pings
+
+- **Needed:** Optional, off unless enabled
+- **Kind:** infrastructure
+- **Components:** marketplace-package, app-worker
+- **Hosts:** `rdap.org`, `rdap.arin.net`, `rdap.db.ripe.net`, `rdap.apnic.net`, `rdap.lacnic.net`, `rdap.afrinic.net`
+- **Observes:** The App's egress IP and the public IP address that first opened or clicked a tracked CRM email (often the mail provider's image proxy).
+- **Retention:** Set by each regional internet registry and by rdap.org.
+- **Jurisdiction:** rdap.org (United Kingdom); ARIN (United States), RIPE NCC (Netherlands), APNIC (Australia), LACNIC (Uruguay), AFRINIC (Mauritius).
+- **Canonical data:** The registries are canonical for IP allocation records; nothing is stored by ForkMesh.
+- **When it is gone:** The open or click ping says the whois had no answer; tracking and the ping still work.
+- **Recovery:** None needed; the next email's first open looks up again.
+- **Alternative:** Remove the RDAP origins from the CRM manifest and the ping shows only the user agent.
+- **Known gap:** No drill covers RDAP being unreachable beyond the package test of a failed lookup.
+- **Evidence:** `marketplace/packages/crm/content/worker/crm.py`, `marketplace/packages/crm/manifest.json`, `app/src/entry.py`
 
 <a id="ipify"></a>
 

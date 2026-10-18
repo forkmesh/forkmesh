@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Productivity",
-  "version": "1.37.0",
+  "version": "1.38.0",
   "summary": "Run customizable relationship flows, open a contact for every detail and their accounts' latest posts, send founders outreach, share the investor deck through a tracked link, link Gmail, Zoho Mail and Mastodon threads, and share sheets.",
   "screenshots": [
     {
@@ -123,6 +123,11 @@
       "id": "social.profile.read",
       "label": "Read a contact's Gravatar, and the picture and newest public posts of the Mastodon, Bluesky or GitHub account it names",
       "risk": "sensitive"
+    },
+    {
+      "id": "email.open.whois",
+      "label": "Look up a tracked email reader's IP in public RDAP whois and show it with their mail client in the sender's ping",
+      "risk": "sensitive"
     }
   ],
   "dependencies": [],
@@ -162,7 +167,13 @@
       "https://fosstodon.org",
       "https://hachyderm.io",
       "https://mas.to",
-      "https://infosec.exchange"
+      "https://infosec.exchange",
+      "https://rdap.org",
+      "https://rdap.arin.net",
+      "https://rdap.db.ripe.net",
+      "https://rdap.apnic.net",
+      "https://rdap.lacnic.net",
+      "https://rdap.afrinic.net"
     ]
   }
 }
