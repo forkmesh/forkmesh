@@ -152,6 +152,7 @@ object RouteCatalog {
         Route.Kind.OpenWrtRouter -> "Router"
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
+        Route.Kind.Usage -> "Usage"
         Route.Kind.RssReader -> "RSS Reader"
         Route.Kind.SecureDrive -> "Secure Drive"
         Route.Kind.Files -> "Files"
@@ -225,6 +226,7 @@ object RouteCatalog {
         Route.Kind.OpenWrtRouter -> "router"
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
+        Route.Kind.Usage -> "speed"
         Route.Kind.RssReader -> "feed"
         Route.Kind.SecureDrive -> "lock"
         Route.Kind.Files -> "folder"
@@ -339,6 +341,7 @@ object HubCatalog {
         HubItem.destination(Route.Stats, needsRegistration = true),
         HubItem.destination(Route.Status, needsRegistration = true),
         HubItem.destination(Route.AppStoreStatus, needsRegistration = true),
+        HubItem.destination(Route.Usage, needsRegistration = true),
         HubItem.destination(Route.Ember(null)),
         HubItem.destination(Route.Strata(null)),
         HubItem.destination(Route.Synapse(null)),

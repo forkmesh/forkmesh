@@ -49,6 +49,15 @@ class PackageGateTest {
     private fun packed(pack: StarterPack, vararg choices: Pair<String, Boolean>): MemoryPrefStore =
         chosen(*choices).also { PackageGate.chooseStarterPack(pack, it) }
 
+    fun testUsageIsANativePackageDestinationBehindTheGate() {
+        assertEq(PackagePhoneSurface.Native("usage"), MarketPackage(id = "usage", name = "Usage", webRoute = "/dashboard/usage").phoneSurface)
+        assertEq("usage", PackageGate.ROUTE_KINDS[Route.Kind.Usage])
+        assertEq("usage", PackageGate.HUB_ITEMS[Route.Kind.Usage.raw])
+        expect("usage" in PackageGate.GATED)
+        val removed = PackageSurfaces(setOf("usage"))
+        expect(!removed.showsRoute(Route.Usage) && Route.Kind.Usage.raw in removed.hubItems)
+    }
+
     fun testStarterPacksHoldTheirPackages() {
         assertEq(listOf(StarterPack.MINIMAL, StarterPack.STANDARD, StarterPack.EVERYTHING), StarterPack.values().toList())
         assertEq(listOf("minimal", "standard", "everything"), StarterPack.values().map { it.id })

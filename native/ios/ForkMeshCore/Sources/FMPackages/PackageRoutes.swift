@@ -96,6 +96,7 @@ public enum PackageRoutes {
         case "faceChanger": return .faceChanger
         case "videoMixDjStudio": return .videoMixDjStudio
         case "appStoreStatus": return .appStoreStatus
+        case "usage": return .usage
         case "rssReader": return .rssReader
         case "secureDrive": return .secureDrive
         case "spiderRoom": return .spiderRoom

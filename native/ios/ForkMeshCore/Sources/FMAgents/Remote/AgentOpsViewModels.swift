@@ -368,6 +368,15 @@ public final class AgentUsageModel {
             return ("", AgentOpsClient.describe(error))
         }
     }
+
+    public func deleteAccount(provider: String, account: String) async -> String {
+        do {
+            summary = try await client.deleteAccount(provider: provider, account: account)
+            return ""
+        } catch {
+            return AgentOpsClient.describe(error)
+        }
+    }
 }
 
 @MainActor

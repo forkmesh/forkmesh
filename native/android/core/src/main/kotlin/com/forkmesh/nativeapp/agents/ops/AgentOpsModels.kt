@@ -404,7 +404,42 @@ data class UsageWindowMeter(
     }
 }
 
-data class UsageAccount(val id: String, val label: String, val active: Boolean)
+data class UsageAccount(
+    val id: String,
+    val label: String,
+    val active: Boolean,
+    val signedIn: Boolean? = null,
+    val identity: String = "",
+    val windows: List<UsageWindowMeter> = emptyList(),
+) {
+    val signedOut: Boolean get() = signedIn == false
+
+    val isDefault: Boolean get() = id == DEFAULT_ID
+
+    val name: String get() = label.ifEmpty { identity.ifEmpty { "Account" } }
+
+    val statusLabel: String
+        get() = when {
+            signedOut -> "Not signed in"
+            active -> "In use"
+            else -> "Available"
+        }
+
+    val detail: String get() = identity.ifEmpty { if (signedOut) "Not signed in" else "Signed in" }
+
+    companion object {
+        const val DEFAULT_ID = "default"
+
+        fun from(json: Map<String, Any?>): UsageAccount = UsageAccount(
+            id = json.str("id"),
+            label = json.str("label"),
+            active = json.bool("active"),
+            signedIn = json["signedIn"] as? Boolean,
+            identity = json.str("identity"),
+            windows = json.maps("windows").map(UsageWindowMeter::from),
+        )
+    }
+}
 
 data class UsageCredits(val used: Double?, val limit: Double?, val currency: String) {
     val label: String
@@ -427,6 +462,9 @@ data class UsageProviderMeter(
 ) {
     val activeAccount: UsageAccount? get() = accounts.firstOrNull { it.active }
 
+    fun windowsFor(account: UsageAccount): List<UsageWindowMeter> =
+        if (account.windows.isNotEmpty() || !account.active) account.windows else windows
+
     val worstState: UsageState
         get() {
             val states = windows.map { it.state }
@@ -440,7 +478,7 @@ data class UsageProviderMeter(
 
     companion object {
         fun from(json: Map<String, Any?>): UsageProviderMeter {
-            val accounts = json.maps("accounts").map { UsageAccount(it.str("id"), it.str("label"), it.bool("active")) }
+            val accounts = json.maps("accounts").map(UsageAccount::from)
             val creditsJson = json["credits"] as? Map<*, *>
             val credits = creditsJson?.let {
                 @Suppress("UNCHECKED_CAST")
@@ -471,12 +509,25 @@ data class UsageSummary(
     val claudeSpendUsd: Double? = null,
     val openAiSpendUsd: Double? = null,
     val atMs: Long = 0,
+    val activeProvider: String = "",
 ) {
     val totalSpendUsd: Double?
         get() {
             if (claudeSpendUsd == null && openAiSpendUsd == null) return null
             return (claudeSpendUsd ?: 0.0) + (openAiSpendUsd ?: 0.0)
         }
+
+    val isEmpty: Boolean get() = providers.isEmpty() && totalSpendUsd == null
+
+    fun provider(id: String): UsageProviderMeter? = providers.firstOrNull { it.id == id }
+
+    fun usedForNewAgents(providerId: String): Boolean = activeProvider.isNotEmpty() && activeProvider == providerId
+
+    fun spendUsd(providerId: String): Double? = when (providerId) {
+        "claude-code" -> claudeSpendUsd
+        "codex" -> openAiSpendUsd
+        else -> null
+    }
 
     fun reminders(nowMs: Long): List<UsageReminder> {
         val out = ArrayList<UsageReminder>()
@@ -504,6 +555,7 @@ data class UsageSummary(
                 claudeSpendUsd = numberOrNull(spend["claudeUsd"]),
                 openAiSpendUsd = numberOrNull(spend["openAiUsd"]),
                 atMs = json.long("atMs"),
+                activeProvider = json.str("activeProvider"),
             )
         }
     }
