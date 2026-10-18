@@ -1348,6 +1348,42 @@ function forkMeshVaultClientFactory() {
   function u32(bytes, at) { return (u16(bytes, at) | (u16(bytes, at + 2) << 16)) >>> 0; }
   function isZip(bytes) { return bytes.length >= 4 && u32(bytes, 0) === 0x04034b50; }
 
+  let crcTable = null;
+  function crc32(bytes) {
+    if (!crcTable) {
+      crcTable = new Uint32Array(256);
+      for (let n = 0; n < 256; n += 1) {
+        let c = n;
+        for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+        crcTable[n] = c >>> 0;
+      }
+    }
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i += 1) crc = crcTable[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  async function inflateRaw(data) {
+    const reader = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        total += value.length;
+        if (total > IMPORT_MAX_BYTES) { reader.cancel().catch(() => {}); throw new VaultError("csv_too_large"); }
+        chunks.push(value);
+      }
+    } catch (error) {
+      throw error instanceof VaultError ? error : new VaultError("zip_unreadable");
+    }
+    const out = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) { out.set(chunk, offset); offset += chunk.length; }
+    return out;
+  }
+
   async function firstCsvInZip(bytes) {
     let end = -1;
     for (let at = bytes.length - 22; at >= Math.max(0, bytes.length - 22 - 0xffff); at -= 1) {
@@ -1357,25 +1393,22 @@ function forkMeshVaultClientFactory() {
     let at = u32(bytes, end + 16);
     for (let entry = u16(bytes, end + 10); entry > 0; entry -= 1) {
       if (at + 46 > bytes.length || u32(bytes, at) !== 0x02014b50) throw new VaultError("zip_unreadable");
-      const method = u16(bytes, at + 10), packed = u32(bytes, at + 20), size = u32(bytes, at + 24);
+      const flags = u16(bytes, at + 8), method = u16(bytes, at + 10), crc = u32(bytes, at + 16);
+      const packed = u32(bytes, at + 20), size = u32(bytes, at + 24);
       const nameLength = u16(bytes, at + 28), local = u32(bytes, at + 42);
       const name = new TextDecoder().decode(bytes.subarray(at + 46, at + 46 + nameLength));
       at += 46 + nameLength + u16(bytes, at + 30) + u16(bytes, at + 32);
       if (!/\.csv$/i.test(name) || name.startsWith("__MACOSX/") || name.split("/").pop().startsWith(".")) continue;
+      if (flags & 1) throw new VaultError("zip_encrypted");
       if (size > IMPORT_MAX_BYTES) throw new VaultError("csv_too_large");
       if (local + 30 > bytes.length || u32(bytes, local) !== 0x04034b50) throw new VaultError("zip_unreadable");
       const start = local + 30 + u16(bytes, local + 26) + u16(bytes, local + 28);
+      if (start + packed > bytes.length) throw new VaultError("zip_unreadable");
       const data = bytes.subarray(start, start + packed);
-      if (method === 0) return data;
-      if (method !== 8 || typeof DecompressionStream !== "function") throw new VaultError("zip_unsupported");
-      try {
-        const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-        const out = new Uint8Array(await new Response(stream).arrayBuffer());
-        if (out.length > IMPORT_MAX_BYTES) throw new VaultError("csv_too_large");
-        return out;
-      } catch (error) {
-        throw error instanceof VaultError ? error : new VaultError("zip_unreadable");
-      }
+      if (method !== 0 && (method !== 8 || typeof DecompressionStream !== "function")) throw new VaultError("zip_unsupported");
+      const out = method === 0 ? data : await inflateRaw(data);
+      if (out.length !== size || crc32(out) !== crc) throw new VaultError("zip_unreadable");
+      return out;
     }
     throw new VaultError("zip_no_csv");
   }
@@ -1858,6 +1891,7 @@ window.ForkMeshDashboard.registerPage("vault", ({
     csv_unknown_columns: "That file has no Password column. Export a CSV from Apple Passwords, Chrome, Firefox, DuckDuckGo, Bitwarden or 1Password.",
     csv_no_logins: "That file has no logins in it.",
     zip_unreadable: "That ZIP file could not be read.",
+    zip_encrypted: "That ZIP file is password-protected. Export it again without a password.",
     zip_unsupported: "That ZIP file is compressed in a way this browser cannot open. Unzip it and import the CSV inside.",
     zip_no_csv: "That ZIP file has no CSV export in it.",
   };
