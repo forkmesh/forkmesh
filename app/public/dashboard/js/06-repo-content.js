@@ -118,9 +118,12 @@
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
     const hint = /#w=(\d{1,4})$/.exec(url);
-    const source = mdImageSource(hint ? url.slice(0, hint.index) : url, context);
+    const target = hint ? url.slice(0, hint.index) : url;
+    const source = mdImageSource(target, context);
     if (!source) return alt;
-    return `<img src="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
+    const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
+      && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
+    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
       + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" />';
   }
 
@@ -1902,6 +1905,133 @@
     if (!commit) throw new Error("pull_metadata_absent");
     return commit;
   }
+
+  const REPO_OPTIONAL_TREE_MISS_MS = 10 * 60 * 1000;
+  const repoOptionalTreeListings = new Map();
+
+  function repoOptionalTreeScope(repo) {
+    return `${repoKey(repo)}@${repoSelectedBranch(repo)}#${repoDataVersion(repo) || ""}`;
+  }
+
+  function repoOptionalTreeMissKey(repo, path) {
+    return `forkmesh.repoTreeMiss:${repoOptionalTreeScope(repo)}:${path}`;
+  }
+
+  function repoOptionalTreeMissed(repo, path) {
+    try {
+      const at = Number(sessionStorage.getItem(repoOptionalTreeMissKey(repo, path)) || 0);
+      return at > 0 && Date.now() - at < REPO_OPTIONAL_TREE_MISS_MS;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function rememberRepoOptionalTreeMiss(repo, path) {
+    try {
+      sessionStorage.setItem(repoOptionalTreeMissKey(repo, path), String(Date.now()));
+    } catch (_) {}
+  }
+
+  function repoRootTreeFolders(repo) {
+    const view = state.repoTreeView;
+    if (!view || view.path || !view.repo || repoKey(view.repo) !== repoKey(repo)) return null;
+    return new Set((Array.isArray(view.entries) ? view.entries : [])
+      .filter((entry) => entry?.type === "tree")
+      .map((entry) => String(entry.name || "")));
+  }
+
+  async function repoOptionalTreeParentHas(repo, path, fresh) {
+    const parts = String(path).split("/");
+    const name = parts.pop();
+    const parent = parts.join("/");
+    const root = repoRootTreeFolders(repo);
+    if (root && !root.has(parts[0] || name)) return false;
+    if (!parent || fresh) return true;
+    const key = `${repoOptionalTreeScope(repo)}:${parent}`;
+    if (!repoOptionalTreeListings.has(key)) {
+      const pending = fetchRepoOptionalTree(repo, parent).then((tree) => (tree
+        ? new Set((Array.isArray(tree.entries) ? tree.entries : [])
+          .filter((entry) => entry?.type === "tree")
+          .map((entry) => String(entry.name || "")))
+        : null));
+      pending.catch(() => repoOptionalTreeListings.delete(key));
+      repoOptionalTreeListings.set(key, pending);
+    }
+    const folders = await repoOptionalTreeListings.get(key);
+    return Boolean(folders && folders.has(name));
+  }
+
+  async function fetchRepoOptionalTree(repo, path, { fresh = false } = {}) {
+    if (!fresh && repoOptionalTreeMissed(repo, path)) return null;
+    if (!(await repoOptionalTreeParentHas(repo, path, fresh))) return null;
+    try {
+      return await fetchRepoJson(repoLiveUrl(repo, "tree", { path }));
+    } catch (error) {
+      if (Number(error?.status) !== 404 && !isMissingMirrorFolder(error)) throw error;
+      rememberRepoOptionalTreeMiss(repo, path);
+      return null;
+    }
+  }
+
+  const REPO_SVG_IMAGE_MAX_BYTES = 1024 * 1024;
+
+  function isRepoRawSvgUrl(url) {
+    try {
+      const parsed = new URL(String(url || ""), location.origin);
+      return parsed.origin === location.origin
+        && /^\/api\/repo\/[^/]+\/[^/]+\/raw$/.test(parsed.pathname)
+        && /\.svg$/i.test(parsed.searchParams.get("path") || "");
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function svgDataUrl(bytes) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(new Blob([bytes], { type: "image/svg+xml" }));
+    });
+  }
+
+  async function hydrateRepoSvgImage(image) {
+    const source = image.getAttribute("data-repo-svg-src") || "";
+    image.removeAttribute("data-repo-svg-src");
+    if (!isRepoRawSvgUrl(source)) return;
+    try {
+      const response = await fetch(source, { credentials: "same-origin" });
+      if (!response.ok) return;
+      const bytes = await response.arrayBuffer();
+      if (!bytes.byteLength || bytes.byteLength > REPO_SVG_IMAGE_MAX_BYTES) return;
+      const head = new TextDecoder().decode(bytes.slice(0, 4096));
+      if (!/<svg[\s>]/i.test(head)) return;
+      const dataUrl = await svgDataUrl(bytes);
+      if (dataUrl.startsWith("data:image/svg+xml") && image.isConnected) image.src = dataUrl;
+    } catch (_) {}
+  }
+
+  function hydrateRepoSvgImages(root) {
+    const scope = root?.querySelectorAll ? root : document;
+    scope.querySelectorAll("img[data-repo-svg-src]").forEach((image) => { hydrateRepoSvgImage(image); });
+  }
+
+  function watchRepoSvgImages() {
+    if (!document.body || typeof MutationObserver !== "function") return;
+    hydrateRepoSvgImages(document);
+    new MutationObserver((records) => {
+      records.forEach((record) => {
+        record.addedNodes.forEach((node) => {
+          if (node.nodeType !== 1) return;
+          if (node.matches?.("img[data-repo-svg-src]")) hydrateRepoSvgImage(node);
+          else if (node.querySelector?.("img[data-repo-svg-src]")) hydrateRepoSvgImages(node);
+        });
+      });
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
+  if (document.body) watchRepoSvgImages();
+  else document.addEventListener("DOMContentLoaded", watchRepoSvgImages, { once: true });
 
   // An authoritative "the repository does not hold this" answer, as opposed to
   // "nothing could answer". Mirrors report a missing tree path as 404
@@ -7544,7 +7674,10 @@
     } catch (_) {
       if (state.repoRemoteForks.key === key) state.repoRemoteForks.loaded = true;
     }
-    if (repoAboutStillCurrent(repo)) renderRepoRemoteForks();
+    if (repoAboutStillCurrent(repo)) {
+      renderRepoRemoteForks();
+      syncRepoPullBatchEntry(repo);
+    }
     return state.repoRemoteForks.forks;
   }
 
@@ -8359,7 +8492,8 @@
         // List the git tree under .forkmesh/issues/ (which also reveals the
         // open//closed/ status subdirs), then read one issue-${number}.json
         // blob for each issue from wherever it lives.
-        tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/issues" }));
+        tree = await fetchRepoOptionalTree(repo, ".forkmesh/issues", { fresh: true });
+        if (!tree) throw Object.assign(new Error("not_found"), { status: 404, code: "not_found" });
       } catch (error) {
         if (isMissingMirrorFolder(error)) {
           // No issues have been committed to the mirror yet - which is the
@@ -9429,6 +9563,8 @@
     if (kind === "pulls") {
       delete state.repoPullMetadataCommits[repoPullMetadataCacheKey(repo)];
       syncPullQueryBox();
+      syncRepoPullBatchEntry(repo);
+      if (state.session?.nodeName && !repoReadOnlyMirror(repo)) void loadRepoRemoteForks(repo);
     }
     // Drop the previous repo's cache up front so a failed load can never leave
     // the page filter re-rendering rows that are no longer on screen.
@@ -9499,7 +9635,53 @@
   // re-checks the account name against owner/admin status (no password,
   // adhoc #225), so this is only the client-side gate for showing the checkbox.
   function sessionCanAssignAgent(repo) {
-    return sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+    return sessionAdministersRepo(repo) || Boolean(state.session?.isAdmin);
+  }
+
+  const repoViewerPermissions = new Map();
+
+  function repoViewerPermissionKey(value) {
+    const key = typeof value === "string" ? value : repositoryViewKey(value);
+    const viewer = String(state.session?.nodeName || "").toLowerCase();
+    return viewer && key ? `${viewer}|${String(key).toLowerCase()}` : "";
+  }
+
+  function sessionAdministersRepo(repo) {
+    if (sessionOwnsRepo(repo)) return true;
+    const known = repoViewerPermissions.get(repoViewerPermissionKey(repo));
+    return Boolean(known && typeof known === "object" && known.viewerCanAdmin === true);
+  }
+
+  function loadRepoViewerPermission(target) {
+    const key = repoViewerPermissionKey(target);
+    const publicKey = typeof target === "string" ? target : repositoryViewKey(target);
+    const [owner, name] = String(publicKey || "").split("/");
+    if (!key || !owner || !name) return Promise.resolve(null);
+    if (typeof target !== "string" && sessionOwnsRepo(target)) return Promise.resolve(null);
+    const known = repoViewerPermissions.get(key);
+    if (known) return Promise.resolve(known);
+    const headers = { accept: "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const request = fetch(
+      `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/viewer-permission`,
+      { headers, credentials: "same-origin", cache: "no-store" },
+    )
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        const answer = {
+          permission: String(body?.permission || ""),
+          viewerCanAdmin: body?.viewerCanAdmin === true,
+        };
+        repoViewerPermissions.set(key, answer);
+        return answer;
+      })
+      .catch(() => {
+        repoViewerPermissions.delete(key);
+        return null;
+      });
+    repoViewerPermissions.set(key, request);
+    return request;
   }
 
   function setRepoAboutEditing(on) {
@@ -9807,7 +9989,7 @@
       const suggestions = Array.isArray(body?.suggestions)
         ? body.suggestions
         : [];
-      const mayReview = sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+      const mayReview = sessionAdministersRepo(repo) || Boolean(state.session?.isAdmin);
       target.innerHTML = suggestions.length
         ? suggestions
             .map((suggestion) => {
@@ -10093,7 +10275,7 @@
 
   async function loadRepoDigestPreview(repo) {
     const target = $("[data-repo-digest-preview]");
-    if (!target || !sessionOwnsRepo(repo) || repo.isPrivate) return;
+    if (!target || !sessionAdministersRepo(repo) || repo.isPrivate) return;
     target.textContent = "Loading preview…";
     try {
       const token = state.session?.sessionToken || "";
@@ -10253,7 +10435,7 @@
 
   async function loadRepoWebhooks(repo) {
     const list = $("[data-repo-webhooks-list]");
-    if (!list || !sessionOwnsRepo(repo)) return;
+    if (!list || !sessionAdministersRepo(repo)) return;
     try {
       const body = await repoWebhookRequest(repo, { action: "list" });
       if (!repoAboutStillCurrent(repo)) return;
@@ -10583,7 +10765,7 @@
 
   async function loadRepoProviderMirror(repo) {
     const holder = $("[data-repo-forge-mirror-body]");
-    if (!holder || !sessionOwnsRepo(repo)) return;
+    if (!holder || !sessionAdministersRepo(repo)) return;
     const mirrorState = repoForgeMirrorState(repo);
     try {
       const body = await repoForgeMirrorRequest(repo, { action: "get" });
@@ -10658,7 +10840,7 @@
     }
     const card = event.target.closest("[data-repo-forge-mirror-card]");
     const repo = state.selectedRepo;
-    if (!card || !repo || !sessionOwnsRepo(repo)) return false;
+    if (!card || !repo || !sessionAdministersRepo(repo)) return false;
     const mirrorState = repoForgeMirrorState(repo);
     const providerButton = event.target.closest("[data-repo-forge-mirror-provider]");
     if (providerButton) {
@@ -10776,7 +10958,7 @@
     if (!form) return false;
     event.preventDefault();
     const repo = state.selectedRepo;
-    if (!repo || !sessionOwnsRepo(repo)) return true;
+    if (!repo || !sessionAdministersRepo(repo)) return true;
     const mirrorState = repoForgeMirrorState(repo);
     const submit = form.querySelector('button[type="submit"]');
     if (submit) submit.disabled = true;
@@ -10833,7 +11015,7 @@
       return;
     }
     holder.innerHTML = pullRulesEditorHtml(policy, {
-      editable: sessionOwnsRepo(repo),
+      editable: sessionAdministersRepo(repo),
       saveLabel: `Commit rules to ${branch}`,
     });
     window.lucide?.createIcons();
@@ -11025,12 +11207,9 @@
     try {
       let tree;
       try {
-        tree = await fetchRepoJson(repoLiveUrl(
-          repo,
-          "tree",
-          { path: ".forkmesh/releases" },
-        ));
+        tree = await fetchRepoOptionalTree(repo, ".forkmesh/releases");
       } catch (_) { return; }
+      if (!tree) return;
       const channels = (Array.isArray(tree?.entries) ? tree.entries : [])
         .filter((entry) => entry.type === "tree" && entry.name)
         .map((entry) => String(entry.name));

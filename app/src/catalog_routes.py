@@ -1171,9 +1171,10 @@ async def catalog_handler(env, request):
         sig = clean_string(params.get("sig", [""])[0], 200)
         admin_user = clean_string(
             params.get("user", [""])[0], MAX_NODE_NAME).strip().lower()
-        audit_target = owner + "/" + name if owner and name else ""
         if not owner or not name:
             return json_response({"error": "owner_name_required"}, status=400)
+        owner = await _org_repo_node(env, owner, name) or owner
+        audit_target = owner + "/" + name
 
         # The desktop still signs the catalog-delete canonical with the
         # repository owner's Ed25519 key. The web Settings tab has no access to
@@ -1184,7 +1185,7 @@ async def catalog_handler(env, request):
         session_actor = await _authed_account_name(env, request)
         session_authorized = bool(
             session_actor
-            and await _account_owns_node(env, session_actor, owner)
+            and await _repo_admin_allowed(env, session_actor, owner, name)
         )
         # An administrator can purge any repository from any device, including
         # one whose files that device never had: the desktop's Delete button on

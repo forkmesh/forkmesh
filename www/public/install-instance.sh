@@ -283,6 +283,28 @@ if isinstance(theme, dict):
 elif not isinstance(theme, str) or (theme and not re.fullmatch(r"[a-z][a-z0-9-]{0,40}", theme)):
     sys.exit("Setting theme must be the name of a theme preset or a set of colours.")
 values["theme"] = theme
+legal = c.get("legalPages") or {}
+if update:
+    legal = {}
+if not isinstance(legal, dict) or not set(legal) <= {"terms", "privacy", "security"}:
+    sys.exit("Setting legalPages may only name terms, privacy and security.")
+for page, entry in legal.items():
+    if entry in (None, False):
+        continue
+    if isinstance(entry, str):
+        entry = {"url": entry}
+    if not isinstance(entry, dict) or not set(entry) <= {"markdown", "url", "contact"} or \
+            bool(entry.get("markdown")) == bool(entry.get("url")):
+        sys.exit("Setting legalPages.%s must give markdown or url, not both." % page)
+    if entry.get("url") and not (isinstance(entry["url"], str) and re.fullmatch(r"https?://[^\s<>\"]{1,1990}", entry["url"])):
+        sys.exit("Setting legalPages.%s.url must be an http or https address." % page)
+    if entry.get("markdown") and not (isinstance(entry["markdown"], str) and len(entry["markdown"].encode("utf-8")) <= 32768):
+        sys.exit("Setting legalPages.%s.markdown must be text of up to 32 KB." % page)
+    if entry.get("contact") and (page != "security" or not isinstance(entry["contact"], str)):
+        sys.exit("Setting legalPages: only security takes a contact.")
+    legal[page] = entry
+legal = {page: entry for page, entry in legal.items() if entry not in (None, False)}
+values["legalPages"] = json.dumps(legal, separators=(",", ":"), sort_keys=True) if legal else ""
 for key, value in values.items():
     print("CFG_%s=%s" % (key, shlex.quote(value)))
 ' "$CONFIG_MODE"
@@ -768,6 +790,11 @@ print(encode(seed), encode(public))
     if [ -r "$APP_ENV" ]; then
       grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY)=' "$APP_ENV" || true
     fi
+    if [ -r "$APP_ENV" ] && grep -qE '^TURNSTILE_HOSTNAMES=.' "$APP_ENV"; then
+      grep -E '^TURNSTILE_HOSTNAMES=' "$APP_ENV"
+    else
+      echo "TURNSTILE_HOSTNAMES=$DOMAIN"
+    fi
   } >> "$tmp"
   mv "$tmp" "$APP_ENV"
   if [ "$(files_digest "$APP_ENV")" != "$env_before" ]; then APP_CHANGED="1"; fi
@@ -923,7 +950,10 @@ write_caddyfile() {
 $DOMAIN {
 $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 	encode zstd gzip
-	header Strict-Transport-Security "max-age=31536000"
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
 	@gateway path /v1/* /health /forkmesh-mirror.json /.well-known/forkmesh-mirror.json
 	@cloudflare remote_ip $CLOUDFLARE_RANGES
 	handle @gateway {
@@ -1334,16 +1364,17 @@ create_admin() {
   setup_git_node
   local result
   result="$(
-    cd "$SRC/app/host" && printf '%s\n%s' "$OWNERS_JSON" "$ADMIN_PASSWORD" | python3 -c '
+    cd "$SRC/app/host" && printf '%s\n%s\n%s' "$OWNERS_JSON" "${CFG_legalPages:-}" "$ADMIN_PASSWORD" | python3 -c '
 import json, sys
 owners = json.loads(sys.stdin.readline())
+legal = json.loads(sys.stdin.readline().strip() or "{}")
 print(json.dumps({
     "adminUsername": sys.argv[1], "adminEmail": sys.argv[2],
     "adminPassword": sys.stdin.read(), "ownerType": sys.argv[3],
     "ownerName": sys.argv[4], "projectName": sys.argv[5],
     "nodePublicKey": sys.argv[6], "owners": owners,
     "theme": json.loads(sys.argv[7]) if sys.argv[7].startswith("{") else sys.argv[7],
-    "singleOrganization": sys.argv[8] == "1"}))
+    "singleOrganization": sys.argv[8] == "1", "legalPages": legal}))
 ' "$CFG_adminUsername" "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_projectName" "$NODE_PUBLIC_KEY" "$CFG_theme" "$CFG_singleOrganization" \
       | host_cli instance-bootstrap 2>&1 | tail -n 1
   )" || true

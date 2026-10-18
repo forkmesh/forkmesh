@@ -351,3 +351,45 @@ def test_the_conversion_command_is_registered():
     assert args.func is boot.cmd_instance_single_org and args.off is False
     args = parser.parse_args(["instance-single-org", "--org", "x", "--off"])
     assert args.off is True
+
+
+def legal_entry():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+    import instance_legal
+    entry = Entry()
+    entry.instance_legal = instance_legal
+    return entry
+
+
+def legal_row(entry):
+    row = entry.db.execute(
+        "SELECT doc FROM instance_settings WHERE k='legal_pages'").fetchone()
+    return json.loads(row["doc"]) if row else None
+
+
+def test_legal_pages_stay_off_unless_the_install_names_them():
+    entry = legal_entry()
+    assert boot.read_spec(spec())["legalPages"] == {}
+    run(entry, spec())
+    assert legal_row(entry) is None
+    with pytest.raises(boot.BootstrapError):
+        boot.read_spec(spec(legalPages=["terms"]))
+
+
+def test_install_settings_turn_on_the_named_legal_pages_once():
+    entry = legal_entry()
+    run(entry, spec(legalPages={"terms": {"markdown": "# Terms"},
+                                "security": {"url": "https://example.org/s",
+                                             "contact": "sec@example.org"}}))
+    stored = legal_row(entry)
+    assert stored["terms"]["mode"] == "markdown"
+    assert stored["privacy"]["mode"] == "off"
+    assert stored["security"] == {"mode": "url", "markdown": "",
+                                  "url": "https://example.org/s",
+                                  "contact": "mailto:sec@example.org"}
+    entry.db.execute("UPDATE instance_settings SET doc='{}' "
+                     "WHERE k='legal_pages'")
+    run(entry, spec(legalPages={"terms": {"markdown": "# Terms"}}))
+    assert legal_row(entry) == {}
+    with pytest.raises(boot.BootstrapError):
+        run(legal_entry(), spec(legalPages={"terms": {"url": "ftp://x"}}))

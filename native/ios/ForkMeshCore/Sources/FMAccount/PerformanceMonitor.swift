@@ -93,6 +93,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     @ObservationIgnored private let now: @Sendable () -> Date
     @ObservationIgnored private let elapsedForTest: (@Sendable () -> Duration)?
     @ObservationIgnored private let heartbeatQueue: DispatchQueue
+    @ObservationIgnored private let watchQueue: DispatchQueue
 
     /// Every heartbeat's lag behind schedule, stall or not. The telemetry strip charts the worst of
     /// each second from this. Called on the heartbeat queue.
@@ -138,6 +139,11 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     public static let sectionLimit = 32
     @ObservationIgnored private weak var frameSource: FrameTimingSource?
     @ObservationIgnored private var installed = false
+    @ObservationIgnored private var watchTimer: DispatchSourceTimer?
+    @ObservationIgnored private var lastWatchUs: Int64 = 0
+    @ObservationIgnored private var recentPauses: [(startUs: Int64, endUs: Int64)] = []
+    @ObservationIgnored private var pauseTotal = 0
+    @ObservationIgnored private var longestPauseUs: Int64 = 0
 
     public init(
         enabled: Bool = true,
@@ -150,7 +156,8 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         stallLog: StallLogFile? = nil,
         now: (@Sendable () -> Date)? = nil,
         elapsedForTest: (@Sendable () -> Duration)? = nil,
-        heartbeatQueue: DispatchQueue = .main
+        heartbeatQueue: DispatchQueue = .main,
+        watchQueue: DispatchQueue = DispatchQueue(label: "forkmesh.perf.watch", qos: .userInitiated)
     ) {
         self.enabled = enabled
         self.threshold = threshold
@@ -163,6 +170,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         self.now = now ?? { Date() }
         self.elapsedForTest = elapsedForTest
         self.heartbeatQueue = heartbeatQueue
+        self.watchQueue = watchQueue
     }
 
     // MARK: Reading
@@ -180,6 +188,16 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     public var stallCount: Int {
         if Thread.isMainThread { _ = revision }
         return locked { stallTotal }
+    }
+
+    public var pauseCount: Int {
+        if Thread.isMainThread { _ = revision }
+        return locked { pauseTotal }
+    }
+
+    public var longestPause: Duration {
+        if Thread.isMainThread { _ = revision }
+        return .microseconds(locked { longestPauseUs })
     }
 
     /// Where stalls are being written on this device, once known.
@@ -323,16 +341,76 @@ public final class PerformanceMonitorService: @unchecked Sendable {
             heartbeatGeneration += 1
             lastBeatUs = elapsedMicros()
             heartbeatStartedUs = lastBeatUs
+            lastWatchUs = lastBeatUs
             return heartbeatGeneration
         }
-        if let generation { scheduleBeat(generation) }
+        guard let generation else { return }
+        startWatch()
+        scheduleBeat(generation)
     }
 
     public func stopHeartbeat() {
-        locked {
+        let timer: DispatchSourceTimer? = locked {
             heartbeatRunning = false
             heartbeatGeneration += 1
+            let timer = watchTimer
+            watchTimer = nil
+            return timer
         }
+        timer?.cancel()
+    }
+
+    public func withoutPauses(_ span: Duration) -> Duration {
+        let nowUs = elapsedMicros()
+        let paused = locked { pausedMicros(from: nowUs - PerformanceMonitorService.micros(span), to: nowUs) }
+        return paused > 0 ? max(.zero, span - .microseconds(paused)) : span
+    }
+
+    private func startWatch() {
+        let intervalUs = Int(PerformanceMonitorService.micros(heartbeatInterval))
+        let timer = DispatchSource.makeTimerSource(queue: watchQueue)
+        timer.schedule(
+            deadline: .now() + .microseconds(intervalUs), repeating: .microseconds(intervalUs),
+            leeway: .microseconds(max(1, intervalUs / 10)))
+        timer.setEventHandler { [weak self] in self?.watchTick() }
+        let previous: DispatchSourceTimer? = locked {
+            let previous = watchTimer
+            watchTimer = timer
+            return previous
+        }
+        previous?.cancel()
+        timer.resume()
+    }
+
+    private func watchTick() {
+        let nowUs = elapsedMicros()
+        let intervalUs = PerformanceMonitorService.micros(heartbeatInterval)
+        let pausedUs: Int64? = locked {
+            guard heartbeatRunning else { return nil }
+            let startUs = lastWatchUs + intervalUs
+            lastWatchUs = nowUs
+            let gapUs = nowUs - startUs
+            if gapUs < PerformanceMonitorService.micros(stallThreshold) { return nil }
+            recentPauses.append((startUs, nowUs))
+            if recentPauses.count > PerformanceMonitorService.recentLimit { recentPauses.removeFirst() }
+            pauseTotal += 1
+            longestPauseUs = max(longestPauseUs, gapUs)
+            return gapUs
+        }
+        guard let pausedUs else { return }
+        let line = "[pause] process paused \(pausedUs / 1_000)ms while visible"
+        if let logSink { logSink(line) } else { Log.info("perf", line) }
+        stallLog?.append("\(DartDateFormat.iso8601(now())) \(line)")
+        changed()
+    }
+
+    private func pausedMicros(from startUs: Int64, to endUs: Int64) -> Int64 {
+        let intervalUs = PerformanceMonitorService.micros(heartbeatInterval)
+        var spans = recentPauses
+        if heartbeatRunning, endUs - lastWatchUs - intervalUs >= PerformanceMonitorService.micros(stallThreshold) {
+            spans.append((lastWatchUs + intervalUs, endUs))
+        }
+        return spans.reduce(0) { $0 + max(0, min($1.endUs, endUs) - max($1.startUs, startUs)) }
     }
 
     public func dispose() { uninstallStallMonitors() }
@@ -345,23 +423,24 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     private func beat(_ generation: Int) {
         let nowUs = elapsedMicros()
         let intervalUs = PerformanceMonitorService.micros(heartbeatInterval)
-        let snapshot: (windowStart: Int64, attributed: Int64, inFlight: [String], recent: [String], lagHandler: ((Duration) -> Void)?)? = locked {
+        let snapshot: (windowStart: Int64, attributed: Int64, pausedUs: Int64, inFlight: [String], recent: [String], lagHandler: ((Duration) -> Void)?)? = locked {
             guard heartbeatRunning, generation == heartbeatGeneration else { return nil }
             let windowStart = lastBeatUs
             lastBeatUs = nowUs
             return (
-                windowStart, lastAttributedStallUs, inFlight.map(\.1),
+                windowStart, lastAttributedStallUs, pausedMicros(from: windowStart, to: nowUs), inFlight.map(\.1),
                 recentlyFinished.filter { $0.1 >= windowStart }.map(\.0), heartbeatLagHandler
             )
         }
         guard let snapshot else { return }
         scheduleBeat(generation)
-        let lagUs = max(0, nowUs - snapshot.windowStart - intervalUs)
+        let lagUs = max(0, nowUs - snapshot.windowStart - intervalUs - snapshot.pausedUs)
         let lag = Duration.microseconds(lagUs)
         snapshot.lagHandler?(lag)
         // A timeSync section already named this stall; don't log it twice.
         if lag < stallThreshold || snapshot.attributed >= snapshot.windowStart { return }
         var details = JSONObject()
+        if snapshot.pausedUs > 0 { details["pausedMs"] = .int(snapshot.pausedUs / 1_000) }
         if !snapshot.inFlight.isEmpty { details["inFlight"] = .string(PerformanceMonitorService.uniqueJoined(snapshot.inFlight)) }
         if !snapshot.recent.isEmpty { details["finishedDuring"] = .string(PerformanceMonitorService.uniqueJoined(snapshot.recent)) }
         if let sections = sectionsText(from: snapshot.windowStart, to: nowUs) { details["sections"] = .string(sections) }
@@ -373,12 +452,14 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         guard let visibleSinceUs: Int64 = locked({ heartbeatRunning ? heartbeatStartedUs : nil }) else { return }
         for timing in timings {
             let span = timing.totalSpan ?? timing.buildDuration + timing.rasterDuration + timing.vsyncOverhead
-            if nowUs - PerformanceMonitorService.micros(span) < visibleSinceUs { continue }
+            let spanUs = PerformanceMonitorService.micros(span)
+            if nowUs - spanUs < visibleSinceUs { continue }
+            let paused = Duration.microseconds(locked { pausedMicros(from: nowUs - spanUs, to: nowUs) })
             recordFrameDelay(
-                buildDuration: timing.buildDuration,
+                buildDuration: max(.zero, timing.buildDuration - paused),
                 rasterDuration: timing.rasterDuration,
                 vsyncOverhead: timing.vsyncOverhead,
-                totalSpan: timing.totalSpan)
+                totalSpan: timing.totalSpan.map { max(.zero, $0 - paused) })
         }
     }
 

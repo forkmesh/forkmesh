@@ -320,3 +320,13 @@ def test_strikethrough_renders_from_both_spellings():
     assert "<del>gone</del>" in html
     assert "<del>also gone</del>" in html
     assert ">~~kept~~</code>" in html
+
+
+def test_repository_svg_images_wait_for_the_safe_hydrator():
+    html = _render('<p align="center"><img src="logo.svg" alt="Acme" width="120"></p>\n\n'
+                   "![chart](docs/chart.png) ![badge](https://img.example.org/b.svg)\n")
+    assert 'data-repo-svg-src="/api/repo/forkmesh/forkmesh/raw?path=logo.svg"' in html
+    assert 'src="/api/repo/forkmesh/forkmesh/raw?path=logo.svg"' not in html.replace(
+        "data-repo-svg-src=", "")
+    assert 'src="/api/repo/forkmesh/forkmesh/raw?path=docs%2Fchart.png"' in html
+    assert 'src="https://img.example.org/b.svg"' in html
