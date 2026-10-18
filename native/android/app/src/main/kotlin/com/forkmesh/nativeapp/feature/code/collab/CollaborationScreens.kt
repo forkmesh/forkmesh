@@ -25,6 +25,8 @@ interface CollaborationActions {
     fun newPullRequest()
 
     fun newDiscussion()
+
+    fun mergeAllPullsWithAi()
 }
 
 object CollaborationScreens {
@@ -72,6 +74,10 @@ object CollaborationScreens {
 
                 override fun newDiscussion() {
                     env.launch { showNewDiscussionDialog(repo) }
+                }
+
+                override fun mergeAllPullsWithAi() {
+                    env.launch { mergeAllPullsWithAi(repo) }
                 }
             }
         }

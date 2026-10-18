@@ -36,6 +36,44 @@ QString runTitle(int count)
                             .arg(count);
 }
 
+QString errorMessage(const QString &code)
+{
+    if (code == QLatin1String("unknown_repo"))
+        return QStringLiteral("This repository is not on this desktop.");
+    if (code == QLatin1String("read_only"))
+        return QStringLiteral("This repository is read-only on this desktop.");
+    if (code == QLatin1String("not_repo_owner"))
+        return QStringLiteral("Only the repository's owner can merge every pull "
+                              "request at once.");
+    if (code == QLatin1String("busy"))
+        return QStringLiteral("An agent is already merging this repository's pull "
+                              "requests.");
+    if (code == QLatin1String("no_open_pulls"))
+        return QStringLiteral("No open pull requests to merge.");
+    if (code == QLatin1String("nothing_mergeable"))
+        return QStringLiteral("None of the open pull requests can be merged by an "
+                              "agent on this desktop.");
+    if (code == QLatin1String("launch_failed"))
+        return QStringLiteral("The desktop could not start the merge agent.");
+    return QStringLiteral("Merge all with AI failed (%1).").arg(code);
+}
+
+QString launchMessage(const Launch &launch)
+{
+    QString message;
+    if (!launch.error.isEmpty())
+        message = errorMessage(launch.error);
+    else
+        message = QStringLiteral("Agent #%1 is reviewing and merging %2 pull "
+                                 "request(s).")
+                      .arg(launch.sessionId)
+                      .arg(launch.count);
+    if (!launch.skipped.isEmpty())
+        message += QStringLiteral(" Left out: %1").arg(
+            launch.skipped.join(QStringLiteral(", ")));
+    return message;
+}
+
 QString agentPrompt(const QString &owner, const QString &name,
                     const QString &checkout, const QList<Target> &targets)
 {
@@ -119,8 +157,8 @@ QString agentPrompt(const QString &owner, const QString &name,
     lines << QString();
     lines << QStringLiteral("Rules:");
     lines << QStringLiteral(
-        "- Do not push, force-push, rebase or rewrite existing history, run "
-        "`git reset --hard`, `git clean`, `git stash`, or delete branches, "
+        "- Do not push, force-push, rebase or rewrite existing history, "
+        "hard-reset, clean or stash the working tree, or delete branches, "
         "worktrees or anything outside this repository.");
     lines << QStringLiteral(
         "- Do not edit `.forkmesh/`: the pull request ledger belongs to "

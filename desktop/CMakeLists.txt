@@ -535,6 +535,7 @@ set(FORKMESH_MAIN_WINDOW_SOURCES
     src/MainWindowPingFixes.cpp
     src/MainWindowSecurityAlarm.cpp
     src/MainWindowLocalControlMergeQueue.cpp
+    src/MainWindowLocalControlPulls.cpp
     src/MainWindowLocalControlFleet.cpp
     src/MainWindowLocalControlFiles.cpp
     src/MainWindowLocalControlDiagnostics.cpp
@@ -859,6 +860,8 @@ set(FORKMESH_APP_SOURCES
     src/LocalControlAgentOps.cpp
     src/LocalControlMergeQueue.h
     src/LocalControlMergeQueue.cpp
+    src/LocalControlPulls.h
+    src/LocalControlPulls.cpp
     src/LocalControlFleet.h
     src/LocalControlFleet.cpp
     src/LocalControlFiles.h
@@ -4377,6 +4380,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         tests/test_pull_merge_all.cpp
         src/PullMergeAll.h
         src/PullMergeAll.cpp
+        src/LocalControlPulls.h
+        src/LocalControlPulls.cpp
     )
     target_include_directories(forkmesh-pull-merge-all-tests PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)

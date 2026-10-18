@@ -127,7 +127,9 @@ in `MainWindowLocalControl<Family>.cpp`, with a pure, testable half in
 | `discord.` | WS13 |
 | `wallet.` | WS19 |
 
-Later families (`update.`, `pings.`) follow the same pattern.
+Later families (`update.`, `pings.`, `pulls.`) follow the same pattern.
+`pulls.` carries Merge all with AI from the phones' pull request lists; see
+[../desktop/pull-merge-all.md](../desktop/pull-merge-all.md#from-a-phone).
 
 ### 19.4 Extension targets
 

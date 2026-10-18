@@ -1998,10 +1998,15 @@ PullStore MainWindow::pullStoreForRepoIndex(int index) const
 
 bool MainWindow::currentAccountOwnsPullRepository()
 {
-    if (m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size())
+    return accountOwnsPullRepositoryAt(m_repoDetailIndex);
+}
+
+bool MainWindow::accountOwnsPullRepositoryAt(int index)
+{
+    if (index < 0 || index >= m_repositories.size())
         return false;
     const RepositoryRecord &repository =
-        writableRecordFor(m_repositories.at(m_repoDetailIndex));
+        writableRecordFor(m_repositories.at(index));
     if (PullMergePolicy::repositoryOwnedByAccount(
             repository.owner, accountOwner(), m_profileLinkedNodes)) {
         return true;

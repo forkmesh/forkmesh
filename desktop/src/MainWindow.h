@@ -3846,6 +3846,7 @@ private:
     void runLocalControlMergeQueueAction(int connectionId, int requestId, int index,
                                          const QString &action, int number, int delta);
     forkmesh::localcontrol::hosts::ConfirmationStore m_mergeQueueConfirmations;
+    forkmesh::localcontrol::hosts::ConfirmationStore m_pullsConfirmations;
     void handleLocalControlFleetRequest(int connectionId, int requestId,
                                       const QString &method, const QJsonObject &params); // fleet. WS16
     QJsonObject localControlFleetSummary();
@@ -6521,6 +6522,7 @@ private:
     void sendPullRevisionToAgent();                 // re-queue the linked agent with revision feedback
     void submitPullReview(const QString &state);    // approve / request changes
     bool currentAccountOwnsPullRepository();
+    bool accountOwnsPullRepositoryAt(int index);
     void promptNewPull();
     void importPatchAsPull(); // read a .patch/.diff file and open it as a PR
     void promptNewPullFromDirectory();
@@ -6606,9 +6608,18 @@ private:
     void mergeAndDeleteCurrentPull();
     void deleteAllClosedAndMergedPullsAndBranches();
     void mergeAllPullsWithAgent();
-    void launchPullMergeAllAgent(const QString &owner, const QString &name,
-                                 const QList<forkmesh::pullmergeall::Target> &targets,
-                                 const QStringList &skipped);
+    QString pullMergeAllBlocker(int repoIndex);
+    static QList<PullRequest> openPullsToMergeAll(const QList<PullRequest> &pulls);
+    void startPullMergeAll(const QString &owner, const QString &name,
+                           const QList<PullRequest> &open, bool switchToTab,
+                           std::function<void(const forkmesh::pullmergeall::Launch &)> done);
+    forkmesh::pullmergeall::Launch launchPullMergeAllAgent(
+        const QString &owner, const QString &name,
+        const QList<forkmesh::pullmergeall::Target> &targets,
+        const QStringList &skipped, bool switchToTab);
+    void handleLocalControlPullsRequest(int connectionId, int requestId,
+                                        const QString &method, const QJsonObject &params);
+    void runLocalControlPullsMergeAll(int connectionId, int requestId, int index);
     void finishPullMergeAllRun(int sessionId);
     void loadPullMergeAllRuns();
     void savePullMergeAllRuns();

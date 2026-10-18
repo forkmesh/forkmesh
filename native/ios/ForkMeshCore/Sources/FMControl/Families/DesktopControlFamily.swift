@@ -26,6 +26,7 @@ extension DesktopControlHub: DesktopControlCalling {}
 public enum DesktopControlFamilyName: String, CaseIterable, Sendable {
     case agentOps = "agentops."
     case mergeQueue = "mergequeue."
+    case pulls = "pulls."
     case fleet = "fleet."
     case filesBrowse = "files.browse."
     case diagnostics = "diag."

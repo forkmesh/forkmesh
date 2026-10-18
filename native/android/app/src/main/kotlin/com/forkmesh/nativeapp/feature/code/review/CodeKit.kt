@@ -26,6 +26,7 @@ import com.forkmesh.nativeapp.collab.CollabRecordWriter
 import com.forkmesh.nativeapp.collab.CollabSigner
 import com.forkmesh.nativeapp.collab.CollabTone
 import com.forkmesh.nativeapp.collab.MergeQueueRemote
+import com.forkmesh.nativeapp.collab.PullMergeAllRemote
 import com.forkmesh.nativeapp.collab.PullMergeClient
 import com.forkmesh.nativeapp.collab.RepoArchiveReader
 import com.forkmesh.nativeapp.collab.RepoSettingsClient
@@ -77,6 +78,13 @@ internal object CodeServices {
         val family = DesktopControlFamily(DesktopControlFamilyName.MergeQueue, AgentsFeature.hub)
         return MergeQueueRemote { suffix, params, timeout -> family.call(suffix, params, timeout) }
     }
+
+    fun pullMergeAll(): PullMergeAllRemote {
+        val family = DesktopControlFamily(DesktopControlFamilyName.Pulls, AgentsFeature.hub)
+        return PullMergeAllRemote { suffix, params, timeout -> family.call(suffix, params, timeout) }
+    }
+
+    fun desktopPaired(): Boolean = runCatching { AgentsFeature.hub.desktop != null }.getOrDefault(false)
 
     fun archiveReader(): RepoArchiveReader = object : RepoArchiveReader {
         override fun tree(owner: String, name: String, path: String, ref: String): RepoTree = api.tree(owner, name, path, ref)

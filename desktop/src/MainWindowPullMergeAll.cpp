@@ -93,42 +93,24 @@ int MainWindow::activePullMergeAllSession(const QString &owner, const QString &n
     return active;
 }
 
-void MainWindow::mergeAllPullsWithAgent()
+QString MainWindow::pullMergeAllBlocker(int repoIndex)
 {
-    if (m_pullMergeAllPreparing) {
-        flashMessage(QStringLiteral("Already preparing the pull requests for the "
-                                    "merge agent."),
-                     true, QString(), forkmesh::kLocalOperationNoticeKind);
-        return;
-    }
-    if (m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size())
-        return;
-    const RepositoryRecord repo = m_repositories.at(m_repoDetailIndex);
-    const QString workTree = writableRecordFor(repo).localPath;
-    if (workTree.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("Merge all with AI"),
-                             QStringLiteral("This repository is read-only on this "
-                                            "node."));
-        return;
-    }
-    if (!currentAccountOwnsPullRepository()) {
-        QMessageBox::warning(this, QStringLiteral("Merge all with AI"),
-                             QStringLiteral("Only the repository's owner can merge "
-                                            "every pull request at once."));
-        return;
-    }
-    if (const int running = activePullMergeAllSession(repo.owner, repo.name);
-        running > 0) {
-        switchToAgentsTab(running);
-        flashMessage(QStringLiteral("Agent #%1 is already merging this "
-                                    "repository's pull requests.")
-                         .arg(running),
-                     true, QString(), forkmesh::kLocalOperationNoticeKind);
-        return;
-    }
+    if (repoIndex < 0 || repoIndex >= m_repositories.size())
+        return QStringLiteral("unknown_repo");
+    const RepositoryRecord repo = m_repositories.at(repoIndex);
+    if (writableRecordFor(repo).localPath.isEmpty())
+        return QStringLiteral("read_only");
+    if (!accountOwnsPullRepositoryAt(repoIndex))
+        return QStringLiteral("not_repo_owner");
+    if (m_pullMergeAllPreparing || activePullMergeAllSession(repo.owner, repo.name) > 0)
+        return QStringLiteral("busy");
+    return QString();
+}
 
+QList<PullRequest> MainWindow::openPullsToMergeAll(const QList<PullRequest> &pulls)
+{
     QList<PullRequest> open;
-    for (const PullRequest &pr : std::as_const(m_currentPulls))
+    for (const PullRequest &pr : pulls)
         if (pr.number > 0 && !pr.archivedOnCodeBranch &&
             pr.status == QLatin1String("open"))
             open << pr;
@@ -136,13 +118,35 @@ void MainWindow::mergeAllPullsWithAgent()
               [](const PullRequest &a, const PullRequest &b) {
                   return a.number < b.number;
               });
-    if (open.isEmpty()) {
-        setRepoDetailNotice(QStringLiteral("No open pull requests to merge."));
-        return;
-    }
     if (open.size() > pullmergeall::kMaxTargets)
         open = open.mid(0, pullmergeall::kMaxTargets);
+    return open;
+}
 
+void MainWindow::mergeAllPullsWithAgent()
+{
+    if (m_repoDetailIndex < 0 || m_repoDetailIndex >= m_repositories.size())
+        return;
+    const RepositoryRecord repo = m_repositories.at(m_repoDetailIndex);
+    const QString blocker = pullMergeAllBlocker(m_repoDetailIndex);
+    if (blocker == QLatin1String("busy")) {
+        const int running = activePullMergeAllSession(repo.owner, repo.name);
+        if (running > 0)
+            switchToAgentsTab(running);
+        flashMessage(pullmergeall::errorMessage(blocker), true, QString(),
+                     forkmesh::kLocalOperationNoticeKind);
+        return;
+    }
+    if (!blocker.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Merge all with AI"),
+                             pullmergeall::errorMessage(blocker));
+        return;
+    }
+    const QList<PullRequest> open = openPullsToMergeAll(m_currentPulls);
+    if (open.isEmpty()) {
+        setRepoDetailNotice(pullmergeall::errorMessage(QStringLiteral("no_open_pulls")));
+        return;
+    }
     const auto answer = QMessageBox::question(
         this, QStringLiteral("Merge all with AI"),
         QStringLiteral(
@@ -152,18 +156,40 @@ void MainWindow::mergeAllPullsWithAgent()
             "the safe ones into their base branch. When it finishes, ForkMesh "
             "deletes every pull request whose branch was merged, and that branch.\n\n"
             "Pull requests it skips stay open. The agent does not push.")
-            .arg(workTree)
+            .arg(writableRecordFor(repo).localPath)
             .arg(open.size()),
         QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Cancel);
     if (answer != QMessageBox::Yes)
         return;
+    startPullMergeAll(repo.owner, repo.name, open, true,
+                      [this](const pullmergeall::Launch &launch) {
+                          if (launch.error.isEmpty() ||
+                              launch.error == QLatin1String("launch_failed"))
+                              return;
+                          QMessageBox::warning(this, QStringLiteral("Merge all with AI"),
+                                               pullmergeall::launchMessage(launch));
+                      });
+}
 
+void MainWindow::startPullMergeAll(
+    const QString &owner, const QString &name, const QList<PullRequest> &open,
+    bool switchToTab, std::function<void(const pullmergeall::Launch &)> done)
+{
+    const int repoIndex = repoIndexFor(owner, name);
+    pullmergeall::Launch refused;
+    refused.error = pullMergeAllBlocker(repoIndex);
+    if (refused.error.isEmpty() && open.isEmpty())
+        refused.error = QStringLiteral("no_open_pulls");
+    if (!refused.error.isEmpty()) {
+        if (done)
+            done(refused);
+        return;
+    }
+    const QString workTree = writableRecordFor(m_repositories.at(repoIndex)).localPath;
+    const PullStore store = pullStoreForRepoIndex(repoIndex);
     m_pullMergeAllPreparing = true;
     if (m_pullMergeAllAiButton)
         m_pullMergeAllAiButton->setEnabled(false);
-    const PullStore store = pullStoreForCurrentRepo();
-    const QString owner = repo.owner;
-    const QString name = repo.name;
     runOffThread<PullMergeAllPrepared>(
         [store, workTree, open] {
             PullMergeAllPrepared out;
@@ -204,29 +230,33 @@ void MainWindow::mergeAllPullsWithAgent()
             }
             return out;
         },
-        [this, owner, name](PullMergeAllPrepared prepared) {
+        [this, owner, name, switchToTab, done](PullMergeAllPrepared prepared) {
             m_pullMergeAllPreparing = false;
             if (m_pullMergeAllAiButton)
                 m_pullMergeAllAiButton->setEnabled(true);
-            launchPullMergeAllAgent(owner, name, prepared.targets, prepared.skipped);
+            const pullmergeall::Launch launch = launchPullMergeAllAgent(
+                owner, name, prepared.targets, prepared.skipped, switchToTab);
+            if (done)
+                done(launch);
         });
 }
 
-void MainWindow::launchPullMergeAllAgent(
+pullmergeall::Launch MainWindow::launchPullMergeAllAgent(
     const QString &owner, const QString &name,
-    const QList<pullmergeall::Target> &targets, const QStringList &skipped)
+    const QList<pullmergeall::Target> &targets, const QStringList &skipped,
+    bool switchToTab)
 {
+    pullmergeall::Launch launch;
+    launch.skipped = skipped;
     if (targets.isEmpty()) {
-        QMessageBox::warning(
-            this, QStringLiteral("Merge all with AI"),
-            QStringLiteral("None of the open pull requests can be merged by an "
-                           "agent on this node:\n%1")
-                .arg(skipped.join(QLatin1Char('\n'))));
-        return;
+        launch.error = QStringLiteral("nothing_mergeable");
+        return launch;
     }
     const int repoIndex = repoIndexFor(owner, name);
-    if (repoIndex < 0)
-        return;
+    if (repoIndex < 0) {
+        launch.error = QStringLiteral("unknown_repo");
+        return launch;
+    }
     const QString checkout = writableRecordFor(m_repositories.at(repoIndex)).localPath;
 
     QString provider = defaultAgentProvider();
@@ -240,10 +270,14 @@ void MainWindow::launchPullMergeAllAgent(
     const int sessionId = startAdHocAgentForRepo(
         repoIndex, pullmergeall::agentPrompt(owner, name, checkout, targets),
         provider, false, model, pullmergeall::runTitle(targets.size()),
-        false, true, QString(), QStringLiteral("Auto"),
+        false, switchToTab, QString(), QStringLiteral("Auto"),
         QString(), 50, true);
-    if (sessionId <= 0)
-        return;
+    if (sessionId <= 0) {
+        launch.error = QStringLiteral("launch_failed");
+        return launch;
+    }
+    launch.sessionId = sessionId;
+    launch.count = targets.size();
 
     loadPullMergeAllRuns();
     pullmergeall::Run run;
@@ -265,17 +299,9 @@ void MainWindow::launchPullMergeAllAgent(
                 *session, QStringLiteral("==> Merge all: left out %1.\n")
                               .arg(skipped.join(QStringLiteral(", "))));
     }
-    setRepoDetailNotice(
-        skipped.isEmpty()
-            ? QStringLiteral("Agent #%1 is reviewing and merging %2 pull "
-                             "request(s).")
-                  .arg(sessionId)
-                  .arg(targets.size())
-            : QStringLiteral("Agent #%1 is reviewing and merging %2 pull "
-                             "request(s). Left out: %3")
-                  .arg(sessionId)
-                  .arg(targets.size())
-                  .arg(skipped.join(QStringLiteral(", "))));
+    if (repoIndex == m_repoDetailIndex)
+        setRepoDetailNotice(pullmergeall::launchMessage(launch));
+    return launch;
 }
 
 void MainWindow::finishPullMergeAllRun(int sessionId)

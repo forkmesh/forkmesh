@@ -1,13 +1,15 @@
 # Desktop: Merge all with AI
 
 Part of [the desktop docs](README.md). Code: `desktop/src/PullMergeAll.*`
-(prompt, name checks, saved runs) and `desktop/src/MainWindowPullMergeAll.cpp`
-(button, launch, cleanup). Test: `desktop/tests/test_pull_merge_all.cpp`.
+(prompt, name checks, saved runs, refusal messages),
+`desktop/src/MainWindowPullMergeAll.cpp` (button, launch, cleanup) and the
+`pulls.` family for phones. Test: `desktop/tests/test_pull_merge_all.cpp`.
 
 ## What the button does
 
 **Merge all** sits in the Pull requests list toolbar, between the filters and
-**Delete closed and merged**. Only the repository's owner can use it, and only
+**Delete closed and merged**. The phones offer the same action
+([From a phone](#from-a-phone)). Only the repository's owner can use it, and only
 where this node has a working checkout.
 
 1. It takes every open pull request in the list, oldest first, up to 200.
@@ -59,6 +61,37 @@ session id. This way a restart in the middle of a run still cleans up when it
 finishes. Records for sessions that no longer exist are dropped the next time
 the button checks for a run already in progress. A second click while a run is
 going opens that run instead of starting another.
+
+## From a phone
+
+The iOS and Android pull request lists have the same action at the top. On
+iOS it is a **Merge all** button in the navigation bar of the Pulls tab
+(`RepoPullsTab`, `PullMergeAllFlow.swift`). On Android it is a sparkle icon
+in the Pulls section's top bar (`RepoSectionScreen`, `PullMergeAllAction.kt`).
+The agent has to run where the checkout is, so the phone asks the paired
+desktop through the `pulls.` local control family
+(`desktop/src/LocalControlPulls.*`, `MainWindowLocalControlPulls.cpp`).
+
+1. `pulls.prepare` with `{owner, name, action: "merge-all-ai"}` checks the
+   same blockers as the button (`pullMergeAllBlocker`) and returns a one-use
+   token plus the summary the phone shows in its confirmation. The family is
+   owner-only, like every family, and the token is bound to the device, the
+   action and the repository, and expires after a minute.
+2. `pulls.run` with the token loads the repository's pull requests from its
+   `PullStore`. The repository does not have to be open on the desktop. The
+   run then goes through `startPullMergeAll`, the same dialog-free path the
+   button uses after its own confirmation. The desktop does not switch to the
+   Agents tab for a phone request.
+3. The reply carries `{message, sessionId, pulls, skipped}`. A refusal is one
+   of `unknown_repo`, `read_only`, `not_repo_owner`, `busy`, `no_open_pulls`,
+   `nothing_mergeable` or `launch_failed`. The phone clients
+   (`PullMergeAllRemote` in `FMCode` and in Android `core`) turn each code
+   into a sentence.
+
+The confirmation happens on the phone, as it does for `mergequeue.`. The
+desktop shows no second dialog, because the person is not at it. A desktop
+without the family answers `unknown_method`, and the phone asks for an update.
+Cleanup after the run is the same as for the desktop button.
 
 ## Prompt safety
 

@@ -1,6 +1,8 @@
+#include "LocalControlPulls.h"
 #include "PullMergeAll.h"
 
 #include <QCoreApplication>
+#include <QJsonArray>
 
 #include <iostream>
 
@@ -94,6 +96,53 @@ int main(int argc, char **argv)
               "\"branch\":\"-D\",\"base\":\"main\"}]}}"))
               .isEmpty(),
           "a stored run with only unsafe branches is dropped");
+
+    namespace pulls = forkmesh::localcontrol::pulls;
+    check(pulls::familyPrefix() == QStringLiteral("pulls."), "pulls family prefix");
+    check(pulls::actions() == QStringList{QStringLiteral("merge-all-ai")},
+          "the phone may name only merge-all-ai in the pulls family");
+    check(pulls::validRequest(QStringLiteral("acme"), QStringLiteral("app.web"),
+                              QStringLiteral("merge-all-ai")),
+          "a plain repository and known action is valid");
+    check(!pulls::validRequest(QStringLiteral("acme"), QStringLiteral("app"),
+                               QStringLiteral("merge")),
+          "an unknown pulls action is refused");
+    check(!pulls::validRequest(QStringLiteral("../etc"), QStringLiteral("app"),
+                               QStringLiteral("merge-all-ai")),
+          "a path-like owner is refused");
+    check(!pulls::validRequest(QStringLiteral("acme"), QStringLiteral("a..b"),
+                               QStringLiteral("merge-all-ai")),
+          "a repository name with a range is refused");
+    check(pulls::confirmationTarget(QStringLiteral("Acme"), QStringLiteral("App"),
+                                    QStringLiteral("merge-all-ai")) ==
+              QStringLiteral("merge-all-ai:acme/app"),
+          "the confirmation is bound to the action and the lower-cased repository");
+    const QString summary = pulls::actionSummary(QStringLiteral("acme"), QStringLiteral("app"),
+                                                 QStringLiteral("merge-all-ai"));
+    check(summary.contains(QStringLiteral("acme/app")) &&
+              summary.contains(QStringLiteral("no permission prompts")) &&
+              summary.contains(QStringLiteral("deletes")),
+          "the phone's confirmation names the repository, the unattended mode and the deletes");
+
+    Launch started;
+    started.sessionId = 9;
+    started.count = 2;
+    started.skipped = {QStringLiteral("#5 (its code is not on this node)")};
+    const QJsonObject reply = pulls::launchReply(started);
+    check(reply.value(QStringLiteral("sessionId")).toInt() == 9 &&
+              reply.value(QStringLiteral("pulls")).toInt() == 2 &&
+              reply.value(QStringLiteral("skipped")).toArray().size() == 1,
+          "the run reply carries the session, the count and what was left out");
+    check(reply.value(QStringLiteral("message")).toString() ==
+              QStringLiteral("Agent #9 is reviewing and merging 2 pull request(s). Left out: "
+                             "#5 (its code is not on this node)"),
+          "the run reply message names the agent and what was left out");
+    Launch refused;
+    refused.error = QStringLiteral("busy");
+    check(launchMessage(refused).contains(QStringLiteral("already merging")),
+          "a busy refusal explains itself");
+    check(errorMessage(QStringLiteral("weird")).contains(QStringLiteral("weird")),
+          "an unknown code is still named");
 
     if (failures)
         std::cerr << failures << " check(s) failed\n";
