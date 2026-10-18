@@ -31,7 +31,7 @@ enum DirectLiveHaptics {
 @MainActor
 final class DirectLiveMotionFeed {
     static let shared: DirectLiveMotionFeed = DirectLiveMotionFeed()
-    static let rate: Double = 30
+    static let rate: Double = 60
     static let smoothing: Double = 0.1
 
     private let manager: CMMotionManager = CMMotionManager()
@@ -367,90 +367,178 @@ enum DirectLivePhone {
 }
 
 struct MessagesLivePartnerPhone<Avatar: View>: View {
-    @Environment(\.fmPalette) private var fm
     @AppStorage(DirectLivePhone.floatingFaceKey) private var floatingFace: Bool = false
+    @State private var enlarged: Bool = false
     let engine: DirectLiveEngine
     let conversation: String
     let name: String
     let dark: Bool
-    @ViewBuilder let avatar: () -> Avatar
+    @ViewBuilder let avatar: (CGFloat) -> Avatar
 
     var body: some View {
         let sharing: Bool = engine.partnerMotion(conversation) != nil
-        Menu {
-            Toggle(isOn: $floatingFace) {
-                Label("Floating 3D Face", systemImage: "person.and.background.dotted")
-            }
-        } label: {
-            Group {
-                if sharing || floatingFace {
-                    TimelineView(.animation(minimumInterval: sharing ? 1.0 / 60.0 : 1.0 / 30.0)) { (context: TimelineViewDefaultContext) in
-                        phone(
-                            sharing ? engine.motion[conversation]?.sample(at: context.date.epochMillis) : nil,
-                            time: context.date.timeIntervalSinceReferenceDate)
-                    }
-                } else {
-                    phone(nil, time: 0)
-                }
-            }
+        Button(action: {
+            enlarged = true
+            FmHaptics.selection()
+        }) {
+            DirectLivePhoneLive(
+                engine: engine, conversation: conversation, sharing: sharing, floatingFace: floatingFace, dark: dark,
+                height: 38, avatar: avatar
+            )
             .frame(width: 44, height: 44)
-            .chatGlass(Circle(), border: fm.border)
+            .contentShape(Rectangle())
         }
-        .menuStyle(.button)
         .buttonStyle(.plain)
         .animation(.spring(response: 0.35, dampingFraction: 0.75), value: floatingFace)
         .accessibilityLabel("\(name)'s phone")
         .accessibilityValue(
             [sharing ? "Showing its direction" : "Not sharing its direction", floatingFace ? "floating face on" : ""]
                 .filter { !$0.isEmpty }.joined(separator: ", "))
-        .accessibilityHint("Turns the floating 3D face on or off.")
+        .accessibilityHint("Shows their phone bigger.")
         .accessibilityAction(named: "Send a tap") {
             engine.tap(conversation, at: DirectLivePoint(x: 0.5, y: 0))
             DirectLiveHaptics.sent()
         }
         .accessibilityIdentifier(sharing ? "chat-live-partner-motion" : "chat-live-partner-still")
+        .sheet(isPresented: $enlarged) {
+            DirectLivePhoneSheet(
+                engine: engine, conversation: conversation, name: name, floatingFace: $floatingFace, avatar: avatar)
+        }
     }
+}
 
-    private func phone(_ sample: DirectLiveMotionSample?, time: Double) -> some View {
+struct DirectLivePhoneSheet<Avatar: View>: View {
+    @Environment(\.fmPalette) private var fm
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.dismiss) private var dismiss
+    let engine: DirectLiveEngine
+    let conversation: String
+    let name: String
+    @Binding var floatingFace: Bool
+    let avatar: (CGFloat) -> Avatar
+
+    var body: some View {
+        let sharing: Bool = engine.partnerMotion(conversation) != nil
+        NavigationStack {
+            VStack(spacing: FmSpace.x3) {
+                DirectLivePhoneLive(
+                    engine: engine, conversation: conversation, sharing: sharing, floatingFace: floatingFace,
+                    dark: scheme == .dark, height: 170, avatar: avatar
+                )
+                .frame(maxWidth: .infinity)
+                .frame(height: 230)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    engine.tap(conversation, at: DirectLivePoint(x: 0.5, y: 0))
+                    DirectLiveHaptics.sent()
+                }
+                .accessibilityElement()
+                .accessibilityLabel("\(name)'s phone")
+                .accessibilityValue(sharing ? "Showing its direction" : "Not sharing its direction")
+                .accessibilityHint("Tap to make their phone tap back.")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("chat-live-partner-large")
+                Text(sharing ? "Moves with \(name)'s phone. Tap it to buzz them." : "\(name)'s phone isn't sharing its direction right now.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(fm.textSecondary)
+                    .multilineTextAlignment(.center)
+                Toggle(isOn: $floatingFace) {
+                    Label("Floating 3D Face", systemImage: "person.and.background.dotted")
+                        .foregroundStyle(fm.textPrimary)
+                }
+                .tint(fm.accent)
+                .accessibilityIdentifier("chat-live-floating-face")
+            }
+            .padding(.horizontal, FmSpace.x4)
+            .padding(.top, FmSpace.x2)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: floatingFace)
+            .fmPreGlassBackground(fm.bgBase)
+            .navigationTitle("\(name)'s phone")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+struct DirectLivePhoneLive<Avatar: View>: View {
+    let engine: DirectLiveEngine
+    let conversation: String
+    let sharing: Bool
+    let floatingFace: Bool
+    let dark: Bool
+    let height: CGFloat
+    let avatar: (CGFloat) -> Avatar
+
+    var body: some View {
+        if sharing || floatingFace {
+            TimelineView(.animation(minimumInterval: sharing ? 1.0 / 60.0 : 1.0 / 30.0)) { (context: TimelineViewDefaultContext) in
+                DirectLivePhoneFigure(
+                    sample: sharing ? engine.motion[conversation]?.sample(at: context.date.epochMillis) : nil,
+                    time: context.date.timeIntervalSinceReferenceDate, floatingFace: floatingFace, dark: dark,
+                    height: height, avatar: avatar)
+            }
+        } else {
+            DirectLivePhoneFigure(
+                sample: nil, time: 0, floatingFace: floatingFace, dark: dark, height: height, avatar: avatar)
+        }
+    }
+}
+
+struct DirectLivePhoneFigure<Avatar: View>: View {
+    static var maxPitch: Double { 1.2 }
+
+    let sample: DirectLiveMotionSample?
+    let time: Double
+    let floatingFace: Bool
+    let dark: Bool
+    let height: CGFloat
+    let avatar: (CGFloat) -> Avatar
+
+    var body: some View {
+        let unit: CGFloat = height / 32
         let roll: Double = sample?.steadyRoll ?? 0
-        let pitch: Double = sample?.pitch ?? 0
+        let pitch: Double = min(max(sample?.pitch ?? 0, -DirectLivePhoneFigure.maxPitch), DirectLivePhoneFigure.maxPitch)
         let jolt: Double = min(sample?.jolt ?? 0, 2)
         let ink: Color = dark ? Color.white : Color.black.opacity(0.75)
         let rim: Color = sample == nil ? ink.opacity(0.6) : DirectLivePhone.rim.opacity(min(1, 0.6 + jolt * 0.4))
-        let bob: CGFloat = CGFloat(sin(time * 2.4))
-        let tilt: CGSize = CGSize(width: CGFloat(sin(roll)) * 7, height: CGFloat(sin(pitch)) * 4)
+        let bob: CGFloat = CGFloat(sin(time * 2.4)) * unit
+        let tilt: CGSize = CGSize(width: CGFloat(sin(roll)) * 7 * unit, height: CGFloat(sin(pitch)) * 4 * unit)
         return ZStack {
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
+            RoundedRectangle(cornerRadius: 5 * unit, style: .continuous)
                 .fill(Color.black.opacity(dark ? 0.55 : 0.1))
-            RoundedRectangle(cornerRadius: 5, style: .continuous)
-                .stroke(rim, lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: 5 * unit, style: .continuous)
+                .stroke(rim, lineWidth: max(1.5, 1.2 * unit))
             Capsule()
                 .fill(rim)
-                .frame(width: 6, height: 1.6)
+                .frame(width: 6 * unit, height: 1.6 * unit)
                 .frame(maxHeight: .infinity, alignment: .top)
-                .padding(.top, 3)
+                .padding(.top, 3 * unit)
             if floatingFace {
                 Ellipse()
                     .fill(Color.black.opacity(0.3))
-                    .frame(width: 12 - bob * 1.5, height: 4)
-                    .blur(radius: 1.2)
-                    .offset(y: 7)
+                    .frame(width: 12 * unit - bob * 1.5, height: 4 * unit)
+                    .blur(radius: 1.2 * unit)
+                    .offset(y: 7 * unit)
             } else {
-                avatar().frame(width: 15, height: 15)
+                avatar(15 * unit).frame(width: 15 * unit, height: 15 * unit)
             }
         }
-        .frame(width: 20, height: 32)
-        .rotation3DEffect(.radians(-pitch * 0.6), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+        .frame(width: 20 * unit, height: 32 * unit)
         .rotationEffect(.radians(roll))
+        .rotation3DEffect(.radians(pitch), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
         .overlay {
             if floatingFace {
-                avatar()
-                    .frame(width: 22, height: 22)
-                    .shadow(color: Color.black.opacity(0.35), radius: 2.5, y: 3 + bob)
+                avatar(22 * unit)
+                    .frame(width: 22 * unit, height: 22 * unit)
+                    .shadow(color: Color.black.opacity(0.35), radius: 2.5 * unit, y: 3 * unit + bob)
                     .rotation3DEffect(.radians(roll * 0.6), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
-                    .rotation3DEffect(.radians(-pitch * 0.35), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
+                    .rotation3DEffect(.radians(pitch * 0.35), axis: (x: 1, y: 0, z: 0), perspective: 0.6)
                     .scaleEffect(1 + CGFloat(jolt) * 0.08)
-                    .offset(x: tilt.width, y: -5 - bob * 2 + tilt.height)
+                    .offset(x: tilt.width, y: -5 * unit - bob * 2 + tilt.height)
                     .transition(.scale(scale: 0.4).combined(with: .opacity))
                     .allowsHitTesting(false)
             }

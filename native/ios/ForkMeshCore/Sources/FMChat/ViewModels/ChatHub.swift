@@ -75,6 +75,8 @@ public final class ChatHub: ShellChatBridge {
             office?.isExpired = expiry
             office?.isRemoved = { [weak self] id in self?.extras.isRemoved(id) ?? false }
             office?.onRemoved = { [weak self] conversation, id in self?.messageRemoved(conversation, id) }
+            office?.onChange = { [weak self] in self?.persistSoon() }
+            restoreOfficeHistory()
             office?.onFrame = { [weak self] frame, conversation in
                 guard let self, let office = self.office else { return }
                 self.extras.applyRoomFrame(frame, conversation: conversation, selfId: office.currentSelfId)
@@ -143,9 +145,12 @@ public final class ChatHub: ShellChatBridge {
     private var ephemerals: [String: [ChatMessage]] = [:]
     @ObservationIgnored public var history: ChatHistoryStore?
     @ObservationIgnored public var historyScope: @MainActor () -> String = { "" }
+    @ObservationIgnored public var historyFormerScopes: @MainActor () -> [String] = { [] }
     @ObservationIgnored private var loadedScope = ""
     @ObservationIgnored private var historyToken: ListenerToken?
     @ObservationIgnored private var directRestore: (messages: [ChatMessage], receipts: [String: ChatReceipt])?
+    @ObservationIgnored private var officeRestore: [ChatMessage]?
+    @ObservationIgnored private var directAccount = ""
     @ObservationIgnored var trustChangedAt: [String: Date] = [:]
     public private(set) var replyingTo: ChatReplyQuote?
     @ObservationIgnored private var replyConversation = ""
@@ -237,9 +242,13 @@ public final class ChatHub: ShellChatBridge {
         pruneTask = nil
     }
 
-    public func attachHistory(_ store: ChatHistoryStore, scope: @escaping @MainActor () -> String) {
+    public func attachHistory(
+        _ store: ChatHistoryStore, scope: @escaping @MainActor () -> String,
+        formerScopes: @escaping @MainActor () -> [String] = { [] }
+    ) {
         history = store
         historyScope = scope
+        historyFormerScopes = formerScopes
         restoreHistoryIfNeeded()
         extras.onChange = { [weak self] in self?.persistSoon() }
         if let token = historyToken { relay.removeListener(token) }
@@ -248,18 +257,30 @@ public final class ChatHub: ShellChatBridge {
         }
     }
 
-    private func restoreHistoryIfNeeded() {
-        guard let history else { return }
+    @discardableResult
+    private func restoreHistoryIfNeeded() -> Bool {
+        guard let history else { return false }
         let scope = historyScope()
-        if scope.isEmpty || scope == loadedScope { return }
-        loadedScope = scope
-        guard let snapshot = history.load(scope: scope) else { return }
+        if scope.isEmpty { return false }
+        if scope == loadedScope { return true }
+        let snapshot: ChatHistorySnapshot
+        switch history.read(scope: scope, formerScopes: historyFormerScopes()) {
+        case .unreadable:
+            return false
+        case .missing:
+            loadedScope = scope
+            return true
+        case .loaded(let loaded):
+            loadedScope = scope
+            snapshot = loaded
+        }
         extras.restoreChannels(privateChannels: snapshot.privateChannels, hiddenChannels: snapshot.hiddenChannels)
         purgePrivatePings()
+        let shown = snapshot.messages.filter { !snapshot.hiddenChannels.contains($0.conversation) }
         relay.restoreHistory(
-            snapshot.messages.filter {
-                !snapshot.hiddenChannels.contains($0.conversation) && !DirectMessageFrames.isDirect($0.conversation)
-            })
+            shown.filter { !DirectMessageFrames.isDirect($0.conversation) && !OfficeFrames.isOffice($0.conversation) })
+        officeRestore = shown.filter { OfficeFrames.isOffice($0.conversation) }
+        restoreOfficeHistory()
         directRestore = (snapshot.messages.filter { DirectMessageFrames.isDirect($0.conversation) }, snapshot.receipts)
         restoreDirectHistory()
         extras.restore(
@@ -268,6 +289,7 @@ public final class ChatHub: ShellChatBridge {
         extras.restoreHiddenMessages(snapshot.hiddenMessages)
         extras.restoreRemovedMessages(snapshot.removedMessages)
         extras.restoreLooks(snapshot.looks, events: snapshot.lookEvents)
+        return true
     }
 
     private func restoreDirectHistory() {
@@ -276,11 +298,31 @@ public final class ChatHub: ShellChatBridge {
         direct.restore(saved.messages, receipts: saved.receipts)
     }
 
+    private func restoreOfficeHistory() {
+        guard let office, let saved = officeRestore else { return }
+        officeRestore = nil
+        office.restore(saved)
+    }
+
+    public func directSessionChanged(account: String) {
+        let account = account.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if account.isEmpty {
+            guard let direct else { return }
+            var ids = Set<String>()
+            let held = (direct.historySnapshot.values.flatMap { $0 } + (directRestore?.messages ?? []))
+                .filter { ids.insert($0.id).inserted }
+            let receipts = direct.receiptSnapshot.merging(directRestore?.receipts ?? [:]) { kept, _ in kept }
+            directRestore = held.isEmpty ? directRestore : (held, receipts)
+            return
+        }
+        if !directAccount.isEmpty && directAccount != account { directRestore = nil }
+        directAccount = account
+        restoreDirectHistory()
+    }
+
     private func persistSoon() {
-        guard let history else { return }
-        restoreHistoryIfNeeded()
+        guard let history, restoreHistoryIfNeeded() else { return }
         let scope = loadedScope
-        if scope.isEmpty { return }
         history.scheduleSave(scope: scope) { [weak self] in self?.historyParts() ?? ChatHistoryParts() }
     }
 
@@ -288,8 +330,20 @@ public final class ChatHub: ShellChatBridge {
 
     public func historyParts() -> ChatHistoryParts {
         var parts = ChatHistoryParts()
-        parts.conversations = relay.historySnapshot.merging(direct?.historySnapshot ?? [:]) { kept, _ in kept }
-        parts.receipts = direct?.receiptSnapshot ?? [:]
+        var conversations = relay.historySnapshot
+        for source in [direct?.historySnapshot ?? [:], office?.historySnapshot ?? [:]] {
+            conversations.merge(source) { kept, _ in kept }
+        }
+        for held in [directRestore?.messages ?? [], officeRestore ?? []] {
+            for (conversation, list) in Dictionary(grouping: held, by: \.conversation) {
+                let ids = Set(conversations[conversation]?.map(\.id) ?? [])
+                let missing = list.filter { !ids.contains($0.id) }
+                if missing.isEmpty { continue }
+                conversations[conversation] = ((conversations[conversation] ?? []) + missing).sorted { $0.timestamp < $1.timestamp }
+            }
+        }
+        parts.conversations = conversations
+        parts.receipts = (direct?.receiptSnapshot ?? [:]).merging(directRestore?.receipts ?? [:]) { kept, _ in kept }
         parts.replies = extras.snapshotThreads()
         parts.replyRoots = extras.snapshotReplyRoots()
         parts.reactions = extras.snapshotReactions()
