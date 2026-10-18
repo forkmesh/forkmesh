@@ -149,8 +149,11 @@ repository) gets the credential: `http.extraHeader` is
 `X-ForkMesh-Runner-Grant: <grant>` (the header agent-branch pushes use), and
 `branch.<branch>.remote`/`.merge` point at `origin`. A grant that does not
 match is left out silently and the run continues without it.
-`git push origin HEAD:<branch>` is accepted when it fast-forwards that branch.
-A push made with an Actions grant does not trigger `push` workflows again.
+`git push origin HEAD:<branch>` is accepted when it fast-forwards that branch,
+and `git fetch` / `git pull --rebase origin <branch>` work with the same
+header, so a commit-back step can rebase onto a tip that moved while it ran
+and retry. A push made with an Actions grant does not trigger `push`
+workflows again.
 
 The runner masks the job token and the push grant as well as the secrets.
 
@@ -172,7 +175,22 @@ not end in `/`, `.lock` or `.`. The gateway (`tools/mirror_gateway.py`,
 advertisement and receive-pack for it like a `push` grant, but before git
 runs it refuses the push unless it holds exactly one command for the granted
 ref whose old id is the branch's current tip: creates, deletes, other refs and
-stale bases are refused. Git's own `receive.denyNonFastForwards` then refuses
+stale bases are refused. It also serves the upload-pack advertisement and
+upload-pack of the same repository (`RUNNER_READ_ACCESS`), because the
+workspace's only credential is this grant: the lease's read grant stays with
+the runner's own clone. An agent `push` grant still cannot read.
+
+Why: the stale-base rule means a commit-back that races another push must
+fetch and rebase first, and with a push-only grant every `git fetch` or
+`git pull` in the workspace was answered 404, which git reports as
+`fatal: repository '<url>/' not found`. A commit-back loop of
+`git pull --rebase origin main && git push origin HEAD:main` therefore failed
+every attempt ("could not push to main") although the push alone would have
+been accepted. It showed up first on an organization repository because those
+jobs only started running once leases named the organization, but it never
+depended on the alias: `/v1/runner/<org>/<repo>.git` is a gateway entry for
+the same bare repository (`server/hosted.go` writes one per organization
+alias) and receive-pack resolves it exactly as upload-pack does. Git's own `receive.denyNonFastForwards` then refuses
 a new commit that does not descend from the old one (the pack is not in the
 repository before git runs, so the gateway cannot check ancestry itself).
 
@@ -282,7 +300,10 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   address finds the same rows.
 - The lease names the organization everywhere the runner looks:
   `repositoryOwner`, `organization`, the clone URL
-  (`/v1/runner/<org>/<repo>.git`, which the gateway serves as an alias) and
+  (`/v1/runner/<org>/<repo>.git`, which the gateway serves as an alias for
+  clone, fetch and the Actions push alike; a grant must name the address it
+  is used on, so an `acme` grant reaches only repositories with an `acme`
+  entry, never the storage address or an unlinked repository) and
   the owner in the read and `actions-push` grants, exactly like agent jobs
   (`runner_leases._gateway_owner`). The Go runner checks its `allowedOwners`
   against `organization` (falling back to `repositoryOwner` for a lease

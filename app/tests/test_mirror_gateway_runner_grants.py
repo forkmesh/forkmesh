@@ -452,7 +452,7 @@ def test_actions_push_fast_forwards_the_granted_branch(served):
         "GET",
         "/v1/runner/alice/project.git/info/refs?service=git-upload-pack",
         {"X-ForkMesh-Runner-Grant": actions_grant()}, b"",
-    ).status == 404
+    ).status == 200
     work, new = new_commit(tmp, bare)
     response = receive(app, actions_grant(), push_body(
         [(commit, new, MAIN_REF)], pack_for(work, new, commit)))
@@ -529,3 +529,156 @@ def test_actions_scope_checks_without_git():
     with pytest.raises(gateway.GatewayError):
         gateway.enforce_runner_push_scope(
             [(ZERO, oid, AGENT_REF)], AGENT_REF, "admin", None)
+
+
+def alias_app(tmp_path):
+    bare, commit = make_bare_repository(tmp_path)
+    (tmp_path / "other").mkdir()
+    other, _other_commit = make_bare_repository(tmp_path / "other")
+    config_path = write_config(tmp_path, bare)
+    value = json.loads(config_path.read_text(encoding="utf-8"))
+    operations = sorted(["git-info-refs", "git-upload-pack",
+                         "git-receive-pack", "tree", "blob", "history"])
+
+    def entry(owner, name, git_dir):
+        return {
+            "owner": owner, "name": name, "visibility": "public",
+            "enabled": True, "gitDir": str(git_dir), "operations": operations,
+            "integrity": {"expectedRefsSha256": gateway.refs_sha256(git_dir)},
+        }
+
+    value["repositories"] = [
+        entry("alice", "Project", bare),
+        entry("acme", "Project", bare),
+        entry("alice", "solo", other),
+    ]
+    config_path.write_text(json.dumps(value), encoding="utf-8")
+    app = gateway.GatewayApplication(
+        gateway.load_config(config_path),
+        verifier=AcceptVerifier(),
+        health_signer=HealthSigner(),
+        materializer=FakeArchiveMaterializer(bare),
+        clock_ms=lambda: NOW,
+        log=lambda _entry: None,
+    )
+    return app, bare, commit, other
+
+
+def org_grant(access="actions-push", ref=MAIN_REF, **kwargs):
+    kwargs.setdefault("owner", "acme")
+    kwargs.setdefault("repository", "Project")
+    return grant(access, ref, **kwargs)
+
+
+def test_actions_push_through_an_organization_alias(tmp_path):
+    app, bare, commit, _other = alias_app(tmp_path)
+    try:
+        for service in ("git-upload-pack", "git-receive-pack"):
+            assert app.dispatch(
+                "GET",
+                "/v1/runner/acme/Project.git/info/refs?service=" + service,
+                {"X-ForkMesh-Runner-Grant": org_grant()}, b"",
+            ).status == 200, service
+        work, new = new_commit(tmp_path, bare)
+        body = push_body([(commit, new, MAIN_REF)], pack_for(work, new, commit))
+        assert receive(app, None, body, "acme", "Project").status == 404
+        assert receive(app, org_grant(owner="alice"), body,
+                       "acme", "Project").status == 404
+        assert receive(app, org_grant(), body, "alice",
+                       "Project").status == 404
+        assert receive(app, org_grant("read", ""), body,
+                       "acme", "Project").status == 404
+        assert run(["git", "rev-parse", MAIN_REF], bare) == commit
+        accepted = receive(app, org_grant(), body, "acme", "Project")
+        assert accepted.status == 200, accepted.body
+        assert run(["git", "rev-parse", MAIN_REF], bare) == new
+    finally:
+        app.close()
+
+
+def test_an_organization_grant_never_reaches_an_unlinked_repository(tmp_path):
+    app, bare, _commit, other = alias_app(tmp_path)
+    try:
+        before = refs(other)
+        tip = run(["git", "rev-parse", MAIN_REF], other)
+        work, new = new_commit(tmp_path, other, name="solo-work")
+        body = push_body([(tip, new, MAIN_REF)], pack_for(work, new, tip))
+        for owner, token in (
+            ("acme", org_grant(repository="solo")),
+            ("alice", org_grant(repository="solo")),
+        ):
+            for service in ("git-upload-pack", "git-receive-pack"):
+                assert app.dispatch(
+                    "GET",
+                    "/v1/runner/%s/solo.git/info/refs?service=%s"
+                    % (owner, service),
+                    {"X-ForkMesh-Runner-Grant": token}, b"",
+                ).status == 404, (owner, service)
+            assert receive(app, token, body, owner, "solo").status == 404
+        assert refs(other) == before
+        assert app.dispatch(
+            "GET",
+            "/v1/runner/alice/Project.git/info/refs?service=git-upload-pack",
+            {"X-ForkMesh-Runner-Grant": org_grant()}, b"",
+        ).status == 404
+        assert app.dispatch(
+            "GET",
+            "/v1/runner/acme/Project.git/info/refs?service=git-upload-pack",
+            {"X-ForkMesh-Runner-Grant": grant(owner="acme",
+                                              repository="Project")}, b"",
+        ).status == 404
+    finally:
+        app.close()
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git is required")
+def test_commit_back_pulls_rebases_and_pushes_through_the_alias(tmp_path):
+    app, bare, commit, _other = alias_app(tmp_path)
+    server = gateway.MirrorGatewayServer(("127.0.0.1", 0), app)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", HOME=str(tmp_path),
+               XDG_CONFIG_HOME=str(tmp_path / "xdg"), GIT_CONFIG_NOSYSTEM="1")
+    env.pop("FORKMESH_HOME", None)
+    env.pop("FORKMESH_PROJECTS_DIR", None)
+    url = "http://127.0.0.1:%d/v1/runner/acme/Project.git" % (
+        server.server_address[1])
+
+    def git(*args, cwd, check=True):
+        return subprocess.run(
+            ["git", *args], cwd=cwd, env=env, capture_output=True, text=True,
+            check=check, timeout=60)
+
+    try:
+        clone = tmp_path / "workspace"
+        git("-c", "http.extraHeader=X-ForkMesh-Runner-Grant: "
+            + org_grant("read", ""), "clone", "--quiet", url, str(clone),
+            cwd=tmp_path)
+        git("config", "http.extraHeader",
+            "X-ForkMesh-Runner-Grant: " + org_grant(), cwd=clone)
+        git("config", "user.email", "bot@example.test", cwd=clone)
+        git("config", "user.name", "acme-actions", cwd=clone)
+        (clone / "stats.json").write_text("{}\n", encoding="utf-8")
+        git("add", "stats.json", cwd=clone)
+        git("commit", "--quiet", "-m", "update stats", cwd=clone)
+        _work, moved = new_commit(tmp_path, bare, name="concurrent")
+        advanced = receive(app, org_grant(), push_body(
+            [(commit, moved, MAIN_REF)], pack_for(_work, moved, commit)),
+            "acme", "Project")
+        assert advanced.status == 200
+        assert git("push", "origin", "HEAD:main", cwd=clone,
+                   check=False).returncode != 0
+        git("pull", "-q", "--rebase", "origin", "main", cwd=clone)
+        git("push", "origin", "HEAD:main", cwd=clone)
+        tip = git("rev-parse", "HEAD", cwd=clone).stdout.strip()
+        assert run(["git", "rev-parse", MAIN_REF], bare) == tip
+        assert run(["git", "rev-parse", tip + "^"], bare) == moved
+        git("config", "http.extraHeader", "X-ForkMesh-Runner-Grant: "
+            + grant(owner="acme", repository="Project"), cwd=clone)
+        refused = git("fetch", "origin", cwd=clone, check=False)
+        assert refused.returncode != 0 and "not found" in refused.stderr
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        app.close()
