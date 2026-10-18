@@ -186,6 +186,7 @@ optional = {
     "mailgunDomain": checks["domain"],
     "mailgunRegion": r"^(us|eu)$",
     "launchId": r"^[0-9a-f]{32}$",
+    "platformUrl": checks["sourceUrl"],
 }
 values = {}
 c.setdefault("mailProvider", "none")
@@ -836,8 +837,20 @@ build_app() {
   fi
 }
 
+platform_source() {
+  if [ -n "${CFG_platformUrl:-}" ]; then
+    printf '%s\n' "${CFG_platformUrl%.git}"
+  else
+    case "$CFG_sourceUrl" in
+      "https://$DOMAIN/"*) printf '%s\n' "$RELEASE_SOURCE" ;;
+      *) printf '%s\n' "${CFG_sourceUrl%.git}" ;;
+    esac
+  fi
+}
+
 upstream_page() {
-  local url="${CFG_sourceUrl%.git}"
+  local url
+  url="$(platform_source)"
   url="${url%/}"
   printf '%s\n' "$url" | sed -E 's#^https://app\.#https://#'
 }
@@ -952,8 +965,10 @@ print(encode(seed), encode(public))
 import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
-        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy"]
+        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl"]
 values = dict(zip(keys, sys.argv[1:]))
+if not values["platformUrl"]:
+    del values["platformUrl"]
 values["poweredBy"] = values["poweredBy"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
@@ -963,7 +978,7 @@ print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$CFG_actions" "$CFG_poweredBy" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -1445,7 +1460,7 @@ print((manifest.get("endpoint") or {}).get("origin", ""))
     runuser -u "$NODE_USER" -- "$DAEMON" --init \
       --config "$DAEMON_CONFIG.init" --state-dir /var/lib/forkmesh \
       --node "$NODE_NAME" --owner forkmesh --repository forkmesh \
-      --upstream "${CFG_sourceUrl%.git}" \
+      --upstream "$(platform_source)" \
       --catalog-url "$ORIGIN/api/repositories" \
       --public-origin "$ORIGIN" --mirror-url "$ORIGIN" \
       --gateway-script "$DAEMON_TOOLS/mirror_gateway.py" \
@@ -1577,7 +1592,7 @@ start_git_node() {
     systemctl daemon-reload
     systemctl enable forkmesh-mirror-node.service >/dev/null 2>&1
     systemctl restart forkmesh-mirror-node.service
-    say "The git node is copying the ForkMesh source from ${CFG_sourceUrl%.git}."
+    say "The git node is copying the ForkMesh source from $(platform_source)."
   fi
   local waited=0
   while [ "$waited" -lt "$REPO_WAIT_SECONDS" ]; do

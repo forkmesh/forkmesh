@@ -529,13 +529,14 @@ def _git_node_config_patch():
     return body[start:body.index("\nPY\n", start)]
 
 
-def _upstream_page(tmp_path, source):
-    function = TEXT[TEXT.index("upstream_page() {"):]
-    function = function[:function.index("\n}\n") + 3]
+def _upstream_page(tmp_path, source, platform=""):
+    body = function("platform_source") + function("upstream_page")
     return subprocess.run(
-        ["bash", "-c", function + 'CFG_sourceUrl="$1"; upstream_page', "x",
-         source], capture_output=True, text=True, env=sandbox_env(tmp_path),
-        timeout=30, check=True).stdout.strip()
+        ["bash", "-c", body + 'DOMAIN=code.example.com; '
+         'RELEASE_SOURCE=https://app.forkmesh.com/forkmesh/forkmesh; '
+         'CFG_sourceUrl="$1"; CFG_platformUrl="$2"; upstream_page', "x",
+         source, platform], capture_output=True, text=True,
+        env=sandbox_env(tmp_path), timeout=30, check=True).stdout.strip()
 
 
 def test_the_platform_copy_is_configured_as_a_labelled_read_only_mirror(tmp_path):
@@ -543,6 +544,14 @@ def test_the_platform_copy_is_configured_as_a_labelled_read_only_mirror(tmp_path
         "https://forkmesh.com/forkmesh/forkmesh"
     assert _upstream_page(tmp_path, "https://git.example.org/acme/forkmesh.git") == \
         "https://git.example.org/acme/forkmesh"
+    assert _upstream_page(
+        tmp_path, "https://code.example.com/acme/forkmesh-acme.git") == \
+        "https://forkmesh.com/forkmesh/forkmesh"
+    assert _upstream_page(
+        tmp_path, "https://code.example.com/acme/forkmesh-acme",
+        "https://git.example.org/acme/forkmesh.git") == \
+        "https://git.example.org/acme/forkmesh"
+    assert '--upstream "$(platform_source)"' in TEXT
     assert 'echo "INSTANCE_UPSTREAM=$(upstream_page)"' in TEXT
     script = tmp_path / "patch.py"
     script.write_text(_git_node_config_patch())
@@ -611,7 +620,7 @@ def test_actions_install_job_tools_and_configure_the_app():
     assert 'echo "ACTIONS_BOT_SEED=$bot_seed"' in writer
     assert 'echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"' in writer
     assert 'echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"' in writer
-    assert '"plugins", "actions", "poweredBy"]' in writer
+    assert '"plugins", "actions", "poweredBy", "platformUrl"]' in writer
     assert 'RUNNER_NAME="$NODE_NAME-runner"' in TEXT
 
 
@@ -696,3 +705,13 @@ def test_the_first_login_cleanup_removes_only_what_the_install_created(tmp_path)
     assert not (root / "etc/forkmesh-runner").exists()
     assert not (root / "var/lib/forkmesh-runner").exists()
     assert "forkmesh-runner-firewall" in calls.read_text()
+
+
+def test_the_platform_mirror_source_is_an_optional_setting(tmp_path):
+    found = values(parse(tmp_path, settings()).stdout)
+    assert found["CFG_platformUrl"] == ""
+    found = values(parse(tmp_path, settings(
+        platformUrl="https://app.forkmesh.com/forkmesh/forkmesh")).stdout)
+    assert found["CFG_platformUrl"] == "https://app.forkmesh.com/forkmesh/forkmesh"
+    result = parse(tmp_path, settings(platformUrl="http://insecure.example/x"))
+    assert result.returncode != 0 and "platformUrl" in result.stdout + result.stderr
