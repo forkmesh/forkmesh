@@ -31,6 +31,7 @@ public final class ControlWatchFeeds {
         var status = ""
         var streamed = false
         var ended = false
+        var revision = 0
         var stream: WatchTranscriptStream?
     }
 
@@ -90,6 +91,10 @@ public final class ControlWatchFeeds {
         return ControlWatchText(text: feed.follower.text, status: feed.ended ? "done" : feed.status)
     }
 
+    public func revision(_ id: String) -> Int {
+        feeds[id]?.revision ?? -1
+    }
+
     public func streaming(_ id: String) -> Bool {
         guard let feed = feeds[id] else { return false }
         return feed.ended || feed.stream?.isStreaming == true
@@ -109,11 +114,11 @@ public final class ControlWatchFeeds {
     }
 
     private func apply(_ id: String, _ delta: AgentTranscriptDelta) {
-        guard !stopped, var feed = feeds[id] else { return }
-        feed.follower.apply(delta)
-        if !delta.status.isEmpty { feed.status = delta.status }
-        feed.streamed = true
-        feeds[id] = feed
+        guard !stopped, feeds[id] != nil else { return }
+        feeds[id]?.follower.apply(delta)
+        if !delta.status.isEmpty { feeds[id]?.status = delta.status }
+        feeds[id]?.streamed = true
+        feeds[id]?.revision += 1
         bytesIn += delta.text.utf8.count
         deltas += 1
         onChange?()
@@ -128,6 +133,7 @@ public final class ControlWatchFeeds {
                 opened -= 1
             }
         }
+        feed.revision += 1
         feeds[id] = feed
         fill()
         onChange?()

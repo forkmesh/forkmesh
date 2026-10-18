@@ -1,10 +1,12 @@
 import FMAccount
+import FMAgents
 import FMApi
 import FMBase
 import FMInsights
 import FMTools
 import Foundation
 import UIKit
+import WatchConnectivity
 import os
 
 @MainActor
@@ -76,7 +78,25 @@ enum PerformanceReportBuilder {
                 out.append(("recent screens", router.recents.prefix(5).map(\.title).joined(separator: ", ")))
             }
         }
+        out.append(("agents", agents()))
+        out.append(("watch", watch()))
         return out
+    }
+
+    static func agents() -> String {
+        let counts: ShellCounts = ShellCounts.shared
+        let settings: SettingsService? = Services.get(SettingsService.self)
+        let view: String = Services.get(KeyValueStore.self)?.string(forKey: AgentListView.storageKey) ?? AgentListView.eagle.rawValue
+        return "\(counts.agentsTotal) listed, \(counts.agents) running, view \(view), "
+            + "dots \(settings?.showAgentDots == true ? "on" : "off"), aquarium \(settings?.aquariumOn == true ? "on" : "off")"
+    }
+
+    static func watch() -> String {
+        guard WCSession.isSupported() else { return "unsupported" }
+        let session: WCSession = WCSession.default
+        guard session.activationState == .activated else { return "not activated" }
+        if !session.isPaired { return "none paired" }
+        return "paired, app \(session.isWatchAppInstalled ? "installed" : "not installed")\(session.isReachable ? ", reachable" : "")"
     }
 
     static func thermal(_ state: ProcessInfo.ThermalState) -> String {

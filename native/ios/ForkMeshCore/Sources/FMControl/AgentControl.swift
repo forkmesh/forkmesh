@@ -9,6 +9,7 @@
 // drives agents through the phone: `AgentControlling` is the contract it can call, and the row and
 // transcript types are plain `Sendable` values it can map onto its own wire frames.
 
+import FMAccount
 import FMApi
 import FMBase
 import FMChat
@@ -671,7 +672,9 @@ public final class AgentControlCenter: AgentControlling {
                 nodes = cloudSessions.map(UnifiedAgentRow.fromCloud)
             }
             if started != epoch { return }
-            let merged = mergeAgentRows(desktop: desk, cloud: nodes, desktopName: hub.currentLink?.desktopName ?? "")
+            let merged = PerformanceMonitorService.section("agents.mergeRows") {
+                mergeAgentRows(desktop: desk, cloud: nodes, desktopName: hub.currentLink?.desktopName ?? "")
+            }
             if merged != rows { rows = merged }
         }
     }
@@ -694,14 +697,17 @@ public final class AgentControlCenter: AgentControlling {
         }
         do {
             let link = try await hub.link()
-            let snapshot = LocalAgentsSnapshot.fromJSON(try await link.request("agents.list", [:]))
+            let listed = try await link.request("agents.list", [:])
             if started != epoch { return [] }
-            if snapshot != desktopSnapshot { desktopSnapshot = snapshot }
-            if !desktopNote.isEmpty { desktopNote = "" }
-            return snapshot.sessions.map {
-                UnifiedAgentRow.fromDesktop($0, transport: link.transport, desktop: link.desktopName)
-            } + snapshot.outside.map {
-                UnifiedAgentRow.fromOutside($0, transport: link.transport, desktop: link.desktopName)
+            return PerformanceMonitorService.section("agents.desktopList") {
+                let snapshot = LocalAgentsSnapshot.fromJSON(listed)
+                if snapshot != desktopSnapshot { desktopSnapshot = snapshot }
+                if !desktopNote.isEmpty { desktopNote = "" }
+                return snapshot.sessions.map {
+                    UnifiedAgentRow.fromDesktop($0, transport: link.transport, desktop: link.desktopName)
+                } + snapshot.outside.map {
+                    UnifiedAgentRow.fromOutside($0, transport: link.transport, desktop: link.desktopName)
+                }
             }
         } catch {
             if started != epoch { return [] }

@@ -130,6 +130,10 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     @ObservationIgnored private var nextOperationId = 0
     @ObservationIgnored private var recentlyFinished: [(String, Int64)] = []
     private static let recentLimit = 16
+    public let sectionFloor: Duration
+    @ObservationIgnored private var recentSections: [(name: String, startUs: Int64, endUs: Int64)] = []
+    @ObservationIgnored private var mainSectionDepth = 0
+    public static let sectionLimit = 32
     @ObservationIgnored private weak var frameSource: FrameTimingSource?
     @ObservationIgnored private var installed = false
 
@@ -138,6 +142,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         threshold: Duration = .milliseconds(500),
         stallThreshold: Duration = .milliseconds(200),
         heartbeatInterval: Duration = .milliseconds(100),
+        sectionFloor: Duration = .milliseconds(8),
         maxEvents: Int = 100,
         logSink: (@Sendable (String) -> Void)? = nil,
         stallLog: StallLogFile? = nil,
@@ -149,6 +154,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         self.threshold = threshold
         self.stallThreshold = stallThreshold
         self.heartbeatInterval = heartbeatInterval
+        self.sectionFloor = sectionFloor
         self.maxEvents = maxEvents
         self.logSink = logSink
         self.stallLog = stallLog
@@ -229,18 +235,33 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     /// it instead of reporting an anonymous blocked run loop.
     public func timeSync<T>(_ name: String, details: JSONObject = [:], _ action: () throws -> T) rethrows -> T {
         guard enabled else { return try action() }
+        let onMain = Thread.isMainThread
+        let nested: Bool = onMain ? locked {
+            mainSectionDepth += 1
+            return mainSectionDepth > 1
+        } : false
         let startUs = elapsedMicros()
         defer {
             let endUs = elapsedMicros()
+            if onMain { locked { mainSectionDepth -= 1 } }
             let elapsed = Duration.microseconds(endUs - startUs)
-            if elapsed >= stallThreshold {
+            let inner = elapsed >= stallThreshold && !nested ? sectionsText(from: startUs, to: endUs) : nil
+            if elapsed >= sectionFloor { noteSection(name, startUs: startUs, endUs: endUs) }
+            if elapsed >= stallThreshold && !nested {
                 locked { lastAttributedStallUs = endUs }
+                var merged = details
+                if let inner { merged["sections"] = .string(inner) }
                 recordSlowEvent(
-                    kind: .sync, name: name, duration: elapsed, details: details,
+                    kind: .sync, name: name, duration: elapsed, details: merged,
                     stackTrace: PerformanceMonitorService.captureStack())
             }
         }
         return try action()
+    }
+
+    public static func section<T>(_ name: String, _ action: () throws -> T) rethrows -> T {
+        guard let monitor = Services.get(PerformanceMonitorService.self) else { return try action() }
+        return try monitor.timeSync(name, action)
     }
 
     // MARK: Stall monitors
@@ -334,6 +355,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         var details = JSONObject()
         if !snapshot.inFlight.isEmpty { details["inFlight"] = .string(PerformanceMonitorService.uniqueJoined(snapshot.inFlight)) }
         if !snapshot.recent.isEmpty { details["finishedDuring"] = .string(PerformanceMonitorService.uniqueJoined(snapshot.recent)) }
+        if let sections = sectionsText(from: snapshot.windowStart, to: nowUs) { details["sections"] = .string(sections) }
         recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: lag, details: details)
     }
 
@@ -368,6 +390,10 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         if vsyncMs > 0 { details["vsyncMs"] = .int(vsyncMs) }
         let running = locked { inFlight.map(\.1) }
         if !running.isEmpty { details["inFlight"] = .string(PerformanceMonitorService.uniqueJoined(running)) }
+        let endUs = elapsedMicros()
+        if let sections = sectionsText(from: endUs - PerformanceMonitorService.micros(total), to: endUs) {
+            details["sections"] = .string(sections)
+        }
         recordSlowEvent(kind: .frame, name: "frame", duration: total, details: details)
     }
 
@@ -442,6 +468,30 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     private static func quote(_ text: String) -> String { text.contains(" ") ? "\"\(text)\"" : text }
 
     /// `values.toSet().join(', ')`: first occurrence order.
+    private func noteSection(_ name: String, startUs: Int64, endUs: Int64) {
+        locked {
+            recentSections.append((name, startUs, endUs))
+            if recentSections.count > PerformanceMonitorService.sectionLimit { recentSections.removeFirst() }
+        }
+    }
+
+    private func sectionsText(from startUs: Int64, to endUs: Int64) -> String? {
+        let spans: [(String, Int64)] = locked {
+            recentSections.filter { $0.endUs > startUs && $0.startUs < endUs }
+                .map { ($0.name, min($0.endUs, endUs) - max($0.startUs, startUs)) }
+        }
+        if spans.isEmpty { return nil }
+        var order: [String] = []
+        var totals: [String: Int64] = [:]
+        for (name, us) in spans {
+            if totals[name] == nil { order.append(name) }
+            totals[name, default: 0] += us
+        }
+        return order.sorted { (totals[$0] ?? 0) > (totals[$1] ?? 0) }
+            .map { "\($0) \((totals[$0] ?? 0) / 1_000)ms" }
+            .joined(separator: ", ")
+    }
+
     private static func uniqueJoined(_ values: [String]) -> String {
         var seen = Set<String>()
         return values.filter { seen.insert($0).inserted }.joined(separator: ", ")

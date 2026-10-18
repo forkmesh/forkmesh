@@ -183,6 +183,50 @@ final class PerformanceMonitorTests: XCTestCase {
         XCTAssertFalse(lags.all.isEmpty, "every beat reports its lag")
     }
 
+    func testAStallNamesTheShorterSectionsThatRanInsideIt() async throws {
+        let ui = DispatchQueue(label: "test.ui")
+        let monitor = PerformanceMonitorService(
+            stallThreshold: .milliseconds(120), heartbeatInterval: .milliseconds(20), sectionFloor: .milliseconds(30),
+            logSink: { _ in }, heartbeatQueue: ui)
+        monitor.startHeartbeat()
+        try await sleep(50)
+
+        ui.async {
+            monitor.timeSync("agents.lines") { self.busyWait(milliseconds: 50) }
+            monitor.timeSync("watch.fit") { self.busyWait(milliseconds: 90) }
+            monitor.timeSync("agents.eagle") { self.busyWait(milliseconds: 2) }
+        }
+        try await sleep(400)
+        monitor.stopHeartbeat()
+
+        XCTAssertFalse(monitor.events.contains { $0.kind == .sync }, "each section alone is under the stall budget")
+        let stall = try XCTUnwrap(monitor.events.first { $0.kind == .eventLoop })
+        let sections = try XCTUnwrap(stall.details["sections"]?.stringValue)
+        let names = sections.components(separatedBy: ", ").map { $0.components(separatedBy: " ").first ?? "" }
+        XCTAssertEqual(names, ["watch.fit", "agents.lines"], sections)
+
+        monitor.timeSync("agents.desktopList") { busyWait(milliseconds: 40) }
+        monitor.recordFrameDelay(buildDuration: .milliseconds(250), rasterDuration: .zero)
+        let frame = try XCTUnwrap(monitor.events.first { $0.kind == .frame })
+        XCTAssertTrue(try XCTUnwrap(frame.details["sections"]?.stringValue).hasPrefix("agents.desktopList "))
+    }
+
+    @MainActor
+    func testNestedSectionsRecordOneStallThatNamesTheInnerWork() throws {
+        let monitor = PerformanceMonitorService(
+            stallThreshold: .milliseconds(100), sectionFloor: .milliseconds(20), logSink: { _ in })
+        monitor.timeSync("relay.event") {
+            monitor.timeSync("relay.control") {
+                monitor.timeSync("agents.eagle") { busyWait(milliseconds: 130) }
+            }
+        }
+        XCTAssertEqual(monitor.events.map(\.name), ["relay.event"])
+        XCTAssertEqual(monitor.stallCount, 1)
+        let sections = try XCTUnwrap(monitor.events.first?.details["sections"]?.stringValue)
+        XCTAssertEqual(sections.components(separatedBy: ", ").count, 2, sections)
+        XCTAssertTrue(sections.contains("agents.eagle ") && sections.contains("relay.control "), sections)
+    }
+
     func testStallsAreAppendedToDiagnosticsStallsLog() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("stall_log_test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }

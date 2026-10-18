@@ -351,13 +351,15 @@ public final class OfficeChannelService {
             if roomName.isEmpty || passphrase.isEmpty { return }
             let crypto = await derive(roomName, passphrase)
             let seal = try await seal(for: roomName)
-            for entry in payload["messages"]?.objects ?? [] {
-                let ts = entry["ts"]?.int64Value ?? 0
-                lastTs[room.id] = max(lastTs[room.id] ?? 0, ts)
-                guard let envelope = JSON.parseObject(entry["body"]?.text ?? "") as JSONObject?, !envelope.isEmpty,
-                    let plain = crypto.decrypt(envelope)
-                else { continue }
-                accept(plain, room: room, seal: seal, live: false, recipients: OfficeFrames.recipients(envelope), history: true)
+            PerformanceMonitorService.section("chat.office.history") {
+                for entry in payload["messages"]?.objects ?? [] {
+                    let ts = entry["ts"]?.int64Value ?? 0
+                    lastTs[room.id] = max(lastTs[room.id] ?? 0, ts)
+                    guard let envelope = JSON.parseObject(entry["body"]?.text ?? "") as JSONObject?, !envelope.isEmpty,
+                        let plain = crypto.decrypt(envelope)
+                    else { continue }
+                    accept(plain, room: room, seal: seal, live: false, recipients: OfficeFrames.recipients(envelope), history: true)
+                }
             }
         } catch {
             lastError = "\(error)"
@@ -537,6 +539,10 @@ public final class OfficeChannelService {
     }
 
     private func receive(_ message: WebSocketMessage, roomId: String) {
+        PerformanceMonitorService.section("chat.office.receive") { receiveFrame(message, roomId: roomId) }
+    }
+
+    private func receiveFrame(_ message: WebSocketMessage, roomId: String) {
         guard let socket = sockets[roomId], let room = rooms.first(where: { $0.id == roomId }) else { return }
         let text: String
         switch message {

@@ -225,6 +225,10 @@ public final class AccountEventChannel {
     }
 
     private func handle(_ message: WebSocketMessage) {
+        PerformanceMonitorService.section("relay.event") { handleFrame(message) }
+    }
+
+    private func handleFrame(_ message: WebSocketMessage) {
         let text: String
         switch message {
         case .text(let value): text = value

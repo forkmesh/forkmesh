@@ -288,6 +288,40 @@ final class AgentLinesTests: XCTestCase {
         XCTAssertEqual(feed.dialog(AgentLines.line(first)), "")
     }
 
+    @MainActor
+    func testEagleFeedReadsOnlyTheTranscriptThatMoved() {
+        var deltas: [String: @MainActor (AgentTranscriptDelta) -> Void] = [:]
+        let feeds = ControlWatchFeeds { row, _, onDelta in
+            deltas[row.id] = onDelta
+            return nil
+        }
+        let rows = (1...6).map { (n: Int) -> UnifiedAgentRow in
+            UnifiedAgentRow(
+                id: "desktop:\(n)", badge: .desktopLan, title: "t\(n)", repoOwner: "forkmesh", repoName: "forkmesh",
+                node: "studio", status: "running", statusLabel: "Running", isActive: true, localId: n)
+        }
+        var read: [String] = []
+        let feed = AgentEagleFeed { (text: String) -> String in
+            read.append(text)
+            return AgentLines.dialog(text)
+        }
+        feed.follow(rows) { feeds }
+        for row in rows {
+            deltas[row.id]?(AgentTranscriptDelta(
+                text: "Line \(row.localId).\n\n", next: 9, reset: true, active: true, status: "running"))
+        }
+        read.removeAll()
+        for step in 0..<10 {
+            deltas["desktop:3"]?(AgentTranscriptDelta(
+                text: "Step \(step).\n\n", next: 18 + step * 9, reset: false, active: true, status: "running"))
+        }
+        XCTAssertEqual(read.count, 10, "a delta re-reads its own run's transcript, not every followed one")
+        XCTAssertTrue(read.allSatisfy { $0.hasPrefix("Line 3.") })
+        XCTAssertEqual(feed.dialog(AgentLines.line(rows[2])), "Step 9.")
+        XCTAssertEqual(feed.dialog(AgentLines.line(rows[0])), "Line 1.")
+        feed.stop()
+    }
+
     func testMergeShowsEachRunOnceAcrossRepositories() {
         let pushed = AgentSession(id: 7, status: "running", branchName: "agent/7", createdAtMs: 100)
         let queued = AgentLaunchSession(sessionId: "s1", owner: "forkmesh", repo: "forkmesh", status: "completed", updatedAtMs: 50)

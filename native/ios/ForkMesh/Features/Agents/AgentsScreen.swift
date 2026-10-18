@@ -64,9 +64,11 @@ struct AgentsScreen: View {
     private var lines: [AgentLine] {
         let pending: AgentPendingDeletes = .shared
         let center: AgentControlCenter? = HostsFeature.agents
-        return reads.lines(listSort.sorted(AgentLines.merge(
-            entries: model.entries, rows: center?.rows ?? [], cover: center?.desktopCover)))
-            .filter { !pending.isHidden(AgentLines.deletion($0)?.key ?? "") }
+        return PerformanceMonitorService.section("agents.lines") {
+            reads.lines(listSort.sorted(AgentLines.merge(
+                entries: model.entries, rows: center?.rows ?? [], cover: center?.desktopCover)))
+                .filter { !pending.isHidden(AgentLines.deletion($0)?.key ?? "") }
+        }
     }
 
     private var runningIds: [String] {
