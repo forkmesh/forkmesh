@@ -1104,7 +1104,7 @@ struct SuggestionModeCard: View {
             }
             .tint(fm.accent)
             .accessibilityIdentifier("settings-suggestion-mode")
-            SettingsNote(text: "Shows the next best new CRM contact and the marketing channel that needs attention at the top, next to Glasses Alert. Tap the contact and the Genie writes to them; tap the megaphone to open the channels. Touch and hold the contact for Not now.")
+            SettingsNote(text: "Shows the next best new CRM contact at the top, next to Glasses Alert. Tap the contact and the Genie writes to them. Touch and hold it to turn auto-send on or off: up to 100 emails a day through Zoho Mail, one about every 14 minutes while the app is open, each shown for you to rate. The number on the picture counts today's sends.")
             Button {
                 ShellPocket.shared.lock()
             } label: {

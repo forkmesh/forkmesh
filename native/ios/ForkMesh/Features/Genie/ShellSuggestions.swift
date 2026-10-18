@@ -12,12 +12,10 @@ final class ShellSuggestions {
     static let shared: ShellSuggestions = ShellSuggestions()
     nonisolated static let onKey: String = "shell/suggestion_mode"
     nonisolated static let refreshEvery: Double = 10 * 60
-    nonisolated static let organizations: Int = 5
 
     private(set) var on: Bool
     private(set) var contact: GenieOutreachPick?
     private(set) var contactImage: UIImage?
-    private(set) var channel: MarketingChannelAttention?
 
     @ObservationIgnored private let prefs: KeyValueStore?
     @ObservationIgnored private var passed: Set<String> = []
@@ -37,7 +35,7 @@ final class ShellSuggestions {
         } else {
             contact = nil
             contactImage = nil
-            channel = nil
+            if ShellAutoSend.shared.on { ShellAutoSend.shared.setOn(false) }
         }
     }
 
@@ -65,7 +63,6 @@ final class ShellSuggestions {
         repeat {
             again = false
             await refreshContact()
-            await refreshChannel()
         } while again && on
     }
 
@@ -87,19 +84,17 @@ final class ShellSuggestions {
         refreshNow()
     }
 
-    func channelTapped() {
-        FmHaptics.tap()
-        SurfaceRouter.open(.marketing(section: MarketingSection.channels.rawValue))
-    }
-
     private func refreshContact() async {
         guard let toolbox: ForkMeshToolbox = LocalAIFeature.toolbox() else {
             contact = nil
             contactImage = nil
             return
         }
-        let skip: Set<String> = passed.union(GenieOutreachCoach.shared.log.draftedContacts)
-        let next: GenieOutreachPick? = await toolbox.outreachBest(skip: skip)
+        let auto: ShellAutoSend = ShellAutoSend.shared
+        let skip: Set<String> = passed.union(GenieOutreachCoach.shared.log.draftedContacts).union(auto.skipped)
+        let next: GenieOutreachPick? = auto.on
+            ? await toolbox.outreachBest(skip: skip, only: .email, zohoOnly: true)
+            : await toolbox.outreachBest(skip: skip)
         guard on else { return }
         if next?.contact.id == contact?.contact.id, next != nil {
             contact = next
@@ -110,20 +105,5 @@ final class ShellSuggestions {
         guard on else { return }
         contact = next
         contactImage = picture.flatMap { (data: Data) -> UIImage? in UIImage(data: data) }
-    }
-
-    private func refreshChannel() async {
-        guard let client: PackagesClient = PackagesFeature.client, PackagesFeature.signedIn,
-              let organizations: [String] = try? await client.marketingOrganizations().filter(\.installed).map(\.name)
-        else {
-            channel = nil
-            return
-        }
-        var overviews: [MarketingOverview] = []
-        for organization in organizations.prefix(ShellSuggestions.organizations) {
-            if let overview: MarketingOverview = try? await client.marketing(organization) { overviews.append(overview) }
-        }
-        guard on else { return }
-        channel = MarketingChannelAttention.next(overviews)
     }
 }
