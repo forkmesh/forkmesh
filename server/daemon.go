@@ -599,6 +599,9 @@ func (d *Daemon) Run(ctx context.Context, executable string) error {
 	if d.actions != nil {
 		go d.actions.run(ctx)
 	}
+	if d.hosted != nil {
+		go d.hosted.maintainLoop(ctx)
+	}
 	go d.supervisor.Run(ctx, specs)
 	if d.events != nil {
 		go d.events.Run(ctx)

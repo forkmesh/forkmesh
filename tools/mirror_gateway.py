@@ -45,6 +45,11 @@ from urllib import error as urllib_error
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 from urllib import request as urllib_request
 
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
 
 # The dashboard replica contract is shared with the Worker. Installed nodes
 # stage these two files beside this script; source checkouts keep them under
@@ -399,6 +404,9 @@ MAX_PULL_RULES_RESPONSE_BYTES = 64 * 1024
 PULL_RULES_NUMBER_RE = re.compile(r"^[1-9][0-9]{0,8}$")
 MERGE_BASE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$")
 INTERNAL_GIT_REF_NAMESPACE = "refs/forkmesh/"
+MAINTENANCE_LOCK_NAME = "forkmesh-maintenance.lock"
+MAINTENANCE_MARKER_NAME = "forkmesh-maintenance-due"
+MAINTENANCE_LOCK_WAIT_SECONDS = 120.0
 BRANCH_TRASH_OPERATION = "branch-trash"
 BRANCH_TRASH_CARRIER_OPERATION = "delete-agent-branch"
 BRANCH_TRASH_PREFIXES = (
@@ -5474,17 +5482,25 @@ class GitRepository:
     ) -> tuple[bytes, list[tuple[str, str, str]]]:
         if len(body) > max_input_bytes:
             raise GatewayError("push request is too large")
-        before = stable_refs(self.git_dir)
-        output = _run_git(
-            self.git_dir,
-            self._receive_pack_configuration(
-                max_input_bytes, self.receive_hooks_path)
-            + ["receive-pack", "--stateless-rpc", str(self.git_dir)],
-            input_bytes=body,
-            max_output=MAX_JSON_OUTPUT,
-            timeout=receive_pack_timeout_seconds(len(body)),
-        )
-        return output, ref_transitions(before, stable_refs(self.git_dir))
+        lock = maintenance_push_lock(self.git_dir)
+        try:
+            before = stable_refs(self.git_dir)
+            output = _run_git(
+                self.git_dir,
+                self._receive_pack_configuration(
+                    max_input_bytes, self.receive_hooks_path)
+                + ["receive-pack", "--stateless-rpc", str(self.git_dir)],
+                input_bytes=body,
+                max_output=MAX_JSON_OUTPUT,
+                timeout=receive_pack_timeout_seconds(len(body)),
+            )
+            changes = ref_transitions(before, stable_refs(self.git_dir))
+        finally:
+            if lock is not None:
+                os.close(lock)
+        if changes:
+            mark_maintenance_due(self.git_dir)
+        return output, changes
 
     def new_commit_count(self, old: str, new: str) -> int:
         if set(new) == {"0"} or not GIT_OID_RE.fullmatch(new):
@@ -5501,6 +5517,39 @@ class GitRepository:
             return int(output.decode("ascii").strip() or 0)
         except (GitError, OSError, ValueError):
             return 0
+
+
+def maintenance_push_lock(git_dir: Path | None) -> int | None:
+    if fcntl is None or git_dir is None:
+        return None
+    flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(
+        os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(Path(git_dir) / MAINTENANCE_LOCK_NAME, flags)
+    except OSError:
+        return None
+    deadline = time.monotonic() + MAINTENANCE_LOCK_WAIT_SECONDS
+    while True:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
+            return descriptor
+        except BlockingIOError:
+            if time.monotonic() >= deadline:
+                return descriptor
+            time.sleep(0.2)
+        except OSError:
+            return descriptor
+
+
+def mark_maintenance_due(git_dir: Path | None) -> None:
+    if git_dir is None or not (Path(git_dir) / MAINTENANCE_LOCK_NAME).is_file():
+        return
+    flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_CLOEXEC", 0) | getattr(
+        os, "O_NOFOLLOW", 0)
+    try:
+        os.close(os.open(Path(git_dir) / MAINTENANCE_MARKER_NAME, flags, 0o600))
+    except OSError:
+        pass
 
 
 def receive_pack_timeout_seconds(body_bytes: int) -> int:
