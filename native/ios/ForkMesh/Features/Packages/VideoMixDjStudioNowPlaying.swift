@@ -33,6 +33,7 @@ struct DjMiniRecord: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: !deck.moving)) { _ in
             let time = deck.shown()
+            let turn = deck.spin.turn
             let beat = DjStudio.amplitude(deck.waveform, time: time, duration: deck.duration)
             ZStack {
                 ZStack {
@@ -46,7 +47,7 @@ struct DjMiniRecord: View {
                     }
                     DjMiniGrooves(size: size).equatable()
                 }
-                .rotationEffect(.degrees(DjStudio.turnDegrees(time)))
+                .rotationEffect(.degrees(DjStudio.turnDegrees(turn)))
                 DjMiniPulse(level: deck.playing ? beat.level : 0, hue: beat.hue, size: size * 0.3)
             }
             .frame(width: size, height: size)

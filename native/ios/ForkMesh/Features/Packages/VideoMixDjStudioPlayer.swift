@@ -259,7 +259,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         (function(){
         if(window.top===window||!/(^|\\.)youtube(-nocookie)?\\.com$/.test(location.hostname))return;
         var mse=/[?&]fmmse=1(&|$)/.test(location.search);
-        var w={rate:1,gain:1,scratch:null,at:0,bg:0,on:0,from:0},ctx=null,amp=null,live=null,last=null,stale="",tries=0,moved=0,beat=0,queued=0;
+        var w={rate:1,gain:1,scratch:null,at:0,bg:0,on:0,from:0},ctx=null,amp=null,live=null,last=null,stale="",tries=0,waking=0,moved=0,beat=0,queued=0;
         var P=HTMLMediaElement.prototype,md=Object.getOwnPropertyDescriptor(P,"muted"),H=new WeakMap(),T=new WeakMap(),A=new WeakMap(),decoys=[];
         function own(v){return!!v&&v.tagName==="VIDEO"&&decoys.indexOf(v)<0}
         function want(v){var h=H.get(v);return h?h.want:md.get.call(v)}
@@ -306,7 +306,7 @@ final class DjPlayerHost: NSObject, WKNavigationDelegate {
         if(tries>4||!(e===video()?blob(e):e.fmCors&&e.readyState>=1))return false;
         var C=window.AudioContext||window.webkitAudioContext;if(!C)return false;
         try{ctx=ctx||new C()}catch(x){tries=9;return false}
-        if(ctx.state!=="running"){tries++;ctx.resume().then(apply,function(){});return false}
+        if(ctx.state!=="running"){if(!waking){waking=1;tries++;ctx.resume().then(function(){waking=0;apply()},function(){waking=0})}return false}
         try{var s=ctx.createMediaElementSource(e);if(!amp){amp=ctx.createGain();amp.connect(ctx.destination)}if(live&&live.fmNode)try{live.fmNode.disconnect()}catch(x){}s.connect(amp);e.fmNode=s;live=e;
         ctx.onstatechange=function(){if(ctx.state!=="running"&&ctx.state!=="closed")ctx.resume().catch(function(){})};
         parent.postMessage({fmdjFrame:"routed",mirror:e.tagName==="AUDIO"?1:0},"*");return true}catch(x){tries=9;return false}}

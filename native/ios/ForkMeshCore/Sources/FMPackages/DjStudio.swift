@@ -320,37 +320,47 @@ public struct DjSpin: Equatable, Sendable {
     public static let jump = 0.6
     public static let waiting = 0.35
     public static let gap = 0.1
+    public static let hitch = 0.5
 
     public private(set) var position: Double = 0
     public private(set) var speed: Double = 0
+    public private(set) var turn: Double = 0
+    public private(set) var motor: Double = 0
     private var stamp: Double?
 
     public init() {}
 
     public mutating func hold(_ target: Double, at now: Double) {
         guard target.isFinite else { return }
+        if abs(target - position) <= Self.jump { turn += target - position }
         position = target
         speed = 0
+        motor = 0
         stamp = now.isFinite ? now : stamp
     }
 
-    public mutating func step(target: Double, speed goal: Double, at now: Double) -> Double {
+    public mutating func step(target: Double, speed goal: Double, motor drive: Double? = nil, at now: Double) -> Double {
         guard target.isFinite else { return position }
         let goal = goal.isFinite ? goal : 0
+        let drive = drive.map { $0.isFinite ? $0 : 0 } ?? goal
         guard now.isFinite, let last = stamp, abs(target - position) <= Self.jump else {
             position = target
             speed = goal
+            motor = drive
             if now.isFinite { stamp = now }
             return position
         }
         stamp = max(last, now)
-        guard now - last <= Self.gap else {
+        let elapsed = max(0, now - last)
+        guard elapsed <= Self.gap else {
+            if elapsed <= Self.hitch { turn += motor * elapsed }
             position = target
             return position
         }
-        let elapsed = max(0, now - last)
         guard elapsed > 0 else { return position }
         speed += (goal - speed) * (1 - exp(-elapsed / (goal > speed ? Self.spinUp : Self.spinDown)))
+        motor += (drive - motor) * (1 - exp(-elapsed / (drive > motor ? Self.spinUp : Self.spinDown)))
+        turn += motor * elapsed
         position += speed * elapsed
         position += (target - position) * (1 - exp(-elapsed / Self.follow))
         return position

@@ -136,6 +136,32 @@ final class DjStudioTests: XCTestCase {
         XCTAssertEqual(spin.step(target: .nan, speed: 1, at: now + 5.05), 42)
     }
 
+    func testRecordTurnsAtOnceWhileTheMusicStarts() {
+        var spin = DjSpin()
+        spin.hold(10, at: 0)
+        var now = 0.0
+        for _ in 1...60 {
+            now += 1.0 / 60
+            XCTAssertEqual(spin.step(target: 10, speed: DjSpin.waiting, motor: 1, at: now), 10, accuracy: 0.1)
+        }
+        XCTAssertEqual(spin.motor, 1, accuracy: 0.01)
+        XCTAssertGreaterThan(spin.turn, 0.8)
+        let turned = spin.turn
+        _ = spin.step(target: 10.016, speed: 1, motor: 1, at: now + 0.4)
+        XCTAssertEqual(spin.turn - turned, 0.4, accuracy: 0.01)
+        _ = spin.step(target: 12, speed: 1, motor: 1, at: now + 5)
+        XCTAssertEqual(spin.turn - turned, 0.4, accuracy: 0.01)
+        _ = spin.step(target: 12.016, speed: 1, motor: 1, at: now + 5.016)
+        XCTAssertEqual(spin.turn - turned, 0.416, accuracy: 0.01)
+        _ = spin.step(target: 200, speed: 1, motor: 1, at: now + 5.03)
+        XCTAssertEqual(spin.turn - turned, 0.416, accuracy: 0.01)
+        spin.hold(200.1, at: now + 5.05)
+        XCTAssertEqual(spin.turn - turned, 0.516, accuracy: 0.01)
+        XCTAssertEqual(spin.motor, 0)
+        spin.hold(5, at: now + 5.07)
+        XCTAssertEqual(spin.turn - turned, 0.516, accuracy: 0.01)
+    }
+
     func testWaveBarsFollowTheSongLength() {
         XCTAssertEqual(DjWaveAccumulator.bars(seconds: 30), DjWaveAccumulator.barCount)
         XCTAssertEqual(DjWaveAccumulator.bars(seconds: 240), 4800)

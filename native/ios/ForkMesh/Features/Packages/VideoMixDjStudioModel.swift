@@ -96,7 +96,12 @@ final class DjDeck {
             return target
         }
         let goal = advancing ? effectiveRate : playing ? DjSpin.waiting * effectiveRate : 0
-        return spin.step(target: target, speed: goal, at: now)
+        return spin.step(target: target, speed: goal, motor: playing ? effectiveRate : 0, at: now)
+    }
+
+    func turned(at now: CFTimeInterval = CACurrentMediaTime()) -> Double {
+        _ = shown(at: now)
+        return spin.turn
     }
 
     private func coast() {
@@ -678,6 +683,9 @@ final class DjStudioModel {
             deck.reading = true
         }
         Task { [weak self, weak deck] in
+            while self?.automixing == true, !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(250))
+            }
             let read = await DjWaveSource.read(for: id, source: source, bars: wantsBars)
             if wantsBars, read.bars == nil { self?.analysed.remove(id) }
             guard let deck, deck.videoId == id else { return }
@@ -1028,17 +1036,42 @@ final class DjStudioModel {
         case .wait:
             break
         case let .preload(side):
-            if let item = shownQueue.first {
-                playFromQueue(item, on: side)
-            } else if let song = replay() {
-                load(side, id: song.id, title: song.title, author: song.author)
-            }
+            preload(side)
         case let .start(side):
             play(deck(side))
             fade(to: side == .a ? -1 : 1, seconds: 0.4, then: nil)
         case let .mix(from, to, seconds):
             mix(from: deck(from), to: deck(to), seconds: seconds)
         }
+    }
+
+    @discardableResult
+    private func preload(_ side: DjDeckSide) -> Bool {
+        if let item = shownQueue.first {
+            playFromQueue(item, on: side)
+        } else if let song = replay() {
+            load(side, id: song.id, title: song.title, author: song.author)
+        } else {
+            return false
+        }
+        return true
+    }
+
+    func shakeMix() {
+        guard sheet == nil, !automixing, !a.scratching, !b.scratching else { return }
+        let playing = [a, b].filter(\.playing)
+        guard let live = playing.count > 1 ? deck(crossfader <= 0 ? .a : .b) : playing.first else {
+            show("Start a deck, then shake to mix into the next song.")
+            return
+        }
+        let incoming = deck(live.side.other)
+        if !incoming.playing, !snapshot(incoming).fresh, !preload(incoming.side) {
+            show("Queue a song to shake into it.")
+            return
+        }
+        DjTheme.tick()
+        show(incoming.title.isEmpty ? "Mixing into Deck \(incoming.side.label)." : "Mixing into \(incoming.title).")
+        mix(from: live, to: incoming, seconds: DjStudio.automixSeconds)
     }
 
     private func replay() -> DjPlayedSong? {
@@ -1052,7 +1085,7 @@ final class DjStudioModel {
 
     private func mix(from outgoing: DjDeck, to incoming: DjDeck, seconds: Double) {
         automixing = true
-        play(incoming)
+        if !incoming.playing { play(incoming) }
         automixTask?.cancel()
         let began = CACurrentMediaTime()
         automixTask = Task { [weak self] in
@@ -1111,7 +1144,7 @@ final class DjStudioModel {
                     then?()
                     return
                 }
-                try? await Task.sleep(for: .milliseconds(30))
+                try? await Task.sleep(for: .milliseconds(16))
             }
         }
     }

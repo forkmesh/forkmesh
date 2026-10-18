@@ -359,6 +359,7 @@ struct DjInfoSheet: View {
                 Label("Tap the BPM box on the beat, then press SYNC.", systemImage: "metronome")
                 Label("Hold − or + to nudge a deck’s tempo.", systemImage: "plusminus")
                 Label("AUTOMIX on plays the queue, then songs you have played, one after another with an 8-second crossfade; hold it to mix to the other deck now.", systemImage: "arrow.left.arrow.right")
+                Label("Shake the phone to mix into the next song.", systemImage: "iphone.radiowaves.left.and.right")
                 Label("Back closes the studio; playing decks keep going and show in the top bar.", systemImage: "chevron.left")
                 Label("Reset All (the circular arrow at the bottom) unloads both decks and puts every setting back to the start.", systemImage: "arrow.counterclockwise")
             }
