@@ -130,7 +130,8 @@ def test_every_page_step_is_announced_in_order():
 
 def test_secrets_never_reach_a_command_line_or_a_log():
     bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
-    assert "printf '%s\\n%s' \"$OWNERS_JSON\" \"$ADMIN_PASSWORD\" | python3" in bootstrap
+    assert ("printf '%s\\n%s\\n%s' \"$OWNERS_JSON\" \"${CFG_legalPages:-}\" "
+            "\"$ADMIN_PASSWORD\" | python3") in bootstrap
     assert "host_cli instance-bootstrap" in bootstrap
     assert 'ADMIN_PASSWORD=""' in bootstrap and 'OWNERS_JSON="[]"' in bootstrap
     settings_writer = TEXT.split("write_settings() {", 1)[1].split("\n}\n", 1)[0]
@@ -432,7 +433,7 @@ def test_the_bootstrap_settings_carry_the_owners_from_stdin():
     bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
     code = bootstrap.split("| python3 -c '", 1)[1].split("\n' ", 1)[0]
     owners = [{"username": "grace", "email": "grace@example.com", "password": OWNER_PASSWORD}]
-    stdin = json.dumps(owners) + "\n" + ADMIN_PASSWORD + "\nwith a line break"
+    stdin = json.dumps(owners) + "\n\n" + ADMIN_PASSWORD + "\nwith a line break"
     result = subprocess.run(
         ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, "", "1"],
         input=stdin, capture_output=True, text=True, timeout=30)
@@ -463,7 +464,7 @@ def test_a_theme_is_a_preset_name_or_a_set_of_colours(tmp_path):
 def test_the_bootstrap_settings_carry_a_colour_theme_as_an_object():
     bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
     code = bootstrap.split("| python3 -c '", 1)[1].split("\n' ", 1)[0]
-    stdin = "[]\n" + ADMIN_PASSWORD
+    stdin = "[]\n\n" + ADMIN_PASSWORD
     colours = {"dark": {"primary": "#f97316"}}
     for theme, expected in ((json.dumps(colours), colours), ("crimson", "crimson"), ("", "")):
         result = subprocess.run(
@@ -472,6 +473,46 @@ def test_the_bootstrap_settings_carry_a_colour_theme_as_an_object():
         assert result.returncode == 0, result.stderr
         assert json.loads(result.stdout)["theme"] == expected
         assert json.loads(result.stdout)["singleOrganization"] is False
+
+
+def test_legal_pages_are_off_unless_named_and_never_set_by_an_update(tmp_path):
+    found = values(parse(tmp_path, settings()).stdout)
+    assert found["CFG_legalPages"] == ""
+    legal = {"terms": {"markdown": "# Terms\n\nIt's 'quoted'."},
+             "privacy": "https://example.org/privacy", "security": None}
+    result = parse(tmp_path, settings(legalPages=legal), stdin=True)
+    assert result.returncode == 0, result.stdout
+    assert json.loads(values(result.stdout)["CFG_legalPages"]) == {
+        "terms": {"markdown": "# Terms\n\nIt's 'quoted'."},
+        "privacy": {"url": "https://example.org/privacy"}}
+    for bad in ({"cookies": {"url": "https://example.org"}},
+                {"terms": {"markdown": "x", "url": "https://example.org"}},
+                {"terms": {"url": "javascript:alert(1)"}},
+                {"privacy": {"url": "https://example.org", "contact": "a@b.co"}},
+                {"terms": {"markdown": "x" * 40000}}, ["terms"]):
+        result = parse(tmp_path, settings(legalPages=bad))
+        assert result.returncode == 2, bad
+        assert "Setting legalPages" in result.stdout
+    parser = TEXT.split("parse_config() {", 1)[1].split("\n' \"$CONFIG_MODE\"", 1)[0]
+    assert 'legal = c.get("legalPages") or {}\nif update:\n    legal = {}' in parser
+    assert "instance-bootstrap" not in function("update_admin")
+    writer = TEXT.split('keys = ["projectName"', 1)[1].split('> "$INSTANCE_JSON.new"', 1)[0]
+    assert "legalPages" not in writer
+
+
+def test_the_bootstrap_settings_carry_the_legal_pages_from_stdin():
+    bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
+    assert '"$OWNERS_JSON" "${CFG_legalPages:-}" "$ADMIN_PASSWORD"' in bootstrap
+    code = bootstrap.split("| python3 -c '", 1)[1].split("\n' ", 1)[0]
+    legal = {"terms": {"markdown": "# Terms\nline two"}}
+    stdin = "[]\n" + json.dumps(legal) + "\n" + ADMIN_PASSWORD
+    result = subprocess.run(
+        ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, "", "0"],
+        input=stdin, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    spec = json.loads(result.stdout)
+    assert spec["legalPages"] == legal
+    assert spec["adminPassword"] == ADMIN_PASSWORD
 
 
 def test_the_admin_console_can_ask_for_an_update():
