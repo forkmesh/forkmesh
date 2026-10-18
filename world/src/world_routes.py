@@ -45,7 +45,8 @@ def world_context_handler(request):
 
 
 async def world_durable_object_request(
-        request, trusted_claim=None, moderation_tokens=None):
+        request, trusted_claim=None, moderation_tokens=None, mesh_home="",
+        watch=False):
     """Rebuild the world upgrade with tightly scoped connection headers.
 
     The general tunnel helper forwards Authorization and User-Agent because Git
@@ -107,6 +108,11 @@ async def world_durable_object_request(
             # block plane. Raw connection detail crosses separately below only
             # into ephemeral socket memory for the verified-admin guest view.
             headers["x-forkmesh-world-%s-token" % target_type] = token
+    home = str(mesh_home or "")
+    if world_mesh.HOST_RE.fullmatch(home):
+        headers["x-forkmesh-world-home"] = home
+        if watch:
+            headers["x-forkmesh-world-watch"] = "1"
     client_ip = _account_session_client_ip(request)
     if client_ip:
         headers["x-forkmesh-world-private-ip"] = client_ip
@@ -3241,3 +3247,179 @@ async def world_floor_notes_handler(env, request):
         })
     return _world_floor_notes_response(
         {"ok": False, "error": "invalid_action"}, 400)
+
+
+_WORLD_MESH_CACHE = {"at": 0, "ttl": 0, "worlds": None}
+WORLD_MESH_FETCH_TIMEOUT_SECONDS = 4
+WORLD_MESH_BODY_MAX_BYTES = 4096
+
+
+async def _world_mesh_load(env):
+    if world_mesh.is_hub(env):
+        try:
+            rows = await d1_all(
+                env,
+                "SELECT id,name,url,logo<>'' AS has_logo,slot,updated_at "
+                "FROM instance_directory WHERE hidden=0 AND failures<2 "
+                "AND world=1 AND slot>=0 ORDER BY created_at, domain LIMIT ?",
+                200)
+        except Exception:
+            rows = []
+        return world_mesh.build_directory(
+            world_mesh.hub_entry(env), rows,
+            world_mesh.own_api_origin(env)), world_mesh.DIRECTORY_CACHE_MS
+    try:
+        resp = await js_fetch_with_timeout(
+            world_mesh.hub_api(env) + "/api/world/mesh",
+            {"method": "GET", "headers": {"accept": "application/json"},
+             "redirect": "error"},
+            WORLD_MESH_FETCH_TIMEOUT_SECONDS)
+        if int(getattr(resp, "status", 0)) != 200:
+            raise ValueError("mesh_unavailable")
+        payload = json.loads(str(await resp.text())[:65536])
+    except Exception:
+        return [], world_mesh.DIRECTORY_FAILURE_CACHE_MS
+    worlds = world_mesh.normalize_directory(payload)
+    return worlds, (
+        world_mesh.DIRECTORY_CACHE_MS if worlds
+        else world_mesh.DIRECTORY_FAILURE_CACHE_MS)
+
+
+async def world_mesh_directory(env):
+    now = int(Date.now())
+    cache = _WORLD_MESH_CACHE
+    if cache["worlds"] is not None and now - cache["at"] < cache["ttl"]:
+        return cache["worlds"]
+    worlds, ttl = await _world_mesh_load(env)
+    cache.update({"at": now, "ttl": ttl, "worlds": worlds})
+    return worlds
+
+
+async def world_mesh_handler(env, request):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            extra_headers={"allow": "GET"})
+    worlds = await world_mesh_directory(env)
+    return json_response(
+        world_mesh.directory_payload(env, worlds),
+        cache_seconds=world_mesh.DIRECTORY_MAX_AGE)
+
+
+async def world_visa_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    if method_name(request) != "POST":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "POST"})
+    if not _request_origin_allowed(env, request):
+        return json_response(
+            {"error": "origin_not_allowed"}, status=403,
+            cache_control=no_store)
+    try:
+        data = await bounded_json_request(request, WORLD_MESH_BODY_MAX_BYTES)
+    except RequestBodyTooLarge:
+        return json_response(
+            {"error": "payload_too_large"}, status=413, cache_control=no_store)
+    except Exception:
+        return json_response(
+            {"error": "invalid_json"}, status=400, cache_control=no_store)
+    data = data if isinstance(data, dict) else {}
+    claim = await _world_account_claim(env, request, data)
+    if not claim:
+        return json_response(
+            {"ok": True, "authenticated": False, "visa": ""},
+            cache_control=no_store)
+    worlds = await world_mesh_directory(env)
+    neighbor = world_mesh.neighbor_for_origin(
+        env, worlds, data.get("destination"))
+    if not neighbor:
+        return json_response(
+            {"error": "unknown_world"}, status=404, cache_control=no_store)
+    now = int(Date.now())
+    visa = world_mesh.visa_for(
+        claim["name"], world_mesh.own_world_origin(env), neighbor["world"],
+        new_world_peer_id(), now)
+    return json_response(
+        {
+            "ok": True,
+            "authenticated": True,
+            "visa": world_mesh.visa_encode(
+                _account_session_secret(env), visa),
+            "expiresAt": visa["expiresAt"],
+        },
+        cache_control=no_store)
+
+
+async def world_visa_verify_handler(env, request):
+    no_store = "no-store, max-age=0, must-revalidate"
+    if method_name(request) != "POST":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control=no_store, extra_headers={"allow": "POST"})
+    try:
+        data = await bounded_json_request(request, WORLD_MESH_BODY_MAX_BYTES)
+    except Exception:
+        data = None
+    data = data if isinstance(data, dict) else {}
+    verified = world_mesh.visa_verify(
+        _account_session_secret(env), data.get("visa"), int(Date.now()),
+        world_mesh.own_world_origin(env), data.get("destination"))
+    if not verified:
+        return json_response(
+            {"ok": False, "error": "invalid_visa"}, status=401,
+            cache_control=no_store)
+    return json_response(
+        {"ok": True, "name": verified["name"], "nonce": verified["nonce"]},
+        cache_control=no_store)
+
+
+async def world_mesh_visitor(env, request, visa=""):
+    try:
+        origin = request.headers.get("origin") or ""
+    except Exception:
+        origin = ""
+    worlds = await world_mesh_directory(env)
+    home = world_mesh.neighbor_for_origin(env, worlds, origin)
+    if not home:
+        return None
+    visitor = {"home": home["host"], "claim": {}}
+    if not visa:
+        return visitor
+    if world_mesh.visa_unverified_home(visa) != home["world"]:
+        return {"error": "invalid_visa"}
+    destination = world_mesh.own_world_origin(env)
+    try:
+        resp = await js_fetch_with_timeout(
+            home["api"] + "/api/world/visa/verify",
+            {
+                "method": "POST",
+                "headers": {
+                    "accept": "application/json",
+                    "content-type": "application/json",
+                },
+                "body": json.dumps(
+                    {"visa": visa, "destination": destination},
+                    separators=(",", ":")),
+                "redirect": "error",
+            },
+            WORLD_MESH_FETCH_TIMEOUT_SECONDS)
+        if int(getattr(resp, "status", 0)) != 200:
+            return {"error": "invalid_visa"}
+        payload = json.loads(str(await resp.text())[:4096])
+    except Exception:
+        return {"error": "visa_unverified"}
+    if not isinstance(payload, dict) or payload.get("ok") is not True:
+        return {"error": "invalid_visa"}
+    name = world_protocol.clean_display_name(payload.get("name"), "")
+    nonce = str(payload.get("nonce") or "")
+    if not name or not world_mesh.NONCE_RE.fullmatch(nonce):
+        return {"error": "invalid_visa"}
+    visitor["claim"] = {
+        "name": name,
+        "accountStatus": world_mesh.VISITOR_STATUS,
+        "nodeCount": 0,
+        "isAdmin": False,
+        "ticketNonce": nonce,
+    }
+    return visitor

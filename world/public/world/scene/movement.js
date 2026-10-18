@@ -35,6 +35,8 @@ import {
   WORLD_BIKE_LANE_CENTER_Z,
   WORLD_BIKE_LANE_CORNER_RADIUS,
   WORLD_HEX_TILES,
+  WORLD_MESH_FLOWER_HEXES,
+  WORLD_MESH_FLOWER_REACH,
   WORLD_RADIUS,
   WORLD_ROAD_JUNCTIONS,
   WORLD_ROAD_JUNCTION_WALK_RADIUS,
@@ -73,7 +75,7 @@ export function officeCampusSpace(value) {
 export function worldRadiusForSpace(value, spaces = null) {
   const district = spaces?.get(String(value || ""));
   if (district) return district.radius;
-  if (packageSpace(value)) return REMOTE_DISTRICT_RADIUS;
+  if (packageSpace(value) || value === WORLD_MESH_SPACE) return REMOTE_DISTRICT_RADIUS;
   return WORLD_RADIUS;
 }
 
@@ -170,78 +172,45 @@ export function cityWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
   );
 }
 
-let instanceHexTiles = [];
-let instanceHexJunctions = [];
+export const WORLD_MESH_SPACE = "world-mesh";
 
-export function instanceHexCorners(tile) {
+let worldMeshFlowers = [];
+let worldMeshHexes = [];
+let worldMeshJunctions = [];
+
+export function hexCorners(center) {
   const reach = (WORLD_BIKE_LANE_APOTHEM * 2) / Math.sqrt(3);
-  return [0, 1, 2, 3, 4, 5]
-    .map((corner) => {
-      const angle = Math.PI / 6 + (corner * Math.PI) / 3;
-      return { x: tile.x + Math.cos(angle) * reach, z: tile.z + Math.sin(angle) * reach };
-    })
-    .filter((point) =>
-      WORLD_HEX_TILES.some(
-        (other) => Math.abs(Math.hypot(point.x - other.x, point.z - other.z) - reach) < 1,
-      ),
-    );
+  return [0, 1, 2, 3, 4, 5].map((corner) => {
+    const angle = Math.PI / 6 + (corner * Math.PI) / 3;
+    return { x: center.x + Math.cos(angle) * reach, z: center.z + Math.sin(angle) * reach };
+  });
 }
 
-export function setInstanceHexTiles(tiles = []) {
-  instanceHexTiles = Array.isArray(tiles) ? tiles.filter(Boolean) : [];
-  instanceHexJunctions = instanceHexTiles.flatMap(instanceHexCorners);
+export function setWorldMeshFlowers(flowers = []) {
+  worldMeshFlowers = (Array.isArray(flowers) ? flowers : []).filter(
+    (flower) => flower && Number.isFinite(flower.x) && Number.isFinite(flower.z),
+  );
+  worldMeshHexes = worldMeshFlowers.flatMap((flower) =>
+    WORLD_MESH_FLOWER_HEXES.map((hex) => ({ x: flower.x + hex.x, z: flower.z + hex.z })),
+  );
+  worldMeshJunctions = worldMeshHexes.flatMap(hexCorners);
 }
 
-export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
-  const px = Number(x);
-  const pz = Number(z);
-  const margin = Math.max(0, Number(radius) || 0);
-  if (!Number.isFinite(px) || !Number.isFinite(pz)) return false;
-  const bound = WORLD_RADIUS - margin;
-  if (Math.abs(px) > bound || Math.abs(pz) > bound) return false;
-  for (let index = 0; index < WORLD_HEX_TILES.length; index += 1) {
-    const tile = WORLD_HEX_TILES[index];
-    if (
-      roundedHexagonContains(
-        px,
-        pz,
-        tile.x,
-        tile.z,
-        CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
-        CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
-        margin,
-      )
-    ) {
-      return true;
-    }
-  }
-  for (let index = 0; index < instanceHexTiles.length; index += 1) {
-    const tile = instanceHexTiles[index];
-    if (
-      roundedHexagonContains(
-        px,
-        pz,
-        tile.x,
-        tile.z,
-        CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
-        CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
-        margin,
-      )
-    ) {
-      return true;
-    }
-  }
-  for (let index = 0; index < instanceHexJunctions.length; index += 1) {
-    const junction = instanceHexJunctions[index];
-    if (
-      Math.hypot(px - junction.x, pz - junction.z) <=
-      WORLD_ROAD_JUNCTION_WALK_RADIUS - margin
-    ) {
-      return true;
-    }
-  }
-  for (let index = 0; index < WORLD_ROAD_JUNCTIONS.length; index += 1) {
-    const junction = WORLD_ROAD_JUNCTIONS[index];
+function grownHexContains(px, pz, tile, margin) {
+  return roundedHexagonContains(
+    px,
+    pz,
+    tile.x,
+    tile.z,
+    CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
+    CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
+    margin,
+  );
+}
+
+function junctionContains(px, pz, junctions, margin) {
+  for (let index = 0; index < junctions.length; index += 1) {
+    const junction = junctions[index];
     if (
       Math.hypot(px - junction.x, pz - junction.z) <=
       WORLD_ROAD_JUNCTION_WALK_RADIUS - margin
@@ -250,6 +219,65 @@ export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
     }
   }
   return false;
+}
+
+export function worldMeshFlowerAt(x, z, radius = 0) {
+  const px = Number(x);
+  const pz = Number(z);
+  const margin = Math.max(0, Number(radius) || 0);
+  if (!Number.isFinite(px) || !Number.isFinite(pz)) return null;
+  for (let index = 0; index < worldMeshFlowers.length; index += 1) {
+    const flower = worldMeshFlowers[index];
+    if (Math.hypot(px - flower.x, pz - flower.z) > WORLD_MESH_FLOWER_REACH) continue;
+    for (let hex = 0; hex < WORLD_MESH_FLOWER_HEXES.length; hex += 1) {
+      const tile = {
+        x: flower.x + WORLD_MESH_FLOWER_HEXES[hex].x,
+        z: flower.z + WORLD_MESH_FLOWER_HEXES[hex].z,
+      };
+      if (grownHexContains(px, pz, tile, margin)) return flower;
+    }
+  }
+  return null;
+}
+
+export function worldMeshOwnerAt(x, z) {
+  const px = Number(x);
+  const pz = Number(z);
+  if (!Number.isFinite(px) || !Number.isFinite(pz) || !worldMeshFlowers.length) return null;
+  for (let index = 0; index < WORLD_HEX_TILES.length; index += 1) {
+    const tile = WORLD_HEX_TILES[index];
+    if (
+      roundedHexagonContains(
+        px,
+        pz,
+        tile.x,
+        tile.z,
+        CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH / 2,
+        CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH / 2,
+      )
+    ) {
+      return null;
+    }
+  }
+  return worldMeshFlowerAt(px, pz);
+}
+
+export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
+  const px = Number(x);
+  const pz = Number(z);
+  const margin = Math.max(0, Number(radius) || 0);
+  if (!Number.isFinite(px) || !Number.isFinite(pz)) return false;
+  const bound = WORLD_RADIUS - margin;
+  if (Math.abs(px) <= bound && Math.abs(pz) <= bound) {
+    for (let index = 0; index < WORLD_HEX_TILES.length; index += 1) {
+      if (grownHexContains(px, pz, WORLD_HEX_TILES[index], margin)) return true;
+    }
+    if (junctionContains(px, pz, WORLD_ROAD_JUNCTIONS, margin)) return true;
+  }
+  for (let index = 0; index < worldMeshHexes.length; index += 1) {
+    if (grownHexContains(px, pz, worldMeshHexes[index], margin)) return true;
+  }
+  return junctionContains(px, pz, worldMeshJunctions, margin);
 }
 
 export function beachWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
