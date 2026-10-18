@@ -155,6 +155,20 @@ header, so a commit-back step can rebase onto a tip that moved while it ran
 and retry. A push made with an Actions grant does not trigger `push`
 workflows again.
 
+That push goes straight to the git node on the runner route, so the app never
+sees it the way it sees a push through `/<owner>/<repo>.git`, and it does not
+record the new refs state as a routing pin. A public clone is routed only to a
+node whose signed refs digest is pinned, or that two nodes agree on; an
+instance with a single git node has no second node, so after an Actions
+commit-back every `git clone` / `git ls-remote` answered 503
+`mirror_unavailable` while the website kept browsing (2026-10-18). When a
+trusted job (one leased with a job token, the only kind that gets a push
+grant) reports a terminal status, the app now reads the target node's freshly
+signed repository proof and records its refs digest exactly as an accepted
+core push does (`_admit_core_push_state`), then wakes the repository's
+mirrors. A job that pushed nothing re-records the current digest, which is
+harmless; a failed proof leaves the report untouched.
+
 The runner masks the job token and the push grant as well as the secrets.
 
 ### Which commit runs
