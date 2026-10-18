@@ -48,6 +48,11 @@ characters, lowest-ranked sections are trimmed first and say so):
   `relay.control`, which holds the delta handling under it), so an outer
   name's time includes its inner ones. A stall with no sections ran
   unnamed work: SwiftUI's own updates, or code not wrapped yet.
+  `surfaces.publish` (the widget, Live Activity and Shortcuts snapshot after
+  agent row changes) has been named since 2026-10-18. `watchSections` hands
+  every main-thread section of 1 ms or more to one watcher; the DJ studio
+  uses it to put app work in its long frames
+  ([../marketplace/video-mix-dj-studio-performance.md](../marketplace/video-mix-dj-studio-performance.md)).
 - `Stalls by screen` (since 2026-10-17): the same stalls grouped by the
   tab and navigation stack showing when each was recorded
   (`AppRouter.screenTitle`, the `screen` detail, also in `stalls.log`

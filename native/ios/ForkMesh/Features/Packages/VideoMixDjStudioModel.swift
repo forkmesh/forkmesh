@@ -166,7 +166,9 @@ final class DjStudioModel {
     var automixOn = false
     var onScreen = false
     var notice: String?
-    var sheet: DjSheet?
+    var sheet: DjSheet? {
+        didSet { if sheet != oldValue { DjDiagnostics.mark(sheet.map { "sheet \($0.id)" } ?? "sheet closed") } }
+    }
     var searchTarget: DjLoadTarget = .a
     var searchText = ""
     var searchResults: [DjSearchResult] = []

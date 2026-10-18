@@ -32,6 +32,7 @@ final class DjFrameTicker: NSObject {
 @MainActor
 final class DjFrameProbe {
     static let range = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+    static let beforeCommit = 1_998_000
     private var link: CADisplayLink?
     private var watchers: [CFRunLoopObserver] = []
 
@@ -46,12 +47,19 @@ final class DjFrameProbe {
             let now = CACurrentMediaTime()
             DjVitalsRecorder.shared.update { $0.awake(at: now) }
         }
+        let committing = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, Self.beforeCommit) { @Sendable _, _ in
+            let now = CACurrentMediaTime()
+            DjVitalsRecorder.shared.update { $0.committing(at: now) }
+        }
         let slept = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.beforeWaiting.rawValue, true, Int.max) { @Sendable _, _ in
             let now = CACurrentMediaTime()
             DjVitalsRecorder.shared.update { $0.asleep(at: now) }
         }
-        watchers = [woke, slept].compactMap { $0 }
+        watchers = [woke, committing, slept].compactMap { $0 }
         for watcher in watchers { CFRunLoopAddObserver(CFRunLoopGetMain(), watcher, .commonModes) }
+        Services.get(PerformanceMonitorService.self)?.watchSections { name, start, end in
+            DjVitalsRecorder.shared.update { $0.section(name, ms: (end - start) * 1000, at: end) }
+        }
     }
 
     func stop() {
@@ -63,6 +71,7 @@ final class DjFrameProbe {
             CFRunLoopObserverInvalidate(watcher)
         }
         watchers = []
+        Services.get(PerformanceMonitorService.self)?.watchSections(nil)
         DjVitalsRecorder.shared.update { $0.end(at: CACurrentMediaTime()) }
     }
 }

@@ -133,6 +133,8 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     public let sectionFloor: Duration
     @ObservationIgnored private var recentSections: [(name: String, startUs: Int64, endUs: Int64)] = []
     @ObservationIgnored private var mainSectionDepth = 0
+    @ObservationIgnored private var sectionWatcher: (@Sendable (String, Double, Double) -> Void)?
+    public static let watchedFloor: Duration = .milliseconds(1)
     public static let sectionLimit = 32
     @ObservationIgnored private weak var frameSource: FrameTimingSource?
     @ObservationIgnored private var installed = false
@@ -247,6 +249,9 @@ public final class PerformanceMonitorService: @unchecked Sendable {
             let elapsed = Duration.microseconds(endUs - startUs)
             let inner = elapsed >= stallThreshold && !nested ? sectionsText(from: startUs, to: endUs) : nil
             if elapsed >= sectionFloor { noteSection(name, startUs: startUs, endUs: endUs) }
+            if onMain, elapsed >= PerformanceMonitorService.watchedFloor, let watcher = locked({ sectionWatcher }) {
+                watcher(name, uptimeSeconds(startUs), uptimeSeconds(endUs))
+            }
             if elapsed >= stallThreshold && !nested {
                 locked { lastAttributedStallUs = endUs }
                 var merged = details
@@ -257,6 +262,10 @@ public final class PerformanceMonitorService: @unchecked Sendable {
             }
         }
         return try action()
+    }
+
+    public func watchSections(_ watcher: (@Sendable (_ name: String, _ start: Double, _ end: Double) -> Void)?) {
+        locked { sectionWatcher = watcher }
     }
 
     public static func section<T>(_ name: String, _ action: () throws -> T) rethrows -> T {
@@ -520,6 +529,10 @@ public final class PerformanceMonitorService: @unchecked Sendable {
             return "\(index) ??? \(hex)"
             #endif
         }.joined(separator: "\n")
+    }
+
+    private func uptimeSeconds(_ micros: Int64) -> Double {
+        Double(origin) / 1_000_000_000 + Double(micros) / 1_000_000
     }
 
     private func elapsedMicros() -> Int64 {

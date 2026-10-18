@@ -212,6 +212,27 @@ final class PerformanceMonitorTests: XCTestCase {
     }
 
     @MainActor
+    func testAWatcherHearsMainThreadSectionsOfAMillisecondOrMoreOnTheUptimeClock() async {
+        let monitor = PerformanceMonitorService(logSink: { _ in })
+        let heard = Lines()
+        let before = Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+        monitor.watchSections { name, start, end in
+            heard.add("\(name) \(start >= before - 0.001) \(end - start >= 0.003) \(end <= Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000)")
+        }
+        monitor.timeSync("surfaces.publish") { busyWait(milliseconds: 4) }
+        monitor.timeSync("agents.lines") {}
+        await Task.detached {
+            monitor.timeSync("off.main") {
+                let until = Date().addingTimeInterval(0.004)
+                while Date() < until {}
+            }
+        }.value
+        monitor.watchSections(nil)
+        monitor.timeSync("after") { busyWait(milliseconds: 4) }
+        XCTAssertEqual(heard.all, ["surfaces.publish true true true"])
+    }
+
+    @MainActor
     func testNestedSectionsRecordOneStallThatNamesTheInnerWork() throws {
         let monitor = PerformanceMonitorService(
             stallThreshold: .milliseconds(100), sectionFloor: .milliseconds(20), logSink: { _ in })
