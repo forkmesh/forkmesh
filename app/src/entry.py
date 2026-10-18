@@ -23457,7 +23457,8 @@ async def _account_login(env, request):
     if marker.startswith("/var/lib/forkmesh-instance/") and \
             await _is_admin_flag(env, rec.get("name", "")):
         try:
-            Path(marker).touch(exist_ok=True)
+            from pathlib import Path as _MarkerPath
+            _MarkerPath(marker).touch(exist_ok=True)
         except OSError:
             pass
 
