@@ -48,7 +48,7 @@ def test_fragment_ships_in_the_bundle_in_lexical_order():
 
 def test_tab_strip_panel_and_loaders_are_wired():
     assert 'actions: { label: "Actions", icon: "workflow", count: "" }' in DASHBOARD_JS
-    assert '"pulls", "actions", "discussions"' in DASHBOARD_JS
+    assert '"pulls", "discussions", "insights", "projects", "actions"' in DASHBOARD_JS
     assert 'data-dashboard-repo-tab-panel="actions"' in DASHBOARD_JS
     assert "<div data-repo-actions></div>" in DASHBOARD_JS
     # Opened by click, restored by deep link, and silenced when left.
