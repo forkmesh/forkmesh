@@ -208,6 +208,13 @@ destination, in sections, with counts and activity:
   counts, on every `pings` frame (an assignment arrives as a ping) and
   whenever the Tasks page reloads (`ShellNavigatorCounts.adoptTasks`). The
   operator asked for the three badges on 2026-10-18.
+- **Bug count.** For an administrator the Bug icon shows how many reported
+  bugs are still `new`, the same number as the Report a bug sheet's Reported
+  tab. Home's count refresh asks `/api/bug-reports/inbox?status=new&limit=1`
+  for the counts only, and the sheet writes its counts back whenever the
+  inbox reloads or a status changes (`ShellNavigatorCounts.adoptBugReports`).
+  Reports are readable by administrators only, so everyone else sees the
+  plain icon. The operator asked for the count on 2026-10-18.
 - Frequently used tiles glow (`ShellBarOrder.heat`, log scale).
 - **Update dot.** A plugin tile whose Market package changed version since
   the user last opened it shows a small accent dot at the icon's bottom right

@@ -221,7 +221,7 @@ struct HomeShell: View {
         items.append(
             ShellBarItem(
                 id: "reportBug", title: "Bug", symbol: "ladybug", badge: 0, selected: page == .reportBug,
-                kind: .action, action: { reportBug() }))
+                kind: .action, count: ShellNavigatorCounts.shared.bugReports, action: { reportBug() }))
         return items
     }
 
