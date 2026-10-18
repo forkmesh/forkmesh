@@ -58,12 +58,25 @@ can log in as `build` on the Mac.
   DerivedData by project path. It is a partial (`blob:none`), sparse checkout
   of `native/ios/`, `codemagic.yaml`, `conformance/`, and the files outside
   them that the ForkMeshCore tests read (`app/src/apns.py`,
-  `app/src/app_runtime.py`, `marketplace/packages/vault/tests/fixtures/`,
-  `marketplace/packages/people/tests/fixtures/`).
-  `test_the_mac_checkout_holds_every_file_the_core_tests_read` in
-  `tools/test_mac_adhoc_deploy.py` lists them; a new test that reads a file
-  outside `native/ios/` must add it there and to `MAC_IOS_FETCH_SCRIPT` in
-  `tools/forkmesh-release-host.py`.
+  `app/src/app_runtime.py`, the vault, people and secure-drive fixtures under
+  `marketplace/packages/*/tests/fixtures/`, and the two performance playbooks
+  `docs/native/PERFORMANCE_CHECKS.md` and
+  `docs/marketplace/video-mix-dj-studio-performance.md`).
+- `test_the_mac_checkout_holds_every_file_the_core_tests_read` in
+  `tools/test_mac_adhoc_deploy.py` finds those files itself: in every test file
+  that builds the repository root from `#filePath` (or calls a helper defined
+  in one), each string literal or `Type.constant` from `Sources/` passed as a
+  call's first argument that names an existing repository path with a `/` in
+  it. Each must be covered by `MAC_IOS_FETCH_SCRIPT` in
+  `tools/forkmesh-release-host.py`, so a new test that reads a file outside
+  `native/ios/` fails here instead of on the Mac.
+- The 2026-10-18 04:20 App Store build of `f123cb5c0dd8` failed after 19
+  minutes in "Test ForkMeshCore": `DiagnosticsBundleTests` reads
+  `docs/native/PERFORMANCE_CHECKS.md`, which the sparse checkout did not hold
+  (`NSCocoaErrorDomain Code=260`). The guard test then listed its paths by
+  hand and missed it; `DjVitalsTests` (the DJ studio playbook) would have
+  failed the next build the same way, and `SecureDriveInteropTests` skipped
+  silently without its fixtures.
 - Each run fetches its commit at depth 1 from `MAC_BUILD_GIT_URL` and checks it
   out with `git clean -ffdx`. Fetch and checkout retry together (six times,
   20 s apart) because a core may advertise a commit before it holds every blob,

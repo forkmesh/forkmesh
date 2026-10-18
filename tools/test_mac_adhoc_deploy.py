@@ -1,5 +1,6 @@
 import io
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -563,14 +564,38 @@ def sparse_patterns(script):
     return [part.strip("'") for part in line.replace("\\\n", " ").split()]
 
 
+def repo_paths_the_core_tests_read():
+    core = ROOT / "native/ios/ForkMeshCore"
+    constants = {}
+    for source in (core / "Sources").rglob("*.swift"):
+        text = source.read_text(encoding="utf-8")
+        for match in re.finditer(r'static let (\w+)\s*(?::\s*String)?\s*=\s*"([^"\\]+)"', text):
+            owner = re.findall(r"\b(?:enum|struct|class|extension)\s+(\w+)", text[:match.start()])
+            if owner:
+                constants[f"{owner[-1]}.{match.group(1)}"] = match.group(2)
+    tests = {test: test.read_text(encoding="utf-8") for test in (core / "Tests").rglob("*.swift")}
+    helpers = {name for text in tests.values() if "fileURLWithPath: #file" in text
+               for name in re.findall(r"\b(?:func|var|let)\s+(\w+)", text)}
+    paths = set()
+    for text in tests.values():
+        if "fileURLWithPath: #file" not in text and not any(re.search(rf"\b{name}\(", text) for name in helpers):
+            continue
+        for match in re.finditer(r'\w\(\s*(?:"([^"]*)"|([A-Z]\w*\.\w+)\))', text):
+            path = (match.group(1) or constants.get(match.group(2), "")).split("\\(", 1)[0]
+            if "/" in path.strip("/") and not path.startswith(("/", ".")) and (ROOT / path).exists():
+                paths.add(path.rstrip("/"))
+    return paths
+
+
 def test_the_mac_checkout_holds_every_file_the_core_tests_read():
     patterns = sparse_patterns(mac_adhoc_deploy.RELEASE.MAC_IOS_FETCH_SCRIPT)
-    for path in ["native/ios/ForkMeshCore/Package.swift", "codemagic.yaml", "app/src/apns.py",
-                 "app/src/app_runtime.py", "conformance/agent-transcript/v1/transcript.txt",
-                 "marketplace/packages/vault/tests/fixtures/interop-from-js.json",
-                 "marketplace/packages/people/tests/fixtures/rings.json"]:
-        assert (ROOT / path).is_file(), path
-        assert any(pattern == f"/{path}" or (pattern.endswith("/") and f"/{path}".startswith(pattern))
+    found = repo_paths_the_core_tests_read()
+    for path in ["app/src/apns.py", "app/src/app_runtime.py", "conformance/chat/v4/vectors.json",
+                 "docs/native/PERFORMANCE_CHECKS.md", "docs/marketplace/video-mix-dj-studio-performance.md",
+                 "marketplace/packages/secure-drive/tests/fixtures"]:
+        assert path in found, path
+    for path in sorted(found | {"native/ios/ForkMeshCore/Package.swift", "codemagic.yaml"}):
+        assert any(pattern.rstrip("/") == f"/{path}" or (pattern.endswith("/") and f"/{path}".startswith(pattern))
                    for pattern in patterns), path
 
 
