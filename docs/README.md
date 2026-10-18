@@ -63,6 +63,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [attribution.md](attribution.md): acquisition attribution.
 - [PERF_PAGES.md](PERF_PAGES.md): page performance techniques.
 - [GIT_ERROR_MESSAGES.md](GIT_ERROR_MESSAGES.md): what failing Git commands show.
+- [Folder About boxes](../www/docs/folder-about.md): the `<folder>/.forkmesh/info.json` file format for a folder's own About box and logo (user guide); [app/directory-about.md](app/directory-about.md) has the API, caching and permissions.
 - [engineering/destructive-actions.md](engineering/destructive-actions.md): guarded deletes and the contract test.
 - [security/NODE_LINK_GRANT.md](security/NODE_LINK_GRANT.md), [security/agent-host-boundaries.md](security/agent-host-boundaries.md), [security/sentinel.md](security/sentinel.md), [security/findings.md](security/findings.md).
 - [dependency-security-audit-2026-09-13.md](dependency-security-audit-2026-09-13.md): dependency audit snapshot.

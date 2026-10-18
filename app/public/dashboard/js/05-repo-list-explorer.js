@@ -2619,6 +2619,7 @@
     contentGrid?.classList.toggle("lg:grid-cols-[minmax(0,1fr)_18rem]", showAbout);
     contentGrid?.classList.toggle("lg:grid-cols-1", !showAbout);
     about?.classList.toggle("hidden", !showAbout);
+    if (!showAbout) detail.querySelector("[data-repo-dir-about]")?.classList.add("hidden");
     // Mirrors is the one tab whose content is genuinely wider than the 80rem
     // reading column: twenty-odd node-health columns. Capping it there pushed
     // most of them behind a horizontal scrollbar on a monitor with the room to
