@@ -94,6 +94,12 @@ REPO_ACTION_RUNS_RE = re.compile(
 # executor the browser names (www/docs/operations/mirror-actions-control.md).
 REPO_ACTION_CONTROL_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/actions/control$")
+REPO_ACTION_RUN_LOG_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/actions/runs/([0-9]{1,16})/log$")
+REPO_ACTION_SECRETS_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/actions/secrets(?:/([^/]+))?$")
+ORG_ACTION_SECRETS_RE = re.compile(
+    r"^/api/org/([^/]+)/actions/secrets(?:/([^/]+))?$")
 # Commit-comment inbox: signed per-commit comments from any node.
 # Discussion inbox: signed discussion open/comment submissions from any node.
 REPO_DISCUSSIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/discussions$")

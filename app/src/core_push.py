@@ -205,8 +205,12 @@ async def _desktop_online(env, owner, repo, pool):
     return False
 
 
+def _instance_actions(env):
+    return bool(str(getattr(env, "ACTIONS_INSTANCE_RUNNER", "") or "").strip())
+
+
 async def queue_runner_actions(env, owner, repo, commit, node="", pusher="",
-                               branch=""):
+                               branch="", before=""):
     try:
         owner = str(owner or "").strip().lower()
         repo = str(repo or "").strip()
@@ -221,18 +225,29 @@ async def queue_runner_actions(env, owner, repo, commit, node="", pusher="",
         pool = runtime.pool_targets()
         if node not in pool:
             return 0
-        if not await runner_actions.owner_has_runner(runtime, owner):
+        instance = _instance_actions(env)
+        if not instance and not await runner_actions.owner_has_runner(
+                runtime, owner):
             return 0
-        if await _desktop_online(env, owner, repo, pool):
+        if not instance and await _desktop_online(env, owner, repo, pool):
             return 0
         branch = branch or await _default_branch(env, owner, repo)
         return await runner_actions.enqueue(
-            runtime, owner, repo, branch, commit, node, pusher)
+            runtime, owner, repo, branch, commit, node, pusher,
+            before=before)
     except Exception:
         return 0
 
 
 async def _queue_pushed_actions(env, owner, repo, node, account, updates):
+    if _instance_actions(env):
+        for item in updates:
+            ref = str(item.get("ref") or "")
+            if ref.startswith("refs/heads/") and not _zero(item["new"]):
+                await queue_runner_actions(
+                    env, owner, repo, item["new"], node, account,
+                    ref[len("refs/heads/"):], item.get("old") or "")
+        return
     default = await _default_branch(env, owner, repo)
     head = next((item for item in updates
                  if item["ref"] == "refs/heads/" + default), None)
@@ -280,8 +295,9 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
         except Exception:
             pass
         try:
-            await _queue_pushed_actions(env, owner, repo, node, account,
-                                        updates)
+            if (report or {}).get("actions") is not True:
+                await _queue_pushed_actions(env, owner, repo, node, account,
+                                            updates)
         except Exception:
             pass
     return len(updates)
