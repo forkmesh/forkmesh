@@ -78,7 +78,9 @@ CLI, never listed in Agents) and, for packages declaring `desktop.agents.run`,
 `specialAgents()` / `specialAgentAction(...)`, and for packages declaring
 `repository.read`, `repositories()`, `currentRepository()` and
 `openRepositoryFile(repository, path, line)`
-([codebase-analysis.md](codebase-analysis.md#host-contract)). `request` waits out the
+([codebase-analysis.md](codebase-analysis.md#host-contract)), and for packages
+declaring `desktop.logins.use`, `loginStoreName()`, `saveLogin(login, asker,
+done)` and `findLogins(url, asker, done)` (see **Login store** below). `request` waits out the
 network manager's host-wide cooldown (after a 5xx or 429 on any `/api/`
 route) and resends GETs up to four times before reporting "the ForkMesh relay
 is restarting or unreachable".
@@ -90,6 +92,20 @@ no timers), `navigationBadge()` / `prepareNavigationBadge()`,
 (offered on removal), `hostPromptTarget()` / `submitHostPrompt()` (the page
 takes over the footer prompt box while visible), `userDirectoryChanged()`
 and `repositoryChanged()` (the user opened another repository).
+
+**Login store.** A package can hand a password it was given to the user's
+password manager and ask for it back, without the host knowing which package
+that is. The store is the first installed page whose `storesLogins()` is true
+and whose manifest declares `desktop.logins.store` (today the Password Vault);
+only packages declaring `desktop.logins.use` (today the Router) get
+`saveLogin` and `findLogins`, and `loginStoreName()` is empty when there is no
+store. The store answers with a `NativePackageLoginReply` (`ok`, `cancelled`,
+a readable `error`, `logins`); it may show its own unlock prompt over the
+`asker` widget, so the master password never passes through the host or the
+asking package. Logins are matched by origin (scheme, host and port), and a
+save reply carries no password. The Vault side is described in
+[the Vault README](../../marketplace/packages/vault/README.md#on-the-desktop),
+the Router side in [openwrt.md](openwrt.md#safety).
 
 **Own window.** "Open in new window" on a rail button (or dragging it out)
 moves the page widget into a top-level window

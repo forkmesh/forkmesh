@@ -5,6 +5,9 @@ import android.content.SharedPreferences
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.tools.vault.VaultPhase
+import com.forkmesh.nativeapp.feature.tools.vault.VaultService
 import com.forkmesh.nativeapp.json.obj
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.openwrt.OpenWrtApplyOutcome
@@ -15,9 +18,18 @@ import com.forkmesh.nativeapp.openwrt.OpenWrtResult
 import com.forkmesh.nativeapp.openwrt.OpenWrtSnapshot
 import com.forkmesh.nativeapp.openwrt.RouterHttp
 import com.forkmesh.nativeapp.openwrt.UciEdit
+import com.forkmesh.nativeapp.vault.VaultItem
+import com.forkmesh.nativeapp.vault.VaultLoginAnswer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+
+data class OpenWrtVaultPrompt(val purpose: String, val action: Action) {
+    sealed class Action {
+        data class Save(val title: String, val url: String, val username: String, val password: String, val done: String) : Action()
+        data class Fill(val url: String) : Action()
+    }
+}
 
 class OpenWrtState {
     var address by mutableStateOf("")
@@ -34,8 +46,15 @@ class OpenWrtState {
     var storageLog by mutableStateOf("")
     var storageBusy by mutableStateOf(false)
     var routerHost by mutableStateOf("")
+    var saveToVault by mutableStateOf(true)
+        private set
+    var vaultPrompt by mutableStateOf<OpenWrtVaultPrompt?>(null)
+    var vaultChoices by mutableStateOf<List<VaultItem>>(emptyList())
 
     private var client: OpenWrtClient? = null
+    private var loginUrl = ""
+    private var loginUser = ""
+    private var filledFromVault = ""
     private var certificateKey = ""
     private var prefs: SharedPreferences? = null
 
@@ -45,6 +64,16 @@ class OpenWrtState {
         prefs = store
         address = store.getString("address", "").orEmpty()
         user = store.getString("user", "root").orEmpty().ifEmpty { "root" }
+        saveToVault = store.getBoolean("saveLogin", true)
+    }
+
+    val vault: VaultService? get() = Services.get<VaultService>()
+
+    private val vaultOffered: Boolean get() = vault?.let { it.phase.value != VaultPhase.SignedOut } ?: false
+
+    fun changeSaveToVault(on: Boolean) {
+        saveToVault = on
+        prefs?.edit()?.putBoolean("saveLogin", on)?.apply()
     }
 
     val addressNote: String
@@ -67,6 +96,8 @@ class OpenWrtState {
     }
 
     suspend fun connect() {
+        var fromVault = false
+        var saved = ""
         val parsed = OpenWrtModel.parseAddress(address.ifBlank { "192.168.1.1" })
         if (!parsed.valid) return show(parsed.error, true)
         busy = true
@@ -97,11 +128,89 @@ class OpenWrtState {
             routerHost = parsed.host
             prefs?.edit()?.putString("address", address)?.putString("user", account)?.apply()
             signedIn = true
+            loginUrl = parsed.base
+            loginUser = account
+            fromVault = filledFromVault.isNotEmpty() && typed == filledFromVault
+            filledFromVault = ""
+            saved = typed
             show("Connected to ${parsed.host}.")
         } finally {
             busy = false
         }
         refresh()
+        if (signedIn && saved.isNotEmpty() && !fromVault && saveToVault && vaultOffered) saveInVault(saved, "Connected to $routerHost.")
+    }
+
+    suspend fun saveInVault(secret: String, done: String) {
+        if (loginUrl.isEmpty() || secret.isEmpty()) return
+        val host = OpenWrtModel.parseAddress(loginUrl).host.ifEmpty { routerHost }
+        perform(
+            OpenWrtVaultPrompt.Action.Save("OpenWrt router ($host)", loginUrl, loginUser.ifEmpty { "root" }, secret, done),
+            "Router asks to save the password for $loginUrl in your Password Vault.",
+        )
+    }
+
+    suspend fun signInWithVault() {
+        val parsed = OpenWrtModel.parseAddress(address.ifBlank { "192.168.1.1" })
+        if (!parsed.valid) return show(parsed.error, true)
+        perform(OpenWrtVaultPrompt.Action.Fill(parsed.base), "Router asks for the password you saved for ${parsed.base}.")
+    }
+
+    suspend fun vaultUnlocked() {
+        val prompt = vaultPrompt ?: return
+        vaultPrompt = null
+        perform(prompt.action, prompt.purpose)
+    }
+
+    fun vaultPromptCancelled() {
+        val prompt = vaultPrompt ?: return
+        vaultPrompt = null
+        val action = prompt.action
+        if (action is OpenWrtVaultPrompt.Action.Save) show("${action.done} The password was not saved in Password Vault.") else show("")
+    }
+
+    suspend fun useVaultLogin(item: VaultItem) {
+        vaultChoices = emptyList()
+        user = item.username.ifEmpty { "root" }
+        password = item.password
+        filledFromVault = item.password
+        connect()
+    }
+
+    private suspend fun perform(action: OpenWrtVaultPrompt.Action, purpose: String) {
+        val vault = vault ?: return
+        when (action) {
+            is OpenWrtVaultPrompt.Action.Save -> {
+                val done = action.done
+                when (val answer = vault.saveLogin(action.title, action.url, action.username, action.password)) {
+                    is VaultLoginAnswer.Saved -> show(if (answer.changed) "$done The password is saved in Password Vault." else "$done The password was already saved in Password Vault.")
+                    VaultLoginAnswer.Locked -> vaultPrompt = OpenWrtVaultPrompt(purpose, action)
+                    VaultLoginAnswer.NoVault -> show("$done The password was not saved: create a Password Vault first in Tools, Vault.", true)
+                    VaultLoginAnswer.SignedOut -> show("$done Sign in to ForkMesh to save the password in Password Vault.", true)
+                    is VaultLoginAnswer.Failed -> show("$done The password was not saved in Password Vault: ${answer.text}", true)
+                    is VaultLoginAnswer.Found -> Unit
+                }
+            }
+            is OpenWrtVaultPrompt.Action.Fill -> when (val answer = vault.findLogins(action.url)) {
+                is VaultLoginAnswer.Found -> choose(answer.logins, action.url)
+                VaultLoginAnswer.Locked -> vaultPrompt = OpenWrtVaultPrompt(purpose, action)
+                VaultLoginAnswer.NoVault -> show("There is no Password Vault on this account yet. Create one in Tools, Vault.", true)
+                VaultLoginAnswer.SignedOut -> show("Sign in to ForkMesh to use Password Vault.", true)
+                is VaultLoginAnswer.Failed -> show(answer.text, true)
+                is VaultLoginAnswer.Saved -> Unit
+            }
+        }
+    }
+
+    private suspend fun choose(logins: List<VaultItem>, url: String) {
+        if (logins.isEmpty()) return show("Password Vault has no password for $url yet. Type it once with “Save the password in Password Vault” on.", true)
+        val typed = user.trim().ifEmpty { "root" }
+        val same = logins.firstOrNull { it.username == typed }
+        when {
+            same != null -> useVaultLogin(same)
+            logins.size == 1 -> useVaultLogin(logins.first())
+            else -> vaultChoices = logins
+        }
     }
 
     suspend fun trustCertificate() {
@@ -124,6 +233,8 @@ class OpenWrtState {
         storageLog = ""
         storageBusy = false
         routerHost = ""
+        loginUrl = ""
+        loginUser = ""
         show(text)
     }
 
@@ -416,6 +527,7 @@ class OpenWrtState {
         val result = withContext(Dispatchers.IO) { current.call("luci", "setPassword", mapOf("username" to account, "password" to password)) }
         if (result.ok) current.rememberPassword(password)
         report(result, "Router password changed.")
+        if (result.ok && saveToVault && vaultOffered) saveInVault(password, "Router password changed.")
         return result.ok
     }
 

@@ -1,6 +1,7 @@
 import FMBase
 import FMFiles
 import FMPackages
+import FMVault
 import SwiftUI
 
 struct OpenWrtScreen: View {
@@ -39,6 +40,22 @@ struct OpenWrtScreen: View {
         } message: {
             Text("The \(model.snapshot.pendingCount) changes you have not applied will be thrown away.")
         }
+        .task { try? await model.vault?.refresh() }
+        .sheet(item: Binding(get: { model.vaultPrompt }, set: { if $0 == nil { model.vaultPromptCancelled() } })) { prompt in
+            if let vault = model.vault {
+                VaultUnlockSheet(vault: vault, purpose: prompt.purpose,
+                                 onUnlocked: { Task { await model.vaultUnlocked() } },
+                                 onCancel: { model.vaultPromptCancelled() })
+            }
+        }
+        .confirmationDialog("Choose an account", isPresented: Binding(get: { !model.vaultChoices.isEmpty }, set: { if !$0 { model.vaultChoices = [] } }),
+                            titleVisibility: .visible) {
+            ForEach(model.vaultChoices) { item in
+                Button(item.username.isEmpty ? "root" : item.username) { Task { await model.useVaultLogin(item) } }
+            }
+        } message: {
+            Text("Password Vault has more than one account for this router.")
+        }
         .sheet(isPresented: $reviewing) {
             NavigationStack {
                 List(model.snapshot.pendingLines, id: \.self) { line in
@@ -70,10 +87,23 @@ struct OpenWrtScreen: View {
             } footer: {
                 Text(model.addressNote)
             }
+            if model.vaultOffered {
+                Section {
+                    Toggle("Save the password in Password Vault", isOn: $model.saveToVault)
+                        .accessibilityIdentifier("openwrt-save-to-vault")
+                } footer: {
+                    Text("Password Vault encrypts it on this phone with your master password before storing it, so ForkMesh cannot read it.")
+                }
+            }
             Section {
                 Button(model.busy ? "Connecting…" : "Connect") { Task { await model.connect() } }
                     .disabled(model.busy)
                     .accessibilityIdentifier("openwrt-connect")
+                if model.vaultOffered {
+                    Button("Use saved password") { Task { await model.signInWithVault() } }
+                        .disabled(model.busy)
+                        .accessibilityIdentifier("openwrt-use-saved")
+                }
             }
             if !model.pendingCertificate.isEmpty {
                 Section {
@@ -87,7 +117,7 @@ struct OpenWrtScreen: View {
             }
             if !model.message.isEmpty { OpenWrtMessage(model: model) }
             Section {
-                Text("Manage an OpenWrt router on this Wi-Fi: its internet and local network, Wi-Fi, devices, port forwards, USB storage, services, packages and every setting. The password stays in memory while you use the router and is sent only to it.")
+                Text("Manage an OpenWrt router on this Wi-Fi: its internet and local network, Wi-Fi, devices, port forwards, USB storage, services, packages and every setting. The password is sent only to the router and stays in memory while you use it, unless you save it in Password Vault.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }

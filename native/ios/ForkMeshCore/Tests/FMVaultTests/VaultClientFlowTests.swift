@@ -157,6 +157,61 @@ final class VaultClientFlowTests: XCTestCase {
         await refused("vault_locked") { _ = try recovered.exportKeyset() }
     }
 
+    func testALoginOriginIsSchemeHostAndPort() {
+        XCTAssertEqual(VaultClient.loginOrigin("192.168.1.1"), "http://192.168.1.1:80")
+        XCTAssertEqual(VaultClient.loginOrigin("HTTPS://Router.LAN/cgi-bin/luci"), "https://router.lan:443")
+        XCTAssertEqual(VaultClient.loginOrigin("http://[fd00::1]:8080"), "http://fd00::1:8080")
+        XCTAssertEqual(VaultClient.loginOrigin("ftp://router.lan"), "")
+        XCTAssertEqual(VaultClient.loginOrigin("router notes"), "")
+        XCTAssertEqual(VaultClient.loginOrigin("  "), "")
+    }
+
+    @MainActor
+    func testARouterLoginIsRememberedAndFoundByItsAddress() async throws {
+        let bridge = try VaultBridge.start()
+        defer { bridge.stop() }
+        let alice = bridge.client(for: "alice")
+        try await alice.status()
+        _ = try await alice.setUp("alice master password")
+        let router: JSONObject = ["title": "OpenWrt router (192.168.1.1)", "url": "http://192.168.1.1", "username": "root", "password": "router-pass"]
+        let first = try await alice.rememberLogin(router)
+        XCTAssertTrue(first.changed)
+        XCTAssertEqual(alice.logins(for: "http://192.168.1.1:80/").map(\.id), [first.id])
+        XCTAssertEqual(alice.logins(for: "http://192.168.1.1").first?.password, "router-pass")
+        XCTAssertTrue(alice.logins(for: "https://192.168.1.1").isEmpty)
+        XCTAssertTrue(alice.logins(for: "http://192.168.1.2").isEmpty)
+
+        let again = try await alice.rememberLogin(router)
+        XCTAssertEqual(again.id, first.id)
+        XCTAssertFalse(again.changed)
+
+        var rotated = router
+        rotated["password"] = "router-pass-2"
+        rotated["title"] = "ignored"
+        let updated = try await alice.rememberLogin(rotated)
+        XCTAssertEqual(updated.id, first.id)
+        XCTAssertTrue(updated.changed)
+        XCTAssertEqual(alice.items.count, 1)
+        XCTAssertEqual(alice.find(first.id)?.password, "router-pass-2")
+        XCTAssertEqual(alice.find(first.id)?.title, "OpenWrt router (192.168.1.1)")
+
+        var admin = router
+        admin["username"] = "admin"
+        let other = try await alice.rememberLogin(admin)
+        XCTAssertNotEqual(other.id, first.id)
+        XCTAssertEqual(alice.logins(for: "http://192.168.1.1").count, 2)
+
+        var nowhere = router
+        nowhere["url"] = "router notes"
+        await refused("invalid_url") { _ = try await alice.rememberLogin(nowhere) }
+        let dump = JSON.encode(try bridge.control("dump")["rows"] ?? .null)
+        XCTAssertFalse(dump.contains("router-pass"))
+
+        alice.lock()
+        XCTAssertTrue(alice.logins(for: "http://192.168.1.1").isEmpty)
+        await refused("vault_locked") { _ = try await alice.rememberLogin(router) }
+    }
+
     func testFieldsAreCleanedAndCut() throws {
         let clean = try VaultFields.clean([
             "title": "  Bank  ", "url": " bank.example ", "password": .string(String(repeating: "p", count: 5000)), "extra": "dropped",

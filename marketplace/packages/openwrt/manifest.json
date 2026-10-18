@@ -55,6 +55,11 @@
       "id": "router.firmware.write",
       "label": "Restore a backup, install firmware, restart or reset the router after you confirm",
       "risk": "high"
+    },
+    {
+      "id": "desktop.logins.use",
+      "label": "Save the router password in your Password Vault and fill it from there when you ask",
+      "risk": "sensitive"
     }
   ],
   "dependencies": [],

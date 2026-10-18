@@ -642,6 +642,62 @@ void VaultClient::save(const QJsonObject &fields, const QString &id,
          [id, done](const QJsonObject &) { done(QString(), id); }, failed);
 }
 
+QString VaultClient::loginOrigin(const QString &url)
+{
+    const QString text = url.trimmed();
+    if (text.isEmpty())
+        return {};
+    const QUrl parsed = QUrl::fromUserInput(text);
+    const QString scheme = parsed.scheme().toLower();
+    const QString host = parsed.host().toLower();
+    if (!parsed.isValid() || host.isEmpty() || (scheme != QLatin1String("http") && scheme != QLatin1String("https")))
+        return {};
+    const int port = parsed.port(scheme == QLatin1String("https") ? 443 : 80);
+    return QStringLiteral("%1://%2:%3").arg(scheme, host).arg(port);
+}
+
+QList<const VaultItem *> VaultClient::loginsFor(const QString &url) const
+{
+    QList<const VaultItem *> found;
+    const QString origin = loginOrigin(url);
+    if (origin.isEmpty() || !unlocked())
+        return found;
+    for (const VaultItem &item : m_items) {
+        if (item.readable() && !item.field("password").isEmpty() && loginOrigin(item.field("url")) == origin)
+            found.append(&item);
+    }
+    return found;
+}
+
+void VaultClient::rememberLogin(const QJsonObject &fields, std::function<void(const QString &, const QString &, bool)> done)
+{
+    if (!unlocked()) { done(QStringLiteral("vault_locked"), QString(), false); return; }
+    if (loginOrigin(fields.value(QStringLiteral("url")).toString()).isEmpty()) { done(QStringLiteral("invalid_url"), QString(), false); return; }
+    load([this, fields, done](const QString &loaded) {
+        if (!loaded.isEmpty()) { done(loaded, QString(), false); return; }
+        const QString username = fields.value(QStringLiteral("username")).toString();
+        const QString password = fields.value(QStringLiteral("password")).toString();
+        QString id;
+        QJsonObject next = fields;
+        for (const VaultItem *item : loginsFor(fields.value(QStringLiteral("url")).toString())) {
+            if (item->permission == QLatin1String("read") || item->field("username") != username)
+                continue;
+            if (item->field("password") == password) {
+                done(QString(), item->id, false);
+                return;
+            }
+            id = item->id;
+            next = item->fields;
+            next.insert(QStringLiteral("password"), password);
+            break;
+        }
+        save(next, id, [this, done](const QString &code, const QString &savedId) {
+            if (!code.isEmpty()) { done(code, QString(), false); return; }
+            load([done, savedId](const QString &reloaded) { done(reloaded, savedId, true); });
+        });
+    });
+}
+
 void VaultClient::remove(const QString &id, Done done)
 {
     if (!unlocked()) { done(QStringLiteral("vault_locked")); return; }

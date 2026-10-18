@@ -531,6 +531,14 @@ void testFeature()
         browsedUrl = url;
         browsedAsGuest = guest;
     };
+    QList<forkmesh::market::NativePackageLogin> savedLogins;
+    host.loginStoreName = [] { return QStringLiteral("Password Vault"); };
+    host.saveLogin = [&](const forkmesh::market::NativePackageLogin &login, QWidget *,
+                         forkmesh::market::NativePackageLoginHandler done) {
+        savedLogins.append(login);
+        done({true, false, QString(), {login}});
+    };
+    host.findLogins = [](const QString &, QWidget *, forkmesh::market::NativePackageLoginHandler done) { done({true, false, QString(), {}}); };
     OpenWrtFeature page(host);
     QLineEdit *addressField = nullptr;
     QLineEdit *passwordField = nullptr;
@@ -568,6 +576,12 @@ void testFeature()
     auto *interfaces = page.findChild<QTreeWidget *>(QStringLiteral("openWrtInterfaces"));
     check(waitFor([&] { return pages->currentIndex() == 1 && interfaces && interfaces->topLevelItemCount() == 2; }), QStringLiteral("signing in loads the router's interfaces"));
     check(passwordField->text().isEmpty(), QStringLiteral("the password field is cleared after signing in"));
+    const QString routerUrl = QStringLiteral("http://127.0.0.1:%1").arg(router.server.serverPort());
+    check(waitFor([&] { return savedLogins.size() == 1; }) && savedLogins.first().url == routerUrl
+              && savedLogins.first().username == QStringLiteral("root") && savedLogins.first().password == QStringLiteral("secret")
+              && savedLogins.first().title == QStringLiteral("OpenWrt router (127.0.0.1)"),
+          QStringLiteral("signing in saves the password in the vault"));
+    check(statusText().contains(QStringLiteral("The password is saved in Password Vault.")), QStringLiteral("the page says the password was saved"));
     check(network.privateRequests == network.requests, QStringLiteral("the page's requests are all private"));
     if (!interfaces || interfaces->topLevelItemCount() == 0)
         return;
@@ -683,6 +697,81 @@ void testFeature()
 
 }
 
+void testSavedLogin()
+{
+    {
+        forkmesh::market::NativePackageHost host;
+        host.packageId = QStringLiteral("openwrt-no-store");
+        OpenWrtFeature page(host);
+        bool offered = false;
+        for (QPushButton *button : page.findChildren<QPushButton *>())
+            offered = offered || (button->text() == QStringLiteral("Use saved password") && !button->isHidden());
+        for (QCheckBox *box : page.findChildren<QCheckBox *>())
+            offered = offered || (box->text().startsWith(QStringLiteral("Save the password")) && !box->isHidden());
+        check(!offered, QStringLiteral("without a password manager the page offers neither saving nor filling"));
+    }
+
+    FakeRouter router;
+    RecordingManager network;
+    forkmesh::market::NativePackageHost host;
+    host.packageId = QStringLiteral("openwrt-saved");
+    host.network = &network;
+    QString askedUrl;
+    int saves = 0;
+    host.loginStoreName = [] { return QStringLiteral("Password Vault"); };
+    host.saveLogin = [&](const forkmesh::market::NativePackageLogin &login, QWidget *, forkmesh::market::NativePackageLoginHandler done) {
+        ++saves;
+        done({true, false, QString(), {login}});
+    };
+    bool cancel = true;
+    host.findLogins = [&](const QString &url, QWidget *, forkmesh::market::NativePackageLoginHandler done) {
+        askedUrl = url;
+        if (cancel) {
+            done({false, true, QString(), {}});
+            return;
+        }
+        done({true, false, QString(), {{QStringLiteral("Router"), url, QStringLiteral("admin"), QStringLiteral("wrong")},
+                                       {QStringLiteral("Router"), url, QStringLiteral("root"), QStringLiteral("secret")}}});
+    };
+    OpenWrtFeature page(host);
+    QLineEdit *addressField = nullptr;
+    QLineEdit *userField = nullptr;
+    QLineEdit *passwordField = nullptr;
+    for (QLineEdit *field : page.findChildren<QLineEdit *>()) {
+        if (field->accessibleName() == QStringLiteral("Router address"))
+            addressField = field;
+        if (field->accessibleName() == QStringLiteral("Router user name"))
+            userField = field;
+        if (field->accessibleName() == QStringLiteral("Router password"))
+            passwordField = field;
+    }
+    QPushButton *useSaved = nullptr;
+    for (QPushButton *button : page.findChildren<QPushButton *>()) {
+        if (button->text() == QStringLiteral("Use saved password"))
+            useSaved = button;
+    }
+    QCheckBox *saveBox = nullptr;
+    for (QCheckBox *box : page.findChildren<QCheckBox *>()) {
+        if (box->text() == QStringLiteral("Save the password in Password Vault"))
+            saveBox = box;
+    }
+    auto *pages = page.findChild<QStackedWidget *>();
+    check(addressField && userField && passwordField && useSaved && !useSaved->isHidden() && saveBox && !saveBox->isHidden() && saveBox->isChecked() && pages,
+          QStringLiteral("with a password manager the page offers to save and to fill the password, saving by default"));
+    if (!addressField || !userField || !passwordField || !useSaved || !pages)
+        return;
+    addressField->setText(QStringLiteral("http://127.0.0.1:%1/cgi-bin/luci").arg(router.server.serverPort()));
+    userField->setText(QStringLiteral("root"));
+    useSaved->click();
+    check(askedUrl == QStringLiteral("http://127.0.0.1:%1").arg(router.server.serverPort()) && network.requests == 0 && pages->currentIndex() == 0,
+          QStringLiteral("cancelling the vault leaves the page on the sign-in form"));
+    cancel = false;
+    useSaved->click();
+    check(waitFor([&] { return pages->currentIndex() == 1; }) && passwordField->text().isEmpty(), QStringLiteral("the saved password for the typed user signs in"));
+    waitFor([] { return false; }, 100);
+    check(saves == 0, QStringLiteral("a password that came from the vault is not saved again"));
+}
+
 int main(int argc, char **argv)
 {
     qputenv("QT_QPA_PLATFORM", "offscreen");
@@ -696,5 +785,6 @@ int main(int argc, char **argv)
     testClient();
     testStorageCheck();
     testFeature();
+    testSavedLogin();
     return failures == 0 ? 0 : 1;
 }

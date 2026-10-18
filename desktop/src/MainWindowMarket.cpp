@@ -3296,6 +3296,32 @@ void MainWindow::syncNativePackagePages()
         host.openNetworkShare = [this](const QString &url, bool guest) {
             openNetworkShareLocation(url, guest);
         };
+        if (permissionIds.contains(QStringLiteral("desktop.logins.use"))) {
+            const QString requester = manifest->name;
+            host.loginStoreName = [this] {
+                QString name;
+                return nativeLoginStore(&name) ? name : QString();
+            };
+            host.saveLogin = [this, requester](
+                                 const forkmesh::market::NativePackageLogin &login,
+                                 QWidget *asker,
+                                 forkmesh::market::NativePackageLoginHandler done) {
+                QString name;
+                if (forkmesh::market::NativePackageWidget *store = nativeLoginStore(&name))
+                    store->saveLogin(login, requester, asker, std::move(done));
+                else
+                    done({false, false, QStringLiteral("No password manager is installed."), {}});
+            };
+            host.findLogins = [this, requester](
+                                  const QString &url, QWidget *asker,
+                                  forkmesh::market::NativePackageLoginHandler done) {
+                QString name;
+                if (forkmesh::market::NativePackageWidget *store = nativeLoginStore(&name))
+                    store->findLogins(url, requester, asker, std::move(done));
+                else
+                    done({false, false, QStringLiteral("No password manager is installed."), {}});
+            };
+        }
         if (permissionIds.contains(QStringLiteral("repository.read"))) {
             host.repositories = [this] { return nativePackageRepositories(); };
             host.currentRepository = [this] { return currentNativePackageRepository(); };
@@ -3361,6 +3387,30 @@ QUrl MainWindow::nativePackageLinkUrl(const QString &id) const
     url.setQuery(QString());
     url.setFragment(QString());
     return url;
+}
+
+forkmesh::market::NativePackageWidget *MainWindow::nativeLoginStore(QString *name) const
+{
+    if (!m_packageRegistry)
+        return nullptr;
+    for (const NativePackagePage &page : m_nativePackagePages) {
+        if (!page.widget || !page.widget->storesLogins())
+            continue;
+        const PackageManifest *manifest = m_packageRegistry->package(page.id);
+        if (!manifest || !m_packageRegistry->isInstalledHere(page.id))
+            continue;
+        const bool allowed = std::any_of(
+            manifest->permissions.cbegin(), manifest->permissions.cend(),
+            [](const forkmesh::market::PackagePermission &permission) {
+                return permission.id == QLatin1String("desktop.logins.store");
+            });
+        if (!allowed)
+            continue;
+        if (name)
+            *name = manifest->name;
+        return page.widget;
+    }
+    return nullptr;
 }
 
 void MainWindow::openNativePackageLink(const QString &id)

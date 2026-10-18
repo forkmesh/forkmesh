@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,6 +46,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.forkmesh.nativeapp.feature.files.FilesFeature
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.tools.ToolsAppBar
+import com.forkmesh.nativeapp.feature.tools.vault.VaultPhase
+import com.forkmesh.nativeapp.feature.tools.vault.VaultUnlockDialog
 import com.forkmesh.nativeapp.json.obj
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.json.list
@@ -240,12 +243,35 @@ class OpenWrtScreen : Screen() {
             Confirm("Restart the router?", "Your network and internet go down for a minute or two while it restarts. Changes you have not applied are lost.", "Restart",
                 { scope.guard { state.reboot() } }, { rebooting = false })
         }
+        val vault = state.vault
+        val vaultPhase = vault?.phase?.collectAsState()?.value
+        LaunchedEffect(vault) { runCatching { vault?.refresh() } }
+        val prompt = state.vaultPrompt
+        if (vault != null && prompt != null) {
+            VaultUnlockDialog(vault, prompt.purpose, onUnlocked = { scope.guard { state.vaultUnlocked() } }, onCancel = { state.vaultPromptCancelled() })
+        }
+        if (state.vaultChoices.isNotEmpty()) {
+            AlertDialog(
+                onDismissRequest = { state.vaultChoices = emptyList() },
+                title = { Text("Choose an account") },
+                text = {
+                    Column {
+                        Text("Password Vault has more than one account for this router.")
+                        for (item in state.vaultChoices) {
+                            TextButton(onClick = { scope.guard { state.useVaultLogin(item) } }) { Text(item.username.ifEmpty { "root" }) }
+                        }
+                    }
+                },
+                confirmButton = { TextButton(onClick = { state.vaultChoices = emptyList() }) { Text("Cancel") } },
+            )
+        }
+        val vaultOffered = vault != null && vaultPhase != null && vaultPhase != VaultPhase.SignedOut
         RouterPage("Router", navigator, root = true) {
-            if (!state.signedIn) signIn(scope) else manager(navigator, scope)
+            if (!state.signedIn) signIn(scope, vaultOffered) else manager(navigator, scope)
         }
     }
 
-    private fun LazyListScope.signIn(scope: CoroutineScope) {
+    private fun LazyListScope.signIn(scope: CoroutineScope, vaultOffered: Boolean) {
         item(key = "signin") {
             Column {
                 Header("Connect to your OpenWrt router")
@@ -253,8 +279,13 @@ class OpenWrtScreen : Screen() {
                 Field("User", state.user, { state.user = it }, "root")
                 Field("Password", state.password, { state.password = it }, secret = true)
                 Note(state.addressNote)
+                if (vaultOffered) {
+                    Toggle("Save the password in Password Vault", state.saveToVault) { state.changeSaveToVault(it) }
+                    Note("Password Vault encrypts it on this phone with your master password before storing it, so ForkMesh cannot read it.")
+                }
                 Actions {
                     Button(onClick = { scope.guard { state.connect() } }, enabled = !state.busy) { Text(if (state.busy) "Connecting…" else "Connect") }
+                    if (vaultOffered) TextButton(onClick = { scope.guard { state.signInWithVault() } }, enabled = !state.busy) { Text("Use saved password") }
                 }
                 if (state.pendingCertificate.isNotEmpty()) {
                     Header("Certificate fingerprint (SHA-256)")
@@ -262,7 +293,7 @@ class OpenWrtScreen : Screen() {
                     Note("Compare it with the fingerprint the router shows before you trust it.")
                     Actions { TextButton(onClick = { scope.guard { state.trustCertificate() } }) { Text("Trust this certificate") } }
                 }
-                Note("Manage an OpenWrt router on this Wi-Fi: its internet and local network, Wi-Fi, devices, port forwards, USB storage, services, packages and every setting. The password stays in memory while you use the router and is sent only to it.")
+                Note("Manage an OpenWrt router on this Wi-Fi: its internet and local network, Wi-Fi, devices, port forwards, USB storage, services, packages and every setting. The password is sent only to the router and stays in memory while you use it, unless you save it in Password Vault.")
             }
         }
     }

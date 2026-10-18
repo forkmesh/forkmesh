@@ -35,6 +35,11 @@ public:
     // A locked vault has nothing to search and nothing to warm: the top
     // search box must never be what prompts for a master password.
     void prepareSearch() override {}
+    bool storesLogins() const override { return true; }
+    void saveLogin(const forkmesh::market::NativePackageLogin &login, const QString &requester, QWidget *asker,
+                   forkmesh::market::NativePackageLoginHandler done) override;
+    void findLogins(const QString &url, const QString &requester, QWidget *asker,
+                    forkmesh::market::NativePackageLoginHandler done) override;
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -56,6 +61,8 @@ private:
     void recoverVault();
     void enter();
     void lockVault(const QString &note = QString());
+    void unlockFor(const QString &purpose, QWidget *asker, const QString &error, bool checked,
+                   std::function<void(const QString &code)> then);
     void touch();
     void reload(std::function<void()> then = {});
     void renderItems();
