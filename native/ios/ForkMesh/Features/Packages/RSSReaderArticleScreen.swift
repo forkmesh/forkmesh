@@ -109,22 +109,22 @@ struct RSSReaderArticleScreen: View {
     }
 
     @ViewBuilder private var content: some View {
-        ZStack {
-            if let article {
-                RSSArticleWebView(
-                    html: model.page(for: article, reader: reader), articleKey: "\(article.id)|\(reader)",
-                    onLink: { (url: URL) in openLink(url) },
-                    canSwipe: { (step: Int) in canMove(step) },
-                    onSwipe: { (step: Int) in move(step) })
-                    .ignoresSafeArea(edges: .bottom)
-                    .accessibilityIdentifier("rss-article-body")
-                    .id(article.id)
-                    .transition(pageTransition)
-            } else {
+        if let article {
+            RSSArticlePager(
+                previous: neighbor(-1), current: page(article, reader: reader), next: neighbor(1), direction: pageDirection,
+                onLink: { (url: URL) in openLink(url) },
+                onPage: { (step: Int) in move(step) })
+                .ignoresSafeArea(edges: .bottom)
+                .accessibilityIdentifier("rss-article-body")
+        } else {
+            GeometryReader { (proxy: GeometryProxy) in
                 Text("This article is no longer on this iPhone.")
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
+                    .onTapGesture { (point: CGPoint) in
+                        move(point.x < proxy.size.width / 2 ? -1 : 1)
+                    }
                     .gesture(
                         DragGesture(minimumDistance: 12).onEnded { value in
                             guard abs(value.translation.width) > abs(value.translation.height) else { return }
@@ -132,15 +132,17 @@ struct RSSReaderArticleScreen: View {
                         })
             }
         }
-        .clipped()
     }
 
-    private var pageTransition: AnyTransition {
-        let entering: Edge = pageDirection > 0 ? .trailing : .leading
-        let leaving: Edge = pageDirection > 0 ? .leading : .trailing
-        return .asymmetric(
-            insertion: .move(edge: entering).combined(with: .opacity),
-            removal: .move(edge: leaving).combined(with: .opacity))
+    private func page(_ article: RSSArticle, reader: Bool) -> RSSPagerPage {
+        RSSPagerPage(id: article.id, key: "\(article.id)|\(reader)", html: model.page(for: article, reader: reader))
+    }
+
+    private func neighbor(_ step: Int) -> RSSPagerPage? {
+        guard let index else { return nil }
+        let next: Int = index + step
+        guard next >= 0 && next < list.count, let article = model.article(list[next].id) else { return nil }
+        return page(article, reader: false)
     }
 
     @ViewBuilder private var noticeView: some View {
@@ -245,9 +247,7 @@ struct RSSReaderArticleScreen: View {
         let next: Int = index + step
         guard next >= 0 && next < list.count else { return }
         pageDirection = step
-        withAnimation(.easeInOut(duration: 0.24)) {
-            articleId = list[next].id
-        }
+        articleId = list[next].id
     }
 
     private func nextUnread() {
@@ -260,9 +260,7 @@ struct RSSReaderArticleScreen: View {
             list = model.timeline(found.scope)
         }
         pageDirection = 1
-        withAnimation(.easeInOut(duration: 0.24)) {
-            articleId = found.article.id
-        }
+        articleId = found.article.id
     }
 
     private func toggleReader() {
@@ -350,118 +348,317 @@ struct RSSSafariView: UIViewControllerRepresentable {
     func updateUIViewController(_ controller: SFSafariViewController, context: Context) {}
 }
 
-struct RSSArticleWebView: UIViewRepresentable {
+
+struct RSSPagerPage: Equatable {
+    let id: String
+    let key: String
     let html: String
-    let articleKey: String
+}
+
+final class RSSPagerView: UIView {
+    var onLayout: (() -> Void)?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        onLayout?()
+    }
+}
+
+struct RSSArticlePager: UIViewRepresentable {
+    let previous: RSSPagerPage?
+    let current: RSSPagerPage
+    let next: RSSPagerPage?
+    let direction: Int
     let onLink: (URL) -> Void
-    let canSwipe: (Int) -> Bool
-    let onSwipe: (Int) -> Void
+    let onPage: (Int) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onLink: onLink, canSwipe: canSwipe, onSwipe: onSwipe) }
+    private var pages: [Int: RSSPagerPage] {
+        var pages: [Int: RSSPagerPage] = [0: current]
+        if let previous { pages[-1] = previous }
+        if let next { pages[1] = next }
+        return pages
+    }
 
-    func makeUIView(context: Context) -> WKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.allowsInlineMediaPlayback = true
-        configuration.mediaTypesRequiringUserActionForPlayback = .all
-        configuration.dataDetectorTypes = []
-        let view = WKWebView(frame: .zero, configuration: configuration)
-        view.navigationDelegate = context.coordinator
-        view.uiDelegate = context.coordinator
-        view.isOpaque = false
+    func makeCoordinator() -> Coordinator { Coordinator(onLink: onLink, onPage: onPage) }
+
+    func makeUIView(context: Context) -> RSSPagerView {
+        let view = RSSPagerView()
+        view.clipsToBounds = true
         view.backgroundColor = .clear
-        view.scrollView.backgroundColor = .clear
-        view.scrollView.contentInsetAdjustmentBehavior = .automatic
-        view.scrollView.alwaysBounceHorizontal = false
-        view.scrollView.showsHorizontalScrollIndicator = false
-        view.scrollView.isDirectionalLockEnabled = true
-        view.scrollView.delegate = context.coordinator
-        let swipe = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.swiped(_:)))
-        swipe.delegate = context.coordinator
-        view.addGestureRecognizer(swipe)
-        view.scrollView.panGestureRecognizer.require(toFail: swipe)
-        context.coordinator.load(html, key: articleKey, into: view)
+        context.coordinator.attach(view)
+        context.coordinator.show(pages, direction: direction)
         return view
     }
 
-    func updateUIView(_ view: WKWebView, context: Context) {
+    func updateUIView(_ view: RSSPagerView, context: Context) {
         context.coordinator.onLink = onLink
-        context.coordinator.canSwipe = canSwipe
-        context.coordinator.onSwipe = onSwipe
-        context.coordinator.load(html, key: articleKey, into: view)
+        context.coordinator.onPage = onPage
+        context.coordinator.show(pages, direction: direction)
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIGestureRecognizerDelegate, UIScrollViewDelegate {
         var onLink: (URL) -> Void
-        var canSwipe: (Int) -> Bool
-        var onSwipe: (Int) -> Void
-        private var html = ""
-        private var key = ""
+        var onPage: (Int) -> Void
+        private weak var host: RSSPagerView?
+        private let configuration: WKWebViewConfiguration
+        private let pan = UIPanGestureRecognizer()
+        private let tap = UITapGestureRecognizer()
+        private var views: [String: WKWebView] = [:]
+        private var slots: [String: Int] = [:]
+        private var loaded: [String: RSSPagerPage] = [:]
+        private var wanted: [Int: RSSPagerPage] = [:]
+        private var currentId = ""
+        private var heading = ""
+        private var shift: CGFloat = 0
+        private var animator: UIViewPropertyAnimator?
+        private var finish: (() -> Void)?
+        private var taps = 0
+        private var linkOpened = false
 
-        init(onLink: @escaping (URL) -> Void, canSwipe: @escaping (Int) -> Bool, onSwipe: @escaping (Int) -> Void) {
+        init(onLink: @escaping (URL) -> Void, onPage: @escaping (Int) -> Void) {
             self.onLink = onLink
-            self.canSwipe = canSwipe
-            self.onSwipe = onSwipe
+            self.onPage = onPage
+            let configuration = WKWebViewConfiguration()
+            configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+            configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
+            configuration.websiteDataStore = .nonPersistent()
+            configuration.allowsInlineMediaPlayback = true
+            configuration.mediaTypesRequiringUserActionForPlayback = .all
+            configuration.dataDetectorTypes = []
+            self.configuration = configuration
+            super.init()
+        }
+
+        func attach(_ view: RSSPagerView) {
+            host = view
+            view.onLayout = { [weak self] in self?.layout() }
+            pan.addTarget(self, action: #selector(panned(_:)))
+            pan.delegate = self
+            view.addGestureRecognizer(pan)
+            tap.addTarget(self, action: #selector(tapped(_:)))
+            tap.delegate = self
+            tap.cancelsTouchesInView = false
+            view.addGestureRecognizer(tap)
+        }
+
+        func show(_ pages: [Int: RSSPagerPage], direction: Int) {
+            wanted = pages
+            guard let current = pages[0], let host else { return }
+            if animator != nil {
+                if current.id == heading || current.id == currentId { return }
+                finishAnimation()
+            }
+            guard !currentId.isEmpty, current.id != currentId, host.bounds.width > 0 else {
+                reconcile()
+                return
+            }
+            let known: Int = slots[current.id] ?? 0
+            let step: Int = known != 0 ? (known > 0 ? 1 : -1) : (direction < 0 ? -1 : 1)
+            if known != step {
+                for (id, slot) in slots where slot == step { drop(id) }
+                place(current, slot: step)
+                layout()
+            }
+            turn(step, speed: 0, notify: false)
+        }
+
+        private func reconcile() {
+            guard animator == nil else { return }
+            for (slot, page) in wanted { place(page, slot: slot) }
+            let keep = Set(wanted.values.map(\.id))
+            for id in views.keys where !keep.contains(id) { drop(id) }
+            currentId = wanted[0]?.id ?? ""
+            shift = 0
+            layout()
+        }
+
+        private func place(_ page: RSSPagerPage, slot: Int) {
+            let view: WKWebView = views[page.id] ?? make(page.id)
+            slots[page.id] = slot
+            let before: RSSPagerPage? = loaded[page.id]
+            guard before != page else { return }
+            loaded[page.id] = page
+            view.loadHTMLString(page.html, baseURL: nil)
+            if before?.key != page.key {
+                view.scrollView.setContentOffset(CGPoint(x: 0, y: -view.scrollView.adjustedContentInset.top), animated: false)
+            }
+        }
+
+        private func make(_ id: String) -> WKWebView {
+            let view = WKWebView(frame: host?.bounds ?? .zero, configuration: configuration)
+            view.navigationDelegate = self
+            view.uiDelegate = self
+            view.isOpaque = false
+            view.backgroundColor = .clear
+            view.scrollView.backgroundColor = .clear
+            view.scrollView.contentInsetAdjustmentBehavior = .automatic
+            view.scrollView.alwaysBounceHorizontal = false
+            view.scrollView.showsHorizontalScrollIndicator = false
+            view.scrollView.isDirectionalLockEnabled = true
+            view.scrollView.delegate = self
+            view.scrollView.panGestureRecognizer.require(toFail: pan)
+            host?.addSubview(view)
+            views[id] = view
+            return view
+        }
+
+        private func drop(_ id: String) {
+            views[id]?.scrollView.delegate = nil
+            views[id]?.removeFromSuperview()
+            views[id] = nil
+            slots[id] = nil
+            loaded[id] = nil
+        }
+
+        private func layout() {
+            guard let host else { return }
+            let size: CGSize = host.bounds.size
+            for (id, view) in views {
+                let frame = CGRect(x: CGFloat(slots[id] ?? 0) * size.width + shift, y: 0, width: size.width, height: size.height)
+                if view.frame != frame { view.frame = frame }
+            }
+        }
+
+        private func has(_ step: Int) -> Bool { slots.values.contains(step) }
+
+        private var page: WKWebView? { views[currentId] }
+
+        private func offset(_ moved: CGFloat) -> CGFloat {
+            has(moved < 0 ? 1 : -1) ? moved : moved * 0.25
+        }
+
+        private func turn(_ step: Int, speed: CGFloat, notify: Bool) {
+            guard let host, let target = slots.first(where: { $0.value == step })?.key else { return }
+            heading = target
+            animate(to: -CGFloat(step) * host.bounds.width, speed: speed, duration: 0.34) { [weak self] in
+                guard let self else { return }
+                for (id, slot) in self.slots { self.slots[id] = slot - step }
+                for (id, slot) in self.slots where abs(slot) > 1 { self.drop(id) }
+                self.currentId = target
+                self.shift = 0
+                self.layout()
+                if notify {
+                    self.onPage(step)
+                } else {
+                    self.reconcile()
+                }
+            }
+        }
+
+        private func settle(speed: CGFloat) {
+            heading = currentId
+            animate(to: 0, speed: speed, duration: 0.3) {}
+        }
+
+        private func animate(to target: CGFloat, speed: CGFloat, duration: TimeInterval, then done: @escaping () -> Void) {
+            let distance: CGFloat = target - shift
+            let relative: CGFloat = abs(distance) < 1 ? 0 : max(-30, min(30, speed / distance))
+            let timing = UISpringTimingParameters(dampingRatio: 1, initialVelocity: CGVector(dx: relative, dy: 0))
+            let animator = UIViewPropertyAnimator(duration: duration, timingParameters: timing)
+            animator.addAnimations { [weak self] in
+                self?.shift = target
+                self?.layout()
+            }
+            animator.addCompletion { [weak self] (_: UIViewAnimatingPosition) in
+                guard let self, self.animator === animator else { return }
+                self.complete()
+            }
+            finish = done
+            self.animator = animator
+            animator.startAnimation()
+        }
+
+        private func complete() {
+            animator = nil
+            let done = finish
+            finish = nil
+            done?()
+        }
+
+        private func finishAnimation() {
+            guard let running = animator else { return }
+            running.stopAnimation(true)
+            complete()
+            layout()
+        }
+
+        @objc func panned(_ pan: UIPanGestureRecognizer) {
+            guard let host else { return }
+            let moved: CGFloat = pan.translation(in: host).x
+            switch pan.state {
+            case .began:
+                finishAnimation()
+                shift = offset(moved)
+                layout()
+            case .changed:
+                shift = offset(moved)
+                layout()
+            case .ended:
+                let speed: CGFloat = pan.velocity(in: host).x
+                let step: Int = moved < 0 ? 1 : -1
+                let far: Bool = abs(moved) > max(50, host.bounds.width * 0.18)
+                let flung: Bool = abs(speed) > 350 && (speed < 0) == (moved < 0)
+                let back: Bool = abs(speed) > 350 && (speed < 0) != (moved < 0)
+                if (far || flung) && !back && has(step) {
+                    turn(step, speed: speed, notify: true)
+                } else {
+                    settle(speed: speed)
+                }
+            default:
+                settle(speed: 0)
+            }
+        }
+
+        @objc func tapped(_ tap: UITapGestureRecognizer) {
+            guard tap.state == .ended, let host, let web = page else { return }
+            let step: Int = tap.location(in: host).x < host.bounds.width / 2 ? -1 : 1
+            guard has(step) || animator != nil else { return }
+            let scroll: UIScrollView = web.scrollView
+            let point: CGPoint = tap.location(in: scroll)
+            let zoom: CGFloat = max(scroll.zoomScale, 0.01)
+            taps += 1
+            let mine: Int = taps
+            linkOpened = false
+            let script = RSSPagerScript.hitsControl(x: point.x / zoom, y: point.y / zoom)
+            web.evaluateJavaScript(script, in: nil, in: .defaultClient) { [weak self] (result: Result<Any, Error>) in
+                switch result {
+                case .success(let value):
+                    if (value as? Bool) != true { self?.tapTurn(mine, step) }
+                case .failure:
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { self?.tapTurn(mine, step) }
+                }
+            }
+        }
+
+        private func tapTurn(_ mine: Int, _ step: Int) {
+            guard mine == taps, !linkOpened else { return }
+            finishAnimation()
+            guard has(step) else { return }
+            turn(step, speed: 0, notify: true)
         }
 
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
-            guard let pan = gesture as? UIPanGestureRecognizer, let view = pan.view else { return true }
-            let moved: CGPoint = pan.translation(in: view.superview ?? view)
+            guard gesture === pan, let host else { return true }
+            if let scroll = page?.scrollView, scroll.zoomScale > scroll.minimumZoomScale + 0.001 { return false }
+            let moved: CGPoint = pan.translation(in: host)
             if moved.x != 0 || moved.y != 0 { return abs(moved.x) > abs(moved.y) }
-            let speed: CGPoint = pan.velocity(in: view.superview ?? view)
+            let speed: CGPoint = pan.velocity(in: host)
             return abs(speed.x) > abs(speed.y)
         }
 
-        private func offset(_ moved: CGFloat) -> CGFloat {
-            let step: Int = moved < 0 ? 1 : -1
-            return canSwipe(step) ? moved : moved * 0.25
+        func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            guard gesture === tap, let scroll = page?.scrollView else { return true }
+            return !scroll.isDecelerating && !scroll.isDragging
         }
 
-        @objc func swiped(_ pan: UIPanGestureRecognizer) {
-            guard let view = pan.view else { return }
-            let space: UIView = view.superview ?? view
-            let moved: CGFloat = pan.translation(in: space).x
-            switch pan.state {
-            case .began, .changed:
-                view.transform = CGAffineTransform(translationX: offset(moved), y: 0)
-            case .ended:
-                let speed: CGFloat = pan.velocity(in: space).x
-                let step: Int = moved < 0 ? 1 : -1
-                let far: Bool = abs(moved) > max(60, view.bounds.width * 0.22)
-                let flung: Bool = abs(speed) > 500 && (speed < 0) == (moved < 0) && abs(moved) > 12
-                if (far || flung) && canSwipe(step) {
-                    onSwipe(step)
-                } else {
-                    settle(view)
-                }
-            default:
-                settle(view)
-            }
-        }
-
-        private func settle(_ view: UIView) {
-            UIView.animate(
-                withDuration: 0.28, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]
-            ) {
-                view.transform = .identity
-            }
+        func gestureRecognizer(_ gesture: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool {
+            gesture === tap
         }
 
         func scrollViewDidScroll(_ scrollView: UIScrollView) {
             guard scrollView.zoomScale <= scrollView.minimumZoomScale + 0.001 else { return }
             let left: CGFloat = -scrollView.adjustedContentInset.left
             if scrollView.contentOffset.x != left { scrollView.contentOffset.x = left }
-        }
-
-        func load(_ html: String, key: String, into view: WKWebView) {
-            guard html != self.html || key != self.key else { return }
-            let moved: Bool = key != self.key
-            self.html = html
-            self.key = key
-            view.loadHTMLString(html, baseURL: nil)
-            if moved { view.scrollView.setContentOffset(.zero, animated: false) }
         }
 
         func webView(
@@ -475,6 +672,7 @@ struct RSSArticleWebView: UIViewRepresentable {
                 return
             }
             if navigationAction.navigationType == .linkActivated || navigationAction.targetFrame == nil, let url {
+                linkOpened = true
                 if scheme == "http" || scheme == "https" || scheme == "mailto" { onLink(url) }
             }
             decisionHandler(.cancel)
@@ -484,11 +682,35 @@ struct RSSArticleWebView: UIViewRepresentable {
             _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration,
             for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures
         ) -> WKWebView? {
+            linkOpened = true
             if let url = navigationAction.request.url {
                 let scheme: String = url.scheme?.lowercased() ?? ""
                 if scheme == "http" || scheme == "https" || scheme == "mailto" { onLink(url) }
             }
             return nil
         }
+    }
+}
+
+enum RSSPagerScript {
+    static func hitsControl(x: CGFloat, y: CGFloat) -> String {
+        """
+        (function(x, y) {
+          var picked = window.getSelection ? String(window.getSelection()) : "";
+          if (picked.length > 0) return true;
+          var nodes = document.querySelectorAll("a[href], button, input, select, textarea, label, summary, video, audio, iframe");
+          var slop = 12;
+          for (var i = 0; i < nodes.length; i++) {
+            var rects = nodes[i].getClientRects();
+            for (var j = 0; j < rects.length; j++) {
+              var r = rects[j];
+              var left = r.left + window.scrollX - slop, right = r.right + window.scrollX + slop;
+              var top = r.top + window.scrollY - slop, bottom = r.bottom + window.scrollY + slop;
+              if (x >= left && x <= right && y >= top && y <= bottom) return true;
+            }
+          }
+          return false;
+        })(\(Double(x)), \(Double(y)))
+        """
     }
 }
