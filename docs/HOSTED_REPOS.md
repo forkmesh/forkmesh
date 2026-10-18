@@ -9,7 +9,9 @@ Code: `app/src/hosted_git.py` (create, push routing, quotas, private reads),
 `app/src/hosted_repos.py` (replica exchange, templates), migration
 `0199_hosted_repositories`, daemon `server/hosted.go` and
 `server/hosted_push_mirror.go`, the `restricted` visibility in
-`tools/mirror_gateway.py`, and the create page `/dashboard/repos/new`.
+`tools/mirror_gateway.py`, and the create page `/dashboard/repos/new`. On a self-hosted instance the
+operator command `instance-repo` creates and fills one from a repository on
+the server through the same create helpers ([INSTANCES.md](INSTANCES.md)).
 
 ## What a user gets
 
