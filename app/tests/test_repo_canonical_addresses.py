@@ -190,7 +190,7 @@ def entry_namespace(setting_doc, accounts=(), rows=None, records=(),
     names = {"_git_request_path", "_repo_short_setting_row",
              "_repo_name_is_account", "_repo_canonical_path",
              "_repo_public_path", "_repo_public_href", "_repo_short_links",
-             "_repo_clone_url"}
+             "_repo_clone_url", "_short_repo_board"}
     selected = [node for node in tree.body
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
                 and node.name in names]
@@ -281,6 +281,28 @@ def test_the_platform_mirror_owned_by_the_node_account_moves_to_the_root():
     assert asyncio.run(ns["_repo_clone_url"](
         None, "https://code.example.org", "acme-bolt", "forkmesh")) == (
         "https://code.example.org/forkmesh.git")
+
+
+def test_the_largest_repositories_board_names_short_repositories_only():
+    ns = entry_namespace(
+        repo_short_urls.dump({"short": True, "owner": "acme", "canonical": True}),
+        rows={("acme", "repo"): "alice", ("acme", "forkmesh"): "forkmesh"})
+    rows = [{"name": "forkmesh/forkmesh", "bytes": 3},
+            {"name": "alice/Repo", "bytes": 2},
+            {"name": "bob/tools", "bytes": 1},
+            {"name": "node", "bytes": 0}]
+    shown = asyncio.run(ns["_short_repo_board"](None, rows))
+    assert [row["name"] for row in shown] == [
+        "forkmesh", "Repo", "bob/tools", "node"]
+    assert [row["bytes"] for row in shown] == [3, 2, 1, 0]
+    repo_short_urls.forget()
+    ns = entry_namespace(
+        repo_short_urls.dump({"short": True, "owner": "acme", "canonical": False}),
+        rows={("acme", "repo"): "alice"})
+    assert [row["name"] for row in asyncio.run(ns["_short_repo_board"](
+        None, rows))] == ["forkmesh/forkmesh", "alice/Repo", "bob/tools", "node"]
+    assert 'short_board = globals().get("_short_repo_board")' in ENTRY
+    assert '"largest": await short_board(env, largest_board[:LEADERBOARD_LIMIT])' in ENTRY
 
 
 def test_names_of_accounts_keep_the_owner():
@@ -615,12 +637,14 @@ const repoPublicOwner = (repo) => repo.logicalOwner || "";
 
 def run_helpers(script, metas=None, store=None, path="/"):
     names = ["safeDecodeURIComponent", "normalizeRepoAddresses",
+             "repoAddressesSignature",
              "repoAddresses", "applyRepoAddresses", "repoAddressesKnown",
              "repoShortName", "repoPathUrl", "repoLinkUrl", "cloneUrl",
              "repoShortRoute", "repoRouteParts", "repoPublicHref",
              "repoPublicKey", "normalizeRepoSegment", "isThisSiteUrl",
              "parseCloneUrlIdentity"]
-    consts = ["REPO_ADDRESSES_STORE", "REPO_CORE_HOSTS", "REPO_SHORT_NAME_RE",
+    consts = ["REPO_ADDRESSES_STORE", "REPO_ADDRESSES_SAVED_STORE",
+              "REPO_ADDRESSES_TTL_MS", "REPO_CORE_HOSTS", "REPO_SHORT_NAME_RE",
               "REPO_SHORT_FILE_RE", "REPO_TAB_ROUTES"]
     source = (HARNESS % {"metas": json.dumps(metas or {}),
                          "store": json.dumps(list((store or {}).items())),

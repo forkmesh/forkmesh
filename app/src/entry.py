@@ -7799,6 +7799,7 @@ async def network_leaderboards(env):
     ]
 
     funds = await _funds_received_boards(env)
+    short_board = globals().get("_short_repo_board")
 
     resp = json_response(
         {"ok": True,
@@ -7808,7 +7809,8 @@ async def network_leaderboards(env):
          "repos": repo_board[:LEADERBOARD_LIMIT],
          "mirrors": mirror_board[:LEADERBOARD_LIMIT],
          "hosted": hosted_board[:LEADERBOARD_LIMIT],
-         "largest": largest_board[:LEADERBOARD_LIMIT],
+         "largest": await short_board(env, largest_board[:LEADERBOARD_LIMIT])
+         if short_board else largest_board[:LEADERBOARD_LIMIT],
          "dataHosted": data_board[:LEADERBOARD_LIMIT],
          "contributors": contrib_board,
          "fundsMainnodes": funds["mainnode"][:LEADERBOARD_LIMIT],
@@ -51301,6 +51303,22 @@ async def _repo_canonical_path(env, path, query="", public_only=True):
     if hit is None or await _repo_name_is_account(env, hit[1], True):
         return None
     return hit[0]
+
+
+async def _short_repo_board(env, rows):
+    shown = []
+    for row in rows:
+        owner, _, name = str(row.get("name") or "").partition("/")
+        if owner and name and "/" not in name:
+            try:
+                path = await _repo_canonical_path(
+                    env, "/%s/%s" % (quote(owner, safe=""), quote(name, safe="")))
+            except Exception:
+                path = None
+            if path and path.count("/") == 1:
+                row = dict(row, name=unquote(path[1:]))
+        shown.append(row)
+    return shown
 
 
 async def _repo_public_path(env, owner, name):

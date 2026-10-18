@@ -616,7 +616,7 @@
   }
 
   function formatRepoContextCopyPath(repo, path) {
-    const repoLabel = repoDisplayKey(repo) || repoKey(repo) || "repo";
+    const repoLabel = repoDisplayName(repo) || repoKey(repo) || "repo";
     return path ? `${repoLabel}/${path}` : repoLabel;
   }
 
@@ -1101,8 +1101,8 @@
         <div class="flex items-start gap-2">
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
           <div class="min-w-0 flex-1">
-            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(item.body || repoPublicKey(item.repo) || "ForkMesh update")}</p>
+            <p class="truncate text-xs font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
+            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || "ForkMesh update")}</p>
           </div>
           <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
@@ -1124,11 +1124,11 @@
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="h-4 w-4"></i>
         </span>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold text-foreground">${escapeHtml(item.title || "Ping")}</p>
+          <p class="text-sm font-semibold text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(item.body || "ForkMesh notification")}</p>
+      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(repoPublicText(item.body) || "ForkMesh notification")}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">

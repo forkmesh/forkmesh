@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["notes"] = (core) => {
-  const { $, escapeHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, state, submitWebIssue } = core;
+  const { $, escapeHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, submitWebIssue } = core;
   // Collaborative Markdown notes. Edits autosave through the version-checked
   // PATCH; the socket only announces persisted changes, in-progress drafts,
   // and lightweight presence.
@@ -459,7 +459,7 @@
   function noteActivityText(entry) {
     const detail = entry.detail || {};
     const name = (value) => `<b>${escapeHtml(value || "someone")}</b>`;
-    const ref = `${escapeHtml(`${detail.owner}/${detail.repo}`)}#${Number(detail.number || 0)}`;
+    const ref = `${escapeHtml(repoPublicKey(`${detail.owner}/${detail.repo}`))}#${Number(detail.number || 0)}`;
     const role = detail.role === "editor" ? "can edit" : "can view";
     const count = Number(entry.count || 1);
     switch (entry.kind) {

@@ -58,8 +58,9 @@ def test_repo_card_groups_mirrors_under_source_of_truth():
     # machine the bytes happen to be published from.
     assert "const origin = sourceOfTruth(group);" in card
     assert "const key = repoKey(origin);" in card
-    assert "const displayOwner = groupDisplayOwner(group);" in card
-    assert 'escapeHtml(displayOwner || "owner")' in card
+    assert "const label = repoLabelParts(groupDisplayName(group));" in card
+    assert "const displayOwner = label.owner;" in card
+    assert 'escapeHtml(displayOwner)}/</span>' in card
     assert 'escapeHtml(origin.name || "repository")' in card
     assert "cloneUrl(origin)" in card
     # A grouped repo advertises how many nodes mirror it.

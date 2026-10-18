@@ -2410,6 +2410,18 @@
       || "home";
   }
 
+  function repoDocumentTitle(label, title) {
+    const text = String(title || "");
+    const at = text.lastIndexOf(" - ");
+    return `${label}${at >= 0 ? text.slice(at) : ""}`;
+  }
+
+  function restoreDocumentTitle() {
+    if (state.documentTitleBase === undefined) return;
+    document.title = state.documentTitleBase;
+    state.documentTitleBase = undefined;
+  }
+
   function renderHeaderContext(section = currentSection()) {
     const headerContext = $("[data-dashboard-header-context]");
     if (!headerContext) return;
@@ -2431,6 +2443,12 @@
       headerContext.innerHTML = owner && !shortAddress
         ? `<a href="${escapeHtml(publicProfileUrl(owner))}" data-repo-header-owner class="hover:underline">${escapeHtml(owner)}</a><span class="px-1 font-normal text-muted-foreground" aria-hidden="true">/</span>${repoLink}`
         : repoLink;
+      if (shortAddress) {
+        if (state.documentTitleBase === undefined) state.documentTitleBase = document.title;
+        document.title = repoDocumentTitle(nameParts.join("/"), document.title);
+      } else {
+        restoreDocumentTitle();
+      }
       repoMeta?.classList.add("sm:flex");
       if (repoVisibility) {
         repoVisibility.textContent = repo.isPrivate ? "private" : "public";
@@ -2454,6 +2472,7 @@
       }
       return;
     }
+    restoreDocumentTitle();
     repoMeta?.classList.remove("sm:flex");
     if (repoVisibility) repoVisibility.textContent = "";
     if (repoTerms) repoTerms.innerHTML = "";
@@ -3827,7 +3846,7 @@
 
   function profileContributionRepositoryUrl(repository) {
     const supplied = String(repository?.url || "");
-    if (supplied.startsWith("/") && !supplied.startsWith("//")) return supplied;
+    if (supplied.startsWith("/") && !supplied.startsWith("//")) return repoPublicHref(supplied);
     const owner = String(repository?.owner || "").trim();
     const name = String(repository?.name || "").trim();
     return owner && name ? repoPathUrl({ owner, name }) : "/dashboard/repos";
@@ -3844,7 +3863,9 @@
       const category = PROFILE_CONTRIBUTION_CATEGORIES.find((item) => item.key === event?.kind) || PROFILE_CONTRIBUTION_CATEGORIES[0];
       const count = profileContributionCount(event?.count);
       const repository = event?.repository || {};
-      const repoLabel = [repository.owner, repository.name].filter(Boolean).join("/") || "Public repository";
+      const repoLabel = repository.owner && repository.name
+        ? repoPublicKey(`${repository.owner}/${repository.name}`)
+        : [repository.owner, repository.name].filter(Boolean).join("/") || "Public repository";
       const date = profileContributionDate(event?.date);
       const dateLabel = date
         ? new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(date)

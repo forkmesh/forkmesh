@@ -166,8 +166,25 @@
     },
   });
 
+  function refreshRepoAddressViews() {
+    const steps = [
+      () => (Array.isArray(state.repositories)
+        ? applyRepositoryFilter()
+        : renderSidebarRepositories(state.session)),
+      () => renderHeaderContext(),
+      () => refreshRepoLinks(document),
+      () => replaceLongRepoLocation(),
+    ];
+    for (const step of steps) {
+      try {
+        step();
+      } catch (_) {}
+    }
+  }
+
   async function bootDashboard() {
     const startupStartedAt = 0;
+    window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
     watchGenieSetting();
@@ -190,6 +207,7 @@
       initDashboardUpdateNotice();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
+      if (state.repoAddressesChanged) refreshRepoAddressViews();
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

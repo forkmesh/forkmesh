@@ -164,7 +164,9 @@ function extract(name) {
 }
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const names = ["taskDetailCard", "taskRepositoryHtml", "taskWorkItems", "taskWorkItemsHtml", "taskPromptText"];
-const api = new Function("escapeHtml", `${names.map(extract).join("\n")}; return { ${names.join(", ")} };`)(escapeHtml);
+const repoPathUrl = (repo) => `/${repo.owner}/${repo.name}`;
+const repoPublicKey = (key) => String(key);
+const api = new Function("escapeHtml", "repoPathUrl", "repoPublicKey", `${names.map(extract).join("\n")}; return { ${names.join(", ")} };`)(escapeHtml, repoPathUrl, repoPublicKey);
 const task = {
   id: "a".repeat(32), title: "Ship", repository: "forkmesh/src",
   workItems: [

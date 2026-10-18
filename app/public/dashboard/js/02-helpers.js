@@ -1391,6 +1391,19 @@
     return { owner, keep: names(value.keep), reserved: names(value.reserved), aliases };
   }
 
+  const REPO_ADDRESSES_SAVED_STORE = "forkmesh.repoAddressesSavedAt";
+  const REPO_ADDRESSES_TTL_MS = 10 * 60 * 1000;
+
+  function repoAddressesSignature(addresses) {
+    if (!addresses) return "";
+    return JSON.stringify([
+      addresses.owner,
+      [...addresses.keep].sort(),
+      [...addresses.reserved].sort(),
+      [...addresses.aliases.entries()].sort(),
+    ]);
+  }
+
   function repoAddresses() {
     if (state.repoAddresses !== undefined) return state.repoAddresses;
     let stored = null;
@@ -1407,10 +1420,19 @@
   }
 
   function applyRepoAddresses(value) {
+    const used = state.repoAddresses !== undefined;
+    const before = used ? repoAddressesSignature(state.repoAddresses) : "";
     state.repoAddresses = normalizeRepoAddresses(value);
     try {
       localStorage.setItem(REPO_ADDRESSES_STORE, JSON.stringify(value || null));
+      localStorage.setItem(REPO_ADDRESSES_SAVED_STORE, String(Date.now()));
     } catch (_) {}
+    if (used && before !== repoAddressesSignature(state.repoAddresses)) {
+      state.repoAddressesChanged = true;
+      try {
+        window.dispatchEvent(new CustomEvent("forkmesh:repo-addresses"));
+      } catch (_) {}
+    }
     return state.repoAddresses;
   }
 
@@ -1426,7 +1448,10 @@
 
   function repoAddressesKnown() {
     try {
-      return localStorage.getItem(REPO_ADDRESSES_STORE) !== null;
+      if (localStorage.getItem(REPO_ADDRESSES_STORE) === null) return false;
+      const savedAt = Number(localStorage.getItem(REPO_ADDRESSES_SAVED_STORE)) || 0;
+      const age = Date.now() - savedAt;
+      return age >= 0 && age < REPO_ADDRESSES_TTL_MS;
     } catch (_) {
       return false;
     }
@@ -1517,6 +1542,93 @@
   function repoPublicKey(key) {
     const [owner, name, ...extra] = String(key || "").split("/");
     return owner && name && !extra.length && repoShortName(owner, name) ? name : String(key || "");
+  }
+
+  function repoHasShortAddress(repo) {
+    const name = String(repo?.name || "");
+    if (!name || !repoAddresses()) return false;
+    const owners = [repo.owner];
+    try {
+      owners.push(repoPublicOwner(repo), repoDisplayOwner(repo));
+    } catch (_) {}
+    return owners.some((owner) => owner && repoShortName(owner, name));
+  }
+
+  function repoDisplayName(repo, longLabel) {
+    if (typeof repo === "string") return repoPublicKey(repo);
+    if (!repo) return "";
+    if (repoHasShortAddress(repo)) return String(repo.name);
+    return longLabel === undefined ? repoDisplayKey(repo) : String(longLabel);
+  }
+
+  function repoPublicText(text) {
+    const value = String(text || "");
+    if (!value || !repoAddresses()) return value;
+    return value.replace(/(^|[^A-Za-z0-9._\/@-])([A-Za-z0-9_-][A-Za-z0-9._-]*)\/([A-Za-z0-9_-][A-Za-z0-9._-]*)(?![A-Za-z0-9_\/-])/g,
+      (match, lead, owner, name) => {
+        const trimmed = name.replace(/\.+$/, "");
+        const dots = name.slice(trimmed.length);
+        return repoShortName(owner, trimmed) ? `${lead}${trimmed}${dots}` : match;
+      });
+  }
+
+  function repoReferenceLabel(repo, number) {
+    const label = repoDisplayName(repo);
+    return Number(number) ? `${label}#${Number(number)}` : label;
+  }
+
+  function groupDisplayName(group) {
+    const origin = sourceOfTruth(group);
+    const name = String(origin?.name || "");
+    const organization = groupOrganizationAlias(group);
+    if (repoHasShortAddress(origin) || (organization && repoShortName(organization, name))) return name;
+    return `${groupDisplayOwner(group) || origin?.owner || ""}/${name}`;
+  }
+
+  function repoLabelParts(label) {
+    const text = String(label || "");
+    const slash = text.indexOf("/");
+    return slash < 0 ? { owner: "", name: text } : { owner: text.slice(0, slash), name: text.slice(slash + 1) };
+  }
+
+  function repoShortHrefTarget(href) {
+    const value = String(href || "");
+    if (!value.startsWith("/") || value.startsWith("//")) return value;
+    const shortened = repoPublicHref(value);
+    if (shortened !== value) return shortened;
+    const [path, ...tail] = value.split(/(?=[?#])/);
+    const parts = path.split("/").filter(Boolean);
+    if (!parts.length) return value;
+    const known = state.repoShortNames?.get(safeDecodeURIComponent(parts[0]).toLowerCase());
+    if (!known || repoShortName(known.owner, known.name)) return value;
+    const rest = parts.slice(1);
+    return `${repoPathUrl({ owner: known.owner, name: known.name })}${rest.length ? `/${rest.join("/")}` : ""}${tail.join("")}`;
+  }
+
+  function refreshRepoLinks(root) {
+    const scope = root || document;
+    let changed = 0;
+    for (const link of scope.querySelectorAll ? scope.querySelectorAll("a[href^='/']") : []) {
+      const href = link.getAttribute("href");
+      const target = repoShortHrefTarget(href);
+      if (target !== href) {
+        link.setAttribute("href", target);
+        changed += 1;
+      }
+    }
+    return changed;
+  }
+
+  function replaceLongRepoLocation() {
+    const current = `${location.pathname}${location.search}${location.hash}`;
+    const target = repoShortHrefTarget(current);
+    if (target === current) return false;
+    try {
+      window.history.replaceState(window.history.state, "", target);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   function repoShortRoute(first = "") {

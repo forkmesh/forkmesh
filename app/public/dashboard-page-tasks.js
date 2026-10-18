@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["tasks"] = (core) => {
-  const { $, $$, MD_BODY_CLASS, copyTextToClipboard, escapeHtml, fetchJson, formatCount, loadingHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, state } = core;
+  const { $, $$, MD_BODY_CLASS, copyTextToClipboard, escapeHtml, fetchJson, formatCount, loadingHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state } = core;
   // ---------------------------------------------------------------------------
   // Organization tasks. The dashboard uses the same encrypted catalog and
   // lifecycle endpoints as desktop and World; authorization always remains on
@@ -610,7 +610,7 @@
     const value = String(repository || "").trim();
     const parts = value.split("/");
     return parts.length === 2 && parts.every((part) => /^[A-Za-z0-9._-]{1,100}$/.test(part))
-      ? `<a class="text-accent hover:underline" href="${escapeHtml(repoPathUrl({ owner: parts[0], name: parts[1] }))}">${escapeHtml(value)}</a>`
+      ? `<a class="text-accent hover:underline" href="${escapeHtml(repoPathUrl({ owner: parts[0], name: parts[1] }))}">${escapeHtml(repoPublicKey(value))}</a>`
       : escapeHtml(value || "—");
   }
 

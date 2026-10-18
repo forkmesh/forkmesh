@@ -605,7 +605,7 @@
     const value = String(repository || "").trim();
     const parts = value.split("/");
     return parts.length === 2 && parts.every((part) => /^[A-Za-z0-9._-]{1,100}$/.test(part))
-      ? `<a class="text-accent hover:underline" href="${escapeHtml(repoPathUrl({ owner: parts[0], name: parts[1] }))}">${escapeHtml(value)}</a>`
+      ? `<a class="text-accent hover:underline" href="${escapeHtml(repoPathUrl({ owner: parts[0], name: parts[1] }))}">${escapeHtml(repoPublicKey(value))}</a>`
       : escapeHtml(value || "—");
   }
 

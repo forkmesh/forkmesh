@@ -149,8 +149,19 @@ Where the short form is produced:
   owner's public repository names that must keep the owner, public creator
   aliases `{repo: creator}`, and the reserved route names). Dashboard boot
   (`10-boot.js`) starts the read at once and waits for it (at most 1.5 s)
-  only the first time; the answer is kept in `localStorage`
-  (`forkmesh.repoAddresses`) so later pages render short links straight away.
+  when no answer is cached or the cached one is older than ten minutes
+  (`REPO_ADDRESSES_TTL_MS`); the answer is kept in `localStorage`
+  (`forkmesh.repoAddresses`, saved time in `forkmesh.repoAddressesSavedAt`)
+  so later pages render short links straight away. A page drawn from a cached
+  answer can be wrong right after an admin switches the mode, so when the
+  fresh answer differs from the one the page already used,
+  `applyRepoAddresses` fires `forkmesh:repo-addresses` and boot runs
+  `refreshRepoAddressViews`: the repository lists and sidebar are drawn
+  again, the header is redrawn, every same-site link is rewritten
+  (`refreshRepoLinks`: long to short, or back to the long form when the mode
+  was turned off) and a long address in the address bar is replaced with
+  `history.replaceState` (`replaceLongRepoLocation`). An identical answer
+  changes nothing.
   The core hosts never ask. `repoPathUrl`, and through it `repoLinkUrl`,
   `groupLinkUrl`, record and compare links, `navigateHistory` targets and the
   repository lists, return `/<repo>/...` for the owner, its creator aliases
@@ -211,6 +222,30 @@ With canonical on, the repository page names only the repository:
   the file, folder and README links are `/<repo>/...`. The early-read script
   still only reads two-segment paths, so on a short page the dashboard reads
   the tree itself when it boots.
+
+Labels follow the same rule. `repoDisplayName(repo)` (`02-helpers.js`)
+returns only the name for a repository that has a short address (the owner,
+a creator alias, or a row whose public owner is the organization) and the
+usual `owner/name` otherwise; a string key goes through `repoPublicKey`.
+`groupDisplayName(group)` does the same for a mirror group,
+`repoReferenceLabel` gives `Repo#12`, and `repoPublicText` shortens
+`owner/name` inside server-written text (notification and activity titles,
+for example `Bounty funded on acme/Repo` becomes `Bounty funded on Repo`).
+They are used by the sidebar, the dashboard home list, the repositories
+page, global search, profile activity, the activity feed, notifications,
+the agent, task and note lists, the pull request compose and detail
+labels, the contribution tips, the commit detail, the copy-path menu, the
+code map and the agent repository picker. The sidebar and home list
+deduplicate on that label, so a repository stored under its creator
+(`alice/Repo`) and linked to the organization (`acme/Repo`) appears once,
+as `Repo`. Where a label would name an internal node account (the platform
+mirror under `forkmesh`), the "published from" note is dropped with the
+owner. With canonical on the browser title of a repository page becomes
+`<repo> - <instance>` (`renderHeaderContext`, restored when the page leaves
+the repository). The network page's largest-repositories board names a
+short repository by its name (`_short_repo_board` in `entry.py`). Without
+canonical, every label keeps its previous form; the call sites that used
+the physical `owner/name` pass it as the fallback.
 
 Still shown with the owner: ActivityPub actor URLs and the fediverse
 profile, mirror and runner clone URLs on other hosts, and the materialized

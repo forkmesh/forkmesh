@@ -6121,7 +6121,7 @@
     // only records the contributor as a "<node>:" prefix on head. A fork keeps
     // the repository name, so the contributor's namespace plus this repo's name
     // names the source repository.
-    const baseRepoLabel = `${repo.owner || "owner"}/${repo.name || "repo"}`;
+    const baseRepoLabel = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`);
     const headOwner = headRef.includes(":")
       ? headRef.slice(0, headRef.lastIndexOf(":")).trim()
       : "";
@@ -7428,7 +7428,7 @@
   // disclosure, not an action.
   function repoForkPath(rawUrl, owner, name) {
     return /^\/[^/\\]/.test(rawUrl) && !/[\u0000-\u0020\\]/.test(rawUrl)
-      ? rawUrl
+      ? repoPublicHref(rawUrl)
       : repoPathUrl({ owner, name });
   }
 
@@ -11340,7 +11340,7 @@
       const commit = immutableGitCommit(data.commit);
       const refParams = commit ? { ref: commit } : {};
       window.ForkMeshCodeMap.open({
-        title: `${repoPublicOwner(repo) || repo.owner || ""}/${repo.name || ""}`,
+        title: repoDisplayName(repo, `${repoPublicOwner(repo) || repo.owner || ""}/${repo.name || ""}`),
         root: data,
         theme: document.documentElement.dataset.dashboardTheme === "light" ? "light" : "dark",
         formatSize,
@@ -11835,7 +11835,7 @@
       repoKey(repo).toLowerCase() === previous) ||
       agentModalPreferredRepo(choices);
     repoSelect.innerHTML = choices.length
-      ? choices.map((repo) => `<option value="${escapeHtml(repoKey(repo))}"${repo === preferred ? " selected" : ""}>${escapeHtml(repoDisplayKey(repo))}</option>`).join("")
+      ? choices.map((repo) => `<option value="${escapeHtml(repoKey(repo))}"${repo === preferred ? " selected" : ""}>${escapeHtml(repoDisplayName(repo))}</option>`).join("")
       : '<option value="">No repositories you belong to</option>';
     repoSelect.disabled = !choices.length;
   }
