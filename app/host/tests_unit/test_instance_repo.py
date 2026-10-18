@@ -45,9 +45,9 @@ def test_fork_and_switch_options_are_normalized(tmp_path):
     assert repo.read_spec(args(tmp_path, actions="on"))["actions"] is True
     assert repo.read_spec(args(
         tmp_path, protect_default_branch=False))["protect"] is False
-    for bad in ("acme", "acme/x/y", "-a/b", "acme/Bolt", "alice/bolt"):
+    for bad in ("acme", "acme/x/y", "-a/b", "acme/Platform", "alice/platform"):
         with pytest.raises(repo.RepoError):
-            repo.read_spec(args(tmp_path, fork_of=bad))
+            repo.read_spec(args(tmp_path, name="Platform", fork_of=bad))
 
 
 def test_shared_history_is_found_by_commit_or_root(tmp_path):
