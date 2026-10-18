@@ -53,8 +53,12 @@ public enum DiagnosticsBundle {
     }
 
     public static func prompt(reason: String, report: String, includeLogs: Bool, limit: Int) -> String {
+        prompt(lead: lead(reason: reason), report: report, includeLogs: includeLogs, limit: limit)
+    }
+
+    public static func prompt(lead: String, report: String, includeLogs: Bool, limit: Int) -> String {
         let body: String = scrub(includeLogs ? report : dropSections(report, titles: logSections))
-        let head: String = lead(reason: reason) + "\n\n# Diagnostics bundle\n"
+        let head: String = lead + "\n\n# Diagnostics bundle\n"
         let room: Int = max(0, limit - head.count)
         let clipped: String = body.count <= room ? body : String(body.prefix(max(0, room - 24))) + "\n[cut to fit the prompt]"
         return head + clipped

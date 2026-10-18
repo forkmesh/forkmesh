@@ -15,6 +15,7 @@ enum DjSheet: Identifiable, Equatable {
     case crate
     case song(String)
     case similar(DjDeckSide)
+    case diagnostics
 
     var id: String {
         switch self {
@@ -26,6 +27,7 @@ enum DjSheet: Identifiable, Equatable {
         case .crate: return "crate"
         case let .song(id): return "song-\(id)"
         case let .similar(side): return "similar-\(side.rawValue)"
+        case .diagnostics: return "diagnostics"
         }
     }
 }
@@ -216,6 +218,7 @@ final class DjStudioModel {
     @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored private let store: DjStore
     @ObservationIgnored private let sampler = DjSampler()
+    @ObservationIgnored private let probe = DjFrameProbe()
     @ObservationIgnored private var sectionCursor = 0
     @ObservationIgnored private var searchInstances: [URL] = []
     @ObservationIgnored private var automixTask: Task<Void, Never>?
@@ -253,7 +256,11 @@ final class DjStudioModel {
         resumeAutomix = saved.automix
         host.onEvent = { [weak self] side, event in
             guard let self else { return }
+            let began = CACurrentMediaTime()
             self.handle(event, self.deck(side))
+            let kind: DjWork
+            if case .tick = event { kind = .tick } else { kind = .event }
+            DjVitalsRecorder.shared.work(kind, from: began, to: CACurrentMediaTime())
         }
         host.onReload = { [weak self] in self?.revive() }
         for deck in [a, b] {
@@ -346,12 +353,14 @@ final class DjStudioModel {
         host.dock()
         applyMix()
         resumeJam()
+        probe.start()
     }
 
     func disappear() {
         guard active else { return }
         active = false
         onScreen = false
+        probe.stop()
         for deck in [a, b] where deck.scratching { scratchEnded(deck.side) }
         for deck in [a, b] where deck.brake != 0 { releaseBrake(deck) }
         sampler.stop()
@@ -467,6 +476,7 @@ final class DjStudioModel {
     }
 
     func load(_ side: DjDeckSide, id: String, title: String = "", author: String = "") {
+        DjDiagnostics.mark("load Deck \(side.label)")
         let deck = deck(side)
         prepare(deck, id: id, title: title, author: author, start: 0, keepSettings: false)
         show(title.isEmpty ? "Deck \(side.label) loaded." : "Deck \(side.label): \(title)")
@@ -564,13 +574,17 @@ final class DjStudioModel {
             if duration > 0, abs(duration - deck.duration) > 0.5 { deck.duration = duration }
             guard !deck.scratching else { return }
             let now = CACurrentMediaTime()
+            let side = deck.side
             if now < deck.settleUntil {
+                DjVitalsRecorder.shared.update { $0.tick(side, at: now, playing: state == 1, drift: nil) }
                 advance(state == 1 && deck.playing, deck)
                 return
             }
             apply(state, deck)
             let continuous = deck.advancing && state == 1
-            let tracked = DjStudio.trackedPosition(predicted: deck.position(at: now), reported: time, continuous: continuous)
+            let predicted = deck.position(at: now)
+            let tracked = DjStudio.trackedPosition(predicted: predicted, reported: time, continuous: continuous)
+            DjVitalsRecorder.shared.update { $0.tick(side, at: now, playing: state == 1, drift: continuous ? time - predicted : nil) }
             if abs(deck.time - tracked) > 0.0005 { deck.time = tracked }
             deck.tickDate = now
             advance(state == 1, deck)
@@ -603,6 +617,7 @@ final class DjStudioModel {
                 save()
             }
         case let .failed(code):
+            DjDiagnostics.mark("Deck \(deck.side.label) player error \(code)")
             deck.playing = false
             deck.keepsPlaying = false
             deck.failed = true
@@ -643,9 +658,11 @@ final class DjStudioModel {
             return
         }
         if !deck.playing { play(deck) }
+        DjDiagnostics.mark("START \(side.label)")
     }
 
     func pauseDeck(_ side: DjDeckSide) {
+        DjDiagnostics.mark("PAUSE \(side.label)")
         let deck = deck(side)
         if deck.playing || deck.keepsPlaying { pause(deck) }
         holdAutomix()
@@ -654,6 +671,7 @@ final class DjStudioModel {
     func stop(_ side: DjDeckSide) {
         let deck = deck(side)
         guard deck.loaded else { return }
+        DjDiagnostics.mark("STOP \(side.label)")
         sectionTasks[side]?.cancel()
         if deck.playing || deck.keepsPlaying { pause(deck) }
         rewind(deck)
@@ -697,6 +715,7 @@ final class DjStudioModel {
     private func analyse(_ deck: DjDeck, id: String, source: URL) {
         guard deck.videoId == id, deck.audioFor != id else { return }
         deck.audioFor = id
+        let side = deck.side.label
         let wantsBars = !analysed.contains(id)
         if wantsBars {
             analysed.insert(id)
@@ -706,7 +725,9 @@ final class DjStudioModel {
             while self?.automixing == true, !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
             }
+            DjDiagnostics.mark("Deck \(side) reading audio")
             let read = await DjWaveSource.read(for: id, source: source, bars: wantsBars)
+            DjDiagnostics.mark("Deck \(side) audio read\(read.bars == nil && read.audio == nil ? " failed" : "")")
             if wantsBars, read.bars == nil { self?.analysed.remove(id) }
             guard let deck, deck.videoId == id else { return }
             if wantsBars { deck.reading = false }
@@ -930,6 +951,7 @@ final class DjStudioModel {
         deck.player.scratch(0, at: deck.time)
         deck.scratchTask?.cancel()
         deck.scratchTask = nil
+        DjDiagnostics.mark("scratch \(side.label)\(deck.scratchAudio == nil ? " (noise)" : "")")
         if let audio = deck.scratchAudio, abs(audio.duration - deck.duration) < 2 {
             deck.vinyl = true
             sampler.beginScratch(side, audio: audio, at: deck.time, gain: DjStudio.gain(side, crossfader: crossfader) * deck.level)
@@ -951,6 +973,8 @@ final class DjStudioModel {
     func scratchMoved(_ side: DjDeckSide, radians: Double) {
         let deck = deck(side)
         guard deck.scratching else { return }
+        let began = CACurrentMediaTime()
+        defer { DjVitalsRecorder.shared.work(.scratch, from: began, to: CACurrentMediaTime()) }
         let seconds = DjStudio.scratchSeconds(fromRadians: radians)
         let now = CACurrentMediaTime()
         deck.time = min(deck.duration, max(0, deck.time + seconds))
@@ -979,6 +1003,7 @@ final class DjStudioModel {
     func scratchEnded(_ side: DjDeckSide) {
         let deck = deck(side)
         guard deck.scratching else { return }
+        DjDiagnostics.mark("release \(side.label)")
         deck.scratchTask?.cancel()
         deck.scratchTask = nil
         deck.scratchSpeed = 0
@@ -995,7 +1020,7 @@ final class DjStudioModel {
         share(side)
     }
 
-    func setCrossfader(_ value: Double, cancelAutomix: Bool = true) {
+    func setCrossfader(_ value: Double, cancelAutomix: Bool = true, saving: Bool = true) {
         if cancelAutomix, automixing {
             automixTask?.cancel()
             automixing = false
@@ -1004,7 +1029,7 @@ final class DjStudioModel {
         guard clamped != crossfader else { return }
         crossfader = clamped
         applyMix()
-        save()
+        if saving { save() }
     }
 
     private func volume(for deck: DjDeck) -> DjVolume {
@@ -1013,7 +1038,7 @@ final class DjStudioModel {
     }
 
     private func applyMix() {
-        for deck in [a, b] { deck.player.setVolume(volume(for: deck)) }
+        host.setVolumes([a, b].map { ($0.side, volume(for: $0)) })
     }
 
     func slam(_ side: DjDeckSide) {
@@ -1056,6 +1081,8 @@ final class DjStudioModel {
 
     private func automixStep() {
         guard automixOn, !automixing, !a.scratching, !b.scratching else { return }
+        let began = CACurrentMediaTime()
+        defer { DjVitalsRecorder.shared.work(.automix, from: began, to: CACurrentMediaTime()) }
         let favoured: DjDeckSide = crossfader <= 0 ? .a : .b
         switch DjAutomix.step(a: snapshot(a), b: snapshot(b), favoured: favoured, queued: !shownQueue.isEmpty || !crate.pool(library, skip: unplayable).isEmpty) {
         case .wait:
@@ -1271,13 +1298,18 @@ final class DjStudioModel {
         automixTask?.cancel()
         let start = crossfader
         let began = CACurrentMediaTime()
+        DjDiagnostics.mark("fade to \(end > 0 ? "B" : "A") over \(String(format: "%.1f", seconds)) s")
         automixTask = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
-                let progress = min(1, (CACurrentMediaTime() - began) / seconds)
+                let step = CACurrentMediaTime()
+                let progress = min(1, (step - began) / seconds)
                 let eased = progress * progress * (3 - 2 * progress)
-                self.setCrossfader(start + (end - start) * eased, cancelAutomix: false)
+                self.setCrossfader(start + (end - start) * eased, cancelAutomix: false, saving: false)
+                DjVitalsRecorder.shared.work(.fade, from: step, to: CACurrentMediaTime())
                 if progress >= 1 {
+                    DjDiagnostics.mark("fade done")
+                    self.save()
                     then?()
                     return
                 }
@@ -1448,6 +1480,7 @@ final class DjStudioModel {
 
     private func write() {
         savedAt = CACurrentMediaTime()
+        defer { DjVitalsRecorder.shared.work(.save, from: savedAt, to: CACurrentMediaTime()) }
         var saved = DjSaved()
         saved.crossfader = crossfader
         saved.samplerLevel = samplerLevel

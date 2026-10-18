@@ -127,6 +127,8 @@ final class DjSpinView: UIView {
     }
 
     func step(at now: CFTimeInterval) {
+        let began = CACurrentMediaTime()
+        defer { DjVitalsRecorder.shared.work(.spin, from: began, to: CACurrentMediaTime()) }
         let angle = DjStudio.turnDegrees(deck.turned(at: now)) * Double.pi / 180
         if let speed = steadySpeed() {
             pace(Self.slow, quick: false)

@@ -259,7 +259,8 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   ([../app/chat-direct-calls.md](../app/chat-direct-calls.md#plug-ins)).
 - **Video mixing:** `video-mix-dj-studio` (two YouTube decks with local cue,
   loop, tempo and crossfader controls on responsive web, mobile and desktop
-  surfaces; [details](video-mix-dj-studio.md)).
+  surfaces; [details](video-mix-dj-studio.md), iOS performance checks in
+  [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md)).
 - **World:** `forkmesh-sky-office`, `reddit-banner-board`, `x-banner-board`.
 - **Catalog only:** `forkmesh-ide` (VS Code extension source).
 
