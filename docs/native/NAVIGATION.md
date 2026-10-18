@@ -161,6 +161,14 @@ destination, in sections, with counts and activity:
   the bar and the page's Open chip all count a pull as open unless it is
   closed or merged (`PullStatusFilter.open`). The operator asked for the
   count on the mobile Pull requests icon on 2026-10-16.
+- The repository behind those icons and the **Code** button follows the
+  composer: picking a repository there (or the one it settles on at launch)
+  moves `ShellCounts.currentRepo` and `code/current-repo` to it
+  (`CodeCurrentRepo.follow`, from `AgentStartTarget.ref`), so Pull requests
+  opens that repository's pulls and shows its open count. Opening a
+  repository in Code still moves them too, and the composer picks that
+  repository the next time it opens there. The operator asked for the
+  repository icons to follow the composer on 2026-10-18.
 - **New pull requests show at once.** `ShellPullsWatch` (iOS) is the one
   reader of the current repository's pull list. It reads it when the
   repository changes, when the app comes back to the foreground, when the

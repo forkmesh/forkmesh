@@ -28,80 +28,109 @@ final class ShellPocket {
 struct ShellSuggestionChips: View {
     @Environment(\.fmPalette) private var fm
     private let suggestions: ShellSuggestions = ShellSuggestions.shared
+    private let autoSend: ShellAutoSend = ShellAutoSend.shared
+    @State private var held: Bool = false
+
+    private static let size: CGFloat = 44
 
     var body: some View {
-        if suggestions.on, suggestions.contact != nil || suggestions.channel != nil {
-            HStack(spacing: FmSpace.x1) {
-                if let pick: GenieOutreachPick = suggestions.contact {
-                    contactButton(pick)
-                }
-                if let channel: MarketingChannelAttention = suggestions.channel {
-                    channelButton(channel)
-                }
-            }
-            .padding(5)
-            .shellGlass(Capsule())
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("top-suggestions")
+        if suggestions.on, suggestions.contact != nil || autoSend.on {
+            contactButton(suggestions.contact)
+                .accessibilityIdentifier("top-suggestions")
         }
     }
 
-    private func contactButton(_ pick: GenieOutreachPick) -> some View {
-        Button { suggestions.contactTapped() } label: {
+    private func contactButton(_ pick: GenieOutreachPick?) -> some View {
+        Button {
+            if held {
+                held = false
+                return
+            }
+            suggestions.contactTapped()
+        } label: {
             portrait(pick)
+                .overlay {
+                    if autoSend.on {
+                        Circle().strokeBorder(fm.accent, lineWidth: 2.5)
+                    }
+                }
+                .overlay(alignment: .topTrailing) { count }
                 .overlay(alignment: .bottomTrailing) {
-                    Image(systemName: pick.channel == .email ? "envelope.fill" : "bubble.left.fill")
-                        .font(.system(size: 7, weight: .bold))
-                        .foregroundStyle(Color.white)
-                        .frame(width: 14, height: 14)
-                        .background(Circle().fill(fm.accent))
-                        .offset(x: 2, y: 2)
+                    if let pick {
+                        Image(systemName: pick.channel == .email ? "envelope.fill" : "bubble.left.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(Color.white)
+                            .frame(width: 16, height: 16)
+                            .background(Circle().fill(fm.accent))
+                            .offset(x: 2, y: 2)
+                    }
                 }
                 .contentShape(Circle())
         }
         .buttonStyle(ShellBarButtonStyle())
-        .contextMenu {
-            Button("Not now", systemImage: "forward") { suggestions.skipContact() }
-            Button("Open the CRM", systemImage: "person.2") { SurfaceRouter.open(.crm(pipeline: nil)) }
-        }
-        .accessibilityLabel(Text(pick.caption))
-        .accessibilityHint(Text("Writes the message and opens it in \(pick.channel == .email ? "Mail" : "Mastodon")"))
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+            held = true
+            autoSend.toggle()
+        })
+        .accessibilityLabel(Text(label(pick)))
+        .accessibilityHint(Text(hint(pick)))
+        .accessibilityAction(named: Text(toggleLabel)) { autoSend.toggle() }
+        .accessibilityAction(named: Text("Not now")) { suggestions.skipContact() }
+        .accessibilityAction(named: Text("Open the CRM")) { SurfaceRouter.open(.crm(pipeline: nil)) }
         .accessibilityIdentifier("top-suggestion-contact")
     }
 
-    @ViewBuilder private func portrait(_ pick: GenieOutreachPick) -> some View {
+    private var toggleLabel: String { autoSend.on ? "Turn auto-send off" : "Turn auto-send on" }
+
+    private func hint(_ pick: GenieOutreachPick?) -> String {
+        let toggle: String = "Long-press to turn auto-send \(autoSend.on ? "off" : "on")."
+        guard let pick else { return toggle }
+        return "Writes the message and opens it in \(pick.channel == .email ? "Mail" : "Mastodon"). \(toggle)"
+    }
+
+    private func label(_ pick: GenieOutreachPick?) -> String {
+        let sent: String = autoSend.sentToday == 1 ? "1 email sent today" : "\(autoSend.sentToday) emails sent today"
+        let state: String = autoSend.on ? "Auto-send on, \(sent)" : sent
+        guard let pick else { return state }
+        return autoSend.on ? "Next: \(pick.contact.displayName). \(state)" : "\(pick.caption) \(state)"
+    }
+
+    @ViewBuilder private var count: some View {
+        if autoSend.on || autoSend.sentToday > 0 {
+            Text("\(autoSend.sentToday)")
+                .font(.system(size: 10, weight: .bold).monospacedDigit())
+                .foregroundStyle(Color.white)
+                .padding(.horizontal, 4)
+                .frame(minWidth: 17, minHeight: 17)
+                .background(Capsule().fill(autoSend.on ? fm.accent : fm.textSecondary))
+                .offset(x: 3, y: -3)
+                .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder private func portrait(_ pick: GenieOutreachPick?) -> some View {
         Group {
-            if let image: UIImage = suggestions.contactImage {
+            if pick != nil, let image: UIImage = suggestions.contactImage {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
             } else {
                 ZStack {
                     Circle().fill(fm.accent.opacity(0.18))
-                    Text(pick.contact.initials)
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(fm.accent)
+                    if let pick {
+                        Text(pick.contact.initials)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(fm.accent)
+                    } else {
+                        Image(systemName: "envelope.fill")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(fm.accent)
+                    }
                 }
             }
         }
-        .frame(width: 34, height: 34)
+        .frame(width: ShellSuggestionChips.size, height: ShellSuggestionChips.size)
         .clipShape(Circle())
-    }
-
-    private func channelButton(_ channel: MarketingChannelAttention) -> some View {
-        let ink: Color = channel.channel.health == "attention" ? fm.danger : fm.warning
-        return Button { suggestions.channelTapped() } label: {
-            Image(systemName: "megaphone.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(ink)
-                .frame(width: 34, height: 34)
-                .background(Circle().fill(ink.opacity(0.15)))
-                .contentShape(Circle())
-        }
-        .buttonStyle(ShellBarButtonStyle())
-        .accessibilityLabel(Text("Marketing: \(channel.caption)"))
-        .accessibilityHint(Text("Opens the marketing channels"))
-        .accessibilityIdentifier("top-suggestion-channel")
     }
 }
 
