@@ -275,6 +275,7 @@ final class OpenWrtModelTests: XCTestCase {
         XCTAssertNil(OpenWrtModel.shareNameProblem("Media"))
         XCTAssertNotNil(OpenWrtModel.shareNameProblem("a/b"))
         XCTAssertTrue(OpenWrtModel.usbStoragePackages.contains("block-mount"))
+        XCTAssertEqual(OpenWrtModel.shareSupportPackages, ["ksmbd-server", "luci-app-ksmbd"])
     }
 
     func testStorageCheck() {

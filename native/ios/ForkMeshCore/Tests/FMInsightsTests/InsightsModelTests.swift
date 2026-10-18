@@ -173,6 +173,7 @@ final class StatsBoardModelTests: XCTestCase {
         transport.replies["/api/network/stats"] = object(#"{"ok":true,"repos":12900,"hosts":2,"onlineNodes":["a","b"]}"#)
         transport.replies["/api/network/online-history"] = object(#"{"ok":true,"hours":[{"hourTs":1,"nodeMinutes":60}]}"#)
         transport.replies["/api/status"] = object(statusJSON)
+        transport.replies[LiveReleases.repoBlobs] = ["blobs": .object(realReleaseBlobs())]
         let health = DesktopHealth(json: object(
             #"{"level":"busy","cpuPercent":72.4,"memory":{"total":1000,"available":200},"agents":{"running":2,"queued":1},"stalls":0}"#))
         let model = StatsBoardModel(
@@ -188,6 +189,10 @@ final class StatsBoardModelTests: XCTestCase {
         XCTAssertEqual(model.data("desktopLoad")?.status, .warning)
         XCTAssertEqual(model.data("desktopMemory")?.value, "80%")
         XCTAssertEqual(model.data("agents")?.note, "1 queued")
+        XCTAssertEqual(model.data(LiveReleases.latestId)?.value, "v1.2.8")
+        XCTAssertEqual(model.data("release-android")?.value, "v1.2.8")
+        XCTAssertEqual(model.data("release-macos")?.note, "DMG · Apple silicon, Intel")
+        XCTAssertEqual(model.data(LiveReleases.iosId)?.available, false)
         XCTAssertTrue(model.failures.isEmpty)
     }
 
@@ -270,7 +275,7 @@ final class StatsBoardModelTests: XCTestCase {
         let model = StatsBoardModel(transport: transport, layoutStore: StatsLayoutStore(store: InMemoryKeyValueStore()))
         await model.reload()
         XCTAssertEqual(model.data("agents")?.available, false)
-        XCTAssertEqual(model.failures, ["status"])
+        XCTAssertEqual(model.failures, ["status", "releases"])
         XCTAssertFalse(model.desktopNote.isEmpty)
     }
 

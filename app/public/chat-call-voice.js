@@ -5,6 +5,7 @@ export const CALL_VOICE_OFF = "off";
 export const CALL_VOICE_PROCESSOR = "fm-call-voice";
 export const CALL_VOICE_WORKLET_URL = "/chat-call-voice-worklet.js";
 const RESUME_TIMEOUT_MS = 2000;
+const MODULE_TIMEOUT_MS = 6000;
 const MONITOR_RAMP_S = 0.015;
 const HEADPHONE_LABEL = /head(phone|set)|ear(bud|phone)|airpod|buds|bluetooth|hands-?free|\bbt\b|wireless/i;
 const SPEAKER_LABEL = /speaker|built-?in output|display audio|hdmi/i;
@@ -128,7 +129,10 @@ export async function createVoiceStage({
   const context = new Context({ latencyHint: "interactive" });
   let stopped = false;
   try {
-    await context.audioWorklet.addModule(moduleUrl);
+    await Promise.race([
+      context.audioWorklet.addModule(moduleUrl),
+      new Promise((_, reject) => globalRef.setTimeout(() => reject(new Error("voice module timed out")), MODULE_TIMEOUT_MS)),
+    ]);
     const source = context.createMediaStreamSource(new globalRef.MediaStream([sourceTrack]));
     const node = new globalRef.AudioWorkletNode(context, CALL_VOICE_PROCESSOR, {
       numberOfInputs: 1,

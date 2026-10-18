@@ -3,6 +3,7 @@
 // style. The component themes are views in Kit/FmMaterial.swift and
 // Kit/FmOverlays.swift.
 
+import FMAccount
 import SwiftUI
 
 private struct FmPaletteKey: EnvironmentKey {
@@ -28,16 +29,16 @@ extension EnvironmentValues {
 struct ForkMeshTheme<Content: View>: View {
     @Environment(\.colorScheme) private var systemScheme
 
-    private let accent: FmAccent
+    private let theme: AppTheme
     private let wallpaper: Bool
     private let forcedDark: Bool?
     private let content: Content
 
     init(
-        accent: FmAccent = .fallback, wallpaper: Bool = false, dark: Bool? = nil,
+        theme: AppTheme = .standard, wallpaper: Bool = false, dark: Bool? = nil,
         @ViewBuilder content: () -> Content
     ) {
-        self.accent = accent
+        self.theme = theme
         self.wallpaper = wallpaper
         self.forcedDark = dark
         self.content = content()
@@ -55,7 +56,7 @@ struct ForkMeshTheme<Content: View>: View {
     }
 
     var body: some View {
-        let palette: FmPalette = FmPalette(dark: isDark, accent: accent, wallpaper: wallpaper)
+        let palette: FmPalette = FmPalette(dark: isDark, theme: theme, wallpaper: wallpaper)
         content
             .fmText(.bodyMedium)
             .tint(palette.accent)

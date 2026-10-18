@@ -68,6 +68,7 @@ struct NativePackageHost {
     std::function<NativePackageRepository()> currentRepository;
     std::function<void(const NativePackageRepository &, const QString &, int)>
         openRepositoryFile;
+    std::function<void(const QString &, bool)> openNetworkShare;
 };
 
 struct NativePackagePromptTarget {
