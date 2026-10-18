@@ -24,6 +24,7 @@ struct ActionWorkflow {
     QStringList needs;
     QList<ActionStep> steps;    // steps flattened across all jobs, in order
     bool checkout = true;
+    bool sandbox = true;
     int fetchDepth = 2;
     bool valid = false;
     QString error;

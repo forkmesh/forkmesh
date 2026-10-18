@@ -412,6 +412,13 @@ ActionWorkflow ActionFile::parse(const QString &relPath, const QString &content)
                       value != QLatin1String("off") &&
                       value != QLatin1String("0");
     }
+    if (const Node *sandbox = root.child(QStringLiteral("sandbox"))) {
+        const QString value = sandbox->scalar.trimmed().toLower();
+        wf.sandbox = value != QLatin1String("false") &&
+                     value != QLatin1String("no") &&
+                     value != QLatin1String("off") &&
+                     value != QLatin1String("0");
+    }
     if (const Node *depth = root.child(QStringLiteral("fetch-depth"))) {
         bool ok = false;
         const int value = depth->scalar.trimmed().toInt(&ok);
@@ -456,6 +463,11 @@ ActionWorkflow ActionFile::parse(const QString &relPath, const QString &content)
 
     if (wf.steps.isEmpty()) {
         wf.error = QStringLiteral("workflow has no runnable steps");
+        return wf;
+    }
+    if (!wf.sandbox && (wf.on != QStringList{QStringLiteral("workflow_dispatch")})) {
+        wf.error = QStringLiteral("sandbox: false is only allowed with on: "
+                                  "workflow_dispatch and no other trigger");
         return wf;
     }
     wf.valid = true;

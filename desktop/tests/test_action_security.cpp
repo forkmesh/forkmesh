@@ -26,6 +26,7 @@
 
 #ifndef Q_OS_WIN
 #include <sys/resource.h>
+#include <unistd.h>
 #endif
 
 namespace {
@@ -139,7 +140,8 @@ RunResult runWorkflow(const QString &repository, const QString &commit,
                       bool reenterOnTerminalStatus = false,
                       const QMap<QString, QString> &variables = {},
                       const QString &repositoryName =
-                          QStringLiteral("sandbox"))
+                          QStringLiteral("sandbox"),
+                      const QString &localCheckout = QString())
 {
     ActionRun run;
     run.id = runId;
@@ -195,7 +197,7 @@ RunResult runWorkflow(const QString &repository, const QString &commit,
         loop.quit();
     });
     guard.start(60000);
-    runner.start(run, workflow, repository, QString(), variables);
+    runner.start(run, workflow, repository, localCheckout, variables);
     if (!result.finished)
         loop.exec();
     guard.stop();
@@ -638,6 +640,35 @@ int main(int argc, char **argv)
               retiredPath, QStringLiteral("not: [a, workflow")),
           "an unreadable default-branch copy does not retire the workflow");
 
+    const ActionWorkflow sandboxed = ActionFile::parse(
+        QStringLiteral(".forkmesh/plain.yml"),
+        QStringLiteral("on: push\nsteps:\n  - run: echo hi\n"));
+    check(sandboxed.valid && sandboxed.sandbox, "workflows run in the sandbox by default");
+    const ActionWorkflow hostByHand = ActionFile::parse(
+        QStringLiteral(".forkmesh/host.yml"),
+        QStringLiteral("on: [workflow_dispatch]\nsandbox: false\nsteps:\n  - run: echo hi\n"));
+    check(hostByHand.valid && !hostByHand.sandbox,
+          "sandbox: false is accepted for a manual-only workflow");
+    for (const QString &trigger :
+         {QStringLiteral("[workflow_dispatch, push]"), QStringLiteral("push"),
+          QStringLiteral("pull_request"), QStringLiteral("release"),
+          QStringLiteral("[workflow_dispatch, schedule]")}) {
+        const ActionWorkflow automatic = ActionFile::parse(
+            QStringLiteral(".forkmesh/host.yml"),
+            QStringLiteral("on: %1\nsandbox: false\nsteps:\n  - run: echo hi\n").arg(trigger));
+        check(!automatic.valid && automatic.error.contains(QStringLiteral("workflow_dispatch")),
+              "sandbox: false is refused with any trigger besides workflow_dispatch");
+    }
+    QFile diskCleanupFile(QStringLiteral(FORKMESH_SOURCE_DIR "/../.forkmesh/free-disk-space.yml"));
+    check(diskCleanupFile.open(QIODevice::ReadOnly), "the Free disk space workflow is readable");
+    const ActionWorkflow diskCleanup = ActionFile::parse(
+        QStringLiteral(".forkmesh/free-disk-space.yml"),
+        QString::fromUtf8(diskCleanupFile.readAll()));
+    check(diskCleanup.valid && !diskCleanup.sandbox && diskCleanup.steps.size() == 6 &&
+              diskCleanup.steps.at(3).name ==
+                  QStringLiteral("Prune old Claude versions, backups and Trash"),
+          "the Free disk space workflow parses as six host steps");
+
     QString sandboxReason;
     if (!ActionRunner::sandboxAvailable(&sandboxReason)) {
         std::printf("  SKIP sandbox integration: %s\n",
@@ -765,6 +796,39 @@ int main(int argc, char **argv)
                       QStringLiteral("disposable writable clone")),
               "checkout: false runs the steps in an empty workspace with the "
               "commit in FORKMESH_COMMIT and the run in FORKMESH_RUN_ID");
+
+        const QString localCheckout = temp.filePath(QStringLiteral("local-checkout"));
+        check(QDir().mkpath(localCheckout) &&
+                  writeFile(localCheckout + QStringLiteral("/marker"), QByteArray("local")),
+              "local checkout fixture is written");
+        const QString hostWorkflow = QStringLiteral(
+            "name: Host\non: [workflow_dispatch]\nsandbox: false\n"
+            "env:\n  FORKMESH_LOCAL_CHECKOUT: /nowhere\nsteps:\n"
+            "  - name: runs as this user\n"
+            "    run: |\n"
+            "      set -eu\n"
+            "      [ \"$(id -u)\" = \"%1\" ]\n"
+            "      [ -z \"${FORKMESH_HOST_ONLY_SECRET:-}\" ]\n"
+            "      test -f \"$FORKMESH_LOCAL_CHECKOUT/marker\"\n"
+            "      test -f .forkmesh/security.yml\n"
+            "      echo \"home=$HOME checkout=$FORKMESH_LOCAL_CHECKOUT\"\n"
+            "  - name: second step\n"
+            "    run: echo second done\n")
+                                         .arg(::getuid());
+        check(writeFile(workflowPath, hostWorkflow.toUtf8()), "host workflow fixture is written");
+        const QString hostCommit = commitAll(repository, QStringLiteral("host workflow"));
+        const RunResult host =
+            runWorkflow(repository, hostCommit, hostWorkflow, &store, 177, limits, false, {},
+                        QStringLiteral("sandbox"), localCheckout);
+        check(host.finished && host.signalOk && host.persisted.status == ActionStatus::Success &&
+                  host.persisted.stepStatuses ==
+                      QStringList{ActionStepStatus::Success, ActionStepStatus::Success} &&
+                  host.log.contains(QStringLiteral("home=%1 checkout=%2")
+                                        .arg(QDir::homePath(), localCheckout)) &&
+                  host.log.contains(QStringLiteral("second done")) &&
+                  host.log.contains(QStringLiteral("sandbox: false")),
+              "sandbox: false runs every step as this user in the approved clone, with the "
+              "real home and the repository's local checkout the workflow cannot override");
 
         const QString timeoutWorkflow = QStringLiteral(
             "name: Timeout\non: push\nsteps:\n"

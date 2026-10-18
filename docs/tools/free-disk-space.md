@@ -1,25 +1,27 @@
 # Freeing disk space
 
 `tools/free_disk_space.py` turns the hand-run disk sweeps of 2026-08 to
-2026-10 into one command. It is a dry run unless given `--execute`; the
-shortcut **Free disk space** (`.forkmesh/shortcuts/free-disk-space.sh`) runs
-it with `--execute` (pass `--dry-run` anywhere on its command line to only
-list).
+2026-10 into one command. It is a dry run unless given `--execute`. The
+**Free disk space** Actions workflow (`.forkmesh/free-disk-space.yml`) runs
+it with `--execute`, one part per step, so the desktop's Actions page and the
+phones' Actions screens show each part as it runs. It replaced the
+`free-disk-space.sh` shortcut, which is gone from the shortcut list.
 
 ```sh
 python3 tools/free_disk_space.py                # list what would go
 python3 tools/free_disk_space.py --execute      # delete it
 python3 tools/free_disk_space.py --step agents  # one part only
-.forkmesh/shortcuts/free-disk-space.sh          # every part, with --execute
 ```
 
-## Steps you can watch
+## The workflow
 
-The shortcut is a stepped workflow: six `# step:` blocks, each running one
-`--step` of the tool and printing a `::step::<name>` marker first, so the
-desktop card lights each step as it starts, shows which one failed, and the
-web canvas draws the same six steps
-([../desktop/shortcuts.md](../desktop/shortcuts.md#steps-and-linked-shortcuts)).
+Start it with **Run workflow** on the repository's Actions page, or under
+**Run by hand** in the iPhone or Android app (the phone asks the paired
+desktop to run it). It is manual-only and runs on the desktop outside the
+Actions sandbox (`sandbox: false`): a sandboxed step runs as uid 65534 with a
+fresh home and `/tmp` and its own `/proc`, so it could not see, let alone
+delete, anything this tool cleans. The rules for such workflows are in
+[../desktop/README.md](../desktop/README.md#actions-outside-the-sandbox).
 
 | Step | `--step` | What it does |
 | --- | --- | --- |
@@ -30,14 +32,19 @@ web canvas draws the same six steps
 | Clear the pip and npm caches | `caches` | `pip cache purge`, `npm cache clean --force` (skipped with `--no-caches`) |
 | Report what is left | `report` | free space after, and the large folders left for the user |
 
-Each step re-reads `git worktree list` and `/proc`, so a worktree or process
-that appears between steps is still respected. Without `--step` the tool does
-every part in one pass, as before.
-
-It stays a shortcut rather than a `.forkmesh/*.yml` Actions workflow: Actions
-steps run in a bubblewrap sandbox as uid 65534 with a fresh home and `/tmp`
-and their own `/proc`, so they cannot see, let alone delete, anything this
-tool cleans (`ActionRunner::sandboxArguments` in `desktop/src/ActionRunner.cpp`).
+- Every step passes `--repo "$FORKMESH_LOCAL_CHECKOUT"`, the repository's
+  local checkout on the desktop, and fails before deleting anything when the
+  run has none. The tool keeps agent leftovers by matching them to
+  `git worktree list` of `--repo`; run from the Actions clone (its default),
+  it would see none of the agent worktrees and treat every live agent's
+  builds as orphaned.
+- Each step re-reads `git worktree list` and `/proc`, so a worktree or
+  process that appears between steps is still respected. A candidate holding
+  the tool's own working directory, or its parent shell's, counts as in use.
+- A run needs 1 GiB free for its checkout. Below that, run
+  `python3 tools/free_disk_space.py --execute` by hand from the primary
+  checkout.
+- Without `--step` the tool does every part in one pass, as before.
 
 ## What is removed
 

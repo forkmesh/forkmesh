@@ -48,6 +48,7 @@ constexpr qsizetype kActionProcessLogMaxLineChars = 4096;
 constexpr qsizetype kActionCrashOutputTailBytes = 12 * 1024;
 constexpr qsizetype kActionCrashContextMaxChars = 12000;
 constexpr qint64 kMaxLandedArtifactBytes = 1024LL * 1024 * 1024;
+constexpr qint64 kHostRunFreeBytes = 1024LL * 1024 * 1024;
 
 // Where a run's disposable trees live. These used to sit under QDir::tempPath(),
 // which on this fleet is a size-capped tmpfs shared with every other checkout on
@@ -240,6 +241,7 @@ bool dangerousEnvironmentName(const QString &name)
         QStringLiteral("GIT_CONFIG_GLOBAL"),
         QStringLiteral("GIT_CONFIG_SYSTEM"),
         QStringLiteral("GIT_CONFIG_COUNT"),
+        QStringLiteral("FORKMESH_LOCAL_CHECKOUT"),
     };
     return exact.contains(upper) ||
            upper.startsWith(QLatin1String("GIT_CONFIG_KEY_")) ||
@@ -685,11 +687,18 @@ void ActionRunner::start(const ActionRun &run, const ActionWorkflow &workflow,
     }
 
     QString sandboxReason;
-    if (!sandboxAvailable(&sandboxReason)) {
+    if (m_workflow.sandbox && !sandboxAvailable(&sandboxReason)) {
         complete(false, QStringLiteral("Actions isolation unavailable: %1.")
                             .arg(sandboxReason));
         return;
     }
+    if (!m_workflow.sandbox)
+        emitLog(QString::fromUtf8(
+                    "==> \xE2\x9A\xA0\xEF\xB8\x8F  sandbox: false \xE2\x80\x94 "
+                    "the steps run on this computer as you, outside the "
+                    "Actions sandbox, with FORKMESH_LOCAL_CHECKOUT=%1.") // ⚠️ —
+                    .arg(m_repoWorkTree.isEmpty() ? QStringLiteral("(none)")
+                                                  : m_repoWorkTree));
 
     const qint64 sandboxStampMs = QDateTime::currentMSecsSinceEpoch();
     const QString sandboxBase = sandboxBaseDir(m_store);
@@ -726,8 +735,11 @@ void ActionRunner::start(const ActionRun &run, const ActionWorkflow &workflow,
     // of the same repository will read it, which is why the scope is a single
     // repository and why only one run may hold it at a time.
     releaseBuildCache();
-    if (truthy(variables.value(
-            QStringLiteral("FORKMESH_ACTIONS_DISABLE_CACHE")))) {
+    if (!m_workflow.sandbox) {
+        emitLog(QStringLiteral("==> No persistent build cache outside the "
+                               "sandbox."));
+    } else if (truthy(variables.value(
+                   QStringLiteral("FORKMESH_ACTIONS_DISABLE_CACHE")))) {
         emitLog(QStringLiteral("==> Persistent build cache disabled by this "
                                "node's Actions policy."));
     } else {
@@ -802,6 +814,9 @@ void ActionRunner::reclaimSandboxSpaceThenCheckout()
 // than that free cannot host a run whatever it checks out.
 qint64 ActionRunner::requiredFreeBytes() const
 {
+    if (!m_workflow.sandbox)
+        return qMin<qint64>(qMax<qint64>(m_limits.maxWorkspaceBytes, 0),
+                            kHostRunFreeBytes);
     return qMax<qint64>(m_limits.maxWorkspaceBytes, 0);
 }
 
@@ -996,16 +1011,31 @@ void ActionRunner::launch(Phase phase, const QString &program,
         env.insert(QStringLiteral("DBUS_SESSION_BUS_ADDRESS"),
                    QStringLiteral("unix:path=%1/bus").arg(runtimeDir));
 #endif
-        env.insert(QStringLiteral("HOME"), QStringLiteral("/home/forkmesh"));
-        env.insert(QStringLiteral("TMPDIR"), QStringLiteral("/tmp"));
-        env.insert(QStringLiteral("XDG_CACHE_HOME"),
-                   QStringLiteral("/home/forkmesh/.cache"));
-        env.insert(QStringLiteral("XDG_CONFIG_HOME"),
-                   QStringLiteral("/home/forkmesh/.config"));
-        env.insert(QStringLiteral("XDG_DATA_HOME"),
-                   QStringLiteral("/home/forkmesh/.local/share"));
-        env.insert(QStringLiteral("XDG_STATE_HOME"),
-                   QStringLiteral("/home/forkmesh/.local/state"));
+        if (m_workflow.sandbox) {
+            env.insert(QStringLiteral("HOME"), QStringLiteral("/home/forkmesh"));
+            env.insert(QStringLiteral("TMPDIR"), QStringLiteral("/tmp"));
+            env.insert(QStringLiteral("XDG_CACHE_HOME"),
+                       QStringLiteral("/home/forkmesh/.cache"));
+            env.insert(QStringLiteral("XDG_CONFIG_HOME"),
+                       QStringLiteral("/home/forkmesh/.config"));
+            env.insert(QStringLiteral("XDG_DATA_HOME"),
+                       QStringLiteral("/home/forkmesh/.local/share"));
+            env.insert(QStringLiteral("XDG_STATE_HOME"),
+                       QStringLiteral("/home/forkmesh/.local/state"));
+        } else {
+            const QString home = QDir::homePath();
+            env.insert(QStringLiteral("HOME"), home);
+            env.insert(QStringLiteral("PATH"),
+                       home + QStringLiteral("/.local/bin:/usr/local/bin:/usr/bin:/bin"));
+            env.insert(QStringLiteral("TMPDIR"), QStringLiteral("/tmp"));
+            for (const QString &name : {QStringLiteral("USER"), QStringLiteral("LOGNAME")}) {
+                const QString value = qEnvironmentVariable(name.toLatin1().constData());
+                if (!value.isEmpty())
+                    env.insert(name, value);
+            }
+            if (!m_repoWorkTree.isEmpty())
+                env.insert(QStringLiteral("FORKMESH_LOCAL_CHECKOUT"), m_repoWorkTree);
+        }
         env.insert(QStringLiteral("FORKMESH_ACTIONS_CPUS"),
                    QString::number(qMax(1, actionCpuQuotaPercent() / 100)));
         env.insert(QStringLiteral("FORKMESH_ACTIONS_MEMORY_MB"),
@@ -1276,6 +1306,11 @@ void ActionRunner::launchSandboxedStep(const QString &command)
     };
     if (forkmesh::agentresources::status().available)
         args << QStringLiteral("--slice=") + forkmesh::agentresources::sliceName();
+    if (!m_workflow.sandbox) {
+        args << QStringLiteral("--") << shell << QStringLiteral("-se");
+        launch(Phase::Step, systemdRun, args, m_workspace);
+        return;
+    }
     args << QStringLiteral("--") << bwrap;
     args += sandboxArguments(shell, command);
     launch(Phase::Step, systemdRun, args, QString());
@@ -1327,6 +1362,12 @@ void ActionRunner::verifyWorkspaceSnapshotAsync()
 
 void ActionRunner::startSteps()
 {
+    if (!m_workflow.sandbox) {
+        emitLog(QStringLiteral("==> Steps use this computer's own network, "
+                               "files and processes."));
+        runNextStep();
+        return;
+    }
     emitLog(m_networkAllowed
                 ? QStringLiteral(
                       "==> Network access explicitly enabled by this "

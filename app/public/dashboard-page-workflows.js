@@ -62,6 +62,7 @@
     too_many_monitors: "A special agent can have at most 16 log monitors.",
     invalid_skill_ref: "Every skill file needs a scope and a file name.",
     invalid_native_workflow: "Pick a native workflow the desktop knows.",
+    sandbox_needs_manual_run: "Steps outside the sandbox run only by hand: keep Manual run as the only event.",
     missing_root: "The file needs its starting step.",
     missing_profile: "A special agent needs its profile step.",
     unsupported_path: "That file type cannot be edited here.",

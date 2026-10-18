@@ -160,8 +160,7 @@ python3 tools/free_disk_space.py --execute --step agents
 Code: `shortcutStepMarker` and `trackShortcutStep` in
 `desktop/src/LocalControlInsights.cpp` (tested in
 `desktop/tests/test_local_control_teammates.cpp`), `ShortcutStepList::setProgress`
-in `desktop/src/MainWindowShortcuts.cpp`. `free-disk-space.sh` is the first
-shortcut that uses it ([../tools/free-disk-space.md](../tools/free-disk-space.md)).
+in `desktop/src/MainWindowShortcuts.cpp`.
 
 **Phones.** Each `insights.shortcuts` entry with at least one step carries
 `"steps": [{"name": "Reset build numbers to 1"}, {"name": "Deploy Android build",

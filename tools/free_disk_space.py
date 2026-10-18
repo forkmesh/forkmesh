@@ -100,6 +100,10 @@ def paths_in_use(proc: Path) -> set[str]:
         return used
     for pid in pids:
         if pid in own:
+            try:
+                used.add(os.readlink(proc / pid / "cwd"))
+            except OSError:
+                pass
             continue
         base = proc / pid
         for link in ("cwd", "root", "exe"):

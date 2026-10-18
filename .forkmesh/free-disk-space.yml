@@ -1,0 +1,25 @@
+name: Free disk space
+on: [workflow_dispatch]
+sandbox: false
+fetch-depth: 1
+jobs:
+  free-disk-space:
+    steps:
+      - name: Measure the disk
+        run: |
+          python3 tools/free_disk_space.py --execute --step usage --repo "${FORKMESH_LOCAL_CHECKOUT:?this run has no local checkout}"
+      - name: Remove agent leftovers
+        run: |
+          python3 tools/free_disk_space.py --execute --step agents --repo "${FORKMESH_LOCAL_CHECKOUT:?this run has no local checkout}"
+      - name: Remove test and Actions leftovers
+        run: |
+          python3 tools/free_disk_space.py --execute --step tests --repo "${FORKMESH_LOCAL_CHECKOUT:?this run has no local checkout}"
+      - name: "Prune old Claude versions, backups and Trash"
+        run: |
+          python3 tools/free_disk_space.py --execute --step versions --repo "${FORKMESH_LOCAL_CHECKOUT:?this run has no local checkout}"
+      - name: Clear the pip and npm caches
+        run: |
+          python3 tools/free_disk_space.py --execute --step caches --repo "${FORKMESH_LOCAL_CHECKOUT:?this run has no local checkout}"
+      - name: Report what is left
+        run: |
+          python3 tools/free_disk_space.py --execute --step report --repo "${FORKMESH_LOCAL_CHECKOUT:?this run has no local checkout}"
