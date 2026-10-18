@@ -346,7 +346,7 @@ class ControlRequest:
         return json.dumps(self.body)
 
 
-def control_module(runtime):
+def control_module(runtime, public=()):
     import importlib
     sys.modules.pop("repository_actions", None)
     module = importlib.import_module("repository_actions")
@@ -364,6 +364,9 @@ def control_module(runtime):
     async def audit(_env, actor, action, kind, target, outcome, details=None):
         audits.append((actor, action, outcome, details))
 
+    async def private(_env, owner, repo):
+        return (owner, repo.lower()) not in set(public)
+
     module._bind_runtime({
         "json_response": lambda data, status=200, **_: {
             "status": status, "data": data},
@@ -374,6 +377,7 @@ def control_module(runtime):
         "_account_owns_node": no,
         "_org_write_allowed": writer,
         "_audit_sensitive_action": audit,
+        "_repo_is_private": private,
     })
     module._runner_runtime = lambda env: runtime
     return module, audits
@@ -554,3 +558,145 @@ def test_the_instance_status_endpoint_answers_for_the_organization_address():
     assert status("acme-bolt", actor="bob")["status"] == 403
     assert status("acme-bolt", actor="")["status"] == 401
     assert [a[2] for a in audits] == ["success"] * 3 + ["denied"]
+
+
+def public_setup():
+    runtime = FakeRuntime()
+    key = Key()
+    runtime.pool = {"forkmesh"}
+    runtime.gateways = {"forkmesh": "https://git.example.test"}
+    runtime.add_runner("box-runner", key, owners=("acme",))
+    runtime.db.executescript(
+        "UPDATE runner_nodes SET actions_trusted=1;"
+        "CREATE TABLE orgs (org_bi TEXT PRIMARY KEY, name TEXT);"
+        "CREATE TABLE org_repos (org_bi TEXT, repo TEXT, node_owner TEXT);"
+        "INSERT INTO orgs VALUES ('org-1', 'acme');"
+        "INSERT INTO org_repos VALUES ('org-1', 'web', 'builder');")
+    runtime.db.commit()
+    runtime.settings["ACTIONS_INSTANCE_RUNNER"] = "box-runner"
+    add_secret(runtime, "acme", "", "DEPLOY_TOKEN", "deploy-secret-value")
+    job_id = run(runner_actions.enqueue(
+        runtime, "acme", "web", "main", COMMIT_A, "forkmesh", "ada"))
+    [job] = lease(runtime, key)
+    body = {"jobId": job_id, "leaseId": job["leaseId"], "status": "running",
+            "commit": COMMIT_A,
+            "runs": [{"workflow": "CI", "workflowPath": ".forkmesh/ci.yml",
+                      "commit": COMMIT_A, "ref": "refs/heads/main",
+                      "status": "running", "createdAt": NOW,
+                      "startedAt": NOW, "finishedAt": 0,
+                      "logTail": "using deploy-secret-value",
+                      "log": "step 1\ndeploy-secret-value\n"
+                             + job["jobToken"] + "\n"}],
+            "catalog": [{"path": ".forkmesh/ci.yml", "name": "CI",
+                         "events": ["push", "workflow_dispatch"],
+                         "inputs": [{"name": "target", "type": "string",
+                                     "default": "staging"}]}]}
+    assert report(runtime, key, body)["status"] == 200
+    return runtime, job_id, job
+
+
+def status_module(runtime, public=()):
+    module, audits = control_module(runtime, public)
+    module._ACTIONS_PUBLIC_MEMO.clear()
+    responses = []
+
+    def respond(data, status=200, cache_control=None, extra_headers=None):
+        responses.append((cache_control, extra_headers))
+        return {"status": status, "data": data, "cache": cache_control,
+                "headers": extra_headers or {}}
+
+    module.json_response = respond
+    env = type("Env", (), {"ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+
+    def status(owner="acme", actor=""):
+        return run(module.repository_actions_instance_status_handler(
+            env, ControlRequest("GET", actor=actor), owner, "web"))
+
+    def log(run_id, actor=""):
+        return run(module.repository_actions_run_log_handler(
+            env, ControlRequest("GET", actor=actor), "acme", "web", run_id))
+
+    return module, audits, status, log
+
+
+def test_a_public_repository_shows_a_run_summary_to_anyone():
+    runtime, job_id, job = public_setup()
+    module, audits, status, log = status_module(
+        runtime, public={("builder", "web")})
+    for actor in ("", "bob"):
+        answer = status(actor=actor)
+        assert answer["status"] == 200
+        assert answer["cache"].startswith("public, max-age=5")
+        assert answer["headers"]["Vary"] == "Cookie, Authorization"
+        data = answer["data"]
+        assert data["access"] == "public" and data["source"] == "runner"
+        assert data["controlAvailable"] is False and data["node"] == ""
+        [shown] = data["runs"]
+        assert shown == {
+            "id": job_id * 100 + 1, "workflow": "CI",
+            "workflowPath": ".forkmesh/ci.yml", "event": "push",
+            "commit": COMMIT_A, "ref": "refs/heads/main",
+            "status": "running", "createdAt": NOW, "startedAt": NOW,
+            "finishedAt": 0, "actor": "ada"}
+        assert data["workflows"] == [{"path": ".forkmesh/ci.yml",
+                                      "name": "CI",
+                                      "events": ["push", "workflow_dispatch"]}]
+        text = json.dumps(data)
+        for secret in ("deploy-secret-value", job["jobToken"], "box-runner",
+                       "logTail", "inputs", "staging", "controls"):
+            assert secret not in text
+    assert audits == []
+    assert log(job_id * 100 + 1)["status"] == 401
+    assert log(job_id * 100 + 1, actor="bob")["status"] == 403
+
+
+def test_the_public_summary_is_cached_briefly():
+    runtime, job_id, _job = public_setup()
+    _module, _audits, status, _log = status_module(
+        runtime, public={("builder", "web")})
+    assert len(status()["data"]["runs"]) == 1
+    second = run(runner_actions.enqueue(
+        runtime, "acme", "web", "main", COMMIT_B, "forkmesh", "ada"))
+    assert len(status()["data"]["runs"]) == 1
+    runtime.clock += 6000
+    assert [r["id"] for r in status()["data"]["runs"]] == [
+        second * 100, job_id * 100 + 1]
+
+
+def test_writers_get_the_full_answer_with_masked_logs():
+    runtime, job_id, job = public_setup()
+    _module, audits, status, log = status_module(
+        runtime, public={("builder", "web")})
+    answer = status(actor="ada")
+    assert answer["status"] == 200
+    assert answer["cache"].startswith("private, no-store")
+    data = answer["data"]
+    assert data["access"] == "member" and data["controlAvailable"] is True
+    assert data["node"] == "box-runner"
+    [shown] = data["runs"]
+    assert shown["logTail"] == "using ***" and shown["actor"] == "ada"
+    assert data["workflows"][0]["inputs"][0]["name"] == "target"
+    full = log(job_id * 100 + 1, actor="ada")
+    assert full["status"] == 200
+    assert full["data"]["log"] == "step 1\n***\n***\n"
+    assert [a[2] for a in audits] == ["success"]
+
+
+def test_logs_are_masked_with_secrets_added_after_the_report():
+    runtime, job_id, _job = public_setup()
+    _module, _audits, status, log = status_module(runtime)
+    add_secret(runtime, "builder", "web", "LATE", "step 1")
+    assert log(job_id * 100 + 1, actor="ada")["data"]["log"].startswith(
+        "***\n")
+
+
+def test_a_private_repository_shows_nothing_to_outsiders():
+    runtime, job_id, _job = public_setup()
+    _module, audits, status, log = status_module(runtime)
+    anonymous = status()
+    assert anonymous["status"] == 401 and "runs" not in anonymous["data"]
+    outsider = status(actor="bob")
+    assert outsider["status"] == 403 and "runs" not in outsider["data"]
+    assert [a[2] for a in audits] == ["denied"]
+    assert status(actor="ada")["data"]["access"] == "member"
+    assert log(job_id * 100 + 1)["status"] == 401
