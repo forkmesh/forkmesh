@@ -143,7 +143,11 @@ the Actions bot `<owner>-actions` (a node account holding the Ed25519 key
 derived from the seed, organization role `maintainer`), and
 `python -m forkmesh_host instance-runner --name N --public-key K --owner O`
 registers the instance's own trusted pool runner; see
-[server/instance-actions.md](server/instance-actions.md).
+[server/instance-actions.md](server/instance-actions.md). The Actions tab of
+a public repository lists its runs to everyone (workflow, event, branch,
+commit, actor, status, times); logs, live log tails and the Run, Cancel and
+Re-run controls stay with the owner and organization writers, and a private
+repository's runs stay hidden ("Public run summary" there).
 Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
 → Repository addresses ([app/server-update.md](app/server-update.md)).
 

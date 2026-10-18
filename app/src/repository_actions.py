@@ -555,10 +555,43 @@ async def _instance_actions_control(env, request, owner, repo):
         status=202, cache_control="no-store")
 
 
+ACTIONS_PUBLIC_TTL_MS = 5 * 1000
+ACTIONS_PUBLIC_MEMO_MAX = 256
+ACTIONS_PUBLIC_CACHE = "public, max-age=5, stale-while-revalidate=10"
+_ACTIONS_PUBLIC_MEMO = {}
+
+
+async def _instance_public_summary(env, owner, repo):
+    import runner_actions
+    runtime = _runner_runtime(env)
+    storage, _organization = await runner_actions.identity(
+        runtime, owner, repo)
+    if await _repo_is_private(env, storage, repo):
+        return None
+    key = storage + "/" + repo.lower()
+    now = int(runtime.now())
+    hit = _ACTIONS_PUBLIC_MEMO.get(key)
+    if hit and now - hit[0] < ACTIONS_PUBLIC_TTL_MS:
+        return hit[1]
+    await runtime.ensure_schema()
+    summary = runner_actions.public_summary(await runner_actions.snapshot(
+        runtime, owner, repo, always=True, masked=False))
+    if len(_ACTIONS_PUBLIC_MEMO) >= ACTIONS_PUBLIC_MEMO_MAX:
+        _ACTIONS_PUBLIC_MEMO.clear()
+    _ACTIONS_PUBLIC_MEMO[key] = (now, summary)
+    return summary
+
+
 async def repository_actions_instance_status_handler(env, request, owner,
                                                     repo):
     owner = str(owner or "").strip().lower()
     actor, allowed = await _instance_actor(env, request, owner, repo)
+    if not allowed:
+        summary = await _instance_public_summary(env, owner, repo)
+        if summary is not None:
+            return json_response(
+                summary, cache_control=ACTIONS_PUBLIC_CACHE,
+                extra_headers={"Vary": "Cookie, Authorization"})
     if not actor:
         return _instance_error("invalid_session", 401)
     if not allowed:
@@ -570,6 +603,7 @@ async def repository_actions_instance_status_handler(env, request, owner,
     runtime = _runner_runtime(env)
     await runtime.ensure_schema()
     snapshot = await runner_actions.snapshot(runtime, owner, repo, always=True)
+    snapshot["access"] = "member"
     await _audit_sensitive_action(
         env, actor, "repository.actions_status", "repository",
         owner + "/" + repo, "success", {"node": snapshot["node"]})
