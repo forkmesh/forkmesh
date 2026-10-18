@@ -33,82 +33,37 @@ struct YouHubSheet: View {
         return account.isEmpty ? [] : [HubGroup(id: "account", title: "Account", items: account)]
     }
 
-    private var recents: [Route] {
-        let installed: Set<String> = PackageGateSync.publish()
-        return router.recents.filter { PackageGate.shows($0, installed: installed) }
-    }
-
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    header
-                }
-                Section {
-                    pocketRow
-                    suggestionToggle
-                }
-                if !recents.isEmpty {
-                    Section("Recent") {
-                        ForEach(recents, id: \.self) { (route: Route) in
-                            row(title: route.title, symbol: RouteCatalog.symbol(route.kind), id: "recent-\(route.kind.rawValue)") {
-                                choose(.route(route))
-                            }
-                        }
-                    }
-                }
-                ForEach(groups) { (group: HubGroup) in
-                    Section(group.title) {
-                        ForEach(group.items) { (item: HubItem) in
-                            row(title: item.title, symbol: item.symbol, id: item.id, destructive: item.action == .signOut) {
-                                choose(item.action)
-                            }
-                        }
-                    }
-                }
-                Section {
-                    versionRow
-                }
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView {
+                content
             }
-            .listStyle(.insetGrouped)
-            .navigationDestination(isPresented: $showWhatsNew) {
-                WhatsNewScreen()
+            .scrollIndicators(.hidden)
+        }
+        .background(fm.sheetSurface)
+        .confirmationDialog("Sign out of this project?", isPresented: $confirmSignOut, titleVisibility: .visible) {
+            Button("Sign out", role: .destructive) {
+                onClose()
+                onAction(.signOut)
             }
-            .navigationTitle("You")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if let settings = settings {
-                        Toggle(isOn: Binding<Bool>(
-                            get: { settings.showTelemetryStrip },
-                            set: { (value: Bool) in settings.setShowTelemetryStrip(value) })
-                        ) {
-                            Text("Diagnostics")
-                                .fmText(.bodySmall, color: fm.textSecondary)
-                        }
-                        .toggleStyle(.switch)
-                        .fixedSize()
-                        .accessibilityIdentifier("hub-diagnostics-strip")
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { onClose() }
-                        .keyboardShortcut(.cancelAction)
-                }
-            }
-            .confirmationDialog("Sign out of this project?", isPresented: $confirmSignOut, titleVisibility: .visible) {
-                Button("Sign out", role: .destructive) {
-                    onClose()
-                    onAction(.signOut)
-                }
-                Button("Cancel", role: .cancel) {}
-            }
+            Button("Cancel", role: .cancel) {}
         }
         .sheet(isPresented: $showStatus) {
             UserStatusSheet()
         }
         .sheet(isPresented: $reportingBug) {
             ReportBugSheet(screen: "hub")
+        }
+        .sheet(isPresented: $showWhatsNew) {
+            NavigationStack {
+                WhatsNewScreen()
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { showWhatsNew = false }
+                        }
+                    }
+            }
         }
         .sheet(isPresented: $sendingDiagnostics) {
             if let send = onSendDiagnostics {
@@ -127,42 +82,104 @@ struct YouHubSheet: View {
         .accessibilityIdentifier("you-hub")
     }
 
+    private var content: some View {
+        VStack(alignment: .leading, spacing: FmSpace.x2) {
+            header
+            Divider()
+            VStack(spacing: 0) {
+                pocketRow
+                suggestionToggle
+                diagnosticsToggle
+            }
+            Divider()
+            items
+            versionRow
+        }
+        .padding(FmSpace.x3)
+    }
+
     private var header: some View {
-        VStack(alignment: .leading, spacing: FmSpace.x3) {
-            HStack(spacing: FmSpace.x3) {
-                AvatarWithDot(state: state.relayState.fmState, label: state.name, avatarPng: state.avatarPng, size: 48)
+        HStack(spacing: FmSpace.x2) {
+            HStack(spacing: FmSpace.x2) {
+                AvatarWithDot(state: state.relayState.fmState, label: state.name, avatarPng: state.avatarPng, size: 40)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(state.guest ? "Guest" : state.name)
-                        .fmText(.titleMedium)
+                        .fmText(.titleSmall)
                         .lineLimit(1)
                     if !state.statusDescription.isEmpty {
                         Text(state.statusDescription)
                             .fmText(.bodySmall, color: fm.textSecondary)
-                            .lineLimit(2)
+                            .lineLimit(1)
                     }
                 }
-                Spacer(minLength: 0)
             }
             .accessibilityElement(children: .combine)
-            HStack(spacing: FmSpace.x2) {
-                ProjectSwitcherButton()
-                Spacer(minLength: 0)
-                if state.canSetStatus {
-                    Button {
-                        FmHaptics.selection()
-                        showStatus = true
-                    } label: {
-                        Label("Set a status", systemImage: "face.smiling")
-                            .labelStyle(.titleAndIcon)
+            Spacer(minLength: 0)
+            if state.canSetStatus {
+                Button {
+                    FmHaptics.selection()
+                    showStatus = true
+                } label: {
+                    Label("Set a status", systemImage: "face.smiling")
+                        .labelStyle(.titleAndIcon)
+                        .fmText(.labelMedium)
+                        .lineLimit(1)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityIdentifier("hub-set-status")
+            }
+        }
+    }
+
+    @ViewBuilder private var items: some View {
+        if linksInBar {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: FmSpace.x2) {
+                    ForEach(groups.flatMap(\.items)) { (item: HubItem) in
+                        chip(item)
                     }
-                    .buttonStyle(.bordered)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("hub-set-status")
+                    Spacer(minLength: 0)
+                }
+                VStack(spacing: 0) {
+                    ForEach(groups.flatMap(\.items)) { (item: HubItem) in
+                        row(title: item.title, symbol: item.symbol, id: item.id, destructive: item.action == .signOut) {
+                            choose(item.action)
+                        }
+                    }
+                }
+            }
+        } else {
+            ForEach(groups) { (group: HubGroup) in
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(group.title)
+                        .fmText(.labelSmall, color: fm.textSecondary)
+                        .padding(.top, FmSpace.x1)
+                    ForEach(group.items) { (item: HubItem) in
+                        row(title: item.title, symbol: item.symbol, id: item.id, destructive: item.action == .signOut) {
+                            choose(item.action)
+                        }
+                    }
                 }
             }
         }
-        .padding(.vertical, FmSpace.x1)
+    }
+
+    private func chip(_ item: HubItem) -> some View {
+        let destructive: Bool = item.action == .signOut
+        return Button {
+            choose(item.action)
+        } label: {
+            Label(item.title, systemImage: item.symbol)
+                .labelStyle(.titleAndIcon)
+                .fmText(.labelMedium, color: destructive ? fm.danger : fm.textPrimary)
+                .lineLimit(1)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(destructive ? fm.danger : fm.textPrimary)
+        .accessibilityIdentifier("hub-item-\(item.id)")
     }
 
     private var versionRow: some View {
@@ -171,25 +188,30 @@ struct YouHubSheet: View {
                 FmHaptics.selection()
                 showWhatsNew = true
             } label: {
-                VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: FmSpace.x2) {
                     Text(verbatim: AppChangelog.label(infoDictionary: Bundle.main.infoDictionary))
-                        .fmText(.bodySmall, color: fm.textSecondary)
+                        .fmText(.labelSmall, color: fm.textSecondary)
                         .monospacedDigit()
+                        .lineLimit(1)
                     Text("What's new")
-                        .fmText(.bodySmall, color: fm.accent)
+                        .fmText(.labelSmall, color: fm.accent)
+                        .lineLimit(1)
                 }
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.borderless)
             .accessibilityIdentifier("hub-version")
             if onSendDiagnostics != nil {
-                DiagnosticsSendButton(alert: diagnostics.alert) {
+                DiagnosticsSendButton(alert: diagnostics.alert, compact: true) {
                     FmHaptics.selection()
                     sendingDiagnostics = true
                 }
             }
         }
+        .padding(.horizontal, FmSpace.x2)
+        .padding(.vertical, FmSpace.x1)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(fm.bgElevated))
     }
 
     private var pocketRow: some View {
@@ -200,21 +222,18 @@ struct YouHubSheet: View {
             ShellPocket.shared.lock()
         } label: {
             Label {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(walking ? "Pocket mode, walking" : "Pocket mode")
-                        .foregroundStyle(fm.textPrimary)
-                    Text("Locks the screen to Glasses Alert, pings and walking. Slide to unlock.")
-                        .fmText(.bodySmall, color: fm.textSecondary)
-                }
+                Text(walking ? "Pocket mode, walking" : "Pocket mode")
+                    .fmText(.bodyMedium)
             } icon: {
                 Image(systemName: walking ? "figure.walk" : "lock.iphone")
                     .foregroundStyle(fm.accent)
                     .symbolEffect(.pulse, options: .repeating, isActive: walking)
             }
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityHint(Text("Locks the screen to Glasses Alert, pings and walking. Slide to unlock."))
         .accessibilityIdentifier("hub-pocket-mode")
     }
 
@@ -222,15 +241,37 @@ struct YouHubSheet: View {
         Toggle(isOn: Binding<Bool>(get: { suggestions.on }, set: { (on: Bool) in suggestions.setOn(on) })) {
             Label {
                 Text("Suggestion mode")
-                    .foregroundStyle(fm.textPrimary)
+                    .fmText(.bodyMedium)
             } icon: {
                 Image(systemName: "sparkles")
                     .foregroundStyle(fm.accent)
             }
         }
         .tint(fm.accent)
-        .frame(minHeight: 44)
+        .controlSize(.small)
+        .frame(minHeight: 36)
         .accessibilityIdentifier("hub-suggestion-mode")
+    }
+
+    @ViewBuilder private var diagnosticsToggle: some View {
+        if let settings = settings {
+            Toggle(isOn: Binding<Bool>(
+                get: { settings.showTelemetryStrip },
+                set: { (value: Bool) in settings.setShowTelemetryStrip(value) })
+            ) {
+                Label {
+                    Text("Diagnostics")
+                        .fmText(.bodyMedium)
+                } icon: {
+                    Image(systemName: "waveform.path.ecg")
+                        .foregroundStyle(fm.accent)
+                }
+            }
+            .tint(fm.accent)
+            .controlSize(.small)
+            .frame(minHeight: 36)
+            .accessibilityIdentifier("hub-diagnostics-strip")
+        }
     }
 
     private func row(
@@ -239,12 +280,12 @@ struct YouHubSheet: View {
         Button(action: action) {
             Label {
                 Text(title)
-                    .foregroundStyle(destructive ? fm.danger : fm.textPrimary)
+                    .fmText(.bodyMedium, color: destructive ? fm.danger : fm.textPrimary)
             } icon: {
                 Image(systemName: symbol)
                     .foregroundStyle(destructive ? fm.danger : fm.accent)
             }
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
