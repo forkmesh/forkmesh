@@ -1198,13 +1198,14 @@ void MainWindow::startCliTranscriptWorktree(
     const QString script = forkmesh::agentwt::addScript(
         wtPath, branchName, baseRef, !resumeId.isEmpty());
     auto runAdd = std::make_shared<std::function<void(int)>>();
+    auto firstFailure = std::make_shared<QString>();
     *runAdd = [this, sid, wtPath, repoPath, script, launch, failLaunch,
-               runAdd](int attemptsLeft) {
+               runAdd, firstFailure](int attemptsLeft) {
         auto *add = new QProcess(this);
         add->setWorkingDirectory(repoPath);
         connect(add, &QProcess::finished, this,
                 [this, sid, add, wtPath, script, launch, failLaunch, runAdd,
-                 attemptsLeft](int, QProcess::ExitStatus) {
+                 firstFailure, attemptsLeft](int, QProcess::ExitStatus) {
                     const QString out = QString::fromUtf8(
                                             add->readAllStandardOutput())
                                             .trimmed();
@@ -1226,6 +1227,13 @@ void MainWindow::startCliTranscriptWorktree(
                     }
                     if (!m_streamSessions.value(sid) && !m_codexStreams.value(sid))
                         return;
+                    const QString failure = diagnostic.join(QLatin1Char('\n'));
+                    if (firstFailure->isEmpty())
+                        *firstFailure = failure;
+                    else if (!failure.isEmpty() && failure != *firstFailure)
+                        diagnostic.prepend(
+                            QStringLiteral("first attempt: %1\nlast attempt:")
+                                .arg(*firstFailure));
                     if (attemptsLeft > 0) {
                         QTimer::singleShot(400, this,
                                            [runAdd, attemptsLeft] {

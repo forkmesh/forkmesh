@@ -4,6 +4,8 @@
 #include "OpenWrtModel.h"
 
 #include <QApplication>
+#include <QCheckBox>
+#include <QPlainTextEdit>
 #include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QJsonDocument>
@@ -74,6 +76,8 @@ public:
     QString session;
     int logins = 0;
     bool expireOnce = false;
+    bool fstabMissing = false;
+    bool fstabWritten = false;
 
     FakeRouter()
     {
@@ -148,6 +152,30 @@ private:
         }
         if (object == QStringLiteral("system") && method == QStringLiteral("board"))
             return QJsonArray{0, QJsonObject{{QStringLiteral("hostname"), QStringLiteral("OpenWrt")}, {QStringLiteral("model"), QStringLiteral("Test Router")}}};
+        if (object == QStringLiteral("uci") && method == QStringLiteral("get") && args.value(QStringLiteral("config")).toString() == QStringLiteral("fstab")) {
+            if (fstabMissing)
+                return QJsonArray{UbusNotFound};
+            QJsonObject values;
+            if (fstabWritten)
+                values.insert(QStringLiteral("cfg01"), QJsonObject{{QStringLiteral(".name"), QStringLiteral("cfg01")}, {QStringLiteral(".type"), QStringLiteral("global")},
+                                                                   {QStringLiteral(".anonymous"), true}, {QStringLiteral(".index"), 0}, {QStringLiteral("anon_mount"), QStringLiteral("0")}});
+            return QJsonArray{0, QJsonObject{{QStringLiteral("values"), values}}};
+        }
+        if (object == QStringLiteral("file") && method == QStringLiteral("write")) {
+            if (args.value(QStringLiteral("path")).toString() != QStringLiteral("/etc/config/fstab") || !args.value(QStringLiteral("data")).toString().contains(QStringLiteral("global")))
+                return QJsonArray{UbusPermissionDenied};
+            fstabMissing = false;
+            fstabWritten = true;
+            return QJsonArray{0};
+        }
+        if (object == QStringLiteral("file") && method == QStringLiteral("list") && args.value(QStringLiteral("path")).toString() == QStringLiteral("/sys/bus/usb/devices"))
+            return QJsonArray{0, QJsonObject{{QStringLiteral("entries"), QJsonArray{QJsonObject{{QStringLiteral("name"), QStringLiteral("usb1")}},
+                                                                                   QJsonObject{{QStringLiteral("name"), QStringLiteral("1-1")}},
+                                                                                   QJsonObject{{QStringLiteral("name"), QStringLiteral("1-1:1.0")}}}}}};
+        if (object == QStringLiteral("file") && method == QStringLiteral("read") && args.value(QStringLiteral("path")).toString() == QStringLiteral("/sys/bus/usb/devices/1-1/product"))
+            return QJsonArray{0, QJsonObject{{QStringLiteral("data"), QStringLiteral("Flash Disk\n")}}};
+        if (object == QStringLiteral("file") && method == QStringLiteral("read") && args.value(QStringLiteral("path")).toString() == QStringLiteral("/proc/partitions"))
+            return QJsonArray{0, QJsonObject{{QStringLiteral("data"), QStringLiteral("major minor  #blocks  name\n\n  31        0       1024 mtdblock0\n   8        0   15000000 sda\n   8        1   14999000 sda1\n")}}};
         if (object == QStringLiteral("uci") && method == QStringLiteral("get")) {
             if (args.value(QStringLiteral("config")).toString() != QStringLiteral("network"))
                 return QJsonArray{0, QJsonObject{{QStringLiteral("values"), QJsonObject()}}};
@@ -168,6 +196,10 @@ private:
                 return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 1}, {QStringLiteral("stderr"), QStringLiteral("nope")}}};
             if (command == QStringLiteral("/bin/opkg"))
                 return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), QStringLiteral("base-files - 1-r1\nluci - git-24\n")}}};
+            if (command == QStringLiteral("/sbin/block") && args.value(QStringLiteral("params")).toArray().first().toString() == QStringLiteral("detect"))
+                return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), QStringLiteral("config 'global'\n\toption\tanon_mount\t'0'\n")}}};
+            if (command == QStringLiteral("/bin/dmesg"))
+                return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), QStringLiteral("<6>[    5.1] usb 1-1: new high-speed USB device number 2\n<5>[    6.0] random: crng init done\n")}}};
             return QJsonArray{UbusPermissionDenied};
         }
         return QJsonArray{0};
@@ -403,9 +435,60 @@ void testClient()
           QStringLiteral("an unreachable router is named in the error"));
 }
 
+void testStorageCheck()
+{
+    check(parsePartitions(QStringLiteral("major minor  #blocks  name\n\n  31 0 1024 mtdblock0\n 8 0 100 sda\n 8 1 99 sda1\n 179 0 50 mmcblk0\n"))
+              == QStringList({QStringLiteral("sda"), QStringLiteral("sda1"), QStringLiteral("mmcblk0")}),
+          QStringLiteral("/proc/partitions gives the kernel's disks without the router's flash"));
+    const QStringList entries{QStringLiteral("usb1"), QStringLiteral("usb2"), QStringLiteral("1-1"), QStringLiteral("1-1:1.0"), QStringLiteral("2-1.4")};
+    check(usbControllerCount(entries) == 2 && usbDeviceEntries(entries) == QStringList({QStringLiteral("1-1"), QStringLiteral("2-1.4")}),
+          QStringLiteral("USB controllers and devices are told apart from interfaces"));
+    check(storageKernelLines(QStringLiteral("<6>[1.0] usb 1-1: new device\n<6>[1.1] eth0: link up\n<3>[2.0] sd 0:0:0:0: [sda] No Caching mode page found\n"))
+              == QStringList({QStringLiteral("[1.0] usb 1-1: new device"), QStringLiteral("[2.0] sd 0:0:0:0: [sda] No Caching mode page found")}),
+          QStringLiteral("only USB and disk kernel messages are kept, without their priority"));
+    check(missingStoragePackages({QStringLiteral("block-mount"), QStringLiteral("kmod-usb-storage")}).size() == usbStoragePackages().size() - 2,
+          QStringLiteral("missing storage packages are listed"));
+    check(fstabFromDetect(QStringLiteral("config 'global'\n\toption\tanon_mount\t'0'")).endsWith(QStringLiteral("'0'\n"))
+              && fstabFromDetect(QString()).startsWith(QStringLiteral("config global\n")),
+          QStringLiteral("block detect output becomes the fstab, with a default when it prints nothing"));
+    check(outputTail(QStringLiteral("a\n\nb\nc\n"), 2) == QStringList({QStringLiteral("b"), QStringLiteral("c")}), QStringLiteral("the end of a command's output is kept"));
+
+    StorageCheck empty;
+    empty.packagesKnown = true;
+    empty.usbKnown = true;
+    empty.usbControllers = 1;
+    empty.partitionsKnown = true;
+    check(storageFindings(empty).first().contains(QStringLiteral("sees nothing plugged into its USB port")), QStringLiteral("an empty port is reported"));
+    StorageCheck noHost = empty;
+    noHost.usbControllers = 0;
+    check(storageFindings(noHost).first().contains(QStringLiteral("no USB controller driver")), QStringLiteral("a missing USB controller driver is reported"));
+    StorageCheck noDriver = empty;
+    noDriver.usbDevices = {QStringLiteral("Flash Disk (1-1)")};
+    check(storageFindings(noDriver).first().contains(QStringLiteral("kmod-usb-storage")) && storageFindings(noDriver).first().contains(QStringLiteral("Flash Disk")),
+          QStringLiteral("a plugged-in drive without the storage driver names the driver"));
+    StorageCheck noBlock = noDriver;
+    noBlock.installed = {QStringLiteral("kmod-usb-storage")};
+    noBlock.partitions = {QStringLiteral("sda"), QStringLiteral("sda1")};
+    check(storageFindings(noBlock).first().contains(QStringLiteral("block-mount is not installed")), QStringLiteral("a disk without block-mount is reported"));
+    StorageCheck noFstab = noBlock;
+    noFstab.blockTool = true;
+    noFstab.disks = 1;
+    const QStringList fstabFindings = storageFindings(noFstab);
+    check(fstabFindings.join(QLatin1Char('\n')).contains(QStringLiteral("/etc/config/fstab")) && fstabFindings.last().contains(QStringLiteral("Turn on Mount any disk")),
+          QStringLiteral("a missing fstab and an unmounted disk say what to do"));
+    StorageCheck ready = noFstab;
+    ready.fstabExists = true;
+    ready.installed = usbStoragePackages();
+    ready.mounted = 1;
+    check(storageFindings(ready) == QStringList({QStringLiteral("The disk is mounted.")}), QStringLiteral("a working disk reports only that it is mounted"));
+    check(storageReport(ready).contains(QStringLiteral("Storage packages: all installed")) && storageReport(ready).startsWith(QStringLiteral("• The disk is mounted.")),
+          QStringLiteral("the report lists findings before the details"));
+}
+
 void testFeature()
 {
     FakeRouter router;
+    router.fstabMissing = true;
     RecordingManager network;
     forkmesh::market::NativePackageHost host;
     host.packageId = QStringLiteral("openwrt");
@@ -477,6 +560,49 @@ void testFeature()
           QStringLiteral("the staged change sets the lan DNS list"));
     check(router.lastCall(QStringLiteral("uci"), QStringLiteral("apply")).isEmpty(), QStringLiteral("nothing is applied without asking"));
     check(page.searchHits(QStringLiteral("wan"), 5).size() == 1, QStringLiteral("the top search finds router interfaces"));
+
+    QCheckBox *autoMount = nullptr;
+    for (QCheckBox *box : page.findChildren<QCheckBox *>()) {
+        if (box->text() == QStringLiteral("Mount any disk when it is plugged in"))
+            autoMount = box;
+    }
+    check(autoMount && autoMount->isEnabled(), QStringLiteral("automatic mounting can be switched on while the router has no fstab"));
+    if (!autoMount)
+        return;
+    autoMount->click();
+    check(waitFor([&] {
+              const QJsonObject set = router.lastCall(QStringLiteral("uci"), QStringLiteral("set")).at(3).toObject();
+              return set.value(QStringLiteral("config")).toString() == QStringLiteral("fstab");
+          }),
+          QStringLiteral("switching on automatic mounting stages it"));
+    const QJsonObject written = router.lastCall(QStringLiteral("file"), QStringLiteral("write")).at(3).toObject();
+    const QJsonObject mountSet = router.lastCall(QStringLiteral("uci"), QStringLiteral("set")).at(3).toObject();
+    check(written.value(QStringLiteral("path")).toString() == QStringLiteral("/etc/config/fstab") && written.value(QStringLiteral("data")).toString().startsWith(QStringLiteral("config 'global'"))
+              && mountSet.value(QStringLiteral("section")).toString() == QStringLiteral("cfg01")
+              && mountSet.value(QStringLiteral("values")).toObject().value(QStringLiteral("anon_mount")).toString() == QStringLiteral("1"),
+          QStringLiteral("a missing fstab is created from block detect before anon_mount is set on its global section"));
+    check(router.lastCall(QStringLiteral("uci"), QStringLiteral("add")).isEmpty(), QStringLiteral("no second global section is added"));
+
+    QPlainTextEdit *log = nullptr;
+    for (QPlainTextEdit *edit : page.findChildren<QPlainTextEdit *>()) {
+        if (edit->accessibleName() == QStringLiteral("USB storage diagnostics"))
+            log = edit;
+    }
+    QPushButton *checkUsb = nullptr;
+    for (QPushButton *button : page.findChildren<QPushButton *>()) {
+        if (button->text() == QStringLiteral("Check USB storage"))
+            checkUsb = button;
+    }
+    check(log && checkUsb, QStringLiteral("the Storage tab has a USB check and its log"));
+    if (!log || !checkUsb)
+        return;
+    checkUsb->click();
+    check(waitFor([&] { return log->toPlainText().contains(QStringLiteral("Recent kernel messages")); }), QStringLiteral("the USB check finishes"));
+    const QString report = log->toPlainText();
+    check(report.contains(QStringLiteral("USB devices: Flash Disk (1-1)")) && report.contains(QStringLiteral("Disks the kernel sees: sda, sda1"))
+              && report.contains(QStringLiteral("found no filesystem it can read")) && report.contains(QStringLiteral("usb 1-1: new high-speed"))
+              && !report.contains(QStringLiteral("crng")),
+          QStringLiteral("the USB check reports the device, the kernel's disks, the reason and the USB kernel messages"));
 }
 
 }
@@ -492,6 +618,7 @@ int main(int argc, char **argv)
     QCoreApplication::setApplicationName(QStringLiteral("openwrt-tests"));
     testModel();
     testClient();
+    testStorageCheck();
     testFeature();
     return failures == 0 ? 0 : 1;
 }

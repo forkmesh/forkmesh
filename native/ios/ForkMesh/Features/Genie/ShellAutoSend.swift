@@ -33,7 +33,7 @@ final class ShellAutoSend {
         setOn(!on)
         if on {
             FmHaptics.impact(.heavy)
-            GenieHub.shared.show(line: "Auto-send is on: up to \(GenieAutoSendPace.perDay) emails a day through Zoho Mail, one about every \(Int((GenieAutoSendPace.every / 60).rounded())) minutes while the app is open. Long-press the picture to stop.")
+            GenieHub.shared.show(line: "Auto-send is on: sending the first email now, then up to \(GenieAutoSendPace.perDay) a day through Zoho Mail, one about every \(Int((GenieAutoSendPace.every / 60).rounded())) minutes while the app is open. Long-press the picture to stop.")
         } else {
             FmHaptics.success()
             GenieHub.shared.show(line: "Auto-send is off. \(sentToday == 1 ? "1 email" : "\(sentToday) emails") sent today.")
@@ -46,7 +46,7 @@ final class ShellAutoSend {
         pausedFor = ""
         ShellSuggestions.shared.refreshNow()
         if value {
-            Task { @MainActor [weak self] in await self?.tick() }
+            Task { @MainActor [weak self] in await self?.tick(force: true) }
         }
     }
 
@@ -58,10 +58,21 @@ final class ShellAutoSend {
         }
     }
 
-    func tick(now: Date = Date()) async {
+    func tick(now: Date = Date(), force: Bool = false) async {
         sentToday = pace.sentToday(now: now)
-        guard on, !sending, pace.due(now: now) else { return }
-        guard let toolbox: ForkMeshToolbox = LocalAIFeature.toolbox() else { return }
+        guard on, !sending else { return }
+        if force {
+            guard sentToday < GenieAutoSendPace.perDay else {
+                pause("Today's \(GenieAutoSendPace.perDay) emails are already sent. The next one goes out tomorrow.")
+                return
+            }
+        } else {
+            guard pace.due(now: now) else { return }
+        }
+        guard let toolbox: ForkMeshToolbox = LocalAIFeature.toolbox() else {
+            if force { pause("This phone is not connected to ForkMesh. Sign in and try again.") }
+            return
+        }
         sending = true
         defer { sending = false }
         for _ in 0..<ShellAutoSend.tries {
@@ -86,7 +97,11 @@ final class ShellAutoSend {
                 return
             }
         }
-        pace.held(at: Date())
+        if force {
+            pause("The next \(ShellAutoSend.tries) contacts were skipped: no email address, closed, or emailed recently.")
+        } else {
+            pace.held(at: Date())
+        }
     }
 
     func next() {

@@ -893,6 +893,8 @@ class WorkflowEngine(val spec: Map<String, Any?>) {
                 val max = (values["max"] as Number).toDouble().toLong().coerceAtLeast(0)
                 return linkedMapOf("main" to items.take(max.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()))
             }
+            val core = map(coreNodes[type])
+            if (core["runsOn"] == "desktop") fail(core["refusal"].toString())
             if (type in WorkflowActions.TYPES) return runAction(node, items.take(maxItems))
             val out = LinkedHashMap<String, MutableList<Any?>>()
             for (name in outputsFor(type)) out[name] = mutableListOf()

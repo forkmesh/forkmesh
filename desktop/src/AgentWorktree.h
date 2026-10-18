@@ -354,8 +354,11 @@ inline QString addScript(const QString &path, const QString &branch,
     return
         resume ? QStringLiteral("git worktree add %1 %2")
                      .arg(quotedPath, shellQuote(branch))
-               : QStringLiteral("git worktree add -b %1 %2 %3")
-                     .arg(shellQuote(branch), quotedPath, shellQuote(baseRef));
+               : QStringLiteral("if git rev-parse --verify --quiet %1 >/dev/null; "
+                                "then git worktree add %2 %3; "
+                                "else git worktree add -b %3 %2 %4; fi")
+                     .arg(shellQuote(QStringLiteral("refs/heads/") + branch), quotedPath,
+                          shellQuote(branch), shellQuote(baseRef));
 }
 
 } // namespace forkmesh::agentwt

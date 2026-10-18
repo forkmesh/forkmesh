@@ -42,6 +42,7 @@ tested on Linux); views and platform glue are in
 | CRM outreach (`GenieOutreach`, `GenieOutreachWriter`, `GenieOutreachLog`) | `FMAssistant/GenieOutreach.swift`; `Features/Genie/GenieOutreachCoach.swift` | `GenieOutreachTests` |
 | Suggestion mode, auto-send and pocket mode | `Features/Genie/ShellSuggestions.swift`, `Features/Genie/ShellAutoSend.swift`, `Features/Genie/ShellAutoSendReview.swift`, `FMAssistant/GenieAutoSend.swift`, `Shell/ShellPocket.swift` | `GenieOutreachTests`, `GenieAutoSendTests` |
 | Aquarium fish on the phone | `FMAssistant/Aquarium{Fish,Tank}.swift`, `Features/Aquarium/AquariumLayer.swift` | `AquariumTests` |
+| Spider Room, the spider in the room in AR ([../marketplace/spider-room.md](../marketplace/spider-room.md)) | `FMAssistant/RoomSpider{,Space,Acts}.swift`; `Features/SpiderRoom/SpiderRoom{Screen,Director,Body}.swift` | `RoomSpiderTests` |
 | Overlay, gestures, menu, hub | `Features/Genie/GenieSpiderLayer.swift`, `GenieCrawler.swift`, `GenieHub.swift`, `GenieBubbles.swift` | parse only |
 | Motion, avatar, window, speech, Apple engine, shell bridge | `Features/Genie/GenieMotion.swift`, `GenieAvatar.swift`, `GenieSheet.swift`, `GenieSpeechVoice.swift`, `AppleGenieEngine.swift`, `GenieShellBridge.swift` | parse only |
 
@@ -280,7 +281,12 @@ contacted, with a tap to draft an email or a Mastodon post.
   slot meant for one glance. VoiceOver actions: auto-send on/off, Not now,
   Open the CRM.
 - **Auto-send** (`ShellAutoSend`, `shell/auto_send`): touch and hold the
-  portrait to turn it on or off. While on, the portrait has an accent ring, it
+  portrait to turn it on or off. Turning it on sends the first email right
+  away (`tick(force: true)` skips the pace wait, 2026-10-18), and anything that
+  stops that first email (today's 100 already sent, no ForkMesh session, nobody
+  left to email, five contacts skipped in a row, or any CRM refusal) is said by
+  the Spider at once instead of waiting for the next turn. While on, the
+  portrait has an accent ring, it
   shows the next email recipient in a CRM with Zoho Mail connected
   (`outreachBest(only: .email, zohoOnly: true)`), and the app sends one email
   every 864 s, 100 a day (`GenieAutoSendPace`), through the CRM's

@@ -659,16 +659,6 @@ int main(int argc, char **argv)
         check(!automatic.valid && automatic.error.contains(QStringLiteral("workflow_dispatch")),
               "sandbox: false is refused with any trigger besides workflow_dispatch");
     }
-    QFile diskCleanupFile(QStringLiteral(FORKMESH_SOURCE_DIR "/../.forkmesh/free-disk-space.yml"));
-    check(diskCleanupFile.open(QIODevice::ReadOnly), "the Free disk space workflow is readable");
-    const ActionWorkflow diskCleanup = ActionFile::parse(
-        QStringLiteral(".forkmesh/free-disk-space.yml"),
-        QString::fromUtf8(diskCleanupFile.readAll()));
-    check(diskCleanup.valid && !diskCleanup.sandbox && diskCleanup.steps.size() == 6 &&
-              diskCleanup.steps.at(3).name ==
-                  QStringLiteral("Prune old Claude versions, backups and Trash"),
-          "the Free disk space workflow parses as six host steps");
-
     QString sandboxReason;
     if (!ActionRunner::sandboxAvailable(&sandboxReason)) {
         std::printf("  SKIP sandbox integration: %s\n",

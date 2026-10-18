@@ -752,6 +752,28 @@ final class DjStudioModel {
             if let bars = read.bars { deck.waveform = bars }
             deck.scratchAudio = read.audio
             if read.bars == nil, read.audio == nil { deck.audioFor = "" }
+            if deck.bpm == 0 { self?.detectBpm(deck.side, quietly: true) }
+        }
+    }
+
+    func detectBpm(_ side: DjDeckSide, quietly: Bool = false) {
+        let deck = deck(side)
+        let id = deck.videoId
+        guard let audio = deck.scratchAudio, !id.isEmpty else {
+            if !quietly { show("Deck \(side.label)’s audio is not read yet: tap the BPM box on the beat instead.") }
+            return
+        }
+        Task { [weak self, weak deck] in
+            let found = await Task.detached(priority: .utility) { DjBpm.detect(audio) }.value
+            DjDiagnostics.mark("Deck \(side.label) BPM \(found.map { String(format: "%.1f", $0) } ?? "not found")")
+            guard let self, let deck, deck.videoId == id, !quietly || deck.bpm == 0 else { return }
+            guard let found else {
+                if !quietly { self.show("No steady beat found on Deck \(side.label): tap the BPM box on the beat instead.") }
+                return
+            }
+            deck.bpm = found
+            deck.tapTempo = DjTapTempo()
+            self.save()
         }
     }
 

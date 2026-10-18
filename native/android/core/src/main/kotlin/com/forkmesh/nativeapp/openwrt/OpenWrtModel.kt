@@ -107,6 +107,24 @@ data class OpenWrtDisk(
     val title: String get() = if (block.label.isEmpty()) block.name else "${block.label} (${block.name})"
 }
 
+data class OpenWrtStorageCheck(
+    val packagesKnown: Boolean = false,
+    val installed: List<String> = emptyList(),
+    val blockTool: Boolean = false,
+    val fstabExists: Boolean = false,
+    val autoMount: Boolean = false,
+    val autoMountPending: Boolean = false,
+    val usbKnown: Boolean = false,
+    val usbControllers: Int = 0,
+    val usbDevices: List<String> = emptyList(),
+    val partitionsKnown: Boolean = false,
+    val partitions: List<String> = emptyList(),
+    val disks: Int = 0,
+    val mounted: Int = 0,
+    val listProblem: String = "",
+    val kernelLines: List<String> = emptyList(),
+)
+
 data class OpenWrtShare(val section: String, val name: String, val path: String, val readOnly: Boolean, val guests: Boolean)
 
 object OpenWrtModel {
@@ -710,6 +728,123 @@ object OpenWrtModel {
     }
 
     val usbStoragePackages = listOf("kmod-usb-storage", "kmod-usb-storage-uas", "block-mount", "kmod-fs-ext4", "kmod-fs-vfat", "kmod-fs-exfat")
+
+    const val FSTAB_PATH = "/etc/config/fstab"
+    const val DEFAULT_FSTAB = "config global\n\toption anon_swap '0'\n\toption anon_mount '0'\n\toption auto_swap '1'\n\toption auto_mount '1'\n\toption delay_root '5'\n\toption check_fs '0'\n"
+
+    fun parsePartitions(text: String): List<String> = text.lines()
+        .map { it.trim().split(Regex("\\s+")) }
+        .filter { it.size == 4 && isStorageDevice(it[3]) }
+        .map { it[3] }
+        .distinct()
+
+    private val usbControllerPattern = Regex("^usb\\d+$")
+    private val usbDevicePattern = Regex("^\\d+-\\d+(\\.\\d+)*$")
+
+    fun usbControllerCount(entries: List<String>): Int = entries.count { usbControllerPattern.matches(it) }
+
+    fun usbDeviceEntries(entries: List<String>): List<String> = entries.filter { usbDevicePattern.matches(it) }.sorted()
+
+    private val kernelPriority = Regex("^<\\d+>")
+    private val kernelWanted = Regex("usb|uas|scsi|xhci|ehci|ohci|\\bsd[a-z]+\\d*\\b|exfat|ext4|vfat|fat-fs|mmc\\d|i/o error", RegexOption.IGNORE_CASE)
+
+    fun storageKernelLines(dmesg: String, limit: Int = 20): List<String> = dmesg.lines()
+        .map { it.replace(kernelPriority, "").trim() }
+        .filter { it.isNotEmpty() && kernelWanted.containsMatchIn(it) }
+        .takeLast(limit)
+
+    fun missingStoragePackages(installed: List<String>): List<String> = usbStoragePackages.filter { it !in installed }
+
+    private val fstabGlobal = Regex("^config\\s+'?global'?\\s*$", RegexOption.MULTILINE)
+
+    fun fstabFromDetect(output: String): String = when {
+        !fstabGlobal.containsMatchIn(output) -> DEFAULT_FSTAB
+        output.endsWith("\n") -> output
+        else -> output + "\n"
+    }
+
+    fun outputTail(text: String, count: Int = 4): List<String> = text.lines().map { it.trim() }.filter { it.isNotEmpty() }.takeLast(count)
+
+    fun storageFindings(check: OpenWrtStorageCheck): List<String> {
+        val findings = mutableListOf<String>()
+        val devices = check.usbDevices.joinToString(", ")
+        val partitions = check.partitions.joinToString(", ")
+        val missing = missingStoragePackages(check.installed)
+        if (check.listProblem.isNotEmpty()) findings += "The router could not list its disks: ${check.listProblem}"
+        if (check.usbKnown && check.usbControllers == 0 && check.partitions.isEmpty()) {
+            findings += "The router has no USB controller driver running, so it cannot see anything in its USB port. Install the driver for this router (usually kmod-usb2 or kmod-usb3), or check that the model has a USB port."
+        } else if (check.usbKnown && check.usbDevices.isEmpty() && check.partitions.isEmpty()) {
+            findings += "The router sees nothing plugged into its USB port. Push the drive in fully, try another port or cable, and give a hard disk that needs more power a powered USB hub."
+        } else if (check.partitionsKnown && check.partitions.isEmpty() && check.usbDevices.isNotEmpty()) {
+            findings += if (check.packagesKnown && "kmod-usb-storage" !in check.installed) {
+                "A USB device is plugged in ($devices), but the USB storage driver (kmod-usb-storage) is not installed, so no disk appears. Press Install USB storage support."
+            } else {
+                "A USB device is plugged in ($devices), but no disk appeared for it. Unplug it and plug it back in, or restart the router; the kernel messages below may say why."
+            }
+        }
+        if (check.partitions.isNotEmpty() && !check.blockTool) {
+            findings += "The router sees the disk ($partitions), but block-mount is not installed, so it cannot list or mount it. Press Install USB storage support."
+        } else if (check.partitions.isNotEmpty() && check.disks == 0 && check.listProblem.isEmpty()) {
+            val drivers = missing.filter { it.startsWith("kmod-fs-") }
+            var text = "The router sees the disk ($partitions), but found no filesystem it can read on it. Format it on a computer as ext4, exFAT or FAT32."
+            if (check.packagesKnown && drivers.isNotEmpty()) text += " These filesystem drivers are not installed: ${drivers.joinToString(", ")}."
+            findings += text
+        }
+        if (check.blockTool && !check.fstabExists) {
+            findings += "The router has no storage settings file (/etc/config/fstab) yet. Turning on Mount any disk when it is plugged in creates it."
+        }
+        if (!check.packagesKnown) {
+            findings += "ForkMesh cannot run the router's package manager, so it cannot tell which drivers are installed."
+        } else if (missing.isNotEmpty()) {
+            findings += "Not installed: ${missing.joinToString(", ")}."
+        }
+        val unmounted = check.disks - check.mounted
+        if (unmounted > 0) {
+            val count = if (unmounted == 1) "1 disk is not mounted." else "$unmounted disks are not mounted."
+            findings += count + when {
+                !check.autoMount -> " Turn on Mount any disk when it is plugged in and apply, or choose Mount at boot for the disk; then press Mount disks now."
+                check.autoMountPending -> " Apply your changes, then press Mount disks now."
+                else -> " Press Mount disks now; if it stays unmounted, its filesystem driver may be missing."
+            }
+        } else if (check.disks > 0) {
+            findings += if (check.disks == 1) "The disk is mounted." else "All ${check.disks} disks are mounted."
+        }
+        if (findings.isEmpty()) findings += "No problem found."
+        return findings
+    }
+
+    fun storageReport(check: OpenWrtStorageCheck): String {
+        val lines = storageFindings(check).map { "• $it" }.toMutableList()
+        lines += ""
+        if (check.usbKnown) {
+            lines += "USB controllers: ${check.usbControllers}"
+            lines += "USB devices: ${if (check.usbDevices.isEmpty()) "none" else check.usbDevices.joinToString(", ")}"
+        } else {
+            lines += "USB devices: the router did not list them"
+        }
+        lines += "Disks the kernel sees: " + when {
+            !check.partitionsKnown -> "could not read /proc/partitions"
+            check.partitions.isEmpty() -> "none"
+            else -> check.partitions.joinToString(", ")
+        }
+        lines += "Disks with a readable filesystem: ${check.disks}, mounted: ${check.mounted}"
+        lines += "block-mount: ${if (check.blockTool) "installed" else "not installed"}"
+        lines += "Storage settings (/etc/config/fstab): ${if (check.fstabExists) "present" else "missing"}"
+        lines += "Mount any disk when it is plugged in: ${if (check.autoMount) "on" else "off"}${if (check.autoMountPending) ", waiting to be applied" else ""}"
+        val missing = missingStoragePackages(check.installed)
+        lines += when {
+            !check.packagesKnown -> "Storage packages: unknown"
+            missing.isEmpty() -> "Storage packages: all installed"
+            else -> "Storage packages missing: ${missing.joinToString(", ")}"
+        }
+        if (check.kernelLines.isEmpty()) {
+            lines += "Recent kernel messages: none about USB or disks"
+        } else {
+            lines += "Recent kernel messages:"
+            lines += check.kernelLines.map { "  $it" }
+        }
+        return lines.joinToString("\n")
+    }
 
     fun shareConfig(configs: List<String>): String = when {
         "ksmbd" in configs -> "ksmbd"

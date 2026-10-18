@@ -173,12 +173,14 @@ public enum RouteCatalog {
         case .speech: return "Speech"
         case .glassesAlert: return "Glasses Alert"
         case .phoneSecurity: return "Phone Security"
+        case .eyeControl: return "Eye Control"
         case .openWrtRouter: return "Router"
         case .faceChanger: return "Face Changer"
         case .videoMixDjStudio: return "Video Mix DJ Studio"
         case .appStoreStatus: return "App Store Status"
         case .rssReader: return "RSS Reader"
         case .secureDrive: return "Secure Drive"
+        case .spiderRoom: return "Spider Room"
         case .workflows: return "Workflows"
         case .localAI: return "On-device AI"
         case .activity: return "Activity"
@@ -252,12 +254,14 @@ public enum RouteCatalog {
         case .speech: return "speaker.wave.2"
         case .glassesAlert: return "eyeglasses"
         case .phoneSecurity: return "checkmark.shield"
+        case .eyeControl: return "eye"
         case .openWrtRouter: return "wifi.router"
         case .faceChanger: return "theatermasks"
         case .videoMixDjStudio: return "music.note.list"
         case .appStoreStatus: return "app.badge"
         case .rssReader: return "dot.radiowaves.up.forward"
         case .secureDrive: return "lock.shield"
+        case .spiderRoom: return "arkit"
         case .workflows: return "point.3.connected.trianglepath.dotted"
         case .localAI: return "cpu"
         case .activity: return "bolt"
@@ -387,11 +391,13 @@ public enum HubCatalog {
         .destination(.speech),
         .destination(.glassesAlert),
         .destination(.phoneSecurity),
+        .destination(.eyeControl),
         .destination(.openWrtRouter),
         .destination(.faceChanger),
         .destination(.videoMixDjStudio),
         .destination(.rssReader),
         .destination(.secureDrive),
+        .destination(.spiderRoom),
         .destination(.localAI),
         .destination(.activity),
     ]

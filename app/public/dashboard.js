@@ -43151,7 +43151,7 @@
     "notes": "/dashboard-page-notes.js?v=0617eb425d63",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "tasks": "/dashboard-page-tasks.js?v=d19aedd4b98f",
-    "workflows": "/dashboard-page-workflows.js?v=691b42bc3f7e",
+    "workflows": "/dashboard-page-workflows.js?v=c61995e2e8c1",
   };
   const dashboardChunkScope = {
     $,
@@ -43159,6 +43159,8 @@
     MD_BODY_CLASS,
     blobText,
     copyTextToClipboard,
+    desktopControlErrorText,
+    desktopControlHub,
     escapeHtml,
     fetchJson,
     fetchRepoJson,

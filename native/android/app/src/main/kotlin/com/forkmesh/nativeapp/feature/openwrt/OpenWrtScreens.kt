@@ -21,12 +21,14 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -732,24 +734,42 @@ class OpenWrtStorageScreen : Screen() {
                 { scope.guard { state.unmount(disk) } }, { unmountDisk = null })
         }
         if (installing) {
-            Confirm("Install USB storage support?", "This installs ${OpenWrtModel.usbStoragePackages.joinToString(", ")}. The router needs internet access to download them.", "Install",
-                { scope.guard { state.packageAction("install", OpenWrtModel.usbStoragePackages) } }, { installing = false })
+            Confirm("Install USB storage support?", "This updates the router's package lists and installs ${OpenWrtModel.usbStoragePackages.joinToString(", ")}. The router needs internet access to download them.", "Install",
+                { scope.guard { state.installStorageSupport() } }, { installing = false })
+        }
+        LaunchedEffect(Unit) {
+            if (state.snapshot.disks.isEmpty() && state.storageLog.isEmpty()) scope.guard { state.checkStorage() }
         }
         RouterPage(title, navigator) {
             item(key = "top") {
                 Column {
-                    Toggle("Mount any disk when it is plugged in", snapshot.autoMount) { on -> scope.guard { state.setAutoMount(on) } }
+                    if (snapshot.pendingCount > 0) {
+                        Note(if (snapshot.pendingCount == 1) "1 change is waiting. Disks mount by themselves only after it is applied."
+                        else "${snapshot.pendingCount} changes are waiting. Disks mount by themselves only after they are applied.")
+                        Actions {
+                            TextButton(onClick = { scope.guard { state.applyAndMount() } }, enabled = !state.busy && !state.storageBusy) { Text("Apply and mount disks") }
+                        }
+                    }
+                    Toggle("Mount any disk when it is plugged in", snapshot.autoMount) { on -> if (!state.storageBusy) scope.guard { state.setAutoMount(on) } }
                     Actions {
                         TextButton(onClick = { scope.guard { state.mountAll() } }) { Text("Mount disks now") }
-                        TextButton(onClick = { installing = true }) { Text("Install USB storage support") }
+                        TextButton(onClick = { installing = true }, enabled = !state.storageBusy) { Text("Install USB support") }
+                        TextButton(onClick = { scope.guard { state.checkStorage() } }, enabled = !state.storageBusy) { Text("Check USB") }
                     }
+                    if (state.storageBusy) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4))
                     Note(
                         when {
                             snapshot.storageProblem.isNotEmpty() -> "The router cannot list its disks (${snapshot.storageProblem}). Install USB storage support, which adds block-mount and the USB and filesystem drivers."
-                            disks.isEmpty() -> "No USB disk or memory card is attached. Plug one in and refresh."
+                            disks.isEmpty() -> "No USB disk or memory card is listed. Plug one in and refresh, or press Check USB to see why."
                             else -> "Unmount a disk before you unplug it. Formatting is not offered: format the disk on a computer first."
                         },
                     )
+                    if (state.storageLog.isNotEmpty()) {
+                        Header("USB storage check")
+                        SelectionContainer {
+                            Text(state.storageLog, style = Fm.text.bodySmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
+                        }
+                    }
                     Header("Disks")
                 }
             }

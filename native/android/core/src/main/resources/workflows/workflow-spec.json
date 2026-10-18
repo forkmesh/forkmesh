@@ -2064,6 +2064,90 @@
      "placeholder": "difference"
     }
    ]
+  },
+  "desktop.diskUsage": {
+   "name": "Measure the disk",
+   "group": "Desktop",
+   "icon": "hard-drive",
+   "color": "#0f766e",
+   "outputs": [
+    "main"
+   ],
+   "description": "Reads the free space and the agent worktrees the cleanup keeps.",
+   "fields": [],
+   "runsOn": "desktop",
+   "desktopStep": "usage",
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+  },
+  "desktop.cleanAgents": {
+   "name": "Remove agent leftovers",
+   "group": "Desktop",
+   "icon": "bot",
+   "color": "#0f766e",
+   "outputs": [
+    "main"
+   ],
+   "description": "Deletes scratch folders and builds of agents that no longer run.",
+   "fields": [],
+   "runsOn": "desktop",
+   "desktopStep": "agents",
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+  },
+  "desktop.cleanTests": {
+   "name": "Remove test leftovers",
+   "group": "Desktop",
+   "icon": "flask-conical",
+   "color": "#0f766e",
+   "outputs": [
+    "main"
+   ],
+   "description": "Deletes pytest, Actions sandbox and Qt test folders nothing uses.",
+   "fields": [],
+   "runsOn": "desktop",
+   "desktopStep": "tests",
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+  },
+  "desktop.cleanVersions": {
+   "name": "Prune old versions and Trash",
+   "group": "Desktop",
+   "icon": "archive",
+   "color": "#0f766e",
+   "outputs": [
+    "main"
+   ],
+   "description": "Removes old Claude versions, backups past the newest three and ForkMesh cleanup items in the Trash.",
+   "fields": [],
+   "runsOn": "desktop",
+   "desktopStep": "versions",
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+  },
+  "desktop.cleanCaches": {
+   "name": "Clear pip and npm caches",
+   "group": "Desktop",
+   "icon": "package",
+   "color": "#0f766e",
+   "outputs": [
+    "main"
+   ],
+   "description": "Runs pip3 cache purge and npm cache clean.",
+   "fields": [],
+   "runsOn": "desktop",
+   "desktopStep": "caches",
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
+  },
+  "desktop.diskReport": {
+   "name": "Report free space",
+   "group": "Desktop",
+   "icon": "gauge",
+   "color": "#0f766e",
+   "outputs": [
+    "main"
+   ],
+   "description": "Reads the free space after the cleanup and lists big folders it leaves for you.",
+   "fields": [],
+   "runsOn": "desktop",
+   "desktopStep": "report",
+   "refusal": "This step runs on your desktop. Press Run workflow on the Workflows page while the ForkMesh desktop app is open."
   }
  },
  "integrations": {
@@ -9055,5 +9139,5 @@
    }
   }
  },
- "version": "bbbde01b54fb8cad"
+ "version": "c4f5ebdc8f989878"
 }

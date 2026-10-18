@@ -25,7 +25,8 @@ user (usually `root`) and password. The page then offers:
   free space and filesystem. Mount them at boot in a folder you choose, mount
   any disk as soon as it is plugged in, unmount before unplugging, share a
   disk on your network (SMB, with or without a password) and install USB
-  storage support in one step.
+  storage support in one step. **Check USB storage** asks the router what it
+  sees in its USB port and says why a disk does not show up or mount.
 - **Services**: start, stop, restart, and choose whether each starts at boot.
 - **Packages**: list, filter, install and remove packages and update the
   package lists (opkg or apk).

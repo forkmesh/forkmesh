@@ -2,6 +2,7 @@ package com.forkmesh.nativeapp.openwrt
 
 import com.forkmesh.nativeapp.json.JsonMap
 import com.forkmesh.nativeapp.json.int
+import com.forkmesh.nativeapp.json.maps
 import com.forkmesh.nativeapp.json.obj
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.json.strings
@@ -147,6 +148,7 @@ data class OpenWrtSnapshot(
     val wirelessStatus: JsonMap = emptyMap(),
     val configs: Map<String, JsonMap> = emptyMap(),
     val configNames: List<String> = emptyList(),
+    val missingConfigs: Set<String> = emptySet(),
     val changes: JsonMap = emptyMap(),
     val leases: List<OpenWrtLease> = emptyList(),
     val services: List<OpenWrtService> = emptyList(),
@@ -173,6 +175,7 @@ data class OpenWrtSnapshot(
     val shareConfig: String get() = OpenWrtModel.shareConfig(configNames)
     val shares: List<OpenWrtShare> get() = if (shareConfig.isEmpty()) emptyList() else OpenWrtModel.parseShares(sections(shareConfig))
     val autoMount: Boolean get() = sections("fstab", "global").firstOrNull()?.flag("anon_mount") ?: false
+    val fstabMissing: Boolean get() = "fstab" in missingConfigs
 
     fun dhcpSection(forInterface: String): UciSection? = sections("dhcp", "dhcp").firstOrNull { it.option("interface") == forInterface }
     fun status(of: String): OpenWrtInterfaceStatus? = interfaces.firstOrNull { it.name == of }
@@ -305,10 +308,15 @@ class OpenWrtClient(private val transport: OpenWrtTransport, base: String) {
         val configNames = call("uci", "configs").data.strings("configs").sorted()
         val wanted = BASE_CONFIGS + listOfNotNull(OpenWrtModel.shareConfig(configNames).ifEmpty { null })
         val configs = linkedMapOf<String, JsonMap>()
+        val missingConfigs = mutableSetOf<String>()
         for (config in wanted) {
             val result = call("uci", "get", mapOf("config" to config))
-            if (result.ok || result.status == OpenWrt.STATUS_NOT_FOUND) configs[config] = result.data.obj("values")
-            else problems += "Could not read the $config settings: ${result.error}"
+            if (result.ok || result.status == OpenWrt.STATUS_NOT_FOUND) {
+                configs[config] = result.data.obj("values")
+                if (!result.ok) missingConfigs += config
+            } else {
+                problems += "Could not read the $config settings: ${result.error}"
+            }
         }
         val luciLeases = call("luci-rpc", "getDHCPLeases")
         val leases = if (luciLeases.ok) {
@@ -326,6 +334,7 @@ class OpenWrtClient(private val transport: OpenWrtTransport, base: String) {
             wirelessStatus = call("network.wireless", "status").data,
             configs = configs,
             configNames = configNames,
+            missingConfigs = missingConfigs,
             changes = call("uci", "changes").data.obj("changes"),
             leases = leases,
             services = OpenWrtModel.parseServices(call("rc", "list").data),
@@ -399,6 +408,69 @@ class OpenWrtClient(private val transport: OpenWrtTransport, base: String) {
                 OpenWrtApplyOutcome.Failed("The change could not be confirmed (${confirm.error}). The router will put the old settings back by itself.")
             }
         }
+    }
+
+    fun createFstab(): OpenWrtResult {
+        val detect = exec("/sbin/block", listOf("detect"), 60_000)
+        if (!detect.ok) {
+            return OpenWrtResult.failure("Automatic mounting needs block-mount, and the router could not run it (${detect.error}). Press Install USB storage support first.")
+        }
+        val written = call("file", "write", mapOf("path" to OpenWrtModel.FSTAB_PATH, "data" to OpenWrtModel.fstabFromDetect(detect.data.str("stdout")), "mode" to 420))
+        if (!written.ok) {
+            return OpenWrtResult.failure("The router has no /etc/config/fstab and did not let ForkMesh create it (${written.error}). Reinstall block-mount, which creates it, or run \"block detect > /etc/config/fstab\" on the router.")
+        }
+        return written
+    }
+
+    fun checkStorage(current: OpenWrtSnapshot): Pair<OpenWrtStorageCheck, OpenWrtSnapshot> {
+        var snapshot = current
+        val tool = snapshot.packageTool
+        if (tool != null) {
+            val listed = listPackages(tool)
+            if (listed.first != null) snapshot = snapshot.copy(packages = listed.second)
+        }
+        val fstab = call("uci", "get", mapOf("config" to "fstab"))
+        if (fstab.ok || fstab.status == OpenWrt.STATUS_NOT_FOUND) {
+            snapshot = snapshot.copy(
+                configs = snapshot.configs + ("fstab" to fstab.data.obj("values")),
+                missingConfigs = if (fstab.ok) snapshot.missingConfigs - "fstab" else snapshot.missingConfigs + "fstab",
+            )
+        }
+        val blockTool = call("file", "stat", mapOf("path" to "/sbin/block")).ok
+        val usb = call("file", "list", mapOf("path" to "/sys/bus/usb/devices"))
+        val entries = usb.data.maps("entries").map { it.str("name") }
+        val devices = OpenWrtModel.usbDeviceEntries(entries).take(8).map { entry ->
+            val product = call("file", "read", mapOf("path" to "/sys/bus/usb/devices/$entry/product"))
+            val name = if (product.ok) product.data.str("data").trim() else ""
+            if (name.isEmpty()) entry else "$name ($entry)"
+        }
+        val partitions = call("file", "read", mapOf("path" to "/proc/partitions"))
+        val blocks = call("luci", "getBlockDevices")
+        snapshot = snapshot.copy(
+            blocks = if (blocks.ok) OpenWrtModel.parseBlockDevices(blocks.data) else emptyList(),
+            storageProblem = if (blocks.ok) "" else blocks.error,
+            mounts = OpenWrtModel.parseMountPoints(call("luci", "getMountPoints").data),
+            changes = call("uci", "changes").data.obj("changes"),
+        )
+        val disks = snapshot.disks
+        val check = OpenWrtStorageCheck(
+            packagesKnown = tool != null,
+            installed = snapshot.packages.map { it.name },
+            blockTool = blockTool,
+            fstabExists = fstab.ok,
+            autoMount = snapshot.autoMount,
+            autoMountPending = snapshot.changes.containsKey("fstab"),
+            usbKnown = usb.ok,
+            usbControllers = OpenWrtModel.usbControllerCount(entries),
+            usbDevices = devices,
+            partitionsKnown = partitions.ok,
+            partitions = OpenWrtModel.parsePartitions(partitions.data.str("data")),
+            disks = disks.size,
+            mounted = disks.count { it.mounted },
+            listProblem = snapshot.storageProblem,
+            kernelLines = OpenWrtModel.storageKernelLines(exec("/bin/dmesg", listOf("-r")).data.str("stdout")),
+        )
+        return check to snapshot
     }
 
     fun packageAction(tool: OpenWrtPackageTool, action: String, names: List<String>): OpenWrtResult {
