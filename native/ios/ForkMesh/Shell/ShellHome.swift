@@ -39,6 +39,7 @@ struct ShellHome: View {
     var onPackage: (String) -> Void = { (_: String) in }
     var isUpdated: (String) -> Bool = { (_: String) in false }
     var onSearch: (String) -> Void = { (_: String) in }
+    var onClearUpdates: () -> Void = {}
     let onPick: (ShellBarItem) -> Void
 
     @State private var naming: ShellBarNaming?
@@ -51,6 +52,7 @@ struct ShellHome: View {
     @State private var contentTop: CGFloat = 0
     @State private var settingsShown: Bool = false
     @State private var barSettingsShown: Bool = false
+    @State private var backgroundMenuShown: Bool = false
 
     @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 22
     @ScaledMetric(relativeTo: .caption) private var labelSize: CGFloat = 12
@@ -143,45 +145,49 @@ struct ShellHome: View {
     var body: some View {
         let layout: ShellHomeLayout = makeLayout()
         return ScrollView {
-            if searchVisible {
-                searchField
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: FmSpace.x0) {
-                ForEach(layout.shown) { (group: ShellMenuGroup) in
-                    if style.headed {
-                        Section {
-                            tiles(group, layout: layout)
-                        } header: {
-                            sectionHeader(group)
-                                .onDrop(of: [.text], delegate: drop(group.id, near: nil))
-                        }
-                    } else if style.grouped {
-                        Section {
-                            tiles(group, layout: layout)
-                        } header: {
-                            Color.clear
-                                .frame(height: FmSpace.x2)
-                                .onDrop(of: [.text], delegate: drop(group.id, near: nil))
-                                .accessibilityHidden(true)
-                        }
-                    } else {
-                        Section {
-                            tiles(group, layout: layout)
+            VStack {
+                if searchVisible {
+                    searchField
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                LazyVGrid(columns: columns, alignment: .leading, spacing: FmSpace.x0) {
+                    ForEach(layout.shown) { (group: ShellMenuGroup) in
+                        if style.headed {
+                            Section {
+                                tiles(group, layout: layout)
+                            } header: {
+                                sectionHeader(group)
+                                    .onDrop(of: [.text], delegate: drop(group.id, near: nil))
+                            }
+                        } else if style.grouped {
+                            Section {
+                                tiles(group, layout: layout)
+                            } header: {
+                                Color.clear
+                                    .frame(height: FmSpace.x2)
+                                    .onDrop(of: [.text], delegate: drop(group.id, near: nil))
+                                    .accessibilityHidden(true)
+                            }
+                        } else {
+                            Section {
+                                tiles(group, layout: layout)
+                            }
                         }
                     }
                 }
+                .padding(.horizontal, FmSpace.x1)
+                .padding(.top, gridTop)
+                .padding(.bottom, FmSpace.x3)
+                .background(alignment: .top) { pullSensor }
+                if layout.shown.isEmpty && trimmedQuery.isEmpty {
+                    allHidden
+                }
+                if !trimmedQuery.isEmpty {
+                    searchEverywhere
+                }
             }
-            .padding(.horizontal, FmSpace.x1)
-            .padding(.top, gridTop)
-            .padding(.bottom, FmSpace.x3)
-            .background(alignment: .top) { pullSensor }
-            if layout.shown.isEmpty && trimmedQuery.isEmpty {
-                allHidden
-            }
-            if !trimmedQuery.isEmpty {
-                searchEverywhere
-            }
+            .frame(maxWidth: .infinity, minHeight: viewHeight, alignment: .top)
+            .background { backgroundHold }
         }
         .scrollBounceBehavior(.always, axes: .vertical)
         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minY + $0.safeAreaInsets.top }) {
@@ -211,6 +217,16 @@ struct ShellHome: View {
         }
         .sheet(isPresented: $barSettingsShown) {
             ShellBarSettingsSheet(prefs: prefs)
+        }
+        .confirmationDialog("Home", isPresented: $backgroundMenuShown, titleVisibility: .hidden) {
+            if hasUpdates {
+                Button("Clear all update dots") { clearUpdates() }
+                    .accessibilityIdentifier("shell-home-background-clear-dots")
+            }
+            Button("Home settings…") { settingsShown = true }
+                .accessibilityIdentifier("shell-home-background-settings")
+            Button("Bottom bar settings…") { barSettingsShown = true }
+                .accessibilityIdentifier("shell-home-background-bar-settings")
         }
         .onAppear { prefs.drag = nil }
         .onDisappear {
@@ -252,6 +268,28 @@ struct ShellHome: View {
         .padding(.vertical, FmSpace.x6)
     }
 
+    private var hasUpdates: Bool {
+        linked.contains { (group: ShellMenuGroup) in group.items.contains { isUpdated($0.id) } }
+    }
+
+    private func clearUpdates() {
+        withAnimation(reduceMotion ? nil : .snappy) {
+            onClearUpdates()
+        }
+        FmHaptics.success()
+    }
+
+    private var backgroundHold: some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10) {
+                guard prefs.drag == nil else { return }
+                FmHaptics.selection()
+                backgroundMenuShown = true
+            }
+            .accessibilityHidden(true)
+    }
+
     @ViewBuilder private func homeMenuItems(hiding group: ShellMenuGroup?) -> some View {
         if let group = group {
             Button {
@@ -269,6 +307,14 @@ struct ShellHome: View {
             SwiftUI.Label("Home settings…", systemImage: "slider.horizontal.3")
         }
         .accessibilityIdentifier("shell-home-open-settings")
+        if hasUpdates {
+            Button {
+                clearUpdates()
+            } label: {
+                SwiftUI.Label("Clear all update dots", systemImage: "circle.badge.xmark")
+            }
+            .accessibilityIdentifier("shell-home-clear-dots")
+        }
     }
 
     private func sectionHeader(_ group: ShellMenuGroup) -> some View {

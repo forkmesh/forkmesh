@@ -171,6 +171,15 @@ destination, in sections, with counts and activity:
   (`PackageGate.packageId(for:)`), its Market page, or installing it. The
   operator asked for the dot on 2026-10-16, and on 2026-10-17 for it to show
   on every unopened plugin after a new install.
+- **Clear all update dots.** Long-pressing Home's empty background (half a
+  second, `ShellHome.backgroundHold`, not while dragging a tile) opens a menu
+  with **Clear all update dots**, **Home settings…** and **Bottom bar
+  settings…**. Clearing calls `AccountPackagesStore.markAllViewed()`, which
+  records every package's latest version as seen, so the dots return only when
+  a new version is published. The same item appears in the tile and section
+  long-press menus while any dot shows. The background fills at least one
+  screen (`minHeight: viewHeight`) so the space below a short grid answers the
+  press. The operator asked for it on 2026-10-18.
 - Search is revealed by pulling Home down 56 pt (`ShellBarOrder.searchPull`);
   it filters tiles by title or section and offers **Search everywhere**. With
   VoiceOver on the field always shows.
