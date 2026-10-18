@@ -128,6 +128,7 @@ enum NavigationRoutes {
         fallback(routes, .speech) { _ in AnyView(SpeechScreen()) }
         fallback(routes, .glassesAlert) { _ in AnyView(GlassesAlertScreen()) }
         fallback(routes, .phoneSecurity) { _ in AnyView(PhoneSecurityScreen()) }
+        fallback(routes, .eyeControl) { _ in AnyView(EyeControlScreen()) }
         fallback(routes, .openWrtRouter) { _ in AnyView(OpenWrtScreen()) }
         fallback(routes, .faceChanger) { _ in AnyView(FaceChangerScreen()) }
         fallback(routes, .videoMixDjStudio) { _ in AnyView(VideoMixDjStudioScreen()) }
