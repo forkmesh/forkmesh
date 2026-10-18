@@ -705,7 +705,7 @@ def test_signed_completion_never_claims_the_repository_is_mirrored():
     # modal subtitle and the source hint before anything is started.
     assert "NEW_REPO_PROVIDER_SUBTITLE" in script
     assert "Mirroring the Git contents is a separate step" in script
-    assert "an external listing, not a ForkMesh mirror" in script
+    assert "an external listing, not a ${platformName()} mirror" in script
     assert "(no Git contents)" in modal
 
     # And the receipt hands off to the steps that actually mirror it, reusing

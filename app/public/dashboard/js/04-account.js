@@ -650,7 +650,7 @@
   // them all; logout() then clears this browser and tells its other tabs.
   async function revokeAllAccountSessions() {
     if (!await confirmAccountAction({
-      title: "Sign out of ForkMesh on every device, including this one?",
+      title: `Sign out of ${platformName()} on every device, including this one?`,
       confirmLabel: "Sign out everywhere",
     })) return;
     const button = $("[data-account-sessions-revoke-all]");
@@ -698,7 +698,7 @@
       if (!asHtml && window.ClipboardItem && navigator.clipboard?.write) {
         await navigator.clipboard.write([new ClipboardItem({
           "text/html": new Blob([emailFooter.html], { type: "text/html" }),
-          "text/plain": new Blob(["Sent with ForkMesh"], { type: "text/plain" }),
+          "text/plain": new Blob([`Sent with ${platformName()}`], { type: "text/plain" }),
         })]);
       } else {
         await navigator.clipboard.writeText(emailFooter.html);
@@ -1623,7 +1623,7 @@
           "Verify the live revision and production behavior. Only then call complete_org_task with the commit, deployed revision, tests, and exact QA steps.",
         ]
       : [
-          "Push the task branch and open a focused pull request against main using the repository's normal ForkMesh tooling.",
+          `Push the task branch and open a focused pull request against main using the repository's normal ${platformName()} tooling.`,
           "Do not merge or deploy. After the pull request exists, call complete_org_task with its number, branch, tests, and exact QA steps.",
         ];
     return [
@@ -1660,7 +1660,7 @@
     ];
     return '<section class="mt-6 rounded-md border border-border bg-card p-4" data-org-remote-mcp>' +
       '<div class="flex items-center gap-2"><i data-lucide="plug-zap" class="h-4 w-4 text-muted-foreground"></i>' +
-        '<h4 class="text-sm font-semibold text-foreground">Remote ForkMesh MCP</h4></div>' +
+        '<h4 class="text-sm font-semibold text-foreground">Remote ' + escapeHtml(platformName()) + ' MCP</h4></div>' +
       '<p class="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">Generate a revocable task-only credential and one complete paste block. It connects the agent directly to <span class="font-mono text-foreground">' +
         escapeHtml(publicSiteOrigin() + "/mcp") +
         '</span>; there is no local Python server, repository path, or Qt connector token to fill in.</p>' +
@@ -1776,7 +1776,7 @@
           '<div class="min-w-[14rem] flex-1">' +
             '<input data-member-name list="org-member-suggestions" role="combobox" aria-autocomplete="list" aria-controls="org-member-suggestions" placeholder="Start typing an account name" autocomplete="off" class="' + ORG_INPUT_CLASS + ' w-full" />' +
             '<datalist id="org-member-suggestions" data-org-member-suggestions></datalist>' +
-            '<p data-org-member-search-status class="mt-1 min-h-4 text-[11px] text-muted-foreground">Type a name to search active ForkMesh accounts.</p>' +
+            '<p data-org-member-search-status class="mt-1 min-h-4 text-[11px] text-muted-foreground">Type a name to search active ' + escapeHtml(platformName()) + ' accounts.</p>' +
           "</div>" +
           '<select data-member-role class="' + ORG_INPUT_CLASS + '">' + orgOptionTags(ORG_ROLE_OPTIONS, "member") + "</select>" +
           '<button type="submit" class="' + ORG_BTN_SECONDARY + '">Add member</button></form>'
@@ -2275,7 +2275,7 @@
       const currentGeneration = ++generation;
       suggestions.replaceChildren();
       if (!query) {
-        status.textContent = "Type a name to search active ForkMesh accounts.";
+        status.textContent = `Type a name to search active ${platformName()} accounts.`;
         return;
       }
       status.textContent = "Searching active accounts…";
@@ -2347,7 +2347,7 @@
     const addForm =
       '<form data-org-team-member-add class="mt-3 grid gap-2 rounded-md border border-border bg-card p-3">' +
         '<div class="flex flex-wrap items-center gap-2">' +
-          '<input data-team-member-name list="org-team-member-candidates" autocomplete="off" placeholder="ForkMesh account name" class="' + ORG_INPUT_CLASS + ' flex-1 min-w-[10rem]" />' +
+          '<input data-team-member-name list="org-team-member-candidates" autocomplete="off" placeholder="' + escapeHtml(platformName()) + ' account name" class="' + ORG_INPUT_CLASS + ' flex-1 min-w-[10rem]" />' +
           '<datalist id="org-team-member-candidates">' +
             candidates.map((member) => '<option value="' + escapeHtml(member.name) + '"></option>').join("") +
           "</datalist>" +
@@ -3254,7 +3254,7 @@
   }
 
   function defaultProfileAbout(session = profileSubject()) {
-    const name = String(session?.nodeName || session?.email || "ForkMesh").trim() || "ForkMesh";
+    const name = String(session?.nodeName || session?.email || platformName()).trim() || platformName();
     if (session?.kind === "node") {
       const owner = String(session?.owner || "").trim();
       return `# ${name} is a ForkMesh node\n\nIt mirrors Git repositories and helps serve them to the network.` +
@@ -5668,7 +5668,7 @@
     const result = await openImageResizeModal(file, PROFILE_AVATAR_MAX_BYTES, {
       dialogLabel: "Crop profile picture",
       title: "Crop profile picture",
-      description: "Drag to choose a square crop. ForkMesh will resize it to a PNG that fits the profile picture limit.",
+      description: `Drag to choose a square crop. ${platformName()} will resize it to a PNG that fits the profile picture limit.`,
       confirmLabel: "Save profile picture",
       outputType: "image/png",
       aspectRatio: 1,

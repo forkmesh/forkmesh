@@ -2903,7 +2903,7 @@
         <div data-update-notice hidden class="fm-flash fm-flash-neutral fm-flash-full" role="status" aria-live="polite">
           <i data-lucide="sparkles" class="fm-flash-icon-accent" aria-hidden="true"></i>
           <div class="fm-flash-body">
-            <strong class="fm-flash-title">A new version of ForkMesh is available</strong>
+            <strong class="fm-flash-title">A new version of <span data-platform-name>ForkMesh</span> is available</strong>
             <p data-update-notice-detail>Update reloads this page on the new version.</p>
           </div>
           <div class="fm-flash-actions">
@@ -3050,7 +3050,7 @@
                     </div>
                     <ul data-profile-badges-list class="grid gap-3 p-3 text-sm"></ul>
                   </section>
-                  <section data-profile-tips class="mt-4 overflow-hidden rounded-md border border-border bg-card">
+                  <section data-profile-tips data-instance-plugin="rewards" class="mt-4 overflow-hidden rounded-md border border-border bg-card">
                     <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                       <i data-lucide="coins" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
                       <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Tips</h2>
@@ -3154,7 +3154,7 @@
         <div class="fm-dialog-header">
           <div class="fm-dialog-heading">
             <h2 id="profileAboutModalTitle" class="fm-dialog-title">Edit about yourself</h2>
-            <p class="fm-dialog-desc">Markdown shown on your ForkMesh profile overview.</p>
+            <p class="fm-dialog-desc">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>
           </div>
           <button data-profile-about-modal-close type="button" aria-label="Close about editor" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
             <i data-lucide="x" aria-hidden="true"></i>
@@ -3248,7 +3248,7 @@
         <div class="fm-dialog-header">
           <div class="fm-dialog-heading">
             <h2 id="feedbackModalTitle" class="fm-dialog-title">Send feedback</h2>
-            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.</p>
+            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>
           </div>
           <button data-feedback-close type="button" aria-label="Close feedback" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
             <i data-lucide="x" aria-hidden="true"></i>

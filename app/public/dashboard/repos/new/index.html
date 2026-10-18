@@ -2903,7 +2903,7 @@
         <div data-update-notice hidden class="fm-flash fm-flash-neutral fm-flash-full" role="status" aria-live="polite">
           <i data-lucide="sparkles" class="fm-flash-icon-accent" aria-hidden="true"></i>
           <div class="fm-flash-body">
-            <strong class="fm-flash-title">A new version of ForkMesh is available</strong>
+            <strong class="fm-flash-title">A new version of <span data-platform-name>ForkMesh</span> is available</strong>
             <p data-update-notice-detail>Update reloads this page on the new version.</p>
           </div>
           <div class="fm-flash-actions">
@@ -2991,7 +2991,7 @@
 
               <header class="nr-head">
                 <h1 id="newRepoModalTitle" data-new-repo-title>Create a new repository</h1>
-                <p data-new-repo-subtitle>A repository holds your project's files and history. ForkMesh keeps a copy on every core node.</p>
+                <p data-new-repo-subtitle>A repository holds your project's files and history. <span data-platform-name>ForkMesh</span> keeps a copy on every core node.</p>
               </header>
               <p class="nr-required">Required fields are marked with an asterisk (<span class="nr-star">*</span>).</p>
 
@@ -3008,7 +3008,7 @@
                         <button data-new-repo-source="provider" type="button" aria-pressed="false"><i data-lucide="download" class="h-4 w-4"></i>Import from GitHub, GitLab, Codeberg</button>
                       </div>
                       <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Source URL or path" placeholder="https://github.com/owner/repo.git" class="nr-input font-mono" style="margin-top:6px" />
-                      <p data-new-repo-source-hint class="nr-help">ForkMesh clones this URL into a bare mirror. Local paths never leave your machine.</p>
+                      <p data-new-repo-source-hint class="nr-help"><span data-platform-name>ForkMesh</span> clones this URL into a bare mirror. Local paths never leave your machine.</p>
                       <div data-new-repo-provider-options class="hidden nr-panel">
                         <label class="nr-field">
                           <span class="nr-label">Import type</span>
@@ -3119,7 +3119,7 @@
                         <p class="text-sm text-muted-foreground"><span data-new-repo-push-repo class="font-mono text-foreground"></span></p>
                       </div>
                     </div>
-                    <p class="mt-4 text-sm leading-6 text-muted-foreground">ForkMesh hosts it <span data-new-repo-push-intro>and it stays empty until your first push. Run these in your project folder; git asks for the credential below.</span></p>
+                    <p class="mt-4 text-sm leading-6 text-muted-foreground"><span data-platform-name>ForkMesh</span> hosts it <span data-new-repo-push-intro>and it stays empty until your first push. Run these in your project folder; git asks for the credential below.</span></p>
                     <pre data-new-repo-push-commands class="nr-code mt-3"></pre>
                     <div class="nr-two mt-4 text-xs">
                       <label class="nr-field">
@@ -3132,7 +3132,7 @@
                       </label>
                     </div>
                     <p class="nr-help mt-3">
-                      This credential belongs to the browser session you are signed in with, expires <span data-new-repo-push-expiry class="text-foreground"></span>, and is not stored by ForkMesh. Signing this session out revokes it. <span data-new-repo-push-visibility>Your repository is public; a private mirror is an owner-sealed archive only a ForkMesh node holding your key can publish.</span>
+                      This credential belongs to the browser session you are signed in with, expires <span data-new-repo-push-expiry class="text-foreground"></span>, and is not stored by <span data-platform-name>ForkMesh</span>. Signing this session out revokes it. <span data-new-repo-push-visibility>Your repository is public; a private mirror is an owner-sealed archive only a ForkMesh node holding your key can publish.</span>
                     </p>
                     <div class="mt-5 flex flex-wrap items-center gap-2">
                       <button data-new-repo-push-copy type="button" class="nr-btn nr-btn-ghost">
@@ -3216,7 +3216,7 @@
                     </div>
                     <ul data-profile-badges-list class="grid gap-3 p-3 text-sm"></ul>
                   </section>
-                  <section data-profile-tips class="mt-4 overflow-hidden rounded-md border border-border bg-card">
+                  <section data-profile-tips data-instance-plugin="rewards" class="mt-4 overflow-hidden rounded-md border border-border bg-card">
                     <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                       <i data-lucide="coins" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
                       <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Tips</h2>
@@ -3320,7 +3320,7 @@
         <div class="fm-dialog-header">
           <div class="fm-dialog-heading">
             <h2 id="profileAboutModalTitle" class="fm-dialog-title">Edit about yourself</h2>
-            <p class="fm-dialog-desc">Markdown shown on your ForkMesh profile overview.</p>
+            <p class="fm-dialog-desc">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>
           </div>
           <button data-profile-about-modal-close type="button" aria-label="Close about editor" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
             <i data-lucide="x" aria-hidden="true"></i>
@@ -3414,7 +3414,7 @@
         <div class="fm-dialog-header">
           <div class="fm-dialog-heading">
             <h2 id="feedbackModalTitle" class="fm-dialog-title">Send feedback</h2>
-            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.</p>
+            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>
           </div>
           <button data-feedback-close type="button" aria-label="Close feedback" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
             <i data-lucide="x" aria-hidden="true"></i>

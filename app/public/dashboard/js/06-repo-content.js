@@ -6031,7 +6031,7 @@
             </div>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-6 ${status ? "italic text-muted-foreground" : "text-foreground"}">${escapeHtml(body)}</p>
             <div class="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
-              <span>Remote ActivityPub reply · not a signed ForkMesh event</span>
+              <span>Remote ActivityPub reply · not a signed ${escapeHtml(platformName())} event</span>
               ${backlinkHtml}
             </div>
           </div>
@@ -6178,7 +6178,7 @@
         ].join("\n")
       : `FORKMESH_MCP_TOKEN above is a placeholder: replace ${MCP_CONNECTOR_TOKEN_PLACEHOLDER} with the connector token the ForkMesh desktop app mints under Settings -> MCP -> Generate token, otherwise the write tools stay read-only. Treat it as a secret - never print it in logs, commits, pull requests, or chat.`;
     return [
-      `Work ForkMesh issue #${number} in ${repoSlug} end to end through the "forkmesh" MCP server.`,
+      `Work ${platformName()} issue #${number} in ${repoSlug} end to end through the "forkmesh" MCP server.`,
       "",
       `Issue: ${title || `#${number}`}`,
       `Issue page: ${issueUrl}`,
@@ -6192,7 +6192,7 @@
       `In Claude Code that is one command: claude mcp add forkmesh --scope user --env FORKMESH_REPO=${repoCheckout} --env FORKMESH_MCP_TOKEN=${connectorToken} -- python3 ${serverScript}`,
       tokenNote,
       "",
-      `1. Call whoami on the forkmesh MCP server to confirm it answers and reaches ${repoSlug} with write access. If it is missing or read-only, fix the configuration above and retry; use the forkmesh MCP server for every ForkMesh read and write rather than any other issue tracker.`,
+      `1. Call whoami on the forkmesh MCP server to confirm it answers and reaches ${repoSlug} with write access. If it is missing or read-only, fix the configuration above and retry; use the forkmesh MCP server for every ${platformName()} read and write rather than any other issue tracker.`,
       "2. Pull this issue with search_issues and read every file it references with read_file before planning.",
       `3. Work in the local checkout of ${repoSlug} that the connector exposes. Create a dedicated branch named ${branch} from the latest main; never commit to main directly.`,
       `4. Implement the smallest complete fix, run the repository's tests and required checks, and commit with a clear message referencing issue #${number}.`,
@@ -6827,7 +6827,7 @@
         .forEach(({ value, count }) => add(value, "active", `Active on ${count} ${count === 1 ? "issue" : "issues"}`));
       // The directory is long, so it only joins once a name is being typed.
       if (String(issuePicker?.query || "").trim()) {
-        (repoIssueAssigneeDirectory || []).forEach((name) => add(name, "user", "ForkMesh user"));
+        (repoIssueAssigneeDirectory || []).forEach((name) => add(name, "user", `${platformName()} user`));
       }
     } else if (field === "labels") {
       splitWebIssueList(issuePickerInput("labels")?.value).forEach((label) => add(label, ""));
@@ -10250,7 +10250,9 @@
       // never saved reads as off, which is the stored default.
       // Mirrors may report their own actor handle, but the repository UI
       // advertises the canonical ForkMesh actor everywhere.
-      const handle = "@forkmesh.forkmesh@forkmesh.com";
+      const handle = dashboardOnInstance() && body.fediverse?.handle
+        ? String(body.fediverse.handle)
+        : "@forkmesh.forkmesh@forkmesh.com";
       if (handle) {
         const handleEl = $("[data-repo-watch-handle]");
         if (handleEl) handleEl.textContent = handle;
@@ -10375,7 +10377,7 @@
   function repoWebhookErrorText(code) {
     switch (String(code || "")) {
       case "invalid_url":
-        return "Enter a public https URL. Loopback, private and ForkMesh addresses are refused.";
+        return `Enter a public https URL. Loopback, private and ${platformName()} addresses are refused.`;
       case "no_events":
         return "Choose at least one event.";
       case "duplicate_url":
@@ -10527,7 +10529,7 @@
       case "invalid_remote":
         return "Enter the repository as owner/name, or paste its https address.";
       case "token_required":
-        return "Paste an access token so ForkMesh can reach the repository.";
+        return `Paste an access token so ${platformName()} can reach the repository.`;
       case "not_authorized":
         return "Only the repository owner can manage its mirror.";
       case "not_configured":
@@ -10558,9 +10560,9 @@
   function repoForgeMirrorDirectionLabel(direction, providerLabel) {
     switch (direction) {
       case "push":
-        return `ForkMesh → ${providerLabel}`;
+        return `${platformName()} → ${providerLabel}`;
       case "pull":
-        return `${providerLabel} → ForkMesh`;
+        return `${providerLabel} → ${platformName()}`;
       case "both":
         return "Both ways";
       default:
@@ -10599,7 +10601,7 @@
         `<option value="${escapeHtml(value)}"${value === direction ? " selected" : ""}>${escapeHtml(repoForgeMirrorDirectionLabel(value, providerLabel))}</option>`).join("");
       const codeNote = resource.key === "code"
         ? `<label class="inline-flex items-start gap-2 text-[10px] text-muted-foreground"><input data-repo-forge-mirror-prune type="checkbox" class="mt-0.5 h-3.5 w-3.5"${body?.mirror?.prune ? " checked" : ""} />Also delete branches and tags there that no longer exist here</label>
-           ${body?.codeHosted ? "" : `<p class="text-[10px] leading-4 text-muted-foreground">Code is pushed by the ForkMesh server that holds this repository. This one is served from its owner's node, so the push starts once it is hosted on ForkMesh.</p>`}`
+           ${body?.codeHosted ? "" : `<p class="text-[10px] leading-4 text-muted-foreground">Code is pushed by the ${escapeHtml(platformName())} server that holds this repository. This one is served from its owner's node, so the push starts once it is hosted on ${escapeHtml(platformName())}.</p>`}`
         : "";
       return `<div data-repo-forge-mirror-resource="${escapeHtml(resource.key)}" class="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${supported ? "" : "opacity-50"}">
         <div class="flex min-w-0 items-start gap-2.5">
@@ -10651,7 +10653,7 @@
       <div class="grid gap-2">
         <span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">What to mirror</span>
         <div class="divide-y divide-border rounded-md border border-border">${renderRepoForgeMirrorResourceRows(body, provider, resources)}</div>
-        <p class="text-[10px] leading-4 text-muted-foreground">Items brought in from ${escapeHtml(providerLabel)} keep a link to the original and are never sent back, so nothing loops. Wikis, projects and Actions have no ForkMesh counterpart and are not mirrored.</p>
+        <p class="text-[10px] leading-4 text-muted-foreground">Items brought in from ${escapeHtml(providerLabel)} keep a link to the original and are never sent back, so nothing loops. Wikis, projects and Actions have no ${escapeHtml(platformName())} counterpart and are not mirrored.</p>
       </div>
       <div class="flex flex-wrap items-center justify-end gap-2">
         ${mirror ? `<button type="button" data-repo-forge-mirror-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>` : ""}
@@ -10663,7 +10665,7 @@
   function repoForgeMirrorCodeLine(mirror, body) {
     const push = mirror.status?.codePush || {};
     if (mirror.resources?.code?.direction !== "push") return { tone: "", text: "Code is not mirrored." };
-    if (!body?.codeHosted) return { tone: "", text: "Waiting for this repository to be hosted on ForkMesh." };
+    if (!body?.codeHosted) return { tone: "", text: `Waiting for this repository to be hosted on ${platformName()}.` };
     if (!push.at) return { tone: "", text: "First push is on its way (within a few minutes)." };
     if (!push.ok) return { tone: "bad", text: `Last push failed ${relativeTimeLabel(push.at)}: ${push.error || "unknown error"}` };
     return { tone: "good", text: `Pushed ${push.refs || 0} branch${push.refs === 1 ? "" : "es"} and tags ${relativeTimeLabel(push.at)}.` };
@@ -10672,7 +10674,7 @@
   function repoForgeMirrorSyncLine(mirror) {
     const sync = mirror.status?.lastSync || {};
     const pulling = Object.values(mirror.resources || {}).some((item) => item.direction === "pull" || item.direction === "both");
-    if (!pulling) return { tone: "", text: "Nothing is imported into ForkMesh." };
+    if (!pulling) return { tone: "", text: `Nothing is imported into ${platformName()}.` };
     if (!sync.at) return { tone: "", text: "First import runs within ten minutes, or press Sync now." };
     if (!sync.ok) return { tone: "bad", text: `Last import ${relativeTimeLabel(sync.at)} hit a problem: ${sync.error}` };
     return { tone: "good", text: `Checked ${relativeTimeLabel(sync.at)}: ${sync.imported || 0} new item${sync.imported === 1 ? "" : "s"}, ${sync.comments || 0} comment${sync.comments === 1 ? "" : "s"}.` };
@@ -10754,7 +10756,7 @@
             <span class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title)}</span>
             <span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] ${item.state === "open" ? "text-success" : "text-muted-foreground"}">${item.merged ? "merged" : escapeHtml(item.state)}</span>
           </span>
-          <span class="truncate text-[10px] text-muted-foreground">#${escapeHtml(item.number)} · @${escapeHtml(item.author)} · ${escapeHtml(relativeTimeLabel(item.updatedAt) || "")}${item.commentCount ? ` · ${Number(item.commentCount)} comment${Number(item.commentCount) === 1 ? "" : "s"}` : ""}${item.imported ? " · already imported" : item.mirrored ? " · came from ForkMesh" : ""}</span>
+          <span class="truncate text-[10px] text-muted-foreground">#${escapeHtml(item.number)} · @${escapeHtml(item.author)} · ${escapeHtml(relativeTimeLabel(item.updatedAt) || "")}${item.commentCount ? ` · ${Number(item.commentCount)} comment${Number(item.commentCount) === 1 ? "" : "s"}` : ""}${item.imported ? " · already imported" : item.mirrored ? ` · came from ${escapeHtml(platformName())}` : ""}</span>
           ${item.excerpt ? `<span class="line-clamp-2 text-[11px] text-muted-foreground">${escapeHtml(item.excerpt)}</span>` : ""}
         </span>
         <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="shrink-0 text-muted-foreground hover:text-foreground" title="Open on ${escapeHtml(providerLabel)}"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a>
@@ -10763,7 +10765,7 @@
     const importable = items.filter((item) => !item.imported && !item.mirrored);
     holder.innerHTML = `<div class="overflow-hidden rounded-md border border-border">
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-3 py-2">
-        <span class="text-xs font-semibold text-foreground">Pick ${escapeHtml(label.toLowerCase())} to bring into ForkMesh</span>
+        <span class="text-xs font-semibold text-foreground">Pick ${escapeHtml(label.toLowerCase())} to bring into ${escapeHtml(platformName())}</span>
         <span class="inline-flex items-center gap-2">
           ${importable.length ? `<button type="button" data-repo-forge-mirror-pick-all class="text-[11px] text-accent hover:underline">${picker.selected.size === importable.length ? "Clear" : "Select all"}</button>` : ""}
           <button type="button" data-repo-forge-mirror-pick-close class="text-muted-foreground hover:text-foreground" aria-label="Close"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>
@@ -12395,7 +12397,7 @@
     // other refusal on that same status line.
     if (!readSession()?.sessionToken) {
       setAgentLoginStatus(
-        "Sign in to ForkMesh before starting a sign-in on a node.", "error");
+        `Sign in to ${platformName()} before starting a sign-in on a node.`, "error");
       return;
     }
     // Dynamic import: the bundle is a classic script, and a terminal emulator
@@ -13349,7 +13351,7 @@
 
   function renderOrgAgentRunnerDiff(branchFacts) {
     const diff = orgAgentOps.diff;
-    if (diff.loading) return `<p class="text-xs text-muted-foreground">${loadingHtml("Reading the diff from ForkMesh…")}</p>`;
+    if (diff.loading) return `<p class="text-xs text-muted-foreground">${loadingHtml(`Reading the diff from ${platformName()}…`)}</p>`;
     if (diff.error) return `<p class="text-xs text-destructive">${escapeHtml(diff.error)}</p>`;
     const data = diff.data;
     if (!data) return "";
@@ -13478,7 +13480,7 @@
       throw new Error(code === "no_changes"
         ? `${branchFacts.branch} has no changes against ${base}, so there is nothing to open a pull request for.`
         : code === "comparison_unavailable"
-          ? `${branchFacts.branch} is not on ForkMesh yet, so no pull request was opened.`
+          ? `${branchFacts.branch} is not on ${platformName()} yet, so no pull request was opened.`
           : code === "pull_too_large"
             ? `${branchFacts.branch} is too large for a web pull request. Open it from a desktop.`
             : `The pull request could not be opened (${code || "error"}).`);
@@ -14087,7 +14089,7 @@
       ? `@${String(item?.author || session?.createdBy || "member")}`
       : role === "assistant"
         ? orgAgentProviderLabel(session)
-        : String(item?.author || "ForkMesh");
+        : String(item?.author || platformName());
     const text = String(item?.text || "");
     const clock = orgAgentClockHtml(item?.at);
     return `
@@ -14185,8 +14187,8 @@
       branchFacts.branch ? orgAgentOpsButton("diff", "git-compare-arrows", diffOpen ? "Transcript" : "Diff", { title: diffOpen ? "Back to the transcript" : "Show this agent's changes against its base" }) : "",
       branchFacts.active && canManage ? orgAgentOpsButton("stop", "square", "Stop", { tone: "danger" }) : "",
       branchFacts.canContinue && canManage ? orgAgentOpsButton("continue", "play", "Continue", { title: "Resume this agent where it left off" }) : "",
-      branchFacts.canMerge && canManage ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : "Merge the branch into its base on ForkMesh, then remove the branch" }) : "",
-      branchFacts.canMerge && canManage && !branchFacts.merging && branchFacts.branch ? orgAgentOpsButton("update", "git-pull-request-arrow", `Update from ${branchFacts.base || repoDefaultBranch(repo)}`, { title: `Merge ${branchFacts.base || repoDefaultBranch(repo)} into ${branchFacts.branch} on ForkMesh` }) : "",
+      branchFacts.canMerge && canManage ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : `Merge the branch into its base on ${platformName()}, then remove the branch` }) : "",
+      branchFacts.canMerge && canManage && !branchFacts.merging && branchFacts.branch ? orgAgentOpsButton("update", "git-pull-request-arrow", `Update from ${branchFacts.base || repoDefaultBranch(repo)}`, { title: `Merge ${branchFacts.base || repoDefaultBranch(repo)} into ${branchFacts.branch} on ${platformName()}` }) : "",
       branchFacts.canCleanup && canManage ? orgAgentOpsButton("cleanup", "eraser", "Clean up", { title: "Remove the merged branch" }) : "",
       prNumber > 0 && canLink ? `<a data-org-agent-pull href="${escapeHtml(repoRecordUrl(repo, "pulls", prNumber))}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary" title="Open pull request #${prNumber}"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>PR #${prNumber}</a>` : "",
       branchFacts.canOpenPull && canManage && canLink ? orgAgentOpsButton("pull", "git-pull-request", "Create PR", { title: `Open a pull request from ${branchFacts.branch} into ${branchFacts.base || repoDefaultBranch(repo)}` }) : "",
@@ -14990,7 +14992,7 @@
           <i data-lucide="shield-check"></i>
           <div class="fm-flash-body">
             <span class="fm-flash-title">Owner-device encrypted agents</span>
-            <p class="max-w-2xl">Agent session snapshots, transcripts, results, and prompts are encrypted to a hybrid key whose private half stays in the owner's desktop vault. This browser cannot decrypt them, and ForkMesh administrators do not receive an override.</p>
+            <p class="max-w-2xl">Agent session snapshots, transcripts, results, and prompts are encrypted to a hybrid key whose private half stays in the owner's desktop vault. This browser cannot decrypt them, and ${escapeHtml(platformName())} administrators do not receive an override.</p>
           </div>
           <div class="fm-flash-actions"><a href="/desktop" class="fm-btn fm-btn-sm"><i data-lucide="monitor-down"></i>Open desktop downloads</a></div>
         </div>

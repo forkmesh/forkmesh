@@ -1814,6 +1814,37 @@
     return Boolean(document?.querySelector?.("script[data-instance-brand]"));
   }
 
+  function platformName() {
+    const brand = document?.querySelector?.("script[data-instance-brand]");
+    return String(brand?.dataset?.instanceName || "").trim() || "ForkMesh";
+  }
+
+  function applyPlatformName(root = document) {
+    const name = platformName();
+    root?.querySelectorAll?.("[data-platform-name]").forEach((element) => {
+      if (element.textContent !== name) element.textContent = name;
+    });
+  }
+
+  let instanceInfoRequest = null;
+
+  function instanceInfo() {
+    if (!dashboardOnInstance()) return Promise.resolve(null);
+    if (!instanceInfoRequest) {
+      instanceInfoRequest = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+    }
+    return instanceInfoRequest;
+  }
+
+  async function instancePluginEnabled(id) {
+    if (!dashboardOnInstance()) return true;
+    const info = await instanceInfo();
+    const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
+    return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
   const DIRECT_MIRROR_ORIGINS_KEY = "forkmesh.directMirrorOrigins.v1";
 
   function preconnectDirectMirrorOrigins(origins) {
@@ -2444,7 +2475,7 @@
     { kind: "commits", label: "Code quality: commit message format" },
     { kind: "secrets", label: "Security: no secrets in the change" },
     { kind: "paths", label: "Security: protected paths" },
-    { kind: "model", label: "Required AI model (signed by a ForkMesh runner)" },
+    { kind: "model", label: `Required AI model (signed by a ${platformName()} runner)` },
   ];
   const PULL_RULE_MODELS = [
     "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5",
@@ -2496,7 +2527,7 @@
         ${group("commits", field("subjectPattern", "Subject must match (regular expression)", rule.subjectPattern, "^(feat|fix|docs|chore)(\\(.+\\))?: ") + field("maxSubjectLength", "Longest subject", rule.maxSubjectLength || "", "72", "number"))}
         ${group("secrets", `<label class="${PULL_RULE_LABEL} sm:col-span-2">Extra secret patterns, one regular expression per line (API keys, private keys and common tokens are always checked)<textarea data-pull-rule-field="patterns" rows="2" class="w-full rounded-md border border-border bg-secondary px-2 py-1 font-mono text-xs text-foreground outline-none"${disabled}>${escapeHtml((rule.patterns || []).join("\n"))}</textarea></label>` + field("paths", "Only scan these paths (empty = everything)", pullRuleList(rule.kind === "secrets" ? rule.paths : [])))}
         ${group("paths", field("paths", "Protected paths", pullRuleList(rule.kind === "paths" ? rule.paths : []), ".github/workflows/**, deploy/**"))}
-        ${group("model", `<div class="grid gap-1 text-[11px] font-medium text-foreground sm:col-span-2">Allowed models<div class="flex flex-wrap gap-1.5">${modelBoxes}</div><span class="font-normal leading-4 text-muted-foreground">Every commit must carry a ForkMesh-Attestation that a ForkMesh runner signed under a router-issued grant naming one of these models. Commits written by hand, on a desktop or on a personal runner fail this rule; clean merges of the base branch pass.</span></div>`)}
+        ${group("model", `<div class="grid gap-1 text-[11px] font-medium text-foreground sm:col-span-2">Allowed models<div class="flex flex-wrap gap-1.5">${modelBoxes}</div><span class="font-normal leading-4 text-muted-foreground">Every commit must carry a ForkMesh-Attestation that a ${escapeHtml(platformName())} runner signed under a router-issued grant naming one of these models. Commits written by hand, on a desktop or on a personal runner fail this rule; clean merges of the base branch pass.</span></div>`)}
         <label class="${PULL_RULE_LABEL}">How to fix it (optional, shown when the rule fails)
           <textarea data-pull-rule-field="suggestion" rows="2" class="w-full rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"${disabled}>${escapeHtml(rule.suggestion || "")}</textarea>
         </label>
@@ -4889,7 +4920,7 @@
 
   function applyAvatar(container, session) {
     if (!container) return;
-    const name = session?.nodeName || session?.email || "ForkMesh";
+    const name = session?.nodeName || session?.email || platformName();
     const initial = (name[0] || "F").toUpperCase();
     const avatarPng = session?.avatarPng || "";
     const image = container.querySelector("img");
@@ -5607,7 +5638,7 @@
   // them all; logout() then clears this browser and tells its other tabs.
   async function revokeAllAccountSessions() {
     if (!await confirmAccountAction({
-      title: "Sign out of ForkMesh on every device, including this one?",
+      title: `Sign out of ${platformName()} on every device, including this one?`,
       confirmLabel: "Sign out everywhere",
     })) return;
     const button = $("[data-account-sessions-revoke-all]");
@@ -5655,7 +5686,7 @@
       if (!asHtml && window.ClipboardItem && navigator.clipboard?.write) {
         await navigator.clipboard.write([new ClipboardItem({
           "text/html": new Blob([emailFooter.html], { type: "text/html" }),
-          "text/plain": new Blob(["Sent with ForkMesh"], { type: "text/plain" }),
+          "text/plain": new Blob([`Sent with ${platformName()}`], { type: "text/plain" }),
         })]);
       } else {
         await navigator.clipboard.writeText(emailFooter.html);
@@ -6580,7 +6611,7 @@
           "Verify the live revision and production behavior. Only then call complete_org_task with the commit, deployed revision, tests, and exact QA steps.",
         ]
       : [
-          "Push the task branch and open a focused pull request against main using the repository's normal ForkMesh tooling.",
+          `Push the task branch and open a focused pull request against main using the repository's normal ${platformName()} tooling.`,
           "Do not merge or deploy. After the pull request exists, call complete_org_task with its number, branch, tests, and exact QA steps.",
         ];
     return [
@@ -6617,7 +6648,7 @@
     ];
     return '<section class="mt-6 rounded-md border border-border bg-card p-4" data-org-remote-mcp>' +
       '<div class="flex items-center gap-2"><i data-lucide="plug-zap" class="h-4 w-4 text-muted-foreground"></i>' +
-        '<h4 class="text-sm font-semibold text-foreground">Remote ForkMesh MCP</h4></div>' +
+        '<h4 class="text-sm font-semibold text-foreground">Remote ' + escapeHtml(platformName()) + ' MCP</h4></div>' +
       '<p class="mt-1 max-w-3xl text-xs leading-5 text-muted-foreground">Generate a revocable task-only credential and one complete paste block. It connects the agent directly to <span class="font-mono text-foreground">' +
         escapeHtml(publicSiteOrigin() + "/mcp") +
         '</span>; there is no local Python server, repository path, or Qt connector token to fill in.</p>' +
@@ -6733,7 +6764,7 @@
           '<div class="min-w-[14rem] flex-1">' +
             '<input data-member-name list="org-member-suggestions" role="combobox" aria-autocomplete="list" aria-controls="org-member-suggestions" placeholder="Start typing an account name" autocomplete="off" class="' + ORG_INPUT_CLASS + ' w-full" />' +
             '<datalist id="org-member-suggestions" data-org-member-suggestions></datalist>' +
-            '<p data-org-member-search-status class="mt-1 min-h-4 text-[11px] text-muted-foreground">Type a name to search active ForkMesh accounts.</p>' +
+            '<p data-org-member-search-status class="mt-1 min-h-4 text-[11px] text-muted-foreground">Type a name to search active ' + escapeHtml(platformName()) + ' accounts.</p>' +
           "</div>" +
           '<select data-member-role class="' + ORG_INPUT_CLASS + '">' + orgOptionTags(ORG_ROLE_OPTIONS, "member") + "</select>" +
           '<button type="submit" class="' + ORG_BTN_SECONDARY + '">Add member</button></form>'
@@ -7232,7 +7263,7 @@
       const currentGeneration = ++generation;
       suggestions.replaceChildren();
       if (!query) {
-        status.textContent = "Type a name to search active ForkMesh accounts.";
+        status.textContent = `Type a name to search active ${platformName()} accounts.`;
         return;
       }
       status.textContent = "Searching active accounts…";
@@ -7304,7 +7335,7 @@
     const addForm =
       '<form data-org-team-member-add class="mt-3 grid gap-2 rounded-md border border-border bg-card p-3">' +
         '<div class="flex flex-wrap items-center gap-2">' +
-          '<input data-team-member-name list="org-team-member-candidates" autocomplete="off" placeholder="ForkMesh account name" class="' + ORG_INPUT_CLASS + ' flex-1 min-w-[10rem]" />' +
+          '<input data-team-member-name list="org-team-member-candidates" autocomplete="off" placeholder="' + escapeHtml(platformName()) + ' account name" class="' + ORG_INPUT_CLASS + ' flex-1 min-w-[10rem]" />' +
           '<datalist id="org-team-member-candidates">' +
             candidates.map((member) => '<option value="' + escapeHtml(member.name) + '"></option>').join("") +
           "</datalist>" +
@@ -8211,7 +8242,7 @@
   }
 
   function defaultProfileAbout(session = profileSubject()) {
-    const name = String(session?.nodeName || session?.email || "ForkMesh").trim() || "ForkMesh";
+    const name = String(session?.nodeName || session?.email || platformName()).trim() || platformName();
     if (session?.kind === "node") {
       const owner = String(session?.owner || "").trim();
       return `# ${name} is a ForkMesh node\n\nIt mirrors Git repositories and helps serve them to the network.` +
@@ -10625,7 +10656,7 @@
     const result = await openImageResizeModal(file, PROFILE_AVATAR_MAX_BYTES, {
       dialogLabel: "Crop profile picture",
       title: "Crop profile picture",
-      description: "Drag to choose a square crop. ForkMesh will resize it to a PNG that fits the profile picture limit.",
+      description: `Drag to choose a square crop. ${platformName()} will resize it to a PNG that fits the profile picture limit.`,
       confirmLabel: "Save profile picture",
       outputType: "image/png",
       aspectRatio: 1,
@@ -11344,7 +11375,7 @@
       /[^a-z-]/gi,
       "",
     ).slice(0, 20);
-    return `<span title="This repository has an active ForkMesh Terms of Service moderation flag${category ? `: ${escapeHtml(category)}` : ""}." class="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/60 bg-destructive/10 ${compact ? "px-1 py-0.5 text-[8px]" : "px-2 py-0.5 text-[10px]"} font-semibold text-destructive"><i data-lucide="flag" class="${compact ? "h-2.5 w-2.5" : "h-3 w-3"}"></i>${compact ? "ToS" : "Terms flag"}</span>`;
+    return `<span title="This repository has an active ${escapeHtml(platformName())} Terms of Service moderation flag${category ? `: ${escapeHtml(category)}` : ""}." class="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/60 bg-destructive/10 ${compact ? "px-1 py-0.5 text-[8px]" : "px-2 py-0.5 text-[10px]"} font-semibold text-destructive"><i data-lucide="flag" class="${compact ? "h-2.5 w-2.5" : "h-3 w-3"}"></i>${compact ? "ToS" : "Terms flag"}</span>`;
   }
 
   function groupMatchesGlobalSearch(group, query) {
@@ -12339,7 +12370,7 @@
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
         <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "ForkMesh activity")}</span>
+          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
           ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
           <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
         </span>
@@ -12444,6 +12475,7 @@
 
   async function loadHomeBlogPosts() {
     if (!$("[data-home-blog-list]")) return;
+    if (!(await instancePluginEnabled("blog"))) return;
     try {
       const response = await fetch(HOME_BLOG_FEED_URL, {
         credentials: "omit",
@@ -12682,7 +12714,7 @@
     const logo = String(repository?.logo?.dataUrl || "");
     const hosted = Boolean(repository?.mirrored && repository?.mirror?.owner && repository?.mirror?.name);
     const status = hosted
-      ? "Fully hosted by ForkMesh"
+      ? `Fully hosted by ${platformName()}`
       : String(repository?.statusLabel || "External repository");
     const provider = String(repository?.attribution?.provider || repository?.provider || "Provider");
     const original = String(repository?.originalUrl || "");
@@ -12734,14 +12766,14 @@
             ${repository?.isPrivate ? '<span class="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Private · owner only</span>' : ""}
           </div>
           <p class="mt-1 text-xs leading-5 text-muted-foreground">${escapeHtml(repository?.metadata?.description || "No provider description.")}</p>
-          <p class="mt-2 text-[11px] leading-4 text-muted-foreground">${escapeHtml(hosted ? "The complete Git repository is synced, cloneable, and hosted by ForkMesh." : repository?.mirrorNotice || "This external entry is not mirrored by ForkMesh.")}</p>
+          <p class="mt-2 text-[11px] leading-4 text-muted-foreground">${escapeHtml(hosted ? `The complete Git repository is synced, cloneable, and hosted by ${platformName()}.` : repository?.mirrorNotice || `This external entry is not mirrored by ${platformName()}.`)}</p>
           ${migrationSummary}
           ${incomplete}
           <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             <a href="${escapeHtml(original)}" target="_blank" rel="noopener noreferrer" class="font-medium text-accent hover:underline">Open on ${escapeHtml(provider)}</a>
             ${repository?.targetOwner ? `<span aria-hidden="true">·</span><span>Listed under ${repository?.targetOwnerType === "organization" ? "organization " : ""}<span class="font-mono text-foreground">${escapeHtml(repository.targetOwner)}</span></span>` : ""}
             <span aria-hidden="true">·</span>
-            <span>${hosted ? "Full Git data hosted by ForkMesh" : "ForkMesh does not own or control this repository"}</span>
+            <span>${hosted ? `Full Git data hosted by ${escapeHtml(platformName())}` : `${escapeHtml(platformName())} does not own or control this repository`}</span>
           </div>
         </div>
         <div class="flex shrink-0 flex-col gap-2">
@@ -12829,7 +12861,7 @@
   async function deleteSelectedExternalRepositories() {
     const ids = [...state.externalRepositorySelection];
     if (!ids.length || !state.session?.sessionToken) return;
-    if (!window.confirm(`Delete ${ids.length} selected external ${ids.length === 1 ? "repository" : "repositories"}? This removes ForkMesh metadata and does not delete anything from the source provider.`)) return;
+    if (!window.confirm(`Delete ${ids.length} selected external ${ids.length === 1 ? "repository" : "repositories"}? This removes ${platformName()} metadata and does not delete anything from the source provider.`)) return;
     const button = $("[data-external-repo-delete-selected]");
     if (button) button.disabled = true;
     try {
@@ -13082,7 +13114,7 @@
       const perAccount = Number(limits.repositoriesPerAccount || 0);
       const megabytes = Math.round(Number(limits.repositoryBytes || 0) / 1048576);
       quota.textContent = core && perAccount
-        ? `ForkMesh hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
+        ? `${platformName()} hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
         : "";
     }
     setNewRepoSource(newRepoSource());
@@ -13167,13 +13199,13 @@
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
-    "A repository holds your project's files and history. ForkMesh keeps a copy on every core node.";
+    `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
 
   function newRepoSubtitleFor(source) {
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
     if (source === "empty") return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "remote" && hostedCoreMode()) {
-      return "Paste a public repository URL: ForkMesh copies it and hosts it on its own nodes, no desktop app needed.";
+      return `Paste a public repository URL: ${platformName()} copies it and hosts it on its own nodes, no desktop app needed.`;
     }
     return NEW_REPO_SUBTITLE;
   }
@@ -13191,7 +13223,7 @@
     if (title) title.textContent = open ? (copy.title || "Finish creating your repository") : "Create a new repository";
     if (subtitle) {
       subtitle.textContent = open
-        ? (copy.subtitle || "ForkMesh needs your desktop node to publish and mirror this repository.")
+        ? (copy.subtitle || `${platformName()} needs your desktop node to publish and mirror this repository.`)
         : newRepoSubtitleFor(newRepoSource());
     }
     if (intro) intro.textContent = (open && copy.intro) || NEW_REPO_STEPS_INTRO;
@@ -13302,16 +13334,16 @@
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `ForkMesh copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ForkMesh desktop node.`;
+      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ForkMesh desktop node.`;
     } else if (source === "local") {
       if (value) value.placeholder = localRepositoryPlaceholder();
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = "Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ForkMesh mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.";
+      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = "ForkMesh clones this URL into a bare mirror you then keep in sync.";
+      if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
     }
   }
 
@@ -13609,7 +13641,7 @@
     if (code === "email_not_verified") return "Confirm your email address to create a repository.";
     if (code === "blocked") return "That repository name is not available.";
     if (code === "hosted_quota_exceeded") {
-      return "This account hosts as many repositories on ForkMesh as it may. Delete one, or host more from your own node.";
+      return `This account hosts as many repositories on ${platformName()} as it may. Delete one, or host more from your own node.`;
     }
     if (code === "invalid_import_url") {
       return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org"]).join(", ")}.`;
@@ -13620,7 +13652,7 @@
 
   async function createHostedRepository(details) {
     if (!state.session?.sessionToken) {
-      setNewRepoHint("Sign in to create a ForkMesh-hosted repository.", "bad");
+      setNewRepoHint(`Sign in to create a ${platformName()}-hosted repository.`, "bad");
       return;
     }
     const submit = $("[data-new-repo-submit]");
@@ -15820,7 +15852,7 @@
     const message = {
       "signed-out": ["lock", "Sign in to see runs", "Workflow runs, logs and controls are shown to the repository owner and organization writers."],
       forbidden: ["lock", "Runs are private to this repository's writers", "Workflow runs can print build output, so only the owner and organization writers can read them."],
-      unavailable: ["server-off", "No runs reported for this repository yet", "A push to the default branch runs the workflows below on the owner's desktop while it is connected, and on a ForkMesh runner while it is away. Desktop runs show in the desktop app and on paired phones; runner and mirror runs appear here. To run them here while the desktop is away, link a runner that allows this owner."],
+      unavailable: ["server-off", "No runs reported for this repository yet", `A push to the default branch runs the workflows below on the owner's desktop while it is connected, and on a ${platformName()} runner while it is away. Desktop runs show in the desktop app and on paired phones; runner and mirror runs appear here. To run them here while the desktop is away, link a runner that allows this owner.`],
       error: ["triangle-alert", "Actions are unreachable right now", view.error],
       loading: ["loader-circle", "Asking the mirror executor ...", ""],
     }[view.phase];
@@ -22164,7 +22196,7 @@
             </div>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-6 ${status ? "italic text-muted-foreground" : "text-foreground"}">${escapeHtml(body)}</p>
             <div class="mt-2 flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
-              <span>Remote ActivityPub reply · not a signed ForkMesh event</span>
+              <span>Remote ActivityPub reply · not a signed ${escapeHtml(platformName())} event</span>
               ${backlinkHtml}
             </div>
           </div>
@@ -22311,7 +22343,7 @@
         ].join("\n")
       : `FORKMESH_MCP_TOKEN above is a placeholder: replace ${MCP_CONNECTOR_TOKEN_PLACEHOLDER} with the connector token the ForkMesh desktop app mints under Settings -> MCP -> Generate token, otherwise the write tools stay read-only. Treat it as a secret - never print it in logs, commits, pull requests, or chat.`;
     return [
-      `Work ForkMesh issue #${number} in ${repoSlug} end to end through the "forkmesh" MCP server.`,
+      `Work ${platformName()} issue #${number} in ${repoSlug} end to end through the "forkmesh" MCP server.`,
       "",
       `Issue: ${title || `#${number}`}`,
       `Issue page: ${issueUrl}`,
@@ -22325,7 +22357,7 @@
       `In Claude Code that is one command: claude mcp add forkmesh --scope user --env FORKMESH_REPO=${repoCheckout} --env FORKMESH_MCP_TOKEN=${connectorToken} -- python3 ${serverScript}`,
       tokenNote,
       "",
-      `1. Call whoami on the forkmesh MCP server to confirm it answers and reaches ${repoSlug} with write access. If it is missing or read-only, fix the configuration above and retry; use the forkmesh MCP server for every ForkMesh read and write rather than any other issue tracker.`,
+      `1. Call whoami on the forkmesh MCP server to confirm it answers and reaches ${repoSlug} with write access. If it is missing or read-only, fix the configuration above and retry; use the forkmesh MCP server for every ${platformName()} read and write rather than any other issue tracker.`,
       "2. Pull this issue with search_issues and read every file it references with read_file before planning.",
       `3. Work in the local checkout of ${repoSlug} that the connector exposes. Create a dedicated branch named ${branch} from the latest main; never commit to main directly.`,
       `4. Implement the smallest complete fix, run the repository's tests and required checks, and commit with a clear message referencing issue #${number}.`,
@@ -22960,7 +22992,7 @@
         .forEach(({ value, count }) => add(value, "active", `Active on ${count} ${count === 1 ? "issue" : "issues"}`));
       // The directory is long, so it only joins once a name is being typed.
       if (String(issuePicker?.query || "").trim()) {
-        (repoIssueAssigneeDirectory || []).forEach((name) => add(name, "user", "ForkMesh user"));
+        (repoIssueAssigneeDirectory || []).forEach((name) => add(name, "user", `${platformName()} user`));
       }
     } else if (field === "labels") {
       splitWebIssueList(issuePickerInput("labels")?.value).forEach((label) => add(label, ""));
@@ -26383,7 +26415,9 @@
       // never saved reads as off, which is the stored default.
       // Mirrors may report their own actor handle, but the repository UI
       // advertises the canonical ForkMesh actor everywhere.
-      const handle = "@forkmesh.forkmesh@forkmesh.com";
+      const handle = dashboardOnInstance() && body.fediverse?.handle
+        ? String(body.fediverse.handle)
+        : "@forkmesh.forkmesh@forkmesh.com";
       if (handle) {
         const handleEl = $("[data-repo-watch-handle]");
         if (handleEl) handleEl.textContent = handle;
@@ -26508,7 +26542,7 @@
   function repoWebhookErrorText(code) {
     switch (String(code || "")) {
       case "invalid_url":
-        return "Enter a public https URL. Loopback, private and ForkMesh addresses are refused.";
+        return `Enter a public https URL. Loopback, private and ${platformName()} addresses are refused.`;
       case "no_events":
         return "Choose at least one event.";
       case "duplicate_url":
@@ -26660,7 +26694,7 @@
       case "invalid_remote":
         return "Enter the repository as owner/name, or paste its https address.";
       case "token_required":
-        return "Paste an access token so ForkMesh can reach the repository.";
+        return `Paste an access token so ${platformName()} can reach the repository.`;
       case "not_authorized":
         return "Only the repository owner can manage its mirror.";
       case "not_configured":
@@ -26691,9 +26725,9 @@
   function repoForgeMirrorDirectionLabel(direction, providerLabel) {
     switch (direction) {
       case "push":
-        return `ForkMesh → ${providerLabel}`;
+        return `${platformName()} → ${providerLabel}`;
       case "pull":
-        return `${providerLabel} → ForkMesh`;
+        return `${providerLabel} → ${platformName()}`;
       case "both":
         return "Both ways";
       default:
@@ -26732,7 +26766,7 @@
         `<option value="${escapeHtml(value)}"${value === direction ? " selected" : ""}>${escapeHtml(repoForgeMirrorDirectionLabel(value, providerLabel))}</option>`).join("");
       const codeNote = resource.key === "code"
         ? `<label class="inline-flex items-start gap-2 text-[10px] text-muted-foreground"><input data-repo-forge-mirror-prune type="checkbox" class="mt-0.5 h-3.5 w-3.5"${body?.mirror?.prune ? " checked" : ""} />Also delete branches and tags there that no longer exist here</label>
-           ${body?.codeHosted ? "" : `<p class="text-[10px] leading-4 text-muted-foreground">Code is pushed by the ForkMesh server that holds this repository. This one is served from its owner's node, so the push starts once it is hosted on ForkMesh.</p>`}`
+           ${body?.codeHosted ? "" : `<p class="text-[10px] leading-4 text-muted-foreground">Code is pushed by the ${escapeHtml(platformName())} server that holds this repository. This one is served from its owner's node, so the push starts once it is hosted on ${escapeHtml(platformName())}.</p>`}`
         : "";
       return `<div data-repo-forge-mirror-resource="${escapeHtml(resource.key)}" class="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${supported ? "" : "opacity-50"}">
         <div class="flex min-w-0 items-start gap-2.5">
@@ -26784,7 +26818,7 @@
       <div class="grid gap-2">
         <span class="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">What to mirror</span>
         <div class="divide-y divide-border rounded-md border border-border">${renderRepoForgeMirrorResourceRows(body, provider, resources)}</div>
-        <p class="text-[10px] leading-4 text-muted-foreground">Items brought in from ${escapeHtml(providerLabel)} keep a link to the original and are never sent back, so nothing loops. Wikis, projects and Actions have no ForkMesh counterpart and are not mirrored.</p>
+        <p class="text-[10px] leading-4 text-muted-foreground">Items brought in from ${escapeHtml(providerLabel)} keep a link to the original and are never sent back, so nothing loops. Wikis, projects and Actions have no ${escapeHtml(platformName())} counterpart and are not mirrored.</p>
       </div>
       <div class="flex flex-wrap items-center justify-end gap-2">
         ${mirror ? `<button type="button" data-repo-forge-mirror-cancel class="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary">Cancel</button>` : ""}
@@ -26796,7 +26830,7 @@
   function repoForgeMirrorCodeLine(mirror, body) {
     const push = mirror.status?.codePush || {};
     if (mirror.resources?.code?.direction !== "push") return { tone: "", text: "Code is not mirrored." };
-    if (!body?.codeHosted) return { tone: "", text: "Waiting for this repository to be hosted on ForkMesh." };
+    if (!body?.codeHosted) return { tone: "", text: `Waiting for this repository to be hosted on ${platformName()}.` };
     if (!push.at) return { tone: "", text: "First push is on its way (within a few minutes)." };
     if (!push.ok) return { tone: "bad", text: `Last push failed ${relativeTimeLabel(push.at)}: ${push.error || "unknown error"}` };
     return { tone: "good", text: `Pushed ${push.refs || 0} branch${push.refs === 1 ? "" : "es"} and tags ${relativeTimeLabel(push.at)}.` };
@@ -26805,7 +26839,7 @@
   function repoForgeMirrorSyncLine(mirror) {
     const sync = mirror.status?.lastSync || {};
     const pulling = Object.values(mirror.resources || {}).some((item) => item.direction === "pull" || item.direction === "both");
-    if (!pulling) return { tone: "", text: "Nothing is imported into ForkMesh." };
+    if (!pulling) return { tone: "", text: `Nothing is imported into ${platformName()}.` };
     if (!sync.at) return { tone: "", text: "First import runs within ten minutes, or press Sync now." };
     if (!sync.ok) return { tone: "bad", text: `Last import ${relativeTimeLabel(sync.at)} hit a problem: ${sync.error}` };
     return { tone: "good", text: `Checked ${relativeTimeLabel(sync.at)}: ${sync.imported || 0} new item${sync.imported === 1 ? "" : "s"}, ${sync.comments || 0} comment${sync.comments === 1 ? "" : "s"}.` };
@@ -26887,7 +26921,7 @@
             <span class="truncate text-xs font-medium text-foreground">${escapeHtml(item.title)}</span>
             <span class="shrink-0 rounded-full border border-border px-1.5 text-[10px] ${item.state === "open" ? "text-success" : "text-muted-foreground"}">${item.merged ? "merged" : escapeHtml(item.state)}</span>
           </span>
-          <span class="truncate text-[10px] text-muted-foreground">#${escapeHtml(item.number)} · @${escapeHtml(item.author)} · ${escapeHtml(relativeTimeLabel(item.updatedAt) || "")}${item.commentCount ? ` · ${Number(item.commentCount)} comment${Number(item.commentCount) === 1 ? "" : "s"}` : ""}${item.imported ? " · already imported" : item.mirrored ? " · came from ForkMesh" : ""}</span>
+          <span class="truncate text-[10px] text-muted-foreground">#${escapeHtml(item.number)} · @${escapeHtml(item.author)} · ${escapeHtml(relativeTimeLabel(item.updatedAt) || "")}${item.commentCount ? ` · ${Number(item.commentCount)} comment${Number(item.commentCount) === 1 ? "" : "s"}` : ""}${item.imported ? " · already imported" : item.mirrored ? ` · came from ${escapeHtml(platformName())}` : ""}</span>
           ${item.excerpt ? `<span class="line-clamp-2 text-[11px] text-muted-foreground">${escapeHtml(item.excerpt)}</span>` : ""}
         </span>
         <a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer" class="shrink-0 text-muted-foreground hover:text-foreground" title="Open on ${escapeHtml(providerLabel)}"><i data-lucide="external-link" class="h-3.5 w-3.5"></i></a>
@@ -26896,7 +26930,7 @@
     const importable = items.filter((item) => !item.imported && !item.mirrored);
     holder.innerHTML = `<div class="overflow-hidden rounded-md border border-border">
       <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-3 py-2">
-        <span class="text-xs font-semibold text-foreground">Pick ${escapeHtml(label.toLowerCase())} to bring into ForkMesh</span>
+        <span class="text-xs font-semibold text-foreground">Pick ${escapeHtml(label.toLowerCase())} to bring into ${escapeHtml(platformName())}</span>
         <span class="inline-flex items-center gap-2">
           ${importable.length ? `<button type="button" data-repo-forge-mirror-pick-all class="text-[11px] text-accent hover:underline">${picker.selected.size === importable.length ? "Clear" : "Select all"}</button>` : ""}
           <button type="button" data-repo-forge-mirror-pick-close class="text-muted-foreground hover:text-foreground" aria-label="Close"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>
@@ -28528,7 +28562,7 @@
     // other refusal on that same status line.
     if (!readSession()?.sessionToken) {
       setAgentLoginStatus(
-        "Sign in to ForkMesh before starting a sign-in on a node.", "error");
+        `Sign in to ${platformName()} before starting a sign-in on a node.`, "error");
       return;
     }
     // Dynamic import: the bundle is a classic script, and a terminal emulator
@@ -29482,7 +29516,7 @@
 
   function renderOrgAgentRunnerDiff(branchFacts) {
     const diff = orgAgentOps.diff;
-    if (diff.loading) return `<p class="text-xs text-muted-foreground">${loadingHtml("Reading the diff from ForkMesh…")}</p>`;
+    if (diff.loading) return `<p class="text-xs text-muted-foreground">${loadingHtml(`Reading the diff from ${platformName()}…`)}</p>`;
     if (diff.error) return `<p class="text-xs text-destructive">${escapeHtml(diff.error)}</p>`;
     const data = diff.data;
     if (!data) return "";
@@ -29611,7 +29645,7 @@
       throw new Error(code === "no_changes"
         ? `${branchFacts.branch} has no changes against ${base}, so there is nothing to open a pull request for.`
         : code === "comparison_unavailable"
-          ? `${branchFacts.branch} is not on ForkMesh yet, so no pull request was opened.`
+          ? `${branchFacts.branch} is not on ${platformName()} yet, so no pull request was opened.`
           : code === "pull_too_large"
             ? `${branchFacts.branch} is too large for a web pull request. Open it from a desktop.`
             : `The pull request could not be opened (${code || "error"}).`);
@@ -30220,7 +30254,7 @@
       ? `@${String(item?.author || session?.createdBy || "member")}`
       : role === "assistant"
         ? orgAgentProviderLabel(session)
-        : String(item?.author || "ForkMesh");
+        : String(item?.author || platformName());
     const text = String(item?.text || "");
     const clock = orgAgentClockHtml(item?.at);
     return `
@@ -30318,8 +30352,8 @@
       branchFacts.branch ? orgAgentOpsButton("diff", "git-compare-arrows", diffOpen ? "Transcript" : "Diff", { title: diffOpen ? "Back to the transcript" : "Show this agent's changes against its base" }) : "",
       branchFacts.active && canManage ? orgAgentOpsButton("stop", "square", "Stop", { tone: "danger" }) : "",
       branchFacts.canContinue && canManage ? orgAgentOpsButton("continue", "play", "Continue", { title: "Resume this agent where it left off" }) : "",
-      branchFacts.canMerge && canManage ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : "Merge the branch into its base on ForkMesh, then remove the branch" }) : "",
-      branchFacts.canMerge && canManage && !branchFacts.merging && branchFacts.branch ? orgAgentOpsButton("update", "git-pull-request-arrow", `Update from ${branchFacts.base || repoDefaultBranch(repo)}`, { title: `Merge ${branchFacts.base || repoDefaultBranch(repo)} into ${branchFacts.branch} on ForkMesh` }) : "",
+      branchFacts.canMerge && canManage ? orgAgentOpsButton("merge", "git-merge", branchFacts.merging ? "Finish merge" : "Merge & clean up", { tone: "primary", title: branchFacts.merging ? "A core is publishing this merge; wait for the same merge to finish" : `Merge the branch into its base on ${platformName()}, then remove the branch` }) : "",
+      branchFacts.canMerge && canManage && !branchFacts.merging && branchFacts.branch ? orgAgentOpsButton("update", "git-pull-request-arrow", `Update from ${branchFacts.base || repoDefaultBranch(repo)}`, { title: `Merge ${branchFacts.base || repoDefaultBranch(repo)} into ${branchFacts.branch} on ${platformName()}` }) : "",
       branchFacts.canCleanup && canManage ? orgAgentOpsButton("cleanup", "eraser", "Clean up", { title: "Remove the merged branch" }) : "",
       prNumber > 0 && canLink ? `<a data-org-agent-pull href="${escapeHtml(repoRecordUrl(repo, "pulls", prNumber))}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-foreground hover:bg-secondary" title="Open pull request #${prNumber}"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>PR #${prNumber}</a>` : "",
       branchFacts.canOpenPull && canManage && canLink ? orgAgentOpsButton("pull", "git-pull-request", "Create PR", { title: `Open a pull request from ${branchFacts.branch} into ${branchFacts.base || repoDefaultBranch(repo)}` }) : "",
@@ -31123,7 +31157,7 @@
           <i data-lucide="shield-check"></i>
           <div class="fm-flash-body">
             <span class="fm-flash-title">Owner-device encrypted agents</span>
-            <p class="max-w-2xl">Agent session snapshots, transcripts, results, and prompts are encrypted to a hybrid key whose private half stays in the owner's desktop vault. This browser cannot decrypt them, and ForkMesh administrators do not receive an override.</p>
+            <p class="max-w-2xl">Agent session snapshots, transcripts, results, and prompts are encrypted to a hybrid key whose private half stays in the owner's desktop vault. This browser cannot decrypt them, and ${escapeHtml(platformName())} administrators do not receive an override.</p>
           </div>
           <div class="fm-flash-actions"><a href="/desktop" class="fm-btn fm-btn-sm"><i data-lucide="monitor-down"></i>Open desktop downloads</a></div>
         </div>
@@ -32233,7 +32267,7 @@
     if (code === "bad_signature") return "The server could not verify this browser's signature on the issue. Reload the page and try again.";
     if (code === "alias_unresolved") return "This repository's address could not be resolved right now. Try again in a moment.";
     if (status === 429) return "Too many submissions in a short time. Wait a minute and try again.";
-    if (isWebSubmissionNetworkError(error)) return "Could not reach ForkMesh - check your connection and try again.";
+    if (isWebSubmissionNetworkError(error)) return `Could not reach ${platformName()} - check your connection and try again.`;
     if (isWebSubmissionSigningUnsupported(error)) {
       return "This browser cannot sign issues (no Ed25519 support). Update the browser, or file the issue from the desktop app.";
     }
@@ -32263,7 +32297,7 @@
         return "Nothing was sent: this comparison is larger than a mirror will serve in one read. Narrow the branches and try again.";
       }
       if (isWebSubmissionNetworkError(cause)) {
-        return "Could not reach ForkMesh - check your connection and try again.";
+        return `Could not reach ${platformName()} - check your connection and try again.`;
       }
       return `Nothing was sent: these branches could not be compared on a live mirror (${webSubmissionErrorDetail(cause || error)}). Try again in a moment.`;
     }
@@ -32279,10 +32313,10 @@
     // of - a private or unpublished address, or a fork parent this catalog
     // cannot resolve. "Try again" is the one thing that cannot help there.
     if (code === "not_found" || Number(error?.status) === 404) {
-      return `ForkMesh has no public record of ${target || "that repository"} to deliver this pull request to. It may be private, or not published yet.`;
+      return `${platformName()} has no public record of ${target || "that repository"} to deliver this pull request to. It may be private, or not published yet.`;
     }
     if (isWebSubmissionNetworkError(error)) {
-      return "Could not reach ForkMesh - check your connection and try again.";
+      return `Could not reach ${platformName()} - check your connection and try again.`;
     }
     if (isWebSubmissionSigningUnsupported(error)) {
       return "This browser cannot sign pull requests (no Ed25519 support). Update the browser, or open the pull request from the desktop app.";
@@ -32411,7 +32445,7 @@
       const reason =
         code === "signing_unavailable" ? "This browser cannot sign issues (Ed25519 is unsupported). Update your browser and try again."
           : code === "bad_signature" ? "The issue signature was rejected. Reload the page and try again."
-          : code === "network_error" ? "Could not reach ForkMesh after several attempts - check your connection."
+          : code === "network_error" ? `Could not reach ${platformName()} after several attempts - check your connection.`
           : code === "timeout" ? "The repository did not answer in time after several attempts. The issue may still arrive - check the issues list before sending it again."
           : code === "invalid_json" ? "The description is too large - please shorten it or attach smaller images."
           : status >= 500 && (!code || code === `HTTP ${status}`) ? `Could not send the issue (HTTP ${status}).`
@@ -33247,7 +33281,7 @@
     const account = String(mirror.owner || mirror.node || "").trim().toLowerCase();
     return `
         <td class="w-px whitespace-nowrap px-1 py-1 text-center text-[10px] leading-none">
-          <button type="button" data-repo-mirror-delete data-mirror-node="${escapeHtml(account)}" data-mirror-machine="${escapeHtml(String(mirror.machineName || mirror.node || ""))}" data-mirror-id="${escapeHtml(String(mirror.id || ""))}" title="Permanently delete ${escapeHtml(shown)} from ForkMesh" class="inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive">
+          <button type="button" data-repo-mirror-delete data-mirror-node="${escapeHtml(account)}" data-mirror-machine="${escapeHtml(String(mirror.machineName || mirror.node || ""))}" data-mirror-id="${escapeHtml(String(mirror.id || ""))}" title="Permanently delete ${escapeHtml(shown)} from ${escapeHtml(platformName())}" class="inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive">
             <i data-lucide="trash-2" class="h-3 w-3" aria-hidden="true"></i>
             <span class="sr-only">Delete ${escapeHtml(shown)}</span>
           </button>
@@ -33699,10 +33733,11 @@
     ];
     const risks = Array.isArray(proof.risks) ? proof.risks : [];
     const copies = Array.isArray(proof.copies) ? proof.copies : [];
+    const offsiteDocs = !dashboardOnInstance();
     const riskItems = risks.map((risk) => `<li data-repo-availability-risk="${escapeHtml(risk.code)}" class="py-1.5">
         <div class="flex flex-wrap items-baseline gap-x-2"><span class="font-medium text-foreground">${escapeHtml(risk.title)}</span><span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(risk.code)} · +${escapeHtml(String(Number(risk.weight) || 0))}</span></div>
         <p class="text-muted-foreground">${escapeHtml(risk.detail)}</p>
-        <a data-repo-availability-action="${escapeHtml(risk.action?.kind || "")}" href="${escapeHtml(availabilityDocsHref(risk.action?.href))}" target="_blank" rel="noopener" class="text-accent hover:underline">${escapeHtml(risk.action?.label || "What to do")}</a>
+        ${offsiteDocs ? `<a data-repo-availability-action="${escapeHtml(risk.action?.kind || "")}" href="${escapeHtml(availabilityDocsHref(risk.action?.href))}" target="_blank" rel="noopener" class="text-accent hover:underline">${escapeHtml(risk.action?.label || "What to do")}</a>` : ""}
       </li>`).join("");
     const copyRows = copies.map((copy) => `<tr data-repo-availability-copy="${escapeHtml(copy.class)}">
         <td class="px-1 py-0.5 font-mono">${escapeHtml(copy.node || "—")}</td>
@@ -33716,7 +33751,7 @@
     return `<section data-repo-availability-proof="${escapeHtml(proof.proof)}" aria-label="Availability proof" class="mx-1 mb-2 rounded-md border border-border px-3 py-2 text-xs">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
           <p role="status"><span class="font-medium text-foreground">${escapeHtml(proof.label)}</span> · <span data-repo-availability-score class="${tone}">Risk ${escapeHtml(String(Number(proof.score) || 0))}/100 (${escapeHtml(proof.levelLabel || proof.level || "")})</span></p>
-          <a href="https://forkmesh.com/docs/availability-proof/" target="_blank" rel="noopener" class="text-[10px] text-muted-foreground hover:underline">How this is calculated</a>
+          ${offsiteDocs ? `<a href="https://forkmesh.com/docs/availability-proof/" target="_blank" rel="noopener" class="text-[10px] text-muted-foreground hover:underline">How this is calculated</a>` : ""}
         </div>
         <p class="mt-1 text-muted-foreground">${escapeHtml(proof.summary)}</p>
         <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">${metrics
@@ -34021,7 +34056,7 @@
       if (state.selectedRepo) {
         await loadRepoMirrors(state.selectedRepo, { background: true, force: true });
       }
-      setRepoMirrorStatus(`${nodeName} was removed from ForkMesh.`, "good");
+      setRepoMirrorStatus(`${nodeName} was removed from ${platformName()}.`, "good");
     } catch (error) {
       button.disabled = false;
       const code = String(error?.message || "");
@@ -34278,7 +34313,7 @@
       const link = document.createElement("a");
       link.className = "dashboard-accent-link hover:underline";
       link.href = publicProfileUrl(handle);
-      link.title = `ForkMesh profile @${handle}`;
+      link.title = `${platformName()} profile @${handle}`;
       link.textContent = author;
       row.replaceChildren(link);
     }
@@ -34387,7 +34422,7 @@
             </div>
           </section>
           <aside class="rounded-lg border border-border bg-secondary/20 p-4">
-            <div class="flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="network" class="h-4 w-4 text-muted-foreground"></i>ForkMesh traffic</div>
+            <div class="flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="network" class="h-4 w-4 text-muted-foreground"></i>${escapeHtml(platformName())} traffic</div>
             ${repoTrafficChart(traffic)}
             <p class="mt-3 text-[10px] leading-4 text-muted-foreground">Daily Git clone requests reported by managed mirror nodes.</p>
           </aside>
@@ -36920,7 +36955,9 @@
     // loadRepoFediverse), and the button opens the follow-from-Mastodon card.
     // The public repository actor is the canonical ForkMesh identity. Do not
     // derive it from a mirror hostname or replica owner name.
-    const fediHandle = "@forkmesh.forkmesh@forkmesh.com";
+    const fediHandle = dashboardOnInstance()
+      ? `@${String(repo.owner || "").toLowerCase()}.${String(repo.name || "").toLowerCase()}@${location.host}`
+      : "@forkmesh.forkmesh@forkmesh.com";
     const mastodonUrl = fediverseFollowUrl(fediHandle);
     const mirrorButton = (compact) => canSeeSettingsTab
       ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/settings#mirror`)}" data-repo-forge-mirror-open title="Mirror this repository to GitHub or GitLab" class="inline-flex ${compact ? "h-8" : "h-9"} shrink-0 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="arrow-left-right" class="h-3.5 w-3.5 text-muted-foreground"></i>Mirror</a>`
@@ -36978,7 +37015,7 @@
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
           </div>
           <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">ForkMesh POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">www/docs/integrations.md</span>.</p>
+            <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(platformName())} POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">www/docs/integrations.md</span>.</p>
             <div data-repo-webhooks-list class="grid gap-2 text-xs text-muted-foreground">Loading webhooks…</div>
             <form data-repo-webhook-form class="grid gap-3 rounded-md border border-border p-3">
               <label class="grid gap-1 text-[11px] font-medium text-foreground">Payload URL
@@ -36997,7 +37034,7 @@
             </form>
             <div data-repo-webhook-secret hidden class="rounded-md border border-border bg-secondary/40 p-3 text-[11px] leading-5 text-foreground">
               <p class="font-semibold">Signing secret — shown once</p>
-              <p class="mt-1 text-muted-foreground">Store it on the receiving side now. ForkMesh keeps it encrypted and never shows it again; if it is lost, rotate the webhook.</p>
+              <p class="mt-1 text-muted-foreground">Store it on the receiving side now. ${escapeHtml(platformName())} keeps it encrypted and never shows it again; if it is lost, rotate the webhook.</p>
               <code data-repo-webhook-secret-value class="mt-2 block break-all rounded bg-background p-2 font-mono text-[11px]"></code>
             </div>
           </div>
@@ -37015,7 +37052,7 @@
             <span data-repo-forge-mirror-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
           </div>
           <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">Keep a copy of this repository on GitHub or GitLab with your own access token. Choose, for code, issues, pull requests, discussions and releases, whether each one is sent from ForkMesh, brought in from the other side, both, or neither, and whether imports happen on their own or only for the items you pick.</p>
+            <p class="text-[11px] leading-5 text-muted-foreground">Keep a copy of this repository on GitHub or GitLab with your own access token. Choose, for code, issues, pull requests, discussions and releases, whether each one is sent from ${escapeHtml(platformName())}, brought in from the other side, both, or neither, and whether imports happen on their own or only for the items you pick.</p>
             <div data-repo-forge-mirror-body class="text-xs text-muted-foreground">Loading mirror settings…</div>
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
@@ -37027,7 +37064,7 @@
           <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p class="text-sm font-medium text-foreground">Delete this repository</p>
-              <p class="mt-1 text-xs leading-5 text-muted-foreground">Removes the repository from ForkMesh, including relay metadata, pending inboxes, agents, mirror presence, and repository chat history. Source files on the owner's device are not erased.</p>
+              <p class="mt-1 text-xs leading-5 text-muted-foreground">Removes the repository from ${escapeHtml(platformName())}, including relay metadata, pending inboxes, agents, mirror presence, and repository chat history. Source files on the owner's device are not erased.</p>
               <p data-repo-delete-status class="mt-1 text-xs text-muted-foreground"></p>
             </div>
             <button type="button" data-repo-delete class="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-destructive/60 px-3 text-xs font-semibold text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete repository</button>
@@ -37263,7 +37300,7 @@
                 <span class="inline-flex items-center gap-1.5"><i data-lucide="image-plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
                 <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-muted-foreground"></i>
               </summary>
-              <p class="mt-2 text-[11px] leading-4 text-muted-foreground">ForkMesh shows the logo committed at the root of the repository (logo.png), and never invents artwork for a project. Signed-in community members may suggest PNG, JPEG, or WebP artwork; the repository owner or a moderator must approve it before it becomes official.</p>
+              <p class="mt-2 text-[11px] leading-4 text-muted-foreground">${escapeHtml(platformName())} shows the logo committed at the root of the repository (logo.png), and never invents artwork for a project. Signed-in community members may suggest PNG, JPEG, or WebP artwork; the repository owner or a moderator must approve it before it becomes official.</p>
               <form data-repo-logo-suggestion-form class="mt-3 grid gap-2">
                 <input data-repo-logo-suggestion-file type="file" accept="image/png,image/jpeg,image/webp" required class="text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-border file:bg-secondary file:px-2 file:py-1 file:text-xs file:text-foreground" />
                 <input data-repo-logo-suggestion-attribution type="text" maxlength="240" placeholder="Artwork attribution (optional)" class="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent" />
@@ -37376,7 +37413,7 @@
             <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><i data-lucide="terminal" class="h-3.5 w-3.5 text-muted-foreground"></i>Clone</span>
             <span class="fm-label">HTTPS</span>
           </div>
-          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">Clone this repository from its live ForkMesh mirror over HTTPS.</p>
+          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">Clone this repository from its live ${escapeHtml(platformName())} mirror over HTTPS.</p>
           <div class="mt-2 flex items-center gap-2">
             <input data-repo-clone-url type="text" readonly value="${escapeHtml(url)}" aria-label="Clone URL" class="min-w-0 flex-1 rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground outline-none focus:border-accent" />
             ${copyBtn(url, "Copy clone URL")}
@@ -37916,7 +37953,7 @@
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
           <div class="min-w-0 flex-1">
             <p class="truncate text-xs font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || "ForkMesh update")}</p>
+            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || `${platformName()} update`)}</p>
           </div>
           <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
@@ -37942,7 +37979,7 @@
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(repoPublicText(item.body) || "ForkMesh notification")}</p>
+      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">
@@ -41498,7 +41535,9 @@
     const slot = $('[data-forkmesh-ad-slot="web"]');
     if (!slot || ADS_SLOT_SKIPPED_PAGES.has(currentPage())) return;
     if (adSlotHiddenUntil() > Date.now()) return;
-    const run = () => { void loadAdSlot(slot); };
+    const run = () => {
+      void instancePluginEnabled("ads").then((enabled) => { if (enabled) void loadAdSlot(slot); });
+    };
     if (typeof window.requestIdleCallback === "function") {
       window.requestIdleCallback(run, { timeout: 5000 });
     } else {
@@ -43130,12 +43169,12 @@
         <div class="fm-spotlight-search">
           <i data-lucide="search" aria-hidden="true"></i>
           <label for="commandPaletteInput" class="sr-only">Filter commands</label>
-          <input id="commandPaletteInput" data-command-palette-input type="search" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="commandPaletteResults" aria-expanded="true" placeholder="Search ForkMesh" />
+          <input id="commandPaletteInput" data-command-palette-input type="search" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="commandPaletteResults" aria-expanded="true" placeholder="Search ${escapeHtml(platformName())}" />
           <kbd>esc</kbd>
         </div>
         <div id="commandPaletteResults" data-command-palette-results role="listbox" aria-label="Commands" class="fm-spotlight-results"></div>
         <div class="fm-spotlight-footer" aria-hidden="true">
-          <span class="fm-spotlight-brand"><i data-lucide="command"></i>ForkMesh</span>
+          <span class="fm-spotlight-brand"><i data-lucide="command"></i>${escapeHtml(platformName())}</span>
           <span class="fm-spotlight-keys"><span><kbd>↵</kbd>Open</span><span><kbd>↑</kbd><kbd>↓</kbd>Move</span><span><kbd>esc</kbd>Close</span></span>
         </div>
       </section>`;
@@ -43312,7 +43351,7 @@
   let feedbackPlugin = null;
   const FEEDBACK_GENERAL_COPY = Object.freeze({
     title: "Send feedback",
-    desc: "Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.",
+    desc: "Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the " + platformName() + " team reads it; nothing is published.",
     placeholder: "What should we know?",
   });
 
@@ -43393,7 +43432,7 @@
       }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       form.reset();
-      setFeedbackStatus(plugin ? `Thank you. Your report on ${plugin.name} was filed.` : "Thank you. Your feedback reached the ForkMesh team.", "good");
+      setFeedbackStatus(plugin ? `Thank you. Your report on ${plugin.name} was filed.` : `Thank you. Your feedback reached the ${platformName()} team.`, "good");
       if (submit) submit.textContent = "Sent";
       feedbackCloseTimer = window.setTimeout(() => setFeedbackModalOpen(false), 1400);
     } catch (_) {
@@ -44669,7 +44708,7 @@
       if (verify) verify.hidden = true;
       runnerSetup.ssh = null;
       runnerSetupStatus(error.code === "ssh_setup_unavailable"
-        ? "ForkMesh cannot connect for you here. Use ForkMesh Desktop, or the one command."
+        ? `${platformName()} cannot connect for you here. Use ForkMesh Desktop, or the one command.`
         : `Could not check the server: ${error.message}`, "bad");
     }
   }
@@ -45151,7 +45190,7 @@
     "agents": "/dashboard-page-agents.js?v=0ec627084c94",
     "apps": "/dashboard-page-apps.js?v=8e695c33eb03",
     "bounties": "/dashboard-page-bounties.js?v=071ac595b6bb",
-    "calendar": "/dashboard-page-calendar.js?v=f3f31e10bb77",
+    "calendar": "/dashboard-page-calendar.js?v=1ebcd099794e",
     "challenges": "/dashboard-page-challenges.js?v=2c09240bdb95",
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=915f8761c02c",
@@ -45159,7 +45198,7 @@
     "notes": "/dashboard-page-notes.js?v=befe2a1621ea",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "tasks": "/dashboard-page-tasks.js?v=987abe164a59",
-    "workflows": "/dashboard-page-workflows.js?v=b1f9fc87fe2b",
+    "workflows": "/dashboard-page-workflows.js?v=35a9e53b7c1d",
   };
   const dashboardChunkScope = {
     $,
@@ -45183,6 +45222,7 @@
     mergeGroupsByPublicAddress,
     orgAgentRequest,
     parseFlexibleDate,
+    platformName,
     profileBadgeMedal,
     profileBadgeTier,
     publicProfileUrl,
@@ -45445,6 +45485,7 @@
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    applyPlatformName();
     watchGenieSetting();
     watchHomeRedirectSetting();
     installErrorActions();

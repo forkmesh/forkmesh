@@ -189,6 +189,7 @@
     window.addEventListener("forkmesh:repo-addresses", refreshRepoAddressViews);
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
+    applyPlatformName();
     watchGenieSetting();
     watchHomeRedirectSetting();
     installErrorActions();

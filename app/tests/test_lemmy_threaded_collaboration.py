@@ -91,7 +91,7 @@ def test_world_web_native_and_qt_render_provenance_backlinks_as_non_native():
     assert "not a signed ForkMesh native event" in world
     assert "data-repo-federated-replies" in dashboard
     assert "loadFederatedReplies(repo, kind, number" in dashboard
-    assert "not a signed ForkMesh event" in dashboard
+    assert "not a signed ${escapeHtml(platformName())} event" in dashboard
     assert "class FederatedReply" in android_model
     assert "nativeEvent = false" in android_model
     assert "fedi-comments" in android_api

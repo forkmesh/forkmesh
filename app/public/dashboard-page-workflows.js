@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["workflows"] = (core) => {
-  const { $, $$, blobText, desktopControlErrorText, desktopControlHub, escapeHtml, fetchJson, fetchRepoJson, formatTimeAgo, sendTextToPrompt, state } = core;
+  const { $, $$, blobText, desktopControlErrorText, desktopControlHub, escapeHtml, fetchJson, fetchRepoJson, formatTimeAgo, platformName, sendTextToPrompt, state } = core;
   const WF_NODE_W = 216;
   const WF_NODE_H = 64;
   const WF_GRID = 8;
@@ -39,7 +39,7 @@
     not_a_workflow: "That file does not contain a workflow (no nodes and connections).",
     invalid_import_url: "Use a public https:// link to a workflow JSON file.",
     import_fetch_failed: "That link could not be downloaded.",
-    yaml_syntax: "The file is not valid YAML for ForkMesh Actions.",
+    yaml_syntax: `The file is not valid YAML for ${platformName()} Actions.`,
     not_a_mapping: "The action file must be a YAML mapping.",
     no_steps: "An action needs at least one step with a command, connected to the trigger.",
     too_many_steps: "An action can have at most 64 steps.",
@@ -2051,7 +2051,7 @@
     try {
       const data = await wfPost("/api/workflows/export", wfPayload());
       wfDownload(data.filename || "workflow.json", `${JSON.stringify(data.document, null, 2)}\n`);
-      wfSetNotice(`Downloaded ${data.filename}. It opens in n8n too; integration steps stay ForkMesh steps.`, "good");
+      wfSetNotice(`Downloaded ${data.filename}. It opens in n8n too; integration steps stay ${platformName()} steps.`, "good");
     } catch (error) {
       wfSetNotice(wfErrorText(error, "The workflow could not be exported."), "bad");
     }

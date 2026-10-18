@@ -2903,7 +2903,7 @@
         <div data-update-notice hidden class="fm-flash fm-flash-neutral fm-flash-full" role="status" aria-live="polite">
           <i data-lucide="sparkles" class="fm-flash-icon-accent" aria-hidden="true"></i>
           <div class="fm-flash-body">
-            <strong class="fm-flash-title">A new version of ForkMesh is available</strong>
+            <strong class="fm-flash-title">A new version of <span data-platform-name>ForkMesh</span> is available</strong>
             <p data-update-notice-detail>Update reloads this page on the new version.</p>
           </div>
           <div class="fm-flash-actions">
@@ -2978,11 +2978,11 @@
                         </button>
                       </div>
                       <div data-profile-about-body class="grid gap-4 border-t border-border p-5 text-sm leading-6 text-foreground md:p-6">
-                        <p class="text-2xl font-semibold">Hi, this is your ForkMesh profile.</p>
+                        <p class="text-2xl font-semibold">Hi, this is your <span data-platform-name>ForkMesh</span> profile.</p>
                         <p class="text-muted-foreground">Pinned profile content and public activity will live here.</p>
                       </div>
                     </section>
-                    <section data-profile-referrals-panel class="overflow-hidden rounded-md border border-border bg-card">
+                    <section data-profile-referrals-panel data-instance-plugin="referrals" class="overflow-hidden rounded-md border border-border bg-card">
                       <div class="flex items-center justify-between gap-3 px-4 py-3">
                         <h2 class="text-sm font-semibold text-foreground">Referred users</h2>
                         <span data-profile-referrals-count class="fm-label">0 credited</span>
@@ -3028,7 +3028,7 @@
                             <div data-profile-contribution-empty hidden class="fm-blankslate mb-4">
                               <i data-lucide="activity" aria-hidden="true"></i>
                               <p class="fm-blankslate-title">No public contributions in this period</p>
-                              <p class="fm-blankslate-desc">Publish or contribute to a public ForkMesh repository to begin your native activity skyline.</p>
+                              <p class="fm-blankslate-desc">Publish or contribute to a public <span data-platform-name>ForkMesh</span> repository to begin your native activity skyline.</p>
                             </div>
                             <div data-profile-contribution-error hidden role="alert" class="fm-blankslate min-h-48 content-center">
                               <i data-lucide="circle-alert" aria-hidden="true"></i>
@@ -3094,8 +3094,8 @@
                           <p data-profile-activity-empty class="text-sm text-muted-foreground">Loading verified contribution activity...</p>
                         </section>
                         <footer data-profile-contribution-footer class="hidden items-center gap-5 pt-10 text-xs text-muted-foreground lg:flex">
-                          <span class="font-semibold text-foreground">ForkMesh</span>
-                          <span>© 2026 ForkMesh, Inc.</span>
+                          <span class="font-semibold text-foreground" data-platform-name>ForkMesh</span>
+                          <span data-instance-plugin="website">© 2026 ForkMesh, Inc.</span>
                           <a href="/terms" class="hover:text-accent hover:underline">Terms</a>
                           <a href="/privacy" class="hover:text-accent hover:underline">Privacy</a>
                           <a href="/security" class="hover:text-accent hover:underline">Security</a>
@@ -3170,7 +3170,7 @@
                     </div>
                     <ul data-profile-badges-list class="grid gap-3 p-3 text-sm"></ul>
                   </section>
-                  <section data-profile-tips class="mt-4 overflow-hidden rounded-md border border-border bg-card">
+                  <section data-profile-tips data-instance-plugin="rewards" class="mt-4 overflow-hidden rounded-md border border-border bg-card">
                     <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                       <i data-lucide="coins" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
                       <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Tips</h2>
@@ -3274,7 +3274,7 @@
         <div class="fm-dialog-header">
           <div class="fm-dialog-heading">
             <h2 id="profileAboutModalTitle" class="fm-dialog-title">Edit about yourself</h2>
-            <p class="fm-dialog-desc">Markdown shown on your ForkMesh profile overview.</p>
+            <p class="fm-dialog-desc">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>
           </div>
           <button data-profile-about-modal-close type="button" aria-label="Close about editor" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
             <i data-lucide="x" aria-hidden="true"></i>
@@ -3368,7 +3368,7 @@
         <div class="fm-dialog-header">
           <div class="fm-dialog-heading">
             <h2 id="feedbackModalTitle" class="fm-dialog-title">Send feedback</h2>
-            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.</p>
+            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>
           </div>
           <button data-feedback-close type="button" aria-label="Close feedback" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
             <i data-lucide="x" aria-hidden="true"></i>

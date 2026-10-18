@@ -75,7 +75,7 @@
 
               <header class="nr-head">
                 <h1 id="newRepoModalTitle" data-new-repo-title>Create a new repository</h1>
-                <p data-new-repo-subtitle>A repository holds your project's files and history. ForkMesh keeps a copy on every core node.</p>
+                <p data-new-repo-subtitle>A repository holds your project's files and history. <span data-platform-name>ForkMesh</span> keeps a copy on every core node.</p>
               </header>
               <p class="nr-required">Required fields are marked with an asterisk (<span class="nr-star">*</span>).</p>
 
@@ -92,7 +92,7 @@
                         <button data-new-repo-source="provider" type="button" aria-pressed="false"><i data-lucide="download" class="h-4 w-4"></i>Import from GitHub, GitLab, Codeberg</button>
                       </div>
                       <input data-new-repo-source-value type="text" autocomplete="off" spellcheck="false" aria-label="Source URL or path" placeholder="https://github.com/owner/repo.git" class="nr-input font-mono" style="margin-top:6px" />
-                      <p data-new-repo-source-hint class="nr-help">ForkMesh clones this URL into a bare mirror. Local paths never leave your machine.</p>
+                      <p data-new-repo-source-hint class="nr-help"><span data-platform-name>ForkMesh</span> clones this URL into a bare mirror. Local paths never leave your machine.</p>
                       <div data-new-repo-provider-options class="hidden nr-panel">
                         <label class="nr-field">
                           <span class="nr-label">Import type</span>
@@ -203,7 +203,7 @@
                         <p class="text-sm text-muted-foreground"><span data-new-repo-push-repo class="font-mono text-foreground"></span></p>
                       </div>
                     </div>
-                    <p class="mt-4 text-sm leading-6 text-muted-foreground">ForkMesh hosts it <span data-new-repo-push-intro>and it stays empty until your first push. Run these in your project folder; git asks for the credential below.</span></p>
+                    <p class="mt-4 text-sm leading-6 text-muted-foreground"><span data-platform-name>ForkMesh</span> hosts it <span data-new-repo-push-intro>and it stays empty until your first push. Run these in your project folder; git asks for the credential below.</span></p>
                     <pre data-new-repo-push-commands class="nr-code mt-3"></pre>
                     <div class="nr-two mt-4 text-xs">
                       <label class="nr-field">
@@ -216,7 +216,7 @@
                       </label>
                     </div>
                     <p class="nr-help mt-3">
-                      This credential belongs to the browser session you are signed in with, expires <span data-new-repo-push-expiry class="text-foreground"></span>, and is not stored by ForkMesh. Signing this session out revokes it. <span data-new-repo-push-visibility>Your repository is public; a private mirror is an owner-sealed archive only a ForkMesh node holding your key can publish.</span>
+                      This credential belongs to the browser session you are signed in with, expires <span data-new-repo-push-expiry class="text-foreground"></span>, and is not stored by <span data-platform-name>ForkMesh</span>. Signing this session out revokes it. <span data-new-repo-push-visibility>Your repository is public; a private mirror is an owner-sealed archive only a ForkMesh node holding your key can publish.</span>
                     </p>
                     <div class="mt-5 flex flex-wrap items-center gap-2">
                       <button data-new-repo-push-copy type="button" class="nr-btn nr-btn-ghost">

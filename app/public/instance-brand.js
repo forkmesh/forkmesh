@@ -2,7 +2,7 @@
   const script = document.currentScript;
   const name = (script && script.dataset.instanceName || "").trim();
   if (!name || name === "ForkMesh") return;
-  const BRAND = /ForkMesh(?! [Dd]esktop)/g;
+  const BRAND = /(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)/g;
   const SKIP = new Set(["SCRIPT", "STYLE", "TEXTAREA", "CODE", "PRE", "KBD", "SAMP", "NOSCRIPT"]);
   const ATTRIBUTES = ["title", "aria-label", "placeholder", "alt"];
   let hiddenPaths = [];

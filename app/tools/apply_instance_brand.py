@@ -19,6 +19,10 @@ TITLE_RE = re.compile(r"(<title[^>]*>)(.*?)(</title>)", re.IGNORECASE | re.DOTAL
 META_RE = re.compile(
     r'(<meta\s+(?:name|property)="(?:application-name|apple-mobile-web-app-title|og:site_name)"\s+content=")'
     r'ForkMesh(")', re.IGNORECASE)
+META_TEXT_RE = re.compile(
+    r'(<meta\s+(?:name|property)="(?:description|og:title|og:description|twitter:title|twitter:description)"'
+    r'\s+content=")([^"]*)(")', re.IGNORECASE)
+BRAND_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)")
 OLD_TAG_RE = re.compile(r'<script src="/instance-brand\.js"[^>]*' + MARKER + r'[^>]*></script>')
 THEME_TAG = '<link rel="stylesheet" href="/instance-theme.css" data-instance-theme />'
 ICON_RE = re.compile(r'[ \t]*<link\s+rel="(?:icon|shortcut icon|apple-touch-icon)"[^>]*>[ \t]*\n?', re.IGNORECASE)
@@ -87,6 +91,8 @@ def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
         lambda match: match.group(1) + match.group(2).replace("ForkMesh", escaped) + match.group(3),
         text, count=1)
     text = META_RE.sub(lambda match: match.group(1) + escaped + match.group(2), text)
+    text = META_TEXT_RE.sub(
+        lambda match: match.group(1) + BRAND_RE.sub(lambda _: escaped, match.group(2)) + match.group(3), text)
     off = ' data-instance-powered-by="off"' if not powered_by else ""
     tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
     lower = text.lower()

@@ -3,7 +3,7 @@
   let feedbackPlugin = null;
   const FEEDBACK_GENERAL_COPY = Object.freeze({
     title: "Send feedback",
-    desc: "Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.",
+    desc: "Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the " + platformName() + " team reads it; nothing is published.",
     placeholder: "What should we know?",
   });
 
@@ -84,7 +84,7 @@
       }
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       form.reset();
-      setFeedbackStatus(plugin ? `Thank you. Your report on ${plugin.name} was filed.` : "Thank you. Your feedback reached the ForkMesh team.", "good");
+      setFeedbackStatus(plugin ? `Thank you. Your report on ${plugin.name} was filed.` : `Thank you. Your feedback reached the ${platformName()} team.`, "good");
       if (submit) submit.textContent = "Sent";
       feedbackCloseTimer = window.setTimeout(() => setFeedbackModalOpen(false), 1400);
     } catch (_) {

@@ -920,7 +920,7 @@
       if (verify) verify.hidden = true;
       runnerSetup.ssh = null;
       runnerSetupStatus(error.code === "ssh_setup_unavailable"
-        ? "ForkMesh cannot connect for you here. Use ForkMesh Desktop, or the one command."
+        ? `${platformName()} cannot connect for you here. Use ForkMesh Desktop, or the one command.`
         : `Could not check the server: ${error.message}`, "bad");
     }
   }
