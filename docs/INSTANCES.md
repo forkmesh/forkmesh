@@ -138,6 +138,12 @@ app does not redirect Git clients to its own origin.
 The bootstrap also switches Issues, Pull requests and Discussions off on the
 `<owner>/forkmesh` mirror; the owner can turn them back on in the
 repository's Settings tab ([app/repo-features.md](app/repo-features.md)).
+With `ACTIONS_BOT_SEED` in its environment (or the app env) it also creates
+the Actions bot `<owner>-actions` (a node account holding the Ed25519 key
+derived from the seed, organization role `maintainer`), and
+`python -m forkmesh_host instance-runner --name N --public-key K --owner O`
+registers the instance's own trusted pool runner; see
+[server/instance-actions.md](server/instance-actions.md).
 Admins can serve one owner's repositories at `/<repo>/<folder>` from Platform
 → Repository addresses ([app/server-update.md](app/server-update.md)).
 
