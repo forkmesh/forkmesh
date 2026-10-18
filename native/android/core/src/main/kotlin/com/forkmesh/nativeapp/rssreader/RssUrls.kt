@@ -132,6 +132,16 @@ object RssUrls {
         return parts.host + port + path + query
     }
 
+    fun linkKey(value: String): String {
+        val parts = split(RssText.unescape(value.trim())) ?: return ""
+        if (parts.authority.isEmpty() || parts.host.isEmpty()) return ""
+        val scheme = if (parts.scheme == "https") "http" else parts.scheme
+        val port = if (parts.port > 0 && parts.port != 80 && parts.port != 443) ":${parts.port}" else ""
+        val query = parts.query?.takeIf { it.isNotEmpty() }?.let { "?$it" }.orEmpty()
+        val fragment = parts.fragment?.takeIf { it.isNotEmpty() }?.let { "#$it" }.orEmpty()
+        return "$scheme://${parts.host.trimEnd('.')}$port${parts.path.trimEnd('/')}$query$fragment"
+    }
+
     fun origin(url: String): String = split(url)?.takeIf { it.authority.isNotEmpty() }?.origin.orEmpty()
 
     fun favicon(site: String): String {

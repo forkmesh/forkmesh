@@ -23,16 +23,17 @@ const crc32 = (bytes) => {
 function zip(entries) {
   const locals = [], centrals = [];
   let offset = 0;
-  for (const { name, data, deflate } of entries) {
+  for (const { name, data, deflate, flags = 0, crc } of entries) {
     const raw = Buffer.from(data), packed = deflate ? zlib.deflateRawSync(raw) : raw;
+    const sum = crc ?? crc32(raw);
     const fileName = Buffer.from(name);
     const local = Buffer.alloc(30);
-    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(deflate ? 8 : 0, 8);
-    local.writeUInt32LE(crc32(raw), 14); local.writeUInt32LE(packed.length, 18); local.writeUInt32LE(raw.length, 22);
+    local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(flags, 6); local.writeUInt16LE(deflate ? 8 : 0, 8);
+    local.writeUInt32LE(sum, 14); local.writeUInt32LE(packed.length, 18); local.writeUInt32LE(raw.length, 22);
     local.writeUInt16LE(fileName.length, 26);
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6);
-    central.writeUInt16LE(deflate ? 8 : 0, 10); central.writeUInt32LE(crc32(raw), 16);
+    central.writeUInt16LE(flags, 8); central.writeUInt16LE(deflate ? 8 : 0, 10); central.writeUInt32LE(sum, 16);
     central.writeUInt32LE(packed.length, 20); central.writeUInt32LE(raw.length, 24);
     central.writeUInt16LE(fileName.length, 28); central.writeUInt32LE(offset, 42);
     locals.push(local, fileName, packed); centrals.push(central, fileName);
@@ -95,6 +96,11 @@ const APPLE = "﻿Title,URL,Username,Password,Notes,OTPAuth\r\n"
   check("a stored ZIP entry opens", (await Client.readLoginsFile(zip([{ name: "p.csv", data: APPLE }]).buffer)).logins.length === 2);
   await refused("a ZIP without a CSV", () => Client.readLoginsFile(zip([{ name: "a.txt", data: "x" }])), "zip_no_csv");
   await refused("a truncated ZIP", () => Client.readLoginsFile(archive.subarray(0, 40)), "zip_unreadable");
+  await refused("a ZIP whose checksum does not match", () => Client.readLoginsFile(zip([{ name: "p.csv", data: APPLE, deflate: true, crc: 1 }])), "zip_unreadable");
+  await refused("a password-protected ZIP", () => Client.readLoginsFile(zip([{ name: "p.csv", data: APPLE, flags: 1 }])), "zip_encrypted");
+  const bomb = zip([{ name: "p.csv", data: Buffer.alloc(17 * 1024 * 1024, 0x61), deflate: true }]);
+  bomb.set([0, 0, 0, 0], bomb.length - 22 - 46 - 5 + 24);
+  await refused("a ZIP that inflates past 16 MB, whatever size it claims", () => Client.readLoginsFile(bomb), "csv_too_large");
 
   const existing = [
     { fields: { title: "Example", url: "https://example.com", username: "ANA@example.com", password: 'pa,ss"word' } },

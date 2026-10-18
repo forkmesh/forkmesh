@@ -1,3 +1,4 @@
+import FMChat
 import FMPackages
 import SafariServices
 import SwiftUI
@@ -14,6 +15,7 @@ struct RSSReaderArticleScreen: View {
     @State private var browser: RSSBrowserLink?
     @State private var notice = ""
     @State private var pageDirection = 1
+    @State private var chatShare: RSSChatShare?
     @Environment(\.openURL) private var openURL
 
     init(model: RSSReaderModel, scope: RSSScope, list: [RSSArticle], articleId: String) {
@@ -88,6 +90,13 @@ struct RSSReaderArticleScreen: View {
                 RSSSafariView(url: target.url)
                     .ignoresSafeArea()
             }
+            .sheet(item: $chatShare) { (share: RSSChatShare) in
+                if let hub = ChatFeature.hub() {
+                    RSSReaderShareSheet(hub: hub, share: share) { (place: String) in
+                        withAnimation { notice = "Sent to \(place)." }
+                    }
+                }
+            }
             .alert("Reader View", isPresented: $readerFailed) {
                 if let link {
                     Button("Open Original") { openLink(link) }
@@ -105,6 +114,7 @@ struct RSSReaderArticleScreen: View {
                 RSSArticleWebView(
                     html: model.page(for: article, reader: reader), articleKey: "\(article.id)|\(reader)",
                     onLink: { (url: URL) in openLink(url) },
+                    canSwipe: { (step: Int) in canMove(step) },
                     onSwipe: { (step: Int) in move(step) })
                     .ignoresSafeArea(edges: .bottom)
                     .accessibilityIdentifier("rss-article-body")
@@ -116,7 +126,7 @@ struct RSSReaderArticleScreen: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .contentShape(Rectangle())
                     .gesture(
-                        DragGesture(minimumDistance: 30).onEnded { value in
+                        DragGesture(minimumDistance: 12).onEnded { value in
                             guard abs(value.translation.width) > abs(value.translation.height) else { return }
                             move(value.translation.width < 0 ? 1 : -1)
                         })
@@ -194,6 +204,15 @@ struct RSSReaderArticleScreen: View {
                 }
                 .disabled(link == nil || loadingReader)
                 .accessibilityLabel(reader ? "Show Feed Content" : "Reader View")
+                Button {
+                    shareToChat()
+                } label: {
+                    Image(systemName: "paperplane")
+                        .frame(width: 46, height: 46)
+                }
+                .disabled(link == nil || ChatFeature.hub() == nil)
+                .accessibilityLabel("Send to Chat")
+                .accessibilityIdentifier("rss-share-chat")
                 if let link {
                     ShareLink(item: link) {
                         Image(systemName: "square.and.arrow.up")
@@ -213,6 +232,12 @@ struct RSSReaderArticleScreen: View {
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
+    }
+
+    private func canMove(_ step: Int) -> Bool {
+        guard let index else { return false }
+        let next: Int = index + step
+        return next >= 0 && next < list.count
     }
 
     private func move(_ step: Int) {
@@ -259,6 +284,12 @@ struct RSSReaderArticleScreen: View {
                 if ok { reader = true } else { readerFailed = true }
             }
         }
+    }
+
+    private func shareToChat() {
+        guard let article, let link else { return }
+        let feed: String = model.feed(article.feedId)?.displayTitle ?? ""
+        chatShare = RSSChatShare(title: article.title, link: link.absoluteString, feed: feed)
     }
 
     private func openLink(_ url: URL) {
@@ -323,9 +354,10 @@ struct RSSArticleWebView: UIViewRepresentable {
     let html: String
     let articleKey: String
     let onLink: (URL) -> Void
+    let canSwipe: (Int) -> Bool
     let onSwipe: (Int) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onLink: onLink, onSwipe: onSwipe) }
+    func makeCoordinator() -> Coordinator { Coordinator(onLink: onLink, canSwipe: canSwipe, onSwipe: onSwipe) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -342,6 +374,10 @@ struct RSSArticleWebView: UIViewRepresentable {
         view.backgroundColor = .clear
         view.scrollView.backgroundColor = .clear
         view.scrollView.contentInsetAdjustmentBehavior = .automatic
+        view.scrollView.alwaysBounceHorizontal = false
+        view.scrollView.showsHorizontalScrollIndicator = false
+        view.scrollView.isDirectionalLockEnabled = true
+        view.scrollView.delegate = context.coordinator
         let swipe = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.swiped(_:)))
         swipe.delegate = context.coordinator
         view.addGestureRecognizer(swipe)
@@ -352,32 +388,71 @@ struct RSSArticleWebView: UIViewRepresentable {
 
     func updateUIView(_ view: WKWebView, context: Context) {
         context.coordinator.onLink = onLink
+        context.coordinator.canSwipe = canSwipe
         context.coordinator.onSwipe = onSwipe
         context.coordinator.load(html, key: articleKey, into: view)
     }
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIGestureRecognizerDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, UIGestureRecognizerDelegate, UIScrollViewDelegate {
         var onLink: (URL) -> Void
+        var canSwipe: (Int) -> Bool
         var onSwipe: (Int) -> Void
         private var html = ""
         private var key = ""
 
-        init(onLink: @escaping (URL) -> Void, onSwipe: @escaping (Int) -> Void) {
+        init(onLink: @escaping (URL) -> Void, canSwipe: @escaping (Int) -> Bool, onSwipe: @escaping (Int) -> Void) {
             self.onLink = onLink
+            self.canSwipe = canSwipe
             self.onSwipe = onSwipe
         }
 
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
             guard let pan = gesture as? UIPanGestureRecognizer, let view = pan.view else { return true }
-            let speed: CGPoint = pan.velocity(in: view)
+            let moved: CGPoint = pan.translation(in: view.superview ?? view)
+            if moved.x != 0 || moved.y != 0 { return abs(moved.x) > abs(moved.y) }
+            let speed: CGPoint = pan.velocity(in: view.superview ?? view)
             return abs(speed.x) > abs(speed.y)
         }
 
+        private func offset(_ moved: CGFloat) -> CGFloat {
+            let step: Int = moved < 0 ? 1 : -1
+            return canSwipe(step) ? moved : moved * 0.25
+        }
+
         @objc func swiped(_ pan: UIPanGestureRecognizer) {
-            guard pan.state == .ended, let view = pan.view else { return }
-            let moved: CGFloat = pan.translation(in: view).x
-            guard abs(moved) > 30 else { return }
-            onSwipe(moved < 0 ? 1 : -1)
+            guard let view = pan.view else { return }
+            let space: UIView = view.superview ?? view
+            let moved: CGFloat = pan.translation(in: space).x
+            switch pan.state {
+            case .began, .changed:
+                view.transform = CGAffineTransform(translationX: offset(moved), y: 0)
+            case .ended:
+                let speed: CGFloat = pan.velocity(in: space).x
+                let step: Int = moved < 0 ? 1 : -1
+                let far: Bool = abs(moved) > max(60, view.bounds.width * 0.22)
+                let flung: Bool = abs(speed) > 500 && (speed < 0) == (moved < 0) && abs(moved) > 12
+                if (far || flung) && canSwipe(step) {
+                    onSwipe(step)
+                } else {
+                    settle(view)
+                }
+            default:
+                settle(view)
+            }
+        }
+
+        private func settle(_ view: UIView) {
+            UIView.animate(
+                withDuration: 0.28, delay: 0, usingSpringWithDamping: 0.9, initialSpringVelocity: 0, options: [.allowUserInteraction, .beginFromCurrentState]
+            ) {
+                view.transform = .identity
+            }
+        }
+
+        func scrollViewDidScroll(_ scrollView: UIScrollView) {
+            guard scrollView.zoomScale <= scrollView.minimumZoomScale + 0.001 else { return }
+            let left: CGFloat = -scrollView.adjustedContentInset.left
+            if scrollView.contentOffset.x != left { scrollView.contentOffset.x = left }
         }
 
         func load(_ html: String, key: String, into view: WKWebView) {

@@ -146,6 +146,9 @@ object RouteCatalog {
         Route.Kind.Calories -> "Calories"
         Route.Kind.GlassesAlert -> "Glasses Alert"
         Route.Kind.PhoneSecurity -> "Phone Security"
+        Route.Kind.Ember -> "Ember"
+        Route.Kind.Strata -> "Strata"
+        Route.Kind.Synapse -> "Synapse"
         Route.Kind.OpenWrtRouter -> "Router"
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
@@ -216,6 +219,9 @@ object RouteCatalog {
         Route.Kind.Calories -> "restaurant"
         Route.Kind.GlassesAlert -> "visibility"
         Route.Kind.PhoneSecurity -> "security"
+        Route.Kind.Ember -> "local_fire_department_rounded"
+        Route.Kind.Strata -> "layers"
+        Route.Kind.Synapse -> "polyline"
         Route.Kind.OpenWrtRouter -> "router"
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
@@ -333,6 +339,9 @@ object HubCatalog {
         HubItem.destination(Route.Stats, needsRegistration = true),
         HubItem.destination(Route.Status, needsRegistration = true),
         HubItem.destination(Route.AppStoreStatus, needsRegistration = true),
+        HubItem.destination(Route.Ember(null)),
+        HubItem.destination(Route.Strata(null)),
+        HubItem.destination(Route.Synapse(null)),
         HubItem.destination(Route.Admin(null), needsRegistration = true, adminOnly = true),
     )
 

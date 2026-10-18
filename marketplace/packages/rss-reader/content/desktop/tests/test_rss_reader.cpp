@@ -1226,6 +1226,122 @@ QByteArray liveFeed()
     return xml;
 }
 
+QByteArray squarePng(int width, int height)
+{
+    QImage image(width, height, QImage::Format_ARGB32);
+    image.fill(Qt::blue);
+    QByteArray bytes;
+    QBuffer buffer(&bytes);
+    buffer.open(QIODevice::WriteOnly);
+    image.save(&buffer, "PNG");
+    return bytes;
+}
+
+void testIconsCommentsAndSharing()
+{
+    const QString html = QStringLiteral(
+        "<html><head><base href=\"/static/\">"
+        "<link rel=\"shortcut icon\" href=\"favicon.ico\">"
+        "<link rel=\"icon\" type=\"image/png\" sizes=\"16x16\" href=\"icon-16.png\">"
+        "<link rel=\"icon\" type=\"image/png\" sizes=\"32x32 192x192\" href=\"icon-multi.png\">"
+        "<link rel=\"icon\" type=\"image/svg+xml\" href=\"icon.svg\">"
+        "<link rel=\"apple-touch-icon-precomposed\" href=\"https://cdn.example.org/touch.png\">"
+        "<link rel=\"mask-icon\" href=\"mask.svg\">"
+        "<link rel=\"icon\" href=\"javascript:alert(1)\">"
+        "<link rel=\"icon\" sizes=\"300x100\" href=\"wide.png\">"
+        "</head><body><link rel=\"icon\" href=\"/late.png\"></body></html>");
+    const QUrl page(QStringLiteral("https://site.example.com/blog/"));
+    const QStringList pngFirst = discoverIconLinks(html, page, false);
+    check(pngFirst == QStringList{QStringLiteral("https://site.example.com/static/icon-multi.png"),
+                                  QStringLiteral("https://cdn.example.org/touch.png"),
+                                  QStringLiteral("https://site.example.com/static/favicon.ico"),
+                                  QStringLiteral("https://site.example.com/static/icon-16.png")},
+          "icon links ranked by size and kind, resolved against <base>, unsafe and body links dropped",
+          pngFirst.join(QStringLiteral(", ")));
+    const QStringList withSvg = discoverIconLinks(html, page, true);
+    check(withSvg.size() == kMaxIconLinks && withSvg.last() == QLatin1String("https://site.example.com/static/icon.svg"),
+          "an SVG icon is a candidate only when SVG decodes, after sized PNG and ICO icons", withSvg.join(QStringLiteral(", ")));
+    check(discoverIconLinks(QStringLiteral("<html><head><title>x</title></head></html>"), page, true).isEmpty(),
+          "a page without icon links offers none");
+    check(fallbackIconUrls(QUrl(QStringLiteral("https://www.example.com/blog")), QUrl(QStringLiteral("http://feeds.example.net:8080/rss"))) ==
+              QStringList{QStringLiteral("https://www.example.com/favicon.ico"), QStringLiteral("http://feeds.example.net:8080/favicon.ico"),
+                          QStringLiteral("https://www.example.com/apple-touch-icon.png"),
+                          QStringLiteral("http://feeds.example.net:8080/apple-touch-icon.png")},
+          "fallback icons try favicon.ico on both origins, then apple-touch-icon.png");
+    check(fallbackIconUrls(QUrl(QStringLiteral("https://www.example.com/")), QUrl(QStringLiteral("https://www.example.com/feed"))).size() == 2,
+          "one origin is tried once");
+
+    Feed feed;
+    feed.id = QStringLiteral("icon-feed");
+    feed.url = QStringLiteral("https://feeds.example.net/rss");
+    check(iconPageUrl(feed) == QUrl(QStringLiteral("https://feeds.example.net/")), "icon page falls back to the feed origin");
+    feed.homePage = QStringLiteral("https://www.example.com/blog");
+    check(iconPageUrl(feed) == QUrl(QStringLiteral("https://www.example.com/blog")), "icon page is the home page when known");
+    Feed local;
+    local.url = QUrl::fromLocalFile(QStringLiteral("/tmp/feed.xml")).toString();
+    check(!iconPageUrl(local).isValid() && fallbackIconUrls(QUrl(), QUrl(local.url)).isEmpty(), "a local feed has no icon page");
+
+    const qint64 at = utc(2026, 10, 18, 12);
+    check(iconFetchDue(feed, true, at), "a feed never checked for an icon is due");
+    feed.iconKey = iconSourceKey(feed);
+    feed.iconCheckedMs = at;
+    check(!iconFetchDue(feed, true, at + kDayMs * 3), "a feed with an icon is not refetched");
+    check(!iconFetchDue(feed, false, at + kDayMs / 2), "a failed icon search waits a day");
+    check(iconFetchDue(feed, false, at + kDayMs), "a failed icon search is retried after a day");
+    feed.iconUrl = QStringLiteral("https://feeds.example.net/new-icon.png");
+    check(iconFetchDue(feed, true, at + 1), "a changed feed icon address is refetched");
+
+    Store store;
+    QString error;
+    const QString id = store.addFeed(QUrl(QStringLiteral("https://feeds.example.net/rss")), QStringLiteral("Icons"), QString(), at, &error);
+    store.recordIconAttempt(id, at);
+    check(store.feed(id) && store.feed(id)->iconCheckedMs == at && store.feed(id)->iconKey == iconSourceKey(*store.feed(id)),
+          "an icon attempt is recorded on the feed");
+    QJsonObject state = store.stateJson();
+    Store reloaded;
+    reloaded.loadState(state);
+    check(reloaded.feed(id) && reloaded.feed(id)->iconCheckedMs == at && !iconFetchDue(*reloaded.feed(id), false, at + 1),
+          "the icon attempt survives a restart");
+    QJsonArray feeds = state.value(QStringLiteral("feeds")).toArray();
+    QJsonObject legacy = feeds.at(0).toObject();
+    legacy.remove(QStringLiteral("iconChecked"));
+    legacy.remove(QStringLiteral("iconKey"));
+    feeds.replace(0, legacy);
+    state.insert(QStringLiteral("feeds"), feeds);
+    Store older;
+    older.loadState(state);
+    check(older.feed(id) && !iconFetchDue(*older.feed(id), true, at) && iconFetchDue(*older.feed(id), false, at),
+          "older state keeps its icons and retries feeds that have none");
+
+    const QString hackerNews = QStringLiteral(
+        "<p>Article URL: <a href=\"https://example.com/x\">https://example.com/x</a></p>"
+        "<p>Comments URL: <a href=\"https://news.ycombinator.com/item?id=4242\">https://news.ycombinator.com/item?id=4242</a></p>");
+    const QUrl articleBase(QStringLiteral("https://example.com/x"));
+    check(htmlLinksTo(hackerNews, QStringLiteral("https://news.ycombinator.com/item?id=4242"), articleBase),
+          "content that links to the comments page is detected");
+    check(htmlLinksTo(QStringLiteral("<a href=\"/item?id=4242\">c</a>"), QStringLiteral("https://news.ycombinator.com/item?id=4242"),
+                      QUrl(QStringLiteral("https://news.ycombinator.com/news"))),
+          "a relative comments link is resolved against the article");
+    check(htmlLinksTo(QStringLiteral("<a href=\"https://blog.example.com/post/1\">c</a>"), QStringLiteral("http://blog.example.com/post/1/"), QUrl()),
+          "scheme and trailing slash do not make a different comments link");
+    check(htmlLinksTo(QStringLiteral("<a href=\"https://x.example.com/c?id=1&amp;page=2\">c</a>"),
+                      QStringLiteral("https://x.example.com/c?id=1&page=2"), QUrl()),
+          "entities in the link are decoded before comparing");
+    check(!htmlLinksTo(QStringLiteral("<a href=\"https://engineering.example.com/posts/build\">more</a>"),
+                       QStringLiteral("https://engineering.example.com/posts/build#comments"), QUrl()),
+          "a link to the article is not a link to its comments");
+    check(!htmlLinksTo(QStringLiteral("<p>https://news.ycombinator.com/item?id=4242</p>"),
+                       QStringLiteral("https://news.ycombinator.com/item?id=4242"), QUrl()),
+          "plain text is not a comments link");
+
+    check(shareMessage(QStringLiteral("  Shipping\n the  build "), QStringLiteral("https://x.example.com/y")) ==
+              QLatin1String("Shipping the build\nhttps://x.example.com/y"),
+          "a shared article is its title and link");
+    check(shareMessage(QString(), QStringLiteral("https://x.example.com/y")) == QLatin1String("https://x.example.com/y") &&
+              shareMessage(QStringLiteral("Title"), QString()) == QLatin1String("Title"),
+          "a shared article without a title or link sends what it has");
+}
+
 void testPage(const QString &home)
 {
     const auto *contribution = forkmesh::market::nativePackageContribution(QStringLiteral("builtin:rss-reader"),
@@ -1293,6 +1409,12 @@ void testPage(const QString &home)
                   html.contains(QStringLiteral(">Comments<")),
               "article shows title, date, author, enclosure and comments");
         check(!html.contains(QStringLiteral("<script")) && !html.contains(QStringLiteral("alert(1)")), "article HTML has no script");
+        bool shareHidden = true;
+        for (QToolButton *button : page.findChildren<QToolButton *>()) {
+            if (button->property("rssIcon").toString() == QLatin1String("paper-airplane"))
+                shareHidden = button->isHidden();
+        }
+        check(shareHidden, "Share to Chat is hidden when the host has no chat");
         check(page.navigationBadge() == 2, "opening an article marks it read");
         page.toggleStar();
         check(page.store().article(page.currentArticle())->starred, "star toggled");
@@ -1300,6 +1422,14 @@ void testPage(const QString &home)
         check(page.navigationBadge() == 3, "mark as unread");
         page.toggleRead();
 
+        const QString lastIcon = QStringLiteral("https://engineering.example.com/apple-touch-icon.png");
+        waitFor([&] { return network.requested.contains(lastIcon) && network.active == 0; });
+        const qsizetype iconAt = network.requested.indexOf(QStringLiteral("https://engineering.example.com/icon.png"));
+        const qsizetype faviconAt = network.requested.indexOf(QStringLiteral("https://engineering.example.com/favicon.ico"));
+        check(iconAt >= 0 && faviconAt > iconAt && network.requested.indexOf(lastIcon) > faviconAt &&
+                  !QFile::exists(DiskStore(page.dataDirectory()).iconPath(page.currentArticle().feedId)),
+              "a site without a usable icon tries the feed icon, then favicon.ico, then apple-touch-icon.png",
+              network.requested.join(QStringLiteral(" ")));
         const int before = int(network.requested.size());
         page.showReaderView();
         waitFor([&] { return page.renderedArticleHtml().contains(QStringLiteral("reader view body text")); });
@@ -1659,11 +1789,28 @@ void testPageFeatures(const QString &home)
                                  "<outline text=\"Sneaky\" xmlUrl=\"%1\"/></body></opml>").arg(QUrl::fromLocalFile(sneakyPath).toString()).toUtf8(),
                   "text/x-opml");
     network.route(QStringLiteral("https://remote.example.com/feed"), 200, kRdf);
+    network.route(QStringLiteral("https://engineering.example.com/"), 200,
+                  "<html><head><base href=\"https://engineering.example.com/assets/\">"
+                  "<link rel=\"icon\" sizes=\"64x64\" href=\"blank.png\">"
+                  "<link rel=\"apple-touch-icon\" href=\"/touch.png\"></head><body></body></html>",
+                  "text/html");
+    network.route(QStringLiteral("https://engineering.example.com/assets/blank.png"), 200, squarePng(1, 1), "image/png");
+    network.route(QStringLiteral("https://engineering.example.com/touch.png"), 200, squarePng(120, 120), "image/png");
 
+    QList<QPair<QString, QString>> shared;
     forkmesh::market::NativePackageHost host;
     host.packageId = QStringLiteral("rss-reader-features");
     host.packageName = QStringLiteral("RSS Reader");
     host.network = &network;
+    host.chatTargets = [] {
+        return QList<forkmesh::market::NativePackageChatTarget>{
+            {QStringLiteral("office:general"), QStringLiteral("#general"), false},
+            {QStringLiteral("office:dm:avery"), QStringLiteral("@avery"), true}};
+    };
+    host.sendChatMessage = [&shared](const QString &conversation, const QString &text) {
+        shared.append({conversation, text});
+        return conversation != QLatin1String("office:closed");
+    };
     RssReaderFeature page(host);
     page.resize(1280, 800);
     page.refresh();
@@ -1685,6 +1832,35 @@ void testPageFeatures(const QString &home)
     const Source feedSource{SourceKind::Feed, engineering};
     const QList<ArticleRef> refs = page.store().query(feedSource, QString(), false, at);
     check(refs.size() == 3 && page.timelineRows() == 3, "three articles in the feed timeline");
+
+    const QString iconFile = DiskStore(page.dataDirectory()).iconPath(engineering);
+    waitFor([&] { return QFile::exists(iconFile); });
+    const QImage storedIcon(iconFile);
+    const qsizetype blankAt = network.requested.indexOf(QStringLiteral("https://engineering.example.com/assets/blank.png"));
+    const qsizetype touchAt = network.requested.indexOf(QStringLiteral("https://engineering.example.com/touch.png"));
+    check(storedIcon.size() == QSize(64, 64) && blankAt >= 0 && touchAt > blankAt &&
+              network.requested.contains(QStringLiteral("https://engineering.example.com/icon.png")) &&
+              !network.requested.contains(QStringLiteral("https://engineering.example.com/favicon.ico")),
+          "the feed icon comes from the home page's icon links, skipping a 1x1 image",
+          network.requested.join(QStringLiteral(" ")));
+    const Feed *iconOwner = page.store().feed(engineering);
+    check(iconOwner && iconOwner->iconCheckedMs > 0 && !iconFetchDue(*iconOwner, true, at), "the icon search is recorded");
+
+    QToolButton *shareButton = nullptr;
+    for (QToolButton *button : page.findChildren<QToolButton *>()) {
+        if (button->property("rssIcon").toString() == QLatin1String("paper-airplane"))
+            shareButton = button;
+    }
+    check(shareButton && !shareButton->isHidden(),
+          "Share to Chat is offered when the host provides chat");
+    check(page.shareTargets().size() == 2 && page.shareTargets().at(1).person, "share targets come from the host");
+    const Article *sharedArticle = page.store().article(refs.value(0));
+    const QString shareError = page.shareArticle(refs.value(0), QStringLiteral("office:general"));
+    check(shareError.isEmpty() && shared.size() == 1 && shared.first().first == QLatin1String("office:general") && sharedArticle &&
+              shared.first().second == shareMessage(sharedArticle->title, sharedArticle->link) &&
+              shared.first().second.contains(sharedArticle->link),
+          "sharing sends the title and link to the chosen conversation", shareError);
+    check(!page.shareArticle(refs.value(0), QStringLiteral("office:closed")).isEmpty(), "a refused share reports an error");
 
     page.updateSettings([](Settings &settings) { settings.unreadOnlyTimeline = true; }, true, false);
     page.selectSource(feedSource);
@@ -1887,6 +2063,7 @@ int main(int argc, char **argv)
     testFeedSwitches();
     testDiscoveryRewrites(home);
     testSettingsJson();
+    testIconsCommentsAndSharing();
     testPage(home);
     testPageFeatures(home);
 

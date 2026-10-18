@@ -209,3 +209,49 @@ score is log(1 + importers) × log(1 + imports), weighted by how much the file
 faces the camera). `FORKMESH_INSIGHT_PREVIEW_VIEW` can be `overview` (nothing
 selected), `cycles` (the largest loop isolated), `language`, `health` or
 `hotspot`.
+
+## On phones
+
+Synapse runs on iPhone and Android; the shared parts are in
+[codebase-analysis.md](codebase-analysis.md#on-phones).
+
+| Platform | Model | Page |
+| --- | --- | --- |
+| iOS | `FMCodeInsight/Synapse{,Math,Models,Layout,Scene,Camera}.swift` | `ForkMesh/Features/CodeInsight/Synapse*.swift` |
+| Android | `core/.../codeinsight/Synapse*.kt` | `app/.../feature/codeinsight/Synapse*.kt` |
+
+The models port `SynapseLayout` (graph, lobes, the Barnes–Hut force layout
+with the same seed and operation order, cycles and cycle paths, orphans,
+leaves, rankings, neighbourhoods) and are checked against
+`native/fixtures/insight/synapse.json`, written by
+`FORKMESH_SYNAPSE_GOLDEN=<fixture> forkmesh-synapse-tests`. The graph, lobes
+and queries match exactly; positions match to rounding (see
+[codebase-analysis.md](codebase-analysis.md#parity-tests)). Laying out 4,600
+files with 18,000 imports takes about 2.4 s in an iOS release build on a
+desktop CPU, off the main thread with progress.
+
+On the phone the brain has no GPU path: a software perspective projection
+draws it on a canvas every frame, always on the dark space background (the
+glow only reads on dark); controls and sheets follow the app theme. Layouts
+are cached per snapshot and per "with orphans or not".
+
+- Neurons are depth-sorted and sized by degree; tiny ones are batched dots,
+  larger ones pre-rendered spheres with halos. Fibres are batched by colour
+  and depth, at most 5,000 at once (dimmed ones capped at 1,200) as in the
+  desktop software renderer, thinned while anything moves (to about 2,000
+  on iPhone and 1,200 on Android).
+- One finger rotates, pinch zooms, a tap picks the nearest neuron within
+  28 pt (empty space clears), a double tap fits. Auto-rotate is on and pauses
+  while touching; Reduce Motion (Android: animator duration scale 0) turns
+  off auto-rotate, pulses and the cycle glow and makes camera moves jump.
+- Chips choose **Colour** (Module, Language, Health, Hotspot) and **Show**
+  (Everything, Circular only, Orphans, Neighbourhood with depth 1 to 3).
+  **Find a file** suggests files and flies to the one picked.
+- Tapping a neuron selects it and shows a small card; **Details** opens the
+  sheet, **Overview** opens the lists.
+- The sheet shows the selected file (path, language, lines, health, module,
+  **Open file**, **Fly to**, **Clear**, its loop as `a → b → c → a` with
+  **Show only this loop**, Imports, Imported by, external packages) or the
+  overview (counts, circular dependencies, most imported, most importing,
+  orphans). It is also the screen-reader view: every fact is reachable
+  without the canvas.

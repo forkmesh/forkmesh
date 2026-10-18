@@ -57,28 +57,77 @@ extension View {
     }
 }
 
+@MainActor
+@Observable
+final class RSSFeedIconImages {
+    static let shared = RSSFeedIconImages()
+    static let maxConcurrent = 4
+    nonisolated static let pixels: CGFloat = 144
+
+    private(set) var images: [String: UIImage] = [:]
+    @ObservationIgnored private var busy: Set<String> = []
+    @ObservationIgnored private var active = 0
+    @ObservationIgnored private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    nonisolated static func key(_ feed: RSSFeed) -> String { "\(feed.id)|\(feed.iconFound)" }
+
+    func image(_ feed: RSSFeed) -> UIImage? { images[Self.key(feed)] }
+
+    nonisolated static func decode(_ data: Data) -> UIImage? {
+        guard let image = UIImage(data: data), image.size.width > 0, image.size.height > 0 else { return nil }
+        let side: CGFloat = max(image.size.width, image.size.height) * image.scale
+        if side <= pixels { return image }
+        let scale: CGFloat = pixels / side
+        let size = CGSize(width: image.size.width * image.scale * scale, height: image.size.height * image.scale * scale)
+        return image.preparingThumbnail(of: size) ?? image
+    }
+
+    func load(_ feed: RSSFeed) {
+        guard let model = RSSReaderFeature.loaded, !busy.contains(feed.id) else { return }
+        let key: String = Self.key(feed)
+        if images[key] == nil, let data = model.iconData(feed.id), let image = Self.decode(data) { images[key] = image }
+        guard model.needsIcon(feed.id, hasImage: images[key] != nil) else { return }
+        busy.insert(feed.id)
+        let id: String = feed.id
+        Task { [weak self] in
+            guard let self else { return }
+            await self.acquire()
+            let data: Data? = await model.resolveIcon(id, decodes: { (bytes: Data) in RSSFeedIconImages.decode(bytes) != nil })
+            self.release()
+            self.busy.remove(id)
+            guard let data, let current = model.feed(id), let image = Self.decode(data) else { return }
+            self.images[Self.key(current)] = image
+        }
+    }
+
+    private func acquire() async {
+        if active < Self.maxConcurrent {
+            active += 1
+            return
+        }
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in waiting.append(continuation) }
+    }
+
+    private func release() {
+        if waiting.isEmpty {
+            active -= 1
+        } else {
+            waiting.removeFirst().resume()
+        }
+    }
+}
+
 struct RSSFeedIcon: View {
     let feed: RSSFeed?
     let title: String
     var size: CGFloat = 22
     var remote: Bool = true
-
-    private var address: URL? {
-        guard remote, let feed else { return nil }
-        let text: String = RSSURL.upgraded(feed.iconAddress)
-        return text.isEmpty ? nil : URL(string: text)
-    }
+    private var icons: RSSFeedIconImages { RSSFeedIconImages.shared }
 
     var body: some View {
         Group {
-            if let address {
-                AsyncImage(url: address) { (phase: AsyncImagePhase) in
-                    if let image = phase.image {
-                        image.resizable().scaledToFill()
-                    } else {
-                        letter
-                    }
-                }
+            if remote, let feed, let image = icons.image(feed) {
+                Image(uiImage: image).resizable().interpolation(.high).scaledToFill()
             } else {
                 letter
             }
@@ -86,6 +135,9 @@ struct RSSFeedIcon: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
         .accessibilityHidden(true)
+        .task(id: remote ? feed.map { (item: RSSFeed) in RSSFeedIconImages.key(item) } : nil) {
+            if remote, let feed { icons.load(feed) }
+        }
     }
 
     private var letter: some View {

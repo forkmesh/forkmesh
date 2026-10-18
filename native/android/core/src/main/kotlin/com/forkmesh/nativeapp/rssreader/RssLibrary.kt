@@ -185,7 +185,7 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
         val folder = folderId.takeIf { id -> folders.any { it.id == id } }.orEmpty()
         val feed = RssFeed(
             id = newId(), url = clean, title = RssText.clean(title, 200), folderId = folder, siteUrl = siteUrl,
-            iconUrl = RssUrls.favicon(siteUrl.ifEmpty { clean }), addedAt = now, nextCheck = 0,
+            addedAt = now, nextCheck = 0,
         )
         feeds.add(feed)
         articles[feed.id] = ArrayList()
@@ -268,10 +268,31 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
             errorAt = 0,
             nextCheck = 0,
             viaHttps = false,
+            iconChecked = 0,
         )
         replaceFeed(next)
         touch()
         return next
+    }
+
+    @Synchronized
+    fun iconsDue(now: Long, cached: (String) -> Boolean): List<RssFeed> = feeds.filter { feed ->
+        val checked = feed.iconChecked
+        when {
+            checked <= 0 || checked > now -> true
+            cached(feed.id) -> now - checked >= RssIcons.RECHECK_MS
+            else -> now - checked >= RssIcons.RETRY_MS
+        }
+    }
+
+    @Synchronized
+    fun articleLink(feedId: String): String = articles[feedId]?.firstOrNull { it.link.isNotEmpty() }?.link.orEmpty()
+
+    @Synchronized
+    fun iconChecked(id: String, found: String, now: Long) {
+        val feed = feed(id) ?: return
+        replaceFeed(feed.copy(iconFound = if (found.startsWith("data:")) "data:" else found.take(RssUrls.MAX_URL), iconChecked = now))
+        touch()
     }
 
     @Synchronized
@@ -314,6 +335,8 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
                     }
                 }
                 val site = parsed.siteUrl.ifEmpty { feed.siteUrl }
+                val icon = parsed.iconUrl.ifEmpty { RssIcons.declared(feed) }
+                val iconChanged = icon != feed.iconUrl || site != feed.siteUrl
                 replaceFeed(
                     feed.copy(
                         url = url,
@@ -321,7 +344,8 @@ class RssLibrary(data: RssLibraryData = RssLibraryData(), articles: Map<String, 
                         title = parsed.title.ifEmpty { feed.title },
                         siteUrl = site,
                         description = parsed.description.ifEmpty { feed.description },
-                        iconUrl = parsed.iconUrl.ifEmpty { feed.iconUrl }.ifEmpty { RssUrls.favicon(site.ifEmpty { url }) },
+                        iconUrl = icon,
+                        iconChecked = if (iconChanged) 0 else feed.iconChecked,
                         etag = outcome.etag.take(200),
                         lastModified = outcome.lastModified.take(200),
                         lastCheck = now,

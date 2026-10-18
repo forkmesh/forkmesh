@@ -11,7 +11,7 @@
   },
   "type": "extension.native",
   "category": "Developer tools",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "summary": "Architecture and complexity for any repository you open: module dependency graph and matrix, cycles, abstractness and instability, code rules, technical debt with an A to E rating and quality gates.",
   "screenshots": [
     {
@@ -35,12 +35,14 @@
   },
   "entrypoints": {
     "desktop": "builtin:strata",
+    "ios": "builtin:strata",
+    "android": "builtin:strata",
     "settings": "builtin:package"
   },
   "permissions": [
     {
       "id": "repository.read",
-      "label": "Read the source files and git history of the repository you pick, on this computer",
+      "label": "Read the source files and git history of the repository you pick, from its folder or a copy fetched onto the phone",
       "risk": "low"
     },
     {
@@ -57,7 +59,9 @@
   },
   "install": {
     "bundled": true,
-    "default": false
+    "default": false,
+    "sync": "account",
+    "places": ["mobile", "desktop"]
   },
   "lifecycle": {
     "migrations": []

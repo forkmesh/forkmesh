@@ -695,7 +695,7 @@ public enum RSSFeedTypes {
 
     public static func discover(_ document: String, base: String) -> RSSDiscovery {
         var feeds: [(String, String, String)] = []
-        var icons: [(Bool, String)] = []
+        var icons: [(rel: String, href: String, sizes: String, type: String)] = []
         var title = ""
         var inTitle = false
         var baseHref = ""
@@ -713,8 +713,8 @@ public enum RSSFeedTypes {
                 if href.isEmpty { continue }
                 if rel.contains("alternate") && feedTypes.contains(kind) {
                     feeds.append((kind, href, RSSText.clean(values["title"] ?? "", 200)))
-                } else if rel.contains("icon") || rel.contains("apple-touch-icon") {
-                    icons.append((rel.contains("apple-touch-icon"), href))
+                } else if rel.contains("icon") || rel.contains("apple-touch-icon") || rel.contains("apple-touch-icon-precomposed") {
+                    icons.append((values["rel"] ?? "", href, values["sizes"] ?? "", values["type"] ?? ""))
                 }
             case let .end(name):
                 if name == "title" { inTitle = false }
@@ -739,10 +739,11 @@ public enum RSSFeedTypes {
                 found.append(RSSDiscoveredLink(url: url, title: entry.element.2, type: entry.element.0))
             }
         }
-        let orderedIcons = icons.enumerated().sorted { lhs, rhs in
-            lhs.element.0 == rhs.element.0 ? lhs.offset < rhs.offset : lhs.element.0 && !rhs.element.0
-        }
-        let icon = orderedIcons.lazy.map { RSSURL.http($0.element.1, base: root) }.first { !$0.isEmpty } ?? ""
+        let icon = RSSFeedIcons.best(icons.enumerated().compactMap { entry in
+            RSSFeedIcons.link(
+                rel: entry.element.rel, href: entry.element.href, sizes: entry.element.sizes, type: entry.element.type, base: root,
+                order: entry.offset)
+        })
         return RSSDiscovery(feeds: found, icon: icon, title: title)
     }
 }

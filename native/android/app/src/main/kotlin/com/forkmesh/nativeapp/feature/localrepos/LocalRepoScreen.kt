@@ -568,6 +568,16 @@ internal class LocalRepoScreen(
                             },
                         )
                     }
+                    for (plugin in com.forkmesh.nativeapp.feature.codeinsight.CodeInsightFeature.installedPlugins()) {
+                        FmDropdownMenuItem(
+                            text = plugin.title,
+                            icon = plugin.icon,
+                            onClick = {
+                                menu = false
+                                navigator.push(com.forkmesh.nativeapp.feature.codeinsight.CodeInsightFeature.localScreen(plugin, record.name))
+                            },
+                        )
+                    }
                     FmDropdownMenuItem(
                         text = "Delete repository",
                         icon = "delete_outline",

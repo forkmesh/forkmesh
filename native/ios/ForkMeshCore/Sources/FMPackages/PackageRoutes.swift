@@ -88,6 +88,9 @@ public enum PackageRoutes {
         case "glassesAlert": return .glassesAlert
         case "phoneSecurity": return .phoneSecurity
         case "eyeControl": return .eyeControl
+        case "ember": return .ember(nil)
+        case "strata": return .strata(nil)
+        case "synapse": return .synapse(nil)
         case "openWrtRouter": return .openWrtRouter
         case "fileExplorer": return .fileExplorer
         case "faceChanger": return .faceChanger

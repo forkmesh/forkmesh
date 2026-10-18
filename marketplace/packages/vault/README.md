@@ -128,7 +128,10 @@ writes on iPhone. The iPhone app reads the same files (see On the phone).
   falls back to Latin-1, and `readLoginsCsv(text)` matches columns by header
   name. The only column it needs is a password one. Rows with neither a
   username nor a password (secure notes, cards) are counted and left out.
-  Files over 16 MB are refused.
+  Files over 16 MB are refused, and so is a ZIP entry that inflates past
+  16 MB, whatever size it claims: the inflate stream is cut off there. A
+  password-protected entry is refused as `zip_encrypted`, and an entry whose
+  length or CRC-32 does not match its header as `zip_unreadable`.
 - The header also names the app for the review: Bitwarden's `login_*`,
   Firefox's `guid`, 1Password's `Archived` (checked before `OTPAuth`, which
   1Password's export has too), Apple's `OTPAuth`, Chrome's `note`, then

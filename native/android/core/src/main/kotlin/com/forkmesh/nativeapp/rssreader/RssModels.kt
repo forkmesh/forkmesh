@@ -26,6 +26,8 @@ data class RssFeed(
     val folderId: String = "",
     val siteUrl: String = "",
     val iconUrl: String = "",
+    val iconFound: String = "",
+    val iconChecked: Long = 0,
     val description: String = "",
     val etag: String = "",
     val lastModified: String = "",
@@ -49,7 +51,8 @@ data class RssFeed(
 
     fun toJson(): Map<String, Any?> = linkedMapOf(
         "id" to id, "url" to url, "title" to title, "customTitle" to customTitle, "folderId" to folderId,
-        "siteUrl" to siteUrl, "iconUrl" to iconUrl, "description" to description, "etag" to etag,
+        "siteUrl" to siteUrl, "iconUrl" to iconUrl, "iconFound" to iconFound, "iconChecked" to iconChecked,
+        "description" to description, "etag" to etag,
         "lastModified" to lastModified, "previousUrls" to previousUrls, "addedAt" to addedAt,
         "lastCheck" to lastCheck, "lastSuccess" to lastSuccess, "nextCheck" to nextCheck,
         "errorCount" to errorCount, "error" to error, "errorAt" to errorAt, "viaHttps" to viaHttps,
@@ -61,6 +64,7 @@ data class RssFeed(
         fun fromJson(json: JsonMap) = RssFeed(
             id = json.str("id"), url = json.str("url"), title = json.str("title"), customTitle = json.str("customTitle"),
             folderId = json.str("folderId"), siteUrl = json.str("siteUrl"), iconUrl = json.str("iconUrl"),
+            iconFound = json.str("iconFound"), iconChecked = json.long("iconChecked"),
             description = json.str("description"), etag = json.str("etag"), lastModified = json.str("lastModified"),
             previousUrls = json.strings("previousUrls"), addedAt = json.long("addedAt"), lastCheck = json.long("lastCheck"),
             lastSuccess = json.long("lastSuccess"), nextCheck = json.long("nextCheck"), errorCount = json.int("errorCount"),
