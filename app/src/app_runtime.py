@@ -1878,6 +1878,8 @@ class Default:
                 "branded": instance_branded(self.env),
                 "logo": instance_logo_url(self.env),
                 "loginDeadline": login_deadline,
+                "gitNode": str(getattr(self.env, "INSTANCE_FLAGSHIP_NODE", "")
+                               or "").strip().lower()[:63],
                 "poweredBy": ({"name": "ForkMesh",
                                "url": "https://forkmesh.com/"}
                               if str(getattr(self.env, "INSTANCE_POWERED_BY", "")

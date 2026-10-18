@@ -190,6 +190,7 @@
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
     applyPlatformName();
+    void instanceInfo();
     watchGenieSetting();
     watchHomeRedirectSetting();
     installErrorActions();

@@ -421,3 +421,17 @@ def test_instance_guide_pages_do_not_say_forkmesh():
             assert "forkmesh" not in line.lower() or "forkmesh.com/install.sh" in line, (path, line)
         assert "Powered by" not in page
     assert "Powered by" in instance_pages.page_for("/docs", "Acme Code", "https://code.example.org")
+
+
+def test_the_instance_git_node_is_shown_as_the_instance_in_commits():
+    helpers = (JS / "02-helpers.js").read_text(encoding="utf-8")
+    assert 'instanceGitNode = String(info?.gitNode || "").toLowerCase();' in helpers
+    assert "return Boolean(value) && dashboardOnInstance() && value === instanceGitNode;" in helpers
+    assert "void instanceInfo();" in (JS / "10-boot.js").read_text(encoding="utf-8")
+    compose = (JS / "07-repo-compose-branch.js").read_text(encoding="utf-8")
+    assert compose.count("shownAccountName(commit.author)") == 3
+    assert "${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}" in compose
+    content = (JS / "06-repo-content.js").read_text(encoding="utf-8")
+    assert "const platform = platformAccount(contributor?.name);" in content
+    assert "shownAccountName(commit.author)" in content
+    assert '"gitNode": str(getattr(self.env, "INSTANCE_FLAGSHIP_NODE", "")' in APP_RUNTIME

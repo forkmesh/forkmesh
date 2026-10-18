@@ -1458,15 +1458,29 @@
   }
 
   let instanceInfoRequest = null;
+  let instanceGitNode = "";
 
   function instanceInfo() {
     if (!dashboardOnInstance()) return Promise.resolve(null);
     if (!instanceInfoRequest) {
       instanceInfoRequest = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
         .then((response) => (response.ok ? response.json() : null))
+        .then((info) => {
+          instanceGitNode = String(info?.gitNode || "").toLowerCase();
+          return info;
+        })
         .catch(() => null);
     }
     return instanceInfoRequest;
+  }
+
+  function platformAccount(name) {
+    const value = String(name || "").trim().toLowerCase();
+    return Boolean(value) && dashboardOnInstance() && value === instanceGitNode;
+  }
+
+  function shownAccountName(name) {
+    return platformAccount(name) ? platformName() : String(name || "");
   }
 
   async function instancePluginEnabled(id) {

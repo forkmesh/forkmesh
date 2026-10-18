@@ -1835,15 +1835,29 @@
   }
 
   let instanceInfoRequest = null;
+  let instanceGitNode = "";
 
   function instanceInfo() {
     if (!dashboardOnInstance()) return Promise.resolve(null);
     if (!instanceInfoRequest) {
       instanceInfoRequest = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
         .then((response) => (response.ok ? response.json() : null))
+        .then((info) => {
+          instanceGitNode = String(info?.gitNode || "").toLowerCase();
+          return info;
+        })
         .catch(() => null);
     }
     return instanceInfoRequest;
+  }
+
+  function platformAccount(name) {
+    const value = String(name || "").trim().toLowerCase();
+    return Boolean(value) && dashboardOnInstance() && value === instanceGitNode;
+  }
+
+  function shownAccountName(name) {
+    return platformAccount(name) ? platformName() : String(name || "");
   }
 
   async function instancePluginEnabled(id) {
@@ -16188,8 +16202,8 @@
     const hash = commitSummaryField(data, "hash", "commitHash", "commit")
       || String(repo.rootCommit || repo.latestCommit || repo.commit || "");
     const subject = commitSummaryField(data, "subject", "message", "commitMessage");
-    const author = commitSummaryField(data, "author", "committer", "name")
-      || String(repo.maintainer || repo.owner || "maintainer");
+    const author = shownAccountName(commitSummaryField(data, "author", "committer", "name")
+      || String(repo.maintainer || repo.owner || "maintainer"));
     const matchingMirror = (state.repoMirrors || []).find((mirror) => {
       const mirrorCommit = String(mirror?.commit || "").trim().toLowerCase();
       return hash && mirrorCommit === hash.trim().toLowerCase()
@@ -20445,7 +20459,7 @@
       id: `commit:${hash}`,
       type: "commit",
       hash,
-      authorName: String(commit.author || commit.authorName || "unknown"),
+      authorName: String(shownAccountName(commit.author || commit.authorName) || "unknown"),
       ts: pullTimestamp(commit.timestamp || commit.date || commit.committedAt),
       body: String(commit.subject || commit.message || "Commit"),
     };
@@ -27475,8 +27489,9 @@
   }
 
   function repoContributorAvatar(contributor) {
-    const name = String(contributor?.name || contributor?.email || "?").trim();
-    const email = String(contributor?.email || "").trim().toLowerCase();
+    const platform = platformAccount(contributor?.name);
+    const name = String(platform ? platformName() : contributor?.name || contributor?.email || "?").trim();
+    const email = platform ? "" : String(contributor?.email || "").trim().toLowerCase();
     const commits = Number(contributor?.commits) || 0;
     const words = name.split(/[\s._@-]+/).filter(Boolean);
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
@@ -27583,7 +27598,7 @@
       if (!commits.length || !repoAboutStillCurrent(repo)) return;
       const tally = {};
       commits.forEach((commit) => {
-        const author = String(commit.author || "").trim();
+        const author = String(shownAccountName(commit.author) || "").trim();
         if (author) tally[author] = (tally[author] || 0) + 1;
       });
       const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]);
@@ -33086,7 +33101,7 @@
         <div data-dashboard-commit-row class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 border-t border-border hover:bg-secondary/30 transition-colors">
           <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" class="min-w-0 px-4 py-3 text-left">
             <span class="block truncate text-sm font-medium text-foreground">${escapeHtml(commit.subject || "Commit")}</span>
-            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(commit.author || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
+            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
           </button>
           <div class="flex items-center justify-end gap-2 px-4 py-3">
             <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" data-dashboard-commit-short-hash class="font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(shortHash)}</button>
@@ -33138,7 +33153,7 @@
           <h3 class="text-base font-semibold text-foreground">${escapeHtml(commit.subject || "Commit")}</h3>
           ${commit.body ? `<p class="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(commit.body)}</p>` : ""}
           <dl class="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(commit.author || "unknown")}</dd></div>
+            <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(shownAccountName(commit.author) || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Date</dt><dd>${escapeHtml(commit.date || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Parents</dt><dd class="font-mono">${parents.length ? parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ") : "root commit"}</dd></div>
             <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</dd></div>
@@ -34192,7 +34207,7 @@
   function repoInsightsContributorRows(commits) {
     const byAuthor = new Map();
     (Array.isArray(commits) ? commits : []).forEach((commit) => {
-      const author = String(commit.author || "unknown").trim() || "unknown";
+      const author = String(shownAccountName(commit.author) || "unknown").trim() || "unknown";
       const current = byAuthor.get(author) || { author, commits: 0, latest: "" };
       current.commits += 1;
       current.latest = current.latest || commit.date || "";
@@ -34403,7 +34418,7 @@
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${userNameHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>
@@ -45495,6 +45510,7 @@
     const repoAddressesLoaded = loadRepoAddresses();
     applyDashboardTheme(readDashboardTheme());
     applyPlatformName();
+    void instanceInfo();
     watchGenieSetting();
     watchHomeRedirectSetting();
     installErrorActions();

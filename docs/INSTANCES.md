@@ -676,6 +676,14 @@ Three layers do it, so that nothing depends on the browser alone:
   gets the env; on an instance it drops the forkmesh.com help link). The
   founders' day-one feedback email (from founders@forkmesh.com) is not sent
   on an instance.
+- **The git node account.** The instance's git node (`INSTANCE_FLAGSHIP_NODE`,
+  `forkmesh`) has authored merge and metadata commits, and it owns the platform
+  mirror internally. `/api/instance`
+  reports it as `gitNode`; the dashboard shows it as the instance name
+  wherever a commit author is shown (latest-commit line, history, commit
+  detail, contributors, Insights) through `shownAccountName()`, the Actions
+  snapshot shows it as the instance name when it is a run's actor, and
+  repository cards drop "published from <node>" on an instance.
 - **Build.** `apply_instance_brand.py` renames `<title>`, the
   application-name and `og:site_name` metas, and now the platform word inside
   `description`, `og:title`, `og:description`, `twitter:title` and

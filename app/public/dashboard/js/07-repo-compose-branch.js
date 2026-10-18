@@ -1100,7 +1100,7 @@
         <div data-dashboard-commit-row class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 border-t border-border hover:bg-secondary/30 transition-colors">
           <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" class="min-w-0 px-4 py-3 text-left">
             <span class="block truncate text-sm font-medium text-foreground">${escapeHtml(commit.subject || "Commit")}</span>
-            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(commit.author || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
+            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
           </button>
           <div class="flex items-center justify-end gap-2 px-4 py-3">
             <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" data-dashboard-commit-short-hash class="font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(shortHash)}</button>
@@ -1152,7 +1152,7 @@
           <h3 class="text-base font-semibold text-foreground">${escapeHtml(commit.subject || "Commit")}</h3>
           ${commit.body ? `<p class="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(commit.body)}</p>` : ""}
           <dl class="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(commit.author || "unknown")}</dd></div>
+            <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(shownAccountName(commit.author) || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Date</dt><dd>${escapeHtml(commit.date || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Parents</dt><dd class="font-mono">${parents.length ? parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ") : "root commit"}</dd></div>
             <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</dd></div>
@@ -2206,7 +2206,7 @@
   function repoInsightsContributorRows(commits) {
     const byAuthor = new Map();
     (Array.isArray(commits) ? commits : []).forEach((commit) => {
-      const author = String(commit.author || "unknown").trim() || "unknown";
+      const author = String(shownAccountName(commit.author) || "unknown").trim() || "unknown";
       const current = byAuthor.get(author) || { author, commits: 0, latest: "" };
       current.commits += 1;
       current.latest = current.latest || commit.date || "";
@@ -2417,7 +2417,7 @@
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${userNameHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>

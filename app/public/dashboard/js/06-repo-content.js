@@ -15,8 +15,8 @@
     const hash = commitSummaryField(data, "hash", "commitHash", "commit")
       || String(repo.rootCommit || repo.latestCommit || repo.commit || "");
     const subject = commitSummaryField(data, "subject", "message", "commitMessage");
-    const author = commitSummaryField(data, "author", "committer", "name")
-      || String(repo.maintainer || repo.owner || "maintainer");
+    const author = shownAccountName(commitSummaryField(data, "author", "committer", "name")
+      || String(repo.maintainer || repo.owner || "maintainer"));
     const matchingMirror = (state.repoMirrors || []).find((mirror) => {
       const mirrorCommit = String(mirror?.commit || "").trim().toLowerCase();
       return hash && mirrorCommit === hash.trim().toLowerCase()
@@ -4272,7 +4272,7 @@
       id: `commit:${hash}`,
       type: "commit",
       hash,
-      authorName: String(commit.author || commit.authorName || "unknown"),
+      authorName: String(shownAccountName(commit.author || commit.authorName) || "unknown"),
       ts: pullTimestamp(commit.timestamp || commit.date || commit.committedAt),
       body: String(commit.subject || commit.message || "Commit"),
     };
@@ -11302,8 +11302,9 @@
   }
 
   function repoContributorAvatar(contributor) {
-    const name = String(contributor?.name || contributor?.email || "?").trim();
-    const email = String(contributor?.email || "").trim().toLowerCase();
+    const platform = platformAccount(contributor?.name);
+    const name = String(platform ? platformName() : contributor?.name || contributor?.email || "?").trim();
+    const email = platform ? "" : String(contributor?.email || "").trim().toLowerCase();
     const commits = Number(contributor?.commits) || 0;
     const words = name.split(/[\s._@-]+/).filter(Boolean);
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
@@ -11410,7 +11411,7 @@
       if (!commits.length || !repoAboutStillCurrent(repo)) return;
       const tally = {};
       commits.forEach((commit) => {
-        const author = String(commit.author || "").trim();
+        const author = String(shownAccountName(commit.author) || "").trim();
         if (author) tally[author] = (tally[author] || 0) + 1;
       });
       const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]);
