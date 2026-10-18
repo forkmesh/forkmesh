@@ -289,6 +289,9 @@ private:
     void loadOrganization();
     void applyOrganization(const QJsonObject &payload);
     void updateZohoAction();
+    void updateZohoBar();
+    void runZohoStep(const QString &action);
+    void markZohoReadOnly();
     void rebuildContactColumns();
     int columnIndex(ContactColumnSpec::Kind kind,
                     const QString &key = QString()) const;
@@ -635,6 +638,9 @@ private:
     QToolButton *m_settingsButton = nullptr;
     QToolButton *m_zohoSyncButton = nullptr;
     QToolButton *m_zohoGuideButton = nullptr;
+    QWidget *m_zohoBar = nullptr;
+    QLabel *m_zohoBarLabel = nullptr;
+    QList<QPushButton *> m_zohoStepButtons;
     QToolButton *m_noteDraftsButton = nullptr;
     QPointer<QTableWidget> m_noteDraftsTable;
     QPointer<QLabel> m_noteDraftsCount;

@@ -157,3 +157,17 @@ def test_desktop_drafts_send_through_compose_or_mastodon_and_rewrite_the_marker(
     assert 'organizationPath(QStringLiteral("/contacts/") + contactId), body' in mark
     compose = _desktop("void CrmFeature::composeEmail")
     assert "if (sent)\n            sent();" in compose
+
+
+def test_the_desktop_crm_shows_a_zoho_bar_with_reconnect_at_the_top():
+    constructor = FEATURE.split("\nCrmFeature::CrmFeature(", 1)[1]
+    assert constructor.index("m_zohoBar = new QWidget") < constructor.index("m_summary = new QLabel")
+    bar = _desktop("void CrmFeature::updateZohoBar")
+    assert '"steps"' in bar and '"canSend"' in bar
+    assert 'QStringLiteral("Reconnect Zoho Mail")' in bar
+    assert "m_canManageSettings" in bar
+    step = _desktop("void CrmFeature::runZohoStep")
+    assert step.index("connectZohoMail()") < step.index("editSettings()")
+    assert "markZohoReadOnly();" in FEATURE
+    assert "void updateZohoBar();" in FEATURE_HEADER
+    assert "The CRM only reads mail" not in FEATURE

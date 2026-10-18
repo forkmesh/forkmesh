@@ -309,6 +309,31 @@ Syncing again could never fix it, and nothing on the CRM page said so. Now:
 
 Tests: the last four tests in `tests/test_auto_email.py`.
 
+**Desktop Zoho bar and exact refusals** (1.40.0). 1.39.0 told users to tap
+Reconnect Zoho Mail at the top of the CRM, but the desktop CRM had no such
+bar: its only way back was the credential form in Settings, and its error
+still pointed there. Now:
+
+- The desktop CRM shows the same Zoho Mail bar between the toolbar and the
+  summary, in the amber attention banner, whenever `settings.zoho.steps` is
+  not empty: the state (not connected, read only, last sync failed), the
+  account, last synced and last sent, the numbered steps, and up to two
+  buttons for their actions. **Reconnect Zoho Mail** opens Zoho's consent page
+  when the server has ForkMesh's Zoho app and CRM settings (Self Client code)
+  otherwise; members who are not owners or admins see it disabled. A refused
+  auto-send adds the reconnect step to the bar at once, without a reload that
+  would hide the error line. The desktop guide no longer says the CRM only
+  reads mail.
+- `_zoho_send` keeps the scope from the refresh it just made and stores it.
+  A 401 or 403 is reported as `zoho_send_not_allowed` (read-only sign-in,
+  reconnect) only when Zoho's code names the OAuth scope or the token's scope
+  lacks `ZohoMail.messages.CREATE`/`.ALL`. When the token can send and Zoho
+  still refuses, the answer is `send_failed` with Zoho's error code or status
+  description, and the bar does not ask for a reconnect that would not help.
+
+Tests: the two `forbidden_send` tests in `tests/test_auto_email.py` and the
+desktop bar test in `tests/test_note_drafts_and_zoho_guide.py`.
+
 A sync reads the Sent folder after the others, reserving half the sync limit
 for it, and records each sent-folder message as an outbound CRM email. Email
 cells open a compose window in the organization's Zoho data center

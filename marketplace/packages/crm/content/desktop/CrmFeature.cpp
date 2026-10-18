@@ -602,8 +602,10 @@ QString autoEmailError(const QString &code, const QString &fallback)
         {QStringLiteral("rate_limited"), QStringLiteral("the AI model is busy. Try again in a minute.")},
         {QStringLiteral("send_failed"), QStringLiteral("the email provider refused the send.")},
         {QStringLiteral("zoho_send_not_allowed"),
-         QStringLiteral("Zoho Mail did not let ForkMesh send from your mailbox. Reconnect Zoho "
-                        "Mail in the CRM settings so it may send as well as read.")},
+         QStringLiteral("Zoho Mail did not let ForkMesh send from your mailbox: its sign-in "
+                        "only allows reading, and syncing does not change that. Click "
+                        "Reconnect Zoho Mail in the bar at the top of the CRM and allow "
+                        "sending.")},
     };
     const QString message = known.value(code);
     if (!message.isEmpty())
@@ -1551,6 +1553,32 @@ CrmFeature::CrmFeature(const forkmesh::market::NativePackageHost &host,
     outer->addLayout(heading);
     tintToolbar();
 
+    m_zohoBar = new QWidget;
+    m_zohoBar->setObjectName(QStringLiteral("firewallBanner"));
+    m_zohoBar->setAttribute(Qt::WA_StyledBackground, true);
+    m_zohoBar->setAccessibleName(QStringLiteral("Zoho Mail status"));
+    auto *zohoBarLayout = new QHBoxLayout(m_zohoBar);
+    zohoBarLayout->setContentsMargins(14, 10, 12, 10);
+    zohoBarLayout->setSpacing(10);
+    m_zohoBarLabel = new QLabel;
+    m_zohoBarLabel->setObjectName(QStringLiteral("firewallBannerLabel"));
+    m_zohoBarLabel->setTextFormat(Qt::RichText);
+    m_zohoBarLabel->setWordWrap(true);
+    zohoBarLayout->addWidget(m_zohoBarLabel, 1);
+    for (int index = 0; index < 2; ++index) {
+        auto *button = new QPushButton;
+        if (index == 0)
+            button->setObjectName(QStringLiteral("primaryButton"));
+        button->setCursor(Qt::PointingHandCursor);
+        connect(button, &QPushButton::clicked, this, [this, button] {
+            runZohoStep(button->property("zohoAction").toString());
+        });
+        zohoBarLayout->addWidget(button, 0, Qt::AlignVCenter);
+        m_zohoStepButtons.append(button);
+    }
+    m_zohoBar->hide();
+    outer->addWidget(m_zohoBar);
+
     m_summary = new QLabel(QStringLiteral("Shared organization relationships"));
     m_summary->setObjectName(QStringLiteral("mutedLabel"));
     outer->addWidget(m_summary);
@@ -2387,6 +2415,7 @@ void CrmFeature::applyInstallState()
         button->setVisible(m_installed);
     m_zohoSyncButton->setVisible(m_installed);
     m_zohoSyncButton->setEnabled(m_installed && canManage);
+    updateZohoBar();
     updateUsersImportAction();
     m_installButton->setVisible(canManage);
     m_installNote->setText(canManage
@@ -2943,6 +2972,104 @@ void CrmFeature::updateZohoAction()
             : m_canManageSettings
             ? QStringLiteral("Set up the Zoho OAuth client: opens the step-by-step guide")
             : QStringLiteral("Ask an owner or admin to connect Zoho Mail"));
+    updateZohoBar();
+}
+
+void CrmFeature::updateZohoBar()
+{
+    const QJsonObject zoho = m_settings.value(QStringLiteral("zoho")).toObject();
+    const QJsonArray steps = zoho.value(QStringLiteral("steps")).toArray();
+    m_zohoBar->setVisible(m_installed && !zoho.isEmpty() && !steps.isEmpty());
+    if (!m_zohoBar->isVisible())
+        return;
+    const bool connected = zoho.value(QStringLiteral("connected")).toBool();
+    bool syncFailed = false;
+    for (const QJsonValue &step : steps)
+        syncFailed |= text(step.toObject(), "key") == QLatin1String("sync_failed");
+    const QString state = !connected ? QStringLiteral("not connected")
+        : !zoho.value(QStringLiteral("canSend")).toBool()
+        ? QStringLiteral("read only, cannot send emails yet")
+        : syncFailed ? QStringLiteral("last sync failed")
+                     : QStringLiteral("one step left");
+    QStringList facts;
+    if (connected) {
+        facts << QStringLiteral("account %1").arg(text(zoho, "accountId"));
+        const qint64 synced = zoho.value(QStringLiteral("lastSyncAt")).toInteger();
+        facts << (synced > 0 ? QStringLiteral("last synced %1").arg(timestamp(synced))
+                             : QStringLiteral("never synced"));
+        const qint64 sent = zoho.value(QStringLiteral("lastSentAt")).toInteger();
+        if (sent > 0)
+            facts << QStringLiteral("last sent %1").arg(timestamp(sent));
+    }
+    QString html = QStringLiteral("<b>Zoho Mail: %1</b>").arg(state.toHtmlEscaped());
+    if (!facts.isEmpty())
+        html += QStringLiteral(" &middot; ") + facts.join(QStringLiteral(" · ")).toHtmlEscaped();
+    for (int index = 0; index < steps.size(); ++index)
+        html += QStringLiteral("<br>%1. %2").arg(index + 1).arg(
+            text(steps.at(index).toObject(), "text").toHtmlEscaped());
+    m_zohoBarLabel->setText(html);
+    static const QHash<QString, QString> labels{
+        {QStringLiteral("connect"), QStringLiteral("Connect Zoho Mail")},
+        {QStringLiteral("reconnect"), QStringLiteral("Reconnect Zoho Mail")},
+        {QStringLiteral("sync"), QStringLiteral("Sync now")},
+        {QStringLiteral("guide"), QStringLiteral("Open the setup guide")},
+    };
+    QStringList actions;
+    for (const QJsonValue &step : steps) {
+        const QString action = text(step.toObject(), "action");
+        if (labels.contains(action) && !actions.contains(action))
+            actions << action;
+    }
+    for (int index = 0; index < m_zohoStepButtons.size(); ++index) {
+        QPushButton *button = m_zohoStepButtons.at(index);
+        const QString action = actions.value(index);
+        button->setVisible(!action.isEmpty());
+        if (action.isEmpty())
+            continue;
+        const bool allowed = action == QLatin1String("sync") ? connected : m_canManageSettings;
+        button->setText(labels.value(action));
+        button->setAccessibleName(labels.value(action));
+        button->setProperty("zohoAction", action);
+        button->setEnabled(allowed);
+        button->setToolTip(allowed ? QString()
+                                   : QStringLiteral("Ask an organization owner or admin"));
+    }
+}
+
+void CrmFeature::runZohoStep(const QString &action)
+{
+    const bool oneClick = m_settings.value(QStringLiteral("zoho")).toObject()
+                              .value(QStringLiteral("oneClick")).toBool();
+    if (action == QLatin1String("sync"))
+        syncZohoMail();
+    else if ((action == QLatin1String("connect") || action == QLatin1String("reconnect")) &&
+             oneClick)
+        connectZohoMail();
+    else if (action == QLatin1String("reconnect"))
+        editSettings();
+    else
+        showZohoGuide();
+}
+
+void CrmFeature::markZohoReadOnly()
+{
+    QJsonObject zoho = m_settings.value(QStringLiteral("zoho")).toObject();
+    QJsonArray steps = zoho.value(QStringLiteral("steps")).toArray();
+    for (const QJsonValue &step : steps) {
+        if (text(step.toObject(), "action") == QLatin1String("reconnect"))
+            return;
+    }
+    steps.prepend(QJsonObject{
+        {QStringLiteral("key"), QStringLiteral("send")},
+        {QStringLiteral("action"), QStringLiteral("reconnect")},
+        {QStringLiteral("text"),
+         QStringLiteral("Zoho refused to let ForkMesh send from the mailbox. Reconnect Zoho "
+                        "Mail once and allow sending; syncing again does not add the "
+                        "permission.")}});
+    zoho.insert(QStringLiteral("canSend"), false);
+    zoho.insert(QStringLiteral("steps"), steps);
+    m_settings.insert(QStringLiteral("zoho"), zoho);
+    updateZohoBar();
 }
 
 void CrmFeature::rebuildContactColumns()
@@ -10746,6 +10873,8 @@ void CrmFeature::sendAutoEmail(const QString &contactId, const QString &mode,
         }
         setStatus(QStringLiteral("Nothing was sent to %1: %2").arg(label, autoEmailError(code, error)),
                   true);
+        if (code == QLatin1String("zoho_send_not_allowed"))
+            markZohoReadOnly();
     });
 }
 
@@ -11531,7 +11660,9 @@ QString zohoGuideHtml(const QString &state)
         "reads the mail account id. No <code>curl</code> needed. Then click "
         "<b>Sync Zoho Mail</b>.</li>"
         "</ol>"
-        "<p>The CRM only reads mail: it asks for %6. The client secret and refresh "
+        "<p>The CRM reads mail and sends the CRM's emails: it asks for %6. A connection "
+        "made before sending existed only allows reading; click <b>Reconnect Zoho Mail</b> "
+        "at the top of the CRM to add sending. The client secret and refresh "
         "token are stored encrypted and are never shown again.</p>")
         .arg(state.toHtmlEscaped(), console, code.arg(callback.toHtmlEscaped()),
              code.arg(zohoSecretLines().toHtmlEscaped()),

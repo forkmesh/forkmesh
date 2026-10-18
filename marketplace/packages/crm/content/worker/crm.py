@@ -1620,7 +1620,7 @@ async def _zoho_send(runtime, connection, from_email, recipient, subject, html):
     account_id = _clean(connection.get("accountId"), 80)
     if not connection.get("accountsServer") or not mail_server or not account_id:
         return {"ok": False, "error": "zoho_connection_incomplete"}
-    access_token, _ = await _zoho_access_token(runtime, connection)
+    access_token, scope = await _zoho_access_token(runtime, connection)
     if not access_token:
         return {"ok": False, "error": "zoho_token_rejected"}
     headers = {"accept": "application/json",
@@ -1641,12 +1641,16 @@ async def _zoho_send(runtime, connection, from_email, recipient, subject, html):
     message = payload.get("data") if isinstance(payload.get("data"), dict) else {}
     status = _integer((result or {}).get("status"))
     if (result or {}).get("ok") and 200 <= status < 300:
-        return {"ok": True, "fromAddress": sender,
+        return {"ok": True, "fromAddress": sender, "scope": scope,
                 "messageId": _clean(message.get("messageId"), 120)}
-    code = _clean(message.get("errorCode") or (result or {}).get("error"), 80)
-    if status in (401, 403) or "OAUTHSCOPE" in code.upper():
-        return {"ok": False, "error": "zoho_send_not_allowed", "fromAddress": sender}
-    return {"ok": False, "fromAddress": sender,
+    described = payload.get("status") if isinstance(payload.get("status"), dict) else {}
+    code = _clean(message.get("errorCode") or message.get("moreInfo")
+                  or described.get("description") or (result or {}).get("error"), 80)
+    granted = bool(ZOHO_SEND_SCOPES & set(scope.lower().split()))
+    if "OAUTHSCOPE" in code.upper() or (status in (401, 403) and not granted):
+        return {"ok": False, "error": "zoho_send_not_allowed", "fromAddress": sender,
+                "scope": scope}
+    return {"ok": False, "fromAddress": sender, "scope": scope,
             "error": code or "zoho_send_rejected_%d" % status}
 
 
@@ -6108,13 +6112,15 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         envelope["fromEmail"] = _email(result.get("fromAddress")) or from_email
         envelope["mailbox"] = envelope["fromEmail"]
         result["accepted"] = bool(result.get("ok"))
+        grant = {"scope": result["scope"]} if result.get("scope") else {}
         if result["accepted"]:
-            await _record_zoho(runtime, org_bi, lastSentAt=runtime.now(),
-                               sendRefusedAt=None, tokenRejectedAt=None)
+            grant.update(lastSentAt=runtime.now(), sendRefusedAt=None, tokenRejectedAt=None)
         elif result.get("error") == "zoho_send_not_allowed":
-            await _record_zoho(runtime, org_bi, sendRefusedAt=runtime.now())
+            grant.update(sendRefusedAt=runtime.now())
         elif result.get("error") == "zoho_token_rejected":
-            await _record_zoho(runtime, org_bi, tokenRejectedAt=runtime.now())
+            grant.update(tokenRejectedAt=runtime.now())
+        if grant:
+            await _record_zoho(runtime, org_bi, **grant)
     else:
         result = await runtime.send_mailtrap("", {
             "from": {"email": from_email, "name": from_name},
