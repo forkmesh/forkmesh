@@ -40,7 +40,7 @@ tested on Linux); views and platform glue are in
 | Touch play (`GenieTouchPlay`) | `FMAssistant/GenieTouchPlay.swift`; `Features/Genie/GenieTouchCoach.swift` | `GenieTouchPlayTests` |
 | Sounds (`GenieChime`, `GenieMoveVoice`) | `FMAgentWatch/GenieChimes.swift`; `Features/Genie/GenieSounds.swift` | `GenieChimeTests` |
 | CRM outreach (`GenieOutreach`, `GenieOutreachWriter`, `GenieOutreachLog`) | `FMAssistant/GenieOutreach.swift`; `Features/Genie/GenieOutreachCoach.swift` | `GenieOutreachTests` |
-| Suggestion mode, auto-send and pocket mode | `Features/Genie/ShellSuggestions.swift`, `Features/Genie/ShellAutoSend.swift`, `Features/Genie/ShellAutoSendReview.swift`, `FMAssistant/GenieAutoSend.swift`, `Shell/ShellPocket.swift` | `GenieOutreachTests`, `GenieAutoSendTests` |
+| Suggestion mode, auto-send and pocket mode | `Features/Genie/ShellSuggestions.swift`, `Features/Genie/ShellAutoSend.swift`, `Features/Genie/ShellAutoSendReview.swift`, `FMAssistant/GenieAutoSend.swift`, `Shell/ShellPocket.swift`, `Shell/ShellMailStatus.swift` | `GenieOutreachTests`, `GenieAutoSendTests` |
 | Aquarium fish on the phone | `FMAssistant/Aquarium{Fish,Tank}.swift`, `Features/Aquarium/AquariumLayer.swift` | `AquariumTests` |
 | Spider Room, the spider in the room in AR ([../marketplace/spider-room.md](../marketplace/spider-room.md)) | `FMAssistant/RoomSpider{,Space,Acts}.swift`; `Features/SpiderRoom/SpiderRoom{Screen,Director,Body}.swift` | `RoomSpiderTests` |
 | Overlay, gestures, menu, hub | `Features/Genie/GenieSpiderLayer.swift`, `GenieCrawler.swift`, `GenieHub.swift`, `GenieBubbles.swift` | parse only |
@@ -276,7 +276,9 @@ contacted, with a tap to draft an email or a Mastodon post.
   contact (`GenieOutreach.best`: deal value, next step, email before Mastodon,
   oldest) in the top bar: a plain 44 pt portrait (the bar's full height, no
   Liquid Glass capsule) with a small email or Mastodon mark. Tap it and the
-  Genie writes to them. The marketing-channel megaphone that used to sit
+  message is written and opened in Zoho Mail (or the share sheet); the
+  portrait shows the progress itself and no Spider card appears
+  (`GenieOutreachCoach.write(_:)`, 2026-10-18). The marketing-channel megaphone that used to sit
   beside it was removed (2026-10-18): it was a second, unrelated control in a
   slot meant for one glance. VoiceOver actions: auto-send on/off, Not now,
   Open the CRM.
@@ -284,8 +286,8 @@ contacted, with a tap to draft an email or a Mastodon post.
   portrait to turn it on or off. Turning it on sends the first email right
   away (`tick(force: true)` skips the pace wait, 2026-10-18), and anything that
   stops that first email (today's 100 already sent, no ForkMesh session, nobody
-  left to email, five contacts skipped in a row, or any CRM refusal) is said by
-  the Spider at once instead of waiting for the next turn. While on, the
+  left to email, five contacts skipped in a row, or any CRM refusal) is shown
+  at once instead of waiting for the next turn. While on, the
   portrait has an accent ring, it
   shows the next email recipient in a CRM with Zoho Mail connected
   (`outreachBest(only: .email, zohoOnly: true)`), and the app sends one email
@@ -296,7 +298,7 @@ contacted, with a tap to draft an email or a Mastodon post.
   Mailtrap. A contact the CRM refuses (`recently_emailed`, `contact_closed`,
   no email) is skipped for the session and the next one is tried, up to five
   per turn; anything else (daily cap, Zoho needs a reconnect, not on the
-  outreach team) pauses until the next turn and the Spider says why. When the
+  outreach team) pauses until the next turn and the top bar says why. When the
   server has no model, the phone's own outreach writers answer the server's
   prompt and the draft is posted back (`GenieAutoSend.write`).
   Sending only happens while the app is open (iOS has no background slot for
@@ -304,6 +306,24 @@ contacted, with a tap to draft an email or a Mastodon post.
   reopening never bursts.
 - **Count on the icon**: the badge at the top right is today's auto-sends
   (local day, `shell/auto_send_day`/`_count`), accent while on, grey after.
+  While auto-send is on, a ring around it drains from the last send to the
+  next one (`GenieAutoSendPace.countdown`, 864 s, or until midnight once 100
+  are sent), redrawn each second; it is hidden while an email is in progress.
+- **Progress on the mail mark** (`ShellMailStatus`, 2026-10-18): while an email
+  is being prepared, an arc spins around the bottom-right mark and the mark
+  shows the stage: magnifying glass while picking the contact, pencil while
+  the email is written, paper plane while the phone's own draft is posted,
+  then a check for three seconds once it is sent or opened. The server writes
+  and sends in one request, so a server-written email goes from pencil
+  straight to the check. While auto-send is paused, the mark is a pause sign
+  on the warning colour.
+- **Feedback without the Spider** (2026-10-18): auto-send and the tap-to-write
+  path no longer speak through `GenieHub.show(line:)`, which showed nothing
+  while the Spider was hidden. Every message (on, off, waiting and why, opened
+  in Zoho Mail, the deck link failed) is a `ShellMailStatus.say` line under the
+  top bar (`shell-mail-notice`), shown at once whether or not the Spider is on
+  screen, announced to VoiceOver, and dismissed by its close button or after
+  8 s plus reading time.
 - **Review popup** (`ShellAutoSendReview`): every sent email opens a sheet with
   recipient, sender, Zoho, the writer, subject and body. Pick 1-5 stars and,
   optionally, write a line on what to change; **Save** posts

@@ -383,6 +383,7 @@ CURL_ATTEMPTS = 5
 CURL_RETRY_SECONDS = 2
 OFFLINE_WAIT_SECONDS = 1800
 OFFLINE_POLL_SECONDS = 30
+UNREACHABLE_WAIT_SECONDS = 300
 
 
 def curl(host, ip, path, run=subprocess.run, timeout=10, attempts=CURL_ATTEMPTS,
@@ -421,8 +422,28 @@ def read_revs(hosts, run=subprocess.run, sleep=time.sleep) -> list:
     return answers
 
 
+def reask_silent(hosts, answers, run=subprocess.run, say=None, sleep=time.sleep,
+                 clock=time.monotonic, wait=UNREACHABLE_WAIT_SECONDS) -> list:
+    deadline = clock() + wait
+    announced = False
+    while True:
+        silent = [name for name, code, _rev in answers if not code]
+        if not silent or clock() >= deadline:
+            return answers
+        if not announced and say:
+            say("gate 1: %s did not answer while other cores did; asking again for up "
+                "to %d min" % (", ".join(silent), wait // 60))
+            announced = True
+        sleep(OFFLINE_POLL_SECONDS)
+        nodes = [node for node in hosts["nodes"] if node["name"] in silent]
+        fresh = {name: (name, code, rev) for name, code, rev in
+                 read_revs(dict(hosts, nodes=nodes), run=run, sleep=sleep)}
+        answers = [fresh.get(name, (name, code, rev)) for name, code, rev in answers]
+
+
 def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
-              clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS) -> dict:
+              clock=time.monotonic, offline_wait=OFFLINE_WAIT_SECONDS,
+              unreachable_wait=UNREACHABLE_WAIT_SECONDS) -> dict:
     deadline = clock() + offline_wait
     announced = False
     while True:
@@ -442,6 +463,8 @@ def live_revs(hosts, run=subprocess.run, say=None, sleep=time.sleep,
         sleep(OFFLINE_POLL_SECONDS)
     if announced and say:
         say("gate 1: the network is back")
+    answers = reask_silent(hosts, answers, run=run, say=say, sleep=sleep, clock=clock,
+                           wait=unreachable_wait)
     revs = {}
     for name, code, rev in answers:
         if not rev:
@@ -1594,7 +1617,7 @@ def status_report(repo, layout=None) -> dict:
               "state": load_state(), "main": git.rev(MAIN_REF)[:12]}
     try:
         hosts = fleet_hosts(git.show(MAIN_REF, "deploy/fleet.toml"))
-        report["live"] = live_revs(hosts, offline_wait=0)
+        report["live"] = live_revs(hosts, offline_wait=0, unreachable_wait=0)
     except (ToolError, ValueError, KeyError) as error:
         report["live"] = {"error": str(error)}
     return report

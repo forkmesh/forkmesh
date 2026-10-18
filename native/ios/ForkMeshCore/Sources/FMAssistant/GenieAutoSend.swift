@@ -34,6 +34,13 @@ public struct GenieAutoSendReceipt: Equatable, Sendable, Identifiable {
     public var viaLabel: String { via == "zoho" ? "Zoho Mail" : via == "mailtrap" ? "ForkMesh mail" : via }
 }
 
+public enum GenieAutoSendStage: Equatable, Sendable {
+    case finding
+    case writing
+    case sending
+    case sent
+}
+
 public enum GenieAutoSendOutcome: Equatable, Sendable {
     case sent(GenieAutoSendReceipt)
     case skip(String)
@@ -80,6 +87,13 @@ public final class GenieAutoSendPace {
             return tomorrow.timeIntervalSince(now)
         }
         return max(0, GenieAutoSendPace.every - now.timeIntervalSince(last))
+    }
+
+    public func countdown(now: Date) -> DateInterval? {
+        let wait = wait(now: now)
+        guard on, wait > 0 else { return nil }
+        let start = min(last, now)
+        return DateInterval(start: start, end: now.addingTimeInterval(wait))
     }
 
     public func sent(at now: Date) {
@@ -148,10 +162,13 @@ public enum GenieAutoSend {
 }
 
 extension ForkMeshToolbox {
-    public func outreachAutoSend(_ pick: GenieOutreachPick, writers: [GenieOutreachWriter]) async -> GenieAutoSendOutcome {
+    public func outreachAutoSend(
+        _ pick: GenieOutreachPick, writers: [GenieOutreachWriter], stage: (GenieAutoSendStage) -> Void = { _ in }
+    ) async -> GenieAutoSendOutcome {
         guard let client = sources.crm() else { return .pause("The CRM is not available in this build.") }
         var body: JSONObject = ["contactId": .string(pick.contact.id)]
         do {
+            stage(.writing)
             var reply = try await client.autoCrmEmail(pick.organization, body: body)
             let code = reply.json.str("error")
             let prompt = reply.json.str("prompt")
@@ -160,9 +177,12 @@ extension ForkMeshToolbox {
                 body["subject"] = .string(draft.subject)
                 body["text"] = .string(draft.body)
                 body["model"] = .string(draft.writer)
+                stage(.sending)
                 reply = try await client.autoCrmEmail(pick.organization, body: body)
             }
-            return GenieAutoSend.outcome(reply, pick: pick)
+            let outcome = GenieAutoSend.outcome(reply, pick: pick)
+            if case .sent = outcome { stage(.sent) }
+            return outcome
         } catch {
             return .pause(PackagesError.describe(error))
         }
