@@ -768,6 +768,11 @@ print(encode(seed), encode(public))
     if [ -r "$APP_ENV" ]; then
       grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY)=' "$APP_ENV" || true
     fi
+    if [ -r "$APP_ENV" ] && grep -qE '^TURNSTILE_HOSTNAMES=.' "$APP_ENV"; then
+      grep -E '^TURNSTILE_HOSTNAMES=' "$APP_ENV"
+    else
+      echo "TURNSTILE_HOSTNAMES=$DOMAIN"
+    fi
   } >> "$tmp"
   mv "$tmp" "$APP_ENV"
   if [ "$(files_digest "$APP_ENV")" != "$env_before" ]; then APP_CHANGED="1"; fi

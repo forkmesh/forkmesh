@@ -172,10 +172,18 @@ def site_key(env):
     return config(env)["siteKey"]
 
 
+def _origin_host(env):
+    origin = _var(env, "APP_ORIGIN")
+    host = origin.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    return host.strip().lower().rstrip(".")
+
+
 def allowed_hostnames(env):
     raw = _var(env, "TURNSTILE_HOSTNAMES")
     names = [item.strip().lower().rstrip(".") for item in raw.split(",")]
     names = [name for name in names if name]
+    if not names and _var(env, "INSTANCE_NAME") and _origin_host(env):
+        names = [_origin_host(env)]
     return frozenset(names or DEFAULT_HOSTNAMES)
 
 
