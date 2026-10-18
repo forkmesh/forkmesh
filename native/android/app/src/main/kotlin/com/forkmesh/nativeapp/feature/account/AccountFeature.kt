@@ -278,8 +278,8 @@ object AccountFeature {
     }
 
     @Composable
-    fun ProjectSlot(modifier: Modifier = Modifier) {
-        com.forkmesh.nativeapp.feature.account.projects.ProjectSwitcherTitle(modifier = modifier, iconOnly = true)
+    fun ProjectSlot(modifier: Modifier = Modifier, onLongPress: (() -> Unit)? = null) {
+        com.forkmesh.nativeapp.feature.account.projects.ProjectSwitcherTitle(modifier = modifier, iconOnly = true, onLongPress = onLongPress)
     }
 
     @Composable

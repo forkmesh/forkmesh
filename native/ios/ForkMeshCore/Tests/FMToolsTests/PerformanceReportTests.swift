@@ -45,7 +45,7 @@ final class PerformanceReportTests: XCTestCase {
 
         XCTAssertTrue(text.hasPrefix("# \(PerformanceReport.title)\n"))
         XCTAssertTrue(text.contains("app: 1.2.5+13 (release)\ndevice: iPhone15,2"))
-        XCTAssertTrue(text.contains("stalls since launch 2 (over 200ms)"))
+        XCTAssertTrue(text.contains("stalls since launch 2 (over 200ms), paused while visible 0 (longest 0ms), "), text)
         XCTAssertTrue(text.contains("## Stalls by name\n2x     total 750ms max 450ms last 12:00:05 eventLoop ui-isolate blocked\n"), text)
         XCTAssertTrue(text.contains("## Slow operations by name\n1x     total 900ms max 900ms operation api.GET /repos\n"), text)
         XCTAssertTrue(text.contains("2x     finishedDuring api.GET /repos\n1x     finishedDuring chat.decode"))

@@ -212,3 +212,14 @@ def test_the_instance_runner_reads_as_this_server():
     assert "Runs on this server" in source
     assert "escapeHtml(view.host)" in source
     assert "Runs on this server" in DASHBOARD_JS
+
+
+def test_a_run_link_opens_that_run():
+    assert static_routes.looks_like_repo_route("/owner/repo/actions/runs/41")
+    assert 'routeKind === "actions" && routeParts[3] === "runs"' in DASHBOARD_JS
+    assert "`${repoLinkUrl(repo)}/actions/runs/${actionsRunId}`" in DASHBOARD_JS
+    loader = FRAGMENT.split("async function loadRepoActions(", 1)[1]
+    loader = loader.split("\n  async function ", 1)[0]
+    assert "view.selectedRunId = initialRun.runId;" in loader
+    assert loader.index("Object.assign(view, {") < loader.index(
+        "view.selectedRunId = initialRun.runId;")

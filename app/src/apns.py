@@ -416,7 +416,7 @@ def alert_payload(alert, topic="", origin=""):
     thread = str(alert.get("threadId") or "").strip()
     if thread:
         payload["aps"]["thread-id"] = thread[:64]
-    for key in ("alertId", "href", "sessionId"):
+    for key in ("alertId", "href", "sessionId", "runId"):
         value = str(alert.get(key) or "").strip()
         if value:
             payload[key] = value

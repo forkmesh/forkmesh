@@ -219,11 +219,19 @@ internal class ActionsScreen(private val repo: Repository, private val commit: S
     }
 }
 
-internal class ActionRunScreen(private val repo: Repository, private val model: RepoActionsModel, private val runId: Int) : Screen() {
+internal fun standaloneActionRunScreen(repo: Repository, runId: Int): Screen = ActionRunScreen(repo, actionsModel(repo), runId, ownsModel = true)
+
+internal class ActionRunScreen(
+    private val repo: Repository,
+    private val model: RepoActionsModel,
+    private val runId: Int,
+    private val ownsModel: Boolean = false,
+) : Screen() {
     override val title: String get() = "Run #$runId"
 
     override fun onDisposed() {
         model.unfollow(runId)
+        if (ownsModel) model.stop()
     }
 
     @Composable
@@ -238,7 +246,10 @@ internal class ActionRunScreen(private val repo: Repository, private val model: 
         val commands = com.forkmesh.nativeapp.feature.code.rememberDesktopCommands()
         model.BumpOnChange(tick)
         LaunchedEffect(Unit) {
-            io { model.follow(runId) }
+            io {
+                if (model.summary == null) model.load()
+                model.follow(runId)
+            }
             tick.bump()
             while (true) {
                 delay(RepoActionsModel.FOLLOW_UP_DELAY_MS)

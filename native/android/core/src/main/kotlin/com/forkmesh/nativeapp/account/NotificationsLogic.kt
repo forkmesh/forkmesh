@@ -273,6 +273,7 @@ fun pingOpenLabel(link: NotificationDeepLink?, web: String?): String? {
         link.initialTab == RepoDetailTab.Commits && link.reference.isNotEmpty() -> "Open commit ${link.reference.take(7)}"
         link.initialTab == RepoDetailTab.Commits && link.branch.isNotEmpty() -> "Open commits on ${link.branch}"
         link.initialTab == RepoDetailTab.Agents && link.session > 0 -> "Open agent session"
+        link.initialTab == RepoDetailTab.Actions && link.run > 0 -> "Open run #${link.run}"
         link.initialTab == RepoDetailTab.Releases -> "Open releases"
         else -> "Open ${link.repo.owner}/${link.repo.name}"
     }

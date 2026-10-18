@@ -93,6 +93,9 @@ def read_spec(raw):
         raise BootstrapError("singleOrganization must be true or false")
     if single and owner_type != "org":
         raise BootstrapError("singleOrganization needs an organization")
+    legal = spec.get("legalPages")
+    if legal not in (None, "", {}) and not isinstance(legal, dict):
+        raise BootstrapError("legalPages must be an object")
     return {
         "admin": admin,
         "email": email,
@@ -104,6 +107,7 @@ def read_spec(raw):
         "nodePublicKey": node_key,
         "theme": theme or "",
         "singleOrganization": single,
+        "legalPages": legal or {},
     }
 
 
@@ -220,6 +224,22 @@ async def ensure_theme(entry, env, value):
         doc, int(entry.Date.now()))
 
 
+async def ensure_legal_pages(entry, env, value):
+    try:
+        setting = entry.instance_legal.from_install(value)
+    except entry.instance_legal.SettingError as error:
+        raise BootstrapError(str(error)) from error
+    if setting is None:
+        return False
+    await entry.d1_run(
+        env,
+        "INSERT INTO instance_settings (k, doc, updated_at) "
+        "VALUES (?, ?, ?) ON CONFLICT(k) DO NOTHING",
+        entry.instance_legal.SETTING_KEY,
+        entry.instance_legal.dump(setting), int(entry.Date.now()))
+    return True
+
+
 def repo_paths_doc(owner, canonical=True):
     return json.dumps({"canonical": bool(canonical), "owner": owner,
                        "short": True}, sort_keys=True, separators=(",", ":"))
@@ -286,6 +306,8 @@ async def bootstrap(runtime, spec, bot_seed=""):
         await ensure_theme(entry, env, spec["theme"])
     if spec["singleOrganization"] and org_created:
         await ensure_repo_paths(entry, env, spec["owner"])
+    if spec.get("legalPages"):
+        await ensure_legal_pages(entry, env, spec["legalPages"])
     bot = ""
     if bot_seed:
         if not SEED_RE.fullmatch(bot_seed):

@@ -140,13 +140,18 @@ QWidget *MainWindow::buildBreadcrumb()
     tokenUsage->setObjectName(QStringLiteral("claudeAccountUsageButton"));
     tokenUsage->setAccessibleName(QStringLiteral("Claude Code accounts and usage"));
     tokenUsage->setToolTip(
-        QStringLiteral("Claude Code accounts and usage\nClick to manage accounts."));
+        QStringLiteral("Claude Code accounts and usage\nClick to open the Usage "
+                       "page. Right-click to manage accounts."));
     m_navTokenUsage = tokenUsage;
     tokenUsage->onHover = [this] {
         refreshClaudeCodeUsage(/*fromHover=*/true);
         refreshClaudeModelCombo();
     };
     tokenUsage->onClick = [this](const QPoint &position) {
+        if (!openAgentUsagePage())
+            showAgentAccountMenu(QStringLiteral("claude-code"), position);
+    };
+    tokenUsage->onContextMenu = [this](const QPoint &position) {
         showAgentAccountMenu(QStringLiteral("claude-code"), position);
     };
     tokenUsage->onChanged = [this] { refreshAgentToolbarAccountButtons(); };
@@ -185,6 +190,10 @@ QWidget *MainWindow::buildBreadcrumb()
         flashUsageChart(m_navCodexUsage, true);
     };
     codexUsage->onClick = [this](const QPoint &position) {
+        if (!openAgentUsagePage())
+            showAgentAccountMenu(QStringLiteral("codex"), position);
+    };
+    codexUsage->onContextMenu = [this](const QPoint &position) {
         showAgentAccountMenu(QStringLiteral("codex"), position);
     };
     codexUsage->onChanged = [this] { refreshAgentToolbarAccountButtons(); };

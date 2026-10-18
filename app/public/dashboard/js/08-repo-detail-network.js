@@ -115,6 +115,10 @@
       }
       : null;
     state.repoRecordSection = recordRoute ? recordRoute.section : "conversation";
+    const actionsRunId = routeKind === "actions" && routeParts[3] === "runs" && /^[1-9]\d{0,11}$/.test(routeParts[4] || "")
+      ? Number(routeParts[4])
+      : 0;
+    state.repoActionsInitialRun = actionsRunId ? { key: repoKey(repo), runId: actionsRunId } : null;
     // /owner/repo/compare/<base>...<head> opens the branch diff viewer on the
     // Pull requests tab (the Agents tab links an agent's branch there).
     const compareRoute = routeMatchesRepo ? parseRepoCompareRoute(routeParts) : null;
@@ -122,9 +126,11 @@
       ? repoRecordUrl(repo, recordRoute.kind, recordRoute.number, recordRoute.section)
       : compareRoute
         ? repoCompareUrl(repo, compareRoute.base, compareRoute.head)
-        : repoTabRoutesFor(repo).includes(routeKind)
-          ? `${repoLinkUrl(repo)}/${routeKind}`
-          : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
+        : actionsRunId && repoTabRoutesFor(repo).includes("actions")
+          ? `${repoLinkUrl(repo)}/actions/runs/${actionsRunId}`
+          : repoTabRoutesFor(repo).includes(routeKind)
+            ? `${repoLinkUrl(repo)}/${routeKind}`
+            : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
     navigateHistory(detailPath);
     const branch = repoSelectedBranch(repo);
     const issuesCount = repoCount(repo, ["issueCount", "issues", "issuesCount", "openIssues"]);

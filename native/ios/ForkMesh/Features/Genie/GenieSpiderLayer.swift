@@ -284,7 +284,10 @@ struct GenieSpiderLayer: View {
         content
             .contentShape(Circle().scale(0.82))
             .onTapGesture { tapped() }
-            .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 10) { hub.openMenu() }
+            .onLongPressGesture(minimumDuration: 0.45, maximumDistance: 10) {
+                CaptureHold.noteHandled()
+                hub.openMenu()
+            }
             .simultaneousGesture(handleGesture)
             .hoverEffect(.lift)
     }

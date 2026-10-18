@@ -375,6 +375,7 @@ struct ShellNewAgentButton: View {
     }
 
     private func hold() {
+        CaptureHold.noteHandled()
         guard let onVoice = onVoice else {
             FmHaptics.palette()
             onPalette()

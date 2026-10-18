@@ -255,7 +255,8 @@ destination, in sections, with counts and activity:
   on 2026-10-15; at 8 pt the pills were cut off.
 
 **Top chrome** (`ShellTopBar`). The project icon (`ShellProjectSlot`, 40 pt,
-opens the project drawer), the telemetry strip centred (tiny health-coloured
+opens the project drawer; touch and hold for 0.5 s goes to Home from any
+tab, closing open overlays, the same as `openProjectHome`, 2026-10-18), the telemetry strip centred (tiny health-coloured
 charts of phone metrics and, when a desktop answers `diag.watch`, desktop
 memory, CPU, disk and swap), the new agent button and the avatar
 (`AvatarWithDot`, rounded square). The connection status is a 2 pt stroke
