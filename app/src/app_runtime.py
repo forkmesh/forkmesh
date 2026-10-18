@@ -1869,6 +1869,9 @@ class Default:
                 return refusal
             pieces = [piece for piece in url.path.split("/") if piece]
             action = safe_segment(pieces[4] if len(pieces) > 4 else "")
+            if action == "viewer-permission" and len(pieces) == 5:
+                return await repo_viewer_permission_handler(
+                    self.env, request, owner, repo)
             if action == "file-edit":
                 import repository_file_edits
                 repository_file_edits._bind_runtime(globals())

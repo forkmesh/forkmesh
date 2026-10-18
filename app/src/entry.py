@@ -16547,7 +16547,7 @@ async def native_repository_logo_handler(
             candidate
             and (
                 await _repository_import_moderator(env, candidate)
-                or await _account_owns_node(env, candidate, owner)
+                or await _repo_admin_allowed(env, candidate, owner, repo)
             )
         )
 
@@ -16825,8 +16825,7 @@ async def repo_about_handler(env, request, owner, repo):
             owner_key_authed = True
     if not actor or (
             not owner_key_authed
-            and not await _account_owns_node(env, actor, owner)
-            and not await _org_owner_of_linked_repo(env, owner, repo, actor)):
+            and not await _repo_admin_allowed(env, actor, owner, repo)):
         return json_response({"error": "not_authorized"}, status=403)
     if not await _owner_pubkey(env, owner):
         return json_response({"error": "account_required"}, status=403)
@@ -28001,6 +28000,63 @@ async def _org_owner_of_linked_repo(env, node, repo, actor):
         return False
 
 
+async def _org_linked_repo_permission(env, node, repo, actor):
+    if not node or not repo or not actor:
+        return ""
+    try:
+        rows = await d1_all(
+            env, "SELECT org_bi FROM org_repos WHERE node_owner=? AND repo=?",
+            str(node).lower(), str(repo).lower())
+        best = ""
+        for row in rows or []:
+            perm = await _org_permission(
+                env, str(row.get("org_bi") or ""), str(actor).lower())
+            if team_permission_rank(perm) > team_permission_rank(best):
+                best = perm
+        return best
+    except Exception:
+        return ""
+
+
+async def _org_admin_of_linked_repo(env, node, repo, actor):
+    return await _org_linked_repo_permission(
+        env, node, repo, actor) == "admin"
+
+
+async def _repo_admin_allowed(env, actor, node, repo):
+    actor = str(actor or "").strip().lower()
+    node = str(node or "").strip().lower()
+    if not actor or not node or not repo:
+        return False
+    if await _account_owns_node(env, actor, node):
+        return True
+    return await _org_admin_of_linked_repo(env, node, repo, actor)
+
+
+async def repo_viewer_permission_handler(env, request, owner, repo):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            cache_control="no-store")
+    await ensure_schema(env)
+    actor = clean_string(
+        await _authed_account_name(env, request) or "",
+        MAX_NODE_NAME).strip().lower()
+    permission = ""
+    if actor:
+        if await _account_owns_node(env, actor, owner):
+            permission = "admin"
+        else:
+            permission = await _org_linked_repo_permission(
+                env, owner, repo, actor)
+    return json_response({
+        "ok": True,
+        "viewer": actor,
+        "permission": permission,
+        "viewerCanAdmin": permission == "admin",
+    }, cache_control="private, no-store")
+
+
 async def verify_org_push_token(env, pusher, owner, repo, ts, sig):
     # Org-team write gate for git push (issue #388): a member of an org team
     # with write+ permission on a linked repo may run receive-pack against it,
@@ -35852,9 +35908,7 @@ async def _authorize_repo_owner_web(env, request, owner, repo, data):
     the same trust gate as the About editor / ap-publish, with a distinct
     canonical so a signed token can't be replayed onto another endpoint."""
     actor = await _authed_account_name(env, request, data)
-    if actor and (
-            await _account_owns_node(env, actor, owner)
-            or await _org_owner_of_linked_repo(env, owner, repo, actor)):
+    if actor and await _repo_admin_allowed(env, actor, owner, repo):
         return True
     if data.get("ownerSig") and data.get("ts"):
         ts = str(data.get("ts", "") or "")
@@ -39461,6 +39515,15 @@ async def _authorized_mirror_issue_signing_key(env, request, owner, repo):
             safe_segment(original.group(1)) if original else owner)
         public_repo = (
             safe_segment(original.group(2)) if original else repo)
+        backing_owner = str(owner or "").strip().lower()
+        if (
+            str(public_owner or "").lower() != backing_owner
+            and str(public_repo or "").lower()
+            == str(repo or "").strip().lower()
+            and await _org_repo_node(env, public_owner, public_repo)
+            == backing_owner
+        ):
+            public_owner, public_repo = backing_owner, repo
         flagship_owner = (
             await _org_repo_node(env, "forkmesh", "forkmesh")
             or "forkmesh"
@@ -51034,9 +51097,14 @@ async def _https_mirror_proxy(
                 proof_details.get("refsSha256") or "").lower()
             lagging_refs_endpoints.setdefault(lagging_digest, {})[
                 str(endpoint.get("node") or "").lower()] = endpoint
+            admit_actions_push = globals().get("_actions_push_admitted")
             if not https_routing.mismatch_is_servable(
                     operation, endpoint.get("node"), proof_details,
-                    lagging_refs_quorum):
+                    lagging_refs_quorum) and not (
+                        not monitoring and callable(admit_actions_push)
+                        and await admit_actions_push(
+                            env, context, endpoint, operation,
+                            proof_details)):
                 if probe_quarantine is not None:
                     probe_quarantine.add(
                         str(endpoint.get("node") or "").lower())
@@ -51631,6 +51699,13 @@ async def _admit_core_push_state(env, owner, repo, endpoint, alias=""):
         state = await _record_core_push_state(env, context, endpoint, alias)
     except Exception:
         state = ""
+    if state:
+        try:
+            await record_hosted_push_state(
+                env, context["owner"], context["repo"], endpoint,
+                state=state, notify=False)
+        except Exception:
+            pass
     generation = int(Date.now()) if state else 0
     try:
         scheduled = await schedule_repo_mirror_wake(
@@ -51643,6 +51718,34 @@ async def _admit_core_push_state(env, owner, repo, endpoint, alias=""):
     except Exception:
         pass
     return state
+
+
+async def _actions_push_admitted(env, context, endpoint, operation, details):
+    if operation == "git-receive-pack":
+        return False
+    lagging = https_routing.signed_refs_lag(operation, details)
+    node = str((endpoint or {}).get("node") or "").strip().lower()
+    owner = str(context.get("owner") or "").strip().lower()
+    cores = _core_push_nodes(env)
+    if not lagging or not node or node not in cores or owner not in cores:
+        return False
+    try:
+        import runner_actions
+        import runner_leases
+        runner_leases._bind_runtime(globals())
+        if not await runner_actions.pushing(
+                runner_leases.WorkerRuntime(env, None), owner,
+                context["repo"], node):
+            return False
+    except Exception:
+        return False
+    try:
+        state = await _admit_core_push_state(
+            env, owner, context["repo"], endpoint,
+            alias=str(context.get("routeOwner") or ""))
+    except Exception:
+        return False
+    return bool(state)
 
 
 async def _record_core_push_state(env, context, endpoint, alias):

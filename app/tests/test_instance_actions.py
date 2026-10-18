@@ -808,3 +808,34 @@ def test_the_worker_admits_the_signed_state_of_the_job_target_node(
     assert run(worker.admit_push_state("forkmesh", "site", "absent")) == ""
     assert run(worker.admit_push_state("forkmesh", "gone", "forkmesh")) == ""
     assert calls == [("forkmesh", "site", "forkmesh")]
+
+
+def test_a_trusted_job_marks_its_target_node_as_pushing_until_it_ends():
+    runtime, key = setup()
+    pushing = runner_actions.pushing
+    assert run(pushing(runtime, "forkmesh", "site", "forkmesh")) is False
+    job_id = enqueue(runtime)
+    assert run(pushing(runtime, "forkmesh", "site", "forkmesh")) is False
+    [job] = lease(runtime, key)
+    assert run(pushing(runtime, "forkmesh", "site", "forkmesh")) is True
+    assert run(pushing(runtime, "forkmesh", "Site", "ForkMesh")) is True
+    assert run(pushing(runtime, "forkmesh", "site", "mirror-a")) is False
+    assert run(pushing(runtime, "forkmesh", "other", "forkmesh")) is False
+    assert run(pushing(runtime, "someone", "site", "forkmesh")) is False
+    report(runtime, key, {"jobId": job_id, "leaseId": job["leaseId"],
+                          "status": "completed", "runs": []})
+    assert run(pushing(runtime, "forkmesh", "site", "forkmesh")) is False
+
+
+def test_an_untrusted_or_expired_job_is_not_pushing():
+    runtime, key = setup(trusted=False)
+    enqueue(runtime)
+    lease(runtime, key)
+    assert run(runner_actions.pushing(
+        runtime, "forkmesh", "site", "forkmesh")) is False
+    runtime, key = setup()
+    enqueue(runtime)
+    lease(runtime, key)
+    runtime.clock += runner_actions.JOB_TIMEOUT_MS + 1
+    assert run(runner_actions.pushing(
+        runtime, "forkmesh", "site", "forkmesh")) is False

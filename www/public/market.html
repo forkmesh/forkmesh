@@ -44,6 +44,7 @@
       }
       .market-lede { font-size: 18px; color: var(--muted); max-width: 62ch; line-height: 1.6; }
       .market-cta { display: flex; gap: 12px; flex-wrap: wrap; margin: 26px 0 10px; }
+      .market-install-all-note { margin: 0 0 10px; max-width: 62ch; color: var(--muted); font-size: 14px; line-height: 1.55; }
 
       .market-toc {
         display: flex; flex-wrap: wrap; gap: 8px;
@@ -502,7 +503,14 @@
       <div class="market-cta">
         <a class="primary-button" href="#create">Create a package</a>
         <a class="secondary-button" href="/desktop">Get the desktop app</a>
+        <a class="secondary-button" id="market-install-all" href="https://app.forkmesh.com/dashboard/apps?installAll=1">Install all</a>
       </div>
+      <p class="market-install-all-note">
+        <strong>Install all</strong> adds every package your account can run
+        &mdash; agents, themes and local AI models stay out. In the desktop,
+        iPhone and Android apps, open <strong>Market</strong> and press
+        <strong>Install all</strong> there.
+      </p>
 
       <div class="market-promises">
         <div class="market-promise">

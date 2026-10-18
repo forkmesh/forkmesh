@@ -413,6 +413,11 @@ redirect it), `app/tests/test_workflow_files.py`.
 
 ## Traps
 
+- **Pull timestamp units.** Legacy pull and event records can store Unix
+  seconds while current records use milliseconds. Normalize them with
+  `issueDisplayTimestampMs()` before ordering, formatting, or storing a
+  display timestamp; compact PR list labels otherwise render current records
+  as decades old.
 - **Qt never draws a tooltip on screen.** `Tooltips::install()`
   (`src/Tooltips.h`) marks Qt's `QTipLabel` `WA_DontShowOnScreen` and draws its
   text in its own `Tooltips::Window`, because Qt's tip inherited transparent

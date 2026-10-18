@@ -376,6 +376,16 @@ QWidget *MainWindow::buildMarketSection()
         refreshMarketPage();
     });
     header->addWidget(m_marketSort);
+    m_marketInstallAllButton = new QPushButton(QStringLiteral("Install all"));
+    m_marketInstallAllButton->setObjectName(QStringLiteral("marketInstallAllButton"));
+    m_marketInstallAllButton->setAccessibleName(
+        QStringLiteral("Install every Market package"));
+    connect(m_marketInstallAllButton, &QPushButton::clicked, this, [this] {
+        if (m_packageRegistry && m_packageRegistry->isReady())
+            installPackageSet(QStringLiteral("Install all"),
+                              m_packageRegistry->installAllPackages());
+    });
+    header->addWidget(m_marketInstallAllButton);
     auto *publish = new QPushButton(QStringLiteral("Publish an item"));
     publish->setObjectName(QStringLiteral("marketPublishButton"));
     publish->setAccessibleName(QStringLiteral("Publish a Market item"));
@@ -1429,8 +1439,28 @@ QList<const PackageManifest *> MainWindow::sortedMarketPackages() const
     return list;
 }
 
+void MainWindow::updateMarketInstallAllButton()
+{
+    if (!m_marketInstallAllButton)
+        return;
+    int remaining = 0;
+    if (m_packageRegistry && m_packageRegistry->isReady()) {
+        for (const QString &id : m_packageRegistry->installAllPackages())
+            remaining += m_packageRegistry->isInstalled(id) ? 0 : 1;
+    }
+    m_marketInstallAllButton->setText(remaining > 0
+                                          ? QStringLiteral("Install all (%1)").arg(remaining)
+                                          : QStringLiteral("All installed"));
+    m_marketInstallAllButton->setEnabled(remaining > 0);
+    m_marketInstallAllButton->setToolTip(
+        QStringLiteral("Install every package this device can run, except "
+                       "agents and themes (local AI models are large "
+                       "downloads; install those on their own)"));
+}
+
 void MainWindow::appendMarketPackCards()
 {
+    updateMarketInstallAllButton();
     if (!m_marketPacksLayout)
         return;
     clearPackageCards(m_marketPacksLayout);
@@ -4892,6 +4922,12 @@ QString MainWindow::testPackageName(const QString &id) const
     const PackageManifest *manifest =
         m_packageRegistry ? m_packageRegistry->package(id) : nullptr;
     return manifest ? manifest->name : id;
+}
+
+QStringList MainWindow::testInstallAllPackages() const
+{
+    return m_packageRegistry ? m_packageRegistry->installAllPackages()
+                             : QStringList();
 }
 
 bool MainWindow::testPackageInstalled(const QString &id) const

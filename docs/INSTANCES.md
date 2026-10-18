@@ -120,6 +120,17 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   and the runner roots, firewall unit and `forkmesh-job` user when the
   install created them). See
   [server/instance-actions.md](server/instance-actions.md).
+- **HSTS comes from Caddy only.** The App adds
+  `Strict-Transport-Security: max-age=31536000; includeSubDomains` to its
+  HTML responses (`_BROWSER_SECURITY_HEADERS`). The Caddyfile used to add its
+  own `max-age=31536000` with a plain `header` line, so instance pages carried
+  the header twice. The Caddyfile now sets that same value in a `header { defer
+  ... }` block, which replaces any upstream value when the response is written, the
+  same way the core nodes' `(security_headers)` snippet does in
+  `deploy/core/render.py`. Every response, including the Git gateway paths,
+  carries exactly one value. The `https` step rewrites the Caddyfile and
+  reloads Caddy on `--update`. Test:
+  `test_caddy_sends_the_only_strict_transport_security_header`.
 - An admin can run the same update from the admin console (Platform →
   Update ForkMesh). The `services` step installs
   `forkmesh-instance-update.path` and `.service` and the helper
@@ -489,6 +500,11 @@ to every provider.
 
 - Public sign-up needs Turnstile keys in `app.env`; it fails closed without
   them.
+- Turnstile tokens must name the instance's own host. The installer writes
+  `TURNSTILE_HOSTNAMES=<domain>` (an existing value is kept), and without it a
+  branded instance accepts the host of `APP_ORIGIN`. Before this, an instance
+  fell back to forkmesh.com's hostnames and refused every sign-up and password
+  reset check with `hostname_mismatch`.
 - Without a fingerprint the first host key is trusted (and shown).
 - SSH credentials pass through the app once, in memory only.
 - The instance app's egress guard refuses forkmesh.com; nothing needs it.

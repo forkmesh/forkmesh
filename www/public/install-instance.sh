@@ -790,6 +790,11 @@ print(encode(seed), encode(public))
     if [ -r "$APP_ENV" ]; then
       grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY)=' "$APP_ENV" || true
     fi
+    if [ -r "$APP_ENV" ] && grep -qE '^TURNSTILE_HOSTNAMES=.' "$APP_ENV"; then
+      grep -E '^TURNSTILE_HOSTNAMES=' "$APP_ENV"
+    else
+      echo "TURNSTILE_HOSTNAMES=$DOMAIN"
+    fi
   } >> "$tmp"
   mv "$tmp" "$APP_ENV"
   if [ "$(files_digest "$APP_ENV")" != "$env_before" ]; then APP_CHANGED="1"; fi
@@ -945,7 +950,10 @@ write_caddyfile() {
 $DOMAIN {
 $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
 	encode zstd gzip
-	header Strict-Transport-Security "max-age=31536000"
+	header {
+		defer
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	}
 	@gateway path /v1/* /health /forkmesh-mirror.json /.well-known/forkmesh-mirror.json
 	@cloudflare remote_ip $CLOUDFLARE_RANGES
 	handle @gateway {

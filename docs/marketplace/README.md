@@ -203,6 +203,20 @@ affiliate program).
   /api/market/packages` rows carry `publisher`, `verified` and `free`.
 - **Installing.** One click installs a package and its dependencies; a pack or
   guide installs in one batch (`MainWindow::installPackageSet`).
+- **Install all.** Every Market surface has an **Install all** button that adds
+  everything the device or account can run, with the rules of the
+  `whole-cutlery-drawer` pack: top-level packages only (nested ones come with
+  their parent), no agents, themes or local AI models (multi-gigabyte
+  downloads), and nothing already installed. The label counts what is left and
+  reads **All installed** when nothing is. The desktop calls
+  `PackageRegistry::installAllPackages` and installs in one batch. The web
+  dashboard (Apps) installs the account-synced packages one at a time after a
+  confirmation naming the count. The phones do the same for account-synced and
+  phone-switched packages, and count organization-scope and desktop-only
+  packages as skipped (they need a choice or the desktop). A failure is
+  reported and does not stop the rest. forkmesh.com/market links to
+  `app.forkmesh.com/dashboard/apps?installAll=1`, which opens that
+  confirmation; the other apps are reached from the Market screen.
 - **Category shortcuts.** The desktop Market filters the All list with
   Virtual goods (`virtual.*`), Agents (`agent`), Services (`service.*`) and
   Themes (`theme`) buttons. Clicking the selected button again clears it;

@@ -7674,7 +7674,10 @@
     } catch (_) {
       if (state.repoRemoteForks.key === key) state.repoRemoteForks.loaded = true;
     }
-    if (repoAboutStillCurrent(repo)) renderRepoRemoteForks();
+    if (repoAboutStillCurrent(repo)) {
+      renderRepoRemoteForks();
+      syncRepoPullBatchEntry(repo);
+    }
     return state.repoRemoteForks.forks;
   }
 
@@ -9560,6 +9563,8 @@
     if (kind === "pulls") {
       delete state.repoPullMetadataCommits[repoPullMetadataCacheKey(repo)];
       syncPullQueryBox();
+      syncRepoPullBatchEntry(repo);
+      if (state.session?.nodeName && !repoReadOnlyMirror(repo)) void loadRepoRemoteForks(repo);
     }
     // Drop the previous repo's cache up front so a failed load can never leave
     // the page filter re-rendering rows that are no longer on screen.
@@ -9630,7 +9635,53 @@
   // re-checks the account name against owner/admin status (no password,
   // adhoc #225), so this is only the client-side gate for showing the checkbox.
   function sessionCanAssignAgent(repo) {
-    return sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+    return sessionAdministersRepo(repo) || Boolean(state.session?.isAdmin);
+  }
+
+  const repoViewerPermissions = new Map();
+
+  function repoViewerPermissionKey(value) {
+    const key = typeof value === "string" ? value : repositoryViewKey(value);
+    const viewer = String(state.session?.nodeName || "").toLowerCase();
+    return viewer && key ? `${viewer}|${String(key).toLowerCase()}` : "";
+  }
+
+  function sessionAdministersRepo(repo) {
+    if (sessionOwnsRepo(repo)) return true;
+    const known = repoViewerPermissions.get(repoViewerPermissionKey(repo));
+    return Boolean(known && typeof known === "object" && known.viewerCanAdmin === true);
+  }
+
+  function loadRepoViewerPermission(target) {
+    const key = repoViewerPermissionKey(target);
+    const publicKey = typeof target === "string" ? target : repositoryViewKey(target);
+    const [owner, name] = String(publicKey || "").split("/");
+    if (!key || !owner || !name) return Promise.resolve(null);
+    if (typeof target !== "string" && sessionOwnsRepo(target)) return Promise.resolve(null);
+    const known = repoViewerPermissions.get(key);
+    if (known) return Promise.resolve(known);
+    const headers = { accept: "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const request = fetch(
+      `/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/viewer-permission`,
+      { headers, credentials: "same-origin", cache: "no-store" },
+    )
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        const answer = {
+          permission: String(body?.permission || ""),
+          viewerCanAdmin: body?.viewerCanAdmin === true,
+        };
+        repoViewerPermissions.set(key, answer);
+        return answer;
+      })
+      .catch(() => {
+        repoViewerPermissions.delete(key);
+        return null;
+      });
+    repoViewerPermissions.set(key, request);
+    return request;
   }
 
   function setRepoAboutEditing(on) {
@@ -9938,7 +9989,7 @@
       const suggestions = Array.isArray(body?.suggestions)
         ? body.suggestions
         : [];
-      const mayReview = sessionOwnsRepo(repo) || Boolean(state.session?.isAdmin);
+      const mayReview = sessionAdministersRepo(repo) || Boolean(state.session?.isAdmin);
       target.innerHTML = suggestions.length
         ? suggestions
             .map((suggestion) => {
@@ -10224,7 +10275,7 @@
 
   async function loadRepoDigestPreview(repo) {
     const target = $("[data-repo-digest-preview]");
-    if (!target || !sessionOwnsRepo(repo) || repo.isPrivate) return;
+    if (!target || !sessionAdministersRepo(repo) || repo.isPrivate) return;
     target.textContent = "Loading preview…";
     try {
       const token = state.session?.sessionToken || "";
@@ -10384,7 +10435,7 @@
 
   async function loadRepoWebhooks(repo) {
     const list = $("[data-repo-webhooks-list]");
-    if (!list || !sessionOwnsRepo(repo)) return;
+    if (!list || !sessionAdministersRepo(repo)) return;
     try {
       const body = await repoWebhookRequest(repo, { action: "list" });
       if (!repoAboutStillCurrent(repo)) return;
@@ -10714,7 +10765,7 @@
 
   async function loadRepoProviderMirror(repo) {
     const holder = $("[data-repo-forge-mirror-body]");
-    if (!holder || !sessionOwnsRepo(repo)) return;
+    if (!holder || !sessionAdministersRepo(repo)) return;
     const mirrorState = repoForgeMirrorState(repo);
     try {
       const body = await repoForgeMirrorRequest(repo, { action: "get" });
@@ -10789,7 +10840,7 @@
     }
     const card = event.target.closest("[data-repo-forge-mirror-card]");
     const repo = state.selectedRepo;
-    if (!card || !repo || !sessionOwnsRepo(repo)) return false;
+    if (!card || !repo || !sessionAdministersRepo(repo)) return false;
     const mirrorState = repoForgeMirrorState(repo);
     const providerButton = event.target.closest("[data-repo-forge-mirror-provider]");
     if (providerButton) {
@@ -10907,7 +10958,7 @@
     if (!form) return false;
     event.preventDefault();
     const repo = state.selectedRepo;
-    if (!repo || !sessionOwnsRepo(repo)) return true;
+    if (!repo || !sessionAdministersRepo(repo)) return true;
     const mirrorState = repoForgeMirrorState(repo);
     const submit = form.querySelector('button[type="submit"]');
     if (submit) submit.disabled = true;
@@ -10964,7 +11015,7 @@
       return;
     }
     holder.innerHTML = pullRulesEditorHtml(policy, {
-      editable: sessionOwnsRepo(repo),
+      editable: sessionAdministersRepo(repo),
       saveLabel: `Commit rules to ${branch}`,
     });
     window.lucide?.createIcons();

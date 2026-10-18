@@ -661,6 +661,22 @@ async def _admit_pushed_state(runtime, owner, repo, node):
         return ""
 
 
+async def pushing(runtime, owner, repo, node):
+    node = str(node or "").strip().lower()
+    repo = str(repo or "").strip()
+    if not NAME_RE.fullmatch(node) or not REPO_RE.fullmatch(repo):
+        return False
+    owner, _public = await identity(runtime, owner, repo)
+    if not NAME_RE.fullmatch(owner):
+        return False
+    row = await runtime.d1_first(
+        "SELECT id FROM repo_action_jobs WHERE owner=? AND lower(repo)=? "
+        "AND target_node=? AND token_hash!='' AND lease_id!='' "
+        "AND expires_at>? AND status IN " + _ACTIVE_SQL + " LIMIT 1",
+        owner, repo.lower(), node, runtime.now())
+    return bool(row)
+
+
 async def cancel(runtime, owner, repo, run_id):
     owner, _public = await identity(runtime, owner, repo)
     job_id = _int(run_id) // RUN_ID_STRIDE
