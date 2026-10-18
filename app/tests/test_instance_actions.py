@@ -700,3 +700,31 @@ def test_a_private_repository_shows_nothing_to_outsiders():
     assert [a[2] for a in audits] == ["denied"]
     assert status(actor="ada")["data"]["access"] == "member"
     assert log(job_id * 100 + 1)["status"] == 401
+
+
+def test_the_instance_runner_is_shown_as_this_server():
+    runtime, _key = setup()
+    runtime.runner_app_url = lambda: "https://code.example.org"
+    job_id = enqueue(runtime)
+    runtime.db.execute(
+        "UPDATE repo_action_jobs SET status='completed',runner='box-runner',"
+        "updated_at=? WHERE id=?", (NOW + 5, job_id))
+    runtime.db.commit()
+    full = run(runner_actions.snapshot(runtime, "forkmesh", "site"))
+    assert full["local"] is True and full["host"] == "code.example.org"
+    summary = runner_actions.public_summary(full)
+    assert summary["local"] is True and summary["host"] == "code.example.org"
+    assert summary["node"] == ""
+
+
+def test_another_runner_is_not_shown_as_this_server():
+    runtime, _key = setup()
+    runtime.runner_app_url = lambda: "https://code.example.org"
+    job_id = enqueue(runtime)
+    runtime.db.execute(
+        "UPDATE repo_action_jobs SET status='completed',runner='elsewhere',"
+        "updated_at=? WHERE id=?", (NOW + 5, job_id))
+    runtime.db.commit()
+    full = run(runner_actions.snapshot(runtime, "forkmesh", "site"))
+    assert full["local"] is False and full["host"] == ""
+    assert runner_actions.public_summary(full)["host"] == ""
