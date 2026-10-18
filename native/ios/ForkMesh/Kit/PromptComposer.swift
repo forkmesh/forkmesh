@@ -502,6 +502,7 @@ struct PromptComposer: View {
                 stopDictation()
             }
             .onLongPressGesture(minimumDuration: 0.5) {
+                CaptureHold.noteHandled()
                 stopListeningOnOpen()
             }
             .accessibilityElement(children: .ignore)
