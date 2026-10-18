@@ -26,6 +26,8 @@ ENTRY_TEXT = (
 
 FUNCS = {
     "issues_handler",
+    "_accept_issue_submission",
+    "_queue_issue_actions",
     "_queued_issue_inbox_event",
     "_fill_signer_author_name",
     "_inbox_author_over_quota",
@@ -142,7 +144,11 @@ def _issue_handler_namespace(inserted, wakes, queued_rows=()):
         wakes.append("mirrors")
         return True
 
+    async def feature_on(_env, _owner, _repo, _feature):
+        return None
+
     ns = _load_functions({
+        "_repo_feature_off": feature_on,
         "Date": _Date,
         "json_response": json_response,
         "ensure_schema": ensure_schema,
