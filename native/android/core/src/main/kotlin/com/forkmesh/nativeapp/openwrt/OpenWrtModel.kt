@@ -34,6 +34,7 @@ data class OpenWrtResult(
     val error: String = "",
     val accessDenied: Boolean = false,
     val unreachable: Boolean = false,
+    val timedOut: Boolean = false,
     val certificate: String = "",
 ) {
     companion object {
@@ -175,6 +176,7 @@ object OpenWrtModel {
                 -32000 -> OpenWrtResult(status = code, error = "The router does not offer this function (object not found). It may need an extra package; LuCI provides most of them.")
                 -32601 -> OpenWrtResult(status = code, error = statusMessage(3))
                 -32602 -> OpenWrtResult(status = code, error = statusMessage(2))
+                -32003 -> OpenWrtResult(status = code, timedOut = true, error = "The router stopped waiting for an answer. What was asked may still be running on the router.")
                 else -> OpenWrtResult(status = code, error = "The router answered: ${error.str("message", "unknown error")}")
             }
         }
@@ -184,7 +186,7 @@ object OpenWrtModel {
         return if (status == 0) {
             OpenWrtResult(ok = true, status = 0, data = data)
         } else {
-            OpenWrtResult(status = status, data = data, error = statusMessage(status), accessDenied = status == OpenWrt.STATUS_PERMISSION_DENIED)
+            OpenWrtResult(status = status, data = data, error = statusMessage(status), accessDenied = status == OpenWrt.STATUS_PERMISSION_DENIED, timedOut = status == OpenWrt.STATUS_TIMEOUT)
         }
     }
 
@@ -341,6 +343,9 @@ object OpenWrtModel {
         val left = expires - now
         return if (left <= 0) "Expired" else "in ${formatUptime(left)}"
     }
+
+    fun packagesInstalled(packages: List<OpenWrtPackage>, names: List<String>): Boolean =
+        names.all { name -> packages.any { it.name == name } }
 
     fun parseInstalledPackages(text: String): List<OpenWrtPackage> {
         val packages = mutableListOf<OpenWrtPackage>()

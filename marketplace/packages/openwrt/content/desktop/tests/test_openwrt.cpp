@@ -82,6 +82,7 @@ public:
     bool fstabWritten = false;
     bool ksmbdInstalled = false;
     QStringList packageCommands;
+    QStringList installedPackages;
 
     FakeRouter()
     {
@@ -219,10 +220,18 @@ private:
                 packageCommands << words.join(QLatin1Char(' '));
                 if (words.value(1) == QStringLiteral("ksmbd-server"))
                     ksmbdInstalled = true;
+                if (words.first() == QStringLiteral("install"))
+                    installedPackages << words.mid(1);
+                if (words.value(1).startsWith(QStringLiteral("luci-app-")))
+                    return QJsonObject{{QStringLiteral("code"), -32003}, {QStringLiteral("message"), QStringLiteral("ubus request timed out")}};
                 return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), QStringLiteral("Installing.\n")}}};
             }
-            if (command == QStringLiteral("/bin/opkg"))
-                return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), QStringLiteral("base-files - 1-r1\nluci - git-24\n")}}};
+            if (command == QStringLiteral("/bin/opkg")) {
+                QString listed = QStringLiteral("base-files - 1-r1\nluci - git-24\n");
+                for (const QString &name : installedPackages)
+                    listed += name + QStringLiteral(" - 1.0\n");
+                return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), listed}}};
+            }
             if (command == QStringLiteral("/sbin/block") && args.value(QStringLiteral("params")).toArray().first().toString() == QStringLiteral("detect"))
                 return QJsonArray{0, QJsonObject{{QStringLiteral("code"), 0}, {QStringLiteral("stdout"), QStringLiteral("config 'global'\n\toption\tanon_mount\t'0'\n")}}};
             if (command == QStringLiteral("/bin/dmesg"))
@@ -252,6 +261,9 @@ void testModel()
     check(!expired.ok && expired.accessDenied, QStringLiteral("JSON-RPC -32002 is access denied"));
     RpcResult missing = parseReply(R"({"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"Object not found"}})");
     check(!missing.ok && !missing.accessDenied && missing.error.contains(QStringLiteral("not found")), QStringLiteral("a missing ubus object is explained"));
+    RpcResult slow = parseReply(R"({"jsonrpc":"2.0","id":1,"error":{"code":-32003,"message":"ubus request timed out"}})");
+    check(!slow.ok && slow.timedOut && !slow.accessDenied, QStringLiteral("JSON-RPC -32003 is a router-side timeout"));
+    check(parseReply(R"({"jsonrpc":"2.0","id":1,"result":[7]})").timedOut, QStringLiteral("ubus status 7 is a timeout"));
     RpcResult html = parseReply("<html>404</html>", 404);
     check(!html.ok && html.error.contains(QStringLiteral("/ubus")), QStringLiteral("a device without /ubus is named as not OpenWrt"));
     check(statusMessage(UbusTimeout).contains(QStringLiteral("too long")), QStringLiteral("ubus status codes have readable messages"));
@@ -319,6 +331,8 @@ void testModel()
     const QList<Package> apk = parseInstalledPackages(QStringLiteral("luci-app-sqm-1.2.3-r1 noarch {luci} (GPL-2.0) [installed]\nbusybox-1.36.1-r2 x86_64 {busybox} (GPL-2.0) [installed]\n"));
     check(apk.size() == 2 && apk.first().name == QStringLiteral("busybox") && apk.at(1).name == QStringLiteral("luci-app-sqm") && apk.at(1).version == QStringLiteral("1.2.3-r1"),
           QStringLiteral("apk list --installed parses"));
+    check(packagesInstalled(apk, {QStringLiteral("busybox"), QStringLiteral("luci-app-sqm")}) && !packagesInstalled(apk, {QStringLiteral("luci-app-sqm"), QStringLiteral("nano")}),
+          QStringLiteral("every named package must be in the installed list"));
     const QList<PackageTool> tools = packageTools();
     check(tools.size() == 4 && tools.first().wrapper, QStringLiteral("LuCI's package wrappers are tried before the package managers"));
     check(packageArguments(tools.at(2), QStringLiteral("install"), {QStringLiteral("nano"), QStringLiteral("htop")}) == QStringList({QStringLiteral("add"), QStringLiteral("nano"), QStringLiteral("htop")})
@@ -686,6 +700,8 @@ void testFeature()
     check(router.packageCommands == QStringList({QStringLiteral("update"), QStringLiteral("install ksmbd-server"), QStringLiteral("install luci-app-ksmbd")}),
           QStringLiteral("the package lists are updated, then ksmbd-server and luci-app-ksmbd are installed one at a time"));
     check(log->toPlainText().contains(QStringLiteral("luci-app-ksmbd is installed.")), QStringLiteral("the install progress goes to the Storage log"));
+    check(log->toPlainText().contains(QStringLiteral("Checking whether luci-app-ksmbd got installed")) && !log->toPlainText().contains(QStringLiteral("failed")),
+          QStringLiteral("a LuCI app whose install outlasts the router's ubus timeout is checked in the package list, not reported as failed"));
     check(waitFor([&] { return shares->topLevelItemCount() == 1 && installSharing->isHidden(); }),
           QStringLiteral("the shares list appears and the install button goes away"));
     if (shares->topLevelItemCount() != 1)

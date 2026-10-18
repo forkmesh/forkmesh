@@ -2584,9 +2584,8 @@ void OpenWrtFeature::installStoragePackages(QStringList remaining, QStringList f
         return;
     }
     const QString name = remaining.takeFirst();
-    const PackageTool tool = packageTools().at(m_packageTool);
     appendStorageLog(QStringLiteral("Installing %1…").arg(name));
-    m_client.exec(tool.program, packageArguments(tool, QStringLiteral("install"), {name}), [this, remaining, failed, name](const RpcResult &result) mutable {
+    installPackages({name}, [this](const QString &text) { appendStorageLog(text); }, [this, remaining, failed, name](const RpcResult &result) mutable {
         if (result.ok) {
             appendStorageLog(QStringLiteral("  %1 is installed.").arg(name));
         } else {
@@ -2597,7 +2596,7 @@ void OpenWrtFeature::installStoragePackages(QStringList remaining, QStringList f
                 appendStorageLog(QStringLiteral("    ") + line);
         }
         installStoragePackages(remaining, failed);
-    }, 300000);
+    });
 }
 
 void OpenWrtFeature::installNetworkSharing()
@@ -2645,9 +2644,8 @@ void OpenWrtFeature::installPackageList(QStringList remaining, QStringList faile
         return;
     }
     const QString name = remaining.takeFirst();
-    const PackageTool tool = packageTools().at(m_packageTool);
     appendStorageLog(QStringLiteral("Installing %1…").arg(name));
-    m_client.exec(tool.program, packageArguments(tool, QStringLiteral("install"), {name}), [this, remaining, failed, firstFailure, name, done](const RpcResult &result) mutable {
+    installPackages({name}, [this](const QString &text) { appendStorageLog(text); }, [this, remaining, failed, firstFailure, name, done](const RpcResult &result) mutable {
         if (result.ok) {
             appendStorageLog(QStringLiteral("  %1 is installed.").arg(name));
         } else {
@@ -2661,7 +2659,52 @@ void OpenWrtFeature::installPackageList(QStringList remaining, QStringList faile
                 firstFailure = QStringLiteral("Could not install %1: %2").arg(name, tail.isEmpty() ? result.error : tail.join(QLatin1Char(' ')));
         }
         installPackageList(remaining, failed, firstFailure, done);
+    });
+}
+
+void OpenWrtFeature::installPackages(const QStringList &names, const std::function<void(const QString &)> &note,
+                                     const std::function<void(const RpcResult &)> &done)
+{
+    const PackageTool tool = packageTools().at(m_packageTool);
+    m_client.exec(tool.program, packageArguments(tool, QStringLiteral("install"), names), [this, names, note, done](const RpcResult &result) {
+        if (result.ok || !result.timedOut) {
+            done(result);
+            return;
+        }
+        note(QStringLiteral("  The router stopped waiting for the install to finish. Checking whether %1 got installed…").arg(names.join(QStringLiteral(", "))));
+        waitForPackages(names, QDateTime::currentMSecsSinceEpoch() + 180000, result, done);
     }, 300000);
+}
+
+void OpenWrtFeature::waitForPackages(const QStringList &names, qint64 deadline, const RpcResult &timedOut,
+                                     const std::function<void(const RpcResult &)> &done)
+{
+    if (m_packageTool < 0) {
+        done(timedOut);
+        return;
+    }
+    const PackageTool tool = packageTools().at(m_packageTool);
+    m_client.exec(tool.program, packageArguments(tool, QStringLiteral("list")), [this, names, deadline, timedOut, done](const RpcResult &result) {
+        if (result.ok) {
+            m_packages = parseInstalledPackages(result.data.value(QStringLiteral("stdout")).toString());
+            renderPackages();
+            if (packagesInstalled(m_packages, names)) {
+                RpcResult installed;
+                installed.ok = true;
+                installed.status = UbusOk;
+                done(installed);
+                return;
+            }
+        }
+        if (QDateTime::currentMSecsSinceEpoch() >= deadline) {
+            RpcResult failed = timedOut;
+            failed.error = QStringLiteral("The router stopped answering during the install, and %1 still is not installed after three minutes. The router may have no internet connection, or the download is still running: check the Packages tab later, or try again.")
+                               .arg(names.join(QStringLiteral(", ")));
+            done(failed);
+            return;
+        }
+        QTimer::singleShot(5000, this, [this, names, deadline, timedOut, done] { waitForPackages(names, deadline, timedOut, done); });
+    }, 30000);
 }
 
 void OpenWrtFeature::browseShare()
@@ -2747,7 +2790,7 @@ void OpenWrtFeature::packageAction(const QString &action, const QString &name)
     const PackageTool tool = packageTools().at(m_packageTool);
     const QStringList names = name.isEmpty() ? QStringList() : name.split(QLatin1Char(' '), Qt::SkipEmptyParts);
     m_packageOutput->setPlainText(QStringLiteral("Running %1 %2…").arg(tool.program, packageArguments(tool, action, names).join(QLatin1Char(' '))));
-    m_client.exec(tool.program, packageArguments(tool, action, names), [this, action, name](const RpcResult &result) {
+    const auto finished = [this, action, name](const RpcResult &result) {
         const QString out = result.data.value(QStringLiteral("stdout")).toString();
         const QString err = result.data.value(QStringLiteral("stderr")).toString();
         QString text = (out + (err.isEmpty() ? QString() : QStringLiteral("\n") + err)).trimmed();
@@ -2764,7 +2807,11 @@ void OpenWrtFeature::packageAction(const QString &action, const QString &name)
             loadPackages();
         if (action == QStringLiteral("install") && result.ok)
             loadStorage();
-    }, 300000);
+    };
+    if (action == QStringLiteral("install"))
+        installPackages(names, [this](const QString &text) { m_packageOutput->appendPlainText(text.trimmed()); }, finished);
+    else
+        m_client.exec(tool.program, packageArguments(tool, action, names), finished, 300000);
 }
 
 void OpenWrtFeature::saveHostname()

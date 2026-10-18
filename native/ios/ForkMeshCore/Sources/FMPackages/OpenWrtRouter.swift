@@ -259,6 +259,18 @@ extension OpenWrtClient {
         if action != "update" && (names.isEmpty || !names.allSatisfy(OpenWrtModel.validPackageName)) {
             return .failure(names.isEmpty ? "Choose a package first." : "That is not a package name.")
         }
-        return await exec(tool.program, OpenWrtModel.packageArguments(tool, action: action, names: names), timeout: 300)
+        let result = await exec(tool.program, OpenWrtModel.packageArguments(tool, action: action, names: names), timeout: 300)
+        guard action == "install", !result.ok, result.timedOut else { return result }
+        let deadline = Date().addingTimeInterval(180)
+        while true {
+            if OpenWrtModel.packagesInstalled(await listPackages(preferred: tool).packages, names) {
+                return OpenWrtResult(ok: true, status: 0)
+            }
+            if Date() >= deadline { break }
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+        }
+        var failed = result
+        failed.error = "The router stopped answering during the install, and \(names.joined(separator: ", ")) still is not installed after three minutes. The router may have no internet connection, or the download is still running: check Packages later, or try again."
+        return failed
     }
 }

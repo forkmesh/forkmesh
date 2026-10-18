@@ -130,6 +130,12 @@ final class OpenWrtModelTests: XCTestCase {
         XCTAssertTrue(OpenWrtModel.parseReply(Data(#"{"result":[6]}"#.utf8)).accessDenied)
         XCTAssertTrue(OpenWrtModel.parseReply(Data(#"{"error":{"code":-32002,"message":"Access denied"}}"#.utf8)).accessDenied)
         XCTAssertTrue(OpenWrtModel.parseReply(Data(#"{"error":{"code":-32000}}"#.utf8)).error.contains("not found"))
+        let slow = OpenWrtModel.parseReply(Data(#"{"error":{"code":-32003,"message":"ubus request timed out"}}"#.utf8))
+        XCTAssertTrue(slow.timedOut && !slow.ok && !slow.accessDenied)
+        XCTAssertTrue(OpenWrtModel.parseReply(Data(#"{"result":[7]}"#.utf8)).timedOut)
+        let listed = [OpenWrtPackage(name: "ksmbd-server", version: "1"), OpenWrtPackage(name: "luci-app-ksmbd", version: "1")]
+        XCTAssertTrue(OpenWrtModel.packagesInstalled(listed, ["luci-app-ksmbd"]))
+        XCTAssertFalse(OpenWrtModel.packagesInstalled(listed, ["luci-app-ksmbd", "nano"]))
         XCTAssertTrue(OpenWrtModel.parseReply(Data("<html>".utf8), httpStatus: 404).error.contains("/ubus"))
     }
 

@@ -183,6 +183,21 @@ signed-in account has.
   `name - version` lines, opkg status blocks and `apk list` lines. Package
   names are checked against `[a-z0-9][a-z0-9+._-]*` so a name cannot become an
   option or a second command.
+- **Installs that outlast the router's timeout**: a LuCI app's post-install
+  script sends rpcd a SIGHUP so it reloads its menus and ACLs, and rpcd
+  re-executes itself. The `file exec` running the package manager never gets
+  its answer, so after `uhttpd`'s script timeout (60 s by default) the router
+  answers JSON-RPC `-32003` "ubus request timed out", although the package
+  manager carries on and finishes. A slow download ends the same way. Every
+  install, from the Packages tab, the USB storage install or Install network
+  sharing, therefore treats `-32003` (and ubus status 7) as "not finished
+  yet": it reads the installed list every 5 s for up to three minutes and
+  counts the install as done once every requested package is listed. Only
+  then does it report a failure, saying the download may still be running.
+  The phones do the same inside `packageAction` (iOS `OpenWrtRouter.swift`,
+  Android `OpenWrtClient.kt`), with `packagesInstalled` in each model.
+  This was seen as "luci-app-ksmbd failed: The router answered: ubus request
+  timed out" right after `ksmbd-server` installed fine.
 - **Backup, restore, firmware, reset**: the same calls LuCI's System pages
   make, so LuCI's `luci-mod-system` ACL allows them: `cgi-backup`;
   `cgi-upload` to `/tmp/backup.tar.gz` then `sysupgrade --restore-backup` and
