@@ -722,6 +722,17 @@ default in new projects except the chosen starter pack
   the target's author; early ones are held (128 targets, 8 frames each).
   Deletes also go into the persisted hidden-message list and send
   `forkmesh-superseded`.
+- **Message long press** (`messageActionsFlow` in `A/feature/chat/ChatSheets.kt`):
+  a row of quick-reaction circles, then 44 dp action rows in three groups
+  (thread, edit, copy, select; prompt, issue, profile; delete) that scroll
+  when the sheet hits its 9/16-screen cap. The old 60 dp rows with chevrons
+  cut off Delete on small phones. The circles and the reaction chips under
+  messages are a translucent `textPrimary` wash with a border: their old
+  `bgRaised` fill was invisible on the white sheet in light mode.
+- **More reactions** (`ChatReactionPicker`, list in `ReactionCatalog.groups`):
+  about 320 emoji in seven tabbed groups. The 18 catalog emoji are sent as
+  their slug (`valueForEmoji`); any other is sent as the literal emoji, which
+  desktop, iOS and web already accept and show as text (up to 16 code points).
 - **Chat list** (`A/feature/chat/ChatChannelList.kt`): server DMs listed newest
   first with unread pills and avatars; each row has a last-line preview built
   only from messages on the phone (`C/chat/ChatListPreview.kt`).

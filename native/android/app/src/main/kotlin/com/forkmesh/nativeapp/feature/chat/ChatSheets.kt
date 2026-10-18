@@ -5,6 +5,10 @@ import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.chat.ChatProfileLink
 import android.content.Context
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -30,7 +34,6 @@ import com.forkmesh.nativeapp.chat.ChatRow
 import com.forkmesh.nativeapp.chat.ChatVisitorPresence
 import com.forkmesh.nativeapp.chat.MESH_CONVERSATION
 import com.forkmesh.nativeapp.chat.OfficeFrames
-import com.forkmesh.nativeapp.chat.ReactionCatalog
 import com.forkmesh.nativeapp.chat.RepoSlug
 import com.forkmesh.nativeapp.chat.messageCopyText
 import com.forkmesh.nativeapp.core.Services
@@ -178,8 +181,8 @@ suspend fun inviteFlow(messenger: FmMessenger, channel: String) {
 }
 
 suspend fun pickReaction(messenger: FmMessenger): String? = messenger.showModalBottomSheet<String> { close ->
-    Text("React", modifier = Modifier.padding(FmSpace.x4), style = Fm.text.titleMedium)
-    ChatEmojiGrid(ReactionCatalog.entries.map { it.emoji }, ReactionCatalog.entries.map { it.label }) { close(ReactionCatalog.entries[it].value) }
+    Text("React", modifier = Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x4, bottom = FmSpace.x1), style = Fm.text.titleMedium)
+    ChatReactionPicker(Modifier.weight(1f, fill = false)) { close(it) }
 }
 
 suspend fun pickEmoji(messenger: FmMessenger): String? = messenger.showModalBottomSheet<String> { close ->
@@ -276,39 +279,35 @@ suspend fun messageActionsFlow(
     val deletable = row.deletable || (message.self && conversation != MESH_CONVERSATION && !OfficeFrames.isOffice(conversation))
     val hideable = chat != null
     if (!relayRoom && copyText.isEmpty() && profileName == null && !deletable && !hideable) return
+    val sections = listOf(
+        listOfNotNull(
+            if (relayRoom && !inThread && chat.canReplyInThread(conversation)) MessageAction("thread", "Reply in thread", "forum_outlined") else null,
+            if (relayRoom && row.editable) MessageAction("edit", "Edit message", "edit_outlined") else null,
+            if (copyText.isNotEmpty()) MessageAction("copy", "Copy text", "copy_outlined") else null,
+            if (copyText.isNotEmpty()) MessageAction("select", "Select text", "select_all_outlined") else null,
+        ),
+        listOfNotNull(
+            if (row.text.isNotEmpty()) MessageAction("prompt", "Send to prompt", "text_snippet_outlined") else null,
+            if (row.text.isNotEmpty()) MessageAction("issue", "Create issue", "bug_report_outlined") else null,
+            profileName?.let { MessageAction("profile", "View $it", "account_circle") },
+        ),
+        listOfNotNull(
+            if (deletable || hideable) MessageAction("delete", "Delete message", "delete_outline", danger = true) else null,
+        ),
+    ).filter { it.isNotEmpty() }
     val choice = messenger.showModalBottomSheet<String> { close ->
-        Spacer(Modifier.height(FmSpace.x2))
-        if (relayRoom) ChatQuickReactions(onPick = { close("react:$it") }, onMore = { close("more") })
-        Column {
-            if (relayRoom && !inThread && chat.canReplyInThread(conversation)) {
-                FmListRow(title = "Reply in thread", leading = { FmIconTile(icon = "forum_outlined") }, onTap = { close("thread") })
-                FmRowDivider()
-            }
-            if (copyText.isNotEmpty()) {
-                FmListRow(title = "Copy text", leading = { FmIconTile(icon = "copy_outlined") }, onTap = { close("copy") })
-                FmRowDivider()
-                FmListRow(title = "Select text", leading = { FmIconTile(icon = "select_all_outlined") }, onTap = { close("select") })
-                FmRowDivider()
-            }
-            if (relayRoom && row.editable) {
-                FmListRow(title = "Edit message", leading = { FmIconTile(icon = "edit_outlined") }, onTap = { close("edit") })
-                FmRowDivider()
-            }
-            if (row.text.isNotEmpty()) {
-                FmListRow(title = "Send to prompt", leading = { FmIconTile(icon = "text_snippet_outlined") }, onTap = { close("prompt") })
-                FmRowDivider()
-                FmListRow(title = "Create issue", leading = { FmIconTile(icon = "bug_report_outlined") }, onTap = { close("issue") })
-            }
-            if (profileName != null) {
-                FmRowDivider()
-                FmListRow(title = "View $profileName", leading = { FmIconTile(icon = "account_circle") }, onTap = { close("profile") })
-            }
-            if (deletable || hideable) {
-                FmRowDivider()
-                FmListRow(title = "Delete message", leading = { FmIconTile(icon = "delete_outline", tint = Fm.colors.danger) }, onTap = { close("delete") })
+        if (relayRoom) {
+            Spacer(Modifier.height(FmSpace.x1))
+            ChatQuickReactions(onPick = { close("react:$it") }, onMore = { close("more") })
+            if (sections.isNotEmpty()) HorizontalDivider(thickness = 1.dp, color = Fm.colors.border)
+        }
+        Column(Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()).padding(vertical = FmSpace.x1)) {
+            sections.forEachIndexed { index, section ->
+                if (index > 0) HorizontalDivider(Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x1), thickness = 1.dp, color = Fm.colors.border)
+                for (action in section) MessageActionRow(action) { close(action.key) }
             }
         }
-        Spacer(Modifier.height(FmSpace.x2))
+        Spacer(Modifier.height(FmSpace.x1))
     } ?: return
     when {
         choice.startsWith("react:") -> withContext(Dispatchers.IO) { chat?.toggleReaction(message, choice.removePrefix("react:")) }
@@ -337,6 +336,22 @@ suspend fun messageActionsFlow(
             }
         }
     }
+}
+
+private data class MessageAction(val key: String, val title: String, val icon: String, val danger: Boolean = false)
+
+@Composable
+private fun MessageActionRow(action: MessageAction, onTap: () -> Unit) {
+    val colors = Fm.colors
+    FmListRow(
+        title = action.title,
+        leading = { FmIcon(action.icon, size = 20.dp, tint = if (action.danger) colors.danger else colors.textSecondary) },
+        onTap = onTap,
+        showChevron = false,
+        titleColor = if (action.danger) colors.danger else null,
+        minHeight = 44.dp,
+        padding = PaddingValues(horizontal = FmSpace.x4, vertical = 0.dp),
+    )
 }
 
 private suspend fun deleteScopeFlow(messenger: FmMessenger, forEveryone: Boolean, forMe: Boolean): Boolean? {
