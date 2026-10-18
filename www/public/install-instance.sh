@@ -1369,6 +1369,9 @@ setup_actions_runner() {
     install -d -m 0700 "$CLEANUP_DIR"
     printf '%s\n' "$CFG_ownerName" > "$CLEANUP_DIR/created-runner"
   fi
+  if [ -f "$SRC/tools/forkmesh-actions.sh" ]; then
+    install -m 0755 "$SRC/tools/forkmesh-actions.sh" /usr/local/bin/forkmesh-actions
+  fi
   local output runner_key result
   if ! output="$(HOME=/root bash "$SRC/$RUNNER_INSTALLER" --preregistered \
       --name "$RUNNER_NAME" --owner "$CFG_ownerName" --app "$ORIGIN" \
@@ -1446,7 +1449,7 @@ fm_safe_rm_tree /etc /etc/forkmesh-instance /etc/forkmesh
 fm_safe_rm_tree /var/lib /var/lib/forkmesh-instance /var/lib/forkmesh /var/lib/forkmesh-instance-update
 fm_safe_rm_tree /usr/local/share/forkmesh /usr/local/share/forkmesh/tools
 fm_safe_rm_tree /usr/local/lib /usr/local/lib/forkmesh-instance-update
-rm -f /usr/local/bin/forkmesh-mirror-node \
+rm -f /usr/local/bin/forkmesh-mirror-node /usr/local/bin/forkmesh-actions \
   /etc/systemd/system/forkmesh-instance.service \
   /etc/systemd/system/forkmesh-mirror-node.service \
   /etc/systemd/system/forkmesh-instance-update.service \

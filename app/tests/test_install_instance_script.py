@@ -557,6 +557,8 @@ def test_the_actions_runner_is_preregistered_after_the_git_node():
     assert "host_cli instance-runner --name \"$RUNNER_NAME\"" in runner
     assert '--public-key "$runner_key" --owner "$CFG_ownerName"' in runner
     assert "FM_RUNNER_PUBLIC_KEY=" in runner
+    assert 'install -m 0755 "$SRC/tools/forkmesh-actions.sh" /usr/local/bin/forkmesh-actions' in runner
+    assert "/usr/local/bin/forkmesh-actions" in function("write_first_login_cleanup")
     assert '[[ "$runner_key" =~ ^[A-Za-z0-9_-]{43}$ ]]' in runner
     assert 'systemctl disable --now "$RUNNER_UNIT"' in runner
     assert 'RUNNER_INSTALLER="www/public/install-runner.sh"' in TEXT
