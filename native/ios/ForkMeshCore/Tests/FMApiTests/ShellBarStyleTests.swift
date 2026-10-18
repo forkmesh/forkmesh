@@ -56,6 +56,33 @@ final class ShellBarStyleTests: XCTestCase {
         XCTAssertEqual(style.cellRadius(side: 50), 25)
     }
 
+    func testADoubleHeightBarStacksTwoRowsAndHoldsTwiceAsMany() {
+        var style: ShellBarStyle = ShellBarStyle()
+        XCTAssertEqual(style.rows, .single)
+        XCTAssertEqual(style.capacity, 6)
+        XCTAssertEqual(style.rowSplit([1, 2, 3]), [[1, 2, 3]])
+        style.rows = .double
+        XCTAssertFalse(style.isDefault)
+        XCTAssertEqual(style.capacity, 12)
+        XCTAssertEqual(style.rowSplit([1, 2, 3, 4, 5]), [[1, 2, 3], [4, 5]])
+        XCTAssertEqual(style.rowSplit([1]), [[1]])
+        let twelve: ShellBarMetrics = style.metrics(available: 366, count: 12, cell: 64, height: 52)
+        XCTAssertEqual(twelve.rows, 2)
+        XCTAssertEqual(twelve.columns, 6)
+        XCTAssertEqual(twelve.slot, 58)
+        XCTAssertEqual(twelve.height, 52)
+        XCTAssertEqual(twelve.rowGap, 2)
+        XCTAssertFalse(twelve.scrolls)
+        let one: ShellBarMetrics = style.metrics(available: 366, count: 1, cell: 64, height: 52)
+        XCTAssertEqual(one.rows, 1)
+        XCTAssertEqual(one.rowGap, 0)
+        style.shape = .squares
+        let squares: ShellBarMetrics = style.metrics(available: 366, count: 10, cell: 64, height: 52)
+        XCTAssertEqual(squares.columns, 5)
+        XCTAssertEqual(squares.gap, (366 - 8 - 5 * 52) / 4, accuracy: 0.001)
+        XCTAssertEqual(squares.rowGap, 4)
+    }
+
     func testSizeAndLabelsChangeTheHeight() {
         var style: ShellBarStyle = ShellBarStyle()
         style.size = .extraLarge
@@ -103,6 +130,7 @@ final class ShellBarStyleTests: XCTestCase {
         style.showActivity = false
         style.highlightFrequent = true
         style.marks = .plain
+        style.rows = .double
         style.save(store)
         XCTAssertEqual(ShellBarStyle.load(store), style)
         ShellBarStyle().save(store)
@@ -123,6 +151,8 @@ final class ShellBarStyleTests: XCTestCase {
         XCTAssertEqual(style.marks, .home)
         store.set("{\"marks\":\"plain\"}", forKey: ShellBarStyle.key)
         XCTAssertEqual(ShellBarStyle.load(store).marks, .plain)
+        store.set("{\"rows\":\"triple\"}", forKey: ShellBarStyle.key)
+        XCTAssertEqual(ShellBarStyle.load(store).rows, .single)
         store.set("{\"marks\":\"sparkly\"}", forKey: ShellBarStyle.key)
         XCTAssertEqual(ShellBarStyle.load(store).marks, .home)
         store.set("not json", forKey: ShellBarStyle.key)
