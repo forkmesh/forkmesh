@@ -762,8 +762,19 @@ struct HomeShell: View {
             }
     }
 
+    private var pushScreen: PushScreen {
+        let covered: Bool = page != nil || showHub || showPalette || showTour || showProjects || showAgentForm
+            || showContextPicker || showDeviceSetup || showGemmaSetup || genie.sheetShown || pocket.locked
+            || router.presented != nil
+        return PushScreen(
+            tab: router.selectedTab, route: router.currentRoute, covered: covered, conversation: model.conversation)
+    }
+
     private func routeChanges<Content: View>(_ content: Content) -> some View {
         content
+            .onChange(of: pushScreen, initial: true) { (_: PushScreen, screen: PushScreen) in
+                push?.screen = screen
+            }
             .onChange(of: push?.pendingOpen) { (_: PushOpen?, next: PushOpen?) in
                 if next != nil {
                     Task { await routePushOpen() }
@@ -862,6 +873,7 @@ struct HomeShell: View {
             }
             .onDisappear {
                 savedNavigation = router.archiveData()
+                push?.screen = nil
             }
             .fmInterfaceSounds(router: router)
     }

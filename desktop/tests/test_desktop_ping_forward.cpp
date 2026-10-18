@@ -257,6 +257,24 @@ static void checkDelete()
     check(kDeleteBatch == 50, "a delete batch matches DESKTOP_PING_DELETE_MAX");
 }
 
+static void checkOnScreen()
+{
+    Screen screen;
+    screen.active = true;
+    screen.agentList = true;
+    check(seenOnScreen(screen, agentDone()), "an agent ping is not sent while the agent list is on screen");
+    Source other = agentDone();
+    other.linkKind = QStringLiteral("issue");
+    check(!seenOnScreen(screen, other), "a non-agent ping still goes while the agent list is on screen");
+    screen.active = false;
+    check(!seenOnScreen(screen, agentDone()), "an inactive window sees nothing");
+    screen.active = true;
+    screen.agentList = false;
+    check(!seenOnScreen(screen, agentDone()), "an agent ping goes when the agent list is hidden");
+    screen.pingsPage = true;
+    check(seenOnScreen(screen, other), "any ping is not sent while the Pings page is on screen");
+}
+
 int main()
 {
     checkWireShape();
@@ -269,6 +287,7 @@ int main()
     checkCelebration();
     checkOnline();
     checkDelete();
+    checkOnScreen();
     if (failures == 0)
         std::cout << "desktop ping forward tests passed\n";
     return failures == 0 ? 0 : 1;

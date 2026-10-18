@@ -59,6 +59,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -119,6 +120,8 @@ import com.forkmesh.nativeapp.feature.navigation.UpdateRequiredView
 import com.forkmesh.nativeapp.feature.navigation.YouHubSheet
 import com.forkmesh.nativeapp.feature.planning.PlanningFeature
 import com.forkmesh.nativeapp.feature.push.PushFeature
+import com.forkmesh.nativeapp.feature.push.PushScreens
+import com.forkmesh.nativeapp.push.PushScreen
 import com.forkmesh.nativeapp.feature.surfaces.RunningAgentAccessory
 import com.forkmesh.nativeapp.feature.surfaces.SurfacesFeature
 import com.forkmesh.nativeapp.feature.tools.ToolsFeature
@@ -175,6 +178,13 @@ class HomeShell : Screen() {
     fun navigator(tab: AppTab): Navigator = navigators.getValue(tab)
 
     fun routes(tab: AppTab): List<Route> = navigator(tab).stack.drop(1).map { routeOf[it] ?: return@map null }.takeWhile { it != null }.filterNotNull()
+
+    private fun pushScreen(root: Navigator): PushScreen {
+        val nav = navigator(selectedTab)
+        val routes = routes(selectedTab)
+        val covered = homeSelected || promptOpen || hubOpen || paletteOpen || root.top !== this || routes.size < nav.depth - 1
+        return PushScreen(selectedTab, routes.lastOrNull(), covered)
+    }
 
     fun push(tab: AppTab, route: Route, screen: Screen) {
         routeOf[screen] = route
@@ -343,6 +353,10 @@ class HomeShell : Screen() {
             AccountFeature.startNotifications()
             Services.get<AuthService>()?.refreshAvatar()
         }
+        LaunchedEffect(navigator) {
+            snapshotFlow { pushScreen(navigator) }.collect { PushScreens.publish(it) }
+        }
+        DisposableEffect(Unit) { onDispose { PushScreens.publish(null) } }
         PushFeature.PermissionPrompt()
         RunnerAttentionFeature.Watcher()
         val uriHandler = LocalUriHandler.current

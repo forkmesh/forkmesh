@@ -104,6 +104,7 @@ public final class PushNotificationService {
     /// Switch to the project a tapped push came from. The tap is delivered as `pendingOpen` when
     /// this returns, so the new project's shell routes it. Nil opens every tap where the app is.
     @ObservationIgnored public var onForeignProjectOpen: (@MainActor (PushOpen) async -> Void)?
+    @ObservationIgnored public var screen: PushScreen?
 
     @ObservationIgnored private var registeredFor = ""
     @ObservationIgnored private var publishingFor = ""
@@ -182,6 +183,11 @@ public final class PushNotificationService {
         guard let open = awaitingProjectOpen else { return }
         awaitingProjectOpen = nil
         deliverOpen(open)
+    }
+
+    public func isOnScreen(_ open: PushOpen) -> Bool {
+        guard let screen, open.isFor(activeProjectProvider?() ?? projectId) else { return false }
+        return open.isShown(on: screen)
     }
 
     /// Whether `open` names a project other than the active one that this phone knows.
