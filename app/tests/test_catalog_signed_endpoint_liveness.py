@@ -63,8 +63,8 @@ def _endpoint(
     }
 
 
-def _run(endpoint):
-    records = [
+def _run(endpoint, records=None, copies=None, cores=()):
+    records = records or [
         {
             "key_bi": "repo:source/forkmesh",
             "owner_bi": "owner:source",
@@ -94,6 +94,10 @@ def _run(endpoint):
     async def d1_all(_env, sql, *args):
         if "FROM repositories" in sql:
             return copy.deepcopy(records)
+        if "FROM hosted_repos" in sql:
+            if copies is None:
+                raise RuntimeError("no such table: hosted_repos")
+            return [dict(row) for row in copies if not row.get("empty")]
         if "FROM mirror_https_endpoints" in sql:
             endpoint_queries.append((sql, args))
             checked_cutoff, verified_cutoff = args
@@ -129,7 +133,11 @@ def _run(endpoint):
         return None
 
     served_mirror_groups, repo_clone_online = _mirror_helpers()
+    extra = {}
+    if cores:
+        extra["hosted_core_nodes"] = lambda _env: list(cores)
     handler = _load_catalog_handler({
+        **extra,
         "Date": type("D", (), {"now": staticmethod(lambda: NOW)}),
         "HTTPS_MIRROR_STATUS_FRESH_MS": FRESH_MS,
         "MAX_NODE_NAME": 80,
@@ -238,3 +246,56 @@ def test_endpoint_queries_use_the_health_writer_canonical_integrity_label():
     assert "integrity='verified'" not in source
     assert "integrity IN ('ok','verified')" not in source
     assert '"ok" if general_healthy else "degraded"' in source
+
+
+def _hosted_record(owner="alice", name="project", source="hosted-web"):
+    return {
+        "key_bi": "repo:%s/%s" % (owner, name),
+        "owner_bi": "owner:" + owner,
+        "data": {
+            "owner": owner,
+            "name": name,
+            "visibility": "public",
+            "rootCommit": "hosted-root",
+            "source": source,
+            "updatedAt": str(NOW),
+        },
+    }
+
+
+def test_hosted_repository_is_online_while_a_live_core_serves_its_copy():
+    records = [_hosted_record()]
+    copies = [{"key_bi": "repo:alice/project", "node": "mirror2"}]
+    repos, _queries = _run(_endpoint(), records, copies, cores=("mirror2",))
+
+    assert repos["alice"]["liveHost"] is True
+    assert repos["alice"]["cloneOnline"] is True
+
+
+def test_hosted_repository_stays_offline_without_a_live_serving_copy():
+    records = [_hosted_record()]
+    for copies, endpoint in (
+        ([], _endpoint()),
+        ([{"key_bi": "repo:alice/project", "node": "mirror2", "empty": 1}],
+         _endpoint()),
+        ([{"key_bi": "repo:alice/project", "node": "mirror2"}],
+         _endpoint(healthy=0)),
+        ([{"key_bi": "repo:other/project", "node": "mirror2"}],
+         _endpoint()),
+    ):
+        repos, _queries = _run(endpoint, records, copies, cores=("mirror2",))
+        assert repos["alice"]["liveHost"] is False
+
+
+def test_only_hosted_records_take_liveness_from_core_copies():
+    records = [_hosted_record(source="remote-clone")]
+    copies = [{"key_bi": "repo:alice/project", "node": "mirror2"}]
+    repos, _queries = _run(_endpoint(), records, copies, cores=("mirror2",))
+    assert repos["alice"]["liveHost"] is False
+
+    repos, _queries = _run(_endpoint(), [_hosted_record()], copies)
+    assert repos["alice"]["liveHost"] is False
+
+    repos, _queries = _run(_endpoint(), [_hosted_record()], None,
+                           cores=("mirror2",))
+    assert repos["alice"]["liveHost"] is False

@@ -90,6 +90,16 @@ git clone ─► app ─► public: a core whose signed refs proof matches the p
   Tests: `test_a_new_pin_moves_the_catalog_head_to_the_default_branch_tip` and
   the tests after it in `app/tests/test_hosted_repositories.py`,
   `test_an_admitted_core_push_moves_the_hosted_catalog_head`.
+- **Online badge:** the catalog's `liveHost` is normally "the record owner's
+  node has a fresh, verified HTTPS endpoint". A hosted record is owned by a
+  user account (`alice/project`), never by a node, so a hosted repository always
+  read *offline* on the dashboard and repository pages, even while the core
+  beside it served it and the instance's own mirror read *online*. The
+  catalog (`catalog_routes.catalog_handler`) now also marks a `hosted-web`
+  record live when a core that reported a non-empty copy in
+  `hosted_repo_copies` has a fresh verified endpoint. Tests:
+  `test_hosted_repository_is_online_while_a_live_core_serves_its_copy` and
+  the two after it in `app/tests/test_catalog_signed_endpoint_liveness.py`.
 
 ### Private repositories
 
