@@ -69,8 +69,9 @@ def test_reads_and_controls_use_the_session_routes():
 def test_controls_require_an_advertising_v2_executor():
     assert (
         "view.controlAvailable = payload.controlAvailable === true "
-        "&& view.schemaVersion === 2;"
+        "&& (view.schemaVersion === 2 || runner);"
     ) in FRAGMENT
+    assert 'const runner = view.source === "runner";' in FRAGMENT
     assert "if (!view.controlAvailable) return \"\";" in FRAGMENT
     assert "if (!repo || !view.controlAvailable || !view.node) return;" in FRAGMENT
     # Every control the contract names has a sender.
@@ -90,7 +91,8 @@ def test_quiet_unavailable_body_is_not_reported_as_an_error():
 
 
 def test_executor_text_is_escaped_and_bounded():
-    assert "${escapeHtml(run.logTail)}" in FRAGMENT
+    assert "const logText = fullLog?.full && fullLog.text ? fullLog.text : run.logTail;" in FRAGMENT
+    assert "${escapeHtml(logText)}" in FRAGMENT
     assert "${escapeHtml(step.name)}" in FRAGMENT
     assert "${escapeHtml(run.workflow)}" in FRAGMENT
     assert "${escapeHtml(view.node)}" in FRAGMENT
@@ -110,3 +112,67 @@ def test_polling_is_bounded_to_the_visible_tab():
     assert "if (!active && document.hidden) return;" in FRAGMENT
     assert "(document.hidden ? 30000 : 6000)" in FRAGMENT
     assert ": 60000;" in FRAGMENT
+
+
+def function(name):
+    start = FRAGMENT.index("function %s(" % name)
+    end = FRAGMENT.index("\n  }\n", start)
+    return FRAGMENT[start:end]
+
+
+def test_runner_snapshots_dispatch_with_inputs_cancel_and_rerun_locally():
+    sender = function("sendRepoActionsRunnerControl")
+    assert '"POST", `${repoApiBase(repo)}/actions/control`, { action, ...fields }' in sender
+    assert "requestId" not in sender.split("orgAgentRequest", 1)[1].split(");", 1)[0]
+    assert 'if (repo && view.controlAvailable && view.source === "runner") {' in FRAGMENT
+    submit = function("handleRepoActionsSubmit")
+    assert '{ workflow, ref: branch, inputs }' in submit
+    assert 'inputs[name] = Boolean(field.checked);' in submit
+    assert 'data-repo-actions-input-required' in submit
+    controls = function("renderRepoActionsRunControls")
+    assert 'button("cancel"' in controls and 'button("rerun"' in controls
+    assert 'run.status === "awaiting-approval" && view.source !== "runner"' in controls
+
+
+def test_dispatch_inputs_render_by_type():
+    field = function("renderRepoActionsInputField")
+    assert 'input.type === "boolean"' in field and 'type="checkbox"' in field
+    assert 'input.type === "choice"' in field and "<select" in field
+    assert 'type="text"' in field and '${input.required ? " required" : ""}' in field
+    assert "escapeHtml(input.description)" in field and "escapeHtml(option)" in field
+    assert "escapeHtml(input.defaultValue)" in field
+    normalize = function("normalizeRepoActionsInputs")
+    assert '["string", "choice", "boolean"].includes(details.type)' in normalize
+    assert "REPO_ACTIONS_INPUT_NAME.test(name)" in normalize
+    assert 'events.includes("workflow_dispatch")' in function("normalizeRepoActionsWorkflow")
+    bar = function("renderRepoActionsWorkflowBar")
+    assert 'view.source === "runner" ? workflow.inputs || [] : []' in bar
+    assert 'view.summaryWorkflows && view.source !== "runner"' in bar
+
+
+def test_runs_show_their_event_and_the_full_log():
+    for event in ("push", "schedule", "workflow_dispatch", "issues", "issue_comment"):
+        assert '"%s"' % event in FRAGMENT.split("REPO_ACTIONS_EVENTS = [", 1)[1].split("]", 1)[0]
+    assert "event: repoActionsRunEvent(run?.event)," in FRAGMENT
+    assert 'data-repo-actions-run-event="${escapeHtml(run.event)}"' in FRAGMENT
+    log = function("loadRepoActionsRunLog")
+    assert '"GET", `${repoApiBase(repo)}/actions/runs/${runId}/log`' in log
+    assert 'typeof payload?.log === "string"' in log
+
+
+def test_actions_secrets_on_repository_and_organization_settings():
+    assert 'data-actions-secrets-base="${escapeHtml(`${repoApiBase(repo)}/actions/secrets`)}"' in DASHBOARD_JS
+    assert '"/api/org/" + encodeURIComponent(name) + "/actions/secrets"' in DASHBOARD_JS
+    assert 'mountActionsSecrets($("[data-actions-secrets]"));' in DASHBOARD_JS
+    assert "Actions secrets" in DASHBOARD_JS
+    save = function("saveActionsSecret")
+    assert '"PUT", `${base}/${encodeURIComponent(name)}`, { value }' in save
+    assert 'valueField.value = ""' in save
+    assert "ACTIONS_SECRET_MAX_BYTES" in save
+    assert '"DELETE", `${base}/${encodeURIComponent(name)}`' in function("deleteActionsSecret")
+    assert 'orgAgentRequest("GET", base)' in function("loadActionsSecrets")
+    assert "const ACTIONS_SECRET_NAME = /^[A-Z_][A-Z0-9_]{0,63}$/;" in FRAGMENT
+    rendered = function("renderActionsSecrets")
+    assert "escapeHtml(secret.name)" in rendered
+    assert "secret.value" not in FRAGMENT
+    assert "bg-cta" not in rendered and "fm-btn-cta" not in rendered
