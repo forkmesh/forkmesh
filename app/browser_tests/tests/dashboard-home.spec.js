@@ -42,16 +42,18 @@ const AGENT_SESSIONS = {
   ],
 };
 
-async function openHome(page, { repos = repositories(3), notifications = NOTIFICATIONS } = {}) {
-  await page.addInitScript(() => {
-    localStorage.setItem("forkmesh.session", JSON.stringify({
-      nodeName: "alice",
-      email: "alice@example.test",
-      emailVerified: true,
-      sessionToken: "test-session",
-      status: "active",
-    }));
-  });
+const USER_SESSION = {
+  nodeName: "alice",
+  email: "alice@example.test",
+  emailVerified: true,
+  sessionToken: "test-session",
+  status: "active",
+};
+
+async function openHome(page, { repos = repositories(3), notifications = NOTIFICATIONS, session = USER_SESSION } = {}) {
+  await page.addInitScript((stored) => {
+    localStorage.setItem("forkmesh.session", JSON.stringify(stored));
+  }, session);
   await page.route("https://cdn.tailwindcss.com/**", (route) =>
     route.fulfill({ contentType: "text/javascript", body: "window.tailwind = {};" }),
   );
@@ -105,6 +107,21 @@ test("home is the prompt composer followed by the account's agents", async ({ pa
   await expect(agents.nth(1)).toContainText("Issue #7");
   await expect(agents.nth(1)).toHaveAttribute("href", "/acme/site/agents");
   await expect(page.locator("[data-home-agents-count]")).toHaveText("1 running");
+});
+
+test("home mounts the composer for an account whose session has no email", async ({ page }) => {
+  await openHome(page, { session: { ...USER_SESSION, email: "" } });
+
+  await expect(page.locator("[data-composer-slot] [data-composer]")).toHaveAttribute("data-inline", "1");
+  await expect(page.locator("[data-composer-slot]")).not.toContainText("Loading prompt");
+});
+
+test("home hides the prompt slot when the composer does not mount", async ({ page }) => {
+  await openHome(page, { session: { ...USER_SESSION, email: "", kind: "node" } });
+
+  await expect(page.locator("[data-home-agents-count]")).toBeAttached();
+  await expect(page.locator("[data-composer-slot]")).toBeHidden();
+  await expect(page.locator("[data-composer]")).toHaveCount(0);
 });
 
 test("the left rail feed shows only other people's activity", async ({ page }) => {
