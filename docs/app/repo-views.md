@@ -193,6 +193,18 @@ stayed blank.
   remembered per owner, repository and commit (512 entries). A mirror that
   cannot answer keeps the old guess. A record that lists its root files is
   trusted without a read.
+- **Root `logo.svg`.** The card logo looked only for raster names, so a
+  repository whose only root logo is `logo.svg` kept the generic book icon.
+  The verifying read now asks for `logo.png` and `logo.svg` together. A
+  raster logo still wins; otherwise a `logo.svg` that passes
+  `directory_about.logo_type` (starts with `<svg`, no entities, at most
+  512 KiB) is offered as `/api/repo/<owner>/<repo>/dir-logo?path=&ref=<commit>`.
+  That route serves it as `image/svg+xml` with a sandboxing CSP, so an
+  `<img>` can draw it, where the raw route's `attachment` download cannot. A
+  record that lists `logo.svg` but no raster logo gets the same URL, and the
+  card's URL check (`nativeRepositoryLogoDataUrl`) accepts the `dir-logo`
+  route. Tests: `test_an_unlisted_root_logo_svg_is_served_through_the_sanitized_route`,
+  `test_repository_cards_accept_the_sanitized_svg_logo_route`.
 - **SVG images.** Git nodes serve an `.svg` blob as
   `application/octet-stream` with `attachment` (SVG can carry script), which
   an `<img>` cannot draw. README images and file previews that name a

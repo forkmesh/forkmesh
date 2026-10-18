@@ -26,6 +26,7 @@ FUNCTIONS = {
     "_native_repository_logo_id",
     "_native_repository_logo_record",
     "_committed_repository_logo_url",
+    "_committed_svg_logo_url",
     "_uploaded_repository_logo_url",
     "_native_repository_logo_context",
 }
@@ -241,6 +242,13 @@ def test_committed_logo_requires_public_repo_exact_commit_and_root_image():
     }
     assert helper(base, "alice", "project") == ""
     assert helper({**base, "metadata": {"fileStructure": ["logo.svg"]}},
+                  "alice", "project") == (
+        "/api/repo/alice/project/dir-logo?path=&ref=" + "b" * 40)
+    assert helper({**base, "metadata": {"fileStructure": [
+        "logo.svg", "logo.png"]}}, "alice", "project") == (
+        "/api/repo/alice/project/raw?path=logo.png&ref=" + "b" * 40)
+    assert helper({**base, "isPrivate": True,
+                   "metadata": {"fileStructure": ["logo.svg"]}},
                   "alice", "project") == ""
     assert helper({**base, "isPrivate": True,
                    "metadata": {"fileStructure": ["logo.png"]}},
@@ -542,6 +550,15 @@ def test_private_collaborator_can_suggest_but_cannot_replace_or_review():
     }
 
 
+def _directory_about():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "directory_about_for_logo_tests", ENTRY.parent / "directory_about.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _probe(blob_reads):
     import sys
     import types
@@ -554,9 +571,12 @@ def _probe(blob_reads):
             raise outcome
         return outcome
 
+    real = _directory_about()
     fake = types.ModuleType("directory_about")
     fake.read_blobs = read_blobs
     fake._bind_runtime = lambda _runtime: None
+    fake.blob_bytes = real.blob_bytes
+    fake.logo_type = real.logo_type
     sys.modules["directory_about"] = fake
     tree = ast.parse(SOURCE, filename=str(ENTRY))
     nodes = [node for node in tree.body
@@ -586,7 +606,8 @@ def test_an_unlisted_root_logo_is_offered_only_when_the_commit_holds_it():
         assert run(verify(None, None, record, "acme", "widgets", url)) == ""
         assert run(verify(None, None, record, "acme", "widgets", url)) == ""
         assert len(reads) == 1
-        assert reads[0] == ("acme", "widgets", ("logo.png",), "a" * 40, False)
+        assert reads[0] == ("acme", "widgets", ("logo.png", "logo.svg"),
+                            "a" * 40, False)
         other = dict(record, commit="b" * 40)
         assert run(verify(None, None, other, "acme", "widgets", url)) == url
         third = dict(record, commit="c" * 40)
@@ -612,3 +633,54 @@ def test_the_logo_handler_verifies_a_guessed_root_logo():
         : SOURCE.index("async def _repo_about_public")
     ]
     assert "await _verified_committed_logo_url(" in handler
+
+
+def _svg_blob(text):
+    import base64
+    return {"encoding": "base64",
+            "content": base64.b64encode(text.encode()).decode()}
+
+
+def test_an_unlisted_root_logo_svg_is_served_through_the_sanitized_route():
+    url = "/api/repo/acme/widgets/raw?path=logo.png&ref=" + "a" * 40
+    svg_url = "/api/repo/acme/widgets/dir-logo?path=&ref=" + "a" * 40
+    record = {"commit": "a" * 40, "metadata": {"fileStructure": []}}
+    svg = '<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"/>'
+    try:
+        namespace, reads = _probe([
+            (200, {"blobs": {"logo.svg": _svg_blob(svg)}}),
+            (200, {"blobs": {"logo.svg": _svg_blob("<html>not svg</html>")}}),
+            (200, {"blobs": {"logo.png": {"encoding": "base64"},
+                             "logo.svg": _svg_blob(svg)}}),
+        ])
+        verify = namespace["_verified_committed_logo_url"]
+        assert run(verify(None, None, record, "acme", "widgets", url)) == (
+            svg_url)
+        assert run(verify(None, None, record, "acme", "widgets", url)) == (
+            svg_url)
+        assert len(reads) == 1
+        other = dict(record, commit="b" * 40)
+        assert run(verify(None, None, other, "acme", "widgets",
+                          url.replace("a" * 40, "b" * 40))) == ""
+        third = dict(record, commit="c" * 40)
+        third_url = url.replace("a" * 40, "c" * 40)
+        assert run(verify(None, None, third, "acme", "widgets",
+                          third_url)) == third_url
+    finally:
+        import sys
+        sys.modules.pop("directory_about", None)
+
+
+def test_repository_cards_accept_the_sanitized_svg_logo_route():
+    script = (ENTRY.parents[1] / "public" / "dashboard" / "js"
+              / "05-repo-list-explorer.js").read_text(encoding="utf-8")
+    body = script[script.index("function nativeRepositoryLogoDataUrl"):]
+    literal = re.search(r"\|\| /(\^\\/api\\/repo.+?)/i\.test\(url\)",
+                        body).group(1)
+    pattern = re.compile(literal, re.I)
+    assert pattern.match(
+        "/api/repo/acme/widgets/dir-logo?path=&ref=" + "a" * 40)
+    assert pattern.match(
+        "/api/repo/acme/widgets/raw?path=logo.png&ref=" + "a" * 40)
+    assert not pattern.match("/api/repo/acme/widgets/dir-about?path=")
+    assert not pattern.match("https://evil.test/api/repo/a/b/dir-logo?x")

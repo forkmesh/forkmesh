@@ -16275,6 +16275,8 @@ def _committed_repository_logo_url(record, owner, repo):
             ),
             "",
         )
+        if not path and "logo.svg" in files:
+            return _committed_svg_logo_url(owner, repo, commit)
         if not path:
             return ""
     else:
@@ -16282,6 +16284,13 @@ def _committed_repository_logo_url(record, owner, repo):
     return (
         "/api/repo/%s/%s/raw?path=%s&ref=%s"
         % (quote(owner), quote(repo), quote(path), quote(commit))
+    )
+
+
+def _committed_svg_logo_url(owner, repo, commit):
+    return (
+        "/api/repo/%s/%s/dir-logo?path=&ref=%s"
+        % (quote(owner), quote(repo), quote(commit))
     )
 
 
@@ -16305,26 +16314,38 @@ async def _verified_committed_logo_url(env, request, record, owner, repo,
         return url
     commit = clean_string((record or {}).get("commit", ""), 64).lower()
     key = (str(owner or "").lower(), str(repo or "").lower(), commit)
+    svg_url = url.split("/raw?", 1)[0] + "/dir-logo?path=&ref=" + commit
+    found_urls = {"png": url, "svg": svg_url}
     if key in _COMMITTED_LOGO_PROBES:
-        return url if _COMMITTED_LOGO_PROBES[key] else ""
+        return found_urls.get(_COMMITTED_LOGO_PROBES[key], "")
     try:
         import directory_about
         directory_about._bind_runtime(globals())
         status, data = await directory_about.read_blobs(
-            env, request, owner, repo, ["logo.png"], commit, False)
+            env, request, owner, repo, ["logo.png", "logo.svg"], commit,
+            False)
     except Exception:
         return url
     if status == 200:
-        found = isinstance(((data or {}).get("blobs") or {}).get("logo.png"),
-                           dict)
+        blobs = (data or {}).get("blobs") or {}
+        found = ""
+        if isinstance(blobs.get("logo.png"), dict):
+            found = "png"
+        elif isinstance(blobs.get("logo.svg"), dict):
+            try:
+                raw = directory_about.blob_bytes(blobs["logo.svg"])
+                if directory_about.logo_type("logo.svg", raw):
+                    found = "svg"
+            except Exception:
+                found = ""
     elif status == 404:
-        found = False
+        found = ""
     else:
         return url
     while len(_COMMITTED_LOGO_PROBES) >= _COMMITTED_LOGO_PROBE_LIMIT:
         del _COMMITTED_LOGO_PROBES[next(iter(_COMMITTED_LOGO_PROBES))]
     _COMMITTED_LOGO_PROBES[key] = found
-    return url if found else ""
+    return found_urls.get(found, "")
 
 
 # A repository's social header belongs to the repository, so it ships inside
