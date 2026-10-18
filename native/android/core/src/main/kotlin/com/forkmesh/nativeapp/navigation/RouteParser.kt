@@ -254,6 +254,7 @@ object RouteParser {
             "app-store-status" -> listOf(Route.AppStoreStatus)
             "rss", "rss-reader" -> listOf(Route.RssReader)
             "secure-drive" -> listOf(Route.SecureDrive)
+            "files" -> listOf(Route.Files)
             "workflows" -> if (first == null) listOf(Route.Workflows) else null
             "docs" -> listOf(Route.Docs)
             "repos" -> listOf(Route.Repos(RepoScope.All))
@@ -312,6 +313,7 @@ object RouteParser {
         "app-store-status" -> listOf(Route.AppStoreStatus)
         "rss", "rss-reader" -> listOf(Route.RssReader)
         "secure-drive" -> listOf(Route.SecureDrive)
+        "files" -> listOf(Route.Files)
         "workflows" -> listOf(Route.Workflows)
         "people" -> listOf(Route.People)
         "docs" -> listOf(Route.Docs)

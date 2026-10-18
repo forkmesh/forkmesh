@@ -128,6 +128,8 @@ enum GenieFeature {
             return "The agent did not start. \(message)"
         case .failed(let message):
             return "The agent did not start. \(message)"
+        case .done(let message):
+            return message
         }
     }
 }

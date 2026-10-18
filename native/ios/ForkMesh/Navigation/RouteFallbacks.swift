@@ -142,6 +142,7 @@ enum NavigationRoutes {
             return AnyView(CodeInsightScreen(plugin: .synapse, repo: repo) { SynapsePage(context: $0) })
         }
         fallback(routes, .openWrtRouter) { _ in AnyView(OpenWrtScreen()) }
+        fallback(routes, .fileExplorer) { _ in AnyView(FilesScreen()) }
         fallback(routes, .faceChanger) { _ in AnyView(FaceChangerScreen()) }
         fallback(routes, .videoMixDjStudio) { _ in AnyView(VideoMixDjStudioScreen()) }
         fallback(routes, .appStoreStatus) { _ in AnyView(AppStoreStatusScreen()) }

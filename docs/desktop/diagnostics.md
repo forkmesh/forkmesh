@@ -370,6 +370,13 @@ and Stop agent.
 Rail **Stats**: `src/StatsDashboard.*`, `src/MainWindowStats.cpp`,
 `src/RepoStatsStore.*`. Tile layout is persisted and has a Reset.
 
+The phone shows every one of these tiles. It asks for them with `stats.tiles`
+(`src/MainWindowLocalControlStats.cpp`), which sends each catalog tile through
+`StatsDashboard::tileToJson`. A new tile in `statsTileCatalog()` also needs a
+`DesktopTileEntry` in both phone apps, or
+`app/tests/test_mobile_stats_desktop_parity.py` fails. See
+[../native/STATS.md](../native/STATS.md).
+
 ## Background timers
 
 **Settings → Background timers** (`src/SystemdTimers.*`,

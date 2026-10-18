@@ -38,6 +38,7 @@ struct ComposerInstaller: AppServicesInstaller {
             localModels: { AgentsFeature.localModels() })
         let launcher = QuickAgentLauncher(form: form, prefs: prefs, account: { auth?.session?.nodeName ?? "" })
         launcher.desktop = HubQuickLaunchDesktop { HostsFeature.hub }
+        launcher.actions = ShellPromptActions(api: { api }, auth: { auth })
         return ShellComposer(launcher: launcher)
     }
 }

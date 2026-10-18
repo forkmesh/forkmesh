@@ -27,6 +27,8 @@ state on the ForkMesh account and follow every device.
   `design-system`, `status-page`, `logs`, `diagnostics`, `speech`, `glasses-alert`.
 - **Installed before 2026-10-14, account-synced:** `workflows` (its
   `workflows-*` packs nest under it).
+- **Installed before 2026-10-19, account-synced:** `files` (the file
+  explorer, [files.md](files.md)).
 - **No `installedBefore`, account-synced:** `timers`, `vault`, `calories`,
   `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide` (mobile
   only), `phone-security` (mobile only, [phone-security.md](phone-security.md)),

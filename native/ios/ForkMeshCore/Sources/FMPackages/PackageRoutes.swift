@@ -92,6 +92,7 @@ public enum PackageRoutes {
         case "strata": return .strata(nil)
         case "synapse": return .synapse(nil)
         case "openWrtRouter": return .openWrtRouter
+        case "fileExplorer": return .fileExplorer
         case "faceChanger": return .faceChanger
         case "videoMixDjStudio": return .videoMixDjStudio
         case "appStoreStatus": return .appStoreStatus

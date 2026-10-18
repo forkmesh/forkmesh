@@ -143,6 +143,7 @@ final class RouteParserTests: XCTestCase {
         XCTAssertEqual(web("/dashboard/synapse?repo=nonsense"), [.synapse(nil)])
         XCTAssertNil(web("/dashboard/ember/extra"))
         XCTAssertEqual(web("/dashboard/openwrt"), [.openWrtRouter])
+        XCTAssertEqual(web("/dashboard/files"), [.fileExplorer])
         XCTAssertEqual(web("/dashboard/face-changer"), [.faceChanger])
         XCTAssertEqual(web("/dashboard/video-mix-dj-studio"), [.videoMixDjStudio])
         XCTAssertEqual(web("/dashboard/app-store-status"), [.appStoreStatus])

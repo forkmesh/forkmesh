@@ -178,6 +178,7 @@ public enum RouteCatalog {
         case .strata: return "Strata"
         case .synapse: return "Synapse"
         case .openWrtRouter: return "Router"
+        case .fileExplorer: return "Files"
         case .faceChanger: return "Face Changer"
         case .videoMixDjStudio: return "Video Mix DJ Studio"
         case .appStoreStatus: return "App Store Status"
@@ -262,6 +263,7 @@ public enum RouteCatalog {
         case .strata: return "square.3.layers.3d"
         case .synapse: return "brain"
         case .openWrtRouter: return "wifi.router"
+        case .fileExplorer: return "folder"
         case .faceChanger: return "theatermasks"
         case .videoMixDjStudio: return "music.note.list"
         case .appStoreStatus: return "app.badge"
@@ -362,6 +364,7 @@ public enum HubCatalog {
         .destination(.tasks(filter: nil), guestAction: "use tasks"),
         .destination(.calendar(date: nil, mode: .month)),
         .destination(.timers),
+        .destination(.fileExplorer),
     ]
 
     public static let operate: [HubItem] = [

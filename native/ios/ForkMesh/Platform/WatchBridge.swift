@@ -400,7 +400,7 @@ final class WatchBridge: NSObject {
         composer.busy = false
         let line = GenieFeature.outcomeLine(outcome)
         switch outcome {
-        case .queued, .queuedWithoutSession, .desktop:
+        case .queued, .queuedWithoutSession, .desktop, .done:
             if let control, control.connected { await control.refreshAgents() }
             await model.refresh()
             await publish()

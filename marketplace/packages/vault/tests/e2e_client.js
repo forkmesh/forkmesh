@@ -171,6 +171,25 @@ async function refused(name, action, code) {
   try { await C.checkBundle({ ...daveBundle, account: "erin" }, "erin"); } catch { substituted = true; }
   check("a bundle cannot be re-labelled as another account's", substituted);
 
+  const exported = Client.readLoginsCsv("Title,URL,Username,Password,Notes,OTPAuth\n"
+    + "Mail,https://mail.example/,erin,first secret,,otpauth://totp/Mail:erin?secret=JBSWY3DPEHPK3PXP\n"
+    + ",https://www.shop.example/,erin@example.com,second secret,,\n"
+    + "Mail again,https://mail.example/,ERIN,first secret,,\n");
+  const progress = [];
+  const imported = await erin.importLogins(exported.logins, { onProgress: (done, total) => progress.push(`${done}/${total}`) });
+  check("an Apple Passwords export is imported, duplicates folded",
+    imported.added === 2 && imported.duplicates === 1 && imported.remaining === 0 && progress.join() === "1/2,2/2");
+  const erinItems = await erin.load();
+  check("imported logins open with the owner's keys", erinItems.length === 2
+    && erinItems.some((item) => item.fields.title === "shop.example" && item.fields.password === "second secret")
+    && erinItems.some((item) => item.fields.notes.startsWith("otpauth://totp/Mail:erin")));
+  check("importing the same file again adds nothing", (await erin.importLogins(exported.logins)).added === 0);
+  const stored = await clientRaw("erin", "/api/vault/items");
+  check("the server never sees an imported password",
+    JSON.stringify(stored).includes(erinItems[0].id) && !JSON.stringify(stored).includes("second secret"));
+  erin.lock();
+  check("a locked client imports nothing", (await erin.importLogins(exported.logins).catch((error) => error.code)) === "vault_locked");
+
   // Locking forgets everything.
   again.lock();
   check("a locked client holds nothing", again.list().length === 0 && !again.unlocked());

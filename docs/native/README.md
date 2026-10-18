@@ -33,6 +33,7 @@ Topic pages:
 | [MESH_PUSH.md](MESH_PUSH.md) | Wake pushes and local alerts for the `#mesh` room |
 | [PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md) | No banner, or no phone ping, for what is already on screen |
 | [DESKTOP_UPDATE.md](DESKTOP_UPDATE.md) | Rebuilding and restarting the desktop from the phone |
+| [STATS.md](STATS.md) | The Stats board: every desktop tile over `stats.tiles`, and the release-version tiles |
 | [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md), [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Screen capture and markup; issue and pull links in messages |
 | [IOS_RELEASE.md](IOS_RELEASE.md), [MAC_BUILD.md](MAC_BUILD.md), [ANDROID.md](ANDROID.md) | iOS release pipeline, office Mac builds, Android design notes |
 | [notes.md](notes.md) | Notes: filters, autosave, conflicts, preview, sharing, links, export |
@@ -124,6 +125,15 @@ Shortcuts (`.forkmesh/shortcuts/`):
     loaded" message no longer appears in a new event.
   - Edit on a pushed event page set a sheet on the calendar page under it.
     `CalendarEventScreen` now shows its own editor sheet.
+  - Every save, edit, delete and RSVP then failed with "Invalid json.". The
+    server's `_CalendarRuntime.json()` (`app/src/entry.py`) called
+    `_json_request_limit`, which `entry.py` never imported from
+    `request_bodies.py`, and `calendar_api.handle` turned the `NameError`
+    into `invalid_json`. Web and desktop calendar writes failed the same way.
+    `entry.py` now exports the helper; `handle` answers `invalid_json` only
+    for a body that does not parse or is not an object, so a coding error
+    is a 500 again. `app/tests/host/test_calendar_runtime.py` runs the real
+    `json()`; the older tests swapped it for a fake and missed this.
 - **Chat history survives updates and restarts (iOS).** The phone is the only
   place most chat history can be read again: DMs are deleted from the server
   once acknowledged and use a per-message ratchet, sealed channel frames can
