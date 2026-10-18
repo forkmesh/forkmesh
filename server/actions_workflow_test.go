@@ -200,3 +200,116 @@ func TestParseWorkflowReadsThisRepositorysWorkflows(t *testing.T) {
 		t.Logf("%-40s %-28q on=%v steps=%d", filepath.Base(file), parsed.Name, parsed.Events, len(parsed.Steps))
 	}
 }
+
+func TestParseWorkflowReadsInstanceTriggersAndStepOptions(t *testing.T) {
+	content := `name: Refresh data
+on:
+  push:
+    branches: [main]
+    paths: ["bolt-jobs/**"]
+  schedule:
+    - cron: "17 3 * * *"
+    - cron: "not a cron"
+    - cron: "@daily"
+  workflow_dispatch:
+    inputs:
+      project:
+        description: Project to deploy
+        required: true
+        default: all
+        type: choice
+        options: [all, bolt-c]
+      verbose:
+        type: boolean
+  issues:
+    types: [opened, labeled, edited]
+  issue_comment:
+    types: [created]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: write
+env:
+  TZ: UTC
+jobs:
+  refresh:
+    runs-on: runner
+    timeout-minutes: 30
+    if: github.event_name != 'issues'
+    defaults:
+      run:
+        working-directory: bolt-jobs
+    env:
+      NODE_ENV: production
+      TZ: Europe/Paris
+    steps:
+      - name: Build
+        run: npm ci
+      - name: Deploy
+        if: github.ref == 'refs/heads/main'
+        working-directory: ./bolt-jobs/worker
+        timeout-minutes: 5
+        env:
+          NODE_ENV: staging
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy
+  other:
+    steps:
+      - run: echo other
+`
+	wf, err := parseWorkflow(".forkmesh/refresh.yml", content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(wf.Events, []string{"push", "schedule", "workflow_dispatch", "issues", "issue_comment", "pull_request"}) {
+		t.Fatalf("events %v", wf.Events)
+	}
+	if !reflect.DeepEqual(wf.Schedules, []string{"17 3 * * *", "@daily"}) || !wf.ContentsWrite ||
+		wf.TimeoutMinutes != 30 || !reflect.DeepEqual(wf.IssueTypes, []string{"opened", "labeled", "edited"}) ||
+		!reflect.DeepEqual(wf.CommentTypes, []string{"created"}) || !reflect.DeepEqual(wf.PullBranches, []string{"main"}) {
+		t.Fatalf("workflow %+v", wf)
+	}
+	wantInputs := []workflowInput{
+		{Name: "project", Description: "Project to deploy", Required: true, Default: "all", Type: "choice",
+			Options: []string{"all", "bolt-c"}},
+		{Name: "verbose", Type: "boolean"},
+	}
+	if !reflect.DeepEqual(wf.Inputs, wantInputs) {
+		t.Fatalf("inputs %+v", wf.Inputs)
+	}
+	if len(wf.Steps) != 3 {
+		t.Fatalf("steps %+v", wf.Steps)
+	}
+	build, deploy, other := wf.Steps[0], wf.Steps[1], wf.Steps[2]
+	if build.Job != "refresh" || build.JobIf != "github.event_name != 'issues'" || build.WorkingDirectory != "bolt-jobs" ||
+		!reflect.DeepEqual(build.Env, [][2]string{{"NODE_ENV", "production"}, {"TZ", "Europe/Paris"}}) {
+		t.Fatalf("build %+v", build)
+	}
+	if deploy.If != "github.ref == 'refs/heads/main'" || deploy.WorkingDirectory != "bolt-jobs/worker" ||
+		deploy.TimeoutMinutes != 5 || !reflect.DeepEqual(deploy.Env, [][2]string{{"NODE_ENV", "staging"},
+		{"TZ", "Europe/Paris"}, {"CLOUDFLARE_API_TOKEN", "${{ secrets.CLOUDFLARE_API_TOKEN }}"}}) {
+		t.Fatalf("deploy %+v", deploy)
+	}
+	if other.Job != "other" || other.JobIf != "" || other.WorkingDirectory != "" || other.Env != nil {
+		t.Fatalf("other %+v", other)
+	}
+	if write, err := parseWorkflow(".forkmesh/a.yml", "permissions: write-all\nsteps:\n  - run: true\n"); err != nil || !write.ContentsWrite {
+		t.Fatalf("write-all: %v", err)
+	}
+	if read, err := parseWorkflow(".forkmesh/a.yml", "permissions:\n  contents: read\nsteps:\n  - run: true\n"); err != nil || read.ContentsWrite {
+		t.Fatalf("contents read: %v", err)
+	}
+	for name, bad := range map[string]string{
+		"absolute dir":  "jobs:\n  a:\n    steps:\n      - run: true\n        working-directory: /etc\n",
+		"parent dir":    "jobs:\n  a:\n    defaults:\n      run:\n        working-directory: a/../..\n    steps:\n      - run: true\n",
+		"bad timeout":   "jobs:\n  a:\n    timeout-minutes: soon\n    steps:\n      - run: true\n",
+		"step timeout":  "jobs:\n  a:\n    steps:\n      - run: true\n        timeout-minutes: 0\n",
+		"input type":    "on:\n  workflow_dispatch:\n    inputs:\n      a:\n        type: number\nsteps:\n  - run: true\n",
+		"empty choice":  "on:\n  workflow_dispatch:\n    inputs:\n      a:\n        type: choice\nsteps:\n  - run: true\n",
+		"required word": "on:\n  workflow_dispatch:\n    inputs:\n      a:\n        required: maybe\nsteps:\n  - run: true\n",
+	} {
+		if _, err := parseWorkflow(".forkmesh/a.yml", bad); err == nil {
+			t.Fatalf("%s accepted", name)
+		}
+	}
+}
