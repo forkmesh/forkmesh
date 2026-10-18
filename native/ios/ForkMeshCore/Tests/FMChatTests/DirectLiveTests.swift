@@ -112,6 +112,54 @@ final class DirectLiveTests: XCTestCase {
         XCTAssertFalse(track.isSharing(at: 200 + DirectLiveFrames.motionQuietMs))
     }
 
+    private func extent(_ points: [DirectLivePlanePoint]) -> (width: Double, height: Double) {
+        let xs = points.map(\.x)
+        let ys = points.map(\.y)
+        return ((xs.max() ?? 0) - (xs.min() ?? 0), (ys.max() ?? 0) - (ys.min() ?? 0))
+    }
+
+    func testPhonePoseShowsAFlatPhoneAsALine() {
+        let upright = extent(DirectLivePhonePose(DirectLiveMotionSample(at: 0, gx: 0, gy: -1, gz: 0)).outline())
+        XCTAssertEqual(upright.width, DirectLivePhonePose.width, accuracy: 0.01)
+        XCTAssertEqual(upright.height, DirectLivePhonePose.height, accuracy: 0.01)
+
+        let faceUp = DirectLivePhonePose(DirectLiveMotionSample(at: 0, gx: 0, gy: 0, gz: -1))
+        let line = extent(faceUp.outline())
+        XCTAssertEqual(line.width, DirectLivePhonePose.width, accuracy: 0.01)
+        XCTAssertEqual(line.height, DirectLivePhonePose.depth, accuracy: 0.01)
+        XCTAssertFalse(faceUp.faceShowing)
+        XCTAssertEqual(faceUp.faceMap.d, 0, accuracy: 0.0001)
+        let faceDown = extent(DirectLivePhonePose(DirectLiveMotionSample(at: 0, gx: 0, gy: 0, gz: 1)).outline())
+        XCTAssertEqual(faceDown.height, DirectLivePhonePose.depth, accuracy: 0.01)
+
+        let halfway = extent(DirectLivePhonePose(roll: 0, pitch: .pi / 4).outline())
+        XCTAssertGreaterThan(halfway.height, DirectLivePhonePose.depth)
+        XCTAssertLessThan(halfway.height, DirectLivePhonePose.height)
+
+        let sideways = extent(DirectLivePhonePose(DirectLiveMotionSample(at: 0, gx: 1, gy: 0, gz: 0)).outline())
+        XCTAssertEqual(sideways.width, DirectLivePhonePose.height, accuracy: 0.01)
+        XCTAssertEqual(sideways.height, DirectLivePhonePose.width, accuracy: 0.01)
+        XCTAssertEqual(DirectLivePhonePose.still.faceMap, DirectLiveFaceMap(a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0))
+    }
+
+    func testPhonePoseHoldsEveryBounceLongEnoughToSee() {
+        let rest = DirectLiveMotionSample(at: 0, gx: 0, gy: 0, gz: -1)
+        let bump = DirectLiveMotionSample(at: 16, gx: 0, gy: 0, gz: -1, az: 1.5)
+        let track = DirectLiveMotionTrack(
+            samples: [rest, bump, DirectLiveMotionSample(at: 33, gx: 0, gy: 0, gz: -1)], lastHeard: 33)
+        let soon = DirectLivePhonePose.live(track, at: 116)
+        XCTAssertNotNil(soon)
+        XCTAssertLessThan(soon?.offset.y ?? 0, 0)
+        XCTAssertGreaterThan(soon?.jolt ?? 0, 0.5)
+        let later = DirectLivePhonePose.live(track, at: 16 + DirectLivePhonePose.kickHoldMs)
+        XCTAssertEqual(later?.jolt ?? 1, 0, accuracy: 0.0001)
+
+        let upright = DirectLivePhonePose(DirectLiveMotionSample(at: 0, gx: 0, gy: -1, gz: 0, ax: 1))
+        XCTAssertGreaterThan(upright.offset.x, 0)
+        let wild = DirectLivePhonePose(DirectLiveMotionSample(at: 0, gx: 0, gy: -1, gz: 0, ay: 8))
+        XCTAssertEqual(wild.jolt, DirectLivePhonePose.maxKick, accuracy: 0.0001)
+    }
+
     @MainActor func testTapsAndStrokesAreBatchedIntoLiveFrames() async throws {
         let clock = FixedClock(epochMillis: 1_000_000)
         let sent = DirectLiveSent()
