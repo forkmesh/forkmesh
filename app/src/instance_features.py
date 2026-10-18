@@ -67,6 +67,9 @@ FEATURES = (
     ("ios-testers", "iOS test builds",
      "ForkMesh's iOS tester enrollment.",
      ("/api/ios-udid",), ()),
+    ("instance-launcher", "Instance launcher",
+     "The start page that sets up new instances on other servers.",
+     ("/start", "/api/start"), ()),
     ("website", "ForkMesh website pages",
      "forkmesh.com's own pages: about, careers, press, pricing, features, "
      "the ecosystem, leaderboards, the blog and the changelog.",
@@ -92,6 +95,7 @@ FORKMESH_ONLY = {
     "status": "Monitors forkmesh.com's own cores, mirrors and app releases.",
     "ios-testers": "Enrolls testers in ForkMesh's iOS builds.",
     "website": "forkmesh.com's own marketing pages.",
+    "instance-launcher": "forkmesh.com's page that installs new instances.",
 }
 INSTANCE_NOTES = {
     "world": "Your own 3D World at /world, with the Office and its chat. "
@@ -124,6 +128,28 @@ def branded(env):
 
 PLATFORM = "ForkMesh"
 _RENAME_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)")
+_REMEMBERED = {"name": "", "origin": ""}
+
+
+def remember_instance(env):
+    if not branded(env):
+        return
+    origin = (_setting(env, "PUBLIC_BASE_URL") or _setting(env, "APP_ORIGIN")).rstrip("/")
+    _REMEMBERED["name"] = display_name(env)
+    _REMEMBERED["origin"] = origin if origin.startswith("https://") else ""
+
+
+def user_agent(default, product):
+    name = _REMEMBERED["name"]
+    if not name:
+        return default
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "git"
+    origin = _REMEMBERED["origin"]
+    return "%s-%s/1.0%s" % (slug, product, " (+%s)" % origin if origin else "")
+
+
+def powered_by(env):
+    return _setting(env, "INSTANCE_POWERED_BY") != "0"
 
 
 def display_name(env):

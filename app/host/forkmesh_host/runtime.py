@@ -182,6 +182,7 @@ class HostRuntime:
         if self.sealed:
             raise RuntimeError("host is sealed")
         ctx = self.context()
+        self._remember_instance()
         with d1_caller.request_scope(request):
             if self._db_scope is not None:
                 with self._db_scope():
@@ -189,6 +190,11 @@ class HostRuntime:
             else:
                 response = await self.entrypoint(ctx).fetch(request)
         return self._instance_error_text(response)
+
+    def _remember_instance(self):
+        features = sys.modules.get("instance_features")
+        if features is not None and hasattr(features, "remember_instance"):
+            features.remember_instance(self.env)
 
     def _instance_error_text(self, response):
         features = sys.modules.get("instance_features")
@@ -214,6 +220,7 @@ class HostRuntime:
         if self.sealed:
             raise RuntimeError("host is sealed")
         ctx = self.context()
+        self._remember_instance()
         controller = JsObject(
             scheduledTime=int(scheduled_time or _js.Date.now()),
             cron=cron, type="scheduled")

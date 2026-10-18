@@ -913,6 +913,7 @@ class Default:
         if maintenance is not None:
             return self._with_fast_cors(request, maintenance)
         if instance_features.branded(self.env):
+            instance_features.remember_instance(self.env)
             await self._instance_plugins_load()
             plugin_path = urlparse(str(request.url)).path
             switched_off = instance_features.blocked(self.env, plugin_path)
@@ -1683,9 +1684,11 @@ class Default:
             "available here</h1><p>The <code>" + _html_escape(feature) +
             "</code> plugin is turned off on " + name + ". An administrator "
             "can turn it on in the instance settings.</p><p><a href=\"/\">"
-            "Back to " + name + "</a></p><p style=\"color:#71717a;"
-            "font-size:.85rem\">Powered by <a href=\"https://forkmesh.com/\">"
-            "ForkMesh</a></p></body></html>",
+            "Back to " + name + "</a></p>" + (
+                "<p style=\"color:#71717a;font-size:.85rem\">Powered by "
+                "<a href=\"https://forkmesh.com/\">ForkMesh</a></p>"
+                if instance_features.powered_by(self.env) else "")
+            + "</body></html>",
             status=404,
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "no-store"},
@@ -1700,7 +1703,8 @@ class Default:
             getattr(self.env, "APP_ORIGIN", "") or "") or (
                 url.scheme + "://" + url.netloc)
         body = instance_pages.page_for(
-            url.path, instance_name(self.env), origin)
+            url.path, instance_name(self.env), origin,
+            instance_features.powered_by(self.env))
         if not body:
             return None
         return self._without_head_body(request, Response(

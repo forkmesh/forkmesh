@@ -31534,7 +31534,9 @@ def _instance_brand_email(env, text, html):
     text = text.replace("Open ForkMesh: " + FORKMESH_SITE_URL,
                         "Open " + name + ": " + site)
     text = instance_features.rename(env, text)
-    text += "\n\nPowered by ForkMesh"
+    credit = instance_features.powered_by(env)
+    if credit:
+        text += "\n\nPowered by ForkMesh"
     if html:
         escaped = _html_escape(name)
         html = (html
@@ -31553,8 +31555,9 @@ def _instance_brand_email(env, text, html):
                   "https://forkmesh.com/\" style=\"color:#71717a\">"
                   "ForkMesh</a></p>")
         closing = "</div></div></body></html>"
-        html = (html.replace(closing, footer + closing, 1)
-                if closing in html else html + footer)
+        if credit:
+            html = (html.replace(closing, footer + closing, 1)
+                    if closing in html else html + footer)
     return text, html
 MAILTRAP_EMAIL_CATEGORIES = {
     "account": "Account notification",
@@ -32169,7 +32172,8 @@ async def _repository_provider_fetch(env, provider, path, token=""):
         return {"status": 400, "data": {}, "headers": {}}
     headers = {
         "accept": "application/json",
-        "user-agent": "ForkMesh-repository-metadata/1.0",
+        "user-agent": instance_features.user_agent(
+            "ForkMesh-repository-metadata/1.0", "repository-metadata"),
     }
     if provider == "github":
         headers["accept"] = "application/vnd.github+json"

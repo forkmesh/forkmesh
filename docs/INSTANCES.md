@@ -542,7 +542,8 @@ reinstall or restart.
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
-`blog`, `status`, `ios-testers`, `website`) needs forkmesh.com's own
+`blog`, `status`, `ios-testers`, `website`, `instance-launcher`) needs
+forkmesh.com's own
 accounts, ledger, keys or content. The page lists them under "forkmesh.com
 services" with the reason (`FORKMESH_ONLY`) and offers no switch;
 `/api/instance` reports each plugin's `scope` (`instance` or `forkmesh`) and
@@ -689,20 +690,47 @@ Three layers do it, so that nothing depends on the browser alone:
   deliberately leaves alone so READMEs and user text are never rewritten) is
   wrapped in `<span data-platform-name>`, which `applyPlatformName()` fills
   at boot. `instance-brand.js` still renames chrome and the other pages; its
-  pattern now skips identifiers (`X-ForkMesh-Ref`, `ForkMesh-Attestation`),
-  "ForkMesh Desktop" and "ForkMesh, Inc.".
+  pattern skips identifiers (`X-ForkMesh-Ref`, `ForkMesh-Attestation`) and
+  "ForkMesh, Inc.", and drops the word before "desktop".
 
-What stays "ForkMesh" on purpose: the desktop app and desktop nodes (the
-product people install), the software itself ("a ForkMesh node", "runs a
-ForkMesh version", "other ForkMesh instances", "a checkout of ForkMesh
-itself", the MCP server and its config path), technical names
-(`.forkmesh/`, `forkmesh-actions`, header and trailer names, the
-`<owner>/forkmesh` platform-source mirror and its description), the Powered
-by badge and email footer, and the strings of ForkMesh-only plugins (ads,
-hackathon, links, referrals, Patreon membership, the Market), which an
-instance does not show. `app/tests/test_instance_platform_name.py` fails on
-any other platform literal in dashboard JS; its `KEPT` list is the
-allow-list.
+Beyond the dashboard, a branded instance also names itself in: the `/docs`
+and `/desktop` pages (which no longer say "ForkMesh desktop app" or
+"forkmesh.com/desktop", and drop the Powered by footer when `poweredBy` is
+off), the plugin-off page, the email unsubscribe pages, JSON error messages
+(`message`, `hint`, `detail`, `title`, `reason` of any 4xx/5xx JSON answer,
+renamed by `HostRuntime._instance_error_text`), the queued-agent notice,
+nodeinfo `nodeName`, the instance ActivityPub actor's name, the default
+profile and repository actor summaries, the fediverse daily digest, and the
+`User-Agent` of requests other servers see (webhook deliveries, fediverse
+fetches, workflow HTTP steps and imports, provider mirrors and repository
+metadata: `<name-slug>-<kind>/1.0 (+<origin>)`, from
+`instance_features.remember`/`user_agent`). The web manifest takes the name
+even without a logo. The build-time brand tool renames the platform word in
+all page text and shown attributes outside `<script>`/`<style>`, so a page
+reads right before `instance-brand.js` runs. "ForkMesh desktop app" reads
+"desktop app" on an instance (`desktopBrand()` in the dashboard,
+`data-desktop-brand` spans in partials, and both brand passes). The start
+page that launches new instances is the `instance-launcher` plugin, off on an
+instance.
+
+What stays on purpose: the software's own identity where it is a fact, not
+branding ("a ForkMesh node", "runs a ForkMesh version", "other ForkMesh
+instances", "a checkout of ForkMesh itself", nodeinfo `software.name`
+`forkmesh` and its repository); technical names never shown as prose
+(`.forkmesh/` like `.github/`, `forkmesh-actions`, `FORKMESH_*` variables,
+the `forkmesh` MCP server and its config path, header and trailer names, the
+`forkmesh-profile=` DNS verification record, service and file names); the
+`<owner>/forkmesh` platform-source mirror, its description and its "Mirror of
+forkmesh.com/forkmesh/forkmesh" label; the upstream installer command
+`curl -fsSL https://forkmesh.com/install.sh | bash` on `/desktop` and in
+Settings > Nodes; license and credit text, the optional Powered by badge and
+email footer; and the strings of ForkMesh-only plugins (ads, hackathon,
+links, referrals, rewards, Patreon membership, the Market, developer docs,
+the instance launcher), which an instance does not show.
+`app/tests/test_instance_platform_name.py` fails on any other platform
+literal in dashboard JS (its `KEPT` list is the allow-list) and on any
+"forkmesh", in any case, in the shown text of the branded static pages (its
+`PAGE_KEPT` and `GATED_PAGES` lists are the allow-list).
 
 ### What an instance hides
 
@@ -798,11 +826,12 @@ to every provider.
   `app.forkmesh.com` (`FORKMESH_EGRESS_PRODUCTION_ALLOW` in the app unit),
   which only the directory announcement uses.
 - Server text that is not listed under "Platform name" (admin-only
-  operational alerts, Solana/ledger notices of switched-off plugins, the
-  referral preview page) still says ForkMesh.
+  operational alerts, the plugin descriptions on the admin console's
+  Plugins page, Solana/ledger notices of switched-off plugins, the referral
+  preview page) still says ForkMesh.
 - The repository card image keeps the ForkMesh mark in its corner.
-- "Mirrors published by ForkMesh desktop nodes" and similar desktop wording
-  stays, because it names the desktop app.
+- Commit identities, the runner name and the Go node's own messages change
+  only with a signed release that contains them (see "Commit identities").
 
 ## Tests
 

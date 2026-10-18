@@ -19,7 +19,7 @@ APP_RUNTIME = (ROOT / "src" / "app_runtime.py").read_text(encoding="utf-8")
 HOSTED_GIT = (ROOT / "src" / "hosted_git.py").read_text(encoding="utf-8")
 BRAND_JS = (ROOT / "public" / "instance-brand.js").read_text(encoding="utf-8")
 
-PLATFORM = re.compile(r"(?<![A-Za-z0-9_.$/-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)")
+PLATFORM = re.compile(r"(?<![A-Za-z0-9_.$/-])ForkMesh(?![A-Za-z0-9_-])")
 
 PLUGIN_FILES = {
     "09-ads.js": "ads",
@@ -29,7 +29,7 @@ PLUGIN_FILES = {
 }
 
 KEPT = {
-    "02-helpers.js": ['|| "ForkMesh";'],
+    "02-helpers.js": ['|| "ForkMesh";', '? "" : "ForkMesh ";'],
     "09-plugin-menu.js": ["on the ForkMesh Market"],
     "04-account.js": [
         "linked to another ForkMesh user",
@@ -146,6 +146,7 @@ def test_content_page_partials_mark_the_platform_name():
         text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
         text = text.replace("<span data-platform-name>ForkMesh</span>", "")
         text = text.replace('data-platform-name>ForkMesh</span>', "")
+        text = text.replace("<span data-desktop-brand>ForkMesh </span>", "")
         text = text.replace("© 2026 ForkMesh, Inc.", "")
         assert not PLATFORM.search(text), (relative, PLATFORM.search(text).group(0),
                                            text[PLATFORM.search(text).start() - 60:][:120])
@@ -233,7 +234,7 @@ def test_hosting_limit_messages_name_the_instance():
     assert HOSTED_GIT.count("instance_features.rename(") == 2
 
 
-def test_brand_tool_renames_page_descriptions_but_keeps_the_desktop(tmp_path):
+def test_brand_tool_renames_page_text_outside_scripts(tmp_path):
     page = tmp_path / "index.html"
     page.write_text(
         '<!doctype html><html><head><title>Log in · ForkMesh</title>\n'
@@ -244,9 +245,9 @@ def test_brand_tool_renames_page_descriptions_but_keeps_the_desktop(tmp_path):
     apply_instance_brand.apply(tmp_path, "Acme & Co")
     text = page.read_text()
     assert 'content="Log in to Acme &amp; Co with your node identity."' in text
-    assert 'content="Repositories mirrored by ForkMesh desktop nodes."' in text
+    assert 'content="Repositories mirrored by desktop nodes."' in text
     assert 'content="Join Acme &amp; Co"' in text
-    assert "<p>ForkMesh</p>" in text
+    assert "<p>Acme &amp; Co</p>" in text
 
 
 def test_brand_script_keeps_the_company_name_and_identifiers():
@@ -276,3 +277,147 @@ def test_api_error_messages_name_the_instance():
     assert _json.loads(answer({"INSTANCE_NAME": "Acme Code"}, payload, status=200)._body) == payload
     text = answer({"INSTANCE_NAME": "Acme Code"}, payload, content_type="text/plain")
     assert _json.loads(text._body) == payload
+
+
+def test_brand_tool_leaves_scripts_styles_and_identifiers_alone(tmp_path):
+    page = tmp_path / "index.html"
+    page.write_text(
+        '<!doctype html><html><head><title>ForkMesh</title>'
+        '<style>body{font-family:"ForkMesh Dashboard Mono"}</style>'
+        '<script>window.ForkMeshAPI = "ForkMesh";</script></head>'
+        '<body data-x="X-ForkMesh-Ref"><a aria-label="ForkMesh home">ForkMesh</a>'
+        '<p>Open the ForkMesh desktop app.</p><span>© 2026 ForkMesh, Inc.</span></body></html>')
+    apply_instance_brand.apply(tmp_path, "Acme Code")
+    text = page.read_text()
+    assert '"ForkMesh Dashboard Mono"' in text
+    assert 'window.ForkMeshAPI = "ForkMesh";' in text
+    assert 'X-ForkMesh-Ref' in text
+    assert 'aria-label="Acme Code home">Acme Code</a>' in text
+    assert "<p>Open the desktop app.</p>" in text
+    assert "© 2026 ForkMesh, Inc." in text
+
+
+def test_outbound_user_agents_name_the_instance_once_it_is_known():
+    saved = dict(instance_features._REMEMBERED)
+    try:
+        instance_features._REMEMBERED.update({"name": "", "origin": ""})
+        instance_features.remember_instance(env())
+        assert instance_features.user_agent("forkmesh-relay/1.0", "webhooks") == "forkmesh-relay/1.0"
+        instance_features.remember_instance(env(INSTANCE_NAME="ACME Bolt",
+                                       PUBLIC_BASE_URL="https://git.example.org/"))
+        assert instance_features.user_agent("forkmesh-relay/1.0", "webhooks") == (
+            "acme-bolt-webhooks/1.0 (+https://git.example.org)")
+    finally:
+        instance_features._REMEMBERED.update(saved)
+    sources = {name: (ROOT / "src" / name).read_text(encoding="utf-8") for name in (
+        "repository_webhooks.py", "workflows_runtime.py", "repository_provider_mirror.py",
+        "fediverse_routes.py")}
+    assert all("instance_features.user_agent(" in text for text in sources.values())
+    assert 'instance_features.user_agent(\n            "ForkMesh-repository-metadata/1.0"' in ENTRY
+    runtime = (ROOT / "host" / "forkmesh_host" / "runtime.py").read_text(encoding="utf-8")
+    assert runtime.count("self._remember_instance()") == 2
+
+
+def test_brand_tool_names_the_web_manifest_without_a_logo(tmp_path):
+    import json as _json
+    (tmp_path / "favicon").mkdir()
+    manifest = tmp_path / "favicon" / "site.webmanifest"
+    manifest.write_text(_json.dumps({"name": "ForkMesh", "short_name": "ForkMesh", "display": "standalone"}))
+    (tmp_path / "index.html").write_text("<!doctype html><html><head><title>ForkMesh</title></head></html>")
+    apply_instance_brand.apply(tmp_path, "Acme Code")
+    app = _json.loads(manifest.read_text())
+    assert app["name"] == app["short_name"] == "Acme Code" and app["display"] == "standalone"
+
+
+GATED_PAGES = {
+    "pitch-deck": "pitch-deck",
+    "referral": "referrals",
+    "mirror-payouts.html": "rewards",
+    "start.html": "instance-launcher",
+    "hackathon": "hackathon",
+    "microjobs": "microjobs",
+    "ledger.html": "rewards",
+    "leaderboards.html": "website",
+    "market-reviews.html": "website",
+    "status.html": "status",
+    "dashboard/docs/": "developer-docs",
+    "dashboard/ads/": "ads",
+    "dashboard/links/": "referrals",
+    "dashboard/bounties/": "referrals",
+    "dashboard/challenges/": "challenges",
+}
+PAGE_KEPT = (
+    "forkmesh.com/install.sh",
+    "forkmesh-profile=username",
+    "demo@forkmesh.local",
+    "forkmesh-demo",
+)
+VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
+        "source", "track", "wbr"}
+SHOWN_ATTRIBUTES = {"title", "aria-label", "alt", "placeholder", "content"}
+
+
+def _shown_text(page):
+    from html.parser import HTMLParser
+
+    class Shown(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=True)
+            self.stack = []
+            self.lines = []
+
+        def hidden(self):
+            return any(self.stack)
+
+        def handle_starttag(self, tag, attrs):
+            values = dict(attrs)
+            skip = tag in ("script", "style", "template") or "data-instance-plugin" in values
+            if not self.hidden() and not skip:
+                self.lines.extend(str(value or "") for name, value in attrs
+                                  if name in SHOWN_ATTRIBUTES)
+            if tag not in VOID:
+                self.stack.append(skip)
+
+        def handle_endtag(self, tag):
+            if tag not in VOID and self.stack:
+                self.stack.pop()
+
+        def handle_data(self, data):
+            if not self.hidden():
+                self.lines.append(data)
+
+    parser = Shown()
+    parser.feed(page)
+    return "\n".join(parser.lines)
+
+
+def test_branded_pages_show_no_platform_word(tmp_path):
+    import shutil
+    dist = tmp_path / "dist"
+    shutil.copytree(ROOT / "public", dist, ignore=shutil.ignore_patterns("*.js", "*.css", "*.png",
+                                                                         "*.webp", "*.svg", "*.zip"))
+    apply_instance_brand.apply(dist, "Acme Code")
+    assert set(GATED_PAGES.values()) <= set(instance_features.IDS)
+    found = []
+    for page in sorted(dist.rglob("*.html")):
+        relative = page.relative_to(dist).as_posix()
+        if (relative.split("/", 1)[0] in GATED_PAGES or relative.startswith("dashboard/partials/")
+                or any(relative.startswith(prefix) for prefix in GATED_PAGES if prefix.endswith("/"))):
+            continue
+        if relative.startswith("dashboard/") and relative.endswith(("shell.html",)):
+            continue
+        for line in _shown_text(page.read_text(encoding="utf-8", errors="replace")).split("\n"):
+            if re.search(r"forkmesh", line, re.I) and not any(kept in line for kept in PAGE_KEPT):
+                found.append("%s: %s" % (relative, line.strip()[:120]))
+    assert found == []
+
+
+def test_instance_guide_pages_do_not_say_forkmesh():
+    import instance_pages
+    for path in ("/desktop", "/docs"):
+        page = instance_pages.page_for(path, "Acme Code", "https://code.example.org", False)
+        shown = _shown_text(page)
+        for line in shown.split("\n"):
+            assert "forkmesh" not in line.lower() or "forkmesh.com/install.sh" in line, (path, line)
+        assert "Powered by" not in page
+    assert "Powered by" in instance_pages.page_for("/docs", "Acme Code", "https://code.example.org")
