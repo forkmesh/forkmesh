@@ -266,6 +266,7 @@ public enum RouteParser {
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil
         case "rss", "rss-reader": return tail.isEmpty ? [.rssReader] : nil
         case "secure-drive": return tail.isEmpty ? [.secureDrive] : nil
+        case "spider-room": return tail.isEmpty ? [.spiderRoom] : nil
         case "workflows": return tail.isEmpty ? [.workflows] : nil
         case "people": return [.people]
         case "docs": return [.docs]
@@ -307,6 +308,8 @@ public enum RouteParser {
             return tail.isEmpty ? [.rssReader] : nil
         case "secure-drive":
             return tail.isEmpty ? [.secureDrive] : nil
+        case "spider-room":
+            return tail.isEmpty ? [.spiderRoom] : nil
         default:
             return routes(segments: all, query: query, me: me)
         }

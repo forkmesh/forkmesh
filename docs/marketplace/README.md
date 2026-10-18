@@ -252,7 +252,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `eye-control` (iPhone, experimental: gaze cursor and blink to tap;
   [eye-control.md](eye-control.md)),
   `tour`, `people` ([people.md](people.md)), `aquarium`
-  ([aquarium.md](aquarium.md)), `winamp` (theme), `gemma-4` (agent model).
+  ([aquarium.md](aquarium.md)), `spider-room` (the Genie spider in the room
+  in augmented reality on the iPhone; [spider-room.md](spider-room.md)),
+  `winamp` (theme), `gemma-4` (agent model).
 - **Face and voice:** `face-changer` (web page, a desktop rail link, and a
   native Face Changer screen in the phone apps whose face, background and voice
   choices video calls use) and
@@ -395,5 +397,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).

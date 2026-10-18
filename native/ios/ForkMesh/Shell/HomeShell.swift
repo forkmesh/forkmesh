@@ -713,7 +713,9 @@ struct HomeShell: View {
             .overlay { AquariumLayer(hidden: composer.isOpen || keyboardUp || voice.isOpen, floor: genieFloor) }
             .overlay {
                 if !genie.spiderHidden {
-                    GenieSpiderLayer(hidden: composer.isOpen || keyboardUp || voice.isOpen, floor: genieFloor)
+                    GenieSpiderLayer(
+                        hidden: composer.isOpen || keyboardUp || voice.isOpen || router.currentRoute?.kind == .spiderRoom,
+                        floor: genieFloor)
                 }
             }
             .overlay { hubDropdown }

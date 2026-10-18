@@ -180,6 +180,7 @@ public enum RouteCatalog {
         case .appStoreStatus: return "App Store Status"
         case .rssReader: return "RSS Reader"
         case .secureDrive: return "Secure Drive"
+        case .spiderRoom: return "Spider Room"
         case .workflows: return "Workflows"
         case .localAI: return "On-device AI"
         case .activity: return "Activity"
@@ -260,6 +261,7 @@ public enum RouteCatalog {
         case .appStoreStatus: return "app.badge"
         case .rssReader: return "dot.radiowaves.up.forward"
         case .secureDrive: return "lock.shield"
+        case .spiderRoom: return "arkit"
         case .workflows: return "point.3.connected.trianglepath.dotted"
         case .localAI: return "cpu"
         case .activity: return "bolt"
@@ -395,6 +397,7 @@ public enum HubCatalog {
         .destination(.videoMixDjStudio),
         .destination(.rssReader),
         .destination(.secureDrive),
+        .destination(.spiderRoom),
         .destination(.localAI),
         .destination(.activity),
     ]

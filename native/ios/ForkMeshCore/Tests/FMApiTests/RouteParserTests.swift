@@ -256,6 +256,8 @@ final class RouteParserTests: XCTestCase {
         XCTAssertEqual(stack("forkmesh://dashboard/rss"), [.rssReader])
         XCTAssertEqual(stack("forkmesh://secure-drive"), [.secureDrive])
         XCTAssertEqual(stack("forkmesh://dashboard/secure-drive"), [.secureDrive])
+        XCTAssertEqual(stack("forkmesh://spider-room"), [.spiderRoom])
+        XCTAssertEqual(stack("forkmesh://dashboard/spider-room"), [.spiderRoom])
         XCTAssertNil(stack("forkmesh://ios-udid?udid=abc"))
         XCTAssertNil(stack("forkmesh://surface/open?route=eyJjb21wb3NlIjp7fX0"))
         XCTAssertNil(RouteParser.parse(URL(string: "forkmesh://surface/open?route=eyJjb21wb3NlIjp7fX0")!))
