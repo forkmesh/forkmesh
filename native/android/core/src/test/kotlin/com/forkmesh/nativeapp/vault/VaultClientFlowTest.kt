@@ -71,6 +71,49 @@ fun refused(code: String, block: () -> Unit) {
 }
 
 class VaultClientFlowTest {
+    fun testALoginOriginIsSchemeHostAndPort() {
+        assertEq("http://192.168.1.1:80", VaultClient.loginOrigin("192.168.1.1"))
+        assertEq("https://router.lan:443", VaultClient.loginOrigin("HTTPS://Router.LAN/cgi-bin/luci"))
+        assertEq("http://fd00::1:8080", VaultClient.loginOrigin("http://[fd00::1]:8080"))
+        assertEq("", VaultClient.loginOrigin("ftp://router.lan"))
+        assertEq("", VaultClient.loginOrigin("router notes"))
+        assertEq("", VaultClient.loginOrigin("  "))
+    }
+
+    fun testARouterLoginIsRememberedAndFoundByItsAddress() {
+        val bridge = VaultBridge.start() ?: run {
+            println("SKIP the vault stdio bridge is not reachable")
+            return
+        }
+        try {
+            val alice = bridge.client("alice")
+            alice.status()
+            alice.setUp("alice master password")
+            val router = mapOf("title" to "OpenWrt router (192.168.1.1)", "url" to "http://192.168.1.1", "username" to "root", "password" to "router-pass")
+            val (id, changed) = alice.rememberLogin(router)
+            expect(changed, "a router login is saved")
+            assertEq(listOf(id), alice.loginsFor("http://192.168.1.1:80/").map { it.id })
+            assertEq("router-pass", alice.loginsFor("http://192.168.1.1").first().password)
+            expect(alice.loginsFor("https://192.168.1.1").isEmpty(), "another scheme finds nothing")
+            expect(alice.loginsFor("http://192.168.1.2").isEmpty(), "another host finds nothing")
+            assertEq(id to false, alice.rememberLogin(router))
+            assertEq(id to true, alice.rememberLogin(router + mapOf("password" to "router-pass-2", "title" to "ignored")))
+            assertEq(1, alice.items.size)
+            assertEq("router-pass-2", alice.find(id)?.password)
+            assertEq("OpenWrt router (192.168.1.1)", alice.find(id)?.title)
+            val (other, _) = alice.rememberLogin(router + ("username" to "admin"))
+            expect(other != id, "another user name is another login")
+            assertEq(2, alice.loginsFor("http://192.168.1.1").size)
+            refused("invalid_url") { alice.rememberLogin(router + ("url" to "router notes")) }
+            expect(!Json.stringify(bridge.control("dump")).contains("router-pass"), "the database never sees a router password")
+            alice.lock()
+            expect(alice.loginsFor("http://192.168.1.1").isEmpty(), "a locked vault finds nothing")
+            refused("vault_locked") { alice.rememberLogin(router) }
+        } finally {
+            bridge.stop()
+        }
+    }
+
     fun testTheWholeVaultFlowAgainstTheRealWorkerModule() {
         val bridge = VaultBridge.start() ?: run {
             println("SKIP the vault stdio bridge is not reachable")

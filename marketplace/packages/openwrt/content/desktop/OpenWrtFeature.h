@@ -39,6 +39,7 @@ public:
     void setHostSearchQuery(const QString &query) override;
     QList<forkmesh::market::NativePackageSearchHit> searchHits(const QString &query, int limit) const override;
     void activateSearchHit(const QString &id) override;
+    void packageChanged() override;
 
 private:
     QWidget *buildSignIn();
@@ -58,6 +59,10 @@ private:
     void connectToRouter();
     void trustCertificate();
     void signOut();
+    QString loginStoreName() const;
+    void updateLoginStore();
+    void signInWithSavedLogin();
+    void saveLoginToStore(const QString &password, const QString &done);
     void showStatus(const QString &text, bool error = false);
     bool confirm(const QString &title, const QString &text, const QString &action, bool danger = false);
     void report(const RpcResult &result, const QString &success);
@@ -186,6 +191,11 @@ private:
     QLineEdit *m_user = nullptr;
     QLineEdit *m_password = nullptr;
     QPushButton *m_connectButton = nullptr;
+    QPushButton *m_savedLoginButton = nullptr;
+    QCheckBox *m_saveLogin = nullptr;
+    QLabel *m_passwordNote = nullptr;
+    QString m_loginUrl;
+    bool m_passwordFromStore = false;
     QLabel *m_signInNote = nullptr;
     QLabel *m_certificateLabel = nullptr;
     QPushButton *m_trustButton = nullptr;

@@ -120,6 +120,8 @@ public:
     void load(Done done);
     void save(const QJsonObject &fields, const QString &id, std::function<void(const QString &code, const QString &id)> done);
     void remove(const QString &id, Done done);
+    QList<const VaultItem *> loginsFor(const QString &url) const;
+    void rememberLogin(const QJsonObject &fields, std::function<void(const QString &code, const QString &id, bool changed)> done);
 
     void previewShare(const QString &kind, const QString &name,
                       std::function<void(const QString &code, const QList<VaultRecipient> &)> done);
@@ -137,6 +139,7 @@ public:
     void destroy(std::function<void(const QString &code, const QJsonObject &payload)> done);
 
     static QJsonObject cleanFields(const QJsonObject &fields, QString *code);
+    static QString loginOrigin(const QString &url);
 
     static constexpr qint64 kImportMaxBytes = 16 * 1024 * 1024;
     static QList<QStringList> parseCsv(const QString &text);

@@ -196,6 +196,45 @@ public final class VaultService {
         return saved
     }
 
+    public func saveLogin(title: String, url: String, username: String, password: String) async -> VaultLoginAnswer {
+        if let blocked = await loginBlocked() { return blocked }
+        touch()
+        let fields: JSONObject = ["title": .string(title), "url": .string(url), "username": .string(username),
+                                  "password": .string(password), "notes": .string("")]
+        do {
+            let saved = try await client.rememberLogin(fields)
+            await syncAutofill()
+            return .saved(changed: saved.changed)
+        } catch {
+            return .failed(VaultCopy.errorText(error))
+        }
+    }
+
+    public func findLogins(url: String) async -> VaultLoginAnswer {
+        if let blocked = await loginBlocked() { return blocked }
+        touch()
+        do {
+            try await reload()
+            return .found(client.logins(for: url))
+        } catch {
+            return .failed(VaultCopy.errorText(error))
+        }
+    }
+
+    private func loginBlocked() async -> VaultLoginAnswer? {
+        do {
+            try await refresh()
+        } catch {
+            return .failed(VaultCopy.errorText(error))
+        }
+        switch phase {
+        case .unlocked: return nil
+        case .notSetUp: return .noVault
+        case .signedOut: return .signedOut
+        case .loading, .locked: return .locked
+        }
+    }
+
     public func remove(_ id: String) async throws {
         touch()
         try await client.remove(id)
@@ -387,6 +426,15 @@ public final class VaultService {
         incomingImport = nil
         client.lock()
     }
+}
+
+public enum VaultLoginAnswer: Equatable {
+    case saved(changed: Bool)
+    case found([VaultItem])
+    case locked
+    case noVault
+    case signedOut
+    case failed(String)
 }
 
 public struct VaultIncomingImport: Equatable, Sendable {
