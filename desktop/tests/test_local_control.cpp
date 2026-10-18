@@ -551,12 +551,12 @@ static void testRelay()
                 {"key", pairedPhone.publicKey}, {"name", "Away phone"},
                 {"user", "alice"}, {"pairedAtMs", 1.0}}}}}).toJson());
     }
+    QList<QJsonObject> outbox;
     LocalControlServer server(
         desktopKey.publicKey,
         [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
     server.setDesktopInfo("desk", "alice");
     server.setDeviceStorePath(store);
-    QList<QJsonObject> outbox;
     server.setRelaySink([&](const QJsonObject &f) { outbox.append(f); return true; },
                         "Desk");
     bool prompted = false;
@@ -874,12 +874,12 @@ static void testCodePairedUserStays()
     writeStore(store, QJsonArray{QJsonObject{
         {"key", phoneKey.publicKey}, {"name", "Guest phone"},
         {"user", "bob"}, {"pairedAtMs", 1.0}, {"approval", "code"}}});
+    QList<QJsonObject> outbox;
     LocalControlServer server(
         desktopKey.publicKey,
         [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
     server.setDesktopInfo("desk", "alice");
     server.setDeviceStorePath(store);
-    QList<QJsonObject> outbox;
     server.setRelaySink(
         [&](const QJsonObject &f) {
             outbox.append(f);
@@ -909,13 +909,13 @@ static void testRelayResilience()
     writeStore(store, QJsonArray{QJsonObject{
         {"key", phoneKey.publicKey}, {"name", "Away phone"},
         {"user", "alice"}, {"pairedAtMs", 1.0}, {"approval", "code"}}});
+    QList<QJsonObject> outbox;
+    bool relayUp = true;
     LocalControlServer server(
         desktopKey.publicKey,
         [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
     server.setDesktopInfo("desk", "alice");
     server.setDeviceStorePath(store);
-    QList<QJsonObject> outbox;
-    bool relayUp = true;
     server.setRelaySink(
         [&](const QJsonObject &f) {
             if (!relayUp)
@@ -1037,12 +1037,12 @@ static void testAccountRevocation()
                     {"pairedAtMs", 2.0}},
         QJsonObject{{"key", codePhone.publicKey}, {"name", "Code phone"},
                     {"pairedAtMs", 3.0}, {"approval", "code"}}});
+    QList<QJsonObject> outbox;
     LocalControlServer server(
         desktopKey.publicKey,
         [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
     server.setDesktopInfo("desk", "alice");
     server.setDeviceStorePath(store);
-    QList<QJsonObject> outbox;
     server.setRelaySink([&](const QJsonObject &f) { outbox.append(f); return true; },
                         "desk");
     using Verdict = LocalControlServer::AccountCheck;
@@ -1134,6 +1134,86 @@ static void testAccountRevocation()
     check(deniedReason(*again) == "pair_on_lan" && again->closed,
           "a revoked phone cannot reconnect over the relay");
     check(!server.isPaired(accountPhone.publicKey), "the revoked phone is forgotten");
+}
+
+static void testLanAdmitsBeforeAccountCheck()
+{
+    QTemporaryDir dir;
+    SigningKey desktopKey;
+    SigningKey freshPhone;
+    SigningKey stalePhone;
+    const QString store = dir.filePath("paired.json");
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    writeStore(store, QJsonArray{
+        QJsonObject{{"key", freshPhone.publicKey}, {"name", "Fresh phone"},
+                    {"pairedAtMs", 1.0}, {"approval", "account"},
+                    {"accountCheckedMs", double(now - 60 * 60 * 1000)}},
+        QJsonObject{{"key", stalePhone.publicKey}, {"name", "Stale phone"},
+                    {"pairedAtMs", 2.0}, {"approval", "account"},
+                    {"accountCheckedMs", double(now - 25ll * 60 * 60 * 1000)}}});
+    LocalControlServer server(
+        desktopKey.publicKey,
+        [&desktopKey](const QByteArray &data) { return desktopKey.sign(data); });
+    server.setDesktopInfo("desk", "alice");
+    server.setDeviceStorePath(store);
+    using Verdict = LocalControlServer::AccountCheck;
+    QHash<QString, std::function<void(Verdict)>> pending;
+    server.accountDeviceCheck = [&](const LocalControlServer::Device &device,
+                                    std::function<void(Verdict)> done) {
+        pending.insert(device.key, done);
+    };
+
+    QTcpServer listener;
+    check(listener.listen(QHostAddress::LocalHost, 0), "fast-admit listener");
+    QObject::connect(&listener, &QTcpServer::newConnection, [&] {
+        QTcpSocket *socket = listener.nextPendingConnection();
+        auto *buffer = new QByteArray;
+        QObject::connect(socket, &QTcpSocket::readyRead, socket, [=, &server] {
+            buffer->append(socket->readAll());
+            if (buffer->size() < 4)
+                return;
+            const quint32 length = qFromBigEndian<quint32>(
+                reinterpret_cast<const uchar *>(buffer->constData()));
+            if (buffer->size() < qsizetype(length) + 4)
+                return;
+            const QByteArray first = buffer->mid(4, length);
+            const QByteArray rest = buffer->mid(4 + length);
+            delete buffer;
+            socket->disconnect();
+            server.adopt(socket, first, rest);
+        });
+    });
+
+    {
+        TestClient phone(freshPhone);
+        check(phone.connectTo(listener.serverPort()), "fresh phone connects");
+        check(waitFor([&] { return !phone.event("session").isEmpty(); }),
+              "fresh phone gets a session while the account is still being asked");
+        check(phone.event("session").value("data").toObject().value("paired").toBool(),
+              "a phone the account confirmed today is admitted on the LAN at once");
+        check(pending.contains(freshPhone.publicKey),
+              "and the account is still asked in the background");
+        if (pending.contains(freshPhone.publicKey))
+            pending.take(freshPhone.publicKey)(Verdict::NotOwned);
+        check(waitFor([&] { return !server.isConnected(freshPhone.publicKey); }),
+              "a phone the account no longer lists is cut off when the answer lands");
+        check(!server.isPaired(freshPhone.publicKey), "and forgotten");
+    }
+
+    {
+        TestClient phone(stalePhone);
+        check(phone.connectTo(listener.serverPort()), "stale phone connects");
+        check(waitFor([&] { return pending.contains(stalePhone.publicKey); }),
+              "a phone not confirmed for a day is asked about first");
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 50);
+        check(phone.event("session").isEmpty(), "and waits for the answer");
+        if (pending.contains(stalePhone.publicKey))
+            pending.take(stalePhone.publicKey)(Verdict::Owned);
+        check(waitFor([&] { return !phone.event("session").isEmpty(); }),
+              "stale phone admitted once confirmed");
+        check(phone.event("session").value("data").toObject().value("paired").toBool(),
+              "stale phone paired after the check");
+    }
 }
 
 static void testHostPolicy()
@@ -1356,6 +1436,7 @@ int main(int argc, char **argv)
     testRelayResilience();
     testCodePairedUserStays();
     testAccountRevocation();
+    testLanAdmitsBeforeAccountCheck();
     testHostPolicy();
     testStream();
     if (failures) {

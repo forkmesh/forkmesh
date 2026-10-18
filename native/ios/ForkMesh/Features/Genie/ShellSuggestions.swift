@@ -67,10 +67,14 @@ final class ShellSuggestions {
     }
 
     func contactTapped() {
-        guard let pick: GenieOutreachPick = contact, GenieOutreachCoach.shared.offer?.stage != .writing else { return }
+        guard let pick: GenieOutreachPick = contact else { return }
+        guard !ShellMailStatus.shared.busy else {
+            ShellMailStatus.shared.say("An email is still being written. Try again when the picture stops spinning.")
+            return
+        }
         FmHaptics.tap()
         passed.insert(pick.contact.id)
-        GenieOutreachCoach.shared.write(pick, image: contactImage)
+        GenieOutreachCoach.shared.write(pick)
         contact = nil
         contactImage = nil
         refreshNow()

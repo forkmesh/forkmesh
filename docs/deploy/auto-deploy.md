@@ -54,7 +54,13 @@ The agent runs its installed copy, so a commit cannot change how it decides;
    tree signature) and refuse a rollback unless the run is a manual rollback.
    If nothing served changed, end green. If no core answers at all, treat the
    operator box as offline and wait up to 30 minutes rather than blaming a
-   node.
+   node. If some cores answer and others give no HTTP answer at all, ask the
+   silent ones again every 30 seconds for up to 5 minutes before failing: on
+   2026-10-18 the operator box lost its route for about three minutes while
+   gate 1 was asking n2, the network was back by the time n3 and n4 were
+   asked, and the deploy of `6b5522ccc12f` failed although n2 never stopped
+   serving the other cores. A core that answers with an HTTP error still
+   fails the gate at once.
 2. **Tests** from a clean `git archive` in a no-network sandbox with no home:
    a must-pass set (`app/tests/host/test_host_e2e.py`, `deploy/tests`, host
    shim, request guard, apps e2e, timer, desktop and operator-alert pings,

@@ -115,12 +115,20 @@ final class GenieOutreachCoach {
         withAnimation(.easeOut(duration: 0.25)) { offer = nil }
     }
 
-    func write(_ pick: GenieOutreachPick, image: UIImage?) {
-        guard offer?.stage != .writing else { return }
-        fade?.cancel()
-        count += 1
-        offer = GenieOutreachOffer(id: count, pick: pick, image: image, stage: .offered)
-        write()
+    func write(_ pick: GenieOutreachPick) {
+        let status: ShellMailStatus = ShellMailStatus.shared
+        guard !status.busy else { return }
+        FmHaptics.impact(.medium)
+        GenieSounds.shared.play(.whoosh)
+        status.set(.writing)
+        Task { @MainActor [weak self] in
+            let opened: Bool = await self?.compose(pick, card: nil) ?? false
+            if opened {
+                status.set(.sent)
+            } else {
+                status.finish()
+            }
+        }
     }
 
     func write() {
@@ -134,31 +142,52 @@ final class GenieOutreachCoach {
         let id: Int = current.id
         let pick: GenieOutreachPick = current.pick
         Task { @MainActor [weak self] in
-            var deck: String = ""
-            if pick.needsDeck {
-                do {
-                    guard let toolbox: ForkMeshToolbox = LocalAIFeature.toolbox() else {
-                        throw GenieOutreachDeckMissing(reason: "The CRM is not available.")
-                    }
-                    deck = try await toolbox.outreachDeck(pick)
-                } catch {
-                    guard let self = self, self.offer?.id == id else { return }
-                    self.dismiss()
-                    GenieHub.shared.show(line: "No email to \(pick.contact.displayName): investor emails carry their own deck link, and I could not make one. \(error)")
-                    return
-                }
-            }
-            guard let self = self, self.offer?.id == id else { return }
-            self.log.drafted(pick.contact.id)
-            let draft: GenieOutreachDraft = await GenieOutreach.write(pick, writers: GenieFeature.outreachWriters(), deck: deck)
-            guard self.offer?.id == id else { return }
-            self.dismiss()
-            self.open(draft)
+            _ = await self?.compose(pick, card: id)
         }
     }
 
-    private func open(_ draft: GenieOutreachDraft) {
-        GenieCues.shared.play(.cheer)
+    private func compose(_ pick: GenieOutreachPick, card: Int?) async -> Bool {
+        var deck: String = ""
+        if pick.needsDeck {
+            do {
+                guard let toolbox: ForkMeshToolbox = LocalAIFeature.toolbox() else {
+                    throw GenieOutreachDeckMissing(reason: "The CRM is not available.")
+                }
+                deck = try await toolbox.outreachDeck(pick)
+            } catch {
+                guard holds(card) else { return false }
+                close(card)
+                say("No email to \(pick.contact.displayName): investor emails carry their own deck link, and I could not make one. \(error)", card: card, isError: true)
+                return false
+            }
+        }
+        guard holds(card) else { return false }
+        log.drafted(pick.contact.id)
+        let draft: GenieOutreachDraft = await GenieOutreach.write(pick, writers: GenieFeature.outreachWriters(), deck: deck)
+        guard holds(card) else { return false }
+        close(card)
+        open(draft, card: card)
+        return true
+    }
+
+    private func holds(_ card: Int?) -> Bool {
+        card == nil || offer?.id == card
+    }
+
+    private func close(_ card: Int?) {
+        if card != nil { dismiss() }
+    }
+
+    private func say(_ line: String, card: Int?, isError: Bool = false) {
+        if card == nil {
+            ShellMailStatus.shared.say(line, isError: isError)
+        } else {
+            GenieHub.shared.show(line: line)
+        }
+    }
+
+    private func open(_ draft: GenieOutreachDraft, card: Int?) {
+        if card != nil { GenieCues.shared.play(.cheer) }
         switch draft.channel {
         case .email:
             guard let url: URL = draft.zohoURL else {
@@ -171,13 +200,13 @@ final class GenieOutreachCoach {
                     return
                 }
                 let line: String = GenieOutreachCoach.openedLine(draft)
-                GenieHub.shared.show(line: line)
-                InboxLocalPings.report(surface: "genie", title: "The spider said", message: line)
+                self?.say(line, card: card)
+                InboxLocalPings.report(surface: "genie", title: card == nil ? "Email opened" : "The spider said", message: line)
             }
         case .mastodon:
             UIPasteboard.general.string = draft.body
             share(draft)
-            GenieHub.shared.show(line: "Toot copied. Pick Mastodon to post it.")
+            say("Toot copied. Pick Mastodon to post it.", card: card)
         }
     }
 
