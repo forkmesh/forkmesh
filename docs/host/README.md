@@ -78,7 +78,12 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   include is runtime state excluded from IDS integrity checks.
 - **Repository fast path.** Public repository reads are answered from the
   local gateway before the app; non-200 answers fall through. It adds the
-  app's CORS answer itself.
+  app's CORS answer itself. `gateway_query` must send the gateway the same
+  query the app's router builds (`_https_mirror_request_query`):
+  `test_query_matches_the_worker_router` compares the two. When the app
+  learned `history?path=` but the fast path did not, every folder's History
+  tab on an instance showed the whole repository's commits, because the fast
+  path answered first and dropped `path`.
 - **Egress.** Every subrequest refuses private, loopback, metadata, CGNAT and
   mesh addresses at connect time, re-checks redirects, and fails over across
   resolved addresses. Without `FORKMESH_SERVES_PRODUCTION=1`,
