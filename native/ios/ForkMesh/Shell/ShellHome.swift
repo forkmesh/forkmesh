@@ -229,6 +229,10 @@ struct ShellHome: View {
                 Button("Clear all update dots") { clearUpdates() }
                     .accessibilityIdentifier("shell-home-background-clear-dots")
             }
+            if CaptureHold.isOn {
+                Button("Select area to copy…") { CaptureHold.start(whole: false) }
+                    .accessibilityIdentifier("shell-home-background-capture")
+            }
             Button("Home settings…") { settingsShown = true }
                 .accessibilityIdentifier("shell-home-background-settings")
             Button("Bottom bar settings…") { barSettingsShown = true }
@@ -301,6 +305,7 @@ struct ShellHome: View {
             .contentShape(Rectangle())
             .onLongPressGesture(minimumDuration: 0.5, maximumDistance: 10) {
                 guard prefs.drag == nil else { return }
+                CaptureHold.noteHandled()
                 FmHaptics.selection()
                 backgroundMenuShown = true
             }

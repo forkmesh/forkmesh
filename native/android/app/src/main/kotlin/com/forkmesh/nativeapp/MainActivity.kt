@@ -45,7 +45,7 @@ class MainActivity : ComponentActivity() {
                     isAppearanceLightNavigationBars = !dark
                 }
             }
-            ForkMeshTheme(dark = dark, accent = appearance.accent) {
+            ForkMeshTheme(dark = dark, theme = appearance.theme) {
                 Box(Modifier.fmTapSounds(), propagateMinConstraints = true) {
                     if (kitGallery != null) kitGallery.Content(navigator) else Features.Root(navigator, onExit = { moveTaskToBack(true) })
                 }

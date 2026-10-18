@@ -11,8 +11,8 @@
   },
   "type": "extension.native",
   "category": "Extensions",
-  "version": "1.0.0",
-  "summary": "Capture a screen region, annotate it, and attach it to an agent prompt.",
+  "version": "1.1.0",
+  "summary": "Capture a screen region, annotate it, and attach it to an agent prompt. On the iPhone, long-press any blank area to select, mark up and copy part of the screen.",
   "license": {
     "model": "free-open-source",
     "spdx": "MIT",
@@ -25,6 +25,7 @@
   },
   "entrypoints": {
     "desktop": "builtin:capture",
+    "ios": "builtin:capture",
     "settings": "builtin:package"
   },
   "permissions": [
@@ -36,6 +37,11 @@
     {
       "id": "prompt.attachments.write",
       "label": "Add the accepted image to the local prompt composer",
+      "risk": "low"
+    },
+    {
+      "id": "clipboard.write",
+      "label": "Copy the area you select on the phone to the clipboard",
       "risk": "low"
     }
   ],

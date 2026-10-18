@@ -228,6 +228,14 @@ def test_missing_calendar_selection_saves_to_the_private_calendar():
     assert run(calendar_api.handle(invalid, "/api/calendar"))["status"] == 400
 
 
+def test_write_body_must_be_a_json_object():
+    db = database()
+    listed = Runtime(db, method="POST", body=["not", "an", "object"])
+    response = run(calendar_api.handle(listed, "/api/calendar"))
+    assert response["status"] == 400
+    assert response["payload"] == {"error": "invalid_json"}
+
+
 def test_due_reminders_are_exactly_once_for_owner_and_non_declined_invitees():
     db = database()
     start = 1_800_086_400_000

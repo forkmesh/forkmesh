@@ -63,6 +63,7 @@ FIRST_PARTY_PACKAGES = {
     "docs": "Docs",
     "eye-control": "Eye Control",
     "face-changer": "Face Changer",
+    "files": "Files",
     "food-guide": "Food Guide",
     "forkmesh-ide": "ForkMesh for VS Code",
     "forkmesh-sky-office": "ForkMesh Aquarium Sky Office",

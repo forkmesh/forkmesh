@@ -532,12 +532,12 @@ bool VaultClient::readImportCsv(const QByteArray &bytes, ImportFile *file, QStri
         out.source = QStringLiteral("bitwarden");
     else if (has({"httprealm"}) || has({"formactionorigin"}) || has({"guid"}))
         out.source = QStringLiteral("firefox");
+    else if (has({"archived"}) || has({"one-time password"}))
+        out.source = QStringLiteral("onePassword");
     else if (has({"otpauth"}))
         out.source = QStringLiteral("applePasswords");
     else if (has({"name", "url", "username", "password", "note"}))
         out.source = QStringLiteral("chrome");
-    else if (has({"archived"}) || has({"one-time password"}))
-        out.source = QStringLiteral("onePassword");
     else if (has({"title", "url", "username", "password", "notes"}))
         out.source = QStringLiteral("duckDuckGo");
     else

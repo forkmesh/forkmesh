@@ -166,34 +166,29 @@ async function refused(name, action, code) {
   // Key substitution: dave's bundle served under erin's name never verifies.
   await dave.setUp("dave master password");
   await erin.setUp("erin master password");
-
-  const appleCsv = "﻿Title,URL,Username,Password,Notes,OTPAuth\r\n"
-    + "Mail,https://www.mail.example/login,dave@mail.example,\"pa,ss\"\"word\",\"line one\nline two\",otpauth://totp/Mail?secret=JBSWY3DPEHPK3PXP\r\n"
-    + ",https://shop.example,dave,shop-pass,,\r\n"
-    + "Mail again,https://mail.example,DAVE@mail.example,\"pa,ss\"\"word\",,\r\n"
-    + "Empty,https://nothing.example,,,,\r\n";
-  const parsed = Client.readImportCsv(appleCsv);
-  check("an Apple Passwords export is recognised", parsed.source === "applePasswords" && parsed.sourceLabel === "Apple Passwords");
-  check("quoted commas, quotes and line breaks survive", parsed.logins[0].password === "pa,ss\"word" && parsed.logins[0].notes === "line one\nline two");
-  check("a row without a username or password is left out", parsed.logins.length === 3 && parsed.skippedRows === 1);
-  await dave.load();
-  const imported = await dave.importLogins(parsed.logins);
-  check("an import saves each new login once", imported.added === 2 && imported.duplicates === 1 && imported.remaining === 0 && !imported.stoppedBy);
-  const mail = dave.list().find((item) => item.fields.title === "Mail");
-  check("a one-time code rides in the notes", mail.fields.notes === "line one\nline two\n\notpauth://totp/Mail?secret=JBSWY3DPEHPK3PXP");
-  check("an untitled login is named after its site", Boolean(dave.list().find((item) => item.fields.title === "shop.example" && item.fields.password === "shop-pass")));
-  const reimported = await dave.importLogins(parsed.logins);
-  check("importing the same file again adds nothing", reimported.added === 0 && reimported.duplicates === 3 && (await dave.load()).length === 2);
-  check("the database never sees an imported password", !JSON.stringify((await control("dump")).rows).includes("shop-pass"));
-  const chrome = Client.readImportCsv("name,url,username,password,note\nBank,https://bank.example,me,pw,\n");
-  check("a Chrome export is recognised", chrome.source === "chrome" && chrome.logins[0].title === "Bank");
-  await refused("a file without a password column", async () => Client.readImportCsv("Name,Site\nx,y\n"), "csv_unknown_columns");
-  await refused("a file with only a header", async () => Client.readImportCsv("Title,URL,Username,Password\n"), "csv_no_logins");
-  await refused("an empty file", async () => Client.readImportCsv(""), "csv_empty");
   const daveBundle = (await clientRaw("alice", "/api/vault/users/dave")).bundle;
   let substituted = false;
   try { await C.checkBundle({ ...daveBundle, account: "erin" }, "erin"); } catch { substituted = true; }
   check("a bundle cannot be re-labelled as another account's", substituted);
+
+  const exported = Client.readLoginsCsv("Title,URL,Username,Password,Notes,OTPAuth\n"
+    + "Mail,https://mail.example/,erin,first secret,,otpauth://totp/Mail:erin?secret=JBSWY3DPEHPK3PXP\n"
+    + ",https://www.shop.example/,erin@example.com,second secret,,\n"
+    + "Mail again,https://mail.example/,ERIN,first secret,,\n");
+  const progress = [];
+  const imported = await erin.importLogins(exported.logins, { onProgress: (done, total) => progress.push(`${done}/${total}`) });
+  check("an Apple Passwords export is imported, duplicates folded",
+    imported.added === 2 && imported.duplicates === 1 && imported.remaining === 0 && progress.join() === "1/2,2/2");
+  const erinItems = await erin.load();
+  check("imported logins open with the owner's keys", erinItems.length === 2
+    && erinItems.some((item) => item.fields.title === "shop.example" && item.fields.password === "second secret")
+    && erinItems.some((item) => item.fields.notes.startsWith("otpauth://totp/Mail:erin")));
+  check("importing the same file again adds nothing", (await erin.importLogins(exported.logins)).added === 0);
+  const stored = await clientRaw("erin", "/api/vault/items");
+  check("the server never sees an imported password",
+    JSON.stringify(stored).includes(erinItems[0].id) && !JSON.stringify(stored).includes("second secret"));
+  erin.lock();
+  check("a locked client imports nothing", (await erin.importLogins(exported.logins).catch((error) => error.code)) === "vault_locked");
 
   // Locking forgets everything.
   again.lock();

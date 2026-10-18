@@ -89,6 +89,7 @@ public enum PackageRoutes {
         case "phoneSecurity": return .phoneSecurity
         case "eyeControl": return .eyeControl
         case "openWrtRouter": return .openWrtRouter
+        case "fileExplorer": return .fileExplorer
         case "faceChanger": return .faceChanger
         case "videoMixDjStudio": return .videoMixDjStudio
         case "appStoreStatus": return .appStoreStatus

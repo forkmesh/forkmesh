@@ -265,6 +265,8 @@ QVector<HomeGroup> MainWindow::homeGridGroups() const
             tile.live = rail->syncing() || rail->activityBlink();
             tile.alert = rail->alertTint();
         }
+        if (key == QLatin1String("code"))
+            tile.badge = repoOpenPullCount();
         if (key == QLatin1String("agents")) {
             for (const AgentSession &session : m_agentSessions)
                 if (!session.merged && session.status == AgentStatus::Running) {
@@ -316,6 +318,11 @@ QString MainWindow::homeGridTileDetail(const QString &key, QWidget *widget) cons
                                          : plural(m_agentSessions.size(),
                                                   QStringLiteral("session"));
     }
+    if (key == QLatin1String("code")) {
+        const int pulls = repoOpenPullCount();
+        if (pulls > 0)
+            return plural(pulls, QStringLiteral("open pull"));
+    }
     if (key == QLatin1String("chat"))
         return badge > 0 ? QStringLiteral("%1 unread").arg(badge)
                          : QStringLiteral("Caught up");
@@ -346,6 +353,12 @@ QString MainWindow::homeGridTileDetail(const QString &key, QWidget *widget) cons
     if (auto *button = qobject_cast<QAbstractButton *>(widget))
         return tooltipSummary(button->toolTip());
     return QString();
+}
+
+int MainWindow::repoOpenPullCount() const
+{
+    const auto *pulls = dynamic_cast<const VerticalIconButton *>(m_repoPullsTab);
+    return pulls ? int(pulls->badgeCount()) : 0;
 }
 
 QString MainWindow::homeGridHeadline() const

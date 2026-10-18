@@ -20,6 +20,7 @@ object DesktopStatsMethod {
     const val RATCHET_PREPARE = "stats.ratchet.prepare"
     const val RATCHET_RUN = "stats.ratchet.run"
     const val SENTRY = "stats.sentry"
+    const val TILES = "stats.tiles"
     const val HEALTH = "diag.health"
 }
 
@@ -100,6 +101,8 @@ data class DesktopConfirmation(val token: String, val summary: String, val expir
 
 class DesktopStatsClient(private val channel: ControlCalling) {
     fun health(): DesktopHealth = DesktopHealth.fromJson(channel.request(DesktopStatsMethod.HEALTH, emptyMap(), 15_000))
+
+    fun tiles(): DesktopTilesReply = DesktopTiles.fromJson(channel.request(DesktopStatsMethod.TILES, emptyMap(), 20_000))
 
     fun timeline(days: Int = 30): LogTimeline = LogTimeline.fromJson(
         channel.request(DesktopStatsMethod.TIMELINE, mapOf("days" to days.coerceIn(1, LogTimeline.MAX_DAYS).toLong()), 20_000),

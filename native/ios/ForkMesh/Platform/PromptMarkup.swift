@@ -48,6 +48,11 @@ struct PromptMarkupTarget: Identifiable {
 enum PromptMarkupRenderer {
     @MainActor
     static func render(_ image: UIImage, drawing: PKDrawing, canvasSize: CGSize) -> Data? {
+        flatten(image, drawing: drawing, canvasSize: canvasSize)?.jpegData(compressionQuality: 0.95)
+    }
+
+    @MainActor
+    static func flatten(_ image: UIImage, drawing: PKDrawing, canvasSize: CGSize) -> UIImage? {
         guard canvasSize.width > 0, canvasSize.height > 0 else { return nil }
         let pixels = PromptMarkupRules.pixelSize(
             width: Double(image.size.width * image.scale), height: Double(image.size.height * image.scale))
@@ -61,13 +66,12 @@ enum PromptMarkupRenderer {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
-        let flattened = UIGraphicsImageRenderer(size: size, format: format).image { context in
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
             UIColor.white.setFill()
             context.fill(bounds)
             image.draw(in: bounds)
             ink?.draw(in: bounds)
         }
-        return flattened.jpegData(compressionQuality: 0.95)
     }
 }
 
@@ -75,6 +79,7 @@ struct PromptMarkupEditor: View {
     let target: PromptMarkupTarget
     let confirmLabel: String
     let onDone: (PromptAttachment?) -> Void
+    var onCopy: ((UIImage) -> Void)? = nil
 
     @State private var canvas: PKCanvasView = PKCanvasView()
     @State private var saving: Bool = false
@@ -152,6 +157,15 @@ struct PromptMarkupEditor: View {
     private func save() {
         guard !saving else { return }
         saving = true
+        if let onCopy {
+            guard let image = PromptMarkupRenderer.flatten(target.image, drawing: canvas.drawing, canvasSize: canvas.bounds.size) else {
+                problem = "The picture could not be drawn."
+                saving = false
+                return
+            }
+            onCopy(image)
+            return
+        }
         guard let data = PromptMarkupRenderer.render(target.image, drawing: canvas.drawing, canvasSize: canvas.bounds.size) else {
             problem = "The picture could not be drawn."
             saving = false

@@ -3,6 +3,7 @@ package com.forkmesh.nativeapp.insights
 import com.forkmesh.nativeapp.hosts.DesktopHealth
 import com.forkmesh.nativeapp.hosts.DesktopHealthLevel
 import com.forkmesh.nativeapp.hosts.RemoteFormat
+import com.forkmesh.nativeapp.hosts.isUnsupportedControl
 import java.util.Collections
 import kotlin.concurrent.thread
 
@@ -11,7 +12,9 @@ object StatsTiles {
     val networkIds: Set<String> = setOf("repos", "nodes", "hosts")
     val historyIds: Set<String> = setOf("nodeHours")
     val statusIds: Set<String> = setOf("uptime", "incidents", "errors")
-    val serverIds: Set<String> get() = networkIds + historyIds + statusIds
+    val releaseIds: Set<String> = LiveReleases.homepageIds + LiveReleases.IOS_ID
+    val serverIds: Set<String> get() = networkIds + historyIds + statusIds + releaseIds
+    val allIds: Set<String> get() = serverIds + desktopIds + DesktopTiles.ids
 
     fun network(snapshot: NetworkSnapshot): Map<String, StatsTileData> = mapOf(
         "repos" to StatsTileData(StatsFormat.compactNumber(snapshot.repos.toDouble()), "in the catalog"),
@@ -100,6 +103,7 @@ class StatsBoardModel(
     private val transport: InsightsRequesting,
     private val layoutStore: StatsLayoutStore,
     private val desktop: (() -> DesktopHealth)? = null,
+    private val desktopTiles: (() -> DesktopTilesReply)? = null,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     @Volatile
@@ -119,7 +123,11 @@ class StatsBoardModel(
         private set
 
     @Volatile
-    var pending: Set<String> = StatsTiles.serverIds + StatsTiles.desktopIds
+    var pending: Set<String> = StatsTiles.allIds
+        private set
+
+    @Volatile
+    var desktopOffered: Set<String> = emptySet()
         private set
 
     @Volatile
@@ -131,6 +139,10 @@ class StatsBoardModel(
         private set
 
     @Volatile
+    var desktopTilesNote: String = ""
+        private set
+
+    @Volatile
     var updatedAtMs: Long = 0
         private set
 
@@ -138,14 +150,17 @@ class StatsBoardModel(
         val merge = layoutStore.load()
         layout = merge.layout
         offered = merge.offered
+        desktopOffered = layoutStore.loadDesktopTiles()
     }
 
-    val visible: List<StatsTilePlacement> get() = StatsLayout.visible(layout, StatsCatalog.entries)
+    fun isShown(id: String): Boolean = !DesktopTiles.isDesktopTile(id) || id in desktopOffered
+
+    val visible: List<StatsTilePlacement> get() = StatsLayout.visible(layout, StatsCatalog.entries).filter { isShown(it.id) }
 
     val addable: List<StatsTileCatalogEntry>
         get() {
             val placed = layout.map { it.id }.toSet()
-            return StatsCatalog.entries.filter { it.id !in placed }
+            return StatsCatalog.entries.filter { it.id !in placed && isShown(it.id) }
         }
 
     fun data(id: String): StatsTileData? = tiles[id]
@@ -154,7 +169,7 @@ class StatsBoardModel(
 
     fun reload(changed: () -> Unit = {}) {
         loading = true
-        pending = StatsTiles.serverIds + StatsTiles.desktopIds
+        pending = StatsTiles.allIds
         changed()
         try {
             val failed = Collections.synchronizedSet(HashSet<String>())
@@ -174,10 +189,15 @@ class StatsBoardModel(
                         StatsTiles.status(StatusReport.fromJson(transport.call("GET", "/api/status", null)))
                     }
                 },
+                thread(name = "stats-releases") {
+                    load(LiveReleases.homepageIds, "releases", failed, changed) { LiveReleases.tiles(LiveReleases.load(transport)) }
+                },
+                thread(name = "stats-app-store") { loadAppStore(changed) },
                 thread(name = "stats-desktop") { loadDesktop(changed) },
+                thread(name = "stats-desktop-tiles") { loadDesktopTiles(changed) },
             )
             parts.forEach { it.join() }
-            failures = listOf("network", "activity", "status").filter { it in failed }
+            failures = listOf("network", "activity", "status", "releases").filter { it in failed }
             updatedAtMs = now()
         } finally {
             pending = emptySet()
@@ -217,14 +237,60 @@ class StatsBoardModel(
         }
     }
 
+    private fun loadAppStore(changed: () -> Unit) {
+        try {
+            publish(mapOf(LiveReleases.IOS_ID to LiveReleases.loadAppStore(transport)))
+        } catch (error: Exception) {
+            val why = InsightsException.from(error).message
+            publishMissing(setOf(LiveReleases.IOS_ID), StatsTileData(note = "App Store status unavailable: $why", available = false))
+        } finally {
+            finish(setOf(LiveReleases.IOS_ID))
+            changed()
+        }
+    }
+
+    private fun loadDesktopTiles(changed: () -> Unit) {
+        try {
+            val source = desktopTiles
+            if (source == null) {
+                offerDesktopTiles(emptySet())
+                desktopTilesNote = ""
+                return
+            }
+            try {
+                val reply = source()
+                offerDesktopTiles(reply.offered intersect DesktopTiles.ids)
+                publish(reply.tiles.filterKeys { it in DesktopTiles.ids })
+                desktopTilesNote = ""
+            } catch (error: Exception) {
+                if (isUnsupportedControl(error)) {
+                    offerDesktopTiles(emptySet())
+                    desktopTilesNote = "Update ForkMesh on your desktop to see all of its stats here."
+                } else {
+                    desktopTilesNote = ""
+                    publishMissing(desktopOffered, StatsTileData(note = DesktopStatsClient.explain(error), available = false))
+                }
+            }
+        } finally {
+            finish(DesktopTiles.ids)
+            changed()
+        }
+    }
+
+    private fun offerDesktopTiles(ids: Set<String>) {
+        if (ids == desktopOffered) return
+        desktopOffered = ids
+        layoutStore.saveDesktopTiles(ids)
+    }
+
     @Synchronized
     private fun publish(fresh: Map<String, StatsTileData>) {
         tiles = LinkedHashMap(tiles).apply { putAll(fresh) }
     }
 
     @Synchronized
-    private fun publishMissing(ids: Set<String>) {
-        tiles = LinkedHashMap(tiles).apply { for (id in ids) if (id !in this) put(id, StatsTileData.unavailable) }
+    private fun publishMissing(ids: Set<String>, missing: StatsTileData = StatsTileData.unavailable) {
+        tiles = LinkedHashMap(tiles).apply { for (id in ids) if (this[id]?.available != true) put(id, missing) }
     }
 
     @Synchronized
@@ -243,7 +309,7 @@ class StatsBoardModel(
     }
 
     fun add(id: String) {
-        if (StatsCatalog.entry(id) == null || layout.any { it.id == id }) return
+        if (StatsCatalog.entry(id) == null || !isShown(id) || layout.any { it.id == id }) return
         layout = layout + StatsTilePlacement(id)
         persist()
     }

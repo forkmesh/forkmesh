@@ -3,6 +3,7 @@
 #include <QColor>
 #include <QHash>
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QPoint>
 #include <QRect>
 #include <QString>
@@ -114,6 +115,11 @@ public:
     // JSON persistence: [{"id":"repos","w":2,"h":1}, ...].
     static QJsonArray layoutToJson(const QVector<StatsTilePlacement> &layout);
     static QVector<StatsTilePlacement> layoutFromJson(const QJsonArray &array);
+
+    static constexpr int kMaxRemoteSeriesPoints = 60;
+    static constexpr int kMaxRemoteTextChars = 80;
+    static constexpr int kMaxRemoteNoteChars = 240;
+    static QJsonObject tileToJson(const StatsTileCatalogEntry &entry, const StatsTileData &data);
 
     // Merges a saved board with the current catalog. Every catalog tile the
     // board has never been offered is appended in default order; a tile that
