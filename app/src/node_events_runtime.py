@@ -60,6 +60,39 @@ async def schedule_repo_mirror_wake(
         return 200 <= int(getattr(response, "status", 0) or 0) < 300
     except BaseException:
         return False
+def _repo_watch_do_name(owner, repo):
+    return "watch:%s/%s" % (
+        str(owner or "").strip().lower(), str(repo or "").strip().lower())
+
+
+async def notify_repo_watchers(env, owner, repo, state="", generation=0):
+    owner = safe_segment(owner)
+    repo = safe_segment(repo)
+    if not owner or not repo:
+        return False
+    try:
+        generation = max(0, int(generation or 0))
+    except (TypeError, ValueError, OverflowError):
+        generation = 0
+    target_state = clean_string(state or "", 64).strip().lower()
+    query = "?topic=commits&repo=" + quote(
+        owner.lower() + "/" + repo.lower())
+    if re.fullmatch(r"[0-9a-f]{64}", target_state):
+        query += "&state=" + quote(target_state)
+    if generation:
+        query += "&generation=" + quote(str(generation))
+    try:
+        watchers = env.FORKMESH_NODES.get(env.FORKMESH_NODES.idFromName(
+            _repo_watch_do_name(owner, repo)))
+        _cron_subrequest_charge()
+        response = await watchers.fetch(
+            "https://forkmesh.internal/api/nodes/notify" + query)
+        status = getattr(response, "status", None)
+        return status is None or 200 <= int(status or 0) < 300
+    except Exception:
+        return False
+
+
 def _node_events_do_name(owner):
     # One Durable Object per OWNER account (not per repo): a node syncs all of
     # its collaboration inboxes with one GET /api/sync and receives targeted
@@ -197,6 +230,8 @@ async def notify_repo_mirrors(
             # nodes and for a transient ownership lookup failure.
             ownership_complete = False
     delivered = ownership_complete
+    if topic == "commits":
+        await notify_repo_watchers(env, source_owner, repo, state, generation)
     for target in sorted(targets):
         if not valid_node_name(target) or (
                 target == source_owner and target not in core_nodes):

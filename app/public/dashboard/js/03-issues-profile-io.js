@@ -1082,6 +1082,7 @@
       const error = new Error(String(data.error || `HTTP ${response.status}`));
       error.code = String(data.error || "");
       error.status = response.status;
+      error.data = data;
       throw error;
     }
     return { ...data, pull, remote };

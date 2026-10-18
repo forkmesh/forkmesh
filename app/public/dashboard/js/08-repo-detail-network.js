@@ -1,3 +1,44 @@
+  function setRepoForkMenuOpen(opening) {
+    $("[data-repo-fork-menu]")?.classList.toggle("hidden", !opening);
+    $("[data-repo-action-fork]")?.setAttribute("aria-expanded", opening ? "true" : "false");
+    if (opening && state.selectedRepo) {
+      loadRepoForks(state.selectedRepo);
+      void loadRepoRemoteForks(state.selectedRepo, { force: true });
+    }
+  }
+
+  function openRepoForkMenuFromMirror() {
+    const detail = $("[data-repo-detail]");
+    const about = detail?.querySelector("[data-repo-about]");
+    if (!about) return;
+    if (about.classList.contains("hidden")) activateRepoTab("code");
+    if (about.classList.contains("hidden")) setRepoExplorerFocusMode(false);
+    setRepoForkMenuOpen(true);
+    $("[data-repo-fork-wrap]")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    ($("[data-repo-fork-create]") || $("[data-repo-action-fork]"))?.focus({ preventScroll: true });
+  }
+
+  function applyRepoReadOnlyMirror(repo) {
+    if (!repo) return;
+    const readOnly = repoReadOnlyMirror(repo);
+    const slot = $("[data-repo-provenance]");
+    if (slot) {
+      const provenance = repoProvenanceHtml(repo);
+      slot.innerHTML = provenance;
+      slot.classList.toggle("hidden", !provenance);
+    }
+    $$('[data-repo-file-action="edit"]').forEach((button) => {
+      button.disabled = readOnly;
+      button.title = readOnly ? REPO_READ_ONLY_MIRROR_HINT : "Edit file";
+    });
+    $$("[data-repo-pull-new], [data-repo-compare-pull]").forEach((button) => {
+      button.classList.toggle("hidden", readOnly);
+    });
+    if (state.activeRepoTab === "branches") renderRepoBranchesList(repo);
+    if (state.repoCompare) renderRepoCompareMergePanel(repo);
+    window.lucide?.createIcons();
+  }
+
   function renderRepoDetail(repo) {
     const detail = $("[data-repo-detail]");
     if (!detail || !repo) return;
@@ -282,6 +323,10 @@
 		                  <div data-repo-explorer-tree class="max-h-[35rem] overflow-auto py-2"></div>
 		                </aside>
 		                <div data-repo-code-main class="min-w-0">
+		                  ${(() => {
+		                    const provenance = repoProvenanceHtml(repo);
+		                    return `<div data-repo-provenance class="${provenance ? "" : "hidden "}mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">${provenance}</div>`;
+		                  })()}
 		                  <div data-repo-tree-panel data-repo-file-table class="overflow-hidden rounded-lg border border-border bg-background">
 	                    <div data-repo-commit-summary class="grid gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
 	                      <div class="flex min-w-0 items-center gap-2">
@@ -2354,6 +2399,11 @@
       // Fork popover: the button shows how many repositories were forked from
       // this one and opens the list of who owns them. Refetched on open so a
       // fork published while the page was sitting there shows up.
+      if (event.target.closest("[data-repo-mirror-fork]")) {
+        event.preventDefault();
+        openRepoForkMenuFromMirror();
+        return;
+      }
       const forkButton = event.target.closest("[data-repo-action-fork]");
       if (forkButton) {
         const forkMenu = $("[data-repo-fork-menu]");
@@ -2835,7 +2885,7 @@
       }
 
       const pullNewButton = event.target.closest("[data-repo-pull-new]");
-      if (pullNewButton && state.selectedRepo) {
+      if (pullNewButton && state.selectedRepo && !repoReadOnlyMirror(state.selectedRepo)) {
         if (!state.session?.nodeName) {
           location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
           return;
@@ -2882,7 +2932,7 @@
         return;
       }
       const comparePullButton = event.target.closest("[data-repo-compare-pull]");
-      if (comparePullButton && state.selectedRepo && state.repoCompare) {
+      if (comparePullButton && state.selectedRepo && state.repoCompare && !repoReadOnlyMirror(state.selectedRepo)) {
         if (!state.session?.nodeName) {
           location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
           return;

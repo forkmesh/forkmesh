@@ -33,6 +33,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlparse
 
+import read_only_mirrors
 from worker_test_helpers import json_from_request_double
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -257,8 +258,10 @@ def test_about_get_returns_followers_list_and_settings():
     ns = _load("_repo_about_public", "_ap_repo_settings_get",
                "_ap_repo_settings_bi", "_repo_alert_settings_get",
                "_repo_alert_settings_bi", "_repo_features_get",
-               "_repo_features_bi",
+               "_repo_features_bi", "_read_only_mirror_fields",
                extra_globals={
+                   "_read_only_mirrors": read_only_mirrors,
+                   "_instance_solo_flagship_node": lambda env: "",
                    "REPO_FEATURE_DEFAULTS": REPO_FEATURE_DEFAULTS,
                    "REPO_ALERT_SETTING_DEFAULTS":
                        REPO_ALERT_SETTING_DEFAULTS,
@@ -328,6 +331,7 @@ def test_about_get_returns_followers_list_and_settings():
     assert fediverse["enabled"] is True
     assert resp["data"]["features"] == {
         "issues": True, "pulls": False, "discussions": True}
+    assert resp["data"]["mirrorOf"] == "" and resp["data"]["readOnly"] is False
     # Platform operational-alert state is not exposed from a public repo API.
     assert "alerts" not in resp["data"]
 

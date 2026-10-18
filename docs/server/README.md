@@ -99,12 +99,36 @@ broker ([gateways.md](gateways.md)), the desktop host installer, and
 `gatewayScript`, `python`, `cloudflared`, `connectorToken` (path),
 `identityKey` (path), `catalogUrl`, `mirrorUrl`, `syncInterval`,
 `syncTimeout`, `gatewayProbe`, `upstreams`, `eventDrivenUpstreams`,
-`publishOwner`, `canonicalOwner`, `version`, `disableCatalog`,
+`mirrorOf`, `publishOwner`, `canonicalOwner`, `version`, `disableCatalog`,
 `disableCloudflared`, `disableMergeExecutor`, `disableAgentLogin`,
 `disableAgentJobs`, `enableActions`, `agentOwner` (accepted, unused), `role`,
 `runner`, `runnerPool`, `hosted`. On cores and runners
 `deploy/core/render.py` merges per-node overrides from `deploy/fleet.toml`.
 Environment: `/etc/forkmesh/node.env`, `FORKMESH_MIRROR_NODE_CONFIG`.
+
+### Upstream events and read-only mirrors
+
+`eventDrivenUpstreams` names upstreams whose changes arrive as `commits`
+doorbells. An upstream on the node's own relay (same host as `catalogUrl`
+once `app.`/`api.`/`www.` is dropped, or a subdomain of it) is announced on
+the node's signed account socket and keeps the 30-minute safety fetch. An
+upstream on another relay (a self-hosted instance following forkmesh.com) gets
+an unsigned watch socket on that relay,
+`/api/nodes/events?watch=<owner>/<repo>` (`upstreamwatch.go`); a doorbell or
+a reconnect fetches at once and `syncInterval` stays the fallback poll. The
+relay side accepts a watch only for a public repository, resolves an
+organization alias to its backing node, and puts watchers on the
+`watch:<owner>/<repo>` `ForkMeshNodes` object, where they may only ping;
+`notify_repo_mirrors` rings that object for every `commits` doorbell.
+`/v1/status` lists `upstreamWatches`.
+
+`mirrorOf` maps a configured repository key to its upstream page
+(`https://host/owner/repo`). Such a repository, and every alias on the same
+Git directory, is a read-only mirror: its catalog record carries `mirrorOf`,
+`upstreamCommit` and `lastSyncedAt` (signed optional fields the relay keeps
+only when well formed), and its gateway entries lose `git-receive-pack`,
+`merge-pull`, `update-pull-branch` and the agent-branch operations. See
+[../INSTANCES.md](../INSTANCES.md#the-platform-source-mirror-ownerforkmesh).
 
 ## Build, run, test
 

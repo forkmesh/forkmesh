@@ -1453,6 +1453,9 @@ def test_node_event_auth_and_final_handoff_clone_native_request_independently():
         "APP_INGRESS_GIT_READ_PURPOSE": "git-read-v1",
         "APP_INGRESS_NODE_AUTH_PURPOSE": "node-events-auth-v1",
         "EXPECTED_DEGRADED_HEADERS": {"x-forkmesh-expected-degraded": "1"},
+        "NODE_EVENTS_OBJECT_RE": re.compile(
+            r"nodes:[a-z0-9._:-]{1,120}"
+            r"|watch:[a-z0-9][a-z0-9-]{0,62}/[a-z0-9._-]{1,100}"),
         "JsRequest": _JsRequest,
         "JsURL": _JsURL,
         "re": re,
@@ -1709,6 +1712,10 @@ def test_ingress_receiver_accepts_only_exact_shards_and_auth_is_preflight_only()
             return "", Response('{"error":"unauthorized"}', status=401)
         return "mirror9", None
 
+    async def node_events_object(env, request):
+        owner, rejection = await authorize(env, request)
+        return ("nodes:" + owner if owner else ""), rejection
+
     async def websocket_authorize(_env, request):
         calls["websocket_auth"].append(request)
         return Response(
@@ -1733,7 +1740,7 @@ def test_ingress_receiver_accepts_only_exact_shards_and_auth_is_preflight_only()
         "AppRuntime": Default,
         "Response": Response,
         "_AppIngressRouter": lambda env: ("router", env),
-        "_node_events_authorization": authorize,
+        "_node_events_object": node_events_object,
         "_websocket_handoff_authorization": websocket_authorize,
         "json_response": json_response,
         "urlparse": urlparse,

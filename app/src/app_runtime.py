@@ -1795,6 +1795,10 @@ class Default:
         if repo_api:
             owner = safe_segment(repo_api.group(1))
             repo = safe_segment(repo_api.group(2))
+            refusal = await read_only_mirror_refusal(
+                self.env, request, owner, repo, url.path)
+            if refusal is not None:
+                return refusal
             pieces = [piece for piece in url.path.split("/") if piece]
             action = safe_segment(pieces[4] if len(pieces) > 4 else "")
             if action == "file-edit":
@@ -4550,6 +4554,9 @@ class Default:
         repo = safe_segment(repo_raw)
         if not owner or not repo:
             return Response("not found", status=404)
+        refusal = await read_only_mirror_push_refusal(self.env, owner, repo)
+        if refusal is not None:
+            return refusal
         url = urlparse(request.url)
         is_info = url.path.endswith("/info/refs")
         return await _https_mirror_push_proxy(

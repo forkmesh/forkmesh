@@ -28,6 +28,9 @@ type Daemon struct {
 	identity       *Identity
 	supervisor     *Supervisor
 	events         *EventSocket
+	watches        []*EventSocket
+	watchUp        map[string]bool
+	upstreamSynced map[string]time.Time
 	terminals      *TerminalRelay
 	startedAt      time.Time
 	mu             sync.RWMutex
@@ -172,7 +175,8 @@ type Status struct {
 	Runtime    RuntimeStats `json:"runtime"`
 	// Recovery exposes the last recorded backup and restore drill so the
 	// recovery point and recovery time objectives are observable.
-	Recovery RecoveryStatus `json:"recovery"`
+	Recovery        RecoveryStatus  `json:"recovery"`
+	UpstreamWatches map[string]bool `json:"upstreamWatches,omitempty"`
 }
 
 const endpointRenewInterval = 4 * time.Minute
@@ -357,6 +361,9 @@ func NewDaemon(cfg Config) (*Daemon, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	if err := daemon.setUpstreamWatches(); err != nil {
+		return nil, err
 	}
 	if events != nil {
 		events.Handler = daemon.handleNodeEvent
@@ -546,6 +553,7 @@ func (d *Daemon) Run(ctx context.Context, executable string) error {
 	d.agentBranchOps = !d.config.DisableMergeExecutor &&
 		gatewayScriptSupports(d.config.GatewayScript, agentBranchMergeOp)
 	ensureGatewayAgentBranchOperations(&d.gateway, d.agentBranchOps)
+	ensureReadOnlyMirrorOperations(&d.gateway, d.readOnlyMirrorDirs())
 	// The Actions operations are advertised only by a node that was asked to
 	// run workflows and has just proved it can sandbox them. Every other node
 	// has them stripped, so switching enableActions off withdraws them.
@@ -594,6 +602,9 @@ func (d *Daemon) Run(ctx context.Context, executable string) error {
 	go d.supervisor.Run(ctx, specs)
 	if d.events != nil {
 		go d.events.Run(ctx)
+	}
+	for _, watch := range d.watches {
+		go watch.Run(ctx)
 	}
 	go d.syncLoop(ctx)
 	select {
@@ -677,7 +688,7 @@ func (d *Daemon) hasExternalUpstreams() bool {
 	}
 	for _, upstreams := range d.config.Upstreams {
 		for _, upstream := range upstreams {
-			if _, ok := eventDriven[upstream]; ok {
+			if _, ok := eventDriven[upstream]; ok && sameRelay(d.config.CatalogURL, upstream) {
 				continue
 			}
 			parsed, err := url.Parse(upstream)
@@ -1135,6 +1146,8 @@ func (d *Daemon) cycle(parent context.Context, fetch bool) {
 			seenDirs[repo.GitDir] = true
 			if err := syncRepository(ctx, *repo, upstreams, d.gateway.Node.Name, d.desiredStatesFor(*repo)...); err != nil {
 				failures = append(failures, key+": "+err.Error())
+			} else {
+				d.noteUpstreamSync(repo.GitDir, time.Now())
 			}
 		}
 		kinds := collaboration[strings.ToLower(key)]
@@ -1229,9 +1242,11 @@ func (d *Daemon) cycle(parent context.Context, fetch bool) {
 			} else {
 				publisher.CloneURL = ""
 			}
+			publisher.MirrorOf = d.mirrorOfFor(repo)
+			publisher.LastSyncedAt = d.upstreamSyncedAt(repo.GitDir)
 			key := repositoryKey(repo)
 			fingerprint := strings.Join([]string{
-				states[key], publisher.CloneURL, publisher.MirrorURL,
+				states[key], publisher.CloneURL, publisher.MirrorURL, publisher.MirrorOf,
 				repo.ForkedFrom, d.config.Version, d.identity.PublicKey(),
 				strconv.Itoa(releaseArtifactCount(repo.ReleaseStore)),
 			}, "\n")
@@ -1446,6 +1461,12 @@ func (d *Daemon) status() Status {
 	}
 	if !d.lastEndpointAt.IsZero() {
 		status.LastEndpointAt = d.lastEndpointAt.UTC().Format(time.RFC3339)
+	}
+	if len(d.watchUp) > 0 {
+		status.UpstreamWatches = make(map[string]bool, len(d.watchUp))
+		for upstream, up := range d.watchUp {
+			status.UpstreamWatches[upstream] = up
+		}
 	}
 	return status
 }

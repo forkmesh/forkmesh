@@ -519,3 +519,52 @@ def test_the_build_records_its_version_and_commit(tmp_path):
     assert value["version"] == "1.4.2" and value["subject"] == 'Ship "notes"'
     assert len(value["commit"]) == 40 and value["ref"] == "main"
     assert oct(info.stat().st_mode & 0o777) == "0o644"
+
+
+def _git_node_config_patch():
+    body = TEXT[TEXT.index("setup_git_node() {"):]
+    start = body.index("<<'PY'\n") + len("<<'PY'\n")
+    return body[start:body.index("\nPY\n", start)]
+
+
+def _upstream_page(tmp_path, source):
+    function = TEXT[TEXT.index("upstream_page() {"):]
+    function = function[:function.index("\n}\n") + 3]
+    return subprocess.run(
+        ["bash", "-c", function + 'CFG_sourceUrl="$1"; upstream_page', "x",
+         source], capture_output=True, text=True, env=sandbox_env(tmp_path),
+        timeout=30, check=True).stdout.strip()
+
+
+def test_the_platform_copy_is_configured_as_a_labelled_read_only_mirror(tmp_path):
+    assert _upstream_page(tmp_path, "https://app.forkmesh.com/forkmesh/forkmesh") == \
+        "https://forkmesh.com/forkmesh/forkmesh"
+    assert _upstream_page(tmp_path, "https://git.example.org/acme/forkmesh.git") == \
+        "https://git.example.org/acme/forkmesh"
+    assert 'echo "INSTANCE_UPSTREAM=$(upstream_page)"' in TEXT
+    script = tmp_path / "patch.py"
+    script.write_text(_git_node_config_patch())
+    path = tmp_path / "mirror-node.json"
+    upstream = "https://app.forkmesh.com/forkmesh/forkmesh"
+    path.write_text(json.dumps({
+        "schemaVersion": 1, "upstreams": {"forkmesh/forkmesh": [upstream]},
+        "gatewayConfig": str(tmp_path / "missing-gateway.json")}))
+    subprocess.run(
+        ["python3", str(script), str(path), "https://code.example.com", "abc",
+         "KEY", "acme", "https://forkmesh.com/forkmesh/forkmesh"],
+        check=True, env=sandbox_env(tmp_path), timeout=30)
+    full = json.loads((tmp_path / "mirror-node.json.new").read_text())
+    assert full["mirrorOf"] == {
+        "forkmesh/forkmesh": "https://forkmesh.com/forkmesh/forkmesh"}
+    assert full["eventDrivenUpstreams"] == [upstream]
+    assert full["role"] == "core"
+    without_mirror = json.loads(
+        (tmp_path / "mirror-node.json.nomirror").read_text())
+    assert "mirrorOf" not in without_mirror and without_mirror["role"] == "core"
+    without_role = json.loads(
+        (tmp_path / "mirror-node.json.norole").read_text())
+    assert not {"mirrorOf", "role", "hosted"} & set(without_role)
+    checks = TEXT[TEXT.index('chown "$NODE_USER:$NODE_USER" "$DAEMON_CONFIG.new"'):]
+    assert checks.index('"$DAEMON_CONFIG.new" --check') < checks.index(
+        '"$DAEMON_CONFIG.nomirror" --check') < checks.index(
+        'mv "$DAEMON_CONFIG.norole" "$DAEMON_CONFIG"')

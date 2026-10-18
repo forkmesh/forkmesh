@@ -1517,6 +1517,65 @@
     return { owner, name, key: `${owner}/${name}` };
   }
 
+  function repoMirrorOf(repo) {
+    const value = String(repo?.mirrorOf || "").trim();
+    return /^https?:\/\/[^\s"'<>]+$/i.test(value) ? value : "";
+  }
+
+  function repoReadOnlyMirror(repo) {
+    return Boolean(repoMirrorOf(repo)) || repo?.readOnly === true;
+  }
+
+  function repoMirrorUpstreamPath(url) {
+    try {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split("/").filter(Boolean);
+      return parts.length >= 2 ? `${parsed.host.replace(/^app\./i, "")}/${parts[0]}/${parts[1].replace(/\.git$/i, "")}` : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function repoMirrorSyncedAt(repo) {
+    const value = Number(repo?.lastSyncedAt || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }
+
+  const REPO_READ_ONLY_MIRROR_HINT = "This repository is a read-only mirror. Fork it to make changes.";
+
+  function rememberRepoMirrorAbout(repo, body) {
+    if (!repo || !body || typeof body !== "object") return false;
+    const before = `${repoMirrorOf(repo)}|${repoReadOnlyMirror(repo)}|${repoMirrorSyncedAt(repo)}|${repo.upstreamCommit || ""}`;
+    if ("mirrorOf" in body) repo.mirrorOf = String(body.mirrorOf || "");
+    if ("readOnly" in body) repo.readOnly = body.readOnly === true;
+    if (Number(body.lastSyncedAt) > 0) repo.lastSyncedAt = Number(body.lastSyncedAt);
+    if (body.upstreamCommit) repo.upstreamCommit = String(body.upstreamCommit);
+    return before !== `${repoMirrorOf(repo)}|${repoReadOnlyMirror(repo)}|${repoMirrorSyncedAt(repo)}|${repo.upstreamCommit || ""}`;
+  }
+
+  function repoProvenanceHtml(repo) {
+    const mirrorOf = repoMirrorOf(repo);
+    const parent = mirrorOf ? null : repoForkParent(repo);
+    if (!mirrorOf && !parent) return "";
+    const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
+    if (!mirrorOf) {
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(parent.key)}</a></span>`;
+    }
+    const syncedAt = repoMirrorSyncedAt(repo);
+    const commit = String(repo?.upstreamCommit || "").trim();
+    const syncedTitle = [
+      syncedAt ? new Date(syncedAt).toLocaleString() : "",
+      commit ? `serving ${commit.slice(0, 12)}` : "",
+    ].filter(Boolean).join(" · ");
+    const synced = syncedAt
+      ? `<span data-repo-mirror-synced${syncedTitle ? ` title="${escapeHtml(syncedTitle)}"` : ""} class="shrink-0 text-muted-foreground">· synced ${escapeHtml(formatTimeAgo(syncedAt))}</span>`
+      : "";
+    const notice = `<span data-repo-mirror-notice class="min-w-0 text-[11px] text-muted-foreground">Read-only. Send changes <a href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="dashboard-accent-link hover:underline">upstream</a> or into a fork.</span>`;
+    const fork = `<button type="button" data-repo-mirror-fork title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-fork"></i>Fork</button>`;
+    const line = `<span data-repo-provenance-line="mirror" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="refresh-cw" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">Mirror of</span><a data-repo-provenance-link href="${escapeHtml(mirrorOf)}" target="_blank" rel="noopener" class="${linkClass}">${escapeHtml(repoMirrorUpstreamPath(mirrorOf) || mirrorOf)}</a>${synced}</span>`;
+    return `${line}${notice}${fork}`;
+  }
+
   function repoGroupKey(repo) {
     // A fork can have the same root commit as its parent for its entire useful
     // lifetime. Folding solely by rootCommit therefore made a freshly-created
@@ -3357,6 +3416,7 @@
       const error = new Error(String(data.error || `HTTP ${response.status}`));
       error.code = String(data.error || "");
       error.status = response.status;
+      error.data = data;
       throw error;
     }
     return { ...data, pull, remote };
@@ -14238,6 +14298,7 @@
   }
 
   function repoFileEditError(error) {
+    if (error?.code === "read_only_mirror") return error?.data?.message || REPO_READ_ONLY_MIRROR_HINT;
     if (error?.code === "conflict" || error?.status === 409) {
       return "The file changed while you were editing. Reload and try again.";
     }
@@ -14549,6 +14610,10 @@
       if (action === "raw") {
         setRepoFileMode(viewer, "raw", lines, path, meta);
       } else if (action === "edit") {
+        if (repoReadOnlyMirror(repo)) {
+          updateRepoFileStatus(viewer, REPO_READ_ONLY_MIRROR_HINT, "bad");
+          return;
+        }
         if (!state.session?.nodeName) {
           updateRepoFileStatus(viewer, "Sign in to edit this file.", "bad");
           location.href = repoFileSignInUrl();
@@ -16026,7 +16091,7 @@
               <span data-repo-file-status class="min-w-0 font-mono text-[10px] text-muted-foreground">Code view - highlighted source.</span>
             </div>
             <div class="flex items-center gap-1.5">
-              <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="Edit file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="${repoReadOnlyMirror(repo) ? escapeHtml(REPO_READ_ONLY_MIRROR_HINT) : "Edit file"}"${repoReadOnlyMirror(repo) ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
               <button type="button" data-repo-file-action="raw" class="fm-btn fm-btn-sm">Raw</button>
               <button type="button" data-repo-file-action="copy" aria-label="Copy file contents" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="copy" class="h-3.5 w-3.5"></i></button>
               <button type="button" data-repo-file-action="download" aria-label="Download file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>
@@ -17044,6 +17109,7 @@
       const error = new Error(code || `HTTP ${response.status}`);
       error.status = response.status;
       error.code = code;
+      error.data = data;
       // A body that is not the API's JSON (an edge error page, an isolate
       // crash) says nothing about the submission itself.
       error.transient = !data || response.status >= 500
@@ -21056,6 +21122,7 @@
         checks_required: "This repository requires signed status checks, and the head being merged has no fresh passing result from a runner the base branch trusts. Run the checks, or change .forkmesh/required-checks.json on the base branch.",
         unsupported_pull: "This pull request cannot be merged on the web; merge it from the desktop client.",
         pull_not_found: "The mirror could not read this pull request's record.",
+        read_only_mirror: payload?.message || REPO_READ_ONLY_MIRROR_HINT,
       };
       parsed.pullMerge = {
         state: "failed",
@@ -25254,6 +25321,11 @@
     try {
       const body = await fetchRepoJson(`${repoApiBase(repo)}/about`);
       if (!repoAboutStillCurrent(repo) || !body?.ok) return;
+      const mirrorChanged = [repo, state.selectedRepo]
+        .filter((item, index, list) => item && list.indexOf(item) === index)
+        .map((item) => rememberRepoMirrorAbout(item, body))
+        .some(Boolean);
+      if (mirrorChanged) applyRepoReadOnlyMirror(state.selectedRepo);
       const followers = Number(body.fediverse?.followers || 0);
       $$("[data-repo-watch-count], [data-repo-watch-followers], [data-repo-social-followers]").forEach((el) => {
         el.textContent = formatCount(followers);
@@ -31056,6 +31128,7 @@
       }
       return `Nothing was sent: these branches could not be compared on a live mirror (${webSubmissionErrorDetail(cause || error)}). Try again in a moment.`;
     }
+    if (code === "read_only_mirror") return String(error?.data?.message || REPO_READ_ONLY_MIRROR_HINT);
     if (code === "inbox_full") return "The maintainer's inbox is full. Try again later.";
     if (code === "author_quota") return "You've reached the submission limit for this repository.";
     if (code === "pull_too_large") return "The submission is too large.";
@@ -31536,7 +31609,7 @@
         <button type="button" data-repo-compare-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to pull requests</button>
         <div class="flex flex-wrap items-center gap-2">
           <button type="button" data-repo-compare-refresh class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
-          <button type="button" data-repo-compare-pull class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>Create pull request</button>
+          <button type="button" data-repo-compare-pull class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>Create pull request</button>
         </div>
       </div>
       <header class="grid gap-1 rounded-lg border border-border bg-secondary/30 p-4">
@@ -33685,7 +33758,7 @@
   }
 
   function repoBranchManageAllowed(repo) {
-    return repo ? state.repoBranchManage[repoKey(repo)] === true : false;
+    return repo && !repoReadOnlyMirror(repo) ? state.repoBranchManage[repoKey(repo)] === true : false;
   }
 
   function repoBranchBusy(repo) {
@@ -33993,7 +34066,7 @@
   }
 
   async function openRepoBranchMergeDialog(repo, branch, base, preview = null) {
-    if (!repo || !branch || !base || branch === base) return;
+    if (!repo || !branch || !base || branch === base || repoReadOnlyMirror(repo)) return;
     const dialog = ensureRepoBranchMergeDialog();
     const defaultBranch = repoDefaultBranch(repo);
     const intoOther = branch === defaultBranch;
@@ -34387,7 +34460,8 @@
         return { ok: true, executed: false, held: true, data: error.data || {} };
       }
       announceRepoBranchOp(
-        REPO_BRANCH_OP_ERRORS[error?.code]
+        (error?.code === "read_only_mirror" && error?.data?.message)
+          || REPO_BRANCH_OP_ERRORS[error?.code]
           || "The branch operation could not be queued.",
         true,
       );
@@ -34821,7 +34895,7 @@
                     ${PULL_VIEWS.map((view) => `<option value="${view.id}">${escapeHtml(view.label)}</option>`).join("")}
                   </select>
                 </div>
-                <button type="button" data-repo-pull-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
+                <button type="button" data-repo-pull-new class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New pull request</button>
               </div>
               ${pullContributionTipDismissed(repo) ? "" : `
               <aside data-repo-pull-contribution-tip class="fm-flash relative mb-4 flex-wrap">
@@ -34860,6 +34934,47 @@
       return false;
     }
   }
+  function setRepoForkMenuOpen(opening) {
+    $("[data-repo-fork-menu]")?.classList.toggle("hidden", !opening);
+    $("[data-repo-action-fork]")?.setAttribute("aria-expanded", opening ? "true" : "false");
+    if (opening && state.selectedRepo) {
+      loadRepoForks(state.selectedRepo);
+      void loadRepoRemoteForks(state.selectedRepo, { force: true });
+    }
+  }
+
+  function openRepoForkMenuFromMirror() {
+    const detail = $("[data-repo-detail]");
+    const about = detail?.querySelector("[data-repo-about]");
+    if (!about) return;
+    if (about.classList.contains("hidden")) activateRepoTab("code");
+    if (about.classList.contains("hidden")) setRepoExplorerFocusMode(false);
+    setRepoForkMenuOpen(true);
+    $("[data-repo-fork-wrap]")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    ($("[data-repo-fork-create]") || $("[data-repo-action-fork]"))?.focus({ preventScroll: true });
+  }
+
+  function applyRepoReadOnlyMirror(repo) {
+    if (!repo) return;
+    const readOnly = repoReadOnlyMirror(repo);
+    const slot = $("[data-repo-provenance]");
+    if (slot) {
+      const provenance = repoProvenanceHtml(repo);
+      slot.innerHTML = provenance;
+      slot.classList.toggle("hidden", !provenance);
+    }
+    $$('[data-repo-file-action="edit"]').forEach((button) => {
+      button.disabled = readOnly;
+      button.title = readOnly ? REPO_READ_ONLY_MIRROR_HINT : "Edit file";
+    });
+    $$("[data-repo-pull-new], [data-repo-compare-pull]").forEach((button) => {
+      button.classList.toggle("hidden", readOnly);
+    });
+    if (state.activeRepoTab === "branches") renderRepoBranchesList(repo);
+    if (state.repoCompare) renderRepoCompareMergePanel(repo);
+    window.lucide?.createIcons();
+  }
+
   function renderRepoDetail(repo) {
     const detail = $("[data-repo-detail]");
     if (!detail || !repo) return;
@@ -35144,6 +35259,10 @@
 		                  <div data-repo-explorer-tree class="max-h-[35rem] overflow-auto py-2"></div>
 		                </aside>
 		                <div data-repo-code-main class="min-w-0">
+		                  ${(() => {
+		                    const provenance = repoProvenanceHtml(repo);
+		                    return `<div data-repo-provenance class="${provenance ? "" : "hidden "}mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">${provenance}</div>`;
+		                  })()}
 		                  <div data-repo-tree-panel data-repo-file-table class="overflow-hidden rounded-lg border border-border bg-background">
 	                    <div data-repo-commit-summary class="grid gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
 	                      <div class="flex min-w-0 items-center gap-2">
@@ -37216,6 +37335,11 @@
       // Fork popover: the button shows how many repositories were forked from
       // this one and opens the list of who owns them. Refetched on open so a
       // fork published while the page was sitting there shows up.
+      if (event.target.closest("[data-repo-mirror-fork]")) {
+        event.preventDefault();
+        openRepoForkMenuFromMirror();
+        return;
+      }
       const forkButton = event.target.closest("[data-repo-action-fork]");
       if (forkButton) {
         const forkMenu = $("[data-repo-fork-menu]");
@@ -37697,7 +37821,7 @@
       }
 
       const pullNewButton = event.target.closest("[data-repo-pull-new]");
-      if (pullNewButton && state.selectedRepo) {
+      if (pullNewButton && state.selectedRepo && !repoReadOnlyMirror(state.selectedRepo)) {
         if (!state.session?.nodeName) {
           location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
           return;
@@ -37744,7 +37868,7 @@
         return;
       }
       const comparePullButton = event.target.closest("[data-repo-compare-pull]");
-      if (comparePullButton && state.selectedRepo && state.repoCompare) {
+      if (comparePullButton && state.selectedRepo && state.repoCompare && !repoReadOnlyMirror(state.selectedRepo)) {
         if (!state.session?.nodeName) {
           location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
           return;

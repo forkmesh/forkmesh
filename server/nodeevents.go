@@ -31,6 +31,7 @@ type EventSocket struct {
 	endpoint string
 	owner    string
 	identity *Identity
+	watch    string
 
 	// Handler receives relay pushes and one synthetic catch-up after each connect.
 	Handler   func(Event)
@@ -124,7 +125,11 @@ func (s *EventSocket) Run(ctx context.Context) {
 	for ctx.Err() == nil {
 		start := time.Now()
 		if err := s.serve(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("node event channel: %v", err)
+			if s.watch != "" {
+				log.Printf("upstream watch %s: %v", s.endpoint+"?watch="+s.watch, err)
+			} else {
+				log.Printf("node event channel: %v", err)
+			}
 		}
 		if time.Since(start) >= 2*s.pingInterval {
 			backoff = s.minBackoff
@@ -144,6 +149,11 @@ func (s *EventSocket) Run(ctx context.Context) {
 // the same canonical the inbox GET/DELETE routes and GET /api/sync verify, so
 // the channel grants no authority this node does not already hold.
 func (s *EventSocket) signedURL() string {
+	if s.watch != "" {
+		query := url.Values{}
+		query.Set("watch", s.watch)
+		return s.endpoint + "?" + query.Encode()
+	}
 	timestamp := strconv.FormatInt(time.Now().UnixMilli(), 10)
 	canonical := "forkmesh-issues-pull-v1\n" + s.owner + "\n" + timestamp
 	query := url.Values{}
