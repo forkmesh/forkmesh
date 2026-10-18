@@ -23,6 +23,7 @@ struct Ping {
     QString kind;
     QString category;
     QString sessionId;
+    QString runId;
     QString repo;
     bool warning = false;
     QString title;
@@ -43,6 +44,7 @@ struct Source {
     QString kind;
     QString linkKind;
     int linkNumber = -1;
+    int runId = 0;
     QString repo;
     bool warning = false;
     QString title;

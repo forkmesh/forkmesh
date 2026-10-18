@@ -42,7 +42,7 @@ const QRegularExpression &repoPattern()
 bool knownCategory(const QString &category)
 {
     return category.isEmpty() || category == QLatin1String("agent-finished") ||
-           category == QLatin1String("agent-failed");
+           category == QLatin1String("agent-failed") || category == QLatin1String("ci-failed");
 }
 
 QString kindToken(const QString &kind)
@@ -64,6 +64,19 @@ QString sessionFor(const Source &source)
     if (source.linkKind != QLatin1String("agent") || source.linkNumber <= 0)
         return {};
     return QString::number(source.linkNumber);
+}
+
+QString runFor(const Source &source)
+{
+    if (!sessionFor(source).isEmpty() || source.runId <= 0)
+        return {};
+    return QString::number(source.runId);
+}
+
+const QRegularExpression &runPattern()
+{
+    static const QRegularExpression pattern(QStringLiteral("^(?:[1-9][0-9]{0,11})?$"));
+    return pattern;
 }
 
 }
@@ -201,6 +214,9 @@ Ping pingFor(const Source &source)
     ping.kind = kindToken(source.kind);
     ping.category = categoryFor(source.kind, source.linkKind, source.warning);
     ping.sessionId = sessionFor(source);
+    ping.runId = runFor(source);
+    if (ping.category.isEmpty() && !ping.runId.isEmpty() && source.warning)
+        ping.category = QStringLiteral("ci-failed");
     const QString repo = source.repo.trimmed();
     ping.repo = repoPattern().match(repo).hasMatch() ? repo : QString();
     ping.warning = source.warning;
@@ -225,6 +241,7 @@ bool valid(const Ping &ping)
            nodePattern().match(ping.node).hasMatch() &&
            kindPattern().match(ping.kind).hasMatch() &&
            sessionPattern().match(ping.sessionId).hasMatch() &&
+           runPattern().match(ping.runId).hasMatch() &&
            repoPattern().match(ping.repo).hasMatch() &&
            knownCategory(ping.category) && ping.title.size() <= kTitleMax &&
            ping.body.size() <= kBodyMax &&
@@ -233,16 +250,12 @@ bool valid(const Ping &ping)
 
 QString resource(const Ping &ping)
 {
-    return QStringList{ping.pingId,
-                       ping.node,
-                       ping.kind,
-                       ping.category,
-                       ping.sessionId,
-                       ping.repo,
-                       ping.warning ? QStringLiteral("1") : QStringLiteral("0"),
-                       ping.title,
-                       ping.body}
-        .join(QLatin1Char('\n'));
+    QStringList fields{ping.pingId, ping.node, ping.kind, ping.category, ping.sessionId};
+    if (!ping.runId.isEmpty())
+        fields.append(ping.runId);
+    fields << ping.repo << (ping.warning ? QStringLiteral("1") : QStringLiteral("0"))
+           << ping.title << ping.body;
+    return fields.join(QLatin1Char('\n'));
 }
 
 QString canonical(const QString &user, const Ping &ping, const QString &ts)
@@ -271,7 +284,7 @@ QJsonObject deleteBody(const QString &node, const QStringList &pingIds)
 
 QJsonObject body(const Ping &ping)
 {
-    return QJsonObject{
+    QJsonObject out{
         {QStringLiteral("pingId"), ping.pingId},
         {QStringLiteral("node"), ping.node},
         {QStringLiteral("kind"), ping.kind},
@@ -282,6 +295,9 @@ QJsonObject body(const Ping &ping)
         {QStringLiteral("title"), ping.title},
         {QStringLiteral("body"), ping.body},
     };
+    if (!ping.runId.isEmpty())
+        out.insert(QStringLiteral("runId"), ping.runId);
+    return out;
 }
 
 QString duplicateKey(const Ping &ping)

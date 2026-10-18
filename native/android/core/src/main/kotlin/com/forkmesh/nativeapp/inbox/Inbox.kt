@@ -161,7 +161,7 @@ object InboxRoutes {
             RepoDetailTab.Mirrors -> Route.Repo(ref, RepoSection.Mirrors)
             RepoDetailTab.Releases -> Route.Repo(ref, RepoSection.Releases)
             RepoDetailTab.About -> Route.Repo(ref, RepoSection.About)
-            RepoDetailTab.Actions -> Route.Repo(ref, RepoSection.Actions)
+            RepoDetailTab.Actions -> if (link.run > 0) Route.Run(ref, link.run.toString()) else Route.Repo(ref, RepoSection.Actions)
             RepoDetailTab.Agents ->
                 if (link.session > 0) Route.LaunchedAgent(ref, link.session.toString()) else Route.Repo(ref, RepoSection.Agents)
             RepoDetailTab.Worktrees -> Route.Repo(ref, RepoSection.Worktrees)

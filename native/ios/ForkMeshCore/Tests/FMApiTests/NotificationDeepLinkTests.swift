@@ -32,6 +32,15 @@ final class NotificationDeepLinkTests: XCTestCase {
         XCTAssertEqual(link.number, 692)
     }
 
+    func testRunLinkKeepsTheRunAndAgentLinkKeepsTheSession() throws {
+        let run = try XCTUnwrap(NotificationDeepLink.parse("/mona/forkmesh/actions/runs/41"))
+        XCTAssertEqual(run.initialTab, .actions)
+        XCTAssertEqual(run.reference, "41")
+        XCTAssertEqual(NotificationDeepLink.parse("/mona/forkmesh/actions/runs/x")?.reference, "")
+        XCTAssertEqual(NotificationDeepLink.parse("/mona/forkmesh/actions/runs/0")?.reference, "")
+        XCTAssertEqual(NotificationDeepLink.parse("/mona/forkmesh/agents/12")?.number, 12)
+    }
+
     func testCommitLinkKeepsTheReference() {
         let link = NotificationDeepLink.parse("/a/b/commit/abc123?x=1#frag")
         XCTAssertEqual(link?.initialTab, .commits)

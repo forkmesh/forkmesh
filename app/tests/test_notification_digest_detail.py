@@ -26,6 +26,7 @@ FUNCS = {
     "_notification_item_record",
     "_notification_item_path",
     "_notification_stored_path",
+    "_notification_stored_tail",
     "_notification_item_url",
     "_notification_record_label",
     "_notification_actor_html",
