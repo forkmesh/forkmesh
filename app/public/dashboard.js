@@ -43151,7 +43151,7 @@
     "notes": "/dashboard-page-notes.js?v=0617eb425d63",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "tasks": "/dashboard-page-tasks.js?v=d19aedd4b98f",
-    "workflows": "/dashboard-page-workflows.js?v=c61995e2e8c1",
+    "workflows": "/dashboard-page-workflows.js?v=68102c21b041",
   };
   const dashboardChunkScope = {
     $,
@@ -43185,6 +43185,7 @@
     repoIsLive,
     repoLinkUrl,
     repoLiveUrl,
+    sendTextToPrompt,
     sourceOfTruth,
     state,
     submitWebIssue,

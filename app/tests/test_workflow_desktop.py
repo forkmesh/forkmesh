@@ -261,3 +261,28 @@ def test_a_failed_desktop_step_stops_the_rest(tmp_path):
                               "error": "Another disk cleanup step is still running on the desktop."}
     assert [nodes[step]["status"] for step in ("versions", "caches", "report")] == ["skipped"] * 3
     assert nodes["agents"]["status"] == "success"
+
+
+def test_a_failed_run_offers_to_send_the_failure_to_an_agent(tmp_path):
+    out = _page(tmp_path, "fail")
+    assert "data-wf-send-failure" in out["railAfter"]
+    assert "data-wf-send-failure" in out["panelAfter"]
+    assert len(out["prompts"]) == 1
+    prompt = out["prompts"][0]
+    assert prompt.startswith(f'The ForkMesh workflow "{SEEDED}" failed')
+    assert "Find the cause and fix it." in prompt
+    assert "?id=" + "a" * 32 in prompt
+    assert "- Remove test leftovers (desktop.cleanTests): failed" in prompt
+    assert "  Error: Another disk cleanup step is still running on the desktop." in prompt
+    assert "- Remove agent leftovers (desktop.cleanAgents): succeeded" in prompt
+    assert "- Report free space (desktop.diskReport): skipped" in prompt
+    assert "--step tests" in prompt and "docs/tools/free-disk-space.md" in prompt
+    assert len(prompt) <= 7500
+    assert "agent prompt" in out["sentNotice"]
+
+
+def test_a_successful_run_has_no_send_to_agent_button(tmp_path):
+    out = _page(tmp_path)
+    assert "data-wf-send-failure" not in out["railAfter"]
+    assert "data-wf-send-failure" not in out["panelAfter"]
+    assert out["prompts"] == []
