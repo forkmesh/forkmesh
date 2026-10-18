@@ -19,7 +19,10 @@ final class FakeCloudAgents: CloudAgentsApi {
     var stopped: [String] = []
     var steered: [(String, String)] = []
 
+    var hold: (@MainActor () async -> Void)?
+
     func accountAgentSessions() async throws -> AgentSessionList {
+        if let hold { await hold() }
         if let failure { throw failure }
         return AgentSessionList(sessions: sessions, finishedBeforeMs: finishedBefore)
     }
@@ -94,6 +97,24 @@ final class FakeCloudAgents: CloudAgentsApi {
             continuation.finish()
         }
         return HTTPStreamedResponse(status: liveStatus, body: body)
+    }
+}
+
+@MainActor
+final class CloudGate {
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var opened = false
+
+    func wait() async {
+        if opened { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        opened = true
+        let pending = waiters
+        waiters = []
+        for waiter in pending { waiter.resume() }
     }
 }
 
@@ -1008,6 +1029,33 @@ final class AgentControlTests: XCTestCase {
         XCTAssertFalse(center.supportsQueue)
         XCTAssertNil(center.queuePosition(center.rows[0]))
         XCTAssertEqual(center.queuedRows, [])
+    }
+
+    @MainActor func testDesktopRowsShowBeforeTheCloudAnswers() async throws {
+        let desktop = try FakeRelayDesktop()
+        let identity = try Identity.fromSeed(Ed25519.generateSeed())
+        desktop.handler = { method, _ in
+            method == "agents.list" ? ["sessions": [["id": 3, "status": "running", "prompt": "Go"]]] : nil
+        }
+        let hub = DesktopControlHub(
+            local: nil,
+            openRelay: { target in
+                try await RelayControlConnection.open(channel: desktop, identity: identity, desktopKey: target.key, node: "desk")
+            },
+            paired: { [PairedDesktop(key: desktop.publicKey, name: "desk", pairedAtMs: 1)] })
+        let cloudApi = FakeCloudAgents()
+        cloudApi.sessions = [cloud("s9", status: "queued", node: "mirror37")]
+        let gate = CloudGate()
+        cloudApi.hold = { await gate.wait() }
+        let center = AgentControlCenter(hub: hub, cloud: cloudApi)
+        let refresh = Task { await center.refresh() }
+        for _ in 0..<300 where center.rows.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTAssertEqual(center.rows.map(\.id), ["desktop:3"])
+        gate.open()
+        await refresh.value
+        XCTAssertEqual(Set(center.rows.map(\.id)), ["desktop:3", "node:s9"])
     }
 
     @MainActor func testAMissingDesktopStillListsNodeRuns() async {

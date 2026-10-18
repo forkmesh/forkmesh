@@ -355,6 +355,14 @@ moves files, without relaying content in clear.
   account. Without a session token the desktop signs
   `forkmesh-device-check-v1\n<account>\n<phone pubkey>\n<ts>`. The phone's
   self-reported user is never trusted.
+- **Instant on the LAN.** A phone already approved through the account whose
+  last check passed less than 24 hours ago (`admitsBeforeCheck`) is admitted on
+  the LAN as soon as the handshake ends; the account is asked in the background
+  (`recheckAccount`), and a `NotOwned` answer closes the channel with `revoked`
+  and forgets the phone. Before this every connect waited in `Checking` for the
+  account server (up to 8 s), so the phone's Agents list and every other
+  desktop page took seconds at home. Relayed channels and phones not confirmed
+  for a day still wait for the answer.
 - Any other phone gets a six-digit code shown on both screens; over the relay it
   is refused with `pair_on_lan`. Approved devices live in
   `data/local_control/paired-devices.json` (**Settings → Phone**). Browsers are

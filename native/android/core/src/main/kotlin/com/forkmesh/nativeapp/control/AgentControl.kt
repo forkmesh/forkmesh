@@ -14,7 +14,9 @@ import com.forkmesh.nativeapp.agents.promptOrPhotoNote
 import com.forkmesh.nativeapp.code.ConflictResolution
 import com.forkmesh.nativeapp.json.JsonMap
 import com.forkmesh.nativeapp.json.jsonText
+import java.util.concurrent.Callable
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 
 enum class AgentTransportBadge(val wire: String, val label: String) {
@@ -430,10 +432,12 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
     private val lock = Any()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "AgentControl").apply { isDaemon = true } }
+    private val cloudReader = Executors.newSingleThreadExecutor { Thread(it, "AgentControlCloud").apply { isDaemon = true } }
     private var refreshing = false
     private var wantDesktop = false
     private var wantCloud = false
     private val tap: Any = hub.addEventTap { event -> if (event.event == "agents.changed") refreshDesktopAsync() }
+    @Volatile
     private var cloudSessions: List<AgentLaunchSession> = emptyList()
 
     @Volatile
@@ -520,8 +524,19 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
                     wantCloud = false
                     next
                 } ?: break
+                val cloudRows = if (withCloud) cloudReader.submit(Callable { loadCloud() }) else null
                 val desk = loadDesktop()
-                val nodes = if (withCloud) loadCloud() else cloudSessions.map(UnifiedAgentRow::fromCloud)
+                if (cloudRows != null) {
+                    rows = mergeAgentRows(desk, cloudSessions.map(UnifiedAgentRow::fromCloud), hub.currentLink?.desktopName ?: "")
+                    notifyListeners()
+                }
+                val nodes = cloudRows?.let { pending ->
+                    try {
+                        pending.get()
+                    } catch (_: ExecutionException) {
+                        cloudSessions.map(UnifiedAgentRow::fromCloud)
+                    }
+                } ?: cloudSessions.map(UnifiedAgentRow::fromCloud)
                 rows = mergeAgentRows(desk, nodes, hub.currentLink?.desktopName ?: "")
                 notifyListeners()
             }
@@ -785,5 +800,6 @@ class AgentControlCenter(val hub: DesktopControlHub, private val cloud: AgentQue
     fun dispose() {
         hub.removeEventTap(tap)
         worker.shutdown()
+        cloudReader.shutdown()
     }
 }

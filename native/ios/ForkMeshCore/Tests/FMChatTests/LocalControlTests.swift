@@ -386,6 +386,23 @@ final class LocalControlServiceTests: XCTestCase {
         XCTAssertEqual(control.localDesktop, .connected("desk"))
     }
 
+    func testTheDesktopsLastAddressIsProbedUntilItIsBack() async {
+        await pairedAndConnected()
+        XCTAssertTrue(
+            (device.prefs.string(forKey: LocalControlService.lanAddressesKey) ?? "").contains(desktop.publicKey))
+        XCTAssertEqual(mesh.rememberedBeaconTargets?().map(\.address), [], "nothing to probe while connected")
+        XCTAssertFalse(control.lanPending)
+
+        await control.disconnect(hold: false)
+        XCTAssertFalse(control.lanPending)
+        XCTAssertEqual(mesh.rememberedBeaconTargets?().map(\.address), [MeshAddress.loopbackIPv4.address])
+        XCTAssertTrue(control.lanPending, "the desktop may answer the probe any moment")
+
+        await control.disconnect()
+        XCTAssertEqual(mesh.rememberedBeaconTargets?().map(\.address), [], "a held desktop is left alone")
+        XCTAssertFalse(control.lanPending)
+    }
+
     func testAMachineThatIsNotTheDesktopItClaimsIsRefused() async {
         let other = controlB64([UInt8](repeating: 9, count: 32))
         await control.connect(host(other))

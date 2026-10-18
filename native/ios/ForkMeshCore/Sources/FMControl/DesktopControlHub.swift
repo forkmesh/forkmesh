@@ -72,6 +72,7 @@ public final class DesktopControlHub {
     @ObservationIgnored private var warmRetry: Task<Void, Never>?
     @ObservationIgnored private var warmDelay: TimeInterval = 2
     @ObservationIgnored public var relayIdleProbe: TimeInterval = 45
+    @ObservationIgnored public var lanGrace: TimeInterval = 1.5
 
     public init(
         local: LocalControlService?,
@@ -166,6 +167,10 @@ public final class DesktopControlHub {
                 return current
             }
         }
+        if let lanLink, await awaitLan(lanLink) {
+            attachTaps(to: lanLink)
+            return lanLink
+        }
         if opening {
             // Someone is already dialling; share their channel.
             return try await withCheckedThrowingContinuation { continuation in
@@ -221,6 +226,15 @@ public final class DesktopControlHub {
             for waiter in waiting { waiter.resume(throwing: error) }
             throw error
         }
+    }
+
+    private func awaitLan(_ lanLink: LanControlLink) async -> Bool {
+        guard let local, local.lanPending else { return lanLink.isOpen }
+        let deadline = Date().addingTimeInterval(lanGrace)
+        while !lanLink.isOpen && local.lanPending && Date() < deadline && !Task.isCancelled {
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
+        return lanLink.isOpen
     }
 
     private func relink() async throws -> DesktopControlLink {
