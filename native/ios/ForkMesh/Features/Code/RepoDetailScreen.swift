@@ -304,6 +304,12 @@ enum CodeCurrentRepo {
         ShellCounts.shared.currentRepo = memory.ref
     }
 
+    static func follow(_ ref: RepoRef) {
+        guard ShellCounts.shared.currentRepo != ref else { return }
+        memory.remember(owner: ref.owner, name: ref.name)
+        ShellCounts.shared.currentRepo = ref
+    }
+
     static func known(_ ref: RepoRef) -> Repository? {
         records[ref.slug.lowercased()]
     }
