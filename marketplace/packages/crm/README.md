@@ -615,38 +615,67 @@ reader to the deck link.
   that the deck follows its note, so it should keep to a few sentences, add
   no link, and ask for a reply.
 
-### Reading time and scroll depth
+### Reading time, slide reach and the summary ping
 
-Every tracked email (investor or not) reports how long it stayed open, and
-an investor email also reports how far down the deck the reader got. Mail
-clients run no script, so both come from CSS that loads a 1×1 image:
+Every tracked email (investor or not) reports how long it stayed open. An
+investor email also reports the furthest deck slide the reader got to. Mail
+clients run no script, so all of it comes from images that CSS loads:
 
-- **Read time.** Six hidden cells (`.fm-r5` … `.fm-r300`, `READ_MARKS`) each
-  run a 1 ms animation delayed 5, 15, 30, 60, 120 or 300 seconds, which sets
-  a background image `/api/crm/-/t/r/<token>.<mark>.png`. A mark counts only
-  once the open pixel has started a view (`crm_email_reading.view_at`), and
-  only when at least 80% of its seconds have passed since that view
-  (`READ_LAG_SHARE`). That way a proxy that fetches every image at once does
-  not report five minutes of reading.
-- **Scroll depth.** Markers after the 3rd, 7th and 11th slides and at the end
-  (`DEPTH_MARKS`: 25, 50, 75, 100) use a scroll-driven animation
-  (`animation-timeline: view()`) that loads `/api/crm/-/t/d/<token>.<mark>.png`
-  when the marker scrolls into view. A depth mark needs 1.5 s since the
-  view started (`DEPTH_MIN_LAG_MS`).
-- **Where it shows.** `crm_email_reading` keeps the highest marks, and the
-  email row returns them as `readSeconds` and `scrollDepth`. The web CRM's
-  activity line and the iOS contact screen (`CrmActivity.engagementLine`)
-  show "read 2 min+ · scrolled to the end". The sender gets one ping at 30
-  seconds ("📖 … is reading your email") and one at 100% ("🏁 … read your
-  email to the end"). The Android and desktop CRMs do not show these yet.
-- **Which clients report it.** Apple Mail runs CSS animations, so it reports
-  read time. It also reports scroll depth where its engine supports
-  scroll-driven animations (WebKit in the 2025–26 releases). Gmail and
-  Outlook do not run CSS animations, so their readers show opens and clicks
-  only. A missing read time therefore does not mean the email went unread.
+- **Opened.** The forkmesh logo at the top of the email is the open pixel,
+  `/api/crm/-/t/o/<token>.png`. It records the open, starts a view
+  (`crm_email_reading.view_at`), stores the reader's mail app
+  (`crm_email_report.client`, from the request's user agent) and redirects to
+  the real logo. Hits in the first 30 s after sending are ignored
+  (`TRACK_QUIET_MS`), so link scanners don't count.
+- **Read time.** Twelve hidden cells (`READ_MARKS`: 5, 15, 30, 45, 60, 90,
+  120, 180, 240, 300, 420 and 600 s) each run a 1 ms animation delayed by
+  their number of seconds, which sets a background image
+  `/t/r/<token>.<seconds>.png`. A mark counts only after a view has started,
+  and only once at least 80% of its seconds have passed since then
+  (`READ_LAG_SHARE`), so a proxy that fetches every image at once does not
+  report ten minutes of reading.
+- **Slide reach.** Each of the fourteen slides ends with a marker
+  (`.fm-s1` … `.fm-s14`). A scroll-driven animation
+  (`animation-timeline: view()`) on it loads `/t/s/<token>.<slide>.png` when
+  it scrolls into view, at least 1.5 s after the view started
+  (`DEPTH_MIN_LAG_MS`). The furthest slide is stored as a percentage in
+  `crm_email_reading.depth`, so the table needed no new column. The email row
+  turns it back into `slideCount`, `slideReached` and `slideTitle` (from
+  `DECK_PAGE_TITLES`). Emails sent before 20 Oct 2026 carried 25/50/75/100%
+  markers (`/t/d/…`), and those still count.
+- **Pings.** The sender gets two pings per email at most, both straight to
+  the phone (`runtime.notify` → the host's APNs push, in the same request
+  as the beacon):
+  1. **First open.** "📬 Ivy opened your email", with the network owner and
+     mail app.
+  2. **One summary.** For a deck, it is sent when the reader reaches the last
+     slide or passes five minutes (`SUMMARY_DECK_SECONDS`), whichever comes
+     first: "🏁 Ivy read your whole deck" or "📖 Ivy has spent 5 min+ on your
+     deck". For a plain note it is sent at 30 seconds
+     (`SUMMARY_NOTE_SECONDS`). The body reads, for example, "Read for 4 min+ ·
+     reached slide 9 of 14 (Market) · iPhone · Apple Mail".
 
-Tests: `test_reading_time_and_depth_count_only_after_a_real_open_and_ping_twice`
-and the deck tests in `tests/test_auto_email.py`. iOS:
+  The host gives packages no timer, so the summary rides on the reader's own
+  beacons, and `crm_email_report.summary_at` keeps it to one. A reader who
+  leaves before the last slide and before five minutes gets no summary
+  ping; the CRM still shows how far they got.
+- **Where it shows.** The email row returns `readSeconds`, `scrollDepth`, the
+  slide fields, `mailClient` and `readingReported`. It shows on the web
+  activity line (`crmReadingParts`), on the iOS contact screen
+  (`CrmActivity.engagementLine` and the email's Reading section), and on the
+  desktop contact card and Linked emails tooltip (`emailReadingLine`), for
+  example "read 4 min+ · reached slide 9/14 · Market · iPhone · Apple Mail".
+  Android does not show it yet.
+- **Which mail apps report it.** Apple Mail runs CSS animations, so it
+  reports read time. It also reports slide reach where its engine supports
+  scroll-driven animations (WebKit in the 2025–26 releases). Gmail, Yahoo
+  and Outlook do not run them (`SILENT_MAIL_CLIENTS`), so `readingReported`
+  is `"no"` and the apps say "Gmail doesn't report read time" for an opened
+  email. That way an empty line is not mistaken for "didn't read".
+
+Tests: the reading, summary, Gmail and legacy-beacon tests in
+`tests/test_auto_email.py`, `tests/test_web_reading_report.py`, the desktop
+contract in `tests/test_qt_plugin_contracts.py`, and iOS
 `CrmReadingReportTests`.
 
 ## Investor deck
