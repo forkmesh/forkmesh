@@ -192,6 +192,34 @@ def test_without_host_ai_the_prompt_comes_back_for_the_desktop_agent():
     assert sent["data"]["model"] == "Claude Code"
 
 
+def test_the_prompt_carries_who_we_are_and_the_contacts_recent_activity():
+    runtime = AiRuntime([_draft("First note")])
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="customers")
+    assert _send(runtime, sam)["status"] == 201
+    opener, _ = _tracking_urls(runtime.mailtrap_calls[-1][1]["html"])
+    _visit(runtime, opener)
+    runtime.clock += crm.AUTO_EMAIL_GAP_MS
+    failed = _send(runtime, sam)
+    assert failed["status"] == 503
+    prompt = failed["data"]["prompt"]
+    activity = prompt.split("## Their recent activity with us")[1].split("## Our conversation")[0]
+    assert "- Added to our CRM on " in activity
+    assert "- Last contacted on " in activity
+    assert "never mention that we can see opens" in activity
+    conversation = prompt.split("## Our conversation so far (oldest first)")[1]
+    assert "We wrote · Subject: First note · they opened it once" in conversation
+    assert "## About us: acme" in prompt
+
+
+def test_the_forkmesh_organization_is_described_without_a_saved_brief():
+    prompt = crm._auto_email_prompt(
+        "forkmesh", "Jett", crm.AUTO_EMAIL_FORKMESH_BRIEF, {"name": "Sam"}, "reach",
+        "referral", "https://forkmesh.com/r/jett", "", "", [], [], "",
+        ["- We have never contacted them."])
+    assert "ForkMesh (https://forkmesh.com) lets developers" in prompt
+    assert "## Their recent activity with us\n- We have never contacted them." in prompt
+
+
 def test_drafts_with_placeholders_or_invented_links_are_refused():
     runtime = AiRuntime([_draft("Hi [Name]"),
                          _draft("Fine", extra="\nhttps://invented.example/x")])

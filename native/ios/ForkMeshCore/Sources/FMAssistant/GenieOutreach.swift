@@ -156,6 +156,7 @@ public enum GenieOutreach {
     public nonisolated static let emailWords = 140
     public nonisolated static let timeout: Double = 25
     public nonisolated static let cloudTimeout: Double = 90
+    public nonisolated static let desktopTimeout: Double = 300
     public nonisolated static let temperature: Double = 0.4
     public nonisolated static let investorWords = 180
     public nonisolated static let investorFlowIds: Set<String> = ["investors", "investment"]

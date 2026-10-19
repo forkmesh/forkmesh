@@ -472,7 +472,14 @@ dialog names the recipient and the link first.
   gets the organization's brief (`messageBrief`, else a short ForkMesh brief
   for the `forkmesh` organization), the contact's fields and notes, the angle
   for the list or pipeline (journalists, investors, grants, partners, users),
-  the last six messages with them, the link, and the lessons below. It answers
+  their recent activity with us, the last six messages with them, the link,
+  and the lessons below.
+- **Recent activity** (`_auto_email_activity`, 2026-10-19): when they were
+  added and last updated and by whom, when we last contacted them, when they
+  last wrote to us, and how often and how long they read the investor deck.
+  Each message we sent in the conversation shows whether they opened it, when
+  they clicked and how long they read (`_auto_email_engagement`). The model is
+  told to use it to judge interest and never to mention the tracking. It answers
   `{subject, body}`. Drafts with `[placeholders]`, under 60 or over 2400
   characters, or with any link not in the prompt are refused and asked for
   again once (`AUTO_EMAIL_ATTEMPTS`); a missing referral link is appended. An
@@ -489,7 +496,9 @@ dialog names the recipient and the link first.
 - **Without a host model** the worker answers `503 ai_unavailable` (or `422
   draft_unusable`) with the full `prompt`. The desktop then asks the default
   agent (Claude Code or Codex) for a `Subject:` line and body and posts them
-  back as `{subject, text, model}`; the same checks apply. The web says the
+  back as `{subject, text, model}`; the same checks apply. iPhone auto-send
+  does the same with its own writers and, last, the paired desktop's agent
+  through `agents.write` (`docs/native/DESKTOP_AGENTS.md`). The web says the
   host has no model. `preview: true` returns the draft without sending.
 - **Sent through Zoho Mail when the organization has it connected** (1.36.0).
   Before 1.36.0 every automated email went out through `runtime.send_mailtrap`

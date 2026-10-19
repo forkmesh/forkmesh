@@ -383,6 +383,7 @@ rebuilds never close an open agent.
 | Changed images | `agentops.file` | `DiffImagePreview` | none |
 | Merge & clean up | `agentops.prepare` + `agentops.merge` | `MergeCleanupButton`, `MergeLandedScreen` | `MergeCleanupDialog` |
 | Queue limit and order | `agents.queue`, `agents.queue.limit`, `agents.queue.move` | `DesktopQueueMenu`, `DesktopQueueSheet` | `AgentQueueViews.kt` |
+| Write text with the default agent | `agents.write` | Genie outreach writers | none |
 | Worktrees | `agentops.worktrees` | `WorktreesScreen` | `WorktreesScreen` |
 | Merge leaderboard | `agentops.mergestats` | `MergeLeaderboardScreen` | `MergeLeaderboardScreen` |
 | Delete | `agentops.prepare {action:"delete"}` + `agentops.delete` | run screen (with Undo), swipe, long press | swipe, `AgentDeleteDialog` |
@@ -497,6 +498,24 @@ starts a new agent.
 The red stop button stops every active, stoppable control row except outside
 agents (`AgentStopAll.targets`), after a confirmation with the count, and
 reports `AgentStopAllOutcome`.
+
+## Writing text with the desktop's agent
+
+- `agents.write {prompt}` (2026-10-19) hands the prompt to the desktop's
+  default agent through `askNativePackageAgent`, the same one-shot Claude Code
+  or Codex run (plan mode, 5 minutes) the CRM's **Send AI email** uses when the
+  host has no model, and answers `{text, agent}` when it finishes. It writes no
+  files and starts no agent row; the desktop log records which device asked.
+- Errors: `bad_prompt` (empty or over 60,000 characters), `no_writer` (the
+  default agent is not Claude Code or Codex), `write_failed` with the agent's
+  error as the message.
+- Why: production cores have no host model (`AI_API_URL` is unset,
+  `docs/app/package-ai-failures.md`), so the CRM's `POST /outreach/auto`
+  answers `ai_unavailable` with its prompt. A phone without an agent API key or
+  an on-device model had nothing to write with and iPhone auto-send paused
+  with "the server has no AI model and no writer on this phone gave a usable
+  draft". The paired desktop's agent is now the phone's last writer
+  (`docs/native/GENIE.md`).
 
 ## Adjusting the desktop's agent queue from the phone
 
