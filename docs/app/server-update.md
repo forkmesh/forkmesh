@@ -49,7 +49,10 @@ only drops a request file; a root unit does the work.
    `www/public/install-instance.sh` and runs it with `--update`. The installer
    rebuilds, migrates and restarts only what changed, as a manual
    `--update` does, and keeps secrets, data and accounts. Running the new
-   installer means installer fixes ship with the update.
+   installer means installer fixes ship with the update. The installer builds
+   beside the running version and switches only after a good build, rolling
+   back if the restart fails, so a failed update leaves the old version
+   serving ([../INSTANCES.md](../INSTANCES.md#updates-build-beside-the-running-version)).
 6. Progress goes to `/var/lib/forkmesh-instance-update/status.json`
    (root:forkmesh-app, 0640): state, the installer's current `FMI` step, the
    last `Error:` line, the commits before and after, and the upstream commit.

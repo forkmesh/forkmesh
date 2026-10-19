@@ -11,6 +11,19 @@ INSTALL_SH_URL="${FORKMESH_INSTALL_SH_URL:-https://forkmesh.com/install.sh}"
 OPT="/opt/forkmesh-instance"
 SRC="$OPT/src"
 VENV="$OPT/venv"
+NEXT_SRC="$OPT/src.next"
+PREV_SRC="$OPT/src.prev"
+NEXT_VENV="$OPT/venv.next"
+PREV_VENV="$OPT/venv.prev"
+BUILD_SRC="$SRC"
+BUILD_VENV="$VENV"
+TARGET_COMMIT=""
+SWAPPED="0"
+VENV_SWAPPED="0"
+APP_RESTARTED="0"
+SOURCE_COMMITTED="0"
+DAEMON_BUILD="$OPT/daemon-build.json"
+RELEASE_SOURCE="https://app.forkmesh.com/forkmesh/forkmesh"
 ETC="/etc/forkmesh-instance"
 VAR="/var/lib/forkmesh-instance"
 APP_ENV="$ETC/app.env"
@@ -80,6 +93,7 @@ on_exit() {
     progress "$CURRENT_STEP" failed
     printf 'Error: the step above stopped with status %s.\n' "$code"
   fi
+  if [ "$code" -ne 0 ]; then rollback_source || true; fi
   if [ "$DETACHED" = "1" ]; then printf '%s\n' "$code" > "$SETUP_RUN_DIR/status" 2>/dev/null || true; fi
 }
 trap on_exit EXIT
@@ -172,6 +186,7 @@ optional = {
     "mailgunDomain": checks["domain"],
     "mailgunRegion": r"^(us|eu)$",
     "launchId": r"^[0-9a-f]{32}$",
+    "platformUrl": checks["sourceUrl"],
 }
 values = {}
 c.setdefault("mailProvider", "none")
@@ -582,6 +597,28 @@ install_packages() {
   install -d -m 0750 -o "$APP_USER" -g "$APP_USER" "$VAR" "$VAR/data"
 }
 
+source_git() {
+  local url="$1"
+  shift
+  case "$url" in
+    "https://$DOMAIN/"*) git -c "http.curloptResolve=$DOMAIN:443:127.0.0.1" "$@" ;;
+    *) git "$@" ;;
+  esac
+}
+
+follow_source_url() {
+  local current
+  current="$(git -C "$SRC" remote get-url origin 2>/dev/null || true)"
+  if [ "$current" != "$CFG_sourceUrl_effective" ]; then
+    if [ -n "$current" ]; then
+      git -C "$SRC" remote set-url origin "$CFG_sourceUrl_effective"
+    else
+      git -C "$SRC" remote add origin "$CFG_sourceUrl_effective"
+    fi
+    say "The source now follows $CFG_sourceUrl_effective (was ${current:-none})."
+  fi
+}
+
 fetch_source() {
   begin source "Downloading the ForkMesh source"
   local local_source="${FORKMESH_INSTANCE_SOURCE_DIR:-}"
@@ -592,18 +629,14 @@ fetch_source() {
     CFG_sourceUrl_effective="$CFG_sourceUrl"
   fi
   if [ -d "$SRC/.git" ]; then
+    follow_source_url
     say "Fetching $CFG_sourceRef from $CFG_sourceUrl_effective"
-    git -C "$SRC" fetch --depth 1 origin "$CFG_sourceRef" 2>&1 | lines
-    if [ "$(git -C "$SRC" rev-parse HEAD)" = "$(git -C "$SRC" rev-parse FETCH_HEAD)" ]; then
+    source_git "$CFG_sourceUrl_effective" -C "$SRC" fetch --depth 1 origin "$CFG_sourceRef" 2>&1 | lines
+    TARGET_COMMIT="$(git -C "$SRC" rev-parse FETCH_HEAD)"
+    if [ "$(git -C "$SRC" rev-parse HEAD)" = "$TARGET_COMMIT" ]; then
       say "The source is already at the latest $CFG_sourceRef."
-    elif ! git -C "$SRC" diff --quiet; then
-      local saved
-      saved="$OPT/src-changes-$(date +%Y%m%d-%H%M%S).patch"
-      git -C "$SRC" diff > "$saved"
-      say "Saved the changes in $SRC (including files the last build rewrote) to $saved."
-      git -C "$SRC" checkout -f -q --detach FETCH_HEAD
     else
-      git -C "$SRC" checkout -f -q --detach FETCH_HEAD
+      say "New source: $(git -C "$SRC" log -1 --format='%h (%cs) %s' "$TARGET_COMMIT" | cut -c1-200)"
     fi
   else
     local stage="$OPT/src.partial"
@@ -612,8 +645,103 @@ fetch_source() {
     git clone --quiet --depth 1 --branch "$CFG_sourceRef" "$CFG_sourceUrl_effective" "$stage" ||
       die "Could not download the ForkMesh source from $CFG_sourceUrl_effective."
     mv "$stage" "$SRC"
+    TARGET_COMMIT="$(git -C "$SRC" rev-parse HEAD)"
   fi
-  say "ForkMesh source at $(git -C "$SRC" rev-parse --short HEAD) ($(git -C "$SRC" log -1 --format=%cs))."
+  say "ForkMesh source at $(git -C "$SRC" rev-parse --short "$TARGET_COMMIT") ($(git -C "$SRC" log -1 --format=%cs "$TARGET_COMMIT"))."
+}
+
+checkout_target() {
+  local tree="$1"
+  if [ "$(git -C "$tree" rev-parse HEAD 2>/dev/null)" = "$TARGET_COMMIT" ] && git -C "$tree" diff --quiet; then
+    return 0
+  fi
+  if ! git -C "$tree" diff --quiet; then
+    local saved
+    saved="$OPT/src-changes-$(date +%Y%m%d-%H%M%S).patch"
+    git -C "$tree" diff > "$saved"
+    say "Saved the changes in $tree (including files the last build rewrote) to $saved."
+  fi
+  git -C "$tree" checkout -f -q --detach "$TARGET_COMMIT"
+}
+
+requirements_digest() { files_digest "$1/app/host/requirements.txt"; }
+
+stage_venv() {
+  BUILD_VENV="$VENV"
+  if [ "$(cat "$VENV/.forkmesh-requirements" 2>/dev/null || true)" = "$(requirements_digest "$BUILD_SRC")" ]; then
+    return 0
+  fi
+  if [ -e "$NEXT_VENV" ] && [ ! -x "$NEXT_VENV/bin/python" ]; then mv "$NEXT_VENV" "$NEXT_VENV.broken-$(date +%s)"; fi
+  if [ ! -e "$NEXT_VENV" ] && [ -x "$PREV_VENV/bin/python" ]; then mv "$PREV_VENV" "$NEXT_VENV"; fi
+  if [ ! -e "$NEXT_VENV" ]; then
+    [ ! -e "$NEXT_VENV.partial" ] || mv "$NEXT_VENV.partial" "$NEXT_VENV.partial.$(date +%s)"
+    cp -a "$VENV" "$NEXT_VENV.partial"
+    mv "$NEXT_VENV.partial" "$NEXT_VENV"
+  fi
+  BUILD_VENV="$NEXT_VENV"
+  say "The Python packages changed; installing them beside the running ones."
+}
+
+stage_source() {
+  if [ -e "$NEXT_SRC" ] && [ ! -d "$NEXT_SRC/.git" ]; then mv "$NEXT_SRC" "$NEXT_SRC.broken-$(date +%s)"; fi
+  if [ ! -e "$NEXT_SRC" ] && [ -d "$PREV_SRC/.git" ]; then mv "$PREV_SRC" "$NEXT_SRC"; fi
+  if [ ! -e "$NEXT_SRC" ]; then
+    say "Copying the running source to build the new one beside it"
+    [ ! -e "$NEXT_SRC.partial" ] || mv "$NEXT_SRC.partial" "$NEXT_SRC.partial.$(date +%s)"
+    cp -a "$SRC" "$NEXT_SRC.partial"
+    mv "$NEXT_SRC.partial" "$NEXT_SRC"
+  fi
+  git -C "$SRC" update-ref refs/forkmesh/build "$TARGET_COMMIT"
+  git -C "$NEXT_SRC" fetch --quiet --depth 1 "$SRC" refs/forkmesh/build 2>&1 | lines
+  git -C "$NEXT_SRC" remote set-url origin "$CFG_sourceUrl_effective" 2>/dev/null ||
+    git -C "$NEXT_SRC" remote add origin "$CFG_sourceUrl_effective"
+  checkout_target "$NEXT_SRC"
+  BUILD_SRC="$NEXT_SRC"
+  say "Building $(git -C "$BUILD_SRC" rev-parse --short HEAD) in $BUILD_SRC; the running version keeps serving until it is ready."
+  stage_venv
+}
+
+activate_source() {
+  [ "$BUILD_SRC" != "$SRC" ] || return 0
+  [ ! -e "$PREV_SRC" ] || mv "$PREV_SRC" "$PREV_SRC.$(date +%s)"
+  [ ! -e "$PREV_VENV" ] || [ "$BUILD_VENV" = "$VENV" ] || mv "$PREV_VENV" "$PREV_VENV.$(date +%s)"
+  if [ -f "$BUILD_INFO" ]; then cp -p "$BUILD_INFO" "$BUILD_INFO.prev"; else rm -f "$BUILD_INFO.prev"; fi
+  if [ -f "$BUILD_STAMP" ]; then cp -p "$BUILD_STAMP" "$BUILD_STAMP.prev"; else rm -f "$BUILD_STAMP.prev"; fi
+  SWAPPED="1"
+  mv "$SRC" "$PREV_SRC"
+  mv "$NEXT_SRC" "$SRC"
+  BUILD_SRC="$SRC"
+  if [ "$BUILD_VENV" != "$VENV" ]; then
+    VENV_SWAPPED="1"
+    mv "$VENV" "$PREV_VENV"
+    mv "$NEXT_VENV" "$VENV"
+    BUILD_VENV="$VENV"
+  fi
+  write_build_info
+  build_stamp "$SRC" > "$BUILD_STAMP"
+  say "Switched to the new build; the previous one is kept in $PREV_SRC until the next update."
+}
+
+rollback_source() {
+  [ "$SWAPPED" = "1" ] && [ "$SOURCE_COMMITTED" != "1" ] && [ -d "$PREV_SRC/.git" ] || return 0
+  SWAPPED="0"
+  if [ -e "$SRC" ]; then
+    [ ! -e "$NEXT_SRC" ] || mv "$NEXT_SRC" "$NEXT_SRC.failed-$(date +%s)"
+    mv "$SRC" "$NEXT_SRC"
+  fi
+  mv "$PREV_SRC" "$SRC"
+  if [ "$VENV_SWAPPED" = "1" ] && [ -x "$PREV_VENV/bin/python" ]; then
+    VENV_SWAPPED="0"
+    if [ -e "$VENV" ]; then
+      [ ! -e "$NEXT_VENV" ] || mv "$NEXT_VENV" "$NEXT_VENV.failed-$(date +%s)"
+      mv "$VENV" "$NEXT_VENV"
+    fi
+    mv "$PREV_VENV" "$VENV"
+  fi
+  if [ -f "$BUILD_INFO.prev" ]; then mv -f "$BUILD_INFO.prev" "$BUILD_INFO"; fi
+  if [ -f "$BUILD_STAMP.prev" ]; then mv -f "$BUILD_STAMP.prev" "$BUILD_STAMP"; fi
+  if [ "$APP_RESTARTED" = "1" ]; then systemctl restart forkmesh-instance.service >/dev/null 2>&1 || true; fi
+  say "Kept the version that was running: $(git -C "$SRC" rev-parse --short HEAD 2>/dev/null || echo unknown). The failed build is in $NEXT_SRC."
 }
 
 logo_file() {
@@ -638,8 +766,9 @@ save_logo() {
 }
 
 build_stamp() {
-  printf '%s\n' "$(git -C "$SRC" rev-parse HEAD)" "$INSTANCE_INSTALLER_VERSION" "$EXCLUDED_PACKAGES" "$CFG_projectName" \
-    "$(files_digest "$SRC/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}"
+  local tree="${1:-$SRC}"
+  printf '%s\n' "$(git -C "$tree" rev-parse HEAD)" "$INSTANCE_INSTALLER_VERSION" "$EXCLUDED_PACKAGES" "$CFG_projectName" \
+    "$(files_digest "$tree/app/host/requirements.txt")" "$(logo_file)" "$(files_digest "$(logo_file)")" "${CFG_poweredBy:-1}"
 }
 
 release_version() {
@@ -657,44 +786,106 @@ print(json.dumps({"version": sys.argv[1], "commit": commit.strip(),
 ' "$(release_version)" "$CFG_sourceUrl" "$CFG_sourceRef" "$(date +%s)" > "$BUILD_INFO.new"
   chmod 0644 "$BUILD_INFO.new"
   mv -f "$BUILD_INFO.new" "$BUILD_INFO"
+  write_daemon_state
+}
+
+write_daemon_state() {
+  [ -s "$BUILD_INFO" ] || return 0
+  python3 -c '
+import json, os, sys
+path, record, tree, source, ref = sys.argv[1:6]
+try:
+    with open(path, encoding="utf-8") as handle:
+        info = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(0)
+try:
+    with open(record, encoding="utf-8") as handle:
+        built = json.load(handle)
+except (OSError, ValueError):
+    built = {}
+if not isinstance(built, dict):
+    built = {}
+built_tree = str(built.get("serverTree") or "")
+origin = str(built.get("from") or "")
+if origin == "release":
+    state = "release"
+elif not built_tree or not tree:
+    state = "unknown"
+elif built_tree == tree:
+    state = "current"
+else:
+    state = "stale"
+info["daemon"] = {"state": state, "builtTree": built_tree, "sourceTree": tree,
+                  "builtCommit": str(built.get("commit") or "")}
+info["source"], info["ref"] = source, ref
+with open(path + ".new", "w", encoding="utf-8") as handle:
+    json.dump(info, handle, sort_keys=True)
+os.chmod(path + ".new", 0o644)
+os.replace(path + ".new", path)
+' "$BUILD_INFO" "$DAEMON_BUILD" "$(git -C "$SRC" rev-parse HEAD:server 2>/dev/null || true)" \
+    "$CFG_sourceUrl" "$CFG_sourceRef"
 }
 
 build_app() {
   begin build "Building the app (this is the longest step)"
   save_logo
   if [ -x "$VENV/bin/python" ] && [ -d "$SRC/app/dist" ] && [ -s "$BUILD_STAMP" ] &&
-      [ "$(cat "$BUILD_STAMP")" = "$(build_stamp)" ]; then
+      [ "$(git -C "$SRC" rev-parse HEAD)" = "$TARGET_COMMIT" ] &&
+      [ "$(cat "$BUILD_STAMP")" = "$(build_stamp "$SRC")" ]; then
     say "The app is already built from $(git -C "$SRC" rev-parse --short HEAD) for $CFG_projectName."
-    [ -s "$BUILD_INFO" ] || write_build_info
+    if [ -s "$BUILD_INFO" ]; then write_daemon_state; else write_build_info; fi
     return 0
   fi
-  rm -f "$BUILD_STAMP"
   APP_CHANGED="1"
-  if [ ! -x "$VENV/bin/python" ]; then
-    python3 -m venv "$VENV"
+  if [ -x "$VENV/bin/python" ] && [ -d "$SRC/app/dist" ]; then
+    stage_source
+  else
+    rm -f "$BUILD_STAMP"
+    checkout_target "$SRC"
   fi
-  say "Installing the Python packages"
-  "$VENV/bin/pip" install --disable-pip-version-check --progress-bar off -r "$SRC/app/host/requirements.txt" 2>&1 |
-    pip_lines || die "The Python packages did not install. The lines above show why."
+  if [ ! -x "$BUILD_VENV/bin/python" ]; then
+    python3 -m venv "$BUILD_VENV"
+  fi
+  if [ "$(cat "$BUILD_VENV/.forkmesh-requirements" 2>/dev/null || true)" != "$(requirements_digest "$BUILD_SRC")" ]; then
+    say "Installing the Python packages"
+    "$BUILD_VENV/bin/python" -m pip install --disable-pip-version-check --progress-bar off -r "$BUILD_SRC/app/host/requirements.txt" 2>&1 |
+      pip_lines || die "The Python packages did not install. The lines above show why."
+    requirements_digest "$BUILD_SRC" > "$BUILD_VENV/.forkmesh-requirements"
+  fi
   say "Python packages are ready."
   (
-    cd "$SRC/app/host"
-    FORKMESH_EXCLUDED_PLUGINS="$EXCLUDED_PACKAGES" "$VENV/bin/python" -m forkmesh_host build 2>&1 | lines
-    cd "$SRC/app"
-    "$VENV/bin/python" tools/build_site_assets.py instance-world 2>&1 | lines
+    cd "$BUILD_SRC/app/host"
+    FORKMESH_EXCLUDED_PLUGINS="$EXCLUDED_PACKAGES" "$BUILD_VENV/bin/python" -m forkmesh_host build 2>&1 | lines
+    cd "$BUILD_SRC/app"
+    "$BUILD_VENV/bin/python" tools/build_site_assets.py instance-world 2>&1 | lines
   )
-  local brand_args=(--name "$CFG_projectName" --dist "$SRC/app/dist") logo
+  local brand_args=(--name "$CFG_projectName" --dist "$BUILD_SRC/app/dist") logo
   logo="$(logo_file)"
   if [ -n "$logo" ]; then brand_args+=(--logo "$logo"); fi
   if [ "$CFG_poweredBy" = "0" ]; then brand_args+=(--no-powered-by); fi
-  "$VENV/bin/python" "$SRC/app/tools/apply_instance_brand.py" "${brand_args[@]}"
-  chmod -R a+rX "$SRC" "$VENV"
-  write_build_info
-  build_stamp > "$BUILD_STAMP"
+  "$BUILD_VENV/bin/python" "$BUILD_SRC/app/tools/apply_instance_brand.py" "${brand_args[@]}"
+  chmod -R a+rX "$BUILD_SRC" "$BUILD_VENV"
+  if [ "$BUILD_SRC" = "$SRC" ]; then
+    write_build_info
+    build_stamp "$SRC" > "$BUILD_STAMP"
+  fi
+}
+
+platform_source() {
+  if [ -n "${CFG_platformUrl:-}" ]; then
+    printf '%s\n' "${CFG_platformUrl%.git}"
+  else
+    case "$CFG_sourceUrl" in
+      "https://$DOMAIN/"*) printf '%s\n' "$RELEASE_SOURCE" ;;
+      *) printf '%s\n' "${CFG_sourceUrl%.git}" ;;
+    esac
+  fi
 }
 
 upstream_page() {
-  local url="${CFG_sourceUrl%.git}"
+  local url
+  url="$(platform_source)"
   url="${url%/}"
   printf '%s\n' "$url" | sed -E 's#^https://app\.#https://#'
 }
@@ -815,8 +1006,10 @@ print(encode(seed), encode(public))
 import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
-        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy"]
+        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl"]
 values = dict(zip(keys, sys.argv[1:]))
+if not values["platformUrl"]:
+    del values["platformUrl"]
 values["poweredBy"] = values["poweredBy"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
@@ -826,7 +1019,7 @@ print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$CFG_actions" "$CFG_poweredBy" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -937,6 +1130,7 @@ start_app() {
   fi
   systemctl daemon-reload
   systemctl enable forkmesh-instance.service >/dev/null 2>&1
+  APP_RESTARTED="1"
   systemctl restart forkmesh-instance.service
   local i
   for i in $(seq 1 90); do
@@ -1183,13 +1377,29 @@ setup_https() {
   die "Caddy could not get a certificate for $DOMAIN. Check that ports 80 and 443 are open to the internet." 31
 }
 
+record_daemon_build() {
+  python3 -c '
+import json, sys
+print(json.dumps({"from": sys.argv[1], "serverTree": sys.argv[2], "commit": sys.argv[3],
+                  "installedAt": int(sys.argv[4])}, sort_keys=True))
+' "$1" "$(git -C "$SRC" rev-parse HEAD:server 2>/dev/null || true)" "$(git -C "$SRC" rev-parse HEAD)" "$(date +%s)" > "$DAEMON_BUILD.new"
+  chmod 0644 "$DAEMON_BUILD.new"
+  mv -f "$DAEMON_BUILD.new" "$DAEMON_BUILD"
+}
+
 install_daemon_binary() {
   if [ -n "${FORKMESH_INSTANCE_DAEMON:-}" ]; then
-    install -m 0755 "$FORKMESH_INSTANCE_DAEMON" "$DAEMON"
+    install -m 0755 "$FORKMESH_INSTANCE_DAEMON" "$DAEMON.new"
+    mv -f "$DAEMON.new" "$DAEMON"
+    record_daemon_build supplied
     return 0
   fi
-  if [ "$CONFIG_MODE" != "update" ] && [ -x "$DAEMON" ]; then
+  if [ -x "$DAEMON" ] && [ "$CONFIG_MODE" != "update" ]; then
     say "The signed ForkMesh git node program is already installed."
+    return 0
+  fi
+  if [ -x "$DAEMON" ] && [ "${CFG_sourceUrl%.git}" != "$RELEASE_SOURCE" ]; then
+    say "Kept the installed git node program: this instance follows its own source, which the signed release is not built from."
     return 0
   fi
   local stage
@@ -1205,8 +1415,18 @@ install_daemon_binary() {
   [ -x "$stage/bin/forkmesh-mirror-node" ] ||
     die "The signed release has no forkmesh-mirror-node for this server."
   install -m 0755 "$stage/bin/forkmesh-mirror-node" "$DAEMON"
+  record_daemon_build release
   rm -f "$stage/install.sh" "$stage/install.log" "$stage/bin/forkmesh-mirror-node" "$stage/bin/forkmesh"
   rmdir "$stage/bin" "$stage" 2>/dev/null || true
+}
+
+daemon_rebuild_notice() {
+  write_daemon_state
+  local state
+  state="$(python3 -c 'import json, sys; print((json.load(open(sys.argv[1])).get("daemon") or {}).get("state") or "")' "$BUILD_INFO" 2>/dev/null || true)"
+  if [ "$state" = "stale" ]; then
+    warn "server/ changed since the git node program was built; it keeps running the old build. Rebuild it from $(git -C "$SRC" rev-parse --short HEAD) and run the update with FORKMESH_INSTANCE_DAEMON (docs/INSTANCES.md)."
+  fi
 }
 
 write_daemon_unit() {
@@ -1255,6 +1475,7 @@ daemon_digest() {
 setup_git_node() {
   DAEMON_BEFORE="$(daemon_digest)"
   install_daemon_binary
+  daemon_rebuild_notice
   install -d -m 0755 "$DAEMON_TOOLS"
   local tool
   for tool in tools/mirror_gateway.py app/src/mirror_replica.py app/src/public_snapshots.py \
@@ -1284,7 +1505,7 @@ print((manifest.get("endpoint") or {}).get("origin", ""))
     runuser -u "$NODE_USER" -- "$DAEMON" --init \
       --config "$DAEMON_CONFIG.init" --state-dir /var/lib/forkmesh \
       --node "$NODE_NAME" --owner forkmesh --repository forkmesh \
-      --upstream "${CFG_sourceUrl%.git}" \
+      --upstream "$(platform_source)" \
       --catalog-url "$ORIGIN/api/repositories" \
       --public-origin "$ORIGIN" --mirror-url "$ORIGIN" \
       --gateway-script "$DAEMON_TOOLS/mirror_gateway.py" \
@@ -1419,7 +1640,7 @@ start_git_node() {
     systemctl daemon-reload
     systemctl enable forkmesh-mirror-node.service >/dev/null 2>&1
     systemctl restart forkmesh-mirror-node.service
-    say "The git node is copying the ForkMesh source from ${CFG_sourceUrl%.git}."
+    say "The git node is copying the ForkMesh source from $(platform_source)."
   fi
   local waited=0
   while [ "$waited" -lt "$REPO_WAIT_SECONDS" ]; do
@@ -1608,9 +1829,11 @@ check_system
 install_packages
 fetch_source
 build_app
+activate_source
 write_settings
 migrate_database
 start_app
+SOURCE_COMMITTED="1"
 setup_https
 if [ "$CONFIG_MODE" = "update" ]; then update_admin; else create_admin; fi
 start_git_node
