@@ -337,6 +337,11 @@ public struct CrmActivity: Equatable, Sendable, Identifiable {
     public var clicks: Int
     public var readSeconds: Int
     public var scrollDepth: Int
+    public var slideCount: Int
+    public var slideReached: Int
+    public var slideTitle: String
+    public var mailClient: String
+    public var readingReported: String
 
     public init(json: JSONObject) {
         id = json.str("id")
@@ -366,6 +371,11 @@ public struct CrmActivity: Equatable, Sendable, Identifiable {
         clicks = max(0, json.int("clicks"))
         readSeconds = max(0, json.int("readSeconds"))
         scrollDepth = min(100, max(0, json.int("scrollDepth")))
+        slideCount = max(0, json.int("slideCount"))
+        slideReached = min(max(0, json.int("slideCount")), max(0, json.int("slideReached")))
+        slideTitle = json.str("slideTitle")
+        mailClient = json.str("mailClient")
+        readingReported = json.str("readingReported")
     }
 
     public var at: Int64 { sentAt > 0 ? sentAt : createdAt }
@@ -380,12 +390,24 @@ public struct CrmActivity: Equatable, Sendable, Identifiable {
         return scrollDepth >= 100 ? "to the end" : "\(scrollDepth)%"
     }
 
+    public var reachLabel: String {
+        guard slideCount > 0, slideReached > 0 else { return scrollLabel.isEmpty ? "" : "scrolled \(scrollLabel)" }
+        if slideReached >= slideCount { return "read all \(slideCount) slides" }
+        return "reached slide \(slideReached)/\(slideCount)" + (slideTitle.isEmpty ? "" : " · \(slideTitle)")
+    }
+
+    public var silentClient: Bool { readingReported == "no" && !mailClient.isEmpty }
+
     public var engagementLine: String {
-        [
+        let client = silentClient && readSeconds == 0 && opens > 0
+            ? "\(mailClient) doesn't report read time"
+            : (readSeconds > 0 || scrollDepth > 0 ? mailClient : "")
+        return [
             opens > 0 ? "\(opens) open\(opens == 1 ? "" : "s")" : "",
             clicks > 0 ? "\(clicks) click\(clicks == 1 ? "" : "s")" : "",
             readLabel.isEmpty ? "" : "read \(readLabel)",
-            scrollLabel.isEmpty ? "" : "scrolled \(scrollLabel)",
+            reachLabel,
+            client,
         ].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
