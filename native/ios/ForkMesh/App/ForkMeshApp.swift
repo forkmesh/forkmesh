@@ -46,10 +46,8 @@ struct AppRootView: View {
                 .ignoresSafeArea()
             if let services = boot.services {
                 ThemedAppView(services: services)
-                    .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: FmMotion.normal), value: boot.services != nil)
         .fmTracksUserActivity()
         .fmDismissesKeyboardOnTap()
         .task {
@@ -111,6 +109,7 @@ struct AppHomeView: View {
         }
         // A project switch replaces every view and view model underneath.
         .id(projects?.generation ?? 0)
+        .dataFolderAlert()
         .background(fm.canvas.ignoresSafeArea())
         .task {
             await updateCheck.check()

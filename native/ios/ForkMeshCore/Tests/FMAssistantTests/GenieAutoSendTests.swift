@@ -133,6 +133,18 @@ final class GenieAutoSendTests: XCTestCase {
         XCTAssertEqual(retry.str("contactId"), samId)
     }
 
+    func testWithoutAnyWriterThePauseSaysWhatIsMissing() async {
+        let unavailable = PackagesReply(status: 503, json: ["error": "ai_unavailable", "prompt": "Write to Sam."])
+        let none = PackagesClient(transport: FakeAutoSendTransport([unavailable]))
+        let alone = await ForkMeshToolbox(sources: AssistantSources(crm: { none })).outreachAutoSend(pick, writers: [])
+        XCTAssertEqual(alone, .pause(GenieAutoSend.noWriter))
+
+        let failing = GenieOutreachWriter(name: "Desktop", timeout: 5) { (_: [LocalChatMessage]) async throws -> String in "Sorry, I can't." }
+        let tried = PackagesClient(transport: FakeAutoSendTransport([unavailable]))
+        let outcome = await ForkMeshToolbox(sources: AssistantSources(crm: { tried })).outreachAutoSend(pick, writers: [failing])
+        XCTAssertEqual(outcome, .pause(GenieAutoSend.unwritten))
+    }
+
     func testAServerDraftGoesStraightFromWritingToSent() async {
         let client = PackagesClient(transport: FakeAutoSendTransport([sent]))
         let box = ForkMeshToolbox(sources: AssistantSources(crm: { client }))

@@ -276,7 +276,7 @@ void rehomeSingleInstanceLock()
     QFile::remove(legacyLock);
     // Gone only when empty: anything unknown left in ~/.forkmesh stays, and
     // shows up on the storage map.
-    QDir().rmdir(QFileInfo(legacyLock).absolutePath());
+    forkmesh::paths::retireStateRoot(QFileInfo(legacyLock).absolutePath());
 }
 
 QString singleInstanceLockPath()

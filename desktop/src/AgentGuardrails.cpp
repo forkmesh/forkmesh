@@ -214,8 +214,7 @@ QString guardScriptPath(QString *error)
         forkmesh::vm::active()
             ? QDir(forkmesh::vm::worktreeRoot())
                   .filePath(QStringLiteral("runtime"))
-            : QDir(forkmesh::paths::dataRoot())
-                  .filePath(QStringLiteral("agents"));
+            : forkmesh::paths::dataPath(QStringLiteral("agents"));
     if (!QDir().mkpath(directory)) {
         if (error)
             *error = QStringLiteral("Could not create the agent guardrail runtime.");

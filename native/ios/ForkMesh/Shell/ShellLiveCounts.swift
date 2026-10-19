@@ -11,6 +11,7 @@ struct ShellLiveCounts: Equatable {
     var hubBadges: [String: Int] = [:]
     var hubActive: Set<String> = []
     var hubProgress: [String: ShellBarProgress] = [:]
+    var hubLoading: Set<String> = []
 
     static let interval: TimeInterval = 0.25
 
@@ -50,6 +51,9 @@ struct ShellLiveCounts: Equatable {
                 }
                 if badge != 0 { out.hubBadges[item.id] = badge }
                 if navigator.active(route.kind) { out.hubActive.insert(item.id) }
+                if navigator.isLoading(route.kind) || (route.kind == .market && HubPackageState.shared.refreshing) {
+                    out.hubLoading.insert(item.id)
+                }
                 if let progress = navigator.progress(route.kind) { out.hubProgress[item.id] = progress }
             }
         }

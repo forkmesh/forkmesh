@@ -71,7 +71,19 @@ enum GenieFeature {
         var writers: [GenieOutreachWriter] = []
         if let cloud: GenieOutreachWriter = outreachCloudWriter() { writers.append(cloud) }
         if let local: GenieOutreachWriter = GenieOutreachWriter.local(model()) { writers.append(local) }
+        if let desktop: GenieOutreachWriter = outreachDesktopWriter() { writers.append(desktop) }
         return writers
+    }
+
+    static func outreachDesktopWriter() -> GenieOutreachWriter? {
+        guard let hub: DesktopControlHub = Services.get(DesktopControlHub.self), let desktop = hub.desktop else { return nil }
+        let name: String = desktop.name.isEmpty ? "Claude Code or Codex on your desktop" : "Claude Code or Codex on \(desktop.name)"
+        return GenieOutreachWriter(name: name, timeout: GenieOutreach.desktopTimeout) {
+            (messages: [LocalChatMessage]) async throws -> String in
+            let prompt: String = messages.map(\.content).joined(separator: "\n\n")
+            let answer: JSONObject = try await hub.request("agents.write", ["prompt": .string(prompt)], timeout: GenieOutreach.desktopTimeout)
+            return answer.str("text")
+        }
     }
 
     static func outreachCloudWriter() -> GenieOutreachWriter? {

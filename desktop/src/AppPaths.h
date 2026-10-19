@@ -18,10 +18,12 @@
 //     forkmesh/                      the home project (FORKMESH_HOME)
 //       src/                         source checkout the app builds/updates from
 //       bin/ toolchain/ builds/ worktrees/ release/    shared by every project
-//       data/ config/ cache/ state/ logs/ ssh/         this project's own files
+//       data/                                      this project's own files
+//         core/                      identity, settings (config/), cache/, state/, logs/, ssh/
+//         <plugin>/                  one folder per plugin that keeps data
 //       project.json  logo.png
 //     <project>/                     any other project, fully isolated
-//       data/ config/ cache/ state/ logs/ ssh/
+//       data/core/ data/<plugin>/
 //       src/                         optional: the project's repositories
 //       project.json  logo.png
 //
@@ -42,6 +44,51 @@ namespace forkmesh::paths {
 
 inline constexpr char kHomeProjectSlug[] = "forkmesh";
 inline constexpr char kProjectFileName[] = "project.json";
+inline constexpr char kCoreFolder[] = "core";
+
+inline const QVector<QPair<QString, QString>> &pluginDataEntries()
+{
+    static const QVector<QPair<QString, QString>> entries{
+        {QStringLiteral("actions"), QStringLiteral("actions")},
+        {QStringLiteral("agents"), QStringLiteral("agents")},
+        {QStringLiteral("agent-accounts"), QStringLiteral("agents/accounts")},
+        {QStringLiteral("agent-images"), QStringLiteral("agents/images")},
+        {QStringLiteral("agent-runtime"), QStringLiteral("agents/runtime")},
+        {QStringLiteral("agent-screenshots"), QStringLiteral("agents/screenshots")},
+        {QStringLiteral("prompt"), QStringLiteral("agents/prompt")},
+        {QStringLiteral("teammate-workspaces"), QStringLiteral("agents/teammate-workspaces")},
+        {QStringLiteral("chat_history"), QStringLiteral("chat/history")},
+        {QStringLiteral("avatars"), QStringLiteral("chat/avatars")},
+        {QStringLiteral("local_mesh"), QStringLiteral("chat/local-mesh")},
+        {QStringLiteral("notes"), QStringLiteral("notes")},
+        {QStringLiteral("vault"), QStringLiteral("vault")},
+        {QStringLiteral("backups"), QStringLiteral("backups")},
+        {QStringLiteral("pull-meta"), QStringLiteral("pull-requests/meta")},
+        {QStringLiteral("pull-review"), QStringLiteral("pull-requests/review")},
+        {QStringLiteral("usage-reminders"), QStringLiteral("usage/reminders")},
+        {QStringLiteral("rss-reader"), QStringLiteral("rss-reader")},
+        {QStringLiteral("secure-drive"), QStringLiteral("secure-drive")},
+        {QStringLiteral("fleet_logs"), QStringLiteral("logs-hosts/fleet")},
+        {QStringLiteral("whisper.cpp"), QStringLiteral("speech/whisper.cpp")},
+        {QStringLiteral("parakeet"), QStringLiteral("speech/parakeet")},
+    };
+    return entries;
+}
+
+inline QString organizedDataEntry(const QString &legacyName)
+{
+    for (const auto &entry : pluginDataEntries()) {
+        if (entry.first == legacyName)
+            return entry.second;
+    }
+    return QLatin1String(kCoreFolder) + QLatin1Char('/') + legacyName;
+}
+
+inline QString pluginOfDataEntry(const QString &organized)
+{
+    const QString first = organized.section(QLatin1Char('/'), 0, 0);
+    return first == QLatin1String(kCoreFolder) ? QString() : first;
+}
 
 // Inputs of the resolver, injected so the logic is testable without touching
 // the real home directory.
@@ -83,6 +130,8 @@ struct Layout {
     bool rerootAllowed = false;
     QString rerootBlockedReason;
 
+    QString dataDir;
+    bool organized = false;
     QString data;
     QString config;   // directory QSettings is pointed at (holds ForkMesh/ForkMesh.conf)
     QString cache;
@@ -100,6 +149,8 @@ struct Layout {
     QString buildsDir() const;
     QString worktreesDir() const;
     QString releaseDir() const;
+    QString coreDir() const;
+    QString pluginDir(const QString &plugin) const;
 };
 
 // "My Project!" -> "my-project". Empty when nothing usable remains; never
@@ -179,6 +230,8 @@ int repointSettingsFile();
 // passes createFolders=false so that looking changes nothing on disk.
 void activate(const QStringList &arguments, bool createFolders = true);
 
+void retireStateRoot(const QString &oldStateDir);
+
 // Moves the legacy locations into the layout, then re-resolves. Only call
 // while holding the single-instance lock: nothing else may have these folders
 // open by their old names. A dry run reports the plan and changes nothing.
@@ -218,6 +271,27 @@ inline QString localDataRoot()
         detail::current.data.startsWith(detail::current.projectDir + QLatin1Char('/')))
         return detail::current.data;
     return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
+}
+
+inline QString dataDir()
+{
+    return detail::active
+               ? detail::current.dataDir
+               : QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+}
+
+inline QString dataPath(const QString &legacyName)
+{
+    if (detail::active && detail::current.organized)
+        return detail::current.dataDir + QLatin1Char('/') + organizedDataEntry(legacyName);
+    return dataRoot() + QLatin1Char('/') + legacyName;
+}
+
+inline QString pluginDataDir(const QString &plugin)
+{
+    if (detail::active && detail::current.organized)
+        return detail::current.dataDir + QLatin1Char('/') + plugin;
+    return dataRoot() + QLatin1Char('/') + plugin;
 }
 
 inline QString cacheRoot()

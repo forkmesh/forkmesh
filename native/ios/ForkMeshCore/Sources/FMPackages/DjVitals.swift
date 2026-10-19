@@ -63,6 +63,7 @@ public struct DjVitals: Sendable {
     public static let workKept = 96
     public static let workShownMs = 1.0
     public static let appKindsShown = 8
+    public static let viewKindsShown = 16
 
     public struct Second: Equatable, Sendable {
         public var at: Int
@@ -73,6 +74,9 @@ public struct DjVitals: Sendable {
         public var span: Double = 0
         public var busyMs: Double = 0
         public var commitMs: Double = 0
+        public var cpuMs: Double = 0
+        public var appCpuMs: Double = 0
+        public var wakes = 0
     }
 
     public struct Mark: Equatable, Sendable {
@@ -99,6 +103,9 @@ public struct DjVitals: Sendable {
         public var ms: Double
         public var busyMs: Double
         public var commitMs: Double
+        public var cpuMs: Double = 0
+        public var wakes = 0
+        public var views = 0
         public var work: [Work]
         public var marks: [Mark]
     }
@@ -138,6 +145,11 @@ public struct DjVitals: Sendable {
     public private(set) var measured: Double = 0
     public private(set) var busyMs: Double = 0
     public private(set) var commitMs: Double = 0
+    public private(set) var cpuMs: Double = 0
+    public private(set) var appCpuMs: Double = 0
+    public private(set) var wakes = 0
+    public private(set) var cpuMeasured = false
+    public private(set) var views: [String: Int] = [:]
     public private(set) var period: Double = 0
     public private(set) var work: [DjWork: Meter] = [:]
     public private(set) var appWork: [String: Meter] = [:]
@@ -156,6 +168,12 @@ public struct DjVitals: Sendable {
     private var commitAt: Double?
     private var commit: Double = 0
     private var commitAtFrame: Double = 0
+    private var cpuAtFrame: Double?
+    private var appCpuAtFrame: Double?
+    private var wakeCount = 0
+    private var wakesAtFrame = 0
+    private var viewCount = 0
+    private var viewsAtFrame = 0
 
     public init() {}
 
@@ -179,6 +197,7 @@ public struct DjVitals: Sendable {
         guard now.isFinite else { return }
         awakeAt = now
         commitAt = nil
+        wakeCount += 1
     }
 
     public mutating func committing(at now: Double) {
@@ -194,7 +213,20 @@ public struct DjVitals: Sendable {
         commitAt = nil
     }
 
-    public mutating func frame(at now: Double, period: Double) {
+    public mutating func viewed(_ name: String) {
+        views[name, default: 0] += 1
+        viewCount += 1
+    }
+
+    public mutating func frame(at now: Double, period: Double, cpu: Double? = nil, appCpu: Double? = nil) {
+        let cpuInside = cpu.flatMap { value in cpuAtFrame.map { max(0, value - $0) * 1000 } }
+        let appCpuInside = appCpu.flatMap { value in appCpuAtFrame.map { max(0, value - $0) * 1000 } }
+        if let cpu, cpu.isFinite { cpuAtFrame = cpu }
+        if let appCpu, appCpu.isFinite { appCpuAtFrame = appCpu }
+        let wakesInside = max(0, wakeCount - wakesAtFrame)
+        wakesAtFrame = wakeCount
+        let viewsInside = max(0, viewCount - viewsAtFrame)
+        viewsAtFrame = viewCount
         let busyNow = busy + (awakeAt.map { max(0, now - $0) } ?? 0)
         let busyInside = max(0, busyNow - busyAtFrame) * 1000
         busyAtFrame = busyNow
@@ -207,6 +239,7 @@ public struct DjVitals: Sendable {
         guard interval > 0, interval < Self.gapSeconds else { return }
         let busyMs = min(busyInside, interval * 1000)
         let commitMs = min(commitInside, busyMs)
+        let cpuMs = cpuInside.map { min($0, interval * 1000) }
         self.period = period
         let ms = interval * 1000
         let lost = max(0, Int((interval / period).rounded()) - 1)
@@ -218,6 +251,10 @@ public struct DjVitals: Sendable {
         measured += interval
         self.busyMs += busyMs
         self.commitMs += commitMs
+        self.cpuMs += cpuMs ?? 0
+        self.appCpuMs += appCpuInside ?? 0
+        wakes += wakesInside
+        if cpuMs != nil { cpuMeasured = true }
         let key = Int(now.rounded(.down))
         if seconds.last?.at != key {
             seconds.append(Second(at: key))
@@ -230,10 +267,13 @@ public struct DjVitals: Sendable {
         seconds[seconds.count - 1].span += interval
         seconds[seconds.count - 1].busyMs += busyMs
         seconds[seconds.count - 1].commitMs += commitMs
+        seconds[seconds.count - 1].cpuMs += cpuMs ?? 0
+        seconds[seconds.count - 1].appCpuMs += appCpuInside ?? 0
+        seconds[seconds.count - 1].wakes += wakesInside
         guard ms >= Self.longFrameMs else { return }
         let inside = recentWork.filter { $0.at > last - 0.001 && $0.at <= now }
         let before = marks.filter { $0.at >= last - 0.5 && $0.at <= now }
-        longFrames.append(LongFrame(at: now, ms: ms, busyMs: busyMs, commitMs: commitMs, work: inside, marks: before))
+        longFrames.append(LongFrame(at: now, ms: ms, busyMs: busyMs, commitMs: commitMs, cpuMs: cpuMs ?? 0, wakes: wakesInside, views: viewsInside, work: inside, marks: before))
         if longFrames.count > Self.longFramesKept { longFrames.removeFirst(longFrames.count - Self.longFramesKept) }
     }
 
@@ -298,11 +338,14 @@ public struct DjVitals: Sendable {
         scriptTrips.add(ms, budget: Self.workBudgetMs * 4)
     }
 
-    public typealias Window = (frames: Int, dropped: Int, hitchMs: Double, worstMs: Double, span: Double, busyMs: Double, commitMs: Double)
+    public typealias Window = (
+        frames: Int, dropped: Int, hitchMs: Double, worstMs: Double, span: Double, busyMs: Double, commitMs: Double, cpuMs: Double, appCpuMs: Double,
+        wakes: Int
+    )
 
     public func window(_ count: Int, now: Double) -> Window {
         let from = Int(now.rounded(.down)) - count + 1
-        var out: Window = (0, 0, 0, 0, 0, 0, 0)
+        var out: Window = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
         for second in seconds where second.at >= from {
             out.frames += second.frames
             out.dropped += second.dropped
@@ -311,6 +354,9 @@ public struct DjVitals: Sendable {
             out.span += second.span
             out.busyMs += second.busyMs
             out.commitMs += second.commitMs
+            out.cpuMs += second.cpuMs
+            out.appCpuMs += second.appCpuMs
+            out.wakes += second.wakes
         }
         return out
     }
@@ -356,21 +402,31 @@ public struct DjVitals: Sendable {
         lines.append("## Frames (last 10 s | last 60 s | all)")
         let ten = window(10, now: now)
         let sixty = window(60, now: now)
-        let all: Window = (frames: frames, dropped: dropped, hitchMs: hitchMs, worstMs: worstMs, span: measured, busyMs: busyMs, commitMs: commitMs)
+        let all: Window = (
+            frames: frames, dropped: dropped, hitchMs: hitchMs, worstMs: worstMs, span: measured, busyMs: busyMs, commitMs: commitMs, cpuMs: cpuMs,
+            appCpuMs: appCpuMs, wakes: wakes
+        )
+        let perSecond = { (window: Window, value: Double) -> String in window.span > 0 ? Self.ms(value / window.span) : "-" }
         let columns = [ten, sixty, all]
         lines.append("fps " + columns.map { $0.span > 0 ? Self.one(Double($0.frames) / $0.span) : "-" }.joined(separator: " | "))
         lines.append("dropped " + columns.map { String($0.dropped) }.joined(separator: " | "))
         lines.append("hitch ms/s " + columns.map { $0.span > 0 ? Self.one($0.hitchMs / $0.span) : "-" }.joined(separator: " | "))
         lines.append("worst ms " + columns.map { Self.ms($0.worstMs) }.joined(separator: " | "))
         lines.append("main thread busy ms/s " + columns.map { $0.span > 0 ? Self.ms($0.busyMs / $0.span) : "-" }.joined(separator: " | "))
-        lines.append("of it layout and drawing ms/s " + columns.map { $0.span > 0 ? Self.ms($0.commitMs / $0.span) : "-" }.joined(separator: " | "))
+        lines.append("of it on the CPU ms/s " + columns.map { cpuMeasured ? perSecond($0, $0.cpuMs) : "-" }.joined(separator: " | "))
+        lines.append("of it layout and drawing ms/s " + (commitSeen ? columns.map { perSecond($0, $0.commitMs) }.joined(separator: " | ") : Self.commitUnseen))
+        lines.append("run-loop wakes a second " + columns.map { perSecond($0, Double($0.wakes)) }.joined(separator: " | "))
+        lines.append("app CPU, all threads ms/s " + columns.map { cpuMeasured ? perSecond($0, $0.appCpuMs) : "-" }.joined(separator: " | "))
         lines.append("worst frame each second, last 30 s, oldest first: " + series(now) { Self.ms($0.worstMs) })
         lines.append("main thread busy each second, last 30 s, oldest first: " + series(now) { $0.span > 0 ? Self.ms($0.busyMs / $0.span) : "." })
         lines.append("")
         lines.append("## Long frames (\(Int(Self.longFrameMs)) ms or more), newest first")
         if longFrames.isEmpty { lines.append("none") }
         for long in longFrames.reversed() {
-            var line = "\(Self.ago(long.at, now)) \(Self.ms(long.ms)) ms, main thread busy \(Self.ms(long.busyMs)) ms, layout and drawing \(Self.ms(long.commitMs)) ms"
+            var line = "\(Self.ago(long.at, now)) \(Self.ms(long.ms)) ms, main thread busy \(Self.ms(long.busyMs)) ms"
+            if cpuMeasured { line += ", on the CPU \(Self.ms(long.cpuMs)) ms" }
+            if commitSeen { line += ", layout and drawing \(Self.ms(long.commitMs)) ms" }
+            line += ", \(long.wakes) wakes, \(long.views) studio view updates"
             if !long.work.isEmpty {
                 line += "; inside: " + long.work.map { "\($0.name) \(Self.one($0.ms)) ms" }.joined(separator: ", ")
             }
@@ -393,6 +449,14 @@ public struct DjVitals: Sendable {
             lines.append("\(name): \(meter.count), \(Self.two(meter.averageMs)), \(Self.one(meter.maxMs)), \(Self.ms(meter.totalMs))")
         }
         if appWork.count > apps.count { lines.append("... \(appWork.count - apps.count) more") }
+        lines.append("")
+        lines.append("## Studio view updates (count, a second measured)")
+        let shown = views.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }.prefix(Self.viewKindsShown)
+        if shown.isEmpty { lines.append("none") }
+        for (name, count) in shown {
+            lines.append("\(name): \(count), \(measured > 0 ? Self.one(Double(count) / measured) : "-")")
+        }
+        if views.count > shown.count { lines.append("... \(views.count - shown.count) more") }
         lines.append("")
         lines.append("## Player ticks (expected every 0.25 s while playing)")
         for side in DjDeckSide.allCases {
@@ -417,6 +481,10 @@ public struct DjVitals: Sendable {
         }
         return lines.joined(separator: "\n")
     }
+
+    public static let commitUnseen = "not seen: this iOS runs layout and drawing outside the run loop's commit observers"
+
+    public var commitSeen: Bool { commitMs > 0 || busyMs < Self.longFrameMs }
 
     public static func lead(reason: String) -> String {
         let why = reason.isEmpty ? "The user asked for a DJ studio performance check" : "The DJ studio detected a performance issue: \(reason)"
@@ -480,6 +548,10 @@ public final class DjVitalsRecorder: @unchecked Sendable {
 
     public func mark(_ text: String, at now: Double) {
         update { $0.mark(text, at: now) }
+    }
+
+    public func viewed(_ name: String) {
+        update { $0.viewed(name) }
     }
 
     public func reset() {

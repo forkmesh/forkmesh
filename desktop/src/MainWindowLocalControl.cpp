@@ -77,6 +77,7 @@ QStringList localControlAttachmentPaths(const AgentStore &store, const AgentSess
 
 constexpr int kMaxListedSessions = 200;
 constexpr int kMaxTranscriptChars = 64000;
+constexpr int kLocalControlWritePromptChars = 60000;
 // A transcript read that asks only for what is new since `since` (the Agent
 // Watch follows a run this way) gets at most this much at once.
 constexpr int kMaxTranscriptDeltaChars = 16000;
@@ -886,7 +887,7 @@ void MainWindow::answerLocalControlOutsidePrompt(int connectionId, int requestId
     const QString typedFrom = m_localControl->deviceFor(connectionId).name;
     const bool claude = kind == QLatin1String("claude");
     const QString home = QDir::homePath();
-    const QString dataRoot = forkmesh::paths::dataRoot();
+    const QString accountsRoot = forkmesh::paths::dataPath(QStringLiteral("agent-accounts"));
     struct Sent {
         bool ok = false;
         QString code;
@@ -897,7 +898,7 @@ void MainWindow::answerLocalControlOutsidePrompt(int connectionId, int requestId
         QString fallback;
     };
     runOffThread<Sent>(
-        [text, uuid, cwd, transcript, configDir, pid, home, dataRoot, terminal, typedFrom,
+        [text, uuid, cwd, transcript, configDir, pid, home, accountsRoot, terminal, typedFrom,
          claude] {
             QString fallback;
             if (terminal) {
@@ -921,7 +922,7 @@ void MainWindow::answerLocalControlOutsidePrompt(int connectionId, int requestId
             const QList<qint64> pids =
                 pid > 0 ? QList<qint64>{pid} : ClaudeSessionScan::findSessionPids(uuid, cwd);
             const QList<ClaudePeerSession> peers = ClaudePeerMessaging::liveSessions(
-                ClaudePeerMessaging::configDirs(home, dataRoot,
+                ClaudePeerMessaging::configDirs(home, accountsRoot,
                                                 configDir.isEmpty() ? QStringList{}
                                                                     : QStringList{configDir}));
             const ClaudePeerSession *session =
@@ -1056,6 +1057,7 @@ void MainWindow::handleLocalControlRequest(int connectionId, int requestId,
                                 QStringLiteral("agents.takeover"),
                                 QStringLiteral("agents.images"),
                                 QStringLiteral("agents.queue"),
+                                QStringLiteral("agents.write"),
                                 QStringLiteral("agentops.diff"),
                                 QStringLiteral("agentops.file"),
                                 QStringLiteral("agentops.delete"),
@@ -1093,6 +1095,36 @@ void MainWindow::handleLocalControlRequest(int connectionId, int requestId,
     }
     if (method == QLatin1String("agents.list")) {
         server->respond(connectionId, requestId, localControlAgentsPayload());
+        return;
+    }
+    if (method == QLatin1String("agents.write")) {
+        const QString prompt = params.value(QStringLiteral("prompt")).toString().trimmed();
+        if (prompt.isEmpty() || prompt.size() > kLocalControlWritePromptChars) {
+            server->respondError(connectionId, requestId, QStringLiteral("bad_prompt"));
+            return;
+        }
+        const QString agent = nativePackageAgentName();
+        if (agent.isEmpty()) {
+            server->respondError(connectionId, requestId, QStringLiteral("no_writer"),
+                                 QStringLiteral("This desktop's default agent is not Claude "
+                                                "Code or Codex."));
+            return;
+        }
+        audit(QStringLiteral("%1 is writing text for the phone").arg(agent));
+        askNativePackageAgent(prompt, [this, connectionId, requestId, agent](
+                                          const QString &reply, const QString &error) {
+            if (!m_localControl)
+                return;
+            if (reply.trimmed().isEmpty()) {
+                m_localControl->respondError(
+                    connectionId, requestId, QStringLiteral("write_failed"),
+                    error.isEmpty() ? QStringLiteral("%1 wrote nothing.").arg(agent) : error);
+                return;
+            }
+            m_localControl->respond(connectionId, requestId,
+                                    {{QStringLiteral("text"), reply},
+                                     {QStringLiteral("agent"), agent}});
+        });
         return;
     }
     if (method == QLatin1String("agents.questions")) {

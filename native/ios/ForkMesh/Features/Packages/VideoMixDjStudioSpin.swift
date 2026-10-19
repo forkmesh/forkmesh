@@ -18,6 +18,7 @@ struct DjSpinner: UIViewRepresentable {
     }
 
     func updateUIView(_ view: DjSpinView, context: Context) {
+        DjDiagnostics.viewed("record view")
         view.deck = deck
         view.set(pace)
         view.show(d: d, artwork: artwork, gain: gain)

@@ -42,14 +42,15 @@ struct ShellHome: View {
     var onClearUpdates: () -> Void = {}
     var canShowUpdate: (String) -> Bool = { (_: String) in false }
     var onShowUpdates: () -> Void = {}
+    var onRefresh: () -> Void = {}
     let onPick: (ShellBarItem) -> Void
 
     @State private var naming: ShellBarNaming?
     @State private var query: String = ""
     @FocusState private var searching: Bool
-    @State private var viewHeight: CGFloat = 0
+    @State private var viewHeight: CGFloat = ShellLayoutMemory.value(.homeHeight)
     @State private var searchBlockHeight: CGFloat = 0
-    @State private var headerHeight: CGFloat = 0
+    @State private var headerHeight: CGFloat = ShellLayoutMemory.value(.homeHeader)
     @State private var searchShown: Bool = false
     @State private var contentTop: CGFloat = 0
     @State private var settingsShown: Bool = false
@@ -200,6 +201,7 @@ struct ShellHome: View {
             (height: CGFloat) in
             if !searching {
                 viewHeight = height
+                ShellLayoutMemory.remember(.homeHeight, height)
             }
         }
         .scrollDismissesKeyboard(.interactively)
@@ -221,6 +223,8 @@ struct ShellHome: View {
             ShellBarSettingsSheet(prefs: prefs)
         }
         .confirmationDialog("Home", isPresented: $backgroundMenuShown, titleVisibility: .hidden) {
+            Button("Refresh everything") { refresh() }
+                .accessibilityIdentifier("shell-home-background-refresh")
             if canShowUpdates {
                 Button("Show all update dots") { showUpdates() }
                     .accessibilityIdentifier("shell-home-background-show-dots")
@@ -293,6 +297,11 @@ struct ShellHome: View {
         FmHaptics.success()
     }
 
+    private func refresh() {
+        FmHaptics.success()
+        onRefresh()
+    }
+
     private func clearUpdates() {
         withAnimation(reduceMotion ? nil : .snappy) {
             onClearUpdates()
@@ -323,6 +332,12 @@ struct ShellHome: View {
             }
             .accessibilityIdentifier("shell-home-hide-category")
         }
+        Button {
+            refresh()
+        } label: {
+            SwiftUI.Label("Refresh everything", systemImage: "arrow.clockwise")
+        }
+        .accessibilityIdentifier("shell-home-refresh")
         Button {
             settingsShown = true
         } label: {
@@ -357,6 +372,7 @@ struct ShellHome: View {
         .padding(.horizontal, FmSpace.x2)
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { (height: CGFloat) in
             headerHeight = height
+            ShellLayoutMemory.remember(.homeHeader, height)
         }
         .contentShape(Rectangle())
         .contextMenu {
@@ -657,6 +673,7 @@ struct ShellHome: View {
             updated ? "Updated" : "",
             docked ? "In the bar" : "",
             item.active ? "Active" : "",
+            item.loading && item.badge == 0 ? "Loading" : "",
             item.badge > 0
                 ? "\(ShellBottomBar.countText(item.badge)) new"
                 : item.count.flatMap { $0 > 0 ? ShellBottomBar.countText($0) : nil } ?? "",

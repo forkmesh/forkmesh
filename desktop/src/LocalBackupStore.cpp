@@ -29,8 +29,7 @@ bool autoBackupDefault(const QString &cloudflareApiToken)
 
 QString defaultBackupRoot()
 {
-    return forkmesh::paths::dataRoot() +
-           QStringLiteral("/backups");
+    return forkmesh::paths::dataPath(QStringLiteral("backups"));
 }
 
 QString backupFileName(const QDateTime &when)

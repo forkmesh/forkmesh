@@ -7,8 +7,9 @@ import time
 from pathlib import Path
 from typing import Iterable, Mapping
 
-PROJECT_ROOTS = ("src", "data", "config", "ssh", "state", "logs")
-STRICT_ROOTS = ("src", "ssh")
+PROJECT_ROOTS = ("src", "data", "config", "ssh", "state", "logs",
+                 "data/core", "data/core/config", "data/core/ssh", "data/core/state", "data/core/logs")
+STRICT_ROOTS = ("src", "ssh", "data/core/ssh")
 SHARED_PROJECT_FOLDERS = frozenset({
     "bin", "builds", "cache", "release", "tmp", "toolchain", "toolchain-windows", "worktrees",
 })

@@ -308,13 +308,13 @@ def build_plan(home: Path, leave_links: bool, use_systemctl: bool = True) -> Pla
         ("Windows cross-build tree", cache / "forkmesh-win-build", home_dir / "builds-windows"),
         ("Windows toolchain", cache / "forkmesh-win-toolchain", home_dir / "toolchain-windows"),
         ("Linker toolchain", share / "forkmesh-toolchain", home_dir / "toolchain-host"),
-        ("Tool state", state / "forkmesh", home_dir / "state" / "tools"),
-        ("Fan-out state", state / "forkmesh-fanout", home_dir / "state" / "fanout"),
-        ("Tool secrets and keys", config / "forkmesh", home_dir / "config" / "tools"),
-        ("Fan-out host list", config / "forkmesh-fanout", home_dir / "config" / "fanout"),
-        ("MCP token", home / ".forkmesh_mcp_token", home_dir / "config" / "mcp_token"),
+        ("Tool state", state / "forkmesh", layout.home_root("state") / "tools"),
+        ("Fan-out state", state / "forkmesh-fanout", layout.home_root("state") / "fanout"),
+        ("Tool secrets and keys", config / "forkmesh", layout.home_root("config") / "tools"),
+        ("Fan-out host list", config / "forkmesh-fanout", layout.home_root("config") / "fanout"),
+        ("MCP token", home / ".forkmesh_mcp_token", layout.home_root("config") / "mcp_token"),
         ("Offline sync key", home / ".forkmesh-offline.key",
-         home_dir / "config" / "offline.key"),
+         layout.home_root("config") / "offline.key"),
         ("Manual worktrees", home / "forkmesh-worktrees", home_dir / "worktrees"),
         ("Helper libraries", home / ".local" / "lib" / "forkmesh", home_dir / "lib"),
     ]
@@ -386,7 +386,7 @@ def build_plan(home: Path, leave_links: bool, use_systemctl: bool = True) -> Pla
         # move along, but are never edited and never linked back.
         if unit.name.endswith(BACKUP_SUFFIX):
             plan_move(f"Backup {unit.name}", unit,
-                      home_dir / "config" / "systemd" / unit.name, link=False)
+                      layout.systemd_units / unit.name, link=False)
             continue
         files = [unit] if unit.is_file() else sorted(unit.rglob("*.conf"))
         for file in files:
@@ -395,7 +395,7 @@ def build_plan(home: Path, leave_links: bool, use_systemctl: bool = True) -> Pla
                 plan.add("edit", f"Point {file.name} at src/", str(file),
                          lambda f=file: edit_file(f, rewrite))
         plan_move(f"systemd unit {unit.name}", unit,
-                  home_dir / "config" / "systemd" / unit.name, link=True)
+                  layout.systemd_units / unit.name, link=True)
     if units and use_systemctl:
         plan.add("run", "Reload systemd user units", "systemctl --user daemon-reload",
                  lambda: "reloaded" if run(["systemctl", "--user", "daemon-reload"]
@@ -429,7 +429,8 @@ def build_plan(home: Path, leave_links: bool, use_systemctl: bool = True) -> Pla
     # Wherever the settings file is by the time this runs (the desktop may or
     # may not have migrated yet), repository records must follow the checkout.
     for settings in {layout.settings_file, layout.legacy_config / "ForkMesh.conf",
-                     home_dir / "config" / "ForkMesh" / "ForkMesh.conf"}:
+                     home_dir / "config" / "ForkMesh" / "ForkMesh.conf",
+                     home_dir / "data" / "core" / "config" / "ForkMesh" / "ForkMesh.conf"}:
         if settings.is_file() and is_checkout:
             plan.add("edit", "Point saved repository paths at src/", str(settings),
                      lambda f=settings: edit_file(f, rewrite))

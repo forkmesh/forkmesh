@@ -9,11 +9,9 @@
 
 QString PromptDraftStore::path()
 {
-    const QString base =
-        forkmesh::paths::dataRoot();
-    if (base.isEmpty())
+    if (forkmesh::paths::dataRoot().isEmpty())
         return QString();
-    return base + QStringLiteral("/prompt/draft.txt");
+    return forkmesh::paths::dataPath(QStringLiteral("prompt")) + QStringLiteral("/draft.txt");
 }
 
 QString PromptDraftStore::load()

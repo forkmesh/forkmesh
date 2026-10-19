@@ -31,6 +31,7 @@ struct ShellHomeIconFace: Equatable {
     let active: Bool
     let count: Int?
     let live: Int
+    let loading: Bool
 
     init(_ item: ShellBarItem) {
         id = item.id
@@ -42,6 +43,7 @@ struct ShellHomeIconFace: Equatable {
         active = item.active
         count = item.count
         live = item.live
+        loading = item.loading
     }
 }
 
@@ -194,6 +196,8 @@ struct ShellHomeIcon: View {
                             }
                         }
                         .transition(.scale(scale: 0.4, anchor: .bottomLeading).combined(with: .opacity))
+                } else if showsCounts, item.loading {
+                    ShellHomeCountSpinner()
                 } else if showsCounts, let count = item.count, count > 0 {
                     ShellHomeCountMark(text: ShellBottomBar.countText(count), value: count, unread: false)
                         .transition(.scale(scale: 0.4, anchor: .bottomLeading).combined(with: .opacity))
@@ -274,6 +278,29 @@ struct ShellHomeCountMark: View {
             .padding(1.5)
             .background(Capsule().fill(fm.bgBase))
             .fixedSize()
+    }
+}
+
+struct ShellHomeCountSpinner: View {
+    @Environment(\.fmPalette) var fm
+
+    static let size: CGFloat = 19
+
+    var body: some View {
+        ProgressView()
+            .progressViewStyle(.circular)
+            .tint(fm.count)
+            .scaleEffect(0.55)
+            .frame(width: ShellHomeCountSpinner.size, height: ShellHomeCountSpinner.size)
+            .background {
+                Capsule()
+                    .fill(fm.dark ? fm.bgElevated : fm.bgRaised)
+                    .overlay(Capsule().strokeBorder(fm.count.opacity(0.3), lineWidth: 0.5))
+            }
+            .padding(1.5)
+            .background(Capsule().fill(fm.bgBase))
+            .fixedSize()
+            .accessibilityHidden(true)
     }
 }
 

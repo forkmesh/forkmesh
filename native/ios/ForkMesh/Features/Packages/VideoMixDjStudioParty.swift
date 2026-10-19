@@ -70,6 +70,7 @@ struct DjPeopleStrip: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("people")
         if let jam = model.jam, jam.joined {
             let crowd = model.crowd
             let effects = model.effects
@@ -248,6 +249,7 @@ struct DjReactionLayer: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("reactions")
         let effects = model.effects
         let emojis = Array(Set(effects.map(\.reaction.emoji))).sorted()
         TimelineView(.animation(minimumInterval: model.pace.motionInterval, paused: effects.isEmpty)) { timeline in

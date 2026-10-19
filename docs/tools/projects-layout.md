@@ -10,13 +10,62 @@ for shell scripts).
   forkmesh/                     the home project   (FORKMESH_HOME)
     src/                        source checkout
     bin/ toolchain/ builds/ worktrees/ release/    shared by every project
-    data/ config/ cache/ state/ logs/ ssh/         this project's own files
+    data/                       this project's own files
+      core/                     identity/, profile/, mirrors/, config/, cache/, state/, logs/, ssh/
+      <plugin>/                 one folder per plugin that keeps data
+    config/ ssh/ state/ logs/ cache/   links into data/core (home project only)
   <project>/                    any other project, fully isolated
-    data/ config/ cache/ state/ logs/ ssh/
+    data/core/ data/<plugin>/   nothing else: project.json, the logo, src/ if it has one
 ```
 
+## Plugin folders (2026-10-19)
+
+Each project's `data/` holds one folder per plugin that keeps data, named by
+the plugin's id, and `core/` for everything that belongs to no plugin: the
+identity key, profile, repository mirrors, network log, settings (`config/`),
+`ssh/`, `state/`, `logs/` and `cache/`. A plugin's folder appears the first
+time it writes data, so a project only holds folders for the plugins it uses.
+
+The table `pluginDataEntries()` in `desktop/src/AppPaths.h` (twin:
+`PLUGIN_DATA_ENTRIES` in `tools/forkmesh_paths.py`) maps each name the code
+used directly under `data/` before the change to its place now:
+
+| Before (`data/…`) | Now (`data/…`) |
+| --- | --- |
+| `actions`, `agents`, `notes`, `vault`, `backups`, `rss-reader`, `secure-drive` | unchanged |
+| `agent-accounts`, `agent-images`, `agent-runtime`, `agent-screenshots`, `prompt`, `teammate-workspaces` | `agents/accounts`, `agents/images`, `agents/runtime`, `agents/screenshots`, `agents/prompt`, `agents/teammate-workspaces` |
+| `chat_history`, `avatars`, `local_mesh` | `chat/history`, `chat/avatars`, `chat/local-mesh` |
+| `pull-meta`, `pull-review` | `pull-requests/meta`, `pull-requests/review` |
+| `usage-reminders` | `usage/reminders` |
+| `fleet_logs` | `logs-hosts/fleet` |
+| `whisper.cpp`, `parakeet` | `speech/whisper.cpp`, `speech/parakeet` |
+| anything else | `core/<name>` |
+
+Desktop code asks for a location with `forkmesh::paths::dataPath("<old
+name>")` (or `pluginDataDir("<plugin id>")` for a new plugin folder);
+`dataRoot()` is `data/core`, and `dataDir()` is the whole `data/` folder
+(backups, the complete-system export and account reset cover all of it).
+Tools use `layout.data_path(...)`, `layout.core` and `layout.home_root(...)`.
+Agent session records stay in `data/agents/sessions`, so the agents plugin's
+other folders sit beside them without being read as sessions.
+
+Removing a plugin never deletes its folder: if `data/<plugin>` holds anything,
+the desktop says where it is, and the user decides.
+
+The desktop moves a box at its next start, under its single-instance lock,
+with renames only: `<project>/{config,cache,logs,ssh}` move into `data/core`,
+the state folder's entries move beside the held lock and the lock is adopted
+afterwards, and every entry of `data/` moves to its row of the table. The home
+project leaves links at `~/projects/forkmesh/{config,cache,logs,ssh,state}`
+for the fleet tools and systemd units; other projects keep none. Saved paths
+in the settings file are repointed from the moves themselves.
+
+A box backup that tars `~/projects/forkmesh/data/identity`,
+`data/profile` or `config` by name must use `data/core/…` (or follow links)
+once the box has moved.
+
 `python3 tools/forkmesh_paths.py` prints where each root resolves on this box,
-including the settings file (`config/ForkMesh/ForkMesh.conf`), fan-out hosts
+including the settings file (`data/core/config/ForkMesh/ForkMesh.conf`), fan-out hosts
 (`config/fanout/hosts`), tool state (`state/tools`) and tool secrets
 (`config/tools/secrets`), plus the source publisher's paths (bare mirror,
 `config/fanout/gateways`, `state/publisher`) and the fleet operator paths
@@ -59,9 +108,16 @@ the desktop, its services, Actions runs or git operations are live
 (`--ignore-live` overrides). The desktop moves its own data, settings, cache,
 diagnostics and SSH keys at its next start, under its single-instance lock.
 
+## Phones
+
+The iOS and Android apps keep the same shape, `<project>/data/core/…` and
+`<project>/data/<plugin>/…`, in a data folder they pick on their own and the
+user can change: see [../native/DATA_FOLDER.md](../native/DATA_FOLDER.md).
+
 ## Never erase
 
-`data/`, `config/`, `ssh/`, `state/` and `logs/` hold the node identity key,
+`data/` (with `data/core/config`, `ssh`, `state` and `logs`) and the
+`config/`, `ssh/`, `state/` and `logs/` links hold the node identity key,
 settings, the mirror-fleet SSH key and agent history. `AGENTS.md` forbids
 deleting them; tests that run installers must sandbox `HOME` and `XDG_*_HOME`
 and drop `FORKMESH_HOME` and `FORKMESH_PROJECTS_DIR` (see

@@ -1466,6 +1466,7 @@ void MainWindow::uninstallForkMesh()
                     addFile(entry.absoluteFilePath());
             }
         };
+    addDir(forkmesh::paths::dataDir(), true);
     addDir(forkmesh::paths::dataRoot(), true);
     addDir(forkmesh::paths::localDataRoot(), true);
     addDir(forkmesh::paths::cacheRoot(), true);

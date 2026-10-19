@@ -774,7 +774,7 @@ RssReaderFeature::~RssReaderFeature()
 
 QString RssReaderFeature::dataDirectory() const
 {
-    return QDir(forkmesh::paths::localDataRoot()).filePath(QStringLiteral("rss-reader"));
+    return forkmesh::paths::dataPath(QStringLiteral("rss-reader"));
 }
 
 QToolButton *RssReaderFeature::toolButton(const QString &icon, const QString &tooltip, bool checkable)

@@ -129,7 +129,7 @@ QString transactionBasePath(const QSettings &settings)
 {
     const QString directory = detail::transactionDirectoryFor(
         settings.fileName(), settings.format(),
-        forkmesh::paths::dataRoot());
+        QFileInfo(forkmesh::paths::dataPath(QStringLiteral("actions"))).absolutePath());
     return QDir(directory).filePath(
         QStringLiteral(".forkmesh-actions-configuration-") +
         transactionIdentity(settings));
@@ -489,13 +489,13 @@ QString actionMirrorPath(QSettings &settings, const QString &node,
             QCryptographicHash::Sha256)
             .toHex()
             .left(24);
-    const QString dataRoot =
+    const QString actionsRoot =
         settings.format() == QSettings::IniFormat
             ? QDir(QFileInfo(settings.fileName()).absolutePath())
-                  .filePath(QStringLiteral("forkmesh-actions-test-data"))
-            : forkmesh::paths::dataRoot();
-    return QDir(dataRoot)
-        .filePath(QStringLiteral("actions/mirrors/") +
+                  .filePath(QStringLiteral("forkmesh-actions-test-data/actions"))
+            : forkmesh::paths::dataPath(QStringLiteral("actions"));
+    return QDir(actionsRoot)
+        .filePath(QStringLiteral("mirrors/") +
                   QString::fromLatin1(key) + QStringLiteral(".git"));
 }
 

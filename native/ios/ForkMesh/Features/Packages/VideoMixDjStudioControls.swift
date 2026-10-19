@@ -159,6 +159,7 @@ struct DjDeckInfo: View {
     let u: CGFloat
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("deck info")
         HStack(alignment: .center, spacing: 12 * u) {
             if mirrored {
                 titles
@@ -196,8 +197,10 @@ struct DjClock: View {
     let u: CGFloat
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("clock")
         HStack(alignment: .firstTextBaseline, spacing: 4 * u) {
             TimelineView(.animation(minimumInterval: 0.25, paused: !deck.playing || deck.scratching)) { _ in
+                let _ = DjDiagnostics.viewed("clock time")
                 let position = deck.position()
                 Text(deck.showsRemaining ? "-" + DjStudio.clock(max(0, deck.duration - position)) : DjStudio.clock(position))
                     .font(.system(size: 30 * u, weight: .light))
@@ -223,9 +226,11 @@ struct DjWaveform: View {
     @State private var dragX: CGFloat?
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("waveform")
         GeometryReader { geometry in
             let size = geometry.size
             TimelineView(.animation(minimumInterval: model.pace.motionInterval, paused: !deck.moving)) { _ in
+                let _ = DjDiagnostics.viewed("waveform frame")
                 let time = deck.shown() - Double((dragX ?? 0) / max(1, size.width)) * DjWaveDrawing.window
                 let bars = deck.waveform
                 let duration = deck.duration
@@ -330,6 +335,7 @@ struct DjTransport: View {
     var cell = CGSize(width: 58, height: 32)
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("transport")
         let layout = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
         let atStart = !deck.playing && deck.position() < 0.05
         layout {
@@ -389,6 +395,7 @@ struct DjCueButtons: View {
     var segment: CGFloat = 58
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("cue buttons")
         let layout = vertical ? AnyLayout(VStackLayout(spacing: 0)) : AnyLayout(HStackLayout(spacing: 0))
         layout {
             Button {
@@ -465,6 +472,7 @@ struct DjPitchStrip: View {
     let u: CGFloat
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("pitch strip")
         VStack(spacing: 6 * u) {
             DjRoundButton(size: 30 * u, action: { model.sheet = .deck(deck.side) }) {
                 Image(systemName: "slider.vertical.3")
@@ -618,6 +626,7 @@ struct DjLevelFader: View {
     @State private var startLevel: Double?
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("level fader")
         VStack(spacing: 4 * u) {
             Image(systemName: deck.level < 0.01 ? "speaker.slash.fill" : deck.level < 0.5 ? "speaker.wave.1.fill" : "speaker.wave.2.fill")
                 .font(.system(size: 11 * u, weight: .semibold))
@@ -700,6 +709,7 @@ struct DjCrossfader: View {
     @GestureState private var dragging = false
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("crossfader")
         HStack(spacing: 10 * u) {
             arrow(.a)
             GeometryReader { geometry in
@@ -763,6 +773,7 @@ struct DjAutomixButton: View {
     let u: CGFloat
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("automix button")
         let on = model.automixOn
         let height = 28 * u
         Button {
@@ -835,6 +846,7 @@ struct DjNotice: View {
     let model: DjStudioModel
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("notice")
         ZStack {
             if let notice = model.notice { bubble(notice) }
         }

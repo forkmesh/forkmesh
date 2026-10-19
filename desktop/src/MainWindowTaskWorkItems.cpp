@@ -76,7 +76,7 @@ tw::Guard MainWindow::taskWorkItemGuard() const
     guard.home = QDir::homePath();
     const forkmesh::paths::Layout &layout = forkmesh::paths::layout();
     guard.protectedDirs = {
-        layout.data, layout.config, layout.state, layout.logs, layout.ssh,
+        layout.dataDir, layout.data, layout.config, layout.state, layout.logs, layout.ssh,
         layout.cache, forkmesh::paths::dataRoot(), forkmesh::paths::localDataRoot(),
         forkmesh::paths::cacheRoot()};
     if (!layout.homeDir.isEmpty()) {

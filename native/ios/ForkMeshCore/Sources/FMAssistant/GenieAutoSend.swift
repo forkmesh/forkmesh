@@ -118,6 +118,10 @@ public final class GenieAutoSendPace {
 
 public enum GenieAutoSend {
     public static let skipped: Set<String> = ["contact_has_no_email", "contact_closed", "recently_emailed", "contact_not_found"]
+    public static let unwritten =
+        "Nothing could write the email: the server has no AI model, and no agent API key, on-device model or desktop running Claude Code or Codex gave a usable draft."
+    public static let noWriter =
+        "Nothing can write the email: the server has no AI model and this phone has no writer. Open ForkMesh on a desktop signed in to this account with Claude Code or Codex as its default agent, or save an agent API key in Settings."
 
     public static func outcome(_ reply: PackagesReply, pick: GenieOutreachPick) -> GenieAutoSendOutcome {
         if reply.ok { return .sent(GenieAutoSendReceipt(json: reply.json, pick: pick)) }
@@ -130,7 +134,7 @@ public enum GenieAutoSend {
         case "outreach_forbidden":
             return .pause("Only owners, admins and the outreach team of \(pick.organization) can send outreach.")
         case "ai_unavailable", "draft_unusable":
-            return .pause("Nothing could write the email: the server has no AI model and no writer on this phone gave a usable draft.")
+            return .pause(unwritten)
         case "rate_limited":
             return .pause("The AI model is busy. Trying again in a while.")
         default:
@@ -180,6 +184,7 @@ extension ForkMeshToolbox {
                 stage(.sending)
                 reply = try await client.autoCrmEmail(pick.organization, body: body)
             }
+            if writers.isEmpty, code == "ai_unavailable" || code == "draft_unusable" { return .pause(GenieAutoSend.noWriter) }
             let outcome = GenieAutoSend.outcome(reply, pick: pick)
             if case .sent = outcome { stage(.sent) }
             return outcome
