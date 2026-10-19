@@ -108,8 +108,10 @@ can be done with them:
   the same path as the USB install below: update the package lists, install
   `ksmbd-server`, then `luci-app-ksmbd`, one at a time, with progress in the
   Storage log ("Installing ksmbd-server and luci-app-ksmbd…", "Could not
-  install <package>: <output tail>"), and reloads so the shares list appears
-  ("Network sharing is installed. Share a mounted disk below."). The package
+  install <package>: <output tail>"), signs in again so the session can read
+  the new config (see *New packages need a new session* below), and reloads
+  so the shares list appears ("Network sharing is installed. Share a mounted
+  disk below."). The package
   names live in one place per model (`networkSharingPackages()` on the
   desktop, `shareSupportPackages` on iOS and Android). Every listed share has
   **Browse files**, which opens the [Files](files.md) explorer on
@@ -198,6 +200,20 @@ signed-in account has.
   Android `OpenWrtClient.kt`), with `packagesInstalled` in each model.
   This was seen as "luci-app-ksmbd failed: The router answered: ubus request
   timed out" right after `ksmbd-server` installed fine.
+- **New packages need a new session**: rpcd works out a session's ACL when it
+  signs in, from the `/usr/share/rpcd/acl.d` files present then, and keeps it
+  across the SIGHUP re-exec. `uci configs` lists only the configs the session
+  may read, so after `luci-app-ksmbd` adds its ACL the old session still does
+  not see `ksmbd` and the shares list stayed empty however often the page was
+  refreshed ("The packages are installed, but the router shows no file server
+  settings yet. Pull to refresh in a moment."). After Install network sharing
+  the client signs in again with the remembered password (`renewSession`) and
+  reloads. The phones also do this on a refresh, once per sign-in or install,
+  when `luci-app-ksmbd` or `luci-app-samba4` is installed but no share config
+  shows (`needsShareSessionRenewal`), which covers installs from the Packages
+  screen. A renewal drops staged UCI changes, so it is skipped while any are
+  pending and the page asks to apply or discard them first. If a fresh session
+  still sees no config, the page says `/etc/config/ksmbd` is missing.
 - **Backup, restore, firmware, reset**: the same calls LuCI's System pages
   make, so LuCI's `luci-mod-system` ACL allows them: `cgi-backup`;
   `cgi-upload` to `/tmp/backup.tar.gz` then `sysupgrade --restore-backup` and

@@ -219,6 +219,17 @@ void Client::send(const Pending &pending, bool mayRenew)
     });
 }
 
+void Client::renewSession(Done done)
+{
+    if (!m_network || m_password.isEmpty()) {
+        RpcResult failed;
+        failed.error = QStringLiteral("Sign out and sign in again so the router shows the new settings.");
+        done(failed);
+        return;
+    }
+    renewThen(Pending{QStringLiteral("uci"), QStringLiteral("configs"), {}, std::move(done)});
+}
+
 void Client::renewThen(const Pending &pending)
 {
     m_waiting << pending;

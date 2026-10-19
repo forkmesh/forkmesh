@@ -42,6 +42,7 @@ public:
 
     void call(const QString &object, const QString &method, const QJsonObject &args, Done done, int timeoutMs = 20000);
     void exec(const QString &command, const QStringList &params, Done done, int timeoutMs = 120000);
+    void renewSession(Done done);
     void upload(const QString &path, const QByteArray &data, Done done);
     void downloadBackup(BytesDone done);
 

@@ -43,6 +43,7 @@ final class OpenWrtRouterModel {
     var vaultChoices: [VaultItem] = []
 
     @ObservationIgnored private var client: OpenWrtClient?
+    @ObservationIgnored private var shareRenewalTried = false
     @ObservationIgnored private var loginUrl = ""
     @ObservationIgnored private var loginUser = ""
     @ObservationIgnored private var filledFromVault = ""
@@ -127,6 +128,7 @@ final class OpenWrtRouterModel {
             return
         }
         client = router
+        shareRenewalTried = false
         pendingCertificate = ""
         password = ""
         routerHost = host
@@ -274,8 +276,14 @@ final class OpenWrtRouterModel {
         busy = true
         defer { busy = false }
         let before = await client.renewals
-        let fresh = await client.loadSnapshot(packageTool: snapshot.packageTool)
+        var fresh = await client.loadSnapshot(packageTool: snapshot.packageTool)
         let after = await client.renewals
+        if OpenWrtModel.needsShareSessionRenewal(fresh) && !shareRenewalTried {
+            shareRenewalTried = true
+            if await client.renewSession().ok {
+                fresh = await client.loadSnapshot(packageTool: fresh.packageTool)
+            }
+        }
         if after > before && snapshot.pendingCount > 0 {
             show("The router session timed out, so the router dropped the changes you had not applied. ForkMesh signed in again.", error: true)
         } else if let problem = fresh.problems.first {
@@ -379,7 +387,10 @@ final class OpenWrtRouterModel {
             let listed = await client.listPackages(preferred: tool)
             snapshot.packages = listed.packages
         }
-        if action == "install" && result.ok { await refresh() }
+        if action == "install" && result.ok {
+            shareRenewalTried = false
+            await refresh()
+        }
     }
 
     func unmount(_ disk: OpenWrtDisk) async {
@@ -467,14 +478,17 @@ final class OpenWrtRouterModel {
 
     func installShareSupport() async {
         guard !storageBusy else { return }
+        shareRenewalTried = false
         guard let failed = await installPackages(
             OpenWrtModel.shareSupportPackages, progress: "Installing ksmbd-server and luci-app-ksmbd…",
             noTool: "The router does not let ForkMesh run its package manager, so network sharing cannot be installed from here. Install luci-app-package-manager (or luci-app-opkg on older releases) on the router.")
         else { return }
         if let first = failed.first {
             show("Could not install \(first.name): \(first.tail)", error: true)
+        } else if snapshot.shareConfig.isEmpty && snapshot.pendingCount > 0 {
+            show("The packages are installed. Apply or discard your waiting changes, then pull to refresh: ForkMesh has to sign in again to see the file server settings, and that drops changes not yet applied.", error: true)
         } else if snapshot.shareConfig.isEmpty {
-            show("The packages are installed, but the router shows no file server settings yet. Pull to refresh in a moment.", error: true)
+            show("The packages are installed, but the router has no file server settings (/etc/config/ksmbd). Reinstall ksmbd-server on the router, or sign out and sign in again.", error: true)
         } else {
             show("Network sharing is installed. Share a mounted disk below.")
         }

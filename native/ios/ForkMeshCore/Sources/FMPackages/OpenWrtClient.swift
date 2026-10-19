@@ -87,6 +87,11 @@ public actor OpenWrtClient {
         return result
     }
 
+    public func renewSession() async -> OpenWrtResult {
+        guard !password.isEmpty else { return .failure("Sign out and sign in again so the router shows the new settings.") }
+        return await renew()
+    }
+
     private func renew() async -> OpenWrtResult {
         if let renewal { return await renewal.value }
         let user = self.user
