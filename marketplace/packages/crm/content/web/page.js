@@ -3433,6 +3433,24 @@ window.ForkMeshDashboard.registerPage("crm", ({
     crmMessage("error", `That link points to a contact that is not in ${state.crmView.organization}.`);
   }
 
+  function crmReadingParts(email) {
+    const seconds = Number(email.readSeconds) || 0;
+    const depth = Number(email.scrollDepth) || 0;
+    const slides = Number(email.slideCount) || 0;
+    const slide = Number(email.slideReached) || 0;
+    const client = String(email.mailClient || "");
+    const parts = [];
+    if (seconds) parts.push(`read ${seconds >= 60 ? `${Math.floor(seconds / 60)} min+` : `${seconds}s+`}`);
+    if (slides && slide) {
+      parts.push(slide >= slides ? `read all ${slides} slides` : `reached slide ${slide}/${slides}${email.slideTitle ? ` · ${email.slideTitle}` : ""}`);
+    } else if (depth) {
+      parts.push(depth >= 100 ? "scrolled to the end" : `scrolled ${depth}%`);
+    }
+    if (client && email.readingReported === "no" && !seconds && Number(email.opens)) parts.push(`${client} doesn't report read time`);
+    else if (client && (seconds || depth)) parts.push(client);
+    return parts;
+  }
+
   // Everything that has happened on the record, newest first: the messages
   // linked to it, the deck link's opens, and the record's own stamps.
   function crmContactActivity(contact) {
@@ -3441,8 +3459,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
       label: [`${email.direction === "inbound" ? "Received" : email.automated ? "Sent by AI" : "Sent"} · ${crmProviderLabel(email)}`,
         Number(email.opens) ? `${email.opens} open${Number(email.opens) === 1 ? "" : "s"}` : "",
         Number(email.clicks) ? `${email.clicks} click${Number(email.clicks) === 1 ? "" : "s"}` : "",
-        Number(email.readSeconds) ? `read ${Number(email.readSeconds) >= 60 ? `${Math.floor(Number(email.readSeconds) / 60)} min+` : `${Number(email.readSeconds)}s+`}` : "",
-        Number(email.scrollDepth) ? (Number(email.scrollDepth) >= 100 ? "scrolled to the end" : `scrolled ${Number(email.scrollDepth)}%`) : ""].filter(Boolean).join(" · "),
+        ...crmReadingParts(email)].filter(Boolean).join(" · "),
       text: email.subject || "No subject",
       url: crmHttpsUrl(email.providerUrl),
     }));
