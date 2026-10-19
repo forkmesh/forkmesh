@@ -3,7 +3,10 @@ const usagePageResetClock = (resetAtMs, nowMs = Date.now(), timeZone = undefined
   if (!reset || reset <= nowMs) return "";
   const zone = timeZone ? { timeZone } : {};
   const format = (options, ms) => new Intl.DateTimeFormat("en-US", { ...options, ...zone }).format(ms).replace(/\s/g, " ");
-  const dayOf = (ms) => Date.parse(new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", ...zone }).format(ms));
+  const dayOf = (ms) => {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", { year: "numeric", month: "numeric", day: "numeric", ...zone }).formatToParts(ms).map((part) => [part.type, part.value]));
+    return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day));
+  };
   const clock = format({ hour: "numeric", minute: "2-digit", hour12: true }, reset);
   const days = Math.round((dayOf(reset) - dayOf(nowMs)) / 86400000);
   if (days === 0) return `Resets ${clock}`;
@@ -22,7 +25,8 @@ window.ForkMeshDashboard.registerPage("usage", ({ select: $, desktopUsage, escap
     const used = percent(window?.usedPercent);
     const label = escapeHtml(String(window?.label || window?.id || "Usage window"));
     const reset = Number(window?.resetAtMs) || 0;
-    const resetLabel = reset > Date.now() ? escapeHtml(usagePageResetClock(reset)) : reset ? "Ready" : "Reset time unavailable";
+    const now = Date.now();
+    const resetLabel = reset > now ? escapeHtml(usagePageResetClock(reset, now)) : reset ? "Ready" : "Reset time unavailable";
     return `<div class="grid gap-1.5"><div class="flex items-baseline justify-between gap-3 text-xs"><span class="min-w-0 truncate text-foreground">${label}</span><span class="shrink-0 font-mono text-muted-foreground">${used.toFixed(0)}%</span></div><div class="h-1.5 overflow-hidden rounded-full bg-secondary" role="progressbar" aria-label="${label}" aria-valuenow="${used}" aria-valuemin="0" aria-valuemax="100"><span class="block h-full bg-primary" style="width:${used}%"></span></div><span class="text-[11px] text-muted-foreground">${resetLabel}</span></div>`;
   };
   const account = (provider, item) => {
