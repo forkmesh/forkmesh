@@ -135,7 +135,7 @@ struct UsageMeterRow: View {
 
     private var caption: String {
         let used = window.usedPercent.map { "\($0)% used" } ?? "No reading yet"
-        let reset = window.resetLabel(nowMs: nowMs)
+        let reset = window.resetClockLabel(nowMs: nowMs)
         return reset.isEmpty ? used : "\(used) · \(reset)"
     }
 
