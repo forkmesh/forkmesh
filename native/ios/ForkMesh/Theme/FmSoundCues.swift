@@ -198,7 +198,7 @@ final class FmCuePlayer {
     }
 
     func activateSession() {
-        if Self.recording || PromptDictation.isOverhearing { return }
+        if Self.recording || PromptDictation.isOverhearing || OtherAppCall.inProgress { return }
         let session = AVAudioSession.sharedInstance()
         if session.category != .playback || !session.categoryOptions.contains(.mixWithOthers) {
             try? session.setCategory(.playback, options: [.mixWithOthers])
@@ -211,7 +211,7 @@ final class FmCuePlayer {
     }
 
     private func sessionReady() -> Bool {
-        if Self.recording { return false }
+        if Self.recording || OtherAppCall.inProgress { return false }
         if PromptDictation.isOverhearing { return true }
         let session = AVAudioSession.sharedInstance()
         if session.category == .playback && session.categoryOptions.contains(.mixWithOthers) { return true }

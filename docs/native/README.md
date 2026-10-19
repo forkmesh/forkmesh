@@ -29,6 +29,7 @@ Topic pages:
 | [DIFF_REVIEW.md](DIFF_REVIEW.md) | The diff review stream |
 | [COMMIT_GRAPH.md](COMMIT_GRAPH.md) | The Commits screen's Graph tab |
 | [GENIE.md](GENIE.md) | The on-device voice assistant |
+| [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md) | Sounds, listening, ducking and Bluetooth held back while another app's call is up |
 | [DESKTOP_PINGS.md](DESKTOP_PINGS.md), [PING_QUICK_FIXES.md](PING_QUICK_FIXES.md), [PUSH_ICONS.md](PUSH_ICONS.md) | Desktop pings, one-tap fixes, banner icons |
 | [MESH_PUSH.md](MESH_PUSH.md) | Wake pushes and local alerts for the `#mesh` room |
 | [PUSH_ON_SCREEN.md](PUSH_ON_SCREEN.md) | No banner, or no phone ping, for what is already on screen |

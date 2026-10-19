@@ -8,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.bluetooth.le.BluetoothLeScanner
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -34,8 +35,12 @@ import com.forkmesh.nativeapp.glasses.GlassesSignatures
 import com.forkmesh.nativeapp.glasses.GlassesTracker
 import com.forkmesh.nativeapp.glasses.NearbyDevice
 import com.forkmesh.nativeapp.glasses.NearbyKinds
+import com.forkmesh.nativeapp.net.RadioPolicy
+import com.forkmesh.nativeapp.net.ScanDuty
 import com.forkmesh.nativeapp.platform.AppLifecycle
+import com.forkmesh.nativeapp.platform.AudioActivityProbe
 import com.forkmesh.nativeapp.platform.Prefs
+import com.forkmesh.nativeapp.platform.scanMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -121,10 +126,12 @@ class GlassesWatchService : Service() {
     private var foregroundJob: Job? = null
     private val alarm: GlassesAlarm get() = GlassesAlarm.get(this)
     private var scanning = false
+    private var duty: ScanDuty? = null
     private var adapterReceiver: BroadcastReceiver? = null
 
     private val refresher = object : Runnable {
         override fun run() {
+            retune()
             publishNearby()
             main.postDelayed(this, REFRESH_MS)
         }
@@ -294,27 +301,14 @@ class GlassesWatchService : Service() {
             if (adapter == null) shutDown()
             return
         }
-        val filters = GlassesSignatures.COMPANY_IDS.map { id ->
-            ScanFilter.Builder().setManufacturerData(id, ByteArray(0), ByteArray(0)).build()
-        }
-        val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
-            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
-            .build()
-        val started = try {
-            scanner.startScan(filters, settings, callback)
-            true
-        } catch (_: SecurityException) {
-            false
-        } catch (_: IllegalStateException) {
-            false
-        }
-        if (!started) {
+        val wanted = RadioPolicy.glassesDuty(AudioActivityProbe.current(this))
+        if (!launchScan(scanner, wanted)) {
             mutableState.update { it.copy(watching = false, problem = "Android refused the Bluetooth scan. Check Nearby devices permission.") }
             shutDown()
             return
         }
         scanning = true
+        duty = wanted
         tracker.reset()
         homing.reset()
         mutableState.update { it.copy(watching = true, problem = null, nearby = emptyList(), homing = null) }
@@ -323,8 +317,42 @@ class GlassesWatchService : Service() {
         syncCensus()
     }
 
+    private fun launchScan(scanner: BluetoothLeScanner, wanted: ScanDuty): Boolean {
+        val filters = GlassesSignatures.COMPANY_IDS.map { id ->
+            ScanFilter.Builder().setManufacturerData(id, ByteArray(0), ByteArray(0)).build()
+        }
+        val settings = ScanSettings.Builder()
+            .setScanMode(wanted.scanMode)
+            .setCallbackType(ScanSettings.CALLBACK_TYPE_ALL_MATCHES)
+            .build()
+        return try {
+            scanner.startScan(filters, settings, callback)
+            true
+        } catch (_: SecurityException) {
+            false
+        } catch (_: IllegalStateException) {
+            false
+        }
+    }
+
+    private fun retune() {
+        if (!scanning) return
+        val wanted = RadioPolicy.glassesDuty(AudioActivityProbe.current(this))
+        if (wanted != duty) {
+            val scanner = getSystemService(BluetoothManager::class.java)?.adapter?.takeIf { it.isEnabled }?.bluetoothLeScanner ?: return
+            runCatching { scanner.stopScan(callback) }
+            if (!launchScan(scanner, wanted)) {
+                mutableState.update { it.copy(watching = false, problem = "Android refused the Bluetooth scan. Check Nearby devices permission.") }
+                shutDown()
+                return
+            }
+            duty = wanted
+        }
+        syncCensus()
+    }
+
     private fun syncCensus() {
-        if (scanning && foreground) startCensus() else stopCensus()
+        if (scanning && RadioPolicy.glassesCensus(AudioActivityProbe.current(this), foreground)) startCensus() else stopCensus()
     }
 
     private fun startCensus() {
@@ -358,6 +386,7 @@ class GlassesWatchService : Service() {
         stopCensus()
         if (!scanning) return
         scanning = false
+        duty = null
         runCatching { getSystemService(BluetoothManager::class.java)?.adapter?.bluetoothLeScanner?.stopScan(callback) }
         homing.reset()
         mutableState.update { it.copy(watching = false, homing = null) }

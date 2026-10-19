@@ -56,8 +56,10 @@ enum ChatFeature {
         }
         relay.accountProvider = { auth.session?.nodeName ?? "" }
 
+        let meshTransport: CoreBluetoothMeshTransport = CoreBluetoothMeshTransport()
+        OtherAppCall.shared.onChange { [weak meshTransport] (inCall: Bool) in meshTransport?.setCallInProgress(inCall) }
         let mesh = LocalMeshService(
-            settings: settings, identity: identity, secureStore: secure, transport: CoreBluetoothMeshTransport(),
+            settings: settings, identity: identity, secureStore: secure, transport: meshTransport,
             historyFile: { defaultMeshHistoryFile() })
         mesh.accountProvider = { auth.session?.nodeName ?? "" }
         mesh.wakeTokenProvider = {

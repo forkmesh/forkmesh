@@ -97,7 +97,7 @@ final class PlatformAgentWatchOutput: AgentWatchOutput {
     private func startAudio(rate: Double, channels: Int) -> AVAudioFormat? {
         // Checked every phrase: something else taking the shared session back
         // to ambient would hand the Watch to the silent switch again.
-        if PromptDictation.isListening { return nil }
+        if PromptDictation.isListening || OtherAppCall.inProgress { return nil }
         PromptDictation.holdOverhearing(10)
         let session = AVAudioSession.sharedInstance()
         if session.category != .playback || !session.categoryOptions.contains(.mixWithOthers) {

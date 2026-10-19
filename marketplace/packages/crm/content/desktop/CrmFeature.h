@@ -551,6 +551,7 @@ private:
     void editSettings();
     void syncZohoMail();
     void connectZohoMail();
+    void reconnectZohoInBrowser();
     void exchangeZohoCode(const QJsonObject &body);
     void logToot(const QString &contactId);
     void syncToots(bool automatic,
