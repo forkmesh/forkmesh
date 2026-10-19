@@ -6,6 +6,7 @@
 #include <QList>
 #include <QString>
 #include <QStringList>
+#include <QUrl>
 #include <QWidget>
 
 #include <functional>
@@ -101,6 +102,7 @@ struct NativePackageHost {
         saveLogin;
     std::function<void(const QString &, QWidget *, NativePackageLoginHandler)>
         findLogins;
+    std::function<void(const QString &)> openWebPage;
 };
 
 struct NativePackagePromptTarget {
@@ -242,5 +244,6 @@ QString nativePackageLifecyclePath(const QString &organization,
 bool nativePackageRequestPathAllowed(const QString &packageId,
                                      const QString &apiPrefix,
                                      const QString &path);
+QUrl nativePackageWebPageUrl(const QUrl &base, const QString &path);
 
 } // namespace forkmesh::market

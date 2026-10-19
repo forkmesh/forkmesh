@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "RunnersModel.h",
+    "RunnersModel.cpp",
+    "RunnersFeature.h",
+    "RunnersFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_runners.cpp",
+    "RunnersModel.h",
+    "RunnersModel.cpp",
+    "RunnersFeature.h",
+    "RunnersFeature.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Widgets"
+  ],
+  "testHostSources": [
+    "NativePackageExtension.h",
+    "NativePackageExtension.cpp",
+    "RunnerLogin.h",
+    "RunnerLogin.cpp"
+  ]
+}

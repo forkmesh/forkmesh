@@ -207,6 +207,23 @@ int main(int argc, char **argv)
                   QStringLiteral("install")).isEmpty(),
           "a package cannot cross identities, origins, or an empty organization");
 
+    const QUrl webBase(QStringLiteral("https://user:secret@app.example.test/api/x?q=1#f"));
+    check(nativePackageWebPageUrl(
+              webBase,
+              QStringLiteral("/dashboard/runners?runner=box&provider=codex&connect=1"))
+                  .toString() ==
+              QStringLiteral("https://app.example.test/dashboard/runners"
+                             "?runner=box&provider=codex&connect=1"),
+          "a package web page opens on the active host with its query and no credentials");
+    check(!nativePackageWebPageUrl(webBase, QStringLiteral("https://evil.invalid/x")).isValid() &&
+              !nativePackageWebPageUrl(webBase, QStringLiteral("//evil.invalid/x")).isValid() &&
+              !nativePackageWebPageUrl(webBase, QStringLiteral("dashboard")).isValid() &&
+              !nativePackageWebPageUrl(webBase, QStringLiteral("/dashboard/../x")).isValid() &&
+              !nativePackageWebPageUrl(QUrl(), QStringLiteral("/dashboard")).isValid() &&
+              !nativePackageWebPageUrl(QUrl(QStringLiteral("file:///tmp")),
+                                       QStringLiteral("/dashboard")).isValid(),
+          "a package web page stays on the active web host");
+
     NativePackageRailTile tile;
     tile.id = QStringLiteral("youtube");
     tile.label = QStringLiteral("YouTube");
