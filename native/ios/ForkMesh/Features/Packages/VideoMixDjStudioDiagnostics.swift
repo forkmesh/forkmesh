@@ -25,7 +25,9 @@ final class DjFrameTicker: NSObject {
             return
         }
         let period = link.targetTimestamp - link.timestamp
-        DjVitalsRecorder.shared.update { $0.frame(at: link.timestamp, period: period) }
+        let cpu = Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)) / 1e9
+        let app = Double(clock_gettime_nsec_np(CLOCK_PROCESS_CPUTIME_ID)) / 1e9
+        DjVitalsRecorder.shared.update { $0.frame(at: link.timestamp, period: period, cpu: cpu, appCpu: app) }
     }
 }
 
@@ -97,6 +99,10 @@ final class DjDiagnostics {
 
     static func mark(_ text: String) {
         DjVitalsRecorder.shared.mark(text, at: CACurrentMediaTime())
+    }
+
+    static func viewed(_ name: String) {
+        DjVitalsRecorder.shared.viewed(name)
     }
 
     func prompt(model: DjStudioModel, includeLogs: Bool) async -> String {
@@ -181,6 +187,7 @@ struct DjDiagnosticsButton: View {
     private var diagnostics: DjDiagnostics { DjDiagnostics.shared }
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("diagnostics button")
         let detected = diagnostics.alert.detected
         Button {
             DjTheme.tick()
@@ -214,8 +221,9 @@ struct DjDiagnosticsSheet: View {
     private var diagnostics: DjDiagnostics { DjDiagnostics.shared }
 
     private static let contents: [String] = [
-        "Frame times, dropped frames, hitches and main-thread busy time while the studio is open",
+        "Frame times, dropped frames, hitches, main-thread busy and CPU time while the studio is open",
         "Each long frame with the studio work inside it and what you did just before",
+        "How often each part of the studio was redrawn",
         "Player ticks, drift, web view scripts and their round trip",
         "Both decks, crossfader, AUTOMIX, jam and audio session state",
         "App version, iPhone model, iOS version, memory and thermal state",
