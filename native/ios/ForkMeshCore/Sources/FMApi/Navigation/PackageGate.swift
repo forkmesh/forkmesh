@@ -7,6 +7,10 @@ public enum PackageGate {
 
     public static let devicePackages: Set<String> = ["sign-in"]
 
+    public static let desktopReliantPackages: Set<String> = [
+        "agents", "desktops", "special-agents", "shortcuts", "hosts", "usage",
+    ]
+
     public static let starterPackages: Set<String> = ["agents", "chat", "inbox", "code", "tour"]
 
     public static func isStarter(_ packageId: String, pack: StarterPack = .fallback) -> Bool {
@@ -66,6 +70,10 @@ public enum PackageGate {
     public static func isGated(_ packageId: String) -> Bool { packages.contains(packageId) }
 
     public static func packageId(forItem id: String) -> String? { items[id] }
+
+    public static func reliesOnDesktop(item id: String) -> Bool {
+        packageId(forItem: id).map(desktopReliantPackages.contains) ?? false
+    }
 
     public static func packageId(for route: Route) -> String? {
         switch route {
