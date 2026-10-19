@@ -606,7 +606,6 @@ def bundle_world_scene(destination: Path) -> list[str]:
                 *WORLD_BUNDLE_ENTRIES,
             ],
             check=True,
-            capture_output=True,
         )
         forkmesh_safe_delete.remove_tree(world_directory / "scene", world_directory)
         for built in sorted(Path(tmp).rglob("*.js")):

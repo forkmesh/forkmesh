@@ -592,6 +592,34 @@ def test_remote_fork_lookups_survive_rekey(tmp_path):
                                 old.bi("remote-fork-url:" + url))).fetchone()[0] == 0
 
 
+def test_pull_review_lookups_survive_rekey(tmp_path):
+    import io
+    old, new = rk.Keyset(KEY_A, "a"), rk.Keyset(KEY_B, "b")
+    source = tmp_path / "reviews.sqlite3"
+    target = tmp_path / "rekeyed.sqlite3"
+    repo = "alice/engine"
+    ledger = "pull-review-ledger:" + repo
+    with sqlite3.connect(source) as conn:
+        conn.execute("CREATE TABLE repositories (key_bi TEXT PRIMARY KEY, data TEXT)")
+        conn.execute("INSERT INTO repositories VALUES (?,?)", (
+            old.bi(repo), old.seal(json.dumps({"owner": "alice", "name": "engine"}).encode())))
+        conn.execute("CREATE TABLE pull_review_ledger (repo_bi TEXT, pull_number INTEGER, "
+                     "account TEXT, state TEXT, updated_at INTEGER, "
+                     "PRIMARY KEY (repo_bi, pull_number, account))")
+        conn.executemany("INSERT INTO pull_review_ledger VALUES (?,?,?,?,?)", [
+            (old.bi(ledger), 7, "bob", "approved", 123),
+            (old.bi(ledger), 7, "carol", "changes_requested", 124),
+        ])
+    rk.rekey(source, target, old, new, tmp_path / "work", out=io.StringIO())
+    with sqlite3.connect(target) as conn:
+        rows = conn.execute("SELECT pull_number, account, state, updated_at "
+                            "FROM pull_review_ledger WHERE repo_bi=? ORDER BY account",
+                            (new.bi(ledger),)).fetchall()
+        assert rows == [(7, "bob", "approved", 123), (7, "carol", "changes_requested", 124)]
+        assert conn.execute("SELECT COUNT(*) FROM pull_review_ledger WHERE repo_bi=?",
+                            (old.bi(ledger),)).fetchone()[0] == 0
+
+
 def test_unrecoverable_identity_index_aborts_unless_allowed(tmp_path):
     old, new = rk.Keyset(KEY_A, "a"), rk.Keyset(KEY_B, "b")
     src = tmp_path / "in.sqlite3"
