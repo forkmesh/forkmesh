@@ -187,6 +187,8 @@ copies brought a DM back after a relaunch, so a sent message either vanished or 
 messages when `hub.direct` is set (it is set after `attachHistory`). The file also keeps
 `receipts` (message id to `delivered` or `read`) for the kept messages, so a mark does not drop
 back to "Sent" after a relaunch. Signing out clears the service, and the next save drops the DMs.
+`receiptTimes` (message id to `{"delivered", "read"}` epoch milliseconds) is saved beside it so
+the Message Info page still shows when a message arrived and was read after a relaunch.
 
 ## Disappearing messages
 
@@ -397,6 +399,12 @@ messages"). On iOS they live in `DirectMessageService`:
   (except ones still sending), not only refs seen since launch. Delivered and read marks are
   saved with the history file. Office rooms reach `sent` only. Drawn by `ChatReceiptMark` inside
   the sender's own bubble.
+- **Receipt times** (`ChatReceiptTimes`, `DirectMessageService.receiptTime(_:)`,
+  `ChatHub.receiptTimes(for:)`): the first time this device saw a message reach `delivered` and
+  `read`, stamped from the service clock when the relay frame arrives. The protocol carries no
+  times, so these are when the phone learned of the receipt; a receipt that arrives while the
+  phone is offline is stamped when it reconnects. Restoring from disk never stamps a time, so a
+  mark saved before times were kept shows "Delivered"/"Read" without one.
 - **Quoted replies** (DMs): Reply in a message's menu sets `ChatHub.replyingTo`; the composer
   shows the quote with a cancel button, and the next text sent carries
   `"replyTo": {"id", "senderId", "sender", "text"}` (text up to 280 characters,

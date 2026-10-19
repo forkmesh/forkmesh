@@ -148,7 +148,8 @@ public final class ChatHub: ShellChatBridge {
     @ObservationIgnored public var historyFormerScopes: @MainActor () -> [String] = { [] }
     @ObservationIgnored private var loadedScope = ""
     @ObservationIgnored private var historyToken: ListenerToken?
-    @ObservationIgnored private var directRestore: (messages: [ChatMessage], receipts: [String: ChatReceipt])?
+    @ObservationIgnored private var directRestore:
+        (messages: [ChatMessage], receipts: [String: ChatReceipt], times: [String: ChatReceiptTimes])?
     @ObservationIgnored private var officeRestore: [ChatMessage]?
     @ObservationIgnored private var directAccount = ""
     @ObservationIgnored var trustChangedAt: [String: Date] = [:]
@@ -281,7 +282,9 @@ public final class ChatHub: ShellChatBridge {
             shown.filter { !DirectMessageFrames.isDirect($0.conversation) && !OfficeFrames.isOffice($0.conversation) })
         officeRestore = shown.filter { OfficeFrames.isOffice($0.conversation) }
         restoreOfficeHistory()
-        directRestore = (snapshot.messages.filter { DirectMessageFrames.isDirect($0.conversation) }, snapshot.receipts)
+        directRestore = (
+            snapshot.messages.filter { DirectMessageFrames.isDirect($0.conversation) }, snapshot.receipts, snapshot.receiptTimes
+        )
         restoreDirectHistory()
         extras.restore(
             replies: snapshot.replies, roots: snapshot.replyRoots, reactions: snapshot.reactions, order: snapshot.reactionOrder,
@@ -295,7 +298,7 @@ public final class ChatHub: ShellChatBridge {
     private func restoreDirectHistory() {
         guard let direct, let saved = directRestore else { return }
         directRestore = nil
-        direct.restore(saved.messages, receipts: saved.receipts)
+        direct.restore(saved.messages, receipts: saved.receipts, times: saved.times)
     }
 
     private func restoreOfficeHistory() {
@@ -312,7 +315,8 @@ public final class ChatHub: ShellChatBridge {
             let held = (direct.historySnapshot.values.flatMap { $0 } + (directRestore?.messages ?? []))
                 .filter { ids.insert($0.id).inserted }
             let receipts = direct.receiptSnapshot.merging(directRestore?.receipts ?? [:]) { kept, _ in kept }
-            directRestore = held.isEmpty ? directRestore : (held, receipts)
+            let times = direct.receiptTimeSnapshot.merging(directRestore?.times ?? [:]) { kept, _ in kept }
+            directRestore = held.isEmpty ? directRestore : (held, receipts, times)
             return
         }
         if !directAccount.isEmpty && directAccount != account { directRestore = nil }
@@ -344,6 +348,7 @@ public final class ChatHub: ShellChatBridge {
         }
         parts.conversations = conversations
         parts.receipts = (direct?.receiptSnapshot ?? [:]).merging(directRestore?.receipts ?? [:]) { kept, _ in kept }
+        parts.receiptTimes = (direct?.receiptTimeSnapshot ?? [:]).merging(directRestore?.times ?? [:]) { kept, _ in kept }
         parts.replies = extras.snapshotThreads()
         parts.replyRoots = extras.snapshotReplyRoots()
         parts.reactions = extras.snapshotReactions()
@@ -733,6 +738,11 @@ public final class ChatHub: ShellChatBridge {
         if DirectMessageFrames.isDirect(conversation) { return direct?.receipt(message.id) ?? .sent }
         if OfficeFrames.isOffice(conversation) { return office?.receipt(message.id) ?? .sent }
         return .sent
+    }
+
+    public func receiptTimes(for message: ChatMessage) -> ChatReceiptTimes {
+        guard message.isSelf, DirectMessageFrames.isDirect(message.conversation) else { return ChatReceiptTimes() }
+        return direct?.receiptTime(message.id) ?? ChatReceiptTimes()
     }
 
     func roomSelfId(_ conversation: String) -> String {
