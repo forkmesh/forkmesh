@@ -13422,6 +13422,9 @@ private:
     int m_currentDiscussionNumber = -1;
     DiscussionInboxBackoff m_discussionInboxBackoff;
     NetworkBackoff m_pollBackoff;
+    QList<std::function<void()>> m_agentUsageRefreshWaiters;
+    bool m_agentUsageRefreshing = false;
+    qint64 m_agentUsageRefreshedAtMs = 0;
     // a refill notification waiting to ride the next signed
     // heartbeat (kept as flags, not fired directly, so it retries on the
     // periodic heartbeat timer if the immediate send fails).

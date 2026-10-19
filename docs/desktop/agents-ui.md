@@ -25,7 +25,7 @@ The toolbar has **Tool efficiency** (`src/AgentToolEfficiencyBoard.*`),
 **Announcer**. Watch is a Market package page in the rail (see
 [Watch](#watch-market-package-agent-watch)).
 
-### Usage page: Refresh and reset times (2026-10-20)
+### Usage page: Refresh and reset times (2026-10-19)
 
 The `usage` Market package's page is `MainWindow::buildAgentUsagePage`
 (`src/MainWindowAgentUsagePage.cpp`). Its **Refresh** button calls
@@ -38,7 +38,17 @@ the full path (top-bar meter, limit reminders, credits); any other account only
 gets its account-scoped settings written, so the meters on the page are a real
 re-read of each account rather than a redraw. Each account keeps its own poll
 backoff key (`claude-usage-<id>`), so a rate-limited account is skipped until
-its backoff ends. The button reads "Refreshing…" until the last account answers.
+its backoff ends, and a failed read keeps the server's `Retry-After`, as the
+regular poll does (`claudeUsageRetryAfterMs`). The button reads "Refreshing…"
+until the last account answers.
+
+Refreshes are coalesced: a call while one is running only joins its list of
+waiters (`m_agentUsageRefreshWaiters`), and a call within 30 seconds of the
+last finished one (`kAgentUsageRefreshMinMs`) answers from the stored readings
+without asking Anthropic again. Without that, the web page and both phones
+refreshing at once, or a paired client calling `agentops.usage {refresh: true}`
+in a loop, would send one request per account per call with the user's tokens
+and soon earn a 429 that also stalls the regular poll.
 
 Codex has no per-account read that works without running an agent: its limits
 arrive only from a running `codex app-server` (`account/rateLimits/read` and

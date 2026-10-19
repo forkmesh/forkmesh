@@ -294,6 +294,27 @@ qint64 exhaustedUsageResetMs(const QString &providerKey, const QString &model,
     return latest > nowMs ? latest : 0;
 }
 
+constexpr qint64 kAgentUsageRefreshMinMs = 30000;
+
+QNetworkRequest claudeUsageRequest(const QString &token)
+{
+    QNetworkRequest req(
+        QUrl(QStringLiteral("https://api.anthropic.com/api/oauth/usage")));
+    req.setRawHeader("Authorization", "Bearer " + token.toUtf8());
+    req.setRawHeader("anthropic-beta", "oauth-2025-04-20");
+    req.setRawHeader("Accept", "application/json");
+    return req;
+}
+
+qint64 claudeUsageRetryAfterMs(QNetworkReply *reply)
+{
+    bool ok = false;
+    const qint64 seconds = QString::fromLatin1(reply->rawHeader("Retry-After"))
+                               .trimmed()
+                               .toLongLong(&ok);
+    return ok && seconds > 0 ? seconds * 1000 : 0;
+}
+
 } // namespace
 
 void MainWindow::testOpenAiAgentKey()
@@ -1685,26 +1706,16 @@ void MainWindow::refreshClaudeCodeUsage(bool fromHover)
         return;
     }
 
-    QNetworkRequest req(
-        QUrl(QStringLiteral("https://api.anthropic.com/api/oauth/usage")));
-    req.setRawHeader("Authorization", "Bearer " + token.toUtf8());
-    req.setRawHeader("anthropic-beta", "oauth-2025-04-20");
-    req.setRawHeader("Accept", "application/json");
-
-    QNetworkReply *reply = m_networkAccess->get(req);
+    QNetworkReply *reply = m_networkAccess->get(claudeUsageRequest(token));
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, fromHover, pollKey, accountId] {
         const QByteArray body = reply->readAll();
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            const QByteArray retryAfter = reply->rawHeader("Retry-After");
-            bool retryAfterOk = false;
-            const qint64 retryAfterMs =
-                QString::fromLatin1(retryAfter).trimmed().toLongLong(&retryAfterOk) * 1000;
             m_pollBackoff.noteFailure(
                 pollKey, QDateTime::currentMSecsSinceEpoch(),
                 NetworkBackoff::kDefaultBaseMs, NetworkBackoff::kDefaultCapMs,
-                retryAfterOk && retryAfterMs > 0 ? retryAfterMs : 0);
+                claudeUsageRetryAfterMs(reply));
             if (fromHover)
                 flashUsageChart(m_navTokenUsage, false);
             return;
@@ -1720,6 +1731,26 @@ void MainWindow::refreshClaudeCodeUsage(bool fromHover)
 
 void MainWindow::refreshAgentUsageAccounts(std::function<void()> done)
 {
+    if (done)
+        m_agentUsageRefreshWaiters.append(std::move(done));
+    if (m_agentUsageRefreshing)
+        return;
+    const auto finish = [this] {
+        m_agentUsageRefreshing = false;
+        refreshAgentAccountUsageMenu(QStringLiteral("claude-code"));
+        scheduleAgentUsagePagesRefresh();
+        const QList<std::function<void()>> waiters =
+            std::exchange(m_agentUsageRefreshWaiters, {});
+        for (const std::function<void()> &waiter : waiters)
+            waiter();
+    };
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_agentUsageRefreshedAtMs > 0 &&
+        nowMs - m_agentUsageRefreshedAtMs < kAgentUsageRefreshMinMs) {
+        finish();
+        return;
+    }
+    m_agentUsageRefreshing = true;
     refreshCodexUsageRemaining();
     auto queue = std::make_shared<QList<AgentAccountProfile>>();
     if (m_networkAccess) {
@@ -1729,7 +1760,7 @@ void MainWindow::refreshAgentUsageAccounts(std::function<void()> done)
     }
     auto next = std::make_shared<std::function<void()>>();
     const std::weak_ptr<std::function<void()>> weakNext = next;
-    *next = [this, queue, weakNext, done = std::move(done)]() mutable {
+    *next = [this, queue, weakNext, finish] {
         const std::shared_ptr<std::function<void()>> next = weakNext.lock();
         while (next && !queue->isEmpty()) {
             const AgentAccountProfile profile = queue->takeFirst();
@@ -1743,11 +1774,7 @@ void MainWindow::refreshAgentUsageAccounts(std::function<void()> done)
             if (token.isEmpty() ||
                 !m_pollBackoff.ready(pollKey, QDateTime::currentMSecsSinceEpoch()))
                 continue;
-            QNetworkRequest req(
-                QUrl(QStringLiteral("https://api.anthropic.com/api/oauth/usage")));
-            req.setRawHeader("Authorization", "Bearer " + token.toUtf8());
-            req.setRawHeader("anthropic-beta", "oauth-2025-04-20");
-            req.setRawHeader("Accept", "application/json");
+            QNetworkRequest req = claudeUsageRequest(token);
             req.setTransferTimeout(15000);
             QNetworkReply *reply = m_networkAccess->get(req);
             connect(reply, &QNetworkReply::finished, this,
@@ -1755,8 +1782,10 @@ void MainWindow::refreshAgentUsageAccounts(std::function<void()> done)
                 const QByteArray body = reply->readAll();
                 reply->deleteLater();
                 if (reply->error() != QNetworkReply::NoError) {
-                    m_pollBackoff.noteFailure(pollKey,
-                                              QDateTime::currentMSecsSinceEpoch());
+                    m_pollBackoff.noteFailure(
+                        pollKey, QDateTime::currentMSecsSinceEpoch(),
+                        NetworkBackoff::kDefaultBaseMs, NetworkBackoff::kDefaultCapMs,
+                        claudeUsageRetryAfterMs(reply));
                 } else {
                     m_pollBackoff.noteSuccess(pollKey);
                     applyClaudeUsageResponse(
@@ -1766,10 +1795,8 @@ void MainWindow::refreshAgentUsageAccounts(std::function<void()> done)
             });
             return;
         }
-        refreshAgentAccountUsageMenu(QStringLiteral("claude-code"));
-        scheduleAgentUsagePagesRefresh();
-        if (done)
-            std::exchange(done, nullptr)();
+        m_agentUsageRefreshedAtMs = QDateTime::currentMSecsSinceEpoch();
+        finish();
     };
     (*next)();
 }
