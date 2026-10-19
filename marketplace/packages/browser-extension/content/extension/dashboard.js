@@ -15,6 +15,8 @@
   // The CRM page has read this name since extension 1.7.0.
   document.documentElement.dataset.forkmeshCrmExtension = version;
   const marketing = location.pathname.startsWith("/dashboard/marketing");
+  const crm = location.pathname.startsWith("/dashboard/crm");
+  if (crm) document.documentElement.dataset.forkmeshCrmZohoSetup = version;
   if (marketing) {
     document.documentElement.dataset.forkmeshMarketingCapture = version;
     document.documentElement.dataset.forkmeshMarketingXSetup = version;
@@ -36,6 +38,14 @@
     if (!PAGES.includes(event.data?.source)) return;
     if (event.data.type === "open-extensions") {
       chrome.runtime.sendMessage({ type: "fm-open-extensions" }).catch(() => null);
+      return;
+    }
+    if (crm && event.data.source === "forkmesh-crm-page" && ["crm-zoho-setup", "crm-zoho-setup-stop"].includes(event.data.type)) {
+      const request = String(event.data.request || "").slice(0, 64);
+      const type = event.data.type === "crm-zoho-setup" ? "fm-zoho-setup-start" : "fm-zoho-setup-stop";
+      chrome.runtime.sendMessage({ type, organization: String(event.data.organization || "").slice(0, 64) })
+        .then((response) => reply({ type: event.data.type, request, response: response || { ok: false } }))
+        .catch((error) => reply({ type: event.data.type, request, response: { ok: false, error: "extension_unavailable", message: String(error?.message || "") } }));
       return;
     }
     if (!marketing || event.data.source !== "forkmesh-marketing-page") return;
@@ -81,6 +91,12 @@
     }).then((response) => reply({ type: "marketing-capture", request, response: response || { ok: false } }))
       .catch((error) => reply({ type: "marketing-capture", request, response: { ok: false, error: "extension_unavailable", message: String(error?.message || "") } }));
   });
+
+  if (crm) {
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message?.type === "fm-zoho-setup-update") reply({ type: "crm-zoho-setup-update", setup: message.setup });
+    });
+  }
 
   if (marketing) {
     chrome.runtime.onMessage.addListener((message) => {
