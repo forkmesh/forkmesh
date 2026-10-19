@@ -70,7 +70,7 @@ final class DjVitalsTests: XCTestCase {
         XCTAssertEqual(long?.work.map(\.kind), [.wave])
         XCTAssertEqual(long?.marks.map(\.text), ["start A"])
         let report = vitals.report(now: now, alert: .none, context: [])
-        XCTAssertTrue(report.contains("80 ms, main thread busy 0 ms, layout and drawing 0 ms; inside: waveform draw 62.0 ms; around: start A"), report)
+        XCTAssertTrue(report.contains("80 ms, main thread busy 0 ms, layout and drawing 0 ms, 0 wakes, 0 studio view updates; inside: waveform draw 62.0 ms; around: start A"), report)
     }
 
     func testLongFramesTellAMainThreadThatWasBusyFromOneThatWasWaiting() {
@@ -120,6 +120,79 @@ final class DjVitalsTests: XCTestCase {
         let report = vitals.report(now: now, alert: .none, context: [])
         XCTAssertTrue(report.contains("70 ms, main thread busy 60 ms, layout and drawing 20 ms"), report)
         XCTAssertTrue(report.contains("of it layout and drawing ms/s"), report)
+    }
+
+    func testBusyTimeWithNoLayoutAndDrawingSaysItWasNotSeenInsteadOfZero() {
+        var vitals = DjVitals()
+        vitals.begin(at: 0)
+        var now = run(&vitals, from: 0, frames: 60)
+        vitals.awake(at: now + 0.001)
+        vitals.asleep(at: now + 0.157)
+        now += 0.16
+        vitals.frame(at: now, period: period)
+        now = run(&vitals, from: now, frames: 2)
+        XCTAssertFalse(vitals.commitSeen)
+        let report = vitals.report(now: now, alert: .none, context: [])
+        XCTAssertTrue(report.contains("of it layout and drawing ms/s " + DjVitals.commitUnseen), report)
+        XCTAssertTrue(report.contains("160 ms, main thread busy 156 ms, 1 wakes"), report)
+        XCTAssertFalse(report.contains("layout and drawing 0 ms"), report)
+    }
+
+    func testLongFramesTellComputingFromWaitingByTheMainThreadsCpuTime() {
+        var vitals = DjVitals()
+        vitals.begin(at: 0)
+        var now = 0.0
+        var cpu = 5.0
+        var app = 20.0
+        for _ in 0..<60 {
+            now += period
+            cpu += 0.002
+            app += 0.006
+            vitals.awake(at: now - 0.004)
+            vitals.asleep(at: now - 0.002)
+            vitals.frame(at: now, period: period, cpu: cpu, appCpu: app)
+        }
+        vitals.awake(at: now + 0.001)
+        vitals.asleep(at: now + 0.151)
+        now += 0.16
+        cpu += 0.03
+        app += 0.4
+        vitals.frame(at: now, period: period, cpu: cpu, appCpu: app)
+        let long = try? XCTUnwrap(vitals.longFrames.last)
+        XCTAssertEqual(long?.busyMs ?? 0, 150, accuracy: 0.01)
+        XCTAssertEqual(long?.cpuMs ?? 0, 30, accuracy: 0.01)
+        XCTAssertEqual(long?.wakes, 1)
+        XCTAssertTrue(vitals.cpuMeasured)
+        XCTAssertEqual(vitals.cpuMs, 59 * 2 + 30, accuracy: 0.01)
+        XCTAssertEqual(vitals.appCpuMs, 59 * 6 + 400, accuracy: 0.01)
+        XCTAssertEqual(vitals.wakes, 60)
+        let report = vitals.report(now: now, alert: .none, context: [])
+        XCTAssertTrue(report.contains("160 ms, main thread busy 150 ms, on the CPU 30 ms, 1 wakes, 0 studio view updates"), report)
+        XCTAssertTrue(report.contains("of it on the CPU ms/s "), report)
+        XCTAssertTrue(report.contains("run-loop wakes a second "), report)
+        XCTAssertTrue(report.contains("app CPU, all threads ms/s "), report)
+    }
+
+    func testStudioViewUpdatesAreCountedPerViewAndPerLongFrame() {
+        var vitals = DjVitals()
+        vitals.begin(at: 0)
+        var now = 0.0
+        for _ in 0..<120 {
+            vitals.viewed("waveform")
+            now += period
+            vitals.frame(at: now, period: period)
+        }
+        for _ in 0..<40 { vitals.viewed("deck info") }
+        vitals.viewed("waveform")
+        now += 0.08
+        vitals.frame(at: now, period: period)
+        XCTAssertEqual(vitals.views["waveform"], 121)
+        XCTAssertEqual(vitals.views["deck info"], 40)
+        XCTAssertEqual(vitals.longFrames.last?.views, 41)
+        let report = vitals.report(now: now, alert: .none, context: [])
+        XCTAssertTrue(report.contains("## Studio view updates (count, a second measured)\nwaveform: 121, "), report)
+        XCTAssertTrue(report.contains("\ndeck info: 40, "), report)
+        XCTAssertTrue(report.contains("80 ms, main thread busy 0 ms, layout and drawing 0 ms, 0 wakes, 41 studio view updates"), report)
     }
 
     func testTheReportHasTheBusyTimeOfEachSecond() {
@@ -253,7 +326,7 @@ final class DjVitalsTests: XCTestCase {
         let report = vitals.report(now: now, alert: DjVitalsAlert(reason: "x"), context: [("decks", "A playing")])
         for heading in ["# DJ studio vitals", "alert: x", "## Frames", "## Long frames", "## Main-thread work", "## Player ticks",
                         "## Web view scripts", "## Recent moments", "## Studio and device", "decks: A playing",
-                        "## App work on the main thread"] {
+                        "## App work on the main thread", "## Studio view updates"] {
             XCTAssertTrue(report.contains(heading), heading)
         }
         XCTAssertTrue(report.contains("probe 60 Hz"), report)
@@ -282,5 +355,7 @@ final class DjVitalsTests: XCTestCase {
             recorder.mark("m", at: Double(index))
         }
         XCTAssertEqual(recorder.snapshot.work[.wave]?.count, 200)
+        DispatchQueue.concurrentPerform(iterations: 200) { _ in recorder.viewed("record") }
+        XCTAssertEqual(recorder.snapshot.views["record"], 200)
     }
 }
