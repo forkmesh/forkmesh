@@ -7986,6 +7986,63 @@ void MainWindow::loadMutedLogCategories() const
     }
 }
 
+void MainWindow::saveMutedLogCategories() const
+{
+    QStringList saved(m_mutedLogCategories.cbegin(),
+                      m_mutedLogCategories.cend());
+    std::sort(saved.begin(), saved.end());
+    QSettings().setValue(kMutedLogCategoriesSetting, saved);
+}
+
+void MainWindow::toggleLogCategoryRecording(const QString &badge)
+{
+    const QString normalized = badge.trimmed().toUpper();
+    if (normalized.isEmpty())
+        return;
+    if (logCategoryRecording(normalized))
+        setLogCategoryEnabled(normalized, false);
+    else if (!loggingEnabled())
+        recordOnlyLogCategory(normalized);
+    else
+        setLogCategoryEnabled(normalized, true);
+}
+
+void MainWindow::recordOnlyLogCategory(const QString &badge)
+{
+    const QString normalized = badge.trimmed().toUpper();
+    if (normalized.isEmpty())
+        return;
+    loadMutedLogCategories();
+    const QStringList taxonomy = forkmesh::ui::LogActivityLights::badges();
+    m_mutedLogCategories = QSet<QString>(taxonomy.cbegin(), taxonomy.cend());
+    for (auto it = m_logFilterCounts.cbegin(); it != m_logFilterCounts.cend();
+         ++it)
+        m_mutedLogCategories.insert(it.key().trimmed().toUpper());
+    m_mutedLogCategories.remove(normalized);
+    m_mutedLogCategories.remove(QString());
+    saveMutedLogCategories();
+    setLoggingEnabled(true);
+    rebuildLogFilterButtons();
+    logSystemFrom(QStringLiteral("Logs: only %1 lines are recorded.")
+                      .arg(normalized),
+                  forkmesh::logSourceRelativePath(__FILE__), __LINE__,
+                  forkmesh::LogSeverity::Informational);
+}
+
+void MainWindow::recordAllLogCategories()
+{
+    loadMutedLogCategories();
+    const bool hadMuted = !m_mutedLogCategories.isEmpty();
+    m_mutedLogCategories.clear();
+    saveMutedLogCategories();
+    setLoggingEnabled(true);
+    rebuildLogFilterButtons();
+    if (hadMuted)
+        logSystemFrom(QStringLiteral("Logs: every log type is recorded."),
+                      forkmesh::logSourceRelativePath(__FILE__), __LINE__,
+                      forkmesh::LogSeverity::Informational);
+}
+
 void MainWindow::setLogCategoryEnabled(const QString &badge, bool enabled)
 {
     const QString normalized = badge.trimmed().toUpper();
@@ -7998,10 +8055,7 @@ void MainWindow::setLogCategoryEnabled(const QString &badge, bool enabled)
         m_mutedLogCategories.remove(normalized);
     else
         m_mutedLogCategories.insert(normalized);
-    QStringList saved(m_mutedLogCategories.cbegin(),
-                      m_mutedLogCategories.cend());
-    std::sort(saved.begin(), saved.end());
-    QSettings().setValue(kMutedLogCategoriesSetting, saved);
+    saveMutedLogCategories();
     rebuildLogFilterButtons(); // the chip carries the off marker
     // Logged rather than shown as a notice: this is a change to what the log records, so
     // the log is where it belongs. Muting INFO silences this very line, which
@@ -8330,6 +8384,51 @@ void MainWindow::rebuildLogFilterButtons()
         chip->setAccentColor(QColor(accent));
         chip->setBadgeCount(logFilterChipCount(category));
         chip->setBadgeAboveIcon(true);
+        auto *record = new QCheckBox;
+        record->setObjectName(QStringLiteral("logRecordCheck"));
+        record->setCursor(Qt::PointingHandCursor);
+        record->setProperty("logChipCategory", category);
+        if (category.isEmpty()) {
+            loadMutedLogCategories();
+            const bool every =
+                loggingEnabled() && m_mutedLogCategories.isEmpty();
+            record->setCheckState(every ? Qt::Checked
+                                  : loggingEnabled() ? Qt::PartiallyChecked
+                                                     : Qt::Unchecked);
+            record->setToolTip(
+                every ? QStringLiteral("Every log type is recorded. Untick to "
+                                       "turn all logging off.")
+                      : QStringLiteral("Tick to record every log type."));
+            record->setAccessibleName(QStringLiteral("Record every log type"));
+            connect(record, &QCheckBox::clicked, this, [this, every] {
+                if (every)
+                    setLoggingEnabled(false);
+                else
+                    recordAllLogCategories();
+            });
+        } else {
+            record->setChecked(logCategoryRecording(category));
+            record->setToolTip(
+                record->isChecked()
+                    ? QStringLiteral("%1 lines are recorded. Untick to stop "
+                                     "recording them; the choice is kept "
+                                     "across restarts.")
+                          .arg(label)
+                    : loggingEnabled()
+                          ? QStringLiteral("Tick to record %1 lines; the "
+                                           "choice is kept across restarts.")
+                                .arg(label)
+                          : QStringLiteral("Logging is off. Tick to record "
+                                           "only %1 lines, then tick any "
+                                           "other types to add them.")
+                                .arg(label));
+            record->setAccessibleName(
+                QStringLiteral("Record %1 lines").arg(label));
+            connect(record, &QCheckBox::clicked, this, [this, category] {
+                toggleLogCategoryRecording(category);
+            });
+        }
+        chip->setFooterWidget(record);
         m_logFilterGroup->addButton(chip);
         m_logFilterRow->addWidget(chip);
         connect(chip, &QPushButton::clicked, this, [this, category] {
@@ -8490,6 +8589,13 @@ QPushButton *MainWindow::testLogFilterChip(const QString &category) const
             return chip;
     }
     return nullptr;
+}
+
+QCheckBox *MainWindow::testLogRecordCheck(const QString &category) const
+{
+    auto *chip = dynamic_cast<forkmesh::ui::VerticalIconButton *>(
+        testLogFilterChip(category));
+    return chip ? qobject_cast<QCheckBox *>(chip->footerWidget()) : nullptr;
 }
 
 QStringList MainWindow::testLogFilterChipLabels() const

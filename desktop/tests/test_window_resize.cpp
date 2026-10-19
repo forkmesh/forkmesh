@@ -5045,6 +5045,80 @@ void checkLoggingAllOff(MainWindow &window)
     window.testResetNetworkLog();
 }
 
+void checkLogRecordCheckboxes(MainWindow &window)
+{
+    window.testShowLogSection();
+    window.testResetNetworkLog();
+    window.testSetLoggingEnabled(true);
+    QApplication::processEvents();
+    auto *all = window.testLogRecordCheck(QString());
+    auto *db = window.testLogRecordCheck(QStringLiteral("DB"));
+    check(all && db && all->checkState() == Qt::Checked && db->isChecked(),
+          QStringLiteral("each log type chip carries a checked record box"));
+    if (!all || !db)
+        return;
+
+    all->click();
+    QApplication::processEvents();
+    db = window.testLogRecordCheck(QStringLiteral("DB"));
+    check(!window.testLoggingEnabled() && db && !db->isChecked(),
+          QStringLiteral("unticking All turns logging off"));
+    if (!db)
+        return;
+
+    db->click();
+    QApplication::processEvents();
+    auto *error = window.testLogRecordCheck(QStringLiteral("ERROR"));
+    const QStringList muted = QSettings()
+                                  .value(QStringLiteral("logs/mutedCategories"))
+                                  .toStringList();
+    check(window.testLoggingEnabled() &&
+              window.testLogCategoryEnabled(QStringLiteral("DB")) &&
+              !window.testLogCategoryEnabled(QStringLiteral("ERROR")) &&
+              !muted.contains(QStringLiteral("DB")) &&
+              muted.contains(QStringLiteral("ERROR")) &&
+              muted.contains(QStringLiteral("INFO")) && error &&
+              !error->isChecked() &&
+              window.testLogRecordCheck(QStringLiteral("DB"))->isChecked(),
+          QStringLiteral("ticking a type while logging is off records only "
+                         "that type, and the choice is saved"));
+    if (!error)
+        return;
+
+    error->click();
+    QApplication::processEvents();
+    window.testLogSystem(QStringLiteral("Error: recorded by its checkbox"));
+    window.testLogSystem(QStringLiteral("Mirror sync finished unrecorded"));
+    QApplication::processEvents();
+    bool sawError = false;
+    bool sawPlain = false;
+    for (const QString &line : window.testNetworkLog()) {
+        sawError = sawError || line.contains(QStringLiteral("recorded by its"));
+        sawPlain = sawPlain || line.contains(QStringLiteral("finished unrecorded"));
+    }
+    all = window.testLogRecordCheck(QString());
+    check(window.testLogCategoryEnabled(QStringLiteral("ERROR")) && sawError &&
+              !sawPlain && all && all->checkState() == Qt::PartiallyChecked,
+          QStringLiteral("ticking a second type adds it; unticked types stay "
+                         "unrecorded"));
+    if (!all)
+        return;
+
+    all->click();
+    QApplication::processEvents();
+    check(window.testLoggingEnabled() &&
+              window.testLogCategoryEnabled(QStringLiteral("INFO")) &&
+              QSettings()
+                  .value(QStringLiteral("logs/mutedCategories"))
+                  .toStringList()
+                  .isEmpty(),
+          QStringLiteral("ticking All records every type again"));
+
+    QSettings().remove(QStringLiteral("logs/mutedCategories"));
+    QSettings().remove(QStringLiteral("logs/allOff"));
+    window.testResetNetworkLog();
+}
+
 // adhoc #1613: the Worker tail has no window of its own any more. Its traffic is
 // this log's CLOUD category, and the cloud icon is that category's chip in the
 // quick-filter row — a filter like every other chip beside it, which also
@@ -20046,6 +20120,7 @@ else:
         checkCloudLogMerged(window);
         checkLogCategoryMuteAndDelete(window);
         checkLoggingAllOff(window);
+        checkLogRecordCheckboxes(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -22215,6 +22290,7 @@ else:
     checkCloudLogMerged(window);
     checkLogCategoryMuteAndDelete(window);
     checkLoggingAllOff(window);
+    checkLogRecordCheckboxes(window);
 
     checkInlinePageNotices(window);
     checkPromptFlight(window);

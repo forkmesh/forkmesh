@@ -8458,7 +8458,29 @@ public:
     }
     bool inRail() const { return m_inRail; }
 
+    void setFooterWidget(QWidget *footer)
+    {
+        if (m_footer == footer)
+            return;
+        if (m_footer)
+            m_footer->deleteLater();
+        m_footer = footer;
+        if (footer) {
+            footer->setParent(this);
+            footer->show();
+        }
+        updateGeometry();
+        placeFooter();
+    }
+    QWidget *footerWidget() const { return m_footer; }
+
 protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        QPushButton::resizeEvent(event);
+        placeFooter();
+    }
+
     void paintEvent(QPaintEvent *) override
     {
         QPainter p(this);
@@ -8592,7 +8614,20 @@ private:
     // The badge band pushes the glyph down by its own height, and the tile
     // grows by the same amount so the caption keeps its room underneath.
     int iconTop() const { return m_badgeAbove ? kBadgeH + 1 : 6; }
-    int tileHeight() const { return m_badgeAbove ? kHeight + kBadgeH - 8 : kHeight; }
+    int bodyHeight() const { return m_badgeAbove ? kHeight + kBadgeH - 8 : kHeight; }
+    int footerHeight() const
+    {
+        return m_footer ? m_footer->sizeHint().height() : 0;
+    }
+    int tileHeight() const { return bodyHeight() + footerHeight(); }
+    void placeFooter()
+    {
+        if (!m_footer)
+            return;
+        const QSize size = m_footer->sizeHint();
+        m_footer->setGeometry((width() - size.width()) / 2, bodyHeight() - 2,
+                              size.width(), size.height());
+    }
 
     static constexpr int kIconPx = 16;
     static constexpr int kHeight = 44;
@@ -8605,6 +8640,7 @@ private:
     bool m_attentionLightOn = false;
     bool m_inRail = false;
     QTimer *m_attentionTimer = nullptr;
+    QPointer<QWidget> m_footer;
     QString m_iconName; // empty: paint the QIcon set by setOcticon instead
     QColor m_accent;    // invalid: the rail's neutral grey/hover colours
 };

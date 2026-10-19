@@ -136,3 +136,21 @@ it is recorded, stops every network log feed (Worker tail, node SSH streams,
 host feeds, provider inventory polls) and the deploy-log follower, and flushes
 the queue with a final `Logs: all logging is off.` line. Turning it back on
 restarts each feed whose own setting is on.
+
+## Recording only some log types
+
+Each category chip on the Log page has a record checkbox under it, a shortcut
+for the Log types dialog's switches (`logs/mutedCategories`), so the choice
+survives a restart. A ticked box means the category is recorded right now:
+logging is on and the category is not muted.
+
+- Ticking a box while all logging is off turns logging on for that category
+  alone (every other category is muted), so picking a few types from the off
+  state is a matter of ticking each one.
+- Ticking a box while logging is on adds that category back; unticking mutes it.
+- The **All** box is checked when every category is recorded, partly checked
+  when some are muted, and empty while logging is off. Unticking it turns all
+  logging off; ticking it unmutes everything and turns logging on.
+
+Muted categories still let their network feeds run; only **Stop logging**
+stops those.
