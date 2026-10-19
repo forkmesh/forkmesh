@@ -239,7 +239,7 @@ static void discoveryTests()
         check(merged.size() == 1, "live sessions are merged by pid");
     }
 
-    const QStringList dirs = configDirs(QStringLiteral("/home/u"), root.path(),
+    const QStringList dirs = configDirs(QStringLiteral("/home/u"), root.filePath(QStringLiteral("agent-accounts")),
                                         {config, QStringLiteral("/home/u/.claude/")});
     check(dirs.first() == QLatin1String("/home/u/.claude"), "home config dir first");
     check(dirs.count(QStringLiteral("/home/u/.claude")) == 1, "config dirs are unique");

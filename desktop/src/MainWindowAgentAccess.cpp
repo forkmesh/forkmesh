@@ -47,7 +47,8 @@ forkmesh::projects::AgentAccess savedProjectAccess()
 
 QStringList agentPrivateRoots()
 {
-    return {forkmesh::paths::dataRoot(),   forkmesh::paths::localDataRoot(),
+    return {forkmesh::paths::dataDir(),    forkmesh::paths::dataRoot(),
+            forkmesh::paths::localDataRoot(),
             forkmesh::paths::configRoot(), forkmesh::paths::settingsDir(),
             forkmesh::paths::cacheRoot(),  forkmesh::paths::stateRoot(),
             forkmesh::paths::logsDir(),    forkmesh::paths::sshDir()};

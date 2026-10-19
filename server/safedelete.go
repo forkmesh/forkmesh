@@ -17,7 +17,8 @@ const (
 	deleteOwnClone
 )
 
-var safeDeleteProjectRoots = []string{"src", "data", "config", "ssh", "state", "logs"}
+var safeDeleteProjectRoots = []string{"src", "data", "config", "ssh", "state", "logs",
+	"data/core", "data/core/config", "data/core/ssh", "data/core/state", "data/core/logs"}
 
 var safeDeleteSharedFolders = map[string]bool{
 	"bin": true, "builds": true, "cache": true, "release": true, "tmp": true,
@@ -117,7 +118,7 @@ func safeDeleteProtectedRoots() []safeDeleteRoot {
 		add(project, "project")
 		for _, sub := range safeDeleteProjectRoots {
 			kind := "owned"
-			if sub == "src" || sub == "ssh" {
+			if sub == "src" || sub == "ssh" || sub == "data/core/ssh" {
 				kind = "strict"
 			}
 			add(filepath.Join(project, sub), kind)

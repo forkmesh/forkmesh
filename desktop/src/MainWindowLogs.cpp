@@ -2576,14 +2576,14 @@ QString ipCountryDir()
 
 QString coreLogCursorPath()
 {
-    return forkmesh::paths::dataRoot() +
-           QStringLiteral("/fleet_logs/cursors.json");
+    return forkmesh::paths::dataPath(QStringLiteral("fleet_logs")) +
+           QStringLiteral("/cursors.json");
 }
 
 QString fleetInventoryPath()
 {
-    return forkmesh::paths::dataRoot() +
-           QStringLiteral("/fleet_logs/vultr-inventory.json");
+    return forkmesh::paths::dataPath(QStringLiteral("fleet_logs")) +
+           QStringLiteral("/vultr-inventory.json");
 }
 
 QString fleetLineBadge(const QString &text)
@@ -2829,8 +2829,8 @@ void MainWindow::startDeployLogFollower()
     }
     if (!m_deployLogFollower) {
         m_deployLogFollower = new forkmesh::deploylogs::DeployLogFollower(
-            forkmesh::paths::dataRoot() +
-                QStringLiteral("/fleet_logs/deploy_cursor.json"),
+            forkmesh::paths::dataPath(QStringLiteral("fleet_logs")) +
+                QStringLiteral("/deploy_cursor.json"),
             [this](const QString &text, const QString &category) {
                 logSystemFrom(
                     forkmesh::control::redactProcessOutput(text),

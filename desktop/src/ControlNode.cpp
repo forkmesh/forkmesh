@@ -7141,9 +7141,15 @@ bool completeSystemDataIsBulk(const QString &topLevelName)
         QStringLiteral("network_log.d"),          // rotated 30-day log archive
         QStringLiteral("public-mirror-archives"),
         QStringLiteral("pull-meta"),              // cached forkmesh/pulls copies
+        QStringLiteral("pull-requests"),
         QStringLiteral("repo-preview-cache"),
+        QStringLiteral("cache"),
+        QStringLiteral("logs"),
     };
-    return bulk.contains(topLevelName.trimmed());
+    QString name = topLevelName.trimmed();
+    if (name.startsWith(QLatin1String("core/")))
+        name = name.mid(5);
+    return bulk.contains(name);
 }
 
 // code-health: allow(deep-nested-loop, dir-walk-in-loop) only called from QtConcurrent::run in MainWindow::startSystemExportSurvey()
@@ -7158,10 +7164,20 @@ QList<CompleteSystemDataEntry> surveyCompleteSystemApplicationData(
 
     const QDir::Filters filters = QDir::AllEntries | QDir::NoDotAndDotDot |
                                   QDir::Hidden | QDir::System;
-    const QFileInfoList top = QDir(appData).entryInfoList(filters, QDir::Name);
-    for (const QFileInfo &info : top) {
+    QList<QPair<QString, QFileInfo>> top;
+    for (const QFileInfo &info : QDir(appData).entryInfoList(filters, QDir::Name)) {
+        if (info.isDir() && !info.isSymLink() && info.fileName() == QLatin1String("core")) {
+            for (const QFileInfo &child :
+                 QDir(info.absoluteFilePath()).entryInfoList(filters, QDir::Name))
+                top.append({QStringLiteral("core/") + child.fileName(), child});
+            continue;
+        }
+        top.append({info.fileName(), info});
+    }
+    for (const auto &named : top) {
+        const QFileInfo &info = named.second;
         CompleteSystemDataEntry entry;
-        entry.name = info.fileName();
+        entry.name = named.first;
         entry.bulk = completeSystemDataIsBulk(entry.name);
         if (info.isSymLink() || (!info.isDir() && !info.isFile())) {
             entry.skippedEntries = 1;
@@ -7269,14 +7285,12 @@ QJsonObject createCompleteSystemBundle(
                                        QDir::Hidden | QDir::System,
                                    QDir::Name);
             for (const QFileInfo &info : children) {
-                if (relativeDir.isEmpty() &&
-                    excludedNames.contains(info.fileName())) {
-                    continue;
-                }
                 const QString relativePath =
                     relativeDir.isEmpty()
                         ? info.fileName()
                         : relativeDir + QLatin1Char('/') + info.fileName();
+                if (excludedNames.contains(relativePath))
+                    continue;
                 if (!safeBundleRelativePath(relativePath))
                     return fail(QStringLiteral("Application data contains an unsafe path."));
                 // A JSON bundle carries bytes, so a symbolic link, FIFO, socket

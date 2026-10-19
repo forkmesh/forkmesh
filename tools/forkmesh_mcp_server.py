@@ -130,7 +130,7 @@ LAYOUT = forkmesh_paths.resolve()
 KEY_PATH = LAYOUT.identity_key
 CONNECTOR_PATH = Path(
     os.environ.get("FORKMESH_MCP_CONNECTOR")
-    or LAYOUT.data / "mcp/connector.json")
+    or LAYOUT.data_path("mcp") / "connector.json")
 
 # Tools that change node/repository state or send node-authorized traffic.
 WRITE_TOOLS = {

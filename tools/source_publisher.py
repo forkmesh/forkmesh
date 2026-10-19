@@ -1286,7 +1286,7 @@ def status_report(paths, run=subprocess.run) -> dict:
         "gateways": [{"name": item.get("name"), "ok": item.get("ok"),
                       "diverged": item.get("diverged")}
                      for item in last.get("gateways") or []],
-        "fanout": read_json(paths.home_dir / "state" / "fanout" / "status.json"),
+        "fanout": read_json(paths.home_root("state") / "fanout" / "status.json"),
         "flagship": unit_state(SOURCE_UNIT, run=run),
         "hold": active_hold(paths.publisher_state / "source-hold.json"),
     }

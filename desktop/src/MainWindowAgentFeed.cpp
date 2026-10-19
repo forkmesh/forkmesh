@@ -168,7 +168,7 @@ void MainWindow::scanMachineAgents()
     const quint64 generation = ++m_machineAgentScanGeneration;
     m_machineAgentScanInFlight = true;
     const QString home = QDir::homePath();
-    const QString dataRoot = forkmesh::paths::dataRoot();
+    const QString accountsRoot = forkmesh::paths::dataPath(QStringLiteral("agent-accounts"));
     const QString terminalDir = TerminalHandoff::runtimeDir();
     struct Scan {
         QList<MachineAgent> agents;
@@ -177,7 +177,7 @@ void MainWindow::scanMachineAgents()
         QHash<QString, QList<qint64>> surfacedPids;
     };
     runOffThread<Scan>(
-        [ownRoots, ownCwds, foreignRoots, surfaced, home, dataRoot, terminalDir] {
+        [ownRoots, ownCwds, foreignRoots, surfaced, home, accountsRoot, terminalDir] {
             const SystemStats::ProcessTable table = SystemStats::processTable();
             Scan result;
             QList<MachineAgent> &agents = result.agents;
@@ -188,7 +188,7 @@ void MainWindow::scanMachineAgents()
                     extraDirs.append(agent.configDir);
             }
             result.peers = ClaudePeerMessaging::liveSessions(
-                ClaudePeerMessaging::configDirs(home, dataRoot, extraDirs));
+                ClaudePeerMessaging::configDirs(home, accountsRoot, extraDirs));
             result.terminals = TerminalHandoff::liveSessions(terminalDir);
             if (surfaced.isEmpty())
                 return result;

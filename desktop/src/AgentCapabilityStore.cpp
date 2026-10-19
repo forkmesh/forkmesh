@@ -54,10 +54,8 @@ bool hasPublicPermissions(QFileDevice::Permissions permissions)
 
 QString AgentCapabilityStore::defaultPath()
 {
-    const QString root =
-        forkmesh::paths::dataRoot();
-    return QDir(root).filePath(
-        QStringLiteral("agent-runtime/capability-grants.json"));
+    return QDir(forkmesh::paths::dataPath(QStringLiteral("agent-runtime")))
+        .filePath(QStringLiteral("capability-grants.json"));
 }
 
 bool AgentCapabilityStore::load(const QString &path,

@@ -245,8 +245,8 @@ AgentRunner::Config MainWindow::agentConfigForProvider(
             QSettings().value(kCodexModelSetting).toString());
         config.preferApiKeyAuth = true;
         config.isolatedHome =
-            forkmesh::paths::dataRoot() +
-            QStringLiteral("/agents/codex-api-home");
+            forkmesh::paths::dataPath(QStringLiteral("agents")) +
+            QStringLiteral("/codex-api-home");
     }
     return config;
 }

@@ -1751,11 +1751,10 @@ QStringList MainWindow::saveWebAgentImages(const RepositoryRecord &repo,
     QStringList paths;
     if (images.isEmpty())
         return paths;
-    QString baseDir =
-        forkmesh::paths::dataRoot();
-    if (baseDir.isEmpty())
-        baseDir = QDir::tempPath();
-    QDir dir(baseDir + QStringLiteral("/agent-screenshots/%1-%2-%3")
+    const QString baseDir = forkmesh::paths::dataRoot().isEmpty()
+                                ? QDir::tempPath() + QStringLiteral("/agent-screenshots")
+                                : forkmesh::paths::dataPath(QStringLiteral("agent-screenshots"));
+    QDir dir(baseDir + QStringLiteral("/%1-%2-%3")
                            .arg(repo.owner, repo.name)
                            .arg(QDateTime::currentMSecsSinceEpoch()));
     if (!dir.mkpath(QStringLiteral(".")))

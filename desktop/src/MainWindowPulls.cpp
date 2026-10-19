@@ -11895,8 +11895,8 @@ QString MainWindow::pullReviewCheckoutPath(const RepositoryRecord &repo,
         }
         return out.left(60);
     };
-    return forkmesh::paths::localDataRoot() +
-           QStringLiteral("/pull-review/%1__%2/pr-%3")
+    return forkmesh::paths::dataPath(QStringLiteral("pull-review")) +
+           QStringLiteral("/%1__%2/pr-%3")
                .arg(safe(repo.owner), safe(repo.name), safe(slug));
 }
 

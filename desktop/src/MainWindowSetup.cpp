@@ -60,8 +60,8 @@ QString MainWindow::chatHistoryPathForServerUrl(const QString &serverUrl,
         QCryptographicHash::hash((url + "\n" + room).toUtf8(),
                                  QCryptographicHash::Sha256)
             .toHex());
-    return forkmesh::paths::dataRoot() +
-           "/chat_history/" + key + ".json";
+    return forkmesh::paths::dataPath(QStringLiteral("chat_history")) +
+           "/" + key + ".json";
 }
 
 QStringList MainWindow::chatHistoryCompatibilityPaths() const
@@ -88,8 +88,8 @@ QString MainWindow::chatHistoryPath() const
     const QString key = chatHistoryKey();
     if (key.isEmpty())
         return {};
-    return forkmesh::paths::dataRoot() +
-           "/chat_history/" + key + ".json";
+    return forkmesh::paths::dataPath(QStringLiteral("chat_history")) +
+           "/" + key + ".json";
 }
 
 QString MainWindow::avatarCacheDirectory() const
@@ -100,8 +100,8 @@ QString MainWindow::avatarCacheDirectory() const
     const QString directory = QString::fromLatin1(
         QCryptographicHash::hash(instance.toUtf8(), QCryptographicHash::Sha256)
             .toHex());
-    return forkmesh::paths::dataRoot() +
-           "/avatars/" + directory;
+    return forkmesh::paths::dataPath(QStringLiteral("avatars")) +
+           "/" + directory;
 }
 
 QString MainWindow::avatarCachePath(const QString &peerId) const
@@ -3328,8 +3328,8 @@ void MainWindow::startLocalMesh()
     // The room's history, and the messages still waiting for a device, live
     // with this identity, so a restart neither loses nor strands them.
     m_localMesh->setHistoryFile(
-        forkmesh::paths::dataRoot() +
-        QStringLiteral("/local_mesh/history-") +
+        forkmesh::paths::dataPath(QStringLiteral("local_mesh")) +
+        QStringLiteral("/history-") +
         QString::fromLatin1(
             QCryptographicHash::hash(m_profileIdentity.publicKey().toUtf8(),
                                      QCryptographicHash::Sha256)
@@ -3848,8 +3848,7 @@ void MainWindow::purgeDiscordAvatarCache()
         else
             ++it;
     }
-    const QDir dir(forkmesh::paths::dataRoot() +
-                   QStringLiteral("/avatars"));
+    const QDir dir(forkmesh::paths::dataPath(QStringLiteral("avatars")));
     if (!dir.exists())
         return;
     // Each cached avatar starts with its peer id on the first line (see

@@ -1318,8 +1318,8 @@ QString MainWindow::createAgentAccount(const QString &provider, const QString &l
     const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     const QString configDir =
         existingConfigDir.isEmpty()
-            ? forkmesh::paths::dataRoot() +
-                  QStringLiteral("/agent-accounts/%1/%2")
+            ? forkmesh::paths::dataPath(QStringLiteral("agent-accounts")) +
+                  QStringLiteral("/%1/%2")
                       .arg(agentAccountProviderKey(provider), id)
             : existingConfigDir;
     if (!QDir().mkpath(configDir))
@@ -1465,8 +1465,8 @@ bool MainWindow::finishClaudeAccountLogin(const QString &stagingDir)
         targetDir = stagingDir;
         if (fileLogin) {
             const QString accountDir =
-                forkmesh::paths::dataRoot() +
-                QStringLiteral("/agent-accounts/claude/") +
+                forkmesh::paths::dataPath(QStringLiteral("agent-accounts")) +
+                QStringLiteral("/claude/") +
                 QUuid::createUuid().toString(QUuid::WithoutBraces);
             if (QDir().rename(stagingDir, accountDir))
                 targetDir = accountDir;
@@ -1653,8 +1653,8 @@ bool MainWindow::deleteAgentAccount(const QString &provider,
     QFile::remove(agentAccountCredentialPath(provider, configDir));
     const QString loginRoot = QDir::cleanPath(claudeAccountLoginRoot());
     if (configDir.startsWith(loginRoot + QLatin1Char('/')))
-        QDir().rename(configDir, forkmesh::paths::dataRoot() +
-                                     QStringLiteral("/agent-accounts/%1/%2")
+        QDir().rename(configDir, forkmesh::paths::dataPath(QStringLiteral("agent-accounts")) +
+                                     QStringLiteral("/%1/%2")
                                          .arg(key, accountId));
     claudeCliIdentityCache().remove(configDir);
 

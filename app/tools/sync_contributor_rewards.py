@@ -40,7 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
 import forkmesh_paths  # noqa: E402  (shared resolver lives with the tools)
 
 DEFAULT_MIRROR_GIT_DIR = (
-    forkmesh_paths.resolve(forkmesh_paths.HOME_PROJECT).data / "mirrors"
+    forkmesh_paths.resolve(forkmesh_paths.HOME_PROJECT).data_path("mirrors")
     / "forkmesh-forkmesh.git")
 PULL_REF_PREFIX = "refs/heads/forkmesh/pull/"
 PULL_REF_RE = re.compile(r"^refs/heads/forkmesh/pull/([1-9][0-9]{0,8})$")

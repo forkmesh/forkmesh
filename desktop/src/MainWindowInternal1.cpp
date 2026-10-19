@@ -812,8 +812,8 @@ QString claudeAccountStateFile(const AgentAccountProfile &profile)
 
 QString claudeAccountLoginRoot()
 {
-    return forkmesh::paths::dataRoot() +
-           QStringLiteral("/agent-accounts/claude-login");
+    return forkmesh::paths::dataPath(QStringLiteral("agent-accounts")) +
+           QStringLiteral("/claude-login");
 }
 
 QMutex &agentAccountProfileCacheMutex()
@@ -1826,8 +1826,7 @@ bool hasLinkedTeamChatAgentAccount()
 QString claudeAgentScriptPath(const QString &directory)
 {
     const QString dir = directory.isEmpty()
-                            ? forkmesh::paths::dataRoot() +
-                                  QStringLiteral("/agents")
+                            ? forkmesh::paths::dataPath(QStringLiteral("agents"))
                             : directory;
     QDir().mkpath(dir);
     const QString path = dir + QStringLiteral("/forkmesh_claude_agent.py");
@@ -1855,8 +1854,7 @@ QString defaultClaudeCommand()
 QString cloudflareAgentScriptPath(const QString &directory)
 {
     const QString dir = directory.isEmpty()
-                            ? forkmesh::paths::dataRoot() +
-                                  QStringLiteral("/agents")
+                            ? forkmesh::paths::dataPath(QStringLiteral("agents"))
                             : directory;
     QDir().mkpath(dir);
     const QString path = dir + QStringLiteral("/forkmesh_cloudflare_agent.py");

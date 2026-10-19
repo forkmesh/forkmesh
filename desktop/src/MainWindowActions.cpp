@@ -44,8 +44,8 @@ namespace {
 
 QString actionRunLogPath(const ActionRun &run)
 {
-    return forkmesh::paths::dataRoot() +
-           QStringLiteral("/actions/runs/") + run.repoKey() + QLatin1Char('/') +
+    return forkmesh::paths::dataPath(QStringLiteral("actions")) +
+           QStringLiteral("/runs/") + run.repoKey() + QLatin1Char('/') +
            QString::number(run.id) + QStringLiteral("/log.txt");
 }
 
@@ -305,8 +305,7 @@ void MainWindow::initActionStore()
     if (m_actionStore)
         return;
     const QString root =
-        forkmesh::paths::dataRoot() +
-        QStringLiteral("/actions");
+        forkmesh::paths::dataPath(QStringLiteral("actions"));
     m_actionStore = std::make_shared<ActionStore>(root);
     const int concurrency = qBound(2, QThread::idealThreadCount(), 4);
     for (int i = 0; i < concurrency; ++i) {

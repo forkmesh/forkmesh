@@ -227,7 +227,14 @@ QString destructiveKey(GlobalAgentRules::Destructive destructive)
 
 QString globalRulesPath(const QString &homeProjectDir)
 {
-    return QDir(homeProjectDir).filePath(QStringLiteral("config/agent-rules.json"));
+    const QString organized =
+        QDir(homeProjectDir).filePath(QStringLiteral("data/core/config/agent-rules.json"));
+    const QString previous = QDir(homeProjectDir).filePath(QStringLiteral("config/agent-rules.json"));
+    const QFileInfo oldConfig(QDir(homeProjectDir).filePath(QStringLiteral("config")));
+    if (!QFileInfo::exists(organized) && oldConfig.isDir() && !oldConfig.isSymLink() &&
+        QFileInfo::exists(previous))
+        return previous;
+    return organized;
 }
 
 GlobalAgentRules loadGlobalRules(const QString &path)

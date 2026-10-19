@@ -1517,7 +1517,7 @@ QString pullMetaCheckoutDir(const QString &workTree)
                                 QCryptographicHash::Sha256)
                                 .toHex()
                                 .left(16);
-    return forkmesh::paths::dataRoot() + "/pull-meta/" + QString::fromUtf8(key);
+    return forkmesh::paths::dataPath(QStringLiteral("pull-meta")) + "/" + QString::fromUtf8(key);
 }
 
 QString existingPullMetaCheckout(const QString &workTree)
@@ -1568,7 +1568,7 @@ QString PullStore::metaWorkTree() const
                            {"worktree", "add", "-b", "forkmesh/pulls", dir, "HEAD"});
     };
     if (!link()) {
-        forkmesh::safedelete::removeTree(dir, forkmesh::paths::dataRoot() + "/pull-meta",
+        forkmesh::safedelete::removeTree(dir, forkmesh::paths::dataPath(QStringLiteral("pull-meta")),
                                          nullptr,
                                          forkmesh::safedelete::Allow::OwnWorktree);
         runGit(m_workTree, {"worktree", "prune"}, nullptr, nullptr);

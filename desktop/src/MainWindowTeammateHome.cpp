@@ -329,8 +329,8 @@ QString MainWindow::teammateWorkspaceRoot(int repoIndex) const
     const QString digest = teammateRepoDigest(repoIndex);
     if (digest.isEmpty())
         return {};
-    return QDir(forkmesh::paths::dataRoot())
-        .filePath(QStringLiteral("teammate-workspaces/%1").arg(digest));
+    return QDir(forkmesh::paths::dataPath(QStringLiteral("teammate-workspaces")))
+        .filePath(QStringLiteral("%1").arg(digest));
 }
 
 Workspace MainWindow::loadTeammateWorkspace(const QString &id, int repoIndex) const
