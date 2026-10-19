@@ -3003,6 +3003,222 @@ async function xSetupBack() {
   return { ok: true };
 }
 
+const ZOHO_SETUP_KEY = "zohoSetup";
+const ZOHO_SETUP_TTL = 60 * 60 * 1000;
+const ZOHO_CODE_TTL = 9 * 60 * 1000;
+const ZOHO_CONSOLES = {
+  "https://api-console.zoho.com": "com",
+  "https://api-console.zoho.eu": "eu",
+  "https://api-console.zoho.in": "in",
+  "https://api-console.zoho.com.au": "com.au",
+  "https://api-console.zoho.jp": "jp",
+  "https://api-console.zohocloud.ca": "ca",
+};
+const ZOHO_SETUP_FIELDS = {
+  clientId: /^1000\.[A-Za-z0-9]{10,64}$/,
+  clientSecret: /^[A-Za-z0-9]{20,100}$/,
+  code: /^1000\.[A-Za-z0-9]{10,100}\.[A-Za-z0-9]{10,100}$/,
+};
+const ZOHO_SETUP_ERRORS = {
+  zoho_code_rejected: "Zoho rejected the code in every data center",
+  zoho_account_missing: "That Zoho login has no Zoho Mail account to sync",
+  zoho_code_incomplete: "The client ID, client secret or code is missing",
+  organization_admin_required: "Only an owner or admin of the organization can connect Zoho Mail",
+  not_signed_in: "Sign in to the ForkMesh extension first",
+};
+let zohoSetupQueue = Promise.resolve();
+const zohoSetupSerial = (work) => (zohoSetupQueue = zohoSetupQueue.then(work, work));
+
+async function zohoSetupLoad() {
+  const stored = (await chrome.storage.session.get([ZOHO_SETUP_KEY]))[ZOHO_SETUP_KEY];
+  if (!stored?.id) return null;
+  if (Date.now() - Number(stored.startedAt || 0) > ZOHO_SETUP_TTL) {
+    await chrome.storage.session.remove(ZOHO_SETUP_KEY);
+    return null;
+  }
+  if (stored.keys?.code && Date.now() - Number(stored.codeAt || 0) > ZOHO_CODE_TTL) {
+    stored.keys = { ...stored.keys, code: "" };
+  }
+  return stored;
+}
+
+function zohoSetupPublic(setup) {
+  if (!setup) return { active: false };
+  const keys = Object.fromEntries(Object.keys(ZOHO_SETUP_FIELDS).map((name) => {
+    const value = String(setup.keys?.[name] || "");
+    return [name, value ? `…${value.slice(-4)}` : ""];
+  }));
+  return {
+    active: true, id: setup.id, organization: setup.organization, state: setup.state, keys,
+    region: setup.region || "", rejected: Number(setup.rejected || 0), error: setup.error || "",
+    message: setup.message || "", detail: setup.detail || "", accountId: setup.accountId || "",
+    startedAt: setup.startedAt, finishedAt: setup.finishedAt || 0, crmUrl: setup.crmUrl || "",
+  };
+}
+
+async function zohoSetupSave(setup) {
+  await chrome.storage.session.set({ [ZOHO_SETUP_KEY]: setup });
+  const update = zohoSetupPublic(setup);
+  for (const tabId of [setup.sourceTabId, ...(setup.consoleTabs || [])]) {
+    if (!Number.isInteger(tabId)) continue;
+    const type = tabId === setup.sourceTabId ? "fm-zoho-setup-update" : "fm-zoho-setup-changed";
+    await chrome.tabs.sendMessage(tabId, { type, setup: update }).catch(() => null);
+  }
+  return update;
+}
+
+function zohoConsoleRegion(sender) {
+  try {
+    if (!sender?.tab || sender.id !== chrome.runtime.id) return "";
+    return ZOHO_CONSOLES[new URL(String(sender.url || "")).origin] || "";
+  } catch {
+    return "";
+  }
+}
+
+const zohoSetupFromConsole = (sender) => Boolean(zohoConsoleRegion(sender));
+
+function zohoSetupFromCrm(sender) {
+  try {
+    const url = new URL(String(sender?.url || ""));
+    return Boolean(sender?.tab) && sender.id === chrome.runtime.id
+      && FORKMESH_ORIGINS.includes(url.origin) && url.pathname.startsWith("/dashboard/crm");
+  } catch {
+    return false;
+  }
+}
+
+function zohoSetupRemember(setup, sender) {
+  const tabId = sender?.tab?.id;
+  if (!Number.isInteger(tabId) || !zohoSetupFromConsole(sender)) return;
+  setup.consoleTabs = [tabId, ...(setup.consoleTabs || []).filter((item) => item !== tabId)].slice(0, 4);
+  setup.region = zohoConsoleRegion(sender);
+}
+
+const zohoSetupStart = ({ organization }, sender) => zohoSetupSerial(async () => {
+  const current = await settings();
+  if (!current.sessionToken) throw new ApiError("not_signed_in", 401);
+  const org = String(organization || current.organization || "").trim();
+  if (!/^[a-z][a-z0-9-]{0,62}$/.test(org)) throw new ApiError("organization_required", 400);
+  const payload = await api(`/api/crm/${encodeURIComponent(org)}/settings`);
+  if (!payload.canManageSettings) throw new ApiError("organization_admin_required", 403);
+  const region = String(payload.settings?.zoho?.region || "com");
+  const consoleUrl = `${Object.keys(ZOHO_CONSOLES).find((origin) => ZOHO_CONSOLES[origin] === region) || "https://api-console.zoho.com"}/`;
+  const setup = {
+    id: crypto.randomUUID(), organization: org, startedAt: Date.now(), state: "guiding", keys: {},
+    region, rejected: 0, sourceTabId: Number.isInteger(sender?.tab?.id) ? sender.tab.id : null,
+    crmUrl: `${current.baseUrl}/dashboard/crm?org=${encodeURIComponent(org)}`, consoleTabs: [],
+  };
+  const tab = await chrome.tabs.create({ url: consoleUrl, active: true });
+  setup.consoleTabs = [tab.id];
+  return { ok: true, setup: await zohoSetupSave(setup) };
+});
+
+const zohoSetupState = (_request, sender) => zohoSetupSerial(async () => {
+  const setup = await zohoSetupLoad();
+  if (setup && zohoSetupFromConsole(sender) && !(setup.consoleTabs || []).includes(sender.tab.id)) {
+    zohoSetupRemember(setup, sender);
+    await chrome.storage.session.set({ [ZOHO_SETUP_KEY]: setup });
+  }
+  return { ok: true, setup: zohoSetupPublic(setup) };
+});
+
+async function zohoSetupFocusCrm(setup) {
+  const source = Number.isInteger(setup.sourceTabId) ? await chrome.tabs.get(setup.sourceTabId).catch(() => null) : null;
+  if (source) {
+    await chrome.tabs.update(source.id, { active: true });
+    await chrome.windows.update(source.windowId, { focused: true }).catch(() => null);
+  } else {
+    await chrome.tabs.create({ url: setup.crmUrl || `${(await settings()).baseUrl}/dashboard/crm` });
+  }
+}
+
+async function zohoSetupSubmit(setup) {
+  setup.state = "checking";
+  Object.assign(setup, { error: "", message: "", detail: "" });
+  await zohoSetupSave(setup);
+  try {
+    const result = await api(`/api/crm/${encodeURIComponent(setup.organization)}/zoho/exchange`, "POST", {
+      clientId: setup.keys.clientId, clientSecret: setup.keys.clientSecret, code: setup.keys.code, region: setup.region || "com",
+    });
+    const zoho = result.settings?.zoho || {};
+    Object.assign(setup, {
+      state: "done", keys: {}, usedCode: "", accountId: String(zoho.accountId || ""), region: String(zoho.region || setup.region || ""),
+      finishedAt: Date.now(),
+    });
+  } catch (error) {
+    const code = error?.code || "request_failed";
+    const detail = String(error?.payload?.zohoError || error?.payload?.detail || "").slice(0, 300);
+    setup.keys = { ...setup.keys, code: "" };
+    if (code === "zoho_code_rejected") setup.rejected = Number(setup.rejected || 0) + 1;
+    const retry = code === "zoho_code_rejected" && setup.rejected < 2;
+    Object.assign(setup, {
+      state: retry ? "guiding" : "error", error: code, detail, finishedAt: retry ? 0 : Date.now(),
+      message: `${ZOHO_SETUP_ERRORS[code] || String(error?.message || "request failed")}`.slice(0, 200),
+    });
+  }
+  const saved = await zohoSetupSave(setup);
+  if (setup.state === "done") await zohoSetupFocusCrm(setup);
+  return saved;
+}
+
+const zohoSetupComplete = (setup) => Object.keys(ZOHO_SETUP_FIELDS).every((name) => setup.keys?.[name]);
+
+const zohoSetupKeys = ({ keys, submit }, sender) => zohoSetupSerial(async () => {
+  const setup = await zohoSetupLoad();
+  if (!setup) throw new ApiError("zoho_setup_expired", 404);
+  zohoSetupRemember(setup, sender);
+  if (["checking", "done"].includes(setup.state)) return { ok: true, setup: zohoSetupPublic(setup) };
+  let changed = false;
+  for (const [name, pattern] of Object.entries(ZOHO_SETUP_FIELDS)) {
+    const value = String(keys?.[name] || "").trim();
+    if (!value || !pattern.test(value) || setup.keys?.[name] === value) continue;
+    if (name === "code" && value === setup.usedCode) continue;
+    if (name === "clientId" && setup.keys?.clientId) setup.keys = { ...setup.keys, clientSecret: "", code: "" };
+    setup.keys = { ...setup.keys, [name]: value };
+    if (name === "code") setup.codeAt = Date.now();
+    changed = true;
+  }
+  if (changed && setup.state === "error") Object.assign(setup, { state: "guiding", error: "", message: "", detail: "" });
+  if (zohoSetupComplete(setup) && setup.state === "guiding" && (changed || submit)) {
+    setup.usedCode = setup.keys.code;
+    return { ok: true, setup: await zohoSetupSubmit(setup) };
+  }
+  return { ok: true, setup: await zohoSetupSave(setup) };
+});
+
+const zohoSetupRestart = (_request, sender) => zohoSetupSerial(async () => {
+  const setup = await zohoSetupLoad();
+  if (!setup) throw new ApiError("zoho_setup_expired", 404);
+  zohoSetupRemember(setup, sender);
+  Object.assign(setup, { state: "guiding", keys: {}, rejected: 0, error: "", message: "", detail: "", finishedAt: 0 });
+  return { ok: true, setup: await zohoSetupSave(setup) };
+});
+
+const zohoSetupStop = () => zohoSetupSerial(async () => {
+  const setup = await zohoSetupLoad();
+  await chrome.storage.session.remove(ZOHO_SETUP_KEY);
+  if (setup) {
+    for (const tabId of setup.consoleTabs || []) {
+      await chrome.tabs.sendMessage(tabId, { type: "fm-zoho-setup-changed", setup: { active: false } }).catch(() => null);
+    }
+    if (Number.isInteger(setup.sourceTabId)) {
+      await chrome.tabs.sendMessage(setup.sourceTabId, { type: "fm-zoho-setup-update", setup: { ...zohoSetupPublic(setup), state: "stopped" } }).catch(() => null);
+    }
+  }
+  return { ok: true, setup: { active: false } };
+});
+
+async function zohoSetupBack() {
+  const setup = await zohoSetupLoad();
+  if (!setup) throw new ApiError("zoho_setup_expired", 404);
+  await zohoSetupFocusCrm(setup);
+  if (setup.state === "done") await chrome.storage.session.remove(ZOHO_SETUP_KEY);
+  return { ok: true };
+}
+
+const ZOHO_SETUP_CONSOLE_ONLY = new Set(["fm-zoho-setup-keys", "fm-zoho-setup-restart", "fm-zoho-setup-back"]);
+
 const X_SETUP_PORTAL_ONLY = new Set(["fm-x-setup-keys", "fm-x-setup-mark", "fm-x-setup-forget", "fm-x-setup-back"]);
 
 const REDDIT_WALK_SENDERS = new Set(["fm-reddit-walk", "fm-reddit-walk-state", "fm-reddit-walk-stop", "fm-reddit-accounts-update", "fm-reddit-threads-update"]);
@@ -3104,6 +3320,12 @@ const HANDLERS = {
   "fm-x-setup-forget": xSetupForget,
   "fm-x-setup-stop": xSetupStop,
   "fm-x-setup-back": xSetupBack,
+  "fm-zoho-setup-start": zohoSetupStart,
+  "fm-zoho-setup-state": zohoSetupState,
+  "fm-zoho-setup-keys": zohoSetupKeys,
+  "fm-zoho-setup-restart": zohoSetupRestart,
+  "fm-zoho-setup-stop": zohoSetupStop,
+  "fm-zoho-setup-back": zohoSetupBack,
   "fm-refresh-plan": refreshPlan,
   "fm-refresh-run": refreshRun,
   "fm-refresh-channel": refreshChannel,
@@ -3129,7 +3351,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     || (REDDIT_WALK_SENDERS.has(request.type) && !mayUseVault(sender) && !captureFromDashboard(sender))
     || (["fm-x-setup-state", "fm-x-setup-stop"].includes(request.type) && !mayUseVault(sender)
       && !captureFromDashboard(sender) && !xSetupFromPortal(sender))
-    || (X_SETUP_PORTAL_ONLY.has(request.type) && !xSetupFromPortal(sender));
+    || (X_SETUP_PORTAL_ONLY.has(request.type) && !xSetupFromPortal(sender))
+    || (request.type === "fm-zoho-setup-start" && !mayUseVault(sender) && !zohoSetupFromCrm(sender))
+    || (["fm-zoho-setup-state", "fm-zoho-setup-stop"].includes(request.type) && !mayUseVault(sender)
+      && !zohoSetupFromCrm(sender) && !zohoSetupFromConsole(sender))
+    || (ZOHO_SETUP_CONSOLE_ONLY.has(request.type) && !zohoSetupFromConsole(sender));
   if (forbidden) {
     sendResponse({ ok: false, error: "forbidden_sender", message: "Forbidden", status: 403 });
     return false;
