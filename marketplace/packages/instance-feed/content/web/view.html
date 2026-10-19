@@ -1,0 +1,53 @@
+          <section data-view="instance-feed" class="view active h-full overflow-y-auto">
+            <div class="mx-auto w-full max-w-2xl p-3 sm:p-6">
+              <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h1 class="text-lg font-semibold text-foreground">Instance feed</h1>
+                  <p class="mt-1 text-sm text-muted-foreground">Short posts from the people on this instance, newest first.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <button data-ifeed-refresh data-ifeed-requires-install type="button" class="fm-btn fm-btn-sm hidden"><i data-lucide="refresh-cw"></i>Refresh</button>
+                  <button data-ifeed-manage data-ifeed-requires-install type="button" class="fm-btn fm-btn-sm hidden"><i data-lucide="settings"></i>Plugin data</button>
+                </div>
+              </header>
+              <div data-ifeed-error role="alert" class="fm-flash fm-flash-danger mb-3 hidden"><i data-lucide="circle-alert"></i><p data-ifeed-message-text class="fm-flash-body"></p></div>
+              <div data-ifeed-notice role="status" class="fm-flash mb-3 hidden"><i data-lucide="info"></i><p data-ifeed-message-text class="fm-flash-body"></p></div>
+
+              <section data-ifeed-install-panel class="fm-blankslate hidden rounded-lg border border-border bg-card">
+                <i data-lucide="messages-square"></i>
+                <h2 class="fm-blankslate-title">Install Instance Feed</h2>
+                <p class="fm-blankslate-desc">Read and write short posts with the people on this instance: reply, favourite, boost, and add a content warning when a post needs one. What you post is visible to everyone here who uses the feed, and uninstalling removes your posts.</p>
+                <button data-ifeed-install type="button" class="fm-btn fm-btn-sm fm-btn-cta mt-3">Install Instance Feed</button>
+              </section>
+
+              <div data-ifeed-app class="hidden">
+                <form data-ifeed-compose class="mb-4 rounded-lg border border-border bg-card p-3">
+                  <div data-ifeed-replying class="mb-2 hidden items-center gap-2 text-xs text-muted-foreground"><i data-lucide="reply" class="h-3.5 w-3.5"></i><span data-ifeed-replying-text></span><button data-ifeed-reply-cancel type="button" class="fm-btn fm-btn-sm fm-btn-invisible ml-auto">Cancel</button></div>
+                  <input data-ifeed-spoiler type="text" maxlength="100" placeholder="Content warning" aria-label="Content warning" class="mb-2 hidden h-control w-full rounded-md border border-border bg-background px-3 text-control text-foreground">
+                  <textarea data-ifeed-text rows="3" maxlength="500" placeholder="What’s happening on the instance?" aria-label="Post text" class="block w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground"></textarea>
+                  <div class="mt-2 flex items-center gap-2">
+                    <button data-ifeed-spoiler-toggle type="button" aria-pressed="false" class="fm-btn fm-btn-sm fm-btn-invisible" title="Add a content warning">CW</button>
+                    <span data-ifeed-remaining class="ml-auto text-xs tabular-nums text-muted-foreground">500</span>
+                    <button data-ifeed-submit type="submit" class="fm-btn fm-btn-sm fm-btn-cta">Post</button>
+                  </div>
+                </form>
+
+                <div data-ifeed-context class="mb-3 hidden items-center gap-2">
+                  <button data-ifeed-back type="button" class="fm-btn fm-btn-sm fm-btn-invisible"><i data-lucide="arrow-left"></i>Back to the feed</button>
+                </div>
+                <section data-ifeed-profile class="mb-3 hidden rounded-lg border border-border bg-card px-4 py-4"></section>
+                <div data-ifeed-list class="overflow-hidden rounded-lg border border-border bg-card">
+                  <div class="px-4 py-8 text-sm text-muted-foreground"><span class="fm-spinner"></span>Loading the instance feed…</div>
+                </div>
+                <div class="mt-3 flex justify-center"><button data-ifeed-more type="button" class="fm-btn fm-btn-sm hidden">Load older posts</button></div>
+              </div>
+            </div>
+
+            <dialog data-ifeed-manage-dialog class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
+              <div class="fm-dialog">
+                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Instance Feed data</h2></div>
+                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export your posts, boosts and favourites as JSON, or uninstall Instance Feed from your account. Uninstalling downloads your export first, then deletes your posts, boosts and favourites from the feed.</p></div>
+                <div class="fm-dialog-footer"><button data-ifeed-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-ifeed-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-ifeed-export type="button" class="fm-btn fm-btn-sm">Export my data</button></div>
+              </div>
+            </dialog>
+          </section>

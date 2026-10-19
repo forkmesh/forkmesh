@@ -254,6 +254,7 @@ object RouteParser {
             "app-store-status" -> listOf(Route.AppStoreStatus)
             "usage" -> if (first == null) listOf(Route.Usage) else null
             "rss", "rss-reader" -> listOf(Route.RssReader)
+            "instance-feed" -> if (first == null) listOf(Route.InstanceFeed(query["post"]?.trim()?.takeIf { it.isNotEmpty() })) else null
             "secure-drive" -> listOf(Route.SecureDrive)
             "files" -> listOf(Route.Files)
             "workflows" -> if (first == null) listOf(Route.Workflows) else null
@@ -314,6 +315,7 @@ object RouteParser {
         "app-store-status" -> listOf(Route.AppStoreStatus)
         "usage" -> listOf(Route.Usage)
         "rss", "rss-reader" -> listOf(Route.RssReader)
+        "instance-feed" -> listOf(Route.InstanceFeed(first))
         "secure-drive" -> listOf(Route.SecureDrive)
         "files" -> listOf(Route.Files)
         "workflows" -> listOf(Route.Workflows)

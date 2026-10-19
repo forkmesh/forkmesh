@@ -306,6 +306,9 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   loop, tempo and crossfader controls on responsive web, mobile and desktop
   surfaces; [details](video-mix-dj-studio.md), iOS performance checks in
   [video-mix-dj-studio-performance.md](video-mix-dj-studio-performance.md)).
+- **Community:** `instance-feed` (a Mastodon-style timeline of posts from the
+  people on one instance; [instance-feed.md](instance-feed.md)), `feed` and
+  `mastodon` ([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md)).
 - **World:** `forkmesh-sky-office`, `reddit-banner-board`, `x-banner-board`.
 - **Catalog only:** `forkmesh-ide` (VS Code extension source).
 
@@ -438,5 +441,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [instance-feed.md](instance-feed.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).
