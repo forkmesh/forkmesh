@@ -26,15 +26,66 @@ final class ShellCounts {
     var pullsRevision: Int = 0
     var pullsRings: Int = 0
     var newPulls: Int = 0
+    private(set) var loadingRepo: String = ""
+    @ObservationIgnored private var freshSlugs: Set<String> = []
 
     init() {
         currentRepo = CodeCurrentRepo.memory.ref
+        if let repo = currentRepo { restoreCounts(repo) }
+    }
+
+    static func countsKey(_ slug: String) -> String {
+        "shell.repoCounts.\(slug)"
+    }
+
+    private static var store: KeyValueStore {
+        Services.get(KeyValueStore.self) ?? UserDefaultsStore()
+    }
+
+    func restoreCounts(_ repo: RepoRef) {
+        let slug: String = repo.slug.lowercased()
+        guard slug != repoCountsSlug else { return }
+        let saved: [String] = ShellCounts.store.stringList(forKey: ShellCounts.countsKey(slug)) ?? []
+        guard !saved.isEmpty else { return }
+        var counts: [RepoSection: Int] = [:]
+        for line in saved {
+            let parts: [Substring] = line.split(separator: ":", maxSplits: 1)
+            guard parts.count == 2, let section = RepoSection(rawValue: String(parts[0])), let count = Int(parts[1])
+            else { continue }
+            counts[section] = count
+        }
+        repoCounts = counts
+        repoCountsSlug = slug
     }
 
     func adopt(_ repo: RepoRef, counts: [RepoSection: Int]) {
         let slug: String = repo.slug.lowercased()
-        repoCounts = slug == repoCountsSlug ? repoCounts.merging(counts) { $1 } : counts
-        repoCountsSlug = slug
+        let next: [RepoSection: Int] = slug == repoCountsSlug ? repoCounts.merging(counts) { $1 } : counts
+        if repoCounts != next { repoCounts = next }
+        if repoCountsSlug != slug { repoCountsSlug = slug }
+        ShellCounts.store.set(
+            next.map { "\($0.key.rawValue):\($0.value)" }.sorted(), forKey: ShellCounts.countsKey(slug))
+    }
+
+    func isFresh(_ repo: RepoRef) -> Bool {
+        freshSlugs.contains(repo.slug.lowercased())
+    }
+
+    func markFresh(_ repo: RepoRef, _ fresh: Bool) {
+        if fresh {
+            freshSlugs.insert(repo.slug.lowercased())
+        } else {
+            freshSlugs.remove(repo.slug.lowercased())
+        }
+    }
+
+    func setLoading(_ repo: RepoRef?) {
+        let slug: String = repo?.slug.lowercased() ?? ""
+        if loadingRepo != slug { loadingRepo = slug }
+    }
+
+    func isLoadingCounts(_ repo: RepoRef) -> Bool {
+        loadingRepo == repo.slug.lowercased()
     }
 
     func repoCount(_ section: RepoSection) -> Int? {
@@ -444,6 +495,7 @@ struct ShellBarItem: Identifiable {
     var count: Int?
     var live: Int = 0
     var progress: ShellBarProgress?
+    var loading: Bool = false
     var action: () -> Void
 }
 

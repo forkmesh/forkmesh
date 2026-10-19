@@ -35,7 +35,6 @@ struct HomeShell: View {
     @State var composer: ShellComposer
     @State var updateCheck: UpdateRequiredCheck = UpdateRequiredCheck.shared
     @State var showContextPicker: Bool = false
-    @State var loadingRepoCounts: Bool = false
     @State var showPalette: Bool = false
     @State var showHub: Bool = false
     @State var showTour: Bool = false
@@ -55,11 +54,11 @@ struct HomeShell: View {
     @State var showAgentForm: Bool = false
     @State var started: Bool = false
     @State var keyboardUp: Bool = false
-    @State var barHeight: CGFloat = 0
+    @State var barHeight: CGFloat = ShellLayoutMemory.value(.barHeight)
     @State var capsuleTop: CGFloat = 0
     @State var barBottom: CGFloat = 0
-    @State var safeBottom: CGFloat = 0
-    @State var chromeHeight: CGFloat = 0
+    @State var safeBottom: CGFloat = ShellLayoutMemory.value(.safeBottom)
+    @State var chromeHeight: CGFloat = ShellLayoutMemory.value(.chromeHeight)
     @State var docks: [AppTab: ShellDock] = Dictionary(
         uniqueKeysWithValues: AppTab.allCases.map { (tab: AppTab) in (tab, ShellDock()) })
     @State var runnerAttention: RunnerAttentionModel? = Services.get(RunnerAttentionModel.self)
@@ -196,7 +195,8 @@ struct HomeShell: View {
                 selected: selected, kind: .tab(position: entry.offset, total: order.count),
                 pulse: tab == .agents ? ShellLaunchFlight.shared.landings : 0, flightTarget: tab == .agents,
                 active: tab == .agents && counts.agents > 0, count: count,
-                live: tab == .agents ? counts.agents : 0, action: { selectTab(tab) })
+                live: tab == .agents ? counts.agents : 0,
+                loading: tab == .code && ShellNavigatorCounts.shared.isLoading(.repos), action: { selectTab(tab) })
         }
         items.insert(
             ShellBarItem(
@@ -211,6 +211,7 @@ struct HomeShell: View {
                     badge: counts.newPullsBadge,
                     selected: page == nil && router.selectedTab == .code && !router.path(for: .code).isEmpty,
                     kind: .action, count: counts.repoCount(.pulls),
+                    loading: repo.map { counts.isLoadingCounts($0) } ?? false,
                     action: { openCurrentRepo(repo) }),
                 at: index + 1)
         }
@@ -241,7 +242,8 @@ struct HomeShell: View {
                         id: item.id, title: item.title, symbol: item.symbol, badge: live.hubBadges[item.id] ?? 0,
                         selected: false, kind: .action, running: HomeShell.runsBadge(item.action),
                         active: live.hubActive.contains(item.id), count: live.hubCounts[item.id],
-                        progress: live.hubProgress[item.id], action: { hubAction(item.action) })
+                        progress: live.hubProgress[item.id], loading: live.hubLoading.contains(item.id),
+                        action: { hubAction(item.action) })
                 }
             return ShellMenuGroup(id: group.id, title: group.title, items: items)
         }
@@ -259,24 +261,29 @@ struct HomeShell: View {
                 id: "repo-\(section.rawValue)", title: entry?.1 ?? RouteCatalog.sectionTitle(section),
                 symbol: entry?.2 ?? "folder", badge: section == .pulls ? counts.newPullsBadge : 0,
                 selected: open == Route.repo(repo, section: section), kind: .action,
-                count: counts.repoCount(section), action: { openRepoSection(repo, section) })
+                count: counts.repoCount(section), loading: counts.isLoadingCounts(repo),
+                action: { openRepoSection(repo, section) })
         }
         return [ShellMenuGroup(id: "repo", title: repo.name, items: items)]
     }
 
-    private func loadRepoCounts() async {
+    private func loadRepoCounts(force: Bool = false) async {
         let counts: ShellCounts = ShellCounts.shared
         guard let repo = counts.currentRepo else { return }
-        if !counts.knowsCounts(of: repo) {
-            let overview: RepoOverviewModel = RepoOverviewModel(
-                repo: Repository(owner: repo.owner, name: repo.name), client: RepoServices.overviewClient)
-            await overview.load()
-            guard counts.currentRepo == repo else { return }
+        counts.restoreCounts(repo)
+        if force { counts.markFresh(repo, false) }
+        guard !counts.isFresh(repo) else { return }
+        counts.setLoading(repo)
+        defer { if counts.isLoadingCounts(repo) { counts.setLoading(nil) } }
+        let overview: RepoOverviewModel = RepoOverviewModel(
+            repo: Repository(owner: repo.owner, name: repo.name), client: RepoServices.overviewClient)
+        await overview.load()
+        guard counts.currentRepo == repo else { return }
+        if !overview.counts.isEmpty {
             counts.adopt(repo, counts: overview.counts)
+            counts.markFresh(repo, true)
         }
-        guard let api = Services.get(ApiService.self),
-            counts.repoCount(.actions) == nil || counts.repoCount(.discussions) == nil
-        else { return }
+        guard let api = Services.get(ApiService.self) else { return }
         async let runs: Int? = try? await api.actionsRuns(repo).runs.count
         async let discussions: Int? = try? await api.publishedDiscussions(repo.owner, repo.name).count
         var more: [RepoSection: Int] = [:]
@@ -352,12 +359,12 @@ struct HomeShell: View {
                 },
                 onClearUpdates: { accountPackages?.markAllViewed() },
                 canShowUpdate: { (id: String) in accountPackages?.canMarkUpdated(hubItem: id) ?? false },
-                onShowUpdates: { accountPackages?.markAllUnviewed() }
+                onShowUpdates: { accountPackages?.markAllUnviewed() },
+                onRefresh: { refreshEverything() }
             ) { (item: ShellBarItem) in
                 accountPackages?.markViewed(hubItem: item.id)
                 ShellBottomBar.run(item, prefs: ShellBarPrefs.shared, reduceMotion: reduceMotion)
             }
-            .fmLoading(loadingRepoCounts || HubPackageState.shared.refreshing)
             .task {
                 await ShellNavigatorCounts.shared.refresh(guest: auth?.isGuest ?? false)
             }
@@ -432,6 +439,7 @@ struct HomeShell: View {
         .coordinateSpace(.named(ShellDock.barSpace))
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { (height: CGFloat) in
             barHeight = height
+            ShellLayoutMemory.remember(.barHeight, height)
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { (bottom: CGFloat) in
             barBottom = bottom
@@ -534,6 +542,7 @@ struct HomeShell: View {
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.safeAreaInsets.bottom }) { (inset: CGFloat) in
             safeBottom = inset
+            if !keyboardUp { ShellLayoutMemory.remember(.safeBottom, inset) }
         }
         .onChange(of: dockBottom, initial: true) { (_: CGFloat, bottom: CGFloat) in
             for dock in docks.values {
@@ -601,6 +610,7 @@ struct HomeShell: View {
         }
         .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { (height: CGFloat) in
             chromeHeight = height
+            if notice == nil && !offlineShown { ShellLayoutMemory.remember(.chromeHeight, height) }
         }
     }
 
@@ -753,10 +763,8 @@ struct HomeShell: View {
             }
             .task { await start() }
             .task(id: ShellCounts.shared.currentRepo) {
-                loadingRepoCounts = true
                 await loadRepoCounts()
                 if !Task.isCancelled {
-                    loadingRepoCounts = false
                     await ShellPullsWatch.shared.refresh()
                 }
             }
@@ -1141,6 +1149,29 @@ struct HomeShell: View {
         } else {
             _ = router.back()
         }
+    }
+
+    private func refreshEverything() {
+        let guest: Bool = auth?.isGuest ?? false
+        Task {
+            await HubPackageState.shared.refresh()
+            await ShellNavigatorCounts.shared.refresh(guest: guest, everything: true)
+        }
+        Task {
+            await loadRepoCounts(force: true)
+            await ShellPullsWatch.shared.refresh()
+        }
+        if let accountPackages = accountPackages {
+            Task { await accountPackages.refresh(catalog: true) }
+        }
+        if let fleet = fleet, statusPageOn, diagnosticsEnabled {
+            Task { await fleet.refresh() }
+        }
+        if let notifications = notifications {
+            Task { await notifications.refresh(silent: true) }
+        }
+        let launcher: QuickAgentLauncher = composer.launcher
+        Task { await launcher.refresh() }
     }
 
     private func showHome() {
