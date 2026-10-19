@@ -14,7 +14,7 @@ Rail **Agents**. Main sources:
 | Detail | `src/MainWindowAgentDetail.cpp` |
 | Transcript | `src/MainWindowAgentTranscript.cpp`, `src/ClaudeTranscriptView.*`, `src/ClaudeTranscriptTools.cpp` |
 | Launch | `src/MainWindowAgentLaunch.cpp`, `src/MainWindowAgentCliSession.cpp` |
-| Usage and accounts | `src/MainWindowAgentUsage.cpp`, `src/MainWindowChat.cpp`, `src/ClaudeAccountRouting.cpp` |
+| Usage and accounts | `src/MainWindowAgentUsage.cpp`, `src/MainWindowAgentUsagePage.cpp`, `src/AgentUsageResetClock.*`, `src/MainWindowChat.cpp`, `src/ClaudeAccountRouting.cpp` |
 | Cloud rows | `src/AgentCloudSessions.*`, `src/AgentCloudStream.*`, `src/MainWindowAgentCloud.cpp` |
 | External sessions | `src/ClaudeSessionScan.*`, `src/MachineAgentScan.*`, `src/ClaudePeerMessaging.*` |
 | Task links | `src/MainWindowAgentTaskLink.cpp` |
@@ -24,6 +24,51 @@ The toolbar has **Tool efficiency** (`src/AgentToolEfficiencyBoard.*`),
 **Models** (page 3 of `agentPageStack`), **Usage**, **Listen** and
 **Announcer**. Watch is a Market package page in the rail (see
 [Watch](#watch-market-package-agent-watch)).
+
+### Usage page: Refresh and reset times (2026-10-20)
+
+The `usage` Market package's page is `MainWindow::buildAgentUsagePage`
+(`src/MainWindowAgentUsagePage.cpp`). Its **Refresh** button calls
+`refreshAgentUsageAccounts` (`src/MainWindowAgentUsage.cpp`), which walks every
+Claude Code account one by one: it reads that account's own OAuth token from its
+config folder (`claudeCodeOAuthToken(configDir)`), asks
+`api.anthropic.com/api/oauth/usage`, and stores the answer with
+`applyClaudeUsageResponse(response, accountId)`. The active account goes through
+the full path (top-bar meter, limit reminders, credits); any other account only
+gets its account-scoped settings written, so the meters on the page are a real
+re-read of each account rather than a redraw. Each account keeps its own poll
+backoff key (`claude-usage-<id>`), so a rate-limited account is skipped until
+its backoff ends. The button reads "Refreshing…" until the last account answers.
+
+Codex has no per-account read that works without running an agent: its limits
+arrive only from a running `codex app-server` (`account/rateLimits/read` and
+`account/rateLimits/updated`). Refresh therefore redraws Codex rows from the
+last snapshot each account reported. A one-shot Codex probe per `CODEX_HOME`
+would close that gap.
+
+Each meter shows the reset as a 12-hour clock time in the desktop's time zone,
+next to the remaining time: "Resets 3:45 PM (in 5 h 40 min)", "Resets Tue
+9:00 AM (in 22 h 55 min)" when it is not today, and "Resets Oct 26, 10:00 AM"
+a week or more out. `forkmesh::usageclock` (`src/AgentUsageResetClock.*`,
+tested by `tests/test_agent_usage_reset_clock.cpp`) formats it; the menus and
+top bar keep their relative "resets in" text.
+
+Remote surfaces get the same re-read through `agentops.usage {refresh: true}`
+(`src/MainWindowLocalControlAgentOps.cpp`): the desktop runs
+`refreshAgentUsageAccounts` and answers with the new summary once every account
+has answered, or after 20 seconds with whatever it has. Without `refresh` the
+call answers the stored snapshot at once, as before; older desktops ignore the
+flag and answer the snapshot. The web page (`/dashboard/usage`), iPhone and
+Android send `refresh: true` from their Refresh button and pull-to-refresh, and
+a plain read when the page first opens. Each formats the reset clock locally:
+web `usagePageResetClock` (`marketplace/packages/usage/content/web/page.js`,
+`app/tests/usage_page_web.test.mjs`), iOS `UsageFormat.resetClock`
+(`FMAgents/Remote/AgentOpsModels.swift`, `UsageResetClockTests`), Android
+`UsageFormat.resetClock` (`agents/ops/AgentOpsModels.kt`,
+`UsageResetClockTest`). The web page previously passed the future reset time to
+`relativeTimeLabel`, which only formats past times and so read "Resets 1 minute
+ago"; the clock label replaces it. On Android the reset clock moves to the line
+under the meter, beside the hour/day and pace text, so the bar keeps its width.
 
 ### Session sources and ids
 

@@ -753,6 +753,8 @@ set(FORKMESH_APP_SOURCES
     src/PowerSourceReader.cpp
     src/PingFixes.h
     src/PingFixes.cpp
+    src/AgentUsageResetClock.h
+    src/AgentUsageResetClock.cpp
     src/MainnodeRoom.h
     src/RoomCrypto.h
     src/RoomCrypto.cpp
@@ -4411,6 +4413,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-ping-fixes-tests
         COMMAND forkmesh-ping-fixes-tests)
+
+    qt_add_executable(forkmesh-agent-usage-reset-clock-tests
+        tests/test_agent_usage_reset_clock.cpp
+        src/AgentUsageResetClock.h
+        src/AgentUsageResetClock.cpp
+    )
+    target_include_directories(forkmesh-agent-usage-reset-clock-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-agent-usage-reset-clock-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-agent-usage-reset-clock-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-agent-usage-reset-clock-tests
+        COMMAND forkmesh-agent-usage-reset-clock-tests)
 
     qt_add_executable(forkmesh-local-control-agentops-tests
         tests/test_local_control_agentops.cpp

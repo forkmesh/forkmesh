@@ -1479,8 +1479,12 @@ void MainWindow::applyClaudeUsageCredits(const QJsonValue &extraUsage)
     store(kClaudeCreditsPctSetting, percent);
 }
 
-void MainWindow::applyClaudeUsageResponse(const QJsonObject &root)
+void MainWindow::applyClaudeUsageResponse(const QJsonObject &root,
+                                          const QString &accountId)
 {
+    const bool activeAccount =
+        accountId.isEmpty() ||
+        accountId == activeAgentAccount(QStringLiteral("claude-code")).id;
     auto percentage = [](const QJsonObject &window, bool *ok) {
         QJsonValue value = window.value(QStringLiteral("utilization"));
         if (value.isUndefined())
@@ -1517,6 +1521,28 @@ void MainWindow::applyClaudeUsageResponse(const QJsonObject &root)
     // an old countdown must be cleared rather than left ticking in the tooltip.
     auto applyWindow = [&](TokenUsageMiniChart::Window window, int pct,
                            qint64 reset) {
+        if (!activeAccount) {
+            const bool fable = window == TokenUsageMiniChart::Fable;
+            const bool weekly = window == TokenUsageMiniChart::Weekly;
+            const QString pctKey = fable ? kClaudeUsageFablePctSetting
+                                   : weekly ? kClaudeUsageWeekPctSetting
+                                            : kClaudeUsage5hPctSetting;
+            const QString resetKey = fable ? kClaudeUsageFableResetSetting
+                                     : weekly ? kClaudeUsageWeekResetSetting
+                                              : kClaudeUsage5hResetSetting;
+            QSettings settings;
+            forkmesh::settings::put(
+                settings,
+                agentAccountUsageSetting(QStringLiteral("claude-code"), accountId,
+                                         agentAccountUsageField(pctKey)),
+                pct);
+            forkmesh::settings::put(
+                settings,
+                agentAccountUsageSetting(QStringLiteral("claude-code"), accountId,
+                                         agentAccountUsageField(resetKey)),
+                reset);
+            return;
+        }
         if (window == TokenUsageMiniChart::Fable) {
             applyClaudeFableUsage(pct);
             applyClaudeFableReset(reset);
@@ -1575,7 +1601,7 @@ void MainWindow::applyClaudeUsageResponse(const QJsonObject &root)
     // the same payload — so they bypass the percentage plumbing above. A
     // missing key means this response says nothing about them; an explicit
     // null means the account has none, and clears what we knew.
-    if (root.contains(QStringLiteral("extra_usage")))
+    if (activeAccount && root.contains(QStringLiteral("extra_usage")))
         applyClaudeUsageCredits(root.value(QStringLiteral("extra_usage")));
 
     const QStringList explicitFableKeys = {
@@ -1690,6 +1716,62 @@ void MainWindow::refreshClaudeCodeUsage(bool fromHover)
             flashUsageChart(m_navTokenUsage, true);
         applyClaudeUsageResponse(QJsonDocument::fromJson(body).object());
     });
+}
+
+void MainWindow::refreshAgentUsageAccounts(std::function<void()> done)
+{
+    refreshCodexUsageRemaining();
+    auto queue = std::make_shared<QList<AgentAccountProfile>>();
+    if (m_networkAccess) {
+        for (const AgentAccountProfile &profile :
+             agentAccountProfiles(QStringLiteral("claude-code")))
+            queue->append(profile);
+    }
+    auto next = std::make_shared<std::function<void()>>();
+    const std::weak_ptr<std::function<void()>> weakNext = next;
+    *next = [this, queue, weakNext, done = std::move(done)]() mutable {
+        const std::shared_ptr<std::function<void()>> next = weakNext.lock();
+        while (next && !queue->isEmpty()) {
+            const AgentAccountProfile profile = queue->takeFirst();
+            const QString configDir =
+                profile.configDir.isEmpty()
+                    ? agentAccountDefaultConfigDir(QStringLiteral("claude-code"))
+                    : profile.configDir;
+            const QString token = claudeCodeOAuthToken(configDir);
+            const QString pollKey =
+                QStringLiteral("claude-usage-%1").arg(profile.id);
+            if (token.isEmpty() ||
+                !m_pollBackoff.ready(pollKey, QDateTime::currentMSecsSinceEpoch()))
+                continue;
+            QNetworkRequest req(
+                QUrl(QStringLiteral("https://api.anthropic.com/api/oauth/usage")));
+            req.setRawHeader("Authorization", "Bearer " + token.toUtf8());
+            req.setRawHeader("anthropic-beta", "oauth-2025-04-20");
+            req.setRawHeader("Accept", "application/json");
+            req.setTransferTimeout(15000);
+            QNetworkReply *reply = m_networkAccess->get(req);
+            connect(reply, &QNetworkReply::finished, this,
+                    [this, reply, pollKey, next, accountId = profile.id] {
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
+                if (reply->error() != QNetworkReply::NoError) {
+                    m_pollBackoff.noteFailure(pollKey,
+                                              QDateTime::currentMSecsSinceEpoch());
+                } else {
+                    m_pollBackoff.noteSuccess(pollKey);
+                    applyClaudeUsageResponse(
+                        QJsonDocument::fromJson(body).object(), accountId);
+                }
+                (*next)();
+            });
+            return;
+        }
+        refreshAgentAccountUsageMenu(QStringLiteral("claude-code"));
+        scheduleAgentUsagePagesRefresh();
+        if (done)
+            std::exchange(done, nullptr)();
+    };
+    (*next)();
 }
 
 void MainWindow::applyLiveClaudeModelsToCombos()

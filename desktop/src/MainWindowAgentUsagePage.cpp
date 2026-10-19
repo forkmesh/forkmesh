@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
+#include "AgentUsageResetClock.h"
 
 #include <QAction>
 #include <QFrame>
@@ -93,7 +94,7 @@ QWidget *MainWindow::buildAgentUsagePage(QWidget *parent)
     refresh->setObjectName(QStringLiteral("ghostButton"));
     refresh->setAccessibleName(QStringLiteral("Refresh usage"));
     refresh->setCursor(Qt::PointingHandCursor);
-    refresh->setToolTip(QStringLiteral("Read every account's usage again"));
+    refresh->setToolTip(QStringLiteral("Read each Claude Code account's usage again, one by one"));
     heading->addWidget(refresh);
     outer->addLayout(heading);
 
@@ -118,7 +119,23 @@ QWidget *MainWindow::buildAgentUsagePage(QWidget *parent)
         if (guarded)
             fillAgentUsagePage(guarded);
     };
-    connect(refresh, &QPushButton::clicked, page, readAgain);
+    const QPointer<QPushButton> guardedRefresh(refresh);
+    connect(refresh, &QPushButton::clicked, page, [this, guarded, guardedRefresh] {
+        if (guardedRefresh) {
+            guardedRefresh->setEnabled(false);
+            guardedRefresh->setText(QString::fromUtf8("Refreshing\xE2\x80\xA6"));
+        }
+        reconcileClaudeAccountLogins();
+        refreshRunners();
+        refreshAgentUsageAccounts([this, guarded, guardedRefresh] {
+            if (guardedRefresh) {
+                guardedRefresh->setEnabled(true);
+                guardedRefresh->setText(QStringLiteral("Refresh"));
+            }
+            if (guarded)
+                fillAgentUsagePage(guarded);
+        });
+    });
     page->onShow = readAgain;
 
     m_agentUsagePages.removeAll(QPointer<QWidget>());
@@ -388,10 +405,11 @@ void MainWindow::fillAgentUsagePage(QWidget *target)
 
             for (const AgentUsageMenuData &usage :
                  agentAccountUsageMenuData(provider, profile.id)) {
-                auto *meter = new TokenUsageMenuRow(usage.label, usage.value,
-                                                    usage.resetNote, usage.usedPercent,
-                                                    account, usage.resetAtMs,
-                                                    usage.windowMs);
+                auto *meter = new TokenUsageMenuRow(
+                    usage.label, usage.value,
+                    forkmesh::usageclock::noteWithResetClock(
+                        usage.resetNote, usage.resetAtMs, QDateTime::currentDateTime()),
+                    usage.usedPercent, account, usage.resetAtMs, usage.windowMs);
                 const QString usageKey = QStringLiteral("%1_%2").arg(
                     profile.id, usage.label.toLower().replace('-', '_'));
                 meter->setObjectName(QStringLiteral("agentUsagePageMeter_%1").arg(usageKey));
