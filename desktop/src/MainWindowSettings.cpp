@@ -6360,6 +6360,10 @@ void MainWindow::checkLocalMeshFirewall()
 {
     if (!m_localMesh || !m_localMesh->isRunning())
         return;
+    if (!packageSurfaceShown(QStringLiteral("chat"))) {
+        hideFirewallBanner();
+        return;
+    }
     const forkmesh::meshfirewall::Plan plan = forkmesh::meshfirewall::detect(
         forkmesh::localmesh::discoveryPort());
     const bool blocked = m_localMesh->linksBlocked();
