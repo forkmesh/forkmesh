@@ -56,7 +56,7 @@ final class PackageRoutesTests: XCTestCase {
         XCTAssertFalse(PackageGate.shows(Route.instanceFeed(post: nil), installed: ["water"]))
         XCTAssertTrue(PackageGate.shows(Route.instanceFeed(post: nil), installed: ["instance-feed"]))
         XCTAssertTrue(HubCatalog.personal.contains { $0.route == .instanceFeed(post: nil) })
-        XCTAssertEqual(RouteCatalog.title(.instanceFeed), "Instance Feed")
+        XCTAssertEqual(RouteCatalog.title(.instanceFeed), "Feed")
         let reader = MarketPackage(id: "rss-reader", name: "RSS Reader")
         XCTAssertEqual(reader.phoneSurface, .native("rssReader"))
         XCTAssertEqual(PackageRoutes.route(for: reader), .rssReader)

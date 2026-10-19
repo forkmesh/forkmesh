@@ -1,4 +1,4 @@
-# Usage, Feed, and Mastodon packages
+# Usage, Network Feed, and Mastodon packages
 
 The Usage package reads only the current, already-authenticated provider usage snapshots from desktops linked to the signed-in ForkMesh account. It does not receive provider credentials or agent transcripts. Its Refresh button (and pull-to-refresh on the phones) asks each desktop to re-read its Claude Code accounts from Anthropic first (`agentops.usage {refresh: true}`); the desktop makes those requests with its own stored tokens, coalesces overlapping refreshes and answers from its stored readings within 30 seconds of the last one ([desktop/agents-ui.md](desktop/agents-ui.md)).
 
@@ -26,6 +26,6 @@ The Agents screen's usage bars and the usage card on Desktop agents push this sc
 
 The Usage card on Desktop agents opens this screen when tapped, whether or not the package is installed.
 
-Feed projects public ForkMesh profile updates alongside the existing signature-verified ActivityPub mention stream from World. It excludes private profiles and repositories and never turns a social mention into work automatically.
+Network Feed (package id `feed`) projects public ForkMesh profile updates alongside the existing signature-verified ActivityPub mention stream from World. It excludes private profiles and repositories and never turns a social mention into work automatically.
 
 Mastodon registers a client with the HTTPS instance selected by the user and completes OAuth there. Its access token and client registration are kept in browser session storage, are not synchronized to ForkMesh, and are cleared by Logout or when the browser session ends. The package uses the standard Mastodon API for timelines, posts, profile edits, notifications, relationships, lists, and preferences.

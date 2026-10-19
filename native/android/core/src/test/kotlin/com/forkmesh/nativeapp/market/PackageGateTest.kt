@@ -61,7 +61,7 @@ class PackageGateTest {
     fun testInstanceFeedIsANativePackageDestinationBehindTheGate() {
         assertEq(
             PackagePhoneSurface.Native("instanceFeed"),
-            MarketPackage(id = "instance-feed", name = "Instance Feed", webRoute = "/dashboard/instance-feed").phoneSurface,
+            MarketPackage(id = "instance-feed", name = "Feed", webRoute = "/dashboard/instance-feed").phoneSurface,
         )
         assertEq("instance-feed", PackageGate.ROUTE_KINDS[Route.Kind.InstanceFeed])
         assertEq("instance-feed", PackageGate.HUB_ITEMS[Route.Kind.InstanceFeed.raw])

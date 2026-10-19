@@ -185,7 +185,7 @@ public enum RouteCatalog {
         case .appStoreStatus: return "App Store Status"
         case .usage: return "Usage"
         case .rssReader: return "RSS Reader"
-        case .instanceFeed: return "Instance Feed"
+        case .instanceFeed: return "Feed"
         case .secureDrive: return "Secure Drive"
         case .spiderRoom: return "Spider Room"
         case .workflows: return "Workflows"
