@@ -32,6 +32,10 @@ struct MessagesConversationView<Drawer: View>: View {
     @State private var transcriptSize: CGSize = .zero
     @State private var safety: Bool = false
     @State private var onScreen: Bool = false
+    @State private var infoId: String?
+    @State private var infoOpen: Bool = false
+    @State private var infoDrag: CGFloat = 0
+    @State private var pageWidth: CGFloat = 0
     @State private var focusReport: DirectFocusReporter = DirectFocusReporter { (conversation: String, on: Bool) in
         ChatFeature.hub()?.setFocus(conversation, on)
     }
@@ -89,12 +93,18 @@ struct MessagesConversationView<Drawer: View>: View {
                     .ignoresSafeArea()
                 }
                 .environment(\.colorScheme, palette.dark ? .dark : .light)
+                .offset(x: -infoReveal * 0.3 * pageWidth)
             if let target = tapbackTarget {
                 tapbackOverlay(target)
             }
+            if let infoId, let bubble = infoBubble(infoId) {
+                infoPage(bubble, palette: palette)
+            }
             drawer
         }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { (width: CGFloat) in pageWidth = width }
         .onChange(of: conversation) { (previous: String, _: String) in
+            closeInfo(animated: false)
             drawing = false
             safety = false
             stopSharing(previous)
@@ -102,6 +112,7 @@ struct MessagesConversationView<Drawer: View>: View {
             reportFocus()
         }
         .onChange(of: hub.revealRequests) { _, _ in
+            closeInfo(animated: false)
             details = false
             safety = false
             tapbackTarget = nil
@@ -235,6 +246,82 @@ struct MessagesConversationView<Drawer: View>: View {
             quoteAuthor: quote.map { hub.replyAuthor($0, in: bubble.row.message.conversation) } ?? "",
             onQuote: shown ? { jumpTarget = quote?.id } : nil,
             life: life(bubble))
+        .messagesSideSwipe(
+            .left, enabled: !infoOpen && tapbackTarget == nil,
+            moved: { (dx: CGFloat) in pullInfo(bubble.row.id, dx) },
+            ended: { (dx: CGFloat, flung: CGFloat) in releaseInfo(dx, flung) })
+        .accessibilityAction(named: "Message Info") { openInfo(bubble.row.id) }
+    }
+
+    private var infoReveal: CGFloat {
+        guard infoId != nil, pageWidth > 0 else { return 0 }
+        let shown: CGFloat = infoOpen ? pageWidth - infoDrag : -infoDrag
+        return min(1, max(0, shown / pageWidth))
+    }
+
+    private func infoBubble(_ id: String) -> ChatBubble? {
+        for item in hub.conversationItems {
+            if case .message(let bubble) = item, bubble.row.id == id { return bubble }
+        }
+        return nil
+    }
+
+    private func infoPage(_ bubble: ChatBubble, palette: MessagesColors) -> some View {
+        MessagesMessageInfoScreen(
+            bubble: bubble, times: hub.receiptTimes(for: bubble.row.message), life: life(bubble),
+            direct: DirectMessageFrames.isDirect(bubble.row.message.conversation), colors: palette,
+            onClose: { closeInfo(animated: true) })
+            .shadow(color: Color.black.opacity(0.18 * infoReveal), radius: 12, x: -4)
+            .offset(x: (1 - infoReveal) * pageWidth)
+            .messagesSideSwipe(
+                .right, enabled: infoOpen,
+                moved: { (dx: CGFloat) in infoDrag = max(0, dx) },
+                ended: { (dx: CGFloat, flung: CGFloat) in
+                    settleInfo(open: !(dx > pageWidth * 0.35 || flung > pageWidth * 0.5))
+                })
+            .zIndex(2)
+    }
+
+    private func pullInfo(_ id: String, _ dx: CGFloat) {
+        if infoId != id {
+            infoId = id
+            infoOpen = false
+        }
+        if focused { focused = false }
+        infoDrag = min(0, dx)
+    }
+
+    private func releaseInfo(_ dx: CGFloat, _ flung: CGFloat) {
+        guard infoId != nil, !infoOpen else { return }
+        let open: Bool = -dx > pageWidth * 0.3 || -flung > pageWidth * 0.5
+        if open { FmHaptics.selection() }
+        settleInfo(open: open)
+    }
+
+    private func openInfo(_ id: String) {
+        infoId = id
+        infoDrag = 0
+        settleInfo(open: true)
+    }
+
+    private func settleInfo(open: Bool) {
+        withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) {
+            infoOpen = open
+            infoDrag = 0
+        } completion: {
+            if !infoOpen { infoId = nil }
+        }
+    }
+
+    private func closeInfo(animated: Bool) {
+        guard infoId != nil else { return }
+        if animated {
+            settleInfo(open: false)
+        } else {
+            infoOpen = false
+            infoDrag = 0
+            infoId = nil
+        }
     }
 
     private func life(_ bubble: ChatBubble) -> MessagesBubbleLife {
