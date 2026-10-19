@@ -226,9 +226,11 @@ Dictation on iOS:
   `onDone(true)` only then, and `PromptComposer` sends only if words were
   added this time).
 - Refused microphone or speech permission is not re-asked on every open.
-- The audio session is `playAndRecord` with `duckOthers`. Each start builds a
-  fresh `AVAudioEngine` after the session switches, so the tap uses the
-  current hardware format (a reused engine aborts on a format mismatch).
+- The audio session is `playAndRecord` with `duckOthers` (`mixWithOthers`
+  during another app's call, [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md)). Each
+  start builds a fresh `AVAudioEngine` after the session switches, so the tap
+  uses the current hardware format (a reused engine aborts on a format
+  mismatch).
 - iOS 26 uses on-device `SpeechAnalyzer` with `SpeechTranscriber`
   (`PromptSpeechAnalysis`); its model is installed through `AssetInventory`
   after launch and shown in Voice settings. Otherwise `SFSpeechRecognizer`.

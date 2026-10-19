@@ -4733,8 +4733,8 @@ window.ForkMeshDashboard.registerPage("crm", ({
       : zoho.oneClick ? "One-click connect is on for this server: skip to step A7."
       : "One-click connect is off: the server has no ForkMesh Zoho OAuth client yet. Follow A (server operator) or B (this organization only).";
     const connect = $(`[data-crm-zoho-guide-connect]`);
-    connect.disabled = !(canManage && zoho.oneClick && !zoho.connected);
-    connect.title = zoho.oneClick ? "" : "Available once step A is done";
+    connect.disabled = !(canManage && (zoho.oneClick || crmZohoSetupAvailable()) && !zoho.connected);
+    connect.title = zoho.oneClick ? "" : crmZohoSetupAvailable() ? "Runs B for you with the browser extension" : "Available once step A is done, or with the browser extension 2.26.0 or newer";
     $(`[data-crm-zoho-guide-settings]`).disabled = !canManage;
     const dialog = $(`[data-crm-zoho-guide-dialog]`); if (!dialog.open) dialog.showModal();
   }
@@ -4761,6 +4761,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     $(`[data-crm-zoho-refresh]`).value = "";
     $(`[data-crm-zoho-code]`).value = "";
     $(`[data-crm-zoho-exchange]`).disabled = !state.crmView.canManageSettings;
+    $(`[data-crm-zoho-extension]`)?.classList.toggle("hidden", !crmZohoSetupAvailable() || !state.crmView.canManageSettings);
     $(`[data-crm-zoho-status]`).textContent = zoho.connected
       ? `Connected to account ${zoho.accountId}${zoho.managed ? " through ForkMesh's Zoho app" : ""}${zoho.lastSyncAt ? ` · last synced ${relativeTimeLabel(zoho.lastSyncAt)}` : " · not synced yet"}${zoho.canSend ? " · sends from the mailbox" : " · read only: reconnect and allow sending"}.${zoho.managed ? "" : " Leave secrets blank to keep them unchanged."}`
       : zoho.oneClick
@@ -5217,8 +5218,46 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const zoho = state.crmView.settings?.zoho || {};
     if (action === "sync") void syncCrmZoho();
     else if ((action === "connect" || action === "reconnect") && zoho.oneClick) void connectCrmZoho();
+    else if ((action === "connect" || action === "reconnect") && crmZohoSetupAvailable()) startCrmZohoSetup();
     else if (action === "reconnect") openCrmSettings();
     else openCrmZohoGuide();
+  }
+
+  const crmZohoSetupAvailable = () => Boolean(document.documentElement.dataset.forkmeshCrmZohoSetup);
+
+  const CRM_ZOHO_SETUP_ERRORS = {
+    not_signed_in: "Sign in to the ForkMesh browser extension (its toolbar icon), then press Reconnect Zoho Mail again.",
+    organization_admin_required: "Only organization owners and admins can connect Zoho Mail.",
+    forbidden_sender: "The browser extension refused the request from this page. Reload the page and try again.",
+    extension_unavailable: "The browser extension did not answer. Reload it on chrome://extensions, then this page.",
+  };
+
+  function startCrmZohoSetup() {
+    if (!state.crmView.canManageSettings) { crmMessage("error", CRM_ZOHO_SETUP_ERRORS.organization_admin_required); return; }
+    state.crmView.zohoSetupRequest = `zoho-${Date.now()}`;
+    crmMessage("notice", "Opening the Zoho API Console in a new tab. The extension makes a Self Client code there and connects it; sign in to Zoho if it asks.");
+    window.postMessage({ source: "forkmesh-crm-page", type: "crm-zoho-setup", organization: state.crmView.organization, request: state.crmView.zohoSetupRequest }, location.origin);
+  }
+
+  async function onCrmZohoSetupMessage(event) {
+    if (event.source !== window || event.origin !== location.origin || event.data?.source !== "forkmesh-extension") return;
+    if (event.data.type === "crm-zoho-setup" && event.data.request === state.crmView.zohoSetupRequest) {
+      const response = event.data.response || {};
+      if (!response.ok) crmMessage("error", CRM_ZOHO_SETUP_ERRORS[response.error] || `The extension could not start the Zoho setup: ${response.message || response.error || "no answer"}`);
+      return;
+    }
+    if (event.data.type !== "crm-zoho-setup-update") return;
+    const setup = event.data.setup || {};
+    if (setup.organization && setup.organization !== state.crmView.organization) return;
+    if (setup.state === "done") {
+      if (state.crmView.zohoSetupDone === setup.id) return;
+      state.crmView.zohoSetupDone = setup.id;
+      crmMessage("notice", `Zoho Mail connected to account ${setup.accountId || ""}${setup.region ? ` (${setup.region})` : ""}. Syncing the shared boxes…`);
+      await loadCrm();
+      if (state.crmView.settings?.zoho?.connected) await syncCrmZoho();
+    } else if (setup.state === "error") crmMessage("error", `Zoho Mail was not connected: ${setup.message || setup.error}${setup.detail ? ` (${setup.detail})` : ""}. Try again from the card in the Zoho API Console tab.`);
+    else if (setup.state === "checking") crmMessage("notice", "The extension has the Self Client code; connecting it to Zoho Mail…");
+    else if (setup.state === "stopped") crmMessage("notice", "The Zoho setup was stopped. Nothing was changed.");
   }
 
   const CRM_ZOHO_CODE_ERRORS = {
@@ -5267,6 +5306,14 @@ window.ForkMeshDashboard.registerPage("crm", ({
     token_rejected: ["error", "Zoho rejected the sign-in. Start Connect Zoho Mail again."],
     account_missing: ["error", "That Zoho login has no Zoho Mail account to sync."],
   };
+
+  function crmZohoSetupParam() {
+    const url = new URL(location.href);
+    if (url.searchParams.get("zohosetup") !== "1") return false;
+    url.searchParams.delete("zohosetup");
+    history.replaceState(history.state, "", url);
+    return true;
+  }
 
   function crmZohoReturn() {
     const url = new URL(location.href);
@@ -6630,6 +6677,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     wireCrmActionsMenu();
     state.crmView.section = crmSectionFromUrl();
     window.addEventListener("forkmesh-crm-extension", renderCrmExtensionState);
+    window.addEventListener("message", (event) => void onCrmZohoSetupMessage(event));
     $(`[data-crm-extensions-open]`)?.addEventListener("click", () => void openCrmExtensionsPage());
     if (!state.session?.sessionToken) { crmMessage("error", "Sign in to use the organization CRM."); return; }
     const select = $(`[data-crm-organization]`);
@@ -6646,6 +6694,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
         state.crmView.organization = state.crmView.organizations.some((org) => org.name === requested) ? requested : state.crmView.organizations[0].name;
         select.value = state.crmView.organization; await loadCrm();
         if (crmZohoReturn() === "connected" && state.crmView.settings?.zoho?.connected) void syncCrmZoho();
+        if (crmZohoSetupParam() && state.crmView.canManageSettings) runCrmZohoStep(state.crmView.settings?.zoho?.connected ? "reconnect" : "connect");
       }
     } catch (error) { crmMessage("error", `CRM is unavailable: ${error.message}`); return; }
     select?.addEventListener("change", () => { state.crmView.organization = select.value; const url = new URL(location.href); url.searchParams.set("org", select.value); url.searchParams.delete("list"); history.replaceState(history.state, "", url); void loadCrm(); });
@@ -6822,8 +6871,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     strip?.addEventListener("contextmenu", openCrmStageStripMenu);
     $(`[data-crm-zoho-sync]`)?.addEventListener("click", () => {
       if (state.crmView.settings?.zoho?.connected) void syncCrmZoho();
-      else if (state.crmView.canManageSettings && state.crmView.settings?.zoho?.oneClick) void connectCrmZoho();
-      else if (state.crmView.canManageSettings) openCrmZohoGuide();
+      else if (state.crmView.canManageSettings) runCrmZohoStep("connect");
     });
     $(`[data-crm-zoho-guide]`)?.addEventListener("click", openCrmZohoGuide);
     $(`[data-crm-zoho-bar]`)?.addEventListener("click", (event) => {
@@ -6832,7 +6880,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     });
     $$(`[data-crm-zoho-guide-copy]`).forEach((button) => button.addEventListener("click", () => void copyCrmZohoGuide(button.dataset.crmZohoGuideCopy)));
     $(`[data-crm-zoho-guide-settings]`)?.addEventListener("click", () => { $(`[data-crm-zoho-guide-dialog]`).close(); openCrmSettings(); });
-    $(`[data-crm-zoho-guide-connect]`)?.addEventListener("click", () => { $(`[data-crm-zoho-guide-dialog]`).close(); void connectCrmZoho(); });
+    $(`[data-crm-zoho-guide-connect]`)?.addEventListener("click", () => { $(`[data-crm-zoho-guide-dialog]`).close(); runCrmZohoStep("connect"); });
     $(`[data-crm-drafts-open]`)?.addEventListener("click", openCrmDrafts);
     $(`[data-crm-drafts-body]`)?.addEventListener("click", (event) => {
       const button = event.target.closest("[data-crm-draft-send]");
@@ -6840,6 +6888,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     });
     $(`[data-crm-zoho-connect]`)?.addEventListener("click", () => void connectCrmZoho());
     $(`[data-crm-zoho-exchange]`)?.addEventListener("click", () => void exchangeCrmZohoCode());
+    $(`[data-crm-zoho-extension]`)?.addEventListener("click", () => { $(`[data-crm-settings-dialog]`).close(); startCrmZohoSetup(); });
     $(`[data-crm-zoho-disconnect]`)?.addEventListener("click", () => void disconnectCrmZoho());
     $(`[data-crm-mastodon-sync]`)?.addEventListener("click", () => void syncCrmToots(false));
     $(`[data-crm-mastodon-disconnect]`)?.addEventListener("click", () => void disconnectCrmMastodon());

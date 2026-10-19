@@ -38,6 +38,15 @@ final class DesktopAlarm {
         }
     }
 
+    func hush() {
+        guard player != nil else { return }
+        player?.stop()
+        player = nil
+        if !PromptDictation.isListening {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
     func stop() {
         timeout?.cancel()
         timeout = nil
@@ -50,7 +59,7 @@ final class DesktopAlarm {
     }
 
     private func startSound() {
-        guard player == nil,
+        guard player == nil, !OtherAppCall.inProgress,
             let url = Bundle.main.url(forResource: DesktopAlarm.soundName, withExtension: "wav"),
             let sound = try? AVAudioPlayer(contentsOf: url)
         else { return }

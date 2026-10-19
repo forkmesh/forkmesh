@@ -12,7 +12,9 @@ final class GenieSounds {
     private var lastPlayed: [GenieChime: Date] = [:]
 
     func play(_ chime: GenieChime) {
-        guard FmSoundCues.isEnabled, !FmCuePlayer.shared.isQuiet, !MessagesVoiceRecorder.isRecording else { return }
+        guard FmSoundCues.isEnabled, !FmCuePlayer.shared.isQuiet, !MessagesVoiceRecorder.isRecording,
+              !OtherAppCall.inProgress
+        else { return }
         let now: Date = Date()
         if let last = lastPlayed[chime], now.timeIntervalSince(last) < 0.25 { return }
         lastPlayed[chime] = now

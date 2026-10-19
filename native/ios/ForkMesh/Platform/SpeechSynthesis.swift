@@ -119,7 +119,7 @@ final class AppleSpeechEngine: NSObject, SpeechEngine, AVSpeechSynthesizerDelega
         Self.talking = true
         PromptDictation.yieldOverhearing()
         let session: AVAudioSession = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? session.setCategory(.playback, mode: .spokenAudio, options: OtherAppCall.duckingOptions)
         try? session.setActive(true)
     }
 

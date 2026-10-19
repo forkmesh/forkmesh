@@ -39,7 +39,7 @@ object PackageGate {
         "hosts" to "hosts", "network" to "network",
         "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
-        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "usage" to "usage", "rssReader" to "rss-reader", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
+        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "usage" to "usage", "rssReader" to "rss-reader", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
         "tour" to "tour", "world" to "world", "people" to "people", "docs" to "docs", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
@@ -83,6 +83,7 @@ object PackageGate {
         put("app-store-status", Route.Kind.AppStoreStatus)
         put("usage", Route.Kind.Usage)
         put("rss-reader", Route.Kind.RssReader)
+        put("instance-feed", Route.Kind.InstanceFeed)
         put("secure-drive", Route.Kind.SecureDrive)
         put("files", Route.Kind.Files)
         put(WORKFLOWS, Route.Kind.Workflows)

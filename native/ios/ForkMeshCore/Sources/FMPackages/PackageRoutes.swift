@@ -98,6 +98,7 @@ public enum PackageRoutes {
         case "appStoreStatus": return .appStoreStatus
         case "usage": return .usage
         case "rssReader": return .rssReader
+        case "instanceFeed": return .instanceFeed(post: nil)
         case "secureDrive": return .secureDrive
         case "spiderRoom": return .spiderRoom
         case "workflows": return .workflows

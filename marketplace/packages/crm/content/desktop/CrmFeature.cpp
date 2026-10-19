@@ -3045,10 +3045,25 @@ void CrmFeature::runZohoStep(const QString &action)
     else if ((action == QLatin1String("connect") || action == QLatin1String("reconnect")) &&
              oneClick)
         connectZohoMail();
-    else if (action == QLatin1String("reconnect"))
-        editSettings();
+    else if (action == QLatin1String("connect") || action == QLatin1String("reconnect"))
+        reconnectZohoInBrowser();
     else
         showZohoGuide();
+}
+
+void CrmFeature::reconnectZohoInBrowser()
+{
+    const QString name = m_organization->currentData().toString();
+    if (name.isEmpty()) {
+        editSettings();
+        return;
+    }
+    QDesktopServices::openUrl(QUrl(crmPageLink(QStringLiteral("org"), name) +
+                                   QStringLiteral("&zohosetup=1")));
+    setStatus(QStringLiteral(
+        "Finish in the browser: the ForkMesh extension opens the Zoho API Console, makes a "
+        "Self Client code and connects it. Sign in to Zoho if it asks, then refresh the CRM "
+        "here. Without the extension, the page opens CRM settings for a code."));
 }
 
 void CrmFeature::markZohoReadOnly()
