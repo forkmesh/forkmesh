@@ -4,12 +4,13 @@
 This is the Python twin of desktop/src/AppPaths.{h,cpp}; the two must agree.
 
     ~/projects/                     projects root      (FORKMESH_PROJECTS_DIR)
+      forkmesh_data/                every project's own files
+        forkmesh/                   data/ config/ cache/ state/ logs/ ssh/
+        <project>/                  data/ config/ cache/ state/ logs/ ssh/
       forkmesh/                     the home project   (FORKMESH_HOME)
         src/                        source checkout
         bin/ toolchain/ builds/ worktrees/ release/    shared by every project
-        data/ config/ cache/ state/ logs/ ssh/         this project's own files
-      <project>/                    any other project, fully isolated
-        data/ config/ cache/ state/ logs/ ssh/
+      <project>/                    any other project: project.json, plugin folders
 
 Every root resolves to its place in the layout when that exists (or when there
 is nothing older to preserve) and to the legacy XDG / ~/.forkmesh location
@@ -34,6 +35,7 @@ from pathlib import Path
 
 HOME_PROJECT = "forkmesh"
 PROJECT_FILE = "project.json"
+DATA_STORE = "forkmesh_data"
 _SLUG = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?$")
 
 
@@ -43,6 +45,14 @@ def is_valid_slug(slug: str) -> bool:
 
 def _env(name: str, environ: dict[str, str]) -> str:
     return (environ.get(name) or "").strip()
+
+
+def data_store_root(home_dir: Path) -> Path:
+    return Path(os.path.normpath(home_dir)).parent / DATA_STORE
+
+
+def store_dir(home_dir: Path, slug: str) -> Path:
+    return data_store_root(home_dir) / slug
 
 
 def _xdg(variable: str, home: Path, fallback: str, environ: dict[str, str]) -> Path:
@@ -67,6 +77,8 @@ class Layout:
     home_dir: Path
     project: str
     project_dir: Path
+    data_store: Path
+    store: Path
     reroot_allowed: bool
     reroot_blocked_reason: str
     data: Path
@@ -103,6 +115,17 @@ class Layout:
     def source(self) -> Path:
         return self.home_dir / "src"
 
+    @property
+    def home_store(self) -> Path:
+        return store_dir(self.home_dir, HOME_PROJECT)
+
+    def home_root(self, name: str) -> Path:
+        modern = self.home_store / name
+        old = self.home_dir / name
+        if modern.exists() or not _real(old):
+            return modern
+        return old
+
     def _shared(self, name: str, legacy: Path) -> Path:
         modern = self.home_dir / name
         if self.reroot_allowed_for_home and (modern.exists() or not _real(legacy)):
@@ -133,7 +156,7 @@ class Layout:
 
     @property
     def fanout_hosts(self) -> Path:
-        modern = self.home_dir / "config" / "fanout" / "hosts"
+        modern = self.home_root("config") / "fanout" / "hosts"
         legacy = self.legacy_config.parent / "forkmesh-fanout" / "hosts"
         if self.reroot_allowed_for_home and (modern.exists() or not _real(legacy)):
             return modern
@@ -142,7 +165,7 @@ class Layout:
     @property
     def tool_state(self) -> Path:
         """Durable state written by tools (scan journals, observation logs)."""
-        modern = self.home_dir / "state" / "tools"
+        modern = self.home_root("state") / "tools"
         legacy = self.legacy_state.parent / ".local" / "state" / "forkmesh"
         if self.reroot_allowed_for_home and (modern.exists() or not _real(legacy)):
             return modern
@@ -151,7 +174,7 @@ class Layout:
     @property
     def secrets(self) -> Path:
         """Operator secrets kept by tools (Cloudflare data keys, bridge keys)."""
-        modern = self.home_dir / "config" / "tools" / "secrets"
+        modern = self.home_root("config") / "tools" / "secrets"
         legacy = self.legacy_config.parent / "forkmesh" / "secrets"
         if self.reroot_allowed_for_home and (modern.exists() or not _real(legacy)):
             return modern
@@ -175,7 +198,7 @@ class Layout:
 
     @property
     def publisher_state(self) -> Path:
-        return self.home_dir / "state" / "publisher"
+        return self.home_root("state") / "publisher"
 
     @property
     def action_spool(self) -> Path:
@@ -183,14 +206,14 @@ class Layout:
 
     @property
     def systemd_units(self) -> Path:
-        return self.home_dir / "config" / "systemd"
+        return self.home_root("config") / "systemd"
 
     @property
     def fleet_legacy(self) -> Path:
         return self.projects_root / "forkmesh-next"
 
     def _fleet(self, root: str, legacy: str) -> Path:
-        modern = self.home_dir / root / "fleet"
+        modern = self.home_root(root) / "fleet"
         old = self.fleet_legacy / legacy
         if modern.exists() or not old.exists():
             return modern
@@ -240,12 +263,20 @@ def _real(path: Path) -> bool:
     return path.exists() and not path.is_symlink()
 
 
+def _real_folder(path: Path) -> bool:
+    return path.is_dir() and not path.is_symlink()
+
+
 def _pick(modern: Path, legacy: Path | None, allowed: bool, probe: Path | None = None,
-          modern_probe: Path | None = None) -> Path:
+          modern_probe: Path | None = None, previous: Path | None = None,
+          previous_probe: Path | None = None) -> Path:
     if legacy is not None and not allowed:
         return legacy
     if (modern_probe if modern_probe is not None else modern).exists():
         return modern
+    if (previous is not None and previous.is_dir()
+            and (previous_probe is None or previous_probe.exists())):
+        return previous
     if legacy is not None and _real(probe if probe is not None else legacy):
         return legacy
     return modern
@@ -287,16 +318,29 @@ def resolve(project: str | None = None, environ: dict[str, str] | None = None,
     def legacy(path: Path) -> Path | None:
         return path if is_home else None
 
-    data = _pick(project_dir / "data", legacy(legacy_data), allowed)
+    store = store_dir(home_dir, slug)
+    data = _pick(store / "data", legacy(legacy_data), allowed,
+                 previous=project_dir / "data")
     # config/ may hold tool files before the settings folder has moved in.
-    config = _pick(project_dir / "config", legacy(legacy_config.parent), allowed,
-                   legacy(legacy_config), project_dir / "config" / "ForkMesh")
-    cache = _pick(project_dir / "cache", legacy(legacy_cache), allowed)
-    state = _pick(project_dir / "state", legacy(legacy_state), allowed,
-                  legacy(legacy_state / "forkmesh.lock"))
-    logs = _pick(project_dir / "logs", legacy(legacy_state), allowed,
-                 legacy(legacy_state / "diagnostics"))
-    ssh = _pick(project_dir / "ssh", legacy(legacy_data / "ssh"), allowed)
+    config = _pick(store / "config", legacy(legacy_config.parent), allowed,
+                   legacy(legacy_config), store / "config" / "ForkMesh",
+                   project_dir / "config", project_dir / "config" / "ForkMesh")
+    cache = _pick(store / "cache", legacy(legacy_cache), allowed,
+                  previous=project_dir / "cache")
+    if allowed and _real_folder(project_dir / "state") and (
+            project_dir / "state" / "forkmesh.lock").exists():
+        state = project_dir / "state"
+    elif (is_home and allowed and _real_folder(legacy_state)
+          and (legacy_state / "forkmesh.lock").exists()):
+        state = legacy_state
+    else:
+        state = _pick(store / "state", legacy(legacy_state), allowed,
+                      legacy(legacy_state / "forkmesh.lock"),
+                      previous=project_dir / "state")
+    logs = _pick(store / "logs", legacy(legacy_state), allowed,
+                 legacy(legacy_state / "diagnostics"), previous=project_dir / "logs")
+    ssh = _pick(store / "ssh", legacy(legacy_data / "ssh"), allowed,
+                previous=project_dir / "ssh")
 
     # What the desktop that spawned us resolved always wins for its own project.
     spawned_for = _env("FORKMESH_PROJECT", environ) or HOME_PROJECT
@@ -308,7 +352,8 @@ def resolve(project: str | None = None, environ: dict[str, str] | None = None,
 
     return Layout(
         projects_root=projects_root, home_dir=home_dir, project=slug,
-        project_dir=project_dir, reroot_allowed=not blocked,
+        project_dir=project_dir, data_store=data_store_root(home_dir), store=store,
+        reroot_allowed=not blocked,
         reroot_blocked_reason=reason, data=data, config=config, cache=cache,
         state=state, logs=logs, ssh=ssh, legacy_data=legacy_data,
         legacy_config=legacy_config, legacy_cache=legacy_cache,
@@ -323,6 +368,7 @@ def main(argv: list[str]) -> int:
     layout = resolve(project)
     rows = [
         ("project", layout.project), ("folder", layout.project_dir),
+        ("forkmesh data", layout.store),
         ("data", layout.data), ("settings", layout.settings_file),
         ("cache", layout.cache), ("state", layout.state), ("logs", layout.logs),
         ("ssh", layout.ssh), ("source", layout.source),

@@ -15,13 +15,14 @@
 // Layout (the "projects" layout):
 //
 //   ~/projects/                      projects root  (FORKMESH_PROJECTS_DIR)
+//     forkmesh_data/                 every project's own files, in one place
+//       forkmesh/                    data/ config/ cache/ state/ logs/ ssh/
+//       <project>/                   data/ config/ cache/ state/ logs/ ssh/
 //     forkmesh/                      the home project (FORKMESH_HOME)
 //       src/                         source checkout the app builds/updates from
 //       bin/ toolchain/ builds/ worktrees/ release/    shared by every project
-//       data/ config/ cache/ state/ logs/ ssh/         this project's own files
 //       project.json  logo.png
-//     <project>/                     any other project, fully isolated
-//       data/ config/ cache/ state/ logs/ ssh/
+//     <project>/                     any other project
 //       src/                         optional: the project's repositories
 //       project.json  logo.png
 //
@@ -42,6 +43,7 @@ namespace forkmesh::paths {
 
 inline constexpr char kHomeProjectSlug[] = "forkmesh";
 inline constexpr char kProjectFileName[] = "project.json";
+inline constexpr char kDataStoreName[] = "forkmesh_data";
 
 // Inputs of the resolver, injected so the logic is testable without touching
 // the real home directory.
@@ -79,6 +81,8 @@ struct Layout {
     QString homeDir;
     QString projectSlug;
     QString projectDir;
+    QString dataStoreRoot;
+    QString storeDir;
     // False while projectDir is still a git checkout; every root is legacy.
     bool rerootAllowed = false;
     QString rerootBlockedReason;
@@ -106,6 +110,20 @@ struct Layout {
 // returns a name that escapes the projects root.
 QString slugify(const QString &name);
 bool isValidSlug(const QString &slug);
+
+inline QString dataStoreRootFor(const QString &homeDir)
+{
+    if (homeDir.trimmed().isEmpty())
+        return QString();
+    return QDir::cleanPath(QFileInfo(QDir::cleanPath(homeDir)).absolutePath() +
+                           QLatin1Char('/') + QLatin1String(kDataStoreName));
+}
+
+inline QString storeDirFor(const QString &homeDir, const QString &slug)
+{
+    const QString root = dataStoreRootFor(homeDir);
+    return root.isEmpty() ? QString() : QDir::cleanPath(root + QLatin1Char('/') + slug);
+}
 
 // Pure: where things *would* live. Touches the disk only to test existence.
 Layout resolve(const Environment &environment);
@@ -190,6 +208,8 @@ QVector<MoveResult> migrateNow(bool dryRun = false);
 // delete after taking the new lock. Empty when there is nothing to adopt.
 QString adoptProjectStateRoot();
 
+void retireStateRoot(const QString &oldStateDir);
+
 // Process state lives in the header so the accessors below are usable from
 // any translation unit without linking AppPaths.cpp: most stores are also
 // compiled into standalone test binaries, which never activate the layout.
@@ -215,7 +235,8 @@ inline QString dataRoot()
 inline QString localDataRoot()
 {
     if (detail::active &&
-        detail::current.data.startsWith(detail::current.projectDir + QLatin1Char('/')))
+        (detail::current.data.startsWith(detail::current.storeDir + QLatin1Char('/')) ||
+         detail::current.data.startsWith(detail::current.projectDir + QLatin1Char('/'))))
         return detail::current.data;
     return QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
 }
@@ -312,6 +333,8 @@ QString projectsRoot();
 QString homeDir();
 QString projectDir();
 QString projectSlug();
+QString dataStoreRoot();
+QString storeDir();
 
 // Pre-QApplication resolution of the main log, for the crash handler.
 QString earlyMainLogPath(int argc, char **argv);

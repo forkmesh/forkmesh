@@ -35,6 +35,20 @@ const QStringList &projectRoots()
     return roots;
 }
 
+QString storeRootBeside(const QString &projectsRoot)
+{
+    if (forkmesh::paths::isActive() && !forkmesh::paths::layout().dataStoreRoot.isEmpty() &&
+        QDir::cleanPath(forkmesh::paths::layout().projectsRoot) == QDir::cleanPath(projectsRoot))
+        return forkmesh::paths::layout().dataStoreRoot;
+    return QDir(projectsRoot).filePath(QLatin1String(forkmesh::paths::kDataStoreName));
+}
+
+QString storeDirOf(const QString &projectDir)
+{
+    const QFileInfo info(QDir::cleanPath(projectDir));
+    return QDir(storeRootBeside(info.absolutePath())).filePath(info.fileName());
+}
+
 QStringList stringList(const QJsonValue &value)
 {
     QStringList list;
@@ -163,10 +177,21 @@ QVector<InstanceChoice> decodeInstanceChoices(const QString &json)
 QString settingsFilePath(const QString &projectDir)
 {
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    return QDir(projectDir).filePath(QStringLiteral("config/ForkMesh/ForkMesh.conf"));
+    const QString file = QStringLiteral("config/ForkMesh/ForkMesh.conf");
 #else
-    return QDir(projectDir).filePath(QStringLiteral("config/ForkMesh/ForkMesh.ini"));
+    const QString file = QStringLiteral("config/ForkMesh/ForkMesh.ini");
 #endif
+    const QString inStore = QDir(storeDirOf(projectDir)).filePath(file);
+    const QString inProject = QDir(projectDir).filePath(file);
+    if (!QFileInfo::exists(inStore) && QFileInfo(inProject).isFile() &&
+        !QFileInfo(QDir(projectDir).filePath(QStringLiteral("config"))).isSymLink())
+        return inProject;
+    return inStore;
+}
+
+QString storeDir(const QString &projectDir)
+{
+    return storeDirOf(projectDir);
 }
 
 bool create(const forkmesh::paths::Layout &current, const CreateRequest &request,
@@ -190,11 +215,17 @@ bool create(const forkmesh::paths::Layout &current, const CreateRequest &request
         return false;
     }
     const QString dir = QDir(current.projectsRoot).filePath(slug);
-    if (QFileInfo::exists(dir) || QFileInfo(dir).isSymLink()) {
-        *error = QStringLiteral("%1 already exists. A project only ever uses a folder it "
-                                "created itself.")
-                     .arg(QDir::toNativeSeparators(dir));
-        return false;
+    const QString storeRoot = current.dataStoreRoot.isEmpty()
+                                  ? storeRootBeside(current.projectsRoot)
+                                  : current.dataStoreRoot;
+    const QString store = QDir(storeRoot).filePath(slug);
+    for (const QString &taken : {dir, store}) {
+        if (QFileInfo::exists(taken) || QFileInfo(taken).isSymLink()) {
+            *error = QStringLiteral("%1 already exists. A project only ever uses a folder it "
+                                    "created itself.")
+                         .arg(QDir::toNativeSeparators(taken));
+            return false;
+        }
     }
     if (!request.logoSource.isEmpty()) {
         const QFileInfo logo(request.logoSource);
@@ -213,8 +244,16 @@ bool create(const forkmesh::paths::Layout &current, const CreateRequest &request
         return false;
     }
     QFile::setPermissions(dir, ownerOnly);
+    const bool storeRootIsNew = !QFileInfo::exists(storeRoot);
+    if (!QDir().mkpath(store)) {
+        *error = QStringLiteral("Could not create %1.").arg(QDir::toNativeSeparators(store));
+        return false;
+    }
+    if (storeRootIsNew)
+        QFile::setPermissions(storeRoot, ownerOnly);
+    QFile::setPermissions(store, ownerOnly);
     for (const QString &root : projectRoots()) {
-        const QString path = QDir(dir).filePath(root);
+        const QString path = QDir(store).filePath(root);
         if (!QDir().mkpath(path)) {
             *error = QStringLiteral("Could not create %1.").arg(QDir::toNativeSeparators(path));
             return false;
@@ -232,7 +271,7 @@ bool create(const forkmesh::paths::Layout &current, const CreateRequest &request
     if (request.shareIdentity) {
         const QString source = QDir(current.data).filePath(QStringLiteral("identity/ed25519.pem"));
         if (QFileInfo(source).isFile()) {
-            const QString identityDir = QDir(dir).filePath(QStringLiteral("data/identity"));
+            const QString identityDir = QDir(store).filePath(QStringLiteral("data/identity"));
             QDir().mkpath(identityDir);
             QFile::setPermissions(identityDir, ownerOnly);
             const QString target = QDir(identityDir).filePath(QStringLiteral("ed25519.pem"));
@@ -246,7 +285,13 @@ bool create(const forkmesh::paths::Layout &current, const CreateRequest &request
 
     // Seed settings the project's own process reads on first start.
     {
-        const QString settingsPath = settingsFilePath(dir);
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+        const QString settingsPath =
+            QDir(store).filePath(QStringLiteral("config/ForkMesh/ForkMesh.conf"));
+#else
+        const QString settingsPath =
+            QDir(store).filePath(QStringLiteral("config/ForkMesh/ForkMesh.ini"));
+#endif
         QDir().mkpath(QFileInfo(settingsPath).absolutePath());
         QFile::setPermissions(QFileInfo(settingsPath).absolutePath(), ownerOnly);
         QSettings seed(settingsPath, QSettings::IniFormat);
@@ -363,9 +408,10 @@ bool remove(const QString &projectsRoot, const QString &slug, bool keepFolder,
     }
     // The same lock a project's process holds while it runs (SingleInstance);
     // a stale one left by a crash is taken over.
-    {
-        QLockFile running(QDir(dir).filePath(QStringLiteral("state/forkmesh.lock")));
-        if (QFileInfo(dir + QStringLiteral("/state")).isDir() && !running.tryLock(0)) {
+    const QString store = QDir(storeRootBeside(projectsRoot)).filePath(slug);
+    for (const QString &root : {store, dir}) {
+        QLockFile running(QDir(root).filePath(QStringLiteral("state/forkmesh.lock")));
+        if (QFileInfo(root + QStringLiteral("/state")).isDir() && !running.tryLock(0)) {
             *error = QStringLiteral("The project is open in another window. Close it "
                                     "first, then remove it.");
             return false;
@@ -390,6 +436,14 @@ bool remove(const QString &projectsRoot, const QString &slug, bool keepFolder,
     }
     if (movedTo)
         *movedTo = aside;
+    const QFileInfo storeInfo(store);
+    if (storeInfo.isDir() && !storeInfo.isSymLink() &&
+        forkmesh::safedelete::moveAside(store, QStringLiteral("deleted")).isEmpty()) {
+        *error = QStringLiteral("The project is removed, but its data in %1 could not be "
+                                "moved aside.")
+                     .arg(QDir::toNativeSeparators(store));
+        return false;
+    }
     return true;
 }
 

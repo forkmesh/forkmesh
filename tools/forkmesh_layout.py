@@ -302,19 +302,20 @@ def build_plan(home: Path, leave_links: bool, use_systemctl: bool = True) -> Pla
     config = layout.legacy_config.parent               # ~/.config
     share = layout.legacy_data.parent.parent           # ~/.local/share
     state = home / ".local" / "state"
+    own_state = layout.home_root("state")
+    own_config = layout.home_root("config")
     known = [
         ("Agent and release build trees", cache / "forkmesh-builds", home_dir / "builds"),
         ("Release workspace", cache / "forkmesh-release-host", home_dir / "release"),
         ("Windows cross-build tree", cache / "forkmesh-win-build", home_dir / "builds-windows"),
         ("Windows toolchain", cache / "forkmesh-win-toolchain", home_dir / "toolchain-windows"),
         ("Linker toolchain", share / "forkmesh-toolchain", home_dir / "toolchain-host"),
-        ("Tool state", state / "forkmesh", home_dir / "state" / "tools"),
-        ("Fan-out state", state / "forkmesh-fanout", home_dir / "state" / "fanout"),
-        ("Tool secrets and keys", config / "forkmesh", home_dir / "config" / "tools"),
-        ("Fan-out host list", config / "forkmesh-fanout", home_dir / "config" / "fanout"),
-        ("MCP token", home / ".forkmesh_mcp_token", home_dir / "config" / "mcp_token"),
-        ("Offline sync key", home / ".forkmesh-offline.key",
-         home_dir / "config" / "offline.key"),
+        ("Tool state", state / "forkmesh", own_state / "tools"),
+        ("Fan-out state", state / "forkmesh-fanout", own_state / "fanout"),
+        ("Tool secrets and keys", config / "forkmesh", own_config / "tools"),
+        ("Fan-out host list", config / "forkmesh-fanout", own_config / "fanout"),
+        ("MCP token", home / ".forkmesh_mcp_token", own_config / "mcp_token"),
+        ("Offline sync key", home / ".forkmesh-offline.key", own_config / "offline.key"),
         ("Manual worktrees", home / "forkmesh-worktrees", home_dir / "worktrees"),
         ("Helper libraries", home / ".local" / "lib" / "forkmesh", home_dir / "lib"),
     ]
@@ -385,8 +386,8 @@ def build_plan(home: Path, leave_links: bool, use_systemctl: bool = True) -> Pla
         # Our own backups sit beside the units and share their prefix: they
         # move along, but are never edited and never linked back.
         if unit.name.endswith(BACKUP_SUFFIX):
-            plan_move(f"Backup {unit.name}", unit,
-                      home_dir / "config" / "systemd" / unit.name, link=False)
+            plan_move(f"Backup {unit.name}", unit, layout.systemd_units / unit.name,
+                      link=False)
             continue
         files = [unit] if unit.is_file() else sorted(unit.rglob("*.conf"))
         for file in files:
@@ -394,8 +395,8 @@ def build_plan(home: Path, leave_links: bool, use_systemctl: bool = True) -> Pla
                     errors="surrogateescape"):
                 plan.add("edit", f"Point {file.name} at src/", str(file),
                          lambda f=file: edit_file(f, rewrite))
-        plan_move(f"systemd unit {unit.name}", unit,
-                  home_dir / "config" / "systemd" / unit.name, link=True)
+        plan_move(f"systemd unit {unit.name}", unit, layout.systemd_units / unit.name,
+                  link=True)
     if units and use_systemctl:
         plan.add("run", "Reload systemd user units", "systemctl --user daemon-reload",
                  lambda: "reloaded" if run(["systemctl", "--user", "daemon-reload"]
@@ -429,14 +430,16 @@ def build_plan(home: Path, leave_links: bool, use_systemctl: bool = True) -> Pla
     # Wherever the settings file is by the time this runs (the desktop may or
     # may not have migrated yet), repository records must follow the checkout.
     for settings in {layout.settings_file, layout.legacy_config / "ForkMesh.conf",
-                     home_dir / "config" / "ForkMesh" / "ForkMesh.conf"}:
+                     home_dir / "config" / "ForkMesh" / "ForkMesh.conf",
+                     layout.home_store / "config" / "ForkMesh" / "ForkMesh.conf"}:
         if settings.is_file() and is_checkout:
             plan.add("edit", "Point saved repository paths at src/", str(settings),
                      lambda f=settings: edit_file(f, rewrite))
 
     # 5. what stays for the desktop ------------------------------------------------
+    own_roots = [home_dir / name for name in ("data", "config", "cache", "state", "logs", "ssh")]
     pending = [p for p in (layout.legacy_data, layout.legacy_config, layout.legacy_cache,
-                           layout.legacy_state) if real(p)]
+                           layout.legacy_state, *own_roots) if real(p)]
     keys = sorted(p.name for p in (home / ".ssh").glob("forkmesh_*")) if (home / ".ssh").is_dir() else []
     if pending or keys:
         listing = "\n      ".join(str(p) for p in pending)

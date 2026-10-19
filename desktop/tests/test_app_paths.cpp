@@ -105,10 +105,15 @@ void testFreshInstallUsesLayout()
     check(layout.projectsRoot == home + "/projects", "projects root defaults to ~/projects");
     check(layout.homeDir == home + "/projects/forkmesh", "home project is ~/projects/forkmesh");
     check(layout.isHomeProject() && layout.rerootAllowed, "fresh install may use the layout");
-    check(layout.data == home + "/projects/forkmesh/data", "fresh data root is in the layout");
-    check(layout.config == home + "/projects/forkmesh/config",
+    const QString store = home + "/projects/forkmesh_data/forkmesh";
+    check(layout.dataStoreRoot == home + "/projects/forkmesh_data" && layout.storeDir == store,
+          "forkmesh_data sits beside the home project");
+    check(layout.data == store + "/data", "fresh data root is in forkmesh_data");
+    check(layout.config == store + "/config",
           "fresh config root ignores an unrelated ~/.config");
-    check(layout.ssh == home + "/projects/forkmesh/ssh", "fresh ssh root is in the layout");
+    check(layout.ssh == store + "/ssh" && layout.state == store + "/state" &&
+              layout.logs == store + "/logs" && layout.cache == store + "/cache",
+          "every fresh root is in forkmesh_data");
     check(layout.sourceDir() == home + "/projects/forkmesh/src", "source lives in src/");
     check(planMigration(environmentIn(home), layout).size() > 0 &&
               applyMigration(planMigration(environmentIn(home), layout), false)
@@ -160,7 +165,7 @@ void testMigrationMovesEverything()
     check(wouldMove >= 8, "the dry run reports every legacy location");
     bool sawCarvedSsh = false;
     for (const MoveResult &result : dry) {
-        if (result.move.to.endsWith("/projects/forkmesh/ssh"))
+        if (result.move.to.endsWith("/projects/forkmesh_data/forkmesh/ssh"))
             sawCarvedSsh = result.outcome == MoveResult::Outcome::Moved;
     }
     check(sawCarvedSsh, "the dry run sees through its own pretended moves");
@@ -173,7 +178,7 @@ void testMigrationMovesEverything()
                         qPrintable(result.move.to), qPrintable(result.detail));
         }
     }
-    const QString root = home + "/projects/forkmesh";
+    const QString root = home + "/projects/forkmesh_data/forkmesh";
     check(readFile(root + "/data/identity/ed25519.pem") == "KEY", "identity key moved");
     check(readFile(root + "/ssh/vultr_mirror_ed25519") == "FLEET",
           "managed ssh keys carved out of data into ssh/");
@@ -181,7 +186,8 @@ void testMigrationMovesEverything()
           "settings file moved to config/ForkMesh");
     check(QFileInfo::exists(home + "/.config/git/config"), "unrelated ~/.config untouched");
     check(readFile(root + "/logs/diagnostics/stalls.log") == "stall", "diagnostics moved");
-    check(readFile(root + "/toolchain/jdk/release") == "21", "toolchains moved");
+    check(readFile(home + "/projects/forkmesh/toolchain/jdk/release") == "21",
+          "toolchains moved, and stay shared in the home project");
     check(readFile(root + "/cache/chat-media/a") == "x", "cache moved");
     check(readFile(root + "/ssh/user/forkmesh_jett_ed25519") == "PRIVATE",
           "ForkMesh-named user key moved");
@@ -231,7 +237,7 @@ void testMigrationMovesEverything()
     check(layout.data == root + "/data" && layout.config == root + "/config" &&
               layout.ssh == root + "/ssh" && layout.logs == root + "/logs" &&
               layout.cache == root + "/cache",
-          "after migrating, every root resolves inside the project");
+          "after migrating, every root resolves inside forkmesh_data");
 
     const QVector<MoveResult> again = applyMigration(planMigration(environment, layout), false);
     bool idempotent = true;
@@ -253,7 +259,7 @@ void testToolFilesInConfigDoNotHideLegacySettings()
           "settings stay legacy until the settings folder itself has moved");
     applyMigration(planMigration(environment, layout), false);
     layout = resolve(environment);
-    check(layout.config == home + "/projects/forkmesh/config" &&
+    check(layout.config == home + "/projects/forkmesh_data/forkmesh/config" &&
               readFile(layout.config + "/ForkMesh/ForkMesh.conf").contains("theme=dark") &&
               readFile(layout.config + "/tools/secrets/worker.data-key") == "k",
           "settings move in beside the tool files already there");
@@ -278,8 +284,9 @@ void testXdgSandboxIsRespected()
     check(planMigration(environment, layout).isEmpty(), "a sandboxed run migrates nothing");
     environment.homeEnv = home + "/elsewhere/forkmesh";
     layout = resolve(environment);
-    check(layout.rerootAllowed && layout.data == home + "/elsewhere/forkmesh/data",
-          "FORKMESH_HOME places the layout explicitly, sandbox or not");
+    check(layout.rerootAllowed &&
+              layout.data == home + "/elsewhere/forkmesh_data/forkmesh/data",
+          "FORKMESH_HOME places the layout explicitly, sandbox or not, data beside it");
 }
 
 void testOccupiedDestinationIsNeverMerged()
@@ -287,14 +294,19 @@ void testOccupiedDestinationIsNeverMerged()
     QTemporaryDir tmp;
     const QString home = tmp.path();
     seedLegacyInstall(home);
-    writeFile(home + "/projects/forkmesh/data/identity/ed25519.pem", "NEWER");
+    const QString storeData = home + "/projects/forkmesh_data/forkmesh/data";
+    writeFile(storeData + "/identity/ed25519.pem", "NEWER");
     const Environment environment = environmentIn(home);
     const Layout layout = resolve(environment);
     const QVector<MoveResult> results =
         applyMigration(planMigration(environment, layout), false);
-    check(results.first().outcome == MoveResult::Outcome::Skipped,
-          "an occupied destination is skipped");
-    check(readFile(home + "/projects/forkmesh/data/identity/ed25519.pem") == "NEWER",
+    bool skipped = false;
+    for (const MoveResult &result : results) {
+        if (result.move.from == environment.legacyData)
+            skipped = result.outcome == MoveResult::Outcome::Skipped;
+    }
+    check(skipped, "an occupied destination is skipped");
+    check(readFile(storeData + "/identity/ed25519.pem") == "NEWER",
           "existing project data is not overwritten");
     check(readFile(environment.legacyData + "/identity/ed25519.pem") == "KEY",
           "legacy data is left intact");
@@ -362,16 +374,20 @@ void testOtherProjectIsIsolated()
     environment.projectArg = "Side-Quest";
     const Layout layout = resolve(environment);
     const QString dir = home + "/projects/side-quest";
-    check(layout.projectSlug == "side-quest" && layout.projectDir == dir,
-          "--project selects ~/projects/<slug>");
-    check(layout.data == dir + "/data" && layout.config == dir + "/config" &&
-              layout.logs == dir + "/logs" && layout.ssh == dir + "/ssh" &&
-              layout.state == dir + "/state" && layout.cache == dir + "/cache",
+    const QString store = home + "/projects/forkmesh_data/side-quest";
+    check(layout.projectSlug == "side-quest" && layout.projectDir == dir &&
+              layout.storeDir == store,
+          "--project selects ~/projects/<slug> and forkmesh_data/<slug>");
+    check(layout.data == store + "/data" && layout.config == store + "/config" &&
+              layout.logs == store + "/logs" && layout.ssh == store + "/ssh" &&
+              layout.state == store + "/state" && layout.cache == store + "/cache",
           "another project never falls back to legacy or home-project files");
     check(layout.toolchainDir() == home + "/projects/forkmesh/toolchain",
           "toolchains stay shared in the ForkMesh home");
-    check(planMigration(environment, layout).isEmpty(),
-          "opening another project migrates nothing");
+    bool onlyOwnFolder = true;
+    for (const Move &move : planMigration(environment, layout))
+        onlyOwnFolder = onlyOwnFolder && move.from.startsWith(dir + "/") && !move.leaveLink;
+    check(onlyOwnFolder, "opening another project migrates only its own folder, with no links");
 
     environment.projectArg = "../../etc";
     check(resolve(environment).isHomeProject(), "a hostile project name falls back to home");
@@ -407,6 +423,7 @@ void testStorageMap()
     check(!has(map, home + "/.ssh/id_ed25519"), "map ignores personal keys");
     check(has(map, home + "/projects/side-quest"), "map lists sibling projects");
     check(!has(map, home + "/projects/not-a-project"), "map ignores folders that are not projects");
+    check(has(map, home + "/projects/forkmesh_data/forkmesh"), "map lists the project's data");
 
     applyMigration(planMigration(environment, layout), false);
     layout = resolve(environment);
@@ -417,7 +434,8 @@ void testStorageMap()
             linkFlagged = location.isCompatLink && location.scope == Location::Scope::Legacy;
     }
     check(linkFlagged, "map marks what is left outside as a compatibility link");
-    check(has(map, home + "/projects/forkmesh/ssh"), "map lists the project's ssh folder");
+    check(has(map, home + "/projects/forkmesh_data/forkmesh/ssh"),
+          "map lists the project's ssh folder");
 }
 
 void testProjectRegistry()
@@ -452,13 +470,19 @@ void testProjectRegistry()
     check(created.slug == "side-quest" && created.dir == dir && created.name == "Side Quest" &&
               created.offline && created.packages == QStringList{"notes"},
           "the created project reads back from project.json");
+    const QString store = home + "/projects/forkmesh_data/side-quest";
     bool roots = true;
-    for (const char *root : {"data", "config", "cache", "state", "logs", "ssh"})
-        roots = roots && QFileInfo(dir + "/" + root).isDir();
-    check(roots, "every isolated root exists");
+    bool projectFolderClean = true;
+    for (const char *root : {"data", "config", "cache", "state", "logs", "ssh"}) {
+        roots = roots && QFileInfo(store + "/" + root).isDir();
+        projectFolderClean = projectFolderClean && !QFileInfo::exists(dir + "/" + root);
+    }
+    check(roots, "every isolated root exists in forkmesh_data");
+    check(projectFolderClean, "the project folder gets no data folders of its own");
+    check(projects::storeDir(dir) == store, "the registry finds a project's data folder");
     check(readFile(dir + "/logo.png") == "NEWLOGO", "the logo is copied in");
-    check(readFile(dir + "/data/identity/ed25519.pem") == "KEY" &&
-              (QFile::permissions(dir + "/data/identity/ed25519.pem") &
+    check(readFile(store + "/data/identity/ed25519.pem") == "KEY" &&
+              (QFile::permissions(store + "/data/identity/ed25519.pem") &
                (QFileDevice::ReadGroup | QFileDevice::ReadOther)) == 0,
           "the identity key is copied, owner-only");
     {
@@ -500,7 +524,7 @@ void testProjectRegistry()
     request.logoSource.clear();
     request.shareIdentity = false;
     check(projects::create(layout, request, nullptr, &error) &&
-              !QFileInfo::exists(home + "/projects/no-identity/data/identity"),
+              !QFileInfo::exists(home + "/projects/forkmesh_data/no-identity/data/identity"),
           "an isolated identity is possible");
 
     writeFile(home + "/projects/plain-folder/readme", "x");
@@ -531,7 +555,7 @@ void testProjectRegistry()
               QFileInfo(home + "/projects/plain-folder/project.json.removed").isFile(),
           "a plain folder can stop being listed and keeps its files");
     {
-        QLockFile open(home + "/projects/side-quest/state/forkmesh.lock");
+        QLockFile open(store + "/state/forkmesh.lock");
         check(open.tryLock(0) &&
                   !projects::remove(layout.projectsRoot, "side-quest", false, &error) &&
                   QFileInfo(dir + "/project.json").isFile(),
@@ -549,6 +573,15 @@ void testProjectRegistry()
                                  ".deleted-") &&
               QFileInfo(movedTo).isDir(),
           "remove without keeping the folder moves it aside and reports where");
+    {
+        const QStringList asideData = QDir(home + "/projects/forkmesh_data")
+                                          .entryList({"no-identity.deleted-*"}, QDir::Dirs);
+        check(!QFileInfo::exists(home + "/projects/forkmesh_data/no-identity") &&
+                  asideData.size() == 1,
+              "its data in forkmesh_data is moved aside with it");
+    }
+    check(QFileInfo(store + "/config").isDir(),
+          "a project removed keeping its folder keeps its data too");
     all = projects::list(layout.projectsRoot, layout.homeDir);
     check(all.size() == 1 && all.first().isHome, "deleted projects are no longer listed");
     check(!projects::remove(layout.projectsRoot, "side-quest", false, &error) &&
@@ -564,6 +597,93 @@ void testProjectRegistry()
     check(projects::launchArguments({"forkmesh"}, "forkmesh") ==
               QStringList({"--project", "forkmesh"}),
           "returning home is explicit, so an inherited environment cannot win");
+}
+
+void testProjectFoldersMoveIntoDataStore()
+{
+    QTemporaryDir tmp;
+    const QString home = tmp.path();
+    const QString dir = home + "/projects/forkmesh";
+    const QString store = home + "/projects/forkmesh_data/forkmesh";
+    QDir().mkpath(dir + "/src/.git");
+    writeFile(dir + "/project.json", "{}");
+    writeFile(dir + "/data/identity/ed25519.pem", "KEY");
+    writeFile(dir + "/config/ForkMesh/ForkMesh.conf", "[General]\nmirror=" +
+                                                         dir.toUtf8() + "/data/mirrors/a\n");
+    writeFile(dir + "/config/fleet/secrets.env", "S");
+    writeFile(dir + "/ssh/vultr_mirror_ed25519", "FLEET");
+    writeFile(dir + "/logs/diagnostics/stalls.log", "stall");
+    writeFile(dir + "/cache/a", "x");
+    writeFile(dir + "/state/forkmesh.lock", "1");
+    writeFile(dir + "/state/publisher/cursor", "c");
+    writeFile(dir + "/state/user-activity-today.json", "{}");
+
+    const Environment environment = environmentIn(home);
+    Layout layout = resolve(environment);
+    check(layout.data == dir + "/data" && layout.config == dir + "/config" &&
+              layout.ssh == dir + "/ssh" && layout.state == dir + "/state",
+          "before moving, the project folder's own roots are still in use");
+
+    const QVector<MoveResult> results = applyMigration(planMigration(environment, layout), false);
+    for (const MoveResult &result : results) {
+        if (result.outcome == MoveResult::Outcome::Failed ||
+            result.outcome == MoveResult::Outcome::Skipped)
+            std::printf("     %s -> %s : %s\n", qPrintable(result.move.from),
+                        qPrintable(result.move.to), qPrintable(result.detail));
+    }
+    check(readFile(store + "/data/identity/ed25519.pem") == "KEY" &&
+              readFile(store + "/config/ForkMesh/ForkMesh.conf").contains("mirror=") &&
+              readFile(store + "/config/fleet/secrets.env") == "S" &&
+              readFile(store + "/ssh/vultr_mirror_ed25519") == "FLEET" &&
+              readFile(store + "/logs/diagnostics/stalls.log") == "stall" &&
+              readFile(store + "/cache/a") == "x",
+          "every root moved into forkmesh_data");
+    check(QFileInfo(dir + "/data").isSymLink() && QFileInfo(dir + "/config").isSymLink() &&
+              readFile(dir + "/config/fleet/secrets.env") == "S",
+          "the home project keeps links at the old paths for tools that name them");
+    check(readFile(store + "/state/publisher/cursor") == "c" &&
+              readFile(store + "/state/user-activity-today.json") == "{}" &&
+              QFileInfo::exists(dir + "/state/forkmesh.lock") &&
+              !QFileInfo(dir + "/state").isSymLink(),
+          "runtime state moves, the held lock stays");
+    check(QFileInfo(home + "/projects/forkmesh_data").isDir() &&
+              (QFile::permissions(home + "/projects/forkmesh_data") &
+               (QFileDevice::ReadOther | QFileDevice::ExeOther | QFileDevice::ReadGroup)) == 0,
+          "forkmesh_data is owner-only when the migration makes it");
+
+    layout = resolve(environment);
+    check(layout.data == store + "/data" && layout.config == store + "/config" &&
+              layout.ssh == store + "/ssh" && layout.logs == store + "/logs",
+          "after moving, the roots resolve into forkmesh_data");
+    check(layout.state == dir + "/state",
+          "the state root stays put while the old lock is there");
+    QFile::remove(dir + "/state/forkmesh.lock");
+    QDir().rmdir(dir + "/state");
+    check(resolve(environment).state == store + "/state",
+          "once the old lock is gone the state root is in forkmesh_data");
+
+    bool idempotent = true;
+    for (const MoveResult &result :
+         applyMigration(planMigration(environment, resolve(environment)), false))
+        idempotent = idempotent && result.outcome == MoveResult::Outcome::AlreadyDone;
+    check(idempotent, "moving into forkmesh_data twice changes nothing");
+
+    const QString side = home + "/projects/side";
+    const QString sideStore = home + "/projects/forkmesh_data/side";
+    writeFile(side + "/project.json", "{}");
+    writeFile(side + "/data/identity/ed25519.pem", "SIDE");
+    writeFile(side + "/config/ForkMesh/ForkMesh.conf", "[General]\n");
+    writeFile(side + "/state/x", "x");
+    Environment sideEnvironment = environment;
+    sideEnvironment.projectArg = "side";
+    applyMigration(planMigration(sideEnvironment, resolve(sideEnvironment)), false);
+    check(readFile(sideStore + "/data/identity/ed25519.pem") == "SIDE" &&
+              readFile(sideStore + "/state/x") == "x" &&
+              !QFileInfo::exists(side + "/data") && !QFileInfo(side + "/data").isSymLink() &&
+              !QFileInfo::exists(side + "/config") && QFileInfo::exists(side + "/project.json"),
+          "another project's folders move with no links left behind");
+    check(resolve(sideEnvironment).data == sideStore + "/data",
+          "another project resolves into forkmesh_data after moving");
 }
 
 // The build knows its sources only as the desktop/ CMake directory inside the
@@ -652,6 +772,7 @@ int main(int argc, char **argv)
     testOtherProjectIsIsolated();
     testStorageMap();
     testProjectRegistry();
+    testProjectFoldersMoveIntoDataStore();
     testCheckoutContaining();
     testRegistrySettingsNameIsNotAFolder();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);

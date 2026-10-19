@@ -8,8 +8,10 @@
 #include <QVector>
 
 // Projects: the top-level unit ForkMesh operates on. A project is a folder in
-// the projects root holding project.json, an optional logo, and its own data,
-// config, cache, state, logs and ssh folders. Nothing is shared between two
+// the projects root holding project.json and an optional logo; its own data,
+// config, cache, state, logs and ssh folders live in forkmesh_data/<slug>
+// beside it, and the project folder gains other folders only when a plugin
+// needs one. Nothing is shared between two
 // projects except the ForkMesh home's source, toolchains and build trees, so
 // a project can start with no repository, no relay and almost no plugins.
 //
@@ -58,9 +60,9 @@ struct CreateRequest {
     QStringList removedPackages; // default-installed plugins to start without
 };
 
-// Creates ~/projects/<slug>/ with its isolated roots, project.json, logo and
-// seed settings. Refuses an existing folder: a project never adopts files it
-// did not create.
+// Creates ~/projects/<slug>/ with project.json and logo, and
+// ~/projects/forkmesh_data/<slug>/ with its isolated roots and seed settings.
+// Refuses an existing folder: a project never adopts files it did not create.
 bool create(const forkmesh::paths::Layout &current, const CreateRequest &request,
             Project *created, QString *error);
 
@@ -74,6 +76,8 @@ bool remove(const QString &projectsRoot, const QString &slug, bool keepFolder,
 
 // Settings file a project's process will read, for seeding before first run.
 QString settingsFilePath(const QString &projectDir);
+
+QString storeDir(const QString &projectDir);
 
 // Arguments that make a new process open `slug`, given this process's own.
 QStringList launchArguments(const QStringList &currentArguments, const QString &slug);

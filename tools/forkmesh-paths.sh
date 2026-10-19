@@ -16,6 +16,13 @@ forkmesh_home_dir() {
   printf '%s\n' "${FORKMESH_HOME:-${FORKMESH_PROJECTS_DIR:-$HOME/projects}/forkmesh}"
 }
 
+forkmesh_data_store_dir() {
+  local home_dir
+  home_dir="$(forkmesh_home_dir)"
+  home_dir="${home_dir%/}"
+  printf '%s\n' "${home_dir%/*}/forkmesh_data"
+}
+
 forkmesh_shared_dir() {
   local name="$1" legacy="$2" home_dir
   home_dir="$(forkmesh_home_dir)"
@@ -30,9 +37,27 @@ forkmesh_shared_dir() {
   fi
 }
 
+forkmesh_store_dir() {
+  local name="$1" legacy="$2" home_dir store root
+  home_dir="$(forkmesh_home_dir)"
+  store="$(forkmesh_data_store_dir)/forkmesh"
+  root="${name%%/*}"
+  if [ -e "$store/$name" ]; then
+    printf '%s\n' "$store/$name"
+  elif [ -d "$home_dir/$root" ] && [ ! -L "$home_dir/$root" ] && [ -e "$home_dir/$name" ]; then
+    printf '%s\n' "$home_dir/$name"
+  elif [ -e "$legacy" ] && [ ! -L "$legacy" ]; then
+    printf '%s\n' "$legacy"
+  elif [ -d "$store" ] || { [ -d "$home_dir" ] && [ ! -e "$home_dir/.git" ]; }; then
+    printf '%s\n' "$store/$name"
+  else
+    printf '%s\n' "$legacy"
+  fi
+}
+
 # The ForkMesh home project's managed ssh folder (fleet key, host CA).
 forkmesh_ssh_dir() {
-  forkmesh_shared_dir ssh "${XDG_DATA_HOME:-$HOME/.local/share}/ForkMesh/ForkMesh/ssh"
+  forkmesh_store_dir ssh "${XDG_DATA_HOME:-$HOME/.local/share}/ForkMesh/ForkMesh/ssh"
 }
 
 forkmesh_toolchain_dir() {
@@ -40,5 +65,5 @@ forkmesh_toolchain_dir() {
 }
 
 forkmesh_tool_logs_dir() {
-  forkmesh_shared_dir logs/tools "$HOME/.forkmesh/logs"
+  forkmesh_store_dir logs/tools "$HOME/.forkmesh/logs"
 }

@@ -123,6 +123,24 @@ func safeDeleteProtectedRoots() []safeDeleteRoot {
 			add(filepath.Join(project, sub), kind)
 		}
 	}
+	addStore := func(store string) {
+		cleaned := safeDeleteClean(store)
+		if cleaned == "" {
+			return
+		}
+		addProject(cleaned)
+		slugs := map[string]bool{"forkmesh": true}
+		if entries, err := os.ReadDir(cleaned); err == nil {
+			for _, entry := range entries {
+				if entry.IsDir() {
+					slugs[entry.Name()] = true
+				}
+			}
+		}
+		for slug := range slugs {
+			addProject(filepath.Join(cleaned, slug))
+		}
+	}
 	var projectsDirs []string
 	for _, home := range safeDeleteHomes() {
 		projectsDirs = append(projectsDirs, filepath.Join(home, "projects"))
@@ -138,6 +156,9 @@ func safeDeleteProtectedRoots() []safeDeleteRoot {
 		if value := strings.TrimSpace(os.Getenv(variable)); value != "" {
 			addProject(value)
 		}
+	}
+	if value := strings.TrimSpace(os.Getenv("FORKMESH_HOME")); value != "" {
+		addStore(filepath.Join(filepath.Dir(filepath.Clean(value)), "forkmesh_data"))
 	}
 	for _, variable := range []string{"FORKMESH_DATA_DIR", "FORKMESH_CONFIG_DIR"} {
 		if value := strings.TrimSpace(os.Getenv(variable)); value != "" {
@@ -158,6 +179,7 @@ func safeDeleteProtectedRoots() []safeDeleteRoot {
 		for name := range names {
 			addProject(filepath.Join(cleaned, name))
 		}
+		addStore(filepath.Join(cleaned, "forkmesh_data"))
 	}
 	return roots
 }

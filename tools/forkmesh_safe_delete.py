@@ -72,6 +72,23 @@ def protected_roots(environ: Mapping[str, str] | None = None) -> list[tuple[str,
         if cleaned and cleaned != "/" and (cleaned, kind) not in roots:
             roots.append((cleaned, kind))
 
+    def add_project(project: str) -> None:
+        add(project, "project")
+        for sub in PROJECT_ROOTS:
+            add(os.path.join(project, sub), "strict" if sub in STRICT_ROOTS else "owned")
+
+    def add_store(store: str) -> None:
+        cleaned = _clean(store)
+        if not cleaned:
+            return
+        add_project(cleaned)
+        try:
+            slugs = set(os.listdir(cleaned))
+        except OSError:
+            slugs = set()
+        for slug in slugs | {"forkmesh"}:
+            add_project(os.path.join(cleaned, slug))
+
     projects_roots = []
     for home in _homes(env):
         projects_roots.append(os.path.join(home, "projects"))
@@ -89,9 +106,8 @@ def protected_roots(environ: Mapping[str, str] | None = None) -> list[tuple[str,
         projects_roots.append(override)
     forkmesh_home = (env.get("FORKMESH_HOME") or "").strip()
     if forkmesh_home:
-        add(forkmesh_home, "project")
-        for name in PROJECT_ROOTS:
-            add(os.path.join(forkmesh_home, name), "strict" if name in STRICT_ROOTS else "owned")
+        add_project(forkmesh_home)
+        add_store(os.path.join(os.path.dirname(os.path.normpath(forkmesh_home)), "forkmesh_data"))
     for variable in ("FORKMESH_DATA_DIR", "FORKMESH_CONFIG_DIR"):
         value = (env.get(variable) or "").strip()
         if value:
@@ -111,9 +127,8 @@ def protected_roots(environ: Mapping[str, str] | None = None) -> list[tuple[str,
             if name in FROZEN_PROJECTS:
                 add(project, "frozen")
                 continue
-            add(project, "project")
-            for sub in PROJECT_ROOTS:
-                add(os.path.join(project, sub), "strict" if sub in STRICT_ROOTS else "owned")
+            add_project(project)
+        add_store(os.path.join(cleaned, "forkmesh_data"))
     return roots
 
 
