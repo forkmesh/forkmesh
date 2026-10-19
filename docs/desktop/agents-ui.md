@@ -648,7 +648,13 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
   mood (`src/TeammateMood.*`) is scored from 100 weighted signals and sent to
   phones in `teammates.list`. `runWindowHours` sets a run reminder;
   `teammates/doneUnseenSessions` marks finished runs nobody has seen. The rail
-  rebuilds only when its signature changes.
+  rebuilds only when its signature changes. Every face is driven by one
+  `RailFaceTicker` (40 ms), so a tick is one repaint pass for the window; a
+  face only redraws while its window is exposed and not minimized, and a calm
+  face (still, floating, dozing or paused, without a spinner ring) redraws
+  every 100 ms. The mood badge paints from a cached pixmap. In report #4
+  (2026-10-19) one timer per face repainted each rail item about 540 times a
+  second and the app sat at 106% CPU.
 - **Channel status rail.** `src/MainWindowPackageRail.cpp` builds
   `#packageRail` (`ui/showPackageRail`) from package tiles
   (`NativePackageWidget::railTiles`, `PackageRailTileButton`); Marketing

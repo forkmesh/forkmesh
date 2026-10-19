@@ -50,6 +50,51 @@ QString headBranchFromFile(const QString &dir)
     return ref.mid(11);
 }
 
+static QString packedRefTip(const QString &path, const QByteArray &fullRef)
+{
+    struct PackedRefs {
+        qint64 size = -1;
+        QDateTime modified;
+        QHash<QByteArray, QString> tips;
+    };
+    static QMutex mutex;
+    static QHash<QString, PackedRefs> cache;
+    const QFileInfo info(path);
+    if (!info.isFile())
+        return QString();
+    const QMutexLocker lock(&mutex);
+    auto found = cache.find(path);
+    if (found == cache.end() || found->size != info.size() ||
+        found->modified != info.lastModified()) {
+        QFile packed(path);
+        if (!packed.open(QIODevice::ReadOnly))
+            return QString();
+        PackedRefs parsed;
+        parsed.size = info.size();
+        parsed.modified = info.lastModified();
+        const QByteArray bytes = packed.readAll();
+        const QByteArrayView all(bytes);
+        for (qsizetype start = 0; start < all.size();) {
+            qsizetype end = all.indexOf('\n', start);
+            if (end < 0)
+                end = all.size();
+            const QByteArrayView line = all.sliced(start, end - start).trimmed();
+            start = end + 1;
+            if (line.isEmpty() || line.startsWith('#') || line.startsWith('^'))
+                continue;
+            const qsizetype space = line.indexOf(' ');
+            if (space != 40 && space != 64)
+                continue;
+            parsed.tips.insert(line.mid(space + 1).toByteArray(),
+                               QString::fromLatin1(line.left(space)));
+        }
+        if (cache.size() >= 32)
+            cache.clear();
+        found = cache.insert(path, std::move(parsed));
+    }
+    return found->tips.value(fullRef);
+}
+
 QString refTipFromFiles(const QString &gitDir, const QString &fullRef)
 {
     if (gitDir.isEmpty() || fullRef.isEmpty() || fullRef.contains(QLatin1String("..")))
@@ -61,20 +106,7 @@ QString refTipFromFiles(const QString &gitDir, const QString &fullRef)
             return QString::fromLatin1(line);
         return QString(); // symbolic refs are not tips
     }
-    QFile packed(gitDir + QStringLiteral("/packed-refs"));
-    if (!packed.open(QIODevice::ReadOnly | QIODevice::Text))
-        return QString();
-    const QByteArray needle = QByteArray(" ") + fullRef.toUtf8();
-    while (!packed.atEnd()) {
-        const QByteArray line = packed.readLine().trimmed();
-        if (line.isEmpty() || line.startsWith('#') || line.startsWith('^'))
-            continue;
-        if (line.endsWith(needle) && line.size() == needle.size() + 40)
-            return QString::fromLatin1(line.left(40));
-        if (line.endsWith(needle) && line.size() == needle.size() + 64)
-            return QString::fromLatin1(line.left(64));
-    }
-    return QString();
+    return packedRefTip(gitDir + QStringLiteral("/packed-refs"), fullRef.toUtf8());
 }
 
 QString gitRefsDirSignature(const QString &gitDir)

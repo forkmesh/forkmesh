@@ -944,6 +944,22 @@ int main(int argc, char **argv)
     check(!placed.setPlaces(QStringLiteral("place-parent"),
                             {QStringLiteral("mobile"), QStringLiteral("web")}),
           "storing the same places again is not a change");
+    placesSettings.sync();
+    const QString placesFile = placesSettings.fileName();
+    const QFileDevice::Permissions placesPermissions =
+        QFile::permissions(placesFile);
+    const bool placesLocked =
+        QFile::setPermissions(placesFile, QFileDevice::ReadOwner);
+    const bool unchangedPlacesQuiet =
+        !placed.setPlaces(QStringLiteral("place-parent"),
+                          {QStringLiteral("web"), QStringLiteral("mobile")}) &&
+        !placed.setPlaces(QStringLiteral("place-device"),
+                          {QStringLiteral("mobile")}) &&
+        placesSettings.status() == QSettings::NoError;
+    QFile::setPermissions(placesFile, placesPermissions);
+    check(placesLocked && unchangedPlacesQuiet,
+          "an account answer with unchanged places does not write the "
+          "settings file");
     check(placed.setPlaces(QStringLiteral("place-child"),
                            {QStringLiteral("mobile")}) &&
               placed.places(QStringLiteral("place-child")).isEmpty() &&
