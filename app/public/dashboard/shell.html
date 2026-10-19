@@ -35,6 +35,12 @@
         } catch (_) {}
         document.documentElement.dataset.dashboardTheme = theme;
         document.documentElement.style.colorScheme = theme;
+        try {
+          const stored = JSON.parse(localStorage.getItem("forkmesh.session") || "null");
+          const signedIn = /(?:^|;\s*)forkmesh_session=1(?:;|$)/.test(document.cookie)
+            || Boolean(stored && (stored.nodeName || stored.email));
+          if (!signedIn) document.documentElement.dataset.guest = "";
+        } catch (_) {}
         document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f6f8fb" : "#090909");
       })();
       // Every dashboard page starts from the repository catalog; ask for it
@@ -109,6 +115,21 @@
     </script>
     <script src="/assets/vendor/lucide-0.468.0.min.js" defer></script>
     <style>
+      :where(i[data-lucide]) {
+        display: inline-block;
+        flex-shrink: 0;
+      }
+
+      html[data-guest] [data-profile-account-controls],
+      html[data-guest] #notificationToggle,
+      html[data-guest] #agentModalToggle {
+        display: none !important;
+      }
+
+      html[data-guest] [data-guest-auth-link] {
+        display: inline-flex !important;
+      }
+
       @font-face {
         font-family: "ForkMesh Dashboard Mono";
         src: url("/assets/fonts/DejaVuSansMono.woff2") format("woff2");

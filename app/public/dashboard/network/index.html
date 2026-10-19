@@ -35,6 +35,12 @@
         } catch (_) {}
         document.documentElement.dataset.dashboardTheme = theme;
         document.documentElement.style.colorScheme = theme;
+        try {
+          const stored = JSON.parse(localStorage.getItem("forkmesh.session") || "null");
+          const signedIn = /(?:^|;\s*)forkmesh_session=1(?:;|$)/.test(document.cookie)
+            || Boolean(stored && (stored.nodeName || stored.email));
+          if (!signedIn) document.documentElement.dataset.guest = "";
+        } catch (_) {}
         document.querySelector('meta[name="theme-color"]')?.setAttribute("content", theme === "light" ? "#f6f8fb" : "#090909");
       })();
       // Every dashboard page starts from the repository catalog; ask for it
@@ -109,6 +115,21 @@
     </script>
     <script src="/assets/vendor/lucide-0.468.0.min.js" defer></script>
     <style>
+      :where(i[data-lucide]) {
+        display: inline-block;
+        flex-shrink: 0;
+      }
+
+      html[data-guest] [data-profile-account-controls],
+      html[data-guest] #notificationToggle,
+      html[data-guest] #agentModalToggle {
+        display: none !important;
+      }
+
+      html[data-guest] [data-guest-auth-link] {
+        display: inline-flex !important;
+      }
+
       @font-face {
         font-family: "ForkMesh Dashboard Mono";
         src: url("/assets/fonts/DejaVuSansMono.woff2") format("woff2");
@@ -2458,8 +2479,8 @@
           aria-expanded="false"
           class="items-center justify-center rounded-md border border-border bg-background p-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
         >
-          <i data-lucide="menu" class="dashboard-menu-open-icon h-4 w-4"></i>
-          <i data-lucide="x" class="dashboard-menu-close-icon h-4 w-4"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="menu" class="lucide lucide-menu dashboard-menu-open-icon h-4 w-4"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="x" class="lucide lucide-x dashboard-menu-close-icon h-4 w-4"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
         </button>
 
         <a data-dashboard-logo class="brand flex items-center gap-2 shrink-0" href="/dashboard" aria-label="Refresh ForkMesh Dashboard">
@@ -2504,7 +2525,7 @@
         </div>
 
         <div data-global-search-shell class="relative ml-auto hidden h-9 w-full max-w-sm min-w-0 items-center gap-2 rounded-md border border-border bg-background px-3 text-sm text-muted-foreground focus-within:border-accent focus-within:text-foreground lg:flex">
-          <i data-lucide="search" class="h-4 w-4 shrink-0"></i>
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="search" class="lucide lucide-search h-4 w-4 shrink-0"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
           <input
             data-global-search
             id="globalSearchInput"
@@ -2565,7 +2586,7 @@
             title="Command palette (Ctrl/Command+K)"
             class="flex h-9 items-center justify-center gap-1.5 rounded-md border border-border bg-background px-2 text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
           >
-            <i data-lucide="command" class="h-4 w-4" aria-hidden="true"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="command" aria-hidden="true" class="lucide lucide-command h-4 w-4"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"></path></svg>
             <span class="hidden font-mono text-[10px] sm:inline">Ctrl K</span>
           </button>
           <a
@@ -2574,7 +2595,7 @@
             title="Open ForkMesh World"
             aria-label="Open ForkMesh World"
           >
-            <i data-lucide="globe-2" class="h-4 w-4"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="globe-2" class="lucide lucide-globe-2 h-4 w-4"><path d="M21.54 15H17a2 2 0 0 0-2 2v4.54"></path><path d="M7 3.34V5a3 3 0 0 0 3 3a2 2 0 0 1 2 2c0 1.1.9 2 2 2a2 2 0 0 0 2-2c0-1.1.9-2 2-2h3.17"></path><path d="M11 21.95V18a2 2 0 0 0-2-2a2 2 0 0 1-2-2v-1a2 2 0 0 0-2-2H2.05"></path><circle cx="12" cy="12" r="10"></circle></svg>
           </a>
 
           <a
@@ -2594,8 +2615,8 @@
               aria-expanded="false"
               class="relative flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
             >
-              <i data-notification-bell-on data-lucide="bell" class="w-4 h-4"></i>
-              <i data-notification-bell-off data-lucide="bell-off" class="hidden w-4 h-4"></i>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="bell" data-notification-bell-on class="lucide lucide-bell w-4 h-4"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="bell-off" data-notification-bell-off class="lucide lucide-bell-off hidden w-4 h-4"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"></path><path d="m2 2 20 20"></path><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"></path></svg>
               <span data-notification-badge class="hidden absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-accent"></span>
             </button>
             <div
@@ -2640,7 +2661,7 @@
               title="Start an agent on an owned node"
               class="flex h-9 w-9 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"
             >
-              <i data-lucide="bot" class="w-4 h-4"></i>
+              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="bot" class="lucide lucide-bot w-4 h-4"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>
             </button>
             <div
               id="agentModal"
@@ -2717,7 +2738,7 @@
             title="Admin panel"
             aria-label="Admin panel"
           >
-            <i data-lucide="shield-alert" class="h-4 w-4"></i>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" data-lucide="shield-alert" class="lucide lucide-shield-alert h-4 w-4"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"></path><path d="M12 8v4"></path><path d="M12 16h.01"></path></svg>
           </a>
 
           <a

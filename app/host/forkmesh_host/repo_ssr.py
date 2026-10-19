@@ -23,9 +23,11 @@ A page carrying rendered data is sent ``Cache-Control: no-cache``.
 from __future__ import annotations
 
 import asyncio
+import datetime
 import html
 import json
 import re
+import time
 import urllib.parse
 
 PAGE_RE = re.compile(r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/?$")
@@ -48,8 +50,9 @@ PRERENDER_FRESH_SECONDS = 5.0
 PRERENDER_STALE_SECONDS = 300.0
 MAX_TREE_ROWS = 400
 MAX_README_CHARS = 200_000
-PLACEHOLDER = ('<p class="text-sm text-muted-foreground">'
-               'Choose a repository to inspect it.</p>')
+PLACEHOLDER = ('<div data-repo-frame data-repo-layout="pending" class="min-w-0"><div '
+               'data-repo-github-header class="h-12 border-b border-border"></div><p '
+               'class="sr-only">Choose a repository to inspect it.</p></div>')
 CHARSET = '<meta charset="UTF-8" />'
 
 STYLE = """<style>
@@ -69,6 +72,15 @@ STYLE = """<style>
 .fm-ssr-md code{font-family:ui-monospace,monospace;font-size:85%}.fm-ssr-md ul,.fm-ssr-md ol{padding-left:2em}
 .fm-ssr-md blockquote{margin:0;padding:0 1em;border-left:.25em solid rgb(var(--dashboard-border-rgb));color:rgb(var(--dashboard-muted-foreground-rgb))}
 @media (max-width:640px){.fm-ssr-row{grid-template-columns:minmax(0,1fr) auto}.fm-ssr-row .m{display:none}}
+[data-repo-ssr] [role=tab][aria-selected=true]{font-weight:600}[data-repo-ssr] [role=tab][aria-selected=true]::after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:2px;border-radius:6px;background:var(--dashboard-tab-underline)}
+.fm-ssr-readme{overflow-wrap:anywhere}.fm-ssr-readme>:first-child{margin-top:0}.fm-ssr-readme>:last-child{margin-bottom:0}
+.fm-ssr-readme h1,.fm-ssr-readme h2,.fm-ssr-readme h3,.fm-ssr-readme h4,.fm-ssr-readme h5,.fm-ssr-readme h6{font-weight:600;margin:1.25rem 0 .5rem}
+.fm-ssr-readme h1{font-size:1.5rem;line-height:2rem}.fm-ssr-readme h2{font-size:1.25rem;line-height:1.75rem}.fm-ssr-readme h3{font-size:1.125rem;line-height:1.75rem}.fm-ssr-readme h4{font-size:1rem}.fm-ssr-readme h6{font-size:.75rem}
+.fm-ssr-readme p{margin:.5rem 0;line-height:1.5rem}.fm-ssr-readme ul,.fm-ssr-readme ol{margin:.5rem 0 .5rem 1.25rem}.fm-ssr-readme ul{list-style:disc}.fm-ssr-readme ol{list-style:decimal}.fm-ssr-readme li+li{margin-top:.25rem}
+.fm-ssr-readme a{color:var(--dashboard-link,#58a6ff);text-decoration:underline;text-underline-offset:2px}.fm-ssr-readme hr{margin:1rem 0;border-color:rgb(var(--dashboard-border-rgb))}
+.fm-ssr-readme code{border-radius:.25rem;background:rgb(var(--dashboard-secondary-rgb));padding:.125rem .375rem;font-family:ui-monospace,monospace;font-size:.75rem}
+.fm-ssr-readme pre{margin:.75rem 0;overflow:auto;border:1px solid rgb(var(--dashboard-border-rgb));border-radius:.375rem;padding:.75rem;font-size:.75rem}.fm-ssr-readme pre code{background:none;padding:0}
+.fm-ssr-readme blockquote{margin:.75rem 0;border-left:2px solid rgb(var(--dashboard-border-rgb));padding-left:.75rem;color:rgb(var(--dashboard-muted-foreground-rgb))}
 </style>"""
 
 
@@ -143,11 +155,33 @@ async def prerender(fastpath, owner, repo):
                 if blob and blob.get("ok") is not False:
                     readme = {"name": entry["name"], "data": blob}
                 break
+        info = None
+        if any(entry.get("type") == "tree" and entry.get("name") == ".forkmesh"
+               for entry in tree.get("entries") or []):
+            blob = await _get_json(fastpath, base + "blob?" + urllib.parse.urlencode(
+                [("path", ".forkmesh/info.json"), ("ref", commit)]))
+            info = repo_info(blob)
         node = await fastpath.node_name() or ""
         return {"owner": owner, "repo": repo, "ref": ref, "commit": commit,
-                "servedBy": node, "tree": tree, "readme": readme}
+                "servedBy": node, "tree": tree, "readme": readme, "info": info}
     except Exception:
         return None
+
+
+def repo_info(blob):
+    if not isinstance(blob, dict) or blob.get("ok") is False \
+            or blob.get("encoding") == "base64":
+        return None
+    try:
+        info = json.loads(str(blob.get("content") or ""))
+    except ValueError:
+        return None
+    if not isinstance(info, dict):
+        return None
+    about = info.get("about")
+    website = info.get("website")
+    return {"about": about.strip()[:500] if isinstance(about, str) else "",
+            "website": website.strip()[:500] if isinstance(website, str) else ""}
 
 
 class ShortTicket:
@@ -396,11 +430,24 @@ def inject(page, data, short=False):
         return None
     payload = {k: data[k] for k in ("owner", "repo", "ref", "commit",
                                     "servedBy", "tree", "readme")}
+    about = cached_about(data["owner"], data["repo"])
+    if data.get("info"):
+        payload["info"] = data["info"]
+    if about and isinstance(about.get("features"), dict):
+        payload["features"] = {key: bool(value) for key, value in about["features"].items()
+                               if key in ("issues", "pulls", "discussions")}
     head = (CHARSET + '\n    <script type="application/json" '
             'id="forkmesh-repo-ssr">' + _json_for_script(payload)
             + "</script>\n    " + STYLE)
     page = page.replace(CHARSET, head, 1)
-    return page.replace(PLACEHOLDER, render_view(data, short), 1)
+    page = page.replace(HEADER_CONTEXT, header_context(data, short), 1)
+    page = page.replace(HEADER_META, HEADER_META.replace(
+        '"hidden shrink-0', '"hidden sm:flex shrink-0'), 1)
+    page = page.replace(HEADER_VISIBILITY, HEADER_VISIBILITY.replace(
+        "></span>", ">public</span>"), 1)
+    page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
+        'class="inline-flex', 'class="hidden inline-flex'), 1)
+    return page.replace(PLACEHOLDER, render_view(data, short, about), 1)
 
 
 def _view_reads_head(meta):
@@ -451,12 +498,309 @@ def _when(value):
     return html.escape(text[:10])
 
 
-def render_view(data, short=False):
+def _parse_time(value):
+    if value in (None, ""):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = None
+    if number is not None and number > 0:
+        return number / 1000 if number >= 1e12 else number
+    try:
+        moment = datetime.datetime.fromisoformat(
+            str(value).strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=datetime.timezone.utc)
+    return moment.timestamp()
+
+
+TIME_UNITS = (("year", 31536000), ("month", 2592000), ("week", 604800),
+              ("day", 86400), ("hour", 3600), ("minute", 60))
+
+
+def time_ago(value, now=None):
+    moment = _parse_time(value)
+    if moment is None:
+        return "unknown"
+    seconds = max(0, round((time.time() if now is None else now) - moment))
+    if seconds < 45:
+        return "just now"
+    for name, size in TIME_UNITS:
+        count = seconds // size
+        if count >= 1:
+            return "%d %s%s ago" % (count, name, "" if count == 1 else "s")
+    return "just now"
+
+
+def raw_prefix(data):
+    return "/api/repo/%s/%s/raw?ref=%s&path=" % (
+        urllib.parse.quote(data["owner"], safe=""),
+        urllib.parse.quote(data["repo"], safe=""),
+        urllib.parse.quote(str(data.get("ref") or data.get("commit") or ""),
+                           safe=""))
+
+
+ICONS = {
+    'activity': (
+        '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"></path>'),
+    'book-open': (
+        '<path d="M12 7v14"></path><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path>'),
+    'chart-gantt': (
+        '<path d="M10 6h8"></path><path d="M12 16h6"></path><path d="M3 3v16a2 2 0 0 0 2 2h16"></path><path d="M8 11h7"></path>'),
+    'chart-no-axes-combined': (
+        '<path d="M12 16v5"></path><path d="M16 14v7"></path><path d="M20 10v11"></path><path d="m22 3-8.646 8.646a.5.5 0 0 1-.708 0L9.354 8.354a.5.5 0 0 0-.707 0L2 15"></path><path d="M4 18v3"></path><path d="M8 14v7"></path>'),
+    'chevron-down': (
+        '<path d="m6 9 6 6 6-6"></path>'),
+    'chevron-right': (
+        '<path d="m9 18 6-6-6-6"></path>'),
+    'circle-dot': (
+        '<circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="1"></circle>'),
+    'code': (
+        '<polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline>'),
+    'code-2': (
+        '<path d="m18 16 4-4-4-4"></path><path d="m6 8-4 4 4 4"></path><path d="m14.5 4-5 16"></path>'),
+    'file': (
+        '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v4a2 2 0 0 0 2 2h4"></path>'),
+    'folder': (
+        '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>'),
+    'git-branch': (
+        '<line x1="6" x2="6" y1="3" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path>'),
+    'git-pull-request': (
+        '<circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" x2="6" y1="9" y2="21"></line>'),
+    'history': (
+        '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M12 7v5l4 2"></path>'),
+    'image-plus': (
+        '<path d="M16 5h6"></path><path d="M19 2v6"></path><path d="M21 11.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7.5"></path><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path><circle cx="9" cy="9" r="2"></circle>'),
+    'layout-grid': (
+        '<rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="14" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect>'),
+    'link': (
+        '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>'),
+    'message-square': (
+        '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>'),
+    'plus': (
+        '<path d="M5 12h14"></path><path d="M12 5v14"></path>'),
+    'search': (
+        '<circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>'),
+    'star': (
+        '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z"></path>'),
+    'workflow': (
+        '<rect width="8" height="8" x="3" y="3" rx="2"></rect><path d="M7 11v4a2 2 0 0 0 2 2h4"></path><rect width="8" height="8" x="13" y="13" rx="2"></rect>'),
+}
+
+
+def _icon(name, size="h-3.5 w-3.5", extra=""):
+    return ('<svg class="lucide %s%s" viewBox="0 0 24 24" fill="none" '
+            'stroke="currentColor" stroke-width="2" stroke-linecap="round" '
+            'stroke-linejoin="round" aria-hidden="true"><use href="#fm-ssr-%s">'
+            '</use></svg>' % (size, " " + extra if extra else "", name))
+
+
+def _icon_sprite():
+    return ('<svg width="0" height="0" style="position:absolute" '
+            'aria-hidden="true">%s</svg>' % "".join(
+                '<symbol id="fm-ssr-%s" viewBox="0 0 24 24">%s</symbol>' % item
+                for item in sorted(ICONS.items())))
+
+
+def cached_about(owner, repo):
+    target = ("/api/repo/%s/%s/about" % (owner, repo)).lower()
+    now = None
+    for key, entry in list(_micro.items()):
+        if key.lower() != target:
+            continue
+        if now is None:
+            try:
+                now = asyncio.get_running_loop().time()
+            except RuntimeError:
+                return None
+        if now - entry[0] >= MICRO_STALE_SECONDS:
+            return None
+        try:
+            about = json.loads(entry[3])
+        except (TypeError, ValueError):
+            return None
+        return about if isinstance(about, dict) and about.get("ok") else None
+    return None
+
+
+TAB = ('<a href="%s" role="tab" aria-selected="%s" class="group relative '
+       'inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal '
+       'text-foreground"><span class="inline-flex h-8 items-center gap-2 '
+       'rounded-md px-2 transition-colors group-hover:bg-secondary">%s'
+       '<span>%s</span>%s</span></a>')
+COUNT = ('<span class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] '
+         'px-1.5 text-center text-[12px] font-medium leading-[18px] '
+         'text-foreground">%s</span>')
+TABS = (("code", "Code", "code-2", ""), ("issues", "Issues", "circle-dot", "openIssues"),
+        ("pulls", "Pull requests", "git-pull-request", "openPulls"),
+        ("discussions", "Discussions", "message-square", "discussions"),
+        ("insights", "Insights", "chart-no-axes-combined", ""),
+        ("projects", "Projects", "chart-gantt", ""), ("actions", "Actions", "workflow", ""))
+SKELETON = "rounded bg-muted-foreground/20"
+ROW = ('<a href="%s" %s="%s" class="grid w-full grid-cols-[1.5rem_minmax(0,1fr)_auto] '
+       'items-center gap-3 border-t border-border px-4 py-2.5 text-left text-sm '
+       'hover:bg-secondary/40 transition-colors sm:grid-cols-[1.5rem_minmax(9rem,0.8fr)'
+       '_minmax(0,1fr)_8rem]">%s<span class="min-w-0 truncate font-medium '
+       'text-foreground">%s</span><span class="hidden w-full min-w-0 truncate '
+       'text-left text-xs text-muted-foreground sm:block" style="justify-self:'
+       'stretch;text-align:left">%s</span><span class="w-full shrink-0 text-right '
+       'text-xs tabular-nums text-muted-foreground font-mono" style="justify-self:'
+       'end;text-align:right">%s</span></a>')
+ABOUT_ROW = ('<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 '
+             'w-full rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 '
+             'text-muted-foreground">%s</span><span class="inline-flex items-center '
+             'gap-1 justify-self-end text-foreground">%s</span></div>')
+
+
+def _count_label(value):
+    try:
+        return "{:,}".format(int(value))
+    except (TypeError, ValueError):
+        return ""
+
+
+def _tabs(base, about, counts):
+    features = (about or {}).get("features") or {}
+    shown = []
+    for key, label, icon, count_key in TABS:
+        if key != "code" and about is None:
+            continue
+        if key in ("issues", "pulls", "discussions") and features.get(key) is False:
+            continue
+        count = ""
+        if count_key and count_key in counts:
+            number = counts.get(count_key)
+            if key != "discussions" or (isinstance(number, int) and number > 0):
+                count = COUNT % html.escape(_count_label(number))
+        href = base if key == "code" else "%s/%s" % (base, key)
+        shown.append(TAB % (html.escape(href), "true" if key == "code" else "false",
+                            _icon(icon, "h-4 w-4", "text-muted-foreground"),
+                            label, count))
+    return ('<div data-repo-github-header class="border-b border-border"><div class="flex w-full min-w-0 '
+            'gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" '
+            'aria-label="Repository sections">%s</div></div>' % "".join(shown))
+
+
+def _toolbar(ref):
+    return (
+        '<div class="grid gap-2 md:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]">'
+        '<div class="flex min-w-0 flex-nowrap items-center gap-3"><div class="relative '
+        'inline-flex min-w-0 max-w-64 shrink"><span class="inline-flex h-9 w-full '
+        'max-w-full items-center justify-center gap-2 rounded-md border border-border '
+        'bg-secondary px-3 text-xs font-medium text-foreground">%s<span class="min-w-0 '
+        'truncate">%s</span>%s</span></div><span class="inline-flex h-9 items-center '
+        'gap-2 whitespace-nowrap text-xs font-semibold text-muted-foreground">%s'
+        '<span class="inline-block h-3 w-4 %s"></span><span>Branches</span></span></div>'
+        '<span class="inline-flex h-9 min-w-0 items-center gap-2 rounded-md border '
+        'border-border bg-background px-3 text-left text-xs text-muted-foreground">%s'
+        '<span class="min-w-0 truncate">Go to file</span><span class="ml-auto hidden '
+        'rounded border border-border px-1.5 py-0.5 font-mono text-[10px] '
+        'text-muted-foreground sm:inline">T</span></span>'
+        '<span class="inline-flex h-9 items-center justify-center gap-2 rounded-md border '
+        'border-border bg-secondary px-3 text-xs font-semibold text-foreground">%s'
+        '<span>Code map</span></span>'
+        '<span class="inline-flex h-9 items-center justify-center gap-2 rounded-md border '
+        'border-border bg-secondary px-3 text-xs font-semibold text-foreground">%sAdd file%s'
+        '</span><div class="flex min-w-0 items-center gap-2"><span class="inline-flex h-9 '
+        'items-center justify-center gap-2 rounded-md border border-foreground/10 bg-cta '
+        'px-3 text-xs font-semibold text-cta-foreground">%s<span>Code</span>%s</span></div>'
+        '</div>' % (
+            _icon("git-branch", "h-3.5 w-3.5", "shrink-0"), html.escape(ref),
+            _icon("chevron-down", "h-3 w-3", "shrink-0 text-muted-foreground"),
+            _icon("git-branch"), SKELETON,
+            _icon("search", "h-3.5 w-3.5", "shrink-0"),
+            _icon("layout-grid", "h-3.5 w-3.5", "text-muted-foreground"),
+            _icon("plus", "h-3.5 w-3.5", "text-muted-foreground"),
+            _icon("chevron-down", "h-3 w-3", "text-muted-foreground"),
+            _icon("code"), _icon("chevron-down", "h-3 w-3")))
+
+
+def _provenance(about):
+    upstream = str((about or {}).get("mirrorOf") or "").strip()
+    if not upstream.lower().startswith(("https://", "http://")):
+        return ""
+    synced = _parse_time((about or {}).get("lastSyncedAt"))
+    label = re.sub(r"^https?://", "", upstream).rstrip("/")
+    return (
+        '<div class="mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs '
+        'text-muted-foreground"><span class="inline-flex min-w-0 items-center gap-1.5">'
+        '<span class="h-3.5 w-3.5 shrink-0"></span><span class="shrink-0">Mirror of</span>'
+        '<a href="%s" class="dashboard-accent-link min-w-0 truncate font-medium '
+        'hover:underline">%s</a>%s</span><span class="min-w-0 text-[11px] '
+        'text-muted-foreground">Read-only. Send changes <a href="%s" '
+        'class="dashboard-accent-link hover:underline">upstream</a> or into a fork.'
+        '</span><span class="fm-btn fm-btn-sm shrink-0"><span class="h-3.5 w-3.5">'
+        '</span>Fork</span></div>' % (
+            html.escape(upstream), html.escape(label),
+            ('<span class="shrink-0 text-muted-foreground">· synced %s</span>'
+             % html.escape(time_ago(synced))) if synced else "",
+            html.escape(upstream)))
+
+
+def _about_rail(about, readme_href, info=None):
+    description = str((info or {}).get("about") or (about or {}).get("description")
+                      or "").strip()
+    website = str((info or {}).get("website") or "").strip()
+    if not website.lower().startswith(("https://", "http://")):
+        website = ""
+    text = (html.escape(description) if description else
+            '<span class="inline-block h-3.5 w-full max-w-full align-middle %s">'
+            '</span>' % SKELETON)
+    dash = '<span class="font-mono">–</span>'
+    site = ('<div class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full '
+            'rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 '
+            'text-muted-foreground">Website</span><a href="%s" class="dashboard-accent-link '
+            'min-w-0 truncate text-right">%s</a></div>' % (
+                html.escape(website), html.escape(re.sub(r"^https?://", "", website,
+                                                         flags=re.I).rstrip("/")))
+            ) if website else ""
+    rows = site + "".join(ABOUT_ROW % (label, value) for label, value in (
+        ("Stars", _icon("star", "h-3.5 w-3.5", "text-muted-foreground") + dash),
+        ("Watchers", dash + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),
+        ("Forks", dash + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),
+        ("Mirrors", dash), ("Files", dash), ("Size", dash)))
+    legend = "".join('<span class="block %s">&nbsp;</span>' % SKELETON for _ in range(6))
+    people = "".join('<span class="h-7 w-7 rounded-full border-2 border-background '
+                     'bg-secondary"></span>' for _ in range(8))
+    return (
+        '<aside class="min-w-0 self-start rounded-lg border border-border bg-background p-4">'
+        '<div class="flex items-center justify-between gap-3"><h3 class="text-sm '
+        'font-semibold text-foreground">About</h3></div>'
+        '<p class="mt-2 text-sm leading-6 text-foreground">%s</p>'
+        '<div class="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-muted-foreground">'
+        '<span class="inline-flex min-w-0 items-center gap-1.5">%s<span class="min-w-0 '
+        'truncate">Open clean URL</span></span><a href="%s" class="inline-flex min-w-0 '
+        'items-center gap-1.5 hover:text-foreground">%s<span>Readme</span></a>'
+        '<span class="inline-flex min-w-0 items-center gap-1.5">%s<span>Activity</span>'
+        '</span></div><div class="-mx-2 mt-3 grid">%s</div>'
+        '<div class="mt-3 border-t border-border pt-3"><h4 class="text-xs font-semibold '
+        'text-foreground">Languages</h4><div class="mt-2.5 h-1.5 w-full rounded-full '
+        'bg-muted-foreground/20"></div><div class="mt-2.5 grid grid-cols-2 gap-x-3 '
+        'gap-y-1 text-[11px]">%s</div></div>'
+        '<div class="mt-3 border-t border-border pt-3"><div class="flex items-center '
+        'justify-between gap-3"><h4 class="text-xs font-semibold text-foreground">'
+        'Contributors</h4><span class="font-mono text-[11px] text-muted-foreground">–'
+        '</span></div><div class="mt-2.5 flex items-center -space-x-1.5">%s</div></div>'
+        '<div class="mt-4 border-t border-border pt-4"><div class="flex items-center '
+        'justify-between gap-2 text-xs font-semibold text-foreground"><span '
+        'class="inline-flex items-center gap-1.5">%sRepository logo</span>%s</div></div>'
+        '</aside>' % (
+            text, _icon("link", "h-3.5 w-3.5", "shrink-0"), html.escape(readme_href),
+            _icon("book-open"), _icon("activity"), rows, legend, people,
+            _icon("image-plus", "h-3.5 w-3.5", "text-muted-foreground"),
+            _icon("chevron-down", "h-3.5 w-3.5", "text-muted-foreground")))
+
+
+def render_view(data, short=False, about=None):
     owner, repo = data["owner"], data["repo"]
     base = "/%s/%s" % (urllib.parse.quote(owner), urllib.parse.quote(repo))
     if short:
         base = "/" + urllib.parse.quote(repo)
     tree = data["tree"]
+    counts = tree.get("counts") if isinstance(tree.get("counts"), dict) else {}
     latest = tree.get("latestCommit") or {}
     entries = sorted(tree.get("entries") or [], key=lambda e: (
         e.get("type") != "tree", str(e.get("name") or "").lower()))
@@ -467,60 +811,167 @@ def render_view(data, short=False):
         href = "%s/%s/%s" % (base, kind, urllib.parse.quote(name))
         attr = "data-dashboard-tree-path" if kind == "tree" \
             else "data-dashboard-blob-path"
-        rows.append(
-            '<div class="fm-ssr-row"><a href="%s" %s="%s">%s%s</a>'
-            '<span class="m">%s</span><time>%s</time></div>' % (
-                html.escape(href), attr, html.escape(name),
-                html.escape(name), "/" if kind == "tree" else "",
-                html.escape(str(entry.get("subject") or "")),
-                _when(entry.get("date"))))
-    commit_line = ""
-    if latest:
-        commit_line = (
-            '<div class="fm-ssr-commit"><b>%s</b><span>%s</span>'
-            '<span style="margin-left:auto;flex-shrink:0">%s &middot; %s'
-            '</span></div>' % (
-                html.escape(str(latest.get("author") or "")),
-                html.escape(str(latest.get("subject") or "")),
-                html.escape(str(latest.get("hash") or "")[:7]),
-                _when(latest.get("date"))))
+        message = str(entry.get("message") or entry.get("commitMessage")
+                      or entry.get("subject") or "mirrored repository object")
+        rows.append(ROW % (
+            html.escape(href), attr, html.escape(name),
+            _icon("folder" if kind == "tree" else "file", "h-4 w-4",
+                  "shrink-0 text-foreground"),
+            html.escape(name), html.escape(message),
+            html.escape(time_ago(entry.get("date") or entry.get("updatedAt")
+                                 or entry.get("committedAt")))))
+    author = str(latest.get("author") or latest.get("committer") or owner)
+    summary = (
+        '<div class="grid gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs '
+        'sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center"><div class="flex '
+        'min-w-0 items-center gap-2"><span class="flex h-6 w-6 shrink-0 items-center '
+        'justify-center rounded-full border border-border/30 bg-primary/10 font-mono '
+        'text-[10px] font-semibold text-muted-foreground">%s</span><span class="min-w-0 '
+        'truncate text-foreground font-medium">%s</span><span class="min-w-0 truncate '
+        'text-muted-foreground">%s</span></div><span class="font-mono '
+        'text-muted-foreground">%s</span><span class="font-mono text-muted-foreground">'
+        '%s</span><a href="%s/commits" class="inline-flex items-center gap-1 font-medium '
+        'text-foreground transition-colors hover:text-accent">%s<span>History</span>'
+        '<span class="inline-block w-10 rounded-full bg-background px-1.5 py-0.5 font-mono text-[10px]">&nbsp;</span></a>'
+        '</div>' % (
+            html.escape((author[:1] or "F").upper()), html.escape(author),
+            html.escape(str(latest.get("subject") or latest.get("message")
+                            or "published latest mirror metadata")),
+            html.escape(str(latest.get("hash") or data.get("commit") or "")[:7]
+                        or "live"),
+            html.escape(time_ago(latest.get("date"))),
+            html.escape(base), _icon("history", "h-3.5 w-3.5", "text-muted-foreground")))
     readme = ""
+    readme_href = base
     if data.get("readme"):
         blob = data["readme"]["data"]
         name = data["readme"]["name"]
+        readme_href = "%s/blob/%s" % (base, urllib.parse.quote(name))
         text = str(blob.get("content") or "")[:MAX_README_CHARS] \
             if blob.get("encoding") != "base64" else ""
         body = ("<pre>%s</pre>" % html.escape(text)
                 if name.lower().endswith(".txt")
-                else markdown_html(text, base))
-        readme = ('<div class="fm-ssr-box fm-ssr-readme">'
-                  '<h2 class="fm-ssr-file">%s</h2>'
-                  '<div class="fm-ssr-md" data-repo-readme-body>%s</div>'
-                  '</div>' % (html.escape(name), body))
-    title = '<a href="%s">%s</a>' % (html.escape(base), html.escape(repo))
-    if not short:
-        title = '<a href="/%s">%s</a> / %s' % (
-            html.escape(urllib.parse.quote(owner)), html.escape(owner), title)
+                else markdown_html(text, base, raw_prefix(data)))
+        readme = (
+            '<section class="mt-4 overflow-hidden rounded-lg border border-border '
+            'bg-background"><div class="flex items-center gap-2 border-b border-border '
+            'bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground">%s%s</div>'
+            '<div class="fm-ssr-readme p-4 text-sm text-foreground" '
+            'data-repo-readme-body>%s</div></section>' % (
+                _icon("book-open", "h-3.5 w-3.5", "text-muted-foreground"),
+                html.escape(name), body))
     return (
-        '<div class="fm-ssr" data-repo-ssr>'
-        '<h1 class="fm-ssr-title">%s</h1>'
-        '<div class="fm-ssr-box">%s<div data-repo-tree>%s</div></div>%s'
-        '</div>' % (title, commit_line, "".join(rows), readme))
+        '<div data-repo-ssr data-repo-layout="first-view" class="min-w-0">%s%s<div data-repo-content-grid class="mx-auto grid w-full max-w-7xl '
+        'min-w-0 gap-5 px-3 pb-3 pt-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_18rem]">'
+        '<div class="min-w-0">%s<div class="my-3 flex min-w-0 flex-col gap-2 md:flex-row '
+        'md:items-center md:justify-between"><div class="flex min-w-0 items-center gap-2">'
+        '<div class="min-w-0 truncate text-xs text-muted-foreground"><a href="%s" '
+        'class="inline-block font-semibold text-accent hover:underline" style="line-height:1.5">%s</a></div></div></div>'
+        '%s<div class="overflow-hidden rounded-lg border border-border bg-background">'
+        '%s<div data-repo-tree>%s</div></div>%s</div>%s</div></div>' % (
+            _icon_sprite(), _tabs(base, about, counts),
+            _toolbar(str(data.get("ref") or "main")), html.escape(base), html.escape(repo),
+            _provenance(about), summary, "".join(rows), readme,
+            _about_rail(about, readme_href, data.get("info"))))
+
+
+HEADER_CONTEXT = '<span data-dashboard-header-context class="min-w-0 truncate"></span>'
+HEADER_META = '<div data-repo-header-meta class="hidden shrink-0 items-center gap-1.5">'
+HEADER_VISIBILITY = '<span data-repo-header-visibility class="fm-label"></span>'
+HEADER_AVAILABILITY = ('<span data-repo-availability-status class="inline-flex h-5 items-center '
+                       'rounded-full border border-border px-2 text-xs font-medium '
+                       'text-muted-foreground"></span>')
+
+
+def header_context(data, short=False):
+    owner, repo = data["owner"], data["repo"]
+    base = "/" + urllib.parse.quote(repo) if short else "/%s/%s" % (
+        urllib.parse.quote(owner), urllib.parse.quote(repo))
+    link = '<a href="%s" class="hover:underline">%s</a>' % (
+        html.escape(base), html.escape(repo))
+    if not short:
+        link = ('<a href="/@%s" class="hover:underline">%s</a><span class="px-1 '
+                'font-normal text-muted-foreground" aria-hidden="true">/</span>%s' % (
+                    html.escape(urllib.parse.quote(owner)), html.escape(owner), link))
+    return HEADER_CONTEXT.replace("></span>", ">%s</span>" % link)
 
 
 # -- a small, escaping Markdown subset --------------------------------------
-# Enough for a README to read well until the dashboard's own renderer takes
-# over: headings, paragraphs, lists, quotes, fenced code, inline code,
-# emphasis and links. Raw HTML is shown as text (never interpreted), images
-# become their alt text, and only http(s), mailto and relative links are
-# kept (relative ones resolve inside the repository, like the dashboard).
 
 _INLINE_CODE = re.compile(r"`([^`]+)`")
-_IMAGE = re.compile(r"!\[([^\]]*)\]\([^)]*\)")
+_CODE_SPAN = re.compile(r"(`+[^`]*`+)")
+_IMAGE = re.compile(r"!\[([^\]]*)\]\(([^)\s]*)\)")
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)")
 _BOLD = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")
 _ITALIC = re.compile(r"(?<![\w*])\*(?!\s)(.+?)(?<!\s)\*(?![\w*])")
-_TAG = re.compile(r"<[^>\n]{1,400}>")
+_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_IMG_TAG = re.compile(r"<img\b[^>]*>", re.I)
+_A_TAG = re.compile(r"<a\b([^>]*)>(.*?)</a\s*>", re.I | re.S)
+_BLOCK_TAG = re.compile(
+    r"</?(?:p|div|center|section|summary|details|ul|ol|li|table|tbody|thead|tr"
+    r"|blockquote|picture|h[1-6])\b[^>]*>", re.I)
+_ANY_TAG = re.compile(r"</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)?/?>")
+_SIZE_HINT = re.compile(r"#w=(\d{1,4})(?:x(\d{1,4}))?$")
+_RAW_BLOCK = re.compile(r"^\s*<[a-zA-Z!/]")
+_CENTRED = re.compile(r"<center\b|\balign\s*=\s*[\"']?center", re.I)
+IMAGE_CLASS = "my-2 inline-block max-w-full rounded-md border border-border"
+
+
+def _attr(tag, name):
+    match = re.search(r"(?<![\w-])%s\s*=\s*(?:\"([^\"]*)\"|'([^']*)'|([^\s>]+))"
+                      % name, tag, re.I)
+    if not match:
+        return ""
+    return match.group(1) if match.group(1) is not None else (
+        match.group(2) if match.group(2) is not None else match.group(3))
+
+
+def _markdown_url(url):
+    return url.strip().replace(" ", "%20").replace(")", "%29")
+
+
+def _flatten_html(text, block=True):
+    def image(match):
+        tag = match.group(0)
+        source = _markdown_url(html.unescape(_attr(tag, "src")))
+        if not source:
+            return ""
+        hint = ""
+        width, height = _attr(tag, "width"), _attr(tag, "height")
+        if width.isdigit() and 0 < int(width) < 10000 and "#" not in source:
+            hint = "#w=%d" % int(width)
+            if height.isdigit() and 0 < int(height) < 10000:
+                hint += "x%d" % int(height)
+        alt = re.sub(r"[\[\]]", "", html.unescape(_attr(tag, "alt")))
+        return "![%s](%s%s)" % (alt, source, hint)
+
+    def link(match):
+        label = match.group(2).strip()
+        href = _markdown_url(html.unescape(_attr(match.group(1), "href")))
+        if not label:
+            return ""
+        return "[%s](%s)" % (label, href) if href else label
+
+    text = _COMMENT.sub("", text)
+    text = _IMG_TAG.sub(image, text)
+    text = _A_TAG.sub(link, text)
+    text = re.sub(r"</?(?:strong|b)\s*>", "**", text, flags=re.I)
+    text = re.sub(r"</?(?:em|i)\s*>", "*", text, flags=re.I)
+    text = re.sub(r"</?(?:code|tt)\s*>", "`", text, flags=re.I)
+    text = re.sub(r"<br\s*/?>", "\n" if block else " ", text, flags=re.I)
+    if block:
+        text = re.sub(r"<hr\s*/?>", "\n\n---\n\n", text, flags=re.I)
+        text = re.sub(r"<h([1-6])\b[^>]*>",
+                      lambda m: "\n\n%s " % ("#" * int(m.group(1))), text,
+                      flags=re.I)
+        text = _BLOCK_TAG.sub("\n\n", text)
+    text = _ANY_TAG.sub("", text)
+    return html.unescape(text)
+
+
+def _flatten_inline(text):
+    return "".join(part if index % 2 else _flatten_html(part, block=False)
+                   for index, part in enumerate(_CODE_SPAN.split(text)))
 
 
 def _safe_href(url, base):
@@ -537,16 +988,61 @@ def _safe_href(url, base):
     return "%s/blob/%s" % (base, url.lstrip("./"))
 
 
-def _inline(text, base):
+def _image_src(url, raw):
+    lowered = url.lower()
+    if lowered.startswith(("https://", "http://")):
+        return url
+    if re.match(r"^[a-z][a-z0-9+.-]*:", lowered) or url.startswith(("//", "#")):
+        return ""
+    if url.startswith("/"):
+        return url
+    if not raw:
+        return ""
+    parts = []
+    for part in url.split("?", 1)[0].split("/"):
+        if part in ("", "."):
+            continue
+        if part == "..":
+            if parts:
+                parts.pop()
+            continue
+        parts.append(urllib.parse.unquote(part))
+    return raw + urllib.parse.quote("/".join(parts), safe="") if parts else ""
+
+
+def _image_html(alt, url, raw):
+    hint = _SIZE_HINT.search(url)
+    target = url[:hint.start()] if hint else url
+    source = _image_src(target, raw)
+    if not source:
+        return html.escape(alt)
+    size = ""
+    if hint:
+        size = ' width="%s"' % hint.group(1)
+        if hint.group(2):
+            size += ' height="%s"' % hint.group(2)
+    external = ' referrerpolicy="no-referrer"' \
+        if source.lower().startswith("http") else ""
+    return ('<img src="%s" alt="%s"%s%s class="%s" loading="lazy" '
+            'decoding="async">' % (html.escape(source), html.escape(alt), size,
+                                   external, IMAGE_CLASS))
+
+
+def _inline(text, base, raw=""):
     codes = []
 
     def keep_code(match):
         codes.append("<code>%s</code>" % html.escape(match.group(1)))
         return "\x00%d\x00" % (len(codes) - 1)
 
-    text = _INLINE_CODE.sub(keep_code, text)
-    text = _TAG.sub("", text)
-    text = _IMAGE.sub(lambda m: "\x01%s\x02" % m.group(1), text)
+    text = _INLINE_CODE.sub(keep_code, _flatten_inline(text))
+    images = []
+
+    def keep_image(match):
+        images.append(_image_html(match.group(1), match.group(2), raw))
+        return "\x01%d\x01" % (len(images) - 1)
+
+    text = _IMAGE.sub(keep_image, text)
     links = []
 
     def keep_link(match):
@@ -561,13 +1057,14 @@ def _inline(text, base):
     text = _BOLD.sub(lambda m: "<strong>%s</strong>" % (m.group(1) or m.group(2)),
                      text)
     text = _ITALIC.sub(lambda m: "<em>%s</em>" % m.group(1), text)
-    text = text.replace("\x01", "").replace("\x02", "")
     text = re.sub("\x03(\\d+)\x03", lambda m: links[int(m.group(1))], text)
+    text = re.sub("\x01(\\d+)\x01", lambda m: images[int(m.group(1))], text)
     return re.sub("\x00(\\d+)\x00", lambda m: codes[int(m.group(1))], text)
 
 
-def markdown_html(source, base):
+def markdown_html(source, base, raw="", depth=0):
     out = []
+    source = re.sub("[\x00-\x03]", "", source)
     lines = source.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     paragraph = []
     lists = None  # ("ul"|"ol", [items])
@@ -576,12 +1073,12 @@ def markdown_html(source, base):
     def flush():
         nonlocal paragraph, lists
         if paragraph:
-            out.append("<p>%s</p>" % _inline(" ".join(paragraph), base))
+            out.append("<p>%s</p>" % _inline(" ".join(paragraph), base, raw))
             paragraph = []
         if lists:
             tag, items = lists
             out.append("<%s>%s</%s>" % (tag, "".join(
-                "<li>%s</li>" % _inline(item, base) for item in items), tag))
+                "<li>%s</li>" % _inline(item, base, raw) for item in items), tag))
             lists = None
 
     while i < len(lines):
@@ -600,12 +1097,23 @@ def markdown_html(source, base):
                 "\n".join(block)))
             i += 1
             continue
+        if depth < 2 and _RAW_BLOCK.match(line):
+            flush()
+            block = []
+            while i < len(lines) and lines[i].strip():
+                block.append(lines[i])
+                i += 1
+            text = "\n".join(block)
+            rendered = markdown_html(_flatten_html(text), base, raw, depth + 1)
+            out.append('<div class="text-center">%s</div>' % rendered
+                       if _CENTRED.search(text) else rendered)
+            continue
         heading = re.match(r"^(#{1,6})\s+(.*?)\s*#*\s*$", stripped)
         if heading:
             flush()
             level = len(heading.group(1))
             out.append("<h%d>%s</h%d>" % (level, _inline(heading.group(2),
-                                                        base), level))
+                                                        base, raw), level))
         elif not stripped or re.match(r"^(-{3,}|\*{3,}|_{3,})$", stripped):
             flush()
             if stripped:
@@ -615,7 +1123,7 @@ def markdown_html(source, base):
             ordered = bool(re.match(r"^\s*\d+[.)]\s+", line))
             tag = "ol" if ordered else "ul"
             if paragraph:
-                out.append("<p>%s</p>" % _inline(" ".join(paragraph), base))
+                out.append("<p>%s</p>" % _inline(" ".join(paragraph), base, raw))
                 paragraph = []
             if lists and lists[0] != tag:
                 flush()
@@ -629,7 +1137,7 @@ def markdown_html(source, base):
                 quote.append(lines[i].strip()[1:].strip())
                 i += 1
             out.append("<blockquote><p>%s</p></blockquote>" % _inline(
-                " ".join(quote), base))
+                " ".join(quote), base, raw))
             continue
         elif lists and line.startswith(("  ", "\t")):
             lists[1][-1] += " " + stripped

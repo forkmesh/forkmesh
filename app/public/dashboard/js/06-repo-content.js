@@ -117,14 +117,16 @@
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
-    const hint = /#w=(\d{1,4})$/.exec(url);
+    const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
     const source = mdImageSource(target, context);
-    if (!source) return alt;
+    if (!source || source === "#") return alt;
     const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
-    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
-      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" />';
+    const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
+    const external = /^https?:/i.test(source) ? ' referrerpolicy="no-referrer"' : "";
+    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${size}${external}`
+      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" />';
   }
 
   // Operates on already-`escapeHtml`d text so the captured groups (urls,
@@ -136,8 +138,7 @@
   // between them into an <em>, and a code span reading `a_b_c` lost its
   // underscores. Link labels are rendered before their whole anchor is parked,
   // preserving emphasis without allowing record references to become nested links.
-  function renderMarkdownInline(escapedText, context, linkRecordReferences = true) {
-    const parked = [];
+  function renderMarkdownInline(escapedText, context, linkRecordReferences = true, parked = []) {
     const park = (html) => `\u0001${parked.push(html) - 1}\u0001`;
     const recordReference = (whole, prefix, label, kind, number) => {
       if (!linkRecordReferences) return whole;
@@ -149,7 +150,7 @@
     return escapedText
       .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) => park(mdImageHtml(alt, url, context)))
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
-        park(mdLinkHtml(renderMarkdownInline(label, context, false), url, context)))
+        park(mdLinkHtml(renderMarkdownInline(label, context, false, parked), url, context)))
       .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
       .replace(/(^|[^\w&])((?:pull[-\s]+request|pull|pr)[-\s]*#([1-9]\d*))\b/gi,
         (whole, prefix, label, number) => recordReference(whole, prefix, label, "pulls", number))
@@ -204,15 +205,18 @@
     return decodeHtmlEntities(String(text)
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<img\b[^>]*>/gi, (tag) => {
-        const source = htmlTagAttr(tag, "src");
+        const source = htmlTagAttr(tag, "src").trim().replace(/\s/g, "%20").replace(/\)/g, "%29");
         if (!source) return "";
         const width = parseInt(htmlTagAttr(tag, "width"), 10);
-        const hint = width > 0 && !source.includes("#") ? `#w=${width}` : "";
-        return `![${htmlTagAttr(tag, "alt")}](${source}${hint})`;
+        const height = parseInt(htmlTagAttr(tag, "height"), 10);
+        const hint = width > 0 && width < 10000 && !source.includes("#")
+          ? `#w=${width}${height > 0 && height < 10000 ? `x${height}` : ""}`
+          : "";
+        return `![${htmlTagAttr(tag, "alt").replace(/[[\]]/g, "")}](${source}${hint})`;
       })
       .replace(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi, (whole, attributes, label) => {
         const text = label.trim();
-        const href = htmlTagAttr(attributes, "href");
+        const href = htmlTagAttr(attributes, "href").trim().replace(/\s/g, "%20").replace(/\)/g, "%29");
         if (!text) return "";
         return href ? `[${text}](${href})` : text;
       })
@@ -10136,6 +10140,27 @@
 
   const REPO_FEATURE_TABS = ["issues", "pulls", "discussions"];
 
+  function repoFirstViewSeed(repo) {
+    let seed = null;
+    try {
+      seed = JSON.parse(document.getElementById("forkmesh-repo-ssr")?.textContent || "null");
+    } catch (_) {
+      return null;
+    }
+    if (!seed?.owner || !seed?.repo) return null;
+    const base = `/api/repo/${encodeURIComponent(seed.owner)}/${encodeURIComponent(seed.repo)}`;
+    return base.toLowerCase() === repoApiBase(repo).toLowerCase() ? seed : null;
+  }
+
+  function applyRepoFirstViewAbout(repo) {
+    const seed = repoFirstViewSeed(repo);
+    if (!seed) return;
+    applyRepoFeatures(seed.features);
+    const about = String(seed.info?.about || "").trim();
+    if (about) applyRepoAboutDescription(repo, about);
+    if (seed.info) applyRepoAboutWebsite(String(seed.info.website || ""));
+  }
+
   function applyRepoFeatures(features) {
     if (!features || typeof features !== "object") return;
     REPO_FEATURE_TABS.forEach((key) => {
@@ -11241,7 +11266,6 @@
     const label = $("[data-repo-about-files-count]");
     if (!section || !label || !count) return;
     label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""}`;
-    section.classList.remove("hidden");
   }
 
   // ranked: [[language, weight], ...] already sorted desc. weight is bytes when
@@ -11263,6 +11287,7 @@
       const pct = ((weight / total) * 100).toFixed(1);
       return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
     }).join("");
+    section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
 
@@ -11274,7 +11299,33 @@
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
-    return `<span title="${escapeHtml(title)}" class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(initials)}</span>`;
+    const classes = "relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground";
+    const initialsHtml = `<span>${escapeHtml(initials)}</span>`;
+    const picture = repoContributorAvatarUrl(contributor?.avatarUrl);
+    if (picture) {
+      return `<span title="${escapeHtml(title)}" data-repo-contributor-avatar class="${classes}">${initialsHtml}<img src="${escapeHtml(picture)}" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" /></span>`;
+    }
+    const handle = String(contributor?.name || "").trim().toLowerCase();
+    if (validNodeName(handle)) {
+      watchIssueActorAvatars();
+      return `<span title="${escapeHtml(title)}" data-issue-actor-avatar="${escapeHtml(handle)}" class="${classes}">${initialsHtml}</span>`;
+    }
+    return `<span title="${escapeHtml(title)}" class="${classes}">${initialsHtml}</span>`;
+  }
+
+  function repoContributorAvatarUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function dropBrokenContributorAvatars(list) {
+    list.querySelectorAll("[data-repo-contributor-avatar] img").forEach((image) => {
+      image.addEventListener("error", () => image.remove(), { once: true });
+    });
   }
 
   // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
@@ -11293,6 +11344,8 @@
     const more = (Number(total) || rows.length) - shown.length;
     list.innerHTML = shown.map(repoContributorAvatar).join("") +
       (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
+    dropBrokenContributorAvatars(list);
+    section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
 
@@ -11528,7 +11581,6 @@
     const meta = $("[data-repo-about-sizemap-meta]");
     if (meta) meta.textContent = formatSize(tree.size);
     open.onclick = () => activateRepoTab("sizemap");
-    section.classList.remove("hidden");
   }
 
   // --- Size map tab (adhoc #198) ----------------------------------------
@@ -11804,17 +11856,9 @@
     const section = $("[data-repo-about-sizemap]");
     state.repoAboutSizeMapObserver?.disconnect();
     state.repoAboutSizeMapObserver = null;
-    if (!section?.parentElement || typeof IntersectionObserver !== "function") {
+    if (!section || typeof IntersectionObserver !== "function") {
       loadRepoAboutSizeMap(repo);
       return;
-    }
-    let marker = section.previousElementSibling;
-    if (!marker?.hasAttribute("data-repo-about-sizemap-marker")) {
-      marker = document.createElement("div");
-      marker.setAttribute("data-repo-about-sizemap-marker", "");
-      marker.setAttribute("aria-hidden", "true");
-      marker.style.height = "1px";
-      section.parentElement.insertBefore(marker, section);
     }
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -11823,14 +11867,22 @@
       if (repoAboutStillCurrent(repo)) loadRepoAboutSizeMap(repo);
     }, { rootMargin: "300px 0px" });
     state.repoAboutSizeMapObserver = observer;
-    observer.observe(marker);
+    observer.observe(section);
   }
 
   async function loadRepoAboutInsights(repo) {
     loadRepoAboutSizeMapWhenNear(repo);
-    if (await loadRepoAboutStats(repo)) return;
-    loadRepoAboutFilesAndLanguages(repo);
-    loadRepoAboutContributors(repo);
+    if (!await loadRepoAboutStats(repo)) {
+      await Promise.allSettled([loadRepoAboutFilesAndLanguages(repo), loadRepoAboutContributors(repo)]);
+    }
+    if (repoAboutStillCurrent(repo)) settleRepoAboutPending();
+  }
+
+  function settleRepoAboutPending() {
+    document.querySelectorAll("[data-repo-about-pending]").forEach((section) => {
+      section.removeAttribute("data-repo-about-pending");
+      section.classList.add("hidden");
+    });
   }
 
   function loadRepoAboutRail(repo) {

@@ -222,6 +222,7 @@
         }
       : nextSession;
     state.session = storedSession;
+    if (storedSession?.nodeName || storedSession?.email) document.documentElement?.removeAttribute?.("data-guest");
     try {
       localStorage.setItem("forkmesh.session", JSON.stringify(storedSession));
       document.cookie = "forkmesh_session=1; Path=/; Max-Age=2592000; SameSite=Lax"

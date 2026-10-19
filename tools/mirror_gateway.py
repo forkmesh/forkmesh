@@ -788,6 +788,23 @@ def _receive_pack_target(method: str, path: str) -> bool:
         return False
 
 
+GITHUB_NOREPLY_RE = re.compile(
+    r"^(?:([0-9]{1,12})\+)?([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?)"
+    r"@users\.noreply\.github\.com$", re.IGNORECASE)
+
+
+def _github_noreply_avatar(email: str) -> str:
+    match = GITHUB_NOREPLY_RE.match(str(email or "").strip())
+    if not match:
+        return ""
+    if match.group(1):
+        return "https://avatars.githubusercontent.com/u/%s?s=56&v=4" % match.group(1)
+    login = match.group(2)
+    if login.lower().endswith("[bot]"):
+        return ""
+    return "https://github.com/%s.png?size=56" % login
+
+
 def _public_https_url(value: Any) -> str:
     """Return one bounded, credential-free public image URL."""
     raw = str(value or "").strip()
@@ -5147,7 +5164,8 @@ class GitRepository:
                         (match.group(3) or name).strip().casefold()
                     ),
                 }
-                avatar = contributor_avatars.get(name.strip().casefold(), "")
+                avatar = contributor_avatars.get(name.strip().casefold(), "") \
+                    or _github_noreply_avatar(match.group(3) or "")
                 if avatar:
                     contributor["avatarUrl"] = avatar
                 contributors.append(contributor)

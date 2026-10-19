@@ -330,3 +330,61 @@ def test_repository_svg_images_wait_for_the_safe_hydrator():
         "data-repo-svg-src=", "")
     assert 'src="/api/repo/forkmesh/forkmesh/raw?path=docs%2Fchart.png"' in html
     assert 'src="https://img.example.org/b.svg"' in html
+
+
+def test_linked_avatar_images_render_as_images_inside_their_links():
+    html = _render(
+        '<a href="https://github.com/alice" title="alice: 3 commits">'
+        '<img src="https://github.com/alice.png?size=60" width="50" height="50" alt="alice"></a> '
+        '<a href="https://github.com/bob"><img src="https://github.com/bob.png?size=60" '
+        'width="50" height="50" alt="bob"></a>\n'
+    )
+    assert "undefined" not in html
+    assert html.count("<img ") == 2
+    assert '<a href="https://github.com/alice"' in html
+    assert 'src="https://github.com/alice.png?size=60"' in html
+    assert 'width="50" height="50"' in html
+    assert 'referrerpolicy="no-referrer"' in html
+    alice = html.index('href="https://github.com/alice"')
+    assert html.index('src="https://github.com/alice.png', alice) < html.index("</a>", alice)
+
+
+def test_markdown_image_inside_a_markdown_link_keeps_both():
+    html = _render("See [![badge](https://example.com/b.svg)](https://example.com).\n")
+    assert "undefined" not in html
+    assert '<a href="https://example.com"' in html
+    assert '<img src="https://example.com/b.svg" alt="badge"' in html
+
+
+def test_centred_logo_with_size_and_picture_sources():
+    html = _render(
+        '<p align="center"><img src="docs/logo.png" alt="Logo" width="140" height="140"></p>\n\n'
+        '<picture><source media="(prefers-color-scheme: dark)" srcset="dark.png">'
+        '<img src="light.png" alt="mode"></picture>\n'
+    )
+    assert '<div class="text-center">' in html
+    assert 'src="/api/repo/forkmesh/forkmesh/raw?path=docs%2Flogo.png"' in html
+    assert 'width="140" height="140"' in html
+    assert 'src="/api/repo/forkmesh/forkmesh/raw?path=light.png" alt="mode"' in html
+    assert "srcset" not in html and "<source" not in html
+
+
+def test_raw_html_images_and_links_stay_sanitized():
+    html = _render(
+        '<a href="javascript:alert(1)" onclick="alert(2)">'
+        '<img src="javascript:alert(3)" onerror="alert(4)" alt="x"></a> '
+        '<img src=x onerror=alert(5)//> <img src="data:image/svg+xml;base64,PHN2Zz4=" alt="svg"> '
+        '<a href="https://ok.example/" style="color:red"><img src="vbscript:x" alt="vb"></a> '
+        '<svg onload="alert(6)"></svg><iframe src="https://evil.example"></iframe>\n'
+    )
+    assert "javascript:" not in html and "vbscript:" not in html
+    assert "onerror" not in html and "onclick" not in html and "onload" not in html
+    assert "<svg" not in html and "<iframe" not in html and "style=" not in html
+    assert "data:image/svg" not in html
+    assert '<a href="https://ok.example/"' in html
+
+
+def test_image_alt_and_url_cannot_break_out_of_the_attribute():
+    html = _render('<img src="https://e.example/a.png?x=&quot;onerror=&quot;" alt="a&quot; onload=&quot;b">\n')
+    assert "onload=\"" not in html and "onerror=\"" not in html
+    assert html.count("<img ") == 1

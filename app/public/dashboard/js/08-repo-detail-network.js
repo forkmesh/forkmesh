@@ -484,22 +484,22 @@
                 </div>
               </div>
               <a href="${escapeHtml(`${repoLinkUrl(repo)}/mirrors`)}" data-dashboard-repo-tab="mirrors" aria-label="Show repository mirror status" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Mirrors</span><span data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors" class="min-w-0 truncate text-right font-mono text-foreground">${tabCountLabel(mirrorsCount)}</span></a>
-              <div data-repo-about-files class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 text-muted-foreground">Files</span><span data-repo-about-files-count class="min-w-0 truncate text-right font-mono text-foreground"></span></div>
-              <div data-repo-about-sizemap class="hidden">
-                <button type="button" data-repo-about-sizemap-open title="Explore the repository size map" aria-label="Explore the repository size map" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Size</span><span class="inline-flex items-center gap-1.5 justify-self-end text-foreground"><span data-repo-about-sizemap-chart class="block h-4 w-4"></span><span data-repo-about-sizemap-meta class="font-mono"></span><i data-lucide="chevron-right" class="h-3 w-3 text-muted-foreground"></i></span></button>
+              <div data-repo-about-files class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 text-muted-foreground">Files</span><span data-repo-about-files-count class="min-w-0 truncate text-right font-mono text-foreground">–</span></div>
+              <div data-repo-about-sizemap>
+                <button type="button" data-repo-about-sizemap-open title="Explore the repository size map" aria-label="Explore the repository size map" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Size</span><span class="inline-flex items-center gap-1.5 justify-self-end text-foreground"><span data-repo-about-sizemap-chart class="block h-4 w-4"></span><span data-repo-about-sizemap-meta class="font-mono">–</span><i data-lucide="chevron-right" class="h-3 w-3 text-muted-foreground"></i></span></button>
               </div>
             </div>
-            <div data-repo-about-langs class="mt-3 hidden border-t border-border pt-3">
+            <div data-repo-about-langs data-repo-about-pending class="mt-3 border-t border-border pt-3">
               <h4 class="text-xs font-semibold text-foreground">Languages</h4>
-              <div data-repo-about-langs-bar class="mt-2.5 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"></div>
-              <div data-repo-about-langs-legend class="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground"></div>
+              <div data-repo-about-langs-bar class="mt-2.5 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"><span class="h-full w-full rounded-full bg-muted-foreground/20"></span></div>
+              <div data-repo-about-langs-legend class="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground">${'<span class="block rounded bg-muted-foreground/20">&nbsp;</span>'.repeat(6)}</div>
             </div>
-            <div data-repo-about-contribs class="mt-3 hidden border-t border-border pt-3">
+            <div data-repo-about-contribs data-repo-about-pending class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Contributors</h4>
-                <span data-repo-about-contribs-count class="font-mono text-[11px] text-muted-foreground"></span>
+                <span data-repo-about-contribs-count class="font-mono text-[11px] text-muted-foreground">–</span>
               </div>
-              <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5"></div>
+              <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5">${'<span class="h-7 w-7 rounded-full border-2 border-background bg-secondary"></span>'.repeat(8)}</div>
             </div>
             ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
@@ -538,6 +538,7 @@
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
       </div>`;
+    applyRepoFirstViewAbout(repo);
     // Restore whichever tab the URL points at (e.g. a refresh on
     // /owner/repo/issues) instead of always defaulting back to Code. This
     // runs right after painting the DOM, before anything else that could
@@ -1715,6 +1716,7 @@
     // signed-out visitors back to the landing page, the header swaps the
     // profile/notification controls for a Sign Up / Log In link.
     const guest = !session || (!session.nodeName && !session.email);
+    document.documentElement?.toggleAttribute?.("data-guest", guest);
     if (guest) {
       // The profile and settings documents are account pages — signed-out
       // visitors have no profile to show there, so bounce through login and
@@ -1834,7 +1836,7 @@
     // A node that reads the repository locally sends the page with its first
     // view already rendered (app/host/forkmesh_host/repo_ssr.py); keep that
     // on screen until the full interface replaces it.
-    if (detail && requested && !detail.querySelector("[data-repo-ssr]")) {
+    if (detail && requested && !detail.querySelector("[data-repo-ssr], [data-repo-frame]")) {
       detail.innerHTML = `<p class="text-sm text-muted-foreground">${loadingHtml("Loading repository…")}</p>`;
     }
     // findRepository needs the catalog (alias/canonical grouping), so this page
