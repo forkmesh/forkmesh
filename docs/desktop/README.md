@@ -137,7 +137,11 @@ Everything is in `desktop/`.
   A fresh celebrating ping plays `CelebrationOverlay` (confetti with a
   headline card); the card word-wraps its title and body onto as many lines
   as they need instead of eliding them, so "Email tracked in the CRM" and the
-  email subject are read in full.
+  email subject are read in full. The confetti stays click-through, so a ✕
+  button (a sibling of the overlay, since a click-through widget passes clicks
+  past its children too) sits on the card's top-right corner, or the window's
+  when there is no card, and ends the show at once. It appears once the card
+  has popped in and leaves when the fade-out starts.
 - **Git work off the GUI thread.** Git runs through helpers in
   `MainWindowInternal.h` (`waitForGit`, `runOffThread`); a GUI-thread wait pumps
   the event loop, and Git on the GUI thread shows up in the stall log.

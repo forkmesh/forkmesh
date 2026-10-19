@@ -7030,7 +7030,11 @@ private:
     void refreshCodexUsageRemaining();
     void applyCodexRateLimits(
         const QJsonObject &rateLimits,
-        const QJsonObject &rateLimitsByLimitId = QJsonObject());
+        const QJsonObject &rateLimitsByLimitId = QJsonObject(),
+        const QString &accountId = QString());
+    void applyInactiveCodexRateLimits(const QJsonObject &rateLimits,
+                                      const QJsonObject &rateLimitsByLimitId,
+                                      const QString &accountId);
     // A live run's own rate_limit_info: the percentage for one window and, when
     // the CLI says so, the time it reopens.
     void applyClaudeRateLimitEvent(const QJsonObject &rateLimitInfo);
