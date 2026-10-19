@@ -1950,6 +1950,7 @@ public:
     }
     bool testLoggingEnabled() const { return loggingEnabled(); }
     void testSetLoggingEnabled(bool enabled) { setLoggingEnabled(enabled); }
+    QCheckBox *testLogRecordCheck(const QString &category) const;
     int testDeleteLogCategory(const QString &badge)
     {
         return deleteLogCategory(badge);
@@ -10171,6 +10172,14 @@ private:
         return !m_mutedLogCategories.contains(badge);
     }
     void setLogCategoryEnabled(const QString &badge, bool enabled);
+    void saveMutedLogCategories() const;
+    bool logCategoryRecording(const QString &badge) const
+    {
+        return loggingEnabled() && logCategoryEnabled(badge);
+    }
+    void toggleLogCategoryRecording(const QString &badge);
+    void recordOnlyLogCategory(const QString &badge);
+    void recordAllLogCategories();
     bool loggingEnabled() const;
     void setLoggingEnabled(bool enabled);
     void updateLoggingOffButton();

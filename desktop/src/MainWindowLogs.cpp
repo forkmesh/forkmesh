@@ -968,7 +968,7 @@ QWidget *MainWindow::buildLogSection()
     filterScroll->setFrameShape(QFrame::NoFrame);
     filterScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     filterScroll->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-    filterScroll->setFixedHeight(62);
+    filterScroll->setFixedHeight(80);
 
     m_logFilterCounts.clear();
     for (const QString &line : std::as_const(m_networkLog))
@@ -2072,6 +2072,7 @@ void MainWindow::setLoggingEnabled(bool enabled)
     m_loggingOff = !enabled;
     QSettings().setValue(kLoggingOffSetting, !enabled);
     updateLoggingOffButton();
+    rebuildLogFilterButtons();
     if (enabled) {
         startCloudLogMonitorIfConfigured();
         syncCoreLogFeeds();
