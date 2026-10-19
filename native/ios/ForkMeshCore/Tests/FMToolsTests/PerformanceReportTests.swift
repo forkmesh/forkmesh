@@ -161,6 +161,26 @@ final class PerformanceReportTests: XCTestCase {
     }
 
     @MainActor
+    func testStallsAreGroupedByHowLongAfterLaunchOrResumeTheyBegan() async {
+        let (telemetry, clock) = fixture()
+        let monitor = telemetry.monitor!
+        monitor.recordSlowEvent(
+            kind: .frame, name: "frame", duration: .milliseconds(1262), details: ["shown": "launch", "shownMs": 400])
+        clock.advance(60)
+        monitor.recordSlowEvent(
+            kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(250), details: ["shown": "resume", "shownMs": 30_000])
+        monitor.recordSlowEvent(
+            kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(325), details: ["shown": "resume", "shownMs": 900])
+        monitor.recordSlowEvent(
+            kind: .frame, name: "frame", duration: .milliseconds(224), details: ["shown": "resume", "shownMs": 1_200])
+        let text = PerformanceReport.text(telemetry: telemetry, now: clock.now, timeZone: utc)
+        XCTAssertTrue(text.contains(
+            "## Stalls by time since shown\n1x     total 1262ms max 1262ms last 12:00:00 launch, first 10s\n"
+                + "2x     total 549ms max 325ms last 12:01:00 resume, first 10s\n"
+                + "1x     total 250ms max 250ms last 12:01:00 later\n"), text)
+    }
+
+    @MainActor
     func testStallsSumTheNamedMainActorWorkThatRanInsideThem() async {
         let (telemetry, clock) = fixture()
         let monitor = telemetry.monitor!

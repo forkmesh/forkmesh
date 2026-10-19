@@ -135,14 +135,14 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
     $("[data-ifeed-refresh]").disabled = state.loading;
     if (!list) return;
     if (state.loading && !state.posts.length && !state.thread) {
-      list.innerHTML = '<div class="px-4 py-8 text-sm text-muted-foreground"><span class="fm-spinner"></span>Loading the instance feed…</div>';
+      list.innerHTML = '<div class="px-4 py-8 text-sm text-muted-foreground"><span class="fm-spinner"></span>Loading the feed…</div>';
     } else if (state.view.kind === "thread") {
       const thread = state.thread;
       const items = thread?.post ? [...thread.ancestors, thread.post, ...thread.replies] : [];
       list.innerHTML = items.length ? rows(items, (item) => ({ focused: item.id === thread.post.id })) : empty("Post not found", "It may have been deleted.");
     } else if (!state.posts.length) {
       list.innerHTML = state.view.kind === "profile"
-        ? empty("No posts yet", `@${state.view.author} has not posted to the instance feed.`)
+        ? empty("No posts yet", `@${state.view.author} has not posted to the feed.`)
         : empty("No posts yet", "Be the first to post to this instance.");
     } else {
       list.innerHTML = rows(state.posts, () => ({}));
@@ -252,7 +252,7 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
     const button = $("[data-ifeed-install]"); if (button) button.disabled = true;
     try {
       await request(`/api/plugins/@account/${PACKAGE}/install`, "POST", {});
-      message("notice", "Instance Feed installed.");
+      message("notice", "Feed installed.");
       await load();
     } catch (error) {
       message("error", `Could not install: ${error.message}`);
@@ -265,7 +265,7 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
     catch (error) { message("error", `Could not export: ${error.message}`); }
   }
   async function uninstall() {
-    if (!confirm("Uninstall Instance Feed? Your posts, boosts and favourites download first, then they are deleted from the feed.")) return;
+    if (!confirm("Uninstall Feed? Your posts, boosts and favourites download first, then they are deleted from the feed.")) return;
     try {
       const snapshot = await request(`${API}/export`);
       const data = snapshot.export || {};
@@ -273,7 +273,7 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
       await request(`/api/plugins/@account/${PACKAGE}/uninstall`, "POST", {});
       $("[data-ifeed-manage-dialog]")?.close();
       state.installed = false; state.posts = []; state.thread = null;
-      message("notice", "Instance Feed uninstalled.");
+      message("notice", "Feed uninstalled.");
       render();
     } catch (error) {
       message("error", `Could not uninstall: ${error.message}`);
@@ -281,7 +281,7 @@ window.ForkMeshDashboard.registerPage("instance-feed", ({ select: $, selectAll: 
   }
 
   function init() {
-    if (!session()?.sessionToken) return message("error", "Sign in to use the instance feed.");
+    if (!session()?.sessionToken) return message("error", "Sign in to use the feed.");
     $("[data-ifeed-install]")?.addEventListener("click", () => void install());
     $("[data-ifeed-refresh]")?.addEventListener("click", () => void load());
     $("[data-ifeed-more]")?.addEventListener("click", () => void load({ append: true }));

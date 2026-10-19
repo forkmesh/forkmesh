@@ -1491,6 +1491,92 @@ PullStore::PullStore(QString workTreePath, QString mirrorPath,
 {
 }
 
+namespace {
+
+bool runPullHeadGit(const QString &dir, const QStringList &args)
+{
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    for (const char *key : {"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_AUTHOR_DATE",
+                            "GIT_COMMITTER_DATE"})
+        env.remove(QString::fromLatin1(key));
+    env.insert(QStringLiteral("GIT_COMMITTER_NAME"), QStringLiteral("ForkMesh"));
+    env.insert(QStringLiteral("GIT_COMMITTER_EMAIL"),
+               QStringLiteral("pulls@users.noreply.forkmesh.com"));
+    QProcess process;
+    process.setProcessEnvironment(env);
+    process.start(QStringLiteral("git"),
+                  QStringList{"-C", dir, "-c", "core.hooksPath=/dev/null"} + args);
+    const QCoreApplication *app = QCoreApplication::instance();
+    const bool onGuiThread = app && QThread::currentThread() == app->thread();
+    if (!waitForFinishedKeepAlive(process, kGitTimeoutMs, onGuiThread))
+        return false;
+    return process.exitStatus() == QProcess::NormalExit && process.exitCode() == 0;
+}
+
+QString replayPullSeries(const QString &workTree, int number, const QString &baseOid,
+                         const QString &series)
+{
+    const QString stamp = QStringLiteral("%1-%2-%3")
+                              .arg(number)
+                              .arg(QDateTime::currentMSecsSinceEpoch())
+                              .arg(baseOid.left(8));
+    const QString scratchDir =
+        QDir::temp().filePath(QStringLiteral("forkmesh-pr-ref-") + stamp);
+    if (!runPullHeadGit(workTree, {"worktree", "add", "--detach", scratchDir, baseOid}))
+        return QString();
+    const QString mboxPath =
+        QDir::temp().filePath(QStringLiteral("forkmesh-pr-ref-%1.mbox").arg(stamp));
+    QString tipSha;
+    if (writeTextFile(mboxPath, series, nullptr) &&
+        runPullHeadGit(scratchDir, {"am", "--quiet", "--3way", "--no-gpg-sign",
+                                    "--no-message-id", "--no-scissors", "--no-keep-cr",
+                                    "--committer-date-is-author-date", mboxPath})) {
+        const QString tip = resolvedCommitOid(scratchDir, QStringLiteral("HEAD"));
+        if (tip != baseOid.toLower())
+            tipSha = tip;
+    }
+    QFile::remove(mboxPath);
+    runGit(scratchDir, {"am", "--abort"}, nullptr, nullptr);
+    runGit(workTree, {"worktree", "remove", "--force", scratchDir}, nullptr, nullptr);
+    forkmesh::safedelete::removeTree(scratchDir, QDir::tempPath(), nullptr,
+                                     forkmesh::safedelete::Allow::OwnWorktree);
+    runGit(workTree, {"worktree", "prune"}, nullptr, nullptr);
+    return tipSha;
+}
+
+QString recordedPullHead(const QString &dir, const PullRequest &pr,
+                         const QString &baseTip)
+{
+    if (baseTip.isEmpty() || !validCommitOid(pr.headOid) ||
+        !validCommitOid(pr.headBaseOid))
+        return QString();
+    const QString head = resolvedCommitOid(dir, pr.headOid);
+    const QString onto = resolvedCommitOid(dir, pr.headBaseOid);
+    if (head.isEmpty() || onto.isEmpty() || head == onto ||
+        !runGit(dir, {"merge-base", "--is-ancestor", onto, baseTip}) ||
+        !runGit(dir, {"merge-base", "--is-ancestor", onto, head}))
+        return QString();
+    return head;
+}
+
+} // namespace
+
+QString PullStore::pullBaseTip(const PullRequest &pr) const
+{
+    const QString base = resolvedCommitOid(m_workTree, pr.base.trimmed());
+    return base.isEmpty() ? resolvedCommitOid(m_workTree, QStringLiteral("HEAD")) : base;
+}
+
+QString PullStore::pullHeadCommit(const PullRequest &pr) const
+{
+    const QString head = pr.branchBacked
+                             ? reachableHeadCommit(m_workTree, m_mirror, pr.head)
+                             : recordedPullHead(m_workTree, pr, pullBaseTip(pr));
+    if (!head.isEmpty())
+        return head;
+    return resolvedCommitOid(m_workTree, QStringLiteral("refs/pr/%1/head").arg(pr.number));
+}
+
 bool PullStore::canWrite() const
 {
     if (m_workTree.isEmpty() || !m_identity || !m_identity->isValid())
@@ -1712,70 +1798,27 @@ bool PullStore::materializePullRef(const PullRequest &pr, QString *error) const
     QString sha = pr.branchBacked
                       ? reachableHeadCommit(m_workTree, m_mirror, pr.head)
                       : QString();
-    if (sha.isEmpty()) {
-        // Which commit the signed patch replays onto decides whether this pull
-        // gets a branch at all. The base branch's *current* tip is the wrong
-        // first guess: a pull that conflicts with it — the only kind the "Fix"
-        // button is ever offered for — applies there by definition never, so
-        // replaying only onto that tip left exactly those pulls with no branch
-        // for an agent to work on. The base the author signed against is the
-        // faithful one and the patch was cut from it, which is why
-        // checkoutForReview() already prefers it; the named base stays as the
-        // fallback for a pull whose signed base this node has never seen.
+    const QString baseTip = pullBaseTip(pr);
+    if (sha.isEmpty() && !pr.branchBacked)
+        sha = recordedPullHead(m_workTree, pr, baseTip);
+    if (sha.isEmpty() && !baseTip.isEmpty()) {
         QStringList baseOids;
-        for (const QString &ref : {pr.creationBaseOid, pr.base.trimmed()}) {
-            const QString oid = resolvedCommitOid(m_workTree, ref);
-            if (!oid.isEmpty() && !baseOids.contains(oid))
-                baseOids << oid;
-        }
-        const auto replayOnto = [this, &pr](const QString &baseOid) {
-            QString tipSha;
-            const QString scratchDir = QDir::temp().filePath(
-                QStringLiteral("forkmesh-pr-ref-%1-%2-%3")
-                    .arg(pr.number)
-                    .arg(QDateTime::currentMSecsSinceEpoch())
-                    .arg(baseOid.left(8)));
-            if (!runGit(m_workTree,
-                        {"worktree", "add", "--detach", scratchDir, baseOid}))
-                return tipSha;
-            const QString mboxPath = QDir::temp().filePath(
-                QStringLiteral("forkmesh-pr-ref-%1.mbox").arg(pr.number));
-            if (writeTextFile(mboxPath,
-                              pr.commits.isEmpty() ? syntheticMbox(pr) : pr.commits,
-                              nullptr) &&
-                runGit(scratchDir, {"am", "--3way", mboxPath})) {
-                QByteArray tip;
-                if (runGit(scratchDir, {"rev-parse", "HEAD"}, &tip) &&
-                    !tip.trimmed().isEmpty())
-                    tipSha = QString::fromUtf8(tip).trimmed();
-            }
-            QFile::remove(mboxPath);
-            runGit(scratchDir, {"am", "--abort"}, nullptr, nullptr);
-            runGit(m_workTree, {"worktree", "remove", "--force", scratchDir},
-                   nullptr, nullptr);
-            forkmesh::safedelete::removeTree(scratchDir, QDir::tempPath(), nullptr,
-                                             forkmesh::safedelete::Allow::OwnWorktree);
-            runGit(m_workTree, {"worktree", "prune"}, nullptr, nullptr);
-            return tipSha;
+        const auto addBase = [this, &baseOids, &baseTip](const QString &ref) {
+            const QString oid = resolvedCommitOid(m_workTree, ref.trimmed());
+            if (oid.isEmpty() || baseOids.contains(oid) ||
+                !runGit(m_workTree, {"merge-base", "--is-ancestor", oid, baseTip}))
+                return;
+            baseOids << oid;
         };
+        addBase(pr.headBaseOid);
+        addBase(pr.creationBaseOid);
+        addBase(patchPreimageBaseCommit(m_workTree, pr.patch, baseTip));
+        addBase(baseTip);
+        const QString series = pr.commits.isEmpty() ? syntheticMbox(pr) : pr.commits;
         for (const QString &baseOid : std::as_const(baseOids)) {
-            sha = replayOnto(baseOid);
+            sha = replayPullSeries(m_workTree, pr.number, baseOid, series);
             if (!sha.isEmpty())
                 break;
-        }
-        if (sha.isEmpty()) {
-            // Neither named base took the patch, which is the case that left a
-            // relayed pull request with no branch at all: its author signed no
-            // base oid this node knows, and the base branch has moved on since
-            // the patch was cut. The patch's own pre-image blobs still say
-            // which commit it fits, so ask history for that one rather than
-            // reporting code that is sitting right here as unreconstructable.
-            // Searched last so a pull that already materializes keeps landing
-            // on exactly the base it landed on before.
-            const QString preimageBase = patchPreimageBaseCommit(
-                m_workTree, pr.patch, pr.base.trimmed());
-            if (!preimageBase.isEmpty() && !baseOids.contains(preimageBase))
-                sha = replayOnto(preimageBase);
         }
     }
     // An earlier materialization, or the checks runner publishing the head to
@@ -2648,6 +2691,10 @@ bool PullStore::writePull(const PullRequest &pr, QString *error) const
         lines << "creationBaseOid: " + pr.creationBaseOid;
     if (!pr.creationHeadOid.isEmpty())
         lines << "creationHeadOid: " + pr.creationHeadOid;
+    if (!pr.headBaseOid.isEmpty())
+        lines << "headBaseOid: " + pr.headBaseOid;
+    if (!pr.headOid.isEmpty())
+        lines << "headOid: " + pr.headOid;
     if (!pr.mergeBase.isEmpty())
         lines << "mergeBase: " + pr.mergeBase;
     if (!pr.mergeHead.isEmpty())
@@ -2718,6 +2765,8 @@ bool PullStore::readPull(int number, PullRequest &out) const
     out.branchBacked = fm.get("derive") == QLatin1String("branch");
     out.creationBaseOid = fm.get("creationBaseOid");
     out.creationHeadOid = fm.get("creationHeadOid");
+    out.headBaseOid = fm.get("headBaseOid");
+    out.headOid = fm.get("headOid");
     out.mergeBase = fm.get("mergeBase");
     out.mergeHead = fm.get("mergeHead");
     out.mergedAt = fm.num("mergedAt");
@@ -3848,17 +3897,9 @@ bool PullStore::mergePull(int number, QString *error, bool requirePeerReview,
         return false;
     }
     QString err;
-    QByteArray prRefSha;
-    QString headSha;
-    if (runGit(m_workTree,
-              {"rev-parse", "--verify", "-q",
-               QStringLiteral("refs/pr/%1/head^{commit}").arg(number)},
-              &prRefSha) &&
-        !prRefSha.trimmed().isEmpty()) {
-        headSha = QString::fromUtf8(prRefSha).trimmed();
-    } else if (pr.branchBacked) {
-        headSha = reachableHeadCommit(m_workTree, m_mirror, pr.head);
-    }
+    QString headSha = pullHeadCommit(pr);
+    if (headSha.isEmpty() && !pr.branchBacked && materializePullRef(pr, nullptr))
+        headSha = pullHeadCommit(pr);
     const bool refMerge = !headSha.isEmpty();
     QString mergedMessages = pr.commits;
     if (refMerge)
@@ -3877,6 +3918,9 @@ bool PullStore::mergePull(int number, QString *error, bool requirePeerReview,
                        &hsha))
                 preHead = QString::fromUtf8(hsha).trimmed();
         }
+    } else if (refMerge) {
+        preBase = resolvedCommitOid(m_workTree, QStringLiteral("HEAD"));
+        preHead = headSha;
     }
     bool applied = false;
     if (refMerge) {
@@ -3942,7 +3986,7 @@ bool PullStore::mergePull(int number, QString *error, bool requirePeerReview,
     pr.mergedBy = m_identity ? m_identity->publicKey() : QString();
     pr.coAuthors = coAuthorEmails(mergedMessages);
     PullReward::advanceForMerge(pr);
-    if (pr.branchBacked && !preBase.isEmpty() && !preHead.isEmpty()) {
+    if (!preBase.isEmpty() && !preHead.isEmpty()) {
         pr.mergeBase = preBase;
         pr.mergeHead = preHead;
     }
@@ -4290,20 +4334,19 @@ QString PullStore::syntheticMbox(const PullRequest &pr)
     const QString name = pr.authorName.trimmed().isEmpty()
                              ? QStringLiteral("ForkMesh contributor")
                              : pr.authorName.trimmed();
-    const QString email = (pr.author.isEmpty() ? QStringLiteral("contributor")
-                                               : pr.author) +
+    const QString email = (pr.author.trimmed().isEmpty() ? QStringLiteral("contributor")
+                                                         : pr.author.trimmed()) +
                           QStringLiteral("@forkmesh");
-    const QDateTime when = pr.ts > 0 ? QDateTime::fromMSecsSinceEpoch(pr.ts)
-                                     : QDateTime::currentDateTime();
+    const QDateTime when =
+        QDateTime::fromMSecsSinceEpoch(pr.ts > 0 ? pr.ts : 0).toUTC();
+    const QString title = pr.title.trimmed();
     QString out;
     out += "From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001\n";
     out += "From: " + name + " <" + email + ">\n";
     out += "Date: " + when.toString(Qt::RFC2822Date) + "\n";
-    out += "Subject: [PATCH] " + (pr.title.isEmpty() ? QStringLiteral("Pull request")
-                                                      : pr.title) +
+    out += "Subject: [PATCH] " + (title.isEmpty() ? QStringLiteral("Pull request")
+                                                  : title) +
            "\n\n";
-    if (!pr.description.trimmed().isEmpty())
-        out += pr.description.trimmed() + "\n\n";
     out += "---\n";
     QString patch = pr.patch;
     if (!patch.endsWith('\n'))
@@ -5042,6 +5085,8 @@ bool PullStore::deletePullFile(int number, const QString &relPath, QString *erro
     pr.branchBacked = false;
     pr.creationBaseOid.clear();
     pr.creationHeadOid.clear();
+    pr.headBaseOid.clear();
+    pr.headOid.clear();
     pr.mergeBase.clear();
     pr.mergeHead.clear();
     if (!writePull(pr, error))
@@ -5089,6 +5134,8 @@ bool PullStore::finalizeOnPullBranch(int number, const QString &commitMsg,
     pr.patch = QString::fromUtf8(diff);
     pr.commits = QString::fromUtf8(mbox);
     pr.head = m_amBranch;
+    pr.headBaseOid = resolvedCommitOid(m_workTree, m_amBase);
+    pr.headOid.clear();
     computeStats(pr);
     if (!writePull(pr, error))
         return false;
@@ -5199,8 +5246,8 @@ bool PullStore::checkMergeable(int number, bool *clean,
             *error = QStringLiteral("Pull request #%1 not found.").arg(number);
         return false;
     }
-    if (pr.branchBacked) {
-        const QString headSha = reachableHeadCommit(m_workTree, m_mirror, pr.head);
+    {
+        const QString headSha = pullHeadCommit(pr);
         QByteArray baseSha;
         if (!headSha.isEmpty() &&
             runGit(m_workTree, {"rev-parse", "--verify", "--quiet", "HEAD"},
@@ -5298,6 +5345,8 @@ bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error)
     if (!canWrite())
         return false;
     PullRequest pr = incoming;
+    pr.headBaseOid.clear();
+    pr.headOid.clear();
     // A relay reservation gives every eligible mirror the same proposed slot.
     // Deduplicate a replayed delivery first, then keep that reservation when it
     // is free. A stale catalog or concurrent local write is harmless: only an
@@ -5888,6 +5937,8 @@ QList<PullRequest> PullStore::loadFromMirror(QString *error, bool strict,
         pr.branchBacked = fm.get("derive") == QLatin1String("branch");
         pr.creationBaseOid = fm.get("creationBaseOid");
         pr.creationHeadOid = fm.get("creationHeadOid");
+        pr.headBaseOid = fm.get("headBaseOid");
+        pr.headOid = fm.get("headOid");
         pr.mergeBase = fm.get("mergeBase");
         pr.mergeHead = fm.get("mergeHead");
         pr.client = fm.get("client");

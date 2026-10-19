@@ -4,6 +4,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QPointer>
 #include <QString>
 
 #include <functional>
@@ -11,6 +12,7 @@
 class QButtonGroup;
 class QCheckBox;
 class QComboBox;
+class QDialog;
 class QGridLayout;
 class QLabel;
 class QLineEdit;
@@ -50,6 +52,8 @@ public:
     static QJsonObject funnelQuery(qint64 nowMs, int rangeHours, int tzOffsetMinutes, const QJsonObject &stored);
     static QString rateText(double rate);
     static QString variantSplit(const QJsonObject &flag);
+    static QString agoText(qint64 nowMs, qint64 atMs);
+    static QString recordingTip(const QJsonObject &recording);
 
 private:
     void request(const QByteArray &method, const QString &path,
@@ -70,6 +74,10 @@ private:
     void applyState();
     void renderOverview();
     void fillTable(QTableWidget *table, const QJsonArray &rows, bool visitors);
+    void loadRecordings(int serial);
+    void renderRecordings();
+    void openRecording(int row);
+    void enableRecordings();
     void setStatus(const QString &text, bool error = false);
     QWidget *buildConversionsPage();
     QWidget *buildExperimentsPage();
@@ -124,6 +132,11 @@ private:
     QTableWidget *m_campaigns = nullptr;
     QTableWidget *m_landing = nullptr;
     QTableWidget *m_terms = nullptr;
+    QTableWidget *m_recordings = nullptr;
+    QLabel *m_recordingsNote = nullptr;
+    QPushButton *m_recordingsEnable = nullptr;
+    QJsonArray m_recordingList;
+    QPointer<QDialog> m_replayDialog;
     QLabel *m_writeKey = nullptr;
     QLabel *m_truncated = nullptr;
     QButtonGroup *m_sectionGroup = nullptr;

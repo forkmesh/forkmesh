@@ -31,6 +31,7 @@ struct RouteDestinationView: View {
         } else if let services = AppServices.current {
             services.routes.destination(for: route)
                 .pluginMenu(for: route)
+                .modifier(RouteCountRefresh(kind: route.kind))
                 .task(id: route) {
                     guard let package = PackageGate.packageId(for: route), PackagesFeature.signedIn else { return }
                     PackageActivity.shared.report(package, kind: .open, client: PackagesFeature.client)
@@ -38,6 +39,18 @@ struct RouteDestinationView: View {
         } else {
             RoutePlaceholderView(route: route)
         }
+    }
+}
+
+private struct RouteCountRefresh: ViewModifier {
+    let kind: Route.Kind
+
+    func body(content: Content) -> some View {
+        content
+            .fmLoading(ShellNavigatorCounts.shared.refreshing.contains(kind))
+            .task(id: kind) {
+                await ShellNavigatorCounts.shared.refresh(kind)
+            }
     }
 }
 

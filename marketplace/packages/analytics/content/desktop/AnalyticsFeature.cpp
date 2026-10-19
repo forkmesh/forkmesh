@@ -1,4 +1,5 @@
 #include "AnalyticsFeature.h"
+#include "AnalyticsReplay.h"
 
 #include <QAbstractButton>
 #include <QApplication>
@@ -35,6 +36,8 @@ namespace {
 
 constexpr char kAnalyticsOrigin[] = "https://app.forkmesh.com";
 constexpr qint64 kHourMs = 3600000;
+constexpr int kCompactRow = 22;
+constexpr int kCompactRows = 7;
 
 QString text(const QJsonObject &object, const char *key)
 {
@@ -57,7 +60,7 @@ QLabel *mutedLabel(const QString &value)
 QLabel *sectionLabel(const QString &value)
 {
     auto *label = new QLabel(value);
-    label->setStyleSheet(QStringLiteral("font-weight: 600;"));
+    label->setStyleSheet(QStringLiteral("font-weight: 600; font-size: 12px;"));
     return label;
 }
 
@@ -74,8 +77,19 @@ QTableWidget *topTable(const QStringList &headers, const QString &name)
     table->setAlternatingRowColors(true);
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
     table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    table->setMinimumHeight(180);
+    table->horizontalHeader()->setMinimumSectionSize(28);
+    table->verticalHeader()->setDefaultSectionSize(kCompactRow);
+    table->setWordWrap(false);
+    table->setTextElideMode(Qt::ElideMiddle);
+    table->setFixedHeight(kCompactRow * kCompactRows + kCompactRow + 6);
     return table;
+}
+
+QFont compactFont(QFont font)
+{
+    if (font.pointSizeF() > 0)
+        font.setPointSizeF(std::max(8.0, font.pointSizeF() - 0.5));
+    return font;
 }
 
 QColor visitorColor(bool dark) { return QColor(dark ? "#3aa7e0" : "#1f8fd1"); }
@@ -89,7 +103,7 @@ public:
     explicit AnalyticsChart(QWidget *parent = nullptr) : QWidget(parent)
     {
         setObjectName(QStringLiteral("analyticsTrend"));
-        setMinimumHeight(190);
+        setMinimumHeight(120);
         setMouseTracking(true);
     }
 
@@ -304,8 +318,8 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
 {
     setObjectName(QStringLiteral("analyticsSection"));
     auto *outer = new QVBoxLayout(this);
-    outer->setContentsMargins(20, 18, 20, 20);
-    outer->setSpacing(10);
+    outer->setContentsMargins(16, 12, 16, 12);
+    outer->setSpacing(6);
 
     auto *heading = new QHBoxLayout;
     auto *title = new QLabel(QStringLiteral("Analytics"));
@@ -354,7 +368,7 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     auto *refreshButton = new QPushButton(QStringLiteral("Refresh"));
     auto *webButton = new QPushButton(QStringLiteral("Open in browser"));
     webButton->setToolTip(QStringLiteral(
-        "Retention, session recordings, heatmaps, feature flags and surveys open on the web dashboard"));
+        "Retention, page-level recording replays, heatmaps, feature flags and surveys open on the web dashboard"));
     for (QPushButton *button : {refreshButton, webButton}) {
         button->setObjectName(QStringLiteral("ghostButton"));
         heading->addWidget(button);
@@ -409,13 +423,16 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     scroll->setFrameShape(QFrame::NoFrame);
     m_content = scroll;
     auto *body = new QWidget;
-    auto *layout = new QVBoxLayout(body);
-    layout->setContentsMargins(0, 6, 0, 0);
-    layout->setSpacing(12);
+    auto *columns = new QHBoxLayout(body);
+    columns->setContentsMargins(0, 4, 0, 0);
+    columns->setSpacing(14);
+    auto *layout = new QVBoxLayout;
+    layout->setSpacing(8);
+    columns->addLayout(layout, 1);
 
     m_kpis = new QGridLayout;
-    m_kpis->setHorizontalSpacing(24);
-    m_kpis->setVerticalSpacing(2);
+    m_kpis->setHorizontalSpacing(20);
+    m_kpis->setVerticalSpacing(0);
     const QStringList kpiNames{QStringLiteral("Visitors"), QStringLiteral("Pageviews"), QStringLiteral("Sessions"),
                                QStringLiteral("Bounce rate"), QStringLiteral("Avg. session")};
     for (int column = 0; column < kpiNames.size(); ++column) {
@@ -423,7 +440,7 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
         auto *value = new QLabel(QStringLiteral("–"));
         value->setObjectName(QStringLiteral("analyticsKpi"));
         value->setAccessibleName(kpiNames.at(column));
-        value->setStyleSheet(QStringLiteral("font-size: 24px; font-weight: 600;"));
+        value->setStyleSheet(QStringLiteral("font-size: 18px; font-weight: 600;"));
         m_kpis->addWidget(value, 1, column);
         m_kpiValues.append(value);
         auto *change = new QLabel;
@@ -435,11 +452,12 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     layout->addLayout(m_kpis);
 
     m_chart = new AnalyticsChart;
+    m_chart->setFixedHeight(150);
     layout->addWidget(m_chart);
 
     auto *tables = new QGridLayout;
-    tables->setHorizontalSpacing(16);
-    tables->setVerticalSpacing(6);
+    tables->setHorizontalSpacing(10);
+    tables->setVerticalSpacing(3);
     m_pages = topTable({QStringLiteral("Page"), QStringLiteral("Views"), QStringLiteral("Visitors")},
                        QStringLiteral("analyticsPages"));
     m_referrers = topTable({QStringLiteral("Referrer"), QStringLiteral("Views")}, QStringLiteral("analyticsReferrers"));
@@ -447,36 +465,33 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     m_devices = topTable({QStringLiteral("Device"), QStringLiteral("Views")}, QStringLiteral("analyticsDevices"));
     m_browsers = topTable({QStringLiteral("Browser"), QStringLiteral("Views")}, QStringLiteral("analyticsBrowsers"));
     m_events = topTable({QStringLiteral("Event"), QStringLiteral("Count")}, QStringLiteral("analyticsEvents"));
+    m_landing = topTable({QStringLiteral("Landing page"), QStringLiteral("Visits"), QStringLiteral("Bounce")},
+                         QStringLiteral("analyticsLanding"));
+    m_terms = topTable({QStringLiteral("Search term"), QStringLiteral("Visits"), QStringLiteral("Bounce")},
+                       QStringLiteral("analyticsSearchTerms"));
     const QList<std::pair<QString, QTableWidget *>> sections{
         {QStringLiteral("Top pages"), m_pages},     {QStringLiteral("Referrers"), m_referrers},
+        {QStringLiteral("Landing pages"), m_landing}, {QStringLiteral("Search terms"), m_terms},
         {QStringLiteral("Countries"), m_countries}, {QStringLiteral("Devices"), m_devices},
         {QStringLiteral("Browsers"), m_browsers},   {QStringLiteral("Events"), m_events}};
+    constexpr int kTableColumns = 4;
     for (int index = 0; index < sections.size(); ++index) {
-        const int row = index / 2 * 2;
-        const int column = index % 2;
+        const int row = index / kTableColumns * 2;
+        const int column = index % kTableColumns;
         tables->addWidget(sectionLabel(sections.at(index).first), row, column);
         tables->addWidget(sections.at(index).second, row + 1, column);
+        tables->setColumnStretch(column, 1);
     }
     m_campaigns = topTable({QStringLiteral("Campaign"), QStringLiteral("Source / medium"), QStringLiteral("Visits"),
                             QStringLiteral("Change"), QStringLiteral("Bounce"), QStringLiteral("Avg. time"),
                             QStringLiteral("Lands on")},
                            QStringLiteral("analyticsCampaigns"));
-    m_landing = topTable({QStringLiteral("Landing page"), QStringLiteral("Visits"), QStringLiteral("Bounce")},
-                         QStringLiteral("analyticsLanding"));
-    m_terms = topTable({QStringLiteral("Search term"), QStringLiteral("Visits"), QStringLiteral("Bounce")},
-                       QStringLiteral("analyticsSearchTerms"));
-    const int campaignRow = int(sections.size() + 1) / 2 * 2;
+    const int campaignRow = int(sections.size() + kTableColumns - 1) / kTableColumns * 2;
     auto *campaignsLabel = sectionLabel(QStringLiteral("Campaigns"));
     campaignsLabel->setToolTip(QStringLiteral(
         "Visits grouped by their first page's campaign tags (utm_source, utm_medium, utm_campaign), or by the referring site when untagged"));
-    tables->addWidget(campaignsLabel, campaignRow, 0, 1, 2);
-    tables->addWidget(m_campaigns, campaignRow + 1, 0, 1, 2);
-    tables->addWidget(sectionLabel(QStringLiteral("Landing pages")), campaignRow + 2, 0);
-    tables->addWidget(m_landing, campaignRow + 3, 0);
-    tables->addWidget(sectionLabel(QStringLiteral("Search terms")), campaignRow + 2, 1);
-    tables->addWidget(m_terms, campaignRow + 3, 1);
-    tables->setColumnStretch(0, 3);
-    tables->setColumnStretch(1, 2);
+    tables->addWidget(campaignsLabel, campaignRow, 0, 1, kTableColumns);
+    tables->addWidget(m_campaigns, campaignRow + 1, 0, 1, kTableColumns);
     layout->addLayout(tables);
 
     m_truncated = mutedLabel(QStringLiteral(
@@ -484,8 +499,8 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     m_truncated->setVisible(false);
     layout->addWidget(m_truncated);
 
-    layout->addWidget(sectionLabel(QStringLiteral("Add this project to a site")));
     auto *setupRow = new QHBoxLayout;
+    setupRow->addWidget(sectionLabel(QStringLiteral("Add this project to a site")));
     m_writeKey = mutedLabel(QString());
     m_writeKey->setTextInteractionFlags(Qt::TextSelectableByMouse);
     setupRow->addWidget(m_writeKey, 1);
@@ -495,6 +510,39 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     setupRow->addWidget(copyButton);
     layout->addLayout(setupRow);
     layout->addStretch();
+
+    auto *recordingsPanel = new QWidget;
+    recordingsPanel->setObjectName(QStringLiteral("analyticsRecordingsPanel"));
+    recordingsPanel->setFixedWidth(380);
+    auto *recordingsLayout = new QVBoxLayout(recordingsPanel);
+    recordingsLayout->setContentsMargins(0, 0, 0, 0);
+    recordingsLayout->setSpacing(3);
+    auto *recordingsTitle = sectionLabel(QStringLiteral("Recordings"));
+    recordingsTitle->setToolTip(QStringLiteral(
+        "The latest recorded visits. Click one to play back the visitor's mouse movement, clicks and scrolling."));
+    recordingsLayout->addWidget(recordingsTitle);
+    m_recordingsNote = mutedLabel(QString());
+    m_recordingsNote->setVisible(false);
+    recordingsLayout->addWidget(m_recordingsNote);
+    m_recordingsEnable = new QPushButton(QStringLiteral("Turn on recordings"));
+    m_recordingsEnable->setObjectName(QStringLiteral("ghostButton"));
+    m_recordingsEnable->setVisible(false);
+    recordingsLayout->addWidget(m_recordingsEnable, 0, Qt::AlignLeft);
+    m_recordings = topTable({QStringLiteral(""), QStringLiteral("Entry page"), QStringLiteral("Pages"),
+                             QStringLiteral("Length"), QStringLiteral("When")},
+                            QStringLiteral("analyticsRecordings"));
+    m_recordings->setAccessibleName(QStringLiteral("Recordings"));
+    m_recordings->setMaximumHeight(QWIDGETSIZE_MAX);
+    m_recordings->setMinimumHeight(240);
+    m_recordings->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_recordings->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_recordings->setFocusPolicy(Qt::StrongFocus);
+    m_recordings->setCursor(Qt::PointingHandCursor);
+    m_recordings->setFont(compactFont(m_recordings->font()));
+    m_recordings->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
+    m_recordings->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
+    recordingsLayout->addWidget(m_recordings, 1);
+    columns->addWidget(recordingsPanel);
     scroll->setWidget(body);
     m_sections = new QStackedWidget;
     m_sections->addWidget(m_content);
@@ -529,6 +577,9 @@ AnalyticsFeature::AnalyticsFeature(const forkmesh::market::NativePackageHost &ho
     connect(m_createButton, &QPushButton::clicked, this, [this] { createProject(); });
     connect(m_projectName, &QLineEdit::returnPressed, this, [this] { createProject(); });
     connect(copyButton, &QPushButton::clicked, this, [this] { copySnippet(); });
+    connect(m_recordings, &QTableWidget::cellClicked, this, [this](int row, int) { openRecording(row); });
+    connect(m_recordings, &QTableWidget::cellActivated, this, [this](int row, int) { openRecording(row); });
+    connect(m_recordingsEnable, &QPushButton::clicked, this, [this] { enableRecordings(); });
 
     applyState();
 }
@@ -753,6 +804,7 @@ void AnalyticsFeature::loadOverview()
             m_searchIndexChanged();
     });
     loadCampaigns(serial);
+    loadRecordings(serial);
 }
 
 void AnalyticsFeature::loadCampaigns(int serial)
@@ -934,7 +986,8 @@ void AnalyticsFeature::fillTable(QTableWidget *table, const QJsonArray &rows, bo
         const QJsonObject row = value.toObject();
         const int index = table->rowCount();
         table->insertRow(index);
-        auto *label = new QTableWidgetItem(text(row, "value"));
+        const QString flag = table == m_countries ? MotionTrack::countryFlag(text(row, "value")) : QString();
+        auto *label = new QTableWidgetItem(flag.isEmpty() ? text(row, "value") : flag + QLatin1Char(' ') + text(row, "value"));
         label->setToolTip(text(row, "value"));
         table->setItem(index, 0, label);
         auto *count = new QTableWidgetItem(countText(number(row, "count")));
@@ -952,6 +1005,159 @@ void AnalyticsFeature::fillTable(QTableWidget *table, const QJsonArray &rows, bo
         empty->setForeground(palette().color(QPalette::PlaceholderText));
         table->setItem(0, 0, empty);
     }
+}
+
+QString AnalyticsFeature::agoText(qint64 nowMs, qint64 atMs)
+{
+    const qint64 seconds = std::max<qint64>(0, (nowMs - atMs) / 1000);
+    if (seconds < 60)
+        return QStringLiteral("now");
+    if (seconds < 3600)
+        return QStringLiteral("%1m ago").arg(seconds / 60);
+    if (seconds < 86400)
+        return QStringLiteral("%1h ago").arg(seconds / 3600);
+    if (seconds < 7 * 86400)
+        return QStringLiteral("%1d ago").arg(seconds / 86400);
+    return QLocale().toString(QDateTime::fromMSecsSinceEpoch(atMs).date(), QStringLiteral("MMM d"));
+}
+
+QString AnalyticsFeature::recordingTip(const QJsonObject &recording)
+{
+    QStringList trail;
+    for (const QJsonValue &page : recording.value(QStringLiteral("pages")).toArray())
+        trail.append(MotionTrack::pathOf(page.toString()));
+    if (trail.isEmpty())
+        trail.append(MotionTrack::pathOf(text(recording, "startUrl")));
+    const QJsonObject device = recording.value(QStringLiteral("device")).toObject();
+    QStringList lines{trail.join(QStringLiteral(" → ")),
+                      QStringLiteral("%1 active · %2 clicks")
+                          .arg(durationText(qint64(number(recording, "activeMs"))))
+                          .arg(qint64(number(recording, "clicks")))};
+    QStringList parts;
+    for (const char *key : {"type", "browser", "os"}) {
+        const QString part = text(device, key).trimmed();
+        if (!part.isEmpty())
+            parts.append(part);
+    }
+    if (!text(recording, "country").isEmpty())
+        parts.append(text(recording, "country"));
+    if (!parts.isEmpty())
+        lines.append(parts.join(QStringLiteral(" · ")));
+    if (number(recording, "errors") > 0)
+        lines.append(QStringLiteral("%1 errors").arg(qint64(number(recording, "errors"))));
+    return lines.join(QLatin1Char('\n'));
+}
+
+void AnalyticsFeature::loadRecordings(int serial)
+{
+    if (m_project->currentData().toString().isEmpty())
+        return;
+    request(QByteArrayLiteral("GET"), projectPath(QStringLiteral("/recordings")), {},
+            [this, serial](bool ok, const QJsonObject &payload, const QString &error) {
+        if (serial != m_serial)
+            return;
+        m_recordingList = ok ? payload.value(QStringLiteral("recordings")).toArray() : QJsonArray();
+        renderRecordings();
+        if (!ok) {
+            m_recordingsNote->setText(QStringLiteral("Recordings could not load: %1").arg(error));
+            m_recordingsNote->setVisible(true);
+        }
+    });
+}
+
+void AnalyticsFeature::renderRecordings()
+{
+    m_recordings->setRowCount(0);
+    const bool enabled = projectRecord().value(QStringLiteral("settings")).toObject()
+                             .value(QStringLiteral("replay")).toObject()
+                             .value(QStringLiteral("enabled")).toBool();
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    QFont flagFont = m_recordings->font();
+    flagFont.setFamilies({QStringLiteral("Noto Color Emoji"), QStringLiteral("Apple Color Emoji"),
+                          QStringLiteral("Segoe UI Emoji")});
+    for (const QJsonValue &value : std::as_const(m_recordingList)) {
+        const QJsonObject recording = value.toObject();
+        const QJsonArray pages = recording.value(QStringLiteral("pages")).toArray();
+        const QString entry = pages.isEmpty() ? text(recording, "startUrl") : pages.first().toString();
+        const QString tip = recordingTip(recording);
+        const int row = m_recordings->rowCount();
+        m_recordings->insertRow(row);
+        const QString country = text(recording, "country");
+        auto *flag = new QTableWidgetItem(MotionTrack::countryFlag(country));
+        flag->setFont(flagFont);
+        flag->setToolTip(country.isEmpty() ? QStringLiteral("Country unknown") : country);
+        flag->setTextAlignment(Qt::AlignCenter);
+        m_recordings->setItem(row, 0, flag);
+        auto *page = new QTableWidgetItem(MotionTrack::pathOf(entry));
+        page->setToolTip(tip);
+        m_recordings->setItem(row, 1, page);
+        const QStringList cells{countText(std::max<double>(1, pages.size())),
+                                durationText(qint64(number(recording, "durationMs"))),
+                                agoText(now, qint64(number(recording, "startedAt")))};
+        for (int column = 0; column < cells.size(); ++column) {
+            auto *item = new QTableWidgetItem(cells.at(column));
+            item->setToolTip(column == 2 ? QLocale().toString(QDateTime::fromMSecsSinceEpoch(
+                                                                  qint64(number(recording, "startedAt"))),
+                                                              QLocale::ShortFormat)
+                                         : tip);
+            item->setTextAlignment(Qt::AlignRight | Qt::AlignVCenter);
+            m_recordings->setItem(row, column + 2, item);
+        }
+    }
+    QString note;
+    if (m_recordingList.isEmpty())
+        note = enabled ? QStringLiteral("No recorded visits yet. New visits appear here within a few minutes.")
+                       : QStringLiteral("Recordings are off for this project. When they are on, each visit is "
+                                        "recorded so you can watch the mouse, clicks and scrolling.");
+    m_recordingsNote->setText(note);
+    m_recordingsNote->setVisible(!note.isEmpty());
+    m_recordingsEnable->setVisible(!enabled && canManage());
+}
+
+void AnalyticsFeature::openRecording(int row)
+{
+    if (row < 0 || row >= m_recordingList.size())
+        return;
+    const QJsonObject recording = m_recordingList.at(row).toObject();
+    const QString session = text(recording, "sessionId");
+    if (session.isEmpty())
+        return;
+    if (m_replayDialog && m_replayDialog->property("sessionId").toString() == session) {
+        m_replayDialog->raise();
+        m_replayDialog->activateWindow();
+        return;
+    }
+    if (m_replayDialog)
+        m_replayDialog->close();
+    const QString path = projectPath(QStringLiteral("/recordings/") + session);
+    const QPointer<AnalyticsFeature> guard(this);
+    auto *dialog = new AnalyticsReplayDialog(
+        recording,
+        [guard, path](const QString &query, AnalyticsReplayDialog::ReplyHandler done) {
+            if (!guard)
+                return done(false, {}, QStringLiteral("Analytics was closed."));
+            guard->request(QByteArrayLiteral("GET"), path + query, {}, std::move(done));
+        },
+        this);
+    dialog->setProperty("sessionId", session);
+    m_replayDialog = dialog;
+    dialog->show();
+}
+
+void AnalyticsFeature::enableRecordings()
+{
+    if (!canManage())
+        return;
+    m_recordingsEnable->setEnabled(false);
+    request(QByteArrayLiteral("PATCH"), projectPath(QString()),
+            QJsonObject{{QStringLiteral("replay"), QJsonObject{{QStringLiteral("enabled"), true}}}},
+            [this](bool ok, const QJsonObject &, const QString &error) {
+        m_recordingsEnable->setEnabled(true);
+        if (!ok)
+            return setStatus(QStringLiteral("Recordings were not turned on: %1").arg(error), true);
+        setStatus(QStringLiteral("Recordings are on. Sites start recording new visits within about five minutes."));
+        loadOrganization();
+    });
 }
 
 void AnalyticsFeature::renderOverview()

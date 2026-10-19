@@ -293,13 +293,13 @@ void crashHandler(int sig, siginfo_t *info, void *)
     safeWriteMainLogSignalRecord(
         sig, when,
         surviveTermination
-            ? "; action workflow survived and will finish/fail normally"
+            ? "; action workflow survived and will run to its end"
         : gracefulShutdown ? "; shutting down cleanly"
                            : "; terminating; full record logged above");
 
     if (surviveTermination) {
-        safeWrite("termination signal survived: action workflow is still "
-                  "running; continuing so the run can fail cleanly\n");
+        safeWrite("termination signal survived: an action workflow is still "
+                  "running, so ForkMesh keeps going until the run ends\n");
         safeWrite(footer);
         g_handling.clear(std::memory_order_release);
         return;

@@ -930,6 +930,45 @@ int main(int argc, char *argv[])
         }
     }
 
+    {
+        QTemporaryDir packedRepo;
+        const QString gitDir = packedRepo.path();
+        const auto writePacked = [&gitDir](const QByteArray &tipPrefix, int count) {
+            QFile packed(gitDir + QStringLiteral("/packed-refs"));
+            if (!packed.open(QIODevice::WriteOnly | QIODevice::Truncate))
+                return false;
+            packed.write("# pack-refs with: peeled fully-peeled sorted \n");
+            for (int i = 0; i < count; ++i) {
+                const QByteArray sha =
+                    (tipPrefix + QByteArray::number(i)).leftJustified(40, '0');
+                packed.write(sha + " refs/heads/branch-" + QByteArray::number(i) + "\n");
+            }
+            return true;
+        };
+        bool ok = packedRepo.isValid() && writePacked("a", 3000);
+        QElapsedTimer timer;
+        timer.start();
+        for (int i = 0; i < 2000 && ok; ++i)
+            ok = !forkmesh::ui::refTipFromFiles(
+                      gitDir, QStringLiteral("refs/heads/branch-%1").arg(i % 3000))
+                      .isEmpty();
+        const qint64 elapsed = timer.elapsed();
+        ok = ok && forkmesh::ui::refTipFromFiles(
+                       gitDir, QStringLiteral("refs/heads/branch-7"))
+                       .startsWith(QLatin1String("a7"));
+        ok = ok && writePacked("bb", 3001) &&
+             forkmesh::ui::refTipFromFiles(gitDir, QStringLiteral("refs/heads/branch-7"))
+                 .startsWith(QLatin1String("bb7"));
+        if (ok && elapsed < 100) {
+            qInfo("PASS: 2000 packed-ref lookups took %lld ms and a rewritten "
+                  "packed-refs is read again", elapsed);
+        } else {
+            qCritical("FAIL: packed-ref lookups took %lld ms (budget 100 ms) "
+                      "or missed a rewrite", elapsed);
+            ++failures;
+        }
+    }
+
     // --- Git reads keyed on the ref files instead of processes: the branch
     // tip resolves from loose and packed refs, the refs stamp moves for a
     // nested branch, a tip-keyed memo recomputes only when the tip moves, and

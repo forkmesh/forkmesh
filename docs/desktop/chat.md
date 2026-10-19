@@ -36,6 +36,11 @@ chain, simultaneous first messages, reset recovery, `commit = false`,
 QSettings, where the v2 key lived: `chat/e2ee/ed25519IdentityV3`,
 `chat/e2ee/prekeysV3`, `chat/e2ee/trustV3/<b64u(scope)>` (records, held frames,
 last safety number), `chat/e2ee/ctrV3/<b64u(room)>`, `chat/e2ee/seenV3/<b64u(room)>`.
+Held frames are capped per room at 64 frames and 128 KB (`kMaxHeldBytes`),
+newest first, and a scope saved before the byte cap is trimmed when it loads:
+on 2026-10-19 three direct rooms held 64 frames of about 8 KB each from
+pending devices, 950 KB of a 1.5 MB `ForkMesh.conf`, which every settings sync
+rewrote (`testHeldBudget`).
 The old `chat/e2ee/x25519PrivateV2` value is left in place and unused.
 
 - Prekeys rotate when the newest is 24 h old (checked at start, before each

@@ -6,6 +6,7 @@
 // user grant the access (AgentAccessFailure.h).
 
 #include "MainWindow.h"
+#include "MessageBoxClicks.h"
 #include "MainWindowInternal.h"
 #include "AgentNetworkGate.h"
 #include "AgentRunRules.h"
@@ -415,7 +416,7 @@ void MainWindow::answerAgentGateRequest(const forkmesh::agentnet::Request &reque
     const QString id = request.id;
     const QString session = request.session;
     m_agentGatePrompts.insert(id, box);
-    connect(box, &QMessageBox::buttonClicked, this,
+    forkmesh::ui::onMessageBoxClicked(box, this,
             [this, id, session, target, host, shown, sid, once, run,
              always](QAbstractButton *button) {
                 m_agentGatePrompts.remove(id);
@@ -1069,7 +1070,7 @@ void MainWindow::handleAgentAccessFailure(const forkmesh::agentnet::Request &req
     const QString session = request.session;
     const QString target = failure.target;
     m_agentGatePrompts.insert(id, box);
-    connect(box, &QMessageBox::buttonClicked, this,
+    forkmesh::ui::onMessageBoxClicked(box, this,
             [this, id, session, key, target, sid, deny, contextFor,
              answersLater](QAbstractButton *button) {
                 m_agentGatePrompts.remove(id);

@@ -96,6 +96,9 @@
     ) {
       return "account";
     }
+    if (path.startsWith("/pitch-deck/")) return "investor-deck";
+    if (/^\/hackathon\/(?:join|squad|challenge)\//.test(path)) return "hackathon-link";
+    if (/^\/(?:hackathon|market|ecosystem)\//.test(path)) return "public-page";
     const parts = path.split("/").filter(Boolean);
     if (parts.length >= 2) return "repository";
     return "public-page";

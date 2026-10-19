@@ -321,6 +321,12 @@ it reflects the phone's direction while the shell is visible. Agent Watch feel
 defaults on unless the user explicitly turns it off; Reduce Motion stops the
 avatar movement but does not silently change that saved feedback preference.
 
+- No Keychain write per received frame on the main actor. `SecItemDelete`
+  plus `SecItemAdd` is a round trip to `securityd`; the chat replay book
+  (up to 256 senders by 1024 counters) was re-encoded and written on every
+  fresh relay frame, about 65 times in the second after a reconnect to a
+  busy room. It is now written at most every 250 ms off the main thread
+  (`ChatKeyring.persistReplay`).
 - Parse API replies of 16 KB or more off the main actor
   (`decodeResponseAsync`, `ApiParse.parseAsync`, `ApiParse.modelAsync`).
   The documents inside a reply count too: repository files read in

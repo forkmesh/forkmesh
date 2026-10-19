@@ -17,6 +17,7 @@
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QTextLayout>
+#include <QWindow>
 #include <QtMath>
 
 #include <algorithm>
@@ -48,6 +49,8 @@ constexpr int kTeammateTileInset = 7;
 constexpr int kTeammateTileRadius = 12;
 constexpr int kTeammateTileCaptionLines = 5;
 constexpr int kTeammateTileFrameMs = 66;
+constexpr int kRailFaceTickMs = 40;
+constexpr int kRailFaceCalmFrameMs = 100;
 
 bool railStatusInFlight(const QString &status)
 {
@@ -170,6 +173,65 @@ QElapsedTimer &railFaceClock()
     return clock;
 }
 
+class RailFaceTicker : public QObject
+{
+public:
+    static RailFaceTicker &instance()
+    {
+        if (!ticker())
+            ticker() = new RailFaceTicker(QCoreApplication::instance());
+        return *ticker();
+    }
+    static void forget(QObject *face)
+    {
+        if (ticker())
+            ticker()->remove(face);
+    }
+    void add(QObject *face, std::function<void(qint64)> advance)
+    {
+        m_faces.insert(face, std::move(advance));
+        if (!m_timer.isActive())
+            m_timer.start();
+    }
+    void remove(QObject *face)
+    {
+        m_faces.remove(face);
+        if (m_faces.isEmpty())
+            m_timer.stop();
+    }
+
+private:
+    static QPointer<RailFaceTicker> &ticker()
+    {
+        static QPointer<RailFaceTicker> current;
+        return current;
+    }
+    explicit RailFaceTicker(QObject *parent) : QObject(parent)
+    {
+        m_timer.setInterval(kRailFaceTickMs);
+        connect(&m_timer, &QTimer::timeout, this, [this] {
+            const qint64 now = railFaceClock().elapsed();
+            const auto faces = m_faces;
+            for (const auto &advance : faces)
+                advance(now);
+        });
+    }
+
+    QHash<QObject *, std::function<void(qint64)>> m_faces;
+    QTimer m_timer;
+};
+
+bool railFaceMoves(forkmesh::teammates::MoodMotion motion, RailRing ring)
+{
+    using forkmesh::teammates::MoodMotion;
+    if (ring == RailRing::Spinner)
+        return true;
+    if (ring == RailRing::Paused)
+        return false;
+    return motion != MoodMotion::Still && motion != MoodMotion::Float &&
+           motion != MoodMotion::Doze;
+}
+
 class RailFaceButton : public QPushButton
 {
 public:
@@ -181,15 +243,14 @@ public:
     {
         setFixedSize(side, side);
         setAttribute(Qt::WA_Hover);
-        m_timer = new QTimer(this);
-        m_timer->setInterval(40);
-        connect(m_timer, &QTimer::timeout, this, [this] { update(); });
+        m_frameMs = railFaceMoves(motion, ring) ? kRailFaceTickMs : kRailFaceCalmFrameMs;
     }
+    ~RailFaceButton() override { RailFaceTicker::forget(this); }
 
 protected:
     virtual QRectF faceArea(const QRectF &frame) const { return frame; }
     virtual void paintOverlay(QPainter &, const QRectF &) {}
-    void setFrameInterval(int ms) { m_timer->setInterval(ms); }
+    void setFrameInterval(int ms) { m_frameMs = qMax(m_frameMs, ms); }
     void setCornerRadius(qreal radius) { m_radius = radius; }
     void useBackdrop()
     {
@@ -218,13 +279,25 @@ protected:
 
     void showEvent(QShowEvent *event) override
     {
-        m_timer->start();
+        RailFaceTicker::instance().add(this, [this](qint64 now) { advance(now); });
         QPushButton::showEvent(event);
     }
     void hideEvent(QHideEvent *event) override
     {
-        m_timer->stop();
+        RailFaceTicker::forget(this);
         QPushButton::hideEvent(event);
+    }
+    void advance(qint64 now)
+    {
+        if (now - m_lastFrameMs < m_frameMs)
+            return;
+        const QWidget *top = window();
+        if (top->isMinimized())
+            return;
+        if (const QWindow *handle = top->windowHandle(); handle && !handle->isExposed())
+            return;
+        m_lastFrameMs = now;
+        update();
     }
     void paintEvent(QPaintEvent *) override
     {
@@ -321,7 +394,8 @@ private:
     qreal m_intensity;
     qreal m_phase;
     qreal m_radius = kTeammateRailFaceRadius;
-    QTimer *m_timer = nullptr;
+    int m_frameMs = kRailFaceTickMs;
+    qint64 m_lastFrameMs = 0;
 };
 
 QStringList wrappedCaptionLines(const QString &text, const QFont &font,
@@ -536,12 +610,29 @@ public:
 protected:
     void paintEvent(QPaintEvent *) override
     {
+        const bool hovered = underMouse();
+        const qreal ratio = devicePixelRatioF();
+        QPixmap &cached = hovered ? m_hovered : m_resting;
+        if (cached.isNull() || cached.devicePixelRatio() != ratio ||
+            cached.deviceIndependentSize() != QSizeF(size())) {
+            cached = QPixmap((QSizeF(size()) * ratio).toSize());
+            cached.setDevicePixelRatio(ratio);
+            cached.fill(Qt::transparent);
+            QPainter badge(&cached);
+            paintBadge(badge, hovered);
+        }
         QPainter painter(this);
+        painter.drawPixmap(0, 0, cached);
+    }
+
+private:
+    void paintBadge(QPainter &painter, bool hovered) const
+    {
         painter.setRenderHint(QPainter::Antialiasing);
         painter.setRenderHint(QPainter::TextAntialiasing);
         const QRectF bounds = QRectF(rect()).adjusted(0.6, 0.6, -0.6, -0.6);
         QColor fill = m_dark ? QColor(13, 17, 23, 190) : QColor(255, 255, 255, 205);
-        if (underMouse())
+        if (hovered)
             fill.setAlpha(240);
         QColor edge = m_attention ? (m_dark ? QColor("#d29922") : QColor("#bf8700"))
                                   : (m_dark ? QColor(139, 148, 158, 140)
@@ -559,10 +650,11 @@ protected:
         painter.drawText(bounds.adjusted(0, 0.5, 0, 0), Qt::AlignCenter, m_emoji);
     }
 
-private:
     QString m_emoji;
     bool m_attention;
     bool m_dark;
+    QPixmap m_resting;
+    QPixmap m_hovered;
 };
 
 class RailItem : public QWidget

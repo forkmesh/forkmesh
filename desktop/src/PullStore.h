@@ -83,6 +83,8 @@ struct PullRequest {
     // following the mutable base/head branch names.
     QString creationBaseOid;
     QString creationHeadOid;
+    QString headBaseOid;
+    QString headOid;
     QString mergeBase;
     QString mergeHead;
     qint64 mergedAt = 0;
@@ -451,6 +453,8 @@ private:
     QString pullsDir() const;
     QString pullDir(int number) const;
     bool materializePullRef(const PullRequest &pr, QString *error) const;
+    QString pullBaseTip(const PullRequest &pr) const;
+    QString pullHeadCommit(const PullRequest &pr) const;
     // Materialize the PR's metadata on its independent
     // forkmesh/pull/<n> branch. The aggregate forkmesh/pulls ref remains only
     // as a compatibility index for older peers; refs/pr/<n>/metadata points at

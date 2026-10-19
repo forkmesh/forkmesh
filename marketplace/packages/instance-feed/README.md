@@ -1,6 +1,6 @@
-# Instance Feed
+# Feed
 
-Instance Feed is an optional ForkMesh package that gives the people on one
+Feed is an optional ForkMesh package that gives the people on one
 ForkMesh instance a Mastodon-style timeline: short posts (up to 500
 characters), newest first, with replies and threads, favourites, boosts,
 content warnings, `@name` mentions and a per-person profile.

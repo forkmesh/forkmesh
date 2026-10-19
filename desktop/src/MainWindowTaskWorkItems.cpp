@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "MessageBoxClicks.h"
 #include "MainWindowInternal.h"
 #include "AppPaths.h"
 #include "TaskWorkItems.h"
@@ -422,7 +423,7 @@ void MainWindow::cleanupOrganizationTaskWorkItems(const QString &taskId,
             QPushButton *remove =
                 box->addButton(QStringLiteral("Delete"), QMessageBox::DestructiveRole);
             box->addButton(QStringLiteral("Keep"), QMessageBox::RejectRole);
-            connect(box, &QMessageBox::buttonClicked, this,
+            forkmesh::ui::onMessageBoxClicked(box, this,
                     [this, taskId, unmerged, remove](QAbstractButton *button) {
                         if (button == remove) {
                             removeOrganizationTaskWorkItems(taskId, unmerged, true);

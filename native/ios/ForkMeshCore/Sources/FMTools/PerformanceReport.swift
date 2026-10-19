@@ -36,6 +36,7 @@ public enum PerformanceReport {
             Part("Metrics (5m | 1h)", metricTable(telemetry), rank: 10),
             Part("Stalls by name", eventGroups(events.filter(\.isStall), lastSeen: timeZone), rank: 9),
             Part("Stalls by screen", eventGroups(events.filter(\.isStall), lastSeen: timeZone, key: stallScreen), rank: 8),
+            Part("Stalls by time since shown", eventGroups(events.filter(\.isStall), lastSeen: timeZone, key: stallMoment), rank: 8),
             Part("Slow operations by name", eventGroups(events.filter { !$0.isStall }), rank: 8),
             Part("Main-actor work during stalls", stallSections(events), rank: 8),
             Part("In flight or finished during stalls", stallCulprits(events), rank: 7),
@@ -196,6 +197,13 @@ public enum PerformanceReport {
 
     static func stallScreen(_ event: PerformanceEvent) -> String {
         event.details["screen"].map(PerformanceLogText.dartText) ?? "not recorded"
+    }
+
+    static func stallMoment(_ event: PerformanceEvent) -> String {
+        guard let shown = event.details["shown"].map(PerformanceLogText.dartText), let ms = event.details["shownMs"]?.intValue
+        else { return "not recorded" }
+        let window = PerformanceMonitorService.shownWindowMs
+        return ms < window ? "\(shown), first \(window / 1_000)s" : "later"
     }
 
     static func eventGroups(

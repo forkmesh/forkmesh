@@ -179,6 +179,23 @@ QByteArray compactJson(const QJsonObject &object)
     return QJsonDocument(object).toJson(QJsonDocument::Compact);
 }
 
+bool trimHeld(QList<QJsonObject> *frames)
+{
+    qsizetype bytes = 0;
+    qsizetype first = frames->size();
+    while (first > 0 && frames->size() - first < kMaxHeldFrames) {
+        const qsizetype size = compactJson(frames->at(first - 1)).size();
+        if (first < frames->size() && bytes + size > kMaxHeldBytes)
+            break;
+        bytes += size;
+        --first;
+    }
+    if (first == 0)
+        return false;
+    frames->remove(0, first);
+    return true;
+}
+
 TrustState stateFromName(const QString &name)
 {
     if (name == QLatin1String("approved"))
@@ -1138,14 +1155,17 @@ ChatDevice::Scope &ChatDevice::scopeState(const QString &scope)
             state.records.insert(record.kid, record);
     }
     const QJsonObject held = root.value(QStringLiteral("held")).toObject();
+    bool trimmed = false;
     for (auto it = held.constBegin(); it != held.constEnd(); ++it) {
         QList<QJsonObject> frames;
         for (const QJsonValue &frame : it.value().toArray())
             frames.append(frame.toObject());
-        state.held.insert(it.key(), frames.mid(qMax<qsizetype>(0, frames.size() -
-                                                                      kMaxHeldFrames)));
+        trimmed = trimHeld(&frames) || trimmed;
+        state.held.insert(it.key(), frames);
     }
     state.safety = root.value(QStringLiteral("safety")).toString();
+    if (trimmed)
+        saveScope(scope, false);
     return state;
 }
 
@@ -1682,8 +1702,7 @@ void ChatDevice::hold(const QString &scope, const QString &room,
         if (existing.value(QStringLiteral("sig")).toString() == sig)
             return;
     frames.append(frame);
-    while (frames.size() > kMaxHeldFrames)
-        frames.removeFirst();
+    trimHeld(&frames);
     saveScope(scope, false);
 }
 

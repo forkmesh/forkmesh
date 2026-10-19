@@ -10,6 +10,7 @@
 #include "ForkMeshPackageRegistry.h"
 #include "ForkMeshVersion.h"
 #include "MainWindow.h"
+#include "MessageBoxClicks.h"
 #include "MirrorNodeColumns.h"
 #include "MainWindowInternal.h"
 #include "MainWindowNextAccess.h"
@@ -2868,8 +2869,8 @@ void MainWindow::showOwnershipTransferPrompt(const QString &admin)
     QPushButton *deny = box->addButton("Deny", QMessageBox::RejectRole);
     box->setDefaultButton(deny);
     box->setModal(false);
-    connect(box, &QMessageBox::buttonClicked, this,
-            [this, box, approve](QAbstractButton *clicked) {
+    forkmesh::ui::onMessageBoxClicked(box, this,
+            [this, approve](QAbstractButton *clicked) {
                 submitOwnershipTransferDecision(clicked == approve);
             });
     box->show();

@@ -542,6 +542,68 @@ void testCountersPersist()
           "the identity seed and prekeys live in the settings store");
 }
 
+QJsonObject heldFrame(int index, int bodyBytes)
+{
+    return QJsonObject{{QStringLiteral("sig"), QStringLiteral("sig-%1").arg(index)},
+                       {QStringLiteral("kid"), QStringLiteral("pendingKid000001")},
+                       {QStringLiteral("body"), QString(bodyBytes, QLatin1Char('a'))}};
+}
+
+qsizetype heldBytes(const QList<QJsonObject> &frames)
+{
+    qsizetype bytes = 0;
+    for (const QJsonObject &frame : frames)
+        bytes += QJsonDocument(frame).toJson(QJsonDocument::Compact).size();
+    return bytes;
+}
+
+void testHeldBudget()
+{
+    auto memory = ChatDevice::inMemory(randomBytes(32));
+    const QString heldScope = QStringLiteral("held-scope");
+    const QString heldRoom = QStringLiteral("held-room");
+    for (int i = 0; i < 40; ++i)
+        memory->hold(heldScope, heldRoom, heldFrame(i, 8 * 1024));
+    const QList<QJsonObject> big = memory->held(heldScope, heldRoom);
+    check(!big.isEmpty() && big.size() < 40 && heldBytes(big) <= kMaxHeldBytes,
+          "held frames from a pending sender stay within the byte budget");
+    check(!big.isEmpty() &&
+              big.last().value(QStringLiteral("sig")).toString() ==
+                  QStringLiteral("sig-39"),
+          "the byte budget drops the oldest held frames first");
+
+    const QString smallRoom = QStringLiteral("held-small-room");
+    for (int i = 0; i < kMaxHeldFrames + 10; ++i)
+        memory->hold(heldScope, smallRoom, heldFrame(i, 16));
+    check(memory->held(heldScope, smallRoom).size() == kMaxHeldFrames,
+          "small held frames are still capped by count");
+
+    const QString hugeRoom = QStringLiteral("held-huge-room");
+    memory->hold(heldScope, hugeRoom, heldFrame(1, 64 * 1024));
+    memory->hold(heldScope, hugeRoom, heldFrame(2, int(kMaxHeldBytes) + 1024));
+    const QList<QJsonObject> huge = memory->held(heldScope, hugeRoom);
+    check(huge.size() == 1 &&
+              huge.first().value(QStringLiteral("sig")).toString() ==
+                  QStringLiteral("sig-2"),
+          "a single oversized frame is kept on its own");
+
+    const QString storedScope = QStringLiteral("held-stored-scope");
+    QJsonArray stored;
+    for (int i = 0; i < kMaxHeldFrames; ++i)
+        stored.append(heldFrame(i, 8 * 1024));
+    const QJsonObject root{{QStringLiteral("policy"), QStringLiteral("open")},
+                           {QStringLiteral("records"), QJsonArray()},
+                           {QStringLiteral("held"), QJsonObject{{heldRoom, stored}}}};
+    QSettings().setValue(QStringLiteral("chat/e2ee/trustV3/") +
+                             b64u(storedScope.toUtf8()),
+                         QJsonDocument(root).toJson(QJsonDocument::Compact));
+    const QList<QJsonObject> loaded = ChatDevice::local()->held(storedScope, heldRoom);
+    check(!loaded.isEmpty() && heldBytes(loaded) <= kMaxHeldBytes &&
+              loaded.last().value(QStringLiteral("sig")).toString() ==
+                  QStringLiteral("sig-%1").arg(kMaxHeldFrames - 1),
+          "held frames saved before the byte budget are trimmed on load");
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -574,6 +636,7 @@ int main(int argc, char **argv)
     testLink();
     testRoundTrips();
     testCountersPersist();
+    testHeldBudget();
 
     if (failures) {
         std::fprintf(stderr, "%d chat v3 check(s) failed.\n", failures);
