@@ -593,6 +593,55 @@ def _beacons(sent_html, action):
         sent_html)}
 
 
+APPLE_MAIL = ("Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 "
+              "(KHTML, like Gecko) Mobile/15E148")
+
+
+def test_a_deck_reader_who_stops_early_gets_one_summary_at_five_minutes():
+    runtime = VisitorRuntime([_draft("Hello")], agent=APPLE_MAIL)
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="investment",
+                   stage="sourced")
+    send_id = _send(runtime, sam)["data"]["email"]["id"]
+    page = runtime.mailtrap_calls[-1][1]["html"]
+    opener, _ = _tracking_urls(page)
+    reads, slides = _beacons(page, "r"), _beacons(page, "s")
+    runtime.pings.clear()
+    _hit(runtime, opener, crm.TRACK_QUIET_MS)
+    _hit(runtime, slides[9], 2000)
+    for mark in (30, 60, 120, 240):
+        _hit(runtime, reads[mark], mark * 1000)
+    assert len([ping for ping in runtime.pings if ping["recipient"] == "alice"]) == 1
+    _hit(runtime, reads[300], 300000)
+    _hit(runtime, reads[600], 600000)
+    _hit(runtime, slides[14], 1000)
+    pings = [ping for ping in runtime.pings if ping["recipient"] == "alice"]
+    assert [ping["title"] for ping in pings] == [
+        "📬 Sam Dev opened your email", "📖 Sam Dev has spent 5 min+ on your deck"]
+    assert pings[1]["body"].split("\n")[1] == (
+        "Read for 5 min+ · reached slide 9 of 14 (Market) · iPhone · Apple Mail")
+    email = call(runtime.use("GET"), f"/api/crm/acme/emails/{send_id}")["data"]["email"]
+    assert (email["readSeconds"], email["slideReached"]) == (600, 14)
+    assert (email["mailClient"], email["readingReported"]) == ("iPhone · Apple Mail", "yes")
+
+
+def test_a_gmail_reader_is_labelled_and_a_short_note_summarizes_at_thirty_seconds():
+    runtime = VisitorRuntime([_draft("Hello")])
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="customers")
+    send_id = _send(runtime, sam)["data"]["email"]["id"]
+    page = runtime.mailtrap_calls[-1][1]["html"]
+    opener, _ = _tracking_urls(page)
+    assert _beacons(page, "s") == {}
+    runtime.pings.clear()
+    _visit(runtime, opener)
+    email = call(runtime.use("GET"), f"/api/crm/acme/emails/{send_id}")["data"]["email"]
+    assert (email["mailClient"], email["readingReported"]) == ("Gmail", "no")
+    assert (email["slideCount"], email["slideReached"]) == (0, 0)
+    _hit(runtime, _beacons(page, "r")[30], 30000)
+    pings = [ping for ping in runtime.pings if ping["recipient"] == "alice"]
+    assert [ping["title"] for ping in pings][1:] == ["📖 Sam Dev is reading your email"]
+    assert pings[1]["body"].split("\n")[1] == "Read for 30s+ · Gmail"
+
+
 def test_beacons_from_emails_sent_before_slide_markers_still_count():
     runtime = AiRuntime([_draft("Hello")])
     sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="investment",
@@ -666,7 +715,7 @@ def test_other_contacts_get_the_plain_note_with_read_beacons_but_no_deck():
     assert _beacons(page, "d") == {}
 
 
-def test_reading_time_and_depth_count_only_after_a_real_open_and_ping_twice():
+def test_reading_time_and_reach_count_only_after_a_real_open_and_ping_one_summary():
     runtime = AiRuntime([_draft("Hello")])
     sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="investment",
                    stage="sourced")
@@ -700,10 +749,8 @@ def test_reading_time_and_depth_count_only_after_a_real_open_and_ping_twice():
     assert (email["slideReached"], email["slideTitle"]) == (14, "Sources")
     pings = [ping for ping in runtime.pings if ping["recipient"] == "alice"]
     assert [ping["title"] for ping in pings] == [
-        "📬 Sam Dev opened your email", "📖 Sam Dev is reading your email",
-        "🏁 Sam Dev read your email to the end"]
-    assert "Reading time: 30s+ · scrolled 50% of the way" in pings[1]["body"]
-    assert "Reading time: 1 min+ · scrolled to the end" in pings[2]["body"]
+        "📬 Sam Dev opened your email", "🏁 Sam Dev read your whole deck"]
+    assert pings[1]["body"].split("\n")[1] == "Read for 1 min+ · reached slide 14 of 14 (Sources)"
 
     odd = _hit(runtime, reads[60].replace(".60.png", ".7.png"), 1000)
     assert odd["headers"]["location"] == crm.TRACK_LOGO
