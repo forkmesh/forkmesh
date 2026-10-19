@@ -461,10 +461,13 @@ dialog names the recipient and the link first.
   an ended stage (`contact_closed`), or got a CRM email in the last three days
   (`recently_emailed`, `AUTO_EMAIL_GAP_MS`), so a double click or two
   teammates never send twice.
-- **The link.** Every email carries one trackable link: a contact in an
-  investor pipeline gets their own deck link (the active one, else a new one,
-  as `POST /decks` makes it); everyone else gets the sender's referral link
-  `https://forkmesh.com/r/<account>`, which counts visits and signups.
+- **The link.** A contact outside an investor pipeline gets one trackable
+  link, the sender's referral link `https://forkmesh.com/r/<account>`, which
+  counts visits and signups. A contact in an investor pipeline gets no link
+  in the note: the whole deck is in the email (see "The investor email"
+  below). Their deck link is still minted (the active one, else a new one,
+  as `POST /decks` makes it) and returned as `link`, so the team can share it
+  by hand.
 - **The model.** `runtime.ai_json` (the host model, `docs/app/package-ai-failures.md`)
   gets the organization's brief (`messageBrief`, else a short ForkMesh brief
   for the `forkmesh` organization), the contact's fields and notes, the angle
@@ -472,7 +475,8 @@ dialog names the recipient and the link first.
   the last six messages with them, the link, and the lessons below. It answers
   `{subject, body}`. Drafts with `[placeholders]`, under 60 or over 2400
   characters, or with any link not in the prompt are refused and asked for
-  again once (`AUTO_EMAIL_ATTEMPTS`); a missing tracked link is appended.
+  again once (`AUTO_EMAIL_ATTEMPTS`); a missing referral link is appended. An
+  investor note may carry no link at all, so any link in it is refused.
 - **Learning from opens and clicks.** The prompt's "What our past emails
   taught us" reads the organization's last 120 sent Mailtrap emails (manual,
   automated and outreach) with their open and click results: overall rates,
@@ -576,6 +580,75 @@ iPhone's auto-send review popup is the first client
 
 Tests: `tests/test_auto_email.py`.
 
+### The investor email
+
+Since 20 Oct 2026 an automated email to an investor carries the whole
+investor deck in its body, under the short note the model writes. All
+fourteen slides, from the cover to Sources & contact, are there, with the
+same copy, order, numbering and colours as `app/public/pitch-deck/deck.html`.
+There is no "Full slide" or "Open the full deck" link: the founders asked
+for the deck to arrive as an email, not as a link to click. Before that, the
+email carried a condensed deck (cover, Problem, Product, Proof, Market, Team,
+The round) with a link to each full slide, and the note was told to send the
+reader to the deck link.
+
+- **Why it is rebuilt, not copied.** `deck.html` cannot be mailed as it is.
+  Mail clients drop its script, CSS variables, grid, `clip-path`, fixed bar
+  and web font, and Gmail clips any message over about 102 KB, which would
+  also cut off the reading beacons at the bottom. `_mail_deck_sections`
+  rebuilds each slide from tables and inline styles, so it lays out in Gmail,
+  Outlook and Apple Mail. Slides 3, 7 and 13 sit in dark cards, as the deck's
+  dark panels do. `test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links`
+  checks the order, the 02–14 numbers, the images, that the only link is the
+  logo's, and that the page stays under 100 KB (66.7 KB on 20 Oct 2026).
+- **Copy lives in `DECK_MAIL_*`.** When a slide's wording changes in
+  `deck.html`, change the matching constant too. Nothing copies it across.
+- **Images** come from `https://forkmesh.com/assets/email/` and are drawn by
+  `tools/render_email_assets.py` (Pillow): `hero.jpg`, `mesh.gif`,
+  `agent-flow.gif`, `count.gif`, `xr.jpg` and the two avatars. `xr.jpg` is the
+  "Beyond the desk" slide flattened for email: the desktop app and a Claude
+  Code session seen through AR glasses, with the watch's agent list beside
+  them. The deck draws that slide with CSS, which mail clients cannot.
+  `python3 tools/render_email_assets.py` rewrites every file; to redraw one,
+  import the module and call its function (for example `xr()`).
+- **The note.** The prompt's "## The investor deck" section tells the model
+  that the deck follows its note, so it should keep to a few sentences, add
+  no link, and ask for a reply.
+
+### Reading time and scroll depth
+
+Every tracked email (investor or not) reports how long it stayed open, and
+an investor email also reports how far down the deck the reader got. Mail
+clients run no script, so both come from CSS that loads a 1×1 image:
+
+- **Read time.** Six hidden cells (`.fm-r5` … `.fm-r300`, `READ_MARKS`) each
+  run a 1 ms animation delayed 5, 15, 30, 60, 120 or 300 seconds, which sets
+  a background image `/api/crm/-/t/r/<token>.<mark>.png`. A mark counts only
+  once the open pixel has started a view (`crm_email_reading.view_at`), and
+  only when at least 80% of its seconds have passed since that view
+  (`READ_LAG_SHARE`). That way a proxy that fetches every image at once does
+  not report five minutes of reading.
+- **Scroll depth.** Markers after the 3rd, 7th and 11th slides and at the end
+  (`DEPTH_MARKS`: 25, 50, 75, 100) use a scroll-driven animation
+  (`animation-timeline: view()`) that loads `/api/crm/-/t/d/<token>.<mark>.png`
+  when the marker scrolls into view. A depth mark needs 1.5 s since the
+  view started (`DEPTH_MIN_LAG_MS`).
+- **Where it shows.** `crm_email_reading` keeps the highest marks, and the
+  email row returns them as `readSeconds` and `scrollDepth`. The web CRM's
+  activity line and the iOS contact screen (`CrmActivity.engagementLine`)
+  show "read 2 min+ · scrolled to the end". The sender gets one ping at 30
+  seconds ("📖 … is reading your email") and one at 100% ("🏁 … read your
+  email to the end"). The Android and desktop CRMs do not show these yet.
+- **Which clients report it.** Apple Mail runs CSS animations, so it reports
+  read time. It also reports scroll depth where its engine supports
+  scroll-driven animations (WebKit in the 2025–26 releases). Gmail and
+  Outlook do not run CSS animations, so their readers show opens and clicks
+  only. A missing read time therefore does not mean the email went unread.
+
+Tests: `test_reading_time_and_depth_count_only_after_a_real_open_and_ping_twice`
+and the deck tests in `tests/test_auto_email.py`. iOS:
+`CrmReadingReportTests`.
+
 ## Investor deck
 
 Deck links (`POST /decks`) are minted only for contacts in an investor pipeline
@@ -584,7 +657,8 @@ Deck links (`POST /decks`) are minted only for contacts in an investor pipeline
 `/outreach/send` refuse a body carrying a `/pitch-deck/` link or the
 `investor` template for a contact outside an investor pipeline. Only **Send AI
 email** sends the deck without a compose step, and only to a contact in an
-investor pipeline. Opens are recorded per visit and page
+investor pipeline; it sends the deck itself in the email body, not the link
+("The investor email" above). Opens are recorded per visit and page
 (`crm_deck_sessions`, `crm_deck_page_views`), and the first beacon of a visit
 pings whoever minted the link (not the HTML fetch, so link-scanning mail
 gateways do not trigger it). On the desktop, **Write email with Claude Code**
