@@ -48,6 +48,15 @@ Install state comes from the host's account install registry
 `installedBefore`, the registry would call that hook as its fallback, and a
 hook that asked the registry back would recurse.
 
+An account with no install row is `unchosen`, because this package has no
+legacy install hook. The desktop keeps an existing local install and pushes
+it to the account on its next successful account refresh. This also recovers
+an install made while the desktop had Instance Feed but the instance still
+ran an older catalog: that server returns `plugin_not_found` until its App
+deployment includes the package. Updating the desktop alone cannot supply
+the server API. An explicit account uninstall is never marked `unchosen`,
+so another desktop cannot restore an intentionally removed feed.
+
 Uninstalling (and account deletion) runs `purge_account_data`, which removes
 the account's posts and boosts, its favourites, and every favourite and boost
 of its posts. The page downloads the export first when there is anything in

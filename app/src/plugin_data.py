@@ -434,7 +434,8 @@ def _fallback_installed(plugin, created_at):
 
 def _hook_fallback(plugin):
     entry = REGISTRY.get(plugin, {})
-    return bool(entry.get("accountData")) and not entry.get("installedBefore")
+    return (bool(entry.get("accountData")) and not entry.get("installedBefore")
+            and callable(getattr(_account_module(plugin), "account_installed", None)))
 
 
 def _targets(plugins):
