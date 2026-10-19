@@ -221,6 +221,42 @@ Tests: `marketplace/tests/test_core_plugins.py`; iOS `PackageGateTests`,
 Android `PackageGateTest` and `AccountPackagesTest`; desktop
 `test_package_registry.cpp`.
 
+## Desktop offline mark
+
+Some packages only work while the user's desktop is reachable: `agents`,
+`desktops`, `special-agents`, `shortcuts`, `hosts` and `usage`. While the
+desktop is offline, each of their icons gets a small amber dot at the
+bottom-left corner that slowly fades in and out (one cycle takes about two seconds).
+It tells the user why the page is empty before they open it. The bottom-left
+corner was chosen because it is the only one free: counts sit top-right,
+live markers top-left, and the update dot (phone) and activity lamp
+(desktop) bottom-right. With Reduce Motion on, the dot stays solid.
+
+The list is kept by hand in three places, because no manifest field says
+whether a package needs the desktop:
+
+- iOS: `PackageGate.desktopReliantPackages`.
+- Android: `PackageGate.DESKTOP_RELIANT`.
+- Desktop: `PackageRegistry::reliesOnDesktop`.
+
+Which icons get the dot, and what counts as offline:
+
+- **iPhone.** Home grid tiles (`ShellHomeIcon`) and bottom bar cells
+  (`ShellBarCellLabel`), through `ShellDesktopOfflineDot`. Offline means
+  `DesktopControlHub.reach` is `.offline`. `.connecting` and `.notPaired`
+  show no dot, so the dot does not flash each time the app opens, and a
+  user with no desktop is not warned about one.
+- **Android.** Menu grid tiles (`ShellMenuTile`), plus the Agents tab and
+  rail item (`BadgeIcon`). It uses the same rule, `DesktopReach.Offline` on
+  `AgentsFeature.hub`, read through `rememberDesktopOffline`.
+- **Desktop.** Rail buttons (`ActivityRailButton::setDesktopOffline`, drawn
+  by both the classic and the Next painter) and Home board tiles
+  (`HomeTile::desktopOffline`). Here, offline means this desktop is not
+  online on the relay (`updateConnectionStatus`, where the top-right
+  connection dot is not green), so phones and the web cannot reach it.
+  `syncDesktopOfflineDots` marks the Agents and Team buttons and any native
+  package page in the list.
+
 ## Hosts
 
 - Desktop: [docs/desktop/README.md](../desktop/README.md).
