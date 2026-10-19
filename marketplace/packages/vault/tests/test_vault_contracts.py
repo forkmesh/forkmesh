@@ -45,7 +45,8 @@ def test_the_package_is_account_scoped_and_the_host_stages_it():
         "accountSync": True, "installedBefore": "", "dependencies": (), "settings": ()}
     assert registry["PLUGIN_DASHBOARD_PAGE_ASSETS"]["/dashboard/vault"] == (
         "dashboard-plugins/vault/default/index.html")
-    assert "vault.py" in {str(path) for path, _size, _raw in build_app_plugins.worker_payloads()}
+    assert "plugins/vault.py" in {
+        path.as_posix() for path, _size, _raw in build_app_plugins.worker_payloads()}
     # The account lifecycle hooks plugin_data calls by name.
     for hook in ("async def purge_account_data(runtime, account_bi, account_name=\"\")",
                  "async def account_installed(runtime, account_bi)",

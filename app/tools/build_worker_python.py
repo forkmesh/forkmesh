@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import ast
 import hashlib
-import json
 import os
 import sys
 from pathlib import Path
@@ -37,28 +36,7 @@ import build_app_plugins
 
 ROOT = Path(__file__).resolve().parent.parent
 APP_SOURCE = ROOT / "src"
-def _plugin_worker_roots():
-    """Worker modules contributed by market packages (content/worker/).
-
-    Every catalogued package that ships server-side code stages it next to
-    the app modules, so the deployed Worker imports plugin modules flat while
-    the repository keeps them inside their marketplace package — removing the
-    package removes its Worker code from the next deploy.
-    """
-    catalog = json.loads(
-        (ROOT.parent / "marketplace" / "catalog.json").read_text("utf-8"))
-    roots = []
-    for entry in catalog["packages"]:
-        relative = entry["manifest"] if isinstance(entry, dict) else entry
-        worker_dir = (ROOT.parent / "marketplace" / relative).parent / (
-            "content/worker")
-        if worker_dir.is_dir():
-            roots.append(worker_dir)
-    return tuple(roots)
-
-
-SOURCE_ROOTS = (
-    (APP_SOURCE, ROOT.parent / "world" / "src") + _plugin_worker_roots())
+SOURCE_ROOTS = (APP_SOURCE, ROOT.parent / "world" / "src")
 STAGED = ROOT / "src_build"
 # These modules assemble static dashboard assets during the preceding build
 # step. The Worker never imports them at runtime, so attaching them spends

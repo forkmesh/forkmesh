@@ -1,5 +1,6 @@
 #include "PackageModules.h"
 
+#include "DesktopPackageExtension.h"
 #include "NativePackageExtension.h"
 
 #include <QCoreApplication>
@@ -145,6 +146,9 @@ void install()
 {
     scan(searchDirectories());
     setNativePackageLoader([](const QString &entrypoint) { return loadForEntrypoint(entrypoint); });
+    setDesktopPackageExtensionModules(
+        [](const QString &entrypoint) { return providesEntrypoint(entrypoint); },
+        [](const QString &entrypoint) { return loadForEntrypoint(entrypoint); });
 }
 
 bool providesEntrypoint(const QString &entrypoint)
