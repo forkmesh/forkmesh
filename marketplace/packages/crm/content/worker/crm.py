@@ -5803,10 +5803,27 @@ def _auto_email_quote(text):
     return flat
 
 
+def _auto_email_engagement(row):
+    opens = _integer(row.get("opens"))
+    clicks = _integer(row.get("clicks"))
+    seconds = _integer(row.get("read_seconds"))
+    parts = []
+    if opens:
+        parts.append("they opened it %s (last %s)" % (
+            "once" if opens == 1 else "%d times" % opens, _day(row.get("opened_at"))))
+    if clicks:
+        parts.append("clicked the link on %s" % _day(row.get("clicked_at")))
+    if seconds:
+        parts.append("read it for about %d s" % seconds)
+    if not parts and str(row.get("status") or "") in ("bounce", "soft bounce"):
+        parts.append("it bounced")
+    return "; ".join(parts) or "no sign they opened it"
+
+
 async def _auto_email_conversation(runtime, org_bi, contact_id):
     rows = await runtime.d1_all(
-        "SELECT status,created_at,sent_at,data FROM crm_email_sends "
-        "WHERE org_bi=? AND contact_id=? ORDER BY created_at DESC LIMIT ?",
+        "SELECT " + EMAIL_SELECT + " WHERE s.org_bi=? AND s.contact_id=? "
+        "ORDER BY s.created_at DESC LIMIT ?",
         org_bi, contact_id, AUTO_EMAIL_MESSAGES)
     lines = []
     for row in reversed(rows or []):
@@ -5816,12 +5833,52 @@ async def _auto_email_conversation(runtime, org_bi, contact_id):
         if not inbound and str(row.get("status") or "") in AUTO_EMAIL_UNSENT:
             continue
         subject = _clean(data.get("subject"), 200)
-        lines.append("- %s · %s%s" % (
+        tracked = not inbound and (row.get("transport") == "mailtrap" or data.get("tracked"))
+        lines.append("- %s · %s%s%s" % (
             _day(row.get("sent_at") or row.get("created_at")),
             "They wrote" if inbound else "We wrote",
-            " · Subject: " + subject if subject else ""))
+            " · Subject: " + subject if subject else "",
+            " · " + _auto_email_engagement(row) if tracked else ""))
         body = _auto_email_quote(data.get("text"))
         lines.extend("  > " + line for line in body.split("\n") if body)
+    return lines
+
+
+async def _auto_email_activity(runtime, org_bi, contact_id, row, contact):
+    lines = []
+    added = _integer(row.get("created_at"))
+    if added:
+        by = _clean(row.get("created_by_name"), 64)
+        lines.append("- Added to our CRM on %s%s." % (_day(added), " by " + by if by else ""))
+    changed = _integer(row.get("updated_at"))
+    if changed > added:
+        by = _clean(row.get("updated_by_name"), 64)
+        lines.append("- Their record was last updated on %s%s." % (
+            _day(changed), " by " + by if by else ""))
+    contacted = _integer(contact.get("lastContactedAt"))
+    lines.append("- Last contacted on %s." % _day(contacted) if contacted
+                 else "- We have never contacted them.")
+    replies = await runtime.d1_all(
+        "SELECT sent_at,created_at,data FROM crm_email_sends WHERE org_bi=? "
+        "AND contact_id=? AND transport='external' ORDER BY created_at DESC LIMIT ?",
+        org_bi, contact_id, AUTO_EMAIL_MESSAGES)
+    for reply in replies or []:
+        data = await runtime.open(reply.get("data"))
+        if isinstance(data, dict) and _email_direction(data.get("direction")) == "inbound":
+            lines.append("- They last wrote to us on %s." % _day(
+                reply.get("sent_at") or reply.get("created_at")))
+            break
+    deck = await runtime.d1_first(
+        "SELECT COUNT(*) AS views,COALESCE(SUM(s.seconds),0) AS seconds,"
+        "COALESCE(MAX(s.pages),0) AS pages,COALESCE(MAX(s.last_at),0) AS last_at "
+        "FROM crm_deck_sessions s JOIN crm_deck_links l ON l.token=s.token "
+        "WHERE l.org_bi=? AND l.contact_id=?", org_bi, contact_id) or {}
+    views = _integer(deck.get("views"))
+    if views:
+        lines.append("- They opened our investor deck %d time%s, %d s in all, up to %d "
+                     "pages in one visit, last on %s." % (
+                         views, "" if views == 1 else "s", _integer(deck.get("seconds")),
+                         _integer(deck.get("pages")), _day(deck.get("last_at"))))
     return lines
 
 
@@ -5922,7 +5979,7 @@ def _auto_email_lessons(sends):
 
 
 def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
-                       angle, flow_name, conversation, lessons, reason):
+                       angle, flow_name, conversation, lessons, reason, activity=()):
     name = _contact_label(contact)
     investor = link_kind == "deck"
     goal = ("This is our first contact with %s: introduce %s in a sentence and give "
@@ -5964,6 +6021,10 @@ def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
     lines += facts or ["- Nothing beyond the name is on record."]
     if notes:
         lines += ["", "Our notes on them:", notes]
+    if activity:
+        lines += ["", "## Their recent activity with us"] + list(activity) + [
+            "Use this to judge their interest and what to say next; never mention that "
+            "we can see opens, clicks or reading time."]
     lines += ["", "## Our conversation so far (oldest first)"]
     lines += conversation or ["Nothing on record yet: this is the first message."]
     lines += ["", "## What our past emails taught us"] + lessons
@@ -6677,7 +6738,8 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         org_name, from_name, brief, contact, mode, link_kind, link,
         _auto_email_angle([_clean(data.get("list"), 80), flow_name]), flow_name,
         await _auto_email_conversation(runtime, org_bi, contact_id),
-        _auto_email_lessons(sends), _clean(data.get("reason"), 400))
+        _auto_email_lessons(sends), _clean(data.get("reason"), 400),
+        await _auto_email_activity(runtime, org_bi, contact_id, row, contact))
     learning = _auto_email_stats(sends)
     fallback = {"prompt": "\n\n".join((AUTO_EMAIL_RULES, prompt, AUTO_EMAIL_AGENT_REPLY)),
                 "link": link,

@@ -248,8 +248,10 @@ contacted, with a tap to draft an email or a Mastodon post.
   without one nothing is written.
 - **Writers** (`GenieFeature.outreachWriters`, first passing draft wins): the
   strongest model for a saved agent API key (90 s; the contact's CRM details go
-  to that provider), the Genie's on-device model (25 s, 420 tokens), then a
-  template (`GenieOutreach.fallback`). Temperature 0.4.
+  to that provider), the Genie's on-device model (25 s, 420 tokens), the paired
+  desktop's default agent, Claude Code or Codex (`outreachDesktopWriter`,
+  `agents.write` over the LAN or relay, 300 s; the prompt goes to that
+  desktop), then a template (`GenieOutreach.fallback`). Temperature 0.4.
 - **Prompt** (`GenieOutreach.messages`): product description, sender, the
   contact's CRM fields, the pitch angle (`CrmPrompt.angle`), and the rule to
   use only given facts. Emails at most 140 words (180 for investors, with the
@@ -300,7 +302,14 @@ contacted, with a tap to draft an email or a Mastodon post.
   per turn; anything else (daily cap, Zoho needs a reconnect, not on the
   outreach team) pauses until the next turn and the top bar says why. When the
   server has no model, the phone's own outreach writers answer the server's
-  prompt and the draft is posted back (`GenieAutoSend.write`).
+  prompt and the draft is posted back (`GenieAutoSend.write`). That prompt
+  holds the organization's brief (the ForkMesh description for `forkmesh`),
+  the contact's fields and notes, their recent activity with us and the
+  conversation so far (`marketplace/packages/crm/README.md`). Production cores
+  have no host model, so on a phone without an API key or on-device model the
+  paired desktop's Claude Code or Codex writes it (2026-10-19); before that,
+  auto-send paused with "no writer on this phone gave a usable draft". With no
+  writer at all the pause now says what to set up (`GenieAutoSend.noWriter`).
   Sending only happens while the app is open (iOS has no background slot for
   it and the CRM package has no cron); the pace is kept across launches, so
   reopening never bursts.
