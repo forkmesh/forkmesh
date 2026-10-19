@@ -59,7 +59,12 @@ class DataFolderScreen : Screen() {
                     SettingsNote(DataFolder.ALERT_MESSAGE)
                     SettingsNote(feature.summary(), if (need == DataFolderNeed.ReconnectFolder) Fm.colors.danger else Fm.colors.textPrimary)
                     FmTextButton(onClick = { picker.launch(null) }, enabled = !feature.working) {
-                        Text(if (need == DataFolderNeed.ChooseFolder) "Choose a folder" else "Choose another folder")
+                        Text(if (feature.chosen) "Choose another folder" else "Choose a folder")
+                    }
+                    if (feature.chosen) {
+                        FmTextButton(onClick = { scope.launch { feature.useAutomaticFolder() } }, enabled = !feature.working) {
+                            Text("Use the automatic folder")
+                        }
                     }
                 }
             }

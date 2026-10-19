@@ -21,7 +21,10 @@ struct DataFolderAlertModifier: ViewModifier {
             .sheet(isPresented: Binding(get: { model.showSetup }, set: { model.showSetup = $0 })) {
                 DataFolderSetupSheet(model: model)
             }
-            .task { await model.sync() }
+            .task {
+                await model.pickAutomaticFolder()
+                await model.sync()
+            }
             .onChange(of: scenePhase) { (_: ScenePhase, phase: ScenePhase) in
                 if phase == .background { model.syncInBackground() }
             }
@@ -61,9 +64,13 @@ struct DataFolderSetupSheet: View {
                 VStack(alignment: .leading, spacing: FmSpace.x3) {
                     SettingsNote(text: DataFolder.alertMessage)
                     SettingsNote(text: model.summary, color: model.reachable ? fm.textPrimary : fm.danger)
-                    FmFilledButton(model.folder == nil ? "Choose a folder in Files" : "Choose another folder",
+                    FmFilledButton(model.chosen ? "Choose another folder" : "Choose a folder in Files",
                                    icon: "folder_open_outlined", fillWidth: true,
                                    onPressed: model.working ? nil : { picking = true })
+                    if model.chosen {
+                        FmToneButton(label: "Use the automatic folder", icon: "folder_outlined",
+                                     onPressed: model.working ? nil : { Task { @MainActor in await model.useAutomaticFolder() } })
+                    }
                     if !model.restorable.isEmpty {
                         restoreSection
                     } else if model.need == .saveIdentity {

@@ -37,7 +37,7 @@ Topic pages:
 | [STATS.md](STATS.md) | The Stats board: every desktop tile over `stats.tiles`, and the release-version tiles |
 | [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md), [REFERENCE_LINKS.md](REFERENCE_LINKS.md) | Screen capture and markup; issue and pull links in messages |
 | [IOS_RELEASE.md](IOS_RELEASE.md), [MAC_BUILD.md](MAC_BUILD.md), [ANDROID.md](ANDROID.md) | iOS release pipeline, office Mac builds, Android design notes |
-| [DATA_FOLDER.md](DATA_FOLDER.md) | The user-picked `forkmesh_data` folder that keeps settings, files and the encrypted identity key through a reinstall |
+| [DATA_FOLDER.md](DATA_FOLDER.md) | The projects folder (automatic, or one the user picks) that keeps settings, plugin data and the encrypted identity key through a reinstall |
 | [notes.md](notes.md) | Notes: filters, autosave, conflicts, preview, sharing, links, export |
 | [NEXUS.md](NEXUS.md) | NEXUS package, permissions, safety policy, host integration and verification |
 

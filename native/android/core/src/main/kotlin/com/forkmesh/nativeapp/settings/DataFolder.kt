@@ -24,6 +24,8 @@ data class DataFolderProject(
 
 data class DataFolderTree(val name: String, val local: File, val skippedTopLevel: Set<String> = emptySet())
 
+data class DataFolderIndexEntry(val local: String, val signature: String)
+
 data class DataFolderCopyReport(var copied: Int = 0, var unchanged: Int = 0, val failed: MutableList<String> = mutableListOf())
 
 interface DataFolderIo {
@@ -73,17 +75,26 @@ class FileDataFolderIo(private val root: File) : DataFolderIo {
 }
 
 object DataFolder {
-    const val FOLDER_NAME = "forkmesh_data"
+    const val DEFAULT_FOLDER_NAME = "ForkMesh projects"
     const val HOME_PROJECT = "forkmesh"
     const val MARKER_FILE = "forkmesh-data.json"
     const val MARKER_TYPE = "forkmesh.data-folder"
     const val PROJECT_FILE = "project.json"
-    const val SETTINGS_PATH = "config/ForkMesh/settings.json"
-    const val KIT_PATH = "data/identity/recovery-kit.json"
-    const val INDEX_PATH = "state/sync-index.json"
+    const val SETTINGS_PATH = "data/core/config/ForkMesh/settings.json"
+    const val KIT_PATH = "data/core/identity/recovery-kit.json"
+    const val INDEX_PATH = "data/core/state/sync-index.json"
     const val SETTINGS_TYPE = "forkmesh.android-settings"
     const val PARTIAL_SUFFIX = ".fm-partial"
-    val ROOTS = listOf("data", "config", "cache", "state", "logs", "ssh")
+    val ROOTS = listOf("data/core", "data/core/config", "data/core/cache", "data/core/state", "data/core/logs", "data/core/ssh")
+    val PLUGIN_ENTRIES = mapOf(
+        "chat-history" to "chat/history",
+        "local_mesh_history.json" to "chat/local-mesh/local_mesh_history.json",
+        "chat-people-pictures" to "chat/people-pictures",
+        "diagnostics" to "core/logs/diagnostics",
+        "NextTask" to "agents/next-task",
+        "secure-drive" to "secure-drive",
+        "rss-reader" to "rss-reader",
+    )
 
     const val LOCATION_KEY = "dataFolder/location"
     const val SYNCED_AT_KEY = "dataFolder/syncedAt"
@@ -93,19 +104,25 @@ object DataFolder {
 
     const val ALERT_TITLE = "Keep your ForkMesh data safe"
     const val ALERT_MESSAGE =
-        "ForkMesh keeps its data inside the app, and Android deletes it with the app. Choose a folder, for example Documents on this phone: ForkMesh keeps a copy of your settings, files and identity key in a forkmesh_data folder there, so you can reinstall and pick the same folder to get everything back."
+        "ForkMesh keeps your projects in its own folder, and Android deletes that folder with the app. Choose a folder, for example Documents on this phone: each project keeps its data there, data/core for settings and the identity key and one folder per plugin, so you can reinstall and pick the same folder to get everything back."
     const val RECONNECT_MESSAGE =
-        "The folder holding your forkmesh_data copy can't be opened. Choose it again so ForkMesh can keep your data safe."
+        "The folder holding your ForkMesh projects can't be opened. Choose it again so ForkMesh can keep your data safe."
     const val IDENTITY_MESSAGE =
-        "Your forkmesh_data folder doesn't hold this project's identity key yet. Save it there with a passphrase so a reinstall can bring the account back."
+        "Your projects folder doesn't hold this project's identity key yet. Save it there with a passphrase so a reinstall can bring the account back."
 
     fun projectFolder(scope: ProjectScope): String = if (scope.isLegacy) HOME_PROJECT else scope.slug
 
     fun kitKey(slug: String): String = KIT_KEY_PREFIX + slug
 
-    fun need(prefs: PrefStore, slug: String, publicKey: String, reachable: Boolean): DataFolderNeed? {
-        if (prefs.getString(LOCATION_KEY).isNullOrEmpty()) return DataFolderNeed.ChooseFolder
+    fun folderPath(tree: String, relative: String): String {
+        val first = relative.substringBefore('/')
+        val mapped = PLUGIN_ENTRIES[first] ?: return "data/core/$tree/$relative"
+        return "data/$mapped" + relative.substring(first.length)
+    }
+
+    fun need(prefs: PrefStore, slug: String, publicKey: String, reachable: Boolean, insideApp: Boolean): DataFolderNeed? {
         if (!reachable) return DataFolderNeed.ReconnectFolder
+        if (insideApp) return DataFolderNeed.ChooseFolder
         if (publicKey.isNotEmpty() && prefs.getString(kitKey(slug)) != publicKey) return DataFolderNeed.SaveIdentity
         return null
     }
@@ -206,11 +223,21 @@ class DataFolderStore(private val io: DataFolderIo) {
 
     fun readKit(slug: String): String? = io.read("$slug/${DataFolder.KIT_PATH}")?.toString(Charsets.UTF_8)
 
-    fun readIndex(slug: String): MutableMap<String, String> {
+    fun readIndex(slug: String): MutableMap<String, DataFolderIndexEntry> {
         val parsed = io.read("$slug/${DataFolder.INDEX_PATH}")?.let { parse(it) } ?: return linkedMapOf()
-        val index = linkedMapOf<String, String>()
-        for ((key, value) in parsed) if (value is String) index[key] = value
+        val index = linkedMapOf<String, DataFolderIndexEntry>()
+        for ((key, value) in parsed) {
+            val entry = value as? Map<*, *> ?: continue
+            val local = entry["local"] as? String ?: continue
+            index[key] = DataFolderIndexEntry(local, entry["sig"] as? String ?: "")
+        }
         return index
+    }
+
+    private fun writeIndex(slug: String, index: Map<String, DataFolderIndexEntry>) {
+        val out = sortedMapOf<String, Any?>()
+        for ((key, entry) in index) out[key] = linkedMapOf("local" to entry.local, "sig" to entry.signature)
+        io.write("$slug/${DataFolder.INDEX_PATH}", Json.stringify(out).toByteArray())
     }
 
     fun backup(slug: String, trees: List<DataFolderTree>): DataFolderCopyReport {
@@ -218,37 +245,39 @@ class DataFolderStore(private val io: DataFolderIo) {
         val index = readIndex(slug)
         for (tree in trees) {
             for ((relative, file) in walk(tree.local, tree.skippedTopLevel)) {
-                val key = "${tree.name}/$relative"
+                val key = DataFolder.folderPath(tree.name, relative)
+                val local = "${tree.name}/$relative"
                 val signature = DataFolder.signature(file.length(), file.lastModified())
-                if (index[key] == signature) {
+                if (index[key]?.let { it.signature == signature && it.local == local } == true) {
                     report.unchanged++
                     continue
                 }
                 val copied = try {
-                    io.openOutput("$slug/data/$key")?.use { out -> file.inputStream().use { it.copyTo(out) } } != null
+                    io.openOutput("$slug/$key")?.use { out -> file.inputStream().use { it.copyTo(out) } } != null
                 } catch (_: Exception) {
                     false
                 }
                 if (copied) {
-                    index[key] = signature
+                    index[key] = DataFolderIndexEntry(local, signature)
                     report.copied++
                 } else {
                     report.failed.add(key)
                 }
             }
         }
-        io.write("$slug/${DataFolder.INDEX_PATH}", Json.stringify(index.toSortedMap()).toByteArray())
+        writeIndex(slug, index)
         return report
     }
 
     fun restore(slug: String, trees: List<DataFolderTree>): DataFolderCopyReport {
         val report = DataFolderCopyReport()
         val byName = trees.associateBy { it.name }
-        for (key in readIndex(slug).keys.sorted()) {
-            val tree = byName[key.substringBefore('/')] ?: continue
-            val relative = key.substringAfter('/')
-            if (relative.isEmpty() || relative.split('/').any { it == ".." || it.isEmpty() }) continue
-            val target = File(tree.local, relative)
+        for ((key, entry) in readIndex(slug).toSortedMap()) {
+            val parts = entry.local.split('/')
+            val tree = byName[parts.first()] ?: continue
+            if (parts.size < 2 || parts.any { it == ".." || it == "." || it.isEmpty() }) continue
+            if (key.split('/').any { it == ".." }) continue
+            val target = File(tree.local, parts.drop(1).joinToString("/"))
             if (target.exists()) {
                 report.unchanged++
                 continue
@@ -256,7 +285,7 @@ class DataFolderStore(private val io: DataFolderIo) {
             val copied = try {
                 target.parentFile?.mkdirs()
                 val partial = File(target.parentFile, target.name + DataFolder.PARTIAL_SUFFIX)
-                val read = io.openInput("$slug/data/$key")?.use { input -> partial.outputStream().use { input.copyTo(it) } } != null
+                val read = io.openInput("$slug/$key")?.use { input -> partial.outputStream().use { input.copyTo(it) } } != null
                 read && partial.renameTo(target)
             } catch (_: Exception) {
                 false

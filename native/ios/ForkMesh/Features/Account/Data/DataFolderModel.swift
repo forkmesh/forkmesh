@@ -11,6 +11,7 @@ final class DataFolderModel {
     static let shared: DataFolderModel = DataFolderModel()
 
     private(set) var folder: URL?
+    private(set) var chosen: Bool = false
     private(set) var reachable: Bool = false
     private(set) var status: String = ""
     private(set) var statusIsError: Bool = false
@@ -26,6 +27,57 @@ final class DataFolderModel {
 
     private init() {
         restoreBookmark()
+        if folder == nil { useAppFolder() }
+    }
+
+    static var appContainer: URL { URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true) }
+
+    var insideApp: Bool {
+        guard let folder else { return true }
+        return DataFolder.problem(with: folder, appContainer: DataFolderModel.appContainer) != nil
+    }
+
+    private func useAppFolder() {
+        guard let documents = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
+        folder = documents.appendingPathComponent(DataFolder.defaultFolderName, isDirectory: true)
+        chosen = false
+        reachable = true
+    }
+
+    func pickAutomaticFolder() async {
+        guard !chosen else { return }
+        let cloud: URL? = await Task.detached(priority: .utility) {
+            FileManager.default.url(forUbiquityContainerIdentifier: nil)
+        }.value
+        guard !chosen else { return }
+        if let cloud {
+            folder = cloud.appendingPathComponent("Documents", isDirectory: true)
+                .appendingPathComponent(DataFolder.defaultFolderName, isDirectory: true)
+            reachable = true
+            findRestorable(in: DataFolderStore(root: folder ?? cloud))
+            if !restorable.isEmpty {
+                report("iCloud Drive holds ForkMesh projects from an earlier install. Enter their passphrase to restore them.")
+            }
+            revision &+= 1
+        }
+    }
+
+    private func findRestorable(in store: DataFolderStore) {
+        let current: String = publicKey
+        let mine: String = slug
+        restorable = store.projects().filter { project in
+            store.readKit(slug: project.slug) != nil && !(project.slug == mine && project.publicKey == current)
+        }
+    }
+
+    func useAutomaticFolder() async {
+        prefs?.remove(DataFolder.locationKey)
+        if chosen { folder?.stopAccessingSecurityScopedResource() }
+        restorable = []
+        useAppFolder()
+        await pickAutomaticFolder()
+        report(insideApp ? DataFolder.alertMessage : "ForkMesh keeps your projects in iCloud Drive again.")
+        await sync()
     }
 
     private var services: AppServices? { AppServices.current }
@@ -37,13 +89,14 @@ final class DataFolderModel {
 
     var store: DataFolderStore? {
         guard reachable, let folder else { return nil }
-        return DataFolderStore(root: DataFolder.root(forPicked: folder))
+        return DataFolderStore(root: folder)
     }
 
     var need: DataFolderNeed? {
         _ = revision
         guard let prefs else { return .chooseFolder }
-        return DataFolder.need(prefs: prefs, slug: slug, publicKey: publicKey, reachable: reachable)
+        return DataFolder.need(prefs: prefs, slug: slug, publicKey: publicKey, reachable: reachable,
+                               insideApp: insideApp)
     }
 
     var showsAlert: Bool { need != nil && !dismissedThisLaunch && !showSetup && !needsRestart }
@@ -52,7 +105,9 @@ final class DataFolderModel {
         _ = revision
         guard let folder else { return "Not set up: your data is deleted with the app" }
         if !reachable { return "Can't open “\(folder.lastPathComponent)”" }
-        return "Saved in “\(folder.lastPathComponent)/\(DataFolder.folderName)”"
+        if insideApp { return "Kept in ForkMesh's own folder, which is deleted with the app" }
+        if !chosen { return "Kept in iCloud Drive, in “\(DataFolder.defaultFolderName)”" }
+        return "Kept in “\(folder.lastPathComponent)”"
     }
 
     private func restoreBookmark() {
@@ -65,6 +120,7 @@ final class DataFolderModel {
         _ = url.startAccessingSecurityScopedResource()
         var isDirectory: ObjCBool = false
         folder = url
+        chosen = true
         reachable = FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory) && isDirectory.boolValue
         if reachable, stale,
            let fresh = try? url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil) {
@@ -92,20 +148,16 @@ final class DataFolderModel {
             report("ForkMesh can't keep access to that folder. Pick another one.", error: true)
             return
         }
-        if let previous = folder, previous.standardizedFileURL.path != picked.standardizedFileURL.path {
+        if chosen, let previous = folder, previous.standardizedFileURL.path != picked.standardizedFileURL.path {
             previous.stopAccessingSecurityScopedResource()
         }
         prefs.set(bookmark.base64EncodedString(), forKey: DataFolder.locationKey)
         folder = picked
+        chosen = true
         reachable = true
-        let store = DataFolderStore(root: DataFolder.root(forPicked: picked))
-        let current: String = publicKey
-        let mine: String = slug
-        restorable = store.projects().filter { project in
-            store.readKit(slug: project.slug) != nil && !(project.slug == mine && project.publicKey == current)
-        }
+        findRestorable(in: DataFolderStore(root: picked))
         if restorable.isEmpty {
-            report("ForkMesh keeps a copy of your data in “\(picked.lastPathComponent)/\(DataFolder.folderName)”.")
+            report("ForkMesh keeps your projects in “\(picked.lastPathComponent)”.")
             await sync()
         } else {
             report("This folder holds ForkMesh data from an earlier install. Enter its passphrase to restore it.")

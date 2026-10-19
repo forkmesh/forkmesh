@@ -36,6 +36,11 @@ public struct DataFolderTree: Sendable {
     }
 }
 
+public struct DataFolderIndexEntry: Equatable, Sendable {
+    public let local: String
+    public let signature: String
+}
+
 public struct DataFolderCopyReport: Equatable, Sendable {
     public var copied: Int = 0
     public var unchanged: Int = 0
@@ -45,15 +50,25 @@ public struct DataFolderCopyReport: Equatable, Sendable {
 }
 
 public enum DataFolder {
-    public static let folderName = "forkmesh_data"
+    public static let defaultFolderName = "ForkMesh projects"
     public static let homeProject = "forkmesh"
     public static let markerFile = "forkmesh-data.json"
     public static let markerType = "forkmesh.data-folder"
     public static let projectFile = "project.json"
-    public static let settingsPath = "config/ForkMesh/settings.json"
-    public static let kitPath = "data/identity/recovery-kit.json"
-    public static let indexPath = "state/sync-index.json"
-    public static let roots = ["data", "config", "cache", "state", "logs", "ssh"]
+    public static let settingsPath = "data/core/config/ForkMesh/settings.json"
+    public static let kitPath = "data/core/identity/recovery-kit.json"
+    public static let indexPath = "data/core/state/sync-index.json"
+    public static let roots = ["data/core", "data/core/config", "data/core/cache", "data/core/state",
+                               "data/core/logs", "data/core/ssh"]
+    public static let pluginEntries: [String: String] = [
+        "chat-history": "chat/history",
+        "local_mesh_history.json": "chat/local-mesh/local_mesh_history.json",
+        "chat-people-pictures": "chat/people-pictures",
+        "diagnostics": "core/logs/diagnostics",
+        "NextTask": "agents/next-task",
+        "secure-drive": "secure-drive",
+        "rss-reader": "rss-reader",
+    ]
     public static let partialSuffix = ".fm-partial"
 
     public static let locationKey = "dataFolder/location"
@@ -64,11 +79,11 @@ public enum DataFolder {
 
     public static let alertTitle = "Keep your ForkMesh data safe"
     public static let alertMessage =
-        "ForkMesh keeps its data inside the app, and the phone deletes it with the app. Choose a folder in Files, for example On My iPhone or iCloud Drive: ForkMesh keeps a copy of your settings, files and identity key in a forkmesh_data folder there, so you can reinstall and pick the same folder to get everything back."
+        "ForkMesh keeps your projects in its own folder, and the phone deletes that folder with the app. Choose a folder in Files, for example On My iPhone or iCloud Drive: each project keeps its data there, data/core for settings and the identity key and one folder per plugin, so you can reinstall and pick the same folder to get everything back."
     public static let reconnectMessage =
-        "The folder holding your forkmesh_data copy can't be opened. Choose it again so ForkMesh can keep your data safe."
+        "The folder holding your ForkMesh projects can't be opened. Choose it again so ForkMesh can keep your data safe."
     public static let identityMessage =
-        "Your forkmesh_data folder doesn't hold this project's identity key yet. Save it there with a passphrase so a reinstall can bring the account back."
+        "Your projects folder doesn't hold this project's identity key yet. Save it there with a passphrase so a reinstall can bring the account back."
     public static let insideApp =
         "That folder is inside ForkMesh's own storage, which is deleted with the app. Pick a folder outside it, for example in On My iPhone or iCloud Drive."
 
@@ -76,9 +91,12 @@ public enum DataFolder {
         scope.isLegacy ? homeProject : scope.slug
     }
 
-    public static func root(forPicked picked: URL) -> URL {
-        picked.lastPathComponent == folderName
-            ? picked : picked.appendingPathComponent(folderName, isDirectory: true)
+    public static func folderPath(tree: String, relative: String) -> String {
+        let first = String(relative.split(separator: "/", maxSplits: 1).first ?? "")
+        if let mapped = pluginEntries[first] {
+            return "data/" + mapped + relative.dropFirst(first.count)
+        }
+        return "data/core/\(tree)/\(relative)"
     }
 
     public static func problem(with picked: URL, appContainer: URL) -> String? {
@@ -96,9 +114,10 @@ public enum DataFolder {
 
     public static func kitKey(_ slug: String) -> String { kitKeyPrefix + slug }
 
-    public static func need(prefs: KeyValueStore, slug: String, publicKey: String, reachable: Bool) -> DataFolderNeed? {
-        guard let location = prefs.string(forKey: locationKey), !location.isEmpty else { return .chooseFolder }
+    public static func need(prefs: KeyValueStore, slug: String, publicKey: String, reachable: Bool,
+                            insideApp: Bool) -> DataFolderNeed? {
         if !reachable { return .reconnectFolder }
+        if insideApp { return .chooseFolder }
         if !publicKey.isEmpty && prefs.string(forKey: kitKey(slug)) != publicKey { return .saveIdentity }
         return nil
     }
@@ -231,19 +250,21 @@ public final class DataFolderStore: @unchecked Sendable {
 
     public func backup(slug: String, trees: [DataFolderTree]) -> DataFolderCopyReport {
         var report = DataFolderCopyReport()
-        let dataDir = projectDir(slug).appendingPathComponent("data", isDirectory: true)
+        let dir = projectDir(slug)
         var index = readIndex(slug: slug)
         for tree in trees {
             for (relative, url, signature) in walk(tree.local, skippedTopLevel: tree.skippedTopLevel) {
-                let key = tree.name + "/" + relative
-                let target = dataDir.appendingPathComponent(key)
-                if index[key] == signature && files.fileExists(atPath: target.path) {
+                let key = DataFolder.folderPath(tree: tree.name, relative: relative)
+                let local = tree.name + "/" + relative
+                let target = dir.appendingPathComponent(key)
+                if index[key]?.signature == signature && index[key]?.local == local &&
+                    files.fileExists(atPath: target.path) {
                     report.unchanged += 1
                     continue
                 }
                 do {
                     try copy(url, to: target)
-                    index[key] = signature
+                    index[key] = DataFolderIndexEntry(local: local, signature: signature)
                     report.copied += 1
                 } catch {
                     report.failed.append(key)
@@ -256,38 +277,47 @@ public final class DataFolderStore: @unchecked Sendable {
 
     public func restore(slug: String, trees: [DataFolderTree]) -> DataFolderCopyReport {
         var report = DataFolderCopyReport()
-        let dataDir = projectDir(slug).appendingPathComponent("data", isDirectory: true)
-        for tree in trees {
-            let source = dataDir.appendingPathComponent(tree.name, isDirectory: true)
-            for (relative, url, _) in walk(source, skippedTopLevel: tree.skippedTopLevel) {
-                let target = tree.local.appendingPathComponent(relative)
-                if files.fileExists(atPath: target.path) {
-                    report.unchanged += 1
-                    continue
-                }
-                do {
-                    try copy(url, to: target)
-                    report.copied += 1
-                } catch {
-                    report.failed.append(tree.name + "/" + relative)
-                }
+        let dir = projectDir(slug)
+        let byName = Dictionary(trees.map { ($0.name, $0) }, uniquingKeysWith: { first, _ in first })
+        for (key, entry) in readIndex(slug: slug).sorted(by: { $0.key < $1.key }) {
+            let parts = entry.local.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+            guard parts.count >= 2, let tree = byName[parts[0]],
+                  !parts.contains(where: { $0 == ".." || $0 == "." || $0.isEmpty }),
+                  !key.split(separator: "/").contains(where: { $0 == ".." })
+            else { continue }
+            let relative = parts.dropFirst().joined(separator: "/")
+            let target = tree.local.appendingPathComponent(relative)
+            if files.fileExists(atPath: target.path) {
+                report.unchanged += 1
+                continue
+            }
+            do {
+                try copy(dir.appendingPathComponent(key), to: target)
+                report.copied += 1
+            } catch {
+                report.failed.append(key)
             }
         }
         return report
     }
 
-    func readIndex(slug: String) -> [String: String] {
+    func readIndex(slug: String) -> [String: DataFolderIndexEntry] {
         guard let data = try? Data(contentsOf: projectDir(slug).appendingPathComponent(DataFolder.indexPath)) else { return [:] }
-        var index: [String: String] = [:]
+        var index: [String: DataFolderIndexEntry] = [:]
         for (key, value) in JSON.parseObject(data) {
-            if let text = value.stringValue { index[key] = text }
+            guard let object = value.objectValue else { continue }
+            let local = object.str("local")
+            if !local.isEmpty { index[key] = DataFolderIndexEntry(local: local, signature: object.str("sig")) }
         }
         return index
     }
 
-    private func writeIndex(_ index: [String: String], slug: String) {
+    private func writeIndex(_ index: [String: DataFolderIndexEntry], slug: String) {
         var object: JSONObject = [:]
-        for key in index.keys.sorted() { object[key] = .string(index[key] ?? "") }
+        for key in index.keys.sorted() {
+            guard let entry = index[key] else { continue }
+            object[key] = .object(["local": .string(entry.local), "sig": .string(entry.signature)])
+        }
         try? write(Data(JSON.encode(object).utf8), to: projectDir(slug).appendingPathComponent(DataFolder.indexPath))
     }
 

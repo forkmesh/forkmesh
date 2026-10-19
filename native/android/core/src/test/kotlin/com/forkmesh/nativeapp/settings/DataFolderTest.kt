@@ -21,19 +21,20 @@ class DataFolderTest {
     fun testProjectFoldersMatchTheDesktopLayout() {
         assertEq("forkmesh", DataFolder.projectFolder(ProjectScope.legacy))
         assertEq("work.example.com_8443", DataFolder.projectFolder(ProjectScope("work.example.com:8443", "p/work.example.com:8443/")))
-        assertEq(listOf("data", "config", "cache", "state", "logs", "ssh"), DataFolder.ROOTS)
-        assertEq("config/ForkMesh/settings.json", DataFolder.SETTINGS_PATH)
+        assertEq("data/core/config/ForkMesh/settings.json", DataFolder.SETTINGS_PATH)
+        assertEq("data/chat/history/relay.json", DataFolder.folderPath("support", "chat-history/relay.json"))
+        assertEq("data/core/logs/diagnostics/stalls.log", DataFolder.folderPath("support", "diagnostics/stalls.log"))
+        assertEq("data/core/documents/notes/a.txt", DataFolder.folderPath("documents", "notes/a.txt"))
     }
 
     fun testTheAlertStaysUntilTheFolderAndIdentityAreSaved() {
         val prefs = MemoryPrefStore()
-        assertEq(DataFolderNeed.ChooseFolder, DataFolder.need(prefs, "forkmesh", "K", reachable = false))
-        prefs.putString(DataFolder.LOCATION_KEY, "content://tree")
-        assertEq(DataFolderNeed.ReconnectFolder, DataFolder.need(prefs, "forkmesh", "K", reachable = false))
-        assertEq(DataFolderNeed.SaveIdentity, DataFolder.need(prefs, "forkmesh", "K", reachable = true))
+        assertEq(DataFolderNeed.ChooseFolder, DataFolder.need(prefs, "forkmesh", "K", reachable = true, insideApp = true))
+        assertEq(DataFolderNeed.ReconnectFolder, DataFolder.need(prefs, "forkmesh", "K", reachable = false, insideApp = false))
+        assertEq(DataFolderNeed.SaveIdentity, DataFolder.need(prefs, "forkmesh", "K", reachable = true, insideApp = false))
         prefs.putString(DataFolder.kitKey("forkmesh"), "K")
-        assertEq(null, DataFolder.need(prefs, "forkmesh", "K", reachable = true))
-        assertEq(DataFolderNeed.SaveIdentity, DataFolder.need(prefs, "forkmesh", "ROTATED", reachable = true))
+        assertEq(null, DataFolder.need(prefs, "forkmesh", "K", reachable = true, insideApp = false))
+        assertEq(DataFolderNeed.SaveIdentity, DataFolder.need(prefs, "forkmesh", "ROTATED", reachable = true, insideApp = false))
     }
 
     fun testSettingsKeepTheirTypesAndSkipDeviceKeys() {
@@ -62,7 +63,7 @@ class DataFolderTest {
         write(support, "chat-history/relay.json", "chat")
         write(support, "LocalModels/model.bin", "big")
         write(support, "projects/work/x.txt", "other project")
-        val root = File(base, "picked/${DataFolder.FOLDER_NAME}")
+        val root = File(base, "picked/${DataFolder.DEFAULT_FOLDER_NAME}")
         val store = DataFolderStore(FileDataFolderIo(root))
         expect(store.prepare("android", 1L))
         expect(store.hasData)
@@ -75,16 +76,16 @@ class DataFolderTest {
         val first = store.backup("forkmesh", trees)
         assertEq(2, first.copied)
         expect(first.failed.isEmpty())
-        assertEq("hello", File(root, "forkmesh/data/documents/notes/a.txt").readText())
-        assertEq("chat", File(root, "forkmesh/data/support/chat-history/relay.json").readText())
-        expect(!File(root, "forkmesh/data/support/LocalModels").exists())
-        expect(!File(root, "forkmesh/data/support/projects").exists())
+        assertEq("hello", File(root, "forkmesh/data/core/documents/notes/a.txt").readText())
+        assertEq("chat", File(root, "forkmesh/data/chat/history/relay.json").readText())
+        expect(!File(root, "forkmesh/data/core/support/LocalModels").exists())
+        expect(!File(root, "forkmesh/data/core/support/projects").exists())
 
         assertEq(0, store.backup("forkmesh", trees).copied)
         val changed = write(documents, "notes/a.txt", "hello again")
         changed.setLastModified(changed.lastModified() + 60_000)
         assertEq(1, store.backup("forkmesh", trees).copied)
-        assertEq("hello again", File(root, "forkmesh/data/documents/notes/a.txt").readText())
+        assertEq("hello again", File(root, "forkmesh/data/core/documents/notes/a.txt").readText())
 
         val fresh = File(base, "reinstalled/flutter")
         val freshSupport = File(base, "reinstalled/files")
@@ -100,9 +101,11 @@ class DataFolderTest {
 
     fun testRestoreNeverLeavesTheProjectFolders() {
         val base = scratch()
-        val root = File(base, DataFolder.FOLDER_NAME)
-        write(root, "forkmesh/${DataFolder.INDEX_PATH}", """{"documents/../../escape.txt":"1:1","documents/ok.txt":"1:1"}""")
-        write(root, "forkmesh/data/documents/ok.txt", "ok")
+        val root = File(base, DataFolder.DEFAULT_FOLDER_NAME)
+        write(root, "forkmesh/${DataFolder.INDEX_PATH}",
+            """{"data/core/documents/x":{"local":"documents/../../escape.txt","sig":"1:1"},"data/core/documents/ok.txt":{"local":"documents/ok.txt","sig":"1:1"}}""")
+        write(root, "forkmesh/data/core/documents/x", "escape")
+        write(root, "forkmesh/data/core/documents/ok.txt", "ok")
         val local = File(base, "local")
         val report = DataFolderStore(FileDataFolderIo(root)).restore("forkmesh", listOf(DataFolderTree("documents", local)))
         assertEq(1, report.copied)
@@ -110,7 +113,7 @@ class DataFolderTest {
     }
 
     fun testProjectsAreReadBackFromTheFolder() {
-        val root = File(scratch(), DataFolder.FOLDER_NAME)
+        val root = File(scratch(), DataFolder.DEFAULT_FOLDER_NAME)
         val store = DataFolderStore(FileDataFolderIo(root))
         val work = DataFolderProject("work.example.com", "work.example.com", "p/work.example.com/", "Work", "W")
         store.prepareProject(work)
@@ -119,12 +122,12 @@ class DataFolderTest {
         assertEq(listOf("forkmesh", "work.example.com"), store.projects().map { it.slug })
         assertEq(work, store.projects().last())
         expect(store.writeSettings(DataFolder.exportSettings(mapOf("theme/mode" to "dark")), "forkmesh"))
-        expect(File(root, "forkmesh/config/ForkMesh/settings.json").readText().contains("theme/mode"))
+        expect(File(root, "forkmesh/data/core/config/ForkMesh/settings.json").readText().contains("theme/mode"))
         expect(store.readSettings("work.example.com") == null)
     }
 
     fun testTheIdentityKitRestoresTheSameKey() {
-        val root = File(scratch(), DataFolder.FOLDER_NAME)
+        val root = File(scratch(), DataFolder.DEFAULT_FOLDER_NAME)
         val store = DataFolderStore(FileDataFolderIo(root))
         val identity = Identity.fromSeed(ByteArray(32) { 7 })
         val prefs = MemoryPrefStore()

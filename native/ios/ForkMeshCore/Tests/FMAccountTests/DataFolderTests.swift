@@ -29,11 +29,14 @@ final class DataFolderTests: XCTestCase {
         (try? Data(contentsOf: base.appendingPathComponent(path))).flatMap { String(data: $0, encoding: .utf8) }
     }
 
-    func testTheFolderIsNamedLikeTheDesktopOne() {
-        let picked = URL(fileURLWithPath: "/files/On My iPhone/ForkMesh", isDirectory: true)
-        XCTAssertEqual(DataFolder.root(forPicked: picked).path, "/files/On My iPhone/ForkMesh/forkmesh_data")
-        let already = URL(fileURLWithPath: "/files/forkmesh_data", isDirectory: true)
-        XCTAssertEqual(DataFolder.root(forPicked: already).path, "/files/forkmesh_data")
+    func testFilesAreOrganizedLikeTheDesktop() {
+        XCTAssertEqual(DataFolder.folderPath(tree: "support", relative: "chat-history/relay.json"),
+                       "data/chat/history/relay.json")
+        XCTAssertEqual(DataFolder.folderPath(tree: "support", relative: "diagnostics/stalls.log"),
+                       "data/core/logs/diagnostics/stalls.log")
+        XCTAssertEqual(DataFolder.folderPath(tree: "documents", relative: "notes/a.txt"),
+                       "data/core/documents/notes/a.txt")
+        XCTAssertEqual(DataFolder.settingsPath, "data/core/config/ForkMesh/settings.json")
         XCTAssertEqual(DataFolder.projectFolder(.legacy), "forkmesh")
         let project = ProjectScope(projectId: "work.example.com:8443", namespace: "p/work.example.com:8443/")
         XCTAssertEqual(DataFolder.projectFolder(project), "work.example.com_8443")
@@ -48,13 +51,16 @@ final class DataFolderTests: XCTestCase {
 
     func testTheAlertStaysUntilTheFolderAndIdentityAreSaved() {
         let prefs = InMemoryKeyValueStore()
-        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: false), .chooseFolder)
-        prefs.set("bookmark", forKey: DataFolder.locationKey)
-        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: false), .reconnectFolder)
-        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: true), .saveIdentity)
+        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: true, insideApp: true),
+                       .chooseFolder)
+        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: false, insideApp: false),
+                       .reconnectFolder)
+        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: true, insideApp: false),
+                       .saveIdentity)
         prefs.set("K", forKey: DataFolder.kitKey("forkmesh"))
-        XCTAssertNil(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: true))
-        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "ROTATED", reachable: true), .saveIdentity)
+        XCTAssertNil(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: true, insideApp: false))
+        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "ROTATED", reachable: true, insideApp: false),
+                       .saveIdentity)
     }
 
     func testSettingsRoundTripWithoutDeviceKeys() {
@@ -86,7 +92,7 @@ final class DataFolderTests: XCTestCase {
         try write("chat", "chat-history/relay.json", under: support)
         try write("big", "LocalModels/model.bin", under: support)
         try write("other project", "projects/work/x.txt", under: support)
-        let store = DataFolderStore(root: DataFolder.root(forPicked: scratch.appendingPathComponent("picked")))
+        let store = DataFolderStore(root: scratch.appendingPathComponent("picked"))
         try store.prepare(platform: "ios", nowMillis: 1)
         try store.prepareProject(DataFolderProject(slug: "forkmesh", projectId: "app.forkmesh.com", namespace: "", name: "ForkMesh", publicKey: "K"))
         XCTAssertTrue(store.hasData)
@@ -102,10 +108,10 @@ final class DataFolderTests: XCTestCase {
         XCTAssertEqual(first.copied, 2)
         XCTAssertTrue(first.failed.isEmpty)
         let data = store.projectDir("forkmesh").appendingPathComponent("data")
-        XCTAssertEqual(read("documents/notes/a.txt", under: data), "hello")
-        XCTAssertEqual(read("support/chat-history/relay.json", under: data), "chat")
-        XCTAssertNil(read("support/LocalModels/model.bin", under: data))
-        XCTAssertNil(read("support/projects/work/x.txt", under: data))
+        XCTAssertEqual(read("core/documents/notes/a.txt", under: data), "hello")
+        XCTAssertEqual(read("chat/history/relay.json", under: data), "chat")
+        XCTAssertNil(read("core/support/LocalModels/model.bin", under: data))
+        XCTAssertNil(read("core/support/projects/work/x.txt", under: data))
 
         let second = store.backup(slug: "forkmesh", trees: trees)
         XCTAssertEqual(second.copied, 0)
@@ -115,7 +121,7 @@ final class DataFolderTests: XCTestCase {
         try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSinceNow: 60)],
                                               ofItemAtPath: documents.appendingPathComponent("notes/a.txt").path)
         XCTAssertEqual(store.backup(slug: "forkmesh", trees: trees).copied, 1)
-        XCTAssertEqual(read("documents/notes/a.txt", under: data), "hello again")
+        XCTAssertEqual(read("core/documents/notes/a.txt", under: data), "hello again")
 
         let fresh = scratch.appendingPathComponent("reinstalled/Documents", isDirectory: true)
         let freshSupport = scratch.appendingPathComponent("reinstalled/Support", isDirectory: true)
@@ -129,7 +135,7 @@ final class DataFolderTests: XCTestCase {
     }
 
     func testProjectsAndSettingsAreReadBackFromTheFolder() throws {
-        let store = DataFolderStore(root: scratch.appendingPathComponent("forkmesh_data"))
+        let store = DataFolderStore(root: scratch.appendingPathComponent("ForkMesh projects"))
         try store.prepare(platform: "ios", nowMillis: 1)
         let work = DataFolderProject(slug: "work.example.com", projectId: "work.example.com",
                                      namespace: "p/work.example.com/", name: "Work", publicKey: "W")
@@ -141,13 +147,13 @@ final class DataFolderTests: XCTestCase {
         let prefs = InMemoryKeyValueStore()
         prefs.set("dark", forKey: "theme/mode")
         try store.writeSettings(DataFolder.exportSettings(prefs), slug: "forkmesh")
-        XCTAssertEqual(read("forkmesh/config/ForkMesh/settings.json", under: store.root)?.contains("theme/mode"), true)
+        XCTAssertEqual(read("forkmesh/data/core/config/ForkMesh/settings.json", under: store.root)?.contains("theme/mode"), true)
         XCTAssertNotNil(store.readSettings(slug: "forkmesh"))
         XCTAssertNil(store.readSettings(slug: "work.example.com"))
     }
 
     func testTheIdentityKitRestoresTheSameKey() throws {
-        let store = DataFolderStore(root: scratch.appendingPathComponent("forkmesh_data"))
+        let store = DataFolderStore(root: scratch.appendingPathComponent("ForkMesh projects"))
         let identity = try Identity.fromSeed(Array(repeating: 7, count: 32))
         let prefs = InMemoryKeyValueStore()
         XCTAssertThrowsError(try DataFolderIdentity.saveKit(

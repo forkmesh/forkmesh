@@ -147,9 +147,7 @@ class SafDataFolderIo(private val resolver: ContentResolver, private val tree: U
             } catch (_: Exception) {
                 null
             } ?: return null
-            if (name == DataFolder.FOLDER_NAME) return picked
-            val rootId = picked.resolve(DataFolder.FOLDER_NAME, createDirectories = create) ?: return null
-            return SafDataFolderIo(resolver, tree, rootId)
+            return picked
         }
     }
 }
@@ -197,8 +195,13 @@ object DataFolderFeature {
     private fun hasPermission(uri: Uri): Boolean =
         app.contentResolver.persistedUriPermissions.any { it.uri == uri && it.isReadPermission && it.isWritePermission }
 
+    private val appFolder: java.io.File
+        get() = java.io.File(app.getExternalFilesDir(null) ?: app.filesDir, DataFolder.DEFAULT_FOLDER_NAME)
+
+    val chosen: Boolean get() = location != null
+
     private fun store(create: Boolean = false): DataFolderStore? {
-        val uri = location ?: return null
+        val uri = location ?: return DataFolderStore(com.forkmesh.nativeapp.settings.FileDataFolderIo(appFolder))
         if (!hasPermission(uri)) return null
         return SafDataFolderIo.open(app, uri, create)?.let(::DataFolderStore)
     }
@@ -206,8 +209,19 @@ object DataFolderFeature {
     fun folderName(): String = location?.lastPathSegment?.substringAfterLast(':')?.substringAfterLast('/').orEmpty()
 
     fun need(): DataFolderNeed? {
-        val reach = reachable ?: (location?.let(::hasPermission) == true).also { reachable = it }
-        return DataFolder.need(prefs, slug, publicKey, reach)
+        val reach = reachable ?: (location?.let(::hasPermission) ?: true).also { reachable = it }
+        return DataFolder.need(prefs, slug, publicKey, reach, insideApp = location == null)
+    }
+
+    suspend fun useAutomaticFolder() {
+        location?.let { uri ->
+            runCatching { app.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }
+        }
+        rawPrefs.remove(DataFolder.LOCATION_KEY)
+        reachable = true
+        restorable = emptyList()
+        report(DataFolder.ALERT_MESSAGE)
+        sync()
     }
 
     fun showsAlert(): Boolean = need() != null && !dismissedThisLaunch && !needsRestart
@@ -215,9 +229,9 @@ object DataFolderFeature {
     fun summary(): String {
         val name = folderName()
         return when {
-            location == null -> "Not set up: your data is deleted with the app"
+            location == null -> "Kept in ForkMesh's own folder, which is deleted with the app"
             reachable == false -> "Can't open “$name”"
-            else -> "Saved in “$name/${DataFolder.FOLDER_NAME}”"
+            else -> "Kept in “$name”"
         }
     }
 
@@ -256,7 +270,7 @@ object DataFolderFeature {
         }
         restorable = found
         if (found.isEmpty()) {
-            report("ForkMesh keeps a copy of your data in “${folderName()}/${DataFolder.FOLDER_NAME}”.")
+            report("ForkMesh keeps your projects in “${folderName()}”.")
             sync()
         } else {
             report("This folder holds ForkMesh data from an earlier install. Enter its passphrase to restore it.")
@@ -332,7 +346,7 @@ object DataFolderFeature {
     }
 
     suspend fun sync() {
-        if (needsRestart || restorable.isNotEmpty() || location == null) return
+        if (needsRestart || restorable.isNotEmpty()) return
         val project = DataFolderProject(slug, scope.projectId, scope.namespace, projectName, publicKey)
         val trees = trees(scope)
         val failed = lock.withLock {
