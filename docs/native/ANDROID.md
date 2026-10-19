@@ -311,6 +311,23 @@ signed with the v3 key (`native/android/README.md`); the default application id
   because a v3 frame can only be opened by the devices it was sealed to. The
   history file (v2) keeps each received message's original sealed frame for
   backfill. The same links carry `direct-sealed`, `direct-ack` and `focus`.
+- **Bluetooth stays off the air during calls** (`C/net/RadioPolicy.kt`,
+  `A/platform/AudioActivityProbe.kt`). The mesh search pass (paired devices,
+  classic inquiry up to 15 s, a 15 s BLE scan, every 2 minutes) and Glasses
+  Alert's continuous BLE scan share the phone's one radio with Bluetooth
+  headsets and, on combo chips, 2.4 GHz Wi-Fi. At full duty they stole enough
+  airtime that another app's call (Signal, reported 2026-10-19) went silent
+  in bursts. The audio mode decides: any mode other than `MODE_NORMAL`
+  (ringing, a phone call or a VoIP call from any app) is a call, otherwise
+  `isMusicActive` means audio is playing. During a call the mesh skips the
+  whole pass and checks again every 10 s; an inquiry or BLE window already
+  running ends within a second of the call starting. While audio plays it
+  skips the inquiry and scans in `SCAN_MODE_LOW_POWER`. Paired devices are
+  dialled only when their class is computer, phone or uncategorised (as the
+  inquiry already filtered), never headsets, car kits or watches. Glasses
+  Alert scans in `SCAN_MODE_LOW_POWER` while audio plays or a call is up
+  (re-checked on its 5 s refresh tick) and drops the census scan during a
+  call.
 - **Node sync** (`C/chat/NodeSyncEngine.kt`, `NodeSyncApplier.kt`):
   `GET /api/sync` is destructive, so the phone stands by while a desktop node
   is enrolled. Poll 60 s, backoff 2 s to 30 s with ±25% jitter. Requests sign
