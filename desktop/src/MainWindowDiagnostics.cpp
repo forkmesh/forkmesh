@@ -1181,35 +1181,52 @@ void MainWindow::sendDiagnosticsReportToAgent()
 {
     const int repoIndex = stallReportRepoIndex();
     if (repoIndex < 0) {
-        QMessageBox::warning(
-            this, QStringLiteral("Diagnostic report"),
+        flashMessage(
             QStringLiteral("No local checkout is available to run an agent in. Clone "
-                           "ForkMesh (or add the repo on the Issues tab) and try again."));
+                           "ForkMesh (or add the repo on the Issues tab) and try again."),
+            true, QString(), forkmesh::kLocalOperationNoticeKind);
         return;
     }
     const QString report = diagnosticsReport(true);
     const QString path = diagnosticsReportPath();
     QString error;
     if (path.isEmpty() || !forkmesh::diskwrite::writeNow(path, report.toUtf8(), &error)) {
-        QMessageBox::warning(this, QStringLiteral("Diagnostic report"),
-                             QStringLiteral("Could not save the report: %1")
-                                 .arg(error.isEmpty() ? QStringLiteral("no path") : error));
+        flashMessage(QStringLiteral("Could not save the diagnostic report: %1")
+                         .arg(error.isEmpty() ? QStringLiteral("no path") : error),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
         return;
     }
     const QString prompt =
-        QStringLiteral("Read the ForkMesh desktop diagnostic report at %1 and "
+        QStringLiteral("Use the ForkMesh desktop diagnostic snapshot below and "
                        "follow its \"What to do with this report\" section: fix the "
                        "crashes, stalls and logged problems it lists, optimize what "
-                       "its findings point at, and commit.")
-            .arg(QDir::toNativeSeparators(path));
-    if (startAdHocAgentForRepo(repoIndex, prompt, defaultAgentProvider(),
-                               false) <= 0) {
-        QMessageBox::warning(this, QStringLiteral("Diagnostic report"),
-                             QStringLiteral("Could not start an agent for the report."));
+                       "its findings point at, verify the changes and commit. "
+                       "Do not push. Preserve user data. The latest report is also "
+                       "saved at %1; use this snapshot if that file changes.\n\n%2")
+            .arg(QDir::toNativeSeparators(path), report);
+    auto choice = promptAreaAgentChoice();
+    if (!agentProviderIsKnown(choice.provider) || agentIsCloudflareAiProvider(choice.provider))
+        choice = {defaultAgentProvider(), QString()};
+    if (agentIsCloudflareAiProvider(choice.provider))
+        choice = {kFallbackAgentProvider, QString()};
+    flashMessage(QStringLiteral("Starting a desktop agent with the diagnostic report..."));
+    const int sessionId = startAdHocAgentForRepo(
+        repoIndex, prompt, choice.provider, false, choice.model,
+        QStringLiteral("Diagnose and optimize ForkMesh desktop"));
+    if (sessionId <= 0) {
+        flashMessage(QStringLiteral("Could not start an agent for the diagnostic report. Check the Log for details."),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
         return;
     }
-    logSystem(QStringLiteral("Started an agent on the diagnostic report at %1")
-                  .arg(QDir::toNativeSeparators(path)));
+    const AgentSession *session = findAgentSession(sessionId);
+    if (session && session->status == AgentStatus::Failed) {
+        flashMessage(QStringLiteral("Diagnostic agent #%1 could not start: %2")
+                         .arg(sessionId).arg(session->lastError),
+                     true, QString(), forkmesh::kLocalOperationNoticeKind);
+        return;
+    }
+    flashMessage(QStringLiteral("Diagnostic report sent to desktop agent #%1. Follow its progress in Agents.")
+                     .arg(sessionId));
 }
 
 void MainWindow::resetDiagnosticsReportBaseline()
