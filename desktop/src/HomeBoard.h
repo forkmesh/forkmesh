@@ -26,6 +26,7 @@ struct HomeTile {
     bool urgent = false;
     bool live = false;
     bool alert = false;
+    bool desktopOffline = false;
 
     bool operator==(const HomeTile &other) const
     {
@@ -33,7 +34,8 @@ struct HomeTile {
                detail == other.detail && tooltip == other.tooltip &&
                badge == other.badge && pending == other.pending &&
                urgent == other.urgent && live == other.live &&
-               alert == other.alert;
+               alert == other.alert &&
+               desktopOffline == other.desktopOffline;
     }
     bool operator!=(const HomeTile &other) const { return !(*this == other); }
 };

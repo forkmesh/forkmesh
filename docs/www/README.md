@@ -134,12 +134,66 @@ tools/render_logo.py` (pycairo, Pillow) rewrites every other logo file, then
 That test holds every page under `app/public` and `www/public` to the same
 head: all four favicons, the manifest, `application-name`,
 `apple-mobile-web-app-title`, `theme-color` `#090909`, `color-scheme`
-`light dark` and a description. Only the www landing page and the investor
-deck (`app/public/pitch-deck/deck.html`) may stay `color-scheme: dark`. The
+`light dark` and a description. Only the www landing page may stay
+`color-scheme: dark`; the investor deck (`app/public/pitch-deck/deck.html`)
+may too, but since 19 Oct 2026 it advertises `light dark`. The
 deck's CSP (`PAGE_CSP` in `app/src/pitch_deck_runtime.py`) allows
 `manifest-src 'self'` so its manifest link loads. On 15 Oct 2026 the login
 page's `#0f0f0f` theme colour and the missing tags on the OAuth consent page,
 the deck and `ios-install.html` were the last failures.
+
+## Investor deck
+
+The deck a CRM contact opens (`/pitch-deck/<token>`, served by
+`app/src/pitch_deck_runtime.py`) was restyled on 19 Oct 2026 to match the
+homepage. It used to have its own violet-on-navy palette, and the deck goes
+out with every investor email. The wording of the 13 slides it had then did
+not change; a fourteenth was added on 20 Oct 2026 (below).
+
+- **Theme.** The tokens are the homepage's: white page, ink `#101012`, blue
+  accent, ABC Favorit headlines. Slides 3, 5, 7, 9 and 13 sit in the dark
+  rounded panel used by the homepage's feature section. Like the homepage,
+  the deck defaults to light. A choice saved under `forkmesh.theme` or
+  `forkmesh.dashboard.theme` wins, and the moon/sun button in the bar
+  writes both keys.
+- **Assets.** The cover and the closing slide draw the hero schematic
+  (copied from `www/public/index.html`, with moving pulses along its traces).
+  Images and the font load from `/assets/...` on the deck's own origin.
+  `PAGE_CSP` keeps `img-src 'self'` and `font-src 'self'`, so the deck must be
+  opened on forkmesh.com, which is where the CRM's `DECK_SITE_ORIGIN` links.
+  On app.forkmesh.com the screenshots and the font are missing.
+- **Product visuals.** The cover shows the desktop app on a laptop next to a
+  phone running the mobile app. On slide 4 a phone beside the six workflow
+  cards cycles through the matching mobile screens (prompt, model, agent,
+  inbox, diff, review). The cards themselves stay still: a highlight that
+  moved from card to card was taken out at the user's request. Slide 5 fans three phone screens. The
+  numbers count up, the use-of-funds bars fill and the ARR ladder steps in
+  when their slide scrolls into view. `prefers-reduced-motion` and print show
+  the final state.
+- **Beyond the desk (slide 7).** Added on 20 Oct 2026 after Roadmap to show
+  the watch app and the AR/XR glasses work, under the tagline the founders
+  chose. Three treatments were compared: a flat product shot, CSS 3D glasses
+  that turn with the pointer, and a view through the lenses. The last one won:
+  the workspace (the desktop app and a Claude Code session opening a pull
+  request) appears only inside the lenses of AOC Air Mega-style aviator AR
+  glasses, a blurred copy glows behind them, and the scene shifts a little
+  with the pointer. The watch beside them copies the watchOS agent list
+  (model disc, title, repository, status, context ring). Everything is inline
+  SVG and CSS: `PAGE_CSP` allows no external scripts, so a 3D library such as
+  three.js cannot load. The glasses are drawn on a fixed 600 by 240 stage that
+  a small script scales to the slide (`--fit` sets the share of the width).
+  The watch is labelled "In build" and the glasses "R&D"; the footer names the
+  pictured hardware. The watch classes are `.strap` and `.wrow.on` because the
+  deck already uses `.band` and `.live`.
+- **Page numbers moved.** Inserting slide 7 renumbered Customer &
+  go-to-market through Sources to 8 to 14, and `DECK_PAGE_TITLES` in the CRM
+  worker follows. Page views are stored by number, so seconds recorded before
+  20 Oct 2026 on old pages 7 to 13 now show against the title one place
+  earlier in the CRM's per-page table.
+- **Page tracking.** The current page is the slide that crosses the middle of
+  the viewport, not a slide that is 55% visible. On a phone a slide is
+  taller than the screen, so the old rule never changed page and every
+  second was counted against page 1.
 
 ## Operations
 

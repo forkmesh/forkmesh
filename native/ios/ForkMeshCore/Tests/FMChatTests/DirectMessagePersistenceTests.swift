@@ -28,6 +28,9 @@ extension DirectMessageReceiptsTests {
         let saved = try XCTUnwrap(ChatHistoryCodec.decode(ChatHistoryCodec.encode(hub.historySnapshot())))
         XCTAssertEqual(saved.messages.filter { $0.conversation == room.conversation }.map(\.id), ["pat-1", mine.id])
         XCTAssertEqual(saved.receipts, [mine.id: .delivered])
+        let deliveredAt = try XCTUnwrap(service.receiptTime(mine.id).delivered)
+        XCTAssertEqual(saved.receiptTimes[mine.id]?.delivered?.epochMillis, deliveredAt.epochMillis)
+        XCTAssertNil(saved.receiptTimes[mine.id]?.read)
 
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let store = ChatHistoryStore(directory: directory)
@@ -37,6 +40,7 @@ extension DirectMessageReceiptsTests {
         fresh.attachHistory(store) { "restart" }
         XCTAssertEqual(restarted.messages(room.conversation).map(\.id), ["pat-1", mine.id])
         XCTAssertEqual(restarted.receipt(mine.id), .delivered)
+        XCTAssertEqual(restarted.receiptTime(mine.id).delivered?.epochMillis, deliveredAt.epochMillis, "a restart keeps when it arrived")
         XCTAssertTrue(fresh.relay.messages(room.conversation).isEmpty, "direct messages stay out of the relay history")
         store.erase(scope: "restart")
         await service.closeAll()

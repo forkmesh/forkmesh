@@ -543,6 +543,15 @@ QString PackageRegistry::desktopPlace()
     return QStringLiteral("desktop");
 }
 
+bool PackageRegistry::reliesOnDesktop(const QString &id)
+{
+    static const QSet<QString> ids{
+        QStringLiteral("agents"),         QStringLiteral("desktops"),
+        QStringLiteral("special-agents"), QStringLiteral("shortcuts"),
+        QStringLiteral("hosts"),          QStringLiteral("usage")};
+    return ids.contains(id);
+}
+
 QStringList PackageRegistry::places(const QString &id) const
 {
     const PackageManifest *manifest = package(id);

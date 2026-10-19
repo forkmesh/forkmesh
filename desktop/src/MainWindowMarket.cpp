@@ -3359,6 +3359,9 @@ void MainWindow::syncNativePackagePages()
         attachPackageRailMenu(navigation, entrypoint);
         m_nativePackagePages.append({id, entrypoint, navigation, widget});
         syncNativePackageBadge(id);
+        navigation->setDesktopOffline(
+            m_desktopOfflineDots &&
+            forkmesh::market::PackageRegistry::reliesOnDesktop(id));
         if (hasActiveAccountSession() || m_startupAuthResolved)
             QTimer::singleShot(0, widget, [this, widget] {
                 preparePackagePage(widget);
@@ -3439,6 +3442,21 @@ void MainWindow::prepareNativePackageSearch()
         page.searchPrepared = true;
         page.widget->prepareSearch();
     }
+}
+
+void MainWindow::syncDesktopOfflineDots(bool offline)
+{
+    m_desktopOfflineDots = offline;
+    const auto mark = [offline](QPushButton *button, const QString &id) {
+        if (auto *rail = dynamic_cast<ActivityRailButton *>(button))
+            rail->setDesktopOffline(
+                offline &&
+                forkmesh::market::PackageRegistry::reliesOnDesktop(id));
+    };
+    mark(m_agentsNavButton, QStringLiteral("agents"));
+    mark(m_teamNavButton, QStringLiteral("special-agents"));
+    for (const NativePackagePage &page : std::as_const(m_nativePackagePages))
+        mark(page.navigation.data(), page.id);
 }
 
 void MainWindow::syncNativePackageBadge(const QString &id)

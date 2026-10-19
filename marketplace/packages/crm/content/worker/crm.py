@@ -361,7 +361,7 @@ MAIL_AGENTS = (
     ("protonmail", "Proton Mail"))
 DECK_PAGE_TITLES = (
     "Cover", "Problem", "Why now", "Product", "Proof", "Roadmap",
-    "Customer & go-to-market", "Market", "Business model", "Competition",
+    "Beyond the desk", "Customer & go-to-market", "Market", "Business model", "Competition",
     "Team", "The round", "Sources",
 )
 # Starting points the compose form offers; [bracketed] placeholders are filled

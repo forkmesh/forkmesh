@@ -3254,6 +3254,7 @@ void MainWindow::updateConnectionStatus()
             selfOnline = true;
     }
     const bool connected = m_backend && selfOnline;
+    syncDesktopOfflineDots(!connected);
 
     QString color, text;
     if (connected) {

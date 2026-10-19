@@ -840,6 +840,7 @@ struct ShellBarCellLabel: View {
                             .transition(.scale.combined(with: .opacity))
                     }
                 }
+                .overlay(alignment: .bottomLeading) { desktopOfflineAnchor }
             if look.labels.shows(selected: item.selected) {
                 Text(item.title)
                     .font(.system(size: labelSize, weight: item.selected ? .semibold : .medium))
@@ -850,6 +851,18 @@ struct ShellBarCellLabel: View {
             }
         }
         .shellBarLift(!look.shape.backed, dark: fm.dark)
+    }
+
+    @ViewBuilder private var desktopOfflineAnchor: some View {
+        if ShellDesktopOfflineDot.shows(item.id) {
+            let drop: CGFloat = tiled ? tileSide * 0.09 : (glyphHeight - iconSize) / 2
+            let inset: CGFloat = tiled || homeMarks ? drop : 0
+            Color.clear
+                .frame(width: 0, height: 0)
+                .overlay { ShellDesktopOfflineDot() }
+                .offset(x: inset, y: -drop)
+                .transition(.scale.combined(with: .opacity))
+        }
     }
 
     @ViewBuilder private var activityMark: some View {

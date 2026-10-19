@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" class="light" data-theme-default="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <title>ForkMesh · Investor deck</title>
     <meta name="description" content="The ForkMesh investor deck." />
     <meta name="application-name" content="ForkMesh" />
@@ -16,186 +16,432 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
     <link rel="manifest" href="/favicon/site.webmanifest" />
-    <!-- Served only through /pitch-deck/<token> (pitch_deck_runtime.py), which
-         stamps the reader's name and token into the block below. -->
     <script id="deck-config" type="application/json">{}</script>
+    <script>
+      (() => {
+        const root = document.documentElement;
+        let theme = "";
+        try {
+          for (const key of ["forkmesh.dashboard.theme", "forkmesh.theme"]) {
+            const value = localStorage.getItem(key);
+            if (value === "light" || value === "dark") { theme = value; break; }
+          }
+        } catch {}
+        if (!theme) theme = root.dataset.themeDefault || "light";
+        root.classList.toggle("light", theme === "light");
+        root.classList.toggle("dark", theme === "dark");
+        root.classList.add("js");
+      })();
+    </script>
     <style>
+      @font-face {
+        font-family: "ForkMesh Favorit";
+        src: url("/assets/fonts/ABCFavorit-Bold.woff2") format("woff2");
+        font-weight: 400 800;
+        font-style: normal;
+        font-display: swap;
+      }
       :root {
-        --ink: #0a0f1f;
-        --ink-2: #0f1630;
-        --panel: rgba(255, 255, 255, 0.035);
-        --line: rgba(160, 172, 220, 0.16);
-        --line-strong: rgba(160, 172, 220, 0.34);
-        --text: #e7eaf5;
-        --muted: #9aa4c4;
-        --faint: #6b7597;
-        --accent: #8b7cf6;
-        --accent-2: #c4b5fd;
-        --accent-ink: #1a1240;
-        --mint: #5eead4;
-        --amber: #fbbf77;
-        --sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
-        --mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-        --gutter: clamp(20px, 6vw, 88px);
+        color-scheme: light;
+        --page: #ffffff;
+        --ink: #101012;
+        --body: #5f6270;
+        --faint: #9a9ca8;
+        --line: #e4e5ea;
+        --pattern: #d4d6df;
+        --surface: #ffffff;
+        --surface-2: #f6f6f8;
+        --card-shadow: 0 0 0 1px rgba(34, 42, 53, 0.07), 0 1px 5px -4px rgba(36, 36, 36, 0.6), 0 4px 10px rgba(36, 36, 36, 0.05);
+        --raised: 0 1px 2px rgba(16, 16, 18, 0.06), 0 22px 48px -22px rgba(16, 16, 18, 0.32);
+        --accent: #0969da;
+        --accent-soft: rgba(9, 105, 218, 0.07);
+        --accent-line: rgba(9, 105, 218, 0.38);
+        --success: #1a7f37;
+        --btn-fg: #ffffff;
+        --btn-fill: linear-gradient(180deg, #2c2c2c 0%, #222222 100%);
+        --btn-fill-hover: linear-gradient(180deg, #363636 0%, #2a2a2a 100%);
+        --btn-border: #161616;
+        --btn-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.17), 0 1px 2px rgba(0, 0, 0, 0.16);
+        --btn2-fg: #292929;
+        --btn2-fill: linear-gradient(180deg, #ffffff 0%, #fcfcfc 100%);
+        --btn2-fill-hover: linear-gradient(180deg, #ffffff 0%, #f5f5f6 100%);
+        --btn2-border: #e1e2e3;
+        --btn2-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.03), 0 1px 2px rgba(0, 0, 0, 0.05);
+        --display: "ForkMesh Favorit", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+        --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+        --gutter: clamp(16px, 5vw, 72px);
+        --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+      }
+      html.dark,
+      .is-panel .frame,
+      .card.featured {
+        color-scheme: dark;
+        --page: #090909;
+        --ink: #f5f5f5;
+        --body: #a3a3a3;
+        --faint: #6b6b74;
+        --line: #2a2a2e;
+        --pattern: #2e2e34;
+        --surface: #141416;
+        --surface-2: #1b1b1f;
+        --card-shadow: 0 0 0 1px rgba(255, 255, 255, 0.07), 0 4px 8px rgba(0, 0, 0, 0.35);
+        --raised: 0 1px 2px rgba(0, 0, 0, 0.5), 0 24px 56px -24px rgba(0, 0, 0, 0.95);
+        --accent: #58a6ff;
+        --accent-soft: rgba(88, 166, 255, 0.1);
+        --accent-line: rgba(88, 166, 255, 0.42);
+        --success: #3fb950;
+        --btn-fg: #111113;
+        --btn-fill: linear-gradient(180deg, #ffffff 0%, #e8e8ea 100%);
+        --btn-fill-hover: linear-gradient(180deg, #ffffff 0%, #f1f1f2 100%);
+        --btn-border: #f4f4f5;
+        --btn-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 1px 2px rgba(0, 0, 0, 0.5);
+        --btn2-fg: #f5f5f5;
+        --btn2-fill: linear-gradient(180deg, #222225 0%, #19191b 100%);
+        --btn2-fill-hover: linear-gradient(180deg, #29292c 0%, #1f1f22 100%);
+        --btn2-border: #34343a;
+        --btn2-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1px 2px rgba(0, 0, 0, 0.4);
       }
       * { box-sizing: border-box; }
-      html { background: var(--ink); color: var(--text); }
-      body { margin: 0; font: 400 16px/1.55 var(--sans); background: var(--ink); -webkit-font-smoothing: antialiased; }
-      a { color: var(--accent-2); }
-      ::selection { background: rgba(139, 124, 246, 0.35); }
+      html { background: var(--page); color: var(--ink); }
+      body { margin: 0; font: 400 16px/1.55 var(--sans); background: var(--page); color: var(--ink); -webkit-font-smoothing: antialiased; text-rendering: geometricPrecision; }
+      a { color: var(--accent); }
+      ::selection { background: var(--accent-line); }
+      img { max-width: 100%; }
+      button, a { outline-color: var(--accent); }
 
-      /* --- chrome ---------------------------------------------------------- */
+      .progress { position: fixed; left: 0; top: 0; height: 2px; width: 0; background: var(--accent); z-index: 7; transition: width 300ms var(--ease); }
       .bar {
-        position: fixed; inset: 0 0 auto 0; z-index: 5; height: 52px;
-        display: flex; align-items: center; justify-content: space-between; gap: 16px;
-        padding: 0 var(--gutter);
-        background: linear-gradient(180deg, rgba(10, 15, 31, 0.92), rgba(10, 15, 31, 0.6) 70%, rgba(10, 15, 31, 0));
-        pointer-events: none;
+        position: fixed; z-index: 6; top: 12px; left: 50%; transform: translateX(-50%);
+        width: min(calc(100% - 24px), 76rem); height: 56px;
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        padding: 0 8px 0 16px; border-radius: 16px;
+        background: color-mix(in oklab, var(--surface) 84%, transparent);
+        -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4);
+        box-shadow: var(--card-shadow), 0 10px 30px -18px rgba(0, 0, 0, 0.3);
       }
-      .bar > * { pointer-events: auto; }
-      .wordmark { display: flex; align-items: center; gap: 10px; font: 600 12px/1 var(--mono); letter-spacing: 0.26em; color: var(--text); text-decoration: none; }
-      .wordmark svg { width: 22px; height: 22px; }
-      .for { font: 500 12px/1 var(--mono); letter-spacing: 0.08em; color: var(--muted); padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(10, 15, 31, 0.6); white-space: nowrap; }
-      .for b { color: var(--accent-2); font-weight: 600; }
-      .progress { position: fixed; left: 0; top: 0; height: 2px; width: 0; background: linear-gradient(90deg, var(--accent), var(--mint)); z-index: 6; transition: width 240ms ease; }
-      .nav {
-        position: fixed; right: var(--gutter); bottom: 22px; z-index: 5;
-        display: flex; align-items: center; gap: 6px;
-        font: 500 12px/1 var(--mono); color: var(--muted);
-      }
-      .nav .count { padding: 0 10px; letter-spacing: 0.08em; font-variant-numeric: tabular-nums; }
-      .nav button {
-        width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--line-strong);
-        background: rgba(15, 22, 48, 0.85); color: var(--text); cursor: pointer; display: grid; place-items: center;
-      }
-      .nav button:hover { border-color: var(--accent); }
-      .nav button:focus-visible, .wordmark:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      .wordmark { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font: 700 21px/1 var(--display); letter-spacing: -0.035em; border-radius: 8px; }
+      .wordmark img { width: 26px; height: 30px; display: block; }
+      .bar-end { display: flex; align-items: center; gap: 6px; }
+      .for { font: 500 13px/1 var(--sans); color: var(--body); padding: 8px 12px; border-radius: 999px; background: var(--surface-2); box-shadow: 0 0 0 1px var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
+      .for b { color: var(--ink); font-weight: 700; }
+      .icon-btn { width: 38px; height: 38px; display: grid; place-items: center; border: 0; border-radius: 10px; background: transparent; color: var(--body); cursor: pointer; }
+      .icon-btn:hover { color: var(--ink); background: var(--surface-2); }
+      .icon-btn svg { width: 18px; height: 18px; }
+      html.light .sun, html.dark .moon { display: none; }
+
+      .nav { position: fixed; right: var(--gutter); bottom: 20px; z-index: 6; display: flex; align-items: center; gap: 6px; }
+      .nav .count { padding: 0 12px; height: 36px; display: inline-flex; align-items: center; border-radius: 999px; font: 600 12px/1 var(--mono); color: var(--body); background: color-mix(in oklab, var(--surface) 84%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: var(--card-shadow); font-variant-numeric: tabular-nums; }
+      .nav button { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--btn2-border); background: var(--btn2-fill); box-shadow: var(--btn2-shadow); color: var(--btn2-fg); cursor: pointer; display: grid; place-items: center; }
+      .nav button:hover { background: var(--btn2-fill-hover); }
       .nav button svg { width: 14px; height: 14px; }
-      .hint { position: fixed; left: var(--gutter); bottom: 26px; z-index: 5; font: 500 11px/1 var(--mono); letter-spacing: 0.14em; color: var(--faint); }
+      .hint { position: fixed; left: var(--gutter); bottom: 30px; z-index: 6; font: 600 11px/1 var(--mono); letter-spacing: 0.12em; color: var(--faint); }
+      @media (max-width: 720px) { .hint { display: none; } }
 
-      /* --- slides ---------------------------------------------------------- */
       .deck { scroll-snap-type: y mandatory; height: 100dvh; overflow-y: auto; scroll-behavior: smooth; }
-      @media (prefers-reduced-motion: reduce) { .deck { scroll-behavior: auto; } .progress { transition: none; } }
       .slide {
-        scroll-snap-align: start; min-height: 100dvh; position: relative;
-        display: grid; grid-template-rows: auto 1fr auto; gap: 24px;
-        padding: 72px var(--gutter) 64px;
-        border-bottom: 1px solid var(--line);
-        overflow: hidden;
+        scroll-snap-align: start; min-height: 100dvh; position: relative; display: flex;
+        padding: 92px var(--gutter) 72px; overflow: clip; background: var(--page);
       }
-      .slide::before {
-        content: ""; position: absolute; inset: 0; pointer-events: none;
-        background-image:
-          linear-gradient(rgba(160, 172, 220, 0.045) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(160, 172, 220, 0.045) 1px, transparent 1px);
-        background-size: 64px 64px;
-        mask-image: radial-gradient(ellipse 80% 70% at 50% 40%, #000 20%, transparent 100%);
+      .frame { position: relative; z-index: 1; width: 100%; max-width: 76rem; margin: 0 auto; display: grid; grid-template-rows: auto 1fr auto; gap: clamp(18px, 2.6vh, 28px); color: var(--ink); }
+      .is-panel { padding: 80px calc(var(--gutter) * 0.5) 64px; }
+      .is-panel .frame {
+        max-width: 84rem; padding: clamp(24px, 4.4vh, 52px) clamp(22px, 4.6vw, 68px);
+        border-radius: 28px; background: #090909; overflow: clip; isolation: isolate;
+        box-shadow: 0 40px 90px -50px rgba(0, 0, 0, 0.75);
       }
-      .slide > * { position: relative; }
-      .eyebrow { display: flex; align-items: center; gap: 14px; font: 600 11px/1 var(--mono); letter-spacing: 0.26em; color: var(--accent-2); text-transform: uppercase; }
-      .eyebrow::after { content: ""; flex: 0 0 48px; height: 1px; background: var(--line-strong); }
-      .eyebrow .n { color: var(--faint); letter-spacing: 0.1em; }
-      h1, h2 { margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
-      h1 { font-size: clamp(38px, 5.4vw, 74px); line-height: 1.04; font-weight: 700; }
-      h2 { font-size: clamp(28px, 3.6vw, 46px); line-height: 1.12; font-weight: 700; max-width: 22ch; }
-      .lede { margin: 12px 0 0; max-width: 62ch; font-size: clamp(16px, 1.45vw, 19px); color: var(--muted); }
-      .body { display: grid; gap: 28px; align-content: start; }
-      .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font: 500 11px/1.6 var(--mono); letter-spacing: 0.1em; color: var(--faint); text-transform: uppercase; }
-      .foot .tag { color: var(--mint); }
-      .foot .src { text-transform: none; letter-spacing: 0; color: var(--faint); }
+      .is-panel .frame::before {
+        content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+        background:
+          radial-gradient(ellipse 55% 45% at 50% 0%, rgba(255, 255, 255, 0.07), transparent 70%),
+          radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.06) 1px, transparent 0) 0 0 / 24px 24px;
+        -webkit-mask-image: linear-gradient(180deg, #000 0%, transparent 85%); mask-image: linear-gradient(180deg, #000 0%, transparent 85%);
+      }
+      html.dark .is-panel .frame { background: #111113; box-shadow: 0 0 0 1px #232326, 0 40px 90px -50px rgba(0, 0, 0, 0.9); }
+      .body { display: grid; gap: clamp(20px, 3.2vh, 32px); align-content: center; min-width: 0; }
 
-      .cols { display: grid; gap: 18px; }
+      .eyebrow { justify-self: start; display: inline-flex; align-items: center; gap: 10px; padding: 7px 13px 7px 9px; border-radius: 999px; background: var(--surface); box-shadow: var(--card-shadow); font: 600 12.5px/1 var(--sans); color: var(--ink); white-space: nowrap; }
+      .eyebrow::before { content: ""; width: 8px; height: 8px; border-radius: 3px; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+      .eyebrow .n { font: 600 11px/1 var(--mono); color: var(--faint); }
+      h1, h2 { margin: 0; text-wrap: balance; font-family: var(--display); font-weight: 700; font-synthesis: none; color: var(--ink); }
+      h1 { font-size: clamp(2.6rem, 5.6vw, 5rem); line-height: 1.02; letter-spacing: -0.045em; }
+      h2 { font-size: clamp(1.8rem, 3.2vw, 2.8rem); line-height: 1.06; letter-spacing: -0.04em; max-width: 26ch; }
+      .lede { margin: 14px 0 0; max-width: 68ch; font-size: clamp(16px, 1.4vw, 19px); line-height: 1.55; color: var(--body); text-wrap: pretty; }
+      .foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding-top: 16px; border-top: 1px solid var(--line); font: 500 12.5px/1.5 var(--sans); color: var(--faint); }
+      .foot .tag { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 600; }
+      .foot .tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+      .cols { display: grid; gap: 16px; }
       .cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-      .cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-      .cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-      @media (max-width: 900px) { .cols-3, .cols-4, .cols-6 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-      @media (max-width: 560px) { .cols-2, .cols-3, .cols-4, .cols-6 { grid-template-columns: minmax(0, 1fr); } }
+      @media (max-width: 900px) { .cols-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+      @media (max-width: 600px) { .cols-2, .cols-3 { grid-template-columns: minmax(0, 1fr); } }
 
-      .card { padding: 20px 22px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
-      .card h3 { margin: 0 0 6px; font-size: 16px; font-weight: 650; }
-      .card p { margin: 0; color: var(--muted); font-size: 14px; }
-      .card .k { display: inline-block; margin-bottom: 12px; font: 600 11px/1 var(--mono); letter-spacing: 0.18em; color: var(--accent-2); }
-      .num { font: 700 clamp(34px, 4.2vw, 56px)/1 var(--mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text); }
-      .num small { display: block; margin-top: 10px; font: 600 11px/1.5 var(--mono); letter-spacing: 0.16em; color: var(--muted); text-transform: uppercase; }
-      .stat-mint .num { color: var(--mint); }
-      .stat-accent .num { color: var(--accent-2); }
+      .card { position: relative; padding: 22px 24px; border-radius: 16px; background: var(--surface); box-shadow: var(--card-shadow); color: var(--ink); transition: translate 300ms var(--ease), box-shadow 300ms var(--ease); }
+      .card:hover { translate: 0 -2px; }
+      .card h3 { margin: 0 0 6px; font: 700 17px/1.3 var(--sans); letter-spacing: -0.01em; color: var(--ink); }
+      .card p { margin: 0; color: var(--body); font-size: 14.5px; line-height: 1.55; }
+      .card .k { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px; font: 600 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+      .card.featured { background: linear-gradient(180deg, #1c1c1f 0%, #111113 100%); box-shadow: 0 0 0 1px #2a2a2e, var(--raised); }
+      .card.ring { box-shadow: 0 0 0 1.5px var(--accent-line), 0 18px 40px -26px var(--accent-line); }
+      .live { width: 8px; height: 8px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 0 var(--success); animation: live 2.4s ease-out infinite; }
+      @keyframes live { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--success) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 8px transparent; } }
+
+      .num { font: 700 clamp(2.2rem, 4vw, 3.6rem)/1 var(--display); letter-spacing: -0.04em; color: var(--ink); }
+      .num small { display: block; margin-top: 14px; font: 600 11px/1.5 var(--mono); letter-spacing: 0.08em; color: var(--faint); text-transform: uppercase; }
+      .stat-mint .num { color: var(--accent); }
 
       .list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
-      .list li { position: relative; padding-left: 24px; color: var(--muted); font-size: 15px; }
-      .list li::before { content: "▸"; position: absolute; left: 2px; top: 0; color: var(--accent); font-size: 14px; line-height: 1.6; }
-      .list li b { color: var(--text); font-weight: 600; }
-      .band { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px 22px; padding: 12px 18px; border: 1px solid var(--line-strong); border-radius: 10px; font: 600 11px/1.6 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent-2); background: rgba(139, 124, 246, 0.07); }
-      .band .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--mint); }
+      .list li { position: relative; padding-left: 22px; color: var(--body); font-size: 15px; line-height: 1.55; }
+      .list li::before { content: ""; position: absolute; left: 3px; top: 0.6em; width: 7px; height: 7px; border-radius: 2px; background: var(--accent); }
+      .list li b { color: var(--ink); font-weight: 700; }
+      .list.spaced { margin-top: 14px; }
+      .band { justify-self: start; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; padding: 12px 20px; border-radius: 999px; background: var(--surface-2); box-shadow: 0 0 0 1px var(--line); font: 600 14px/1.5 var(--sans); color: var(--ink); }
+      .band .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+      @media (max-width: 600px) { .band { border-radius: 16px; } }
 
-      table { width: 100%; border-collapse: collapse; font-size: 14px; }
-      th, td { padding: 12px 12px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
-      th { font: 600 11px/1.4 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
-      td:first-child { color: var(--text); font-weight: 600; white-space: nowrap; }
-      td { color: var(--muted); }
-      td.role { color: var(--accent-2); font-weight: 600; }
-      .scroll { overflow-x: auto; }
+      .scroll { overflow-x: auto; border-radius: 16px; box-shadow: var(--card-shadow); }
+      table { width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0; font-size: 14.5px; background: var(--surface); }
+      th, td { padding: 16px 18px; border-bottom: 1px solid var(--line); vertical-align: top; text-align: left; }
+      tbody tr:last-child td { border-bottom: 0; }
+      tbody tr { transition: background 200ms ease; }
+      tbody tr:hover { background: var(--surface-2); }
+      th { font: 600 11px/1.4 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); background: var(--surface-2); }
+      td { color: var(--body); }
+      td:first-child { color: var(--ink); font-weight: 700; white-space: nowrap; }
+      td.role { color: var(--accent); font-weight: 700; }
 
-      .flow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-      .flow > div { padding: 18px 20px; border-right: 1px solid var(--line); background: var(--panel); }
+      .flow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-radius: 16px; overflow: hidden; background: var(--surface); box-shadow: var(--card-shadow); }
+      .flow > div { padding: 20px 22px; border-right: 1px solid var(--line); }
       .flow > div:last-child { border-right: 0; }
-      .flow .k { display: block; margin-bottom: 8px; font: 600 11px/1 var(--mono); letter-spacing: 0.18em; color: var(--accent-2); }
-      .flow h3 { margin: 0 0 6px; font-size: 17px; }
-      .flow p { margin: 0; color: var(--muted); font-size: 13.5px; }
-      @media (max-width: 900px) { .flow { grid-template-columns: repeat(2, minmax(0, 1fr)); } .flow > div:nth-child(2) { border-right: 0; } .flow > div:nth-child(-n+2) { border-bottom: 1px solid var(--line); } }
-      @media (max-width: 560px) { .flow { grid-template-columns: minmax(0, 1fr); } .flow > div { border-right: 0; border-bottom: 1px solid var(--line); } }
+      .flow .k { display: block; margin-bottom: 10px; font: 600 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+      .flow h3 { margin: 0 0 6px; font: 700 17px/1.3 var(--sans); color: var(--ink); }
+      .flow p { margin: 0; color: var(--body); font-size: 14px; }
+      .flow.stack { grid-template-columns: minmax(0, 1fr); }
+      .flow.stack > div { border-right: 0; border-bottom: 1px solid var(--line); position: relative; padding-left: 52px; }
+      .flow.stack > div:last-child { border-bottom: 0; }
+      .flow.stack > div::before { content: ""; position: absolute; left: 24px; top: 22px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--accent); background: var(--surface); }
+      .flow.stack > div::after { content: ""; position: absolute; left: 29px; top: 36px; bottom: -22px; width: 1px; background: var(--accent-line); }
+      .flow.stack > div:last-child::after { display: none; }
+      @media (max-width: 900px) { .flow:not(.stack) { grid-template-columns: minmax(0, 1fr); } .flow:not(.stack) > div { border-right: 0; border-bottom: 1px solid var(--line); } .flow:not(.stack) > div:last-child { border-bottom: 0; } }
 
-      .bars { display: grid; gap: 14px; }
-      .bar-row { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 2fr) auto; gap: 14px; align-items: center; font-size: 14px; }
-      .bar-row .lbl { color: var(--text); font-weight: 600; }
-      .bar-row .track { display: block; height: 12px; border-radius: 999px; background: rgba(160, 172, 220, 0.12); overflow: hidden; }
-      .bar-row .fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
-      .bar-row .val { font: 600 13px/1 var(--mono); color: var(--accent-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-      @media (max-width: 560px) { .bar-row { grid-template-columns: minmax(0, 1fr) auto; } .bar-row .track { grid-column: 1 / -1; } }
+      .bars { display: grid; gap: 18px; margin-top: 8px; }
+      .bar-row { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(0, 1.5fr) auto; gap: 14px; align-items: center; font-size: 14.5px; }
+      .bar-row .lbl { color: var(--ink); font-weight: 600; }
+      .bar-row .track { display: block; height: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+      .bar-row .fill { display: block; height: 100%; border-radius: 999px; background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent), white 40%)); transform-origin: left; }
+      .bar-row .val { font: 600 13px/1 var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+      @media (max-width: 600px) { .bar-row { grid-template-columns: minmax(0, 1fr) auto; } .bar-row .track { grid-column: 1 / -1; grid-row: 2; } }
 
       .ladder { display: grid; gap: 12px; }
-      .rung { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 14px 18px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-      .rung .n { font: 700 22px/1 var(--mono); color: var(--text); font-variant-numeric: tabular-nums; }
-      .rung .t { color: var(--muted); font-size: 14px; }
-      .rung .r { font: 700 16px/1 var(--mono); color: var(--mint); white-space: nowrap; }
-      .rung .r small { display: block; margin-top: 6px; font: 600 10px/1 var(--mono); letter-spacing: 0.16em; color: var(--faint); text-transform: uppercase; }
-      @media (max-width: 560px) { .rung { grid-template-columns: 72px minmax(0, 1fr); } .rung .r { grid-column: 2; } }
+      .rung { display: grid; grid-template-columns: 110px minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 18px 22px; border-radius: 16px; background: var(--surface); box-shadow: var(--card-shadow); }
+      .rung:nth-child(1) { width: 78%; }
+      .rung:nth-child(2) { width: 89%; }
+      .rung:nth-child(3) { width: 100%; box-shadow: 0 0 0 1.5px var(--accent-line), 0 18px 40px -26px var(--accent-line); }
+      .rung .n { font: 700 28px/1 var(--display); letter-spacing: -0.03em; color: var(--ink); }
+      .rung .t { color: var(--body); font-size: 14.5px; }
+      .rung .r { font: 700 20px/1 var(--display); letter-spacing: -0.02em; color: var(--ink); white-space: nowrap; text-align: right; }
+      .rung .r small { display: block; margin-top: 8px; font: 600 10.5px/1 var(--mono); letter-spacing: 0.08em; color: var(--accent); text-transform: uppercase; }
+      @media (max-width: 600px) { .rung, .rung:nth-child(n) { width: 100%; grid-template-columns: 80px minmax(0, 1fr); } .rung .r { grid-column: 2; text-align: left; } }
 
-      .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font: 600 12px/1.4 var(--mono); letter-spacing: 0.04em; color: var(--muted); }
-      .chain span { padding: 7px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); }
-      .chain i { color: var(--accent); font-style: normal; }
+      .chain { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font: 600 13px/1.4 var(--sans); }
+      .chain span { padding: 8px 14px; border-radius: 999px; background: var(--surface); box-shadow: var(--card-shadow); color: var(--ink); }
+      .chain span:last-child { background: var(--btn-fill); color: var(--btn-fg); box-shadow: var(--btn-shadow); }
+      .chain i { color: var(--faint); font-style: normal; }
 
-      .person { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 18px; align-items: start; }
-      .person .av { width: 64px; height: 64px; border-radius: 16px; display: grid; place-items: center; font: 700 22px/1 var(--mono); color: var(--accent-ink); background: linear-gradient(135deg, var(--accent-2), var(--accent)); }
-      .person h3 { margin: 0; font-size: 20px; }
-      .person .role { margin: 4px 0 12px; font: 600 11px/1 var(--mono); letter-spacing: 0.18em; color: var(--accent-2); text-transform: uppercase; }
+      .person { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 20px; align-items: start; padding: 26px 28px; }
+      .person .av { width: 72px; height: 72px; border-radius: 18px; object-fit: cover; display: block; box-shadow: 0 0 0 1px var(--line), var(--raised); background: var(--surface-2); }
+      .person h3 { margin: 2px 0 0; font: 700 22px/1.2 var(--display); letter-spacing: -0.03em; }
+      .person .role { margin: 6px 0 14px; font: 600 11px/1 var(--mono); letter-spacing: 0.08em; color: var(--accent); text-transform: uppercase; }
 
-      .cover { background: radial-gradient(ellipse 60% 50% at 78% 38%, rgba(139, 124, 246, 0.22), transparent 70%), var(--ink); }
-      .cover .body { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); align-items: center; gap: 48px; }
-      @media (max-width: 900px) { .cover .body { grid-template-columns: minmax(0, 1fr); } .cover .mark { display: none; } }
-      .cover .chip { display: inline-flex; align-items: center; gap: 12px; margin-top: 28px; padding: 12px 18px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font: 700 12px/1 var(--mono); letter-spacing: 0.18em; text-transform: uppercase; }
-      .cover .greet { margin-top: 18px; color: var(--muted); font-size: 15px; }
-      .cover .greet b { color: var(--text); }
-      .mark { position: relative; justify-self: center; width: min(360px, 90%); aspect-ratio: 1; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: 24px; background: linear-gradient(160deg, rgba(139, 124, 246, 0.16), rgba(94, 234, 212, 0.05)); box-shadow: 0 30px 90px rgba(0, 0, 0, 0.45); }
-      .mark svg { width: 62%; height: auto; }
-      .mark .wm { position: absolute; bottom: 26px; font: 600 12px/1 var(--mono); letter-spacing: 0.3em; color: var(--muted); }
+      .backdrop { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+      .schematic { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--pattern); }
+      .schematic * { vector-effect: non-scaling-stroke; }
+      .pulse { fill: none; stroke: var(--accent); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 7 93; stroke-dashoffset: 100; opacity: 0.85; animation: pulse 7s linear infinite; }
+      .pulse:nth-child(2) { animation-duration: 9s; animation-delay: -3s; }
+      .pulse:nth-child(3) { animation-duration: 8s; animation-delay: -5s; }
+      .pulse:nth-child(4) { animation-duration: 10s; animation-delay: -1s; }
+      .pulse:nth-child(5) { animation-duration: 7.5s; animation-delay: -6s; }
+      @keyframes pulse { to { stroke-dashoffset: 0; } }
+      .glow { position: absolute; inset: 0; background: radial-gradient(ellipse 42% 52% at 30% 50%, var(--page) 0%, color-mix(in oklab, var(--page) 80%, transparent) 55%, transparent 100%); }
+      .fade { position: absolute; inset: 0; background: linear-gradient(to bottom, color-mix(in oklab, var(--page) 60%, transparent) 0%, transparent 18%, transparent 60%, var(--page) 96%), linear-gradient(to right, var(--page) 0%, transparent 12%, transparent 88%, var(--page) 100%); }
+
+      .cover .frame { max-width: 80rem; }
+      .cover .body { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); align-items: center; gap: clamp(28px, 4vw, 64px); }
+      .cover h1 { font-size: clamp(2.6rem, 4.7vw, 4.7rem); }
+      .chip { display: inline-flex; align-items: center; gap: 10px; margin-top: 30px; padding: 13px 18px; border-radius: 12px; background: var(--btn-fill); color: var(--btn-fg); border: 1px solid var(--btn-border); box-shadow: var(--btn-shadow); font: 700 14px/1 var(--sans); }
+      .greet { margin: 18px 0 0; color: var(--body); font-size: 15px; }
+      .greet b { color: var(--ink); }
+      @media (max-width: 1000px) { .cover .body { grid-template-columns: minmax(0, 1fr); } }
+
+      .showcase { position: relative; padding: 0 0 9% 9%; }
+      .laptop { margin: 0; }
+      .laptop-screen { position: relative; border-radius: 0.9rem 0.9rem 0.3rem 0.3rem; padding: 0.45rem 0.45rem 0.3rem; border: 1px solid rgba(0, 0, 0, 0.35); background: linear-gradient(180deg, #2b2d30 0%, #191b1d 100%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2.5rem 5rem -1.75rem rgba(16, 16, 18, 0.55); }
+      html.dark .laptop-screen { border-color: rgba(255, 255, 255, 0.14); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 2.5rem 5rem -1.5rem rgba(0, 0, 0, 0.95); }
+      .laptop-screen img { display: block; width: 100%; height: auto; border-radius: 0.4rem; background: #0d0d0f; }
+      .laptop-screen::after { content: ""; position: absolute; inset: 0.45rem 0.45rem 0.3rem; border-radius: 0.4rem; pointer-events: none; background: linear-gradient(115deg, transparent 30%, rgba(255, 255, 255, 0.07) 45%, transparent 60%) 0 0 / 300% 100%; animation: glare 7s ease-in-out infinite; }
+      @keyframes glare { 0%, 55% { background-position: 120% 0; } 100% { background-position: -120% 0; } }
+      .laptop-notch { position: absolute; top: 0.45rem; left: 50%; z-index: 2; width: clamp(4rem, 13%, 8rem); height: clamp(0.7rem, 1vw, 1.05rem); transform: translateX(-50%); border-radius: 0 0 0.45rem 0.45rem; background: #000; }
+      .laptop-base { position: relative; width: 104.5%; margin-left: -2.25%; height: clamp(0.55rem, 0.95vw, 0.8rem); border-radius: 0 0 0.6rem 0.6rem; background: linear-gradient(180deg, #3b3e42 0%, #17191b 82%, #0d0e10 100%); box-shadow: 0 1.25rem 2.5rem -1.1rem rgba(16, 16, 18, 0.5); }
+      .laptop-lip { position: absolute; top: 0; left: 50%; width: 11%; height: 42%; transform: translateX(-50%); border-radius: 0 0 0.35rem 0.35rem; background: rgba(0, 0, 0, 0.5); }
+      .showcase .phone { position: absolute; left: 0; bottom: 0; z-index: 2; --pw: clamp(96px, 11.5vw, 178px); }
+
+      .phone { --pw: 200px; position: relative; flex: none; margin: 0; width: var(--pw); padding: calc(var(--pw) * 0.03); border-radius: calc(var(--pw) * 0.175); background: linear-gradient(158deg, #4a4a4a, #1a1a1a 34%, #101010 62%, #3d3d3d); box-shadow: 0 2.4rem 4rem -1.6rem rgba(0, 0, 0, 0.7), inset 0 0 0 1px rgba(255, 255, 255, 0.1); }
+      .phone::before { content: ""; position: absolute; top: 21%; left: calc(var(--pw) * -0.01); width: calc(var(--pw) * 0.013); height: 17%; border-radius: 999px; background: linear-gradient(180deg, #555 0 44%, transparent 44% 56%, #555 56% 100%); }
+      .phone .screen { position: relative; display: block; overflow: hidden; aspect-ratio: 640 / 1391; border-radius: calc(var(--pw) * 0.145); background: #000; }
+      .phone .screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+      .phone .screen::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 28%; pointer-events: none; background: linear-gradient(180deg, transparent, rgba(88, 166, 255, 0.16) 85%, rgba(88, 166, 255, 0.55)); transform: translateY(-110%); animation: scan 4.2s var(--ease) infinite; }
+      @keyframes scan { 0% { transform: translateY(-110%); } 60%, 100% { transform: translateY(380%); } }
+      .float { animation: float 7s ease-in-out infinite; }
+      @keyframes float { 0%, 100% { translate: 0 0; } 50% { translate: 0 -12px; } }
+
+      .product { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: clamp(24px, 4vw, 56px); align-items: center; }
+      .product .phone { --pw: clamp(136px, 10.4vw, 156px); }
+      .product .body, .slide:has(.product) .body { gap: 26px; }
+      .steps { gap: 12px; }
+      .steps .card { padding: 16px 20px; }
+      .steps .card .k { margin-bottom: 10px; }
+      .steps .card h3 { font-size: 16px; }
+      .cycle img { opacity: 0; }
+      .cycle img:first-child { opacity: 1; }
+      .js .cycle img { animation: screen 12s infinite; animation-delay: calc(var(--i) * 2s); animation-play-state: paused; }
+      .js .is-in .cycle img { animation-play-state: running; }
+      @keyframes screen { 0%, 16.6% { opacity: 1; } 19% { opacity: 0; } 98% { opacity: 0; } 100% { opacity: 1; } }
+      @media (max-width: 760px) { .product { grid-template-columns: minmax(0, 1fr); } .product .device { justify-self: center; } }
+
+      .proof { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: clamp(24px, 4vw, 56px); align-items: center; }
+      .proof .num { font-size: clamp(1.7rem, 2.6vw, 2.5rem); }
+      .proof .num small { margin-top: 10px; }
+      .proof .card { padding: 16px 18px; }
+      .proof .cols { gap: 12px; }
+      .fan { display: flex; justify-content: center; align-items: flex-end; padding: 12px 0 18px; }
+      .fan .phone { --pw: clamp(112px, 9.6vw, 152px); z-index: 2; }
+      .fan .phone.side { --pw: clamp(92px, 7.8vw, 124px); z-index: 1; margin-bottom: clamp(10px, 1.6vw, 22px); filter: brightness(0.8); transition: rotate 700ms var(--ease), translate 700ms var(--ease), filter 700ms ease; }
+      .fan .phone.left { rotate: -7deg; translate: 6% 0; margin-right: calc(var(--pw) * -0.22); }
+      .fan .phone.right { rotate: 7deg; translate: -6% 0; margin-left: calc(var(--pw) * -0.22); }
+      .fan:hover .phone.left { rotate: -11deg; translate: -10% 3%; filter: brightness(0.95); }
+      .fan:hover .phone.right { rotate: 11deg; translate: 10% 3%; filter: brightness(0.95); }
+      .proof + .list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 32px; }
+      @media (max-width: 900px) { .proof { grid-template-columns: minmax(0, 1fr); } .proof + .list { grid-template-columns: minmax(0, 1fr); } }
 
       .close .body { align-content: center; }
-      .close h1 { font-size: clamp(34px, 5.6vw, 72px); }
-      .cta { display: inline-flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
-      .cta a { display: inline-flex; align-items: center; gap: 10px; padding: 12px 18px; border-radius: 10px; font: 600 13px/1 var(--sans); text-decoration: none; border: 1px solid var(--line-strong); color: var(--text); }
-      .cta a.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+      .close h1 { font-size: clamp(2.4rem, 5.2vw, 4.6rem); }
+      .cta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 28px; }
+      .cta a { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 10px 16px; border-radius: 12px; font: 700 14px/1 var(--sans); text-decoration: none; color: var(--btn2-fg); background: var(--btn2-fill); border: 1px solid var(--btn2-border); box-shadow: var(--btn2-shadow); }
+      .cta a:hover { background: var(--btn2-fill-hover); }
+      .cta a.primary { color: var(--btn-fg); background: var(--btn-fill); border-color: var(--btn-border); box-shadow: var(--btn-shadow); }
+      .cta a.primary:hover { background: var(--btn-fill-hover); }
+      .sources { display: grid; padding: 6px 22px; border-radius: 16px; background: color-mix(in oklab, var(--surface) 88%, transparent); box-shadow: var(--card-shadow); }
+      .sources div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.8fr); gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--body); }
+      .sources div:last-child { border-bottom: 0; }
+      .sources div b { color: var(--ink); font-weight: 700; }
+      .close .cols { align-items: center; gap: clamp(28px, 4vw, 56px); }
+      @media (max-width: 600px) { .sources div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 
-      .sources { display: grid; gap: 8px; }
-      .sources div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--muted); }
-      .sources div b { color: var(--text); font-weight: 600; }
-      @media (max-width: 560px) { .sources div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
+      .xr .body { gap: clamp(16px, 2.4vh, 24px); }
+      .xr-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); gap: 40px; align-items: end; }
+      .xr-top .lede { max-width: 48ch; }
+      .xr-specs { margin: 0; padding: 0; list-style: none; display: grid; }
+      .xr-specs li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 13px 0; border-top: 1px solid var(--line); }
+      .xr-specs li:last-child { border-bottom: 1px solid var(--line); }
+      .xr-specs svg { width: 20px; height: 20px; color: var(--accent); }
+      .xr-specs b { display: block; font: 700 15px/1.3 var(--sans); color: var(--ink); }
+      .xr-specs span { font-size: 13.5px; color: var(--body); }
+      .xr-specs em { padding: 6px 8px; border-radius: 999px; box-shadow: 0 0 0 1px var(--line); font: 600 10.5px/1 var(--mono); font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+      .xr-specs em.on { color: var(--success); box-shadow: 0 0 0 1px color-mix(in oklab, var(--success) 40%, transparent); }
+      @media (max-width: 900px) { .xr-top { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
 
+      .xr-stage { --fit: 0.74; position: relative; aspect-ratio: 2.9; }
+      .xr-fit { position: absolute; left: 50%; top: 50%; width: 600px; height: 240px; translate: -50% -50%; transform-origin: 50% 50%; }
+      .lv { position: relative; width: 600px; height: 240px; }
+      .lv-ghost, .lv-world { position: absolute; inset: 0; }
+      .lv-ghost { filter: blur(26px) saturate(1.4); opacity: 0.55; }
+      .lv-world { clip-path: path("M263 62 C212 52 120 48 74 56 C46 61 38 94 47 132 C60 188 102 228 157 228 C204 228 238 200 250 164 C260 132 268 90 263 62 Z M337 62 C388 52 480 48 526 56 C554 61 562 94 553 132 C540 188 498 228 443 228 C396 228 362 200 350 164 C340 132 332 90 337 62 Z"); background: radial-gradient(ellipse 80% 70% at 50% 40%, #13263d, #0a1220 70%); }
+      .space { position: absolute; inset: -20px; perspective: 700px; transform: translate(var(--px, 0px), var(--py, 0px)); transition: transform 600ms var(--ease); }
+      .gridfloor { position: absolute; left: -10%; right: -10%; bottom: -10px; height: 120px; transform: rotateX(72deg); transform-origin: 50% 100%; background: linear-gradient(rgba(88, 166, 255, 0.28) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(90deg, rgba(88, 166, 255, 0.28) 1px, transparent 1px) 0 0 / 28px 28px; -webkit-mask-image: linear-gradient(0deg, #000, transparent); mask-image: linear-gradient(0deg, #000, transparent); }
+      .pane { position: absolute; overflow: hidden; border-radius: 6px; background: rgba(20, 22, 27, 0.92); box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.45), 0 0 30px -4px rgba(88, 166, 255, 0.45); }
+      .pane.desk { left: 70px; top: 86px; width: 196px; padding: 2px; transform: rotateY(22deg); transform-origin: 100% 50%; }
+      .pane.desk img { display: block; width: 100%; height: auto; border-radius: 4px; }
+      .pane.agent { left: 358px; top: 84px; width: 176px; padding: 8px 9px; transform: rotateY(-22deg); transform-origin: 0 50%; font: 500 6.4px/1.5 var(--mono); color: #c9d1d9; }
+      .pane.agent .hd { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; font: 700 7px/1 var(--sans); color: #fff; }
+      .pane.agent .hd i { width: 5px; height: 5px; border-radius: 50%; background: #3fb950; animation: blink 1.6s ease-in-out infinite; }
+      .pane.agent .hd span { margin-left: auto; color: #8b949e; font-weight: 500; }
+      .pane.agent p { margin: 0; white-space: nowrap; overflow: hidden; animation: line 9s infinite both; animation-delay: calc(var(--i) * 0.45s); }
+      .pane.agent p.add { color: #3fb950; }
+      .pane.agent p.del { color: #f85149; }
+      .pane.agent p.dim { color: #6e7681; }
+      .pane.agent .pr { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding: 5px 6px; border-radius: 4px; background: rgba(88, 166, 255, 0.14); font: 700 6.6px/1 var(--sans); color: #fff; }
+      .pane.agent .pr b { padding: 3px 5px; border-radius: 3px; background: #238636; }
+      @keyframes line { 0% { opacity: 0; } 4%, 86% { opacity: 1; } 92%, 100% { opacity: 0; } }
+      @keyframes blink { 50% { opacity: 0.3; } }
+      .lv-frame { position: absolute; inset: 0; width: 600px; height: 240px; overflow: visible; pointer-events: none; }
+
+      .watch { --ww: clamp(80px, 9vw, 132px); position: absolute; right: 1%; bottom: -6%; width: var(--ww); rotate: 8deg; }
+      .watch .strap { display: block; width: 72%; height: calc(var(--ww) * 0.42); margin: 0 auto; background: linear-gradient(90deg, #17181b, #2a2c31 45%, #17181b); }
+      .watch .strap.top { border-radius: 10px 10px 0 0; -webkit-mask-image: linear-gradient(180deg, transparent, #000 70%); mask-image: linear-gradient(180deg, transparent, #000 70%); }
+      .watch .strap.bot { border-radius: 0 0 10px 10px; -webkit-mask-image: linear-gradient(0deg, transparent, #000 70%); mask-image: linear-gradient(0deg, transparent, #000 70%); }
+      .watch .case { position: relative; height: calc(var(--ww) * 1.2); padding: calc(var(--ww) * 0.055); border-radius: calc(var(--ww) * 0.27); background: linear-gradient(150deg, #5a5d63, #1b1c1f 30%, #0d0d0f 70%, #45474c); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 30px 50px -24px rgba(0, 0, 0, 0.7); }
+      .watch .crown { position: absolute; right: calc(var(--ww) * -0.045); top: 24%; width: calc(var(--ww) * 0.06); height: calc(var(--ww) * 0.17); border-radius: 4px; background: repeating-linear-gradient(180deg, #6b6e74 0 2px, #2c2e33 2px 4px); }
+      .watch .side { position: absolute; right: calc(var(--ww) * -0.025); top: 52%; width: calc(var(--ww) * 0.03); height: calc(var(--ww) * 0.2); border-radius: 3px; background: #2c2e33; }
+      .wscreen { position: relative; height: 100%; overflow: hidden; padding: calc(var(--ww) * 0.07) calc(var(--ww) * 0.065); border-radius: calc(var(--ww) * 0.22); background: #000; font-family: var(--sans); font-size: calc(var(--ww) * 0.062); line-height: 1.25; color: #fff; }
+      .wbar { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.55em; }
+      .wbar b { font-size: 1.45em; color: #58a6ff; letter-spacing: -0.01em; }
+      .wbar span { font-weight: 600; font-variant-numeric: tabular-nums; }
+      .wrow { display: grid; grid-template-columns: 1.9em minmax(0, 1fr) 1.6em; gap: 0.5em; align-items: center; margin-bottom: 0.4em; padding: 0.55em; border-radius: 0.9em; background: #1c1c1e; }
+      .wrow .face { width: 1.9em; height: 1.9em; display: grid; place-items: center; border-radius: 50%; background: hsl(var(--h) 55% 72%); font: 800 0.8em/1 ui-rounded, var(--sans); font-style: normal; color: rgba(0, 0, 0, 0.8); }
+      .wrow b { display: block; overflow: hidden; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+      .wrow small { display: block; font-size: 0.85em; color: #8e8e93; white-space: nowrap; }
+      .wrow em { display: flex; align-items: center; gap: 0.3em; font-size: 0.85em; font-style: normal; }
+      .wrow em i { width: 0.45em; height: 0.45em; border-radius: 50%; background: #30d158; }
+      .wrow em i.wait { background: #ffd60a; }
+      .wrow em i.done { background: #8e8e93; }
+      .wrow.on em i { animation: blink 1.6s ease-in-out infinite; }
+      .gauge { width: 1.6em; height: 1.6em; border-radius: 50%; background: conic-gradient(#0a84ff calc(var(--p) * 1turn), #3a3a3c 0); -webkit-mask: radial-gradient(circle, transparent 52%, #000 54%); mask: radial-gradient(circle, transparent 52%, #000 54%); }
+      @media (max-width: 720px) {
+        .xr-stage { --fit: 1; aspect-ratio: 2.1; margin-bottom: 28px; }
+        .watch { --ww: 58px; right: -1%; bottom: -34%; }
+      }
+
+      .js .slide .body > *, .js .slide .eyebrow { opacity: 0; translate: 0 18px; transition: opacity 800ms var(--ease), translate 800ms var(--ease); }
+      .js .slide.is-in .body > *, .js .slide.is-in .eyebrow { opacity: 1; translate: 0 0; }
+      .js .slide.is-in .body > :nth-child(2) { transition-delay: 120ms; }
+      .js .slide.is-in .body > :nth-child(3) { transition-delay: 240ms; }
+      .js .slide.is-in .body > :nth-child(4) { transition-delay: 360ms; }
+      .js .cover .showcase { opacity: 0; translate: 0 48px; scale: 0.94; transition: opacity 1100ms var(--ease) 200ms, translate 1100ms var(--ease) 200ms, scale 1100ms var(--ease) 200ms; }
+      .js .cover.is-in .showcase { opacity: 1; translate: 0 0; scale: 1; }
+      .js .bar-row .fill { transform: scaleX(0); transition: transform 1400ms var(--ease); }
+      .js .is-in .bar-row .fill { transform: scaleX(1); }
+      .js .is-in .bar-row:nth-child(2) .fill { transition-delay: 150ms; }
+      .js .is-in .bar-row:nth-child(3) .fill { transition-delay: 300ms; }
+      .js .is-in .bar-row:nth-child(4) .fill { transition-delay: 450ms; }
+      .js .rung { opacity: 0; translate: -18px 0; transition: opacity 700ms var(--ease), translate 700ms var(--ease); }
+      .js .is-in .rung { opacity: 1; translate: 0 0; }
+      .js .is-in .rung:nth-child(2) { transition-delay: 220ms; }
+      .js .is-in .rung:nth-child(3) { transition-delay: 440ms; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .deck { scroll-behavior: auto; }
+        .progress { transition: none; }
+        *, *::before, *::after { animation: none !important; transition: none !important; }
+        .js .slide .body > *, .js .slide .eyebrow, .js .cover .showcase, .js .rung { opacity: 1; translate: none; scale: none; }
+        .js .bar-row .fill { transform: none; }
+        .js .cycle img { opacity: 0; }
+        .js .cycle img:first-child { opacity: 1; }
+      }
+      @media (max-width: 600px) {
+        .slide { padding-top: 92px; }
+        .is-panel { padding-left: 10px; padding-right: 10px; }
+        .is-panel .frame { border-radius: 22px; }
+        .wordmark { font-size: 19px; }
+        .eyebrow { font-size: 11.5px; gap: 7px; }
+      }
       @media print {
-        .bar, .nav, .hint, .progress { display: none !important; }
+        .bar, .nav, .hint, .progress, .backdrop { display: none !important; }
         .deck { height: auto; overflow: visible; }
-        .slide { min-height: 0; break-after: page; padding: 40px; border: 0; }
-        html, body { background: #fff; color: #111; }
+        .slide { min-height: 0; break-after: page; padding: 32px; }
+        .js .slide .body > *, .js .slide .eyebrow, .js .cover .showcase, .js .rung { opacity: 1 !important; translate: none !important; scale: none !important; }
+        .js .bar-row .fill { transform: none !important; }
+        *, *::before, *::after { animation: none !important; }
       }
     </style>
   </head>
@@ -203,349 +449,701 @@
     <div class="progress" id="progress" aria-hidden="true"></div>
     <header class="bar">
       <a class="wordmark" href="#p1" aria-label="ForkMesh, back to the cover">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 2.5 21 7.5v9L12 21.5 3 16.5v-9z" stroke="#c4b5fd" stroke-width="1.5"/><path d="M12 2.5v19M3 7.5l9 5 9-5" stroke="#8b7cf6" stroke-width="1.5"/></svg>
-        FORKMESH
+        <img src="/assets/logo.svg" alt="" width="26" height="30" />
+        forkmesh
       </a>
-      <span class="for" id="for" hidden>Prepared for <b id="viewer"></b></span>
+      <div class="bar-end">
+        <span class="for" id="for" hidden>Prepared for <b id="viewer"></b></span>
+        <button class="icon-btn" type="button" id="theme" aria-label="Switch theme" title="Switch theme">
+          <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></svg>
+          <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></svg>
+        </button>
+      </div>
     </header>
 
     <main class="deck" id="deck" tabindex="-1">
 
-      <!-- 1 · Cover -->
       <section class="slide cover" id="p1" data-page="1" aria-label="Cover">
-        <div class="eyebrow">ForkMesh <span class="n">·</span> Investor deck <span class="n">·</span> September 2026</div>
-        <div class="body">
-          <div>
-            <h1>Code with agents.<br />Own the forge.</h1>
-            <p class="lede">ForkMesh turns Claude Code and Codex into attributable contributors on a local-first Git platform you control.</p>
-            <span class="chip">Raising $1.0M · 18-month plan</span>
-            <p class="greet" id="greet" hidden>Prepared for <b id="viewer-long"></b>. This copy is yours alone.</p>
-          </div>
-          <div class="mark" aria-hidden="true">
-            <svg viewBox="0 0 120 120" fill="none">
-              <path d="M60 10 104 35v50L60 110 16 85V35z" stroke="#c4b5fd" stroke-width="2.5"/>
-              <path d="M60 10v100M16 35l44 25 44-25" stroke="#8b7cf6" stroke-width="2.5"/>
-              <path d="M38 47v26M38 47c0-6 10-6 10 0v6c0 6-10 6-10 12M82 47v26M82 47c0-6-10-6-10 0v6c0 6 10 6 10 12" stroke="#5eead4" stroke-width="2.5" stroke-linecap="round"/>
-              <circle cx="38" cy="47" r="3.5" fill="#5eead4"/><circle cx="82" cy="47" r="3.5" fill="#5eead4"/><circle cx="38" cy="73" r="3.5" fill="#5eead4"/><circle cx="82" cy="73" r="3.5" fill="#5eead4"/>
-            </svg>
-            <span class="wm">OWN YOUR CODE</span>
-          </div>
+        <div class="backdrop" aria-hidden="true">
+          <svg class="schematic" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
+          <g id="deck-art">
+          <rect x="96" y="128" width="372" height="268" rx="10" opacity="0.6"/>
+          <rect x="201.6" y="122" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="350.4" y="122" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="462" y="256.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1140" y="96" width="344" height="300" rx="10" opacity="0.6"/>
+          <rect x="1237.2" y="90" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1374.8" y="90" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1478" y="240.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="48" y="500" width="300" height="220" rx="10" opacity="0.6"/>
+          <rect x="132.0" y="494" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="252.0" y="494" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="342" y="604.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1196" y="520" width="336" height="232" rx="10" opacity="0.6"/>
+          <rect x="1290.8" y="514" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1425.2" y="514" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1526" y="630.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="560" y="600" width="480" height="220" rx="10" opacity="0.6"/>
+          <rect x="698.0" y="594" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="890.0" y="594" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1034" y="704.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="440" y="40" width="300" height="120" rx="10" opacity="0.6"/>
+          <rect x="524.0" y="34" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="644.0" y="34" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="734" y="94.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="900" y="40" width="260" height="110" rx="10" opacity="0.6"/>
+          <rect x="972.0" y="34" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1076.0" y="34" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="1154" y="89.0" width="12" height="12" rx="2" opacity="0.5"/>
+          <rect x="232.0" y="152.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M237.33333333333334 152.0 v-5 M237.33333333333334 168.0 v5 M232.0 157.33333333333334 h-5 M248.0 157.33333333333334 h5" opacity="0.7"/>
+          <path d="M242.66666666666666 152.0 v-5 M242.66666666666666 168.0 v5 M232.0 162.66666666666666 h-5 M248.0 162.66666666666666 h5" opacity="0.7"/>
+          <rect x="472.0" y="712.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M477.3333333333333 712.0 v-5 M477.3333333333333 728.0 v5 M472.0 717.3333333333334 h-5 M488.0 717.3333333333334 h5" opacity="0.7"/>
+          <path d="M482.6666666666667 712.0 v-5 M482.6666666666667 728.0 v5 M472.0 722.6666666666666 h-5 M488.0 722.6666666666666 h5" opacity="0.7"/>
+          <rect x="308.0" y="628.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="317" y="637" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M314.0 628.0 v-5 M314.0 652.0 v5 M308.0 634.0 h-5 M332.0 634.0 h5" opacity="0.7"/>
+          <path d="M320.0 628.0 v-5 M320.0 652.0 v5 M308.0 640.0 h-5 M332.0 640.0 h5" opacity="0.7"/>
+          <path d="M326.0 628.0 v-5 M326.0 652.0 v5 M308.0 646.0 h-5 M332.0 646.0 h5" opacity="0.7"/>
+          <rect x="68.0" y="388.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="77" y="397" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M74.0 388.0 v-5 M74.0 412.0 v5 M68.0 394.0 h-5 M92.0 394.0 h5" opacity="0.7"/>
+          <path d="M80.0 388.0 v-5 M80.0 412.0 v5 M68.0 400.0 h-5 M92.0 400.0 h5" opacity="0.7"/>
+          <path d="M86.0 388.0 v-5 M86.0 412.0 v5 M68.0 406.0 h-5 M92.0 406.0 h5" opacity="0.7"/>
+          <rect x="72.0" y="312.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M77.33333333333333 312.0 v-5 M77.33333333333333 328.0 v5 M72.0 317.3333333333333 h-5 M88.0 317.3333333333333 h5" opacity="0.7"/>
+          <path d="M82.66666666666667 312.0 v-5 M82.66666666666667 328.0 v5 M72.0 322.6666666666667 h-5 M88.0 322.6666666666667 h5" opacity="0.7"/>
+          <rect x="1270.0" y="550.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1277" y="557" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1276.6666666666667 550.0 v-5 M1276.6666666666667 570.0 v5 M1270.0 556.6666666666666 h-5 M1290.0 556.6666666666666 h5" opacity="0.7"/>
+          <path d="M1283.3333333333333 550.0 v-5 M1283.3333333333333 570.0 v5 M1270.0 563.3333333333334 h-5 M1290.0 563.3333333333334 h5" opacity="0.7"/>
+          <rect x="1192.0" y="312.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M1197.3333333333333 312.0 v-5 M1197.3333333333333 328.0 v5 M1192.0 317.3333333333333 h-5 M1208.0 317.3333333333333 h5" opacity="0.7"/>
+          <path d="M1202.6666666666667 312.0 v-5 M1202.6666666666667 328.0 v5 M1192.0 322.6666666666667 h-5 M1208.0 322.6666666666667 h5" opacity="0.7"/>
+          <rect x="952.0" y="712.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M957.3333333333334 712.0 v-5 M957.3333333333334 728.0 v5 M952.0 717.3333333333334 h-5 M968.0 717.3333333333334 h5" opacity="0.7"/>
+          <path d="M962.6666666666666 712.0 v-5 M962.6666666666666 728.0 v5 M952.0 722.6666666666666 h-5 M968.0 722.6666666666666 h5" opacity="0.7"/>
+          <rect x="632.0" y="632.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M637.3333333333334 632.0 v-5 M637.3333333333334 648.0 v5 M632.0 637.3333333333334 h-5 M648.0 637.3333333333334 h5" opacity="0.7"/>
+          <path d="M642.6666666666666 632.0 v-5 M642.6666666666666 648.0 v5 M632.0 642.6666666666666 h-5 M648.0 642.6666666666666 h5" opacity="0.7"/>
+          <rect x="1430.0" y="630.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1437" y="637" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1436.6666666666667 630.0 v-5 M1436.6666666666667 650.0 v5 M1430.0 636.6666666666666 h-5 M1450.0 636.6666666666666 h5" opacity="0.7"/>
+          <path d="M1443.3333333333333 630.0 v-5 M1443.3333333333333 650.0 v5 M1430.0 643.3333333333334 h-5 M1450.0 643.3333333333334 h5" opacity="0.7"/>
+          <rect x="152.0" y="632.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M157.33333333333334 632.0 v-5 M157.33333333333334 648.0 v5 M152.0 637.3333333333334 h-5 M168.0 637.3333333333334 h5" opacity="0.7"/>
+          <path d="M162.66666666666666 632.0 v-5 M162.66666666666666 648.0 v5 M152.0 642.6666666666666 h-5 M168.0 642.6666666666666 h5" opacity="0.7"/>
+          <rect x="792.0" y="712.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M797.3333333333334 712.0 v-5 M797.3333333333334 728.0 v5 M792.0 717.3333333333334 h-5 M808.0 717.3333333333334 h5" opacity="0.7"/>
+          <path d="M802.6666666666666 712.0 v-5 M802.6666666666666 728.0 v5 M792.0 722.6666666666666 h-5 M808.0 722.6666666666666 h5" opacity="0.7"/>
+          <rect x="1270.0" y="70.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1277" y="77" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1276.6666666666667 70.0 v-5 M1276.6666666666667 90.0 v5 M1270.0 76.66666666666667 h-5 M1290.0 76.66666666666667 h5" opacity="0.7"/>
+          <path d="M1283.3333333333333 70.0 v-5 M1283.3333333333333 90.0 v5 M1270.0 83.33333333333333 h-5 M1290.0 83.33333333333333 h5" opacity="0.7"/>
+          <rect x="152.0" y="232.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M157.33333333333334 232.0 v-5 M157.33333333333334 248.0 v5 M152.0 237.33333333333334 h-5 M168.0 237.33333333333334 h5" opacity="0.7"/>
+          <path d="M162.66666666666666 232.0 v-5 M162.66666666666666 248.0 v5 M152.0 242.66666666666666 h-5 M168.0 242.66666666666666 h5" opacity="0.7"/>
+          <rect x="228.0" y="68.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="237" y="77" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M234.0 68.0 v-5 M234.0 92.0 v5 M228.0 74.0 h-5 M252.0 74.0 h5" opacity="0.7"/>
+          <path d="M240.0 68.0 v-5 M240.0 92.0 v5 M228.0 80.0 h-5 M252.0 80.0 h5" opacity="0.7"/>
+          <path d="M246.0 68.0 v-5 M246.0 92.0 v5 M228.0 86.0 h-5 M252.0 86.0 h5" opacity="0.7"/>
+          <rect x="472.0" y="232.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M477.3333333333333 232.0 v-5 M477.3333333333333 248.0 v5 M472.0 237.33333333333334 h-5 M488.0 237.33333333333334 h5" opacity="0.7"/>
+          <path d="M482.6666666666667 232.0 v-5 M482.6666666666667 248.0 v5 M472.0 242.66666666666666 h-5 M488.0 242.66666666666666 h5" opacity="0.7"/>
+          <rect x="1268.0" y="148.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="1277" y="157" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1274.0 148.0 v-5 M1274.0 172.0 v5 M1268.0 154.0 h-5 M1292.0 154.0 h5" opacity="0.7"/>
+          <path d="M1280.0 148.0 v-5 M1280.0 172.0 v5 M1268.0 160.0 h-5 M1292.0 160.0 h5" opacity="0.7"/>
+          <path d="M1286.0 148.0 v-5 M1286.0 172.0 v5 M1268.0 166.0 h-5 M1292.0 166.0 h5" opacity="0.7"/>
+          <rect x="1112.0" y="712.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M1117.3333333333333 712.0 v-5 M1117.3333333333333 728.0 v5 M1112.0 717.3333333333334 h-5 M1128.0 717.3333333333334 h5" opacity="0.7"/>
+          <path d="M1122.6666666666667 712.0 v-5 M1122.6666666666667 728.0 v5 M1112.0 722.6666666666666 h-5 M1128.0 722.6666666666666 h5" opacity="0.7"/>
+          <rect x="952.0" y="632.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M957.3333333333334 632.0 v-5 M957.3333333333334 648.0 v5 M952.0 637.3333333333334 h-5 M968.0 637.3333333333334 h5" opacity="0.7"/>
+          <path d="M962.6666666666666 632.0 v-5 M962.6666666666666 648.0 v5 M952.0 642.6666666666666 h-5 M968.0 642.6666666666666 h5" opacity="0.7"/>
+          <rect x="148.0" y="148.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="157" y="157" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M154.0 148.0 v-5 M154.0 172.0 v5 M148.0 154.0 h-5 M172.0 154.0 h5" opacity="0.7"/>
+          <path d="M160.0 148.0 v-5 M160.0 172.0 v5 M148.0 160.0 h-5 M172.0 160.0 h5" opacity="0.7"/>
+          <path d="M166.0 148.0 v-5 M166.0 172.0 v5 M148.0 166.0 h-5 M172.0 166.0 h5" opacity="0.7"/>
+          <rect x="468.0" y="388.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="477" y="397" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M474.0 388.0 v-5 M474.0 412.0 v5 M468.0 394.0 h-5 M492.0 394.0 h5" opacity="0.7"/>
+          <path d="M480.0 388.0 v-5 M480.0 412.0 v5 M468.0 400.0 h-5 M492.0 400.0 h5" opacity="0.7"/>
+          <path d="M486.0 388.0 v-5 M486.0 412.0 v5 M468.0 406.0 h-5 M492.0 406.0 h5" opacity="0.7"/>
+          <rect x="1430.0" y="310.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1437" y="317" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1436.6666666666667 310.0 v-5 M1436.6666666666667 330.0 v5 M1430.0 316.6666666666667 h-5 M1450.0 316.6666666666667 h5" opacity="0.7"/>
+          <path d="M1443.3333333333333 310.0 v-5 M1443.3333333333333 330.0 v5 M1430.0 323.3333333333333 h-5 M1450.0 323.3333333333333 h5" opacity="0.7"/>
+          <rect x="630.0" y="390.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="637" y="397" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M636.6666666666666 390.0 v-5 M636.6666666666666 410.0 v5 M630.0 396.6666666666667 h-5 M650.0 396.6666666666667 h5" opacity="0.7"/>
+          <path d="M643.3333333333334 390.0 v-5 M643.3333333333334 410.0 v5 M630.0 403.3333333333333 h-5 M650.0 403.3333333333333 h5" opacity="0.7"/>
+          <rect x="1428.0" y="468.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="1437" y="477" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1434.0 468.0 v-5 M1434.0 492.0 v5 M1428.0 474.0 h-5 M1452.0 474.0 h5" opacity="0.7"/>
+          <path d="M1440.0 468.0 v-5 M1440.0 492.0 v5 M1428.0 480.0 h-5 M1452.0 480.0 h5" opacity="0.7"/>
+          <path d="M1446.0 468.0 v-5 M1446.0 492.0 v5 M1428.0 486.0 h-5 M1452.0 486.0 h5" opacity="0.7"/>
+          <rect x="632.0" y="312.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M637.3333333333334 312.0 v-5 M637.3333333333334 328.0 v5 M632.0 317.3333333333333 h-5 M648.0 317.3333333333333 h5" opacity="0.7"/>
+          <path d="M642.6666666666666 312.0 v-5 M642.6666666666666 328.0 v5 M632.0 322.6666666666667 h-5 M648.0 322.6666666666667 h5" opacity="0.7"/>
+          <rect x="1352.0" y="72.0" width="16" height="16" rx="3" opacity="0.75"/>
+          <path d="M1357.3333333333333 72.0 v-5 M1357.3333333333333 88.0 v5 M1352.0 77.33333333333333 h-5 M1368.0 77.33333333333333 h5" opacity="0.7"/>
+          <path d="M1362.6666666666667 72.0 v-5 M1362.6666666666667 88.0 v5 M1352.0 82.66666666666667 h-5 M1368.0 82.66666666666667 h5" opacity="0.7"/>
+          <rect x="1030.0" y="630.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1037" y="637" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1036.6666666666667 630.0 v-5 M1036.6666666666667 650.0 v5 M1030.0 636.6666666666666 h-5 M1050.0 636.6666666666666 h5" opacity="0.7"/>
+          <path d="M1043.3333333333333 630.0 v-5 M1043.3333333333333 650.0 v5 M1030.0 643.3333333333334 h-5 M1050.0 643.3333333333334 h5" opacity="0.7"/>
+          <rect x="468.0" y="468.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="477" y="477" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M474.0 468.0 v-5 M474.0 492.0 v5 M468.0 474.0 h-5 M492.0 474.0 h5" opacity="0.7"/>
+          <path d="M480.0 468.0 v-5 M480.0 492.0 v5 M468.0 480.0 h-5 M492.0 480.0 h5" opacity="0.7"/>
+          <path d="M486.0 468.0 v-5 M486.0 492.0 v5 M468.0 486.0 h-5 M492.0 486.0 h5" opacity="0.7"/>
+          <rect x="68.0" y="548.0" width="24" height="24" rx="3" opacity="0.75"/>
+          <rect x="77" y="557" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M74.0 548.0 v-5 M74.0 572.0 v5 M68.0 554.0 h-5 M92.0 554.0 h5" opacity="0.7"/>
+          <path d="M80.0 548.0 v-5 M80.0 572.0 v5 M68.0 560.0 h-5 M92.0 560.0 h5" opacity="0.7"/>
+          <path d="M86.0 548.0 v-5 M86.0 572.0 v5 M68.0 566.0 h-5 M92.0 566.0 h5" opacity="0.7"/>
+          <rect x="1350.0" y="710.0" width="20" height="20" rx="3" opacity="0.75"/>
+          <rect x="1357" y="717" width="6" height="6" rx="1" opacity="0.7"/>
+          <path d="M1356.6666666666667 710.0 v-5 M1356.6666666666667 730.0 v5 M1350.0 716.6666666666666 h-5 M1370.0 716.6666666666666 h5" opacity="0.7"/>
+          <path d="M1363.3333333333333 710.0 v-5 M1363.3333333333333 730.0 v5 M1350.0 723.3333333333334 h-5 M1370.0 723.3333333333334 h5" opacity="0.7"/>
+          <path d="M240 160 L240 80 L240 80" opacity="0.6"/>
+          <path d="M240 160 L240 160 L160 160" opacity="0.6"/>
+          <path d="M480 720 L320 720 L320 640" opacity="0.6"/>
+          <path d="M320 715 L325 720 L320 725 L315 720 Z" opacity="0.75"/>
+          <path d="M480 720 L480 640 L640 640" opacity="0.6"/>
+          <path d="M480 635 L485 640 L480 645 L475 640 Z" opacity="0.75"/>
+          <path d="M320 640 L320 640 L160 640" opacity="0.6"/>
+          <path d="M80 400 L80 320 L80 320" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M80 400 L80 400 L80 560" opacity="0.6"/>
+          <path d="M80 320 L160 320 L160 240" opacity="0.6"/>
+          <path d="M160 315 L165 320 L160 325 L155 320 Z" opacity="0.75"/>
+          <path d="M1280 560 L1280 640 L1440 640" opacity="0.6"/>
+          <path d="M1280 635 L1285 640 L1280 645 L1275 640 Z" opacity="0.75"/>
+          <path d="M1280 560 L1440 560 L1440 480" opacity="0.6"/>
+          <path d="M1440 555 L1445 560 L1440 565 L1435 560 Z" opacity="0.75"/>
+          <path d="M1200 320 L1280 320 L1280 160" opacity="0.6"/>
+          <path d="M1280 315 L1285 320 L1280 325 L1275 320 Z" opacity="0.75"/>
+          <path d="M1200 320 L1440 320 L1440 320" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M960 720 L960 720 L960 640" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M960 720 L960 720 L800 720" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M640 640 L800 640 L800 720" opacity="0.6"/>
+          <path d="M800 635 L805 640 L800 645 L795 640 Z" opacity="0.75"/>
+          <path d="M1440 640 L1440 640 L1440 480" opacity="0.6"/>
+          <path d="M1440 640 L1360 640 L1360 720" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M1360 635 L1365 640 L1360 645 L1355 640 Z" opacity="0.75"/>
+          <path d="M160 640 L80 640 L80 560" opacity="0.6"/>
+          <path d="M80 635 L85 640 L80 645 L75 640 Z" opacity="0.75"/>
+          <path d="M1280 80 L1280 160 L1280 160" opacity="0.6"/>
+          <path d="M1280 80 L1280 80 L1360 80" opacity="0.6"/>
+          <path d="M160 240 L160 240 L160 160" opacity="0.6"/>
+          <path d="M160 240 L160 160 L240 160" opacity="0.6"/>
+          <path d="M160 155 L165 160 L160 165 L155 160 Z" opacity="0.75"/>
+          <path d="M240 80 L160 80 L160 160" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M160 75 L165 80 L160 85 L155 80 Z" opacity="0.75"/>
+          <path d="M480 240 L480 240 L480 400" opacity="0.6"/>
+          <path d="M480 240 L480 320 L640 320" opacity="0.6"/>
+          <path d="M480 315 L485 320 L480 325 L475 320 Z" opacity="0.75"/>
+          <path d="M1280 160 L1280 80 L1360 80" opacity="0.6"/>
+          <path d="M1280 75 L1285 80 L1280 85 L1275 80 Z" opacity="0.75"/>
+          <path d="M1120 720 L960 720 L960 720" opacity="0.6"/>
+          <path d="M1120 720 L1040 720 L1040 640" opacity="0.6"/>
+          <path d="M1040 715 L1045 720 L1040 725 L1035 720 Z" opacity="0.75"/>
+          <path d="M960 640 L960 640 L1040 640" opacity="0.6"/>
+          <path d="M480 400 L480 480 L480 480" opacity="0.6"/>
+          <path d="M1440 320 L1440 480 L1440 480" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M640 400 L640 320 L640 320" opacity="0.6"/>
+          <path d="M640 400 L480 400 L480 400" opacity="0.6" stroke-dasharray="3 7"/>
+          <path d="M1040 640 L1040 720 L960 720" opacity="0.6"/>
+          <path d="M1040 715 L1045 720 L1040 725 L1035 720 Z" opacity="0.75"/>
+          <path d="M480 480 L480 720 L480 720" opacity="0.6"/>
+          <path d="M1360 720 L1360 560 L1280 560" opacity="0.6"/>
+          <path d="M1360 555 L1365 560 L1360 565 L1355 560 Z" opacity="0.75"/>
+          <path d="M621 855 h10 M626 850 v10" opacity="0.55"/>
+          <path d="M257 515 h10 M262 510 v10" opacity="0.55"/>
+          <path d="M658 656 h10 M663 651 v10" opacity="0.55"/>
+          <path d="M170 328 h10 M175 323 v10" opacity="0.55"/>
+          <path d="M672 146 h10 M677 141 v10" opacity="0.55"/>
+          <path d="M1355 790 h10 M1360 785 v10" opacity="0.55"/>
+          <path d="M1174 745 h10 M1179 740 v10" opacity="0.55"/>
+          <path d="M674 738 h10 M679 733 v10" opacity="0.55"/>
+          <path d="M247 235 h10 M252 230 v10" opacity="0.55"/>
+          <path d="M1391 227 h10 M1396 222 v10" opacity="0.55"/>
+          <path d="M294 792 h10 M299 787 v10" opacity="0.55"/>
+          <path d="M1325 738 h10 M1330 733 v10" opacity="0.55"/>
+          </g>
+            <g>
+              <path class="pulse" pathLength="100" d="M240 80 L160 80 L160 320 L80 320 L80 640 L320 640 L320 720 L480 720"/>
+              <path class="pulse" pathLength="100" d="M1200 320 L1280 320 L1280 80 L1360 80"/>
+              <path class="pulse" pathLength="100" d="M1440 320 L1440 560 L1280 560 L1280 640 L1440 640"/>
+              <path class="pulse" pathLength="100" d="M640 320 L480 320 L480 720 L320 720"/>
+              <path class="pulse" pathLength="100" d="M640 640 L800 640 L800 720 L1040 720 L1040 640"/>
+            </g>
+          </svg>
+          <div class="glow"></div>
+          <div class="fade"></div>
         </div>
-        <div class="foot"><span>forkmesh.com · founders@forkmesh.com</span><span>Confidential</span></div>
-      </section>
-
-      <!-- 2 · Problem -->
-      <section class="slide" id="p2" data-page="2" aria-label="Problem">
-        <div class="eyebrow">Problem <span class="n">02</span></div>
-        <div class="body">
-          <div>
-            <h2>Agents work differently. The forge does not.</h2>
-            <p class="lede">Coding is shifting from autocomplete to delegated work, but orchestration, accountability and ownership remain fragmented across three control planes.</p>
-          </div>
-          <div class="cols cols-3">
-            <div class="card"><span class="k">01</span><h3>Work is fragmented</h3><p>Tasks, transcripts, branches, pull requests and reviews live across disconnected tools.</p></div>
-            <div class="card"><span class="k">02</span><h3>Accountability is shallow</h3><p>Teams need model, cost, tool-use, authorship and approval evidence for every delegated change.</p></div>
-            <div class="card"><span class="k">03</span><h3>Control is rented</h3><p>Code, identity, collaboration, and often the agent experience, stay bound to a central platform.</p></div>
-          </div>
-          <div class="chain" aria-label="Three control planes"><span>IDE / CLI</span><i>→</i><span>Hosted forge</span><i>→</i><span>Model vendor</span><i>=</i><span>Three control planes, one overloaded reviewer</span></div>
-        </div>
-        <div class="foot"><span class="tag">More code is cheap. Trusted merges are scarce.</span><span>Confidential · September 2026</span></div>
-      </section>
-
-      <!-- 3 · Why now -->
-      <section class="slide" id="p3" data-page="3" aria-label="Why now">
-        <div class="eyebrow">Why now <span class="n">03</span></div>
-        <div class="body">
-          <div>
-            <h2>AI coding is already a budget line. Agent governance is next.</h2>
-            <p class="lede">The winning platform will coordinate many models, preserve provenance and keep the system of record under customer control.</p>
-          </div>
-          <div class="cols cols-3">
-            <div class="card stat-accent"><div class="num">180M+<small>Developers building on GitHub</small></div></div>
-            <div class="card stat-accent"><div class="num">4.7M<small>Paid GitHub Copilot subscribers</small></div></div>
-            <div class="card stat-mint"><div class="num">+75%<small>Paid Copilot growth, year over year</small></div></div>
-          </div>
-          <div class="flow" style="grid-template-columns: repeat(3, minmax(0, 1fr))">
-            <div><span class="k">Model choice</span><h3>Teams use multiple coding agents</h3><p>Claude, Codex and the next one. No single vendor wins every task.</p></div>
-            <div><span class="k">Macro delegation</span><h3>Agents own tasks, not just autocomplete</h3><p>Issues in, reviewed pull requests out.</p></div>
-            <div><span class="k">Control plane</span><h3>Provenance, policy and trusted merges become mandatory</h3><p>Someone has to own the record of who did what, with which model, at what cost.</p></div>
-          </div>
-        </div>
-        <div class="foot"><span class="src">GitHub Octoverse 2025 · Microsoft FY26 Q2</span><span>Confidential · September 2026</span></div>
-      </section>
-
-      <!-- 4 · Product -->
-      <section class="slide" id="p4" data-page="4" aria-label="Product">
-        <div class="eyebrow">Product <span class="n">04</span></div>
-        <div class="body">
-          <div>
-            <h2>One prompt becomes a reviewed, attributable pull request.</h2>
-            <p class="lede">ForkMesh is the orchestration and system-of-record layer around the coding agents teams already choose.</p>
-          </div>
-          <div class="cols cols-3">
-            <div class="card"><span class="k">01 · Assign</span><h3>Start from an issue or a task</h3><p>In the desktop app or on the web.</p></div>
-            <div class="card"><span class="k">02 · Choose</span><h3>Run Claude Code or Codex</h3><p>Keep provider and model choice.</p></div>
-            <div class="card"><span class="k">03 · Isolate</span><h3>A worktree and branch per session</h3><p>Agents never share a checkout.</p></div>
-            <div class="card"><span class="k">04 · Orchestrate</span><h3>Sessions in parallel</h3><p>Stream, steer, stop and resume.</p></div>
-            <div class="card"><span class="k">05 · Prove</span><h3>Capture metadata and patch</h3><p>Then open a real, signed pull request.</p></div>
-            <div class="card"><span class="k">06 · Gate</span><h3>A human inspects and merges</h3><p>AI findings attached; the merge is deliberate.</p></div>
-          </div>
-          <div class="band"><span class="dot"></span>Replace the Copilot-bound workflow<span class="dot"></span>Keep model choice<span class="dot"></span>Keep forge ownership</div>
-        </div>
-        <div class="foot"><span>forkmesh.com/docs</span><span>Confidential · September 2026</span></div>
-      </section>
-
-      <!-- 5 · Proof -->
-      <section class="slide" id="p5" data-page="5" aria-label="Proof">
-        <div class="eyebrow">Product proof <span class="n">05</span></div>
-        <div class="body">
-          <div>
-            <h2>ForkMesh is already building ForkMesh.</h2>
-            <p class="lede">Dogfooding proves the issue → agent → pull request → merge loop, and shows the velocity it produces. Numbers are from the repository's own Git history and the live network on 13 September 2026.</p>
-          </div>
-          <div class="cols cols-3">
-            <div class="card stat-accent"><div class="num">7,416<small>Agent branches merged into main</small></div></div>
-            <div class="card stat-accent"><div class="num">51,457<small>Commits in the repository</small></div></div>
-            <div class="card stat-mint"><div class="num">90<small>Days since the first commit</small></div></div>
-            <div class="card"><div class="num">24<small>Contributors, human and agent</small></div></div>
-            <div class="card"><div class="num">63<small>Community pull requests through the ledger</small></div></div>
-            <div class="card"><div class="num">54<small>Repositories on the live network</small></div></div>
-          </div>
-          <ul class="list">
-            <li><b>Verified in source and Git history.</b> Agent branches are merged into main continuously; every merge carries the session's model, cost and patch.</li>
-            <li><b>Live in production.</b> Desktop nodes host repositories, mirrors serve clones, and this deck is itself served by the platform.</li>
-          </ul>
-        </div>
-        <div class="foot"><span class="tag">Dogfooding proof, not customer traction · Round objective: repeatable paid adoption</span><span>Confidential</span></div>
-      </section>
-
-      <!-- 6 · Roadmap -->
-      <section class="slide" id="p6" data-page="6" aria-label="Roadmap">
-        <div class="eyebrow">Roadmap <span class="n">06</span></div>
-        <div class="body">
-          <div>
-            <h2>The agent loop works. This round hardens it.</h2>
-            <p class="lede">Exactly what is live today, and what the capital is designed to unlock.</p>
-          </div>
-          <div class="cols cols-2">
-            <div class="card">
-              <span class="k">Live in production</span>
-              <h3>Agent-native forge shipped</h3>
-              <ul class="list" style="margin-top: 12px">
-                <li>Issue or prompt → Claude Code / Codex session</li>
-                <li>Isolated worktree and branch for every agent run</li>
-                <li>Parallel sessions with stream, steer, stop and resume</li>
-                <li>Patch capture, session metadata and a reviewable pull request</li>
-                <li>Signed collaboration events and a deliberate human merge</li>
-              </ul>
-            </div>
-            <div class="card" style="border-color: rgba(139, 124, 246, 0.5)">
-              <span class="k">Funded roadmap</span>
-              <h3>Enterprise control plane</h3>
-              <ul class="list" style="margin-top: 12px">
-                <li>Per-agent cryptographic identity, policy and cost controls</li>
-                <li>Universal sandbox enforcement for every runtime</li>
-                <li>SSO, RBAC, audit exports and admin controls</li>
-                <li>Multiple mainnodes with measured failover reliability</li>
-                <li>Security hardening, independent review and a SOC 2 program</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-        <div class="foot"><span>Milestones are targets, not current traction</span><span>Confidential · September 2026</span></div>
-      </section>
-
-      <!-- 7 · Customer & GTM -->
-      <section class="slide" id="p7" data-page="7" aria-label="Customer and go-to-market">
-        <div class="eyebrow">Customer &amp; go-to-market <span class="n">07</span></div>
-        <div class="body">
-          <div>
-            <h2>Agent-first teams are the wedge. Sovereign infrastructure expands the deal.</h2>
-            <p class="lede">A founder-led motion where every step has an observable conversion event.</p>
-          </div>
-          <div class="cols cols-2">
-            <div class="card">
-              <span class="k">Initial ICP hypothesis</span>
-              <h3>20 to 200 person software teams</h3>
-              <p>Using multiple coding agents on private code, and feeling the review, provenance and platform-control gap.</p>
-              <ul class="list" style="margin-top: 14px">
-                <li><b>Buyer:</b> CTO, VP Engineering, Security</li>
-                <li><b>Trigger:</b> agent throughput rises faster than reviewer trust and control</li>
-                <li><b>Land:</b> one agent workflow, no big-bang migration</li>
-              </ul>
-            </div>
-            <div class="flow" style="grid-template-columns: minmax(0, 1fr); border-radius: 12px">
-              <div style="border-right: 0; border-bottom: 1px solid var(--line)"><span class="k">Prove</span><p>Dogfooding plus a live issue-to-agent-to-PR demo.</p></div>
-              <div style="border-right: 0; border-bottom: 1px solid var(--line)"><span class="k">Pilot</span><p>A design partner delegates one real issue queue.</p></div>
-              <div style="border-right: 0; border-bottom: 1px solid var(--line)"><span class="k">Convert</span><p>The team buys orchestration, governance and support.</p></div>
-              <div style="border-right: 0"><span class="k">Expand</span><p>More agents, repositories, policies and nodes.</p></div>
-            </div>
-          </div>
-          <div class="chain" aria-label="Leading indicators"><span>Prompt</span><i>→</i><span>Agent PR</span><i>→</i><span>Human-approved merge</span><i>→</i><span>Paid pilot</span><i>→</i><span>ARR</span><i>→</i><span>Expansion</span></div>
-        </div>
-        <div class="foot"><span class="tag">Founder-led until 20 paid organizations</span><span>Confidential · September 2026</span></div>
-      </section>
-
-      <!-- 8 · Market -->
-      <section class="slide" id="p8" data-page="8" aria-label="Market">
-        <div class="eyebrow">Market <span class="n">08</span></div>
-        <div class="body">
-          <div>
-            <h2>Paid AI coding is proven. ForkMesh sells the control layer around it.</h2>
-            <p class="lede">A bottom-up model is more credible than an untraceable TAM / SAM / SOM stack. The wedge is the growing spend around delegated code and trusted merges.</p>
-          </div>
-          <div class="cols cols-2" style="align-items: start">
-            <div class="cols" style="gap: 14px">
-              <div class="card stat-accent"><div class="num">4.7M<small>Paid Copilot subscribers today</small></div></div>
-              <div class="card stat-mint"><div class="num">$25K<small>Blended ACV hypothesis per organization</small></div></div>
-            </div>
-            <div class="ladder" aria-label="Illustrative bottom-up path">
-              <div class="rung"><span class="n">20</span><span class="t">Paid organizations</span><span class="r">$0.5M ARR<small>Round milestone</small></span></div>
-              <div class="rung"><span class="n">400</span><span class="t">Paid organizations</span><span class="r">$10M ARR<small>Scale proof</small></span></div>
-              <div class="rung"><span class="n">4,000</span><span class="t">Paid organizations</span><span class="r">$100M ARR<small>Venture outcome</small></span></div>
-            </div>
-          </div>
-        </div>
-        <div class="foot"><span class="src">Microsoft FY26 Q2 · Illustrative model: price and conversion are validated in the design-partner phase</span><span>Confidential</span></div>
-      </section>
-
-      <!-- 9 · Business model -->
-      <section class="slide" id="p9" data-page="9" aria-label="Business model">
-        <div class="eyebrow">Business model <span class="n">09</span></div>
-        <div class="body">
-          <div>
-            <h2>Monetize orchestration and governance, not model lock-in.</h2>
-            <p class="lede">Teams bring the agents they choose. ForkMesh charges for the shared workflow, the control plane and the forge.</p>
-          </div>
-          <div class="cols cols-3">
-            <div class="card"><span class="k">Community</span><h3>Free, open source</h3><ul class="list" style="margin-top: 12px"><li>Local-first Git forge</li><li>Claude and Codex sessions</li><li>Signed issues and pull requests</li></ul></div>
-            <div class="card" style="border-color: rgba(139, 124, 246, 0.5)"><span class="k">Agent team</span><h3>Subscription plus usage</h3><ul class="list" style="margin-top: 12px"><li>Multi-agent orchestration</li><li>Sessions, usage and provenance</li><li>Managed collaboration and support</li></ul></div>
-            <div class="card"><span class="k">Enterprise</span><h3>Annual contract</h3><ul class="list" style="margin-top: 12px"><li>Policy, RBAC and audit controls</li><li>Self-hosted and federated options</li><li>Security, SLA and support</li></ul></div>
-          </div>
-          <div class="chain"><span>Land one workflow</span><i>→</i><span>Expand agents and repositories</span><i>→</i><span>Standardize organization-wide</span></div>
-        </div>
-        <div class="foot"><span class="tag">Usage-priced components protect margin as agent workloads scale</span><span>Confidential</span></div>
-      </section>
-
-      <!-- 10 · Competition -->
-      <section class="slide" id="p10" data-page="10" aria-label="Competition">
-        <div class="eyebrow">Competition <span class="n">10</span></div>
-        <div class="body">
-          <div>
-            <h2>ForkMesh owns the intersection others optimize separately.</h2>
-            <p class="lede">The alternatives are strong. The wedge is model-flexible agents, the full forge workflow and local-first ownership, together.</p>
-          </div>
-          <div class="scroll">
-            <table>
-              <thead><tr><th>Category</th><th>Examples</th><th>Best at</th><th>Trade-off for our ICP</th><th>ForkMesh role</th></tr></thead>
-              <tbody>
-                <tr><td>Hosted AI forges</td><td>Copilot · GitLab Duo</td><td>Integrated forge and agents</td><td>Platform-controlled code and control plane</td><td class="role">Sovereign alternative</td></tr>
-                <tr><td>Coding agents</td><td>Claude · Codex · Cursor</td><td>Best-in-class coding</td><td>Not a shared Git system of record</td><td class="role">Orchestrate</td></tr>
-                <tr><td>Peer-to-peer Git</td><td>Radicle</td><td>Sovereign collaboration</td><td>Agent orchestration is not the core</td><td class="role">Closest infrastructure peer</td></tr>
-                <tr><td>Self-hosted forges</td><td>Forgejo · Gitea</td><td>Instance deployment control</td><td>Agent workflow remains fragmented</td><td class="role">Agent-native evolution</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-        <div class="foot"><span class="src">GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle</span><span>Confidential</span></div>
-      </section>
-
-      <!-- 11 · Team -->
-      <section class="slide" id="p11" data-page="11" aria-label="Team">
-        <div class="eyebrow">Team <span class="n">11</span></div>
-        <div class="body">
-          <div>
-            <h2>Company-building experience meets founder-problem fit.</h2>
-            <p class="lede">Operating experience on one side, protocol, Git and distributed-systems execution on the other. The pain became the protocol.</p>
-          </div>
-          <div class="cols cols-2">
-            <div class="card person">
-              <div class="av" aria-hidden="true">JV</div>
-              <div>
-                <h3>Jett Vale</h3>
-                <p class="role">CEO · Founder</p>
-                <ul class="list"><li>10+ years across software, startups and hardware</li><li>Built and exited a prior company</li><li>Leads product, company and the developer community</li></ul>
-              </div>
-            </div>
-            <div class="card person">
-              <div class="av" aria-hidden="true">MK</div>
-              <div>
-                <h3>Md. Kaif</h3>
-                <p class="role">CTO · Co-founder</p>
-                <ul class="list"><li>Distributed systems and Git workflow builder</li><li>65+ merged open-source contributions informed the problem</li><li>Leads protocol, product architecture and engineering</li></ul>
-              </div>
-            </div>
-          </div>
-          <div class="band"><span class="dot"></span>Founder-market fit<span class="dot"></span>Company-building + distributed systems + open-source contributor experience</div>
-        </div>
-        <div class="foot"><span>founders@forkmesh.com</span><span>Confidential · September 2026</span></div>
-      </section>
-
-      <!-- 12 · The round -->
-      <section class="slide" id="p12" data-page="12" aria-label="The round">
-        <div class="eyebrow">The round <span class="n">12</span></div>
-        <div class="body">
-          <div>
-            <h2>$1M turns product proof into enterprise pull.</h2>
-            <p class="lede">An 18-month plan to win 20 paid teams and harden the control plane. Average budget envelope: about $55.6K per month.</p>
-          </div>
-          <div class="cols cols-2" style="align-items: start">
-            <div class="card">
-              <span class="k">Use of funds</span>
-              <div class="bars" style="margin-top: 6px">
-                <div class="bar-row"><span class="lbl">Product &amp; engineering</span><span class="track"><span class="fill" style="width: 55%"></span></span><span class="val">$550K · 55%</span></div>
-                <div class="bar-row"><span class="lbl">Infrastructure &amp; security</span><span class="track"><span class="fill" style="width: 20%"></span></span><span class="val">$200K · 20%</span></div>
-                <div class="bar-row"><span class="lbl">GTM &amp; developer ecosystem</span><span class="track"><span class="fill" style="width: 15%"></span></span><span class="val">$150K · 15%</span></div>
-                <div class="bar-row"><span class="lbl">Legal, ops &amp; contingency</span><span class="track"><span class="fill" style="width: 10%"></span></span><span class="val">$100K · 10%</span></div>
-              </div>
-            </div>
-            <div class="card" style="border-color: rgba(94, 234, 212, 0.4)">
-              <span class="k" style="color: var(--mint)">Target · Q4 2027 · Series A readiness</span>
-              <ul class="list">
-                <li><b>20</b> paid organizations at a $25K blended ACV target</li>
-                <li><b>$500K ARR</b> plus referenceable deployment evidence</li>
-                <li><b>Proven</b> faster issue-to-accepted-PR cycles, with retention</li>
-                <li><b>Hardened</b> agent controls, multi-mainnode reliability and an independent security review</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-        <div class="foot"><span>Milestones are targets, not current traction</span><span>Confidential · September 2026</span></div>
-      </section>
-
-      <!-- 13 · Sources and close -->
-      <section class="slide close" id="p13" data-page="13" aria-label="Sources and contact">
-        <div class="eyebrow">Sources &amp; contact <span class="n">13</span></div>
-        <div class="body">
-          <div class="cols cols-2" style="align-items: start; gap: 40px">
+        <div class="frame">
+          <div class="eyebrow">ForkMesh <span class="n">·</span> Investor deck <span class="n">·</span> September 2026</div>
+          <div class="body">
             <div>
-              <h1>Let's build the forge teams own.</h1>
-              <p class="lede">The agent-native, local-first Git platform for teams that refuse to rent their system of record. Raising $1.0M.</p>
-              <div class="cta">
-                <a class="primary" href="mailto:founders@forkmesh.com?subject=ForkMesh%20round">Reply to the founders</a>
-                <a href="https://forkmesh.com" target="_blank" rel="noopener">Live product</a>
-                <a href="https://forkmesh.com/docs" target="_blank" rel="noopener">Docs</a>
-                <a href="https://forkmesh.com/status" target="_blank" rel="noopener">Network status</a>
-              </div>
+              <h1>Code with agents.<br />Own the forge.</h1>
+              <p class="lede">ForkMesh turns Claude Code and Codex into attributable contributors on a local-first Git platform you control.</p>
+              <span class="chip">Raising $1.0M · 18-month plan</span>
+              <p class="greet" id="greet" hidden>Prepared for <b id="viewer-long"></b>. This copy is yours alone.</p>
             </div>
-            <div class="sources" aria-label="Sources and definitions">
-              <div><b>ForkMesh Git history</b><span>Agent workflow and dogfooding snapshot through 13 Sep 2026</span></div>
-              <div><b>ForkMesh live network</b><span>Catalog and node counts from the public status API, 13 Sep 2026</span></div>
-              <div><b>GitHub Octoverse 2025</b><span>180M+ developers; AI-coding adoption context</span></div>
-              <div><b>Microsoft FY26 Q2</b><span>4.7M paid Copilot subscribers; +75% year over year; Agent HQ</span></div>
-              <div><b>GitLab Duo · Radicle</b><span>Incumbent agent capability and the peer-to-peer comparator</span></div>
-              <div><b>Definitions</b><span>Dogfooding metrics are internal Git history, not customer traction. ARR and ACV figures are forward-looking targets.</span></div>
+            <div class="showcase" aria-hidden="true">
+              <figure class="laptop">
+                <div class="laptop-screen">
+                  <span class="laptop-notch"></span>
+                  <img src="/assets/desktop-mockup/desktop-app.webp" alt="" width="2048" height="1332" decoding="async" />
+                </div>
+                <div class="laptop-base"><span class="laptop-lip"></span></div>
+              </figure>
+              <figure class="phone float">
+                <span class="screen"><img src="/assets/mobile/start-agent.webp" alt="" width="640" height="1391" decoding="async" /></span>
+              </figure>
             </div>
           </div>
+          <div class="foot"><span>forkmesh.com · founders@forkmesh.com</span><span>Confidential</span></div>
         </div>
-        <div class="foot"><span>forkmesh.com · founders@forkmesh.com</span><span>Confidential · September 2026</span></div>
+      </section>
+
+      <section class="slide" id="p2" data-page="2" aria-label="Problem">
+        <div class="frame">
+          <div class="eyebrow">Problem <span class="n">02</span></div>
+          <div class="body">
+            <div>
+              <h2>Agents work differently. The forge does not.</h2>
+              <p class="lede">Coding is shifting from autocomplete to delegated work, but orchestration, accountability and ownership remain fragmented across three control planes.</p>
+            </div>
+            <div class="cols cols-3">
+              <div class="card"><span class="k">01</span><h3>Work is fragmented</h3><p>Tasks, transcripts, branches, pull requests and reviews live across disconnected tools.</p></div>
+              <div class="card"><span class="k">02</span><h3>Accountability is shallow</h3><p>Teams need model, cost, tool-use, authorship and approval evidence for every delegated change.</p></div>
+              <div class="card"><span class="k">03</span><h3>Control is rented</h3><p>Code, identity, collaboration, and often the agent experience, stay bound to a central platform.</p></div>
+            </div>
+            <div class="chain" aria-label="Three control planes"><span>IDE / CLI</span><i>→</i><span>Hosted forge</span><i>→</i><span>Model vendor</span><i>=</i><span>Three control planes, one overloaded reviewer</span></div>
+          </div>
+          <div class="foot"><span class="tag">More code is cheap. Trusted merges are scarce.</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide is-panel" id="p3" data-page="3" aria-label="Why now">
+        <div class="frame">
+          <div class="eyebrow">Why now <span class="n">03</span></div>
+          <div class="body">
+            <div>
+              <h2>AI coding is already a budget line. Agent governance is next.</h2>
+              <p class="lede">The winning platform will coordinate many models, preserve provenance and keep the system of record under customer control.</p>
+            </div>
+            <div class="cols cols-3">
+              <div class="card stat-accent"><div class="num">180M+<small>Developers building on GitHub</small></div></div>
+              <div class="card stat-accent"><div class="num">4.7M<small>Paid GitHub Copilot subscribers</small></div></div>
+              <div class="card stat-mint"><div class="num">+75%<small>Paid Copilot growth, year over year</small></div></div>
+            </div>
+            <div class="flow">
+              <div><span class="k">Model choice</span><h3>Teams use multiple coding agents</h3><p>Claude, Codex and the next one. No single vendor wins every task.</p></div>
+              <div><span class="k">Macro delegation</span><h3>Agents own tasks, not just autocomplete</h3><p>Issues in, reviewed pull requests out.</p></div>
+              <div><span class="k">Control plane</span><h3>Provenance, policy and trusted merges become mandatory</h3><p>Someone has to own the record of who did what, with which model, at what cost.</p></div>
+            </div>
+          </div>
+          <div class="foot"><span class="src">GitHub Octoverse 2025 · Microsoft FY26 Q2</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide" id="p4" data-page="4" aria-label="Product">
+        <div class="frame">
+          <div class="eyebrow">Product <span class="n">04</span></div>
+          <div class="body">
+            <div>
+              <h2>One prompt becomes a reviewed, attributable pull request.</h2>
+              <p class="lede">ForkMesh is the orchestration and system-of-record layer around the coding agents teams already choose.</p>
+            </div>
+            <div class="product">
+              <div class="cols cols-2 steps">
+                <div class="card"><span class="k">01 · Assign</span><h3>Start from an issue or a task</h3><p>In the desktop app or on the web.</p></div>
+                <div class="card"><span class="k">02 · Choose</span><h3>Run Claude Code or Codex</h3><p>Keep provider and model choice.</p></div>
+                <div class="card"><span class="k">03 · Isolate</span><h3>A worktree and branch per session</h3><p>Agents never share a checkout.</p></div>
+                <div class="card"><span class="k">04 · Orchestrate</span><h3>Sessions in parallel</h3><p>Stream, steer, stop and resume.</p></div>
+                <div class="card"><span class="k">05 · Prove</span><h3>Capture metadata and patch</h3><p>Then open a real, signed pull request.</p></div>
+                <div class="card"><span class="k">06 · Gate</span><h3>A human inspects and merges</h3><p>AI findings attached; the merge is deliberate.</p></div>
+              </div>
+              <div class="device" aria-hidden="true">
+                <figure class="phone cycle">
+                  <span class="screen">
+                    <img style="--i: 0" src="/assets/mobile/prompt.webp" alt="" width="640" height="1391" decoding="async" />
+                    <img style="--i: 1" src="/assets/mobile/models.webp" alt="" width="640" height="1391" decoding="async" />
+                    <img style="--i: 2" src="/assets/mobile/start-agent.webp" alt="" width="640" height="1391" decoding="async" />
+                    <img style="--i: 3" src="/assets/mobile/inbox.webp" alt="" width="640" height="1391" decoding="async" />
+                    <img style="--i: 4" src="/assets/mobile/diff.webp" alt="" width="640" height="1391" decoding="async" />
+                    <img style="--i: 5" src="/assets/mobile/review.webp" alt="" width="640" height="1391" decoding="async" />
+                  </span>
+                </figure>
+              </div>
+            </div>
+            <div class="band"><span class="dot"></span>Replace the Copilot-bound workflow<span class="dot"></span>Keep model choice<span class="dot"></span>Keep forge ownership</div>
+          </div>
+          <div class="foot"><span>forkmesh.com/docs</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide is-panel" id="p5" data-page="5" aria-label="Proof">
+        <div class="frame">
+          <div class="eyebrow">Product proof <span class="n">05</span></div>
+          <div class="body">
+            <div>
+              <h2>ForkMesh is already building ForkMesh.</h2>
+              <p class="lede">Dogfooding proves the issue → agent → pull request → merge loop, and shows the velocity it produces. Numbers are from the repository's own Git history and the live network on 13 September 2026.</p>
+            </div>
+            <div class="proof">
+              <div class="cols cols-3">
+                <div class="card stat-accent"><div class="num">7,416<small>Agent branches merged into main</small></div></div>
+                <div class="card stat-accent"><div class="num">51,457<small>Commits in the repository</small></div></div>
+                <div class="card stat-mint"><div class="num">90<small>Days since the first commit</small></div></div>
+                <div class="card"><div class="num">24<small>Contributors, human and agent</small></div></div>
+                <div class="card"><div class="num">63<small>Community pull requests through the ledger</small></div></div>
+                <div class="card"><div class="num">54<small>Repositories on the live network</small></div></div>
+              </div>
+              <div class="fan" aria-hidden="true">
+                <figure class="phone side left"><span class="screen"><img src="/assets/mobile/history.webp" alt="" width="640" height="1391" decoding="async" /></span></figure>
+                <figure class="phone float"><span class="screen"><img src="/assets/mobile/repos.webp" alt="" width="640" height="1391" decoding="async" /></span></figure>
+                <figure class="phone side right"><span class="screen"><img src="/assets/mobile/tasks.webp" alt="" width="640" height="1391" decoding="async" /></span></figure>
+              </div>
+            </div>
+            <ul class="list">
+              <li><b>Verified in source and Git history.</b> Agent branches are merged into main continuously; every merge carries the session's model, cost and patch.</li>
+              <li><b>Live in production.</b> Desktop nodes host repositories, mirrors serve clones, and this deck is itself served by the platform.</li>
+            </ul>
+          </div>
+          <div class="foot"><span class="tag">Dogfooding proof, not customer traction · Round objective: repeatable paid adoption</span><span>Confidential</span></div>
+        </div>
+      </section>
+
+      <section class="slide" id="p6" data-page="6" aria-label="Roadmap">
+        <div class="frame">
+          <div class="eyebrow">Roadmap <span class="n">06</span></div>
+          <div class="body">
+            <div>
+              <h2>The agent loop works. This round hardens it.</h2>
+              <p class="lede">Exactly what is live today, and what the capital is designed to unlock.</p>
+            </div>
+            <div class="cols cols-2">
+              <div class="card">
+                <span class="k"><span class="live" aria-hidden="true"></span>Live in production</span>
+                <h3>Agent-native forge shipped</h3>
+                <ul class="list spaced">
+                  <li>Issue or prompt → Claude Code / Codex session</li>
+                  <li>Isolated worktree and branch for every agent run</li>
+                  <li>Parallel sessions with stream, steer, stop and resume</li>
+                  <li>Patch capture, session metadata and a reviewable pull request</li>
+                  <li>Signed collaboration events and a deliberate human merge</li>
+                </ul>
+              </div>
+              <div class="card featured">
+                <span class="k">Funded roadmap</span>
+                <h3>Enterprise control plane</h3>
+                <ul class="list spaced">
+                  <li>Per-agent cryptographic identity, policy and cost controls</li>
+                  <li>Universal sandbox enforcement for every runtime</li>
+                  <li>SSO, RBAC, audit exports and admin controls</li>
+                  <li>Multiple mainnodes with measured failover reliability</li>
+                  <li>Security hardening, independent review and a SOC 2 program</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="foot"><span>Milestones are targets, not current traction</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide is-panel xr" id="p7" data-page="7" aria-label="Beyond the desk">
+        <div class="frame">
+          <div class="eyebrow">Beyond the desk <span class="n">07</span></div>
+          <div class="body">
+            <div class="xr-top">
+              <div>
+                <h2>Agents on your wrist. Your code in the room.</h2>
+                <p class="lede">Work with agents on your watch and be connected with your code in a virtual world where efficiency is seen.</p>
+              </div>
+              <ul class="xr-specs">
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="3.5"/><path d="M9 6V3h6v3M9 18v3h6v-3M12 10v2.5l1.5 1"/></svg><div><b>Watch</b><span>Follow, prompt, stop and review agents from the wrist.</span></div><em class="on">In build</em></li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M2.5 9.5h19M4 9.5c0 4 1.4 6 4 6s3.2-2.2 3.4-4.2M20 9.5c0 4-1.4 6-4 6s-3.2-2.2-3.4-4.2"/></svg><div><b>AR glasses</b><span>A 201″ virtual workspace for repos, sessions and diffs.</span></div><em>R&amp;D</em></li>
+              </ul>
+            </div>
+            <div class="xr-stage" id="xr-stage" aria-hidden="true">
+              <div class="xr-fit">
+                <div class="lv">
+                  <div class="lv-ghost"></div>
+                  <div class="lv-world">
+                    <div class="space">
+                      <div class="gridfloor"></div>
+                      <div class="pane desk"><img src="/assets/desktop-mockup/desktop-app.webp" alt="" width="2048" height="1332" decoding="async" /></div>
+                      <div class="pane agent">
+                        <div class="hd"><i></i>Claude Code<span>fix/flaky-deploy</span></div>
+                        <p class="dim" style="--i: 0">$ pytest app/tests -k deploy</p>
+                        <p style="--i: 1">✓ 48 passed in 3.1s</p>
+                        <p class="del" style="--i: 2">- await sleep(2)</p>
+                        <p class="add" style="--i: 3">+ await wait_for(ready, timeout=10)</p>
+                        <p class="dim" style="--i: 4">Opening a signed pull request…</p>
+                        <div class="pr">PR #482 · +128 −14<b>Review</b></div>
+                      </div>
+                    </div>
+                  </div>
+                  <svg class="lv-frame" viewBox="0 0 600 240" focusable="false">
+                    <defs>
+                      <linearGradient id="xr-tint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2533" stop-opacity=".55"/><stop offset=".55" stop-color="#58a6ff" stop-opacity=".06"/><stop offset="1" stop-color="#1b2533" stop-opacity=".4"/></linearGradient>
+                      <linearGradient id="xr-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".14"/><stop offset=".56" stop-color="#fff" stop-opacity=".02"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+                      <linearGradient id="xr-metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef0f3"/><stop offset=".5" stop-color="#a9afb8"/><stop offset="1" stop-color="#6c727b"/></linearGradient>
+                      <linearGradient id="xr-hinge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b5058"/><stop offset="1" stop-color="#181a1e"/></linearGradient>
+                    </defs>
+                    <ellipse cx="280" cy="176" rx="8" ry="16" transform="rotate(-18 280 176)" fill="#0e1013"/>
+                    <ellipse cx="320" cy="176" rx="8" ry="16" transform="rotate(18 320 176)" fill="#0e1013"/>
+                    <path d="M272 110 L279 160 M328 110 L321 160" stroke="#8d939c" stroke-width="2"/>
+                    <g fill="url(#xr-tint)"><path d="M263 62 C212 52 120 48 74 56 C46 61 38 94 47 132 C60 188 102 228 157 228 C204 228 238 200 250 164 C260 132 268 90 263 62 Z"/><path d="M337 62 C388 52 480 48 526 56 C554 61 562 94 553 132 C540 188 498 228 443 228 C396 228 362 200 350 164 C340 132 332 90 337 62 Z"/></g>
+                    <g fill="url(#xr-sheen)"><path d="M263 62 C212 52 120 48 74 56 C46 61 38 94 47 132 C60 188 102 228 157 228 C204 228 238 200 250 164 C260 132 268 90 263 62 Z"/><path d="M337 62 C388 52 480 48 526 56 C554 61 562 94 553 132 C540 188 498 228 443 228 C396 228 362 200 350 164 C340 132 332 90 337 62 Z"/></g>
+                    <g fill="none" stroke="#b9c9dc" stroke-opacity=".5" stroke-width="1.4"><path d="M263 62 C212 52 120 48 74 56 C46 61 38 94 47 132 C60 188 102 228 157 228 C204 228 238 200 250 164 C260 132 268 90 263 62 Z"/><path d="M337 62 C388 52 480 48 526 56 C554 61 562 94 553 132 C540 188 498 228 443 228 C396 228 362 200 350 164 C340 132 332 90 337 62 Z"/></g>
+                    <path d="M58 53 C180 45 420 45 542 53" fill="none" stroke="#0f1114" stroke-width="5.5" stroke-linecap="round" opacity=".5"/>
+                    <path d="M58 52 C180 44 420 44 542 52" fill="none" stroke="url(#xr-metal)" stroke-width="3.6" stroke-linecap="round"/>
+                    <path d="M262 88 C286 80 314 80 338 88" fill="none" stroke="url(#xr-metal)" stroke-width="7" stroke-linecap="round"/>
+                    <rect x="26" y="46" width="30" height="36" rx="6" fill="url(#xr-hinge)"/>
+                    <rect x="544" y="46" width="30" height="36" rx="6" fill="url(#xr-hinge)"/>
+                    <rect x="28" y="48" width="26" height="3" rx="1.5" fill="#fff" opacity=".18"/>
+                    <rect x="546" y="48" width="26" height="3" rx="1.5" fill="#fff" opacity=".18"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="watch">
+                <span class="strap top"></span>
+                <div class="case">
+                  <span class="crown"></span><span class="side"></span>
+                  <div class="wscreen">
+                    <div class="wbar"><b>Agents</b><span>9:41</span></div>
+                    <div class="wrow on"><i class="face" style="--h: 24">Cl</i><div><b>Fix flaky deploy test</b><small>forkmesh/app</small><em><i></i>Running · 14t</em></div><span class="gauge" style="--p: 0.62"></span></div>
+                    <div class="wrow"><i class="face" style="--h: 160">Co</i><div><b>SSO audit export</b><small>forkmesh/server</small><em><i class="wait"></i>Waiting</em></div><span class="gauge" style="--p: 0.34"></span></div>
+                    <div class="wrow"><i class="face" style="--h: 265">Cl</i><div><b>Mirror failover</b><small>forkmesh/world</small><em><i class="done"></i>Merged</em></div><span class="gauge" style="--p: 0.88"></span></div>
+                  </div>
+                </div>
+                <span class="strap bot"></span>
+              </div>
+            </div>
+          </div>
+          <div class="foot"><span>Pictured: AOC Air Mega AR glasses · 201″ micro-OLED · FHD 120 Hz · USB-C</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide" id="p8" data-page="8" aria-label="Customer and go-to-market">
+        <div class="frame">
+          <div class="eyebrow">Customer &amp; go-to-market <span class="n">08</span></div>
+          <div class="body">
+            <div>
+              <h2>Agent-first teams are the wedge. Sovereign infrastructure expands the deal.</h2>
+              <p class="lede">A founder-led motion where every step has an observable conversion event.</p>
+            </div>
+            <div class="cols cols-2">
+              <div class="card">
+                <span class="k">Initial ICP hypothesis</span>
+                <h3>20 to 200 person software teams</h3>
+                <p>Using multiple coding agents on private code, and feeling the review, provenance and platform-control gap.</p>
+                <ul class="list spaced">
+                  <li><b>Buyer:</b> CTO, VP Engineering, Security</li>
+                  <li><b>Trigger:</b> agent throughput rises faster than reviewer trust and control</li>
+                  <li><b>Land:</b> one agent workflow, no big-bang migration</li>
+                </ul>
+              </div>
+              <div class="flow stack">
+                <div><span class="k">Prove</span><p>Dogfooding plus a live issue-to-agent-to-PR demo.</p></div>
+                <div><span class="k">Pilot</span><p>A design partner delegates one real issue queue.</p></div>
+                <div><span class="k">Convert</span><p>The team buys orchestration, governance and support.</p></div>
+                <div><span class="k">Expand</span><p>More agents, repositories, policies and nodes.</p></div>
+              </div>
+            </div>
+            <div class="chain" aria-label="Leading indicators"><span>Prompt</span><i>→</i><span>Agent PR</span><i>→</i><span>Human-approved merge</span><i>→</i><span>Paid pilot</span><i>→</i><span>ARR</span><i>→</i><span>Expansion</span></div>
+          </div>
+          <div class="foot"><span class="tag">Founder-led until 20 paid organizations</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide is-panel" id="p9" data-page="9" aria-label="Market">
+        <div class="frame">
+          <div class="eyebrow">Market <span class="n">09</span></div>
+          <div class="body">
+            <div>
+              <h2>Paid AI coding is proven. ForkMesh sells the control layer around it.</h2>
+              <p class="lede">A bottom-up model is more credible than an untraceable TAM / SAM / SOM stack. The wedge is the growing spend around delegated code and trusted merges.</p>
+            </div>
+            <div class="cols cols-2" style="align-items: center">
+              <div class="cols" style="gap: 16px">
+                <div class="card stat-accent"><div class="num">4.7M<small>Paid Copilot subscribers today</small></div></div>
+                <div class="card stat-mint"><div class="num">$25K<small>Blended ACV hypothesis per organization</small></div></div>
+              </div>
+              <div class="ladder" aria-label="Illustrative bottom-up path">
+                <div class="rung"><span class="n">20</span><span class="t">Paid organizations</span><span class="r">$0.5M ARR<small>Round milestone</small></span></div>
+                <div class="rung"><span class="n">400</span><span class="t">Paid organizations</span><span class="r">$10M ARR<small>Scale proof</small></span></div>
+                <div class="rung"><span class="n">4,000</span><span class="t">Paid organizations</span><span class="r">$100M ARR<small>Venture outcome</small></span></div>
+              </div>
+            </div>
+          </div>
+          <div class="foot"><span class="src">Microsoft FY26 Q2 · Illustrative model: price and conversion are validated in the design-partner phase</span><span>Confidential</span></div>
+        </div>
+      </section>
+
+      <section class="slide" id="p10" data-page="10" aria-label="Business model">
+        <div class="frame">
+          <div class="eyebrow">Business model <span class="n">10</span></div>
+          <div class="body">
+            <div>
+              <h2>Monetize orchestration and governance, not model lock-in.</h2>
+              <p class="lede">Teams bring the agents they choose. ForkMesh charges for the shared workflow, the control plane and the forge.</p>
+            </div>
+            <div class="cols cols-3">
+              <div class="card"><span class="k">Community</span><h3>Free, open source</h3><ul class="list spaced"><li>Local-first Git forge</li><li>Claude and Codex sessions</li><li>Signed issues and pull requests</li></ul></div>
+              <div class="card featured"><span class="k">Agent team</span><h3>Subscription plus usage</h3><ul class="list spaced"><li>Multi-agent orchestration</li><li>Sessions, usage and provenance</li><li>Managed collaboration and support</li></ul></div>
+              <div class="card"><span class="k">Enterprise</span><h3>Annual contract</h3><ul class="list spaced"><li>Policy, RBAC and audit controls</li><li>Self-hosted and federated options</li><li>Security, SLA and support</li></ul></div>
+            </div>
+            <div class="chain"><span>Land one workflow</span><i>→</i><span>Expand agents and repositories</span><i>→</i><span>Standardize organization-wide</span></div>
+          </div>
+          <div class="foot"><span class="tag">Usage-priced components protect margin as agent workloads scale</span><span>Confidential</span></div>
+        </div>
+      </section>
+
+      <section class="slide" id="p11" data-page="11" aria-label="Competition">
+        <div class="frame">
+          <div class="eyebrow">Competition <span class="n">11</span></div>
+          <div class="body">
+            <div>
+              <h2>ForkMesh owns the intersection others optimize separately.</h2>
+              <p class="lede">The alternatives are strong. The wedge is model-flexible agents, the full forge workflow and local-first ownership, together.</p>
+            </div>
+            <div class="scroll">
+              <table>
+                <thead><tr><th>Category</th><th>Examples</th><th>Best at</th><th>Trade-off for our ICP</th><th>ForkMesh role</th></tr></thead>
+                <tbody>
+                  <tr><td>Hosted AI forges</td><td>Copilot · GitLab Duo</td><td>Integrated forge and agents</td><td>Platform-controlled code and control plane</td><td class="role">Sovereign alternative</td></tr>
+                  <tr><td>Coding agents</td><td>Claude · Codex · Cursor</td><td>Best-in-class coding</td><td>Not a shared Git system of record</td><td class="role">Orchestrate</td></tr>
+                  <tr><td>Peer-to-peer Git</td><td>Radicle</td><td>Sovereign collaboration</td><td>Agent orchestration is not the core</td><td class="role">Closest infrastructure peer</td></tr>
+                  <tr><td>Self-hosted forges</td><td>Forgejo · Gitea</td><td>Instance deployment control</td><td>Agent workflow remains fragmented</td><td class="role">Agent-native evolution</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="foot"><span class="src">GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle</span><span>Confidential</span></div>
+        </div>
+      </section>
+
+      <section class="slide" id="p12" data-page="12" aria-label="Team">
+        <div class="frame">
+          <div class="eyebrow">Team <span class="n">12</span></div>
+          <div class="body">
+            <div>
+              <h2>Company-building experience meets founder-problem fit.</h2>
+              <p class="lede">Operating experience on one side, protocol, Git and distributed-systems execution on the other. The pain became the protocol.</p>
+            </div>
+            <div class="cols cols-2">
+              <div class="card person">
+                <img class="av" src="/assets/jett.webp" alt="" width="72" height="72" decoding="async" />
+                <div>
+                  <h3>Jett Vale</h3>
+                  <p class="role">CEO · Founder</p>
+                  <ul class="list"><li>10+ years across software, startups and hardware</li><li>Built and exited a prior company</li><li>Leads product, company and the developer community</li></ul>
+                </div>
+              </div>
+              <div class="card person">
+                <img class="av" src="/assets/kaif.webp" alt="" width="72" height="72" decoding="async" />
+                <div>
+                  <h3>Md. Kaif</h3>
+                  <p class="role">CTO · Co-founder</p>
+                  <ul class="list"><li>Distributed systems and Git workflow builder</li><li>65+ merged open-source contributions informed the problem</li><li>Leads protocol, product architecture and engineering</li></ul>
+                </div>
+              </div>
+            </div>
+            <div class="band"><span class="dot"></span>Founder-market fit<span class="dot"></span>Company-building + distributed systems + open-source contributor experience</div>
+          </div>
+          <div class="foot"><span>founders@forkmesh.com</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide is-panel" id="p13" data-page="13" aria-label="The round">
+        <div class="frame">
+          <div class="eyebrow">The round <span class="n">13</span></div>
+          <div class="body">
+            <div>
+              <h2>$1M turns product proof into enterprise pull.</h2>
+              <p class="lede">An 18-month plan to win 20 paid teams and harden the control plane. Average budget envelope: about $55.6K per month.</p>
+            </div>
+            <div class="cols cols-2" style="align-items: start">
+              <div class="card">
+                <span class="k">Use of funds</span>
+                <div class="bars">
+                  <div class="bar-row"><span class="lbl">Product &amp; engineering</span><span class="track"><span class="fill" style="width: 55%"></span></span><span class="val">$550K · 55%</span></div>
+                  <div class="bar-row"><span class="lbl">Infrastructure &amp; security</span><span class="track"><span class="fill" style="width: 20%"></span></span><span class="val">$200K · 20%</span></div>
+                  <div class="bar-row"><span class="lbl">GTM &amp; developer ecosystem</span><span class="track"><span class="fill" style="width: 15%"></span></span><span class="val">$150K · 15%</span></div>
+                  <div class="bar-row"><span class="lbl">Legal, ops &amp; contingency</span><span class="track"><span class="fill" style="width: 10%"></span></span><span class="val">$100K · 10%</span></div>
+                </div>
+              </div>
+              <div class="card ring">
+                <span class="k" style="color: var(--accent)">Target · Q4 2027 · Series A readiness</span>
+                <ul class="list">
+                  <li><b>20</b> paid organizations at a $25K blended ACV target</li>
+                  <li><b>$500K ARR</b> plus referenceable deployment evidence</li>
+                  <li><b>Proven</b> faster issue-to-accepted-PR cycles, with retention</li>
+                  <li><b>Hardened</b> agent controls, multi-mainnode reliability and an independent security review</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+          <div class="foot"><span>Milestones are targets, not current traction</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide close" id="p14" data-page="14" aria-label="Sources and contact">
+        <div class="backdrop" aria-hidden="true">
+          <svg class="schematic" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
+            <use href="#deck-art"/>
+            <g>
+              <path class="pulse" pathLength="100" d="M240 80 L160 80 L160 320 L80 320 L80 640 L320 640 L320 720 L480 720"/>
+              <path class="pulse" pathLength="100" d="M640 640 L800 640 L800 720 L1040 720 L1040 640"/>
+              <path class="pulse" pathLength="100" d="M640 320 L480 320 L480 720 L320 720"/>
+            </g>
+          </svg>
+          <div class="glow"></div>
+          <div class="fade"></div>
+        </div>
+        <div class="frame">
+          <div class="eyebrow">Sources &amp; contact <span class="n">14</span></div>
+          <div class="body">
+            <div class="cols cols-2">
+              <div>
+                <h1>Let's build the forge teams own.</h1>
+                <p class="lede">The agent-native, local-first Git platform for teams that refuse to rent their system of record. Raising $1.0M.</p>
+                <div class="cta">
+                  <a class="primary" href="mailto:founders@forkmesh.com?subject=ForkMesh%20round">Reply to the founders</a>
+                  <a href="https://forkmesh.com" target="_blank" rel="noopener">Live product</a>
+                  <a href="https://forkmesh.com/docs" target="_blank" rel="noopener">Docs</a>
+                  <a href="https://forkmesh.com/status" target="_blank" rel="noopener">Network status</a>
+                </div>
+              </div>
+              <div class="sources" aria-label="Sources and definitions">
+                <div><b>ForkMesh Git history</b><span>Agent workflow and dogfooding snapshot through 13 Sep 2026</span></div>
+                <div><b>ForkMesh live network</b><span>Catalog and node counts from the public status API, 13 Sep 2026</span></div>
+                <div><b>GitHub Octoverse 2025</b><span>180M+ developers; AI-coding adoption context</span></div>
+                <div><b>Microsoft FY26 Q2</b><span>4.7M paid Copilot subscribers; +75% year over year; Agent HQ</span></div>
+                <div><b>GitLab Duo · Radicle</b><span>Incumbent agent capability and the peer-to-peer comparator</span></div>
+                <div><b>Definitions</b><span>Dogfooding metrics are internal Git history, not customer traction. ARR and ACV figures are forward-looking targets.</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="foot"><span>forkmesh.com · founders@forkmesh.com</span><span>Confidential · September 2026</span></div>
+        </div>
       </section>
     </main>
 
     <div class="hint" aria-hidden="true">↑ ↓ · SPACE · SWIPE</div>
     <nav class="nav" aria-label="Slides">
       <button type="button" id="prev" aria-label="Previous slide"><svg viewBox="0 0 16 16" fill="none"><path d="M12 10 8 6l-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <span class="count" id="count">1 / 13</span>
+      <span class="count" id="count">1 / 14</span>
       <button type="button" id="next" aria-label="Next slide"><svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </nav>
 
@@ -560,15 +1158,90 @@
         const total = slides.length;
         const count = document.getElementById("count");
         const progress = document.getElementById("progress");
+        const root = document.documentElement;
+        const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-        // --- reader's name ---------------------------------------------------
         if (config.viewer) {
           for (const id of ["viewer", "viewer-long"]) document.getElementById(id).textContent = config.viewer;
           document.getElementById("for").hidden = false;
           document.getElementById("greet").hidden = false;
         }
 
-        // --- navigation ------------------------------------------------------
+        const paintTheme = () => {
+          const light = !root.classList.contains("dark");
+          document.querySelector('meta[name="theme-color"]')?.setAttribute("content", light ? "#ffffff" : "#090909");
+          const button = document.getElementById("theme");
+          const label = light ? "Switch to dark mode" : "Switch to light mode";
+          button.setAttribute("aria-label", label);
+          button.title = label;
+        };
+        document.getElementById("theme").addEventListener("click", () => {
+          const next = root.classList.contains("dark") ? "light" : "dark";
+          root.classList.toggle("light", next === "light");
+          root.classList.toggle("dark", next === "dark");
+          try { for (const key of ["forkmesh.dashboard.theme", "forkmesh.theme"]) localStorage.setItem(key, next); } catch {}
+          paintTheme();
+        });
+        paintTheme();
+
+        const xrStage = document.getElementById("xr-stage");
+        if (xrStage) {
+          const fit = xrStage.querySelector(".xr-fit");
+          const world = xrStage.querySelector(".lv-world .space");
+          xrStage.querySelector(".lv-ghost").append(world.cloneNode(true));
+          const scale = () => {
+            const share = Number(getComputedStyle(xrStage).getPropertyValue("--fit")) || 1;
+            fit.style.transform = `scale(${(xrStage.clientWidth * share) / 600})`;
+          };
+          new ResizeObserver(scale).observe(xrStage);
+          scale();
+          if (!calm) {
+            xrStage.addEventListener("pointermove", (event) => {
+              const box = xrStage.getBoundingClientRect();
+              xrStage.style.setProperty("--px", `${((box.left + box.width / 2 - event.clientX) / box.width) * 30}px`);
+              xrStage.style.setProperty("--py", `${((box.top + box.height / 2 - event.clientY) / box.height) * 16}px`);
+            });
+            xrStage.addEventListener("pointerleave", () => {
+              xrStage.style.setProperty("--px", "0px");
+              xrStage.style.setProperty("--py", "0px");
+            });
+          }
+        }
+
+        const countUp = (slide) => {
+          if (calm) return;
+          for (const num of slide.querySelectorAll(".num")) {
+            const node = num.firstChild;
+            if (!node || node.nodeType !== 3) continue;
+            const final = node.textContent;
+            const match = final.match(/^([^\d]*)([\d,.]+)(.*)$/);
+            if (!match) continue;
+            const digits = match[2].replace(/,/g, "");
+            const target = Number(digits);
+            if (!Number.isFinite(target)) continue;
+            const places = (digits.split(".")[1] || "").length;
+            const commas = match[2].includes(",");
+            const started = performance.now();
+            const step = (now) => {
+              const t = Math.min(1, (now - started) / 1400);
+              const value = target * (1 - Math.pow(1 - t, 3));
+              let text = value.toFixed(places);
+              if (commas) text = Number(text).toLocaleString("en-US", { minimumFractionDigits: places, maximumFractionDigits: places });
+              node.textContent = t < 1 ? match[1] + text + match[3] : final;
+              if (t < 1) requestAnimationFrame(step);
+            };
+            requestAnimationFrame(step);
+          }
+        };
+        const reveal = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting || entry.target.classList.contains("is-in")) continue;
+            entry.target.classList.add("is-in");
+            countUp(entry.target);
+          }
+        }, { root: deck, threshold: 0.3 });
+        slides.forEach((slide) => reveal.observe(slide));
+
         let current = 1;
         const go = (page) => {
           const target = slides[Math.min(total, Math.max(1, page)) - 1];
@@ -586,10 +1259,6 @@
         const fromHash = Number((location.hash.match(/^#p(\d+)$/) || [])[1]);
         if (fromHash > 1) requestAnimationFrame(() => go(fromHash));
 
-        // --- attention ledger -----------------------------------------------
-        // Seconds accumulate per page while the tab is visible, and reach the
-        // server on page change, every twenty seconds, when the tab hides and
-        // when it closes. The session id is this visit's only identity.
         const token = String(config.token || "");
         const session = (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2))
           .replace(/-/g, "").toLowerCase().slice(0, 24);
@@ -627,7 +1296,7 @@
           let best = null;
           for (const entry of entries) if (entry.isIntersecting && (!best || entry.intersectionRatio > best.intersectionRatio)) best = entry;
           if (best) setCurrent(Number(best.target.dataset.page));
-        }, { root: deck, threshold: [0.55, 0.75] });
+        }, { root: deck, rootMargin: "-49% 0px -49% 0px", threshold: 0 });
         slides.forEach((slide) => observer.observe(slide));
         document.addEventListener("visibilitychange", () => {
           if (document.hidden) { flush(); enteredAt = 0; }
@@ -635,7 +1304,6 @@
         });
         window.addEventListener("pagehide", flush);
         setInterval(() => { if (!document.hidden) flush(); }, 20000);
-        // A first, page-1 beacon marks the open even if the reader leaves at once.
         setTimeout(() => { if (!document.hidden) { pending.set(current, (pending.get(current) || 0) + 0); accrue(); if (!pending.get(current)) pending.set(current, 1); flush(); } }, 1500);
       })();
     </script>

@@ -187,6 +187,8 @@ copies brought a DM back after a relaunch, so a sent message either vanished or 
 messages when `hub.direct` is set (it is set after `attachHistory`). The file also keeps
 `receipts` (message id to `delivered` or `read`) for the kept messages, so a mark does not drop
 back to "Sent" after a relaunch. Signing out clears the service, and the next save drops the DMs.
+`receiptTimes` (message id to `{"delivered", "read"}` epoch milliseconds) is saved beside it so
+the Message Info page still shows when a message arrived and was read after a relaunch.
 
 ## Disappearing messages
 
@@ -220,6 +222,21 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   direct message the relay still stores: the receipt is Sent, not yet Delivered, and the room's
   server-copies count is not 0 (`ChatHub.isOnServer`). The time sits on the text's last line
   when it fits and drops under it otherwise.
+- **Message Info** (`MessagesMessageInfo.swift`): swiping a bubble left drags the Message Info
+  page in from the right edge, following the finger, with the transcript easing 30% of the way
+  left like a navigation push; letting go past 30% of the width (or flinging) opens it, anything
+  less springs back. Back, or a swipe right on the page, closes it; VoiceOver offers it as the
+  "Message Info" action. It shows the message, who sent it, when it was sent, and for own direct
+  messages when it was delivered and read (with seconds), plus recipients, edits, the
+  disappearing time and the server-copy state when they apply. The pan is a
+  `UIPanGestureRecognizer` that only begins for a mostly-horizontal leftward move, so vertical
+  scrolling and the long-press menu are untouched; iOS 17 falls back to a simultaneous
+  `DragGesture`.
+- **Receipt status line** (`MessagesReceiptLine`): under your most recent sent message in a
+  direct conversation, as in iMessage, a small right-aligned line says "Delivered 11:04 PM" or
+  "Read 11:06 PM" (an earlier day reads "Yesterday 3:20 PM" or the weekday), from
+  `ChatHub.receiptTimes(for:)`; with no recorded time it says just "Delivered" or "Read". It
+  hides while the message is Sending or Sent. Tapping it opens Message Info for that message.
 - **Header** (`MessagesConversationView.header`): back circle, then one glass pill with the
   avatar and, to its right, the name over "Online · N messages on the server", then the call
   buttons. It has no new agent button or own avatar; those stay in the channel list's top bar.
@@ -397,6 +414,12 @@ messages"). On iOS they live in `DirectMessageService`:
   (except ones still sending), not only refs seen since launch. Delivered and read marks are
   saved with the history file. Office rooms reach `sent` only. Drawn by `ChatReceiptMark` inside
   the sender's own bubble.
+- **Receipt times** (`ChatReceiptTimes`, `DirectMessageService.receiptTime(_:)`,
+  `ChatHub.receiptTimes(for:)`): the first time this device saw a message reach `delivered` and
+  `read`, stamped from the service clock when the relay frame arrives. The protocol carries no
+  times, so these are when the phone learned of the receipt; a receipt that arrives while the
+  phone is offline is stamped when it reconnects. Restoring from disk never stamps a time, so a
+  mark saved before times were kept shows "Delivered"/"Read" without one.
 - **Quoted replies** (DMs): Reply in a message's menu sets `ChatHub.replyingTo`; the composer
   shows the quote with a cancel button, and the next text sent carries
   `"replyTo": {"id", "senderId", "sender", "text"}` (text up to 280 characters,

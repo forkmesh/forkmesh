@@ -457,4 +457,14 @@ final class PackageGateTests: XCTestCase {
             XCTAssertNotNil(MarketPackage.nativeDestinations[id], id)
         }
     }
+
+    func testDesktopReliantItems() {
+        for item in ["Agents", "desktops", "teammates", "shortcuts", "hosts", "usage"] {
+            XCTAssertTrue(PackageGate.reliesOnDesktop(item: item), item)
+        }
+        for item in ["Inbox", "Chat", "notes", "currentRepo", "unknown"] {
+            XCTAssertFalse(PackageGate.reliesOnDesktop(item: item), item)
+        }
+        XCTAssertTrue(PackageGate.desktopReliantPackages.isSubset(of: PackageGate.packages))
+    }
 }

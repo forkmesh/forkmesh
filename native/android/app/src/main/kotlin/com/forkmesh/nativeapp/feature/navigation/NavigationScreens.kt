@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -817,6 +818,7 @@ fun ShellMenuGrid(
     val groups = HubCatalog.pages(HubCatalog.groups(guest, session?.isAdmin == true, surfaces.hubItems, NavigationFeature::isRegistered))
     val status = rememberFmStatus()
     val runHubItem = rememberHubItemRunner(scope, status)
+    val desktopOffline = rememberDesktopOffline()
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
         modifier = modifier.semantics { contentDescription = "All pages" },
@@ -829,7 +831,8 @@ fun ShellMenuGrid(
         }
         menuSection("main", "Go to", plain) {
             gridItems(main, key = { "main:${it.id}" }) { entry ->
-                ShellMenuTile(entry.icon, entry.title, entry.badge, entry.selected, entry.running, plain) {
+                val offline = desktopOffline && PackageGate.reliesOnDesktop(entry.id)
+                ShellMenuTile(entry.icon, entry.title, entry.badge, entry.selected, entry.running, plain, offline) {
                     onClose()
                     entry.onClick()
                 }
@@ -839,7 +842,8 @@ fun ShellMenuGrid(
             menuSection(group.id, group.title, plain) {
                 gridItems(group.items, key = { "${group.id}:${it.id}" }) { item ->
                     val badge = item.route?.let { hubBadges[it.kind] }
-                    ShellMenuTile(item.icon, item.title, badge?.count ?: 0, false, badge?.running == true, plain) {
+                    val offline = desktopOffline && PackageGate.reliesOnDesktop(item.id, item.route?.kind)
+                    ShellMenuTile(item.icon, item.title, badge?.count ?: 0, false, badge?.running == true, plain, offline) {
                         if (runHubItem(item)) onClose()
                     }
                 }
@@ -867,7 +871,7 @@ private fun LazyGridScope.menuSection(id: String, title: String, plain: Boolean,
 }
 
 @Composable
-private fun ShellMenuTile(icon: String, title: String, badge: Int, selected: Boolean, running: Boolean, plain: Boolean, onClick: () -> Unit) {
+private fun ShellMenuTile(icon: String, title: String, badge: Int, selected: Boolean, running: Boolean, plain: Boolean, desktopOffline: Boolean, onClick: () -> Unit) {
     val c = Fm.colors
     val tint = if (selected) c.accent else c.textPrimary
     Column(
@@ -879,18 +883,27 @@ private fun ShellMenuTile(icon: String, title: String, badge: Int, selected: Boo
             .clickable(onClick = onClick)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
-                contentDescription = if (badge > 0) "$title, $badge ${if (running) "running" else "new"}" else title
+                contentDescription = listOfNotNull(
+                    title,
+                    if (badge > 0) "$badge ${if (running) "running" else "new"}" else null,
+                    if (desktopOffline) "desktop offline" else null,
+                ).joinToString(", ")
             }
             .padding(horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        if (badge > 0) {
-            BadgedBox(badge = { Badge(containerColor = if (running) c.accent else c.danger) { Text(if (badge > 999) "999+" else "$badge") } }) {
+        Box {
+            if (badge > 0) {
+                BadgedBox(badge = { Badge(containerColor = if (running) c.accent else c.danger) { Text(if (badge > 999) "999+" else "$badge") } }) {
+                    FmIcon(icon, size = 18.dp, tint = tint)
+                }
+            } else {
                 FmIcon(icon, size = 18.dp, tint = tint)
             }
-        } else {
-            FmIcon(icon, size = 18.dp, tint = tint)
+            if (desktopOffline) {
+                DesktopOfflineDot(Modifier.align(Alignment.BottomStart).offset(x = (-4).dp, y = 4.dp))
+            }
         }
         Spacer(Modifier.height(if (plain) 4.dp else 2.dp))
         Text(

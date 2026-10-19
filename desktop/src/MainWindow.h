@@ -8758,6 +8758,7 @@ private:
     void prepareNativePackageSearch();
     void nativePackageSearchIndexChanged();
     void syncNativePackageBadge(const QString &id);
+    void syncDesktopOfflineDots(bool offline);
     QString nativePackageAgentName() const;
     forkmesh::market::NativePackageRepository nativePackageRepository(int index) const;
     QList<forkmesh::market::NativePackageRepository> nativePackageRepositories() const;
@@ -11539,6 +11540,7 @@ private:
     QPushButton *m_networkNavButton = nullptr; // "Network" diagnostics top-nav button
     QPushButton *m_usersNavButton = nullptr; // admin-only World user statistics
     QPushButton *m_teamNavButton = nullptr;  // AI teammates, below Users
+    bool m_desktopOfflineDots = false;
     QPushButton *m_filesNavButton = nullptr; // local file explorer, under Users
     QPushButton *m_statsNavButton = nullptr; // stat tiles dashboard, under Files
     QPushButton *m_componentHealthNavButton = nullptr; // code health board

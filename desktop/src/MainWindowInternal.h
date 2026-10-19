@@ -8778,6 +8778,12 @@ public:
             m_blinkOn = !m_blinkOn;
             update();
         });
+        m_desktopOfflineTimer = new QTimer(this);
+        m_desktopOfflineTimer->setInterval(80);
+        connect(m_desktopOfflineTimer, &QTimer::timeout, this, [this] {
+            m_desktopOfflineStep = (m_desktopOfflineStep + 1) % kDesktopOfflineSteps;
+            update();
+        });
     }
 
     void setCompact(bool compact)
@@ -8931,6 +8937,25 @@ public:
     }
     bool activityBlink() const { return m_blink; }
 
+    void setDesktopOffline(bool on)
+    {
+        if (m_desktopOffline == on)
+            return;
+        m_desktopOffline = on;
+        m_desktopOfflineStep = 0;
+        if (m_desktopOffline && isVisible())
+            m_desktopOfflineTimer->start();
+        else
+            m_desktopOfflineTimer->stop();
+        update();
+    }
+    bool desktopOffline() const { return m_desktopOffline; }
+    double desktopOfflineLevel() const
+    {
+        return 0.2 + 0.8 * qAbs(1.0 - 2.0 * m_desktopOfflineStep /
+                                          kDesktopOfflineSteps);
+    }
+
 protected:
     void showEvent(QShowEvent *e) override
     {
@@ -8938,12 +8963,15 @@ protected:
             m_spinTimer->start();
         if (m_blink)
             m_blinkTimer->start();
+        if (m_desktopOffline)
+            m_desktopOfflineTimer->start();
         QPushButton::showEvent(e);
     }
     void hideEvent(QHideEvent *e) override
     {
         m_spinTimer->stop();
         m_blinkTimer->stop();
+        m_desktopOfflineTimer->stop();
         QPushButton::hideEvent(e);
     }
     void paintEvent(QPaintEvent *) override
@@ -9089,6 +9117,20 @@ protected:
             p.setBrush(QColor("#3fb950"));
             p.drawEllipse(lamp);
         }
+
+        if (m_desktopOffline) {
+            const int d = 8;
+            const QRect dot(iconRect.left() - d + 2, iconRect.bottom() - d + 1,
+                            d, d);
+            p.save();
+            p.setOpacity(desktopOfflineLevel());
+            p.setPen(Qt::NoPen);
+            p.setBrush(Theme::remapColor(QColor(dark ? "#0d1117" : "#ffffff")));
+            p.drawEllipse(dot.adjusted(-2, -2, 2, 2));
+            p.setBrush(QColor(dark ? "#d29922" : "#9a6700"));
+            p.drawEllipse(dot);
+            p.restore();
+        }
     }
     void enterEvent(QEnterEvent *e) override
     {
@@ -9124,6 +9166,8 @@ private:
         state.captionVisible = captionVisible();
         state.blink = m_blink;
         state.blinkOn = m_blinkOn;
+        state.desktopOffline = m_desktopOffline;
+        state.desktopOfflineLevel = desktopOfflineLevel();
         state.iconPainter = m_iconPainter;
         return state;
     }
@@ -9165,8 +9209,12 @@ private:
     bool m_captionAlwaysVisible = true;
     bool m_blink = false;
     bool m_blinkOn = true;
+    bool m_desktopOffline = false;
+    static constexpr int kDesktopOfflineSteps = 30;
+    int m_desktopOfflineStep = 0;
     QTimer *m_spinTimer = nullptr;
     QTimer *m_blinkTimer = nullptr;
+    QTimer *m_desktopOfflineTimer = nullptr;
     int m_spinAngle = 0;
     std::function<void()> m_badgeObserver;
     std::function<void()> m_badgeOrderObserver;

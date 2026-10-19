@@ -22,6 +22,7 @@ struct ShellHomeGroupInfo: Equatable, Identifiable {
 }
 
 struct ShellHomeIconFace: Equatable {
+    let id: String
     let title: String
     let symbol: String
     let badge: Int
@@ -32,6 +33,7 @@ struct ShellHomeIconFace: Equatable {
     let live: Int
 
     init(_ item: ShellBarItem) {
+        id = item.id
         title = item.title
         symbol = item.symbol
         badge = item.badge
@@ -84,6 +86,7 @@ struct ShellHomeIcon: View {
                 .overlay(alignment: .topTrailing) { countAnchor }
                 .overlay(alignment: .topLeading) { liveAnchor }
                 .overlay(alignment: .bottomTrailing) { updateAnchor }
+                .overlay(alignment: .bottomLeading) { desktopOfflineAnchor }
             Text(item.title)
                 .font(.system(size: labelSize, weight: item.selected ? .semibold : .medium))
                 .foregroundStyle(item.selected ? fm.accent : fm.textSecondary)
@@ -212,6 +215,16 @@ struct ShellHomeIcon: View {
                 .offset(x: -updateInset, y: -updateInset)
                 .transition(.scale.combined(with: .opacity))
                 .accessibilityHidden(true)
+        }
+    }
+
+    @ViewBuilder private var desktopOfflineAnchor: some View {
+        if ShellDesktopOfflineDot.shows(item.id) {
+            Color.clear
+                .frame(width: 0, height: 0)
+                .overlay { ShellDesktopOfflineDot() }
+                .offset(x: updateInset, y: -updateInset)
+                .transition(.scale.combined(with: .opacity))
         }
     }
 

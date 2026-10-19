@@ -59,12 +59,12 @@ def test_the_document_is_stamped_noindex_and_reports_to_its_own_token():
     assert '<meta name="robots" content="noindex, nofollow" />' in DECK_HTML
     assert "/api/pitch-deck/${encodeURIComponent(token)}/events" in DECK_HTML
     assert "navigator.sendBeacon(" in DECK_HTML and "keepalive: true" in DECK_HTML
-    # Thirteen pages, numbered the way the CRM labels them.
+    # Fourteen pages, numbered the way the CRM labels them.
     pages = re.findall(r'<section class="slide[^"]*" id="p(\d+)" data-page="(\d+)"', DECK_HTML)
-    assert [int(a) for a, _ in pages] == list(range(1, 14))
+    assert [int(a) for a, _ in pages] == list(range(1, 15))
     assert all(a == b for a, b in pages)
     titles = re.search(r"DECK_PAGE_TITLES = \((.*?)\n\)", CRM_WORKER, re.S).group(1)
-    assert len(re.findall(r'"[^"]+"', titles)) == 13
+    assert len(re.findall(r'"[^"]+"', titles)) == 14
     # The page's CSP admits nothing external: no fonts, scripts or images
     # from other origins, and beacons only to this one.
     assert "connect-src 'self'" in deck.PAGE_CSP and "default-src 'none'" in deck.PAGE_CSP
