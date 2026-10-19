@@ -93,6 +93,18 @@ public enum ChatReceipt: String, Equatable, Hashable, Sendable, CaseIterable {
     }
 }
 
+public struct ChatReceiptTimes: Equatable, Hashable, Sendable {
+    public var delivered: Date?
+    public var read: Date?
+
+    public init(delivered: Date? = nil, read: Date? = nil) {
+        self.delivered = delivered
+        self.read = read
+    }
+
+    public var isEmpty: Bool { delivered == nil && read == nil }
+}
+
 public struct ChatMessage: Equatable, Hashable, Sendable, Identifiable {
     public var id: String
     /// "#channel" or "@peerId".

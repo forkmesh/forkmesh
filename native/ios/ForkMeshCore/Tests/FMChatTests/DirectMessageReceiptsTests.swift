@@ -130,6 +130,7 @@ final class DirectMessageReceiptsTests: XCTestCase {
         XCTAssertTrue(sent)
         let message = try XCTUnwrap(room.service.messages(room.conversation).first)
         XCTAssertEqual(room.service.receipt(message.id), .sending)
+        XCTAssertTrue(room.service.receiptTime(message.id).isEmpty)
         let ref = try XCTUnwrap(sealedRef(room, type: "chat", id: message.id))
         XCTAssertEqual(room.service.ref(of: message.id, in: room.conversation), ref)
         room.connection.receive(text: relayFrame(["kind": "forkmesh-delivered", "v": 1, "refs": [.string(String(repeating: "f", count: 40))]]))
@@ -142,13 +143,19 @@ final class DirectMessageReceiptsTests: XCTestCase {
         room.connection.receive(text: relayFrame(["kind": "forkmesh-recipients", "ref": .string(ref), "recipients": 1]))
         try await Task.sleep(nanoseconds: 50_000_000)
         XCTAssertEqual(room.service.receipt(message.id), .delivered, "a late ack never moves a mark back")
+        let deliveredAt = try XCTUnwrap(room.service.receiptTime(message.id).delivered)
+        XCTAssertNil(room.service.receiptTime(message.id).read)
         let unsent = await room.service.send(room.conversation, text: "second")
         XCTAssertTrue(unsent)
         let second = try XCTUnwrap(room.service.messages(room.conversation).last)
         room.connection.receive(text: relayFrame(["kind": "forkmesh-read", "v": 1]))
         let read = await waitUntil { room.service.receipt(message.id) == .read }
         XCTAssertTrue(read)
+        XCTAssertEqual(room.service.receiptTime(message.id).delivered, deliveredAt, "reading keeps the delivered time")
+        let readAt = try XCTUnwrap(room.service.receiptTime(message.id).read)
+        XCTAssertGreaterThanOrEqual(readAt, deliveredAt)
         XCTAssertEqual(room.service.receipt(second.id), .sending, "read covers only what the relay already took")
+        XCTAssertTrue(room.service.receiptTime(second.id).isEmpty)
         await room.service.closeAll()
     }
 

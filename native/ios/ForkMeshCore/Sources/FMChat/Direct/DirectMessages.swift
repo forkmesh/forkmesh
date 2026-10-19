@@ -357,6 +357,7 @@ public final class DirectMessageService {
     public private(set) var connected: Set<String> = []
     public private(set) var serverCopies: [String: Int] = [:]
     public private(set) var receipts: [String: ChatReceipt] = [:]
+    public private(set) var receiptTimes: [String: ChatReceiptTimes] = [:]
     public private(set) var trustRevision = 0
     public private(set) var routeRevision = 0
     private var history: [String: [ChatMessage]] = [:]
@@ -401,14 +402,24 @@ public final class DirectMessageService {
         receipts.filter { $0.value == .delivered || $0.value == .read }
     }
 
-    public func restore(_ messages: [ChatMessage], receipts saved: [String: ChatReceipt]) {
+    public var receiptTimeSnapshot: [String: ChatReceiptTimes] {
+        receiptTimes.filter { receipts[$0.key] == .delivered || receipts[$0.key] == .read }
+    }
+
+    public func restore(
+        _ messages: [ChatMessage], receipts saved: [String: ChatReceipt], times: [String: ChatReceiptTimes] = [:]
+    ) {
         for message in messages where DirectMessageFrames.isDirect(message.conversation) && !isGone(message.id) {
             append(message, conversationId: DirectMessageFrames.conversationId(message.conversation))
         }
-        for (id, receipt) in saved where receipt == .delivered || receipt == .read { setReceipt(receipt, id) }
+        for (id, receipt) in saved where receipt == .delivered || receipt == .read {
+            setReceipt(receipt, id, stamped: times[id] ?? ChatReceiptTimes())
+        }
     }
 
     public func receipt(_ messageId: String) -> ChatReceipt? { receipts[messageId] }
+
+    public func receiptTime(_ messageId: String) -> ChatReceiptTimes { receiptTimes[messageId] ?? ChatReceiptTimes() }
 
     public func ref(of messageId: String, in conversation: String) -> String? {
         refBooks[DirectMessageFrames.conversationId(conversation)]?.refs[messageId]
@@ -975,7 +986,7 @@ public final class DirectMessageService {
         !id.isEmpty && (removedIds.contains(id) || isRemoved?(id) == true)
     }
 
-    private func setReceipt(_ receipt: ChatReceipt, _ id: String) {
+    private func setReceipt(_ receipt: ChatReceipt, _ id: String, stamped: ChatReceiptTimes? = nil) {
         guard !id.isEmpty, !removedIds.contains(id) else { return }
         if let current = receipts[id] {
             if current.rank >= receipt.rank { return }
@@ -983,13 +994,31 @@ public final class DirectMessageService {
             receiptOrder.append(id)
         }
         receipts[id] = receipt
+        if let stamped {
+            if !stamped.isEmpty { receiptTimes[id] = stamped }
+        } else {
+            stampReceipt(receipt, id)
+        }
         while receiptOrder.count > DirectMessageFrames.maxReceipts {
-            receipts.removeValue(forKey: receiptOrder.removeFirst())
+            let evicted = receiptOrder.removeFirst()
+            receipts.removeValue(forKey: evicted)
+            receiptTimes.removeValue(forKey: evicted)
         }
         if receipt == .delivered || receipt == .read { onChange?() }
     }
 
+    private func stampReceipt(_ receipt: ChatReceipt, _ id: String) {
+        var times = receiptTimes[id] ?? ChatReceiptTimes()
+        switch receipt {
+        case .delivered: times.delivered = times.delivered ?? clock.now
+        case .read: times.read = times.read ?? clock.now
+        case .sending, .sent: return
+        }
+        receiptTimes[id] = times
+    }
+
     private func forgetReceipt(_ id: String) {
+        receiptTimes.removeValue(forKey: id)
         guard receipts.removeValue(forKey: id) != nil else { return }
         receiptOrder.removeAll { $0 == id }
     }
@@ -1423,6 +1452,7 @@ public final class DirectMessageService {
         unacked = []
         liveBudgets = [:]
         receipts = [:]
+        receiptTimes = [:]
         receiptOrder = []
         refBooks = [:]
         pendingDeletes = [:]

@@ -16,6 +16,7 @@ public struct ChatHistorySnapshot: Equatable, Sendable {
     public var looks: [String: ChatLook] = [:]
     public var lookEvents: [ChatLookEvent] = []
     public var receipts: [String: ChatReceipt] = [:]
+    public var receiptTimes: [String: ChatReceiptTimes] = [:]
 
     public init() {}
 }
@@ -94,6 +95,13 @@ public enum ChatHistoryCodec {
         for (conversation, look) in snapshot.looks { looks[conversation] = ChatLookFrames.encode(look) }
         var receipts: JSONObject = [:]
         for (id, receipt) in snapshot.receipts { receipts[id] = .string(receipt.rawValue) }
+        var receiptTimes: JSONObject = [:]
+        for (id, times) in snapshot.receiptTimes where !times.isEmpty {
+            var entry: JSONObject = [:]
+            if let delivered = times.delivered { entry["delivered"] = .int(delivered.epochMillis) }
+            if let read = times.read { entry["read"] = .int(read.epochMillis) }
+            receiptTimes[id] = .object(entry)
+        }
         let root: JSONObject = [
             "v": .int(Int64(version)),
             "messages": .array(snapshot.messages.map(encodeMessage)),
@@ -109,6 +117,7 @@ public enum ChatHistoryCodec {
             "looks": .object(looks),
             "lookEvents": .array(snapshot.lookEvents.map(ChatLookFrames.encodeEvent)),
             "receipts": .object(receipts),
+            "receiptTimes": .object(receiptTimes),
         ]
         return JSON.encodeData(.object(root))
     }
@@ -141,6 +150,13 @@ public enum ChatHistoryCodec {
         snapshot.lookEvents = (root["lookEvents"]?.objects ?? []).compactMap(ChatLookFrames.decodeEvent)
         for (id, value) in root["receipts"]?.objectOrEmpty ?? [:] {
             if let receipt = ChatReceipt(rawValue: value.text) { snapshot.receipts[id] = receipt }
+        }
+        for (id, value) in root["receiptTimes"]?.objectOrEmpty ?? [:] {
+            let entry = value.objectOrEmpty
+            let times = ChatReceiptTimes(
+                delivered: entry["delivered"]?.int64Value.map { Date(epochMillis: $0) },
+                read: entry["read"]?.int64Value.map { Date(epochMillis: $0) })
+            if !times.isEmpty { snapshot.receiptTimes[id] = times }
         }
         return snapshot
     }
@@ -212,6 +228,7 @@ public enum ChatHistoryCodec {
             out.edits.merge(snapshot.edits) { kept, _ in kept }
             out.looks.merge(snapshot.looks) { kept, _ in kept }
             out.receipts.merge(snapshot.receipts) { kept, _ in kept }
+            out.receiptTimes.merge(snapshot.receiptTimes) { kept, _ in kept }
         }
         let removed = Set(out.removedMessages)
         out.messages.removeAll { removed.contains($0.id) }
@@ -240,6 +257,7 @@ public struct ChatHistoryParts: Sendable {
     public var looks: [String: ChatLook] = [:]
     public var lookEvents: [ChatLookEvent] = []
     public var receipts: [String: ChatReceipt] = [:]
+    public var receiptTimes: [String: ChatReceiptTimes] = [:]
     public var retention: ChatRetention?
     public var now = Date()
 
@@ -263,6 +281,7 @@ public struct ChatHistoryParts: Sendable {
         snapshot.looks = looks
         snapshot.lookEvents = lookEvents.filter { !isExpired($0.conversation, $0.timestamp) }
         snapshot.receipts = receipts.filter { kept.contains($0.key) }
+        snapshot.receiptTimes = receiptTimes.filter { kept.contains($0.key) }
         return snapshot
     }
 
