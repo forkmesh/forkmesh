@@ -743,8 +743,11 @@ struct CrmEmailSheet: View {
                 Section {
                     LabeledContent("Opens", value: "\(shown.opens)")
                     LabeledContent("Clicks", value: "\(shown.clicks)")
-                    LabeledContent("Read for", value: shown.readLabel.isEmpty ? "Not reported" : shown.readLabel)
-                    LabeledContent("Scrolled", value: shown.scrollLabel.isEmpty ? "Not reported" : shown.scrollLabel)
+                    LabeledContent("Read for", value: shown.readLabel.isEmpty ? (shown.silentClient ? "\(shown.mailClient) doesn't report it" : "Not reported") : shown.readLabel)
+                    LabeledContent(shown.slideCount > 0 ? "Reached" : "Scrolled", value: shown.slideCount > 0 && shown.slideReached > 0 ? "Slide \(shown.slideReached) of \(shown.slideCount)" + (shown.slideTitle.isEmpty ? "" : " · \(shown.slideTitle)") : (shown.scrollLabel.isEmpty ? "Not reported" : shown.scrollLabel))
+                    if !shown.mailClient.isEmpty {
+                        LabeledContent("Mail app", value: shown.mailClient)
+                    }
                 } header: {
                     Text("Reading")
                 } footer: {
