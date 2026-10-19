@@ -495,4 +495,11 @@ class PackageGateTest {
         expect(RepoHubSection.Agents !in sections && RepoHubSection.MergeQueue !in sections)
         assertEq(RepoHubSection.entries.size, model.tiles().size)
     }
+
+    fun testDesktopReliantItems() {
+        listOf("agents", "allAgents", "desktops", "teammates", "shortcuts", "hosts", "usage").forEach { expect(PackageGate.reliesOnDesktop(it)) }
+        listOf("inbox", "chat", "notes", "code", "unknown").forEach { expect(!PackageGate.reliesOnDesktop(it)) }
+        expect(PackageGate.reliesOnDesktop("unknown", Route.Kind.Hosts))
+        expect(PackageGate.DESKTOP_RELIANT.all { it in PackageGate.GATED })
+    }
 }

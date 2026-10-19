@@ -33,6 +33,8 @@ object PackageGate {
 
     val STARTER: Set<String> = setOf(AGENTS, CHAT, INBOX, CODE, TOUR)
 
+    val DESKTOP_RELIANT: Set<String> = setOf(AGENTS, "desktops", "special-agents", "shortcuts", "hosts", "usage")
+
     val HUB_ITEMS: Map<String, String> = mapOf(
         "notes" to "notes", "tasks" to "tasks", "calendar" to "calendar", "timers" to "timers",
         "desktops" to "desktops", "allAgents" to AGENTS, "teammates" to "special-agents", "shortcuts" to "shortcuts",
@@ -106,6 +108,11 @@ object PackageGate {
         RepoHubSection.Releases to RELEASES, RepoHubSection.Discussions to DISCUSSIONS, RepoHubSection.Agents to AGENTS,
         RepoHubSection.Ember to "ember", RepoHubSection.Strata to "strata", RepoHubSection.Synapse to "synapse",
     )
+
+    fun reliesOnDesktop(hubItemId: String, kind: Route.Kind? = null): Boolean {
+        val packageId = HUB_ITEMS[hubItemId] ?: AppTab.of(hubItemId)?.let(TABS::get) ?: kind?.let(ROUTE_KINDS::get)
+        return packageId in DESKTOP_RELIANT
+    }
 
     val GATED: Set<String> = HUB_ITEMS.values.toSet() + ROUTE_KINDS.values + TABS.values + REPO_SECTIONS.values + CODE
 
