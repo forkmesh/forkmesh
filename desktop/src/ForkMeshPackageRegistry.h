@@ -185,6 +185,7 @@ public:
                                bool unchosen = false) const;
     static const QStringList &allPlaces();
     static QString desktopPlace();
+    static bool reliesOnDesktop(const QString &id);
     QStringList places(const QString &id) const;
     bool setPlaces(const QString &id, const QStringList &places);
     bool isPlacedHere(const QString &id) const;

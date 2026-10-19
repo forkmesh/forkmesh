@@ -81,7 +81,7 @@ HomeBoard::HomeBoard(QWidget *parent) : QWidget(parent)
     connect(m_pulse, &QTimer::timeout, this, [this] {
         m_phase = (m_phase + 1) % kPulseSteps;
         for (const PlacedTile &placed : std::as_const(m_tiles))
-            if (tileOf(placed).live)
+            if (tileOf(placed).live || tileOf(placed).desktopOffline)
                 update(placed.rect.adjusted(-2, -2, 2, 2));
     });
 }
@@ -235,7 +235,9 @@ void HomeBoard::syncAnimation()
 {
     const bool anyLive = std::any_of(
         m_tiles.cbegin(), m_tiles.cend(),
-        [this](const PlacedTile &placed) { return tileOf(placed).live; });
+        [this](const PlacedTile &placed) {
+            return tileOf(placed).live || tileOf(placed).desktopOffline;
+        });
     if (anyLive && isVisible())
         m_pulse->start();
     else
@@ -437,6 +439,16 @@ void HomeBoard::paintTile(QPainter &painter, const HomeTile &tile,
         painter.setPen(QPen(window, 2));
         painter.setBrush(accent);
         painter.drawEllipse(QRect(plate.left() - 4, plate.top() - 4, d, d));
+    }
+    if (tile.desktopOffline) {
+        const int d = 12;
+        painter.save();
+        painter.setOpacity(
+            0.2 + 0.8 * (0.5 + 0.5 * std::cos(2.0 * kPi * m_phase / kPulseSteps)));
+        painter.setPen(QPen(window, 2));
+        painter.setBrush(amber);
+        painter.drawEllipse(QRect(plate.left() - 4, plate.bottom() - d + 4, d, d));
+        painter.restore();
     }
 }
 
