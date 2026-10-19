@@ -149,6 +149,10 @@ enum NavigationRoutes {
         fallback(routes, .usage) { _ in AnyView(UsageScreen()) }
         fallback(routes, .runners) { _ in AnyView(RunnersScreen()) }
         fallback(routes, .rssReader) { _ in AnyView(RSSReaderScreen()) }
+        fallback(routes, .instanceFeed) { route in
+            guard case let .instanceFeed(post) = route else { return AnyView(FeedScreen()) }
+            return AnyView(FeedScreen(post: post))
+        }
         fallback(routes, .secureDrive) { _ in AnyView(SecureDriveScreen()) }
         fallback(routes, .spiderRoom) { _ in AnyView(SpiderRoomScreen()) }
         fallback(routes, .workflows) { _ in AnyView(WorkflowsScreen()) }

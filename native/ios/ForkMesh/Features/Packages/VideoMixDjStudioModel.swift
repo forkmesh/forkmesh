@@ -164,6 +164,8 @@ final class DjStudioModel {
     var sections: [DjSection?] = Array(repeating: nil, count: DjStudio.sectionCount)
     var automixing = false
     var automixOn = false
+    var autoDjOn = false
+    var autoDjFinding = false
     var onScreen = false
     var notice: String?
     var sheet: DjSheet? {
@@ -207,6 +209,12 @@ final class DjStudioModel {
     @ObservationIgnored var sentReactions: [CFTimeInterval] = []
     @ObservationIgnored let motion = DjMotionFeed()
     @ObservationIgnored var automixLoop: Task<Void, Never>?
+    @ObservationIgnored var autoDjTask: Task<Void, Never>?
+    @ObservationIgnored var autoDjSeed = ""
+    @ObservationIgnored var autoDjChoices: [DjAutoDjCandidate] = []
+    @ObservationIgnored var autoDjPlayed: [String] = []
+    @ObservationIgnored var autoDjOwnsAutomix = false
+    @ObservationIgnored var autoDjRefresh = false
 
     @ObservationIgnored var jamTask: Task<Void, Never>?
     @ObservationIgnored var shareTasks: [DjDeckSide: Task<Void, Never>] = [:]
@@ -214,7 +222,7 @@ final class DjStudioModel {
     @ObservationIgnored var applied: [DjDeckSide: Int64] = [:]
     @ObservationIgnored var applyingRemote = false
     @ObservationIgnored private var analysed: Set<String> = []
-    @ObservationIgnored private var unplayable: Set<String> = []
+    @ObservationIgnored private(set) var unplayable: Set<String> = []
 
     @ObservationIgnored var onLeave: (() -> Void)?
     @ObservationIgnored let host: DjPlayerHost
@@ -237,6 +245,7 @@ final class DjStudioModel {
     @ObservationIgnored private var active = false
     @ObservationIgnored private var savedAt: CFTimeInterval = 0
     @ObservationIgnored private var resumeAutomix = false
+    @ObservationIgnored private var resumeAutoDj = false
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
@@ -257,6 +266,7 @@ final class DjStudioModel {
         crate = DjCrate.decode(defaults.data(forKey: DjCrate.storageKey))
         shareMotion = defaults.object(forKey: Self.motionKey) as? Bool ?? true
         resumeAutomix = saved.automix
+        resumeAutoDj = saved.autoDj
         host.onEvent = { [weak self] side, event in
             guard let self else { return }
             let began = CACurrentMediaTime()
@@ -322,9 +332,12 @@ final class DjStudioModel {
     func resumePlayback() {
         for deck in [a, b] where deck.keepsPlaying && deck.loaded && !deck.playing { play(deck) }
         let automix = resumeAutomix
+        let autoDj = resumeAutoDj
         resumeAutomix = false
+        resumeAutoDj = false
         guard a.playing || b.playing else { return }
         if automix, !automixOn { setAutomix(true) }
+        if autoDj, automixOn { setAutoDj(true, refresh: false) }
         if defaults.string(forKey: Self.jamKey)?.isEmpty == false { resumeJam() }
     }
 
@@ -1093,9 +1106,10 @@ final class DjStudioModel {
     }
 
     func automix() {
+        let autoDj = autoDjOn
         setAutomix(!automixOn)
         let focus = crate.label(crate.focus) + (crate.shuffle ? ", shuffled" : " in order")
-        show(!automixOn ? "AUTOMIX off."
+        show(!automixOn ? (autoDj ? "AUTOMIX and AUTO DJ off." : "AUTOMIX off.")
             : crate.focus != .everything ? (shownQueue.isEmpty ? "AUTOMIX on: playing \(focus)." : "AUTOMIX on: the queue, then \(focus).")
             : !shownQueue.isEmpty ? "AUTOMIX on: the queue plays one song after another."
             : library.isEmpty && crate.tracks.isEmpty ? "AUTOMIX on: queue songs and they play one after another."
@@ -1108,6 +1122,7 @@ final class DjStudioModel {
         if !on {
             automixTask?.cancel()
             automixing = false
+            stopAutoDj()
         }
         automixOn = on
         guard on else { return }
@@ -1121,8 +1136,9 @@ final class DjStudioModel {
 
     func holdAutomix() {
         guard automixOn, !a.playing, !b.playing else { return }
+        let autoDj = autoDjOn
         setAutomix(false)
-        show("AUTOMIX off.")
+        show(autoDj ? "AUTOMIX and AUTO DJ off." : "AUTOMIX off.")
     }
 
     private func automixStep() {
@@ -1130,7 +1146,10 @@ final class DjStudioModel {
         let began = CACurrentMediaTime()
         defer { DjVitalsRecorder.shared.work(.automix, from: began, to: CACurrentMediaTime()) }
         let favoured: DjDeckSide = crossfader <= 0 ? .a : .b
-        switch DjAutomix.step(a: snapshot(a), b: snapshot(b), favoured: favoured, queued: !shownQueue.isEmpty || !crate.pool(library, skip: unplayable).isEmpty) {
+        if autoDjOn { primeAutoDj() }
+        let picked = autoDjOn && autoDjNext() != nil
+        let pooled = !(autoDjOn && autoDjFinding) && !crate.pool(library, skip: unplayable).isEmpty
+        switch DjAutomix.step(a: snapshot(a), b: snapshot(b), favoured: favoured, queued: !shownQueue.isEmpty || picked || pooled) {
         case .wait:
             break
         case let .preload(side):
@@ -1144,9 +1163,12 @@ final class DjStudioModel {
     }
 
     @discardableResult
-    private func preload(_ side: DjDeckSide) -> Bool {
+    func preload(_ side: DjDeckSide) -> Bool {
         if let item = shownQueue.first {
             playFromQueue(item, on: side)
+        } else if autoDjOn, let pick = takeAutoDj() {
+            load(side, id: pick.id, title: pick.title, author: pick.author)
+            show("AUTO DJ: \(pick.title) is up next.")
         } else if let song = replay() {
             load(side, id: song.id, title: song.title, author: song.author)
         } else {
@@ -1483,6 +1505,10 @@ final class DjStudioModel {
     }
 
     private func fetchInvidious(_ address: (URL) -> URL?, parse: (Data) -> [DjSearchResult]) async -> [DjSearchResult]? {
+        await fetchInvidiousData(address).map { parse($0.data) }
+    }
+
+    func fetchInvidiousData(_ address: (URL) -> URL?) async -> (data: Data, instance: URL)? {
         if searchInstances.isEmpty, let index = URL(string: "https://api.invidious.io/instances.json?sort_by=health"),
             let (data, response) = try? await URLSession.shared.data(from: index),
             (response as? HTTPURLResponse)?.statusCode == 200
@@ -1498,7 +1524,7 @@ final class DjStudioModel {
             {
                 searchInstances.removeAll { $0 == instance }
                 searchInstances.insert(instance, at: 0)
-                return parse(data)
+                return (data, instance)
             }
             if Task.isCancelled { return nil }
         }
@@ -1535,6 +1561,7 @@ final class DjStudioModel {
         saved.library = library
         saved.queue = queue
         saved.automix = automixOn
+        saved.autoDj = autoDjOn
         for deck in [a, b] {
             var stored = DjSavedDeck()
             stored.videoId = deck.videoId

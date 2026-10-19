@@ -139,6 +139,7 @@ final class DjDiagnostics {
         out.append(("pace", model.pace.label))
         out.append(("crossfader", String(format: "%.2f", model.crossfader)))
         out.append(("automix", (model.automixOn ? "on" : "off") + (model.automixing ? ", fading" : "")))
+        out.append(("auto dj", (model.autoDjOn ? "on" : "off") + (model.autoDjFinding ? ", finding" : "") + ", \(model.autoDjChoices.count) choices"))
         out.append(("queue", "\(model.queue.count) videos"))
         if let jam = model.jam {
             out.append((
