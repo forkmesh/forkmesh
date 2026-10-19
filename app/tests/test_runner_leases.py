@@ -347,6 +347,39 @@ def test_claim_authentication_failures():
     assert call(request, "/api/runners/report")["status"] == 401
 
 
+
+def test_a_paused_runner_claims_nothing_until_resumed():
+    runtime = FakeRuntime()
+    key = Key()
+    runtime.add_runner("pool-1", key)
+    runtime.add_runner("alice-box", Key(), scope="personal")
+    job = runtime.add_job()
+    toggle = lambda action, actor="root", name="pool-1": call(  # noqa: E731
+        runtime.use(json.dumps({"name": name}).encode(), actor=actor),
+        "/api/runners/" + action)
+    status = lambda name="pool-1": runtime.db.execute(  # noqa: E731
+        "SELECT status FROM runner_nodes WHERE name=?", (name,)).fetchone()[0]
+    assert toggle("pause", actor="")["status"] == 401
+    assert toggle("pause", actor="bob")["status"] == 404
+    assert toggle("pause", actor="root", name="alice-box")["status"] == 404
+    assert toggle("pause", actor="bob", name="alice-box")["status"] == 404
+    assert toggle("pause", actor="alice", name="alice-box")["status"] == 200
+    assert status("alice-box") == "paused"
+    paused = toggle("pause")
+    assert paused["status"] == 200 and paused["data"]["status"] == "paused"
+    assert toggle("pause")["data"]["status"] == "paused"
+    answer = claim(runtime, "pool-1", key)
+    assert answer["status"] == 200 and answer["data"]["jobs"] == []
+    assert runtime.job_status(job) == "queued"
+    assert toggle("resume")["data"]["status"] == "active"
+    leased = claim(runtime, "pool-1", key)["data"]["jobs"]
+    assert [item["jobId"] for item in leased] == [job]
+    assert toggle("revoke")["status"] == 200
+    assert toggle("resume")["status"] == 409 and status() == "revoked"
+    assert toggle("pause")["status"] == 409
+    assert call(runtime.use(b"{}", actor="root", method="GET"),
+                "/api/runners/pause")["status"] == 405
+
 # --- claim eligibility and grants -----------------------------------------
 
 def test_claim_returns_exact_grants_and_holds_the_lease():

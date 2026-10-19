@@ -190,7 +190,8 @@ async def handle(runtime, path):
     login_route = runner_logins.match(action)
     if login_route is not None:
         return await runner_logins.handle(runtime, login_route)
-    if action not in ("register", "revoke", "claim", "report", "pool-status",
+    if action not in ("register", "revoke", "pause", "resume", "claim",
+                      "report", "pool-status",
                       "security-incident", "mail-log-note", "stream",
                       "attachment", "actions-report"):
         return _error(runtime, "not_found", 404)
@@ -205,6 +206,8 @@ async def handle(runtime, path):
         return await _register(runtime, raw)
     if action == "revoke":
         return await _revoke(runtime, raw)
+    if action in PAUSE_ACTIONS:
+        return await _set_paused(runtime, raw, action)
     if action == "pool-status":
         return await _pool_status(runtime, path, raw)
     runner = await _signed_caller(runtime, PREFIX + action, raw)
@@ -316,6 +319,36 @@ async def _revoke(runtime, raw):
     return runtime.response({"ok": True, "name": name, "status": "revoked"})
 
 
+PAUSE_ACTIONS = {"pause": ("active", "paused"), "resume": ("paused", "active")}
+
+
+async def _set_paused(runtime, raw, action):
+    data = _json(raw)
+    if data is None:
+        return _error(runtime, "invalid_json", 400)
+    actor = await _account(runtime, data)
+    if not actor:
+        return _error(runtime, "unauthorized", 401)
+    name = str(data.get("name") or "").strip().lower()
+    row = await runtime.d1_first(
+        "SELECT registered_by,scope,status FROM runner_nodes WHERE name=?",
+        name)
+    if not row or not await _may_revoke(runtime, actor, row):
+        return _error(runtime, "not_found", 404)
+    before, after = PAUSE_ACTIONS[action]
+    status = str(row.get("status") or "")
+    if status == after:
+        return runtime.response({"ok": True, "name": name, "status": after})
+    if status != before:
+        return _error(runtime, "runner_inactive", 409,
+                      "That runner is revoked.")
+    await runtime.d1_run(
+        "UPDATE runner_nodes SET status=?,updated_at=? WHERE name=? "
+        "AND status=?", after, runtime.now(), name, before)
+    await runtime.audit(actor, "runner." + action, name)
+    return runtime.response({"ok": True, "name": name, "status": after})
+
+
 async def _may_revoke(runtime, actor, row):
     if row.get("registered_by") == actor:
         return True
@@ -368,7 +401,8 @@ async def _signed_caller(runtime, path, raw):
     async def runner_keys(name):
         row = await runtime.d1_first(
             "SELECT name,public_key,scope,allowed_owners,status,registered_by,"
-            "actions_trusted FROM runner_nodes WHERE name=? AND status='active'",
+            "actions_trusted FROM runner_nodes WHERE name=? AND "
+            "status IN ('active','paused')",
             name)
         if row:
             rows[name] = row
@@ -387,6 +421,7 @@ async def _signed_caller(runtime, path, raw):
             "publicKey": str(row.get("public_key") or ""),
             "registeredBy": str(row.get("registered_by") or ""),
             "allowedOwners": _owners(owners) or [],
+            "paused": row.get("status") == "paused",
             "actionsTrusted": bool(int(row.get("actions_trusted") or 0))}
 
 
@@ -529,6 +564,8 @@ async def _claim(runtime, runner, data):
     except (TypeError, ValueError):
         actions_max = 0
     actions_max = max(0, min(MAX_CLAIM, actions_max))
+    if runner.get("paused"):
+        actions_max = 0
     providers = data.get("providers")
     if isinstance(providers, list) and (providers or actions_max):
         providers = [str(p) for p in providers if str(p) in PROVIDERS]
@@ -554,6 +591,8 @@ async def _claim(runtime, runner, data):
     import runner_logins
     blocked = await runner_logins.blocked_providers(runtime, runner, data)
     providers = [p for p in providers if p not in blocked]
+    if runner.get("paused"):
+        providers = []
     mark = await _queue_mark(runtime, runner, targets) if wait_ms else None
     jobs = await _lease_jobs(runtime, runner, pool, targets, providers,
                              requested, maximum) if providers else []

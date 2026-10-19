@@ -185,6 +185,9 @@ async def handle(runtime, route):
     return await _cancel(runtime, actor, session)
 
 
+USABLE_STATUSES = ("active", "paused")
+
+
 def _may_manage(actor, row):
     return bool(actor) and row.get("registered_by") == actor
 
@@ -616,7 +619,8 @@ async def _attention(runtime, actor):
     now = runtime.now()
     sql = ("SELECT n.name,n.scope,n.last_seen_at,a.data FROM runner_nodes n "
            "LEFT JOIN runner_availability a ON a.runner=n.name "
-           "WHERE n.status='active' AND n.registered_by=? ORDER BY n.name")
+           "WHERE n.status IN ('active','paused') AND n.registered_by=? "
+           "ORDER BY n.name")
     rows = await runtime.d1_all(sql, actor)
     sessions = []
     if rows:
@@ -648,7 +652,7 @@ async def _create(runtime, actor, row, data):
     if kind not in KINDS:
         return _error(runtime, "invalid_kind", 400,
                       "The kind must be login or terminal.")
-    if row.get("status") != "active":
+    if row.get("status") not in USABLE_STATUSES:
         return _error(runtime, "runner_inactive", 409,
                       "That runner is revoked.")
     terminal = kind == "terminal"
@@ -701,7 +705,7 @@ async def _account_request(runtime, actor, row, data):
     account = str(data.get("account") or "").strip().lower()
     if not ID_RE.fullmatch(account):
         return _error(runtime, "invalid_account", 400)
-    if row.get("status") != "active":
+    if row.get("status") not in USABLE_STATUSES:
         return _error(runtime, "runner_inactive", 409,
                       "That runner is revoked.")
     snapshot = await runtime.d1_first(
