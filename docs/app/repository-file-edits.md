@@ -46,9 +46,9 @@ Like GitHub, a reader without write access can still edit a file: the change
 becomes a pull request. ForkMesh does not need a fork or a branch on the
 repository for this. Its pull requests carry a signed, self-contained patch and
 format-patch commit series (the same model forks and
-[remote forks](remote-forks.md) use), and the maintainer's node replays that
-series with `git am --3way` when it drains the pull inbox
-(`PullStore::materializePullRef`). A website fork needs a linked managed
+[remote forks](remote-forks.md) use), and the node that takes it in turns that
+series into commits on the base it was cut from and merges those
+([../server/pull-heads.md](../server/pull-heads.md)). A website fork needs a linked managed
 mirror and finishes asynchronously, so it cannot back an instant edit; pushing
 a namespaced branch into someone else's repository would give readers a write
 path they do not have today.
