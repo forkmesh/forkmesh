@@ -1,3 +1,4 @@
+import FMAccount
 import FMApi
 import FMBase
 import FMChat
@@ -23,8 +24,12 @@ final class ShellNavigatorCounts {
     @ObservationIgnored private var loadedAt: Date?
     @ObservationIgnored private var loadingTasks = false
     @ObservationIgnored private var rssUnread: (model: ObjectIdentifier, revision: Int, count: Int)?
+    @ObservationIgnored private var cacheKey: String?
+    @ObservationIgnored private var cacheDay: String = ""
+    @ObservationIgnored private var tried: Set<Route.Kind> = []
     private(set) var rssOpened = false
     private(set) var loading = false
+    private(set) var refreshing: Set<Route.Kind> = []
 
     func reset() {
         fetched = [:]
@@ -33,6 +38,47 @@ final class ShellNavigatorCounts {
         rssUnread = nil
         rssOpened = false
         loadedAt = nil
+        cacheKey = nil
+        cacheDay = ""
+        tried = []
+    }
+
+    private var store: KeyValueStore {
+        Services.get(KeyValueStore.self) ?? UserDefaultsStore()
+    }
+
+    private static func currentCacheKey() -> String? {
+        guard let project = Services.get(ProjectRuntime.self)?.project.id else { return nil }
+        let user: String = Services.get(AuthService.self)?.session?.nodeName ?? ""
+        return NavigatorCountCache.key(project: project, user: user)
+    }
+
+    private func restore() {
+        let key: String? = ShellNavigatorCounts.currentCacheKey()
+        let today: String = NavigatorCountCache.day(Date())
+        if key == cacheKey && today == cacheDay { return }
+        let sameKey: Bool = key == cacheKey
+        cacheKey = key
+        cacheDay = today
+        loadedAt = nil
+        let saved: NavigatorCountCache? =
+            sameKey
+            ? NavigatorCountCache(day: "", counts: fetched, assignedTasks: assignedTasks, bugReports: bugReports)
+            : key.flatMap { (key: String) -> NavigatorCountCache? in NavigatorCountCache.decode(store.string(forKey: key)) }
+        let cache: NavigatorCountCache = (saved ?? NavigatorCountCache(day: today)).on(today)
+        if !sameKey { tried = [] }
+        tried.subtract(NavigatorCountCache.daily)
+        let kinds: [Route.Kind: Int] = cache.kinds
+        if fetched != kinds { fetched = kinds }
+        if assignedTasks != cache.assignedTasks { assignedTasks = cache.assignedTasks }
+        if bugReports != cache.bugReports { bugReports = cache.bugReports }
+    }
+
+    private func save() {
+        guard let cacheKey else { return }
+        let cache: NavigatorCountCache = NavigatorCountCache(
+            day: cacheDay, counts: fetched, assignedTasks: assignedTasks, bugReports: bugReports)
+        store.set(cache.encoded, forKey: cacheKey)
     }
 
     func badge(_ kind: Route.Kind) -> Int {
@@ -53,15 +99,46 @@ final class ShellNavigatorCounts {
 
     func adoptTasks(_ model: TasksListModel) {
         guard model.error.isEmpty, !model.loading else { return }
+        restore()
         let open: Int = model.open.count
         let mine: Int = model.mineOpen.count
+        guard fetched[.tasks] != open || assignedTasks != mine else { return }
         if fetched[.tasks] != open { fetched[.tasks] = open }
         if assignedTasks != mine { assignedTasks = mine }
+        save()
     }
 
     func adoptBugReports(_ counts: [String: Int]) {
-        guard let new = counts["new"], bugReports != new else { return }
+        guard let new = counts["new"] else { return }
+        restore()
+        guard bugReports != new else { return }
         bugReports = new
+        save()
+    }
+
+    func adopt(_ kind: Route.Kind, count: Int) {
+        restore()
+        guard fetched[kind] != count else { return }
+        fetched[kind] = count
+        save()
+    }
+
+    func refresh(_ kind: Route.Kind) async {
+        restore()
+        guard ShellNavigatorCounts.fetchable.contains(kind), !ShellNavigatorCounts.adoptedOnOpen.contains(kind),
+            !refreshing.contains(kind),
+            NavigatorCountPlan.due(
+                loadedAt: nil, now: Date(), heat: ShellNavigatorCounts.heat,
+                lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled, force: true),
+            let api = Services.get(ApiService.self)
+        else { return }
+        let key: String? = cacheKey
+        refreshing.insert(kind)
+        defer { refreshing.remove(kind) }
+        let count: Int? = await ShellNavigatorCounts.load(kind, api: api, packages: PackagesFeature.client)
+        guard let count, key == cacheKey else { return }
+        tried.insert(kind)
+        adopt(kind, count: count)
     }
 
     func refreshAssignedTasks() async {
@@ -137,6 +214,8 @@ final class ShellNavigatorCounts {
         .crm, .marketing, .analytics,
     ]
 
+    static let adoptedOnOpen: Set<Route.Kind> = [.repos, .tasks]
+
     static var heat: DeviceHeat {
         switch ProcessInfo.processInfo.thermalState {
         case .nominal: return .nominal
@@ -148,20 +227,25 @@ final class ShellNavigatorCounts {
     }
 
     func refresh(guest: Bool, force: Bool = false) async {
+        restore()
         if loading { return }
         let lowPower: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled
         guard NavigatorCountPlan.due(
             loadedAt: loadedAt, now: Date(), heat: ShellNavigatorCounts.heat, lowPower: lowPower, force: force)
         else { return }
         guard let api = Services.get(ApiService.self) else { return }
+        let key: String? = cacheKey
         let packages: PackagesClient? = PackagesFeature.client
         let shown: Set<Route.Kind> = NavigatorCountPlan.shownKinds(HubGroups.current(guest: guest))
-        let kinds: [Route.Kind] = NavigatorCountPlan.wanted(ShellNavigatorCounts.fetchable, shown: shown)
+        let kinds: [Route.Kind] = NavigatorCountPlan.missing(
+            NavigatorCountPlan.wanted(ShellNavigatorCounts.fetchable, shown: shown), known: tried.union(fetched.keys))
+        tried.formUnion(kinds)
         loading = true
         defer { loading = false }
         let counts: [Route.Kind: Int] = await NavigatorCountPlan.run(kinds) { (kind: Route.Kind) -> Int? in
             await ShellNavigatorCounts.load(kind, api: api, packages: packages)
         }
+        guard key == cacheKey else { return }
         var next: [Route.Kind: Int] = fetched.merging(counts) { _, new in new }
         if shown.contains(.ledger) {
             next[.ledger] = PackagesFeature.personalLedger?.load().count ?? next[.ledger]
@@ -171,16 +255,21 @@ final class ShellNavigatorCounts {
         }
         if shown.contains(.shortcuts) { await ShellNavigatorCounts.loadShortcuts() }
         if shown.contains(.coves) { await ShellNavigatorCounts.loadCoves() }
-        if InsightsFeature.isAdmin {
+        if InsightsFeature.isAdmin && bugReports == nil {
             let inbox: BugReportInbox = await api.bugReportInbox(status: "new", limit: 1)
             if inbox.ok { adoptBugReports(inbox.counts) }
         }
         if shown.contains(.rssReader) {
             let reader: RSSReaderModel = RSSReaderFeature.model()
-            if !rssOpened { rssOpened = true }
-            Task { await reader.refresh() }
+            if !rssOpened {
+                rssOpened = true
+                Task { await reader.refresh() }
+            }
         }
-        if fetched != next { fetched = next }
+        if fetched != next {
+            fetched = next
+            save()
+        }
         if !Task.isCancelled { loadedAt = Date() }
     }
 

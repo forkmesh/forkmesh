@@ -137,7 +137,22 @@ destination, in sections, with counts and activity:
   notes, tasks, calendar, orgs, admin, CRM, marketing, analytics), each
   building its full screen model on the main actor; their replies landing
   together blocked the UI for 450 to 850 ms and kept the radio and CPU busy on
-  a phone that was already throttling. Unread pills and the
+  a phone that was already throttling.
+- **Cached counts.** iOS saves the fetched counts, the assigned-tasks badge
+  and the bug count per project and user (`NavigatorCountCache`, FMApi, one
+  JSON string under `shell.navigatorCounts.<project>.<user>`), so Home shows
+  them at once, across launches, without asking the network. Home fetches
+  only the counts it has never had (`NavigatorCountPlan.missing`), each at
+  most once a session; a count is refreshed when its page opens
+  (`ShellNavigatorCounts.refresh(_:)`, from `RouteDestinationView`), with
+  the thin `fmLoading` bar at the top of that page while it loads. Repos and
+  Tasks write theirs from the list the page already loaded
+  (`ShellNavigatorCounts.adopt`, `adoptTasks`) instead of a second request.
+  Day counts (calendar, calories, steps, water, sleep, sugar break,
+  stretch: `NavigatorCountCache.daily`) are dropped at midnight so Home
+  fetches today's once. Home no longer shows a loading bar for counts. The
+  operator asked for it on 2026-10-19 to make going back to Home faster.
+  Unread pills and the
   running-agents heartbeat count are solid `fm.accent` (the user's highlight
   colour) with `fm.onPrimary` digits, which keeps the bright dark-mode accents
   (lime, amber) legible; plain totals stay tinted `fm.count` (blue). Items
@@ -202,16 +217,16 @@ destination, in sections, with counts and activity:
   badge, so a fresh install does not flag every open pull; the page clears
   the badge while it is open. RSS Reader shows its unread article count, the
   same number as its Unread smart feed, read from the reader's saved library
-  (`RSSReaderFeature.loaded`, cached by model revision); Home's count refresh
-  also refreshes the feeds that are due. Tasks shows the open tasks assigned
-  to the signed-in user (`TasksListModel.mineOpen`), refreshed with Home's
-  counts, on every `pings` frame (an assignment arrives as a ping) and
+  (`RSSReaderFeature.loaded`, cached by model revision); Home's first count
+  refresh of a session also refreshes the feeds that are due. Tasks shows the
+  open tasks assigned to the signed-in user (`TasksListModel.mineOpen`),
+  saved with Home's counts, refreshed on every `pings` frame (an assignment arrives as a ping) and
   whenever the Tasks page reloads (`ShellNavigatorCounts.adoptTasks`). The
   operator asked for the three badges on 2026-10-18.
 - **Bug count.** For an administrator the Bug icon shows how many reported
   bugs are still `new`, the same number as the Report a bug sheet's Reported
-  tab. Home's count refresh asks `/api/bug-reports/inbox?status=new&limit=1`
-  for the counts only, and the sheet writes its counts back whenever the
+  tab. While no count is saved, Home's count refresh asks
+  `/api/bug-reports/inbox?status=new&limit=1` for the counts only, and the sheet writes its counts back whenever the
   inbox reloads or a status changes (`ShellNavigatorCounts.adoptBugReports`).
   Reports are readable by administrators only, so everyone else sees the
   plain icon. The operator asked for the count on 2026-10-18.
