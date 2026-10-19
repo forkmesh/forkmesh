@@ -7,9 +7,33 @@
 #include "BackupHostFeed.h"
 #include "SafeDelete.h"
 
+#if defined(Q_OS_UNIX)
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
+#if defined(Q_OS_LINUX)
+#include <sys/syscall.h>
+#endif
+
 using namespace forkmesh::ui;
 
 namespace {
+
+#if defined(Q_OS_UNIX)
+constexpr int kBackgroundNice = 19;
+#if defined(Q_OS_LINUX)
+constexpr int kIoprioWhoProcess = 1;
+constexpr int kIoprioBestEffortLowest = (2 << 13) | 7;
+#endif
+
+void lowerBackgroundPriority()
+{
+    ::setpriority(PRIO_PROCESS, 0, kBackgroundNice);
+#if defined(Q_OS_LINUX)
+    ::syscall(SYS_ioprio_set, kIoprioWhoProcess, 0, kIoprioBestEffortLowest);
+#endif
+}
+#endif
 
 QString userDataWipeRefusal(const QString &path)
 {
@@ -1037,6 +1061,9 @@ void MainWindow::takeBackupNow(bool automatic)
 
     auto *tar = new QProcess(this);
     m_backupProcess = tar;
+#if defined(Q_OS_UNIX)
+    tar->setChildProcessModifier([] { lowerBackgroundPriority(); });
+#endif
     auto lowDisk = std::make_shared<bool>(false);
     auto *diskWatch = new QTimer(tar);
     diskWatch->setInterval(5000);

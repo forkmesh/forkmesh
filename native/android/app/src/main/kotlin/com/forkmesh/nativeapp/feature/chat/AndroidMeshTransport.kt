@@ -2,7 +2,6 @@ package com.forkmesh.nativeapp.feature.chat
 
 import android.Manifest
 import android.bluetooth.BluetoothAdapter
-import android.bluetooth.BluetoothClass
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCallback
@@ -46,6 +45,10 @@ import com.forkmesh.nativeapp.chat.MeshBle
 import com.forkmesh.nativeapp.chat.MeshBleOutbox
 import com.forkmesh.nativeapp.chat.MeshBluetoothEventKind
 import com.forkmesh.nativeapp.chat.MeshNativeTransport
+import com.forkmesh.nativeapp.net.RadioPolicy
+import com.forkmesh.nativeapp.net.ScanDuty
+import com.forkmesh.nativeapp.platform.AudioActivityProbe
+import com.forkmesh.nativeapp.platform.scanMode
 import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
@@ -68,7 +71,6 @@ class AndroidMeshTransport(
 
         private const val MAX_FRAME_BYTES = 24 * 1024 * 1024
 
-        private const val SEARCH_INTERVAL_MS = 120_000L
         private const val INQUIRY_TIMEOUT_MS = 15_000L
 
         private const val TCP_KEEPIDLE = 4
@@ -329,15 +331,16 @@ class AndroidMeshTransport(
         try {
             while (accepting && serverSocket === server) {
                 rescanRequested = false
+                val pass = RadioPolicy.meshPass(AudioActivityProbe.current(context))
                 val bonded: Set<BluetoothDevice> = try {
                     adapter?.bondedDevices ?: emptySet()
                 } catch (_: SecurityException) {
                     emptySet()
                 }
-                dial(bonded)
-                dial(discoverNearby() - bonded)
-                scanBle()
-                pause(SEARCH_INTERVAL_MS, server, wakeOnRescan = true)
+                if (pass.dialBonded) dial(bonded.filter(::isMeshCandidate).toSet())
+                if (pass.inquiry) dial(discoverNearby() - bonded)
+                pass.bleScan?.let(::scanBle)
+                pause(pass.nextPassMs, server, wakeOnRescan = true)
             }
         } catch (_: InterruptedException) {
         }
@@ -351,6 +354,24 @@ class AndroidMeshTransport(
                 if (left <= 0) return
                 searchLock.wait(left)
             }
+        }
+    }
+
+    private fun isMeshCandidate(device: BluetoothDevice): Boolean {
+        val major = try {
+            device.bluetoothClass?.majorDeviceClass
+        } catch (_: SecurityException) {
+            null
+        }
+        return RadioPolicy.meshCandidate(major)
+    }
+
+    private fun radioWindow(ms: Long) {
+        val deadline = System.currentTimeMillis() + ms
+        while (accepting && !AudioActivityProbe.inCall(context)) {
+            val left = deadline - System.currentTimeMillis()
+            if (left <= 0) return
+            pause(minOf(left, RadioPolicy.WINDOW_SLICE_MS), null, wakeOnRescan = false)
         }
     }
 
@@ -372,17 +393,7 @@ class AndroidMeshTransport(
                 when (intent?.action) {
                     BluetoothDevice.ACTION_FOUND -> {
                         val device = foundDevice(intent) ?: return
-                        val major = try {
-                            device.bluetoothClass?.majorDeviceClass
-                        } catch (_: SecurityException) {
-                            null
-                        }
-                        if (major == BluetoothClass.Device.Major.COMPUTER ||
-                            major == BluetoothClass.Device.Major.PHONE ||
-                            major == BluetoothClass.Device.Major.UNCATEGORIZED
-                        ) {
-                            synchronized(found) { found.add(device) }
-                        }
+                        if (isMeshCandidate(device)) synchronized(found) { found.add(device) }
                     }
                     BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> synchronized(finished) {
                         done = true
@@ -409,10 +420,10 @@ class AndroidMeshTransport(
             if (!adapter.startDiscovery()) return emptySet()
             synchronized(finished) {
                 val deadline = System.currentTimeMillis() + INQUIRY_TIMEOUT_MS
-                while (!done && accepting) {
+                while (!done && accepting && !AudioActivityProbe.inCall(context)) {
                     val left = deadline - System.currentTimeMillis()
                     if (left <= 0) break
-                    finished.wait(left)
+                    finished.wait(minOf(left, RadioPolicy.WINDOW_SLICE_MS))
                 }
             }
         } catch (_: SecurityException) {
@@ -551,7 +562,7 @@ class AndroidMeshTransport(
         }
     }
 
-    private fun scanBle() {
+    private fun scanBle(duty: ScanDuty) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
         val adapter = adapter ?: return
         if (!accepting || !canScan()) return
@@ -572,7 +583,7 @@ class AndroidMeshTransport(
             }
         }
         val filters = listOf(ScanFilter.Builder().setServiceUuid(ParcelUuid(BLE_SERVICE)).build())
-        val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
+        val settings = ScanSettings.Builder().setScanMode(duty.scanMode).build()
         try {
             scanner.startScan(filters, settings, callback)
         } catch (_: SecurityException) {
@@ -581,7 +592,7 @@ class AndroidMeshTransport(
             return
         }
         try {
-            pause(MeshBle.SCAN_MS, null, wakeOnRescan = false)
+            radioWindow(MeshBle.SCAN_MS)
         } catch (_: InterruptedException) {
         } finally {
             try {

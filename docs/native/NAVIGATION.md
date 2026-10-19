@@ -978,8 +978,9 @@ with the same notes and celesta, rendered by the Agent Watch synth.
   `.mixWithOthers`, activated at launch and on activation; Android the media
   stream). Only Settings > General > Sounds turns them off (iOS
   `device/soundsOff`). They stay quiet while dictation or a voice message
-  records. Settings search finds the switch under sound, mute, silent, audio,
-  volume, noise, beep and click.
+  records, and while another app's call is up (iOS,
+  [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md)). Settings search finds the switch
+  under sound, mute, silent, audio, volume, noise, beep and click.
 
 ## 7. iPad: a split view with a sidebar
 

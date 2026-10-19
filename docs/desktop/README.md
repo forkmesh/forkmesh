@@ -149,6 +149,13 @@ Everything is in `desktop/`.
   `chat-read`, `direct-messages`); catch-up reads are bounded by floors
   measured in minutes. See
   [www/docs/operations/polling-elimination.md](../../www/docs/operations/polling-elimination.md).
+- **Backups run at background priority.** The hourly and "Back up now"
+  `tar -czf` (`MainWindow::takeBackupNow`, `MainWindowData.cpp`) starts with
+  nice 19 and, on Linux, the lowest best-effort I/O priority; `gzip` inherits
+  both. Its first run lands right after login and packs the whole data
+  folder, which held a core and the disk at full priority while calls and
+  audio in other apps were starting (2026-10-19). Idle I/O class is not used
+  because a disk kept busy by agents could starve the backup outright.
 - **Branch lifecycle.** Deleting an agent, a branch row or a worktree deletes
   every copy of the branch (local, `origin/<b>`, `forkmesh-mesh/<b>`) and
   writes a tombstone so the mesh converge does not bring it back. Branches can

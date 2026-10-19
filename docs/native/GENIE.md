@@ -394,8 +394,9 @@ ear button, VoiceOver or Siri. A teal ring and ear badge show while on.
   "go to sleep"; `GenieWords.stopsListening` matches the whole utterance)
   turns always listening off and saves it off. In the bubble it does the same.
 - It pauses while the composer is open or dictating, in the background, while
-  the Genie is busy, while a voice message records, while anything speaks, and
-  for 10 s after Agent Watch sounds.
+  the Genie is busy, while a voice message records, while anything speaks,
+  for 10 s after Agent Watch sounds, and while another app's call is up
+  ([OTHER_APP_CALLS.md](OTHER_APP_CALLS.md)).
 - Interface cues play through the recording session so the microphone stays
   on.
 
