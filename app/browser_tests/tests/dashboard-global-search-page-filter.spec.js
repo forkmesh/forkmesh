@@ -197,6 +197,72 @@ test("header search filters the repo page's file listing in place", async ({
   await expect(rows).toHaveCount(3);
 });
 
+test("file finder contains keyboard focus and returns it to its opener", async ({ page }) => {
+  await page.route("https://cdn.tailwindcss.com/**", (route) =>
+    route.fulfill({ contentType: "text/javascript", body: "window.tailwind = {};" }),
+  );
+  await page.route(
+    "https://cdn.jsdelivr.net/npm/lucide@0.468.0/dist/umd/lucide.min.js",
+    (route) => route.fulfill({
+      contentType: "text/javascript",
+      body: "window.lucide = { createIcons() {} };",
+    }),
+  );
+  await page.route("**/alpha/engine", (route) =>
+    route.fulfill({ path: REPO_PAGE_PATH, contentType: "text/html; charset=utf-8" }),
+  );
+  await page.route("**/api/**", (route) => {
+    const url = new URL(route.request().url());
+    let body = { ok: true };
+    if (url.pathname === "/api/repositories") {
+      body = { ok: true, repositories: REPOSITORIES };
+    } else if (url.pathname === "/api/repo/alpha/engine/tree") {
+      body = url.searchParams.get("path") === "src"
+        ? { ok: true, commit: "0123456789abcdef", entries: [
+          { name: "app.js", type: "blob" },
+          { name: "solver.js", type: "blob" },
+        ] }
+        : { ok: true, commit: "0123456789abcdef", entries: [
+          { name: "README.md", type: "blob" },
+          { name: "src", type: "tree" },
+        ] };
+    } else if (url.pathname === "/api/repo/alpha/engine/mirrors") {
+      body = { ok: true, mirrors: [], summary: { mirrors: 0 } };
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json; charset=utf-8",
+      body: JSON.stringify(body),
+    });
+  });
+
+  await page.goto("/alpha/engine");
+  const opener = page.locator("[data-repo-file-finder-open]").first();
+  await opener.focus();
+  await page.keyboard.press("t");
+
+  const input = page.locator("[data-repo-file-finder-input]");
+  const finder = page.locator("[data-repo-file-finder]");
+  await expect(input).toBeFocused();
+  await expect(finder.locator('[role="listbox"]')).toHaveCount(1);
+  await expect(finder.locator('[role="option"]')).toHaveCount(3);
+  await expect(finder.locator('[role="option"]').first()).toHaveAttribute("tabindex", "-1");
+
+  await page.keyboard.press("ArrowDown");
+  await expect(input).toHaveAttribute("aria-activedescendant", "repo-file-finder-result-1");
+  await page.keyboard.press("Tab");
+  await expect(finder.locator("[data-repo-file-finder-close]")).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(input).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(finder).toBeHidden();
+  await expect(opener).toBeFocused();
+  await opener.click();
+  await expect(input).toBeFocused();
+  await finder.locator("[data-repo-file-finder-close]").click();
+  await expect(opener).toBeFocused();
+});
+
 test("header search filters the network page's connected nodes", async ({
   page,
 }) => {

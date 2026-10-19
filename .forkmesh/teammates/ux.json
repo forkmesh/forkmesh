@@ -10,8 +10,9 @@
     "enabled": true,
     "focus": "Observe, Simplify & Repair",
     "id": "ux",
-    "improvementCycles": 5,
+    "improvementCycles": 6,
     "improvementNotes": [
+        "For dynamically created native dialogs, test the computed accessible name and real Escape focus return, not just that `showModal()` is called.",
         "Audit every newly introduced modal for its accessible name, focus containment, return focus, and live updates as one keyboard journey.",
         "Exercise keyboard activation on representative search-result types, not merely result visibility and counts.",
         "Model fixed-channel action eligibility once in shared chat state, then exercise every menu surface against that rule.",
@@ -60,7 +61,7 @@
         "Usability Regression Testing"
     ],
     "specialty": "User Experience",
-    "updatedAtMs": 1792159501846,
+    "updatedAtMs": 1792420129324,
     "version": 2,
     "workflow": ""
 }

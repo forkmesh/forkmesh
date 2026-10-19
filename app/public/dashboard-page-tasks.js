@@ -692,7 +692,8 @@
       dialog = document.createElement("dialog");
       dialog.className = "task-image-modal p-3 sm:p-5";
       dialog.dataset.taskImagePreview = "true";
-      dialog.innerHTML = '<header class="mb-3 flex items-center justify-between gap-3"><strong class="min-w-0 truncate text-sm text-foreground" data-task-image-preview-name></strong><button type="button" class="task-btn" data-size="small" data-task-image-preview-close>Close</button></header><img data-task-image-preview-image alt="" /><p class="mt-3 text-center text-xs text-muted-foreground">Click outside the image or press Escape to close.</p>';
+      dialog.setAttribute("aria-labelledby", "task-image-preview-name");
+      dialog.innerHTML = '<header class="mb-3 flex items-center justify-between gap-3"><strong id="task-image-preview-name" class="min-w-0 truncate text-sm text-foreground" data-task-image-preview-name></strong><button type="button" class="task-btn" data-size="small" data-task-image-preview-close aria-label="Close image preview">Close</button></header><img data-task-image-preview-image alt="" /><p class="mt-3 text-center text-xs text-muted-foreground">Click outside the image or press Escape to close.</p>';
       dialog.querySelector("[data-task-image-preview-close]").addEventListener("click", () => dialog.close());
       dialog.addEventListener("click", (event) => {
         if (event.target === dialog) dialog.close();

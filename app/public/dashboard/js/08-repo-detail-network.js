@@ -382,15 +382,15 @@
 	                </div>
 	              </div>
 	              <div data-repo-file-finder class="fixed inset-0 z-50 hidden items-start justify-center bg-black/50 p-4 pt-20" role="dialog" aria-modal="true" aria-label="Go to file">
-	                <button type="button" data-repo-file-finder-backdrop class="absolute inset-0 cursor-default" aria-label="Close file finder"></button>
-	                <div class="fm-popover relative z-10 grid w-full max-w-2xl overflow-hidden">
+	                <button type="button" tabindex="-1" data-repo-file-finder-backdrop class="absolute inset-0 cursor-default" aria-label="Close file finder"></button>
+	                <div data-repo-file-finder-dialog class="fm-popover relative z-10 grid w-full max-w-2xl overflow-hidden">
 	                  <div class="flex items-center gap-3 border-b border-border px-4 py-3">
 	                    <i data-lucide="search" class="h-4 w-4 text-muted-foreground"></i>
-	                    <input data-repo-file-finder-input type="search" autocomplete="off" spellcheck="false" placeholder="Search files in this live mirror" class="min-w-0 flex-1 bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground" />
-	                    <button type="button" data-repo-file-finder-close class="fm-btn fm-btn-sm">Esc</button>
+	                    <input data-repo-file-finder-input type="search" role="combobox" aria-autocomplete="list" aria-controls="repo-file-finder-results" aria-expanded="true" autocomplete="off" spellcheck="false" placeholder="Search files in this live mirror" class="min-w-0 flex-1 bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+	                    <button type="button" data-repo-file-finder-close aria-label="Close file finder" class="fm-btn fm-btn-sm">Esc</button>
 	                  </div>
-	                  <div data-repo-file-finder-status class="border-b border-border px-4 py-2 text-xs text-muted-foreground">Type to search files.</div>
-	                  <div data-repo-file-finder-results class="max-h-[26rem] overflow-auto p-2"></div>
+	                  <div data-repo-file-finder-status role="status" aria-live="polite" class="border-b border-border px-4 py-2 text-xs text-muted-foreground">Type to search files.</div>
+	                  <div id="repo-file-finder-results" data-repo-file-finder-results role="listbox" aria-label="Matching files" class="max-h-[26rem] overflow-auto p-2"></div>
 	                </div>
 	              </div>
 		            </section>
@@ -2853,7 +2853,7 @@
 
       const fileFinderOpenButton = event.target.closest("[data-repo-file-finder-open]");
       if (fileFinderOpenButton) {
-        openRepoFileFinder();
+        openRepoFileFinder(fileFinderOpenButton);
         return;
       }
 
@@ -4194,6 +4194,17 @@
       if (focusGlobalSearch()) event.preventDefault();
       return;
     }
+	    if (fileFinderOpen() && event.key === "Tab") {
+	      const dialog = $("[data-repo-file-finder-dialog]");
+	      const focusable = dialog ? [...dialog.querySelectorAll("button:not([disabled]):not([tabindex='-1']), input:not([disabled]):not([tabindex='-1']), select:not([disabled]):not([tabindex='-1']), textarea:not([disabled]):not([tabindex='-1']), [href]:not([tabindex='-1']), [tabindex]:not([tabindex='-1'])")].filter((element) => !element.hidden) : [];
+	      if (focusable.length) {
+	        event.preventDefault();
+	        const current = focusable.indexOf(document.activeElement);
+	        const next = (current + (event.shiftKey ? -1 : 1) + focusable.length) % focusable.length;
+	        focusable[next].focus();
+	      }
+	      return;
+	    }
 	    if (event.key === "Escape") {
 	      setProfileModalOpen(false);
 	      setNotificationDropdownOpen(false);
@@ -4232,7 +4243,7 @@
     }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();
-      openRepoFileFinder();
+      openRepoFileFinder(event.target);
     }
   });
 

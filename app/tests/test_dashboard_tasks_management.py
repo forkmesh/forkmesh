@@ -143,6 +143,9 @@ def test_task_images_open_in_an_authenticated_full_size_preview():
         "data-task-attachment-link",
         "async function expandTaskAttachment(link)",
         "function openTaskImagePreview(src, name)",
+        'dialog.setAttribute("aria-labelledby", "task-image-preview-name")',
+        'id="task-image-preview-name"',
+        'aria-label="Close image preview"',
         "dialog.showModal()",
         "task-image-modal",
     ):

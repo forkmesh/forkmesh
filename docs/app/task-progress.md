@@ -39,6 +39,8 @@ items while a task is active or done. Changes write
 MCP tools: `list_tasks`, `get_task`, `create_task`, `update_task`,
 `complete_task`, `reopen_task`, `attach_work_item`, `detach_work_item`, plus the
 [trash tools](task-trash.md). The web Tasks page (`09-tasks.js`) draws a
-progress bar and slider, a Work items card and image thumbnails. Production
+progress bar and slider, a Work items card and image thumbnails. An image
+preview is a named native dialog whose Close control returns focus to its
+attachment. Production
 serves it from `marketplace/packages/tasks/content/web/view.html`; copy any
 `.task-*` style there (`app/tests/test_task_pagination.py` checks).

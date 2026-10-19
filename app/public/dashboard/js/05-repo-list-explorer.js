@@ -2863,6 +2863,7 @@
       partial: false,
       error: "",
       selectedIndex: 0,
+      returnFocus: null,
     };
   }
 
@@ -2940,14 +2941,24 @@
 
     if (!matches.length) {
       results.innerHTML = `<div class="px-3 py-6 text-center text-sm text-muted-foreground">${state.repoFileFinder.indexing ? "Still indexing files..." : "No files match your search."}</div>`;
+      syncRepoFileFinderActiveDescendant();
       return;
     }
     results.innerHTML = matches.map((path, index) => `
-      <button type="button" data-repo-file-finder-result data-repo-file-finder-path="${escapeHtml(path)}" aria-selected="${index === state.repoFileFinder.selectedIndex ? "true" : "false"}" class="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${index === state.repoFileFinder.selectedIndex ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
+      <button type="button" role="option" tabindex="-1" id="repo-file-finder-result-${index}" data-repo-file-finder-result data-repo-file-finder-path="${escapeHtml(path)}" aria-selected="${index === state.repoFileFinder.selectedIndex ? "true" : "false"}" class="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${index === state.repoFileFinder.selectedIndex ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
         <i data-lucide="file" class="h-3.5 w-3.5 text-muted-foreground"></i>
         <span class="min-w-0 truncate font-mono">${escapeHtml(path)}</span>
       </button>`).join("");
     window.lucide?.createIcons();
+    syncRepoFileFinderActiveDescendant();
+  }
+
+  function syncRepoFileFinderActiveDescendant() {
+    const finder = $("[data-repo-file-finder]");
+    const input = finder?.querySelector("[data-repo-file-finder-input]");
+    const selected = finder?.querySelector('[data-repo-file-finder-result][aria-selected="true"]');
+    if (input) input.toggleAttribute("aria-activedescendant", Boolean(selected));
+    if (input && selected) input.setAttribute("aria-activedescendant", selected.id);
   }
 
   function moveRepoFileFinderSelection(delta) {
@@ -2962,27 +2973,33 @@
       button.classList.toggle("text-muted-foreground", !active);
       if (active) button.scrollIntoView({ block: "nearest" });
     });
+    syncRepoFileFinderActiveDescendant();
   }
 
   function selectRepoFileFinderResult() {
     const selected = $('[data-repo-file-finder-result][aria-selected="true"]') || $('[data-repo-file-finder-result]');
     if (!selected || !state.selectedRepo) return;
-    closeRepoFileFinder();
+    closeRepoFileFinder({ restoreFocus: false });
     loadRepositoryBlob(state.selectedRepo, selected.dataset.repoFileFinderPath || "");
   }
 
-  function closeRepoFileFinder() {
+  function closeRepoFileFinder({ restoreFocus = true } = {}) {
     const finder = $("[data-repo-file-finder]");
     if (!finder) return;
     finder.classList.add("hidden");
     finder.classList.remove("flex");
+    const opener = state.repoFileFinder.returnFocus;
+    state.repoFileFinder.returnFocus = null;
+    if (restoreFocus && opener?.isConnected) opener.focus({ preventScroll: true });
   }
 
-  async function openRepoFileFinder() {
+  async function openRepoFileFinder(trigger) {
     if (!state.selectedRepo) return;
     const finder = $("[data-repo-file-finder]");
     if (!finder) return;
     if (state.repoFileFinder.repoKey !== fileFinderRepoKey(state.selectedRepo)) resetRepoFileFinder(state.selectedRepo);
+    const opener = trigger instanceof HTMLElement ? trigger : document.activeElement;
+    state.repoFileFinder.returnFocus = opener instanceof HTMLElement ? opener : null;
     finder.classList.remove("hidden");
     finder.classList.add("flex");
     const input = finder.querySelector("[data-repo-file-finder-input]");

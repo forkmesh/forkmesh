@@ -72,7 +72,10 @@ per-page colours:
   current branch gets the blue check through `aria-checked`), the file-tree
   context menu, the New issue and Dismiss menus. The Code, Watch, Fork and
   issue-picker panels and the Go to file finder use the `fm-popover` surface;
-  the picker's selected check is blue.
+  the picker's selected check is blue. The file finder is a modal combobox:
+  focus stays between its search and close controls, Arrow keys update its
+  active result, Escape returns focus to its opener, and result rows are not
+  individual Tab stops.
 - The branch merge dialog uses `fm-dialog` inside the native `<dialog>`; the
   `fm-dialog` class sits on the inner form because its `display: flex` would
   otherwise override the closed dialog's `display: none`.

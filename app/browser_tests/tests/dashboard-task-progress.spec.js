@@ -157,6 +157,20 @@ test("rows show the images attached to each task", async ({ page }) => {
   if (SHOT_DIR) await page.locator("[data-tasks-list]").screenshot({ path: path.join(SHOT_DIR, "tasks-row-thumbnails.png") });
 });
 
+test("an attachment preview names its dialog and returns focus when dismissed", async ({ page }) => {
+  await openTasks(page);
+  await page.locator(`[data-task-select="${FRESH.id}"]`).click();
+  const attachment = page.locator("[data-tasks-detail] [data-task-attachment-link]").first();
+  await attachment.click();
+
+  const dialog = page.getByRole("dialog", { name: "screen.png" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Close image preview" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(attachment).toBeFocused();
+});
+
 test("an assignee sets progress from the detail slider", async ({ page }) => {
   const patched = [];
   await openTasks(page, { patched });

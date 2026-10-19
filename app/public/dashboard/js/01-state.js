@@ -70,6 +70,7 @@
       partial: false,
       error: "",
       selectedIndex: 0,
+      returnFocus: null,
     },
     nodeNameAvailability: {
       candidate: "",

@@ -70,6 +70,7 @@
       partial: false,
       error: "",
       selectedIndex: 0,
+      returnFocus: null,
     },
     nodeNameAvailability: {
       candidate: "",
@@ -14073,6 +14074,7 @@
       partial: false,
       error: "",
       selectedIndex: 0,
+      returnFocus: null,
     };
   }
 
@@ -14150,14 +14152,24 @@
 
     if (!matches.length) {
       results.innerHTML = `<div class="px-3 py-6 text-center text-sm text-muted-foreground">${state.repoFileFinder.indexing ? "Still indexing files..." : "No files match your search."}</div>`;
+      syncRepoFileFinderActiveDescendant();
       return;
     }
     results.innerHTML = matches.map((path, index) => `
-      <button type="button" data-repo-file-finder-result data-repo-file-finder-path="${escapeHtml(path)}" aria-selected="${index === state.repoFileFinder.selectedIndex ? "true" : "false"}" class="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${index === state.repoFileFinder.selectedIndex ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
+      <button type="button" role="option" tabindex="-1" id="repo-file-finder-result-${index}" data-repo-file-finder-result data-repo-file-finder-path="${escapeHtml(path)}" aria-selected="${index === state.repoFileFinder.selectedIndex ? "true" : "false"}" class="grid w-full grid-cols-[1.25rem_minmax(0,1fr)] items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${index === state.repoFileFinder.selectedIndex ? "bg-secondary text-foreground" : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"}">
         <i data-lucide="file" class="h-3.5 w-3.5 text-muted-foreground"></i>
         <span class="min-w-0 truncate font-mono">${escapeHtml(path)}</span>
       </button>`).join("");
     window.lucide?.createIcons();
+    syncRepoFileFinderActiveDescendant();
+  }
+
+  function syncRepoFileFinderActiveDescendant() {
+    const finder = $("[data-repo-file-finder]");
+    const input = finder?.querySelector("[data-repo-file-finder-input]");
+    const selected = finder?.querySelector('[data-repo-file-finder-result][aria-selected="true"]');
+    if (input) input.toggleAttribute("aria-activedescendant", Boolean(selected));
+    if (input && selected) input.setAttribute("aria-activedescendant", selected.id);
   }
 
   function moveRepoFileFinderSelection(delta) {
@@ -14172,27 +14184,33 @@
       button.classList.toggle("text-muted-foreground", !active);
       if (active) button.scrollIntoView({ block: "nearest" });
     });
+    syncRepoFileFinderActiveDescendant();
   }
 
   function selectRepoFileFinderResult() {
     const selected = $('[data-repo-file-finder-result][aria-selected="true"]') || $('[data-repo-file-finder-result]');
     if (!selected || !state.selectedRepo) return;
-    closeRepoFileFinder();
+    closeRepoFileFinder({ restoreFocus: false });
     loadRepositoryBlob(state.selectedRepo, selected.dataset.repoFileFinderPath || "");
   }
 
-  function closeRepoFileFinder() {
+  function closeRepoFileFinder({ restoreFocus = true } = {}) {
     const finder = $("[data-repo-file-finder]");
     if (!finder) return;
     finder.classList.add("hidden");
     finder.classList.remove("flex");
+    const opener = state.repoFileFinder.returnFocus;
+    state.repoFileFinder.returnFocus = null;
+    if (restoreFocus && opener?.isConnected) opener.focus({ preventScroll: true });
   }
 
-  async function openRepoFileFinder() {
+  async function openRepoFileFinder(trigger) {
     if (!state.selectedRepo) return;
     const finder = $("[data-repo-file-finder]");
     if (!finder) return;
     if (state.repoFileFinder.repoKey !== fileFinderRepoKey(state.selectedRepo)) resetRepoFileFinder(state.selectedRepo);
+    const opener = trigger instanceof HTMLElement ? trigger : document.activeElement;
+    state.repoFileFinder.returnFocus = opener instanceof HTMLElement ? opener : null;
     finder.classList.remove("hidden");
     finder.classList.add("flex");
     const input = finder.querySelector("[data-repo-file-finder-input]");
@@ -37105,15 +37123,15 @@
 	                </div>
 	              </div>
 	              <div data-repo-file-finder class="fixed inset-0 z-50 hidden items-start justify-center bg-black/50 p-4 pt-20" role="dialog" aria-modal="true" aria-label="Go to file">
-	                <button type="button" data-repo-file-finder-backdrop class="absolute inset-0 cursor-default" aria-label="Close file finder"></button>
-	                <div class="fm-popover relative z-10 grid w-full max-w-2xl overflow-hidden">
+	                <button type="button" tabindex="-1" data-repo-file-finder-backdrop class="absolute inset-0 cursor-default" aria-label="Close file finder"></button>
+	                <div data-repo-file-finder-dialog class="fm-popover relative z-10 grid w-full max-w-2xl overflow-hidden">
 	                  <div class="flex items-center gap-3 border-b border-border px-4 py-3">
 	                    <i data-lucide="search" class="h-4 w-4 text-muted-foreground"></i>
-	                    <input data-repo-file-finder-input type="search" autocomplete="off" spellcheck="false" placeholder="Search files in this live mirror" class="min-w-0 flex-1 bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground" />
-	                    <button type="button" data-repo-file-finder-close class="fm-btn fm-btn-sm">Esc</button>
+	                    <input data-repo-file-finder-input type="search" role="combobox" aria-autocomplete="list" aria-controls="repo-file-finder-results" aria-expanded="true" autocomplete="off" spellcheck="false" placeholder="Search files in this live mirror" class="min-w-0 flex-1 bg-transparent font-mono text-sm text-foreground outline-none placeholder:text-muted-foreground" />
+	                    <button type="button" data-repo-file-finder-close aria-label="Close file finder" class="fm-btn fm-btn-sm">Esc</button>
 	                  </div>
-	                  <div data-repo-file-finder-status class="border-b border-border px-4 py-2 text-xs text-muted-foreground">Type to search files.</div>
-	                  <div data-repo-file-finder-results class="max-h-[26rem] overflow-auto p-2"></div>
+	                  <div data-repo-file-finder-status role="status" aria-live="polite" class="border-b border-border px-4 py-2 text-xs text-muted-foreground">Type to search files.</div>
+	                  <div id="repo-file-finder-results" data-repo-file-finder-results role="listbox" aria-label="Matching files" class="max-h-[26rem] overflow-auto p-2"></div>
 	                </div>
 	              </div>
 		            </section>
@@ -39576,7 +39594,7 @@
 
       const fileFinderOpenButton = event.target.closest("[data-repo-file-finder-open]");
       if (fileFinderOpenButton) {
-        openRepoFileFinder();
+        openRepoFileFinder(fileFinderOpenButton);
         return;
       }
 
@@ -40917,6 +40935,17 @@
       if (focusGlobalSearch()) event.preventDefault();
       return;
     }
+	    if (fileFinderOpen() && event.key === "Tab") {
+	      const dialog = $("[data-repo-file-finder-dialog]");
+	      const focusable = dialog ? [...dialog.querySelectorAll("button:not([disabled]):not([tabindex='-1']), input:not([disabled]):not([tabindex='-1']), select:not([disabled]):not([tabindex='-1']), textarea:not([disabled]):not([tabindex='-1']), [href]:not([tabindex='-1']), [tabindex]:not([tabindex='-1'])")].filter((element) => !element.hidden) : [];
+	      if (focusable.length) {
+	        event.preventDefault();
+	        const current = focusable.indexOf(document.activeElement);
+	        const next = (current + (event.shiftKey ? -1 : 1) + focusable.length) % focusable.length;
+	        focusable[next].focus();
+	      }
+	      return;
+	    }
 	    if (event.key === "Escape") {
 	      setProfileModalOpen(false);
 	      setNotificationDropdownOpen(false);
@@ -40955,7 +40984,7 @@
     }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();
-      openRepoFileFinder();
+      openRepoFileFinder(event.target);
     }
   });
 
@@ -45124,7 +45153,7 @@
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=befe2a1621ea",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
-    "tasks": "/dashboard-page-tasks.js?v=516c5c5cbd2d",
+    "tasks": "/dashboard-page-tasks.js?v=987abe164a59",
     "workflows": "/dashboard-page-workflows.js?v=b1f9fc87fe2b",
   };
   const dashboardChunkScope = {
