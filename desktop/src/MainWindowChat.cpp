@@ -2788,8 +2788,21 @@ QWidget *MainWindow::buildStatusBar()
                 menu->popup(copyDiagnosticsButton->mapToGlobal(pos));
             });
 
+    auto *sendDiagnosticsButton = new ActivityRailButton(
+        QStringLiteral("rocket"), QStringLiteral("Send diagnostic"));
+    sendDiagnosticsButton->setObjectName(QStringLiteral("sendDiagnosticsButton"));
+    sendDiagnosticsButton->setAccessibleName(QStringLiteral("Send diagnostic"));
+    sendDiagnosticsButton->setCheckable(false);
+    sendDiagnosticsButton->setCursor(Qt::PointingHandCursor);
+    sendDiagnosticsButton->setToolTip(QStringLiteral(
+        "Start a desktop agent with a diagnostic snapshot to fix errors, "
+        "investigate crashes and stalls, and optimize resource usage"));
+    connect(sendDiagnosticsButton, &QPushButton::clicked, this,
+            &MainWindow::sendDiagnosticsReportToAgent);
+
     for (QPushButton *tool : {m_navRebuildButton, m_navResizeButton,
                               static_cast<QPushButton *>(copyDiagnosticsButton),
+                              static_cast<QPushButton *>(sendDiagnosticsButton),
                               static_cast<QPushButton *>(logTailButton)})
         if (tool)
             debugToolsRow->addWidget(tool, 0, Qt::AlignVCenter);
