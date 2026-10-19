@@ -1856,6 +1856,22 @@ void MainWindow::syncPrivateRepository(int index, bool quiet, bool idleChecked)
     const bool hasPublicTransitionSource =
         PublicMirrorRuntime::isArchiveId(repo.publicArchiveId) &&
         QDir(repo.mirrorPath).exists();
+    if (!ownerCapable && !sourceIsForkMeshRoute &&
+        !privateSyncLocalSource(repo).isEmpty() &&
+        repo.owner.compare(accountOwner(), Qt::CaseInsensitive) == 0) {
+        logSystemFrom(QStringLiteral("Private mirror: %1/%2 stays on this "
+                                     "computer until this desktop is signed "
+                                     "in to an account that can publish it.")
+                          .arg(repo.owner, repo.name),
+                      forkmesh::logSourceRelativePath(__FILE__), __LINE__,
+                      forkmesh::LogSeverity::Informational);
+        if (!quiet)
+            flashMessage(QStringLiteral(
+                "%1/%2 is saved on this computer. Sign in to publish its "
+                "encrypted mirror.")
+                             .arg(repo.owner, repo.name));
+        return;
+    }
     if (!ownerCapable ||
         (sourceIsForkMeshRoute && !hasPublicTransitionSource)) {
         downloadPrivateReplica(index, quiet);
