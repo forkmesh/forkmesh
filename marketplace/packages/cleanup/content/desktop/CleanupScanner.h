@@ -95,6 +95,7 @@ struct Context {
     QString uid;
     QString projectHome;
     QString dataDir;
+    QString agentAccountsDir;
     QString buildsDir;
     QString worktreesDir;
     QString sandboxDir;

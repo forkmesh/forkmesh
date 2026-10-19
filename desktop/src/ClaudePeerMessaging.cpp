@@ -103,7 +103,7 @@ QString steerText(const QString &body)
     return body.mid(lead.size()).trimmed();
 }
 
-QStringList configDirs(const QString &home, const QString &dataRoot, const QStringList &extra)
+QStringList configDirs(const QString &home, const QString &accountsRoot, const QStringList &extra)
 {
     QStringList dirs;
     QSet<QString> seen;
@@ -118,8 +118,8 @@ QStringList configDirs(const QString &home, const QString &dataRoot, const QStri
     };
     if (!home.isEmpty())
         add(home + QStringLiteral("/.claude"));
-    if (!dataRoot.isEmpty()) {
-        const QDir accounts(dataRoot + QStringLiteral("/agent-accounts/claude"));
+    if (!accountsRoot.isEmpty()) {
+        const QDir accounts(accountsRoot + QStringLiteral("/claude"));
         for (const QString &name : accounts.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name))
             add(accounts.filePath(name));
     }

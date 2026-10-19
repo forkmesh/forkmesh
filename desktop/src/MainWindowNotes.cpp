@@ -88,8 +88,7 @@ constexpr int kNotePillMinWidth = 28;
 QString notesFilePath()
 {
     const QString directory =
-        forkmesh::paths::dataRoot() +
-        QStringLiteral("/notes");
+        forkmesh::paths::dataPath(QStringLiteral("notes"));
     QDir().mkpath(directory);
     return directory + QStringLiteral("/notes.json");
 }

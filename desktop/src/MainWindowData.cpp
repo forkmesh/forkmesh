@@ -163,6 +163,7 @@ QVector<DataDir> resolveDataDirs(const QString &mirrorRoot,
         forkmesh::paths::Environment::fromProcess(QCoreApplication::arguments());
     if (!forkmesh::paths::isActive()) {
         layout = forkmesh::paths::resolve(environment);
+        layout.dataDir = forkmesh::paths::dataDir();
         layout.data = forkmesh::paths::dataRoot();
         layout.cache = forkmesh::paths::cacheRoot();
         layout.config = forkmesh::paths::settingsDir();
@@ -699,7 +700,7 @@ void MainWindow::exportConfigData()
         out += QStringLiteral(".tar.gz");
 
     const QStringList args = forkmesh::configArchiveTarArgs(
-        out, forkmesh::paths::dataRoot(),
+        out, forkmesh::paths::dataDir(),
         QSettings().fileName(),
         backupExcludeRoots());
     if (args.isEmpty()) {
@@ -806,7 +807,7 @@ void MainWindow::restoreConfigArchive(const QString &in)
         return;
 
     const QString appData =
-        forkmesh::paths::dataRoot();
+        forkmesh::paths::dataDir();
     const QString appParent = QFileInfo(appData).absolutePath();
     const QString appBase = QFileInfo(appData).fileName();
     // Empty when the settings live in the registry: nothing to restore by file.
@@ -868,7 +869,7 @@ void MainWindow::finishConfigRestore(const QString &workRoot,
                                      const QString &stamp)
 {
     const QString appData =
-        forkmesh::paths::dataRoot();
+        forkmesh::paths::dataDir();
     const QString appParent = QFileInfo(appData).absolutePath();
     const QString appBase = QFileInfo(appData).fileName();
     // Empty when the settings live in the registry: nothing to restore by file.
@@ -894,15 +895,20 @@ void MainWindow::finishConfigRestore(const QString &workRoot,
     if (QFileInfo::exists(importedApp)) {
         QDir().mkpath(appParent);
         const QString displaced = appData + ".bak-" + stamp;
-        const QString liveBackups = QDir(backupRoot()).absolutePath();
-        const QString rel = QDir(appData).relativeFilePath(liveBackups);
-        const bool backupsNested = !rel.startsWith(QStringLiteral(".."));
         if (QFileInfo::exists(appData))
             QDir().rename(appData, displaced);
         QDir().rename(importedApp, appData);
-        if (backupsNested && !QFileInfo::exists(liveBackups) &&
-            QFileInfo::exists(QDir(displaced).filePath(rel)))
-            QDir().rename(QDir(displaced).filePath(rel), liveBackups);
+        for (const QString &kept :
+             {backupRoot(), forkmesh::paths::sshDir(), forkmesh::paths::stateRoot(),
+              forkmesh::paths::logsDir(), forkmesh::paths::cacheRoot()}) {
+            const QString live = QDir(kept).absolutePath();
+            const QString rel = QDir(appData).relativeFilePath(live);
+            if (rel.isEmpty() || rel.startsWith(QStringLiteral("..")) ||
+                QFileInfo::exists(live) || !QFileInfo::exists(QDir(displaced).filePath(rel)))
+                continue;
+            QDir().mkpath(QFileInfo(live).absolutePath());
+            QDir().rename(QDir(displaced).filePath(rel), live);
+        }
     }
     if (!importedConfig.isEmpty() && QFileInfo::exists(importedConfig)) {
         QDir().mkpath(configDir);
@@ -1050,7 +1056,7 @@ void MainWindow::takeBackupNow(bool automatic)
     const QString partPath = finalPath + QStringLiteral(".part");
     const QStringList args = forkmesh::configArchiveTarArgs(
         partPath,
-        forkmesh::paths::dataRoot(),
+        forkmesh::paths::dataDir(),
         QSettings().fileName(),
         backupExcludeRoots());
     if (args.isEmpty()) {
@@ -1149,7 +1155,9 @@ void MainWindow::removePartialBackups()
 QStringList MainWindow::backupExcludeRoots() const
 {
     QStringList roots{repositoryMirrorRoot(), repositoryPreviewRoot(),
-                      backupRoot()};
+                      backupRoot(), forkmesh::paths::cacheRoot(),
+                      forkmesh::paths::stateRoot(), forkmesh::paths::logsDir(),
+                      forkmesh::paths::sshDir()};
     if (m_actionStore)
         roots << m_actionStore->cacheRoot() << m_actionStore->sandboxDir();
     return roots;

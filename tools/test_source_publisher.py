@@ -756,7 +756,7 @@ def test_fleet_data_and_logs_follow_the_move(tmp_path):
     paths = forkmesh_paths.resolve(environ=environ, home=home)
     assert paths.fleet_data == projects / "forkmesh-next" / "data"
     assert paths.fleet_logs == projects / "forkmesh-next" / "logs"
-    assert paths.fleet_ssh == projects / "forkmesh" / "ssh" / "fleet"
+    assert paths.fleet_ssh == projects / "forkmesh" / "data" / "core" / "ssh" / "fleet"
     (projects / "forkmesh" / "data" / "fleet").mkdir(parents=True)
     (projects / "forkmesh" / "logs" / "fleet").mkdir(parents=True)
     paths = forkmesh_paths.resolve(environ=environ, home=home)
@@ -764,8 +764,8 @@ def test_fleet_data_and_logs_follow_the_move(tmp_path):
     assert paths.fleet_logs == projects / "forkmesh" / "logs" / "fleet"
     (projects / "forkmesh-next").rename(projects / "forkmesh-backup")
     paths = forkmesh_paths.resolve(environ=environ, home=home)
-    assert paths.fleet_config == projects / "forkmesh" / "config" / "fleet"
-    assert paths.fleet_ssh_key == projects / "forkmesh" / "ssh" / "fleet" / "next_fleet_ed25519"
+    assert paths.fleet_config == projects / "forkmesh" / "data" / "core" / "config" / "fleet"
+    assert paths.fleet_ssh_key == projects / "forkmesh" / "data" / "core" / "ssh" / "fleet" / "next_fleet_ed25519"
     binary = paths.fleet_data / "bin" / "rqlited"
     binary.parent.mkdir()
     binary.write_text("#!/bin/sh\n")

@@ -307,7 +307,7 @@ def main(argv=None):
 
     repo = Path(args.repo).resolve()
     layout = None if args.agents else default_layout()
-    agents_dir = Path(args.agents) if args.agents else layout.data / "agents"
+    agents_dir = Path(args.agents) if args.agents else layout.data_path("agents")
     key = args.repository.replace("/", "-")
     roots = [repo / ".worktrees", repo / ".claude" / "worktrees",
              *(Path(root) for root in args.worktree_root)]

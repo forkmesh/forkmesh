@@ -72,6 +72,21 @@ public enum RecoveryKit {
     }
 
     public static func check(kit text: String, passphrase: String, currentPublicKey: String) throws -> RecoveryKitCheck {
+        let (seedBytes, createdAt) = try open(kit: text, passphrase: passphrase)
+        var seed = seedBytes
+        defer { CryptoBytes.wipe(&seed) }
+        guard let derived = try? Ed25519.publicKey(seed: seed) else { throw RecoveryKitError.notASeed }
+        let publicKey = B64.encodeUrlNoPadding(derived)
+        return RecoveryKitCheck(
+            publicKey: publicKey, createdAt: createdAt,
+            matchesThisDevice: publicKey == currentPublicKey)
+    }
+
+    public static func openSeed(kit text: String, passphrase: String) throws -> [UInt8] {
+        try open(kit: text, passphrase: passphrase).0
+    }
+
+    private static func open(kit text: String, passphrase: String) throws -> ([UInt8], Int64) {
         if passphrase.utf16.count < minPassphrase { throw RecoveryKitError.shortPassphrase }
         guard let data = text.data(using: .utf8), data.count <= 256 * 1024,
               let container = (try? JSON.parse(data))?.objectValue
@@ -90,14 +105,16 @@ public enum RecoveryKit {
             throw RecoveryKitError.notASeed
         }
         var seed = Array(seedData)
-        defer { CryptoBytes.wipe(&seed) }
-        guard let derived = try? Ed25519.publicKey(seed: seed) else { throw RecoveryKitError.notASeed }
-        let publicKey = B64.encodeUrlNoPadding(derived)
+        guard let derived = try? Ed25519.publicKey(seed: seed) else {
+            CryptoBytes.wipe(&seed)
+            throw RecoveryKitError.notASeed
+        }
         let recorded = clear.str("publicKey")
-        if !recorded.isEmpty && recorded != publicKey { throw RecoveryKitError.notASeed }
-        return RecoveryKitCheck(
-            publicKey: publicKey, createdAt: container.int64("createdAt"),
-            matchesThisDevice: publicKey == currentPublicKey)
+        if !recorded.isEmpty && recorded != B64.encodeUrlNoPadding(derived) {
+            CryptoBytes.wipe(&seed)
+            throw RecoveryKitError.notASeed
+        }
+        return (seed, container.int64("createdAt"))
     }
 
     public static func fileName(account: String, createdAt: Int64) -> String {

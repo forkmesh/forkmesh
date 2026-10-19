@@ -886,7 +886,7 @@ void MainWindow::answerLocalControlOutsidePrompt(int connectionId, int requestId
     const QString typedFrom = m_localControl->deviceFor(connectionId).name;
     const bool claude = kind == QLatin1String("claude");
     const QString home = QDir::homePath();
-    const QString dataRoot = forkmesh::paths::dataRoot();
+    const QString accountsRoot = forkmesh::paths::dataPath(QStringLiteral("agent-accounts"));
     struct Sent {
         bool ok = false;
         QString code;
@@ -897,7 +897,7 @@ void MainWindow::answerLocalControlOutsidePrompt(int connectionId, int requestId
         QString fallback;
     };
     runOffThread<Sent>(
-        [text, uuid, cwd, transcript, configDir, pid, home, dataRoot, terminal, typedFrom,
+        [text, uuid, cwd, transcript, configDir, pid, home, accountsRoot, terminal, typedFrom,
          claude] {
             QString fallback;
             if (terminal) {
@@ -921,7 +921,7 @@ void MainWindow::answerLocalControlOutsidePrompt(int connectionId, int requestId
             const QList<qint64> pids =
                 pid > 0 ? QList<qint64>{pid} : ClaudeSessionScan::findSessionPids(uuid, cwd);
             const QList<ClaudePeerSession> peers = ClaudePeerMessaging::liveSessions(
-                ClaudePeerMessaging::configDirs(home, dataRoot,
+                ClaudePeerMessaging::configDirs(home, accountsRoot,
                                                 configDir.isEmpty() ? QStringList{}
                                                                     : QStringList{configDir}));
             const ClaudePeerSession *session =

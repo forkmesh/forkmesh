@@ -145,7 +145,8 @@ Context CleanupFeature::desktopContext()
         context.buildsDir = layout.buildsDir();
         context.worktreesDir = layout.worktreesDir();
     }
-    context.dataDir = forkmesh::paths::dataRoot();
+    context.dataDir = forkmesh::paths::dataDir();
+    context.agentAccountsDir = forkmesh::paths::dataPath(QStringLiteral("agent-accounts"));
     context.claudeBinary = QStandardPaths::findExecutable(QStringLiteral("claude"));
     if (forkmesh::cleanupfeed::hasHost()) {
         const forkmesh::cleanupfeed::Host &host = forkmesh::cleanupfeed::host();

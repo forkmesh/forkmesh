@@ -165,7 +165,7 @@ SecureDriveFeature::SecureDriveFeature(const forkmesh::market::NativePackageHost
 {
     setObjectName(QStringLiteral("secureDriveSection"));
     setAcceptDrops(true);
-    m_root = QDir(forkmesh::paths::localDataRoot()).filePath(QStringLiteral("secure-drive"));
+    m_root = forkmesh::paths::dataPath(QStringLiteral("secure-drive"));
     m_state = std::make_unique<LocalState>(m_root);
     wipeExternalFolder();
 

@@ -285,6 +285,12 @@ class AccountDataScreen : Screen() {
             }
         }
         SettingsPage("Data", navigator) {
+            item {
+                SettingsCard("Data folder") {
+                    SettingsNote(DataFolderFeature.summary())
+                    FmTextButton(onClick = { navigator.push(DataFolderScreen()) }) { Text("Set up the data folder") }
+                }
+            }
             if (model == null) {
                 item { SettingsNote("Sign in to export your account data.") }
                 return@SettingsPage
