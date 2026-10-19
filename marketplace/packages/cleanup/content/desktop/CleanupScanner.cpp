@@ -233,7 +233,9 @@ QStringList claudeProjectRoots(const Context &context)
 {
     QStringList roots{context.home + QStringLiteral("/.claude/projects")};
     if (!context.dataDir.isEmpty()) {
-        for (const QFileInfo &provider : childDirs(context.dataDir + QStringLiteral("/agent-accounts"))) {
+        for (const QFileInfo &provider : childDirs(context.agentAccountsDir.isEmpty()
+                                                       ? context.dataDir + QStringLiteral("/agent-accounts")
+                                                       : context.agentAccountsDir)) {
             for (const QFileInfo &account : childDirs(provider.filePath()))
                 roots << account.filePath() + QStringLiteral("/projects");
         }
@@ -573,7 +575,9 @@ private:
     {
         if (m_context.dataDir.isEmpty())
             return;
-        const QString root = m_context.dataDir + QStringLiteral("/agent-accounts");
+        const QString root = m_context.agentAccountsDir.isEmpty()
+                                 ? m_context.dataDir + QStringLiteral("/agent-accounts")
+                                 : m_context.agentAccountsDir;
         for (const QFileInfo &provider : childDirs(root)) {
             for (const QFileInfo &account : childDirs(provider.filePath())) {
                 const QString projects = account.filePath() + QStringLiteral("/projects");

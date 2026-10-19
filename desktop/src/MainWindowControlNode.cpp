@@ -2511,14 +2511,21 @@ QStringList MainWindow::systemExportExcludedNames() const
     // top-level listing so no export ever tries to base64 a multi-gigabyte
     // mirror or sandbox tree.
     QStringList names;
-    const QFileInfoList top =
-        QDir(forkmesh::paths::dataRoot())
-            .entryInfoList(QDir::AllEntries | QDir::NoDotAndDotDot |
-                               QDir::Hidden | QDir::System,
-                           QDir::Name);
-    for (const QFileInfo &info : top) {
-        if (forkmesh::control::completeSystemDataIsBulk(info.fileName()))
-            names.append(info.fileName());
+    const QDir::Filters filters =
+        QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System;
+    for (const QString &name :
+         QDir(forkmesh::paths::dataDir()).entryList(filters, QDir::Name)) {
+        if (name == QLatin1String("core")) {
+            for (const QString &child :
+                 QDir(forkmesh::paths::dataDir() + QStringLiteral("/core"))
+                     .entryList(filters, QDir::Name)) {
+                if (forkmesh::control::completeSystemDataIsBulk(QStringLiteral("core/") + child))
+                    names.append(QStringLiteral("core/") + child);
+            }
+            continue;
+        }
+        if (forkmesh::control::completeSystemDataIsBulk(name))
+            names.append(name);
     }
     return names;
 }
@@ -2556,7 +2563,7 @@ void MainWindow::exportCompleteSystemBundle()
     QString error;
     const QJsonObject bundle = forkmesh::control::createCompleteSystemBundle(
         settings, ActionStore::variables(),
-        forkmesh::paths::dataRoot(),
+        forkmesh::paths::dataDir(),
         settings.fileName(),
         forkmesh::control::siteDeployEnvFilePath(
             QStringLiteral(FORKMESH_SOURCE_DIR),
@@ -2759,7 +2766,7 @@ void MainWindow::refreshSystemExportValues()
                        : QStringLiteral("(not present on this machine)"));
     appendValueRow(m_exportValuesTable, QStringLiteral("Files"),
                    QStringLiteral("Application data"),
-                   QDir::toNativeSeparators(forkmesh::paths::dataRoot()));
+                   QDir::toNativeSeparators(forkmesh::paths::dataDir()));
 
     const QMap<QString, QString> variables = ActionStore::variables();
     for (auto it = variables.constBegin(); it != variables.constEnd(); ++it) {
@@ -2786,7 +2793,7 @@ void MainWindow::startSystemExportSurvey()
             QStringLiteral("Measuring application data …"));
     }
     const QString appData =
-        forkmesh::paths::dataRoot();
+        forkmesh::paths::dataDir();
     const int epoch = ++m_exportSurveyEpoch;
     auto *watcher =
         new QFutureWatcher<QList<forkmesh::control::CompleteSystemDataEntry>>(

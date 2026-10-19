@@ -38,7 +38,7 @@ QString forkMeshSenderName();
 QString steerLead();
 QString steerBody(const QString &text);
 QString steerText(const QString &body);
-QStringList configDirs(const QString &home, const QString &dataRoot, const QStringList &extra);
+QStringList configDirs(const QString &home, const QString &accountsRoot, const QStringList &extra);
 QString procStart(qint64 pid);
 bool isSocket(const QString &path);
 QList<ClaudePeerSession> readSessions(const QString &configDir);

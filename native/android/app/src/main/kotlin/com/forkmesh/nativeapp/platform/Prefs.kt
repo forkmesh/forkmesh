@@ -67,6 +67,7 @@ class Prefs(context: Context, name: String = "forkmesh") {
             is Long -> editor.putLong(key, value)
             is Int -> editor.putInt(key, value)
             is Float -> editor.putFloat(key, value)
+            is Set<*> -> editor.putStringSet(key, value.map { it.toString() }.toSet())
             else -> return false
         }
         return editor.commit()

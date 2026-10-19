@@ -22,7 +22,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$here/forkmesh-paths.sh"
 
 key_dir="${MAC_BUILD_KEY_DIR:-$(forkmesh_ssh_dir)/mac-build}"
-address_file="$(forkmesh_home_dir)/state/mac-build/address"
+address_file="$(forkmesh_home_root state)/mac-build/address"
 key="$key_dir/id_ed25519"
 known_hosts="$key_dir/known_hosts"
 

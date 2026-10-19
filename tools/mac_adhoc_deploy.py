@@ -1159,7 +1159,7 @@ def main(argv=None) -> int:
                         help="the App Store's What's New text for --app-store")
     parser.add_argument("--to", action="append", default=[],
                         help="email these addresses instead of the early iOS testers (repeatable)")
-    parser.add_argument("--artifacts", type=Path, default=RELEASE.LAYOUT.data / "mac-adhoc")
+    parser.add_argument("--artifacts", type=Path, default=RELEASE.LAYOUT.data_path("mac-adhoc"))
     parser.add_argument("--mirror-timeout", type=int, default=MIRROR_TIMEOUT_SECONDS)
     parser.add_argument("--repo", type=Path, default=ROOT,
                         help="git directory whose main is shipped (default: this checkout)")

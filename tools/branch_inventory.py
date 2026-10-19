@@ -225,7 +225,7 @@ def main(argv=None):
 
     repo = Path(args.repo).resolve()
     layout = None if (args.agents and args.out_dir) else default_layout()
-    agents_dir = Path(args.agents) if args.agents else layout.data / "agents"
+    agents_dir = Path(args.agents) if args.agents else layout.data_path("agents")
     out_dir = Path(args.out_dir) if args.out_dir else layout.logs / "branch-inventory"
     now = time.time()
     result = inventory(repo, agents_dir / "sessions" / args.repository.replace("/", "-"), now)

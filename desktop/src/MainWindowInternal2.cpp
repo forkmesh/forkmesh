@@ -1796,10 +1796,9 @@ QString whisperDir()
         QSettings().value(kWhisperDirSetting).toString().trimmed();
     if (!stored.isEmpty())
         return stored;
-    const QString base =
-        forkmesh::paths::localDataRoot();
-    return QDir(base.isEmpty() ? QDir::homePath() : base)
-        .filePath(QStringLiteral("whisper.cpp"));
+    if (forkmesh::paths::localDataRoot().isEmpty())
+        return QDir(QDir::homePath()).filePath(QStringLiteral("whisper.cpp"));
+    return forkmesh::paths::dataPath(QStringLiteral("whisper.cpp"));
 }
 
 QString whisperModelName()
@@ -1843,10 +1842,9 @@ QString voiceEngine()
 
 QString parakeetDir()
 {
-    const QString base =
-        forkmesh::paths::localDataRoot();
-    return QDir(base.isEmpty() ? QDir::homePath() : base)
-        .filePath(QStringLiteral("parakeet"));
+    if (forkmesh::paths::localDataRoot().isEmpty())
+        return QDir(QDir::homePath()).filePath(QStringLiteral("parakeet"));
+    return forkmesh::paths::dataPath(QStringLiteral("parakeet"));
 }
 
 QString parakeetPython()

@@ -14,16 +14,52 @@ final class HubPackageState {
     private(set) var adReviewer = false
     private(set) var refreshing = false
     @ObservationIgnored private var epoch = 0
+    @ObservationIgnored private var cacheKey: String?
+
+    init() {
+        restore()
+    }
 
     func reset() {
         epoch &+= 1
         refreshing = false
         installed = []
         adReviewer = false
+        cacheKey = nil
         OrganizationPackagesLedger.shared.reset()
+        restore()
+    }
+
+    private var store: KeyValueStore {
+        Services.get(KeyValueStore.self) ?? UserDefaultsStore()
+    }
+
+    static func currentCacheKey() -> String? {
+        guard let project = Services.get(ProjectRuntime.self)?.project.id else { return nil }
+        let user: String = Services.get(AuthService.self)?.session?.nodeName ?? ""
+        return "hub.orgPackages.\(project).\(user)"
+    }
+
+    private func restore() {
+        let key: String? = HubPackageState.currentCacheKey()
+        guard key != cacheKey else { return }
+        cacheKey = key
+        let saved: [String] = key.flatMap { store.stringList(forKey: $0) } ?? []
+        let found: Set<String> = Set(saved.filter { $0 != HubPackageState.reviewerMark })
+        let reviewer: Bool = saved.contains(HubPackageState.reviewerMark)
+        if installed != found { installed = found }
+        if adReviewer != reviewer { adReviewer = reviewer }
+    }
+
+    static let reviewerMark: String = "@reviewer"
+
+    private func save() {
+        guard let cacheKey else { return }
+        store.set(installed.sorted() + (adReviewer ? [HubPackageState.reviewerMark] : []), forKey: cacheKey)
     }
 
     func refresh() async {
+        restore()
         guard !refreshing, PackagesFeature.signedIn, let client = PackagesFeature.client else { return }
         let started = epoch
         refreshing = true
@@ -42,8 +78,12 @@ final class HubPackageState {
         }
         let reviewer: Bool = await reviewing ?? false
         if started != epoch { return }
-        if installed != found { installed = found }
-        if adReviewer != reviewer { adReviewer = reviewer }
+        if !complete { found.formUnion(installed) }
+        if installed != found || adReviewer != reviewer {
+            if installed != found { installed = found }
+            if adReviewer != reviewer { adReviewer = reviewer }
+            if complete { save() }
+        }
         if complete { OrganizationPackagesLedger.shared.replace(states) }
         PackageGateSync.publish()
     }

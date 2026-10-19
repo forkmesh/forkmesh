@@ -115,6 +115,7 @@ object Features {
                 hadAccess = hasAccess
             }
         }
+        com.forkmesh.nativeapp.feature.account.settings.DataFolderAlert()
         AccountFeature.Gate {
             val starterPackPending by PackageGateFeature.starterPackPending.collectAsState()
             if (starterPackPending) {

@@ -198,7 +198,7 @@ QJsonObject MainWindow::localControlBackupStatus() const
     input.keep = backupKeepCount();
     input.running = m_backupProcess != nullptr;
     const QString root = backupRoot();
-    input.location = diagctl::backupLocationLabel(root, forkmesh::paths::dataRoot());
+    input.location = diagctl::backupLocationLabel(root, forkmesh::paths::dataDir());
     for (const forkmesh::BackupSnapshot &snapshot : forkmesh::listBackups(root)) {
         if (input.snapshots.size() >= diagctl::kMaxBackupSnapshots)
             break;

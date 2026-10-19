@@ -41,11 +41,9 @@ QString utcIcalendarTime(qint64 ms)
 
 QString reminderDirectory()
 {
-    QString base =
-        forkmesh::paths::dataRoot();
-    if (base.isEmpty())
-        base = QDir::tempPath();
-    return QDir(base).filePath(QStringLiteral("usage-reminders"));
+    if (forkmesh::paths::dataRoot().isEmpty())
+        return QDir(QDir::tempPath()).filePath(QStringLiteral("usage-reminders"));
+    return forkmesh::paths::dataPath(QStringLiteral("usage-reminders"));
 }
 
 } // namespace

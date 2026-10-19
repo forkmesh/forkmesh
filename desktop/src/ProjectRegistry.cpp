@@ -29,9 +29,12 @@ const QStringList &logoNames()
 
 const QStringList &projectRoots()
 {
-    static const QStringList roots{QStringLiteral("data"),  QStringLiteral("config"),
-                                   QStringLiteral("cache"), QStringLiteral("state"),
-                                   QStringLiteral("logs"),  QStringLiteral("ssh")};
+    static const QStringList roots{QStringLiteral("data/core"),
+                                   QStringLiteral("data/core/config"),
+                                   QStringLiteral("data/core/cache"),
+                                   QStringLiteral("data/core/state"),
+                                   QStringLiteral("data/core/logs"),
+                                   QStringLiteral("data/core/ssh")};
     return roots;
 }
 
@@ -163,10 +166,16 @@ QVector<InstanceChoice> decodeInstanceChoices(const QString &json)
 QString settingsFilePath(const QString &projectDir)
 {
 #if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    return QDir(projectDir).filePath(QStringLiteral("config/ForkMesh/ForkMesh.conf"));
+    const QString file = QStringLiteral("config/ForkMesh/ForkMesh.conf");
 #else
-    return QDir(projectDir).filePath(QStringLiteral("config/ForkMesh/ForkMesh.ini"));
+    const QString file = QStringLiteral("config/ForkMesh/ForkMesh.ini");
 #endif
+    const QString organized = QDir(projectDir).filePath(QStringLiteral("data/core/") + file);
+    const QString previous = QDir(projectDir).filePath(file);
+    if (!QFileInfo::exists(organized) && QFileInfo(previous).isFile() &&
+        !QFileInfo(QDir(projectDir).filePath(QStringLiteral("config"))).isSymLink())
+        return previous;
+    return organized;
 }
 
 bool create(const forkmesh::paths::Layout &current, const CreateRequest &request,
@@ -232,7 +241,7 @@ bool create(const forkmesh::paths::Layout &current, const CreateRequest &request
     if (request.shareIdentity) {
         const QString source = QDir(current.data).filePath(QStringLiteral("identity/ed25519.pem"));
         if (QFileInfo(source).isFile()) {
-            const QString identityDir = QDir(dir).filePath(QStringLiteral("data/identity"));
+            const QString identityDir = QDir(dir).filePath(QStringLiteral("data/core/identity"));
             QDir().mkpath(identityDir);
             QFile::setPermissions(identityDir, ownerOnly);
             const QString target = QDir(identityDir).filePath(QStringLiteral("ed25519.pem"));
@@ -363,9 +372,10 @@ bool remove(const QString &projectsRoot, const QString &slug, bool keepFolder,
     }
     // The same lock a project's process holds while it runs (SingleInstance);
     // a stale one left by a crash is taken over.
-    {
-        QLockFile running(QDir(dir).filePath(QStringLiteral("state/forkmesh.lock")));
-        if (QFileInfo(dir + QStringLiteral("/state")).isDir() && !running.tryLock(0)) {
+    for (const QString &state : {QDir(dir).filePath(QStringLiteral("data/core/state")),
+                                 QDir(dir).filePath(QStringLiteral("state"))}) {
+        QLockFile running(QDir(state).filePath(QStringLiteral("forkmesh.lock")));
+        if (QFileInfo(state).isDir() && !running.tryLock(0)) {
             *error = QStringLiteral("The project is open in another window. Close it "
                                     "first, then remove it.");
             return false;
