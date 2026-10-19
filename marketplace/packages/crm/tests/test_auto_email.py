@@ -593,6 +593,21 @@ def _beacons(sent_html, action):
         sent_html)}
 
 
+def test_beacons_from_emails_sent_before_slide_markers_still_count():
+    runtime = AiRuntime([_draft("Hello")])
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="investment",
+                   stage="sourced")
+    send_id = _send(runtime, sam)["data"]["email"]["id"]
+    page = runtime.mailtrap_calls[-1][1]["html"]
+    opener, _ = _tracking_urls(page)
+    legacy = _beacons(page, "s")[7].replace("/t/s/", "/t/d/").replace(".7.png", ".75.png")
+    _hit(runtime, opener, crm.TRACK_QUIET_MS)
+    _hit(runtime, legacy, 2000)
+    email = call(runtime.use("GET"), f"/api/crm/acme/emails/{send_id}")["data"]["email"]
+    assert (email["scrollDepth"], email["slideReached"], email["slideTitle"]) == (
+        75, 10, "Business model")
+
+
 def _hit(runtime, url, wait_ms):
     runtime.clock += wait_ms
     return call(runtime.use("GET", "nobody"), urlparse(url).path)
@@ -633,7 +648,11 @@ def test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links():
     assert "/pitch-deck/" not in page and "Full slide" not in page
     assert len(page.encode()) < 100 * 1024
     assert sorted(_beacons(page, "r")) == list(crm.READ_MARKS)
-    assert sorted(_beacons(page, "d")) == list(crm.DEPTH_MARKS)
+    assert sorted(_beacons(page, "s")) == list(range(1, crm.DECK_SLIDES + 1))
+    assert page.count('class="fm-s') == crm.DECK_SLIDES
+    markers = [page.index('class="fm-s%d"' % slide) for slide in range(1, crm.DECK_SLIDES + 1)]
+    assert markers == sorted(markers)
+    assert places[8] < markers[8] < places[9]
     assert "all fourteen slides" in runtime.prompts[0]
 
 
@@ -654,7 +673,7 @@ def test_reading_time_and_depth_count_only_after_a_real_open_and_ping_twice():
     send_id = _send(runtime, sam)["data"]["email"]["id"]
     page = runtime.mailtrap_calls[-1][1]["html"]
     opener, _ = _tracking_urls(page)
-    reads, depths = _beacons(page, "r"), _beacons(page, "d")
+    reads, slides = _beacons(page, "r"), _beacons(page, "s")
     runtime.pings.clear()
 
     early = _hit(runtime, reads[30], crm.TRACK_QUIET_MS)
@@ -663,18 +682,22 @@ def test_reading_time_and_depth_count_only_after_a_real_open_and_ping_twice():
 
     _hit(runtime, opener, 0)
     _hit(runtime, reads[30], 1000)
-    _hit(runtime, depths[100], 200)
+    _hit(runtime, slides[14], 200)
     row = runtime.db.execute(
         "SELECT read_seconds,depth FROM crm_email_reading WHERE send_id=?", (send_id,)).fetchone()
     assert tuple(row) == (0, 0)
 
-    _hit(runtime, depths[50], 2000)
+    _hit(runtime, slides[7], 2000)
     _hit(runtime, reads[30], 28000)
     _hit(runtime, reads[60], 30000)
-    _hit(runtime, depths[100], 1000)
+    email = call(runtime.use("GET"), f"/api/crm/acme/emails/{send_id}")["data"]["email"]
+    assert (email["slideCount"], email["slideReached"], email["slideTitle"]) == (
+        14, 7, "Beyond the desk")
+    _hit(runtime, slides[14], 1000)
     _hit(runtime, reads[60], 1000)
     email = call(runtime.use("GET"), f"/api/crm/acme/emails/{send_id}")["data"]["email"]
     assert (email["readSeconds"], email["scrollDepth"]) == (60, 100) and email["readAt"] > 0
+    assert (email["slideReached"], email["slideTitle"]) == (14, "Sources")
     pings = [ping for ping in runtime.pings if ping["recipient"] == "alice"]
     assert [ping["title"] for ping in pings] == [
         "📬 Sam Dev opened your email", "📖 Sam Dev is reading your email",
@@ -684,6 +707,8 @@ def test_reading_time_and_depth_count_only_after_a_real_open_and_ping_twice():
 
     odd = _hit(runtime, reads[60].replace(".60.png", ".7.png"), 1000)
     assert odd["headers"]["location"] == crm.TRACK_LOGO
+    past = _hit(runtime, slides[14].replace(".14.png", ".15.png"), 1000)
+    assert past["headers"]["location"] == crm.TRACK_LOGO
     forged = _hit(runtime, reads[300].replace(send_id, "f" * 32), 400000)
     assert forged["headers"]["location"] == crm.TRACK_LOGO
     assert runtime.db.execute(
