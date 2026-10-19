@@ -1,6 +1,8 @@
 """Analytics package: ingest, identity, insights, flags, replay, lifecycle."""
 
 import asyncio
+import base64
+import gzip
 import hashlib
 import json
 from pathlib import Path
@@ -640,6 +642,52 @@ def test_replay_chunks_are_sealed_paged_and_gated_by_the_project_setting():
         "SELECT COUNT(*) FROM analytics_recording_chunks").fetchone()[0] == 0
 
 
+def test_motion_view_decodes_chunks_into_cursor_scroll_and_page_steps_only():
+    runtime = Runtime()
+    item = project(runtime)
+    call(runtime.use("PATCH", body={"replay": {"enabled": True}}),
+         f"/api/analytics/acme/projects/{item['id']}")
+    steps = [
+        {"t": NOW - 9000, "k": "meta", "d": {"href": "https://example.test/", "width": 1280,
+                                             "height": 720, "pageHeight": 3000}},
+        {"t": NOW - 9000, "k": "full", "d": {"node": {"id": 1, "type": "doc", "children": [
+            {"id": 2, "type": "text", "text": "secret page text"}]}, "scroll": {"x": 0, "y": 40}}},
+        {"t": NOW - 8000, "k": "move", "d": {"positions": [[10, 20, 0], [30, 40, 50], ["x"]]}},
+        {"t": NOW - 7000, "k": "mouse", "d": {"type": "click", "id": 2, "x": 30, "y": 40}},
+        {"t": NOW - 6900, "k": "mouse", "d": {"type": "focus", "id": 2}},
+        {"t": NOW - 6000, "k": "scroll", "d": {"id": 1, "x": 0, "y": 500, "h": 3100}},
+        {"t": NOW - 5000, "k": "input", "d": {"id": 2, "value": "****"}},
+        {"t": NOW - 4000, "k": "mut", "d": {"texts": [{"id": 2, "text": "changed"}]}},
+    ]
+    raw = json.dumps(steps).encode()
+    chunk = {"sessionId": "sess-motion-01", "distinctId": "anon-9", "seq": 0,
+             "startedAt": NOW - 9000, "url": "https://example.test/", "encoding": "gzip-b64",
+             "events": base64.b64encode(gzip.compress(raw)).decode()}
+    capture(runtime, item["writeKey"], [], chunk)
+    capture(runtime, item["writeKey"], [], dict(chunk, seq=1, encoding="gzip-b64",
+                                                events=base64.b64encode(b"not gzip").decode()))
+    path = f"/api/analytics/acme/projects/{item['id']}/recordings"
+    listing = call(runtime.use("GET"), path)["data"]["recordings"]
+    assert listing[0]["country"] == "NL"
+    played = call(runtime.use("GET", params={"view": "motion"}),
+                  path + "/sess-motion-01")["data"]
+    assert played["recording"]["country"] == "NL"
+    first, broken = played["chunks"]
+    assert first["encoding"] == "motion" and broken["events"] == []
+    events = first["events"]
+    assert [event["k"] for event in events] == ["meta", "full", "move", "mouse", "scroll", "input"]
+    assert events[0]["d"] == {"href": "https://example.test/", "width": 1280, "height": 720,
+                              "pageHeight": 3000}
+    assert events[1]["d"] == {"doc": 1, "x": 0, "y": 40}
+    assert events[2]["d"]["positions"] == [[10, 20, 0], [30, 40, 50]]
+    assert events[3]["d"] == {"type": "click", "x": 30, "y": 40}
+    assert events[4]["d"] == {"id": 1, "x": 0, "y": 500, "h": 3100}
+    assert events[5]["d"] == {}
+    assert "secret page text" not in json.dumps(played) and "****" not in json.dumps(played)
+    plain = call(runtime.use("GET"), path + "/sess-motion-01")["data"]
+    assert plain["chunks"][0]["encoding"] == "gzip-b64"
+
+
 def test_heatmap_buckets_clicks_moves_and_scroll_depth_for_one_page():
     runtime = Runtime()
     item = project(runtime)
@@ -1010,6 +1058,20 @@ def test_maintenance_applies_the_playbook_to_the_site_project_once():
     fresh = call(runtime.use("GET"), f"/api/analytics/acme/projects/{item['id']}")
     assert fresh["data"]["project"]["playbook"]["version"] == analytics.PLAYBOOK_VERSION
     assert len(fresh["data"]["project"]["settings"]["goals"]) == 4
+
+
+def test_desktop_overview_lists_recordings_and_plays_back_their_motion():
+    desktop = PACKAGE / "content" / "desktop"
+    build = json.loads((desktop / "build.json").read_text())
+    assert {"AnalyticsReplay.h", "AnalyticsReplay.cpp"} <= set(build["sources"])
+    assert "tests/test_analytics_replay.cpp" in build["testSources"]
+    feature = (desktop / "AnalyticsFeature.cpp").read_text()
+    assert 'projectPath(QStringLiteral("/recordings"))' in feature
+    assert "loadRecordings(serial);" in feature
+    assert "columns->addWidget(recordingsPanel);" in feature
+    assert 'QStringLiteral("Entry page"), QStringLiteral("Pages")' in feature
+    replay = (desktop / "AnalyticsReplay.cpp").read_text()
+    assert 'QStringLiteral("?afterSeq=%1&view=motion")' in replay
 
 
 def test_desktop_manages_conversions_funnels_and_experiments():

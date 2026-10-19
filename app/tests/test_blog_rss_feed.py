@@ -143,10 +143,10 @@ def test_feed_renders_every_shipped_blog_post():
         blog_feed.render_rss(entries)).find("channel")
     assert len(channel.findall("item")) == len(entries)
     newest = channel.find("item")
-    assert newest.findtext("title") == "Start your own ForkMesh"
+    assert newest.findtext("title") == "ForkMesh gives your agents context"
     assert newest.findtext("link") == (
-        "https://forkmesh.com/blog/start-your-own-forkmesh/")
-    assert newest.findtext("pubDate") == "Wed, 07 Oct 2026 00:00:00 GMT"
+        "https://forkmesh.com/blog/forkmesh-gives-your-agents-context/")
+    assert newest.findtext("pubDate") == "Mon, 19 Oct 2026 00:00:00 GMT"
 
 
 def test_feed_parses_back_into_the_entries_it_rendered():
