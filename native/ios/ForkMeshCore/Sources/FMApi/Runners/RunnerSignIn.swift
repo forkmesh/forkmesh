@@ -193,7 +193,7 @@ public enum RunnerSignIn {
 
     public static func derive(runner row: JSONObject) -> [RunnerAttentionItem] {
         let name: String = row.str("name").dartTrimmed
-        guard isRunnerName(name), row.str("status") == "active" else { return [] }
+        guard isRunnerName(name), ["active", "paused"].contains(row.str("status")) else { return [] }
         let availability: JSONObject = row.obj("availability")
         var out: [RunnerAttentionItem] = []
         for provider in providers {

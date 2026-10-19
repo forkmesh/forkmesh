@@ -56,6 +56,13 @@ final class RunnerSignInParsingTests: XCTestCase {
         XCTAssertEqual(items[1].expiresAtMs, 1_770_000_000_000)
     }
 
+    func testAPausedRunnerStillAsksForSignIn() {
+        let row = parse("""
+        {"name":"fmnext-r5","status":"paused","availability":{"claude-code":{"binaryFound":true,"loginState":"expired"}}}
+        """).objectOrEmpty
+        XCTAssertEqual(RunnerSignIn.derive(runner: row).map(\.id), ["fmnext-r5:claude-code"])
+    }
+
     func testDerivesLikeTheWebBanner() {
         let items = RunnerSignIn.derive(runners: runnersPayload())
         XCTAssertEqual(items.map(\.id), ["fmnext-r1:claude-code", "fmnext-r2:claude-code", "fmnext-r1:codex"])

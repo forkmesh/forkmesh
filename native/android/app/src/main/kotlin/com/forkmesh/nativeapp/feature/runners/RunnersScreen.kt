@@ -76,6 +76,7 @@ internal class RunnersScreen : Screen() {
     private var notice by mutableStateOf("")
     private var noticeError by mutableStateOf(false)
     private var busy by mutableStateOf<String?>(null)
+    private var reloadAgain = false
     private var confirmRevoke by mutableStateOf<String?>(null)
 
     @Composable
@@ -84,7 +85,10 @@ internal class RunnersScreen : Screen() {
         val context = LocalContext.current
 
         fun reload(pulled: Boolean) {
-            if (loading) return
+            if (loading) {
+                reloadAgain = true
+                return
+            }
             val api = RunnerAttentionFeature.api()
             if (api == null) {
                 signedOut = true
@@ -94,23 +98,30 @@ internal class RunnersScreen : Screen() {
             loading = true
             refreshing = pulled
             scope.launch {
-                val result = withContext(Dispatchers.IO) { RunnerList.load(api) }
-                when (result) {
-                    is RunnerListResult.SignedOut -> {
-                        signedOut = true
-                        rows = emptyList()
-                        error = ""
+                try {
+                    val result = withContext(Dispatchers.IO) { RunnerList.load(api) }
+                    when (result) {
+                        is RunnerListResult.SignedOut -> {
+                            signedOut = true
+                            rows = emptyList()
+                            error = ""
+                        }
+                        is RunnerListResult.Loaded -> {
+                            signedOut = false
+                            rows = result.rows
+                            error = ""
+                        }
+                        is RunnerListResult.Failed -> error = result.message
                     }
-                    is RunnerListResult.Loaded -> {
-                        signedOut = false
-                        rows = result.rows
-                        error = ""
-                    }
-                    is RunnerListResult.Failed -> error = result.message
+                    loaded = true
+                } finally {
+                    loading = false
+                    refreshing = false
                 }
-                loaded = true
-                loading = false
-                refreshing = false
+                if (reloadAgain) {
+                    reloadAgain = false
+                    reload(false)
+                }
             }
         }
 
@@ -119,14 +130,17 @@ internal class RunnersScreen : Screen() {
             if (busy != null) return
             busy = name
             scope.launch {
-                val outcome = withContext(Dispatchers.IO) { RunnerList.change(api, action, name) }
-                notice = outcome.message
-                noticeError = !outcome.ok
-                val status = outcome.status
-                if (outcome.ok && status != null) {
-                    rows = RunnerList.sorted(rows.map { if (it.name == name) it.copy(status = status) else it })
+                try {
+                    val outcome = withContext(Dispatchers.IO) { RunnerList.change(api, action, name) }
+                    notice = outcome.message
+                    noticeError = !outcome.ok
+                    val status = outcome.status
+                    if (outcome.ok && status != null) {
+                        rows = RunnerList.sorted(rows.map { if (it.name == name) it.copy(status = status) else it })
+                    }
+                } finally {
+                    busy = null
                 }
-                busy = null
                 reload(false)
             }
         }
@@ -260,7 +274,7 @@ private fun RunnerCard(
                     Modifier
                         .size(10.dp)
                         .background(if (online && !row.revoked) c.success else c.textDisabled, CircleShape)
-                        .semantics { contentDescription = if (online) "Online" else "Offline" },
+                        .semantics { contentDescription = if (online && !row.revoked) "Online" else "Offline" },
                 )
                 Spacer(Modifier.width(FmSpace.x3))
                 Column(Modifier.weight(1f)) {
