@@ -124,10 +124,12 @@ def test_blog_page_indexes_every_feature_post():
     html = _read(BLOG_PAGE)
     posts = _feature_post_paths()
 
-    assert len(posts) == 96
-    assert html.count('class="blog1-card" href="/blog/') == 95
-    assert html.count('class="blog1-search-result" href="/blog/') == 95
-    assert html.count('data-blog-search-text=') == 95
+    assert len(posts) == 98
+    assert html.count('class="blog1-card" href="/blog/') == 97
+    assert html.count('class="blog1-search-result" href="/blog/') == 97
+    assert html.count('data-blog-search-text=') == 97
+    assert html.count('href="/blog/forkmesh-gives-your-agents-context/"') == 2
+    assert html.count('href="/blog/whats-new-mid-october-2026/"') == 2
     assert html.count('href="/blog/forkmesh-coaster/"') == 2
     assert html.count('href="/blog/start-your-own-forkmesh/"') == 2
     assert html.count('href="/blog/runs-that-listen-branches-that-let-go/"') == 2
@@ -276,7 +278,7 @@ def test_feature_blog_posts_have_images_and_article_shells():
 def test_every_blog_post_carries_fillable_social_permalinks():
     posts = sorted((PUBLIC / "blog").glob("*/index.html"))
 
-    assert len(posts) == 97
+    assert len(posts) == 99
     for post in posts:
         html = _read(post)
         for marker in (
@@ -315,7 +317,7 @@ def test_feature_blog_images_exist_for_each_generated_post():
     posts = _feature_post_paths()
     images = sorted(FEATURE_IMAGES.glob("*.webp"))
 
-    assert len(images) == 96
+    assert len(images) == 98
     for post in posts:
         slug = post.parent.name
         assert FEATURE_IMAGES.joinpath(slug + ".webp").is_file()
@@ -842,3 +844,23 @@ if __name__ == "__main__":
     test_blog_interaction_states_use_neutral_dark_not_green()
     test_blog_search_result_copy_is_compact()
     test_blog_paths_are_owned_by_redirects_not_python_worker()
+
+
+def test_agents_context_post_has_art_metadata_and_navigation():
+    post = _read(PUBLIC / "blog" / "forkmesh-gives-your-agents-context" / "index.html")
+    previous = _read(PUBLIC / "blog" / "whats-new-mid-october-2026" / "index.html")
+    image = "/assets/blog/features/forkmesh-gives-your-agents-context.webp"
+
+    assert FEATURE_IMAGES.joinpath("forkmesh-gives-your-agents-context.webp").is_file()
+    for marker in (
+        "<h1>ForkMesh gives your agents context</h1>",
+        'content="https://forkmesh.com%s"' % image,
+        '<link rel="canonical" href="https://forkmesh.com/blog/forkmesh-gives-your-agents-context/">',
+        'content="2026-10-19T21:00:00-04:00"',
+        'src="%s"' % image,
+        'href="/blog/whats-new-mid-october-2026/"',
+        'href="/blog/assign-any-issue-to-an-agent/"',
+        'href="/blog/everything-lives-in-git/"',
+    ):
+        assert marker in post
+    assert 'href="/blog/forkmesh-gives-your-agents-context/">← ForkMesh gives your agents context</a>' in previous
