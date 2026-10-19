@@ -141,3 +141,19 @@ def test_page_is_valid_javascript_when_node_is_available():
     node = shutil.which("node")
     if node:
         subprocess.run([node, "--check", str(PACKAGE / "content" / "web" / "page.js")], check=True)
+
+
+def test_auto_dj_follows_each_song_with_a_related_song_people_liked():
+    packages = IOS / "ForkMesh" / "Features" / "Packages"
+    screen = (packages / "VideoMixDjStudioScreen.swift").read_text(encoding="utf-8")
+    model = (packages / "VideoMixDjStudioModel.swift").read_text(encoding="utf-8")
+    auto = (packages / "VideoMixDjStudioAutoDj.swift").read_text(encoding="utf-8")
+    assert 'data-vmdj="auto-dj"' in VIEW and 'aria-pressed="false"' in VIEW
+    assert "fields=recommendedVideos" in PAGE
+    assert "fields=likeCount,viewCount" in PAGE
+    assert "autoDj: state.autoDj" in PAGE
+    assert 'el("auto-dj").addEventListener("click", toggleAutoDj);' in PAGE
+    assert "DjAutoDjButton(model: model, size: 26 * u)" in screen
+    assert "} else if autoDjOn, let pick = takeAutoDj() {" in model
+    assert "saved.autoDj = autoDjOn" in model
+    assert "DjAutoDj.likesURL(instance, id: id)" in auto

@@ -263,12 +263,13 @@ struct DjUtilityRow: View {
     let u: CGFloat
 
     var body: some View {
-        HStack(spacing: 14 * u) {
+        HStack(spacing: 12 * u) {
             DjInfoButton(model: model, size: 28 * u)
             DjPadsButton(model: model, size: 26 * u)
             DjCrateButton(model: model, size: 26 * u)
             DjAutomixButton(model: model, u: u)
                 .fixedSize()
+            DjAutoDjButton(model: model, size: 26 * u)
             DjReactButton(model: model, size: 26 * u)
             DjResetButton(model: model, size: 28 * u)
             DjDiagnosticsButton(model: model, size: 18 * u)
