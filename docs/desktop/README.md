@@ -519,6 +519,14 @@ redirect it), `app/tests/test_workflow_files.py`.
   any other branch skips it (`ActionFile::defaultBranchRetiresPush`).
 - **Workspaces clone `--single-branch`.** A torn loose ref in the mirror is
   advertised as all zeros and breaks a full clone.
+- **A desktop that cannot sign for its own private repository has nothing to
+  download.** `syncPrivateRepository()` falls back to
+  `downloadPrivateReplica()` when the owner signing capability is missing,
+  which is right for a collaborator's copy but wrong for a repository this
+  account created on this computer: a guest creating a Private repository got
+  "Private repository is unavailable or this account is not authorized". A
+  record owned by `accountOwner()` with a local source now stays local and
+  says it needs a signed-in account to publish.
 
 ## Related docs
 
