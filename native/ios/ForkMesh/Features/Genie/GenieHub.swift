@@ -130,7 +130,7 @@ final class GenieHub {
         return made
     }
 
-    var mayOverhear: Bool { active && !spiderHidden && !blocked() }
+    var mayOverhear: Bool { active && !spiderHidden && !blocked() && !OtherAppCall.inProgress }
 
     func tap() {
         FmHaptics.impact(.light)

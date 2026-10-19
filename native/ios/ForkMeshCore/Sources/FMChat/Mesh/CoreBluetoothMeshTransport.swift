@@ -22,6 +22,7 @@ public final class CoreBluetoothMeshTransport: NSObject, MeshNativeTransport {
     private var rescanTimer: Timer?
     private var nextLinkId = 1
     private var promptAllowed = false
+    private var callInProgress = false
 
     private final class DialedLink {
         let id: Int
@@ -147,6 +148,21 @@ public final class CoreBluetoothMeshTransport: NSObject, MeshNativeTransport {
         }
     }
 
+    public func setCallInProgress(_ on: Bool) {
+        guard on != callInProgress else { return }
+        callInProgress = on
+        for link in subscribed.values {
+            peripheralManager?.setDesiredConnectionLatency(linkLatency, for: link.central)
+        }
+        if on {
+            if centralManager?.state == .poweredOn { centralManager?.stopScan() }
+        } else {
+            rescan()
+        }
+    }
+
+    private var linkLatency: CBPeripheralManagerConnectionLatency { callInProgress ? .high : .low }
+
     public func roomOpened() async {
         promptAllowed = true
     }
@@ -222,7 +238,7 @@ public final class CoreBluetoothMeshTransport: NSObject, MeshNativeTransport {
     }
 
     private func scan() {
-        guard listening, let manager = centralManager, manager.state == .poweredOn else { return }
+        guard listening, !callInProgress, let manager = centralManager, manager.state == .poweredOn else { return }
         manager.scanForPeripherals(
             withServices: [serviceId], options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
     }
@@ -283,7 +299,7 @@ public final class CoreBluetoothMeshTransport: NSObject, MeshNativeTransport {
         if let link = subscribed[central.identifier] { return link }
         let link = SubscribedLink(id: takeLinkId(), central: central)
         subscribed[central.identifier] = link
-        peripheralManager?.setDesiredConnectionLatency(.low, for: central)
+        peripheralManager?.setDesiredConnectionLatency(linkLatency, for: central)
         continuation.yield(MeshBluetoothEvent(kind: .linkOpened, linkId: link.id, outbound: false))
         return link
     }
