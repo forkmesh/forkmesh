@@ -142,6 +142,10 @@ runners, the iOS and Android apps and the Marketplace. The roots are Git and
 the mirrors, since they keep a repository alive. The forest, moon, leaves and
 fireflies add nature to a neon perspective grid and aurora.
 
+The blog post  (October 19, 2026) uses it
+as its hero, converted to
+.
+
 The SVG loads its fonts from `assets/fonts/`, so render it from where it
 lives. To refresh the PNG after editing the SVG:
 
