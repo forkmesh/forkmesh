@@ -176,6 +176,17 @@ def test_a_run_sends_in_order_and_names_each_parent_number():
     assert {branch: value["number"] for branch, value in out["stored"].items()} == {"pr/a": 41, "pr/b": 42, "pr/c": 43}
 
 
+def test_an_existing_target_pull_number_is_not_used_as_a_source_compare_ref():
+    out = _run("""
+      const calls = [];
+      const batch = { repo, remote, rows: [row("pr/a", { dependsOn: ["#12"] })], sent: {}, outcome: {} };
+      await runPullBatch(batch, { send: fakeSend(calls) });
+      return calls;
+    """)
+    assert out[0]["compareBase"] == ""
+    assert out[0]["body"].startswith("Depends on: #12\n")
+
+
 def test_a_second_run_resumes_without_sending_anything_twice():
     out = _run("""
       const first = [];
