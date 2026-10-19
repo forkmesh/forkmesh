@@ -6849,7 +6849,7 @@ async def _auto_email_rate(runtime, org_bi, actor, role, data):
 
 
 def _track_miss(runtime, action):
-    if action in ("o", "r", "d"):
+    if action in ("o", "r", "d", "s"):
         return _redirect(runtime, TRACK_LOGO)
     return _response(runtime, {"error": "link_not_found"}, 404)
 

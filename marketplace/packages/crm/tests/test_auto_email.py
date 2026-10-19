@@ -758,5 +758,7 @@ def test_reading_time_and_reach_count_only_after_a_real_open_and_ping_one_summar
     assert past["headers"]["location"] == crm.TRACK_LOGO
     forged = _hit(runtime, reads[300].replace(send_id, "f" * 32), 400000)
     assert forged["headers"]["location"] == crm.TRACK_LOGO
+    forged_slide = _hit(runtime, slides[3].replace(send_id, "f" * 32), 1000)
+    assert forged_slide["headers"]["location"] == crm.TRACK_LOGO
     assert runtime.db.execute(
         "SELECT read_seconds FROM crm_email_reading WHERE send_id=?", (send_id,)).fetchone()[0] == 60
