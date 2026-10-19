@@ -11,7 +11,7 @@
   "screenshots": [{ "path": "preview/market.svg", "alt": "A list of runners with their status and Claude Code and Codex sign-in" }],
   "license": { "model": "free-open-source", "spdx": "MIT", "creatorRetainsOwnership": true, "terms": "Included under the ForkMesh repository licence." },
   "price": { "amount": 0, "currency": "USD" },
-  "entrypoints": { "desktop": "builtin:runners", "settings": "builtin:package" },
+  "entrypoints": { "desktop": "builtin:runners", "ios": "builtin:runners", "android": "builtin:runners", "settings": "builtin:package" },
   "permissions": [
     { "id": "account.runners.read", "label": "See the runners you registered, their status and their provider sign-in", "risk": "sensitive" },
     { "id": "account.runners.manage", "label": "Pause, resume and revoke your runners, sign their providers in and switch their accounts", "risk": "high" }

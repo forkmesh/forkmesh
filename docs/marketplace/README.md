@@ -84,7 +84,8 @@ own Usage page with this desktop's Claude Code and Codex accounts and their
 controls, which the Usage package embeds
 ([../desktop/agents-ui.md](../desktop/agents-ui.md)), and for packages
 declaring `desktop.logins.use`, `loginStoreName()`, `saveLogin(login, asker,
-done)` and `findLogins(url, asker, done)` (see **Login store** below), and `openWebPage(path)`, which opens a
+done)` and `findLogins(url, asker, done)` (see **Login store** below).
+Every package also gets `openWebPage(path)`, with no permission: it opens a
 same-origin path on the active host in the browser (credentials dropped,
 another origin or a `..` segment refused; `nativePackageWebPageUrl`, used by
 the [Runners](runners.md) page). `request` waits out the
