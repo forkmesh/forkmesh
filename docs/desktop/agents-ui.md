@@ -14,7 +14,7 @@ Rail **Agents**. Main sources:
 | Detail | `src/MainWindowAgentDetail.cpp` |
 | Transcript | `src/MainWindowAgentTranscript.cpp`, `src/ClaudeTranscriptView.*`, `src/ClaudeTranscriptTools.cpp` |
 | Launch | `src/MainWindowAgentLaunch.cpp`, `src/MainWindowAgentCliSession.cpp` |
-| Usage and accounts | `src/MainWindowAgentUsage.cpp`, `src/MainWindowAgentUsagePage.cpp`, `src/AgentUsageResetClock.*`, `src/MainWindowChat.cpp`, `src/ClaudeAccountRouting.cpp` |
+| Usage and accounts | `src/MainWindowAgentUsage.cpp`, `src/MainWindowAgentUsagePage.cpp`, `src/AgentUsageResetClock.*`, `src/CodexRateLimitsProbe.*`, `src/MainWindowChat.cpp`, `src/ClaudeAccountRouting.cpp` |
 | Cloud rows | `src/AgentCloudSessions.*`, `src/AgentCloudStream.*`, `src/MainWindowAgentCloud.cpp` |
 | External sessions | `src/ClaudeSessionScan.*`, `src/MachineAgentScan.*`, `src/ClaudePeerMessaging.*` |
 | Task links | `src/MainWindowAgentTaskLink.cpp` |
@@ -40,11 +40,34 @@ re-read of each account rather than a redraw. Each account keeps its own poll
 backoff key (`claude-usage-<id>`), so a rate-limited account is skipped until
 its backoff ends. The button reads "Refreshing…" until the last account answers.
 
-Codex has no per-account read that works without running an agent: its limits
-arrive only from a running `codex app-server` (`account/rateLimits/read` and
-`account/rateLimits/updated`). Refresh therefore redraws Codex rows from the
-last snapshot each account reported. A one-shot Codex probe per `CODEX_HOME`
-would close that gap.
+After the Claude Code accounts, Refresh re-reads every signed-in Codex account
+(one whose config folder holds `auth.json`) the same way, one at a time. Codex
+limits only come from `codex app-server`, so `CodexRateLimitsProbe`
+(`src/CodexRateLimitsProbe.*`, tested by
+`tests/test_codex_rate_limits_probe.cpp` with the test binary standing in for
+the app-server) starts one with `CODEX_HOME` set to that account's folder,
+sends `initialize`, `initialized` and `account/rateLimits/read`, takes
+`rateLimits` and `rateLimitsByLimitId` (adding the general snapshot under its
+own `limitId`, as `CodexAppServerSession` does), and stops the process. It
+starts no thread and no conversation, so it spends no tokens. Each probe gets
+10 seconds; a probe that times out, exits early or gets an error counts as a
+failure for that account's backoff key (`codex-usage-<id>`) and the walk moves
+on. Codex accounts are skipped when the `codex` CLI is not installed.
+
+The probe is not a repository agent: it runs in the account's config folder,
+touches no worktree, and so takes no repository guardrails or KVM isolation.
+It does keep the rest of an agent launch: the widened `PATH`, the
+`agentresources` environment and shell wrapper, and the systemd scope
+(`agentresources::contain`) where that exists. `OPENAI_API_KEY` and
+`CODEX_API_KEY` are removed from its environment so the read is the signed-in
+account's, not whatever key ForkMesh was started with.
+
+`applyCodexRateLimits(rateLimits, rateLimitsByLimitId, accountId)` stores the
+answer. For the active account it is the usual path (top-bar meter, limit
+reminders, the global keys). For any other account it calls
+`applyInactiveCodexRateLimits`, which writes only that account's scoped
+settings (usage windows, 5-hour and weekly percent, reset and window start), the
+same split `applyClaudeUsageResponse(response, accountId)` makes for Claude.
 
 Each meter shows the reset as a 12-hour clock time in the desktop's time zone,
 next to the remaining time: "Resets 3:45 PM (in 5 h 40 min)", "Resets Tue
@@ -55,8 +78,8 @@ top bar keep their relative "resets in" text.
 
 Remote surfaces get the same re-read through `agentops.usage {refresh: true}`
 (`src/MainWindowLocalControlAgentOps.cpp`): the desktop runs
-`refreshAgentUsageAccounts` and answers with the new summary once every account
-has answered, or after 20 seconds with whatever it has. Without `refresh` the
+`refreshAgentUsageAccounts` and answers with the new summary once every Claude
+Code and Codex account has answered, or after 20 seconds with whatever it has. Without `refresh` the
 call answers the stored snapshot at once, as before; older desktops ignore the
 flag and answer the snapshot. The web page (`/dashboard/usage`), iPhone and
 Android send `refresh: true` from their Refresh button and pull-to-refresh, and
