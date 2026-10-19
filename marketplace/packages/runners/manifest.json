@@ -1,0 +1,23 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "runners",
+  "name": "Runners",
+  "creator": { "id": "did:forkmesh:forkmesh", "handle": "forkmesh", "displayName": "ForkMesh", "verified": true },
+  "type": "extension.native",
+  "category": "Operate",
+  "version": "1.0.0",
+  "summary": "See and manage the runners you added: status, provider sign-in, accounts, pause, resume and revoke, from your phone or desktop.",
+  "screenshots": [{ "path": "preview/market.svg", "alt": "A list of runners with their status and Claude Code and Codex sign-in" }],
+  "license": { "model": "free-open-source", "spdx": "MIT", "creatorRetainsOwnership": true, "terms": "Included under the ForkMesh repository licence." },
+  "price": { "amount": 0, "currency": "USD" },
+  "entrypoints": { "desktop": "builtin:runners", "settings": "builtin:package" },
+  "permissions": [
+    { "id": "account.runners.read", "label": "See the runners you registered, their status and their provider sign-in", "risk": "sensitive" },
+    { "id": "account.runners.manage", "label": "Pause, resume and revoke your runners, sign their providers in and switch their accounts", "risk": "high" }
+  ],
+  "trust": { "sourceAvailable": true, "reproducibleBuild": false, "signature": "verified-bundle" },
+  "install": { "bundled": true, "default": false, "sync": "account", "places": ["mobile", "desktop"] },
+  "lifecycle": { "migrations": [] },
+  "dataLifecycle": { "scope": "none", "localData": false }
+}
