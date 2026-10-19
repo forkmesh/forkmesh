@@ -214,6 +214,33 @@ struct MessagesMessageInfoScreen: View {
     }
 }
 
+struct MessagesReceiptLine: View {
+    let text: String
+    let colors: MessagesColors
+    let onTap: () -> Void
+
+    static func stamp(_ date: Date, now: Date = Date()) -> String {
+        if Calendar.current.isDate(date, inSameDayAs: now) { return MessagesBubbleMeta.clock.string(from: date) }
+        return ChatConversationLayout.timeLabel(date, now: now)
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            Text(text)
+                .font(.system(size: 11, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(colors.meta)
+                .lineLimit(1)
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.trailing, 14)
+        .padding(.top, 3)
+        .accessibilityHint("Shows Message Info")
+        .accessibilityIdentifier("chat-receipt-status")
+    }
+}
+
 enum MessagesSwipeHeading {
     case left, right
 

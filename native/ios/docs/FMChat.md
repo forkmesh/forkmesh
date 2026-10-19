@@ -230,6 +230,11 @@ server DMs (`direct:<id>`), relay private channels and private office rooms. Pub
   `UIPanGestureRecognizer` that only begins for a mostly-horizontal leftward move, so vertical
   scrolling and the long-press menu are untouched; iOS 17 falls back to a simultaneous
   `DragGesture`.
+- **Receipt status line** (`MessagesReceiptLine`): under your most recent sent message in a
+  direct conversation, as in iMessage, a small right-aligned line says "Delivered 11:04 PM" or
+  "Read 11:06 PM" (an earlier day reads "Yesterday 3:20 PM" or the weekday), from
+  `ChatHub.receiptTimes(for:)`; with no recorded time it says just "Delivered" or "Read". It
+  hides while the message is Sending or Sent. Tapping it opens Message Info for that message.
 - **Header** (`MessagesConversationView.header`): back circle, then one glass pill with the
   avatar and, to its right, the name over "Online · N messages on the server", then the call
   buttons. It has no new agent button or own avatar; those stay in the channel list's top bar.

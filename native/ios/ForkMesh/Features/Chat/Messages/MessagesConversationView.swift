@@ -159,6 +159,7 @@ struct MessagesConversationView<Drawer: View>: View {
         let typing: [String] = hub.conversationTyping
         let group: Bool = hub.inGroupConversation
         let known: Set<String> = Set(items.map(\.id))
+        let lastOwn: ChatBubble? = lastOwnBubble(items)
         return ScrollViewReader { (proxy: ScrollViewProxy) in
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -168,6 +169,9 @@ struct MessagesConversationView<Drawer: View>: View {
                     ForEach(items) { (item: ChatConversationItem) in
                         itemView(item, palette: palette, group: group, known: known)
                             .id(item.id)
+                        if let lastOwn, item.id == lastOwn.row.id, let status = receiptStatus(lastOwn) {
+                            MessagesReceiptLine(text: status, colors: palette, onTap: { openInfo(lastOwn.row.id) })
+                        }
                     }
                     if !typing.isEmpty {
                         TimelineView(.periodic(from: Date(), by: 1)) { (_: TimelineViewDefaultContext) in
@@ -251,6 +255,23 @@ struct MessagesConversationView<Drawer: View>: View {
             moved: { (dx: CGFloat) in pullInfo(bubble.row.id, dx) },
             ended: { (dx: CGFloat, flung: CGFloat) in releaseInfo(dx, flung) })
         .accessibilityAction(named: "Message Info") { openInfo(bubble.row.id) }
+    }
+
+    private func lastOwnBubble(_ items: [ChatConversationItem]) -> ChatBubble? {
+        for item in items.reversed() {
+            if case .message(let bubble) = item, bubble.row.message.isSelf { return bubble }
+        }
+        return nil
+    }
+
+    private func receiptStatus(_ bubble: ChatBubble) -> String? {
+        guard DirectMessageFrames.isDirect(bubble.row.message.conversation), let receipt = bubble.receipt else { return nil }
+        let times: ChatReceiptTimes = hub.receiptTimes(for: bubble.row.message)
+        switch receipt {
+        case .read: return times.read.map { "Read \(MessagesReceiptLine.stamp($0))" } ?? "Read"
+        case .delivered: return times.delivered.map { "Delivered \(MessagesReceiptLine.stamp($0))" } ?? "Delivered"
+        case .sending, .sent: return nil
+        }
     }
 
     private var infoReveal: CGFloat {
