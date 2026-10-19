@@ -85,7 +85,8 @@ def test_routes_are_matched_without_shadowing_existing_actions():
     assert runner_logins.match("login/login") == ("create", "login")
     assert runner_logins.match("r1/login/abc/cancel") == ("cancel", "r1", "abc")
     assert runner_logins.match("r1/login/abc/resize") == ("resize", "r1", "abc")
-    for action in ("claim", "report", "register", "revoke", "pool-status",
+    for action in ("claim", "report", "register", "revoke", "pause",
+                   "resume", "pool-status",
                    "r1/login/abc/other", "a/b"):
         assert runner_logins.match(action) is None
 
@@ -126,6 +127,11 @@ def test_only_the_registrant_sees_or_drives_a_runner():
         assert browser(runtime, actor, "/api/runners",
                        method="GET")["data"]["runners"] == []
     assert browser(runtime, "root", "/api/runners")["status"] == 405
+    runtime.db.execute("UPDATE runner_nodes SET status='paused' WHERE name='pool-1'")
+    runtime.db.commit()
+    assert start(runtime, "root", "pool-1", "codex")["status"] == 201
+    listed = browser(runtime, "root", "/api/runners", method="GET")
+    assert listed["data"]["runners"][0]["status"] == "paused"
     # Revoked runners take no new sessions.
     runtime.db.execute("UPDATE runner_nodes SET status='revoked' WHERE name='pool-1'")
     runtime.db.commit()
