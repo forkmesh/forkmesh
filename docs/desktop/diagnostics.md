@@ -25,6 +25,12 @@ Windows and macOS read paths from there.
   assigns a badge (category) from the `kNetworkLogRules` substring table in
   `src/MainWindowSettings.cpp`; the legend is in `src/MainWindowInternal.h`.
   Classification is by substring, so rewording a message can change its badge.
+  A zeroed tally is not an error word: `withoutClearedTallies()` drops
+  "0 failed", "no errors" and a count written after the word ("fails 0",
+  "errors: 0"), so the DNS health loop's `ok (fails 0)` lines no longer badge
+  ERROR. The crash handler's "termination signal survived" note avoids the
+  word "fail" for the same reason: a stop deferred while an Action runs is not
+  an error.
 - Main categories: INFO, ERROR, GIT, WEB, STALL, BGBLOCK (a GUI-thread wait for
   background work), plus package lanes (for example **Sentry**). A
   `Push to owner/repo on branch → commit — subject` line always badges GIT,
@@ -209,7 +215,9 @@ returned, so summed frame totals overstate a function's own cost.
 - **Read ref files instead of spawning git** for branch lists, `HEAD`,
   worktrees and the mirror refs hash (`forEachRefHeadsAndTagsFromFiles`),
   falling back to git for reftable or anything unusual. Caches key on ref or
-  config file signatures.
+  config file signatures. `refTipFromFiles` parses `packed-refs` once per
+  size and modification time instead of scanning it per lookup (the 200 KB
+  file was rescanned for each branch in a loop).
 - **Git timeouts.** Reads get 8 s, index-writing commands 60 s
   (`gitWaitTimeoutMs()`); agent pull capture (`captureAgentPull()`) 120 s on a
   worker. Overdue git is stopped with `forkmesh::stopProcessGracefully()`
@@ -252,6 +260,11 @@ a freeze.
   `ForkMesh.conf` written with `diskwrite::writeLater`; batch hot values on a
   timer flushed at quit. A worker does not help: `QSettings` shares one
   in-memory file per process.
+- `QSettings::sync()` rereads and parses the whole file even when nothing is
+  pending, so never call it for an unchanged value. `PackageRegistry::setPlaces`
+  returns before writing or syncing when the stored places already match:
+  applying the account's package list called it once per package and stalled
+  the window for up to 7 s against a 1.5 MB `ForkMesh.conf` (report #4).
 
 ## Crash handling and crash repair
 
@@ -300,6 +313,15 @@ Crash-safety rules:
 - Off-GUI work must not touch widgets after teardown
   (`forkmesh-off-thread-teardown-window-tests`).
 - Transcript previews (`ThumbImage`) paint a `QImage` and create no `QPixmap`.
+- Connect `QMessageBox::buttonClicked` only through
+  `forkmesh::ui::onMessageBoxClicked` (`src/MessageBoxClicks.h`), which queues
+  the handler. `QMessageBox` emits the signal and then reads its button box and
+  calls `done()`; a handler that pumped events (a git wait, a file dialog) let
+  the box's own deferred delete run first, and the click crashed in
+  `QDialogButtonBox::standardButton` (SIGSEGV 2026-10-13, report #4). A queued
+  handler runs after the box has finished and may delete it.
+  `forkmesh-message-box-clicks-tests` reproduces the crash and fails on any
+  direct connection under `desktop/src`.
 - `glib` `SIGTRAP` crashes have come from file-descriptor exhaustion.
 
 ## What is reported to the relay

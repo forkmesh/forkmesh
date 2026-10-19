@@ -21,6 +21,7 @@ constexpr int kMaxPrekeys = 10;
 constexpr int kMaxRecipients = 64;
 constexpr qint64 kReplayWindow = 1024;
 constexpr int kMaxHeldFrames = 64;
+constexpr qsizetype kMaxHeldBytes = 128 * 1024;
 constexpr int kMlkemPublicBytes = 1184;
 constexpr int kMlkemCiphertextBytes = 1088;
 constexpr int kMlkemSeedBytes = 64;

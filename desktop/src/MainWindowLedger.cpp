@@ -12,6 +12,7 @@
 // public ledger and the repository record agree on one receipt.
 
 #include "MainWindow.h"
+#include "MessageBoxClicks.h"
 
 #include "ContributorPayoutReceipt.h"
 #include "KebabHeaderView.h"
@@ -2968,8 +2969,8 @@ void MainWindow::undoHeldLedgerPayout()
     connect(acknowledgement, &QCheckBox::toggled, undo,
             &QPushButton::setEnabled);
 
-    connect(box, &QMessageBox::buttonClicked, this,
-            [this, box, undo, heldPayout](QAbstractButton *clicked) {
+    forkmesh::ui::onMessageBoxClicked(box, this,
+            [this, undo, heldPayout](QAbstractButton *clicked) {
         if (clicked != undo)
             return;
         if (m_tipInFlight || !m_ledgerPayingRecordId.isEmpty()) {
@@ -3024,7 +3025,6 @@ void MainWindow::undoHeldLedgerPayout()
         m_ledgerPaymentReporting = false;
         refreshRewardPoolControls();
         rebuildLedgerTable();
-        box->close();
     });
     box->setModal(false);
     box->show();

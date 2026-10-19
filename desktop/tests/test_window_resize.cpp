@@ -24360,6 +24360,23 @@ else:
                   "Git: fast-forwarded 12 branch(es) to main; 0 failed."))) ==
                   QStringLiteral("GIT"),
               QStringLiteral("a clean fast-forward sweep badges GIT, not ERROR"));
+        check(window.testLogBadgeFor(storedLine(QStringLiteral(
+                  "Deploy next_dns health-loop: n1 192.0.2.10 ok (fails 0) v6 "
+                  "ok  [desktop/src/MainWindowLogs.cpp:2825]"))) !=
+                  QStringLiteral("ERROR"),
+              QStringLiteral("a health check reporting \"fails 0\" is not an "
+                             "error"));
+        check(window.testLogBadgeFor(storedLine(QStringLiteral(
+                  "Deploy next_dns health-loop: n1 192.0.2.10 down (fails 3) "
+                  "v6 ok  [desktop/src/MainWindowLogs.cpp:2825]"))) ==
+                  QStringLiteral("ERROR"),
+              QStringLiteral("a health check counting real failures still "
+                             "badges ERROR"));
+        check(window.testLogBadgeFor(storedLine(QStringLiteral(
+                  "termination signal survived: an action workflow is still "
+                  "running, so ForkMesh keeps going until the run ends"))) !=
+                  QStringLiteral("ERROR"),
+              QStringLiteral("a deferred stop request is not an error"));
         check(window.testLogBadgeFor(storedLine(QString::fromUtf8(
                   "Push to forkmesh/forkmesh on main \xE2\x86\x92 d4958045 "
                   "\xE2\x80\x94 Merge 423-fix-failed-load-extension into "

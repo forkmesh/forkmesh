@@ -1,6 +1,7 @@
 #include <QSettings>
 #include <algorithm>
 #include "MainWindow.h"
+#include "MessageBoxClicks.h"
 #include "MainWindowInternal.h"
 #include "MainWindowAgentsInternal.h"
 #include "AgentActivityFeed.h"
@@ -1211,7 +1212,7 @@ void MainWindow::stopCloudRunAndContinueHere(int sessionId)
         QMessageBox::AcceptRole);
     box->addButton(QMessageBox::Cancel);
     box->setDefaultButton(stop);
-    connect(box, &QMessageBox::buttonClicked, this,
+    forkmesh::ui::onMessageBoxClicked(box, this,
             [this, sessionId, stop](QAbstractButton *clicked) {
                 if (clicked == stop)
                     postCloudRunStopThenContinue(sessionId);
@@ -1404,7 +1405,7 @@ void MainWindow::retryCloudAgentInCloud(int sessionId)
                                         QMessageBox::DestructiveRole);
     box->addButton(QMessageBox::Cancel);
     box->setDefaultButton(signIn);
-    connect(box, &QMessageBox::buttonClicked, this,
+    forkmesh::ui::onMessageBoxClicked(box, this,
             [this, cloud, signIn, retry](QAbstractButton *clicked) {
                 if (clicked == retry) {
                     queueCloudAgentRetry(cloud);
@@ -2251,7 +2252,7 @@ void MainWindow::deleteCloudAgentSession(int sessionId)
     QPushButton *cancel = box->addButton(QMessageBox::Cancel);
     box->setDefaultButton(cancel);
     box->setEscapeButton(cancel);
-    connect(box, &QMessageBox::buttonClicked, this,
+    forkmesh::ui::onMessageBoxClicked(box, this,
             [this, confirm, sessionId](QAbstractButton *clicked) {
                 if (clicked == confirm)
                     requestCloudAgentSessionDelete(sessionId);

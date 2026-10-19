@@ -560,7 +560,11 @@ def test_action_runner_caps_process_output_so_pipeline_logs_do_not_crash_app():
     assert "int g_mainLogFd = -1;" in CRASH_HANDLER_CPP_TEXT
     assert "safeWriteMainLogSignalRecord" in CRASH_HANDLER_CPP_TEXT
     assert "ForkMesh signal: " in CRASH_HANDLER_CPP_TEXT
-    assert "action workflow survived and will finish/fail normally" in CRASH_HANDLER_CPP_TEXT
+    assert "action workflow survived and will run to its end" in CRASH_HANDLER_CPP_TEXT
+    assert "fail" not in CRASH_HANDLER_CPP_TEXT[
+        CRASH_HANDLER_CPP_TEXT.index("if (surviveTermination) {")
+        :CRASH_HANDLER_CPP_TEXT.index("if (gracefulShutdown) {")
+    ]
     # An external stop request is not a crash: it gets its own heading, no
     # event-loop backtrace, and is handed to the event loop so closeEvent()
     # still saves settings/chat/log before the process exits.

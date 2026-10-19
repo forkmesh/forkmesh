@@ -1,6 +1,7 @@
 #include "CrashHandler.h"
 #include "BackgroundMode.h"
 #include "KeepAwake.h"
+#include "MessageBoxClicks.h"
 #include "PackageModules.h"
 #include "ProcessReaper.h"
 #include "AgentCliLocator.h"
@@ -576,8 +577,8 @@ void showMirrorActionsRecoveryWarning(QWidget *parent)
             showMirrorActionsRecoveryWarning(parent);
         });
     };
-    QObject::connect(
-        box, &QMessageBox::buttonClicked, parent,
+    forkmesh::ui::onMessageBoxClicked(
+        box, parent,
         [parent, retry, reset, retryNow, status](QAbstractButton *clicked) {
             if (clicked == retry) {
                 QTimer::singleShot(0, parent, retryNow);

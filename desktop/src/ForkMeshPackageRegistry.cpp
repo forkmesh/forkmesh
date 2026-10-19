@@ -580,6 +580,10 @@ bool PackageRegistry::setPlaces(const QString &id, const QStringList &places)
             chosen.append(place);
     }
     const QString key = statePrefix(id) + QStringLiteral("/places");
+    const bool stored = m_settings->contains(key);
+    if (chosen.isEmpty() ? !stored
+                         : stored && m_settings->value(key).toStringList() == chosen)
+        return false;
     const QStringList before = this->places(id);
     if (chosen.isEmpty())
         m_settings->remove(key);

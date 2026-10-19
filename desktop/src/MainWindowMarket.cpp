@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "MessageBoxClicks.h"
 #include "ProcessReaper.h"
 #include "AppPaths.h"
 #include "BackoffNetworkAccessManager.h"
@@ -2262,9 +2263,8 @@ void MainWindow::requestPackageRemoval(const QString &id, bool fromRail)
         QPushButton *cancel = box->addButton(QMessageBox::Cancel);
         box->setDefaultButton(cancel);
         box->setEscapeButton(cancel);
-        connect(box, &QMessageBox::buttonClicked, this,
-                [this, id, box, remove](QAbstractButton *clicked) {
-                    box->close();
+        forkmesh::ui::onMessageBoxClicked(box, this,
+                [this, id, remove](QAbstractButton *clicked) {
                     if (clicked == remove)
                         setPackageInstalled(id, false);
                 });
@@ -2344,9 +2344,8 @@ void MainWindow::requestPackageRemoval(const QString &id, bool fromRail)
     QPushButton *cancel = box->addButton(QMessageBox::Cancel);
     box->setDefaultButton(save ? save : cancel);
     box->setEscapeButton(cancel);
-    connect(box, &QMessageBox::buttonClicked, this,
-            [this, id, name, box, save, remove](QAbstractButton *clicked) {
-                box->close();
+    forkmesh::ui::onMessageBoxClicked(box, this,
+            [this, id, name, save, remove](QAbstractButton *clicked) {
                 if (clicked == remove) {
                     setPackageInstalled(id, false);
                     return;
@@ -2419,9 +2418,8 @@ void MainWindow::requestPackageInstall(const QString &id)
     QPushButton *cancel = box->addButton(QMessageBox::Cancel);
     box->setDefaultButton(import);
     box->setEscapeButton(cancel);
-    connect(box, &QMessageBox::buttonClicked, this,
-            [this, id, box, import, fresh](QAbstractButton *clicked) {
-                box->close();
+    forkmesh::ui::onMessageBoxClicked(box, this,
+            [this, id, import, fresh](QAbstractButton *clicked) {
                 if (clicked == fresh)
                     setPackageInstalled(id, true);
                 else if (clicked == import)

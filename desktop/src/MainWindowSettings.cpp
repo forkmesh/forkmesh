@@ -7161,8 +7161,9 @@ QString withoutAddressTokens(const QString &text)
 QString withoutClearedTallies(const QString &lowerText)
 {
     static const QRegularExpression cleared(QStringLiteral(
-        "(?<![0-9a-z])(?:0|no)\\s+(?:fail(?:ed|ure|ures|ing)?|errors?)"
-        "(?![a-z])"));
+        "(?<![0-9a-z])(?:0|no)\\s+(?:fail(?:s|ed|ure|ures|ing)?|errors?)"
+        "(?![a-z])|(?<![0-9a-z])(?:fail(?:s|ed|ures)?|errors)\\s*[:=]?\\s*0"
+        "(?![0-9.])"));
     QString kept = lowerText;
     kept.remove(cleared);
     return kept;

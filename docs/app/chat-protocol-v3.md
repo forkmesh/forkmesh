@@ -177,6 +177,7 @@ senderAcct)`, `held(kid)`, `notForMe`, `replay`, `invalid`.
 2. Sender: the trust record for `kid` must exist with the same `idk`. Unknown,
    pending or blocked senders give `held(kid)` (blocked frames are then
    dropped by the client); the client keeps up to 64 held frames per room,
+   at most 128 KB of them (the newest win; one larger frame is kept alone),
    persisted with the trust records, and opens them again on approval or when
    the sender's bundle arrives.
 3. `sig` verifies under `idk`, otherwise `invalid`.

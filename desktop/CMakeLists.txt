@@ -727,6 +727,7 @@ set(FORKMESH_APP_SOURCES
     src/DesignTokens.cpp
     src/UiKit.h
     src/UiKit.cpp
+    src/MessageBoxClicks.h
     src/NextShellHooks.h
     src/MainWindowNextAccess.h
     src/WindowBackdrop.h
@@ -2189,6 +2190,20 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-window-fade-tests PRIVATE Qt6::Widgets)
     if(APPLE)
         set_target_properties(forkmesh-window-fade-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-message-box-clicks-tests
+        tests/test_message_box_clicks.cpp
+        src/MessageBoxClicks.h
+    )
+    target_include_directories(forkmesh-message-box-clicks-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_definitions(forkmesh-message-box-clicks-tests PRIVATE
+        FORKMESH_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(forkmesh-message-box-clicks-tests PRIVATE Qt6::Widgets)
+    if(APPLE)
+        set_target_properties(forkmesh-message-box-clicks-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 
@@ -3865,6 +3880,8 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         COMMAND forkmesh-code-map-view-tests)
     add_test(NAME forkmesh-window-fade-tests
         COMMAND forkmesh-window-fade-tests)
+    add_test(NAME forkmesh-message-box-clicks-tests
+        COMMAND forkmesh-message-box-clicks-tests)
     add_test(NAME forkmesh-tooltip-tests COMMAND forkmesh-tooltip-tests)
     add_test(NAME forkmesh-suggested-apps-tests
              COMMAND forkmesh-suggested-apps-tests)
@@ -4204,6 +4221,7 @@ forkmesh_link_opengl(forkmesh-perf-tests)
         forkmesh-fleet-visualizer-tests
         forkmesh-code-map-view-tests
         forkmesh-window-fade-tests
+        forkmesh-message-box-clicks-tests
         forkmesh-tests forkmesh-window-tests
         forkmesh-qt-runtime-diagnostics-tests
         forkmesh-prompt-spellcheck-tests

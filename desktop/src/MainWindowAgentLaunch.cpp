@@ -1,5 +1,6 @@
 
 #include "MainWindow.h"
+#include "MessageBoxClicks.h"
 #include "MainWindowInternal.h"
 #include "UiSounds.h"
 #include "LocalControlAgentOps.h"
@@ -1762,7 +1763,7 @@ void MainWindow::deleteAgentSessionFromRow(int sessionId)
     QPushButton *cancel = box->addButton(QMessageBox::Cancel);
     box->setDefaultButton(cancel);
     box->setEscapeButton(cancel);
-    connect(box, &QMessageBox::buttonClicked, this,
+    forkmesh::ui::onMessageBoxClicked(box, this,
             [this, confirm, sessionId](QAbstractButton *clicked) {
                 if (clicked != confirm)
                     return;
