@@ -351,7 +351,7 @@ def test_desktop_contact_names_open_a_detail_card_with_a_bigger_picture():
     # The messages and toots linked to the record, newest first.
     assert "m_contactEmails.value(contactId)" in card
     assert "linked.append(m_contactToots.value(contactId))" in card
-    assert "linkedEmailLine(email)" in card
+    assert "linkedEmailReport(email)" in card
     # The card is the third column beside the table, not a window: it
     # replaces the contact it showed and hands off to Email and Edit directly.
     assert "m_detailPanel->show();" in card
@@ -1337,3 +1337,16 @@ def test_desktop_settings_connect_the_mastodon_account_for_managers():
                  "mastodon_account_not_found", "invalid_mastodon_account"):
         assert f'"{code}"' in errors, code
         assert f'"{code}"' in CRM_WORKER, code
+
+
+def test_the_desktop_card_shows_how_far_and_how_long_an_email_was_read():
+    line = FEATURE.split("QString emailReadingLine(const QJsonObject &email)\n", 1)[1].split(
+        "\n}\n", 1)[0]
+    for key in ("opens", "clicks", "readSeconds", "scrollDepth", "slideCount", "slideReached"):
+        assert 'number("%s")' % key in line
+    assert 'QStringLiteral("reached slide %1/%2").arg(slide).arg(slides)' in line
+    assert 'QStringLiteral("read all %1 slides").arg(slides)' in line
+    assert 'QStringLiteral("%1 doesn\'t report read time").arg(client)' in line
+    assert 'text(email, "readingReported") == QLatin1String("no")' in line
+    assert "lines << (toots ? linkedEmailLine(email) : linkedEmailReport(email));" in FEATURE
+    assert "history << QStringLiteral(\"- \") + linkedEmailLine(email);" in FEATURE
