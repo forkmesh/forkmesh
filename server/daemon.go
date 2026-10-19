@@ -1171,6 +1171,9 @@ func (d *Daemon) cycle(parent context.Context, fetch bool) {
 			if _, err := retireMergedPullBranches(ctx, repo.GitDir, d.gateway.Node.Name); err != nil {
 				failures = append(failures, "merged pull branches "+key+": "+err.Error())
 			}
+			if _, err := ensurePullHeadRefs(ctx, repo.GitDir); err != nil {
+				failures = append(failures, "pull heads "+key+": "+err.Error())
+			}
 		}
 		// Heal an unborn HEAD even when every upstream is unreachable: the
 		// catalog record resolves HEAD, and a node that cannot publish is

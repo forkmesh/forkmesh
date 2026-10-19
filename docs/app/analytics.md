@@ -11,6 +11,7 @@ package. No third party receives analytics events.
 | `marketplace/packages/analytics/content/sdk/analytics-sdk.js` | Dependency-free browser SDK (pageviews, autocapture, identify, flags, surveys, errors, web vitals, heatmaps, masked replay) |
 | `marketplace/packages/analytics/content/web/` | Organization page `/dashboard/analytics`; `page.js` is generated from `src/` |
 | `marketplace/packages/analytics/content/desktop/AnalyticsFeature.cpp` | Desktop page (`builtin:analytics`), signed requests |
+| `marketplace/packages/analytics/content/desktop/AnalyticsReplay.cpp` | Desktop recording player: mouse, clicks and scrolling from the motion view |
 | `marketplace/packages/analytics/tools/sync_assets.py` | Builds `page.js` and copies the SDK to `www/public/analytics-sdk.js`; `--check` runs in tests |
 | `www/public/analytics.js` | Consent-gated controller loaded by ForkMesh's own pages |
 
@@ -40,6 +41,18 @@ package. No third party receives analytics events.
   and replay. Private pages (dashboard, chat, World, repositories, account)
   send only a coarse category, because they can show encrypted content and
   private repository names.
+- `coarseSurface` treats any other two-segment path as a repository, so the
+  public sections that use deeper paths are named before that rule:
+  `/hackathon/*`, `/market/*` and `/ecosystem/*` are `public-page`. The
+  personal hackathon links (`/hackathon/join|squad|challenge/*`) are
+  `hackathon-link` and investor deck links (`/pitch-deck/<token>`) are
+  `investor-deck`. Both stay coarse, because their paths name a person or
+  carry a token. Until 2026-10-19 the hackathon rules, archive, Market
+  package and ecosystem project pages were counted only as `/(repository)`.
+- The hackathon pages the App renders in Python (invite, squad, challenge,
+  project) stay script-free on purpose (`hackathon_runtime.py`: one request,
+  no script, before the invited person sees who invited them), so they are
+  not counted. The static hackathon pages are.
 - No IP address is stored.
 - Campaign attribution ([../attribution.md](../attribution.md)) is a
   separate server-side system.
@@ -132,6 +145,43 @@ a "Turn on recordings" button). Typed text is always masked. Each recording
 keeps the ordered list of pages viewed, so the list shows the visitor's path
 and the player can jump to each page change. Details are in the package
 README under "Recordings".
+
+### Investor deck
+
+The investor deck (`app/public/pitch-deck/deck.html`) never loads
+`analytics.js`: it is a per-contact link with no consent banner, and its
+per-reader attention goes to the CRM (`/api/pitch-deck/<token>/events`). As of
+2026-10-19 the same beacon also sends a token-free visit to the site project
+(`key: "site"`): one `$pageview` with `$pathname` `/pitch-deck` and an
+`investor_deck_page` event (`page`, `seconds`, `slides`) per slide report. The
+distinct id is `deck-<tab session>`, nothing is stored in the browser, and
+Do Not Track or Global Privacy Control turn it off. The deck then shows in the
+Analytics overview (top pages, countries, devices, events) next to the rest of
+the site. It sends no replay.
+
+### Desktop overview and playback
+
+The desktop Analytics page (2026-10-19) is laid out densely: KPIs, a 150 px
+chart, then the breakdown tables in four columns of seven 22 px rows (top
+pages, referrers, landing pages, search terms; countries with flags, devices,
+browsers, events), with campaigns full width. A Recordings column on the
+right lists the latest recordings with the visitor's country flag, entry
+page, page count, length and age. A row's tooltip holds the full page trail,
+active time, clicks, device and errors.
+
+Clicking a recording opens a player (`AnalyticsReplay.cpp`). The desktop has
+no web engine to rebuild the page, so it asks for
+`/recordings/<id>?view=motion`. The server unpacks each chunk and keeps only
+`meta`, `full` (document id and scroll), `move`, clicks, window and element
+`scroll`, `resize`, `input` (no value) and `custom`. Page content, mutations
+and typed values never leave the server. The player draws the viewport with
+an outline of the page that scrolls, the cursor and its trail, click ripples,
+and a page minimap with the visible window and that page's clicks so far. It
+has a timeline with page-change and click marks, 0.5–8× speed, skip
+inactivity, and a pages list that seeks. The SDK now records the document
+height (`pageHeight` on `meta`, `h` on window scrolls), so the minimap is to
+scale. Older recordings fall back to the deepest scroll seen. Recordings store
+the visitor's country from the first chunk.
 
 ## Security
 
