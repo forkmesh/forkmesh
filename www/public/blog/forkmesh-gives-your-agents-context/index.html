@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <script src="/api-client.js?v=${version}"></script>
+    <script src="/analytics.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ForkMesh gives your agents context · ForkMesh Blog</title>
+    <meta name="description" content="An agent is only as good as what it knows when it starts. ForkMesh keeps issues, comments, instructions, skills and special agents in the repository next to the code, and hands them to every agent run, on the desktop, a runner or a phone. October 19, 2026.">
+    <link rel="canonical" href="https://forkmesh.com/blog/forkmesh-gives-your-agents-context/">
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="https://forkmesh.com/blog/forkmesh-gives-your-agents-context/">
+    <meta property="og:site_name" content="ForkMesh">
+    <meta property="og:title" content="ForkMesh gives your agents context">
+    <meta property="og:description" content="Issues, comments, instructions, skills and special agents live in the repository next to the code, and every agent run starts from them.">
+    <meta property="og:image" content="https://forkmesh.com/assets/blog/features/forkmesh-gives-your-agents-context.webp">
+    <meta property="og:image:width" content="1920">
+    <meta property="og:image:height" content="1080">
+    <meta property="og:image:alt" content="ForkMesh drawn as a glowing tree at night: the logo is its crown, core nodes its trunk, branches reaching the desktop app, web dashboard, World, issues and pull requests, agents, runners, the phone apps and the Marketplace, and Git and the mirrors as its roots, beside the line ForkMesh gives your agents context">
+    <meta property="article:published_time" content="2026-10-19T21:00:00-04:00">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="ForkMesh gives your agents context">
+    <meta name="twitter:description" content="Issues, comments, instructions, skills and special agents live in the repository next to the code, and every agent run starts from them.">
+    <meta name="twitter:image" content="https://forkmesh.com/assets/blog/features/forkmesh-gives-your-agents-context.webp">
+    <meta name="twitter:image:alt" content="ForkMesh drawn as a glowing tree at night: the logo is its crown, core nodes its trunk, branches reaching the desktop app, web dashboard, World, issues and pull requests, agents, runners, the phone apps and the Marketplace, and Git and the mirrors as its roots, beside the line ForkMesh gives your agents context">
+    <meta name="application-name" content="ForkMesh" />
+    <meta name="apple-mobile-web-app-title" content="ForkMesh" />
+    <meta name="theme-color" content="#090909" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="/favicon/favicon.ico" sizes="any" />
+    <link rel="icon" href="/favicon/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/site-header.css" />
+    <script src="/site-header.js?v=${version}" defer></script>
+    <link rel="stylesheet" href="/feature-post.css">
+    <link rel="stylesheet" href="/blog-social.css">
+    <script src="/blog-social.js?v=${version}" defer></script>
+    <script src="/genie-spider.js?v=${version}" defer></script>
+  </head>
+  <body>
+    <div class="shell">
+      <div data-forkmesh-header="simple"></div>
+      <main>
+        <a class="back" href="/blog">← All blog posts</a>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">AI agents</p>
+            <h1>ForkMesh gives your agents context</h1>
+            <p class="lede">A coding agent is only as good as what it knows when it starts. On ForkMesh, the things it needs to know (the issue, the discussion around it, how your team works, what was tried last time) live in the repository next to the code, and every run starts from them.</p>
+            <div class="meta"><span class="pill">October 19, 2026</span><span>AI agents</span><span>4 min read</span></div>
+          </div>
+          <img class="hero-img" src="/assets/blog/features/forkmesh-gives-your-agents-context.webp" alt="ForkMesh drawn as a glowing tree at night: the logo is its crown, core nodes its trunk, branches reaching the desktop app, web dashboard, World, issues and pull requests, agents, runners, the phone apps and the Marketplace, and Git and the mirrors as its roots, beside the line ForkMesh gives your agents context">
+        </section>
+        <article class="body">
+          <p>The picture at the top is all of ForkMesh drawn as one tree. Git and the mirrors are the roots: they hold the code and keep it reachable. The core servers are the trunk. The branches are everything you use: the desktop app, the web dashboard, the iPhone and Android apps, World, the Marketplace, runners, and the issues, pull requests and reviews your team writes. Agents sit on the same branches as everything else, so they can reach all of it.</p>
+
+          <h2>The conversation lives with the code</h2>
+          <p>On most forges an issue lives in the host's database, and an agent sees whatever you remember to paste into the prompt. On ForkMesh, issues and their comments are signed files under <code>.forkmesh/issues/</code> in the repository itself, as <a href="/blog/everything-lives-in-git/">Everything lives in Git</a> explains.</p>
+          <p>So when you <a href="/blog/assign-any-issue-to-an-agent/">assign an issue to an agent</a>, the agent gets the whole thread, not a one-line summary:</p>
+          <ul>
+            <li>the title and the full description;</li>
+            <li>every comment, with who wrote it, in order;</li>
+            <li>the labels and assignees;</li>
+            <li>when you resume a run, the end of the previous session's transcript, so it picks up where it stopped.</li>
+          </ul>
+
+          <h2>How your team works, written down once</h2>
+          <p>The rest of an agent's context is the kind of thing a new teammate learns in their first week. ForkMesh keeps it in the repository too, as plain files you can review like any other change:</p>
+          <ul>
+            <li><strong><a href="/blog/custom-agent-instructions/">Custom instructions</a></strong> replace the built-in preamble with your own rules.</li>
+            <li><strong>Skills</strong> in <code>.forkmesh/skills/</code> teach agents how a part of your project works. They can be set for one repository, for an organization or for the whole app.</li>
+            <li><strong>Shortcuts</strong> in <code>.forkmesh/shortcuts/</code> are reusable task prompts, such as the one that writes this blog's product updates.</li>
+            <li><strong>Special agents</strong> (in beta, introduced in <a href="/blog/a-team-around-the-work/">A team around the work</a>) are files in <code>.forkmesh/teammates/</code>. Each one holds a role, instructions, skills and a linked shortcut, and knows the other special agents so it can hand work to them by name. A special agent that learns from its runs carries its earlier lessons into the next one.</li>
+          </ul>
+
+          <h2>Tools that reach the rest of the mesh</h2>
+          <p>A good prompt is a starting point; sometimes an agent needs to look things up as it goes. Claude Code on the desktop gets ForkMesh's own MCP server, which lets it search code, read and update issues and plans, work with pull requests and tasks, and read chat. Codex and runner jobs get the issue context and your instructions, but not these tools yet.</p>
+
+          <h2>The same context wherever the agent runs</h2>
+          <p>Because the context is in the repository, it goes wherever the repository goes:</p>
+          <ul>
+            <li><strong>On your desktop</strong>, each run gets its own worktree, so parallel agents never step on each other.</li>
+            <li><strong>On a runner</strong>, the agent takes a signed job lease, works in a sandbox, and can only push to its own <code>agent/</code> branch.</li>
+            <li><strong>From your phone</strong>, you can queue a run, follow it live and send follow-ups, as described in <a href="/blog/runs-that-listen-branches-that-let-go/">Runs that listen, branches that let go</a>.</li>
+          </ul>
+          <p>Claude Code and Codex are both supported. Whichever one you choose, the agent's work comes back as an ordinary Git branch you can review, merge or throw away.</p>
+
+          <h2>Context that outlives any one host</h2>
+          <p>Every copy of a ForkMesh repository counts. Any node can mirror a public repository, and clones are served from a live, signed, checked mirror, so the repository stays reachable when its original host goes offline. Since the issues, instructions and special agents are part of the repository, a mirror or a fork carries them along with the code. Clone it, and your agent starts with the whole story instead of a blank page.</p>
+
+          <h2>Try it</h2>
+          <p>Install the <a href="https://forkmesh.com/desktop">desktop app</a>, open an issue in one of your repositories and hand it to an agent. Then add a skill or a few lines of custom instructions and watch the next run use them. If something is missing from what your agents see, open an issue on <a href="https://app.forkmesh.com/forkmesh/forkmesh">forkmesh/forkmesh</a> or tell us in the ForkMesh Discord. Thanks for reading.</p>
+        </article>
+        <section data-blog-social
+                 data-reddit=""
+                 data-mastodon=""
+                 data-twitter=""></section>
+        <nav class="next" aria-label="Blog posts">
+          <a href="/blog">All posts</a>
+          <a href="/blog/whats-new-mid-october-2026/">What's new: a new look, starter packs and view-once messages →</a>
+        </nav>
+      </main>
+    </div>
+  </body>
+</html>
