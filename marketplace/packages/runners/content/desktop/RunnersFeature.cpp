@@ -151,8 +151,10 @@ void RunnersFeature::request(const QByteArray &method, const QString &path,
 
 void RunnersFeature::refresh()
 {
-    if (m_loading)
+    if (m_loading) {
+        m_reloadPending = true;
         return;
+    }
     m_loading = true;
     m_refresh->setEnabled(false);
     setStatus(m_loaded ? QString::fromUtf8("Refreshing\xE2\x80\xA6")
@@ -161,6 +163,10 @@ void RunnersFeature::refresh()
             [this](bool ok, const QJsonObject &payload, const QString &error) {
         m_loading = false;
         m_refresh->setEnabled(true);
+        if (std::exchange(m_reloadPending, false)) {
+            refresh();
+            return;
+        }
         if (!ok) {
             m_notice.clear();
             setStatus(QString());
@@ -475,6 +481,11 @@ void RunnersFeature::changeAccount(const QString &runner, const QString &provide
             [this, runner, account, action](bool ok, const QJsonObject &, const QString &error) {
         m_busyRunner.clear();
         if (!ok) {
+            if (signedOutError(error)) {
+                m_signedOut = true;
+                render();
+                return;
+            }
             setError(actionErrorText(error));
             render();
             return;

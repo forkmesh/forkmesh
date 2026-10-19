@@ -219,7 +219,11 @@ int main(int argc, char **argv)
               !nativePackageWebPageUrl(webBase, QStringLiteral("//evil.invalid/x")).isValid() &&
               !nativePackageWebPageUrl(webBase, QStringLiteral("dashboard")).isValid() &&
               !nativePackageWebPageUrl(webBase, QStringLiteral("/dashboard/../x")).isValid() &&
-              !nativePackageWebPageUrl(QUrl(), QStringLiteral("/dashboard")).isValid() &&
+              !nativePackageWebPageUrl(webBase, QStringLiteral("/%2e%2e/x")).isValid() &&
+              !nativePackageWebPageUrl(webBase, QStringLiteral("javascript:alert(1)")).isValid() &&
+              !nativePackageWebPageUrl(webBase, QStringLiteral("file:///etc/passwd")).isValid() &&
+              !nativePackageWebPageUrl(webBase, QStringLiteral("mailto:a@b.invalid")).isValid() &&
+              !nativePackageWebPageUrl(QUrl(),QStringLiteral("/dashboard")).isValid() &&
               !nativePackageWebPageUrl(QUrl(QStringLiteral("file:///tmp")),
                                        QStringLiteral("/dashboard")).isValid(),
           "a package web page stays on the active web host");

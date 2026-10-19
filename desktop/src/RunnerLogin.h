@@ -83,6 +83,7 @@ struct RunnerInfo {
     QList<RunnerLoginInfo> logins;
     QList<RunnerAccountRequestInfo> accountRequests;
 
+    bool manageable() const;
     RunnerProviderState provider(const QString &provider) const;
     QString openLoginId(const QString &provider) const;
     bool accountRequestPending(const QString &provider,

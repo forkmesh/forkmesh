@@ -92,7 +92,7 @@ QString runnerLastSeenText(qint64 lastSeenAtMs, qint64 nowMs)
 
 bool runnerSignInOffered(const RunnerInfo &runner, const QString &provider)
 {
-    if (runner.status != QLatin1String("active"))
+    if (!runner.manageable())
         return false;
     const RunnerProviderState state = runner.provider(provider);
     return !state.reported || state.binaryFound;
@@ -243,8 +243,7 @@ void fillRunnersTable(QTableWidget *table, const QList<RunnerInfo> &runners,
                                  });
             }
             accountsButton->setMenu(menu);
-            accountsButton->setEnabled(runner.status ==
-                                       QLatin1String("active"));
+            accountsButton->setEnabled(runner.manageable());
             layout->addWidget(accountsButton);
         }
         layout->addStretch(1);
@@ -266,7 +265,7 @@ void fillRunnerAccountsMenu(QMenu *menu, const QList<RunnerInfo> &runners,
     const QString dot = QString::fromUtf8(" \xC2\xB7 ");
     bool listed = false;
     for (const RunnerInfo &runner : runners) {
-        if (runner.status != QLatin1String("active"))
+        if (!runner.manageable())
             continue;
         const RunnerProviderState state = runner.provider(provider);
         if (!state.binaryFound && state.accounts.isEmpty())

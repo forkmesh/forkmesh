@@ -3301,7 +3301,7 @@ void MainWindow::syncNativePackagePages()
                 catalogApiUrl(), path);
             if (!url.isValid()) {
                 flashMessage(QStringLiteral(
-                    "No ForkMesh host is set, so there is no page to open."));
+                    "That page cannot be opened from here."));
                 return;
             }
             QDesktopServices::openUrl(url);

@@ -203,6 +203,12 @@ bool RunnerLoginInfo::open() const
     return runnerLoginStateOpen(state);
 }
 
+bool RunnerInfo::manageable() const
+{
+    return status == QLatin1String("active") ||
+           status == QLatin1String("paused");
+}
+
 RunnerProviderState RunnerInfo::provider(const QString &provider) const
 {
     for (const RunnerProviderState &state : providers)
@@ -735,7 +741,7 @@ QList<RunnerAttentionItem> runnerAttentionFromRunners(
 {
     QList<RunnerAttentionItem> items;
     for (const RunnerInfo &runner : runners) {
-        if (runner.status != QLatin1String("active"))
+        if (!runner.manageable())
             continue;
         for (const RunnerProviderState &state : runner.providers) {
             if (!state.loginExpired() && !state.loginExpiring())

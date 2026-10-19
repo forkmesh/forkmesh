@@ -754,6 +754,15 @@ static void testAttention()
               "a signed-in login that expires soon comes last");
     }
 
+    QList<RunnerInfo> paused = runners;
+    for (RunnerInfo &runner : paused)
+        if (runner.status == QLatin1String("active"))
+            runner.status = QStringLiteral("paused");
+    check(runnerAttentionFromRunners(paused).size() == 3 &&
+              paused.at(0).manageable(),
+          "a paused runner still asks for its sign-in");
+    check(!paused.last().manageable(), "a revoked runner is not managed");
+
     check(parseRunnerAttention(attentionRunnersPayload()).size() == 3,
           "an attention answer made of runner rows is derived the same way");
 

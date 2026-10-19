@@ -59,6 +59,7 @@ private:
     int m_badge = 0;
     bool m_loaded = false;
     bool m_loading = false;
+    bool m_reloadPending = false;
     bool m_signedOut = false;
     bool m_attentionLoading = false;
     bool m_attentionLoaded = false;
