@@ -1,5 +1,6 @@
 import re
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -48,6 +49,28 @@ def test_built_world_resolves_every_scene_import(tmp_path):
                 unresolved.append(f"{path.relative_to(built).as_posix()} -> {target}")
     assert unresolved == []
     assert (built / "scene" / "resources.js").exists()
+
+
+def test_world_bundle_failure_reports_the_source_error(tmp_path, capfd):
+    build = build_site_assets()
+    try:
+        build.esbuild_package()
+    except RuntimeError:
+        pytest.skip("esbuild is not installed in world/tools/node_modules")
+    if build.node_tool("node") is None:
+        pytest.skip("node is not installed")
+    dist = tmp_path / "dist"
+    for entry in build.WORLD_BUNDLE_ENTRIES:
+        path = dist / "world" / entry
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("export {};\n", encoding="utf-8")
+    (dist / "world" / "world-scene.js").write_text(
+        "export function broken( {\n", encoding="utf-8")
+    with pytest.raises(subprocess.CalledProcessError):
+        build.bundle_world_scene(dist)
+    stderr = capfd.readouterr().err
+    assert "world-scene.js:2:0" in stderr
+    assert "Expected identifier but found end of file" in stderr
 
 
 def test_built_world_scene_fits_the_mobile_health_bounds(tmp_path):

@@ -1,4 +1,5 @@
 import json
+import math
 import shutil
 import subprocess
 from pathlib import Path
@@ -102,7 +103,10 @@ def test_an_instance_world_gets_one_portal_home(result):
 def test_arrival_is_on_the_hexagon_in_front_of_its_landmark(result):
     for item in result["arrivals"]:
         assert 200 < item["fromTile"] < 260, item
-        assert abs(item["spot"]["x"]) < 1900 and abs(item["spot"]["z"]) < 1900
+        tile, spot = item["tile"], item["spot"]
+        assert tile["x"] - spot["x"] == pytest.approx(tile["normalX"] * item["fromTile"])
+        assert tile["z"] - spot["z"] == pytest.approx(tile["normalZ"] * item["fromTile"])
+        assert spot["heading"] == pytest.approx(math.atan2(tile["normalX"], tile["normalZ"]))
         assert item["spot"]["space"] == "town-square"
     assert result["badArrival"] == [None, None]
 
@@ -176,5 +180,5 @@ def test_rewards_ads_and_the_directory_are_not_requested_when_off():
         "\n  }\n", 1)[0]
     assert "if (!instanceKeepsDirectory(instance)) {" in directory
     assert directory.index("instanceKeepsDirectory") < directory.index(
-        "/api/start/instances")
+        "/api/world/mesh?refresh=")
     assert APP.count('this.fetchJSON("/api/instance", {') == 1

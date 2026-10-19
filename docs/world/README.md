@@ -192,6 +192,12 @@ writes `world_deploy_status` for the "ForkMesh is deploying now" notice
 holds `createWorldScene`: renderer, camera, lights, shared state, the
 district build order and the public API.
 
+The instance hex module keeps portal arrival exports at module scope and
+builds the shared flower roads in `flowerRoadGeometry()`. The scene bundler
+passes its diagnostics through to the deployment log so syntax errors identify
+the source file and line. The bundle and instance portal tests cover this
+boundary after the shared-map and portal changes are combined.
+
 A module exports up to two functions:
 
 - `functions({ THREE, <callbacks>, ctx, fns })` declares the area's inner

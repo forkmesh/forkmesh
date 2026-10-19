@@ -290,6 +290,7 @@ BI_COLUMNS = {
     "profile_contribution_receipts": ("generation_bi", "source_account_bi", "source_repo_bi"),
     "profile_follows": ("follower_bi", "target_bi"),
     "pull_inbox": ("repo_bi", "claimed_by_bi", "mirrored_by_bi", "submission_bi"),
+    "pull_review_ledger": ("repo_bi",),
     "pull_submission_receipts": ("repo_bi", "submission_bi"),
     "quarantined_nodes": ("node_bi", "user_bi", "quarantined_user_bi"),
     "quarantined_users": ("user_bi", "email_bi", "ip_bi", "referrer_bi", "discord_bi"),
@@ -474,7 +475,7 @@ BI_PREFIXES = (
     "ap-actor:org:",
 )
 # "<owner>/<repo>" families.
-REPO_PREFIXES = ("", "repo-alert-settings:", "repo-feature-settings:", "ap-repo-settings:", "ap-digest:", "remote-forks:")
+REPO_PREFIXES = ("", "repo-alert-settings:", "repo-feature-settings:", "ap-repo-settings:", "ap-digest:", "remote-forks:", "pull-review-ledger:")
 # Families whose argument embeds another blind index.
 NESTED_PREFIXES = (
     "password-change-v1\n", "password-reset-account-v1\n", "login-source:",
