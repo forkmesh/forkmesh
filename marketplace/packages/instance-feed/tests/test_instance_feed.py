@@ -304,14 +304,33 @@ def test_install_and_uninstall_through_the_account_lifecycle(monkeypatch):
         return asyncio.run(plugin_data.handle(runtime.use(method, actor=actor), path))
 
     assert timeline(runtime)["installed"] is False
+    registry = plugin_data.REGISTRY
+    monkeypatch.setattr(plugin_data, "REGISTRY", {
+        key: value for key, value in registry.items() if key != "instance-feed"})
+    unavailable = lifecycle("POST", "alice", "/api/plugins/@account/instance-feed/install")
+    assert unavailable["status"] == 404
+    assert unavailable["data"]["error"] == "plugin_not_found"
+    monkeypatch.setattr(plugin_data, "REGISTRY", registry)
+    account = lifecycle("GET", "alice", "/api/plugins/@account")
+    entry = next(row for row in account["data"]["packages"] if row["id"] == "instance-feed")
+    assert entry["installed"] is False
+    assert entry.get("unchosen") is True
     for actor in ("alice", "bob"):
         assert lifecycle("POST", actor, "/api/plugins/@account/instance-feed/install")["status"] == 200
+    account = lifecycle("GET", "alice", "/api/plugins/@account")
+    entry = next(row for row in account["data"]["packages"] if row["id"] == "instance-feed")
+    assert entry["installed"] is True
+    assert "unchosen" not in entry
     mine = post(runtime, "hello")
     theirs = post(runtime, "hi alice", actor="bob", replyTo=mine["id"])
     call(runtime.use("POST", actor="bob"), "/api/instance-feed/posts/" + mine["id"] + "/favourite")
     assert lifecycle("POST", "alice", "/api/plugins/@account/instance-feed/uninstall")["status"] == 200
     assert timeline(runtime)["installed"] is False
     assert asyncio.run(instance_feed.account_has_data(runtime, "bi:alice")) is False
+    account = lifecycle("GET", "alice", "/api/plugins/@account")
+    entry = next(row for row in account["data"]["packages"] if row["id"] == "instance-feed")
+    assert entry["installed"] is False
+    assert "unchosen" not in entry
     remaining = timeline(runtime, actor="bob", author="bob")["posts"]
     assert [item["id"] for item in remaining] == [theirs["id"]]
     assert runtime.db.execute("SELECT COUNT(*) FROM instance_feed_favourites").fetchone()[0] == 0

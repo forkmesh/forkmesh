@@ -151,6 +151,13 @@ This keeps desktop installs made while a package was desktop-only, such as
 a package stores a row with `installed: false`, so a removal is never undone
 this way.
 
+Account-scoped data alone does not establish a legacy install choice:
+`_hook_fallback` checks that the package actually provides an
+`account_installed` hook. Packages such as Instance Feed use only the shared
+account registry and must remain `unchosen` until an account row exists,
+including when a desktop install initially failed because the server's
+catalog was older.
+
 ### Projects
 
 The web has no projects and uses the account answer. Desktop and phones:

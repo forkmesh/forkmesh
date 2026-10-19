@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -20,11 +21,16 @@ def test_packages_the_account_never_chose_are_marked_unchosen(monkeypatch):
         "defaulted": _entry(default=True),
         "dated": _entry(installedBefore="2026-10-01"),
         "health": _entry(accountData=True),
+        "feed": _entry(accountData=True),
     })
+    monkeypatch.setattr(plugin_data, "_account_module", lambda plugin: (
+        SimpleNamespace(account_installed=lambda *_: False)
+        if plugin == "health" else SimpleNamespace()))
     rows = {"chosen": {"installed": False, "settings": {}, "places": ()}}
     own = {"voice-changer": False, "chosen": False, "defaulted": True, "dated": False, "health": False}
     packages = {row["id"]: row for row in plugin_data._account_payload(rows, own)["packages"]}
     assert packages["voice-changer"].get("unchosen") is True
+    assert packages["feed"].get("unchosen") is True
     assert "unchosen" not in packages["chosen"]
     assert "unchosen" not in packages["defaulted"]
     assert "unchosen" not in packages["dated"]
