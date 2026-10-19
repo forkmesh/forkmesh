@@ -18,12 +18,14 @@ plain Python over the opened batches. No IP address is ever stored.
 """
 
 import asyncio
+import base64
 import bisect
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import math
 import re
+import zlib
 
 
 PREFIX = "/api/analytics"
@@ -44,6 +46,8 @@ LONG_TEXT_KEYS = frozenset({
     "$elements", "$exception_stack", "$heatmap_points", "$survey_response"})
 MAX_REPLAY_CHUNK = 640 * 1024
 MAX_RECORDING_PAGES = 50
+MAX_MOTION_BYTES = 24 * 1024 * 1024
+MOTION_MOUSE_TYPES = frozenset({"click", "dblclick", "contextmenu", "touchstart"})
 MAX_PROJECTS = 20
 MAX_OBJECTS_PER_KIND = 300
 MAX_QUERY_BATCHES = 1500
@@ -834,7 +838,7 @@ def _recording_pages(meta, url):
     return pages
 
 
-async def _store_replay(runtime, project, replay, person_id, errors, now):
+async def _store_replay(runtime, project, replay, person_id, errors, now, country=""):
     settings = project["settings"]
     if not (settings.get("replay") or {}).get("enabled"):
         return 0, "replay_disabled"
@@ -861,6 +865,8 @@ async def _store_replay(runtime, project, replay, person_id, errors, now):
                 "viewport": _json_value(replay.get("viewport")),
                 "device": _json_value(replay.get("device")),
                 "distinctId": _text(replay.get("distinctId"), 200)}
+    if country and not meta.get("country"):
+        meta["country"] = country
     meta["pages"] = _recording_pages(meta, replay.get("url"))
     sealed_meta = await _seal(runtime, meta)
     await _run_batch(runtime, [(
@@ -959,7 +965,7 @@ async def _capture(runtime, data):
                 runtime, project["id"], _text(replay.get("distinctId"), 200))
         errors = sum(1 for event in events if event["e"] == "$exception")
         replay_bytes, replay_error = await _store_replay(
-            runtime, project, replay, person_id, errors, now)
+            runtime, project, replay, person_id, errors, now, country)
     await runtime.d1_run(
         "INSERT INTO analytics_usage(project_id,day,org_bi,events,replay_bytes,"
         "requests) VALUES(?,?,?,?,?,1) ON CONFLICT(project_id,day) DO UPDATE SET "
@@ -3523,6 +3529,73 @@ async def _handle_groups(runtime, project):
                                "types": sorted({group["type"] for group in groups})})
 
 
+def _replay_chunk_events(opened):
+    payload = opened.get("events") or ""
+    if not isinstance(payload, str) or not payload:
+        return []
+    try:
+        if opened.get("encoding") == "gzip-b64":
+            inflater = zlib.decompressobj(16 + zlib.MAX_WBITS)
+            raw = inflater.decompress(base64.b64decode(payload), MAX_MOTION_BYTES)
+            if inflater.unconsumed_tail:
+                return []
+            payload = raw.decode("utf-8")
+        events = json.loads(payload)
+    except (ValueError, zlib.error, UnicodeDecodeError):
+        return []
+    return events if isinstance(events, list) else []
+
+
+def _motion_number(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+
+
+def _motion_events(opened):
+    out = []
+    for event in _replay_chunk_events(opened):
+        if not isinstance(event, dict) or not isinstance(event.get("d"), dict):
+            continue
+        at, kind, data = _motion_number(event.get("t")), event.get("k"), event["d"]
+        if kind == "meta":
+            item = {"href": _text(data.get("href"), 500),
+                    "width": _motion_number(data.get("width")),
+                    "height": _motion_number(data.get("height"))}
+            if data.get("pageHeight"):
+                item["pageHeight"] = _motion_number(data.get("pageHeight"))
+        elif kind == "full":
+            node = data.get("node") if isinstance(data.get("node"), dict) else {}
+            scroll = data.get("scroll") if isinstance(data.get("scroll"), dict) else {}
+            item = {"doc": _motion_number(node.get("id")),
+                    "x": _motion_number(scroll.get("x")), "y": _motion_number(scroll.get("y"))}
+        elif kind == "move":
+            item = {"positions": [
+                [_motion_number(sample[0]), _motion_number(sample[1]),
+                 _motion_number(sample[2]) if len(sample) > 2 else 0]
+                for sample in (data.get("positions") or [])
+                if isinstance(sample, list) and len(sample) >= 2]}
+        elif kind == "mouse":
+            if data.get("type") not in MOTION_MOUSE_TYPES or "x" not in data:
+                continue
+            item = {"type": data["type"], "x": _motion_number(data.get("x")),
+                    "y": _motion_number(data.get("y"))}
+        elif kind == "scroll":
+            item = {"id": _motion_number(data.get("id")),
+                    "x": _motion_number(data.get("x")), "y": _motion_number(data.get("y"))}
+            if data.get("h"):
+                item["h"] = _motion_number(data.get("h"))
+        elif kind == "resize":
+            item = {"width": _motion_number(data.get("width")),
+                    "height": _motion_number(data.get("height"))}
+        elif kind == "input":
+            item = {}
+        elif kind == "custom":
+            item = {"name": _text(data.get("name"), 200), "url": _text(data.get("url"), 500)}
+        else:
+            continue
+        out.append({"t": at, "k": kind, "d": item})
+    return out
+
+
 def _recording_row(row):
     started, last = _integer(row.get("started_at")), _integer(row.get("last_at"))
     return {"sessionId": str(row.get("session_id") or ""),
@@ -3563,6 +3636,7 @@ async def _handle_recordings(runtime, method, project, actor, role, item, now):
                                    startUrl=meta.get("startUrl") or "",
                                    pages=_recording_pages(meta, ""),
                                    distinctId=meta.get("distinctId") or "",
+                                   country=meta.get("country") or "",
                                    device=meta.get("device") or {}))
         return _response(runtime, {
             "ok": True, "recordings": recordings,
@@ -3586,6 +3660,7 @@ async def _handle_recordings(runtime, method, project, actor, role, item, now):
         return _response(runtime, {"ok": True, "deleted": True})
     params = runtime.query_params()
     after = _bounded(params.get("afterSeq"), -1, 100000, -1)
+    motion = params.get("view") == "motion"
     chunk_rows = await runtime.d1_all(
         "SELECT seq,bytes,data FROM analytics_recording_chunks WHERE project_id=? "
         "AND session_id=? AND seq>? ORDER BY seq LIMIT 12", project_id, item,
@@ -3598,6 +3673,10 @@ async def _handle_recordings(runtime, method, project, actor, role, item, now):
         if chunks and size > 3 * 1024 * 1024:
             break
         opened = await _open(runtime, chunk.get("data"), {})
+        if motion:
+            chunks.append({"seq": _integer(chunk.get("seq")), "encoding": "motion",
+                           "events": _motion_events(opened)})
+            continue
         chunks.append({"seq": _integer(chunk.get("seq")),
                        "encoding": opened.get("encoding") or "json",
                        "events": opened.get("events") or ""})
@@ -3611,6 +3690,7 @@ async def _handle_recordings(runtime, method, project, actor, role, item, now):
         "recording": dict(_recording_row(row), startUrl=meta.get("startUrl") or "",
                           pages=_recording_pages(meta, ""),
                           distinctId=meta.get("distinctId") or "",
+                          country=meta.get("country") or "",
                           viewport=meta.get("viewport") or {},
                           device=meta.get("device") or {}),
         "chunks": chunks,

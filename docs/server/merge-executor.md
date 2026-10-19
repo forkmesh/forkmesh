@@ -25,15 +25,18 @@ can merge while the source desktop is offline. Code: `server/merge.go`,
    `.forkmesh/required-checks.json` read from the reviewed base commit, and
    `.forkmesh/pull-rules.json` from the same commit (`rules_required`; see
    [pull-rules.md](pull-rules.md)). Neither of the last two can be waived.
-5. Merge: branch-backed pulls merge the current tips with `git merge-tree
-   --write-tree`; patch-backed pulls (web and cross-node submissions) replay
-   `commits.mbox` (then `changes.patch`) onto the exact base in a detached
-   worktree under `pull-jobs/`, keeping the contributor's authorship. A pull is
+5. Merge: every pull merges a head commit into the current base tip with `git
+   merge-tree --write-tree`. A branch-backed pull's head is its branch tip; a
+   patch-backed pull's head (web and cross-node submissions) is rebuilt from
+   the pinned `commits.mbox` (or `changes.patch`) on the commit it was cut
+   from, in a detached worktree under `pull-jobs/`, keeping the contributor's
+   authorship ([pull-heads.md](pull-heads.md)). A pull is
    branch-backed only when its `pull.md` says `derive: branch`; a named `head`
    alone does not make it one. The phones apply the same test when they build a
    merge plan (iOS `pullMergePlan`, Android `PullMergeClient.plan`) and pin the
    ledger commit as the head of a patch-backed pull.
-   The merged record gains `mergedAt` (milliseconds) and, when the merged
+   The merged record gains `mergedAt` (milliseconds), `mergeBase` and
+   `mergeHead` and, when the merged
    commits or mbox carry `Co-authored-by` trailers, `coAuthors` (sorted,
    lowercased emails, at most 16). The executor is never told who asked for
    the merge, so it writes no `mergedBy`; the relay records the merger for the

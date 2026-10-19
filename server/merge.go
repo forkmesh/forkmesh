@@ -830,89 +830,6 @@ func (e *PullMutationExecutor) mergeTreeCommit(ctx context.Context, gitDir, ours
 	return commit, true, err
 }
 
-// applyPatchSeries replays a patch-backed pull's mbox (or plain patch) onto
-// the exact base commit in a temporary detached worktree and returns the
-// resulting commit, or "" when it does not apply cleanly. The worktree is
-// detached, so no branch moves until the final ref transaction.
-func (e *PullMutationExecutor) applyPatchSeries(ctx context.Context, gitDir string, request pullMutationRequest, meta *pullMetadata, payload []byte, isMbox bool) (string, error) {
-	jobs, err := e.jobsDirectory()
-	if err != nil {
-		return "", err
-	}
-	noHooks, err := e.noHooksDirectory()
-	if err != nil {
-		return "", err
-	}
-	work, err := os.MkdirTemp(jobs, ".apply-*")
-	if err != nil {
-		return "", err
-	}
-	_ = os.Remove(work)
-	defer func() {
-		_, _, _ = e.git(context.Background(), gitDir, "worktree", "remove", "--force", work)
-		_, _, _ = e.git(context.Background(), gitDir, "worktree", "prune")
-		_ = removeOwnWorktreeUnder(jobs, work)
-	}()
-	if _, code, err := e.git(ctx, gitDir, "worktree", "add", "--detach", "--force", work, request.ExpectedBaseOid); err != nil || code != 0 {
-		return "", errors.New("merge worktree could not be created")
-	}
-	payloadPath := filepath.Join(jobs, ".payload-"+request.token())
-	if err := os.WriteFile(payloadPath, payload, 0600); err != nil {
-		return "", err
-	}
-	defer os.Remove(payloadPath)
-	identity := e.commitIdentityEnvironment()
-	// Address the checkout through its path so index and HEAD resolve to the
-	// linked worktree rather than to the bare repository.
-	runInTree := func(args ...string) (int, error) {
-		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", work, "-c", "core.hooksPath=" + noHooks}, args...)...)
-		cmd.Env = pullGitEnvironment(identity)
-		cmd.Stdout, cmd.Stderr = io.Discard, io.Discard
-		err := cmd.Run()
-		if err == nil {
-			return 0, nil
-		}
-		var exit *exec.ExitError
-		if errors.As(err, &exit) {
-			return exit.ExitCode(), nil
-		}
-		return -1, err
-	}
-	if isMbox {
-		if code, err := runInTree("am", "--3way", "--no-gpg-sign", payloadPath); err != nil {
-			return "", err
-		} else if code != 0 {
-			_, _ = runInTree("am", "--abort")
-			return "", nil
-		}
-	} else {
-		if code, err := runInTree("apply", "--index", "--3way", payloadPath); err != nil {
-			return "", err
-		} else if code != 0 {
-			return "", nil
-		}
-		if code, err := runInTree("diff", "--cached", "--quiet"); err != nil {
-			return "", err
-		} else if code == 0 {
-			return request.ExpectedBaseOid, nil // the patch changed nothing
-		}
-		message := fmt.Sprintf("merge pull #%d: %s", request.number, safeHeader(meta.title))
-		if code, err := runInTree("commit", "--no-gpg-sign", "--no-verify", "-m", message); err != nil {
-			return "", err
-		} else if code != 0 {
-			return "", nil
-		}
-	}
-	cmd := exec.CommandContext(ctx, "git", "-C", work, "rev-parse", "--verify", "HEAD^{commit}")
-	cmd.Env = pullGitEnvironment(nil)
-	out, err := cmd.Output()
-	head := strings.TrimSpace(string(out))
-	if err != nil || !gitObjectIDPattern.MatchString(head) {
-		return "", errors.New("applied commit is invalid")
-	}
-	return head, nil
-}
-
 // blobBytes returns one committed object's exact bytes (no trimming), bounded.
 func (e *PullMutationExecutor) blobBytes(ctx context.Context, gitDir, oid string, maximum int) ([]byte, bool) {
 	if !gitObjectIDPattern.MatchString(oid) {
@@ -927,29 +844,21 @@ func (e *PullMutationExecutor) blobBytes(ctx context.Context, gitDir, oid string
 	return raw, true
 }
 
-// pullPayload reads the committed patch series of a patch-backed pull from
-// the pinned ledger commit: commits.mbox first, then changes.patch.
-func (e *PullMutationExecutor) pullPayload(ctx context.Context, gitDir string, request pullMutationRequest) ([]byte, bool, bool) {
-	for _, candidate := range []struct {
-		name string
-		mbox bool
-	}{{"commits.mbox", true}, {"changes.patch", false}} {
-		path := fmt.Sprintf(".forkmesh/pulls/%d/%s", request.number, candidate.name)
+func (e *PullMutationExecutor) pullPayloads(ctx context.Context, gitDir string, request pullMutationRequest) ([]byte, []byte) {
+	read := func(name string) []byte {
+		path := fmt.Sprintf(".forkmesh/pulls/%d/%s", request.number, name)
 		entry, code, err := e.git(ctx, gitDir, "ls-tree", "-z", request.ExpectedPullsOid, "--", path)
 		if err != nil || code != 0 || entry == "" {
-			continue
+			return nil
 		}
 		meta := strings.Fields(strings.SplitN(strings.TrimSuffix(entry, "\x00"), "\t", 2)[0])
 		if len(meta) != 3 || meta[1] != "blob" {
-			continue
+			return nil
 		}
-		raw, ok := e.blobBytes(ctx, gitDir, meta[2], maxPullPayloadBytes)
-		if !ok {
-			continue
-		}
-		return raw, candidate.mbox, true
+		raw, _ := e.blobBytes(ctx, gitDir, meta[2], maxPullPayloadBytes)
+		return raw
 	}
-	return nil, false, false
+	return read("commits.mbox"), read("changes.patch")
 }
 
 // metadataCommit writes the post-mutation pull record on top of the exact
@@ -1167,21 +1076,39 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 		if request.ExpectedHeadOid != request.ExpectedPullsOid {
 			return e.storeRecord(dir, request, e.failure(request, "unsupported_pull"))
 		}
-		payload, isMbox, ok := e.pullPayload(ctx, gitDir, request)
-		if !ok {
+		mbox, patch := e.pullPayloads(ctx, gitDir, request)
+		if len(bytes.TrimSpace(mbox)) == 0 && len(bytes.TrimSpace(patch)) == 0 {
 			return e.storeRecord(dir, request, e.failure(request, "unsupported_pull"))
 		}
-		applied, err := e.applyPatchSeries(ctx, gitDir, request, meta, payload, isMbox)
+		jobs, err := e.jobsDirectory()
 		if err != nil {
 			return nil, err
 		}
-		if applied == "" {
+		noHooks, err := e.noHooksDirectory()
+		if err != nil {
+			return nil, err
+		}
+		head, err := materializePullHead(ctx, gitDir, jobs, noHooks, meta.matter.values,
+			request.ExpectedBaseOid, mbox, patch)
+		if err != nil {
+			return nil, err
+		}
+		if head.head == "" {
 			return e.storeRecord(dir, request, e.failure(request, "merge_conflict"))
 		}
-		baseAfter = applied
-		if isMbox {
-			messages = string(payload)
+		merged, clean, err := e.mergeTreeCommit(ctx, gitDir, request.ExpectedBaseOid, head.head,
+			fmt.Sprintf("Merge pull request #%d", request.number))
+		if err != nil {
+			return nil, err
 		}
+		if !clean {
+			return e.storeRecord(dir, request, e.failure(request, "merge_conflict"))
+		}
+		baseAfter = merged
+		messages, _, _ = e.git(ctx, gitDir, "log", "--format=%B", head.base+".."+head.head)
+		replacements["mergeBase"] = request.ExpectedBaseOid
+		replacements["mergeHead"] = head.head
+		order = append(order, "mergeBase", "mergeHead")
 	}
 	replacements["mergedAt"] = strconv.FormatInt(e.now().UnixMilli(), 10)
 	order = append(order, "mergedAt")

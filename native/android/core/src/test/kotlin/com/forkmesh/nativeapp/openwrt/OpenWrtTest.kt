@@ -17,6 +17,7 @@ private class FakeRouter : OpenWrtTransport {
     var expireNextBoard = false
     var confirmFailures = 0
     var fstabMissing = false
+    var ksmbdMissing = false
     var shareAclFromLogin = 0
     val installed = mutableListOf<String>()
     val calls = mutableListOf<List<Any?>>()
@@ -57,7 +58,7 @@ private class FakeRouter : OpenWrtTransport {
             return reply(listOf(0L))
         }
         if (objectName == "uci" && method == "configs") {
-            return reply(listOf(0L, mapOf("configs" to listOf("network", "fstab") + if (logins >= shareAclFromLogin) listOf("ksmbd") else emptyList())))
+            return reply(listOf(0L, mapOf("configs" to listOf("network", "fstab") + if (logins >= shareAclFromLogin && !ksmbdMissing) listOf("ksmbd") else emptyList())))
         }
         if (objectName == "uci" && method == "get") {
             val values: Map<String, Any?> = when (args.str("config")) {
@@ -66,7 +67,7 @@ private class FakeRouter : OpenWrtTransport {
                     "wan" to mapOf(".name" to "wan", ".type" to "interface", ".index" to 2L, "proto" to "dhcp"),
                 )
                 "fstab" -> if (fstabMissing) return reply(listOf(4L)) else mapOf("cfg01" to mapOf(".name" to "cfg01", ".type" to "global", ".anonymous" to true, ".index" to 0L, "anon_mount" to "1"))
-                "ksmbd" -> mapOf("cfg02" to mapOf(".name" to "cfg02", ".type" to "share", ".index" to 0L, "name" to "Media", "path" to "/mnt/sda1", "guest_ok" to "yes"))
+                "ksmbd" -> if (logins < shareAclFromLogin) return reply(listOf(6L)) else if (ksmbdMissing) return reply(listOf(4L)) else mapOf("cfg02" to mapOf(".name" to "cfg02", ".type" to "share", ".index" to 0L, "name" to "Media", "path" to "/mnt/sda1", "guest_ok" to "yes"))
                 else -> return reply(listOf(4L))
             }
             return reply(listOf(0L, mapOf("values" to values)))
@@ -98,6 +99,11 @@ private class FakeRouter : OpenWrtTransport {
                 "/bin/dmesg" -> reply(listOf(0L, mapOf("code" to 0L, "stdout" to "<6>[    5.1] usb 1-1: new high-speed USB device number 2\n<5>[    6.0] random: crng init done\n")))
                 else -> reply(listOf(6L))
             }
+        }
+        if (objectName == "file" && method == "write" && args.str("path") == "/etc/config/ksmbd") {
+            if (!args.str("data").startsWith("config globals\n")) return reply(listOf(6L))
+            ksmbdMissing = false
+            return reply(listOf(0L))
         }
         if (objectName == "file" && method == "write") {
             if (args.str("path") != "/etc/config/fstab" || !args.str("data").contains("global")) return reply(listOf(6L))
@@ -339,6 +345,24 @@ class OpenWrtTest {
         val signedOut = router.logins
         expect(!client.renewSession().ok)
         assertEq(signedOut, router.logins)
+    }
+
+    fun testMissingShareConfigIsCreatedOnlyWhenReadable() {
+        val router = FakeRouter()
+        router.ksmbdMissing = true
+        val client = OpenWrtClient(router, "http://192.168.1.1")
+        expect(client.signIn("root", "secret").ok)
+        router.shareAclFromLogin = Int.MAX_VALUE
+        val denied = client.createShareConfig()
+        expect(!denied.ok && "Sign out and sign in again" in denied.error)
+        expect(router.last("file", "write") == null)
+        router.shareAclFromLogin = 0
+        assertEq("", client.loadSnapshot(now = 0).shareConfig)
+        expect(client.createShareConfig().ok)
+        val written = router.last("file", "write")?.getOrNull(3) as? Map<*, *>
+        assertEq("/etc/config/ksmbd", written?.get("path"))
+        assertEq(384L, (written?.get("mode") as? Number)?.toLong())
+        assertEq("ksmbd", client.loadSnapshot(now = 0).shareConfig)
     }
 
     fun testClientSignInRenewalAndExec() {

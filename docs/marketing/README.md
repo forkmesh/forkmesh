@@ -28,6 +28,7 @@ ForkMesh marketing is run by special agents:
 | Marketing email to opted-in users | [../app/marketing-email.md](../app/marketing-email.md) |
 | Onboarding emails (first repo, day 3, day 7; drafted, not sending) | [../app/onboarding-email.md](../app/onboarding-email.md) |
 | Press kit page | [press-kit.md](press-kit.md) |
+| "ForkMesh gives your agents context" image (1920×1080) | `www/public/assets/agents-context.svg` (source), `agents-context.png` (render); see [Agents-context image](#agents-context-image) |
 | Contract tests | `app/tests/test_teammate_documentation_cadence.py` |
 
 Both are checked in paused, like every special agent (Marketing weekly on
@@ -130,3 +131,30 @@ tests. Claude Code has no built-in image tool, so the playbook generates the
 hero with `codex exec` image generation when needed. Blogger does not post
 to social channels; it hands distribution back to Marketing with
 `@Marketing`.
+
+## Agents-context image
+
+`www/public/assets/agents-context.svg` is a 1920×1080 brand image with the
+line "ForkMesh gives your agents context". It draws ForkMesh as a tree of
+light: the logo is the crown, the core nodes are the trunk, and the branches
+reach the desktop app, web dashboard, World, issues and pull requests, agents,
+runners, the iOS and Android apps and the Marketplace. The roots are Git and
+the mirrors, since they keep a repository alive. The forest, moon, leaves and
+fireflies add nature to a neon perspective grid and aurora.
+
+The blog post `forkmesh-gives-your-agents-context` (October 19, 2026) uses it
+as its hero, converted to
+`www/public/assets/blog/features/forkmesh-gives-your-agents-context.webp`.
+
+The SVG loads its fonts from `assets/fonts/`, so render it from where it
+lives. To refresh the PNG after editing the SVG:
+
+```sh
+chrome-headless-shell --no-sandbox --hide-scrollbars --window-size=1920,1080 \
+  --virtual-time-budget=3000 --screenshot=www/public/assets/agents-context.png \
+  "file://$PWD/www/public/assets/agents-context.svg"
+```
+
+Playwright installs `chrome-headless-shell` under `~/.cache/ms-playwright/`.
+Escape `&` as `&amp;` in labels; otherwise the XML does not parse and Chrome
+renders an error banner instead of the image.

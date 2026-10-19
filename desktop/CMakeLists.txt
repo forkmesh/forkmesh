@@ -1097,6 +1097,8 @@ set(FORKMESH_APP_SOURCES
     src/ClaudeStreamSession.cpp
     src/CodexAppServerSession.h
     src/CodexAppServerSession.cpp
+    src/CodexRateLimitsProbe.h
+    src/CodexRateLimitsProbe.cpp
     src/CodexTranscriptStyle.h
     src/Tooltips.h
     src/ClaudeTranscriptView.h
@@ -1274,6 +1276,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
     src/ClaudeTranscriptView.h
+    src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
     src/KebabHeaderView.h
     src/LocalMeshNode.h
@@ -1380,6 +1383,7 @@ set_source_files_properties(
     src/ClaudeStreamSession.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
+    src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
     src/KebabHeaderView.h
     src/LocalMeshNode.h
@@ -2601,6 +2605,23 @@ if(FORKMESH_BUILD_TESTS)
     if(APPLE)
         set_target_properties(forkmesh-codex-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
+
+    qt_add_executable(forkmesh-codex-rate-limits-probe-tests
+        tests/test_codex_rate_limits_probe.cpp
+        src/AgentResources.h
+        src/AgentResources.cpp
+        src/AgentJsonlFramer.h
+        src/AgentJsonlFramer.cpp
+        src/CodexRateLimitsProbe.h
+        src/CodexRateLimitsProbe.cpp
+    )
+    target_link_libraries(forkmesh-codex-rate-limits-probe-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-codex-rate-limits-probe-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-codex-rate-limits-probe-tests
+        COMMAND forkmesh-codex-rate-limits-probe-tests)
 
     # The Claude Code stream transport's start/exit contract: a launch that never
     # starts still has to end, and a turn that cannot be written has to be

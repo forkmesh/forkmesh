@@ -1405,6 +1405,51 @@ QString linkedEmailLine(const QJsonObject &email)
              timestamp(emailSentAt(email)));
 }
 
+QString emailReadingLine(const QJsonObject &email)
+{
+    const auto number = [&email](const char *key) {
+        return qMax(0, email.value(QLatin1String(key)).toInt());
+    };
+    const int opens = number("opens");
+    const int clicks = number("clicks");
+    const int seconds = number("readSeconds");
+    const int depth = number("scrollDepth");
+    const int slides = number("slideCount");
+    const int slide = qMin(slides, number("slideReached"));
+    const QString client = text(email, "mailClient");
+    const QString title = text(email, "slideTitle");
+    const QString dot = QString::fromUtf8(" \xC2\xB7 ");
+    QStringList parts;
+    if (opens > 0)
+        parts << (opens == 1 ? QStringLiteral("1 open") : QStringLiteral("%1 opens").arg(opens));
+    if (clicks > 0)
+        parts << (clicks == 1 ? QStringLiteral("1 click") : QStringLiteral("%1 clicks").arg(clicks));
+    if (seconds > 0)
+        parts << QStringLiteral("read %1").arg(seconds >= 60
+                                                   ? QStringLiteral("%1 min+").arg(seconds / 60)
+                                                   : QStringLiteral("%1s+").arg(seconds));
+    if (slides > 0 && slide > 0)
+        parts << (slide >= slides ? QStringLiteral("read all %1 slides").arg(slides)
+                                  : QStringLiteral("reached slide %1/%2").arg(slide).arg(slides) +
+                                        (title.isEmpty() ? QString() : dot + title));
+    else if (depth > 0)
+        parts << (depth >= 100 ? QStringLiteral("scrolled to the end")
+                               : QStringLiteral("scrolled %1%").arg(depth));
+    if (!client.isEmpty() && text(email, "readingReported") == QLatin1String("no") &&
+        seconds == 0 && opens > 0)
+        parts << QStringLiteral("%1 doesn't report read time").arg(client);
+    else if (!client.isEmpty() && (seconds > 0 || depth > 0))
+        parts << client;
+    return parts.join(dot);
+}
+
+QString linkedEmailReport(const QJsonObject &email)
+{
+    const QString reading = emailReadingLine(email);
+    return reading.isEmpty() ? linkedEmailLine(email)
+                             : linkedEmailLine(email) + QString::fromUtf8(" \xC2\xB7 ") + reading;
+}
+
 // The worker's membership verbs, applied to the table's own copy of a contact
 // so a move shows before the bulk request is answered: `flow`, `stage` and
 // `lastContactedAt` replace, `setViews` replaces the lists (and wins over `views`, which adds),
@@ -3613,7 +3658,7 @@ void CrmFeature::fillContactRows()
                     break;
                 QStringList lines;
                 for (const QJsonObject &email : emails)
-                    lines << linkedEmailLine(email);
+                    lines << (toots ? linkedEmailLine(email) : linkedEmailReport(email));
                 item->setToolTip(lines.join(QLatin1Char('\n')) +
                                  (toots ? QStringLiteral("\n\nClick to open it on Mastodon.")
                                         : QStringLiteral("\n\nClick to open it in the mailbox.")));
@@ -9276,7 +9321,7 @@ void CrmFeature::showContactDetail(const QString &contactId, bool reread)
     if (!deck.isEmpty())
         timeline << htmlLine(deckActivityLine(deck), QUrl(text(deck, "url")));
     for (const QJsonObject &email : std::as_const(linked))
-        timeline << htmlLine(linkedEmailLine(email), QUrl(text(email, "providerUrl")));
+        timeline << htmlLine(linkedEmailReport(email), QUrl(text(email, "providerUrl")));
     if (timeline.isEmpty())
         timeline << htmlLine(QStringLiteral("Nothing has been linked to this record yet."), {});
     auto *activityHeading = new QLabel(QStringLiteral("Activity"));

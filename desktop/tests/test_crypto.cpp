@@ -5758,6 +5758,109 @@ int main(int argc, char *argv[])
             }
         }
 
+        {
+            QTemporaryDir vectorRoot;
+            const QString vectorRepo = vectorRoot.path();
+            const QByteArray vectorPatch = QByteArrayLiteral(
+                "diff --git a/shared.txt b/shared.txt\n"
+                "index 5626abf..e265e82 100644\n"
+                "--- a/shared.txt\n"
+                "+++ b/shared.txt\n"
+                "@@ -1 +1,2 @@\n"
+                " one\n"
+                "+contributor\n");
+            const QByteArray vectorMbox =
+                QByteArrayLiteral(
+                    "From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001\n"
+                    "From: Vector <vector@example.test>\n"
+                    "Date: Tue, 1 Sep 2026 11:00:00 +0000\n"
+                    "Subject: [PATCH] contribution\n"
+                    "\n"
+                    "---\n") +
+                vectorPatch;
+            const bool vectorSetup =
+                vectorRoot.isValid() &&
+                runTestGit(vectorRepo,
+                           {QStringLiteral("init"), QStringLiteral("-q"),
+                            QStringLiteral("-b"), QStringLiteral("main")}) &&
+                runTestGit(vectorRepo,
+                           {QStringLiteral("config"), QStringLiteral("commit.gpgSign"),
+                            QStringLiteral("false")}) &&
+                writeTestFile(vectorRepo + QStringLiteral("/shared.txt"),
+                              QByteArrayLiteral("one\n")) &&
+                commitTestTree(vectorRepo, QStringLiteral("base"),
+                               QStringLiteral("2026-09-01T10:00:00Z"),
+                               QStringLiteral("Vector"),
+                               QStringLiteral("vector@example.test"));
+            check(vectorSetup &&
+                      testGitHead(vectorRepo) ==
+                          QStringLiteral("1d1c53be6d9b05fa8a531653a4a940a6c19da46e"),
+                  "the pull head vector base matches server/pull_head_test.go");
+            if (vectorSetup) {
+                PullStore vectorPulls(vectorRepo, QString(), &identity,
+                                      QStringLiteral("tester"));
+                PullRequest seriesPull;
+                seriesPull.title = QStringLiteral("contribution series");
+                seriesPull.base = QStringLiteral("main");
+                seriesPull.head = QStringLiteral("vector:contribution");
+                seriesPull.author = QStringLiteral("vectorkey");
+                seriesPull.authorName = QStringLiteral("Vector");
+                seriesPull.ts = 1788260400000;
+                seriesPull.patch = QString::fromUtf8(vectorPatch);
+                seriesPull.commits = QString::fromUtf8(vectorMbox);
+                PullRequest patchPull = seriesPull;
+                patchPull.title = QStringLiteral("contribution");
+                patchPull.commits.clear();
+                QString vectorError;
+                const bool stored =
+                    vectorPulls.applyRemotePull(seriesPull, &vectorError);
+                const bool storedPatch =
+                    vectorPulls.applyRemotePull(patchPull, &vectorError);
+                int seriesNumber = 0;
+                int patchNumber = 0;
+                for (const PullRequest &candidate : vectorPulls.loadAll()) {
+                    if (candidate.title == seriesPull.title)
+                        seriesNumber = candidate.number;
+                    if (candidate.title == patchPull.title)
+                        patchNumber = candidate.number;
+                }
+                QByteArray seriesHead;
+                QByteArray patchHead;
+                QByteArray committer;
+                check(stored && seriesNumber > 0 &&
+                          runTestGit(vectorRepo,
+                                     {QStringLiteral("rev-parse"),
+                                      QStringLiteral("refs/pr/%1/head").arg(seriesNumber)},
+                                     &seriesHead) &&
+                          seriesHead.trimmed() ==
+                              QByteArrayLiteral("0231062d32ad46550ba26e9ed7b812c49bb05aaf"),
+                      "a relayed series becomes the same commit the mirror cores derive");
+                check(storedPatch && patchNumber > 0 &&
+                          runTestGit(vectorRepo,
+                                     {QStringLiteral("rev-parse"),
+                                      QStringLiteral("refs/pr/%1/head").arg(patchNumber)},
+                                     &patchHead) &&
+                          patchHead.trimmed() ==
+                              QByteArrayLiteral("5f915f9b52b6a2cfa6fc6e68d01496ab24f3e6fd"),
+                      "a relayed bare patch becomes the same commit the mirror cores derive");
+                check(runTestGit(vectorRepo,
+                                 {QStringLiteral("show"), QStringLiteral("-s"),
+                                  QStringLiteral("--format=%cn <%ce>"),
+                                  QString::fromUtf8(seriesHead.trimmed())},
+                                 &committer) &&
+                          committer.trimmed() ==
+                              QByteArrayLiteral("ForkMesh <pulls@users.noreply.forkmesh.com>"),
+                      "a replayed pull head carries the fixed pull committer");
+                bool vectorClean = false;
+                QStringList vectorConflicts;
+                check(seriesNumber > 0 &&
+                          vectorPulls.checkMergeable(seriesNumber, &vectorClean,
+                                                     &vectorConflicts, nullptr, false) &&
+                          vectorClean,
+                      "a relayed pull is checked by merging its head commit");
+            }
+        }
+
         // --- PullStore conversation round-trip ---------------------------
         PullStore pulls(tmp.path(), QString(), &identity, "tester");
         const int pn = pulls.createPull(

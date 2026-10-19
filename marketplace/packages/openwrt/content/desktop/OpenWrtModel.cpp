@@ -858,6 +858,11 @@ QString fstabFromDetect(const QString &output)
     return QStringLiteral("config global\n\toption anon_swap '0'\n\toption anon_mount '0'\n\toption auto_swap '1'\n\toption auto_mount '1'\n\toption delay_root '5'\n\toption check_fs '0'\n");
 }
 
+QString ksmbdDefaultConfig()
+{
+    return QStringLiteral("config globals\n\toption workgroup 'WORKGROUP'\n\toption description 'Ksmbd on OpenWrt'\n\toption interface 'lan'\n");
+}
+
 QStringList outputTail(const QString &text, int count)
 {
     QStringList lines;
