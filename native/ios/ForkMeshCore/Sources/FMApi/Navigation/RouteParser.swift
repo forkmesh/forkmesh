@@ -270,6 +270,7 @@ public enum RouteParser {
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil
         case "usage": return tail.isEmpty ? [.usage] : nil
         case "rss", "rss-reader": return tail.isEmpty ? [.rssReader] : nil
+        case "instance-feed": return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
         case "secure-drive": return tail.isEmpty ? [.secureDrive] : nil
         case "spider-room": return tail.isEmpty ? [.spiderRoom] : nil
         case "workflows": return tail.isEmpty ? [.workflows] : nil
@@ -281,6 +282,11 @@ public enum RouteParser {
         case "inbox", "pings", "notifications": return [.inbox(.all)]
         default: return nil
         }
+    }
+
+    private static func instanceFeedPost(_ value: String?) -> String? {
+        guard let value, value.count == 32, value.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { return nil }
+        return value
     }
 
     private static func customRoutes(_ all: [String], query: [String: String], me: String) -> [Route]? {
@@ -311,6 +317,8 @@ public enum RouteParser {
             return [.inbox(InboxFilter(rawValue: tail.first ?? "") ?? .all)]
         case "rss-reader":
             return tail.isEmpty ? [.rssReader] : nil
+        case "instance-feed":
+            return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
         case "secure-drive":
             return tail.isEmpty ? [.secureDrive] : nil
         case "spider-room":

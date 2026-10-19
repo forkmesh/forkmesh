@@ -13,6 +13,7 @@ final class PluginMenuTests: XCTestCase {
         XCTAssertEqual(PluginMenu.packageId(for: .videoMixDjStudio), "video-mix-dj-studio")
         XCTAssertEqual(PluginMenu.packageId(for: .appStoreStatus), "app-store-status")
         XCTAssertEqual(PluginMenu.packageId(for: .usage), "usage")
+        XCTAssertEqual(PluginMenu.packageId(for: .instanceFeed(post: nil)), "instance-feed")
         XCTAssertEqual(PluginMenu.packageId(for: .marketing(section: "email")), "marketing")
         XCTAssertEqual(PluginMenu.packageId(for: .ledger(section: nil)), "ledger")
         XCTAssertEqual(PluginMenu.packageId(for: .calendar(date: nil, mode: .month)), "calendar")

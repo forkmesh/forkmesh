@@ -154,6 +154,7 @@ object RouteCatalog {
         Route.Kind.AppStoreStatus -> "App Store Status"
         Route.Kind.Usage -> "Usage"
         Route.Kind.RssReader -> "RSS Reader"
+        Route.Kind.InstanceFeed -> "Instance Feed"
         Route.Kind.SecureDrive -> "Secure Drive"
         Route.Kind.Files -> "Files"
         Route.Kind.Workflows -> "Workflows"
@@ -228,6 +229,7 @@ object RouteCatalog {
         Route.Kind.AppStoreStatus -> "phone_iphone"
         Route.Kind.Usage -> "speed"
         Route.Kind.RssReader -> "feed"
+        Route.Kind.InstanceFeed -> "dynamic_feed"
         Route.Kind.SecureDrive -> "lock"
         Route.Kind.Files -> "folder"
         Route.Kind.Workflows -> "account_tree"
@@ -331,6 +333,7 @@ object HubCatalog {
         HubItem.destination(Route.OpenWrtRouter),
         HubItem.destination(Route.FaceChanger),
         HubItem.destination(Route.RssReader),
+        HubItem.destination(Route.InstanceFeed(null), needsRegistration = true),
         HubItem.destination(Route.SecureDrive),
         HubItem.destination(Route.Files),
         HubItem.destination(Route.LocalAI, needsRegistration = true),

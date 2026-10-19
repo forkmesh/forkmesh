@@ -1,5 +1,12 @@
 {
   "schemaVersion": 1,
-  "sources": ["InstanceFeedLink.cpp"],
-  "mocHeaders": []
+  "sources": ["InstanceFeedFeature.h", "InstanceFeedFeature.cpp"],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_instance_feed_feature.cpp",
+    "InstanceFeedFeature.h",
+    "InstanceFeedFeature.cpp"
+  ],
+  "testLibraries": ["Qt6::Widgets"],
+  "testHostSources": ["NativePackageExtension.h", "NativePackageExtension.cpp"]
 }

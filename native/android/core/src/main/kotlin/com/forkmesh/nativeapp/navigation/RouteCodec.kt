@@ -76,6 +76,7 @@ object RouteCodec {
             is Route.Analytics -> put("section", route.section)
             is Route.Ledger -> put("section", route.section)
             is Route.Vault -> put("section", route.section)
+            is Route.InstanceFeed -> put("post", route.post)
             is Route.Cove -> put("id", route.id)
             is Route.Admin -> put("section", route.section)
             is Route.Settings -> put("section", route.section)
@@ -182,6 +183,7 @@ object RouteCodec {
             Route.Kind.AppStoreStatus -> Route.AppStoreStatus
             Route.Kind.Usage -> Route.Usage
             Route.Kind.RssReader -> Route.RssReader
+            Route.Kind.InstanceFeed -> Route.InstanceFeed(s("post"))
             Route.Kind.SecureDrive -> Route.SecureDrive
             Route.Kind.Files -> Route.Files
             Route.Kind.Workflows -> Route.Workflows

@@ -58,6 +58,19 @@ class PackageGateTest {
         expect(!removed.showsRoute(Route.Usage) && Route.Kind.Usage.raw in removed.hubItems)
     }
 
+    fun testInstanceFeedIsANativePackageDestinationBehindTheGate() {
+        assertEq(
+            PackagePhoneSurface.Native("instanceFeed"),
+            MarketPackage(id = "instance-feed", name = "Instance Feed", webRoute = "/dashboard/instance-feed").phoneSurface,
+        )
+        assertEq("instance-feed", PackageGate.ROUTE_KINDS[Route.Kind.InstanceFeed])
+        assertEq("instance-feed", PackageGate.HUB_ITEMS[Route.Kind.InstanceFeed.raw])
+        expect("instance-feed" in PackageGate.GATED)
+        assertEq("instance-feed", PackageMenu.packageFor(Route.Kind.InstanceFeed))
+        val removed = PackageSurfaces(setOf("instance-feed"))
+        expect(!removed.showsRoute(Route.InstanceFeed(null)) && Route.Kind.InstanceFeed.raw in removed.hubItems)
+    }
+
     fun testStarterPacksHoldTheirPackages() {
         assertEq(listOf(StarterPack.MINIMAL, StarterPack.STANDARD, StarterPack.EVERYTHING), StarterPack.values().toList())
         assertEq(listOf("minimal", "standard", "everything"), StarterPack.values().map { it.id })

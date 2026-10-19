@@ -13,7 +13,8 @@ is the separate `feed` package
 | --- | --- |
 | `content/worker/instance_feed.py` | Worker API at `/api/instance-feed`, schema, account data hooks. |
 | `content/web/view.html`, `content/web/page.js` | Dashboard page `/dashboard/instance-feed` (page id `instance-feed`). |
-| `content/desktop/InstanceFeedLink.cpp` | Desktop rail link (`comment` icon) that opens the dashboard route. |
+| `content/desktop/InstanceFeedFeature.{h,cpp}` | Native desktop page (`builtin:instance-feed`, `comment` rail icon). |
+| `content/desktop/tests/test_instance_feed_feature.cpp` | Qt test for the desktop page, run against a stub host. |
 | `tests/test_instance_feed.py` | Worker suite, including install and uninstall through `plugin_data`. |
 
 ## API
@@ -69,3 +70,26 @@ work. It uses only utilities already present in the prebuilt
 drops classes other pages rely on, so check before adding new ones. Colours
 follow `theme.json`: `Post` is the page's one `cta` button, an active boost
 is `accent` and an active favourite is `attention`.
+
+## Desktop
+
+`InstanceFeedFeature` is a native Qt page, not a link to the dashboard. It
+calls the Worker through `NativePackageHost::request` with the request proof
+`forkmesh-instance-feed-request-v1`, so the host signs every call with the
+desktop's session. It has the same views as the web page (timeline, thread,
+profile), the same compose box (Ctrl+Enter posts) and the same actions, and
+it styles itself with the app stylesheet's existing object names
+(`issueAvatar`, `issueDivider`, `issueComposerSm`, `ghostButton`,
+`primaryButton`). Rich-text links use `fm-author:<name>` and
+`fm-thread:<id>` internally; `https` links open in the browser.
+
+A native page may only call its own API prefix and organization lifecycle
+paths, so it cannot install the package itself. Installing from the desktop
+Market already pushes the install to the account
+(`MainWindow::pushAccountPackageChange`), so an account without the package
+only sees a note pointing to the Market. `openRailTile("post-<id>")` and
+`openRailTile("author-<name>")` open a thread or a profile. The Worker's
+notification links are dashboard paths (`/dashboard/instance-feed?post=<id>`),
+which the desktop's notification router does not map to native pages yet, so
+clicking one raises the window without opening the post.
+

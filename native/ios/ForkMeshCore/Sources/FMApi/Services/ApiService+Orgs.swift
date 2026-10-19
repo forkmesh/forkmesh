@@ -47,6 +47,10 @@ extension ApiService {
         try await accountApiCall(method, "/api/water\(suffix)", body)
     }
 
+    public func instanceFeedApi(_ method: String, _ suffix: String, _ body: JSONObject? = nil) async throws -> JSONObject {
+        try await accountApiCall(method, "/api/instance-feed\(suffix)", body)
+    }
+
     public func sleepApi(_ method: String, _ suffix: String, _ body: JSONObject? = nil) async throws -> JSONObject {
         try await accountApiCall(method, "/api/sleep\(suffix)", body)
     }
