@@ -2144,9 +2144,11 @@
   }
 
   function sessionFromAccountPayload(body, base = {}) {
+    rememberUserNameCase(body.nodeName || body.name || base.nodeName || "", body.nameCase);
     const nextSession = {
       ...(base || {}),
       nodeName: body.nodeName || body.name || base.nodeName || "",
+      nameCase: body.nameCase ?? base.nameCase ?? "",
       email: body.email ?? base.email ?? "",
       status: body.status || base.status || "active",
       pubkey: body.pubkey || base.pubkey || "",

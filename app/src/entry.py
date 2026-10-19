@@ -1195,10 +1195,14 @@ DASHBOARD_PAGE_ASSETS = _static_routes.export("DASHBOARD_PAGE_ASSETS")
 DASHBOARD_REPO_ASSET = "dashboard/repo.html"
 dashboard_section_redirect = _static_routes.export("dashboard_section_redirect")
 legacy_page_redirect = _static_routes.export("legacy_page_redirect")
+profile_page_redirect = _static_routes.export("profile_page_redirect")
+account_page_name = _static_routes.export("account_page_name")
 repo_alias_redirect = _static_routes.export("repo_alias_redirect")
 external_site_route = _static_routes.export("external_site_route")
 external_site_delivery = _static_routes.export("external_site_delivery")
 site_document_asset_path = _static_routes.export("site_document_asset_path")
+world_asset_path = _static_routes.export("world_asset_path")
+world_asset_cache_control = _static_routes.export("world_asset_cache_control")
 looks_like_repo_route = _static_routes.export("looks_like_repo_route")
 dashboard_repo_redirect = _static_routes.export("dashboard_repo_redirect")
 
@@ -1340,6 +1344,7 @@ mail_providers = _LazyModule("mail_providers")
 instance_features = _LazyModule("instance_features")
 instance_pages = _LazyModule("instance_pages")
 instance_legal = _LazyModule("instance_legal")
+instance_registry = _LazyModule("instance_registry")
 instance_theme = _LazyModule("instance_theme")
 mail_tracking = _LazyModule("mail_tracking")
 marketing_email = _LazyModule("marketing_email")
@@ -6367,7 +6372,9 @@ _probe_ban = _LazyModule("probe_ban")
 _probe_ban_local = {}
 _instance_directory_admin = _LazyModule("instance_directory_admin")
 _server_update_admin = _LazyModule("server_update_admin")
+_instance_console = _LazyModule("instance_console")
 repo_short_urls = _LazyModule("repo_short_urls")
+account_names = _LazyModule("account_names")
 repo_projects = _LazyModule("repo_projects")
 _ids_console = _LazyModule("ids_console")
 # The hackathon growth layer (app/src/hackathon.py is its pure policy half).
@@ -13486,7 +13493,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "bd23d448215d983ffe1f306a258fa0c4918fb74df8b099c19f7632986f37a6b5"
+    "b757172124ea52f42581b43e267268ba4e227b53eb8dffa9b561f308dfb3c1b9"
 )
 
 
@@ -16832,7 +16839,8 @@ async def repo_about_handler(env, request, owner, repo):
             not owner_key_authed
             and not await _repo_admin_allowed(env, actor, owner, repo)):
         return json_response({"error": "not_authorized"}, status=403)
-    if not await _owner_pubkey(env, owner):
+    if not await _owner_pubkey(env, owner) and not (
+            await _branch_protection.settings_only(env, data, owner, repo)):
         return json_response({"error": "account_required"}, status=403)
 
     # Absent = unchanged, so a settings-only save (Qt fediverse switches)
@@ -16977,6 +16985,18 @@ async def repo_about_handler(env, request, owner, repo):
         for key in REPO_FEATURE_DEFAULTS:
             if key in feature_data:
                 features[key] = bool(feature_data.get(key))
+        guarded = [key for key in _branch_protection.CONFIG_KEYS
+                   if features.get(key) != current_features.get(key)]
+        if guarded and not await _branch_protection.may_configure(
+                env, actor, owner, repo):
+            return json_response(
+                {"error": "not_authorized", "features": guarded},
+                status=403)
+        if guarded:
+            await _audit_sensitive_action(
+                env, actor, "repository.protection_settings", "repository",
+                str(owner).lower() + "/" + str(repo),
+                "success", {key: features.get(key) for key in guarded})
         if features != current_features:
             await d1_run(
                 env,
@@ -19371,6 +19391,7 @@ async def _account_public_payload(
     payload = {
         "ok": True,
         "nodeName": name,
+        "nameCase": account_names.display_name(rec, name),
         "email": rec.get("email", ""),
         "status": rec.get("status", "active"),
         "pubkey": rec.get("pubkey", ""),
@@ -21528,6 +21549,8 @@ async def _account_signup(env, request):
         "pass_salt": salt,
         "pass_hash": phash,
     })
+    account_names.apply_case(rec, account_names.clean_case(
+        name, clean_string(data.get("nodeName", ""), MAX_NODE_NAME)))
     rec["status"] = "active"
     rec["email_verified"] = bool(rec.get("email_verified", False))
     # A reservation already carries created_at, but it is not a joined user
@@ -22227,6 +22250,7 @@ async def _account_profile(env, request):
         "profileLocation", "profileTimezone", "profilePrivate",
         "followersPublic", "publicEmail", "mastodon",
         "profileLinks", "nodeName", "email", "identifier", "sessionToken",
+        "nameCase",
         # The dashboard always sends a (usually empty) `password` field even on
         # pages with no password input. Whitelist it so a session-authed
         # public-profile save doesn't get shunted into the credentials branch
@@ -22382,6 +22406,15 @@ async def _account_profile(env, request):
                 rec["profile_timezone"] = timezone
             else:
                 rec.pop("profile_timezone", None)
+            changed = True
+
+    if "nameCase" in data:
+        case_changed, case_error = account_names.apply_case(
+            rec, clean_string(data.get("nameCase", ""), MAX_NODE_NAME))
+        if case_error:
+            return json_response({"error": case_error}, status=400)
+        if case_changed:
+            account_names.forget(rec.get("name", ""))
             changed = True
 
     if "profilePrivate" in data:
@@ -29201,14 +29234,21 @@ async def org_members_handler(env, request, org):
         hidden = (await hidden_members(
             env, org_name, [str(r.get("name") or "") for r in rows or []])
             if callable(hidden_members) else set())
+        shown_rows = [r for r in rows or []
+                      if str(r.get("name") or "") not in hidden]
+        name_cases = {}
+        for r in shown_rows:
+            member_name = str(r.get("name") or "")
+            name_cases[member_name] = (
+                await _account_name_case(env, member_name) or member_name)
         return json_response({"ok": True, "visibility": access["offices"],
                               "members": [
             {"name": str(r.get("name") or ""),
+             "nameCase": name_cases.get(str(r.get("name") or ""), ""),
              "role": str(r.get("role") or ""),
              "since": int(r.get("created_at") or 0),
              "teams": teams_by_member.get(str(r.get("name") or ""), [])}
-            for r in rows or []
-            if str(r.get("name") or "") not in hidden]},
+            for r in shown_rows]},
             cache_control="no-store")
     if method not in ("POST", "DELETE"):
         return json_response({"error": "method_not_allowed"}, status=405)
@@ -31237,9 +31277,14 @@ async def account_badges_handler(env, request, raw_name):
     if not valid_node_name(name):
         return json_response({"error": "invalid_account"}, status=400)
     name_bi, rec = await _account_row(env, name)
-    if not rec:
-        return json_response({"error": "not_found"}, status=404)
     method = method_name(request)
+    if not rec:
+        if method == "GET" and (await _org_row(env, name))[1]:
+            return json_response(
+                {"ok": True, "account": name, "kind": "organization",
+                 "badges": [], "progress": []},
+                cache_seconds=30)
+        return json_response({"error": "not_found"}, status=404)
     if method == "GET":
         badges = await _account_badges(env, name_bi)
         earned = {badge["slug"] for badge in badges}
@@ -34129,6 +34174,33 @@ async def _account_central_fund(env, request):
     return json_response(payload)
 
 
+async def _account_name_case(env, name):
+    now = int(Date.now())
+    hit = account_names.cached(name, now)
+    if hit is not None:
+        return hit
+    value = ""
+    try:
+        rec = await _account_identity_rec_by_bi(
+            env, await blind_index(env, name))
+        if account_names.publicly_named(rec):
+            value = account_names.display_name(rec, name)
+    except Exception:
+        return ""
+    account_names.remember(name, value, now)
+    return value
+
+
+async def _account_name_cases(env, values):
+    names = {}
+    for name in account_names.batch_names(values):
+        value = await _account_name_case(env, name)
+        if value:
+            names[name] = value
+    return json_response({"ok": True, "names": names},
+                         cache_control="public, max-age=60")
+
+
 async def accounts_handler(env, request):
     await ensure_schema(env)
     url = urlparse(request.url)
@@ -34309,6 +34381,10 @@ async def accounts_handler(env, request):
     if contributions_match and method == "GET":
         return await _contribution_profile_api(
             env, request, contributions_match.group(1))
+    if url.path == "/api/accounts/name-case" and method == "GET":
+        query = parse_qs(urlparse(request.url).query)
+        if "names" in query:
+            return await _account_name_cases(env, query.get("names", []))
     follow_match = ACCOUNT_FOLLOW_RE.match(url.path)
     if follow_match and method in ("POST", "DELETE"):
         return await _account_follow(env, request, follow_match.group(1), method)
@@ -34418,6 +34494,7 @@ async def accounts_handler(env, request):
                           int(Date.now()) - ACCOUNT_PRESENCE_STALE_MS)
         payload = {"ok": True, "exists": True, "available": not taken,
                    "name": rec.get("name", name), "status": rec.get("status", ""),
+                   "nameCase": account_names.display_name(rec, name),
                    "pubkey": rec.get("pubkey", ""),
                    "isAdmin": await _is_admin(env, rec.get("name", name)),
                    "emailVerified": bool(rec.get("email_verified")),
@@ -34697,7 +34774,8 @@ AP_REPO_SETTING_DEFAULTS = {
     "acceptComments": True,  # remote replies ingested as federated comments
 }
 
-REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True}
+REPO_FEATURE_DEFAULTS = {"issues": True, "pulls": True, "discussions": True,
+                         "actions": True, "protectDefaultBranch": False}
 
 
 async def _repo_features_bi(env, owner, repo):
@@ -40366,6 +40444,24 @@ async def issues_handler(env, request, owner, repo):
     return json_response({"error": "method_not_allowed"}, status=405)
 
 
+async def _record_pull_review(env, request, data, owner, repo, number, event):
+    try:
+        token, _cookie = _request_account_session_token(
+            request, data if isinstance(data, dict) else {})
+        if str(token or "").startswith("fmat_"):
+            return
+        _, reviewer_record = await _account_session_record(env, request, data)
+        reviewer = clean_string(
+            (reviewer_record or {}).get("name", ""), MAX_NODE_NAME
+        ).strip().lower()
+        if reviewer:
+            await _branch_protection.record_review(
+                env, owner, repo, number, reviewer,
+                str(event.get("state") or ""))
+    except Exception:
+        pass
+
+
 async def _fill_signer_author_name(env, record):
     if not isinstance(record, dict):
         return
@@ -40532,6 +40628,9 @@ async def pulls_handler(env, request, owner, repo):
             await _record_contributor(
                 env, event.get("author", ""), "pulls",
                 event.get("authorName", ""))
+            if event.get("type") == "review":
+                await _record_pull_review(
+                    env, request, data, owner, repo, number, event)
             actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
             await notify_pending_inbox(env, owner, repo, "pull", actor, "", number,
                                        text=event.get("body", ""))
@@ -50856,6 +50955,7 @@ async def _repo_merge_jobs_make_room(env, repo_bi, now):
 
 repository_pull_merge_handler = _route_handlers.export("repository_pull_merge_handler")
 _pull_rules = _LazyModule("pull_rules")
+_branch_protection = _LazyModule("branch_protection")
 repo_pull_rules_handler = _pull_rules.export("repo_pull_rules_handler")
 org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")
@@ -52027,6 +52127,14 @@ async def _https_mirror_push_send(
     if tag_moves:
         query = {"tagMoves": " ".join(
             ref + ":" + target for ref, target in sorted(tag_moves.items()))}
+    if method == "POST":
+        protected, protection_problem = (
+            await _branch_protection.push_protection(
+                env, alias_owner or owner, repo))
+        if protection_problem:
+            return None, None
+        if protected:
+            query = dict(query or {}, protect=" ".join(protected))
     for endpoint in candidates:
         if body_stream is not None and endpoint is not candidates[0]:
             # A streamed pack is consumed by its first upstream attempt; the
@@ -52244,6 +52352,8 @@ def _cron_due_phases(minute_slot):
         phases.append("attribution-maintenance")
     elif hourly == 57:
         phases.append("badge-sweep")
+    elif hourly == 32:
+        phases.append("instance-announce")
     # Once a day, copy the cumulative per-repository clone counters into a
     # dated snapshot; the acquisition dashboard reads per-day clones as the
     # delta between snapshots instead of touching the clone path itself.
@@ -52363,6 +52473,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _distribute_central_fund(env)
     if phase == "instance-health":
         return await _instance_directory_admin.health_cron(env)
+    if phase == "instance-announce":
+        return await _instance_console.announce_cron(env)
     if phase == "chat-prune":
         await chat_history_prune_expired(env)
         return await chat_direct_media_api.sweep(

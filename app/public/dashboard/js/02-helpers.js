@@ -59,6 +59,98 @@
     return `${publicSiteOrigin()}/`;
   }
 
+  const USER_NAME_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+  const USER_NAME_BATCH = 50;
+
+  function userNameKey(name) {
+    const key = String(name || "").trim().replace(/^@/, "").toLowerCase();
+    return USER_NAME_RE.test(key) ? key : "";
+  }
+
+  function rememberUserNameCase(name, nameCase) {
+    const key = userNameKey(name);
+    const text = String(nameCase || "").trim();
+    if (!key || text.toLowerCase() !== key) return false;
+    if (!state.userNameCases) state.userNameCases = new Map();
+    const changed = state.userNameCases.get(key) !== text;
+    state.userNameCases.set(key, text);
+    return changed;
+  }
+
+  function userDisplayName(name) {
+    const text = String(name || "").trim();
+    const key = userNameKey(text);
+    if (!key) return text;
+    const known = state.userNameCases?.get(key);
+    if (known) return text.startsWith("@") ? `@${known}` : known;
+    return text;
+  }
+
+  function userNameHtml(name) {
+    const text = String(name || "").trim();
+    const key = userNameKey(text);
+    if (!key) return escapeHtml(text);
+    return `<span data-user-name="${escapeHtml(key)}">${escapeHtml(userDisplayName(text))}</span>`;
+  }
+
+  async function loadUserNameCases(names) {
+    if (!state.userNameCasesAsked) state.userNameCasesAsked = new Set();
+    const wanted = [...new Set((names || []).map(userNameKey).filter(Boolean))]
+      .filter((key) => !state.userNameCasesAsked.has(key) && !state.userNameCases?.has(key));
+    let changed = false;
+    for (let start = 0; start < wanted.length; start += USER_NAME_BATCH) {
+      const batch = wanted.slice(start, start + USER_NAME_BATCH);
+      batch.forEach((key) => state.userNameCasesAsked.add(key));
+      try {
+        const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+          credentials: "omit",
+          headers: { accept: "application/json" },
+        });
+        const data = response.ok ? await response.json() : null;
+        for (const [key, value] of Object.entries(data?.names || {})) {
+          if (rememberUserNameCase(key, value)) changed = true;
+        }
+      } catch (_) {}
+    }
+    return changed;
+  }
+
+  function applyUserNameCases(root) {
+    const scope = root || document;
+    const nodes = scope.querySelectorAll ? [...scope.querySelectorAll("[data-user-name]")] : [];
+    for (const node of nodes) {
+      const key = node.getAttribute("data-user-name");
+      const known = state.userNameCases?.get(key);
+      if (!known) continue;
+      const text = String(node.textContent || "");
+      const at = text.startsWith("@") ? "@" : "";
+      if (text.slice(at.length).toLowerCase() === key && text !== `${at}${known}`) {
+        node.textContent = `${at}${known}`;
+      }
+    }
+    return nodes;
+  }
+
+  async function hydrateUserNames(root) {
+    const nodes = applyUserNameCases(root);
+    const keys = nodes.map((node) => node.getAttribute("data-user-name"));
+    if (await loadUserNameCases(keys)) applyUserNameCases(root);
+  }
+
+  function watchUserNames() {
+    if (state.userNameWatch || typeof MutationObserver === "undefined" || !document.body) return;
+    let timer = 0;
+    state.userNameWatch = new MutationObserver(() => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = 0;
+        void hydrateUserNames(document);
+      }, 50);
+    });
+    state.userNameWatch.observe(document.body, { childList: true, subtree: true });
+    void hydrateUserNames(document);
+  }
+
   function publicProfileUrl(name, suffix = "") {
     const handle = String(name || "").trim().toLowerCase();
     return handle
@@ -222,6 +314,7 @@
         }
       : nextSession;
     state.session = storedSession;
+    if (storedSession?.nodeName || storedSession?.email) document.documentElement?.removeAttribute?.("data-guest");
     try {
       localStorage.setItem("forkmesh.session", JSON.stringify(storedSession));
       document.cookie = "forkmesh_session=1; Path=/; Max-Age=2592000; SameSite=Lax"
@@ -1739,6 +1832,10 @@
 
   // repoLinkUrl, not repoPathUrl: a record link addresses the repository the
   // page names (an organization alias), never the mirror publishing the bytes.
+  function repoCommitUrl(repo, hash) {
+    return `${repoLinkUrl(repo)}/commits/${encodeURIComponent(String(hash || ""))}`;
+  }
+
   function repoRecordUrl(repo, kind, number, section) {
     const url = `${repoLinkUrl(repo)}/${kind}/${number}`;
     // Only pulls have sections; an issue/discussion URL never grows a suffix.

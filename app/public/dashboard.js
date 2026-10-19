@@ -435,6 +435,98 @@
     return `${publicSiteOrigin()}/`;
   }
 
+  const USER_NAME_RE = /^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
+  const USER_NAME_BATCH = 50;
+
+  function userNameKey(name) {
+    const key = String(name || "").trim().replace(/^@/, "").toLowerCase();
+    return USER_NAME_RE.test(key) ? key : "";
+  }
+
+  function rememberUserNameCase(name, nameCase) {
+    const key = userNameKey(name);
+    const text = String(nameCase || "").trim();
+    if (!key || text.toLowerCase() !== key) return false;
+    if (!state.userNameCases) state.userNameCases = new Map();
+    const changed = state.userNameCases.get(key) !== text;
+    state.userNameCases.set(key, text);
+    return changed;
+  }
+
+  function userDisplayName(name) {
+    const text = String(name || "").trim();
+    const key = userNameKey(text);
+    if (!key) return text;
+    const known = state.userNameCases?.get(key);
+    if (known) return text.startsWith("@") ? `@${known}` : known;
+    return text;
+  }
+
+  function userNameHtml(name) {
+    const text = String(name || "").trim();
+    const key = userNameKey(text);
+    if (!key) return escapeHtml(text);
+    return `<span data-user-name="${escapeHtml(key)}">${escapeHtml(userDisplayName(text))}</span>`;
+  }
+
+  async function loadUserNameCases(names) {
+    if (!state.userNameCasesAsked) state.userNameCasesAsked = new Set();
+    const wanted = [...new Set((names || []).map(userNameKey).filter(Boolean))]
+      .filter((key) => !state.userNameCasesAsked.has(key) && !state.userNameCases?.has(key));
+    let changed = false;
+    for (let start = 0; start < wanted.length; start += USER_NAME_BATCH) {
+      const batch = wanted.slice(start, start + USER_NAME_BATCH);
+      batch.forEach((key) => state.userNameCasesAsked.add(key));
+      try {
+        const response = await fetch(`/api/accounts/name-case?names=${encodeURIComponent(batch.join(","))}`, {
+          credentials: "omit",
+          headers: { accept: "application/json" },
+        });
+        const data = response.ok ? await response.json() : null;
+        for (const [key, value] of Object.entries(data?.names || {})) {
+          if (rememberUserNameCase(key, value)) changed = true;
+        }
+      } catch (_) {}
+    }
+    return changed;
+  }
+
+  function applyUserNameCases(root) {
+    const scope = root || document;
+    const nodes = scope.querySelectorAll ? [...scope.querySelectorAll("[data-user-name]")] : [];
+    for (const node of nodes) {
+      const key = node.getAttribute("data-user-name");
+      const known = state.userNameCases?.get(key);
+      if (!known) continue;
+      const text = String(node.textContent || "");
+      const at = text.startsWith("@") ? "@" : "";
+      if (text.slice(at.length).toLowerCase() === key && text !== `${at}${known}`) {
+        node.textContent = `${at}${known}`;
+      }
+    }
+    return nodes;
+  }
+
+  async function hydrateUserNames(root) {
+    const nodes = applyUserNameCases(root);
+    const keys = nodes.map((node) => node.getAttribute("data-user-name"));
+    if (await loadUserNameCases(keys)) applyUserNameCases(root);
+  }
+
+  function watchUserNames() {
+    if (state.userNameWatch || typeof MutationObserver === "undefined" || !document.body) return;
+    let timer = 0;
+    state.userNameWatch = new MutationObserver(() => {
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = 0;
+        void hydrateUserNames(document);
+      }, 50);
+    });
+    state.userNameWatch.observe(document.body, { childList: true, subtree: true });
+    void hydrateUserNames(document);
+  }
+
   function publicProfileUrl(name, suffix = "") {
     const handle = String(name || "").trim().toLowerCase();
     return handle
@@ -598,6 +690,7 @@
         }
       : nextSession;
     state.session = storedSession;
+    if (storedSession?.nodeName || storedSession?.email) document.documentElement?.removeAttribute?.("data-guest");
     try {
       localStorage.setItem("forkmesh.session", JSON.stringify(storedSession));
       document.cookie = "forkmesh_session=1; Path=/; Max-Age=2592000; SameSite=Lax"
@@ -2115,6 +2208,10 @@
 
   // repoLinkUrl, not repoPathUrl: a record link addresses the repository the
   // page names (an organization alias), never the mirror publishing the bytes.
+  function repoCommitUrl(repo, hash) {
+    return `${repoLinkUrl(repo)}/commits/${encodeURIComponent(String(hash || ""))}`;
+  }
+
   function repoRecordUrl(repo, kind, number, section) {
     const url = `${repoLinkUrl(repo)}/${kind}/${number}`;
     // Only pulls have sections; an issue/discussion URL never grows a suffix.
@@ -4697,9 +4794,11 @@
   }
 
   function sessionFromAccountPayload(body, base = {}) {
+    rememberUserNameCase(body.nodeName || body.name || base.nodeName || "", body.nameCase);
     const nextSession = {
       ...(base || {}),
       nodeName: body.nodeName || body.name || base.nodeName || "",
+      nameCase: body.nameCase ?? base.nameCase ?? "",
       email: body.email ?? base.email ?? "",
       status: body.status || base.status || "active",
       pubkey: body.pubkey || base.pubkey || "",
@@ -6582,6 +6681,7 @@
 
     const memberRows = members.map((member) => {
       const memberName = escapeHtml(member.name || "");
+      rememberUserNameCase(member.name, member.nameCase);
       const controls = canManage
         ? '<select data-org-member-role="' + memberName + '" class="' + ORG_INPUT_CLASS + ' h-8 py-0">' +
             orgOptionTags(ORG_ROLE_OPTIONS, member.role) + "</select>" +
@@ -6591,7 +6691,7 @@
         : orgRoleBadge(member.role);
       return '<div class="rounded-md border border-border bg-card px-3 py-2">' +
         '<div class="flex items-center gap-2">' +
-          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + memberName + "</span>" +
+          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") + "</span>" +
           controls +
         "</div>" +
         orgMemberFloorGroups(member, canManage) +
@@ -7192,7 +7292,7 @@
     const rows = teamMembers.map((member) => {
       const memberName = escapeHtml(member.name || "");
       return '<div class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">' +
-        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + memberName +
+        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") +
           (member.external
             ? ' <small class="ml-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">outside collaborator</small>'
             : "") + "</span>" +
@@ -7336,7 +7436,7 @@
     if (repoAvailability) repoAvailability.textContent = "";
     if (section === "profile-overview" || section === "profile-repositories") {
       const renderedName = ($("[data-profile-page-node-name]")?.textContent || "").trim();
-      headerContext.textContent = state.session?.nodeName || state.session?.email || renderedName || "Profile";
+      headerContext.textContent = (state.session?.nodeName ? userDisplayName(state.session.nodeName) : "") || state.session?.email || renderedName || "Profile";
       return;
     }
     if (section === "profile") {
@@ -7412,7 +7512,7 @@
     profile.nodeName = profile.nodeName || name;
     // Never show a mailbox on someone else's page — the handle is the
     // public identity here.
-    profile.email = "@" + profile.nodeName;
+    profile.email = "@" + userDisplayName(profile.nodeName);
     profile.isFollowing = Boolean(body?.social?.isFollowing);
     state.publicProfile = profile;
     renderProfilePage(profile);
@@ -7610,7 +7710,7 @@
     }
     // Owner-only affordances become a Follow button (or disappear).
     $$("[data-profile-about-edit]").forEach((el) => el.classList.add("hidden"));
-    $$("[data-profile-about-owner]").forEach((el) => { el.textContent = name; });
+    $$("[data-profile-about-owner]").forEach((el) => { el.textContent = userDisplayName(name); });
     $$("[data-profile-sidebar-slot] a[href='/dashboard/settings']").forEach((edit) => {
       const wrap = edit.parentElement;
       edit.remove();
@@ -7830,7 +7930,7 @@
   });
 
   function renderProfile(session) {
-    const name = session?.nodeName || session?.email || "My Profile";
+    const name = session?.nodeName ? userDisplayName(session.nodeName) : (session?.email || "My Profile");
     const nameEl = $("[data-dashboard-profile-name]");
     const statusEl = $("[data-dashboard-profile-status]");
     const avatar = $("[data-dashboard-profile-avatar]");
@@ -8197,7 +8297,7 @@
     const owner = $("[data-profile-about-owner]");
     const label = $("[data-profile-about-label]");
     const body = $("[data-profile-about-body]");
-    const name = String(session?.nodeName || session?.email || "forkmesh").trim() || "forkmesh";
+    const name = userDisplayName(String(session?.nodeName || session?.email || "forkmesh").trim() || "forkmesh");
     if (owner) owner.textContent = name;
     if (label) label.textContent = session?.kind === "node" ? "About this node" : "About yourself";
     if (body) {
@@ -8223,7 +8323,7 @@
     ));
     count.textContent = `${formatCount(total)} credited`;
     const links = names.map((name) =>
-      `<a class="font-medium text-accent hover:underline" href="${escapeHtml(publicProfileUrl(name))}">${escapeHtml(name)}</a>`
+      `<a class="font-medium text-accent hover:underline" href="${escapeHtml(publicProfileUrl(name))}">${userNameHtml(name)}</a>`
     ).join('<span class="text-muted-foreground">, </span>');
     if (!total) {
       list.innerHTML = '<p class="text-center text-sm text-muted-foreground">No credited referrals yet.</p>';
@@ -9769,6 +9869,7 @@
     const renameInput = $("[data-profile-rename-input]");
     const bioInput = $("[data-profile-page-bio]");
     const locationInput = $("[data-profile-page-location]");
+    const nameCaseInput = $("[data-profile-page-name-case]");
     const timezoneInput = $("[data-profile-page-timezone]");
     const mastodonInput = $("[data-profile-page-mastodon]");
     const privateInput = $("[data-profile-page-private]");
@@ -9779,7 +9880,7 @@
     const isNode = session?.kind === "node";
     avatars.forEach((avatar) => applyAvatar(avatar, session));
     nameEls.forEach((nameEl) => {
-      nameEl.textContent = name;
+      nameEl.textContent = session?.nodeName ? userDisplayName(name) : name;
     });
     renderProfileUserStatus(nameEls, session);
     emailEls.forEach((emailEl) => {
@@ -9846,6 +9947,10 @@
     }
     if (locationInput && document.activeElement !== locationInput) {
       locationInput.value = session?.profileLocation || "";
+    }
+    if (nameCaseInput && document.activeElement !== nameCaseInput) {
+      nameCaseInput.value = session?.nameCase || session?.nodeName || "";
+      nameCaseInput.placeholder = session?.nodeName || "username";
     }
     renderProfileTimezoneOptions(session);
     if (timezoneInput && document.activeElement !== timezoneInput) {
@@ -10467,6 +10572,9 @@
           : {}),
         profileBio: ($("[data-profile-page-bio]")?.value || "").trim(),
         profileLocation: ($("[data-profile-page-location]")?.value || "").trim(),
+        ...($("[data-profile-page-name-case]")
+          ? { nameCase: ($("[data-profile-page-name-case]")?.value || "").trim() }
+          : {}),
         profileTimezone: ($("[data-profile-page-timezone]")?.value || "").trim(),
         mastodon: ($("[data-profile-page-mastodon]")?.value || "").trim(),
         profilePrivate: Boolean($("[data-profile-page-private]")?.checked),
@@ -10477,6 +10585,7 @@
     } catch (error) {
       const messages = {
         bad_public_email: "Choose one of your verified email addresses.",
+        bad_name_case: "Name capitalization can only change capital letters of your username.",
         bad_mastodon: "Enter a Mastodon handle like @you@example.social.",
         bad_profile_timezone: "Enter a valid IANA time zone like Asia/Kolkata.",
         bad_profile_links: "Check your profile links and try again.",
@@ -12221,10 +12330,10 @@
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
-      `@${homeFeedActor(item)}`,
-      notificationTimeLabel(item.ts),
-      item.repo ? repoPublicKey(item.repo) : "",
-    ].filter(Boolean).map(escapeHtml).join(" · ");
+      userNameHtml(`@${homeFeedActor(item)}`),
+      escapeHtml(notificationTimeLabel(item.ts)),
+      item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
+    ].filter(Boolean).join(" · ");
     return `
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
         <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
@@ -15614,7 +15723,7 @@
       ? `<span>Logs are shown to the repository owner and organization writers.</span>`
       : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
     const facts = [
-      run.actor ? `Triggered by ${escapeHtml(run.actor)}` : "",
+      run.actor ? `Triggered by ${userNameHtml(run.actor)}` : "",
       run.event ? `on ${escapeHtml(run.event)}` : "",
       run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
     ].filter(Boolean).join(" ");
@@ -15673,7 +15782,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
-        run.actor ? `<span data-repo-actions-run-actor>${escapeHtml(run.actor)}</span>` : "",
+        run.actor ? `<span data-repo-actions-run-actor>${userNameHtml(run.actor)}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `
@@ -16123,14 +16232,16 @@
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
-    const hint = /#w=(\d{1,4})$/.exec(url);
+    const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
     const source = mdImageSource(target, context);
-    if (!source) return alt;
+    if (!source || source === "#") return alt;
     const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
-    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
-      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" />';
+    const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
+    const external = /^https?:/i.test(source) ? ' referrerpolicy="no-referrer"' : "";
+    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${size}${external}`
+      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" />';
   }
 
   // Operates on already-`escapeHtml`d text so the captured groups (urls,
@@ -16142,8 +16253,7 @@
   // between them into an <em>, and a code span reading `a_b_c` lost its
   // underscores. Link labels are rendered before their whole anchor is parked,
   // preserving emphasis without allowing record references to become nested links.
-  function renderMarkdownInline(escapedText, context, linkRecordReferences = true) {
-    const parked = [];
+  function renderMarkdownInline(escapedText, context, linkRecordReferences = true, parked = []) {
     const park = (html) => `\u0001${parked.push(html) - 1}\u0001`;
     const recordReference = (whole, prefix, label, kind, number) => {
       if (!linkRecordReferences) return whole;
@@ -16155,7 +16265,7 @@
     return escapedText
       .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) => park(mdImageHtml(alt, url, context)))
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
-        park(mdLinkHtml(renderMarkdownInline(label, context, false), url, context)))
+        park(mdLinkHtml(renderMarkdownInline(label, context, false, parked), url, context)))
       .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
       .replace(/(^|[^\w&])((?:pull[-\s]+request|pull|pr)[-\s]*#([1-9]\d*))\b/gi,
         (whole, prefix, label, number) => recordReference(whole, prefix, label, "pulls", number))
@@ -16210,15 +16320,18 @@
     return decodeHtmlEntities(String(text)
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<img\b[^>]*>/gi, (tag) => {
-        const source = htmlTagAttr(tag, "src");
+        const source = htmlTagAttr(tag, "src").trim().replace(/\s/g, "%20").replace(/\)/g, "%29");
         if (!source) return "";
         const width = parseInt(htmlTagAttr(tag, "width"), 10);
-        const hint = width > 0 && !source.includes("#") ? `#w=${width}` : "";
-        return `![${htmlTagAttr(tag, "alt")}](${source}${hint})`;
+        const height = parseInt(htmlTagAttr(tag, "height"), 10);
+        const hint = width > 0 && width < 10000 && !source.includes("#")
+          ? `#w=${width}${height > 0 && height < 10000 ? `x${height}` : ""}`
+          : "";
+        return `![${htmlTagAttr(tag, "alt").replace(/[[\]]/g, "")}](${source}${hint})`;
       })
       .replace(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi, (whole, attributes, label) => {
         const text = label.trim();
-        const href = htmlTagAttr(attributes, "href");
+        const href = htmlTagAttr(attributes, "href").trim().replace(/\s/g, "%20").replace(/\)/g, "%29");
         if (!text) return "";
         return href ? `[${text}](${href})` : text;
       })
@@ -18365,7 +18478,7 @@
               ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
@@ -18382,7 +18495,7 @@
               ${item.base && item.head ? `<span class="ml-1 inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 align-[2px] font-mono text-[11px] leading-[18px] text-muted-foreground"><span class="truncate">${escapeHtml(item.base)}</span><i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.head.slice(item.head.lastIndexOf(":") + 1))}</span></span>` : ""}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
+              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
               ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
           </span>
@@ -18909,7 +19022,7 @@
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
             <div class="truncate text-2xl font-bold text-foreground">${escapeHtml(title || "Pull request")}</div>
-            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${escapeHtml(author || "unknown")}</span></div>
+            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${author ? userNameHtml(author) : "unknown"}</span></div>
           </div>
           <div class="flex shrink-0 gap-6">
             ${stat(`+${formatCount(additions)}`, "Additions", "text-success")}
@@ -19165,7 +19278,7 @@
     return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
       ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
       <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${escapeHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${userNameHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
         <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
       </div>
     </article>`;
@@ -20203,7 +20316,7 @@
         <span class="hidden sm:block">${issueActorAvatarHtml(author, ev.author, "h-10 w-10", ev.type === "agent")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-            <span class="font-semibold text-foreground">${escapeHtml(author)}</span>
+            <span class="font-semibold text-foreground">${userNameHtml(author)}</span>
             <span>${ev.type === "review" ? escapeHtml(meta.label) : "commented"}</span>
             <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>
             ${anchor ? `<span class="min-w-0 truncate font-mono text-[12px]">on ${escapeHtml(anchor)}</span>` : ""}
@@ -22023,7 +22136,7 @@
           ${issueActorAvatarHtml(author, item.author, "h-7 w-7")}
           <div class="min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <span class="font-semibold text-foreground">${escapeHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
+              <span class="font-semibold text-foreground">${userNameHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
               <span class="font-mono text-muted-foreground">${escapeHtml(software)}${instance ? ` · ${escapeHtml(instance)}` : ""}</span>
             </div>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-6 ${status ? "italic text-muted-foreground" : "text-foreground"}">${escapeHtml(body)}</p>
@@ -22287,7 +22400,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
@@ -22394,8 +22507,8 @@
               ? `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 font-medium text-foreground"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`
               : `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${statePillTone} px-3 font-medium text-white"><i data-lucide="${stateIcon}" class="h-4 w-4"></i>${escapeHtml(stateLabel)}</span>`}
             <span class="min-w-0">${isPulls
-              ? `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
-              : `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
+              ? `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
+              : `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
           </div>
           ${recordTabs}
         </header>
@@ -22531,7 +22644,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                       ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
@@ -22720,7 +22833,7 @@
               <span class="hidden sm:block">${item ? issueActorAvatarHtml(item.author, item.author, "h-10 w-10") : bar("w-10", "h-10 rounded-full")}</span>
               <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                 <div class="flex items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] text-muted-foreground">
-                  ${item ? `<span><span class="font-semibold text-foreground">${escapeHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
+                  ${item ? `<span><span class="font-semibold text-foreground">${userNameHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
                 </div>
                 <div class="grid gap-2.5 px-4 py-4">
                   ${bar("w-1/4", "h-5")}${bar("w-11/12")}${bar("w-10/12")}${bar("w-7/12")}
@@ -25505,7 +25618,7 @@
           <span aria-hidden="true" class="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-[18px]">${discussionCategoryEmoji(category)}</span>
           <span class="min-w-0">
             <span data-repo-discussion-row-title class="block text-[16px] font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-            <span class="block text-[12px] text-muted-foreground">${escapeHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
+            <span class="block text-[12px] text-muted-foreground">${userNameHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
           </span>
           <span class="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground">
             ${issueActorAvatarHtml(item.author, item.authorKey || item.author, "h-5 w-5", false, false)}
@@ -26140,14 +26253,38 @@
     probe.src = url;
   }
 
-  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions"];
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
+
+  function repoFirstViewSeed(repo) {
+    let seed = null;
+    try {
+      seed = JSON.parse(document.getElementById("forkmesh-repo-ssr")?.textContent || "null");
+    } catch (_) {
+      return null;
+    }
+    if (!seed?.owner || !seed?.repo) return null;
+    const base = `/api/repo/${encodeURIComponent(seed.owner)}/${encodeURIComponent(seed.repo)}`;
+    return base.toLowerCase() === repoApiBase(repo).toLowerCase() ? seed : null;
+  }
+
+  function applyRepoFirstViewAbout(repo) {
+    const seed = repoFirstViewSeed(repo);
+    if (!seed) return;
+    applyRepoFeatures(seed.features);
+    const about = String(seed.info?.about || "").trim();
+    if (about) applyRepoAboutDescription(repo, about);
+    if (seed.info) applyRepoAboutWebsite(String(seed.info.website || ""));
+  }
 
   function applyRepoFeatures(features) {
     if (!features || typeof features !== "object") return;
-    REPO_FEATURE_TABS.forEach((key) => {
+    REPO_FEATURE_SWITCHES.forEach((key) => {
       if (!(key in features)) return;
       const on = Boolean(features[key]);
-      $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      if (REPO_FEATURE_TABS.includes(key)) {
+        $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      }
       const box = $(`[data-repo-feature="${key}"]`);
       if (box) box.checked = on;
     });
@@ -27247,7 +27384,6 @@
     const label = $("[data-repo-about-files-count]");
     if (!section || !label || !count) return;
     label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""}`;
-    section.classList.remove("hidden");
   }
 
   // ranked: [[language, weight], ...] already sorted desc. weight is bytes when
@@ -27269,6 +27405,7 @@
       const pct = ((weight / total) * 100).toFixed(1);
       return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
     }).join("");
+    section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
 
@@ -27280,7 +27417,33 @@
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
-    return `<span title="${escapeHtml(title)}" class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(initials)}</span>`;
+    const classes = "relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground";
+    const initialsHtml = `<span>${escapeHtml(initials)}</span>`;
+    const picture = repoContributorAvatarUrl(contributor?.avatarUrl);
+    if (picture) {
+      return `<span title="${escapeHtml(title)}" data-repo-contributor-avatar class="${classes}">${initialsHtml}<img src="${escapeHtml(picture)}" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" /></span>`;
+    }
+    const handle = String(contributor?.name || "").trim().toLowerCase();
+    if (validNodeName(handle)) {
+      watchIssueActorAvatars();
+      return `<span title="${escapeHtml(title)}" data-issue-actor-avatar="${escapeHtml(handle)}" class="${classes}">${initialsHtml}</span>`;
+    }
+    return `<span title="${escapeHtml(title)}" class="${classes}">${initialsHtml}</span>`;
+  }
+
+  function repoContributorAvatarUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function dropBrokenContributorAvatars(list) {
+    list.querySelectorAll("[data-repo-contributor-avatar] img").forEach((image) => {
+      image.addEventListener("error", () => image.remove(), { once: true });
+    });
   }
 
   // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
@@ -27299,6 +27462,8 @@
     const more = (Number(total) || rows.length) - shown.length;
     list.innerHTML = shown.map(repoContributorAvatar).join("") +
       (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
+    dropBrokenContributorAvatars(list);
+    section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
 
@@ -27534,7 +27699,6 @@
     const meta = $("[data-repo-about-sizemap-meta]");
     if (meta) meta.textContent = formatSize(tree.size);
     open.onclick = () => activateRepoTab("sizemap");
-    section.classList.remove("hidden");
   }
 
   // --- Size map tab (adhoc #198) ----------------------------------------
@@ -27810,17 +27974,9 @@
     const section = $("[data-repo-about-sizemap]");
     state.repoAboutSizeMapObserver?.disconnect();
     state.repoAboutSizeMapObserver = null;
-    if (!section?.parentElement || typeof IntersectionObserver !== "function") {
+    if (!section || typeof IntersectionObserver !== "function") {
       loadRepoAboutSizeMap(repo);
       return;
-    }
-    let marker = section.previousElementSibling;
-    if (!marker?.hasAttribute("data-repo-about-sizemap-marker")) {
-      marker = document.createElement("div");
-      marker.setAttribute("data-repo-about-sizemap-marker", "");
-      marker.setAttribute("aria-hidden", "true");
-      marker.style.height = "1px";
-      section.parentElement.insertBefore(marker, section);
     }
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -27829,14 +27985,22 @@
       if (repoAboutStillCurrent(repo)) loadRepoAboutSizeMap(repo);
     }, { rootMargin: "300px 0px" });
     state.repoAboutSizeMapObserver = observer;
-    observer.observe(marker);
+    observer.observe(section);
   }
 
   async function loadRepoAboutInsights(repo) {
     loadRepoAboutSizeMapWhenNear(repo);
-    if (await loadRepoAboutStats(repo)) return;
-    loadRepoAboutFilesAndLanguages(repo);
-    loadRepoAboutContributors(repo);
+    if (!await loadRepoAboutStats(repo)) {
+      await Promise.allSettled([loadRepoAboutFilesAndLanguages(repo), loadRepoAboutContributors(repo)]);
+    }
+    if (repoAboutStillCurrent(repo)) settleRepoAboutPending();
+  }
+
+  function settleRepoAboutPending() {
+    document.querySelectorAll("[data-repo-about-pending]").forEach((section) => {
+      section.removeAttribute("data-repo-about-pending");
+      section.classList.add("hidden");
+    });
   }
 
   function loadRepoAboutRail(repo) {
@@ -34173,7 +34337,7 @@
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${escapeHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${userNameHtml(item.author)}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>
@@ -34261,7 +34425,7 @@
     }
   }
 
-  function loadRepoFeaturePanels(repo, recordRoute = null, compareRoute = null) {
+  function loadRepoFeaturePanels(repo, recordRoute = null, compareRoute = null, commitHash = "") {
     loadRepoMirrors(repo);
     // Feature panels load on their FIRST tab view (and reload here after a
     // repo/branch switch if that tab is already active): fetching hidden live
@@ -34271,7 +34435,8 @@
     const active = state.activeRepoTab || "code";
     if (active === "commits") {
       state.loadedRepoTabs.commits = true;
-      loadRepoCommits(repo);
+      if (commitHash) loadRepoCommitDetail(repo, commitHash);
+      else loadRepoCommits(repo);
     } else if (active === "issues") {
       state.loadedRepoTabs.issues = true;
       // A refreshed/shared issue deep link (/owner/repo/issues/<N>) opens that
@@ -36152,7 +36317,10 @@
   }
 
   function pullBatchCompareBase(row) {
-    return Array.isArray(row?.dependsOn) && row.dependsOn.length === 1 ? row.dependsOn[0] : "";
+    const branches = Array.isArray(row?.dependsOn)
+      ? row.dependsOn.filter((dependency) => !String(dependency).startsWith("#"))
+      : [];
+    return branches.length === 1 ? branches[0] : "";
   }
 
   async function runPullBatch(batch, { send = submitRemotePullOpen, onChange = () => {} } = {}) {
@@ -36675,6 +36843,9 @@
           : "conversation",
       }
       : null;
+    const commitHash = routeKind === "commits" && /^[0-9a-f]{7,64}$/i.test(recordNumber)
+      ? recordNumber
+      : "";
     state.repoRecordSection = recordRoute ? recordRoute.section : "conversation";
     const actionsRunId = routeKind === "actions" && routeParts[3] === "runs" && /^[1-9]\d{0,11}$/.test(routeParts[4] || "")
       ? Number(routeParts[4])
@@ -36685,6 +36856,8 @@
     const compareRoute = routeMatchesRepo ? parseRepoCompareRoute(routeParts) : null;
     const detailPath = recordRoute
       ? repoRecordUrl(repo, recordRoute.kind, recordRoute.number, recordRoute.section)
+      : commitHash
+        ? repoCommitUrl(repo, commitHash)
       : compareRoute
         ? repoCompareUrl(repo, compareRoute.base, compareRoute.head)
         : actionsRunId && repoTabRoutesFor(repo).includes("actions")
@@ -36741,6 +36914,8 @@
               <label class="inline-flex items-start gap-2"><input data-repo-feature="issues" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Issues</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="pulls" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Pull requests</label>
               <label class="inline-flex items-start gap-2"><input data-repo-feature="discussions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Discussions</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="actions" type="checkbox" class="mt-0.5 h-3.5 w-3.5" checked />Actions (run this repository's workflows)</label>
+              <label class="inline-flex items-start gap-2"><input data-repo-feature="protectDefaultBranch" type="checkbox" class="mt-0.5 h-3.5 w-3.5" />Protect the default branch: it changes only by merging a pull request an organization owner or admin approved</label>
             </fieldset>
             <fieldset class="grid gap-2 rounded-md border border-border p-3 text-xs text-muted-foreground">
               <legend class="px-1 text-[11px] font-semibold uppercase tracking-wide">ActivityPub federation</legend>
@@ -37034,22 +37209,22 @@
                 </div>
               </div>
               <a href="${escapeHtml(`${repoLinkUrl(repo)}/mirrors`)}" data-dashboard-repo-tab="mirrors" aria-label="Show repository mirror status" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Mirrors</span><span data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors" class="min-w-0 truncate text-right font-mono text-foreground">${tabCountLabel(mirrorsCount)}</span></a>
-              <div data-repo-about-files class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 text-muted-foreground">Files</span><span data-repo-about-files-count class="min-w-0 truncate text-right font-mono text-foreground"></span></div>
-              <div data-repo-about-sizemap class="hidden">
-                <button type="button" data-repo-about-sizemap-open title="Explore the repository size map" aria-label="Explore the repository size map" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Size</span><span class="inline-flex items-center gap-1.5 justify-self-end text-foreground"><span data-repo-about-sizemap-chart class="block h-4 w-4"></span><span data-repo-about-sizemap-meta class="font-mono"></span><i data-lucide="chevron-right" class="h-3 w-3 text-muted-foreground"></i></span></button>
+              <div data-repo-about-files class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs"><span class="shrink-0 text-muted-foreground">Files</span><span data-repo-about-files-count class="min-w-0 truncate text-right font-mono text-foreground">–</span></div>
+              <div data-repo-about-sizemap>
+                <button type="button" data-repo-about-sizemap-open title="Explore the repository size map" aria-label="Explore the repository size map" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Size</span><span class="inline-flex items-center gap-1.5 justify-self-end text-foreground"><span data-repo-about-sizemap-chart class="block h-4 w-4"></span><span data-repo-about-sizemap-meta class="font-mono">–</span><i data-lucide="chevron-right" class="h-3 w-3 text-muted-foreground"></i></span></button>
               </div>
             </div>
-            <div data-repo-about-langs class="mt-3 hidden border-t border-border pt-3">
+            <div data-repo-about-langs data-repo-about-pending class="mt-3 border-t border-border pt-3">
               <h4 class="text-xs font-semibold text-foreground">Languages</h4>
-              <div data-repo-about-langs-bar class="mt-2.5 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"></div>
-              <div data-repo-about-langs-legend class="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground"></div>
+              <div data-repo-about-langs-bar class="mt-2.5 flex h-1.5 w-full gap-0.5 overflow-hidden rounded-full"><span class="h-full w-full rounded-full bg-muted-foreground/20"></span></div>
+              <div data-repo-about-langs-legend class="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground">${'<span class="block rounded bg-muted-foreground/20">&nbsp;</span>'.repeat(6)}</div>
             </div>
-            <div data-repo-about-contribs class="mt-3 hidden border-t border-border pt-3">
+            <div data-repo-about-contribs data-repo-about-pending class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
                 <h4 class="text-xs font-semibold text-foreground">Contributors</h4>
-                <span data-repo-about-contribs-count class="font-mono text-[11px] text-muted-foreground"></span>
+                <span data-repo-about-contribs-count class="font-mono text-[11px] text-muted-foreground">–</span>
               </div>
-              <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5"></div>
+              <div data-repo-about-contribs-list class="mt-2.5 flex items-center -space-x-1.5">${'<span class="h-7 w-7 rounded-full border-2 border-background bg-secondary"></span>'.repeat(8)}</div>
             </div>
             ${dashboardOnInstance() ? "" : `<div data-repo-live-summary class="mt-3 border-t border-border pt-3">
               <div class="flex items-center justify-between gap-3">
@@ -37088,6 +37263,7 @@
           <aside data-repo-dir-about aria-label="Folder details" class="hidden min-w-0 self-start rounded-lg border border-border bg-background p-4"></aside>
         </div>
       </div>`;
+    applyRepoFirstViewAbout(repo);
     // Restore whichever tab the URL points at (e.g. a refresh on
     // /owner/repo/issues) instead of always defaulting back to Code. This
     // runs right after painting the DOM, before anything else that could
@@ -37117,7 +37293,7 @@
     if (initialTab !== "code" || ((routeKind === "tree" || routeKind === "blob") && routePath)) {
       refreshServedCounts(repo);
     }
-    loadRepoFeaturePanels(repo, recordRoute, compareRoute);
+    loadRepoFeaturePanels(repo, recordRoute, compareRoute, commitHash);
     loadRepoStarState(repo, $("[data-repo-action-star]"));
     loadRepoForks(repo);
   }
@@ -38265,6 +38441,7 @@
     // signed-out visitors back to the landing page, the header swaps the
     // profile/notification controls for a Sign Up / Log In link.
     const guest = !session || (!session.nodeName && !session.email);
+    document.documentElement?.toggleAttribute?.("data-guest", guest);
     if (guest) {
       // The profile and settings documents are account pages — signed-out
       // visitors have no profile to show there, so bounce through login and
@@ -38384,7 +38561,7 @@
     // A node that reads the repository locally sends the page with its first
     // view already rendered (app/host/forkmesh_host/repo_ssr.py); keep that
     // on screen until the full interface replaces it.
-    if (detail && requested && !detail.querySelector("[data-repo-ssr]")) {
+    if (detail && requested && !detail.querySelector("[data-repo-ssr], [data-repo-frame]")) {
       detail.innerHTML = `<p class="text-sm text-muted-foreground">${loadingHtml("Loading repository…")}</p>`;
     }
     // findRepository needs the catalog (alias/canonical grouping), so this page
@@ -39260,11 +39437,15 @@
           state.loadedRepoTabs.commits = true;
           activateRepoTab("commits");
         }
-        loadRepoCommitDetail(state.selectedRepo, commitButton.dataset.dashboardCommitHash || "");
+        const commitHash = commitButton.dataset.dashboardCommitHash || "";
+        if (commitHash) navigateHistory(repoCommitUrl(state.selectedRepo, commitHash));
+        loadRepoCommitDetail(state.selectedRepo, commitHash);
         return;
       }
 
       if (event.target.closest("[data-repo-commit-back]") && state.selectedRepo) {
+        navigateHistory(`${repoLinkUrl(state.selectedRepo)}/commits`);
+        state.repoCommitDetail = null;
         loadRepoCommits(state.selectedRepo);
         return;
       }
@@ -40230,7 +40411,7 @@
             broadcastEvents: Boolean(settingsForm.querySelector("[data-repo-ap-broadcast]")?.checked),
             acceptComments: Boolean(settingsForm.querySelector("[data-repo-ap-comments]")?.checked),
           },
-          features: Object.fromEntries(REPO_FEATURE_TABS.map((key) => [
+          features: Object.fromEntries(REPO_FEATURE_SWITCHES.map((key) => [
             key, Boolean(settingsForm.querySelector(`[data-repo-feature="${key}"]`)?.checked),
           ])),
         });
@@ -40812,6 +40993,14 @@
           // Feature tab (issues, pulls, etc.): restore without re-loading
           // records since they cache in state.
           setRepoTab(kind);
+          if (kind === "commits") {
+            const commitHash = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
+            if (/^[0-9a-f]{7,64}$/i.test(commitHash)) loadRepoCommitDetail(repo, commitHash);
+            else if (state.repoCommitDetail) {
+              state.repoCommitDetail = null;
+              loadRepoCommits(repo);
+            }
+          }
           // Step Back/Forward between a record detail (/pulls/4), one of its
           // sections (/pulls/4/files) and the list.
           if (["pulls", "discussions", "issues"].includes(kind)) {
@@ -44933,7 +45122,7 @@
     "docs": "/dashboard-page-docs.js?v=1f739446a623",
     "hackathon": "/dashboard-page-hackathon.js?v=915f8761c02c",
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
-    "notes": "/dashboard-page-notes.js?v=4a3cfce15160",
+    "notes": "/dashboard-page-notes.js?v=befe2a1621ea",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "tasks": "/dashboard-page-tasks.js?v=516c5c5cbd2d",
     "workflows": "/dashboard-page-workflows.js?v=b1f9fc87fe2b",
@@ -44976,6 +45165,7 @@
     sourceOfTruth,
     state,
     submitWebIssue,
+    userNameHtml,
     validNodeName,
     get repositoriesReady() { return repositoriesReady; },
   };
@@ -45240,6 +45430,7 @@
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();
+      watchUserNames();
       window.dispatchEvent(new CustomEvent("forkmesh:composer-host"));
       // The ForkMesh Ads `web` slot: every page but the ads page and chat,
       // fetched anonymously once the page is idle (09-ads.js).

@@ -16,6 +16,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from protection_fakes import UNPROTECTED  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,7 +77,7 @@ def _load(extra):
         ):
             selected.append(node)
     assert len(selected) == len(BRANCH_OP_NAMES)
-    namespace = dict(extra)
+    namespace = {"_branch_protection": UNPROTECTED, **extra}
     exec(compile(ast.fix_missing_locations(
         ast.Module(body=selected, type_ignores=[])),
         str(ROUTES_PATH), "exec"), namespace)

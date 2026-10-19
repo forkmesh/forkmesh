@@ -117,14 +117,16 @@
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
   function mdImageHtml(alt, url, context) {
-    const hint = /#w=(\d{1,4})$/.exec(url);
+    const hint = /#w=(\d{1,4})(?:x(\d{1,4}))?$/.exec(url);
     const target = hint ? url.slice(0, hint.index) : url;
     const source = mdImageSource(target, context);
-    if (!source) return alt;
+    if (!source || source === "#") return alt;
     const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
-    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${hint ? ` width="${hint[1]}"` : ""}`
-      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" />';
+    const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
+    const external = /^https?:/i.test(source) ? ' referrerpolicy="no-referrer"' : "";
+    return `<img ${svg ? "data-repo-svg-src" : "src"}="${source}" alt="${alt}"${size}${external}`
+      + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" />';
   }
 
   // Operates on already-`escapeHtml`d text so the captured groups (urls,
@@ -136,8 +138,7 @@
   // between them into an <em>, and a code span reading `a_b_c` lost its
   // underscores. Link labels are rendered before their whole anchor is parked,
   // preserving emphasis without allowing record references to become nested links.
-  function renderMarkdownInline(escapedText, context, linkRecordReferences = true) {
-    const parked = [];
+  function renderMarkdownInline(escapedText, context, linkRecordReferences = true, parked = []) {
     const park = (html) => `\u0001${parked.push(html) - 1}\u0001`;
     const recordReference = (whole, prefix, label, kind, number) => {
       if (!linkRecordReferences) return whole;
@@ -149,7 +150,7 @@
     return escapedText
       .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) => park(mdImageHtml(alt, url, context)))
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
-        park(mdLinkHtml(renderMarkdownInline(label, context, false), url, context)))
+        park(mdLinkHtml(renderMarkdownInline(label, context, false, parked), url, context)))
       .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
       .replace(/(^|[^\w&])((?:pull[-\s]+request|pull|pr)[-\s]*#([1-9]\d*))\b/gi,
         (whole, prefix, label, number) => recordReference(whole, prefix, label, "pulls", number))
@@ -204,15 +205,18 @@
     return decodeHtmlEntities(String(text)
       .replace(/<!--[\s\S]*?-->/g, "")
       .replace(/<img\b[^>]*>/gi, (tag) => {
-        const source = htmlTagAttr(tag, "src");
+        const source = htmlTagAttr(tag, "src").trim().replace(/\s/g, "%20").replace(/\)/g, "%29");
         if (!source) return "";
         const width = parseInt(htmlTagAttr(tag, "width"), 10);
-        const hint = width > 0 && !source.includes("#") ? `#w=${width}` : "";
-        return `![${htmlTagAttr(tag, "alt")}](${source}${hint})`;
+        const height = parseInt(htmlTagAttr(tag, "height"), 10);
+        const hint = width > 0 && width < 10000 && !source.includes("#")
+          ? `#w=${width}${height > 0 && height < 10000 ? `x${height}` : ""}`
+          : "";
+        return `![${htmlTagAttr(tag, "alt").replace(/[[\]]/g, "")}](${source}${hint})`;
       })
       .replace(/<a\b([^>]*)>([\s\S]*?)<\/a\s*>/gi, (whole, attributes, label) => {
         const text = label.trim();
-        const href = htmlTagAttr(attributes, "href");
+        const href = htmlTagAttr(attributes, "href").trim().replace(/\s/g, "%20").replace(/\)/g, "%29");
         if (!text) return "";
         return href ? `[${text}](${href})` : text;
       })
@@ -2359,7 +2363,7 @@
               ${issueLabels.map((label) => renderIssueLabelChip(label, `data-repo-issue-label="${escapeHtml(label)}"`).replace('class="issue-label"', 'class="issue-label ml-1 align-[2px]"')).join("")}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
+              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened <time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(openedAt ? formatTimeAgo(openedAt) : item.date)}</time></span>
               ${item.milestone ? `<span class="inline-flex min-w-0 items-center gap-1 pl-1"><i data-lucide="milestone" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.milestone)}</span></span>` : ""}
               ${!["open", "closed"].includes(String(item.status || "").toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
@@ -2376,7 +2380,7 @@
               ${item.base && item.head ? `<span class="ml-1 inline-flex max-w-full items-center gap-1 rounded-full border border-border px-2 align-[2px] font-mono text-[11px] leading-[18px] text-muted-foreground"><span class="truncate">${escapeHtml(item.base)}</span><i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i><span class="truncate">${escapeHtml(item.head.slice(item.head.lastIndexOf(":") + 1))}</span></span>` : ""}
             </span>
             <span class="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1 text-[12px] text-muted-foreground">
-              <span>${escapeHtml(numberLabel)} · ${escapeHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
+              <span>${escapeHtml(numberLabel)} · ${userNameHtml(item.author)} opened ${openedAt ? `<time datetime="${escapeHtml(openedWhen.iso)}" title="${escapeHtml(openedWhen.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time>` : escapeHtml(item.date)}</span>
               ${!["open", "closed", "merged"].includes(String(stateLabel).toLowerCase()) ? `<span data-repo-record-state class="ml-1 rounded-md border border-border px-1.5 font-mono text-[11px] leading-[18px] text-foreground">${escapeHtml(stateLabel)}</span>` : ""}
             </span>
           </span>
@@ -2903,7 +2907,7 @@
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="min-w-0">
             <div class="truncate text-2xl font-bold text-foreground">${escapeHtml(title || "Pull request")}</div>
-            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${escapeHtml(author || "unknown")}</span></div>
+            <div class="mt-1 flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">${number ? `#${escapeHtml(number)}` : "pull request"}<span class="ml-2 inline-flex items-center gap-1.5 font-normal text-muted-foreground">by ${badgeAuthorAvatarHtml(author)}${author ? userNameHtml(author) : "unknown"}</span></div>
           </div>
           <div class="flex shrink-0 gap-6">
             ${stat(`+${formatCount(additions)}`, "Additions", "text-success")}
@@ -3159,7 +3163,7 @@
     return `<article class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-2.5 rounded-md border ${event.draft ? "border-attention/40 bg-attention/10" : "border-border bg-background"} p-3">
       ${issueActorAvatarHtml(author, event.author, "h-6 w-6")}
       <div class="min-w-0">
-        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${escapeHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground"><strong class="text-xs text-foreground">${userNameHtml(author)}</strong><span class="font-mono">${escapeHtml(path)}:${range} (${anchor.side})</span>${placementBadge}${event.draft ? `<span class="rounded border border-attention/40 px-1.5 py-0.5 font-semibold uppercase text-attention">Draft</span><button type="button" data-repo-pull-review-draft-discard="${escapeHtml(event.id || "")}" class="ml-auto inline-flex h-6 items-center gap-1 rounded px-1.5 text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3 w-3"></i>Discard</button>` : ""}</div>
         <div class="mt-2 ${MD_BODY_CLASS}">${renderRecordMarkdown(String(event.body || ""))}</div>
       </div>
     </article>`;
@@ -4197,7 +4201,7 @@
         <span class="hidden sm:block">${issueActorAvatarHtml(author, ev.author, "h-10 w-10", ev.type === "agent")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-            <span class="font-semibold text-foreground">${escapeHtml(author)}</span>
+            <span class="font-semibold text-foreground">${userNameHtml(author)}</span>
             <span>${ev.type === "review" ? escapeHtml(meta.label) : "commented"}</span>
             <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>
             ${anchor ? `<span class="min-w-0 truncate font-mono text-[12px]">on ${escapeHtml(anchor)}</span>` : ""}
@@ -6017,7 +6021,7 @@
           ${issueActorAvatarHtml(author, item.author, "h-7 w-7")}
           <div class="min-w-0">
             <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
-              <span class="font-semibold text-foreground">${escapeHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
+              <span class="font-semibold text-foreground">${userNameHtml(author)} ${edited}${when ? ` <time class="font-normal text-muted-foreground" datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">· ${escapeHtml(when)}</time>` : ""}</span>
               <span class="font-mono text-muted-foreground">${escapeHtml(software)}${instance ? ` · ${escapeHtml(instance)}` : ""}</span>
             </div>
             <p class="mt-2 whitespace-pre-wrap text-sm leading-6 ${status ? "italic text-muted-foreground" : "text-foreground"}">${escapeHtml(body)}</p>
@@ -6281,7 +6285,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
@@ -6388,8 +6392,8 @@
               ? `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border px-3 font-medium text-foreground"><span aria-hidden="true">${discussionCategoryEmoji(discussionCategory)}</span>${escapeHtml(discussionCategory)}</span>`
               : `<span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${statePillTone} px-3 font-medium text-white"><i data-lucide="${stateIcon}" class="h-4 w-4"></i>${escapeHtml(stateLabel)}</span>`}
             <span class="min-w-0">${isPulls
-              ? `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
-              : `<span class="font-semibold text-foreground">${escapeHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
+              ? `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
+              : `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
           </div>
           ${recordTabs}
         </header>
@@ -6525,7 +6529,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${escapeHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
+                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                       ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
@@ -6714,7 +6718,7 @@
               <span class="hidden sm:block">${item ? issueActorAvatarHtml(item.author, item.author, "h-10 w-10") : bar("w-10", "h-10 rounded-full")}</span>
               <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                 <div class="flex items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] text-muted-foreground">
-                  ${item ? `<span><span class="font-semibold text-foreground">${escapeHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
+                  ${item ? `<span><span class="font-semibold text-foreground">${userNameHtml(item.author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>` : bar("w-40")}
                 </div>
                 <div class="grid gap-2.5 px-4 py-4">
                   ${bar("w-1/4", "h-5")}${bar("w-11/12")}${bar("w-10/12")}${bar("w-7/12")}
@@ -9499,7 +9503,7 @@
           <span aria-hidden="true" class="flex h-10 w-10 items-center justify-center rounded-md bg-secondary text-[18px]">${discussionCategoryEmoji(category)}</span>
           <span class="min-w-0">
             <span data-repo-discussion-row-title class="block text-[16px] font-semibold leading-6 text-foreground [overflow-wrap:anywhere] group-hover:text-[var(--dashboard-link)]">${escapeHtml(item.title)}</span>
-            <span class="block text-[12px] text-muted-foreground">${escapeHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
+            <span class="block text-[12px] text-muted-foreground">${userNameHtml(item.author)} ${category === "Q&A" ? "asked" : "started"} ${created ? `<time datetime="${escapeHtml(when.iso)}" title="${escapeHtml(when.label)}">${escapeHtml(formatTimeAgo(created))}</time>` : escapeHtml(item.date)} in <span class="font-medium text-foreground">${escapeHtml(category)}</span>${open ? "" : ` · <span data-repo-record-state>${escapeHtml(item.state)}</span>`}</span>
           </span>
           <span class="flex shrink-0 items-center gap-3 text-[12px] text-muted-foreground">
             ${issueActorAvatarHtml(item.author, item.authorKey || item.author, "h-5 w-5", false, false)}
@@ -10134,14 +10138,38 @@
     probe.src = url;
   }
 
-  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions"];
+  const REPO_FEATURE_TABS = ["issues", "pulls", "discussions", "actions"];
+  const REPO_FEATURE_SWITCHES = [...REPO_FEATURE_TABS, "protectDefaultBranch"];
+
+  function repoFirstViewSeed(repo) {
+    let seed = null;
+    try {
+      seed = JSON.parse(document.getElementById("forkmesh-repo-ssr")?.textContent || "null");
+    } catch (_) {
+      return null;
+    }
+    if (!seed?.owner || !seed?.repo) return null;
+    const base = `/api/repo/${encodeURIComponent(seed.owner)}/${encodeURIComponent(seed.repo)}`;
+    return base.toLowerCase() === repoApiBase(repo).toLowerCase() ? seed : null;
+  }
+
+  function applyRepoFirstViewAbout(repo) {
+    const seed = repoFirstViewSeed(repo);
+    if (!seed) return;
+    applyRepoFeatures(seed.features);
+    const about = String(seed.info?.about || "").trim();
+    if (about) applyRepoAboutDescription(repo, about);
+    if (seed.info) applyRepoAboutWebsite(String(seed.info.website || ""));
+  }
 
   function applyRepoFeatures(features) {
     if (!features || typeof features !== "object") return;
-    REPO_FEATURE_TABS.forEach((key) => {
+    REPO_FEATURE_SWITCHES.forEach((key) => {
       if (!(key in features)) return;
       const on = Boolean(features[key]);
-      $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      if (REPO_FEATURE_TABS.includes(key)) {
+        $$(`[data-dashboard-repo-tab="${key}"]`).forEach((tab) => tab.classList.toggle("hidden", !on));
+      }
       const box = $(`[data-repo-feature="${key}"]`);
       if (box) box.checked = on;
     });
@@ -11241,7 +11269,6 @@
     const label = $("[data-repo-about-files-count]");
     if (!section || !label || !count) return;
     label.textContent = `${Number(count).toLocaleString()}${partial ? "+" : ""}`;
-    section.classList.remove("hidden");
   }
 
   // ranked: [[language, weight], ...] already sorted desc. weight is bytes when
@@ -11263,6 +11290,7 @@
       const pct = ((weight / total) * 100).toFixed(1);
       return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
     }).join("");
+    section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
 
@@ -11274,7 +11302,33 @@
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
     const title = `${name}${email ? ` <${email}>` : ""}` +
       (commits ? ` — ${commits} commit${commits === 1 ? "" : "s"}` : "");
-    return `<span title="${escapeHtml(title)}" class="flex h-7 w-7 items-center justify-center rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground">${escapeHtml(initials)}</span>`;
+    const classes = "relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground";
+    const initialsHtml = `<span>${escapeHtml(initials)}</span>`;
+    const picture = repoContributorAvatarUrl(contributor?.avatarUrl);
+    if (picture) {
+      return `<span title="${escapeHtml(title)}" data-repo-contributor-avatar class="${classes}">${initialsHtml}<img src="${escapeHtml(picture)}" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" /></span>`;
+    }
+    const handle = String(contributor?.name || "").trim().toLowerCase();
+    if (validNodeName(handle)) {
+      watchIssueActorAvatars();
+      return `<span title="${escapeHtml(title)}" data-issue-actor-avatar="${escapeHtml(handle)}" class="${classes}">${initialsHtml}</span>`;
+    }
+    return `<span title="${escapeHtml(title)}" class="${classes}">${initialsHtml}</span>`;
+  }
+
+  function repoContributorAvatarUrl(value) {
+    try {
+      const url = new URL(String(value || ""));
+      return url.protocol === "https:" && !url.username && !url.password ? url.href : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function dropBrokenContributorAvatars(list) {
+    list.querySelectorAll("[data-repo-contributor-avatar] img").forEach((image) => {
+      image.addEventListener("error", () => image.remove(), { once: true });
+    });
   }
 
   // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
@@ -11293,6 +11347,8 @@
     const more = (Number(total) || rows.length) - shown.length;
     list.innerHTML = shown.map(repoContributorAvatar).join("") +
       (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
+    dropBrokenContributorAvatars(list);
+    section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
 
@@ -11528,7 +11584,6 @@
     const meta = $("[data-repo-about-sizemap-meta]");
     if (meta) meta.textContent = formatSize(tree.size);
     open.onclick = () => activateRepoTab("sizemap");
-    section.classList.remove("hidden");
   }
 
   // --- Size map tab (adhoc #198) ----------------------------------------
@@ -11804,17 +11859,9 @@
     const section = $("[data-repo-about-sizemap]");
     state.repoAboutSizeMapObserver?.disconnect();
     state.repoAboutSizeMapObserver = null;
-    if (!section?.parentElement || typeof IntersectionObserver !== "function") {
+    if (!section || typeof IntersectionObserver !== "function") {
       loadRepoAboutSizeMap(repo);
       return;
-    }
-    let marker = section.previousElementSibling;
-    if (!marker?.hasAttribute("data-repo-about-sizemap-marker")) {
-      marker = document.createElement("div");
-      marker.setAttribute("data-repo-about-sizemap-marker", "");
-      marker.setAttribute("aria-hidden", "true");
-      marker.style.height = "1px";
-      section.parentElement.insertBefore(marker, section);
     }
     const observer = new IntersectionObserver((entries) => {
       if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -11823,14 +11870,22 @@
       if (repoAboutStillCurrent(repo)) loadRepoAboutSizeMap(repo);
     }, { rootMargin: "300px 0px" });
     state.repoAboutSizeMapObserver = observer;
-    observer.observe(marker);
+    observer.observe(section);
   }
 
   async function loadRepoAboutInsights(repo) {
     loadRepoAboutSizeMapWhenNear(repo);
-    if (await loadRepoAboutStats(repo)) return;
-    loadRepoAboutFilesAndLanguages(repo);
-    loadRepoAboutContributors(repo);
+    if (!await loadRepoAboutStats(repo)) {
+      await Promise.allSettled([loadRepoAboutFilesAndLanguages(repo), loadRepoAboutContributors(repo)]);
+    }
+    if (repoAboutStillCurrent(repo)) settleRepoAboutPending();
+  }
+
+  function settleRepoAboutPending() {
+    document.querySelectorAll("[data-repo-about-pending]").forEach((section) => {
+      section.removeAttribute("data-repo-about-pending");
+      section.classList.add("hidden");
+    });
   }
 
   function loadRepoAboutRail(repo) {

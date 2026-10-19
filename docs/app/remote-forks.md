@@ -57,7 +57,9 @@ several branches as separate pull requests in one action. Code:
   pull request number on that target (or turned out to have nothing new). Its
   description then starts with `Depends on: #N` and one sentence asking the
   reviewer to merge #N first. A row whose dependency failed, is not selected
-  or is not in the list waits and says why.
+  or is not in the list waits and says why. A `#N` dependency is target-side
+  review metadata, so it is not used as a source branch when computing the
+  patch.
 - **Resuming.** Sent numbers are kept in `localStorage` per repository and
   target (`forkmesh.pullBatch.v1:<host>/<owner>/<repo>><target url>`), written
   after every successful send, so pressing **Send all** again, even after a

@@ -130,8 +130,8 @@ def test_every_page_step_is_announced_in_order():
 
 def test_secrets_never_reach_a_command_line_or_a_log():
     bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
-    assert ("printf '%s\\n%s\\n%s' \"$OWNERS_JSON\" \"${CFG_legalPages:-}\" "
-            "\"$ADMIN_PASSWORD\" | python3") in bootstrap
+    assert ("printf '%s\\n%s\\n%s\\n%s' \"$OWNERS_JSON\" \"${CFG_legalPages:-}\" "
+            "\"${CFG_directory:-}\" \"$ADMIN_PASSWORD\" | python3") in bootstrap
     assert "host_cli instance-bootstrap" in bootstrap
     assert 'ADMIN_PASSWORD=""' in bootstrap and 'OWNERS_JSON="[]"' in bootstrap
     settings_writer = TEXT.split("write_settings() {", 1)[1].split("\n}\n", 1)[0]
@@ -247,7 +247,7 @@ def test_starting_again_skips_finished_steps_and_follows_a_running_setup():
     assert 'rm -f "$CONFIG_FILE"' in TEXT.split('if [ "$DETACHED" = "1" ] && [ "$CONFIG_FILE" = "$SETUP_RUN_DIR/settings.json" ]', 1)[1].split("\n", 1)[0]
     assert "The system packages are already installed." in function("install_packages")
     assert "The source is already at the latest" in function("fetch_source")
-    assert '[ "$(cat "$BUILD_STAMP")" = "$(build_stamp)" ]' in function("build_app")
+    assert '[ "$(cat "$BUILD_STAMP")" = "$(build_stamp "$SRC")" ]' in function("build_app")
     assert "The app is already running this version" in function("start_app")
     assert "is already live over HTTPS." in function("setup_https")
     assert "already installed" in function("install_daemon_binary")
@@ -444,7 +444,7 @@ def test_the_bootstrap_settings_carry_the_owners_from_stdin():
     bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
     code = bootstrap.split("| python3 -c '", 1)[1].split("\n' ", 1)[0]
     owners = [{"username": "grace", "email": "grace@example.com", "password": OWNER_PASSWORD}]
-    stdin = json.dumps(owners) + "\n\n" + ADMIN_PASSWORD + "\nwith a line break"
+    stdin = json.dumps(owners) + "\n\n\n" + ADMIN_PASSWORD + "\nwith a line break"
     result = subprocess.run(
         ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, "", "1"],
         input=stdin, capture_output=True, text=True, timeout=30)
@@ -475,7 +475,7 @@ def test_a_theme_is_a_preset_name_or_a_set_of_colours(tmp_path):
 def test_the_bootstrap_settings_carry_a_colour_theme_as_an_object():
     bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
     code = bootstrap.split("| python3 -c '", 1)[1].split("\n' ", 1)[0]
-    stdin = "[]\n\n" + ADMIN_PASSWORD
+    stdin = "[]\n\n\n" + ADMIN_PASSWORD
     colours = {"dark": {"primary": "#f97316"}}
     for theme, expected in ((json.dumps(colours), colours), ("crimson", "crimson"), ("", "")):
         result = subprocess.run(
@@ -513,10 +513,11 @@ def test_legal_pages_are_off_unless_named_and_never_set_by_an_update(tmp_path):
 
 def test_the_bootstrap_settings_carry_the_legal_pages_from_stdin():
     bootstrap = TEXT.split("create_admin() {", 1)[1].split("\n}\n", 1)[0]
-    assert '"$OWNERS_JSON" "${CFG_legalPages:-}" "$ADMIN_PASSWORD"' in bootstrap
+    assert ('"$OWNERS_JSON" "${CFG_legalPages:-}" "${CFG_directory:-}" '
+            '"$ADMIN_PASSWORD"') in bootstrap
     code = bootstrap.split("| python3 -c '", 1)[1].split("\n' ", 1)[0]
     legal = {"terms": {"markdown": "# Terms\nline two"}}
-    stdin = "[]\n" + json.dumps(legal) + "\n" + ADMIN_PASSWORD
+    stdin = "[]\n" + json.dumps(legal) + "\n\n" + ADMIN_PASSWORD
     result = subprocess.run(
         ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, "", "0"],
         input=stdin, capture_output=True, text=True, timeout=30)
@@ -524,6 +525,42 @@ def test_the_bootstrap_settings_carry_the_legal_pages_from_stdin():
     spec = json.loads(result.stdout)
     assert spec["legalPages"] == legal
     assert spec["adminPassword"] == ADMIN_PASSWORD
+    assert spec["directory"] == {}
+    stdin = "[]\n\n" + json.dumps({"listed": True, "world": False}) + "\n" + \
+        ADMIN_PASSWORD
+    result = subprocess.run(
+        ["python3", "-c", code, "ada", "ada@example.com", "org", "acme", "Acme Code", "K" * 43, "", "0"],
+        input=stdin, capture_output=True, text=True, timeout=30)
+    spec = json.loads(result.stdout)
+    assert spec["directory"] == {"listed": True, "world": False}
+    assert spec["adminPassword"] == ADMIN_PASSWORD
+
+
+def test_the_directory_listing_is_opt_in_and_never_set_by_an_update(tmp_path):
+    found = values(parse(tmp_path, settings()).stdout)
+    assert found["CFG_directory"] == ""
+    result = parse(tmp_path, settings(directory={"listed": True, "world": True}),
+                   stdin=True)
+    assert result.returncode == 0, result.stdout
+    assert json.loads(values(result.stdout)["CFG_directory"]) == {
+        "listed": True, "world": True}
+    for bad in ({"listed": "yes"}, {"hidden": True}, ["listed"], "on"):
+        result = parse(tmp_path, settings(directory=bad))
+        assert result.returncode == 2, bad
+        assert "Setting directory" in result.stdout
+    parser = TEXT.split("parse_config() {", 1)[1].split("\n' \"$CONFIG_MODE\"", 1)[0]
+    assert 'directory = c.get("directory") or {}\nif update:\n    directory = {}' in parser
+    writer = TEXT.split('keys = ["projectName"', 1)[1].split('> "$INSTANCE_JSON.new"', 1)[0]
+    assert "directory" not in writer
+
+
+def test_the_app_may_reach_the_directory_and_nothing_else_at_forkmesh_com():
+    unit = function("write_app_unit")
+    assert "Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST" in unit
+    assert 'DIRECTORY_URL="https://app.forkmesh.com"' in TEXT
+    assert 'DIRECTORY_HOST="app.forkmesh.com"' in TEXT
+    settings_writer = TEXT.split("write_settings() {", 1)[1].split("\n}\n", 1)[0]
+    assert 'echo "INSTANCE_DIRECTORY_URL=$DIRECTORY_URL"' in settings_writer
 
 
 def test_the_admin_console_can_ask_for_an_update():
@@ -565,7 +602,7 @@ def test_the_build_records_its_version_and_commit(tmp_path):
                                                        shlex.quote(str(info))))
     script = tmp_path / "harness.sh"
     script.write_text("set -euo pipefail\n" + function("release_version")
-                      + function("write_build_info") + body)
+                      + function("write_build_info") + "write_daemon_state() { :; }\n" + body)
     result = subprocess.run(["bash", str(script)], env=env, capture_output=True,
                             text=True, timeout=60)
     assert result.returncode == 0, result.stderr
@@ -581,13 +618,14 @@ def _git_node_config_patch():
     return body[start:body.index("\nPY\n", start)]
 
 
-def _upstream_page(tmp_path, source):
-    function = TEXT[TEXT.index("upstream_page() {"):]
-    function = function[:function.index("\n}\n") + 3]
+def _upstream_page(tmp_path, source, platform=""):
+    body = function("platform_source") + function("upstream_page")
     return subprocess.run(
-        ["bash", "-c", function + 'CFG_sourceUrl="$1"; upstream_page', "x",
-         source], capture_output=True, text=True, env=sandbox_env(tmp_path),
-        timeout=30, check=True).stdout.strip()
+        ["bash", "-c", body + 'DOMAIN=code.example.com; '
+         'RELEASE_SOURCE=https://app.forkmesh.com/forkmesh/forkmesh; '
+         'CFG_sourceUrl="$1"; CFG_platformUrl="$2"; upstream_page', "x",
+         source, platform], capture_output=True, text=True,
+        env=sandbox_env(tmp_path), timeout=30, check=True).stdout.strip()
 
 
 def test_the_platform_copy_is_configured_as_a_labelled_read_only_mirror(tmp_path):
@@ -595,6 +633,14 @@ def test_the_platform_copy_is_configured_as_a_labelled_read_only_mirror(tmp_path
         "https://forkmesh.com/forkmesh/forkmesh"
     assert _upstream_page(tmp_path, "https://git.example.org/acme/forkmesh.git") == \
         "https://git.example.org/acme/forkmesh"
+    assert _upstream_page(
+        tmp_path, "https://code.example.com/acme/forkmesh-acme.git") == \
+        "https://forkmesh.com/forkmesh/forkmesh"
+    assert _upstream_page(
+        tmp_path, "https://code.example.com/acme/forkmesh-acme",
+        "https://git.example.org/acme/forkmesh.git") == \
+        "https://git.example.org/acme/forkmesh"
+    assert '--upstream "$(platform_source)"' in TEXT
     assert 'echo "INSTANCE_UPSTREAM=$(upstream_page)"' in TEXT
     script = tmp_path / "patch.py"
     script.write_text(_git_node_config_patch())
@@ -663,7 +709,7 @@ def test_actions_install_job_tools_and_configure_the_app():
     assert 'echo "ACTIONS_BOT_SEED=$bot_seed"' in writer
     assert 'echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"' in writer
     assert 'echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"' in writer
-    assert '"plugins", "actions", "poweredBy"]' in writer
+    assert '"plugins", "actions", "poweredBy", "platformUrl"]' in writer
     assert 'RUNNER_NAME="$NODE_NAME-runner"' in TEXT
 
 
@@ -753,3 +799,12 @@ def test_the_installer_writes_and_keeps_the_turnstile_hostname():
     writer = function("write_settings")
     assert "grep -qE '^TURNSTILE_HOSTNAMES=.' \"$APP_ENV\"" in writer
     assert 'echo "TURNSTILE_HOSTNAMES=$DOMAIN"' in writer
+
+def test_the_platform_mirror_source_is_an_optional_setting(tmp_path):
+    found = values(parse(tmp_path, settings()).stdout)
+    assert found["CFG_platformUrl"] == ""
+    found = values(parse(tmp_path, settings(
+        platformUrl="https://app.forkmesh.com/forkmesh/forkmesh")).stdout)
+    assert found["CFG_platformUrl"] == "https://app.forkmesh.com/forkmesh/forkmesh"
+    result = parse(tmp_path, settings(platformUrl="http://insecure.example/x"))
+    assert result.returncode != 0 and "platformUrl" in result.stdout + result.stderr

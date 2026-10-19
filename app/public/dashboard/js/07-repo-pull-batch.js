@@ -263,7 +263,10 @@
   }
 
   function pullBatchCompareBase(row) {
-    return Array.isArray(row?.dependsOn) && row.dependsOn.length === 1 ? row.dependsOn[0] : "";
+    const branches = Array.isArray(row?.dependsOn)
+      ? row.dependsOn.filter((dependency) => !String(dependency).startsWith("#"))
+      : [];
+    return branches.length === 1 ? branches[0] : "";
   }
 
   async function runPullBatch(batch, { send = submitRemotePullOpen, onChange = () => {} } = {}) {

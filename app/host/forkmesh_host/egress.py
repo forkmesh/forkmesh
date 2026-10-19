@@ -96,11 +96,20 @@ def serves_production(environ=None) -> bool:
     return str(environ.get("FORKMESH_SERVES_PRODUCTION", "")) == "1"
 
 
+def production_allowed(name, environ=None) -> bool:
+    environ = os.environ if environ is None else environ
+    allowed = str(environ.get("FORKMESH_EGRESS_PRODUCTION_ALLOW", "") or "")
+    return name in {normalize_host(item) for item in allowed.split(",")
+                    if item.strip()}
+
+
 def production_host(host, environ=None) -> bool:
     if serves_production(environ):
         return False
     name = normalize_host(host)
     if name == NEXT_DOMAIN or name.endswith("." + NEXT_DOMAIN):
+        return False
+    if production_allowed(name, environ):
         return False
     return name == PRODUCTION_DOMAIN or name.endswith("." + PRODUCTION_DOMAIN)
 

@@ -1120,10 +1120,10 @@
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
-      `@${homeFeedActor(item)}`,
-      notificationTimeLabel(item.ts),
-      item.repo ? repoPublicKey(item.repo) : "",
-    ].filter(Boolean).map(escapeHtml).join(" · ");
+      userNameHtml(`@${homeFeedActor(item)}`),
+      escapeHtml(notificationTimeLabel(item.ts)),
+      item.repo ? escapeHtml(repoPublicKey(item.repo)) : "",
+    ].filter(Boolean).join(" · ");
     return `
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
         <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>

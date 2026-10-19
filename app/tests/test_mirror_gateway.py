@@ -4171,3 +4171,15 @@ def test_release_digest_is_remembered_until_the_file_changes(tmp_path, monkeypat
     assert not gateway._release_digest_matches(blob, digest)
     assert len(hashed) == 2
     gateway._RELEASE_DIGEST_MEMO.clear()
+
+
+def test_github_noreply_emails_give_contributor_avatars():
+    avatar = gateway._github_noreply_avatar
+    assert avatar("12345+alice@users.noreply.github.com") == \
+        "https://avatars.githubusercontent.com/u/12345?s=56&v=4"
+    assert avatar("49699333+dependabot[bot]@users.noreply.github.com") == \
+        "https://avatars.githubusercontent.com/u/49699333?s=56&v=4"
+    assert avatar("alice@users.noreply.github.com") == "https://github.com/alice.png?size=56"
+    for email in ("github-actions[bot]@users.noreply.github.com", "alice@example.com",
+                  "a/b@users.noreply.github.com", "", "x@users.noreply.github.com.evil.test"):
+        assert avatar(email) == "", email

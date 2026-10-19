@@ -781,6 +781,30 @@ def stage_single() -> Path:
     return stage_app()
 
 
+WORLD_CANONICAL_RE = re.compile(r'[ \t]*<link rel="canonical" href="[^"]*" />\n?')
+
+
+def stage_instance_world() -> Path:
+    destination = APP / "dist"
+    if not (destination / "index.html").is_file():
+        raise RuntimeError("stage the app (build_site_assets.py app) before instance-world")
+    world = stage_world()
+    target = destination / "world"
+    if target.exists():
+        forkmesh_safe_delete.remove_tree(target, destination)
+    for source in sorted(world.rglob("*")):
+        relative = source.relative_to(world)
+        if not source.is_file() or relative.as_posix() == "_headers":
+            continue
+        output = destination / relative
+        if relative.parts[0] != "world" and output.exists():
+            continue
+        copy_file(source, output)
+    index = target / "index.html"
+    index.write_text(WORLD_CANONICAL_RE.sub("", index.read_text(encoding="utf-8"), count=1), encoding="utf-8")
+    return target
+
+
 def main(arguments: list[str]) -> int:
     stagers = {
         "app": stage_app,
@@ -790,6 +814,7 @@ def main(arguments: list[str]) -> int:
         "www": stage_www,
     }
     targets = arguments[1:] or list(stagers)
+    stagers["instance-world"] = stage_instance_world
     for target in targets:
         stager = stagers.get(target)
         if stager is None:

@@ -641,6 +641,10 @@ async def _merge(env, request, context, row, record, data, owner_scope):
                 "No core answered for this repository. Try again shortly.",
                 503, retryable=True, degraded=True)
         base = session_base(record) or default or "main"
+        protection = await _branch_protection.branch_refusal(
+            env, context["servedOwner"], context["repo"], [base])
+        if protection is not None:
+            return protection
         head_oid, base_oid = tips.get(branch, ""), tips.get(base, "")
         if not head_oid and published_nothing(row, record):
             return await _merge_nothing(env, context, row, record, branch,
@@ -1316,6 +1320,18 @@ async def core_branch_op(env, request, owner, repo, record, data,
         head_oid = tips.get(base, "") if op == "update" else ""
         if op != "merge" and not tips.get(base or ""):
             return None
+    moved = [record.get("branch", "")] + ([base] if op == "merge" else [])
+    protected, problem = await _branch_protection.push_protection(
+        env, served, repo)
+    if problem or any(
+            branch and _branch_protection.branch_is_protected(
+                branch, protected) for branch in moved):
+        return (503 if problem else 403), {
+            "ok": False, "executed": True, "status": "failed",
+            "error": problem or "branch_protected", "op": op,
+            "branch": record.get("branch", ""),
+            "message": "This branch is protected: it changes only by "
+                       "merging an approved pull request."}
     node_request = _core_op_request(op, record, base, head_oid, request_id)
     if node_request is None:
         return None if not resuming else (409, {

@@ -461,6 +461,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("attribution-maintenance")
         elif hourly == 57:
             phases.append("badge-sweep")
+        elif hourly == 32:
+            phases.append("instance-announce")
         if minute % 1440 == 5:
             phases.append("attribution-clone-snapshot")
         if minute % 5 == 0:

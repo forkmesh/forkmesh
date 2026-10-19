@@ -104,7 +104,7 @@ def gateway_query(operation, query_string):
         for key in ("base", "head"):
             if params.get(key):
                 out.append((key, params[key][0]))
-    elif operation in ("tree", "blob", "raw", "commit"):
+    elif operation in ("tree", "blob", "raw", "commit", "history"):
         if params.get("path"):
             out.append(("path", repository_read_path(params["path"][0])))
     if params.get("ref") and operation in REF_OPERATIONS:

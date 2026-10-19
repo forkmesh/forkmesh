@@ -58,6 +58,14 @@ def test_production_hosts(host, production):
     assert egress.production_host(host) is production
 
 
+def test_an_instance_may_name_the_production_hosts_it_needs():
+    environ = {"FORKMESH_EGRESS_PRODUCTION_ALLOW": " APP.forkmesh.com. ,"}
+    assert egress.production_host("app.forkmesh.com", environ) is False
+    assert egress.production_host("forkmesh.com", environ) is True
+    assert egress.production_host("world.forkmesh.com", environ) is True
+    assert egress.production_host("app.forkmesh.com", {}) is True
+
+
 def _fake_dns(monkeypatch, answers):
     async def getaddrinfo(host, port, *args, **kwargs):
         if host not in answers:

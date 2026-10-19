@@ -115,6 +115,7 @@ import * as cameraRuntime from "./runtime/camera.js";
 import * as avatarSelectionRuntime from "./runtime/avatar-selection.js";
 import * as remotePlayersRuntime from "./runtime/remote-players.js";
 import * as networkRuntime from "./runtime/network.js";
+import { instanceHexArrival } from "./instance-hexes.js";
 import * as repositoryCatalogRuntime from "./runtime/repository-catalog.js";
 import * as repositoryRecordsRuntime from "./runtime/repository-records.js";
 import * as effectsRuntime from "./runtime/effects.js";
@@ -2611,6 +2612,7 @@ export async function createWorldScene({
     setTouchMovement,
     setTouchInteractionActive,
     setSpawn,
+    instanceHexArrival,
     travelToRegion,
     visitNeighborhoodHome,
     campfireSeatsReady,

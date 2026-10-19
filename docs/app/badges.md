@@ -31,6 +31,10 @@ platform administrator. An award is permanent. Some badges have levels
 
 ## Rules
 
+- Badges belong to accounts. `GET /api/badges/<organization>` answers
+  `{"ok": true, "kind": "organization", "badges": [], "progress": []}`, because
+  an organization's `/@<name>` profile renders with the same document and asks
+  for badges; it used to get a 404 there. Grants to an organization stay 404.
 - Every award goes through `_award_badge`, an `INSERT OR IGNORE`; the email
   is sent only when the row is new, so retries never mail twice.
 - **Distinguished Contributor**: an active user account whose own

@@ -160,6 +160,16 @@ async def identity(runtime, owner, repo):
     return owner, owner
 
 
+async def _actions_off(runtime, owner, repo):
+    check = getattr(runtime, "actions_off", None)
+    return bool(check is not None and await check(owner, repo))
+
+
+async def _push_protected(runtime, owner, repo, branch):
+    check = getattr(runtime, "branch_protected", None)
+    return bool(check is not None and await check(owner, repo, branch))
+
+
 async def enqueue(runtime, owner, repo, branch, commit="", node="",
                   pusher="", event="push", workflow="", payload=None,
                   before="", trusted=True, ref="", inputs=None):
@@ -175,6 +185,8 @@ async def enqueue(runtime, owner, repo, branch, commit="", node="",
             or not valid_branch(branch) or event not in EVENTS
             or (workflow and not WORKFLOW_PATH_RE.fullmatch(workflow))
             or (event != "push" and not workflow)):
+        return 0
+    if await _actions_off(runtime, owner, repo):
         return 0
     if commit and not OID_RE.fullmatch(commit):
         commit = ""
@@ -348,6 +360,11 @@ async def lease(runtime, runner, requested, maximum):
         event = str(row.get("event") or "push")
         workflow = str(row.get("workflow") or "")
         owner, public_owner = await identity(runtime, owner, repo)
+        if await _actions_off(runtime, owner, repo):
+            await runtime.d1_run(
+                "UPDATE repo_action_jobs SET status='cancelled',updated_at=? "
+                "WHERE id=? AND status='queued'", now, job_id)
+            continue
         if not (runner_leases._owner_allowed(runner, public_owner, requested)
                 or runner_leases._owner_allowed(runner, owner, requested)):
             continue
@@ -367,11 +384,13 @@ async def lease(runtime, runner, requested, maximum):
             continue
         push_grant = ""
         token = ""
-        if trusted:
+        if trusted and not await _push_protected(
+                runtime, owner, repo, branch):
             push_grant = await runner_leases._grant(
                 runtime, target, repo, "actions-push", "refs/heads/" + branch,
                 runner["name"], runtime.new_id(), now, expires_at,
                 owner=public_owner)
+        if trusted:
             token = runtime.new_id() + runtime.new_id()
         await runtime.d1_run(
             "UPDATE repo_action_jobs SET status='leased',lease_id=?,runner=?,"

@@ -37,7 +37,8 @@ A direct write by a non-writer is always refused; there is no path from
 
 The commit pack is pushed through `_https_mirror_push_send` with the
 `web-file-edit` credential. Only regular files (`100644`, `100755`) are
-editable; branch protection and push policy still apply.
+editable; a protected default branch refuses the edit at the gateway
+([branch-protection.md](branch-protection.md)) and push policy still applies.
 
 ## Proposals: editing without write access
 

@@ -469,6 +469,12 @@ organization), `name, value, updated_by, updated_at`) and `repo_action_logs`
   repository and its organization have at read time, so a value that becomes
   a secret after it was printed is hidden from then on too.
 
+
+A repository can turn Actions off (`actions` in its feature settings): enqueue
+skips it and lease cancels its queued jobs. On a protected default branch the
+lease issues no `actions-push` grant. Both are described in
+[../app/branch-protection.md](../app/branch-protection.md).
+
 ## Public run summary
 
 Like GitHub, the Actions tab of a public repository shows its runs to anyone;

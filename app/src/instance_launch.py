@@ -7,6 +7,7 @@ import json
 import re
 
 import instance_directory
+import instance_registry
 import instance_theme
 import runner_leases as leases
 import runner_ssh_setup as ssh_setup
@@ -39,6 +40,7 @@ LOGO_UNSAFE_RE = re.compile(
 MAX_LAUNCHES_PER_HOUR = 4
 MAX_RUNNING = 5
 HOUR_MS = 60 * 60 * 1000
+FETCH_TIMEOUT_SECONDS = 8
 KEEP_MS = 7 * 24 * 60 * 60 * 1000
 RUN_STALE_MS = 2 * 60 * 1000
 FLUSH_MS = 700
@@ -81,6 +83,8 @@ def match(action):
         return ("status", parts[1])
     if parts == ["instances"]:
         return ("instances",)
+    if parts == ["instances", "register"]:
+        return ("register",)
     if len(parts) == 3 and parts[0] == "instances" and parts[2] == "logo":
         return ("logo", parts[1])
     return None
@@ -393,6 +397,10 @@ def safe_redirect(url, domain):
 
 async def handle(runtime, route):
     kind = route[0]
+    if kind == "register":
+        if not runtime.serves_directory():
+            return _error(runtime, "not_found", 404)
+        return await instance_registry.register(runtime, logo_kind)
     method = runtime.method()
     want = "POST" if kind == "launch" else "GET"
     if method != want:
@@ -732,6 +740,37 @@ class LaunchRuntime(leases.WorkerRuntime):
                 "access-control-allow-origin": "*",
             },
         }))
+
+    def serves_directory(self):
+        return not instance_branded(self.env)  # noqa: F821
+
+    def world_home(self):
+        origin = _normalized_http_origin(  # noqa: F821
+            getattr(self.env, "WORLD_ORIGIN", "") or "")
+        home = origin + "/world/" if origin else ""
+        return home if instance_registry.WORLD_HOME_RE.fullmatch(home) else ""
+
+    async def fetch_bytes(self, url, limit):
+        try:
+            response = await js_fetch_with_timeout(  # noqa: F821
+                url, {"method": "GET", "redirect": "manual",
+                      "headers": {"accept": "application/json, image/*"}},
+                FETCH_TIMEOUT_SECONDS)
+        except Exception:
+            return None
+        status = int(getattr(response, "status", 0) or 0)
+        try:
+            length = int(response.headers.get("content-length") or 0)
+        except Exception:
+            length = 0
+        if length > limit:
+            return status, b"\0" * (limit + 1)
+        try:
+            raw = bytes(Uint8Array.new(  # noqa: F821
+                await response.arrayBuffer()).to_py())
+        except Exception:
+            return None
+        return status, raw
 
     async def client_key(self):
         address = _transient_client_address(self.request)  # noqa: F821

@@ -417,7 +417,7 @@ def test_worker_public_profile_page_wires_follow_and_public_mode():
     assert "data-profile-follow" in dashboard_js
     assert '"/api/accounts/" + encodeURIComponent(name) + "/follow"' in dashboard_js
     # Public mode never shows a mailbox for a foreign account.
-    assert 'profile.email = "@" + profile.nodeName' in dashboard_js
+    assert 'profile.email = "@" + userDisplayName(profile.nodeName)' in dashboard_js
 
 
 def test_public_profile_page_injects_verified_link_tags():

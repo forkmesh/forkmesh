@@ -111,7 +111,22 @@ fediverse handle and watcher list are still in the Watchers popover.
 
 Below the list, Languages, Contributors and Direct access are plain sections
 with sentence-case headings. Contributor avatars are neutral initials (the
-name and commit count are in the tooltip), not coloured gradients. Direct
+name and commit count are in the tooltip), not coloured gradients, with the
+contributor's picture drawn over them when one is known:
+
+- `avatarUrl` from the gateway's `stats`: the repository's own
+  `.forkmesh/info.json` contributor list, else a GitHub no-reply commit email
+  (`<id>+<login>@users.noreply.github.com` gives
+  `avatars.githubusercontent.com/u/<id>`, `<login>@users.noreply.github.com`
+  gives `github.com/<login>.png`; `[bot]` logins without an id get none).
+  Only plain `https:` addresses are used, loaded lazily without a referrer; a
+  picture that fails to load is removed and the initials show.
+- otherwise, a contributor name that is a valid account name is looked up on
+  the instance (`/api/accounts/<name>`, the same cached lookup issue actors
+  use) and its avatar replaces the initials when the account exists and is
+  public. Names with spaces keep initials.
+
+Commit emails are not sent to the browser. Direct
 access lists online mirrors as plain rows with no green: the node name, its
 version or, for the node serving the page, the response time, and an
 open-direct icon. The repository-logo suggestion form and the owner's
@@ -182,3 +197,32 @@ stayed blank.
   `MutationObserver` fetches it (same origin, at most 1 MiB, must start with
   `<svg`) and sets a `data:image/svg+xml` URL, which an image renders inertly
   and a browser will not open as a top-level page.
+
+## README raw HTML and images
+
+READMEs carry raw HTML: a centred logo (`<p align="center"><img …></p>`), a
+contributor wall of `<a href><img src width height></a>` avatars, `<picture>`
+with `<source>` variants. Both renderers turn that HTML into the markdown it
+stands for and render the markdown, so no README markup reaches the page as
+written:
+
+- The dashboard (`flattenMarkdownHtml`, `renderMarkdownInline` in
+  `06-repo-content.js`). A linked image becomes `[![alt](src)](href)`; the
+  image is parked behind a placeholder before the link is rendered, and the
+  link label is rendered by a nested call. That call used to start its own
+  placeholder list, so it looked the image up in an empty list and the wall
+  rendered as the text `undefined`. The placeholder list is now shared with
+  the nested call.
+- The server-rendered first view (`repo_ssr.markdown_html`), which used to
+  drop raw HTML and print images as their alt text, now flattens raw HTML the
+  same way and renders images.
+
+Both keep `width` and `height` (carried as a `#w=WxH` hint), so an image
+reserves its box before it loads. Kept: `http(s)` image and link addresses,
+same-origin paths, and relative paths, which resolve inside the repository
+(images through `/api/repo/<owner>/<repo>/raw`). Dropped: every attribute other
+than `src`, `alt`, `width`, `height` and `href`, event handlers, `style`,
+`javascript:`/`vbscript:`/`data:` (SVG) addresses, protocol-relative `//`
+addresses, `<svg>`, `<iframe>`, `<source srcset>`. External images get
+`referrerpolicy="no-referrer"`; instance pages already allow `https:` images in
+their CSP `img-src`, and there is no image proxy.

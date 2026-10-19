@@ -49,7 +49,10 @@ only drops a request file; a root unit does the work.
    `www/public/install-instance.sh` and runs it with `--update`. The installer
    rebuilds, migrates and restarts only what changed, as a manual
    `--update` does, and keeps secrets, data and accounts. Running the new
-   installer means installer fixes ship with the update.
+   installer means installer fixes ship with the update. The installer builds
+   beside the running version and switches only after a good build, rolling
+   back if the restart fails, so a failed update leaves the old version
+   serving ([../INSTANCES.md](../INSTANCES.md#updates-build-beside-the-running-version)).
 6. Progress goes to `/var/lib/forkmesh-instance-update/status.json`
    (root:forkmesh-app, 0640): state, the installer's current `FMI` step, the
    last `Error:` line, the commits before and after, and the upstream commit.
@@ -196,6 +199,39 @@ listed, turning canonical mode on made `/admin` render an empty repository
 page named "admin" and the admin console unreachable. A repository whose name
 is reserved keeps its `/<owner>/<repo>` address.
 
+Short addresses also skip the dashboard page names (`repos`, `settings`,
+`agents`, `runners`, ... from `DASHBOARD_PAGE_ASSETS`), `profile`, and the
+forge page names `explore` and `forgot`
+(`static_routes.SHORT_NAME_RESERVED`, sent to the browser as `reserved`).
+They are reserved only for short addresses, not as owner names, so an account
+with one of these names keeps its `/<name>/<repo>` pages on the shared site.
+
+Page addresses that used to fall into the short-repository router or the
+JSON 404 (seen on an instance in October 2026):
+
+- `/dashboard/profile/<name>` was bounced by `dashboard_repo_redirect` to
+  `/profile/<name>`, which canonical mode read as the repository `profile`.
+  `/dashboard/profile/<name>` and `/profile/<name>` (browsers cached the old
+  308) now 308 to `/@<name>` (`profile_page_redirect`), and
+  `dashboard_repo_redirect` never turns `/dashboard/<page>/...` into a
+  repository path.
+- `/<name>` of an organization or an active, non-node account 302s to its
+  profile `/@<name>` (`_account_page_redirect`).
+- `/explore` 308s to `/dashboard/repos` and `/forgot` to `/forgot-password`
+  (`LEGACY_PAGE_PATHS`).
+- `/<owner>/<repo>/commit/<sha>` and `/<repo>/commit/<sha>` 308 to
+  `.../commits/<sha>` (`REPO_ROUTE_ALIASES`, `repo_short_urls.alias_redirect`).
+  The repository page opens that commit's detail from the URL, and a click
+  on a commit pushes the same URL so it can be shared.
+- A short address whose repository the visitor cannot read (missing, or
+  private to someone else) still gets the repository page, which says
+  "Repository not found", but with status 404. The check is
+  `_repository_access_context` for the visitor, so a reader of a private
+  repository keeps status 200 and nobody else learns that it exists.
+- A route nothing owns answers the styled 404 page to a browser page load
+  (`_is_page_navigation`) and the JSON `{"error": "not_found"}` to API and
+  other clients.
+
 Internal accounts are node accounts (`_account_kind` = `node`): the git
 node `forkmesh`, the Actions bot `<org>-actions`. They keep their
 organization role (the bot stays a maintainer so workflows can push), but the
@@ -333,6 +369,9 @@ route and lands on an address that canonical mode never redirects again.
   Issues label filter.
 - The `history` read takes an optional `path`: the gateway runs
   `git log ... -- <path>`, and the app does not cache path-filtered history.
+  On a node the host's repository fast path forwards `path` for `history`
+  too (`docs/host/README.md`); `test_repo_fastpath_history_path.py` reads a
+  folder's history through the fast path and a real gateway.
 - An old owner whose name is also the short-address owner keeps its real
   repository (`/<owner>/<repo>`); only names in the table redirect. Git
   paths (`.git`) never redirect.

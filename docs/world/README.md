@@ -30,6 +30,7 @@ desktop embeds the same page.
 | `world/public/world/world-debug-log.js` | Admin debug log: counters, ring buffer, error/console/long-animation-frame/HTTP observers |
 | `world/public/world/world-mesh.js` | World mesh: directory normalising and the watch/visit sockets to neighbouring worlds ([World mesh](#world-mesh)) |
 | `world/public/world/world-boot.js` | Load log: boot timeline, scene-element and shader-compile trace, load suggestions |
+| `world/public/world/world-brand.js` | On a white-label instance, renames "ForkMesh" in canvas-painted scene text to the instance name ([INSTANCES.md](../INSTANCES.md#the-world-on-an-instance)) |
 | `world/public/world/world-marketplace-packages.js` | Loader for World packages from `marketplace/packages/*/content/world/` |
 | `world/public/world/elements/` | Self-contained purchasable World elements; contract in its `README.md` |
 | `world/public/world/vendor/` | Pinned three.js (`three-0.184.0`) and other vendored libraries |
@@ -480,6 +481,18 @@ count toward the safe-mode reboot; visible crashes are kind `crash`.
   its six desert hexes) on one shared map, and other worlds sit on the
   flowers around it. You can see them and walk straight in. See
   [World mesh](#world-mesh).
+- **Instance hexagons.** `INSTANCE_HEX_SLOTS` (`scene/layout.js`) is a second
+  ring of 12 tiles. An instance with its own world gets a meadow hexagon with
+  roads, its logo as a ground decal, and a landmark board that opens the
+  instance's address. `refreshInstanceDirectory()` reads
+  `/api/start/instances` every 5 minutes and keeps entries with
+  `world: true`, an https address, a 32-hex id and an unused slot. Nothing is
+  built while no instance has a hexagon. An entry with a `worldUrl` is a
+  portal: the board travels to that instance's own World at
+  `?portal=<slot>`, and an instance's World draws one "ForkMesh World"
+  hexagon that leads back; `?portal=<n>` places the arriving visitor in front
+  of hexagon `n`
+  ([../app/instance-federation.md](../app/instance-federation.md#world-connectivity)).
 - **Bounds.** `desertWalkSurfaceContains()` is the union of all hexes grown
   by the road width plus junction discs, the hexes of every placed
   neighbouring world included (`setWorldMeshFlowers()`). `WORLD_RADIUS` (1900) bounds remote

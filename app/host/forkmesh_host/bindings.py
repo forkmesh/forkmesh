@@ -19,6 +19,7 @@ import hashlib
 import itertools
 import json
 import mimetypes
+import re
 import sqlite3
 import time
 import urllib.parse
@@ -239,6 +240,50 @@ class LocalQueue:
 # --------------------------------------------------------------------------
 # Static assets
 
+_CONTROL_FILES = frozenset({"_headers", "_redirects", "_routes.json"})
+_HEADER_NAME = re.compile(r"^[A-Za-z0-9-]+$")
+
+
+def _header_pattern(pattern):
+    segments = []
+    for segment in pattern.split("/"):
+        if re.fullmatch(r":[A-Za-z_][A-Za-z0-9_]*", segment):
+            segments.append("[^/]+")
+        else:
+            segments.append(".*".join(
+                re.escape(part) for part in segment.split("*")))
+    return re.compile("/".join(segments))
+
+
+def parse_headers_file(text):
+    rules = []
+    current = None
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if not line[:1].isspace():
+            current = None
+            if stripped.startswith("/"):
+                current = (_header_pattern(
+                    urllib.parse.unquote(stripped)), [])
+                rules.append(current)
+            continue
+        if current is None:
+            continue
+        if stripped.startswith("!"):
+            op = ("unset", stripped[1:].strip(), "")
+        else:
+            name, sep, value = stripped.partition(":")
+            if not sep:
+                continue
+            op = ("set", name.strip(), value.strip())
+        if _HEADER_NAME.match(op[1]):
+            current[1].append(op)
+    return rules
+
+
 class StaticAssets:
     """``env.ASSETS``: Workers Static Assets semantics over a directory."""
 
@@ -247,10 +292,11 @@ class StaticAssets:
         self.root = Path(root).resolve()
         self.html_handling = html_handling
         self.not_found_handling = not_found_handling
+        self._header_rules = None
 
     def _file(self, relative):
         relative = relative.lstrip("/")
-        if not relative:
+        if not relative or relative in _CONTROL_FILES:
             return None
         try:
             candidate = (self.root / relative).resolve()
@@ -338,6 +384,28 @@ class StaticAssets:
             "cache-control": "public, max-age=0, must-revalidate",
         }
 
+    def header_rules(self):
+        if self._header_rules is None:
+            try:
+                text = (self.root / "_headers").read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                text = ""
+            self._header_rules = parse_headers_file(text)
+        return self._header_rules
+
+    def apply_header_rules(self, path, headers):
+        path = urllib.parse.unquote(path or "/")
+        for pattern, ops in self.header_rules():
+            if not pattern.fullmatch(path):
+                continue
+            for op, name, value in ops:
+                if op == "unset":
+                    headers.pop(name.lower(), None)
+            for op, name, value in ops:
+                if op == "set":
+                    headers[name.lower()] = value
+        return headers
+
     def serve(self, path, method="GET", if_none_match=None, redirects=True):
         kind, value = self.resolve(path, redirects)
         status = 200
@@ -351,6 +419,8 @@ class StaticAssets:
             status = 404 if self.not_found_handling == "404-page" else 200
         stat = value.stat()
         headers = self._headers(value, stat)
+        if redirects:
+            self.apply_header_rules(path, headers)
         if status == 200 and if_none_match and \
                 headers["etag"] in if_none_match:
             return _js.Response(None, 304, "", _js.Headers(headers))

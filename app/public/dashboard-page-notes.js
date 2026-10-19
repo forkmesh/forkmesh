@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["notes"] = (core) => {
-  const { $, escapeHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, submitWebIssue } = core;
+  const { $, escapeHtml, relativeTimeLabel, renderMarkdown, repoPathUrl, repoPublicKey, state, submitWebIssue, userNameHtml } = core;
   // Collaborative Markdown notes. Edits autosave through the version-checked
   // PATCH; the socket only announces persisted changes, in-progress drafts,
   // and lightweight presence.
@@ -487,7 +487,7 @@
     if (entry.kind === "web") return "";
     const me = String(state.session?.nodeName || "").toLowerCase();
     const actor = String(entry.actor || "");
-    return `<b>${escapeHtml(actor && actor === me ? "You" : actor || "Someone")}</b> `;
+    return `<b>${actor && actor === me ? "You" : actor ? userNameHtml(actor) : "Someone"}</b> `;
   }
 
   function renderNoteActivity() {

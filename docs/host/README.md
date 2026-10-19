@@ -57,6 +57,15 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   listens on loopback. `request_guard.py` rejects unknown hosts and oversized
   bodies and verifies the homepage Worker's signed visitor header
   (`deploy/core/edge_client.md`), once per request.
+- **Static headers without a fleet Caddy.** A single-server instance
+  (`install-instance.sh`) proxies everything to the app, so the app's
+  `StaticAssets` serves the static pages itself. It applies the dist's
+  `_headers` rules to those responses (security headers, the Turnstile CSP of
+  `/forgot-password`, cache lifetimes), the way the fleet's generated Caddy
+  routes do, and never serves `_headers`, `_redirects` or `_routes.json`.
+  Before this, `/forgot-password` and `/login` on an instance carried no CSP
+  or frame policy and `/_headers` was downloadable. `env.ASSETS.fetch` from
+  the Worker gets the plain file; the Worker sets its own headers.
 - **Block rules and rate limit.** The app and world names point straight at
   the cores, so the cores enforce what a CDN WAF would:
   - enabled `request_block_rules` (`user_agent_keyword`, `ip`, `cidr`,
@@ -78,7 +87,12 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   include is runtime state excluded from IDS integrity checks.
 - **Repository fast path.** Public repository reads are answered from the
   local gateway before the app; non-200 answers fall through. It adds the
-  app's CORS answer itself.
+  app's CORS answer itself. `gateway_query` must send the gateway the same
+  query the app's router builds (`_https_mirror_request_query`):
+  `test_query_matches_the_worker_router` compares the two. When the app
+  learned `history?path=` but the fast path did not, every folder's History
+  tab on an instance showed the whole repository's commits, because the fast
+  path answered first and dropped `path`.
 - **Egress.** Every subrequest refuses private, loopback, metadata, CGNAT and
   mesh addresses at connect time, re-checks redirects, and fails over across
   resolved addresses. Without `FORKMESH_SERVES_PRODUCTION=1`,

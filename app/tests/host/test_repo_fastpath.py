@@ -223,6 +223,8 @@ def entry(staged_src):
     ("raw", "path=a%20b.png&ref=" + COMMIT),
     ("blobs", "path=a&path=b&ref=main"),
     ("history", "ref=main&all=1&since=1&until=2"),
+    ("history", "path=pkg/app&ref=main"),
+    ("history", "path=./pkg//app/&ref=main&limit=5"),
     ("commit", "path=" + COMMIT + "&ref=main"),
     ("compare", "base=main&head=dev&ref=x"),
     ("merge-preview", "base=main&head=dev&ref=x"),
