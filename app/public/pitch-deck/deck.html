@@ -1271,11 +1271,45 @@
           enteredAt = performance.now();
           if (seconds > 0) pending.set(current, (pending.get(current) || 0) + seconds);
         };
+        const agent = navigator.userAgent || "";
+        const visit = {
+          $pathname: "/pitch-deck",
+          $current_url: `${location.origin}/pitch-deck`,
+          $host: location.host,
+          $title: "Investor deck",
+          $referrer: "$direct",
+          $referring_domain: "$direct",
+          $browser: /Edg\//.test(agent) ? "Edge" : /Firefox\//.test(agent) ? "Firefox" : /Chrome\//.test(agent) ? "Chrome" : /Safari\//.test(agent) ? "Safari" : "Other",
+          $os: /iPhone|iPad/.test(agent) ? "iOS" : /Android/.test(agent) ? "Android" : /Windows/.test(agent) ? "Windows" : /Mac OS X/.test(agent) ? "Mac OS X" : /Linux/.test(agent) ? "Linux" : "Other",
+          $device_type: /iPad|Tablet/.test(agent) ? "Tablet" : /Mobi|Android|iPhone/.test(agent) ? "Mobile" : "Desktop",
+          $viewport_width: window.innerWidth,
+          $viewport_height: window.innerHeight,
+          surface: "investor-deck",
+          deck: String(config.deck || ""),
+        };
+        let visitCounted = false;
+        const privacySignal = navigator.globalPrivacyControl === true || navigator.doNotTrack === "1" || window.doNotTrack === "1";
+        const record = (events) => {
+          if (privacySignal) return;
+          const at = Date.now();
+          const batch = events.map((properties, index) => ({
+            event: "investor_deck_page", distinctId: `deck-${session}`, sessionId: session,
+            uuid: `${session}-${at}-${index}`, ts: at, properties: { ...visit, ...properties, slides: total },
+          }));
+          if (!visitCounted) {
+            visitCounted = true;
+            batch.unshift({ event: "$pageview", distinctId: `deck-${session}`, sessionId: session, uuid: `${session}-view`, ts: startedAt, properties: visit });
+          }
+          const body = JSON.stringify({ key: "site", sentAt: at, batch });
+          try { if (navigator.sendBeacon("/api/analytics/_/capture", new Blob([body], { type: "text/plain" }))) return; } catch {}
+          fetch("/api/analytics/_/capture", { method: "POST", body, keepalive: true, headers: { "content-type": "text/plain" } }).catch(() => {});
+        };
         const flush = () => {
           accrue();
           if (!token || !pending.size) return;
           const events = Array.from(pending, ([page, seconds]) => ({ page, seconds }));
           pending.clear();
+          record(events);
           const body = JSON.stringify({ session, startedAt, events });
           const url = `/api/pitch-deck/${encodeURIComponent(token)}/events`;
           let sent = false;

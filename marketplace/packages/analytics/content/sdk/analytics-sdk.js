@@ -9,7 +9,8 @@
  *
  *   Every event is {t, k, d}: t = epoch ms, k = kind, d = data.
  *
- *   meta    {href, width, height}     URL + viewport; emitted right before each full
+ *   meta    {href, width, height, pageHeight}   URL + viewport + document
+ *           height; emitted right before each full
  *   full    {node, scroll: {x, y}}    node = serialized Document, window scroll
  *   mut     {removes: [{id}],
  *            adds:    [{parentId, nextId, node}],   nextId null = append
@@ -22,7 +23,8 @@
  *           time is t + timeOffset, t being the first sample of the batch
  *   mouse   {type, id, x, y}   type: click dblclick contextmenu mousedown
  *           mouseup touchstart touchend focus blur (focus/blur: no x, y)
- *   scroll  {id, x, y}         id of the Document node = window scroll
+ *   scroll  {id, x, y, h?}     id of the Document node = window scroll;
+ *           h = document height, set on window scrolls only
  *   resize  {width, height}
  *   input   {id, value?, checked?}    value is already masked
  *   custom  {name, url?, message?}    analytics event marker for the timeline
@@ -387,6 +389,11 @@
       return list;
     }
 
+    function pageHeight() {
+      const root = doc.documentElement, body = doc.body;
+      return Math.round(Math.max(root ? root.scrollHeight : 0, body ? body.scrollHeight : 0, win.innerHeight));
+    }
+
     function snapshot() {
       if (!running || dead) return;
       if (observer) observer.takeRecords();
@@ -394,7 +401,7 @@
       inputs.clear(); cssDirty.clear();
       paused = false;
       try {
-        emit("meta", { href: host.url(location.href), width: win.innerWidth, height: win.innerHeight });
+        emit("meta", { href: host.url(location.href), width: win.innerWidth, height: win.innerHeight, pageHeight: pageHeight() });
         emit("full", { node: serialize(doc, false), scroll: { x: Math.round(win.scrollX), y: Math.round(win.scrollY) } });
       } catch (_) { fail(); }
     }
@@ -559,7 +566,8 @@
         const id = ids.get(target);
         if (!id) return;
         const page = target === doc;
-        emit("scroll", { id, x: Math.round(page ? win.scrollX : target.scrollLeft), y: Math.round(page ? win.scrollY : target.scrollTop) });
+        if (page) emit("scroll", { id, x: Math.round(win.scrollX), y: Math.round(win.scrollY), h: pageHeight() });
+        else emit("scroll", { id, x: Math.round(target.scrollLeft), y: Math.round(target.scrollTop) });
       }, 100));
     }
 
