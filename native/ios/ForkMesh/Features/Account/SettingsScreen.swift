@@ -481,6 +481,8 @@ struct SettingsScreen: View {
             SettingsCardBox(padded: false) {
                 VStack(spacing: 0) {
                     if shown.contains(.data) {
+                        DataFolderSettingsRow()
+                        FmHairline()
                         NavigationLink {
                             AccountDataScreen()
                                 .shellPageClearance()

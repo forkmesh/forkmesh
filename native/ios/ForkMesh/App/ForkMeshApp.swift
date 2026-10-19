@@ -111,6 +111,7 @@ struct AppHomeView: View {
         }
         // A project switch replaces every view and view model underneath.
         .id(projects?.generation ?? 0)
+        .dataFolderAlert()
         .background(fm.canvas.ignoresSafeArea())
         .task {
             await updateCheck.check()

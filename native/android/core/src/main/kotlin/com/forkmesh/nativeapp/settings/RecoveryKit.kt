@@ -69,6 +69,18 @@ object RecoveryKit {
     }
 
     fun check(kit: String, passphrase: String, currentPublicKey: String): RecoveryKitCheck {
+        val (seed, createdAt) = open(kit, passphrase)
+        try {
+            val publicKey = B64.encodeUrlNoPadding(Ed25519.publicKey(seed))
+            return RecoveryKitCheck(publicKey, createdAt, publicKey == currentPublicKey)
+        } finally {
+            seed.fill(0)
+        }
+    }
+
+    fun openSeed(kit: String, passphrase: String): ByteArray = open(kit, passphrase).first
+
+    private fun open(kit: String, passphrase: String): Pair<ByteArray, Long> {
         if (passphrase.length < MIN_PASSPHRASE) throw RecoveryKitException.shortPassphrase
         if (kit.toByteArray().size > 256 * 1024) throw RecoveryKitException("That file is not a ForkMesh recovery kit.")
         @Suppress("UNCHECKED_CAST")
@@ -93,12 +105,12 @@ object RecoveryKit {
             } catch (_: Exception) {
                 throw RecoveryKitException.notASeed
             }
-            val publicKey = B64.encodeUrlNoPadding(derived)
             val recorded = clear.text("publicKey")
-            if (recorded.isNotEmpty() && recorded != publicKey) throw RecoveryKitException.notASeed
-            return RecoveryKitCheck(publicKey, container.long("createdAt"), publicKey == currentPublicKey)
-        } finally {
+            if (recorded.isNotEmpty() && recorded != B64.encodeUrlNoPadding(derived)) throw RecoveryKitException.notASeed
+            return Pair(seed, container.long("createdAt"))
+        } catch (failure: Throwable) {
             seed.fill(0)
+            throw failure
         }
     }
 
