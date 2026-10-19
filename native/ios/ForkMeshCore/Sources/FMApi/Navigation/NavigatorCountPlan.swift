@@ -39,6 +39,10 @@ public enum NavigatorCountPlan {
         fetchable.filter(shown.contains)
     }
 
+    public static func missing(_ kinds: [Route.Kind], known: Set<Route.Kind>) -> [Route.Kind] {
+        kinds.filter { !known.contains($0) }
+    }
+
     public static func run(
         _ kinds: [Route.Kind], width: Int = NavigatorCountPlan.width,
         _ load: @escaping @MainActor @Sendable (Route.Kind) async -> Int?

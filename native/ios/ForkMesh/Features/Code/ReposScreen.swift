@@ -31,6 +31,10 @@ struct ReposScreen: View {
             .task {
                 await desktop.start()
             }
+            .onChange(of: model.catalog.loading) { (_: Bool, loading: Bool) in
+                guard !loading, model.catalog.error == nil, let repos = model.catalog.data else { return }
+                ShellNavigatorCounts.shared.adopt(.repos, count: repos.count)
+            }
     }
 
     private var hasInstance: Bool { settings?.project.hasInstance != false }
