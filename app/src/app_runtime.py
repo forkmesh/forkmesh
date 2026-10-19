@@ -2038,6 +2038,10 @@ class Default:
         if legacy_page:
             return Response("", status=308, headers={"location": legacy_page})
 
+        profile_page = profile_page_redirect(url.path, url.query)
+        if profile_page:
+            return Response("", status=308, headers={"location": profile_page})
+
         # Familiar forge URLs (/pull/12, /-/merge_requests/12) 308 to the
         # canonical repository route (issue #508).
         repo_alias = repo_alias_redirect(url.path, url.query)
@@ -4033,6 +4037,10 @@ class Default:
         short_route = await self._repo_short_route(url)
         if short_route is not None:
             short_url, short_name = short_route
+            short_alias = await self._repo_short_alias_redirect(url)
+            if short_alias:
+                return Response("", status=308, headers={
+                    "location": short_alias})
             if short_name and looks_like_repo_route(short_url.path):
                 return await self._serve_repo_page(
                     request, short_url, short_name)
@@ -4071,7 +4079,35 @@ class Default:
                 return Response("", status=308, headers={"location": rest})
             return await self._serve_not_found_page(url)
 
+        account_target = await self._account_page_redirect(url)
+        if account_target:
+            return Response("", status=302, headers={
+                "location": account_target, "cache-control": "no-store"})
+        if (not url.path.startswith("/api/")
+                and _is_page_navigation(request)):
+            return await self._serve_not_found_page(url)
         return json_response({"error": "not_found"}, status=404)
+
+    async def _account_page_redirect(self, url):
+        name = account_page_name(url.path)
+        if not name:
+            return None
+        try:
+            if not (await _org_row(self.env, name))[1]:
+                account = (await _account_row(self.env, name))[1]
+                if (not account or account.get("status") != "active"
+                        or _account_kind(account) == "node"):
+                    return None
+        except Exception:
+            return None
+        return "/@" + quote(name) + ("?" + url.query if url.query else "")
+
+    async def _repo_short_alias_redirect(self, url):
+        setting = await self._repo_short_setting()
+        if not setting["short"]:
+            return None
+        return repo_short_urls.alias_redirect(
+            url.path, url.query, setting["owner"])
 
     async def _serve_not_found_page(self, url):
         base = url.scheme + "://" + url.netloc + "/"
@@ -4535,7 +4571,16 @@ class Default:
                     '<meta name="forkmesh-repo-canonical" content="%s">'
                     % _html_escape(owner) if canonical_short else ""),
                 1)
-        page = Response(body, status=200, headers={
+        status = 200
+        if short_name and owner and repo and not explicit_public:
+            try:
+                visible = await _repository_access_context(
+                    self.env, request, data_owner, repo)
+            except Exception:
+                visible = True
+            if visible is None:
+                status = 404
+        page = Response(body, status=status, headers={
             "content-type": "text/html; charset=utf-8",
             "cache-control": (
                 "public, max-age=300" if cache_key

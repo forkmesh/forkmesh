@@ -1739,6 +1739,10 @@
 
   // repoLinkUrl, not repoPathUrl: a record link addresses the repository the
   // page names (an organization alias), never the mirror publishing the bytes.
+  function repoCommitUrl(repo, hash) {
+    return `${repoLinkUrl(repo)}/commits/${encodeURIComponent(String(hash || ""))}`;
+  }
+
   function repoRecordUrl(repo, kind, number, section) {
     const url = `${repoLinkUrl(repo)}/${kind}/${number}`;
     // Only pulls have sections; an issue/discussion URL never grows a suffix.

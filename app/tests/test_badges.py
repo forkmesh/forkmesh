@@ -178,7 +178,8 @@ def test_award_badge_is_a_noop_for_unknown_slug_or_missing_account():
 
 # --- account_badges_handler ---------------------------------------------------
 
-def _account_badges_ns(is_admin, account_exists=True, existing_awards=None):
+def _account_badges_ns(is_admin, account_exists=True, existing_awards=None,
+                       orgs=()):
     writes = []
     audits = []
 
@@ -192,6 +193,9 @@ def _account_badges_ns(is_admin, account_exists=True, existing_awards=None):
 
     async def session_record(env, request, data=None):
         return "actor-bi", {"name": "actor"}
+
+    async def org_row(env, name):
+        return name + "-bi", ({"name": name} if name in orgs else None)
 
     async def has_role(env, name, role):
         assert role == "platform_administrator"
@@ -221,6 +225,7 @@ def _account_badges_ns(is_admin, account_exists=True, existing_awards=None):
             "clean_string": lambda value, size: str(value or "")[:size],
             "valid_node_name": lambda name: bool(name) and name.isalnum(),
             "_account_row": account_row,
+            "_org_row": org_row,
             "_account_session_record": session_record,
             "_has_role": has_role,
             "_audit_sensitive_action": audit,
@@ -267,6 +272,20 @@ def test_get_unknown_account_is_not_found():
         is_admin=False, account_exists=False)
     response = _run(handler(None, _Req("GET"), "ghost"))
     assert response == {"status": 404, "data": {"error": "not_found"}}
+
+
+def test_get_organization_badges_is_an_empty_public_list():
+    handler, writes, _audits = _account_badges_ns(
+        is_admin=True, account_exists=False, orgs={"acme"})
+    response = _run(handler(None, _Req("GET"), "acme"))
+    assert response["status"] == 200
+    assert response["data"] == {
+        "ok": True, "account": "acme", "kind": "organization",
+        "badges": [], "progress": []}
+    granted = _run(handler(
+        None, _Req("POST", {"slug": "mirror_operator"}), "acme"))
+    assert granted == {"status": 404, "data": {"error": "not_found"}}
+    assert writes == []
 
 
 def test_grant_requires_platform_administrator():

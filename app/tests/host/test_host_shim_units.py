@@ -286,6 +286,51 @@ def test_static_assets_html_handling(tmp_path):
         "content-type").startswith("application/javascript")
 
 
+def test_static_assets_apply_headers_file_and_hide_control_files(tmp_path):
+    (tmp_path / "forgot-password.html").write_text("form")
+    (tmp_path / "about.html").write_text("about")
+    (tmp_path / "404.html").write_text("missing")
+    (tmp_path / "assets" / "vendor").mkdir(parents=True)
+    (tmp_path / "assets" / "vendor" / "lib-1.js").write_text("lib")
+    (tmp_path / "_redirects").write_text("/a /b 301")
+    (tmp_path / "_headers").write_text(
+        "/*\n"
+        "  Content-Security-Policy: default-src 'self'\n"
+        "  X-Frame-Options: DENY\n"
+        "\n"
+        "# comment\n"
+        "/assets/vendor/*\n"
+        "  Cache-Control: public, max-age=31536000, immutable\n"
+        "\n"
+        "/forgot-password\n"
+        "  ! Content-Security-Policy\n"
+        "  Content-Security-Policy: default-src 'self'; "
+        "script-src 'self' https://challenges.cloudflare.com\n"
+        "\n"
+        "/:owner/:repo/issues/:number\n"
+        "  ! X-Frame-Options\n")
+    assets = StaticAssets(tmp_path, "drop-trailing-slash", "404-page")
+    about = assets.serve("/about")
+    assert about.headers.get("content-security-policy") == \
+        "default-src 'self'"
+    assert about.headers.get("x-frame-options") == "DENY"
+    form = assets.serve("/forgot-password")
+    assert "https://challenges.cloudflare.com" in form.headers.get(
+        "content-security-policy")
+    vendor = assets.serve("/assets/vendor/lib-1.js")
+    assert "immutable" in vendor.headers.get("cache-control")
+    missing = assets.serve("/acme/widgets/issues/7")
+    assert missing.status == 404
+    assert missing.headers.get("x-frame-options") is None
+    assert missing.headers.get("content-security-policy") == \
+        "default-src 'self'"
+    for control in ("/_headers", "/_redirects"):
+        assert assets.serve(control).status == 404
+        assert not assets.exists(control)
+    direct = run(assets.fetch("https://x.test/about.html"))
+    assert direct.headers.get("content-security-policy") is None
+
+
 class _Room:
     def __init__(self, ctx, env):
         self.ctx, self.env = ctx, env

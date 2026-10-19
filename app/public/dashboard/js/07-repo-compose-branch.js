@@ -2504,7 +2504,7 @@
     }
   }
 
-  function loadRepoFeaturePanels(repo, recordRoute = null, compareRoute = null) {
+  function loadRepoFeaturePanels(repo, recordRoute = null, compareRoute = null, commitHash = "") {
     loadRepoMirrors(repo);
     // Feature panels load on their FIRST tab view (and reload here after a
     // repo/branch switch if that tab is already active): fetching hidden live
@@ -2514,7 +2514,8 @@
     const active = state.activeRepoTab || "code";
     if (active === "commits") {
       state.loadedRepoTabs.commits = true;
-      loadRepoCommits(repo);
+      if (commitHash) loadRepoCommitDetail(repo, commitHash);
+      else loadRepoCommits(repo);
     } else if (active === "issues") {
       state.loadedRepoTabs.issues = true;
       // A refreshed/shared issue deep link (/owner/repo/issues/<N>) opens that

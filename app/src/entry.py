@@ -1195,6 +1195,8 @@ DASHBOARD_PAGE_ASSETS = _static_routes.export("DASHBOARD_PAGE_ASSETS")
 DASHBOARD_REPO_ASSET = "dashboard/repo.html"
 dashboard_section_redirect = _static_routes.export("dashboard_section_redirect")
 legacy_page_redirect = _static_routes.export("legacy_page_redirect")
+profile_page_redirect = _static_routes.export("profile_page_redirect")
+account_page_name = _static_routes.export("account_page_name")
 repo_alias_redirect = _static_routes.export("repo_alias_redirect")
 external_site_route = _static_routes.export("external_site_route")
 external_site_delivery = _static_routes.export("external_site_delivery")
@@ -31237,9 +31239,14 @@ async def account_badges_handler(env, request, raw_name):
     if not valid_node_name(name):
         return json_response({"error": "invalid_account"}, status=400)
     name_bi, rec = await _account_row(env, name)
-    if not rec:
-        return json_response({"error": "not_found"}, status=404)
     method = method_name(request)
+    if not rec:
+        if method == "GET" and (await _org_row(env, name))[1]:
+            return json_response(
+                {"ok": True, "account": name, "kind": "organization",
+                 "badges": [], "progress": []},
+                cache_seconds=30)
+        return json_response({"error": "not_found"}, status=404)
     if method == "GET":
         badges = await _account_badges(env, name_bi)
         earned = {badge["slug"] for badge in badges}

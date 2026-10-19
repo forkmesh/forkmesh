@@ -5,7 +5,8 @@ from urllib.parse import quote, unquote
 from static_routes import (
     REPO_DOCUMENT_ROUTES,
     REPO_TAB_ROUTES,
-    RESERVED_ROUTE_PREFIXES,
+    SHORT_NAME_RESERVED,
+    repo_alias_redirect,
 )
 
 SETTING_KEY = "repo_paths"
@@ -113,7 +114,7 @@ def rewrite(path, owner):
         return None
     first = unquote(parts[0])
     lowered = first.lower()
-    if (lowered in RESERVED_ROUTE_PREFIXES or not NAME_RE.fullmatch(first)
+    if (lowered in SHORT_NAME_RESERVED or not NAME_RE.fullmatch(first)
             or FILE_RE.search(first)):
         return None
     git_suffix = lowered.endswith(".git")
@@ -131,6 +132,17 @@ def rewrite(path, owner):
     if tail[0] in ROUTED:
         return "/%s/%s/%s" % (owner, parts[0], "/".join(rest)), name
     return "/%s/%s/tree/%s" % (owner, parts[0], "/".join(rest)), name
+
+
+def alias_redirect(path, query, owner):
+    hit = rewrite(path, owner)
+    if not hit or not hit[1]:
+        return None
+    target = repo_alias_redirect("/" + str(owner) + str(path), query)
+    prefix = "/" + str(owner) + "/"
+    if not target or not target.startswith(prefix):
+        return None
+    return target[len(prefix) - 1:]
 
 
 def example(owner, host):
@@ -215,7 +227,7 @@ def client_doc(setting, links=None):
     return {"owner": owner, "short": True, "canonical": True,
             "keep": sorted({str(k).lower() for k in links.get("keep") or ()}),
             "aliases": dict(sorted((links.get("aliases") or {}).items())),
-            "reserved": sorted(RESERVED_ROUTE_PREFIXES)}
+            "reserved": sorted(SHORT_NAME_RESERVED)}
 
 
 def _short_match(match, owner, links, clone):
