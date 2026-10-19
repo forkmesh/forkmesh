@@ -314,8 +314,8 @@ def main(argv=None) -> int:
     parser.add_argument("--to", action="append",
                         help="email these addresses instead of the early iOS testers "
                              "flagged in the admin (repeatable)")
-    parser.add_argument("--artifacts", type=Path, default=LAYOUT.data / "actions" / "artifacts")
-    parser.add_argument("--runs", type=Path, default=LAYOUT.data / "actions" / "runs")
+    parser.add_argument("--artifacts", type=Path, default=LAYOUT.data_path("actions") / "artifacts")
+    parser.add_argument("--runs", type=Path, default=LAYOUT.data_path("actions") / "runs")
     parser.add_argument("--state", type=Path, default=LAYOUT.state / "mac-adhoc")
     parser.add_argument("--seed-hosts-file", type=Path, default=LAYOUT.release_seed_hosts)
     parser.add_argument("--seed-ssh-key", type=Path, default=LAYOUT.fleet_ssh_key)

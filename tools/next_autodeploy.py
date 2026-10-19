@@ -607,7 +607,7 @@ class Log:
 
 
 def actions_root(layout=None) -> Path:
-    return (layout or forkmesh_paths.resolve()).data / "actions"
+    return (layout or forkmesh_paths.resolve()).data_path("actions")
 
 
 def running_runs(root: Path) -> list:

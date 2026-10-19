@@ -30,8 +30,24 @@ forkmesh_shared_dir() {
   fi
 }
 
+forkmesh_home_root() {
+  local name="$1" home_dir
+  home_dir="$(forkmesh_home_dir)"
+  if [ -e "$home_dir/data/core/$name" ]; then
+    printf '%s\n' "$home_dir/data/core/$name"
+  elif [ -e "$home_dir/$name" ]; then
+    printf '%s\n' "$home_dir/$name"
+  else
+    printf '%s\n' "$home_dir/data/core/$name"
+  fi
+}
+
 # The ForkMesh home project's managed ssh folder (fleet key, host CA).
 forkmesh_ssh_dir() {
+  if [ -e "$(forkmesh_home_dir)/data/core/ssh" ]; then
+    printf '%s\n' "$(forkmesh_home_dir)/data/core/ssh"
+    return
+  fi
   forkmesh_shared_dir ssh "${XDG_DATA_HOME:-$HOME/.local/share}/ForkMesh/ForkMesh/ssh"
 }
 
@@ -40,5 +56,9 @@ forkmesh_toolchain_dir() {
 }
 
 forkmesh_tool_logs_dir() {
+  if [ -e "$(forkmesh_home_dir)/data/core/logs" ]; then
+    printf '%s\n' "$(forkmesh_home_dir)/data/core/logs/tools"
+    return
+  fi
   forkmesh_shared_dir logs/tools "$HOME/.forkmesh/logs"
 }

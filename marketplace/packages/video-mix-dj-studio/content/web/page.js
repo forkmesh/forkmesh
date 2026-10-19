@@ -8,7 +8,8 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     a: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
     b: { id: "", url: "", cue: 0, level: 100, rate: 1, loop: false, player: null, ready: false, title: "", duration: 0, time: 0, playing: false, start: 0, resume: false },
   };
-  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", modalOpener: null, searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "", savedAt: 0, leaving: false };
+  const state = { crossfader: 0, interval: null, message: "Load a video into each deck to begin.", sampler: { context: null, level: 80 }, samples: [null, null, null, null], sampleCursor: 0, scratch: { a: null, b: null }, modal: "", modalOpener: null, searchTarget: "a", searchResults: [], searchBusy: false, searchEndpoint: "", savedAt: 0, leaving: false, autoDj: false, autoDjSeed: "", autoDjAt: 0, autoDjChoices: [], autoDjBusy: false, autoDjPlayed: [], autoDjHeard: [], autoDjEnded: "", autoDjMix: null };
+  const autoDjNoise = new Set(["official", "video", "audio", "music", "lyrics", "lyric", "visualizer", "visualiser", "hd", "hq", "4k", "mv", "remastered", "remaster", "explicit", "clean", "version", "full", "feat", "ft", "featuring", "topic"]);
 
   function safeNumber(value, fallback, low, high) {
     const number = Number(value);
@@ -19,6 +20,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     try {
       const saved = JSON.parse(localStorage.getItem(key) || "{}");
       state.crossfader = safeNumber(saved.crossfader, 0, -100, 100);
+      state.autoDj = saved.autoDj === true;
       state.sampler.level = safeNumber(saved.sampler?.level, 80, 0, 100);
       state.samples = Array.from({ length: 4 }, (_, index) => {
         const sample = saved.samples?.[index] || {};
@@ -39,7 +41,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   }
 
   function persist() {
-    const saved = { crossfader: state.crossfader, sampler: { level: state.sampler.level }, samples: state.samples, decks: {} };
+    const saved = { crossfader: state.crossfader, autoDj: state.autoDj, sampler: { level: state.sampler.level }, samples: state.samples, decks: {} };
     for (const name of ["a", "b"]) {
       const deck = decks[name];
       saved.decks[name] = { url: deck.url, cue: deck.cue, level: deck.level, rate: deck.rate, loop: deck.loop, position: deck.time, playing: deck.playing || deck.resume };
@@ -89,6 +91,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     command(deck, "addEventListener", ["onReady"]);
     command(deck, "addEventListener", ["onVideoDataChange"]);
     command(deck, "addEventListener", ["infoDelivery"]);
+    command(deck, "addEventListener", ["onError"]);
   }
 
   function embedUrl(id, start = 0) {
@@ -177,6 +180,163 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     } else target.textContent = "Search by song, artist, remix, set, or video title.";
   }
 
+  function fetchJson(url) {
+    return fetch(url).then((response) => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)));
+  }
+
+  async function invidious() {
+    if (!state.searchEndpoint) {
+      const instances = await fetchJson("https://api.invidious.io/instances.json?sort_by=health");
+      const instance = instances.find(([, details]) => details.api && details.cors && /^https:\/\//.test(details.uri || ""));
+      if (!instance) throw new Error("No searchable YouTube index is available.");
+      state.searchEndpoint = instance[1].uri.replace(/\/$/, "");
+    }
+    return state.searchEndpoint;
+  }
+
+  function keyWords(text) {
+    return String(text || "").toLowerCase().replace(/[^\p{L}\p{N}&]+/gu, " ").split(" ").filter((word) => word && !autoDjNoise.has(word)).join(" ");
+  }
+
+  function songKey(title) {
+    const name = String(title || "").replace(/\([^)]*\)|\[[^\]]*\]|\{[^}]*\}/g, " ");
+    const parts = name.split(/ [-–—|] /);
+    const tail = parts.slice(1).join(" ");
+    return keyWords(parts.length > 1 && keyWords(tail) ? tail : name);
+  }
+
+  function viewCount(row) {
+    if (Number(row.viewCount) > 0) return Number(row.viewCount);
+    const match = String(row.viewCountText || "").toLowerCase().replace(/,/g, "").match(/([0-9]+(?:\.[0-9]+)?)\s*([kmb]?)/);
+    return match ? Number(match[1]) * ({ k: 1e3, m: 1e6, b: 1e9 }[match[2]] || 1) : 0;
+  }
+
+  function autoDjEligible(rows, avoid, heard) {
+    const keys = new Set(heard.filter(Boolean));
+    const seen = new Set();
+    const found = [];
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (row.type && row.type !== "video") continue;
+      const id = videoId(row.videoId || row.url);
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      const rank = seen.size - 1;
+      const seconds = Number(row.lengthSeconds) || 0;
+      if (avoid.has(id) || seconds < 60 || seconds > 720) continue;
+      const key = songKey(row.title);
+      if (key && keys.has(key)) continue;
+      if (key) keys.add(key);
+      found.push({ id, title: String(row.title || "Untitled video"), author: String(row.author || ""), views: viewCount(row), likes: null, rank });
+    }
+    return found;
+  }
+
+  function autoDjRanked(found) {
+    const span = Math.max(0, ...found.map((item) => item.rank)) + 1;
+    const score = (item) => {
+      const likes = item.likes ?? item.views * 0.01;
+      const related = span > 1 ? 1 - item.rank / (span - 1) : 1;
+      const ratio = item.likes !== null && item.views > 0 ? Math.min(0.1, likes / item.views) * 10 : 0;
+      return Math.log10(1 + Math.max(0, likes)) + ratio + related * 2;
+    };
+    return found.map((item, index) => ({ item, index, score: score(item) })).sort((left, right) => right.score - left.score || left.index - right.index).map(({ item }) => item);
+  }
+
+  async function findAutoDj(name) {
+    const seed = decks[name];
+    const id = seed.id;
+    state.autoDjSeed = id;
+    state.autoDjAt = Date.now();
+    state.autoDjChoices = [];
+    state.autoDjBusy = true;
+    render();
+    const avoid = new Set([decks.a.id, decks.b.id, ...state.autoDjPlayed].filter(Boolean));
+    const heard = [songKey(seed.title), ...state.autoDjHeard];
+    try {
+      const endpoint = await invidious();
+      const video = await fetchJson(`${endpoint}/api/v1/videos/${encodeURIComponent(id)}?fields=recommendedVideos`);
+      let found = autoDjEligible(video.recommendedVideos, avoid, heard);
+      const query = songKey(seed.title).split(" ").slice(0, 6).join(" ");
+      if (!found.length && query.length >= 2) found = autoDjEligible(await fetchJson(`${endpoint}/api/v1/search?q=${encodeURIComponent(query)}&type=video`), avoid, heard);
+      const top = found.slice(0, 6);
+      await Promise.all(top.map(async (item) => {
+        try {
+          const counts = await fetchJson(`${endpoint}/api/v1/videos/${encodeURIComponent(item.id)}?fields=likeCount,viewCount`);
+          if (Number.isFinite(counts.likeCount) && counts.likeCount >= 0) item.likes = counts.likeCount;
+          if (Number(counts.viewCount) > 0) item.views = Number(counts.viewCount);
+        } catch (_) {}
+      }));
+      if (state.autoDjSeed !== id) return;
+      state.autoDjChoices = autoDjRanked(top).concat(autoDjRanked(found.slice(6)));
+      if (!found.length) status("Auto DJ found nothing new like this song. It tries again shortly.", "error");
+    } catch (_) {
+      state.searchEndpoint = "";
+      if (state.autoDjSeed === id) status("Auto DJ can’t reach YouTube suggestions right now. It tries again shortly.", "error");
+    } finally {
+      if (state.autoDjSeed === id) {
+        state.autoDjBusy = false;
+        render();
+      }
+    }
+  }
+
+  function liveDeck() {
+    const playing = ["a", "b"].filter((name) => decks[name].playing);
+    return playing.length > 1 ? (state.crossfader <= 0 ? "a" : "b") : playing[0] || "";
+  }
+
+  function autoDjTick() {
+    if (!state.autoDj || state.autoDjMix) return;
+    const live = liveDeck() || state.autoDjEnded;
+    const deck = live && decks[live];
+    if (!deck?.id) return;
+    if (state.autoDjSeed !== deck.id || (!state.autoDjBusy && !state.autoDjChoices.length && Date.now() - state.autoDjAt > 30000)) findAutoDj(live);
+    const left = deck.duration ? (deck.duration - deck.time) / deck.rate : Infinity;
+    if ((left <= 10 || state.autoDjEnded === live) && state.autoDjSeed === deck.id && state.autoDjChoices.length) startAutoDjMix(live);
+  }
+
+  function startAutoDjMix(from) {
+    const to = from === "a" ? "b" : "a";
+    if (decks[to].playing) return;
+    const pick = state.autoDjChoices.find((item) => item.id !== decks.a.id && item.id !== decks.b.id && !state.autoDjPlayed.includes(item.id));
+    if (!pick) return;
+    state.autoDjPlayed = [pick.id, ...state.autoDjPlayed].slice(0, 200);
+    state.autoDjHeard = [songKey(decks[from].title), songKey(pick.title), ...state.autoDjHeard].filter(Boolean).slice(0, 200);
+    state.autoDjEnded = "";
+    state.autoDjMix = { from, to, began: Date.now(), fading: 0, start: state.crossfader };
+    loadDeck(to, canonicalUrl(pick.id), 0, true);
+    status(`Auto DJ: ${pick.title} is up next on Deck ${to.toUpperCase()}.`);
+    autoDjFade();
+  }
+
+  function autoDjFade() {
+    const mix = state.autoDjMix;
+    if (!mix) return;
+    const now = Date.now();
+    if (!mix.fading) {
+      if (!decks[mix.to].playing && now - mix.began < 6000) { setTimeout(autoDjFade, 40); return; }
+      mix.fading = now;
+      mix.start = state.crossfader;
+    }
+    const progress = Math.min(1, (now - mix.fading) / 8000);
+    const eased = progress * progress * (3 - 2 * progress);
+    state.crossfader = Math.round(mix.start + ((mix.to === "b" ? 100 : -100) - mix.start) * eased);
+    applyMix();
+    if (progress < 1) { setTimeout(autoDjFade, 40); return; }
+    command(decks[mix.from], "pauseVideo");
+    state.autoDjMix = null;
+    persist();
+    render();
+  }
+
+  function toggleAutoDj() {
+    state.autoDj = !state.autoDj;
+    Object.assign(state, { autoDjSeed: "", autoDjChoices: [], autoDjBusy: false, autoDjEnded: "", autoDjMix: null });
+    status(state.autoDj ? (liveDeck() ? "Auto DJ on: when this song ends, a related song people liked plays on the next deck." : "Auto DJ on: play a song and related songs people liked follow it.") : "Auto DJ off.");
+    persist();
+    render();
+  }
+
   async function searchVideos(query) {
     const text = String(query || "").trim();
     if (text.length < 2) { status("Enter at least two characters to search YouTube.", "error"); return; }
@@ -184,13 +344,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     state.searchResults = [];
     searchCards();
     try {
-      if (!state.searchEndpoint) {
-        const instances = await fetch("https://api.invidious.io/instances.json?sort_by=health").then((response) => response.ok ? response.json() : Promise.reject());
-        const instance = instances.find(([, details]) => details.api && details.cors && /^https:\/\//.test(details.uri || ""));
-        if (!instance) throw new Error("No searchable YouTube index is available.");
-        state.searchEndpoint = instance[1].uri.replace(/\/$/, "");
-      }
-      const results = await fetch(`${state.searchEndpoint}/api/v1/search?q=${encodeURIComponent(text)}&type=video`).then((response) => response.ok ? response.json() : Promise.reject());
+      const results = await fetchJson(`${await invidious()}/api/v1/search?q=${encodeURIComponent(text)}&type=video`);
       state.searchResults = results.map((result) => ({ id: videoId(result.videoId || result.url), title: String(result.title || "Untitled video"), author: String(result.author || ""), thumbnail: String(result.videoThumbnails?.find((image) => image.quality === "medium")?.url || result.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${videoId(result.videoId || result.url)}/mqdefault.jpg`) })).filter((result) => result.id).slice(0, 12);
       if (!state.searchResults.length) status("No YouTube videos matched that search.", "error");
     } catch (_) {
@@ -445,6 +599,8 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       platter.setAttribute("aria-valuenow", String(deck.duration ? Math.round(deck.time / deck.duration * 100) : 0));
     }
     el("crossfader").value = String(state.crossfader);
+    el("auto-dj").setAttribute("aria-pressed", String(state.autoDj));
+    el("auto-dj").textContent = state.autoDj && state.autoDjBusy ? "Auto DJ…" : "Auto DJ";
     el("cross-value").textContent = state.crossfader === 0 ? "Center" : state.crossfader < 0 ? `${Math.abs(state.crossfader)}% A` : `${state.crossfader}% B`;
     el("search-target-a").classList.toggle("is-active", state.searchTarget === "a");
     el("search-target-b").classList.toggle("is-active", state.searchTarget === "b");
@@ -464,6 +620,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
       const deck = decks[name];
       if (deck.loop && deck.playing && deck.time >= deck.cue + 8) command(deck, "seekTo", [deck.cue, true]);
     }
+    autoDjTick();
     if ((decks.a.playing || decks.b.playing) && Date.now() - state.savedAt > 5000) persist();
     render();
   }
@@ -472,8 +629,15 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     if (event.origin !== "https://www.youtube-nocookie.com" || typeof event.data !== "string") return;
     let data;
     try { data = JSON.parse(event.data); } catch (_) { return; }
-    const deck = Object.values(decks).find((item) => item.player?.contentWindow === event.source);
+    const name = ["a", "b"].find((side) => decks[side].player?.contentWindow === event.source);
+    const deck = name && decks[name];
     if (!deck) return;
+    if (data.event === "onError" && state.autoDj && state.autoDjMix?.to === name) {
+      const from = state.autoDjMix.from;
+      state.autoDjMix = null;
+      startAutoDjMix(from);
+      return;
+    }
     const info = data.info || {};
     if (typeof info.currentTime === "number") deck.time = info.currentTime;
     if (typeof info.duration === "number" && info.duration > 0) deck.duration = info.duration;
@@ -481,6 +645,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
     if (data.event === "onStateChange") {
       const playerState = Number(data.info);
       deck.playing = playerState === 1;
+      if (playerState === 0 && state.autoDj) state.autoDjEnded = name;
       if (playerState === 1 || playerState === 0 || (playerState === 2 && !state.leaving)) deck.resume = false;
       if (!state.leaving) persist();
     }
@@ -495,6 +660,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   }
 
   function changeCrossfader(value) {
+    state.autoDjMix = null;
     state.crossfader = safeNumber(value, 0, -100, 100);
     applyMix();
     persist();
@@ -521,6 +687,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   el("open-load-a").addEventListener("click", () => openModal("load-a", "a"));
   el("open-load-b").addEventListener("click", () => openModal("load-b", "b"));
   el("open-search").addEventListener("click", () => openModal("search"));
+  el("auto-dj").addEventListener("click", toggleAutoDj);
   el("open-deck-a").addEventListener("click", () => openModal("deck-a", "a"));
   el("open-deck-b").addEventListener("click", () => openModal("deck-b", "b"));
   el("open-mixer").addEventListener("click", () => openModal("mixer"));
@@ -550,7 +717,7 @@ window.ForkMeshDashboard.registerPage("video-mix-dj-studio", ({ select }) => {
   for (const pad of root.querySelectorAll("[data-vmdj-pad]")) pad.addEventListener("click", () => triggerPad(pad.dataset.vmdjPad));
   for (const index of [0, 1, 2, 3]) el(`section-${index}`).addEventListener("click", () => playSection(index));
   el("save").addEventListener("click", () => { persist(); status("Set saved on this device."); });
-  el("reset").addEventListener("click", () => { destroyDeck("a"); destroyDeck("b"); state.crossfader = 0; try { localStorage.removeItem(key); } catch (_) {} status("Studio cleared."); closeModal(); render(); });
+  el("reset").addEventListener("click", () => { destroyDeck("a"); destroyDeck("b"); state.crossfader = 0; state.autoDjMix = null; state.autoDjEnded = ""; try { localStorage.removeItem(key); } catch (_) {} status("Studio cleared."); closeModal(); render(); });
   window.addEventListener("message", handleMessage);
   window.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && state.modal) { closeModal(); return; }

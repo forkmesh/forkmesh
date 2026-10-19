@@ -181,11 +181,11 @@ public enum InstanceFeed {
 @MainActor
 @Observable
 public final class InstanceFeedModel {
-    public static let title = "Instance Feed"
-    public static let notInstalledTitle = "Install Instance Feed"
+    public static let title = "Feed"
+    public static let notInstalledTitle = "Install Feed"
     public static let notInstalledMessage =
         "Read and write short posts with the people on this instance: reply, favourite, boost, and add a content warning when a post needs one. What you post is visible to everyone here who uses the feed."
-    public static let unavailableTitle = "The instance feed is unavailable"
+    public static let unavailableTitle = "The feed is unavailable"
 
     @ObservationIgnored public let api: InstanceFeedAPI
 
@@ -375,7 +375,7 @@ public final class InstanceFeedModel {
     }
 
     func message(_ error: Error) -> String {
-        (error as? OrgApiException)?.message ?? "The instance feed is unavailable right now."
+        (error as? OrgApiException)?.message ?? "The feed is unavailable right now."
     }
 
     func show(_ text: String, error: Bool = false) { notice = ToolsNotice(text, isError: error) }

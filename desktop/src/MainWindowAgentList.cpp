@@ -384,8 +384,7 @@ void MainWindow::initAgents()
     root = qEnvironmentVariable("FORKMESH_WINDOW_TEST_AGENT_ROOT");
 #endif
     if (root.isEmpty()) {
-        root = forkmesh::paths::dataRoot() +
-               QStringLiteral("/agents");
+        root = forkmesh::paths::dataPath(QStringLiteral("agents"));
     }
     m_agentStore = new AgentStore(root);
     loadAgentReadState();

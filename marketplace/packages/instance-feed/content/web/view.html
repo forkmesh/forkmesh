@@ -2,7 +2,7 @@
             <div class="mx-auto w-full max-w-2xl p-3 sm:p-6">
               <header class="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <h1 class="text-lg font-semibold text-foreground">Instance feed</h1>
+                  <h1 class="text-lg font-semibold text-foreground">Feed</h1>
                   <p class="mt-1 text-sm text-muted-foreground">Short posts from the people on this instance, newest first.</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
@@ -15,9 +15,9 @@
 
               <section data-ifeed-install-panel class="fm-blankslate hidden rounded-lg border border-border bg-card">
                 <i data-lucide="messages-square"></i>
-                <h2 class="fm-blankslate-title">Install Instance Feed</h2>
+                <h2 class="fm-blankslate-title">Install Feed</h2>
                 <p class="fm-blankslate-desc">Read and write short posts with the people on this instance: reply, favourite, boost, and add a content warning when a post needs one. What you post is visible to everyone here who uses the feed, and uninstalling removes your posts.</p>
-                <button data-ifeed-install type="button" class="fm-btn fm-btn-sm fm-btn-cta mt-3">Install Instance Feed</button>
+                <button data-ifeed-install type="button" class="fm-btn fm-btn-sm fm-btn-cta mt-3">Install Feed</button>
               </section>
 
               <div data-ifeed-app class="hidden">
@@ -37,7 +37,7 @@
                 </div>
                 <section data-ifeed-profile class="mb-3 hidden rounded-lg border border-border bg-card px-4 py-4"></section>
                 <div data-ifeed-list class="overflow-hidden rounded-lg border border-border bg-card">
-                  <div class="px-4 py-8 text-sm text-muted-foreground"><span class="fm-spinner"></span>Loading the instance feed…</div>
+                  <div class="px-4 py-8 text-sm text-muted-foreground"><span class="fm-spinner"></span>Loading the feed…</div>
                 </div>
                 <div class="mt-3 flex justify-center"><button data-ifeed-more type="button" class="fm-btn fm-btn-sm hidden">Load older posts</button></div>
               </div>
@@ -45,8 +45,8 @@
 
             <dialog data-ifeed-manage-dialog class="w-full max-w-lg bg-transparent p-0 text-foreground backdrop:bg-background/80">
               <div class="fm-dialog">
-                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Instance Feed data</h2></div>
-                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export your posts, boosts and favourites as JSON, or uninstall Instance Feed from your account. Uninstalling downloads your export first, then deletes your posts, boosts and favourites from the feed.</p></div>
+                <div class="fm-dialog-header"><h2 class="fm-dialog-title">Feed data</h2></div>
+                <div class="fm-dialog-body"><p class="text-sm text-muted-foreground">Export your posts, boosts and favourites as JSON, or uninstall Feed from your account. Uninstalling downloads your export first, then deletes your posts, boosts and favourites from the feed.</p></div>
                 <div class="fm-dialog-footer"><button data-ifeed-uninstall type="button" class="fm-btn fm-btn-sm fm-btn-danger mr-auto">Uninstall…</button><button data-ifeed-dialog-close type="button" class="fm-btn fm-btn-sm">Close</button><button data-ifeed-export type="button" class="fm-btn fm-btn-sm">Export my data</button></div>
               </div>
             </dialog>

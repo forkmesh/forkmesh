@@ -1,4 +1,4 @@
-# Instance Feed
+# Feed
 
 `marketplace/packages/instance-feed` is a Mastodon-style timeline for the
 people on one ForkMesh instance (the local timeline, in Mastodon terms). Each
@@ -6,6 +6,13 @@ account installs it for itself; everyone on the instance with it installed
 reads the same feed. It does not federate: the network-wide ActivityPub view
 is the separate `feed` package
 ([../marketplace-usage-feed-mastodon.md](../marketplace-usage-feed-mastodon.md)).
+
+Every surface (Market, web page, desktop rail, iOS and Android) calls it just
+Feed, at the user's request on 2026-10-19; it was Instance Feed. The package
+id, the `/api/instance-feed` routes, `/dashboard/instance-feed`, the tables
+and the request proof keep the old name so existing installs and data carry
+over. The ActivityPub `feed` package was renamed Network Feed in the same
+change so the Market and the rail never show two packages called Feed.
 
 ## Code map
 
@@ -102,3 +109,59 @@ notification links are dashboard paths (`/dashboard/instance-feed?post=<id>`),
 which the desktop's notification router does not map to native pages yet, so
 clicking one raises the window without opening the post.
 
+## Android
+
+`native/android/app/src/main/kotlin/com/forkmesh/nativeapp/feature/instancefeed/InstanceFeedScreen.kt`
+is the native Compose page, registered for `Route.Kind.InstanceFeed` by
+`InstanceFeedFeature`. The hub, the top bar and the route catalog call it
+"Feed"; the package id, route kind and class names keep `instance-feed` /
+`InstanceFeed`. Its icon is `comment`, as on the desktop rail
+(`dynamic_feed` is not in the bundled Material Icons subset).
+
+It talks to the Worker through `market/InstanceFeed.kt` in `:core` (the
+account's `PackagesClient` from `MarketFeature.client()`), always off the main
+thread. The timeline, a profile (`@name`) and a thread (`Post`) are separate
+screens on the navigator stack, so the system back button walks back through
+them; they share one `FeedSession` that carries favourite, boost and reply
+count changes and deletions across them without a reload. A route with a post
+id (`forkmesh://instance-feed?post=<id>` or the dashboard link) opens the
+timeline and pushes that thread on top.
+
+The timeline has the compose box first: text with a remaining-character
+counter against the server's `maxLength`, an optional content warning (`CW`)
+and the `Post` button. Reply puts the composer in reply mode
+("Replying to @name", prefilled mention, Cancel) and scrolls to it; after a
+reply the thread opens, or reloads if it is the current view. Posts show the
+author, `@name`, relative time, "X boosted" and "Replying to @y" headers, a
+collapsed content warning behind Show more, and text from `InstanceFeed.spans`
+with tappable `https` links (browser) and mentions (profile). Actions are
+reply, boost (active in `accent`), favourite (active in `warning`) and, when
+`canDelete`, delete after a confirmation. Older pages load when the end of the
+list comes into view, or from "Load older posts"; pull down or the refresh
+button reloads. An account without the package sees a note with an "Open in
+Market" button to the package's Market page.
+
+## iOS
+
+`native/ios/ForkMesh/Features/Packages/FeedScreen.swift` is the native SwiftUI
+page, registered for `.instanceFeed(post:)` in
+`Navigation/RouteFallbacks.swift`. It drives `InstanceFeedModel` from
+`ForkMeshCore/Sources/FMTools/InstanceFeedModels.swift` (the account's
+`ApiService.instanceFeedApi`). The route catalog, the hub and the screen call it
+"Feed"; the package id, route case and type names keep `instance-feed` /
+`InstanceFeed`.
+
+The timeline has the compose box first (text, remaining-character counter
+against `maxLength`, optional content warning, `Post`). Reply opens a sheet in
+reply mode ("Replying to @name", prefilled mention). Posts show the author,
+`@name`, relative time, "X boosted" and "Replying to @y" lines, a content
+warning collapsed behind Show more, and text from `InstanceFeed.segments` with
+`https` links (browser) and mentions (profile). Actions are reply, boost
+(active in `accent`), favourite (active in `warning`) and, when `canDelete`,
+delete after a confirmation. Tapping a post pushes its thread and tapping an
+author pushes their profile (summary header first); each pushed screen has its
+own model. Older pages load when the end of the list appears or from "Load
+older posts"; pull down or the refresh button reloads. A route with a post id
+opens that thread with "Back to the feed". An account without the package sees
+the install note and "Open in the Market", which opens the package's Market
+page.

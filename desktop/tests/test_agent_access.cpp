@@ -134,7 +134,7 @@ void testGlobalRules()
     check(fresh.followGlobal, QStringLiteral("no project.json: follows the global rules"));
 
     const QString rulesPath = projects::globalRulesPath(QDir(temp.path()).filePath("home"));
-    check(rulesPath.endsWith(QLatin1String("home/config/agent-rules.json")),
+    check(rulesPath.endsWith(QLatin1String("home/data/core/config/agent-rules.json")),
           QStringLiteral("global rules live in the home project's config folder"));
     const projects::GlobalAgentRules defaults = projects::loadGlobalRules(rulesPath);
     check(defaults.defaults.folders == projects::AgentAccess::Folders::Project &&

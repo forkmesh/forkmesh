@@ -160,8 +160,8 @@ class NavigationTest {
             RouteParser.parse("https://app.forkmesh.com/dashboard/instance-feed?post=0123456789abcdef0123456789abcdef")!!.stack,
         )
         assertEq(null, RouteParser.parse("https://app.forkmesh.com/dashboard/instance-feed/extra"))
-        assertEq("Instance Feed", RouteCatalog.title(Route.Kind.InstanceFeed))
-        assertEq("dynamic_feed", RouteCatalog.icon(Route.Kind.InstanceFeed))
+        assertEq("Feed", RouteCatalog.title(Route.Kind.InstanceFeed))
+        assertEq("comment", RouteCatalog.icon(Route.Kind.InstanceFeed))
         expect(HubCatalog.personal.any { it.route == Route.InstanceFeed(null) && it.needsRegistration })
         expect(Route.RssReader in HubCatalog.personal.mapNotNull { it.route })
         assertEq(listOf(Route.SecureDrive), RouteParser.parse("forkmesh://secure-drive")!!.stack)

@@ -515,6 +515,7 @@ public struct DjSaved: Codable, Equatable, Sendable {
     public var history: [DjHistoryItem] = []
     public var queue: [DjQueueItem] = []
     public var automix: Bool = false
+    public var autoDj: Bool = false
     public var library: [DjPlayedSong] = []
 
     public init() {}
@@ -536,6 +537,7 @@ public struct DjSaved: Codable, Equatable, Sendable {
         var ids = Set<String>()
         queue = Array(queued.compactMap(\.item).filter { ids.insert($0.id).inserted }.prefix(DjStudio.queueLimit))
         automix = ((try? values.decodeIfPresent(Bool.self, forKey: .automix)) ?? nil) ?? false
+        autoDj = automix && (((try? values.decodeIfPresent(Bool.self, forKey: .autoDj)) ?? nil) ?? false)
         if values.contains(.library) {
             let played = ((try? values.decodeIfPresent([DjPlayedEntry].self, forKey: .library)) ?? nil) ?? []
             var known = Set<String>()

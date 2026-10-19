@@ -2002,6 +2002,28 @@ bool MainWindow::setPackageInstalled(const QString &id, bool installed,
         !agentPackage || installed ||
         removePackageAgentModels(id, managedModels);
 
+    if (!installed) {
+        QStringList kept;
+        const QStringList removedIds = changedIds.isEmpty() ? QStringList{id} : changedIds;
+        for (const QString &removedId : removedIds) {
+            const QString folder = forkmesh::paths::pluginDataDir(removedId);
+            const QDir dir(folder);
+            if (!dir.exists() || dir.isEmpty())
+                continue;
+            const PackageManifest *removed = m_packageRegistry->package(removedId);
+            const QString name = removed && !removed->name.isEmpty() ? removed->name : removedId;
+            kept << QStringLiteral("%1: %2").arg(name, QDir::toNativeSeparators(folder));
+        }
+        if (!kept.isEmpty()) {
+            QMessageBox::information(
+                this, QStringLiteral("Plugin data kept"),
+                QStringLiteral("The plugin is removed, but its data stays on disk:\n\n%1\n\n"
+                               "Install the plugin again to use it, or delete the folder "
+                               "yourself if you no longer need it.")
+                    .arg(kept.join(QLatin1Char('\n'))));
+        }
+    }
+
     if (themePackage) {
         QSettings settings;
         const QString preference =

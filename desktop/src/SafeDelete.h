@@ -129,6 +129,9 @@ inline QVector<QPair<QString, RootKind>> protectedRoots()
     static const QStringList projectRoots{
         QStringLiteral("src"),   QStringLiteral("data"), QStringLiteral("config"),
         QStringLiteral("ssh"),   QStringLiteral("state"), QStringLiteral("logs"),
+        QStringLiteral("data/core"),       QStringLiteral("data/core/config"),
+        QStringLiteral("data/core/ssh"),   QStringLiteral("data/core/state"),
+        QStringLiteral("data/core/logs"),
     };
     auto addProject = [&](const QString &project) {
         if (QFileInfo(project).fileName() == QLatin1String("forkmesh-backup")) {
@@ -138,7 +141,8 @@ inline QVector<QPair<QString, RootKind>> protectedRoots()
         add(project, RootKind::Project);
         for (const QString &sub : projectRoots) {
             const bool strict =
-                sub == QLatin1String("src") || sub == QLatin1String("ssh");
+                sub == QLatin1String("src") || sub == QLatin1String("ssh") ||
+                sub == QLatin1String("data/core/ssh");
             add(project + QLatin1Char('/') + sub,
                 strict ? RootKind::Strict : RootKind::Owned);
         }

@@ -20,11 +20,9 @@ QString legacyDirectory()
 
 QString AgentPromptImages::directory()
 {
-    QString base =
-        forkmesh::paths::dataRoot();
-    if (base.isEmpty())
-        base = QDir::tempPath(); // no writable app data: better than nothing
-    return base + QStringLiteral("/agent-images");
+    if (forkmesh::paths::dataRoot().isEmpty())
+        return QDir::tempPath() + QStringLiteral("/agent-images"); // no writable app data: better than nothing
+    return forkmesh::paths::dataPath(QStringLiteral("agent-images"));
 }
 
 QString AgentPromptImages::save(const QImage &image)

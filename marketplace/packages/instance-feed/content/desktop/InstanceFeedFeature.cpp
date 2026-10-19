@@ -171,7 +171,7 @@ InstanceFeedFeature::InstanceFeedFeature(const forkmesh::market::NativePackageHo
     outer->setSpacing(10);
 
     auto *heading = new QHBoxLayout;
-    auto *title = new QLabel(QStringLiteral("Instance feed"));
+    auto *title = new QLabel(QStringLiteral("Feed"));
     title->setObjectName(QStringLiteral("pageTitle"));
     heading->addWidget(title);
     auto *subtitle = mutedLabel(QStringLiteral("Short posts from the people on this instance, newest first"));
@@ -184,11 +184,11 @@ InstanceFeedFeature::InstanceFeedFeature(const forkmesh::market::NativePackageHo
     heading->addWidget(m_exportButton);
     outer->addLayout(heading);
 
-    m_status = mutedLabel(QStringLiteral("Loading the instance feed…"));
+    m_status = mutedLabel(QStringLiteral("Loading the feed…"));
     outer->addWidget(m_status);
 
     m_notInstalled = mutedLabel(QStringLiteral(
-        "Instance Feed is not installed for your ForkMesh account. Install it from the Market to "
+        "Feed is not installed for your ForkMesh account. Install it from the Market to "
         "read and write posts with the people on this instance."));
     m_notInstalled->setAlignment(Qt::AlignHCenter);
     m_notInstalled->setContentsMargins(8, 36, 8, 8);
@@ -312,7 +312,7 @@ void InstanceFeedFeature::request(const QByteArray &method, const QString &path,
                                   const QJsonObject &body, ReplyHandler handler)
 {
     if (!m_request) {
-        handler(false, {}, QStringLiteral("Instance Feed network access is unavailable."));
+        handler(false, {}, QStringLiteral("Feed network access is unavailable."));
         return;
     }
     const QPointer<InstanceFeedFeature> guard(this);
@@ -405,7 +405,7 @@ void InstanceFeedFeature::load(bool append)
                 render();
                 return setStatus(QStringLiteral("That post was deleted."), true);
             }
-            return setStatus(QStringLiteral("The instance feed could not load: %1").arg(error), true);
+            return setStatus(QStringLiteral("The feed could not load: %1").arg(error), true);
         }
         m_checked = true;
         m_installed = thread || payload.value(QStringLiteral("installed")).toBool();
@@ -483,7 +483,7 @@ void InstanceFeedFeature::render()
         auto *empty = mutedLabel(m_view == View::Thread
             ? QStringLiteral("This post was deleted.")
             : m_view == View::Profile
-                ? QStringLiteral("@%1 has not posted to the instance feed yet.").arg(m_author)
+                ? QStringLiteral("@%1 has not posted to the feed yet.").arg(m_author)
                 : QStringLiteral("No posts yet. Be the first to post to this instance."));
         empty->setAlignment(Qt::AlignHCenter);
         empty->setContentsMargins(8, 32, 8, 32);
@@ -790,7 +790,7 @@ void InstanceFeedFeature::exportMine()
             return setStatus(QStringLiteral("The export failed: %1").arg(error), true);
         const QString suggested = text(payload, "filename").isEmpty()
             ? QStringLiteral("forkmesh-instance-feed.json") : text(payload, "filename");
-        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Save the Instance Feed export"),
+        const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Save the Feed export"),
                                                           suggested, QStringLiteral("JSON files (*.json)"));
         if (path.isEmpty())
             return;
@@ -831,7 +831,7 @@ namespace {
 const forkmesh::market::NativePackageRegistration instanceFeedRegistration({
     QStringLiteral("builtin:instance-feed"),
     {QStringLiteral("extension.native")},
-    QStringLiteral("Instance feed"),
+    QStringLiteral("Feed"),
     QStringLiteral("comment"),
     QStringLiteral("/api/instance-feed"),
     QStringLiteral("forkmesh-instance-feed-request-v1"),

@@ -49,6 +49,19 @@ fm_safe_rm_tree() {
       esac
       sub="${rel#"$first"}"; sub="${sub#/}"
       [ -n "$sub" ] || { printf 'Refusing to delete: %s is a protected ForkMesh folder\n' "$target" >&2; return 64; }
+      if [ "$first" = "data" ] && { [ "$sub" = "core" ] || [ "${sub#core/}" != "$sub" ]; }; then
+        sub="${sub#core}"; sub="${sub#/}"
+        [ -n "$sub" ] || { printf 'Refusing to delete: %s is a protected ForkMesh folder\n' "$target" >&2; return 64; }
+        first="${sub%%/*}"
+        case "$first" in
+          cache) continue ;;
+          ssh) kind=strict ;;
+          *) kind=owned ;;
+        esac
+        sub="${sub#"$first"}"; sub="${sub#/}"
+        [ -n "$sub" ] || { printf 'Refusing to delete: %s is a protected ForkMesh folder\n' "$target" >&2; return 64; }
+        first="data/core/$first"
+      fi
       case "/$sub/" in
         */build/*|*/build-*|*/build_*|*/builds/*|*/cache/*|*/.cache/*|*/caches/*|*/tmp/*|*/.tmp/*|*/tmp-*|*/tmp.*|*/temp/*|*/worktrees/*|*/.worktrees/*|*/node_modules/*|*/__pycache__/*|*/.pytest_cache/*|*/dist/*|*/out/*|*/.forkmesh/?*/*) continue ;;
       esac

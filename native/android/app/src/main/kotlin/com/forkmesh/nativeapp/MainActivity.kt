@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         AppLifecycle.setForeground(false)
         FmUserActivity.flush()
+        com.forkmesh.nativeapp.feature.account.settings.DataFolderFeature.syncSoon()
         super.onPause()
     }
 
