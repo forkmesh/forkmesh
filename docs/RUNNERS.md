@@ -168,6 +168,7 @@ systemd-run --scope --quiet --collect [--user] -p MemoryMax=<jobMemoryMax> -p Me
 |---|---|---|
 | `POST /api/runners/register` | session plus key proof | register name and public key |
 | `POST /api/runners/revoke` | registrant (pool runners: also any admin) | revoke |
+| `POST /api/runners/pause`, `/resume` | registrant (pool runners: also any admin) | stop or restart new claims ([marketplace/runners.md](marketplace/runners.md#pause)) |
 | `POST /api/runners/claim` | runner-signed | lease up to N jobs |
 | `POST /api/runners/report` | runner-signed, lease holder | report result |
 | `POST /api/runners/attachment` | runner-signed, lease holder | bytes of one prompt image |
@@ -386,6 +387,10 @@ when it checked in within 10 minutes, the same window as `ONLINE_MS` in
 truncated field with Copy and Open, the terminal as one flat code block, then
 the code form. The settings page renders the same rows into its own list
 container ([app/settings-agents-and-runners.md](app/settings-agents-and-runners.md)).
+
+The desktop and both phones manage the same runners through the `runners`
+Market package ([marketplace/runners.md](marketplace/runners.md)), which also
+pauses, resumes and revokes them.
 
 ## Live agent output
 

@@ -121,6 +121,7 @@
     { "id": "special-agents", "version": "1.0.0", "manifest": "packages/special-agents/manifest.json" },
     { "id": "shortcuts", "version": "1.0.0", "manifest": "packages/shortcuts/manifest.json" },
     { "id": "hosts", "version": "1.0.0", "manifest": "packages/hosts/manifest.json" },
+    { "id": "runners", "version": "1.0.0", "manifest": "packages/runners/manifest.json" },
     { "id": "network", "version": "1.0.0", "manifest": "packages/network/manifest.json" },
     { "id": "coves", "version": "1.0.0", "manifest": "packages/coves/manifest.json" },
     { "id": "on-device-ai", "version": "1.0.0", "manifest": "packages/on-device-ai/manifest.json" },

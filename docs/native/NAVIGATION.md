@@ -531,6 +531,12 @@ Android: [ANDROID.md](ANDROID.md), section 13).
   again, and that shortcut's detail page links here
   ([App Store Status](../marketplace/app-store-status.md)). Android:
   `Route.AppStoreStatus`, `AppStoreStatus.kt`, `feature/appstorestatus/`.
+- **Runners** (`.runners`, `/dashboard/runners`, `forkmesh://runners`,
+  Operate group after Hosts): the runners the account registered, with
+  status, provider sign-in and accounts, and Pause, Resume and Revoke
+  (`RunnersScreen.swift`, `RunnerList.swift`, `RunnersModel.swift`)
+  ([Runners](../marketplace/runners.md)). Android: `Route.Runners`,
+  `runners/RunnerList.kt`, `feature/runners/`.
 - **Usage** (`.usage`, `/dashboard/usage`, Insights group): the paired
   desktop's Claude Code and Codex accounts, usage windows and credits, with
   the account actions and terminals (`UsageScreen.swift`, body

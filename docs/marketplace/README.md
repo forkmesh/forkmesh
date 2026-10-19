@@ -84,7 +84,10 @@ own Usage page with this desktop's Claude Code and Codex accounts and their
 controls, which the Usage package embeds
 ([../desktop/agents-ui.md](../desktop/agents-ui.md)), and for packages
 declaring `desktop.logins.use`, `loginStoreName()`, `saveLogin(login, asker,
-done)` and `findLogins(url, asker, done)` (see **Login store** below). `request` waits out the
+done)` and `findLogins(url, asker, done)` (see **Login store** below), and `openWebPage(path)`, which opens a
+same-origin path on the active host in the browser (credentials dropped,
+another origin or a `..` segment refused; `nativePackageWebPageUrl`, used by
+the [Runners](runners.md) page). `request` waits out the
 network manager's host-wide cooldown (after a 5xx or 429 on any `/api/`
 route) and resends GETs up to four times before reporting "the ForkMesh relay
 is restarting or unreachable".
@@ -280,7 +283,10 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   `app-store-status` ([app-store-status.md](app-store-status.md)),
   `backups`, `cleanup` ([cleanup.md](cleanup.md)), `computer-security`
   ([computer-security.md](computer-security.md)), `phone-security`, its
-  iPhone and Android counterpart ([phone-security.md](phone-security.md)).
+  iPhone and Android counterpart ([phone-security.md](phone-security.md)),
+  `runners` (your agent runners on the desktop, iPhone and Android: status,
+  provider sign-in, accounts, pause, resume and revoke;
+  [runners.md](runners.md)).
 - **Home network:** `openwrt` (manage an OpenWrt router and its USB storage on
   the user's LAN from the desktop, iPhone and Android over its ubus JSON-RPC
   endpoint; [openwrt.md](openwrt.md)), and `files` (a file explorer for each
@@ -441,5 +447,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [instance-feed.md](instance-feed.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).
