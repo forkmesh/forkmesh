@@ -12,7 +12,7 @@ import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 
-enum class DataFolderNeed { ChooseFolder, ReconnectFolder, SaveIdentity }
+enum class DataFolderNeed { ChooseFolder, ReconnectFolder }
 
 data class DataFolderProject(
     val slug: String,
@@ -107,8 +107,8 @@ object DataFolder {
         "ForkMesh keeps your projects in its own folder, and Android deletes that folder with the app. Choose a folder, for example Documents on this phone: each project keeps its data there, data/core for settings and the identity key and one folder per plugin, so you can reinstall and pick the same folder to get everything back."
     const val RECONNECT_MESSAGE =
         "The folder holding your ForkMesh projects can't be opened. Choose it again so ForkMesh can keep your data safe."
-    const val IDENTITY_MESSAGE =
-        "Your projects folder doesn't hold this project's identity key yet. Save it there with a passphrase so a reinstall can bring the account back."
+    const val FOLDER_NAME_HINT =
+        "Suggested name: “$DEFAULT_FOLDER_NAME”. In the picker, make a new folder with that name and choose it."
 
     fun projectFolder(scope: ProjectScope): String = if (scope.isLegacy) HOME_PROJECT else scope.slug
 
@@ -120,17 +120,18 @@ object DataFolder {
         return "data/$mapped" + relative.substring(first.length)
     }
 
-    fun need(prefs: PrefStore, slug: String, publicKey: String, reachable: Boolean, insideApp: Boolean): DataFolderNeed? {
+    fun need(reachable: Boolean, insideApp: Boolean): DataFolderNeed? {
         if (!reachable) return DataFolderNeed.ReconnectFolder
         if (insideApp) return DataFolderNeed.ChooseFolder
-        if (publicKey.isNotEmpty() && prefs.getString(kitKey(slug)) != publicKey) return DataFolderNeed.SaveIdentity
         return null
     }
+
+    fun identitySaved(prefs: PrefStore, slug: String, publicKey: String): Boolean =
+        publicKey.isEmpty() || prefs.getString(kitKey(slug)) == publicKey
 
     fun message(need: DataFolderNeed): String = when (need) {
         DataFolderNeed.ChooseFolder -> ALERT_MESSAGE
         DataFolderNeed.ReconnectFolder -> RECONNECT_MESSAGE
-        DataFolderNeed.SaveIdentity -> IDENTITY_MESSAGE
     }
 
     fun isDeviceKey(key: String): Boolean = DEVICE_PREFIXES.any { key.startsWith(it) }

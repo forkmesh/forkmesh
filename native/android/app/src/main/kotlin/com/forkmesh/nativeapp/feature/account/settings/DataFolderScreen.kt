@@ -58,6 +58,7 @@ class DataFolderScreen : Screen() {
                 SettingsCard("Where your data is kept") {
                     SettingsNote(DataFolder.ALERT_MESSAGE)
                     SettingsNote(feature.summary(), if (need == DataFolderNeed.ReconnectFolder) Fm.colors.danger else Fm.colors.textPrimary)
+                    if (!feature.chosen) SettingsNote(DataFolder.FOLDER_NAME_HINT)
                     FmTextButton(onClick = { picker.launch(null) }, enabled = !feature.working) {
                         Text(if (feature.chosen) "Choose another folder" else "Choose a folder")
                     }
@@ -91,10 +92,10 @@ class DataFolderScreen : Screen() {
                         }
                     }
                 }
-            } else if (need == DataFolderNeed.SaveIdentity) {
+            } else if (need == null && !feature.identitySaved()) {
                 item {
-                    SettingsCard("Identity key") {
-                        SettingsNote("Save your identity key in the folder, encrypted with a passphrase of at least ${RecoveryKit.MIN_PASSPHRASE} characters. Nobody can recover the passphrase for you.")
+                    SettingsCard("Identity key (optional)") {
+                        SettingsNote("Optional: save your identity key in the folder too, encrypted with a passphrase of at least ${RecoveryKit.MIN_PASSPHRASE} characters, so a reinstall can bring the account back. Nobody can recover the passphrase for you.")
                         FmTextField(passphrase, { passphrase = it }, Modifier.fillMaxWidth(), hint = "Passphrase",
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password), visualTransformation = PasswordVisualTransformation())
                         FmTextField(confirm, { confirm = it }, Modifier.fillMaxWidth(), hint = "Type it again",
@@ -104,7 +105,7 @@ class DataFolderScreen : Screen() {
                             val again = confirm
                             scope.launch {
                                 feature.saveIdentity(secret, again)
-                                if (feature.need() != DataFolderNeed.SaveIdentity) {
+                                if (feature.identitySaved()) {
                                     passphrase = ""
                                     confirm = ""
                                 }

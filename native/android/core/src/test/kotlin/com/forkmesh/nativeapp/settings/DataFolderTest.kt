@@ -27,14 +27,19 @@ class DataFolderTest {
         assertEq("data/core/documents/notes/a.txt", DataFolder.folderPath("documents", "notes/a.txt"))
     }
 
-    fun testTheAlertStaysUntilTheFolderAndIdentityAreSaved() {
+    fun testTheAlertStaysUntilAFolderOutsideTheAppIsChosen() {
+        assertEq(DataFolderNeed.ChooseFolder, DataFolder.need(reachable = true, insideApp = true))
+        assertEq(DataFolderNeed.ReconnectFolder, DataFolder.need(reachable = false, insideApp = false))
+        assertEq(null, DataFolder.need(reachable = true, insideApp = false))
+    }
+
+    fun testTheIdentityKeyIsOptionalAndTracksThePublicKey() {
         val prefs = MemoryPrefStore()
-        assertEq(DataFolderNeed.ChooseFolder, DataFolder.need(prefs, "forkmesh", "K", reachable = true, insideApp = true))
-        assertEq(DataFolderNeed.ReconnectFolder, DataFolder.need(prefs, "forkmesh", "K", reachable = false, insideApp = false))
-        assertEq(DataFolderNeed.SaveIdentity, DataFolder.need(prefs, "forkmesh", "K", reachable = true, insideApp = false))
+        assertEq(false, DataFolder.identitySaved(prefs, "forkmesh", "K"))
         prefs.putString(DataFolder.kitKey("forkmesh"), "K")
-        assertEq(null, DataFolder.need(prefs, "forkmesh", "K", reachable = true, insideApp = false))
-        assertEq(DataFolderNeed.SaveIdentity, DataFolder.need(prefs, "forkmesh", "ROTATED", reachable = true, insideApp = false))
+        assertEq(true, DataFolder.identitySaved(prefs, "forkmesh", "K"))
+        assertEq(false, DataFolder.identitySaved(prefs, "forkmesh", "ROTATED"))
+        assertEq(true, DataFolder.identitySaved(prefs, "forkmesh", ""))
     }
 
     fun testSettingsKeepTheirTypesAndSkipDeviceKeys() {

@@ -210,8 +210,10 @@ object DataFolderFeature {
 
     fun need(): DataFolderNeed? {
         val reach = reachable ?: (location?.let(::hasPermission) ?: true).also { reachable = it }
-        return DataFolder.need(prefs, slug, publicKey, reach, insideApp = location == null)
+        return DataFolder.need(reach, insideApp = location == null)
     }
+
+    fun identitySaved(): Boolean = DataFolder.identitySaved(prefs, slug, publicKey)
 
     suspend fun useAutomaticFolder() {
         location?.let { uri ->

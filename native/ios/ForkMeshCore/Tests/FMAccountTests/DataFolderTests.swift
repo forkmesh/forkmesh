@@ -49,18 +49,19 @@ final class DataFolderTests: XCTestCase {
             with: URL(fileURLWithPath: "/var/mobile/Library/Mobile Documents/ForkMesh"), appContainer: container))
     }
 
-    func testTheAlertStaysUntilTheFolderAndIdentityAreSaved() {
+    func testTheAlertStaysUntilAFolderOutsideTheAppIsChosen() {
+        XCTAssertEqual(DataFolder.need(reachable: true, insideApp: true), .chooseFolder)
+        XCTAssertEqual(DataFolder.need(reachable: false, insideApp: false), .reconnectFolder)
+        XCTAssertNil(DataFolder.need(reachable: true, insideApp: false))
+    }
+
+    func testTheIdentityKeyIsOptionalAndTracksThePublicKey() {
         let prefs = InMemoryKeyValueStore()
-        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: true, insideApp: true),
-                       .chooseFolder)
-        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: false, insideApp: false),
-                       .reconnectFolder)
-        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: true, insideApp: false),
-                       .saveIdentity)
+        XCTAssertFalse(DataFolder.identitySaved(prefs: prefs, slug: "forkmesh", publicKey: "K"))
         prefs.set("K", forKey: DataFolder.kitKey("forkmesh"))
-        XCTAssertNil(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "K", reachable: true, insideApp: false))
-        XCTAssertEqual(DataFolder.need(prefs: prefs, slug: "forkmesh", publicKey: "ROTATED", reachable: true, insideApp: false),
-                       .saveIdentity)
+        XCTAssertTrue(DataFolder.identitySaved(prefs: prefs, slug: "forkmesh", publicKey: "K"))
+        XCTAssertFalse(DataFolder.identitySaved(prefs: prefs, slug: "forkmesh", publicKey: "ROTATED"))
+        XCTAssertTrue(DataFolder.identitySaved(prefs: prefs, slug: "forkmesh", publicKey: ""))
     }
 
     func testSettingsRoundTripWithoutDeviceKeys() {
