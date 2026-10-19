@@ -199,11 +199,11 @@ internal fun UsageWindowRows(windows: List<UsageWindowMeter>, nowMs: Long) {
             UsagePaceBar(window, nowMs, usageTone(window.state), Modifier.weight(1f))
             Spacer(Modifier.width(FmSpace.x2))
             Text(
-                listOf(window.usedPercent?.let { "$it%" } ?: "—", window.resetLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · "),
+                window.usedPercent?.let { "$it%" } ?: "—",
                 style = Fm.text.labelSmall.copy(color = c.textSecondary),
             )
         }
-        val pace = listOf(window.periodLabel(nowMs), window.paceLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · ")
+        val pace = listOf(window.resetClockLabel(nowMs), window.periodLabel(nowMs), window.paceLabel(nowMs)).filter { it.isNotEmpty() }.joinToString(" · ")
         if (pace.isNotEmpty()) {
             Text(pace, style = Fm.text.labelSmall.copy(color = c.textTertiary), modifier = Modifier.padding(start = 88.dp))
         }

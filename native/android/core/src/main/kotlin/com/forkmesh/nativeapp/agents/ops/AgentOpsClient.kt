@@ -93,7 +93,8 @@ class AgentOpsClient(channel: ControlCalling, private val clock: () -> Long = Sy
     fun worktrees(owner: String, name: String): WorktreeList =
         WorktreeList.from(family.call("worktrees", linkedMapOf("owner" to owner, "name" to name), 45_000))
 
-    fun usage(): UsageSummary = UsageSummary.from(family.call("usage"))
+    fun usage(refresh: Boolean = false): UsageSummary =
+        UsageSummary.from(if (refresh) family.call("usage", linkedMapOf("refresh" to true), 30_000) else family.call("usage"))
 
     fun selectAccount(provider: String, account: String): UsageSummary =
         UsageSummary.from(family.call("accounts.select", linkedMapOf("provider" to provider, "account" to account)))

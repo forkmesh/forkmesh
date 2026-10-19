@@ -478,11 +478,11 @@ class AgentUsageModel(private val client: AgentOpsClient) : OpsState() {
 
     val nowMs: Long get() = client.nowMs
 
-    fun refresh() {
+    fun refresh(reread: Boolean = false) {
         loading = true
         changed()
         try {
-            summary = client.usage()
+            summary = client.usage(reread)
             errorText = ""
             unsupported = false
         } catch (error: Exception) {

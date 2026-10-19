@@ -345,6 +345,9 @@ data class UsageWindowMeter(
         return "resets in " + UsageFormat.remaining(reset - nowMs)
     }
 
+    fun resetClockLabel(nowMs: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String =
+        resetAtMs?.let { UsageFormat.resetClock(it, nowMs, zone) }.orEmpty()
+
     val stepMs: Long? get() = windowMs?.takeIf { it > 0 }?.let { if (it > DAY_MS) DAY_MS else HOUR_MS }
 
     val segments: Int get() {
@@ -574,6 +577,21 @@ object UsageFormat {
     }
 
     fun usd(value: Double): String = String.format(Locale.US, "$%.2f", value)
+
+    fun resetClock(resetAtMs: Long, nowMs: Long, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String {
+        if (resetAtMs <= 0 || resetAtMs <= nowMs) return ""
+        val reset = java.time.Instant.ofEpochMilli(resetAtMs).atZone(zone)
+        val today = java.time.Instant.ofEpochMilli(nowMs).atZone(zone).toLocalDate()
+        val days = java.time.temporal.ChronoUnit.DAYS.between(today, reset.toLocalDate())
+        val clock = pattern("h:mm a").format(reset)
+        return when {
+            days == 0L -> "Resets $clock"
+            days < 7 -> "Resets ${pattern("EEE").format(reset)} $clock"
+            else -> "Resets ${pattern("MMM d").format(reset)}, $clock"
+        }
+    }
+
+    private fun pattern(text: String) = java.time.format.DateTimeFormatter.ofPattern(text, Locale.US)
 }
 
 data class CapabilityGrant(

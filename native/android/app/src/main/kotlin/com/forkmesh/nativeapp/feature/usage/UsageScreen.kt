@@ -76,16 +76,16 @@ internal class UsageScreen : Screen() {
         val center = AgentsFeature.control
         val centerTick = rememberCenterTick(center)
         val runnerAccounts by RunnerAccountsFeature.state.collectAsState()
-        fun reload(pulled: Boolean) {
+        fun reload(pulled: Boolean, reread: Boolean = true) {
             if (model.loading) return
             refreshing = pulled
             scope.launch {
-                opsIo { model.refresh() }
+                opsIo { model.refresh(reread) }
                 refreshing = false
                 AgentOpsFeature.scheduleUsageReminders(context.applicationContext, model.reminders, model.nowMs)
             }
         }
-        LaunchedEffect(Unit) { reload(false) }
+        LaunchedEffect(Unit) { reload(false, reread = false) }
         tick.let { }
         centerTick.let { }
         val actions = AccountActions(navigator, scope, messenger)
