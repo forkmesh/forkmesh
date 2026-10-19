@@ -27,11 +27,19 @@ final class ShellNavigatorCounts {
     @ObservationIgnored private var cacheKey: String?
     @ObservationIgnored private var cacheDay: String = ""
     @ObservationIgnored private var tried: Set<Route.Kind> = []
+    @ObservationIgnored private var refreshAgain = false
     private(set) var rssOpened = false
     private(set) var loading = false
     private(set) var refreshing: Set<Route.Kind> = []
+    private(set) var pending: Set<Route.Kind> = []
+
+    func isLoading(_ kind: Route.Kind) -> Bool {
+        pending.contains(kind) || refreshing.contains(kind)
+    }
 
     func reset() {
+        pending = []
+        refreshAgain = false
         fetched = [:]
         assignedTasks = 0
         bugReports = nil
@@ -226,27 +234,45 @@ final class ShellNavigatorCounts {
         }
     }
 
-    func refresh(guest: Bool, force: Bool = false) async {
+    func refresh(guest: Bool, force: Bool = false, everything: Bool = false) async {
         restore()
-        if loading { return }
+        if loading {
+            if everything { refreshAgain = true }
+            return
+        }
+        await loadCounts(guest: guest, force: force, everything: everything)
+        while refreshAgain {
+            refreshAgain = false
+            await loadCounts(guest: guest, force: true, everything: true)
+        }
+    }
+
+    private func loadCounts(guest: Bool, force: Bool, everything: Bool) async {
         let lowPower: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled
-        guard NavigatorCountPlan.due(
+        guard everything || NavigatorCountPlan.due(
             loadedAt: loadedAt, now: Date(), heat: ShellNavigatorCounts.heat, lowPower: lowPower, force: force)
         else { return }
         guard let api = Services.get(ApiService.self) else { return }
         let key: String? = cacheKey
         let packages: PackagesClient? = PackagesFeature.client
         let shown: Set<Route.Kind> = NavigatorCountPlan.shownKinds(HubGroups.current(guest: guest))
-        let kinds: [Route.Kind] = NavigatorCountPlan.missing(
-            NavigatorCountPlan.wanted(ShellNavigatorCounts.fetchable, shown: shown), known: tried.union(fetched.keys))
+        let wanted: [Route.Kind] = NavigatorCountPlan.wanted(ShellNavigatorCounts.fetchable, shown: shown)
+        let kinds: [Route.Kind] =
+            everything ? wanted : NavigatorCountPlan.missing(wanted, known: tried.union(fetched.keys))
         tried.formUnion(kinds)
         loading = true
-        defer { loading = false }
-        let counts: [Route.Kind: Int] = await NavigatorCountPlan.run(kinds) { (kind: Route.Kind) -> Int? in
-            await ShellNavigatorCounts.load(kind, api: api, packages: packages)
+        pending.formUnion(kinds)
+        defer {
+            loading = false
+            pending.subtract(kinds)
+        }
+        _ = await NavigatorCountPlan.run(kinds) { (kind: Route.Kind) -> Int? in
+            let count: Int? = await ShellNavigatorCounts.load(kind, api: api, packages: packages)
+            ShellNavigatorCounts.shared.landed(kind, count: count, key: key)
+            return count
         }
         guard key == cacheKey else { return }
-        var next: [Route.Kind: Int] = fetched.merging(counts) { _, new in new }
+        var next: [Route.Kind: Int] = fetched
         if shown.contains(.ledger) {
             next[.ledger] = PackagesFeature.personalLedger?.load().count ?? next[.ledger]
         }
@@ -255,22 +281,26 @@ final class ShellNavigatorCounts {
         }
         if shown.contains(.shortcuts) { await ShellNavigatorCounts.loadShortcuts() }
         if shown.contains(.coves) { await ShellNavigatorCounts.loadCoves() }
-        if InsightsFeature.isAdmin && bugReports == nil {
+        if InsightsFeature.isAdmin && (bugReports == nil || everything) {
             let inbox: BugReportInbox = await api.bugReportInbox(status: "new", limit: 1)
             if inbox.ok { adoptBugReports(inbox.counts) }
         }
         if shown.contains(.rssReader) {
             let reader: RSSReaderModel = RSSReaderFeature.model()
-            if !rssOpened {
+            if !rssOpened || everything {
                 rssOpened = true
                 Task { await reader.refresh() }
             }
         }
-        if fetched != next {
-            fetched = next
-            save()
-        }
+        if fetched != next { fetched = next }
+        save()
         if !Task.isCancelled { loadedAt = Date() }
+    }
+
+    private func landed(_ kind: Route.Kind, count: Int?, key: String?) {
+        if pending.contains(kind) { pending.remove(kind) }
+        guard let count, key == cacheKey, fetched[kind] != count else { return }
+        fetched[kind] = count
     }
 
     private static func load(_ kind: Route.Kind, api: ApiService, packages: PackagesClient?) async -> Int? {

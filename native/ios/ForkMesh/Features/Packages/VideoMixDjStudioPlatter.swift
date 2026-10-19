@@ -15,6 +15,7 @@ struct DjPlatter: View {
     @GestureState private var touching = false
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("platter")
         ZStack {
             DjPlinth(d: d).equatable()
             DjRecord(model: model, deck: deck, d: d)
@@ -110,6 +111,7 @@ struct DjRecord: View {
     let d: CGFloat
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("record")
         ZStack {
             DjVinyl(d: d * 0.82).equatable()
             DjSpinner(
@@ -188,6 +190,7 @@ struct DjTonearm: View {
     let d: CGFloat
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("tonearm")
         let progress = deck.duration > 0 ? min(1, max(0, deck.time / deck.duration)) : 0
         DjTonearmShape(d: d).equatable()
             .rotationEffect(.degrees(deck.loaded ? 12 + 16 * progress : 0), anchor: UnitPoint(x: 0.885, y: 0.115))
@@ -239,6 +242,7 @@ struct DjCueLight: View {
     let d: CGFloat
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("cue light")
         Button {
             DjTheme.tick()
             model.cueStop(deck.side)

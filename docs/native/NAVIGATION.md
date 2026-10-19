@@ -150,8 +150,43 @@ destination, in sections, with counts and activity:
   (`ShellNavigatorCounts.adopt`, `adoptTasks`) instead of a second request.
   Day counts (calendar, calories, steps, water, sleep, sugar break,
   stretch: `NavigatorCountCache.daily`) are dropped at midnight so Home
-  fetches today's once. Home no longer shows a loading bar for counts. The
-  operator asked for it on 2026-10-19 to make going back to Home faster.
+  fetches today's once. The operator asked for it on 2026-10-19 to make
+  going back to Home faster.
+- **Loading on each icon.** Home has no loading bar. While an icon's count is
+  being fetched, a small spinner (`ShellHomeCountSpinner`) sits where its
+  count pill goes: `ShellNavigatorCounts.pending` holds the kinds of the
+  running batch, and each count lands on its icon the moment its own reply
+  arrives (`landed`) instead of all together at the end. The repository
+  section icons and Code spin while `loadRepoCounts` reads the current
+  repository (`ShellCounts.loadingRepo`), Market while the organisation
+  packages load. An unread badge still wins over the spinner. VoiceOver reads
+  "Loading". The operator asked for per-icon indicators on 2026-10-19.
+- **Nothing resizes on load.** Home fits its tiles to the measured screen
+  (`fittedTile`), and every measurement used to start at zero each time Home
+  opened (its `@State` is rebuilt) and at launch (the bar height, the safe
+  area and the top chrome are measured after the first frame), so the grid
+  was laid out at full tile size and then shrank, scaling every icon. Those
+  sizes are now remembered on the device (`ShellLayoutMemory`,
+  `shell.layout.*`: bar height, bottom safe area, top chrome without a notice
+  or offline strip, Home's height and section header height) and the first
+  frame uses them. The organisation packages behind the Business icons (CRM,
+  Marketing, Analytics and the rest) were also read from the network on every
+  launch, so those icons appeared a moment later and pushed the grid into
+  more rows; `HubPackageState` now saves them per project and user
+  (`hub.orgPackages.<project>.<user>`, a reviewer mark included) and a read
+  that misses an organisation keeps the saved ones. The current repository's
+  section counts are saved per repository (`shell.repoCounts.<slug>`) and are
+  read again once a session (`ShellCounts.isFresh`). Reported by the operator
+  on 2026-10-19 ("choppy and shifty", "all the icons are resizing").
+- **Refresh everything.** The long-press menu on Home's background (and on a
+  tile or section) has **Refresh everything**: it re-reads the organisation
+  packages, then every count on the grid regardless of the cache, the
+  thermal state or the once-a-minute limit
+  (`ShellNavigatorCounts.refresh(guest:everything:)`, the bug count and the
+  RSS feeds included), the current repository's counts and pulls, the
+  account packages with the Market catalog, the fleet lights, the inbox and
+  the composer's targets (`HomeShell.refreshEverything`). Each icon shows its
+  spinner until its number lands. The operator asked for it on 2026-10-19.
   Unread pills and the
   running-agents heartbeat count are solid `fm.accent` (the user's highlight
   colour) with `fm.onPrimary` digits, which keeps the bright dark-mode accents
@@ -245,8 +280,8 @@ destination, in sections, with counts and activity:
   on every unopened plugin after a new install.
 - **Clear all update dots.** Long-pressing Home's empty background (half a
   second, `ShellHome.backgroundHold`, not while dragging a tile) opens a menu
-  with **Clear all update dots**, **Home settings…** and **Bottom bar
-  settings…**. Clearing calls `AccountPackagesStore.markAllViewed()`, which
+  with **Refresh everything**, **Clear all update dots**, **Home settings…**
+  and **Bottom bar settings…**. Clearing calls `AccountPackagesStore.markAllViewed()`, which
   records every package's latest version as seen, so the dots return only when
   a new version is published. The same item appears in the tile and section
   long-press menus while any dot shows. The background fills at least one
@@ -316,8 +351,10 @@ launch (it feeds the counts); Chat and Code on first visit; mounted tabs stay
 hidden (`HomeShell.mountedTabs`) and pause frame-rate animations
 (`shellTabHidden`).
 
-**Launch.** `AppRootView` fades the app in over the launch colour, and the shell
-starts on Home unless a restored route, sheet or push wins.
+**Launch.** `AppRootView` shows the app over the launch colour the moment the
+services exist, with no fade (the operator asked for Home to snap in on
+2026-10-19), and the shell starts on Home unless a restored route, sheet or
+push wins.
 
 **Forced update.** When the App Store has a newer version than the running
 build (`ClientVersionGate.availableUpdate`, the iTunes lookup for the app id) or

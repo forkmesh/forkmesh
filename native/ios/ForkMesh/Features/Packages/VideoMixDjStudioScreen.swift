@@ -47,6 +47,7 @@ struct DjStudioView: View {
     @Bindable var model: DjStudioModel
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("studio")
         GeometryReader { geometry in
             if geometry.size.width > geometry.size.height {
                 DjLandscape(model: model, size: geometry.size)
@@ -102,6 +103,7 @@ struct DjLandscape: View {
     let size: CGSize
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("landscape layout")
         let u = min(1.7, max(0.78, min(size.height / 380, size.width / 800)))
         let top = 76 * u
         let bottom = 64 * u
@@ -185,6 +187,7 @@ struct DjPortrait: View {
     let size: CGSize
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("portrait layout")
         let u = min(1.6, max(0.74, min(size.width / 390, size.height / 780)))
         let header = 40 * u
         let wave = 24 * u
@@ -263,6 +266,7 @@ struct DjUtilityRow: View {
     let u: CGFloat
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("utility row")
         HStack(spacing: 12 * u) {
             DjInfoButton(model: model, size: 28 * u)
             DjPadsButton(model: model, size: 26 * u)
