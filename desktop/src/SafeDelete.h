@@ -160,26 +160,11 @@ inline QVector<QPair<QString, RootKind>> protectedRoots()
     const QString projectsEnv = qEnvironmentVariable("FORKMESH_PROJECTS_DIR").trimmed();
     if (!projectsEnv.isEmpty())
         projectsDirs << projectsEnv;
-    auto addStore = [&](const QString &store) {
-        const QString cleaned = clean(store);
-        if (cleaned.isEmpty())
-            return;
-        addProject(cleaned);
-        QStringList slugs = QDir(cleaned).entryList(QDir::Dirs | QDir::Hidden |
-                                                    QDir::NoDotAndDotDot);
-        if (!slugs.contains(QLatin1String(paths::kHomeProjectSlug)))
-            slugs << QLatin1String(paths::kHomeProjectSlug);
-        for (const QString &slug : slugs)
-            addProject(cleaned + QLatin1Char('/') + slug);
-    };
     for (const char *variable : {"FORKMESH_HOME", "FORKMESH_PROJECT_DIR"}) {
         const QString value = qEnvironmentVariable(variable).trimmed();
         if (!value.isEmpty())
             addProject(value);
     }
-    const QString homeEnv = qEnvironmentVariable("FORKMESH_HOME").trimmed();
-    if (!homeEnv.isEmpty())
-        addStore(paths::dataStoreRootFor(homeEnv));
     for (const char *variable : {"FORKMESH_DATA_DIR", "FORKMESH_CONFIG_DIR"}) {
         const QString value = qEnvironmentVariable(variable).trimmed();
         if (!value.isEmpty())
@@ -190,8 +175,6 @@ inline QVector<QPair<QString, RootKind>> protectedRoots()
         projectsDirs << layout.projectsRoot;
         addProject(layout.homeDir);
         addProject(layout.projectDir);
-        addStore(layout.dataStoreRoot);
-        addProject(layout.storeDir);
         add(layout.homeDir + QStringLiteral("/src"), RootKind::Strict);
         for (const QString &owned : {layout.data, layout.config, layout.state, layout.logs})
             add(owned, RootKind::Owned);
@@ -211,7 +194,6 @@ inline QVector<QPair<QString, RootKind>> protectedRoots()
         }
         for (const QString &child : children)
             addProject(cleaned + QLatin1Char('/') + child);
-        addStore(cleaned + QLatin1Char('/') + QLatin1String(paths::kDataStoreName));
     }
     return roots;
 }

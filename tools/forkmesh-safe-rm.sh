@@ -39,11 +39,6 @@ fm_safe_rm_tree() {
       project="${rel%%/*}"
       [ "$project" != "$rel" ] || { printf 'Refusing to delete: %s is a project folder\n' "$target" >&2; return 64; }
       rel="${rel#*/}"
-      if [ "$project" = "forkmesh_data" ]; then
-        project="${rel%%/*}"
-        [ "$project" != "$rel" ] || { printf 'Refusing to delete: %s is a project data folder\n' "$target" >&2; return 64; }
-        rel="${rel#*/}"
-      fi
       first="${rel%%/*}"
       case "$project" in forkmesh-backup) printf 'Refusing to delete: %s is inside the backup project\n' "$target" >&2; return 64 ;; esac
       case "$first" in

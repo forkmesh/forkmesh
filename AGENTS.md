@@ -5,11 +5,7 @@
 These folders hold the node identity key (lose it and the account cannot be
 recovered), settings, the mirror-fleet SSH key, and agent history:
 
-- `~/projects/forkmesh_data`: every project's `data`, `config`, `ssh`, `state`
-  and `logs` (`forkmesh_data/<project>/…`, moved 2026-10-19,
-  `docs/tools/projects-layout.md`)
-- `~/projects/forkmesh/{data,config,ssh,state,logs}` (now links into
-  `forkmesh_data/forkmesh`, or the real folders on a box not yet moved)
+- `~/projects/forkmesh/{data,config,ssh,state,logs}`
 - legacy paths: `~/.config/ForkMesh`, `~/.local/share/ForkMesh`, `~/.forkmesh`
 - `~/projects/forkmesh/src`, the primary checkout: its `.git` holds every local
   branch and every agent worktree (erased by the desktop's update on
@@ -57,9 +53,8 @@ Cloudflare Workers, D1 or Durable Objects. `app/host/`, `deploy/`,
 
 - Vultr instances are labelled `fmnext-*` and tagged `forkmesh-next`. Never add
   them to the desktop's saved hosts.
-- Its operator files live in `~/projects/forkmesh_data/forkmesh/{data,config,ssh,logs}/fleet`
-  (reached through the `~/projects/forkmesh/<root>` links too; moved 2026-09-24,
-  `docs/NEXT_ADOPTION.md`); the never-erase rule applies.
+- Its operator files live in `~/projects/forkmesh/{data,config,ssh,logs}/fleet`
+  (moved 2026-09-24, `docs/NEXT_ADOPTION.md`); the never-erase rule applies.
   `~/projects/forkmesh-backup` is the retired Next folder, kept as a backup:
   never erase it either.
 

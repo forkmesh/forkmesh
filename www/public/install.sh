@@ -270,11 +270,6 @@ fm_safe_rm_tree() {
       project="${rel%%/*}"
       [ "$project" != "$rel" ] || { printf 'Refusing to delete: %s is a project folder\n' "$target" >&2; return 64; }
       rel="${rel#*/}"
-      if [ "$project" = "forkmesh_data" ]; then
-        project="${rel%%/*}"
-        [ "$project" != "$rel" ] || { printf 'Refusing to delete: %s is a project data folder\n' "$target" >&2; return 64; }
-        rel="${rel#*/}"
-      fi
       first="${rel%%/*}"
       case "$project" in forkmesh-backup) printf 'Refusing to delete: %s is inside the backup project\n' "$target" >&2; return 64 ;; esac
       case "$first" in
@@ -733,12 +728,9 @@ uninstall_forkmesh() {
   # project folder itself is never removed: it also holds src/, and may hold
   # files of the user's own.
   local layout_home="${FORKMESH_HOME:-${FORKMESH_PROJECTS_DIR:-$HOME/projects}/forkmesh}"
-  layout_home="${layout_home%/}"
-  local layout_store="${layout_home%/*}/forkmesh_data/forkmesh"
   local dirs=(
     "$cache_home/ForkMesh"          # caches
     "$layout_home/cache"
-    "$layout_store/cache"
   )
   # User data: only erased with --purge.
   local data_dirs=(
@@ -750,11 +742,6 @@ uninstall_forkmesh() {
     "$layout_home/ssh"
     "$layout_home/state"
     "$layout_home/logs"
-    "$layout_store/data"
-    "$layout_store/config"
-    "$layout_store/ssh"
-    "$layout_store/state"
-    "$layout_store/logs"
   )
   if [ "$purge" = "1" ]; then dirs+=("${data_dirs[@]}"); fi
   # Nothing has been touched yet: refuse here, before the prompt or any stop.

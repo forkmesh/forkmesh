@@ -1004,7 +1004,6 @@ void MainWindow::saveInstanceLogo(const QString &projectDir, QList<QUrl> candida
             return;
         if (image.width() > 512 || image.height() > 512)
             image = image.scaled(512, 512, Qt::KeepAspectRatio, Qt::SmoothTransformation);
-        QDir().mkpath(projectDir);
         if (image.save(QDir(projectDir).filePath(QStringLiteral("logo.png")), "PNG"))
             updateProjectSwitcher();
     });

@@ -173,36 +173,6 @@ def test_move_aside_keeps_everything(box):
         safe.move_aside("")
 
 
-def _store(home):
-    store = home / "projects" / "forkmesh_data"
-    for slug in ("forkmesh", "side"):
-        for sub in ("data", "config", "ssh", "state", "logs", "cache"):
-            (store / slug / sub).mkdir(parents=True, exist_ok=True)
-    return store.resolve()
-
-
-def test_refuses_the_forkmesh_data_store(box, monkeypatch):
-    root, home, _, _ = box
-    store = _store(home)
-    assert refused(store, home / "projects")
-    assert refused(store / "forkmesh", store)
-    assert refused(store / "side", store)
-    for sub in ("data", "config", "ssh", "state", "logs"):
-        assert refused(store / "forkmesh" / sub, store / "forkmesh"), sub
-    assert refused(store / "side" / "data" / "identity", store / "side" / "data")
-    assert refused(store / "forkmesh" / "ssh" / "fleet", store / "forkmesh" / "ssh")
-    (store / "forkmesh" / "data" / "mirrors" / "repo").mkdir(parents=True)
-    assert not refused(store / "forkmesh" / "data" / "mirrors" / "repo",
-                       store / "forkmesh" / "data" / "mirrors")
-    assert not refused(store / "forkmesh" / "cache", store / "forkmesh")
-    custom = root / "sandbox" / "forkmesh"
-    custom.mkdir(parents=True)
-    (root / "sandbox" / "forkmesh_data" / "forkmesh" / "data").mkdir(parents=True)
-    monkeypatch.setenv("FORKMESH_HOME", str(custom))
-    assert refused(root / "sandbox" / "forkmesh_data" / "forkmesh" / "data",
-                   root / "sandbox" / "forkmesh_data" / "forkmesh")
-
-
 def _shell(box, parent, *targets, worktree=False):
     root, home, _, _ = box
     env = {"HOME": str(home), "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
@@ -270,25 +240,3 @@ def test_shell_helper_deletes_allowed_targets(box):
     assert not issue.exists() and (project / "src" / ".forkmesh").is_dir()
     assert _shell(box, work, linked, worktree=True).returncode == 0
     assert not scratch.exists() and not build.exists() and not nested.exists() and not linked.exists()
-
-
-def test_shell_helper_guards_the_forkmesh_data_store(box):
-    _, home, _, _ = box
-    store = _store(home)
-    (store / "forkmesh" / "data" / "identity").mkdir()
-    for parent, target in [
-        (home / "projects", store),
-        (store, store / "forkmesh"),
-        (store / "forkmesh", store / "forkmesh" / "data"),
-        (store / "forkmesh", store / "forkmesh" / "ssh"),
-        (store / "side", store / "side" / "config"),
-        (store / "forkmesh" / "data", store / "forkmesh" / "data" / "identity"),
-    ]:
-        result = _shell(box, parent, target)
-        assert result.returncode != 0 and "Refusing" in result.stderr, target
-        assert target.is_dir()
-    mirror = store / "forkmesh" / "data" / "mirrors" / "repo"
-    mirror.mkdir(parents=True)
-    assert _shell(box, mirror.parent, mirror).returncode == 0
-    assert _shell(box, store / "side", store / "side" / "cache").returncode == 0
-    assert not mirror.exists() and not (store / "side" / "cache").exists()

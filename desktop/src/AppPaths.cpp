@@ -71,25 +71,14 @@ bool existsOrLink(const QString &path)
 // `modernProbe` is what proves the new location is populated, where the folder
 // alone does not: config/ may already hold tool files before the settings
 // folder has moved in.
-bool isRealFolder(const QString &path)
-{
-    const QFileInfo info(path);
-    return info.isDir() && !info.isSymLink();
-}
-
 QString pick(const QString &modern, const QString &legacy, bool rerootAllowed,
              const QString &legacyProbe = QString(),
-             const QString &modernProbe = QString(),
-             const QString &previous = QString(),
-             const QString &previousProbe = QString())
+             const QString &modernProbe = QString())
 {
     if (!rerootAllowed)
         return legacy;
     if (QFileInfo::exists(modernProbe.isEmpty() ? modern : modernProbe))
         return modern;
-    if (!previous.isEmpty() && QFileInfo(previous).isDir() &&
-        (previousProbe.isEmpty() || QFileInfo::exists(previousProbe)))
-        return previous;
     const QString probe = legacyProbe.isEmpty() ? legacy : legacyProbe;
     if (!legacy.isEmpty() && QFileInfo::exists(probe) && !QFileInfo(probe).isSymLink())
         return legacy;
@@ -266,65 +255,48 @@ Layout resolve(const Environment &environment)
     // Only the home project inherits the legacy locations. Any other project
     // is born inside the layout and must never fall back to another project's
     // identity or settings.
-    layout.dataStoreRoot = dataStoreRootFor(layout.homeDir);
-    layout.storeDir = join(layout.dataStoreRoot, slug);
-
     const bool home = layout.isHomeProject();
     const bool allowed = layout.rerootAllowed || !home;
     const QString &dir = layout.projectDir;
-    const QString &store = layout.storeDir;
     const QString none;
-    auto inStore = [&store](const char *name) { return join(store, QLatin1String(name)); };
-    auto inProject = [&dir](const char *name) { return join(dir, QLatin1String(name)); };
-    layout.data = pick(inStore("data"), home ? environment.legacyData : none, allowed,
-                       none, none, inProject("data"));
+    layout.data = pick(join(dir, QStringLiteral("data")),
+                       home ? environment.legacyData : none, allowed);
     // QSettings appends ForkMesh/ForkMesh.conf to its root, so the legacy root
     // is the shared ~/.config and only its ForkMesh folder proves content.
-    layout.config = pick(inStore("config"),
+    layout.config = pick(join(dir, QStringLiteral("config")),
                          home && !environment.legacyConfig.isEmpty()
                              ? QFileInfo(environment.legacyConfig).absolutePath()
                              : none,
                          allowed, home ? environment.legacyConfig : none,
-                         inStore("config/ForkMesh"), inProject("config"),
-                         inProject("config/ForkMesh"));
-    layout.cache = pick(inStore("cache"), home ? environment.legacyCache : none, allowed,
-                        none, none, inProject("cache"));
+                         join(dir, QStringLiteral("config/ForkMesh")));
+    layout.cache = pick(join(dir, QStringLiteral("cache")),
+                        home ? environment.legacyCache : none, allowed);
     // The lock file is what makes the legacy state root live: it cannot move
     // while held, so it is adopted separately (adoptProjectStateRoot) and its
     // absence is what lets the state root resolve into the project.
-    if (allowed && isRealFolder(inProject("state")) &&
-        QFileInfo::exists(inProject("state/forkmesh.lock"))) {
-        layout.state = inProject("state");
-    } else if (home && allowed && isRealFolder(environment.legacyState) &&
-               QFileInfo::exists(join(environment.legacyState,
-                                      QStringLiteral("forkmesh.lock")))) {
-        layout.state = environment.legacyState;
-    } else {
-        layout.state = pick(inStore("state"), home ? environment.legacyState : none, allowed,
-                            home ? join(environment.legacyState,
-                                        QStringLiteral("forkmesh.lock"))
-                                 : none,
-                            none, inProject("state"));
-    }
+    layout.state = pick(join(dir, QStringLiteral("state")),
+                        home ? environment.legacyState : none, allowed,
+                        home ? join(environment.legacyState,
+                                    QStringLiteral("forkmesh.lock"))
+                             : none);
     // Legacy logs lived directly in ~/.forkmesh (diagnostics/ beneath it).
-    layout.logs = pick(inStore("logs"), home ? environment.legacyState : none, allowed,
+    layout.logs = pick(join(dir, QStringLiteral("logs")),
+                       home ? environment.legacyState : none, allowed,
                        home ? join(environment.legacyState, QStringLiteral("diagnostics"))
-                            : none,
-                       none, inProject("logs"));
-    layout.ssh = pick(inStore("ssh"),
-                      home ? join(environment.legacyData, QStringLiteral("ssh")) : none,
-                      allowed, none, none, inProject("ssh"));
+                            : none);
+    layout.ssh = pick(join(dir, QStringLiteral("ssh")),
+                      home ? join(environment.legacyData, QStringLiteral("ssh"))
+                           : none,
+                      allowed);
     return layout;
 }
 
 QVector<Move> planMigration(const Environment &environment, const Layout &layout)
 {
     QVector<Move> plan;
-    const bool home = layout.isHomeProject();
-    if (!layout.rerootAllowed || layout.storeDir.isEmpty())
+    if (!layout.isHomeProject() || !layout.rerootAllowed)
         return plan;
-    const QString &dir = layout.storeDir;
-    const QString &project = layout.projectDir;
+    const QString &dir = layout.projectDir;
     auto directory = [&plan](const QString &label, const QString &from,
                              const QString &to, bool link = true) {
         if (!from.isEmpty() && clean(from) != clean(to))
@@ -335,36 +307,6 @@ QVector<Move> planMigration(const Environment &environment, const Layout &layout
         if (!from.isEmpty() && clean(from) != clean(to))
             plan.append({Move::Kind::File, label, clean(from), clean(to), link});
     };
-
-    const struct {
-        const char *name;
-        const char *label;
-    } projectRoots[] = {
-        {"data", "Application data"},          {"ssh", "SSH keys for hosts and mirrors"},
-        {"config", "Preferences"},             {"cache", "Cache"},
-        {"logs", "Logs and diagnostics"},
-    };
-    for (const auto &root : projectRoots) {
-        directory(QStringLiteral("%1 (project folder)").arg(QLatin1String(root.label)),
-                  join(project, QLatin1String(root.name)), join(dir, QLatin1String(root.name)),
-                  home);
-    }
-    const QString oldState = join(project, QStringLiteral("state"));
-    if (isRealFolder(oldState) && clean(oldState) != clean(join(dir, QStringLiteral("state")))) {
-        const QFileInfoList entries = QDir(oldState).entryInfoList(
-            QDir::AllEntries | QDir::NoDotAndDotDot | QDir::Hidden | QDir::System, QDir::Name);
-        for (const QFileInfo &entry : entries) {
-            if (entry.fileName() == QLatin1String("forkmesh.lock"))
-                continue;
-            plan.append({entry.isDir() && !entry.isSymLink() ? Move::Kind::Directory
-                                                             : Move::Kind::File,
-                         QStringLiteral("Runtime state: %1").arg(entry.fileName()),
-                         clean(entry.absoluteFilePath()),
-                         join(dir, QStringLiteral("state/") + entry.fileName()), false});
-        }
-    }
-    if (!home)
-        return plan;
 
     // Order matters: data first, then the pieces that are carved out of it.
     directory(QStringLiteral("Application data"), environment.legacyData,
@@ -383,7 +325,8 @@ QVector<Move> planMigration(const Environment &environment, const Layout &layout
     directory(QStringLiteral("Tool logs"), join(state, QStringLiteral("logs")),
               join(dir, QStringLiteral("logs/tools")));
     directory(QStringLiteral("Build toolchains"),
-              join(state, QStringLiteral("toolchain")), layout.toolchainDir());
+              join(state, QStringLiteral("toolchain")),
+              join(dir, QStringLiteral("toolchain")));
     directory(QStringLiteral("Editor bridge drop-box"),
               join(state, QStringLiteral("ide")),
               join(dir, QStringLiteral("state/ide")));
@@ -454,25 +397,11 @@ QVector<MoveResult> applyMigration(const QVector<Move> &plan, bool dryRun)
         }
         const QString parent = QFileInfo(move.to).absolutePath();
         const bool parentIsNew = !QFileInfo::exists(parent);
-        QStringList created;
-        for (QString folder = parent; !folder.isEmpty() && !existsOrLink(folder);) {
-            created.prepend(folder);
-            const QString up = QFileInfo(folder).absolutePath();
-            if (up == folder)
-                break;
-            folder = up;
-        }
-        const QString storeMark = QLatin1Char('/') + QLatin1String(kDataStoreName);
         if (!QDir().mkpath(parent)) {
             result.outcome = MoveResult::Outcome::Failed;
             result.detail = QStringLiteral("cannot create the destination folder");
             results.append(result);
             continue;
-        }
-        for (const QString &folder : std::as_const(created)) {
-            if (folder.endsWith(storeMark) || folder.contains(storeMark + QLatin1Char('/')))
-                QFile::setPermissions(folder, QFileDevice::ReadOwner | QFileDevice::WriteOwner |
-                                                  QFileDevice::ExeOwner);
         }
         bool crossDevice = false;
         QString renameError;
@@ -636,9 +565,7 @@ bool hasMovedTo(const QString &legacy, const QString &modern)
         return false;
     const QFileInfo info(legacy);
     if (info.isSymLink())
-        return clean(info.symLinkTarget()) == clean(modern) ||
-               (!info.canonicalFilePath().isEmpty() &&
-                info.canonicalFilePath() == QFileInfo(modern).canonicalFilePath());
+        return clean(info.symLinkTarget()) == clean(modern);
     return !info.exists();
 }
 
@@ -646,50 +573,35 @@ bool hasMovedTo(const QString &legacy, const QString &modern)
 
 int repointSettingsFile()
 {
-    if (!detail::active || !detail::current.rerootAllowed)
+#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
+    if (!detail::active || !detail::current.isHomeProject() || !detail::current.rerootAllowed)
         return 0;
     const Layout &layout = detail::current;
     const Environment &environment = g_environment;
-    const QString &dir = layout.storeDir;
-    const QString &project = layout.projectDir;
+    const QString &dir = layout.projectDir;
     QVector<QPair<QString, QString>> relocations;
     auto consider = [&relocations](const QString &legacy, const QString &modern) {
         if (hasMovedTo(legacy, modern))
             relocations.append({clean(legacy), clean(modern)});
     };
-    for (const char *root : {"data", "config", "cache", "state", "logs", "ssh"})
-        consider(join(project, QLatin1String(root)), join(dir, QLatin1String(root)));
-#if defined(Q_OS_UNIX) && !defined(Q_OS_MACOS)
-    if (layout.isHomeProject()) {
-        consider(environment.legacyData, join(dir, QStringLiteral("data")));
-        consider(environment.legacyCache, join(dir, QStringLiteral("cache")));
-        consider(environment.legacyConfig, join(dir, QStringLiteral("config/ForkMesh")));
-        consider(join(environment.legacyState, QStringLiteral("diagnostics")),
-                 join(dir, QStringLiteral("logs/diagnostics")));
-        consider(join(environment.legacyState, QStringLiteral("toolchain")),
-                 layout.toolchainDir());
-        // data/ssh was carved out into ssh/; every spelling of the old place moves.
-        if (QFileInfo(join(dir, QStringLiteral("data/ssh"))).isSymLink()) {
-            relocations.append({join(environment.legacyData, QStringLiteral("ssh")),
-                                join(dir, QStringLiteral("ssh"))});
-            relocations.append({join(project, QStringLiteral("data/ssh")),
-                                join(dir, QStringLiteral("ssh"))});
-            relocations.append({join(dir, QStringLiteral("data/ssh")),
-                                join(dir, QStringLiteral("ssh"))});
-        }
+    consider(environment.legacyData, join(dir, QStringLiteral("data")));
+    consider(environment.legacyCache, join(dir, QStringLiteral("cache")));
+    consider(environment.legacyConfig, join(dir, QStringLiteral("config/ForkMesh")));
+    consider(join(environment.legacyState, QStringLiteral("diagnostics")),
+             join(dir, QStringLiteral("logs/diagnostics")));
+    consider(join(environment.legacyState, QStringLiteral("toolchain")),
+             join(dir, QStringLiteral("toolchain")));
+    // data/ssh was carved out into ssh/; both spellings of the old place move.
+    if (QFileInfo(join(dir, QStringLiteral("data/ssh"))).isSymLink()) {
+        relocations.append({join(environment.legacyData, QStringLiteral("ssh")),
+                            join(dir, QStringLiteral("ssh"))});
+        relocations.append({join(dir, QStringLiteral("data/ssh")),
+                            join(dir, QStringLiteral("ssh"))});
     }
-#endif
     if (relocations.isEmpty())
         return 0;
 
-    const QSettings settings;
-#if !defined(Q_OS_UNIX) || defined(Q_OS_MACOS)
-    if (settings.format() != QSettings::IniFormat)
-        return 0;
-#endif
-    const QString path = settingsFilePath(settings);
-    if (path.isEmpty())
-        return 0;
+    const QString path = join(layout.config, QStringLiteral("ForkMesh/ForkMesh.conf"));
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return 0;
@@ -725,6 +637,9 @@ int repointSettingsFile()
         return 0;
     }
     return qMax(changed, 1);
+#else
+    return 0;
+#endif
 }
 
 namespace {
@@ -736,9 +651,8 @@ void applyLayout(const Layout &layout)
     detail::current = layout;
     detail::active = true;
 
-    if ((layout.rerootAllowed || !layout.isHomeProject()) && g_createFolders) {
-        ensurePrivateDir(layout.dataStoreRoot);
-        ensurePrivateDir(layout.storeDir);
+    if (layout.rerootAllowed && g_createFolders) {
+        ensurePrivateDir(layout.projectDir);
         for (const QString &dir : {layout.data, layout.config, layout.cache,
                                    layout.state, layout.logs, layout.ssh})
             ensurePrivateDir(dir);
@@ -797,7 +711,7 @@ QString adoptProjectStateRoot()
 {
     if (!detail::active || !detail::current.rerootAllowed)
         return QString();
-    const QString modern = join(detail::current.storeDir, QStringLiteral("state"));
+    const QString modern = join(detail::current.projectDir, QStringLiteral("state"));
     if (clean(detail::current.state) == modern)
         return QString();
     const QString legacyLock =
@@ -806,16 +720,6 @@ QString adoptProjectStateRoot()
     layout.state = modern;
     applyLayout(layout);
     return legacyLock;
-}
-
-void retireStateRoot(const QString &oldStateDir)
-{
-    const QString old = clean(oldStateDir);
-    if (old.isEmpty() || !QDir().rmdir(old) || !detail::active)
-        return;
-    const Layout &layout = detail::current;
-    if (layout.isHomeProject() && old == join(layout.projectDir, QStringLiteral("state")))
-        QFile::link(layout.state, old);
 }
 
 QString configRoot()
@@ -844,17 +748,6 @@ QString projectDir() { return detail::active ? detail::current.projectDir : home
 QString projectSlug()
 {
     return detail::active ? detail::current.projectSlug : QLatin1String(kHomeProjectSlug);
-}
-
-QString dataStoreRoot()
-{
-    return detail::active ? detail::current.dataStoreRoot : dataStoreRootFor(homeDir());
-}
-
-QString storeDir()
-{
-    return detail::active ? detail::current.storeDir
-                          : storeDirFor(homeDir(), QLatin1String(kHomeProjectSlug));
 }
 
 QString earlyMainLogPath(int argc, char **argv)
@@ -896,9 +789,7 @@ bool isDefaultStateRoot()
     const QString state = clean(stateRoot());
     const QString home = accountHome();
     return state == join(home, QStringLiteral(".forkmesh")) ||
-           state == join(home, QStringLiteral("projects/") + projectSlug() + QStringLiteral("/state")) ||
-           state == join(home, QStringLiteral("projects/") + QLatin1String(kDataStoreName) +
-                                   QLatin1Char('/') + projectSlug() + QStringLiteral("/state"));
+           state == join(home, QStringLiteral("projects/") + projectSlug() + QStringLiteral("/state"));
 }
 
 QString singleInstanceServerName()
@@ -1028,13 +919,8 @@ QVector<Location> storageMap(const Environment &environment, const Layout &layou
     };
     using Scope = Location::Scope;
 
-    add(QStringLiteral("store"), QStringLiteral("ForkMesh data"), layout.storeDir,
-        QStringLiteral("Everything this project keeps on disk lives beneath this folder, "
-                       "inside forkmesh_data beside every other project's files."),
-        Scope::Project, false);
     add(QStringLiteral("project"), QStringLiteral("Project folder"), layout.projectDir,
-        QStringLiteral("project.json, the logo, and folders only the plugins that need "
-                       "them create."),
+        QStringLiteral("Everything this project keeps on disk lives beneath this folder."),
         Scope::Project, false);
     add(QStringLiteral("data"), QStringLiteral("Application data"), layout.data,
         QStringLiteral("Your identity key, account, chat history, agents, mirrors and "
@@ -1087,8 +973,7 @@ QVector<Location> storageMap(const Environment &environment, const Layout &layou
             .entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name);
     for (const QFileInfo &sibling : siblings) {
         const QString path = clean(sibling.absoluteFilePath());
-        if (path == clean(layout.projectDir) || path == clean(layout.homeDir) ||
-            path == clean(layout.dataStoreRoot))
+        if (path == clean(layout.projectDir) || path == clean(layout.homeDir))
             continue;
         if (!QFileInfo::exists(join(path, QLatin1String(kProjectFileName))))
             continue;

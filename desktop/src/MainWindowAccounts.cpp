@@ -1480,10 +1480,8 @@ void MainWindow::uninstallForkMesh()
     addDir(forkmesh::paths::logsDir(), true);
     addDir(forkmesh::paths::sshDir(), true);
     if (forkmesh::paths::isActive() &&
-        (forkmesh::paths::configRoot().startsWith(forkmesh::paths::storeDir() +
-                                                  QLatin1Char('/')) ||
-         forkmesh::paths::configRoot().startsWith(forkmesh::paths::projectDir() +
-                                                  QLatin1Char('/'))))
+        forkmesh::paths::configRoot().startsWith(forkmesh::paths::projectDir() +
+                                                 QLatin1Char('/')))
         addDir(forkmesh::paths::configRoot(), true);
     addDir(repositoryMirrorRoot(), false);
     addDir(repositoryPreviewRoot(), false);

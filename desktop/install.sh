@@ -75,15 +75,11 @@ uninstall() {
         # The projects layout keeps the same things in ~/projects/forkmesh;
         # the project folder itself stays, since it also holds src/.
         local layout_home="${FORKMESH_HOME:-${FORKMESH_PROJECTS_DIR:-$HOME/projects}/forkmesh}"
-        layout_home="${layout_home%/}"
-        local layout_store="${layout_home%/*}/forkmesh_data/forkmesh"
         for d in "$config_home/ForkMesh" "$DATA_HOME/ForkMesh" \
                  "$cache_home/ForkMesh" "$HOME/.forkmesh" \
                  "$HOME/.local/share/forkmesh" \
                  "$layout_home/data" "$layout_home/config" "$layout_home/ssh" \
-                 "$layout_home/state" "$layout_home/logs" "$layout_home/cache" \
-                 "$layout_store/data" "$layout_store/config" "$layout_store/ssh" \
-                 "$layout_store/state" "$layout_store/logs" "$layout_store/cache"; do
+                 "$layout_home/state" "$layout_home/logs" "$layout_home/cache"; do
             [[ -e "$d" ]] || continue
             case "$d" in
                 "$HOME"/?*) ;;
