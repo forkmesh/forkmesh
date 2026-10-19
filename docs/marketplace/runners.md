@@ -46,8 +46,14 @@ Code: `runner_leases._set_paused` (`PAUSE_ACTIONS`), `_signed_caller`
 accepts `active` and `paused` rows and marks the caller `paused`, `_claim`
 drops providers and Actions slots when paused; `runner_logins.USABLE_STATUSES`
 lets sign-in and account requests through for a paused runner and
-`_attention` still lists it. Tests:
-`app/tests/test_runner_leases.py::test_a_paused_runner_claims_nothing_until_resumed`.
+`_attention` still lists it. On the desktop's Hosts page,
+`RunnerInfo::manageable` (active or paused) keeps Sign in, Accounts and the
+attention badge for a paused runner, while `runnerForTarget` still picks only
+active ones. The desktop Runners page reloads once more when Pause or Resume
+lands during a list load (`m_reloadPending`), so the older reply cannot show
+the runner unchanged. Tests:
+`app/tests/test_runner_leases.py::test_a_paused_runner_claims_nothing_until_resumed`,
+`desktop/tests/test_runner_login.cpp` (`testAttention`).
 
 Why a status value and no new column: a paused runner must still pass
 `_signed_caller` for its reports and sign-ins, and `status` is already the
