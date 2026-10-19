@@ -897,17 +897,21 @@ def test_operator_paths_default_to_the_home_project(monkeypatch, tmp_path):
     project = home / "projects" / "forkmesh"
     import next_backup
     import next_deploy
+    core = project / "data" / "core"
     assert next_fleet.common.project_dir() == project
-    assert next_fleet.common.config_dir() == project / "config" / "fleet"
-    assert next_fleet.common.ssh_key_path() == project / "ssh" / "fleet" / "next_fleet_ed25519"
-    assert next_backup.backups_dir() == project / "data" / "fleet" / "backups"
-    assert next_deploy.dist_dir() == project / "data" / "fleet" / "dist"
-    assert next_fleet.rqlite_tarball({})[2].parent == project / "data" / "fleet" / "dl"
+    assert next_fleet.common.config_dir() == core / "config" / "fleet"
+    assert next_fleet.common.ssh_key_path() == core / "ssh" / "fleet" / "next_fleet_ed25519"
+    assert next_fleet.common.logs_dir() == core / "logs" / "fleet"
+    assert next_backup.backups_dir() == core / "fleet" / "backups"
+    assert next_deploy.dist_dir() == core / "fleet" / "dist"
+    assert next_fleet.rqlite_tarball({})[2].parent == core / "fleet" / "dl"
     legacy = home / "projects" / "forkmesh-next"
     (legacy / "config").mkdir(parents=True)
     assert next_fleet.common.config_dir() == legacy / "config"
     (project / "config" / "fleet").mkdir(parents=True)
     assert next_fleet.common.config_dir() == project / "config" / "fleet"
+    (core / "config" / "fleet").mkdir(parents=True)
+    assert next_fleet.common.config_dir() == core / "config" / "fleet"
 
 
 def test_roll_waits_for_the_deploy_lock_and_releases_it(tmp_path, sandbox, monkeypatch):
