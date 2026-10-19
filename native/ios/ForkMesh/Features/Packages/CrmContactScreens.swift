@@ -467,6 +467,12 @@ struct CrmActivityRow: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
+                if !activity.incoming, !activity.engagementLine.isEmpty {
+                    Text(activity.engagementLine)
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(.tint)
+                        .lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
             CrmChip(text: activity.status, tint: CrmPalette.status(activity))
@@ -732,6 +738,18 @@ struct CrmEmailSheet: View {
                 if !shown.sender.isEmpty { LabeledContent("By", value: shown.sender) }
                 LabeledContent("When", value: PackagesFormat.relative(shown.at))
                 if !shown.error.isEmpty { Text(shown.error).font(.footnote).foregroundStyle(.red).fmMessageTools(shown.error) }
+            }
+            if !shown.incoming, shown.opens + shown.clicks + shown.readSeconds + shown.scrollDepth > 0 {
+                Section {
+                    LabeledContent("Opens", value: "\(shown.opens)")
+                    LabeledContent("Clicks", value: "\(shown.clicks)")
+                    LabeledContent("Read for", value: shown.readLabel.isEmpty ? "Not reported" : shown.readLabel)
+                    LabeledContent("Scrolled", value: shown.scrollLabel.isEmpty ? "Not reported" : shown.scrollLabel)
+                } header: {
+                    Text("Reading")
+                } footer: {
+                    Text("Read time and scroll come from mail apps that run CSS animations, such as Apple Mail without Mail Privacy Protection. Gmail and protected inboxes report opens and clicks only.")
+                }
             }
             if !shown.plainBody.isEmpty {
                 Section("Message") { Text(shown.plainBody).font(.subheadline).textSelection(.enabled) }
