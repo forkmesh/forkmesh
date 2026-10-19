@@ -332,6 +332,11 @@ public struct CrmActivity: Equatable, Sendable, Identifiable {
     public var handle: String
     public var text: String
     public var html: String
+    public var automated: Bool
+    public var opens: Int
+    public var clicks: Int
+    public var readSeconds: Int
+    public var scrollDepth: Int
 
     public init(json: JSONObject) {
         id = json.str("id")
@@ -356,9 +361,33 @@ public struct CrmActivity: Equatable, Sendable, Identifiable {
         handle = json.str("handle")
         text = json.str("text")
         html = json.str("html")
+        automated = json.bool("automated")
+        opens = max(0, json.int("opens"))
+        clicks = max(0, json.int("clicks"))
+        readSeconds = max(0, json.int("readSeconds"))
+        scrollDepth = min(100, max(0, json.int("scrollDepth")))
     }
 
     public var at: Int64 { sentAt > 0 ? sentAt : createdAt }
+
+    public var readLabel: String {
+        guard readSeconds > 0 else { return "" }
+        return readSeconds >= 60 ? "\(readSeconds / 60) min+" : "\(readSeconds)s+"
+    }
+
+    public var scrollLabel: String {
+        guard scrollDepth > 0 else { return "" }
+        return scrollDepth >= 100 ? "to the end" : "\(scrollDepth)%"
+    }
+
+    public var engagementLine: String {
+        [
+            opens > 0 ? "\(opens) open\(opens == 1 ? "" : "s")" : "",
+            clicks > 0 ? "\(clicks) click\(clicks == 1 ? "" : "s")" : "",
+            readLabel.isEmpty ? "" : "read \(readLabel)",
+            scrollLabel.isEmpty ? "" : "scrolled \(scrollLabel)",
+        ].filter { !$0.isEmpty }.joined(separator: " · ")
+    }
 
     public static let statuses = [
         "draft", "external", "sending", "accepted", "delivery", "delivered", "open", "click", "failed", "reject",
