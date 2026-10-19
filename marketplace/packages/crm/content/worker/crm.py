@@ -1065,6 +1065,8 @@ def _zoho_project(runtime, zoho):
         "connected": connected,
         "region": str(zoho.get("region") or "com"),
         "accountId": str(zoho.get("accountId") or ""),
+        "clientId": "" if zoho.get("managed") else str(zoho.get("clientId") or ""),
+        "hasClientSecret": bool(zoho.get("clientSecret")) and not zoho.get("managed", False),
         "lastSyncAt": _integer(zoho.get("lastSyncAt")),
         "oneClick": one_click,
         "managed": bool(zoho.get("managed")),
@@ -1507,10 +1509,13 @@ async def _zoho_access_token(runtime, connection):
     token_data = (token or {}).get("data")
     token_data = token_data if isinstance(token_data, dict) else {}
     access_token = str(token_data.get("access_token") or "")
-    if (not (token or {}).get("ok") or not 200 <= _integer(
-            (token or {}).get("status")) < 300 or not access_token):
-        return "", ""
-    return access_token, _zoho_scope(token_data.get("scope"))
+    status = _integer((token or {}).get("status"))
+    if not (token or {}).get("ok") or not 200 <= status < 300 or not access_token:
+        rejected = status in (200, 400, 401, 403) and _clean(token_data.get("error"), 80) in {
+            "invalid_code", "invalid_client", "invalid_client_secret", "invalid_grant",
+            "invalid_token", "invalid_refresh_token", "unauthorized_client"}
+        return "", "", "zoho_token_rejected" if rejected else "zoho_unavailable"
+    return access_token, _zoho_scope(token_data.get("scope") or connection.get("scope")), ""
 
 
 def _zoho_connection(runtime, settings):
@@ -1533,9 +1538,9 @@ async def _zoho_mail_import(runtime, connection, limit):
     account_id = _clean(connection.get("accountId"), 80)
     if not accounts_server or not mail_server or not account_id:
         return {"ok": False, "error": "zoho_connection_incomplete"}
-    access_token, scope = await _zoho_access_token(runtime, connection)
+    access_token, scope, error = await _zoho_access_token(runtime, connection)
     if not access_token:
-        return {"ok": False, "error": "zoho_token_rejected"}
+        return {"ok": False, "error": error}
     headers = {"accept": "application/json",
                "authorization": "Zoho-oauthtoken " + access_token}
     folders_result = await runtime.outbound_json(
@@ -1620,9 +1625,9 @@ async def _zoho_send(runtime, connection, from_email, recipient, subject, html):
     account_id = _clean(connection.get("accountId"), 80)
     if not connection.get("accountsServer") or not mail_server or not account_id:
         return {"ok": False, "error": "zoho_connection_incomplete"}
-    access_token, scope = await _zoho_access_token(runtime, connection)
+    access_token, scope, error = await _zoho_access_token(runtime, connection)
     if not access_token:
-        return {"ok": False, "error": "zoho_token_rejected"}
+        return {"ok": False, "error": error}
     headers = {"accept": "application/json",
                "authorization": "Zoho-oauthtoken " + access_token}
     account_url = mail_server + "/api/accounts/" + quote(account_id, safe="")
@@ -6168,6 +6173,11 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
                    "and tap Reconnect Zoho Mail at the top, then allow sending."),
             409)
     if not accepted:
+        if envelope["error"] == "zoho_unavailable":
+            return _response(runtime, dict(
+                fallback, error="send_failed", via=via,
+                detail="Zoho Mail is temporarily unavailable. Your saved connection is "
+                       "still in place; try sending again shortly."), 502)
         return _response(runtime, dict(
             fallback, error="send_failed", via=via,
             detail=("Zoho Mail" if zoho else "The email provider") + " rejected the send"

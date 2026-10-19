@@ -170,4 +170,8 @@ enum InboxLocalPings {
     static func report(surface: String, title: String, message: String) {
         log?.record(surface: surface, title: title, message: message)
     }
+
+    static func notice(surface: String, title: String, message: String, isError: Bool = false) {
+        log?.recordNotice(surface: surface, title: title, message: message, isError: isError)
+    }
 }

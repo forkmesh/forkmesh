@@ -201,7 +201,9 @@ final class GenieOutreachCoach {
                 }
                 let line: String = GenieOutreachCoach.openedLine(draft)
                 self?.say(line, card: card)
-                InboxLocalPings.report(surface: "genie", title: card == nil ? "Email opened" : "The spider said", message: line)
+                if card != nil {
+                    InboxLocalPings.report(surface: "genie", title: "The spider said", message: line)
+                }
             }
         case .mastodon:
             UIPasteboard.general.string = draft.body

@@ -2,6 +2,7 @@ import html
 import json
 import re
 import sys
+import pytest
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -513,6 +514,60 @@ def test_a_rejected_sign_in_or_failed_sync_becomes_a_step():
     status = call(runtime.use("POST", body={}),
                   "/api/crm/acme/mail/import")["data"]["settings"]["zoho"]
     assert status["canSend"] is True and status["steps"] == []
+
+
+@pytest.mark.parametrize("reply", [
+    {"ok": False, "status": 0, "error": "network_error"},
+    {"ok": False, "status": 429, "data": {"error": "access_denied"}},
+    {"ok": False, "status": 503, "data": {"error": "invalid_code"}},
+    {"ok": True, "status": 200, "data": {}},
+])
+def test_temporary_refresh_failures_do_not_disconnect_zoho(reply):
+    class TemporaryZohoRuntime(ScopedZohoRuntime):
+        async def outbound_json(self, url, method="GET", headers=None, body=""):
+            if url.endswith("/oauth/v2/token") and self.unavailable:
+                return reply
+            return await super().outbound_json(url, method, headers, body)
+
+    runtime = _zoho_connected(TemporaryZohoRuntime([_draft("First"), _draft("Retry")]))
+    runtime.unavailable = True
+    failed = call(runtime.use("POST", body={}), "/api/crm/acme/mail/import")
+    assert failed["data"]["error"] == "zoho_unavailable"
+    assert _zoho_status(runtime)["canSend"] is True
+    assert [step["key"] for step in _zoho_status(runtime)["steps"]] == ["sync_failed"]
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    failed = _send(runtime, sam)
+    assert failed["status"] == 502
+    assert "temporarily unavailable" in failed["data"]["detail"]
+    assert _zoho_status(runtime)["canSend"] is True
+    runtime.unavailable = False
+    assert _send(runtime, sam)["status"] == 201
+    assert _zoho_status(runtime)["canSend"] is True
+
+
+def test_an_old_refresh_failure_recovers_without_reentering_credentials():
+    runtime = _zoho_connected(ScopedZohoRuntime([_draft("Recovered")]))
+    raw = runtime.db.execute("SELECT data FROM crm_settings").fetchone()[0]
+    stored = json.loads(raw.removeprefix("sealed:"))
+    stored["zoho"]["tokenRejectedAt"] = runtime.now()
+    runtime.db.execute("UPDATE crm_settings SET data=?", ("sealed:" + json.dumps(stored),))
+    assert _zoho_status(runtime)["canSend"] is False
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    assert _send(runtime, sam)["status"] == 201
+    assert _zoho_status(runtime)["canSend"] is True
+
+
+def test_refresh_without_scope_preserves_known_send_permission():
+    runtime = _zoho_connected(ScopedZohoRuntime(
+        [_draft("Hello")], scope="ZohoMail.messages.READ ZohoMail.messages.CREATE",
+        send_status=403, send_error="FROM_ADDRESS_NOT_ALLOWED"))
+    assert call(runtime.use("POST", body={}), "/api/crm/acme/mail/import")["status"] == 200
+    runtime.scope = ""
+    sam = _contact(runtime, name="Sam", email="sam@example.com", flow="customers")
+    refused = _send(runtime, sam)
+    assert refused["status"] == 502
+    assert refused["data"]["error"] == "send_failed"
+    assert _zoho_status(runtime)["canSend"] is True
 
 
 def test_the_page_sync_runs_at_most_every_fifteen_minutes():

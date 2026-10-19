@@ -82,15 +82,27 @@ public struct CrmZohoCode: Equatable, Sendable {
     public var clientSecret = ""
     public var code = ""
     public var region = "com"
+    private var savedClientId = ""
 
-    public init() {}
+    public init(status: CrmZohoStatus? = nil) {
+        guard let status else { return }
+        clientId = status.clientId
+        region = status.region
+        if status.hasClientSecret { savedClientId = status.clientId }
+    }
 
     public static let regions = ["com", "eu", "in", "com.au", "jp", "ca"]
     public static let consoleURL = URL(string: "https://api-console.zoho.com/")!
     public static let scopes = "ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,ZohoMail.accounts.READ"
 
     public var isComplete: Bool {
-        ![clientId, clientSecret, code].contains { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+        ![clientId, code].contains { $0.trimmingCharacters(in: .whitespaces).isEmpty }
+            && (usesSavedSecret || !clientSecret.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
+    public var usesSavedSecret: Bool {
+        !savedClientId.isEmpty && clientId.trimmingCharacters(in: .whitespaces) == savedClientId
+            && clientSecret.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     public var body: JSONObject {

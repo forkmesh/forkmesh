@@ -11,6 +11,7 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QProcess>
@@ -25,6 +26,7 @@
 #ifdef Q_OS_UNIX
 #include <cerrno>
 #include <csignal>
+#include <pwd.h>
 #include <unistd.h>
 #endif
 
@@ -414,6 +416,11 @@ StartManager StartManager::system()
         QDir::isAbsolutePath(xdg) ? xdg : manager.home + QStringLiteral("/.config");
 #ifdef Q_OS_UNIX
     manager.uid = qint64(::getuid());
+    QByteArray accountBuffer(16384, Qt::Uninitialized);
+    struct passwd entry;
+    struct passwd *found = nullptr;
+    if (::getpwuid_r(::getuid(), &entry, accountBuffer.data(), size_t(accountBuffer.size()), &found) == 0 && found)
+        manager.account = QString::fromLocal8Bit(entry.pw_name);
 #endif
     manager.run = [](const QString &program, const QStringList &arguments) {
         CommandResult result;
@@ -422,7 +429,7 @@ StartManager StartManager::system()
         QProcess process;
         process.setProcessChannelMode(QProcess::MergedChannels);
         process.start(program, arguments);
-        if (!process.waitForFinished(15000)) {
+        if (!process.waitForFinished(program == QLatin1String("pkexec") ? 120000 : 15000)) {
             process.kill();
             process.waitForFinished(1000);
             return result;
@@ -463,6 +470,51 @@ QString StartManager::trayEntryPath(const QString &project) const
 QString StartManager::lingerMarkerPath() const
 {
     return configHome + QStringLiteral("/systemd/user/forkmesh-headless.linger");
+}
+
+QString StartManager::bootSleepPolicyPath() const
+{
+    return polkitRulesHome + QStringLiteral("/49-forkmesh-sleep-%1.rules").arg(uid);
+}
+
+QString StartManager::bootSleepPolicy() const
+{
+    if (account.isEmpty())
+        return {};
+    const QByteArray quoted = QJsonDocument(QJsonArray{account}).toJson(QJsonDocument::Compact);
+    return QStringLiteral(
+        "polkit.addRule(function(action, subject) {\n"
+        "    if (action.id === \"org.freedesktop.login1.inhibit-block-sleep\" &&\n"
+        "        subject.user === %1)\n"
+        "        return polkit.Result.YES;\n"
+        "});\n").arg(QString::fromUtf8(quoted.mid(1, quoted.size() - 2)));
+}
+
+bool StartManager::bootSleepProtected() const
+{
+    return !account.isEmpty() && readText(bootSleepPolicyPath()) == bootSleepPolicy();
+}
+
+bool StartManager::ensureBootSleepPermission(QString *error) const
+{
+    if (bootSleepProtected() || sleepDisabled())
+        return true;
+    if (account.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("Could not determine the account for the boot sleep permission.");
+        return false;
+    }
+    const CommandResult result = call(QStringLiteral("pkexec"), {
+        QStringLiteral("/bin/sh"), QStringLiteral("-c"),
+        QStringLiteral("umask 022; mkdir -p -- \"$1\" && "
+                       "printf '%s' \"$3\" > \"$2\" && chmod 0644 -- \"$2\""),
+        QStringLiteral("forkmesh-boot-sleep"), polkitRulesHome, bootSleepPolicyPath(),
+        bootSleepPolicy()});
+    if (!result.ok && error)
+        *error = QStringLiteral("Start at boot is registered, but keeping the computer awake "
+                                "before login needs administrator authentication. %1")
+                     .arg(QString::fromUtf8(result.output).trimmed());
+    return result.ok;
 }
 
 bool StartManager::hasSystemd() const
@@ -628,6 +680,7 @@ StartStatus StartManager::status(const QString &project) const
 {
     StartStatus status;
     status.sleepDisabled = sleepDisabled();
+    status.bootSleepProtected = bootSleepProtected();
     status.afterLogout = QFileInfo::exists(logoutUnitPath(project)) && lingering();
     const QString unit = systemdUnitPath(project);
     if (QFileInfo::exists(unit)) {
@@ -686,6 +739,8 @@ bool StartManager::enable(const QString &binary, const QString &project, QString
             return false;
         }
         enableLinger();
+        if (!isBackgroundInstance())
+            ensureBootSleepPermission(error);
     } else if (!writeText(headlessEntryPath(project), headlessDesktopEntry(binary, project), error)) {
         return false;
     }
@@ -902,8 +957,14 @@ void refreshStartUnit()
 {
     if (!supported())
         return;
-    if (StartManager::system().refreshUnit(desktopBinaryPath(), paths::projectSlug()))
+    const StartManager manager = StartManager::system();
+    if (manager.refreshUnit(desktopBinaryPath(), paths::projectSlug()))
         qInfo().noquote() << "Updated the unit that starts ForkMesh without a window.";
+    if (!isBackgroundInstance() && manager.unitInstalled(paths::projectSlug())) {
+        QString error;
+        if (!manager.ensureBootSleepPermission(&error))
+            qWarning().noquote() << error;
+    }
 }
 
 QString handOverAtLogout()

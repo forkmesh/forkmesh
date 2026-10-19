@@ -35,7 +35,8 @@ BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
     m_startAtBoot->setToolTip(QStringLiteral(
         "Registers ForkMesh with the system as a systemd user unit with lingering turned on, so "
         "it starts at boot before anyone logs in and restarts if it crashes. Without a user "
-        "systemd it starts when you log in."));
+        "systemd it starts when you log in. Asks for administrator authentication once to "
+        "keep this computer awake while ForkMesh runs before login."));
     m_noSleep = new QCheckBox(QStringLiteral("Never let this computer go to sleep"));
     m_noSleep->setToolTip(QStringLiteral(
         "Turns off suspend and hibernate for the whole computer (systemctl mask), so the login "
@@ -221,6 +222,9 @@ void BackgroundSettings::applyStatus(const forkmesh::background::StartStatus &st
                                        "loginctl enable-linger"));
     if (status.sleepDisabled)
         lines << QStringLiteral("This computer never goes to sleep.");
+    else if (status.bootSleepProtected && (status.enabled || m_keepRunning->isChecked()))
+        lines << QStringLiteral("ForkMesh can keep this computer awake before anyone logs in. "
+                                "Sleep is allowed again when ForkMesh stops.");
     else if (status.enabled || m_keepRunning->isChecked())
         lines << QStringLiteral("This computer can still go to sleep when nobody is logged in "
                                 "(the login screen suspends it after 15 minutes), and ForkMesh "

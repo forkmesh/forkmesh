@@ -576,6 +576,11 @@ struct HomeShell: View {
             }
             if notice != nil {
                 FmNoticeLine($notice)
+                    .onChange(of: notice, initial: true) { _, current in
+                        guard let current else { return }
+                        InboxLocalPings.notice(surface: "shell", title: current.isError ? "ForkMesh needs attention" : "ForkMesh",
+                                               message: current.message, isError: current.isError)
+                    }
                     .padding(.horizontal, FmSpace.x4)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(fm.bgBase)

@@ -551,6 +551,8 @@ public struct CrmZohoStatus: Equatable, Sendable {
     public var connected: Bool
     public var region: String
     public var accountId: String
+    public var clientId: String
+    public var hasClientSecret: Bool
     public var lastSyncAt: Int64
     public var oneClick: Bool
     public var managed: Bool
@@ -563,6 +565,8 @@ public struct CrmZohoStatus: Equatable, Sendable {
         connected = json.bool("connected")
         region = json.str("region", "com")
         accountId = json.str("accountId")
+        clientId = json.str("clientId")
+        hasClientSecret = json.bool("hasClientSecret")
         lastSyncAt = json.int64("lastSyncAt")
         oneClick = json.bool("oneClick")
         managed = json.bool("managed")
