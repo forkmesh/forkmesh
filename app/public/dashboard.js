@@ -45318,7 +45318,7 @@
     return data;
   }
 
-  async function pluginDesktopUsage() {
+  async function pluginDesktopUsage(options = {}) {
     if (!state.session?.sessionToken) throw new Error("desktop_sign_in_required");
     const hub = await desktopControlHub();
     const desktops = await hub.desktops();
@@ -45327,7 +45327,9 @@
       if (!node) return null;
       try {
         const connection = await hub.connect(node);
-        const usage = await connection.request("agentops.usage", {});
+        const usage = options?.refresh
+          ? await connection.request("agentops.usage", { refresh: true }, 30000)
+          : await connection.request("agentops.usage", {});
         return {
           node,
           name: String(connection.info?.name || desktop?.name || node),
