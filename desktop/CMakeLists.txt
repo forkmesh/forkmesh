@@ -1276,6 +1276,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
     src/ClaudeTranscriptView.h
+    src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
     src/KebabHeaderView.h
     src/LocalMeshNode.h
@@ -1382,6 +1383,7 @@ set_source_files_properties(
     src/ClaudeStreamSession.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
+    src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
     src/KebabHeaderView.h
     src/LocalMeshNode.h
