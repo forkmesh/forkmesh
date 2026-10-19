@@ -21,7 +21,7 @@
     { "id": "crm", "version": "1.41.0", "manifest": "packages/crm/manifest.json" },
     { "id": "marketing", "version": "1.43.0", "manifest": "packages/marketing/manifest.json" },
     { "id": "competitor", "version": "1.0.0", "manifest": "packages/competitor/manifest.json" },
-    { "id": "analytics", "version": "1.7.0", "manifest": "packages/analytics/manifest.json" },
+    { "id": "analytics", "version": "1.8.0", "manifest": "packages/analytics/manifest.json" },
     { "id": "tasks", "version": "1.1.0", "manifest": "packages/tasks/manifest.json" },
     { "id": "calendar", "version": "1.1.0", "manifest": "packages/calendar/manifest.json" },
     { "id": "notes", "version": "1.1.0", "manifest": "packages/notes/manifest.json" },
