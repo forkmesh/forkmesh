@@ -355,7 +355,9 @@ READ_MARKS = (5, 15, 30, 45, 60, 90, 120, 180, 240, 300, 420, 600)
 DEPTH_MARKS = (25, 50, 75, 100)
 READ_LAG_SHARE = 0.8
 DEPTH_MIN_LAG_MS = 1500
-READ_PING_SECONDS = 30
+SUMMARY_NOTE_SECONDS = 30
+SUMMARY_DECK_SECONDS = 300
+SILENT_MAIL_CLIENTS = ("Gmail image proxy", "Yahoo Mail proxy", "Outlook")
 EMAIL_ASSETS = "https://forkmesh.com/assets/email/"
 EMAIL_FONT = "https://forkmesh.com/assets/fonts/ABCFavorit-Bold.woff2"
 TRACK_AGENT_CHARS = 200
@@ -542,6 +544,11 @@ DATA_SCHEMA_UP = [
         last_at INTEGER NOT NULL DEFAULT 0 CHECK (last_at >= 0))""",
     "CREATE INDEX IF NOT EXISTS idx_crm_email_tracking_org "
     "ON crm_email_tracking(org_bi,last_at DESC)",
+    """CREATE TABLE IF NOT EXISTS crm_email_report (
+        send_id TEXT PRIMARY KEY REFERENCES crm_email_sends(send_id) ON DELETE CASCADE,
+        org_bi TEXT NOT NULL,
+        client TEXT NOT NULL DEFAULT '',
+        summary_at INTEGER NOT NULL DEFAULT 0 CHECK (summary_at >= 0))""",
     """CREATE TABLE IF NOT EXISTS crm_email_reading (
         send_id TEXT PRIMARY KEY REFERENCES crm_email_sends(send_id) ON DELETE CASCADE,
         org_bi TEXT NOT NULL,
@@ -696,6 +703,7 @@ DATA_SCHEMA_DOWN = [
     "DROP TABLE IF EXISTS crm_view_shares",
     "DROP TABLE IF EXISTS crm_mail_messages",
     "DROP TABLE IF EXISTS crm_views",
+    "DROP TABLE IF EXISTS crm_email_report",
     "DROP TABLE IF EXISTS crm_email_reading",
     "DROP TABLE IF EXISTS crm_email_tracking",
     "DROP TABLE IF EXISTS crm_email_sends",
@@ -1358,9 +1366,10 @@ EMAIL_SELECT = (
     "COALESCE(t.opens,0) AS opens,COALESCE(t.clicks,0) AS clicks,"
     "COALESCE(t.opened_at,0) AS opened_at,COALESCE(t.clicked_at,0) AS clicked_at,"
     "COALESCE(r.read_seconds,0) AS read_seconds,COALESCE(r.depth,0) AS read_depth,"
-    "COALESCE(r.read_at,0) AS read_at "
+    "COALESCE(r.read_at,0) AS read_at,COALESCE(c.client,'') AS mail_client "
     "FROM crm_email_sends s LEFT JOIN crm_email_tracking t ON t.send_id=s.send_id "
-    "LEFT JOIN crm_email_reading r ON r.send_id=s.send_id")
+    "LEFT JOIN crm_email_reading r ON r.send_id=s.send_id "
+    "LEFT JOIN crm_email_report c ON c.send_id=s.send_id")
 
 
 async def _email_row(runtime, org_bi, send_id):
@@ -1368,6 +1377,14 @@ async def _email_row(runtime, org_bi, send_id):
         "SELECT " + EMAIL_SELECT + " WHERE s.org_bi=? AND s.send_id=?",
         org_bi, send_id,
     )
+
+
+def _mail_client(label):
+    label = _clean(label, 80)
+    reported = ("no" if label in SILENT_MAIL_CLIENTS else
+                "yes" if label.endswith("Apple Mail") else "")
+    name = label.replace(" image proxy", "").replace(" proxy", "")
+    return {"mailClient": name, "readingReported": reported}
 
 
 def _slide_reach(link_kind, depth):
@@ -1411,6 +1428,7 @@ async def _email_project(runtime, row, include_content=True):
         "scrollDepth": _integer(row.get("read_depth")),
         "readAt": _integer(row.get("read_at")),
         **_slide_reach(data.get("linkKind"), _integer(row.get("read_depth"))),
+        **_mail_client(row.get("mail_client")),
         "automated": bool(data.get("auto")),
         "linkKind": _clean(data.get("linkKind"), 20),
         "rating": _integer(data.get("rating")),
@@ -6894,21 +6912,29 @@ async def _track_reading(runtime, send_id, action, mark):
         "UPDATE crm_email_reading SET read_seconds=?,depth=?,"
         "read_at=CASE WHEN read_at=0 THEN ? ELSE read_at END,last_at=? WHERE send_id=?",
         seconds, depth, now, now, send_id)
-    if before_seconds < READ_PING_SECONDS <= seconds:
-        await _ping_reading(runtime, row, send_id, "read", seconds, depth)
-    if before_depth < 100 <= depth:
-        await _ping_reading(runtime, row, send_id, "end", seconds, depth)
+    data = await runtime.open(row.get("data"))
+    link_kind = _clean((data if isinstance(data, dict) else {}).get("linkKind"), 20)
+    deck = link_kind == "deck"
+    if (deck and depth >= 100) or seconds >= (
+            SUMMARY_DECK_SECONDS if deck else SUMMARY_NOTE_SECONDS):
+        await _summarize_reading(runtime, row, send_id, link_kind, seconds, depth, now)
 
 
-def _reading_copy(seconds, depth):
+def _reading_copy(seconds, depth, link_kind="", client=""):
     if seconds >= 60:
-        minutes = seconds // 60
-        spent = "%d min+" % minutes
+        spent = "Read for %d min+" % (seconds // 60)
     else:
-        spent = "%ds+" % seconds if seconds else "under 5s"
-    scrolled = ("to the end" if depth >= 100 else "%d%% of the way" % depth
-                if depth else "no scroll reported yet")
-    return "Reading time: %s · scrolled %s" % (spent, scrolled)
+        spent = "Read for %ds+" % seconds if seconds else "Read for under 5s"
+    reach = _slide_reach(link_kind, depth)
+    if reach["slideReached"]:
+        where = "reached slide %d of %d (%s)" % (
+            reach["slideReached"], reach["slideCount"], reach["slideTitle"])
+    elif depth:
+        where = "scrolled to the end" if depth >= 100 else "scrolled %d%% of the way" % depth
+    else:
+        where = ""
+    return " · ".join(part for part in (spent, where, _mail_client(client)["mailClient"])
+                      if part)
 
 
 async def _send_contact(runtime, row):
@@ -6924,19 +6950,32 @@ async def _send_contact(runtime, row):
     return contact, _clean(data.get("subject"), 140)
 
 
-async def _ping_reading(runtime, row, send_id, kind, seconds, depth):
+async def _summarize_reading(runtime, row, send_id, link_kind, seconds, depth, now):
+    await runtime.d1_run(
+        "INSERT OR IGNORE INTO crm_email_report(send_id,org_bi) VALUES(?,?)",
+        send_id, str(row.get("org_bi") or ""))
+    report = await runtime.d1_first(
+        "SELECT client,summary_at FROM crm_email_report WHERE send_id=?", send_id) or {}
+    if _integer(report.get("summary_at")):
+        return
+    await runtime.d1_run(
+        "UPDATE crm_email_report SET summary_at=? WHERE send_id=? AND summary_at=0",
+        now, send_id)
     notify = getattr(runtime, "notify", None)
     sender = _clean(row.get("sender_name"), 64).lower()
     if notify is None or not sender:
         return
     contact, subject = await _send_contact(runtime, row)
     label = _contact_label(contact)
-    title = ("📖 %s is reading your email" if kind == "read"
-             else "🏁 %s read your email to the end") % label
+    if link_kind == "deck":
+        title = ("🏁 %s read your whole deck" % label if depth >= 100 else
+                 "📖 %s has spent %d min+ on your deck" % (label, seconds // 60))
+    else:
+        title = "📖 %s is reading your email" % label
     lines = ["“%s”" % subject] if subject else []
-    lines.append(_reading_copy(seconds, depth))
+    lines.append(_reading_copy(seconds, depth, link_kind, report.get("client")))
     await notify(sender, "plugin_activity", title, body="\n".join(lines),
-                 href=CRM_PAGE_PATH, dedupe="crm-email-%s:%s" % (kind, send_id))
+                 href=CRM_PAGE_PATH, dedupe="crm-email-summary:%s" % send_id)
 
 
 async def _record_track(runtime, row, send_id, event, now, visitor=None):
@@ -6946,6 +6985,13 @@ async def _record_track(runtime, row, send_id, event, now, visitor=None):
             "INSERT INTO crm_email_reading(send_id,org_bi,view_at,last_at) VALUES(?,?,?,?) "
             "ON CONFLICT(send_id) DO UPDATE SET view_at=excluded.view_at,"
             "last_at=excluded.last_at", send_id, org_bi, now, now)
+        agent = _clean((visitor or {}).get("agent"), 512)
+        if agent:
+            await runtime.d1_run(
+                "INSERT INTO crm_email_report(send_id,org_bi,client) VALUES(?,?,?) "
+                "ON CONFLICT(send_id) DO UPDATE SET client=CASE WHEN client='' "
+                "THEN excluded.client ELSE client END",
+                send_id, org_bi, _mail_agent_label(agent))
     count, stamp = ("opens", "opened_at") if event == "open" else ("clicks", "clicked_at")
     before = await runtime.d1_first(
         "SELECT " + count + " AS n FROM crm_email_tracking WHERE send_id=?", send_id)
