@@ -36,7 +36,8 @@ state (`app/host/forkmesh_host/repo_views.py`), so the dashboard lists it under
 
 `merged` is for an open pull whose change is already on its base, landed by
 hand (`git am` of its `commits.mbox`) or through another pull. The desktop's
-Merge button would try to apply the patch again and stop on conflicts, and
+Merge button would merge the pull's head commit again
+([../server/pull-heads.md](../server/pull-heads.md)), and
 `PullStore::reconcileMergedPulls` only recognises branch-backed pulls, so
 patch-backed pulls landed this way stayed `open`. Closing them instead would
 drop the merge from the record badges and leave a merge-conditional reward

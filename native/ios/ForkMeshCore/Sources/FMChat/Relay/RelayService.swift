@@ -878,6 +878,10 @@ public final class RelayService: OwnStatusAnnouncer {
 
     private func onFrame(_ message: WebSocketMessage) async {
         framesReceived += 1
+        PerformanceMonitorService.section("relay.frame") { openFrame(message) }
+    }
+
+    private func openFrame(_ message: WebSocketMessage) {
         guard let crypto else { return }
         let text: String
         switch message {

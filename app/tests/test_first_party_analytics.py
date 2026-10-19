@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
 """Every page loads the shared, default-off first-party analytics controller."""
 
+import json
 from pathlib import Path
 import re
+import shutil
+import subprocess
+
+import pytest
 
 
 PROJECT = Path(__file__).resolve().parents[2]
@@ -137,8 +142,8 @@ def test_all_public_html_pages_load_the_controller():
     # dashboard/partials/*.html are shell fragments (no <head>); they are
     # composed into generated dashboard assets before deploy, and the shell
     # they land in carries the snippet — so they are exempt. So is the
-    # per-contact investor deck: a private link that records its own
-    # page-level attention for the CRM and never shows a consent banner.
+    # per-contact investor deck: a private link that never shows a consent
+    # banner; it reports its own token-free visit to the site project.
     exempt = {("app", "pitch-deck/deck.html")}
     html_pages = [
         (owner, public, page)
@@ -182,3 +187,41 @@ def test_worker_generated_pages_apply_their_intended_script_policy():
     assert verify_page
     assert "/analytics.js" not in verify_page.group(0)
     assert '"default-src \'none\'' in verify_page.group(0)
+
+
+def test_public_sections_get_full_detail_and_personal_links_stay_coarse():
+    if not shutil.which("node"):
+        pytest.skip("node is not installed")
+    js = (WWW_PUBLIC / "analytics.js").read_text(encoding="utf-8")
+    source = _function(js, "coarseSurface")
+    paths = ["/", "/hackathon/rules", "/hackathon/archive/2026-spring",
+             "/market/crm", "/ecosystem/forkmesh", "/hackathon/projects/" + "a" * 32,
+             "/hackathon/join/alice", "/hackathon/squad/abc123",
+             "/hackathon/challenge/tok123", "/pitch-deck/abcdef123456",
+             "/alice/repository", "/dashboard/crm", "/features"]
+    script = source + "\nconsole.log(JSON.stringify(%s.map(coarseSurface)));" % json.dumps(paths)
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    assert dict(zip(paths, json.loads(result.stdout))) == {
+        "/": "home", "/hackathon/rules": "public-page",
+        "/hackathon/archive/2026-spring": "public-page", "/market/crm": "public-page",
+        "/ecosystem/forkmesh": "public-page",
+        "/hackathon/projects/" + "a" * 32: "public-page",
+        "/hackathon/join/alice": "hackathon-link", "/hackathon/squad/abc123": "hackathon-link",
+        "/hackathon/challenge/tok123": "hackathon-link",
+        "/pitch-deck/abcdef123456": "investor-deck",
+        "/alice/repository": "repository", "/dashboard/crm": "dashboard",
+        "/features": "public-page"}
+
+
+def test_investor_deck_reports_a_token_free_visit_to_the_site_project():
+    deck = (APP_PUBLIC / "pitch-deck" / "deck.html").read_text(encoding="utf-8")
+    assert not _loads_controller(deck)
+    record = re.search(r"        const record = \(events\) => \{.*?\n        \};\n", deck, re.S)
+    assert record
+    body = record.group(0)
+    assert 'key: "site"' in body and "/api/analytics/_/capture" in body
+    assert "token" not in body and "if (privacySignal) return;" in body
+    visit = re.search(r"        const visit = \{.*?\n        \};\n", deck, re.S)
+    assert visit and "token" not in visit.group(0) and "viewer" not in visit.group(0)
+    assert '$pathname: "/pitch-deck"' in visit.group(0)
+    assert "record(events);" in deck

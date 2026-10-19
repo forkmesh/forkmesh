@@ -414,6 +414,81 @@ extension PerformanceMonitorTests {
     }
 }
 
+extension PerformanceMonitorTests {
+    func testTimeTheAppSpentHiddenIsNotCountedInAnOperation() async throws {
+        let monitor = PerformanceMonitorService(threshold: .milliseconds(300), heartbeatInterval: .seconds(10), logSink: { _ in })
+        monitor.installStallMonitors(frameSource: nil, lifecycleState: .resumed)
+        await monitor.track("api.GET /api/repo/forkmesh/forkmesh/tree") {
+            monitor.appLifecycleChanged(.paused)
+            try? await sleep(500)
+            monitor.appLifecycleChanged(.resumed)
+        }
+        XCTAssertTrue(monitor.events.isEmpty, "a read left open in the background is not slow: \(monitor.events.map(\.durationMs))")
+
+        await monitor.track("api.GET /api/repo/forkmesh/forkmesh/blobs") {
+            monitor.appLifecycleChanged(.paused)
+            try? await sleep(400)
+            monitor.appLifecycleChanged(.resumed)
+            try? await sleep(400)
+        }
+        monitor.uninstallStallMonitors()
+        let event = try XCTUnwrap(monitor.events.first)
+        XCTAssertGreaterThanOrEqual(event.durationMs, 300)
+        XCTAssertLessThan(event.durationMs, 700, "the visible part only")
+        let away = try XCTUnwrap(event.details["awayMs"]?.intValue)
+        XCTAssertGreaterThanOrEqual(away, 380)
+        XCTAssertLessThan(away, 700)
+    }
+
+    func testAnOperationStartedBeforeABackgroundLaunchWasShownLeavesOutTheHiddenTime() async {
+        let monitor = PerformanceMonitorService(threshold: .milliseconds(300), heartbeatInterval: .seconds(10), logSink: { _ in })
+        monitor.installStallMonitors(frameSource: nil, lifecycleState: .paused)
+        await monitor.track("api.GET /api/chat/channels") {
+            try? await sleep(450)
+            monitor.appLifecycleChanged(.resumed)
+        }
+        monitor.uninstallStallMonitors()
+        XCTAssertTrue(monitor.events.isEmpty)
+    }
+
+    @MainActor
+    func testABurstOfShortMainThreadSectionsIsSummedInTheStall() throws {
+        let monitor = PerformanceMonitorService(logSink: { _ in })
+        for _ in 0..<40 { monitor.timeSync("relay.frame") { busyWait(milliseconds: 3) } }
+        monitor.timeSync("under.a.millisecond") {}
+        monitor.recordFrameDelay(buildDuration: .milliseconds(250), rasterDuration: .zero)
+        let sections = try XCTUnwrap(monitor.events.first?.details["sections"]?.stringValue)
+        XCTAssertTrue(sections.hasPrefix("relay.frame "), sections)
+        XCTAssertFalse(sections.contains("under.a.millisecond"), sections)
+        let ms = Int(sections.dropFirst("relay.frame ".count).prefix { $0.isNumber }) ?? 0
+        XCTAssertGreaterThanOrEqual(ms, 110, "40 frames of 3 ms, each under the 8 ms floor: \(sections)")
+    }
+
+    func testStallsSayWhetherTheyFollowedTheLaunchOrAResumeAndHowLongAfter() throws {
+        let monitor = PerformanceMonitorService(heartbeatInterval: .seconds(10), logSink: { _ in })
+        monitor.recordFrameDelay(buildDuration: .milliseconds(250), rasterDuration: .zero)
+        XCTAssertNil(monitor.events.first?.details["shown"], "nothing was shown yet")
+
+        monitor.installStallMonitors(frameSource: nil, lifecycleState: .resumed)
+        Thread.sleep(forTimeInterval: 0.3)
+        monitor.recordFrameDelay(buildDuration: .milliseconds(250), rasterDuration: .zero)
+        let launch = try XCTUnwrap(monitor.events.first)
+        XCTAssertEqual(launch.details["shown"], "launch")
+        XCTAssertLessThan(try XCTUnwrap(launch.details["shownMs"]?.intValue), 200, "the frame began about 50 ms after showing")
+
+        monitor.appLifecycleChanged(.inactive)
+        monitor.appLifecycleChanged(.paused)
+        monitor.appLifecycleChanged(.resumed)
+        monitor.recordSlowEvent(kind: .eventLoop, name: "ui-isolate blocked", duration: .milliseconds(220))
+        XCTAssertEqual(monitor.events.first?.details["shown"], "resume")
+        XCTAssertEqual(monitor.events.first?.details["shownMs"], 0)
+
+        monitor.recordSlowEvent(kind: .operation, name: "api.GET /api/orgs", duration: .seconds(1))
+        XCTAssertNil(monitor.events.first?.details["shown"], "operations are not stalls")
+        monitor.uninstallStallMonitors()
+    }
+}
+
 final class StallLogFileTests: XCTestCase {
     func testStallLogRotatesPastItsSizeCap() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("stall_log_rotate-\(UUID().uuidString)")

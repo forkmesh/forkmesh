@@ -301,6 +301,22 @@ recording's `meta` events with its time and seeks there on click.
 When replay is off for the project, the tab says so and offers owners and
 admins a "Turn on recordings" button, which PATCHes only `replay.enabled`.
 
+### Motion view and desktop playback (1.8.0)
+
+`GET .../recordings/<sessionId>?afterSeq=<n>&view=motion` pages through the
+same chunks, but the server unpacks each one (`gzip-b64` or `json`) and
+answers `encoding: "motion"` with `events` as a JSON array holding only
+`meta` (`href`, `width`, `height`, `pageHeight`), `full` (`doc`, `x`, `y`),
+`move`, clicks (`click`, `dblclick`, `contextmenu`, `touchstart` with `x`,
+`y`), `scroll` (`id`, `x`, `y`, `h`), `resize`, `input` (empty) and `custom`
+(`name`, `url`). Serialized nodes, mutations and input values are never
+included. A chunk that cannot be decoded comes back with no events. The
+desktop player uses this view. Recordings also carry `country`, the visitor's
+two-letter country from the first chunk.
+
+The SDK records the document height: `pageHeight` on `meta` and `h` on window
+`scroll` events.
+
 ### Web overview (1.4.0)
 
 The overview's referral views count **sessions** by their landing pageview's

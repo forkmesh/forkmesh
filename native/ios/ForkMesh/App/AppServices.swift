@@ -539,6 +539,7 @@ final class AppServices {
         accountEvents.appLifecycleChanged(state)
         if state == .paused || state == .hidden {
             vault.appPaused()
+            ChatKeyring.persistPendingReplay()
         }
         if state != .resumed {
             return

@@ -136,7 +136,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     @ObservationIgnored private var mainSectionDepth = 0
     @ObservationIgnored private var sectionWatcher: (@Sendable (String, Double, Double) -> Void)?
     public static let watchedFloor: Duration = .milliseconds(1)
-    public static let sectionLimit = 32
+    public static let sectionLimit = 256
     @ObservationIgnored private weak var frameSource: FrameTimingSource?
     @ObservationIgnored private var installed = false
     @ObservationIgnored private var watchTimer: DispatchSourceTimer?
@@ -144,6 +144,10 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     @ObservationIgnored private var recentPauses: [(startUs: Int64, endUs: Int64)] = []
     @ObservationIgnored private var pauseTotal = 0
     @ObservationIgnored private var longestPauseUs: Int64 = 0
+    @ObservationIgnored private var hiddenSinceUs: Int64?
+    @ObservationIgnored private var recentHidden: [(startUs: Int64, endUs: Int64)] = []
+    @ObservationIgnored private var showCount = 0
+    public static let shownWindowMs = 10_000
 
     public init(
         enabled: Bool = true,
@@ -238,14 +242,17 @@ public final class PerformanceMonitorService: @unchecked Sendable {
 
     private func finishOperation(id: Int, name: String, startUs: Int64, details: JSONObject, error: Error?, stack: [UInt]) {
         let endUs = elapsedMicros()
-        locked {
+        let awayUs: Int64 = locked {
             inFlight.removeAll { $0.0 == id }
             recentlyFinished.append((name, endUs))
             if recentlyFinished.count > PerformanceMonitorService.recentLimit { recentlyFinished.removeFirst() }
+            return hiddenMicros(from: startUs, to: endUs) + pausedMicros(from: startUs, to: endUs)
         }
-        let elapsed = elapsedForTest?() ?? .microseconds(endUs - startUs)
+        let span = elapsedForTest?() ?? .microseconds(endUs - startUs)
+        let elapsed = max(.zero, span - .microseconds(awayUs))
         guard elapsed >= threshold else { return }
         var merged = details
+        if awayUs >= 1_000 { merged["awayMs"] = .int(awayUs / 1_000) }
         if let error { merged["error"] = .string(String(describing: error)) }
         recordSlowEvent(kind: .operation, name: name, duration: elapsed, details: merged, stackTrace: PerformanceMonitorService.symbolicate(stack))
     }
@@ -266,7 +273,9 @@ public final class PerformanceMonitorService: @unchecked Sendable {
             if onMain { locked { mainSectionDepth -= 1 } }
             let elapsed = Duration.microseconds(endUs - startUs)
             let inner = elapsed >= stallThreshold && !nested ? sectionsText(from: startUs, to: endUs) : nil
-            if elapsed >= sectionFloor { noteSection(name, startUs: startUs, endUs: endUs) }
+            if elapsed >= (onMain ? min(sectionFloor, PerformanceMonitorService.watchedFloor) : sectionFloor) {
+                noteSection(name, startUs: startUs, endUs: endUs)
+            }
             if onMain, elapsed >= PerformanceMonitorService.watchedFloor, let watcher = locked({ sectionWatcher }) {
                 watcher(name, uptimeSeconds(startUs), uptimeSeconds(endUs))
             }
@@ -307,6 +316,8 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         frameSource?.startReporting { [weak self] timings in self?.handleFrameTimings(timings) }
         if lifecycleState == nil || lifecycleState == .resumed || lifecycleState == .inactive {
             startHeartbeat()
+        } else {
+            locked { hiddenSinceUs = hiddenSinceUs ?? elapsedMicros() }
         }
     }
 
@@ -342,6 +353,12 @@ public final class PerformanceMonitorService: @unchecked Sendable {
             lastBeatUs = elapsedMicros()
             heartbeatStartedUs = lastBeatUs
             lastWatchUs = lastBeatUs
+            showCount += 1
+            if let since = hiddenSinceUs {
+                recentHidden.append((since, lastBeatUs))
+                if recentHidden.count > PerformanceMonitorService.recentLimit { recentHidden.removeFirst() }
+                hiddenSinceUs = nil
+            }
             return heartbeatGeneration
         }
         guard let generation else { return }
@@ -351,6 +368,7 @@ public final class PerformanceMonitorService: @unchecked Sendable {
 
     public func stopHeartbeat() {
         let timer: DispatchSourceTimer? = locked {
+            if heartbeatRunning { hiddenSinceUs = elapsedMicros() }
             heartbeatRunning = false
             heartbeatGeneration += 1
             let timer = watchTimer
@@ -410,6 +428,12 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         if heartbeatRunning, endUs - lastWatchUs - intervalUs >= PerformanceMonitorService.micros(stallThreshold) {
             spans.append((lastWatchUs + intervalUs, endUs))
         }
+        return spans.reduce(0) { $0 + max(0, min($1.endUs, endUs) - max($1.startUs, startUs)) }
+    }
+
+    private func hiddenMicros(from startUs: Int64, to endUs: Int64) -> Int64 {
+        var spans = recentHidden
+        if let since = hiddenSinceUs { spans.append((since, endUs)) }
         return spans.reduce(0) { $0 + max(0, min($1.endUs, endUs) - max($1.startUs, startUs)) }
     }
 
@@ -500,6 +524,10 @@ public final class PerformanceMonitorService: @unchecked Sendable {
         if kind != .operation, details["screen"] == nil, let screen = currentScreen(), !screen.isEmpty {
             details["screen"] = .string(screen)
         }
+        if kind != .operation, details["shown"] == nil, let shown = shownMoment(before: duration) {
+            details["shown"] = .string(shown.by)
+            details["shownMs"] = .int(shown.ms)
+        }
         let event: PerformanceEvent = locked {
             let event = PerformanceEvent(
                 id: nextEventId, kind: kind, name: name, duration: duration, timestamp: now(),
@@ -524,6 +552,14 @@ public final class PerformanceMonitorService: @unchecked Sendable {
     }
 
     // MARK: Helpers
+
+    private func shownMoment(before duration: Duration) -> (by: String, ms: Int64)? {
+        let startUs = elapsedMicros() - PerformanceMonitorService.micros(duration)
+        return locked {
+            guard heartbeatRunning, showCount > 0 else { return nil }
+            return (showCount == 1 ? "launch" : "resume", max(0, startUs - heartbeatStartedUs) / 1_000)
+        }
+    }
 
     private func currentScreen() -> String? {
         guard Thread.isMainThread, let source = locked({ screenSource }) else { return nil }
@@ -604,8 +640,9 @@ public final class PerformanceMonitorService: @unchecked Sendable {
                 return "\(index) ??? \(hex)"
             }
             let image = info.dli_fname.map { URL(fileURLWithPath: String(cString: $0)).lastPathComponent } ?? "???"
-            guard let name = info.dli_sname, let start = info.dli_saddr else { return "\(index) \(image) \(hex)" }
-            return "\(index) \(image) \(hex) \(String(cString: name)) + \(address &- UInt(bitPattern: start))"
+            let offset = info.dli_fbase.map { " +0x" + String(address &- UInt(bitPattern: $0), radix: 16) } ?? ""
+            guard let name = info.dli_sname, let start = info.dli_saddr else { return "\(index) \(image) \(hex)\(offset)" }
+            return "\(index) \(image) \(hex)\(offset) \(String(cString: name)) + \(address &- UInt(bitPattern: start))"
             #else
             return "\(index) ??? \(hex)"
             #endif

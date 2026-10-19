@@ -236,7 +236,7 @@ func materializeDirectCollaboration(ctx context.Context, repo Repository,
 			}
 			return number, err
 		}
-		if err := commitCollaboration(ctx, dir, ".forkmesh/pulls",
+		if err := commitPullIntake(ctx, repo, dir, item, number,
 			fmt.Sprintf("pull #%d: direct mirror intake", number)); err != nil {
 			return number, err
 		}
@@ -1091,7 +1091,7 @@ func materializePullInbox(ctx context.Context, repo Repository,
 			continue
 		}
 		reserved[number] = true
-		if err := commitCollaboration(ctx, dir, ".forkmesh/pulls",
+		if err := commitPullIntake(ctx, repo, dir, item, number,
 			fmt.Sprintf("pull #%d: mirror intake", number)); err != nil {
 			return ids, err
 		}
@@ -1113,6 +1113,21 @@ func materializePullInbox(ctx context.Context, repo Repository,
 		ids = append(ids, item.ID)
 	}
 	return ids, nil
+}
+
+func commitPullIntake(ctx context.Context, repo Repository, dir string,
+	item collaborationItem, number int, message string) error {
+	head := ""
+	if len(item.Pull) != 0 {
+		head, _ = recordPullHead(ctx, repo.GitDir, dir, number)
+	}
+	if err := commitCollaboration(ctx, dir, ".forkmesh/pulls", message); err != nil {
+		return err
+	}
+	if head == "" {
+		return nil
+	}
+	return publishPullHeadRef(ctx, repo.GitDir, number, head)
 }
 
 func reservedPullNumbers(ctx context.Context, gitDir string) map[int]bool {

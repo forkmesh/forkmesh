@@ -374,7 +374,8 @@ func TestMergeExecutorAppliesPatchBackedPullFromTheLedger(t *testing.T) {
 	}
 	pullsAfter := result["pullsAfter"].(string)
 	record := f.show(t, pullsAfter, ".forkmesh/pulls/7/pull.md")
-	if !strings.Contains(record, "status: merged") || strings.Contains(record, "mergeHead:") ||
+	if !strings.Contains(record, "status: merged") || !strings.Contains(record, "\nmergeHead: "+baseAfter+"\n") ||
+		!strings.Contains(record, "\nmergeBase: "+f.mainOid+"\n") ||
 		!regexp.MustCompile(`\nmergedAt: [0-9]{13}\n`).MatchString(record) {
 		t.Fatalf("patch-backed record:\n%s", record)
 	}
@@ -389,7 +390,7 @@ func TestMergeExecutorAppliesPatchBackedPullFromTheLedger(t *testing.T) {
 		t.Fatal("no job record written")
 	} else {
 		for _, entry := range entries {
-			if strings.HasPrefix(entry.Name(), ".apply-") {
+			if strings.HasPrefix(entry.Name(), ".pull-head-") {
 				t.Fatal("temporary worktree left behind")
 			}
 		}

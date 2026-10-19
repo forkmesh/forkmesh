@@ -187,6 +187,10 @@ public final class ChatKeyring: @unchecked Sendable {
     private var counters: [String: Int64] = [:]
     private var replay: [String: [String: ChatReplayEntry]] = [:]
     private var replayOrder: [String: [String]] = [:]
+    private var replayDirty: Set<String> = []
+    private var replayWriteScheduled = false
+    private static let replayQueue = DispatchQueue(label: "forkmesh.chat.replay", qos: .utility)
+    public static let replayWriteDelay: DispatchTimeInterval = .milliseconds(250)
     private var ratchets: [String: [String: ChatRatchetPeer]] = [:]
     private let ratchetLock = NSLock()
 
@@ -413,13 +417,42 @@ public final class ChatKeyring: @unchecked Sendable {
     }
 
     private func persistReplay(_ room: String) {
-        guard let store, let book = replay[room] else { return }
-        var root = JSONObject()
-        for sender in replayOrder[room] ?? [] {
-            guard let entry = book[sender] else { continue }
-            root[sender] = .object(["m": .int(entry.max), "s": .array(entry.seen.sorted().map { .int($0) })])
+        guard store != nil else { return }
+        replayDirty.insert(room)
+        if replayWriteScheduled { return }
+        replayWriteScheduled = true
+        ChatKeyring.replayQueue.asyncAfter(deadline: .now() + ChatKeyring.replayWriteDelay) { self.writeDirtyReplay() }
+    }
+
+    private func writeDirtyReplay() {
+        let pending: [(room: String, book: [String: ChatReplayEntry], order: [String])] = locked {
+            replayWriteScheduled = false
+            let rooms = replayDirty.sorted()
+            replayDirty.removeAll()
+            return rooms.compactMap { room in replay[room].map { (room, $0, replayOrder[room] ?? []) } }
         }
-        store.write(ChatKeyring.seenKey(room), JSON.encode(root))
+        guard let store else { return }
+        for item in pending {
+            var root = JSONObject()
+            for sender in item.order {
+                guard let entry = item.book[sender] else { continue }
+                root[sender] = .object(["m": .int(entry.max), "s": .array(entry.seen.sorted().map { .int($0) })])
+            }
+            store.write(ChatKeyring.seenKey(item.room), JSON.encode(root))
+        }
+    }
+
+    public func flushReplay() {
+        ChatKeyring.replayQueue.sync { writeDirtyReplay() }
+    }
+
+    public static func persistPendingReplay() {
+        registryLock.lock()
+        let keyrings = registry.values.map(\.keyring)
+        registryLock.unlock()
+        for keyring in keyrings {
+            replayQueue.async { keyring.writeDirtyReplay() }
+        }
     }
 
     func ratchetLocked<R>(_ body: () throws -> R) rethrows -> R {
