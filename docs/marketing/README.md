@@ -142,9 +142,9 @@ runners, the iOS and Android apps and the Marketplace. The roots are Git and
 the mirrors, since they keep a repository alive. The forest, moon, leaves and
 fireflies add nature to a neon perspective grid and aurora.
 
-The blog post  (October 19, 2026) uses it
+The blog post `forkmesh-gives-your-agents-context` (October 19, 2026) uses it
 as its hero, converted to
-.
+`www/public/assets/blog/features/forkmesh-gives-your-agents-context.webp`.
 
 The SVG loads its fonts from `assets/fonts/`, so render it from where it
 lives. To refresh the PNG after editing the SVG:
