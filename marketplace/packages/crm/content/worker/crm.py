@@ -350,8 +350,8 @@ TRACK_LOGO = "https://app.forkmesh.com/assets/logo-96.png"
 TRACK_HOME = "https://forkmesh.com"
 TRACK_QUIET_MS = 30 * 1000
 TRACK_PATH_RE = re.compile(
-    r"/api/crm/-/t/(o|c|r|d)/([0-9a-f]{32})\.([0-9a-f]{24})(?:\.([0-9]{1,3}))?(?:\.png)?")
-READ_MARKS = (5, 15, 30, 60, 120, 300)
+    r"/api/crm/-/t/(o|c|r|d|s)/([0-9a-f]{32})\.([0-9a-f]{24})(?:\.([0-9]{1,3}))?(?:\.png)?")
+READ_MARKS = (5, 15, 30, 45, 60, 90, 120, 180, 240, 300, 420, 600)
 DEPTH_MARKS = (25, 50, 75, 100)
 READ_LAG_SHARE = 0.8
 DEPTH_MIN_LAG_MS = 1500
@@ -371,6 +371,7 @@ DECK_PAGE_TITLES = (
     "Beyond the desk", "Customer & go-to-market", "Market", "Business model", "Competition",
     "Team", "The round", "Sources",
 )
+DECK_SLIDES = len(DECK_PAGE_TITLES)
 # Starting points the compose form offers; [bracketed] placeholders are filled
 # in by the sender before sending and {fromEmail} becomes the organization's
 # sender address. Plain text only: outreach mail should read like a person
@@ -1369,6 +1370,13 @@ async def _email_row(runtime, org_bi, send_id):
     )
 
 
+def _slide_reach(link_kind, depth):
+    slides = DECK_SLIDES if link_kind == "deck" else 0
+    slide = min(slides, round(depth * slides / 100)) if slides else 0
+    return {"slideCount": slides, "slideReached": slide,
+            "slideTitle": DECK_PAGE_TITLES[slide - 1] if slide else ""}
+
+
 async def _email_project(runtime, row, include_content=True):
     data = await runtime.open(row.get("data"))
     data = data if isinstance(data, dict) else {}
@@ -1402,6 +1410,7 @@ async def _email_project(runtime, row, include_content=True):
         "readSeconds": _integer(row.get("read_seconds")),
         "scrollDepth": _integer(row.get("read_depth")),
         "readAt": _integer(row.get("read_at")),
+        **_slide_reach(data.get("linkKind"), _integer(row.get("read_depth"))),
         "automated": bool(data.get("auto")),
         "linkKind": _clean(data.get("linkKind"), 20),
         "rating": _integer(data.get("rating")),
@@ -6195,9 +6204,9 @@ def _mail_note(text, dark=False):
             % (MAIL_SANS, "#6b6b74" if dark else MAIL_FAINT, text))
 
 
-def _mail_marker(depth):
-    return ('<tr><td class="fm-d%d" style="height:1px;line-height:1px;font-size:1px;'
-            'background-repeat:no-repeat;background-size:1px 1px">&#8203;</td></tr>' % depth)
+def _mail_marker(slide):
+    return ('<tr><td class="fm-s%d" style="height:1px;line-height:1px;font-size:1px;'
+            'background-repeat:no-repeat;background-size:1px 1px">&#8203;</td></tr>' % slide)
 
 
 def _mail_style(beacon, deck):
@@ -6206,11 +6215,12 @@ def _mail_style(beacon, deck):
         "@keyframes fm-r%d{to{background-image:url(\"%s\")}}" % (
             mark, mark, mark, mark, beacon("r", mark)) for mark in READ_MARKS)
     depths = "".join(
-        ".fm-d%d{animation:fm-d%d linear both;animation-timeline:view();"
+        ".fm-s%d{animation:fm-s%d linear both;animation-timeline:view();"
         "animation-range:entry 0%% entry 100%%}"
-        "@keyframes fm-d%d{0%%,90%%{background-image:none}"
+        "@keyframes fm-s%d{0%%,90%%{background-image:none}"
         "100%%{background-image:url(\"%s\")}}" % (
-            mark, mark, mark, beacon("d", mark)) for mark in DEPTH_MARKS) if deck else ""
+            slide, slide, slide, beacon("s", slide))
+        for slide in range(1, DECK_SLIDES + 1)) if deck else ""
     layout = (
         "<style>@font-face{font-family:'FM Favorit';src:url(\"" + EMAIL_FONT + "\") "
         "format('woff2');font-weight:700}"
@@ -6300,7 +6310,6 @@ def _mail_deck_sections():
         + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
           'style="margin:22px 0 18px"><tr>%s</tr></table>' % stats + why
         + _mail_note("GitHub Octoverse 2025 · Microsoft FY26 Q2", True), dark=True))
-    rows.append(_mail_marker(25))
     steps = "".join(
         '<div style="padding:10px 0;border-top:1px solid %s"><div style="font:600 10.5px/1.4 '
         '%s;letter-spacing:.08em;text-transform:uppercase;color:%s">%s</div><div '
@@ -6381,7 +6390,6 @@ def _mail_deck_sections():
           % devices
         + _mail_note("Pictured: AOC Air Mega AR glasses · 201″ micro-OLED · FHD 120 Hz.",
                      True), dark=True))
-    rows.append(_mail_marker(50))
     motion = "".join(
         '<tr><td valign="top" style="padding:12px 12px 12px 0;border-top:1px solid %s;width:14px">'
         '<div style="width:8px;height:8px;margin-top:4px;border:2px solid %s;border-radius:50%%">'
@@ -6464,7 +6472,6 @@ def _mail_deck_sections():
         + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
           'style="margin-top:18px">%s</table>' % rivals
         + _mail_note("GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle")))
-    rows.append(_mail_marker(75))
     team = "".join(
         '<div style="display:inline-block;width:100%%;max-width:258px;vertical-align:top;'
         'margin:0 0 12px;text-align:left"><table role="presentation" cellpadding="0" '
@@ -6522,8 +6529,8 @@ def _mail_deck_sections():
           'it goes straight to the founders.</p>' % (MAIL_SANS, MAIL_INK)
         + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
           'style="margin-top:20px">%s</table>' % sources))
-    rows.append(_mail_marker(100))
-    return "".join(rows)
+    return rows[0] + "".join(card + _mail_marker(slide)
+                             for slide, card in enumerate(rows[1:], start=1))
 
 
 async def _tracked_email_html(runtime, send_id, text, origin, link_kind="", link="",
@@ -6835,8 +6842,9 @@ async def _track(runtime, action, token):
     token = send_id + "." + signature
     if not hmac.compare_digest((await _track_token(runtime, send_id)), token):
         return _track_miss(runtime, action)
-    if action in ("r", "d"):
-        marks = READ_MARKS if action == "r" else DEPTH_MARKS
+    if action in ("r", "d", "s"):
+        marks = (READ_MARKS if action == "r" else DEPTH_MARKS if action == "d"
+                 else range(1, DECK_SLIDES + 1))
         if mark.isdigit() and int(mark) in marks:
             await _track_reading(runtime, send_id, action, int(mark))
         return _redirect(runtime, TRACK_LOGO)
@@ -6877,8 +6885,9 @@ async def _track_reading(runtime, send_id, action, mark):
         return
     before_seconds = _integer(reading.get("read_seconds"))
     before_depth = _integer(reading.get("depth"))
+    reached = {"d": mark, "s": round(mark * 100 / DECK_SLIDES)}.get(action, 0)
     seconds = max(before_seconds, mark) if action == "r" else before_seconds
-    depth = max(before_depth, mark) if action == "d" else before_depth
+    depth = max(before_depth, reached)
     if (seconds, depth) == (before_seconds, before_depth):
         return
     await runtime.d1_run(
