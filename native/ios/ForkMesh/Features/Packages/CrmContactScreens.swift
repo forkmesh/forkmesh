@@ -739,7 +739,7 @@ struct CrmEmailSheet: View {
                 LabeledContent("When", value: PackagesFormat.relative(shown.at))
                 if !shown.error.isEmpty { Text(shown.error).font(.footnote).foregroundStyle(.red).fmMessageTools(shown.error) }
             }
-            if !shown.incoming, shown.opens + shown.clicks + shown.readSeconds + shown.scrollDepth > 0 {
+            if !shown.incoming, !shown.engagementLine.isEmpty {
                 Section {
                     LabeledContent("Opens", value: "\(shown.opens)")
                     LabeledContent("Clicks", value: "\(shown.clicks)")
