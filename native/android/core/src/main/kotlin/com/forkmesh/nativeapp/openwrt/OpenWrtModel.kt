@@ -737,6 +737,8 @@ object OpenWrtModel {
     val usbStoragePackages = listOf("kmod-usb-storage", "kmod-usb-storage-uas", "block-mount", "kmod-fs-ext4", "kmod-fs-vfat", "kmod-fs-exfat")
 
     const val FSTAB_PATH = "/etc/config/fstab"
+    const val KSMBD_PATH = "/etc/config/ksmbd"
+    const val DEFAULT_KSMBD = "config globals\n\toption workgroup 'WORKGROUP'\n\toption description 'Ksmbd on OpenWrt'\n\toption interface 'lan'\n"
     const val DEFAULT_FSTAB = "config global\n\toption anon_swap '0'\n\toption anon_mount '0'\n\toption auto_swap '1'\n\toption auto_mount '1'\n\toption delay_root '5'\n\toption check_fs '0'\n"
 
     fun parsePartitions(text: String): List<String> = text.lines()

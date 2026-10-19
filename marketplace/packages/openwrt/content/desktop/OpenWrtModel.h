@@ -220,12 +220,14 @@ struct StorageCheck {
 };
 
 inline const QString kFstabPath = QStringLiteral("/etc/config/fstab");
+inline const QString kKsmbdPath = QStringLiteral("/etc/config/ksmbd");
 QStringList parsePartitions(const QString &text);
 int usbControllerCount(const QStringList &entries);
 QStringList usbDeviceEntries(const QStringList &entries);
 QStringList storageKernelLines(const QString &dmesg, int limit = 20);
 QStringList missingStoragePackages(const QStringList &installed);
 QString fstabFromDetect(const QString &output);
+QString ksmbdDefaultConfig();
 QStringList outputTail(const QString &text, int count = 4);
 QStringList storageFindings(const StorageCheck &check);
 QString storageReport(const StorageCheck &check);

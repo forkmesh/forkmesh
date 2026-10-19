@@ -932,6 +932,8 @@ public enum OpenWrtModel {
     public static let usbStoragePackages = ["kmod-usb-storage", "kmod-usb-storage-uas", "block-mount", "kmod-fs-ext4", "kmod-fs-vfat", "kmod-fs-exfat"]
     public static let shareSupportPackages = ["ksmbd-server", "luci-app-ksmbd"]
     public static let fstabPath = "/etc/config/fstab"
+    public static let ksmbdPath = "/etc/config/ksmbd"
+    public static let defaultKsmbd = "config globals\n\toption workgroup 'WORKGROUP'\n\toption description 'Ksmbd on OpenWrt'\n\toption interface 'lan'\n"
     public static let defaultFstab = "config global\n\toption anon_swap '0'\n\toption anon_mount '0'\n\toption auto_swap '1'\n\toption auto_mount '1'\n\toption delay_root '5'\n\toption check_fs '0'\n"
 
     public static func parsePartitions(_ text: String) -> [String] {

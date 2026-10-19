@@ -488,7 +488,15 @@ final class OpenWrtRouterModel {
         } else if snapshot.shareConfig.isEmpty && snapshot.pendingCount > 0 {
             show("The packages are installed. Apply or discard your waiting changes, then pull to refresh: ForkMesh has to sign in again to see the file server settings, and that drops changes not yet applied.", error: true)
         } else if snapshot.shareConfig.isEmpty {
-            show("The packages are installed, but the router has no file server settings (/etc/config/ksmbd). Reinstall ksmbd-server on the router, or sign out and sign in again.", error: true)
+            guard let client else { return }
+            let created = await client.createShareConfig()
+            guard created.ok else { return show(created.error, error: true) }
+            await refresh()
+            if snapshot.shareConfig.isEmpty {
+                show("ForkMesh created /etc/config/ksmbd, but this sign-in cannot see it yet. Sign out and sign in again.", error: true)
+            } else {
+                show("Network sharing is installed. Share a mounted disk below.")
+            }
         } else {
             show("Network sharing is installed. Share a mounted disk below.")
         }
