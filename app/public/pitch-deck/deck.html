@@ -338,6 +338,70 @@
       .close .cols { align-items: center; gap: clamp(28px, 4vw, 56px); }
       @media (max-width: 600px) { .sources div { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
 
+      .xr .body { gap: clamp(16px, 2.4vh, 24px); }
+      .xr-top { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 26rem); gap: 40px; align-items: end; }
+      .xr-top .lede { max-width: 48ch; }
+      .xr-specs { margin: 0; padding: 0; list-style: none; display: grid; }
+      .xr-specs li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 13px 0; border-top: 1px solid var(--line); }
+      .xr-specs li:last-child { border-bottom: 1px solid var(--line); }
+      .xr-specs svg { width: 20px; height: 20px; color: var(--accent); }
+      .xr-specs b { display: block; font: 700 15px/1.3 var(--sans); color: var(--ink); }
+      .xr-specs span { font-size: 13.5px; color: var(--body); }
+      .xr-specs em { padding: 6px 8px; border-radius: 999px; box-shadow: 0 0 0 1px var(--line); font: 600 10.5px/1 var(--mono); font-style: normal; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); white-space: nowrap; }
+      .xr-specs em.on { color: var(--success); box-shadow: 0 0 0 1px color-mix(in oklab, var(--success) 40%, transparent); }
+      @media (max-width: 900px) { .xr-top { grid-template-columns: minmax(0, 1fr); gap: 20px; } }
+
+      .xr-stage { --fit: 0.74; position: relative; aspect-ratio: 2.9; }
+      .xr-fit { position: absolute; left: 50%; top: 50%; width: 600px; height: 240px; translate: -50% -50%; transform-origin: 50% 50%; }
+      .lv { position: relative; width: 600px; height: 240px; }
+      .lv-ghost, .lv-world { position: absolute; inset: 0; }
+      .lv-ghost { filter: blur(26px) saturate(1.4); opacity: 0.55; }
+      .lv-world { clip-path: path("M263 62 C212 52 120 48 74 56 C46 61 38 94 47 132 C60 188 102 228 157 228 C204 228 238 200 250 164 C260 132 268 90 263 62 Z M337 62 C388 52 480 48 526 56 C554 61 562 94 553 132 C540 188 498 228 443 228 C396 228 362 200 350 164 C340 132 332 90 337 62 Z"); background: radial-gradient(ellipse 80% 70% at 50% 40%, #13263d, #0a1220 70%); }
+      .space { position: absolute; inset: -20px; perspective: 700px; transform: translate(var(--px, 0px), var(--py, 0px)); transition: transform 600ms var(--ease); }
+      .gridfloor { position: absolute; left: -10%; right: -10%; bottom: -10px; height: 120px; transform: rotateX(72deg); transform-origin: 50% 100%; background: linear-gradient(rgba(88, 166, 255, 0.28) 1px, transparent 1px) 0 0 / 28px 28px, linear-gradient(90deg, rgba(88, 166, 255, 0.28) 1px, transparent 1px) 0 0 / 28px 28px; -webkit-mask-image: linear-gradient(0deg, #000, transparent); mask-image: linear-gradient(0deg, #000, transparent); }
+      .pane { position: absolute; overflow: hidden; border-radius: 6px; background: rgba(20, 22, 27, 0.92); box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.45), 0 0 30px -4px rgba(88, 166, 255, 0.45); }
+      .pane.desk { left: 70px; top: 86px; width: 196px; padding: 2px; transform: rotateY(22deg); transform-origin: 100% 50%; }
+      .pane.desk img { display: block; width: 100%; height: auto; border-radius: 4px; }
+      .pane.agent { left: 358px; top: 84px; width: 176px; padding: 8px 9px; transform: rotateY(-22deg); transform-origin: 0 50%; font: 500 6.4px/1.5 var(--mono); color: #c9d1d9; }
+      .pane.agent .hd { display: flex; align-items: center; gap: 5px; margin-bottom: 6px; font: 700 7px/1 var(--sans); color: #fff; }
+      .pane.agent .hd i { width: 5px; height: 5px; border-radius: 50%; background: #3fb950; animation: blink 1.6s ease-in-out infinite; }
+      .pane.agent .hd span { margin-left: auto; color: #8b949e; font-weight: 500; }
+      .pane.agent p { margin: 0; white-space: nowrap; overflow: hidden; animation: line 9s infinite both; animation-delay: calc(var(--i) * 0.45s); }
+      .pane.agent p.add { color: #3fb950; }
+      .pane.agent p.del { color: #f85149; }
+      .pane.agent p.dim { color: #6e7681; }
+      .pane.agent .pr { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; padding: 5px 6px; border-radius: 4px; background: rgba(88, 166, 255, 0.14); font: 700 6.6px/1 var(--sans); color: #fff; }
+      .pane.agent .pr b { padding: 3px 5px; border-radius: 3px; background: #238636; }
+      @keyframes line { 0% { opacity: 0; } 4%, 86% { opacity: 1; } 92%, 100% { opacity: 0; } }
+      @keyframes blink { 50% { opacity: 0.3; } }
+      .lv-frame { position: absolute; inset: 0; width: 600px; height: 240px; overflow: visible; pointer-events: none; }
+
+      .watch { --ww: clamp(80px, 9vw, 132px); position: absolute; right: 1%; bottom: -6%; width: var(--ww); rotate: 8deg; }
+      .watch .strap { display: block; width: 72%; height: calc(var(--ww) * 0.42); margin: 0 auto; background: linear-gradient(90deg, #17181b, #2a2c31 45%, #17181b); }
+      .watch .strap.top { border-radius: 10px 10px 0 0; -webkit-mask-image: linear-gradient(180deg, transparent, #000 70%); mask-image: linear-gradient(180deg, transparent, #000 70%); }
+      .watch .strap.bot { border-radius: 0 0 10px 10px; -webkit-mask-image: linear-gradient(0deg, transparent, #000 70%); mask-image: linear-gradient(0deg, transparent, #000 70%); }
+      .watch .case { position: relative; height: calc(var(--ww) * 1.2); padding: calc(var(--ww) * 0.055); border-radius: calc(var(--ww) * 0.27); background: linear-gradient(150deg, #5a5d63, #1b1c1f 30%, #0d0d0f 70%, #45474c); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12), 0 30px 50px -24px rgba(0, 0, 0, 0.7); }
+      .watch .crown { position: absolute; right: calc(var(--ww) * -0.045); top: 24%; width: calc(var(--ww) * 0.06); height: calc(var(--ww) * 0.17); border-radius: 4px; background: repeating-linear-gradient(180deg, #6b6e74 0 2px, #2c2e33 2px 4px); }
+      .watch .side { position: absolute; right: calc(var(--ww) * -0.025); top: 52%; width: calc(var(--ww) * 0.03); height: calc(var(--ww) * 0.2); border-radius: 3px; background: #2c2e33; }
+      .wscreen { position: relative; height: 100%; overflow: hidden; padding: calc(var(--ww) * 0.07) calc(var(--ww) * 0.065); border-radius: calc(var(--ww) * 0.22); background: #000; font-family: var(--sans); font-size: calc(var(--ww) * 0.062); line-height: 1.25; color: #fff; }
+      .wbar { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.55em; }
+      .wbar b { font-size: 1.45em; color: #58a6ff; letter-spacing: -0.01em; }
+      .wbar span { font-weight: 600; font-variant-numeric: tabular-nums; }
+      .wrow { display: grid; grid-template-columns: 1.9em minmax(0, 1fr) 1.6em; gap: 0.5em; align-items: center; margin-bottom: 0.4em; padding: 0.55em; border-radius: 0.9em; background: #1c1c1e; }
+      .wrow .face { width: 1.9em; height: 1.9em; display: grid; place-items: center; border-radius: 50%; background: hsl(var(--h) 55% 72%); font: 800 0.8em/1 ui-rounded, var(--sans); font-style: normal; color: rgba(0, 0, 0, 0.8); }
+      .wrow b { display: block; overflow: hidden; font-weight: 600; white-space: nowrap; text-overflow: ellipsis; }
+      .wrow small { display: block; font-size: 0.85em; color: #8e8e93; white-space: nowrap; }
+      .wrow em { display: flex; align-items: center; gap: 0.3em; font-size: 0.85em; font-style: normal; }
+      .wrow em i { width: 0.45em; height: 0.45em; border-radius: 50%; background: #30d158; }
+      .wrow em i.wait { background: #ffd60a; }
+      .wrow em i.done { background: #8e8e93; }
+      .wrow.on em i { animation: blink 1.6s ease-in-out infinite; }
+      .gauge { width: 1.6em; height: 1.6em; border-radius: 50%; background: conic-gradient(#0a84ff calc(var(--p) * 1turn), #3a3a3c 0); -webkit-mask: radial-gradient(circle, transparent 52%, #000 54%); mask: radial-gradient(circle, transparent 52%, #000 54%); }
+      @media (max-width: 720px) {
+        .xr-stage { --fit: 1; aspect-ratio: 2.1; margin-bottom: 28px; }
+        .watch { --ww: 58px; right: -1%; bottom: -34%; }
+      }
+
       .js .slide .body > *, .js .slide .eyebrow { opacity: 0; translate: 0 18px; transition: opacity 800ms var(--ease), translate 800ms var(--ease); }
       .js .slide.is-in .body > *, .js .slide.is-in .eyebrow { opacity: 1; translate: 0 0; }
       .js .slide.is-in .body > :nth-child(2) { transition-delay: 120ms; }
@@ -795,9 +859,84 @@
         </div>
       </section>
 
-      <section class="slide" id="p7" data-page="7" aria-label="Customer and go-to-market">
+      <section class="slide is-panel xr" id="p7" data-page="7" aria-label="Beyond the desk">
         <div class="frame">
-          <div class="eyebrow">Customer &amp; go-to-market <span class="n">07</span></div>
+          <div class="eyebrow">Beyond the desk <span class="n">07</span></div>
+          <div class="body">
+            <div class="xr-top">
+              <div>
+                <h2>Agents on your wrist. Your code in the room.</h2>
+                <p class="lede">Work with agents on your watch and be connected with your code in a virtual world where efficiency is seen.</p>
+              </div>
+              <ul class="xr-specs">
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="3.5"/><path d="M9 6V3h6v3M9 18v3h6v-3M12 10v2.5l1.5 1"/></svg><div><b>Watch</b><span>Follow, prompt, stop and review agents from the wrist.</span></div><em class="on">In build</em></li>
+                <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M2.5 9.5h19M4 9.5c0 4 1.4 6 4 6s3.2-2.2 3.4-4.2M20 9.5c0 4-1.4 6-4 6s-3.2-2.2-3.4-4.2"/></svg><div><b>AR glasses</b><span>A 201″ virtual workspace for repos, sessions and diffs.</span></div><em>R&amp;D</em></li>
+              </ul>
+            </div>
+            <div class="xr-stage" id="xr-stage" aria-hidden="true">
+              <div class="xr-fit">
+                <div class="lv">
+                  <div class="lv-ghost"></div>
+                  <div class="lv-world">
+                    <div class="space">
+                      <div class="gridfloor"></div>
+                      <div class="pane desk"><img src="/assets/desktop-mockup/desktop-app.webp" alt="" width="2048" height="1332" decoding="async" /></div>
+                      <div class="pane agent">
+                        <div class="hd"><i></i>Claude Code<span>fix/flaky-deploy</span></div>
+                        <p class="dim" style="--i: 0">$ pytest app/tests -k deploy</p>
+                        <p style="--i: 1">✓ 48 passed in 3.1s</p>
+                        <p class="del" style="--i: 2">- await sleep(2)</p>
+                        <p class="add" style="--i: 3">+ await wait_for(ready, timeout=10)</p>
+                        <p class="dim" style="--i: 4">Opening a signed pull request…</p>
+                        <div class="pr">PR #482 · +128 −14<b>Review</b></div>
+                      </div>
+                    </div>
+                  </div>
+                  <svg class="lv-frame" viewBox="0 0 600 240" focusable="false">
+                    <defs>
+                      <linearGradient id="xr-tint" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1b2533" stop-opacity=".55"/><stop offset=".55" stop-color="#58a6ff" stop-opacity=".06"/><stop offset="1" stop-color="#1b2533" stop-opacity=".4"/></linearGradient>
+                      <linearGradient id="xr-sheen" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".42" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".14"/><stop offset=".56" stop-color="#fff" stop-opacity=".02"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+                      <linearGradient id="xr-metal" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eef0f3"/><stop offset=".5" stop-color="#a9afb8"/><stop offset="1" stop-color="#6c727b"/></linearGradient>
+                      <linearGradient id="xr-hinge" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4b5058"/><stop offset="1" stop-color="#181a1e"/></linearGradient>
+                    </defs>
+                    <ellipse cx="280" cy="176" rx="8" ry="16" transform="rotate(-18 280 176)" fill="#0e1013"/>
+                    <ellipse cx="320" cy="176" rx="8" ry="16" transform="rotate(18 320 176)" fill="#0e1013"/>
+                    <path d="M272 110 L279 160 M328 110 L321 160" stroke="#8d939c" stroke-width="2"/>
+                    <g fill="url(#xr-tint)"><path d="M263 62 C212 52 120 48 74 56 C46 61 38 94 47 132 C60 188 102 228 157 228 C204 228 238 200 250 164 C260 132 268 90 263 62 Z"/><path d="M337 62 C388 52 480 48 526 56 C554 61 562 94 553 132 C540 188 498 228 443 228 C396 228 362 200 350 164 C340 132 332 90 337 62 Z"/></g>
+                    <g fill="url(#xr-sheen)"><path d="M263 62 C212 52 120 48 74 56 C46 61 38 94 47 132 C60 188 102 228 157 228 C204 228 238 200 250 164 C260 132 268 90 263 62 Z"/><path d="M337 62 C388 52 480 48 526 56 C554 61 562 94 553 132 C540 188 498 228 443 228 C396 228 362 200 350 164 C340 132 332 90 337 62 Z"/></g>
+                    <g fill="none" stroke="#b9c9dc" stroke-opacity=".5" stroke-width="1.4"><path d="M263 62 C212 52 120 48 74 56 C46 61 38 94 47 132 C60 188 102 228 157 228 C204 228 238 200 250 164 C260 132 268 90 263 62 Z"/><path d="M337 62 C388 52 480 48 526 56 C554 61 562 94 553 132 C540 188 498 228 443 228 C396 228 362 200 350 164 C340 132 332 90 337 62 Z"/></g>
+                    <path d="M58 53 C180 45 420 45 542 53" fill="none" stroke="#0f1114" stroke-width="5.5" stroke-linecap="round" opacity=".5"/>
+                    <path d="M58 52 C180 44 420 44 542 52" fill="none" stroke="url(#xr-metal)" stroke-width="3.6" stroke-linecap="round"/>
+                    <path d="M262 88 C286 80 314 80 338 88" fill="none" stroke="url(#xr-metal)" stroke-width="7" stroke-linecap="round"/>
+                    <rect x="26" y="46" width="30" height="36" rx="6" fill="url(#xr-hinge)"/>
+                    <rect x="544" y="46" width="30" height="36" rx="6" fill="url(#xr-hinge)"/>
+                    <rect x="28" y="48" width="26" height="3" rx="1.5" fill="#fff" opacity=".18"/>
+                    <rect x="546" y="48" width="26" height="3" rx="1.5" fill="#fff" opacity=".18"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="watch">
+                <span class="strap top"></span>
+                <div class="case">
+                  <span class="crown"></span><span class="side"></span>
+                  <div class="wscreen">
+                    <div class="wbar"><b>Agents</b><span>9:41</span></div>
+                    <div class="wrow on"><i class="face" style="--h: 24">Cl</i><div><b>Fix flaky deploy test</b><small>forkmesh/app</small><em><i></i>Running · 14t</em></div><span class="gauge" style="--p: 0.62"></span></div>
+                    <div class="wrow"><i class="face" style="--h: 160">Co</i><div><b>SSO audit export</b><small>forkmesh/server</small><em><i class="wait"></i>Waiting</em></div><span class="gauge" style="--p: 0.34"></span></div>
+                    <div class="wrow"><i class="face" style="--h: 265">Cl</i><div><b>Mirror failover</b><small>forkmesh/world</small><em><i class="done"></i>Merged</em></div><span class="gauge" style="--p: 0.88"></span></div>
+                  </div>
+                </div>
+                <span class="strap bot"></span>
+              </div>
+            </div>
+          </div>
+          <div class="foot"><span>Pictured: AOC Air Mega AR glasses · 201″ micro-OLED · FHD 120 Hz · USB-C</span><span>Confidential · September 2026</span></div>
+        </div>
+      </section>
+
+      <section class="slide" id="p8" data-page="8" aria-label="Customer and go-to-market">
+        <div class="frame">
+          <div class="eyebrow">Customer &amp; go-to-market <span class="n">08</span></div>
           <div class="body">
             <div>
               <h2>Agent-first teams are the wedge. Sovereign infrastructure expands the deal.</h2>
@@ -827,9 +966,9 @@
         </div>
       </section>
 
-      <section class="slide is-panel" id="p8" data-page="8" aria-label="Market">
+      <section class="slide is-panel" id="p9" data-page="9" aria-label="Market">
         <div class="frame">
-          <div class="eyebrow">Market <span class="n">08</span></div>
+          <div class="eyebrow">Market <span class="n">09</span></div>
           <div class="body">
             <div>
               <h2>Paid AI coding is proven. ForkMesh sells the control layer around it.</h2>
@@ -851,9 +990,9 @@
         </div>
       </section>
 
-      <section class="slide" id="p9" data-page="9" aria-label="Business model">
+      <section class="slide" id="p10" data-page="10" aria-label="Business model">
         <div class="frame">
-          <div class="eyebrow">Business model <span class="n">09</span></div>
+          <div class="eyebrow">Business model <span class="n">10</span></div>
           <div class="body">
             <div>
               <h2>Monetize orchestration and governance, not model lock-in.</h2>
@@ -870,9 +1009,9 @@
         </div>
       </section>
 
-      <section class="slide" id="p10" data-page="10" aria-label="Competition">
+      <section class="slide" id="p11" data-page="11" aria-label="Competition">
         <div class="frame">
-          <div class="eyebrow">Competition <span class="n">10</span></div>
+          <div class="eyebrow">Competition <span class="n">11</span></div>
           <div class="body">
             <div>
               <h2>ForkMesh owns the intersection others optimize separately.</h2>
@@ -894,9 +1033,9 @@
         </div>
       </section>
 
-      <section class="slide" id="p11" data-page="11" aria-label="Team">
+      <section class="slide" id="p12" data-page="12" aria-label="Team">
         <div class="frame">
-          <div class="eyebrow">Team <span class="n">11</span></div>
+          <div class="eyebrow">Team <span class="n">12</span></div>
           <div class="body">
             <div>
               <h2>Company-building experience meets founder-problem fit.</h2>
@@ -926,9 +1065,9 @@
         </div>
       </section>
 
-      <section class="slide is-panel" id="p12" data-page="12" aria-label="The round">
+      <section class="slide is-panel" id="p13" data-page="13" aria-label="The round">
         <div class="frame">
-          <div class="eyebrow">The round <span class="n">12</span></div>
+          <div class="eyebrow">The round <span class="n">13</span></div>
           <div class="body">
             <div>
               <h2>$1M turns product proof into enterprise pull.</h2>
@@ -959,7 +1098,7 @@
         </div>
       </section>
 
-      <section class="slide close" id="p13" data-page="13" aria-label="Sources and contact">
+      <section class="slide close" id="p14" data-page="14" aria-label="Sources and contact">
         <div class="backdrop" aria-hidden="true">
           <svg class="schematic" viewBox="0 0 1600 900" preserveAspectRatio="xMidYMid slice" fill="none" stroke="currentColor" stroke-width="1" focusable="false">
             <use href="#deck-art"/>
@@ -973,7 +1112,7 @@
           <div class="fade"></div>
         </div>
         <div class="frame">
-          <div class="eyebrow">Sources &amp; contact <span class="n">13</span></div>
+          <div class="eyebrow">Sources &amp; contact <span class="n">14</span></div>
           <div class="body">
             <div class="cols cols-2">
               <div>
@@ -1004,7 +1143,7 @@
     <div class="hint" aria-hidden="true">↑ ↓ · SPACE · SWIPE</div>
     <nav class="nav" aria-label="Slides">
       <button type="button" id="prev" aria-label="Previous slide"><svg viewBox="0 0 16 16" fill="none"><path d="M12 10 8 6l-4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      <span class="count" id="count">1 / 13</span>
+      <span class="count" id="count">1 / 14</span>
       <button type="button" id="next" aria-label="Next slide"><svg viewBox="0 0 16 16" fill="none"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     </nav>
 
@@ -1044,6 +1183,30 @@
           paintTheme();
         });
         paintTheme();
+
+        const xrStage = document.getElementById("xr-stage");
+        if (xrStage) {
+          const fit = xrStage.querySelector(".xr-fit");
+          const world = xrStage.querySelector(".lv-world .space");
+          xrStage.querySelector(".lv-ghost").append(world.cloneNode(true));
+          const scale = () => {
+            const share = Number(getComputedStyle(xrStage).getPropertyValue("--fit")) || 1;
+            fit.style.transform = `scale(${(xrStage.clientWidth * share) / 600})`;
+          };
+          new ResizeObserver(scale).observe(xrStage);
+          scale();
+          if (!calm) {
+            xrStage.addEventListener("pointermove", (event) => {
+              const box = xrStage.getBoundingClientRect();
+              xrStage.style.setProperty("--px", `${((box.left + box.width / 2 - event.clientX) / box.width) * 30}px`);
+              xrStage.style.setProperty("--py", `${((box.top + box.height / 2 - event.clientY) / box.height) * 16}px`);
+            });
+            xrStage.addEventListener("pointerleave", () => {
+              xrStage.style.setProperty("--px", "0px");
+              xrStage.style.setProperty("--py", "0px");
+            });
+          }
+        }
 
         const countUp = (slide) => {
           if (calm) return;
