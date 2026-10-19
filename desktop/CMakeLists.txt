@@ -754,6 +754,8 @@ set(FORKMESH_APP_SOURCES
     src/PowerSourceReader.cpp
     src/PingFixes.h
     src/PingFixes.cpp
+    src/AgentUsageResetClock.h
+    src/AgentUsageResetClock.cpp
     src/MainnodeRoom.h
     src/RoomCrypto.h
     src/RoomCrypto.cpp
@@ -1096,6 +1098,8 @@ set(FORKMESH_APP_SOURCES
     src/ClaudeStreamSession.cpp
     src/CodexAppServerSession.h
     src/CodexAppServerSession.cpp
+    src/CodexRateLimitsProbe.h
+    src/CodexRateLimitsProbe.cpp
     src/CodexTranscriptStyle.h
     src/Tooltips.h
     src/ClaudeTranscriptView.h
@@ -1273,6 +1277,7 @@ qt_wrap_cpp(FORKMESH_MOC_SOURCES
     src/WorldSpeechBridge.h
     src/ClaudeStreamSession.h
     src/ClaudeTranscriptView.h
+    src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
     src/KebabHeaderView.h
     src/LocalMeshNode.h
@@ -1379,6 +1384,7 @@ set_source_files_properties(
     src/ClaudeStreamSession.h
     src/CodexAppServerSession.h
     src/ClaudeTranscriptView.h
+    src/CodexRateLimitsProbe.h
     src/GenieSpiderWidget.h
     src/KebabHeaderView.h
     src/LocalMeshNode.h
@@ -2614,6 +2620,23 @@ if(FORKMESH_BUILD_TESTS)
     if(APPLE)
         set_target_properties(forkmesh-codex-tests PROPERTIES MACOSX_BUNDLE FALSE)
     endif()
+
+    qt_add_executable(forkmesh-codex-rate-limits-probe-tests
+        tests/test_codex_rate_limits_probe.cpp
+        src/AgentResources.h
+        src/AgentResources.cpp
+        src/AgentJsonlFramer.h
+        src/AgentJsonlFramer.cpp
+        src/CodexRateLimitsProbe.h
+        src/CodexRateLimitsProbe.cpp
+    )
+    target_link_libraries(forkmesh-codex-rate-limits-probe-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-codex-rate-limits-probe-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-codex-rate-limits-probe-tests
+        COMMAND forkmesh-codex-rate-limits-probe-tests)
 
     # The Claude Code stream transport's start/exit contract: a launch that never
     # starts still has to end, and a turn that cannot be written has to be
@@ -4429,6 +4452,21 @@ forkmesh_link_opengl(forkmesh-perf-tests)
     endif()
     add_test(NAME forkmesh-ping-fixes-tests
         COMMAND forkmesh-ping-fixes-tests)
+
+    qt_add_executable(forkmesh-agent-usage-reset-clock-tests
+        tests/test_agent_usage_reset_clock.cpp
+        src/AgentUsageResetClock.h
+        src/AgentUsageResetClock.cpp
+    )
+    target_include_directories(forkmesh-agent-usage-reset-clock-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-agent-usage-reset-clock-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-agent-usage-reset-clock-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+    add_test(NAME forkmesh-agent-usage-reset-clock-tests
+        COMMAND forkmesh-agent-usage-reset-clock-tests)
 
     qt_add_executable(forkmesh-local-control-agentops-tests
         tests/test_local_control_agentops.cpp

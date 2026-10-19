@@ -46,6 +46,11 @@ class RunnerAttentionTest {
         assertEq(1770000000000L, items[2].expiresAtMs)
     }
 
+    fun testAPausedRunnerStillAsksForSignIn() {
+        val row = """{"name":"fmnext-r5","status":"paused","availability":{"claude-code":{"binaryFound":true,"loginState":"expired"}}}"""
+        assertEq(listOf("fmnext-r5:claude-code"), RunnerAttention.deriveRunner(json(row)).map { it.key })
+    }
+
     fun testFlatAttentionItems() {
         val items = RunnerAttention.parseAttention(
             json(

@@ -326,11 +326,11 @@ public final class AgentUsageModel {
 
     public var nowMs: Int64 { client.nowMs }
 
-    public func refresh() async {
+    public func refresh(reread: Bool = false) async {
         loading = true
         defer { loading = false }
         do {
-            summary = try await client.usage()
+            summary = try await client.usage(refresh: reread)
             errorText = ""
             unsupported = false
         } catch {

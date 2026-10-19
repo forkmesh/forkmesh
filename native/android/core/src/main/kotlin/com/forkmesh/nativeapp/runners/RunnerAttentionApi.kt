@@ -47,6 +47,11 @@ open class RunnerAttentionApi(
             mapOf("provider" to provider.trim(), "account" to account.trim(), "action" to RunnerAccounts.ACTIVATE),
         )
 
+    open fun changeStatus(action: RunnerAction, runner: String): RunnerReply {
+        val path = RunnerList.actionPath(action) ?: return RunnerReply(0, emptyMap(), false)
+        return request("POST", path, RunnerList.actionBody(runner))
+    }
+
     open fun output(runner: String, id: String, afterSeq: Long): RunnerReply =
         request("GET", sessionPath(runner, id) + "/output?after=${afterSeq.coerceAtLeast(0)}", null)
 

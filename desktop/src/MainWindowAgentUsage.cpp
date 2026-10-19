@@ -20,6 +20,7 @@
 #include "FlowLayout.h"
 #include "KebabHeaderView.h"
 #include "CodexAppServerSession.h"
+#include "CodexRateLimitsProbe.h"
 #include "NodeEventSocket.h"
 #include "UsageLimitCalendar.h"
 
@@ -40,6 +41,7 @@
 #include <QDropEvent>
 #include <QButtonGroup>
 #include <QFrame>
+#include <QFileInfo>
 #include <QShowEvent>
 #include <QSignalBlocker>
 
@@ -250,6 +252,7 @@ QJsonArray normalizedCodexUsageWindows(
 }
 
 constexpr qint64 kUsageLimitContinueSlackMs = 60 * 1000;
+constexpr int kCodexUsageProbeTimeoutMs = 10000;
 
 QString usageLimitProviderKey(const QString &provider)
 {
@@ -292,6 +295,27 @@ qint64 exhaustedUsageResetMs(const QString &providerKey, const QString &model,
                                   .toLongLong());
     }
     return latest > nowMs ? latest : 0;
+}
+
+constexpr qint64 kAgentUsageRefreshMinMs = 30000;
+
+QNetworkRequest claudeUsageRequest(const QString &token)
+{
+    QNetworkRequest req(
+        QUrl(QStringLiteral("https://api.anthropic.com/api/oauth/usage")));
+    req.setRawHeader("Authorization", "Bearer " + token.toUtf8());
+    req.setRawHeader("anthropic-beta", "oauth-2025-04-20");
+    req.setRawHeader("Accept", "application/json");
+    return req;
+}
+
+qint64 claudeUsageRetryAfterMs(QNetworkReply *reply)
+{
+    bool ok = false;
+    const qint64 seconds = QString::fromLatin1(reply->rawHeader("Retry-After"))
+                               .trimmed()
+                               .toLongLong(&ok);
+    return ok && seconds > 0 ? seconds * 1000 : 0;
 }
 
 } // namespace
@@ -1120,11 +1144,18 @@ void MainWindow::applyClaudeRateLimitEvent(const QJsonObject &info)
 
 void MainWindow::applyCodexRateLimits(
     const QJsonObject &rateLimits,
-    const QJsonObject &rateLimitsByLimitId)
+    const QJsonObject &rateLimitsByLimitId,
+    const QString &requestedAccountId)
 {
     if (rateLimits.isEmpty() && rateLimitsByLimitId.isEmpty())
         return;
-    const QString accountId = activeAgentAccount(QStringLiteral("codex")).id;
+    const QString activeId = activeAgentAccount(QStringLiteral("codex")).id;
+    const QString accountId =
+        requestedAccountId.isEmpty() ? activeId : requestedAccountId;
+    if (accountId != activeId) {
+        applyInactiveCodexRateLimits(rateLimits, rateLimitsByLimitId, accountId);
+        return;
+    }
     // The app-server repeats the same rate-limit snapshot on most turns (and
     // several times within one). Everything below — a dozen settings writes,
     // the usage meter, the account menu and the limit label — is a function
@@ -1233,6 +1264,71 @@ void MainWindow::applyCodexRateLimits(
     refreshCodexUsageRemaining();
     refreshAgentAccountUsageMenu(QStringLiteral("codex"));
     refreshAgentLimitLabel();
+}
+
+void MainWindow::applyInactiveCodexRateLimits(
+    const QJsonObject &rateLimits,
+    const QJsonObject &rateLimitsByLimitId,
+    const QString &accountId)
+{
+    QSettings settings;
+    auto scoped = [&](const QString &globalKey) {
+        return agentAccountUsageSetting(QStringLiteral("codex"), accountId,
+                                        agentAccountUsageField(globalKey));
+    };
+    const QJsonArray rows =
+        normalizedCodexUsageWindows(rateLimits, rateLimitsByLimitId);
+    forkmesh::settings::put(settings, scoped(kCodexUsageWindowsSetting),
+                            codexUsageWindowsJson(rows));
+    struct Window {
+        QString kind;
+        QString pctKey;
+        QString resetKey;
+        QString anchorKey;
+        bool found = false;
+    };
+    QList<Window> windows{
+        {QStringLiteral("5h"), kCodexUsage5hPctSetting, kCodexUsage5hResetSetting,
+         kCodexLimit5hStartSetting},
+        {QStringLiteral("weekly"), kCodexUsageWeekPctSetting,
+         kCodexUsageWeekResetSetting, kCodexLimitWeekStartSetting}};
+    for (const QJsonValue &value : rows) {
+        const QJsonObject row = value.toObject();
+        if (!row.value(QStringLiteral("general")).toBool())
+            continue;
+        for (Window &window : windows) {
+            if (window.found ||
+                row.value(QStringLiteral("kind")).toString() != window.kind)
+                continue;
+            window.found = true;
+            const qint64 resetAt = static_cast<qint64>(
+                row.value(QStringLiteral("resetAt")).toDouble());
+            const qint64 durationMs =
+                static_cast<qint64>(
+                    row.value(QStringLiteral("windowDurationMins")).toDouble()) *
+                60 * 1000;
+            forkmesh::settings::put(
+                settings, scoped(window.pctKey),
+                qBound(0, row.value(QStringLiteral("usedPercent")).toInt(), 100));
+            if (resetAt > 0)
+                forkmesh::settings::put(settings, scoped(window.resetKey), resetAt);
+            else
+                forkmesh::settings::drop(settings, scoped(window.resetKey));
+            if (resetAt > 0 && durationMs > 0)
+                forkmesh::settings::put(settings, scoped(window.anchorKey),
+                                        resetAt - durationMs);
+            else
+                forkmesh::settings::drop(settings, scoped(window.anchorKey));
+        }
+    }
+    for (const Window &window : std::as_const(windows)) {
+        if (window.found)
+            continue;
+        forkmesh::settings::drop(settings, scoped(window.pctKey));
+        forkmesh::settings::drop(settings, scoped(window.resetKey));
+        forkmesh::settings::drop(settings, scoped(window.anchorKey));
+    }
+    refreshAgentAccountUsageMenu(QStringLiteral("codex"));
 }
 
 void MainWindow::updateAgentTotalSpend()
@@ -1479,8 +1575,12 @@ void MainWindow::applyClaudeUsageCredits(const QJsonValue &extraUsage)
     store(kClaudeCreditsPctSetting, percent);
 }
 
-void MainWindow::applyClaudeUsageResponse(const QJsonObject &root)
+void MainWindow::applyClaudeUsageResponse(const QJsonObject &root,
+                                          const QString &accountId)
 {
+    const bool activeAccount =
+        accountId.isEmpty() ||
+        accountId == activeAgentAccount(QStringLiteral("claude-code")).id;
     auto percentage = [](const QJsonObject &window, bool *ok) {
         QJsonValue value = window.value(QStringLiteral("utilization"));
         if (value.isUndefined())
@@ -1517,6 +1617,28 @@ void MainWindow::applyClaudeUsageResponse(const QJsonObject &root)
     // an old countdown must be cleared rather than left ticking in the tooltip.
     auto applyWindow = [&](TokenUsageMiniChart::Window window, int pct,
                            qint64 reset) {
+        if (!activeAccount) {
+            const bool fable = window == TokenUsageMiniChart::Fable;
+            const bool weekly = window == TokenUsageMiniChart::Weekly;
+            const QString pctKey = fable ? kClaudeUsageFablePctSetting
+                                   : weekly ? kClaudeUsageWeekPctSetting
+                                            : kClaudeUsage5hPctSetting;
+            const QString resetKey = fable ? kClaudeUsageFableResetSetting
+                                     : weekly ? kClaudeUsageWeekResetSetting
+                                              : kClaudeUsage5hResetSetting;
+            QSettings settings;
+            forkmesh::settings::put(
+                settings,
+                agentAccountUsageSetting(QStringLiteral("claude-code"), accountId,
+                                         agentAccountUsageField(pctKey)),
+                pct);
+            forkmesh::settings::put(
+                settings,
+                agentAccountUsageSetting(QStringLiteral("claude-code"), accountId,
+                                         agentAccountUsageField(resetKey)),
+                reset);
+            return;
+        }
         if (window == TokenUsageMiniChart::Fable) {
             applyClaudeFableUsage(pct);
             applyClaudeFableReset(reset);
@@ -1575,7 +1697,7 @@ void MainWindow::applyClaudeUsageResponse(const QJsonObject &root)
     // the same payload — so they bypass the percentage plumbing above. A
     // missing key means this response says nothing about them; an explicit
     // null means the account has none, and clears what we knew.
-    if (root.contains(QStringLiteral("extra_usage")))
+    if (activeAccount && root.contains(QStringLiteral("extra_usage")))
         applyClaudeUsageCredits(root.value(QStringLiteral("extra_usage")));
 
     const QStringList explicitFableKeys = {
@@ -1659,26 +1781,16 @@ void MainWindow::refreshClaudeCodeUsage(bool fromHover)
         return;
     }
 
-    QNetworkRequest req(
-        QUrl(QStringLiteral("https://api.anthropic.com/api/oauth/usage")));
-    req.setRawHeader("Authorization", "Bearer " + token.toUtf8());
-    req.setRawHeader("anthropic-beta", "oauth-2025-04-20");
-    req.setRawHeader("Accept", "application/json");
-
-    QNetworkReply *reply = m_networkAccess->get(req);
+    QNetworkReply *reply = m_networkAccess->get(claudeUsageRequest(token));
     connect(reply, &QNetworkReply::finished, this,
             [this, reply, fromHover, pollKey, accountId] {
         const QByteArray body = reply->readAll();
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            const QByteArray retryAfter = reply->rawHeader("Retry-After");
-            bool retryAfterOk = false;
-            const qint64 retryAfterMs =
-                QString::fromLatin1(retryAfter).trimmed().toLongLong(&retryAfterOk) * 1000;
             m_pollBackoff.noteFailure(
                 pollKey, QDateTime::currentMSecsSinceEpoch(),
                 NetworkBackoff::kDefaultBaseMs, NetworkBackoff::kDefaultCapMs,
-                retryAfterOk && retryAfterMs > 0 ? retryAfterMs : 0);
+                claudeUsageRetryAfterMs(reply));
             if (fromHover)
                 flashUsageChart(m_navTokenUsage, false);
             return;
@@ -1690,6 +1802,119 @@ void MainWindow::refreshClaudeCodeUsage(bool fromHover)
             flashUsageChart(m_navTokenUsage, true);
         applyClaudeUsageResponse(QJsonDocument::fromJson(body).object());
     });
+}
+
+void MainWindow::refreshAgentUsageAccounts(std::function<void()> done)
+{
+    if (done)
+        m_agentUsageRefreshWaiters.append(std::move(done));
+    if (m_agentUsageRefreshing)
+        return;
+    const auto finish = [this] {
+        m_agentUsageRefreshing = false;
+        refreshAgentAccountUsageMenu(QStringLiteral("claude-code"));
+        scheduleAgentUsagePagesRefresh();
+        const QList<std::function<void()>> waiters =
+            std::exchange(m_agentUsageRefreshWaiters, {});
+        for (const std::function<void()> &waiter : waiters)
+            waiter();
+    };
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_agentUsageRefreshedAtMs > 0 &&
+        nowMs - m_agentUsageRefreshedAtMs < kAgentUsageRefreshMinMs) {
+        finish();
+        return;
+    }
+    m_agentUsageRefreshing = true;
+    refreshCodexUsageRemaining();
+    struct Pending {
+        bool codex = false;
+        AgentAccountProfile profile;
+    };
+    auto queue = std::make_shared<QList<Pending>>();
+    if (m_networkAccess) {
+        for (const AgentAccountProfile &profile :
+             agentAccountProfiles(QStringLiteral("claude-code")))
+            queue->append({false, profile});
+    }
+    if (!forkmesh::agentcli::executable(QStringLiteral("codex")).isEmpty()) {
+        for (const AgentAccountProfile &profile :
+             agentAccountProfiles(QStringLiteral("codex")))
+            queue->append({true, profile});
+    }
+    auto next = std::make_shared<std::function<void()>>();
+    const std::weak_ptr<std::function<void()>> weakNext = next;
+    *next = [this, queue, weakNext, finish] {
+        const std::shared_ptr<std::function<void()>> next = weakNext.lock();
+        while (next && !queue->isEmpty()) {
+            const Pending pending = queue->takeFirst();
+            const AgentAccountProfile &profile = pending.profile;
+            const QString provider = pending.codex ? QStringLiteral("codex")
+                                                   : QStringLiteral("claude-code");
+            const QString configDir = profile.configDir.isEmpty()
+                                          ? agentAccountDefaultConfigDir(provider)
+                                          : profile.configDir;
+            const QString pollKey =
+                QStringLiteral("%1-usage-%2")
+                    .arg(pending.codex ? QStringLiteral("codex")
+                                       : QStringLiteral("claude"),
+                         profile.id);
+            if (!m_pollBackoff.ready(pollKey, QDateTime::currentMSecsSinceEpoch()))
+                continue;
+            if (pending.codex) {
+                if (!QFileInfo::exists(
+                        agentAccountCredentialPath(provider, configDir)))
+                    continue;
+                auto *probe = new CodexRateLimitsProbe(this);
+                connect(probe, &CodexRateLimitsProbe::finished, this,
+                        [this, probe, pollKey, next, accountId = profile.id](
+                            bool ok, const QJsonObject &rateLimits,
+                            const QJsonObject &rateLimitsByLimitId,
+                            const QString &) {
+                    probe->deleteLater();
+                    if (ok) {
+                        m_pollBackoff.noteSuccess(pollKey);
+                        applyCodexRateLimits(rateLimits, rateLimitsByLimitId,
+                                             accountId);
+                    } else {
+                        m_pollBackoff.noteFailure(
+                            pollKey, QDateTime::currentMSecsSinceEpoch());
+                    }
+                    (*next)();
+                });
+                probe->start(configDir, kCodexUsageProbeTimeoutMs);
+                return;
+            }
+            const QString token = claudeCodeOAuthToken(configDir);
+            if (token.isEmpty())
+                continue;
+            QNetworkRequest req = claudeUsageRequest(token);
+            req.setTransferTimeout(15000);
+            QNetworkReply *reply = m_networkAccess->get(req);
+            connect(reply, &QNetworkReply::finished, this,
+                    [this, reply, pollKey, next, accountId = profile.id] {
+                const QByteArray body = reply->readAll();
+                reply->deleteLater();
+                if (reply->error() != QNetworkReply::NoError) {
+                    m_pollBackoff.noteFailure(
+                        pollKey, QDateTime::currentMSecsSinceEpoch(),
+                        NetworkBackoff::kDefaultBaseMs, NetworkBackoff::kDefaultCapMs,
+                        claudeUsageRetryAfterMs(reply));
+                } else {
+                    m_pollBackoff.noteSuccess(pollKey);
+                    applyClaudeUsageResponse(
+                        QJsonDocument::fromJson(body).object(), accountId);
+                }
+                (*next)();
+            });
+            return;
+        }
+        m_agentUsageRefreshedAtMs = QDateTime::currentMSecsSinceEpoch();
+        refreshAgentAccountUsageMenu(QStringLiteral("codex"));
+        refreshCodexUsageRemaining();
+        finish();
+    };
+    (*next)();
 }
 
 void MainWindow::applyLiveClaudeModelsToCombos()

@@ -139,8 +139,11 @@ public final class AgentOpsClient {
             "worktrees", ["owner": .string(owner), "name": .string(name)], timeout: 45))
     }
 
-    public func usage() async throws -> UsageSummary {
-        UsageSummary(json: try await family.call("usage"))
+    public func usage(refresh: Bool = false) async throws -> UsageSummary {
+        if refresh {
+            return UsageSummary(json: try await family.call("usage", ["refresh": .bool(true)], timeout: 30))
+        }
+        return UsageSummary(json: try await family.call("usage"))
     }
 
     public func selectAccount(provider: String, account: String) async throws -> UsageSummary {

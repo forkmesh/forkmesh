@@ -83,7 +83,7 @@ object RunnerAttention {
         normalize(payload.maps("runners").flatMap(::deriveRunner))
 
     fun deriveRunner(row: JsonMap): List<RunnerAttentionItem> {
-        if (row.str("status") != "active") return emptyList()
+        if (row.str("status") !in setOf("active", "paused")) return emptyList()
         val runner = row.firstStr("name", "runner").trim().lowercase()
         val availability = row.obj("availability")
         val out = ArrayList<RunnerAttentionItem>()

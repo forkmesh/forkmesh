@@ -57,7 +57,7 @@ struct AgentAccountsPanel: View {
                     ProgressView().controlSize(.small)
                 } else {
                     FmIconButton(icon: "refresh", label: "Refresh", onPressed: {
-                        Task { await refresh() }
+                        Task { await refresh(reread: true) }
                     })
                     .accessibilityIdentifier("usage-refresh")
                 }
@@ -67,7 +67,7 @@ struct AgentAccountsPanel: View {
             destination(route)
                 .shellPageClearance()
         }
-        .fmRefreshable { await refresh() }
+        .fmRefreshable { await refresh(reread: true) }
         .alert("Add a \(agentProviderLabel(addingProvider)) account", isPresented: $adding) {
             TextField("Account name", text: $draft)
                 .textInputAutocapitalization(.words)
@@ -323,8 +323,8 @@ struct AgentAccountsPanel: View {
         }
     }
 
-    private func refresh() async {
-        await usage.refresh()
+    private func refresh(reread: Bool = false) async {
+        await usage.refresh(reread: reread)
         await AgentOpsFeature.scheduleUsageReminders(usage.reminders, nowMs: usage.nowMs)
     }
 

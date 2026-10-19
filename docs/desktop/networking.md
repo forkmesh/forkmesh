@@ -257,7 +257,11 @@ names, account and platform travel in the mesh `hello` inside the link. The
 dial tie-break compares key ids (`kid`), not node ids.
 `src/MeshFirewall.*` generates the rule for `ufw`, `firewalld` or Windows
 `netsh`; `localMesh/firewallOpened` records once the port is known to be open so
-the Allow banner is not shown again. Direct messages travel over the mesh
+the Allow banner is not shown again. `checkLocalMeshFirewall()` stays silent
+while the Chat package is hidden: the mesh still runs, but the banner and its
+log line (which the log classifier badges ERROR, so it raises an Alert) only
+appear once Chat is shown, and `syncPackageSurfaces()` re-runs the check when
+it is. A fresh install without Chat used to get an Alert about `#mesh`. Direct messages travel over the mesh
 as `direct-sealed` frames to the other person's linked, approved devices
 ([chat.md](chat.md#direct-delivery)); iPhones that left the room are woken via
 push ([../native/MESH_PUSH.md](../native/MESH_PUSH.md)).

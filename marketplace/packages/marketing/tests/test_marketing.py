@@ -3081,8 +3081,8 @@ def test_email_channel_counts_outbound_email_and_closed_deals_from_crm_and_zoho(
     overview = call(runtime.use("GET"), "/api/marketing/acme")["data"]
     assert "email" in overview["refreshableChannels"]
     email = next(item for item in overview["summary"]["channels"] if item["channel"] == "email")
-    assert email["health"]["state"] == "setup"
-    assert [step["done"] for step in email["health"]["guide"]] == [False] * 4
+    assert (email["outbound"], email["closedDeals"]) == (5, 3)
+    assert email["health"]["state"] == "good"
 
     refreshed = call(runtime.use("POST", "charlie", {"channel": "email"}),
                      "/api/marketing/acme/refresh")
@@ -3096,9 +3096,39 @@ def test_email_channel_counts_outbound_email_and_closed_deals_from_crm_and_zoho(
                  if item["channel"] == "email")
     assert (email["outbound"], email["closedDeals"]) == (5, 3)
     checks = {check["id"]: check["ok"] for check in email["health"]["checks"]}
-    assert checks == {"zoho": True, "fresh": True, "outbound": True}
+    assert checks == {"zoho": True, "fresh": True, "outbound": True, "deals": True}
     assert email["health"]["state"] == "good"
     assert all(step["done"] for step in email["health"]["guide"])
+
+
+def test_email_channel_rereads_crm_when_the_overview_loads_and_numbers_are_old():
+    runtime = _crm_runtime()
+    def email_row():
+        overview = call(runtime.use("GET"), "/api/marketing/acme")["data"]
+        return next(item for item in overview["summary"]["channels"]
+                    if item["channel"] == "email")
+    assert email_row()["outbound"] == 5
+    runtime.db.execute("INSERT INTO crm_outreach_log(org_bi,ts,sender_bi,sender_name,ok,data) "
+                       "VALUES(?,?,?,?,?,?)",
+                       ("org:acme", runtime.clock, "bi:alice", "alice", 1, "sealed:{}"))
+    runtime.db.commit()
+    assert email_row()["outbound"] == 5
+    runtime.clock += marketing.EMAIL_REFRESH_MS
+    row = email_row()
+    assert row["outbound"] == 6 and row["health"]["checks"][1] == {
+        "id": "fresh", "label": "Numbers updated in the last 7 days", "ok": True}
+    snapshots = runtime.db.execute(
+        "SELECT COUNT(*) FROM marketing_metrics WHERE channel IN ('email','blog')").fetchone()[0]
+    assert snapshots == 2
+
+    runtime.clock += marketing.EMAIL_REFRESH_MS
+    runtime.db.execute("DELETE FROM org_plugin_installs WHERE plugin='crm'")
+    runtime.db.commit()
+    row = email_row()
+    assert row["outbound"] == 6
+    settings = call(runtime.use("GET"), "/api/marketing/acme/settings")["data"]["settings"]
+    email = next(item for item in settings["channels"] if item["id"] == "email")
+    assert email["feed"]["lastError"] == ""
 
 
 def test_email_channel_without_zoho_still_counts_crm_mail_and_asks_for_zoho():

@@ -152,6 +152,7 @@ object RouteCatalog {
         Route.Kind.OpenWrtRouter -> "Router"
         Route.Kind.FaceChanger -> "Face Changer"
         Route.Kind.AppStoreStatus -> "App Store Status"
+        Route.Kind.Runners -> "Runners"
         Route.Kind.Usage -> "Usage"
         Route.Kind.RssReader -> "RSS Reader"
         Route.Kind.InstanceFeed -> "Instance Feed"
@@ -227,6 +228,7 @@ object RouteCatalog {
         Route.Kind.OpenWrtRouter -> "router"
         Route.Kind.FaceChanger -> "face"
         Route.Kind.AppStoreStatus -> "phone_iphone"
+        Route.Kind.Runners -> "dns"
         Route.Kind.Usage -> "speed"
         Route.Kind.RssReader -> "feed"
         Route.Kind.InstanceFeed -> "dynamic_feed"
@@ -311,6 +313,7 @@ object HubCatalog {
         HubItem.destination(Route.Teammates, needsRegistration = true),
         HubItem.destination(Route.Shortcuts(null), needsRegistration = true),
         HubItem.destination(Route.Hosts, guestAction = "manage your hosts"),
+        HubItem.destination(Route.Runners, needsRegistration = true),
         HubItem.destination(Route.Network(null), needsRegistration = true),
     )
 

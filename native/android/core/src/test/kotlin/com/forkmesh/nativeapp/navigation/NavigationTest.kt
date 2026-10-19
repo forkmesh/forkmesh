@@ -31,7 +31,7 @@ class NavigationTest {
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Usage, Route.RssReader, Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -132,6 +132,13 @@ class NavigationTest {
         assertEq(listOf(Route.AppStoreStatus), RouteParser.parse("forkmesh://dashboard/app-store-status")!!.stack)
         assertEq("App Store Status", RouteCatalog.title(Route.Kind.AppStoreStatus))
         expect(Route.AppStoreStatus in HubCatalog.insights.mapNotNull { it.route })
+        assertEq(listOf(Route.Runners), RouteParser.parse("https://app.forkmesh.com/dashboard/runners")!!.stack)
+        assertEq(listOf(Route.Runners), RouteParser.parse("forkmesh://runners")!!.stack)
+        assertEq(listOf(Route.Runners), RouteParser.parse("forkmesh://dashboard/runners")!!.stack)
+        assertEq(null, RouteParser.parse("https://app.forkmesh.com/dashboard/runners/extra"))
+        assertEq("Runners", RouteCatalog.title(Route.Kind.Runners))
+        assertEq("dns", RouteCatalog.icon(Route.Kind.Runners))
+        expect(HubCatalog.operate.any { it.route == Route.Runners && it.needsRegistration })
         assertEq(listOf(Route.Usage), RouteParser.parse("https://app.forkmesh.com/dashboard/usage")!!.stack)
         assertEq(listOf(Route.Usage), RouteParser.parse("forkmesh://usage")!!.stack)
         assertEq(listOf(Route.Usage), RouteParser.parse("forkmesh://dashboard/usage")!!.stack)

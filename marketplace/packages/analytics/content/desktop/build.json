@@ -1,5 +1,20 @@
 {
   "schemaVersion": 1,
-  "sources": ["AnalyticsFeature.h", "AnalyticsFeature.cpp", "AnalyticsManage.cpp"],
-  "mocHeaders": []
+  "sources": [
+    "AnalyticsFeature.h",
+    "AnalyticsFeature.cpp",
+    "AnalyticsManage.cpp",
+    "AnalyticsReplay.h",
+    "AnalyticsReplay.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_analytics_replay.cpp",
+    "AnalyticsReplay.h",
+    "AnalyticsReplay.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Widgets"
+  ]
 }

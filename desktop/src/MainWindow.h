@@ -6971,7 +6971,9 @@ private:
     void testOpenAiAgentKey();
     void refreshClaudeSpend();
     void refreshClaudeCodeUsage(bool fromHover = false);
-    void applyClaudeUsageResponse(const QJsonObject &response);
+    void refreshAgentUsageAccounts(std::function<void()> done);
+    void applyClaudeUsageResponse(const QJsonObject &response,
+                                  const QString &accountId = QString());
     void applyClaudeUsageCredits(const QJsonValue &extraUsage);
     void showAgentAccountMenu(const QString &provider,
                               const QPoint &globalPosition);
@@ -7028,7 +7030,11 @@ private:
     void refreshCodexUsageRemaining();
     void applyCodexRateLimits(
         const QJsonObject &rateLimits,
-        const QJsonObject &rateLimitsByLimitId = QJsonObject());
+        const QJsonObject &rateLimitsByLimitId = QJsonObject(),
+        const QString &accountId = QString());
+    void applyInactiveCodexRateLimits(const QJsonObject &rateLimits,
+                                      const QJsonObject &rateLimitsByLimitId,
+                                      const QString &accountId);
     // A live run's own rate_limit_info: the percentage for one window and, when
     // the CLI says so, the time it reopens.
     void applyClaudeRateLimitEvent(const QJsonObject &rateLimitInfo);
@@ -13420,6 +13426,9 @@ private:
     int m_currentDiscussionNumber = -1;
     DiscussionInboxBackoff m_discussionInboxBackoff;
     NetworkBackoff m_pollBackoff;
+    QList<std::function<void()>> m_agentUsageRefreshWaiters;
+    bool m_agentUsageRefreshing = false;
+    qint64 m_agentUsageRefreshedAtMs = 0;
     // a refill notification waiting to ride the next signed
     // heartbeat (kept as flags, not fired directly, so it retries on the
     // periodic heartbeat timer if the immediate send fails).

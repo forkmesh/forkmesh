@@ -14,7 +14,7 @@ Rail **Agents**. Main sources:
 | Detail | `src/MainWindowAgentDetail.cpp` |
 | Transcript | `src/MainWindowAgentTranscript.cpp`, `src/ClaudeTranscriptView.*`, `src/ClaudeTranscriptTools.cpp` |
 | Launch | `src/MainWindowAgentLaunch.cpp`, `src/MainWindowAgentCliSession.cpp` |
-| Usage and accounts | `src/MainWindowAgentUsage.cpp`, `src/MainWindowChat.cpp`, `src/ClaudeAccountRouting.cpp` |
+| Usage and accounts | `src/MainWindowAgentUsage.cpp`, `src/MainWindowAgentUsagePage.cpp`, `src/AgentUsageResetClock.*`, `src/CodexRateLimitsProbe.*`, `src/MainWindowChat.cpp`, `src/ClaudeAccountRouting.cpp` |
 | Cloud rows | `src/AgentCloudSessions.*`, `src/AgentCloudStream.*`, `src/MainWindowAgentCloud.cpp` |
 | External sessions | `src/ClaudeSessionScan.*`, `src/MachineAgentScan.*`, `src/ClaudePeerMessaging.*` |
 | Task links | `src/MainWindowAgentTaskLink.cpp` |
@@ -24,6 +24,84 @@ The toolbar has **Tool efficiency** (`src/AgentToolEfficiencyBoard.*`),
 **Models** (page 3 of `agentPageStack`), **Usage**, **Listen** and
 **Announcer**. Watch is a Market package page in the rail (see
 [Watch](#watch-market-package-agent-watch)).
+
+### Usage page: Refresh and reset times (2026-10-19)
+
+The `usage` Market package's page is `MainWindow::buildAgentUsagePage`
+(`src/MainWindowAgentUsagePage.cpp`). Its **Refresh** button calls
+`refreshAgentUsageAccounts` (`src/MainWindowAgentUsage.cpp`), which walks every
+Claude Code account one by one: it reads that account's own OAuth token from its
+config folder (`claudeCodeOAuthToken(configDir)`), asks
+`api.anthropic.com/api/oauth/usage`, and stores the answer with
+`applyClaudeUsageResponse(response, accountId)`. The active account goes through
+the full path (top-bar meter, limit reminders, credits); any other account only
+gets its account-scoped settings written, so the meters on the page are a real
+re-read of each account rather than a redraw. Each account keeps its own poll
+backoff key (`claude-usage-<id>`), so a rate-limited account is skipped until
+its backoff ends, and a failed read keeps the server's `Retry-After`, as the
+regular poll does (`claudeUsageRetryAfterMs`). The button reads "Refreshing…"
+until the last account answers.
+
+Refreshes are coalesced: a call while one is running only joins its list of
+waiters (`m_agentUsageRefreshWaiters`), and a call within 30 seconds of the
+last finished one (`kAgentUsageRefreshMinMs`) answers from the stored readings
+without asking Anthropic again. Without that, the web page and both phones
+refreshing at once, or a paired client calling `agentops.usage {refresh: true}`
+in a loop, would send one request per account per call with the user's tokens
+and soon earn a 429 that also stalls the regular poll.
+
+After the Claude Code accounts, Refresh re-reads every signed-in Codex account
+(one whose config folder holds `auth.json`) the same way, one at a time. Codex
+limits only come from `codex app-server`, so `CodexRateLimitsProbe`
+(`src/CodexRateLimitsProbe.*`, tested by
+`tests/test_codex_rate_limits_probe.cpp` with the test binary standing in for
+the app-server) starts one with `CODEX_HOME` set to that account's folder,
+sends `initialize`, `initialized` and `account/rateLimits/read`, takes
+`rateLimits` and `rateLimitsByLimitId` (adding the general snapshot under its
+own `limitId`, as `CodexAppServerSession` does), and stops the process. It
+starts no thread and no conversation, so it spends no tokens. Each probe gets
+10 seconds; a probe that times out, exits early or gets an error counts as a
+failure for that account's backoff key (`codex-usage-<id>`) and the walk moves
+on. Codex accounts are skipped when the `codex` CLI is not installed.
+
+The probe is not a repository agent: it runs in the account's config folder,
+touches no worktree, and so takes no repository guardrails or KVM isolation.
+It does keep the rest of an agent launch: the widened `PATH`, the
+`agentresources` environment and shell wrapper, and the systemd scope
+(`agentresources::contain`) where that exists. `OPENAI_API_KEY` and
+`CODEX_API_KEY` are removed from its environment so the read is the signed-in
+account's, not whatever key ForkMesh was started with.
+
+`applyCodexRateLimits(rateLimits, rateLimitsByLimitId, accountId)` stores the
+answer. For the active account it is the usual path (top-bar meter, limit
+reminders, the global keys). For any other account it calls
+`applyInactiveCodexRateLimits`, which writes only that account's scoped
+settings (usage windows, 5-hour and weekly percent, reset and window start), the
+same split `applyClaudeUsageResponse(response, accountId)` makes for Claude.
+
+Each meter shows the reset as a 12-hour clock time in the desktop's time zone,
+next to the remaining time: "Resets 3:45 PM (in 5 h 40 min)", "Resets Tue
+9:00 AM (in 22 h 55 min)" when it is not today, and "Resets Oct 26, 10:00 AM"
+a week or more out. `forkmesh::usageclock` (`src/AgentUsageResetClock.*`,
+tested by `tests/test_agent_usage_reset_clock.cpp`) formats it; the menus and
+top bar keep their relative "resets in" text.
+
+Remote surfaces get the same re-read through `agentops.usage {refresh: true}`
+(`src/MainWindowLocalControlAgentOps.cpp`): the desktop runs
+`refreshAgentUsageAccounts` and answers with the new summary once every Claude
+Code and Codex account has answered, or after 20 seconds with whatever it has. Without `refresh` the
+call answers the stored snapshot at once, as before; older desktops ignore the
+flag and answer the snapshot. The web page (`/dashboard/usage`), iPhone and
+Android send `refresh: true` from their Refresh button and pull-to-refresh, and
+a plain read when the page first opens. Each formats the reset clock locally:
+web `usagePageResetClock` (`marketplace/packages/usage/content/web/page.js`,
+`app/tests/usage_page_web.test.mjs`), iOS `UsageFormat.resetClock`
+(`FMAgents/Remote/AgentOpsModels.swift`, `UsageResetClockTests`), Android
+`UsageFormat.resetClock` (`agents/ops/AgentOpsModels.kt`,
+`UsageResetClockTest`). The web page previously passed the future reset time to
+`relativeTimeLabel`, which only formats past times and so read "Resets 1 minute
+ago"; the clock label replaces it. On Android the reset clock moves to the line
+under the meter, beside the hour/day and pace text, so the bar keeps its width.
 
 ### Session sources and ids
 

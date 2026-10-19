@@ -137,7 +137,11 @@ Everything is in `desktop/`.
   A fresh celebrating ping plays `CelebrationOverlay` (confetti with a
   headline card); the card word-wraps its title and body onto as many lines
   as they need instead of eliding them, so "Email tracked in the CRM" and the
-  email subject are read in full.
+  email subject are read in full. The confetti stays click-through, so a ✕
+  button (a sibling of the overlay, since a click-through widget passes clicks
+  past its children too) sits on the card's top-right corner, or the window's
+  when there is no card, and ends the show at once. It appears once the card
+  has popped in and leaves when the fade-out starts.
 - **Git work off the GUI thread.** Git runs through helpers in
   `MainWindowInternal.h` (`waitForGit`, `runOffThread`); a GUI-thread wait pumps
   the event loop, and Git on the GUI thread shows up in the stall log.
@@ -420,6 +424,11 @@ redirect it), `app/tests/test_workflow_files.py`.
 
 ## Traps
 
+- **Mirror status reports what exists, not what was asked for.** The repo
+  detail's MIRROR STATUS menu and status line say "Managed mirror enabled"
+  only when `publishToNetwork` is set and the mirror folder exists; before the
+  first publish they say "Not published yet", and "Delete mirror..." is only
+  offered when there is a mirror to delete.
 - **Pull timestamp units.** Legacy pull and event records can store Unix
   seconds while current records use milliseconds. Normalize them with
   `issueDisplayTimestampMs()` before ordering, formatting, or storing a
@@ -514,6 +523,14 @@ redirect it), `app/tests/test_workflow_files.py`.
   any other branch skips it (`ActionFile::defaultBranchRetiresPush`).
 - **Workspaces clone `--single-branch`.** A torn loose ref in the mirror is
   advertised as all zeros and breaks a full clone.
+- **A desktop that cannot sign for its own private repository has nothing to
+  download.** `syncPrivateRepository()` falls back to
+  `downloadPrivateReplica()` when the owner signing capability is missing,
+  which is right for a collaborator's copy but wrong for a repository this
+  account created on this computer: a guest creating a Private repository got
+  "Private repository is unavailable or this account is not authorized". A
+  record owned by `accountOwner()` with a local source now stays local and
+  says it needs a signed-in account to publish.
 
 ## Related docs
 

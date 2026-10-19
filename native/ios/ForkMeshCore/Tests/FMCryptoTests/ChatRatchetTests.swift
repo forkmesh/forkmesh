@@ -121,6 +121,7 @@ final class ChatRatchetVectorTests: XCTestCase {
             }
             var current = try XCTUnwrap(devices[name])
             if step.bool("clearSeen") {
+                current.seal.keyring.flushReplay()
                 current.store.delete("chat/e2ee/seenV3/\(ChatV3.storeSuffix(room))")
                 current = (try device(name, store: current.store), current.store)
                 devices[name] = current

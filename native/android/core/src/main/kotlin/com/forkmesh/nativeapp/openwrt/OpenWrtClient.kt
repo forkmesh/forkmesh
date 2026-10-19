@@ -427,6 +427,20 @@ class OpenWrtClient(private val transport: OpenWrtTransport, base: String) {
         return written
     }
 
+    fun createShareConfig(): OpenWrtResult {
+        val existing = call("uci", "get", mapOf("config" to "ksmbd"))
+        if (existing.ok) return existing
+        if (existing.status != OpenWrt.STATUS_NOT_FOUND) {
+            return OpenWrtResult.failure("The packages are installed, but the router did not let ForkMesh read the file server settings (${existing.error}). Sign out and sign in again.")
+        }
+        val written = call("file", "write", mapOf("path" to OpenWrtModel.KSMBD_PATH, "data" to OpenWrtModel.DEFAULT_KSMBD, "mode" to 384))
+        if (!written.ok) {
+            return OpenWrtResult.failure("The packages are installed, but the router has no file server settings (/etc/config/ksmbd) and did not let ForkMesh create them (${written.error}). Remove and reinstall ksmbd-server on the router, which creates the file.")
+        }
+        val loaded = call("uci", "get", mapOf("config" to "ksmbd"))
+        return if (loaded.ok) loaded else OpenWrtResult.failure("ForkMesh created /etc/config/ksmbd, but the router cannot read it: ${loaded.error}")
+    }
+
     fun checkStorage(current: OpenWrtSnapshot): Pair<OpenWrtStorageCheck, OpenWrtSnapshot> {
         var snapshot = current
         val tool = snapshot.packageTool

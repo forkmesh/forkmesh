@@ -133,4 +133,12 @@ Each client lists the runners with a status dot (online when seen in the last
 10 minutes), a Paused or Revoked label, per-provider sign-in state and the
 active account, and offers Sign in, Accounts, Pause or Resume, and Revoke
 (with a confirmation). Revoked runners are listed last and offer no actions.
+
+The sign-in attention derived from a runner list (`RunnerSignIn.derive` on
+iOS, `RunnerAttention.deriveRunner` on Android, `runnerAttentionFromRunners`
+on the desktop) counts paused runners as well as active ones, matching the
+server's `_attention`. The Android screen resets its loading and busy state
+in `finally`, so leaving for Sign in or Accounts mid-request cannot leave
+every button disabled, and it reloads once more when a change lands during a
+list load (`reloadAgain`).
 Adding a runner opens `/dashboard/runners` on the active host.

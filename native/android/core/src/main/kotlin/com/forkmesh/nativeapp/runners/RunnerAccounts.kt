@@ -167,7 +167,7 @@ object RunnerAccounts {
     fun sections(runners: List<RunnerAccountsRunner>, provider: String? = null): List<RunnerAccountsSection> {
         val out = ArrayList<RunnerAccountsSection>()
         for (runner in runners) {
-            if (runner.status != "active") continue
+            if (runner.status != "active" && runner.status != "paused") continue
             for (name in RunnerAttention.PROVIDERS) {
                 if (provider != null && name != provider) continue
                 val state = runner.provider(name)

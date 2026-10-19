@@ -185,7 +185,11 @@ senderAcct)`, `held(kid)`, `notForMe`, `replay`, `invalid`.
    and the set of counters seen in `(M - 1024, M]`, persisted at
    `chat/e2ee/seenV3/<b64u(room)>`. `ctr <= M - 1024` or already seen gives
    `replay`. `ts` must be within `[now - 8 days, now + 1 day]`, otherwise
-   `invalid`.
+   `invalid`. The iOS app checks against the copy in memory and writes the
+   book at most once per 250 ms per room, off the calling thread
+   (`ChatKeyring.persistReplay`), and at once when the app leaves the
+   foreground; a frame first seen in the 250 ms before the process died can
+   open once more after relaunch.
 5. The entry with `kid == D`; none gives `notForMe`. Its `spk` must be a
    prekey whose private half is still kept, otherwise `notForMe`.
 6. Recompute `KEK` (ML-KEM.Decaps, X25519), unwrap `CK`, decrypt `body`. Any

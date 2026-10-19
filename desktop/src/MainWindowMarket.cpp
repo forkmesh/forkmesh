@@ -3045,8 +3045,14 @@ void MainWindow::syncPackageSurfaces()
     const QSet<QString> newlyHidden = m_packageSurfacesSynced
                                           ? hidden - m_hiddenPackageSurfaces
                                           : QSet<QString>();
+    const bool chatNewlyShown =
+        !hidden.contains(QStringLiteral("chat")) &&
+        (!m_packageSurfacesSynced ||
+         m_hiddenPackageSurfaces.contains(QStringLiteral("chat")));
     m_hiddenPackageSurfaces = hidden;
     m_packageSurfacesSynced = true;
+    if (chatNewlyShown || newlyHidden.contains(QStringLiteral("chat")))
+        checkLocalMeshFirewall();
 
     if (!newlyHidden.isEmpty() && m_sectionStack) {
         const int section = m_sectionStack->currentIndex();

@@ -55,6 +55,11 @@ Each open pull has its own branch `refs/heads/forkmesh/pull/<n>` (alias
 `refs/pr/<n>/metadata`). `forkmesh/pulls` is kept as a compatibility index for
 older clients (`server/pull_metadata_refs.go`).
 
+A patch-backed pull is also turned into commits at intake: its record gains
+`headBaseOid` and `headOid`, and `refs/pr/<n>/head` points at the head. Other
+cores rebuild the same commit in their fetch cycle (`ensurePullHeadRefs`). See
+[pull-heads.md](pull-heads.md).
+
 ### Merged pulls keep no branch
 
 A merged pull keeps only the hidden `refs/pr/<n>/metadata` ref, which stays

@@ -1404,7 +1404,19 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
     }
 
     if (method == QLatin1String("agentops.usage")) {
-        server->respond(connectionId, requestId, localControlAgentOpsUsage());
+        if (!params.value(QStringLiteral("refresh")).toBool()) {
+            server->respond(connectionId, requestId, localControlAgentOpsUsage());
+            return;
+        }
+        auto answered = std::make_shared<bool>(false);
+        const auto answer = [this, connectionId, requestId, answered] {
+            if (*answered || !m_localControl)
+                return;
+            *answered = true;
+            m_localControl->respond(connectionId, requestId, localControlAgentOpsUsage());
+        };
+        QTimer::singleShot(20000, this, answer);
+        refreshAgentUsageAccounts(answer);
         return;
     }
 

@@ -752,6 +752,10 @@ started as `terminal.start {provider, mode, account}`
   terminals and the account methods.
 - `agentops.usage` account rows add `signedIn`, `identity` and `windows`; the
   reply adds `activeProvider`.
+- `agentops.usage {refresh: true}` re-reads every Claude Code account from
+  Anthropic before answering (within 20 s, coalesced, at most once per 30 s);
+  without `refresh` it answers the stored snapshot at once
+  ([desktop/agents-ui.md](../desktop/agents-ui.md)).
 - `agentops.accounts.select {provider, account}`,
   `agentops.accounts.rename {provider, account, label}`,
   `agentops.accounts.add {provider, label}`,

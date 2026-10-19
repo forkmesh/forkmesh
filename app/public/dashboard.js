@@ -21244,7 +21244,10 @@
       if (readiness?.available && readiness.clean !== true) return null;
     } else {
       if (!repoPullHasPatchPayload(parsed)) return null;
-      expectedBaseOid = immutableGitCommit(mergeBase?.baseOid);
+      if (readiness?.available && readiness.clean !== true) return null;
+      expectedBaseOid = immutableGitCommit(
+        readiness?.available ? readiness.baseOid : mergeBase?.baseOid,
+      );
       expectedHeadOid = expectedPullsOid;
     }
     if (
@@ -21361,16 +21364,18 @@
   // every control below then says nothing rather than something untrue.
   async function loadRepoPullReadiness(repo, number, values) {
     const unavailable = { available: false };
+    const branchBacked = values?.derive === "branch";
     if (
       !repo
       || String(values?.status || "open").toLowerCase() !== "open"
-      || values?.derive !== "branch"
+      || (!branchBacked && !immutableGitCommit(values?.headOid))
     ) {
       return unavailable;
     }
     const base = await repoPullBaseTip(repo, values);
-    const head = pullHeadBranchRef(values)
-      || immutableGitCommit(values?.creationHeadOid);
+    const head = branchBacked
+      ? pullHeadBranchRef(values) || immutableGitCommit(values?.creationHeadOid)
+      : immutableGitCommit(values?.headOid);
     if (!base || !head) return unavailable;
     try {
       const preview = await fetchRepoJson(repoLiveUrl(repo, "merge-preview", {
@@ -45318,7 +45323,7 @@
     return data;
   }
 
-  async function pluginDesktopUsage() {
+  async function pluginDesktopUsage(options = {}) {
     if (!state.session?.sessionToken) throw new Error("desktop_sign_in_required");
     const hub = await desktopControlHub();
     const desktops = await hub.desktops();
@@ -45327,7 +45332,9 @@
       if (!node) return null;
       try {
         const connection = await hub.connect(node);
-        const usage = await connection.request("agentops.usage", {});
+        const usage = options?.refresh
+          ? await connection.request("agentops.usage", { refresh: true }, 30000)
+          : await connection.request("agentops.usage", {});
         return {
           node,
           name: String(connection.info?.name || desktop?.name || node),

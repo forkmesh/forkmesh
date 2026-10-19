@@ -252,6 +252,7 @@ object RouteParser {
             "synapse" -> if (first == null) listOf(Route.Synapse(RepoRef.parse(query["repo"]))) else null
             "openwrt" -> listOf(Route.OpenWrtRouter)
             "app-store-status" -> listOf(Route.AppStoreStatus)
+            "runners" -> if (first == null) listOf(Route.Runners) else null
             "usage" -> if (first == null) listOf(Route.Usage) else null
             "rss", "rss-reader" -> listOf(Route.RssReader)
             "instance-feed" -> if (first == null) listOf(Route.InstanceFeed(query["post"]?.trim()?.takeIf { it.isNotEmpty() })) else null
@@ -313,6 +314,7 @@ object RouteParser {
         "openwrt" -> listOf(Route.OpenWrtRouter)
         "face-changer" -> listOf(Route.FaceChanger)
         "app-store-status" -> listOf(Route.AppStoreStatus)
+        "runners" -> listOf(Route.Runners)
         "usage" -> listOf(Route.Usage)
         "rss", "rss-reader" -> listOf(Route.RssReader)
         "instance-feed" -> listOf(Route.InstanceFeed(first))

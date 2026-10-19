@@ -77,7 +77,7 @@ void MainWindow::updateRepoActionMenus()
         });
     } else {
         m_mirrorMenu->addSection("MIRROR STATUS");
-        if (repo.publishToNetwork) {
+        if (repo.publishToNetwork && hasMirror) {
             QAction *browse = m_mirrorMenu->addAction(
                 QStringLiteral("Managed mirror enabled ") + QChar(0x00B7) +
                 " open " + webUrl);
@@ -86,7 +86,8 @@ void MainWindow::updateRepoActionMenus()
                     [webUrl] { QDesktopServices::openUrl(QUrl(webUrl)); });
         } else {
             QAction *status = m_mirrorMenu->addAction(
-                QStringLiteral("Local only"));
+                repo.publishToNetwork ? QStringLiteral("Not published yet")
+                                      : QStringLiteral("Local only"));
             status->setEnabled(false);
         }
         m_mirrorMenu->addSection("MIRROR LOCATION");
@@ -110,9 +111,12 @@ void MainWindow::updateRepoActionMenus()
                 setRepoDetailNotice("Copied mirror location.");
             });
         }
-        m_mirrorMenu->addSeparator();
-        QAction *remove = m_mirrorMenu->addAction("Delete mirror...");
-        connect(remove, &QAction::triggered, this, &MainWindow::deleteCurrentMirror);
+        if (hasMirror) {
+            m_mirrorMenu->addSeparator();
+            QAction *remove = m_mirrorMenu->addAction("Delete mirror...");
+            connect(remove, &QAction::triggered, this,
+                    &MainWindow::deleteCurrentMirror);
+        }
     }
 
     const bool hasWorktree = !repo.localPath.isEmpty() && QDir(repo.localPath).exists();
@@ -1715,9 +1719,12 @@ void MainWindow::updateRepoDetailStatus()
         m_repoDetailStatus->setText(details);
         return;
     }
-    QString details = repo.publishToNetwork
-                          ? QStringLiteral("<b>Managed mirror enabled</b>")
-                          : QStringLiteral("<b>Local only</b>");
+    const bool hasMirror =
+        !repo.mirrorPath.isEmpty() && QDir(repo.mirrorPath).exists();
+    QString details =
+        !repo.publishToNetwork ? QStringLiteral("<b>Local only</b>")
+        : hasMirror            ? QStringLiteral("<b>Managed mirror enabled</b>")
+                               : QStringLiteral("<b>Not published yet</b>");
     details += QString::fromUtf8("<br><span style='color:#8b949e'>Added %1 "
                               "\xC2\xB7 Last sync %2</span>")
                    .arg(formatRepoDate(repo.hostedSinceMs),

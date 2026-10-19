@@ -132,6 +132,8 @@ private:
                          const std::function<void(const RpcResult &)> &done);
     void browseShare();
     void createFstab(const std::function<void()> &then);
+    void createShareConfig();
+    void finishShareInstall(const QString &status, bool error);
     void checkStorage(bool keepLog = false);
     void appendStorageLog(const QString &text);
     void packageAction(const QString &action, const QString &name);

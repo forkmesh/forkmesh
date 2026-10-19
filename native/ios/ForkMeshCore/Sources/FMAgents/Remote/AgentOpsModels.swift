@@ -456,6 +456,11 @@ public struct UsageWindowMeter: Equatable, Hashable, Sendable, Identifiable {
         return "resets in " + UsageFormat.remaining(ms: resetAtMs - nowMs)
     }
 
+    public func resetClockLabel(nowMs: Int64, timeZone: TimeZone = .current) -> String {
+        guard let resetAtMs else { return "" }
+        return UsageFormat.resetClock(atMs: resetAtMs, nowMs: nowMs, timeZone: timeZone)
+    }
+
     public var stepMs: Int64? {
         guard let windowMs, windowMs > 0 else { return nil }
         return windowMs > UsageWindowMeter.dayMs ? UsageWindowMeter.dayMs : UsageWindowMeter.hourMs
@@ -698,6 +703,29 @@ public enum UsageFormat {
     }
 
     public static func usd(_ value: Double) -> String { String(format: "$%.2f", value) }
+
+    public static func resetClock(atMs resetAtMs: Int64, nowMs: Int64, timeZone: TimeZone = .current) -> String {
+        guard resetAtMs > 0, resetAtMs > nowMs else { return "" }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        let reset = Date(timeIntervalSince1970: Double(resetAtMs) / 1000)
+        let now = Date(timeIntervalSince1970: Double(nowMs) / 1000)
+        let days = calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: reset)
+        ).day ?? 0
+        let clock = format(reset, "h:mm a", timeZone)
+        if days == 0 { return "Resets \(clock)" }
+        if days < 7 { return "Resets \(format(reset, "EEE", timeZone)) \(clock)" }
+        return "Resets \(format(reset, "MMM d", timeZone)), \(clock)"
+    }
+
+    private static func format(_ date: Date, _ pattern: String, _ timeZone: TimeZone) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = pattern
+        return formatter.string(from: date)
+    }
 }
 
 public struct CapabilityGrant: Equatable, Hashable, Sendable, Identifiable {

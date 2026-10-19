@@ -212,6 +212,21 @@ extension OpenWrtClient {
         return written
     }
 
+    public func createShareConfig() async -> OpenWrtResult {
+        let existing = await call("uci", "get", ["config": "ksmbd"])
+        if existing.ok { return existing }
+        guard existing.status == UbusStatus.notFound.rawValue else {
+            return .failure("The packages are installed, but the router did not let ForkMesh read the file server settings (\(existing.error)). Sign out and sign in again.")
+        }
+        let written = await call("file", "write", ["path": .string(OpenWrtModel.ksmbdPath), "data": .string(OpenWrtModel.defaultKsmbd), "mode": .int(0o600)])
+        guard written.ok else {
+            return .failure("The packages are installed, but the router has no file server settings (/etc/config/ksmbd) and did not let ForkMesh create them (\(written.error)). Remove and reinstall ksmbd-server on the router, which creates the file.")
+        }
+        let loaded = await call("uci", "get", ["config": "ksmbd"])
+        guard loaded.ok else { return .failure("ForkMesh created /etc/config/ksmbd, but the router cannot read it: \(loaded.error)") }
+        return loaded
+    }
+
     public func checkStorage(_ current: OpenWrtSnapshot) async -> (check: OpenWrtStorageCheck, snapshot: OpenWrtSnapshot) {
         var snapshot = current
         var check = OpenWrtStorageCheck()
