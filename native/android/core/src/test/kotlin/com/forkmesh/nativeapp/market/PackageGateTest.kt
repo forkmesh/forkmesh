@@ -316,6 +316,20 @@ class PackageGateTest {
         expect("vault" in PackageSurfaces.of(fresh::shows).hubItems)
     }
 
+    fun testRunnersIsAGatedPackage() {
+        assertEq("runners", PackageGate.HUB_ITEMS[Route.Kind.Runners.raw])
+        assertEq("runners", PackageGate.ROUTE_KINDS[Route.Kind.Runners])
+        assertEq("runners", MarketPackage.NATIVE_DESTINATIONS["runners"])
+        expect("runners" in PackageGate.GATED)
+        assertEq("runners", PackageMenu.packageFor(Route.Kind.Runners))
+        val removed = PackageSurfaces(setOf("runners"))
+        expect(!removed.showsRoute(Route.Runners) && Route.Kind.Runners.raw in removed.hubItems)
+        val hidden = PackageSurfaces.of(store(legacy = false)::shows).hubItems
+        expect("runners" in hidden)
+        val ids = HubCatalog.groups(guest = false, hidden = hidden) { true }.flatMap { it.items }.map { it.id }
+        expect("runners" !in ids)
+    }
+
     fun testSecureDriveIsAGatedPackage() {
         assertEq("secure-drive", PackageGate.HUB_ITEMS[Route.Kind.SecureDrive.raw])
         assertEq("secure-drive", PackageGate.ROUTE_KINDS[Route.Kind.SecureDrive])
