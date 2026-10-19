@@ -257,6 +257,11 @@ class OpenWrtClient(private val transport: OpenWrtTransport, base: String) {
         return result.copy(ok = false, error = if (errors.isEmpty()) "The command exited with code $code." else errors.takeLast(600))
     }
 
+    fun renewSession(): OpenWrtResult {
+        if (password.isEmpty()) return OpenWrtResult.failure("Sign out and sign in again so the router shows the new settings.")
+        return renew(session)
+    }
+
     private fun renew(stale: String): OpenWrtResult = synchronized(renewLock) {
         if (session != stale && session.isNotEmpty()) return OpenWrtResult.OK
         val result = login(user, password)

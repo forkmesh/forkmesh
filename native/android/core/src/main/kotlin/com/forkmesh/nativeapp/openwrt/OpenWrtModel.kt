@@ -859,6 +859,10 @@ object OpenWrtModel {
         else -> ""
     }
 
+    fun needsShareSessionRenewal(snapshot: OpenWrtSnapshot): Boolean =
+        snapshot.shareConfig.isEmpty() && snapshot.pendingCount == 0 &&
+            snapshot.packages.any { it.name in listOf("luci-app-ksmbd", "luci-app-samba4") }
+
     fun shareSectionType(config: String): String = when (config) {
         "ksmbd" -> "share"
         "samba4" -> "sambashare"

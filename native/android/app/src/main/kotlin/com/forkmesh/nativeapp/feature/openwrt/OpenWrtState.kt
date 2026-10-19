@@ -52,6 +52,7 @@ class OpenWrtState {
     var vaultChoices by mutableStateOf<List<VaultItem>>(emptyList())
 
     private var client: OpenWrtClient? = null
+    private var shareRenewalTried = false
     private var loginUrl = ""
     private var loginUser = ""
     private var filledFromVault = ""
@@ -123,6 +124,7 @@ class OpenWrtState {
                 return show(result.error, true)
             }
             client = router
+            shareRenewalTried = false
             pendingCertificate = ""
             password = ""
             routerHost = parsed.host
@@ -243,9 +245,15 @@ class OpenWrtState {
         busy = true
         val before = current.renewals
         val tool = snapshot.packageTool
-        val fresh = withContext(Dispatchers.IO) { current.loadSnapshot(preferredTool = tool) }
+        var fresh = withContext(Dispatchers.IO) { current.loadSnapshot(preferredTool = tool) }
+        val after = current.renewals
+        if (OpenWrtModel.needsShareSessionRenewal(fresh) && !shareRenewalTried) {
+            shareRenewalTried = true
+            val known = fresh.packageTool
+            withContext(Dispatchers.IO) { if (current.renewSession().ok) current.loadSnapshot(preferredTool = known) else null }?.let { fresh = it }
+        }
         busy = false
-        if (current.renewals > before && snapshot.pendingCount > 0) {
+        if (after > before && snapshot.pendingCount > 0) {
             show("The router session timed out, so the router dropped the changes you had not applied. ForkMesh signed in again.", true)
         } else if (fresh.problems.isNotEmpty()) {
             show(fresh.problems.first(), true)
@@ -344,7 +352,10 @@ class OpenWrtState {
             val listed = withContext(Dispatchers.IO) { current.listPackages(tool) }
             snapshot = snapshot.copy(packages = listed.second)
         }
-        if (action == "install" && result.ok) refresh()
+        if (action == "install" && result.ok) {
+            shareRenewalTried = false
+            refresh()
+        }
     }
 
     suspend fun unmount(disk: OpenWrtDisk) {
@@ -457,6 +468,7 @@ class OpenWrtState {
         val tool = snapshot.packageTool
             ?: return show("The router does not let ForkMesh run its package manager. Install luci-app-package-manager (or luci-app-opkg) on the router.", true)
         storageBusy = true
+        shareRenewalTried = false
         var failure = ""
         try {
             show("Installing ${OpenWrtModel.networkSharePackages.joinToString(" and ")}…")
@@ -484,7 +496,12 @@ class OpenWrtState {
             storageBusy = false
         }
         refresh()
-        if (failure.isEmpty()) show("Network sharing is installed. Share a mounted disk below.") else show(failure, true)
+        when {
+            failure.isNotEmpty() -> show(failure, true)
+            snapshot.shareConfig.isEmpty() && snapshot.pendingCount > 0 -> show("The packages are installed. Apply or discard your waiting changes, then pull to refresh: ForkMesh has to sign in again to see the file server settings, and that drops changes not yet applied.", true)
+            snapshot.shareConfig.isEmpty() -> show("The packages are installed, but the router has no file server settings (/etc/config/ksmbd). Reinstall ksmbd-server on the router, or sign out and sign in again.", true)
+            else -> show("Network sharing is installed. Share a mounted disk below.")
+        }
     }
 
     suspend fun applyAndMount() {

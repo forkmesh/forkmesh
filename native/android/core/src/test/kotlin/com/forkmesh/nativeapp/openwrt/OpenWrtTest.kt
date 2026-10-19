@@ -17,6 +17,7 @@ private class FakeRouter : OpenWrtTransport {
     var expireNextBoard = false
     var confirmFailures = 0
     var fstabMissing = false
+    var shareAclFromLogin = 0
     val installed = mutableListOf<String>()
     val calls = mutableListOf<List<Any?>>()
 
@@ -55,7 +56,9 @@ private class FakeRouter : OpenWrtTransport {
             }
             return reply(listOf(0L))
         }
-        if (objectName == "uci" && method == "configs") return reply(listOf(0L, mapOf("configs" to listOf("network", "fstab", "ksmbd"))))
+        if (objectName == "uci" && method == "configs") {
+            return reply(listOf(0L, mapOf("configs" to listOf("network", "fstab") + if (logins >= shareAclFromLogin) listOf("ksmbd") else emptyList())))
+        }
         if (objectName == "uci" && method == "get") {
             val values: Map<String, Any?> = when (args.str("config")) {
                 "network" -> mapOf(
@@ -313,6 +316,29 @@ class OpenWrtTest {
         assertEq(1, check.mounted)
         assertEq(listOf("[    5.1] usb 1-1: new high-speed USB device number 2"), check.kernelLines)
         expect(OpenWrtModel.storageReport(check).contains("USB devices: Flash Disk (1-1)"))
+    }
+
+    fun testRenewedSessionSeesNewlyInstalledShareConfig() {
+        val router = FakeRouter()
+        val client = OpenWrtClient(router, "http://192.168.1.1")
+        expect(client.signIn("root", "secret").ok)
+        router.shareAclFromLogin = router.logins + 1
+        val stale = client.loadSnapshot(now = 0)
+        assertEq("", stale.shareConfig)
+        expect(!OpenWrtModel.needsShareSessionRenewal(stale))
+        val installed = stale.copy(packages = listOf(OpenWrtPackage("ksmbd-server", "1"), OpenWrtPackage("luci-app-ksmbd", "1")))
+        expect(OpenWrtModel.needsShareSessionRenewal(installed))
+        expect(!OpenWrtModel.needsShareSessionRenewal(installed.copy(changes = mapOf("network" to listOf(listOf("set", "lan", "dns", "1.1.1.1"))))))
+        val before = router.logins
+        expect(client.renewSession().ok)
+        assertEq(before + 1, router.logins)
+        val fresh = client.loadSnapshot(now = 0)
+        assertEq("ksmbd", fresh.shareConfig)
+        assertEq("Media", fresh.shares.firstOrNull()?.name)
+        client.signOut()
+        val signedOut = router.logins
+        expect(!client.renewSession().ok)
+        assertEq(signedOut, router.logins)
     }
 
     fun testClientSignInRenewalAndExec() {

@@ -2626,12 +2626,26 @@ void OpenWrtFeature::installNetworkSharing()
         }
         installPackageList(packages, {}, {}, [this](const QStringList &failed, const QString &firstFailure) {
             m_storageBusy = false;
-            if (failed.isEmpty())
-                showStatus(QStringLiteral("Network sharing is installed. Share a mounted disk below."));
-            else
-                showStatus(firstFailure, true);
-            loadAdvancedConfigs();
-            renderStorage();
+            if (!failed.isEmpty() || pendingCount(m_changes) > 0) {
+                if (!failed.isEmpty())
+                    showStatus(firstFailure, true);
+                else
+                    showStatus(QStringLiteral("The packages are installed. Apply or discard your waiting changes, then sign out and sign in again: the router shows the file server settings only to a new sign-in, and signing in again drops changes not yet applied."), true);
+                loadAdvancedConfigs();
+                renderStorage();
+                return;
+            }
+            m_client.renewSession([this](const RpcResult &result) {
+                QStringList configs;
+                for (const QJsonValue &value : result.data.value(QStringLiteral("configs")).toArray())
+                    configs << value.toString();
+                if (shareConfig(configs).isEmpty())
+                    showStatus(QStringLiteral("The packages are installed, but the router has no file server settings (/etc/config/ksmbd). Reinstall ksmbd-server on the router, or sign out and sign in again."), true);
+                else
+                    showStatus(QStringLiteral("Network sharing is installed. Share a mounted disk below."));
+                loadAdvancedConfigs();
+                renderStorage();
+            });
         });
     }, 300000);
 }

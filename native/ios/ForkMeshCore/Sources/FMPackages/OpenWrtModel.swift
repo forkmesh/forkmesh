@@ -1057,6 +1057,11 @@ public enum OpenWrtModel {
         return ""
     }
 
+    public static func needsShareSessionRenewal(_ snapshot: OpenWrtSnapshot) -> Bool {
+        snapshot.shareConfig.isEmpty && snapshot.pendingCount == 0
+            && snapshot.packages.contains { ["luci-app-ksmbd", "luci-app-samba4"].contains($0.name) }
+    }
+
     public static func shareSectionType(_ config: String) -> String {
         switch config {
         case "ksmbd": return "share"

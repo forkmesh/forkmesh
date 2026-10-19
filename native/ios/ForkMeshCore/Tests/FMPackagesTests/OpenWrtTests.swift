@@ -13,6 +13,7 @@ final class FakeRouterState: @unchecked Sendable {
     private var calls: [[JSONValue]] = []
     private var confirmFailures = 0
     private var fstabMissing = false
+    private var shareAclFromLogin = 0
 
     var logins: Int { lock.withLock { loginCount } }
     var session: String { lock.withLock { sessionValue } }
@@ -20,6 +21,7 @@ final class FakeRouterState: @unchecked Sendable {
     func expireOnce() { lock.withLock { expireNextBoard = true } }
     func failConfirm(times: Int) { lock.withLock { confirmFailures = times } }
     func removeFstab() { lock.withLock { fstabMissing = true } }
+    func grantShareAclOnNextLogin() { lock.withLock { shareAclFromLogin = loginCount + 1 } }
 
     func last(_ object: String, _ method: String) -> [JSONValue]? {
         lock.withLock { calls.last { $0.count > 2 && $0[1].text == object && $0[2].text == method } }
@@ -66,7 +68,10 @@ final class FakeRouterState: @unchecked Sendable {
             if fail { throw HTTPError.transport("connection refused") }
             return reply([0])
         }
-        if object == "uci" && method == "configs" { return reply([0, ["configs": ["network", "fstab", "ksmbd"]]]) }
+        if object == "uci" && method == "configs" {
+            let shared = lock.withLock { loginCount >= shareAclFromLogin }
+            return reply([0, ["configs": .array((["network", "fstab"] + (shared ? ["ksmbd"] : [])).map { .string($0) })]])
+        }
         if object == "uci" && method == "get" {
             switch args.str("config") {
             case "network":
@@ -367,6 +372,34 @@ final class OpenWrtClientTests: XCTestCase {
         let router = OpenWrtClient(http: FakeHTTPClient { _ in throw OpenWrtCertificateError(fingerprint: "AA:BB") }, base: URL(string: "https://192.168.1.1"))
         let result = await router.signIn(user: "root", password: "secret")
         XCTAssertEqual(result.certificate, "AA:BB")
+    }
+
+    func testRenewedSessionSeesNewlyInstalledShareConfig() async {
+        let state = FakeRouterState()
+        let (router, _) = client(state)
+        _ = await router.signIn(user: "root", password: "secret")
+        state.grantShareAclOnNextLogin()
+        var stale = await router.loadSnapshot(now: 0)
+        XCTAssertEqual(stale.shareConfig, "")
+        XCTAssertFalse(OpenWrtModel.needsShareSessionRenewal(stale))
+        stale.packages = [OpenWrtPackage(name: "ksmbd-server", version: "1"), OpenWrtPackage(name: "luci-app-ksmbd", version: "1")]
+        XCTAssertTrue(OpenWrtModel.needsShareSessionRenewal(stale))
+        stale.changes = ["network": [["set", "lan", "dns", "1.1.1.1"]]]
+        XCTAssertFalse(OpenWrtModel.needsShareSessionRenewal(stale))
+
+        let before = state.logins
+        let renewed = await router.renewSession()
+        XCTAssertTrue(renewed.ok)
+        XCTAssertEqual(state.logins, before + 1)
+        let fresh = await router.loadSnapshot(now: 0)
+        XCTAssertEqual(fresh.shareConfig, "ksmbd")
+        XCTAssertEqual(fresh.shares.first?.name, "Media")
+
+        await router.signOut()
+        let signedOut = state.logins
+        let refused = await router.renewSession()
+        XCTAssertFalse(refused.ok)
+        XCTAssertEqual(state.logins, signedOut)
     }
 
     func testSnapshotStageAndApply() async {
