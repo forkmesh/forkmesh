@@ -420,6 +420,11 @@ redirect it), `app/tests/test_workflow_files.py`.
 
 ## Traps
 
+- **Mirror status reports what exists, not what was asked for.** The repo
+  detail's MIRROR STATUS menu and status line say "Managed mirror enabled"
+  only when `publishToNetwork` is set and the mirror folder exists; before the
+  first publish they say "Not published yet", and "Delete mirror..." is only
+  offered when there is a mirror to delete.
 - **Pull timestamp units.** Legacy pull and event records can store Unix
   seconds while current records use milliseconds. Normalize them with
   `issueDisplayTimestampMs()` before ordering, formatting, or storing a
