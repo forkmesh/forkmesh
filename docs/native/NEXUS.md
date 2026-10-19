@@ -35,6 +35,8 @@ import NexusUI
 NexusRootView()
 ```
 
+The ForkMesh iPhone app lists NEXUS in the You hub's Workspace group (`Route.nexus`, `/dashboard/nexus`). It is not a Market package, so `PackageGate` never hides it. `Route.nexus` is modal: `HomeShell` presents it as a full-screen cover rather than pushing it, because `NexusRootView` is a `TabView` whose tabs each own a `NavigationStack`, and nesting those inside the app's stack or the generic route sheet doubles the navigation bars. The host passes `onClose`, which puts a Done button on each tab's root screen; without `onClose` there is no Done button, so a host that embeds the view directly is unchanged.
+
 For a custom host experience, link `NexusKit` and inject transports or test doubles into `NexusClient`:
 
 ```swift

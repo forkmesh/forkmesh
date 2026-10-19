@@ -3,6 +3,7 @@ import FMAgents
 import FMApi
 import FMBase
 import FMCode
+import NexusUI
 import SwiftUI
 
 @MainActor
@@ -143,6 +144,9 @@ enum NavigationRoutes {
         }
         fallback(routes, .openWrtRouter) { _ in AnyView(OpenWrtScreen()) }
         fallback(routes, .fileExplorer) { _ in AnyView(FilesScreen()) }
+        fallback(routes, .nexus) { _ in
+            AnyView(NexusRootView(onClose: { Services.get(AppRouter.self)?.dismissPresented() }))
+        }
         fallback(routes, .faceChanger) { _ in AnyView(FaceChangerScreen()) }
         fallback(routes, .videoMixDjStudio) { _ in AnyView(VideoMixDjStudioScreen()) }
         fallback(routes, .appStoreStatus) { _ in AnyView(AppStoreStatusScreen()) }
