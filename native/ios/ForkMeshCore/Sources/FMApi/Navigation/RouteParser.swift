@@ -269,6 +269,7 @@ public enum RouteParser {
         case "video-mix-dj-studio": return [.videoMixDjStudio]
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil
         case "usage": return tail.isEmpty ? [.usage] : nil
+        case "runners": return tail.isEmpty ? [.runners] : nil
         case "rss", "rss-reader": return tail.isEmpty ? [.rssReader] : nil
         case "instance-feed": return tail.isEmpty ? [.instanceFeed(post: instanceFeedPost(query["post"]))] : nil
         case "secure-drive": return tail.isEmpty ? [.secureDrive] : nil
@@ -323,6 +324,8 @@ public enum RouteParser {
             return tail.isEmpty ? [.secureDrive] : nil
         case "spider-room":
             return tail.isEmpty ? [.spiderRoom] : nil
+        case "runners":
+            return tail.isEmpty ? [.runners] : routes(segments: all, query: query, me: me)
         default:
             return routes(segments: all, query: query, me: me)
         }

@@ -159,6 +159,7 @@ public enum Route: Codable, Hashable, Sendable {
     case desktop(id: String, section: String?)
     case hosts
     case host(name: String, section: String?)
+    case runners
     case provision(id: String)
     case network(section: String?)
     case node(name: String)
@@ -281,6 +282,7 @@ public enum Route: Codable, Hashable, Sendable {
         case .desktop: return .desktop
         case .hosts: return .hosts
         case .host: return .host
+        case .runners: return .runners
         case .provision: return .provision
         case .network: return .network
         case .node: return .node
@@ -350,7 +352,7 @@ public enum Route: Codable, Hashable, Sendable {
         case chat, channel, thread, dm, discord
         case profile, people, docs, search
         case notes, note, tasks, task, calendar, event, timers
-        case desktops, desktop, hosts, host, provision, network, node
+        case desktops, desktop, hosts, host, runners, provision, network, node
         case market, package, crm, contact, crmOrg, marketing, analytics, competitors, ads, ledger
         case vault, coves, cove, calories, steps, water, sleep, sugarBreak, stretch, foodGuide, speech, glassesAlert, phoneSecurity, eyeControl, openWrtRouter, fileExplorer, faceChanger, videoMixDjStudio, appStoreStatus, usage, rssReader, instanceFeed, secureDrive, spiderRoom, workflows, localAI, activity, logs, diagnostics
         case ember, strata, synapse
@@ -364,7 +366,7 @@ public enum Route: Codable, Hashable, Sendable {
             case .compose: return "WS3"
             case .agentWatch: return "WS4"
             case .teammates, .teammate, .teammateEditor, .shortcuts: return "WS17"
-            case .allAgents, .hosts, .host: return "WS7"
+            case .allAgents, .hosts, .host, .runners: return "WS7"
             case .inbox: return "WS9"
             case .pingSettings: return "WS2"
             case .repos, .repo, .tree, .file, .fileHistory, .codeMap, .commits, .commit, .range, .compare,

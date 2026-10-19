@@ -277,7 +277,7 @@ public struct MarketPackage: Equatable, Sendable, Identifiable {
         "agents": "Agents", "inbox": "Inbox", "chat": "Chat", "code": "currentRepo", "bug-reports": "reportBug",
         "issues": "repo-issues", "commits": "repo-commits", "branches": "repo-branches", "pull-requests": "repo-pulls",
         "releases": "repo-releases", "actions": "repo-actions", "discussions": "repo-discussions",
-        "desktops": "desktops", "special-agents": "teammates", "shortcuts": "shortcuts", "hosts": "hosts",
+        "desktops": "desktops", "special-agents": "teammates", "shortcuts": "shortcuts", "hosts": "hosts", "runners": "runners",
         "network": "network", "coves": "coves", "on-device-ai": "localAI", "activity": "activity", "logs": "logs", "diagnostics": "diagnostics", "stats": "stats",
         "organizations": "orgs", "world": "world", "sign-in": "signIn", "workflows": "workflows",
     ]

@@ -16,16 +16,17 @@ struct RunnerAccountsSheet: View {
     @Environment(\.dismiss) private var dismiss
     let model: RunnerAccountsModel
     var attention: RunnerAttentionModel?
+    var only: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                RunnerAccountsPanel(model: model, attention: attention)
+                RunnerAccountsPanel(model: model, attention: attention, only: only)
                     .padding(FmSpace.x4)
             }
             .refreshable { await model.load() }
             .fmPreGlassBackground(fm.bgBase)
-            .navigationTitle("Runner accounts")
+            .navigationTitle(only.map { "\($0) accounts" } ?? "Runner accounts")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -41,6 +42,7 @@ struct RunnerAccountsPanel: View {
     let model: RunnerAccountsModel
     var attention: RunnerAttentionModel?
     var titled: Bool = false
+    var only: String?
     @State private var signIn: RunnerSignInRequest?
     @State private var terminal: RunnerTerminalRequest?
     @State private var logout: RunnerLogoutTarget?
@@ -100,11 +102,11 @@ struct RunnerAccountsPanel: View {
     private func content(nowMs: Int64) -> some View {
         VStack(alignment: .leading, spacing: FmSpace.x3) {
             header
-            if model.runners.isEmpty {
-                Text(model.emptyText)
+            if shown.isEmpty {
+                Text(model.runners.isEmpty || !model.loaded ? model.emptyText : "This runner has no Claude Code or Codex installed.")
                     .fmText(.bodyMedium, color: fm.textSecondary)
             }
-            ForEach(model.runners) { (runner: RunnerAccountsRunner) in
+            ForEach(shown) { (runner: RunnerAccountsRunner) in
                 RunnerAccountsCard(
                     model: model, runner: runner, nowMs: nowMs,
                     onSignIn: { (request: RunnerSignInRequest) in signIn = request },
@@ -113,6 +115,11 @@ struct RunnerAccountsPanel: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var shown: [RunnerAccountsRunner] {
+        guard let only else { return model.runners }
+        return model.runners.filter { $0.name == only }
     }
 
     private var header: some View {

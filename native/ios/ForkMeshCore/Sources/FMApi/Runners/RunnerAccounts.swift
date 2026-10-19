@@ -322,7 +322,7 @@ public enum RunnerAccounts {
 
     public static func listed(_ runners: [RunnerAccountsRunner]) -> [RunnerAccountsRunner] {
         runners.compactMap { (runner: RunnerAccountsRunner) -> RunnerAccountsRunner? in
-            guard runner.active else { return nil }
+            guard runner.active || runner.status == RunnerStatus.paused.rawValue else { return nil }
             var shown: RunnerAccountsRunner = runner
             shown.providers = runner.providers.filter(\.listed)
             return shown.providers.isEmpty ? nil : shown
