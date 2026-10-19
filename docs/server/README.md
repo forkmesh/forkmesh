@@ -39,6 +39,7 @@ pinned toolchain). Paths are relative to `server/`.
 | `identity.go`, `bootstrap.go`, `account.go` | Ed25519 node identity and helper protocols; `--init`; `--register-link-code` |
 | `pushhook.go` | `post-receive` hook that rings `POST /v1/control/sync` |
 | `intake.go`, `issue_reconcile.go`, `pull_metadata_refs.go` | Collaboration intake, issue convergence, per-pull metadata refs ([intake-and-attestation.md](intake-and-attestation.md)) |
+| `pull_head.go` | Deterministic head commits for patch-backed pulls ([pull-heads.md](pull-heads.md)) |
 | `merge.go`, `merge_branch.go`, `checks.go` | Merge executor, branch operations, signed required checks ([merge-executor.md](merge-executor.md)) |
 | `pullrules.go`, `agentattest.go` | Pull request rules and model attestations ([pull-rules.md](pull-rules.md)) |
 | `forks.go`, `hosted.go` | Website fork jobs; core-side hosted repository reconciliation ([HOSTED_REPOS.md](../HOSTED_REPOS.md)) |
@@ -222,6 +223,7 @@ Diagnosis: `journalctl -u forkmesh-mirror-node`,
   backup and recovery, operator policy, required checks, service roles, Git
   conformance; [sync status](../../www/docs/sync-status.md).
 - Topic pages: [agent-jobs.md](agent-jobs.md), [merge-executor.md](merge-executor.md),
+  [pull-heads.md](pull-heads.md),
   [intake-and-attestation.md](intake-and-attestation.md),
   [pull-rules.md](pull-rules.md), [actions-runner.md](actions-runner.md),
   [runner-actions.md](runner-actions.md), [gateways.md](gateways.md),
