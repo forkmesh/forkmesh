@@ -2640,14 +2640,50 @@ void OpenWrtFeature::installNetworkSharing()
                 for (const QJsonValue &value : result.data.value(QStringLiteral("configs")).toArray())
                     configs << value.toString();
                 if (shareConfig(configs).isEmpty())
-                    showStatus(QStringLiteral("The packages are installed, but the router has no file server settings (/etc/config/ksmbd). Reinstall ksmbd-server on the router, or sign out and sign in again."), true);
+                    createShareConfig();
                 else
-                    showStatus(QStringLiteral("Network sharing is installed. Share a mounted disk below."));
-                loadAdvancedConfigs();
-                renderStorage();
+                    finishShareInstall(QStringLiteral("Network sharing is installed. Share a mounted disk below."), false);
             });
         });
     }, 300000);
+}
+
+void OpenWrtFeature::createShareConfig()
+{
+    const QJsonObject probe{{QStringLiteral("config"), QStringLiteral("ksmbd")}};
+    m_client.call(QStringLiteral("uci"), QStringLiteral("get"), probe, [this, probe](const RpcResult &existing) {
+        if (existing.ok) {
+            finishShareInstall(QStringLiteral("Network sharing is installed. Share a mounted disk below."), false);
+            return;
+        }
+        if (existing.status != UbusNotFound) {
+            finishShareInstall(QStringLiteral("The packages are installed, but the router did not let ForkMesh read the file server settings (%1). Sign out and sign in again.").arg(existing.error), true);
+            return;
+        }
+        appendStorageLog(QStringLiteral("The router has no /etc/config/ksmbd. Creating it…"));
+        const QJsonObject args{{QStringLiteral("path"), kKsmbdPath}, {QStringLiteral("data"), ksmbdDefaultConfig()}, {QStringLiteral("mode"), 0600}};
+        m_client.call(QStringLiteral("file"), QStringLiteral("write"), args, [this, probe](const RpcResult &written) {
+            if (!written.ok) {
+                finishShareInstall(QStringLiteral("The packages are installed, but the router has no file server settings (/etc/config/ksmbd) and did not let ForkMesh create them (%1). Remove and reinstall ksmbd-server on the router, which creates the file.").arg(written.error), true);
+                return;
+            }
+            m_client.call(QStringLiteral("uci"), QStringLiteral("get"), probe, [this](const RpcResult &loaded) {
+                if (!loaded.ok) {
+                    finishShareInstall(QStringLiteral("ForkMesh created /etc/config/ksmbd, but the router cannot read it: %1").arg(loaded.error), true);
+                    return;
+                }
+                appendStorageLog(QStringLiteral("Created /etc/config/ksmbd on the router."));
+                finishShareInstall(QStringLiteral("Network sharing is installed. Share a mounted disk below."), false);
+            });
+        });
+    });
+}
+
+void OpenWrtFeature::finishShareInstall(const QString &status, bool error)
+{
+    showStatus(status, error);
+    loadAdvancedConfigs();
+    renderStorage();
 }
 
 void OpenWrtFeature::installPackageList(QStringList remaining, QStringList failed, QString firstFailure,

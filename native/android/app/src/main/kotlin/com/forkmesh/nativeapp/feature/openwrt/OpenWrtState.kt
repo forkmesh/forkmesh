@@ -499,8 +499,19 @@ class OpenWrtState {
         when {
             failure.isNotEmpty() -> show(failure, true)
             snapshot.shareConfig.isEmpty() && snapshot.pendingCount > 0 -> show("The packages are installed. Apply or discard your waiting changes, then pull to refresh: ForkMesh has to sign in again to see the file server settings, and that drops changes not yet applied.", true)
-            snapshot.shareConfig.isEmpty() -> show("The packages are installed, but the router has no file server settings (/etc/config/ksmbd). Reinstall ksmbd-server on the router, or sign out and sign in again.", true)
+            snapshot.shareConfig.isEmpty() -> createShareConfig(current)
             else -> show("Network sharing is installed. Share a mounted disk below.")
+        }
+    }
+
+    private suspend fun createShareConfig(current: OpenWrtClient) {
+        val created = withContext(Dispatchers.IO) { current.createShareConfig() }
+        if (!created.ok) return show(created.error, true)
+        refresh()
+        if (snapshot.shareConfig.isEmpty()) {
+            show("ForkMesh created /etc/config/ksmbd, but this sign-in cannot see it yet. Sign out and sign in again.", true)
+        } else {
+            show("Network sharing is installed. Share a mounted disk below.")
         }
     }
 

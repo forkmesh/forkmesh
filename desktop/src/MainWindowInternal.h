@@ -7134,12 +7134,35 @@ public:
                 return;
             }
             advance();
+            placeCloseButton();
             update();
         });
         m_timer->start();
         raise();
         show();
+        if (parent) {
+            m_closeButton = new QToolButton(parent);
+            m_closeButton->setText(QString::fromUtf8("\xE2\x9C\x95"));
+            m_closeButton->setToolTip(QStringLiteral("Close"));
+            m_closeButton->setAccessibleName(QStringLiteral("Close celebration"));
+            m_closeButton->setCursor(Qt::PointingHandCursor);
+            m_closeButton->setFocusPolicy(Qt::NoFocus);
+            m_closeButton->setFixedSize(kCloseSize, kCloseSize);
+            m_closeButton->setStyleSheet(
+                QStringLiteral("QToolButton { color: white; background: rgba(15, 23, 42, 230);"
+                               " border: 1px solid rgba(255, 255, 255, 60);"
+                               " border-radius: %1px; font-size: 13px; padding: 0; }"
+                               " QToolButton:hover { background: rgba(51, 65, 85, 240); }")
+                    .arg(kCloseSize / 2));
+            connect(m_closeButton, &QToolButton::clicked, this, [this] {
+                m_timer->stop();
+                deleteLater();
+            });
+            m_closeButton->hide();
+        }
     }
+
+    ~CelebrationOverlay() override { delete m_closeButton; }
 
 protected:
     void paintEvent(QPaintEvent *) override
@@ -7217,6 +7240,8 @@ private:
         const int cardWide = textWide + 56;
         const int cardHigh = headBox.height() + 36 +
                              (m_detail.isEmpty() ? 0 : detailBox.height() + 8);
+        m_card = QRectF(width() / 2.0 - cardWide / 2.0,
+                        height() * 0.38 - cardHigh / 2.0, cardWide, cardHigh);
         p.save();
         p.setOpacity(qBound(0.0, fade * qMin(1.0, pop * 1.4), 1.0));
         p.translate(width() / 2.0, height() * 0.38);
@@ -7273,6 +7298,29 @@ private:
         return burst;
     }
 
+    void placeCloseButton()
+    {
+        if (!m_closeButton)
+            return;
+        const bool onCard = !m_headline.isEmpty();
+        const bool shown = m_elapsedMs >= kPopMs &&
+                           m_durationMs - m_elapsedMs > kFadeMs &&
+                           (!onCard || !m_card.isEmpty());
+        if (!shown) {
+            m_closeButton->hide();
+            return;
+        }
+        const QPoint corner =
+            onCard ? QPoint(qRound(m_card.right()) - kCloseSize + 6,
+                            qRound(m_card.top()) - 6)
+                   : QPoint(width() - kCloseSize - 16, 16);
+        m_closeButton->move(mapToParent(corner));
+        if (m_closeButton->isHidden()) {
+            m_closeButton->show();
+            m_closeButton->raise();
+        }
+    }
+
     void advance()
     {
         // The window can be resized mid-show; follow it rather than leaving a
@@ -7308,7 +7356,10 @@ private:
     static constexpr int kFlakes = 90;
     static constexpr int kBursts = 5;
     static constexpr int kPopMs = 260;
+    static constexpr int kCloseSize = 26;
     QTimer *m_timer = nullptr;
+    QPointer<QToolButton> m_closeButton;
+    QRectF m_card;
     int m_durationMs;
     int m_elapsedMs = 0;
     QString m_headline;

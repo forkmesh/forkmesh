@@ -212,8 +212,22 @@ signed-in account has.
   when `luci-app-ksmbd` or `luci-app-samba4` is installed but no share config
   shows (`needsShareSessionRenewal`), which covers installs from the Packages
   screen. A renewal drops staged UCI changes, so it is skipped while any are
-  pending and the page asks to apply or discard them first. If a fresh session
-  still sees no config, the page says `/etc/config/ksmbd` is missing.
+  pending and the page asks to apply or discard them first.
+- **A missing `/etc/config/ksmbd` is created**: a router was seen with both
+  packages installed and no `/etc/config/ksmbd` even after a fresh sign-in
+  (deleted by hand, or never shipped), and the page could only say "Reinstall
+  ksmbd-server on the router, or sign out and sign in again". `uci configs` hides a config the session may not read just as it
+  hides a missing file, so after Install network sharing the client asks
+  `uci get ksmbd`: permission denied means the session still lacks the ACL
+  and the page says to sign out and in; not found means the file is missing,
+  and ForkMesh writes the package's default `globals` section (workgroup
+  `WORKGROUP`, interface `lan`) to `/etc/config/ksmbd` with `file write`,
+  mode 0600 as the package installs it, then reads it back (desktop
+  `createShareConfig` / `ksmbdDefaultConfig()`, phones `createShareConfig` /
+  `defaultKsmbd` / `DEFAULT_KSMBD`). It only writes after "not found", so
+  existing settings are never overwritten. If the router refuses the write,
+  the message says so and asks for ksmbd-server to be removed and installed
+  again, which creates the file.
 - **Backup, restore, firmware, reset**: the same calls LuCI's System pages
   make, so LuCI's `luci-mod-system` ACL allows them: `cgi-backup`;
   `cgi-upload` to `/tmp/backup.tar.gz` then `sysupgrade --restore-backup` and

@@ -13,6 +13,7 @@ final class FakeRouterState: @unchecked Sendable {
     private var calls: [[JSONValue]] = []
     private var confirmFailures = 0
     private var fstabMissing = false
+    private var ksmbdMissing = false
     private var shareAclFromLogin = 0
 
     var logins: Int { lock.withLock { loginCount } }
@@ -21,7 +22,9 @@ final class FakeRouterState: @unchecked Sendable {
     func expireOnce() { lock.withLock { expireNextBoard = true } }
     func failConfirm(times: Int) { lock.withLock { confirmFailures = times } }
     func removeFstab() { lock.withLock { fstabMissing = true } }
+    func removeKsmbdConfig() { lock.withLock { ksmbdMissing = true } }
     func grantShareAclOnNextLogin() { lock.withLock { shareAclFromLogin = loginCount + 1 } }
+    func setShareAcl(_ granted: Bool) { lock.withLock { shareAclFromLogin = granted ? 0 : Int.max } }
 
     func last(_ object: String, _ method: String) -> [JSONValue]? {
         lock.withLock { calls.last { $0.count > 2 && $0[1].text == object && $0[2].text == method } }
@@ -69,7 +72,7 @@ final class FakeRouterState: @unchecked Sendable {
             return reply([0])
         }
         if object == "uci" && method == "configs" {
-            let shared = lock.withLock { loginCount >= shareAclFromLogin }
+            let shared = lock.withLock { loginCount >= shareAclFromLogin && !ksmbdMissing }
             return reply([0, ["configs": .array((["network", "fstab"] + (shared ? ["ksmbd"] : [])).map { .string($0) })]])
         }
         if object == "uci" && method == "get" {
@@ -83,6 +86,9 @@ final class FakeRouterState: @unchecked Sendable {
                 if lock.withLock({ fstabMissing }) { return reply([4]) }
                 return reply([0, ["values": ["cfg01": [".name": "cfg01", ".type": "global", ".anonymous": true, ".index": 0, "anon_mount": "1"]]]])
             case "ksmbd":
+                let (allowed, missing) = lock.withLock { (loginCount >= shareAclFromLogin, ksmbdMissing) }
+                if !allowed { return reply([6]) }
+                if missing { return reply([4]) }
                 return reply([0, ["values": ["cfg02": [".name": "cfg02", ".type": "share", ".index": 0, "name": "Media", "path": "/mnt/sda1", "guest_ok": "yes"]]]])
             default:
                 return reply([4])
@@ -103,6 +109,11 @@ final class FakeRouterState: @unchecked Sendable {
             case "/bin/dmesg": return reply([0, ["code": 0, "stdout": "<6>[    5.1] usb 1-1: new high-speed USB device number 2\n<5>[    6.0] random: crng init done\n"]])
             default: return reply([6])
             }
+        }
+        if object == "file" && method == "write" && args.str("path") == "/etc/config/ksmbd" {
+            guard args.str("data").hasPrefix("config globals\n") else { return reply([6]) }
+            lock.withLock { ksmbdMissing = false }
+            return reply([0])
         }
         if object == "file" && method == "write" {
             guard args.str("path") == "/etc/config/fstab", args.str("data").contains("global") else { return reply([6]) }
@@ -400,6 +411,28 @@ final class OpenWrtClientTests: XCTestCase {
         let refused = await router.renewSession()
         XCTAssertFalse(refused.ok)
         XCTAssertEqual(state.logins, signedOut)
+    }
+
+    func testMissingShareConfigIsCreatedOnlyWhenReadable() async {
+        let state = FakeRouterState()
+        state.removeKsmbdConfig()
+        let (router, _) = client(state)
+        _ = await router.signIn(user: "root", password: "secret")
+        state.setShareAcl(false)
+        let denied = await router.createShareConfig()
+        XCTAssertFalse(denied.ok)
+        XCTAssertTrue(denied.error.contains("Sign out and sign in again"))
+        XCTAssertNil(state.last("file", "write"))
+
+        state.setShareAcl(true)
+        let before = await router.loadSnapshot(now: 0)
+        XCTAssertEqual(before.shareConfig, "")
+        let created = await router.createShareConfig()
+        XCTAssertTrue(created.ok)
+        XCTAssertEqual(state.last("file", "write")?[3].str("path"), "/etc/config/ksmbd")
+        XCTAssertEqual(state.last("file", "write")?[3].int("mode"), 0o600)
+        let after = await router.loadSnapshot(now: 0)
+        XCTAssertEqual(after.shareConfig, "ksmbd")
     }
 
     func testSnapshotStageAndApply() async {
