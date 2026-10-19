@@ -668,7 +668,7 @@
       ? `<span>Logs are shown to the repository owner and organization writers.</span>`
       : `<span><a href="${escapeHtml(repoActionsSignInHref())}" data-repo-actions-link data-repo-actions-sign-in class="font-medium text-accent hover:underline">Sign in to see logs</a></span>`;
     const facts = [
-      run.actor ? `Triggered by ${escapeHtml(run.actor)}` : "",
+      run.actor ? `Triggered by ${userNameHtml(run.actor)}` : "",
       run.event ? `on ${escapeHtml(run.event)}` : "",
       run.startedAt ? `started ${escapeHtml(relativeTimeLabel(run.startedAt))}` : "",
     ].filter(Boolean).join(" ");
@@ -727,7 +727,7 @@
         : "";
       const facts = [
         `run ${run.id}`, commitLink, escapeHtml(repoActionsRefLabel(run.ref)), pullLink,
-        run.actor ? `<span data-repo-actions-run-actor>${escapeHtml(run.actor)}</span>` : "",
+        run.actor ? `<span data-repo-actions-run-actor>${userNameHtml(run.actor)}</span>` : "",
         when ? escapeHtml(relativeTimeLabel(when)) : "", duration ? escapeHtml(duration) : "",
       ].filter(Boolean).join(" · ");
       return `

@@ -6374,6 +6374,7 @@ _instance_directory_admin = _LazyModule("instance_directory_admin")
 _server_update_admin = _LazyModule("server_update_admin")
 _instance_console = _LazyModule("instance_console")
 repo_short_urls = _LazyModule("repo_short_urls")
+account_names = _LazyModule("account_names")
 repo_projects = _LazyModule("repo_projects")
 _ids_console = _LazyModule("ids_console")
 # The hackathon growth layer (app/src/hackathon.py is its pure policy half).
@@ -19377,6 +19378,7 @@ async def _account_public_payload(
     payload = {
         "ok": True,
         "nodeName": name,
+        "nameCase": account_names.display_name(rec, name),
         "email": rec.get("email", ""),
         "status": rec.get("status", "active"),
         "pubkey": rec.get("pubkey", ""),
@@ -21534,6 +21536,8 @@ async def _account_signup(env, request):
         "pass_salt": salt,
         "pass_hash": phash,
     })
+    account_names.apply_case(rec, account_names.clean_case(
+        name, clean_string(data.get("nodeName", ""), MAX_NODE_NAME)))
     rec["status"] = "active"
     rec["email_verified"] = bool(rec.get("email_verified", False))
     # A reservation already carries created_at, but it is not a joined user
@@ -22233,6 +22237,7 @@ async def _account_profile(env, request):
         "profileLocation", "profileTimezone", "profilePrivate",
         "followersPublic", "publicEmail", "mastodon",
         "profileLinks", "nodeName", "email", "identifier", "sessionToken",
+        "nameCase",
         # The dashboard always sends a (usually empty) `password` field even on
         # pages with no password input. Whitelist it so a session-authed
         # public-profile save doesn't get shunted into the credentials branch
@@ -22388,6 +22393,15 @@ async def _account_profile(env, request):
                 rec["profile_timezone"] = timezone
             else:
                 rec.pop("profile_timezone", None)
+            changed = True
+
+    if "nameCase" in data:
+        case_changed, case_error = account_names.apply_case(
+            rec, clean_string(data.get("nameCase", ""), MAX_NODE_NAME))
+        if case_error:
+            return json_response({"error": case_error}, status=400)
+        if case_changed:
+            account_names.forget(rec.get("name", ""))
             changed = True
 
     if "profilePrivate" in data:
@@ -29207,14 +29221,21 @@ async def org_members_handler(env, request, org):
         hidden = (await hidden_members(
             env, org_name, [str(r.get("name") or "") for r in rows or []])
             if callable(hidden_members) else set())
+        shown_rows = [r for r in rows or []
+                      if str(r.get("name") or "") not in hidden]
+        name_cases = {}
+        for r in shown_rows:
+            member_name = str(r.get("name") or "")
+            name_cases[member_name] = (
+                await _account_name_case(env, member_name) or member_name)
         return json_response({"ok": True, "visibility": access["offices"],
                               "members": [
             {"name": str(r.get("name") or ""),
+             "nameCase": name_cases.get(str(r.get("name") or ""), ""),
              "role": str(r.get("role") or ""),
              "since": int(r.get("created_at") or 0),
              "teams": teams_by_member.get(str(r.get("name") or ""), [])}
-            for r in rows or []
-            if str(r.get("name") or "") not in hidden]},
+            for r in shown_rows]},
             cache_control="no-store")
     if method not in ("POST", "DELETE"):
         return json_response({"error": "method_not_allowed"}, status=405)
@@ -34140,6 +34161,33 @@ async def _account_central_fund(env, request):
     return json_response(payload)
 
 
+async def _account_name_case(env, name):
+    now = int(Date.now())
+    hit = account_names.cached(name, now)
+    if hit is not None:
+        return hit
+    value = ""
+    try:
+        rec = await _account_identity_rec_by_bi(
+            env, await blind_index(env, name))
+        if account_names.publicly_named(rec):
+            value = account_names.display_name(rec, name)
+    except Exception:
+        return ""
+    account_names.remember(name, value, now)
+    return value
+
+
+async def _account_name_cases(env, values):
+    names = {}
+    for name in account_names.batch_names(values):
+        value = await _account_name_case(env, name)
+        if value:
+            names[name] = value
+    return json_response({"ok": True, "names": names},
+                         cache_control="public, max-age=60")
+
+
 async def accounts_handler(env, request):
     await ensure_schema(env)
     url = urlparse(request.url)
@@ -34320,6 +34368,10 @@ async def accounts_handler(env, request):
     if contributions_match and method == "GET":
         return await _contribution_profile_api(
             env, request, contributions_match.group(1))
+    if url.path == "/api/accounts/name-case" and method == "GET":
+        query = parse_qs(urlparse(request.url).query)
+        if "names" in query:
+            return await _account_name_cases(env, query.get("names", []))
     follow_match = ACCOUNT_FOLLOW_RE.match(url.path)
     if follow_match and method in ("POST", "DELETE"):
         return await _account_follow(env, request, follow_match.group(1), method)
@@ -34429,6 +34481,7 @@ async def accounts_handler(env, request):
                           int(Date.now()) - ACCOUNT_PRESENCE_STALE_MS)
         payload = {"ok": True, "exists": True, "available": not taken,
                    "name": rec.get("name", name), "status": rec.get("status", ""),
+                   "nameCase": account_names.display_name(rec, name),
                    "pubkey": rec.get("pubkey", ""),
                    "isAdmin": await _is_admin(env, rec.get("name", name)),
                    "emailVerified": bool(rec.get("email_verified")),

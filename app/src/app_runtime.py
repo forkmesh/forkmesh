@@ -4416,8 +4416,9 @@ class Default:
             tags = "<link rel=\"canonical\" href=\"%s\">" % canonical
         if "</head>" in body:
             body = body.replace("</head>", tags + "</head>", 1)
+        shown = name if is_org else account_names.display_name(rec, name)
         body = re.sub(r"<title>[^<]*</title>",
-                      "<title>@%s · ForkMesh</title>" % _html_escape(name),
+                      "<title>@%s · ForkMesh</title>" % _html_escape(shown),
                       body, count=1)
         page = Response(body, status=200, headers={
             "content-type": "text/html; charset=utf-8",

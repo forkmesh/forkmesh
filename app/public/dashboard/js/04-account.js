@@ -1725,6 +1725,7 @@
 
     const memberRows = members.map((member) => {
       const memberName = escapeHtml(member.name || "");
+      rememberUserNameCase(member.name, member.nameCase);
       const controls = canManage
         ? '<select data-org-member-role="' + memberName + '" class="' + ORG_INPUT_CLASS + ' h-8 py-0">' +
             orgOptionTags(ORG_ROLE_OPTIONS, member.role) + "</select>" +
@@ -1734,7 +1735,7 @@
         : orgRoleBadge(member.role);
       return '<div class="rounded-md border border-border bg-card px-3 py-2">' +
         '<div class="flex items-center gap-2">' +
-          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + memberName + "</span>" +
+          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") + "</span>" +
           controls +
         "</div>" +
         orgMemberFloorGroups(member, canManage) +
@@ -2335,7 +2336,7 @@
     const rows = teamMembers.map((member) => {
       const memberName = escapeHtml(member.name || "");
       return '<div class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">' +
-        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + memberName +
+        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") +
           (member.external
             ? ' <small class="ml-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">outside collaborator</small>'
             : "") + "</span>" +
@@ -2479,7 +2480,7 @@
     if (repoAvailability) repoAvailability.textContent = "";
     if (section === "profile-overview" || section === "profile-repositories") {
       const renderedName = ($("[data-profile-page-node-name]")?.textContent || "").trim();
-      headerContext.textContent = state.session?.nodeName || state.session?.email || renderedName || "Profile";
+      headerContext.textContent = (state.session?.nodeName ? userDisplayName(state.session.nodeName) : "") || state.session?.email || renderedName || "Profile";
       return;
     }
     if (section === "profile") {
@@ -2555,7 +2556,7 @@
     profile.nodeName = profile.nodeName || name;
     // Never show a mailbox on someone else's page — the handle is the
     // public identity here.
-    profile.email = "@" + profile.nodeName;
+    profile.email = "@" + userDisplayName(profile.nodeName);
     profile.isFollowing = Boolean(body?.social?.isFollowing);
     state.publicProfile = profile;
     renderProfilePage(profile);
@@ -2753,7 +2754,7 @@
     }
     // Owner-only affordances become a Follow button (or disappear).
     $$("[data-profile-about-edit]").forEach((el) => el.classList.add("hidden"));
-    $$("[data-profile-about-owner]").forEach((el) => { el.textContent = name; });
+    $$("[data-profile-about-owner]").forEach((el) => { el.textContent = userDisplayName(name); });
     $$("[data-profile-sidebar-slot] a[href='/dashboard/settings']").forEach((edit) => {
       const wrap = edit.parentElement;
       edit.remove();
@@ -2973,7 +2974,7 @@
   });
 
   function renderProfile(session) {
-    const name = session?.nodeName || session?.email || "My Profile";
+    const name = session?.nodeName ? userDisplayName(session.nodeName) : (session?.email || "My Profile");
     const nameEl = $("[data-dashboard-profile-name]");
     const statusEl = $("[data-dashboard-profile-status]");
     const avatar = $("[data-dashboard-profile-avatar]");
@@ -3340,7 +3341,7 @@
     const owner = $("[data-profile-about-owner]");
     const label = $("[data-profile-about-label]");
     const body = $("[data-profile-about-body]");
-    const name = String(session?.nodeName || session?.email || "forkmesh").trim() || "forkmesh";
+    const name = userDisplayName(String(session?.nodeName || session?.email || "forkmesh").trim() || "forkmesh");
     if (owner) owner.textContent = name;
     if (label) label.textContent = session?.kind === "node" ? "About this node" : "About yourself";
     if (body) {
@@ -3366,7 +3367,7 @@
     ));
     count.textContent = `${formatCount(total)} credited`;
     const links = names.map((name) =>
-      `<a class="font-medium text-accent hover:underline" href="${escapeHtml(publicProfileUrl(name))}">${escapeHtml(name)}</a>`
+      `<a class="font-medium text-accent hover:underline" href="${escapeHtml(publicProfileUrl(name))}">${userNameHtml(name)}</a>`
     ).join('<span class="text-muted-foreground">, </span>');
     if (!total) {
       list.innerHTML = '<p class="text-center text-sm text-muted-foreground">No credited referrals yet.</p>';
@@ -4912,6 +4913,7 @@
     const renameInput = $("[data-profile-rename-input]");
     const bioInput = $("[data-profile-page-bio]");
     const locationInput = $("[data-profile-page-location]");
+    const nameCaseInput = $("[data-profile-page-name-case]");
     const timezoneInput = $("[data-profile-page-timezone]");
     const mastodonInput = $("[data-profile-page-mastodon]");
     const privateInput = $("[data-profile-page-private]");
@@ -4922,7 +4924,7 @@
     const isNode = session?.kind === "node";
     avatars.forEach((avatar) => applyAvatar(avatar, session));
     nameEls.forEach((nameEl) => {
-      nameEl.textContent = name;
+      nameEl.textContent = session?.nodeName ? userDisplayName(name) : name;
     });
     renderProfileUserStatus(nameEls, session);
     emailEls.forEach((emailEl) => {
@@ -4989,6 +4991,10 @@
     }
     if (locationInput && document.activeElement !== locationInput) {
       locationInput.value = session?.profileLocation || "";
+    }
+    if (nameCaseInput && document.activeElement !== nameCaseInput) {
+      nameCaseInput.value = session?.nameCase || session?.nodeName || "";
+      nameCaseInput.placeholder = session?.nodeName || "username";
     }
     renderProfileTimezoneOptions(session);
     if (timezoneInput && document.activeElement !== timezoneInput) {
@@ -5610,6 +5616,9 @@
           : {}),
         profileBio: ($("[data-profile-page-bio]")?.value || "").trim(),
         profileLocation: ($("[data-profile-page-location]")?.value || "").trim(),
+        ...($("[data-profile-page-name-case]")
+          ? { nameCase: ($("[data-profile-page-name-case]")?.value || "").trim() }
+          : {}),
         profileTimezone: ($("[data-profile-page-timezone]")?.value || "").trim(),
         mastodon: ($("[data-profile-page-mastodon]")?.value || "").trim(),
         profilePrivate: Boolean($("[data-profile-page-private]")?.checked),
@@ -5620,6 +5629,7 @@
     } catch (error) {
       const messages = {
         bad_public_email: "Choose one of your verified email addresses.",
+        bad_name_case: "Name capitalization can only change capital letters of your username.",
         bad_mastodon: "Enter a Mastodon handle like @you@example.social.",
         bad_profile_timezone: "Enter a valid IANA time zone like Asia/Kolkata.",
         bad_profile_links: "Check your profile links and try again.",
