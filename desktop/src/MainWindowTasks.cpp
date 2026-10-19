@@ -2554,10 +2554,10 @@ QWidget *MainWindow::buildOrganizationTasksSection()
             Theme::Role::AccentFg,
             QColor(currentThemeIsDark() ? "#3fb950" : "#1a7f37")));
     m_organizationTaskStartAgentButton->setToolTip(
-        QStringLiteral("Start agent with prompt settings: attach this task to "
-                       "the prompt box and start an agent on it with the "
-                       "repository, provider, model and mode the prompt box "
-                       "is set to"));
+        QStringLiteral("Start agent with prompt settings on this task's repository. "
+                       "Includes your draft and attachments. In Task or other "
+                       "non-agent modes, uses your most recent coding agent "
+                       "or the default agent"));
     addAction(&m_organizationTaskPromptButton,
               QStringLiteral("Add to prompt"), QStringLiteral("plus"));
     m_organizationTaskPromptButton->setToolTip(
@@ -4516,50 +4516,64 @@ void MainWindow::addOrganizationTaskToPrompt()
 
 void MainWindow::startOrganizationTaskAgentFromPrompt()
 {
+    const auto notify = [this](const QString &text, bool error) {
+        if (m_organizationTasksStatus)
+            m_organizationTasksStatus->setText(text);
+        flashMessage(text, error, QString(), forkmesh::kLocalOperationNoticeKind);
+    };
     const QJsonObject task = selectedOrganizationTask(
         m_organizationTasksTable, m_organizationTasks);
-    if (task.isEmpty() || !m_organizationTasksStatus)
+    if (task.isEmpty()) {
+        notify(QStringLiteral("Select a task to start an agent."), true);
         return;
+    }
     const QString id = taskText(task, QStringLiteral("id"));
     const QString title = taskText(task, QStringLiteral("title"));
-    if (id.isEmpty())
+    if (id.isEmpty()) {
+        notify(QStringLiteral("This task has no ID. Refresh Tasks and try again."), true);
         return;
-
-    const QString provider =
-        m_quickAddAgentProvider
-            ? m_quickAddAgentProvider->currentData().toString()
-            : QStringLiteral("claude-code");
-    if (quickAddProviderIsPromptAction(provider) ||
-        agentIsCloudflareAiProvider(provider)) {
-        m_organizationTasksStatus->setText(QStringLiteral(
-            "Pick a coding agent in the prompt box before starting one on a "
-            "task."));
+    }
+    if (!m_agentStore) {
+        notify(QStringLiteral("Agent storage is not ready. Try again after startup."), true);
         return;
     }
 
-    const QStringList repository =
-        taskText(task, QStringLiteral("repository"))
-            .split(QLatin1Char('/'), Qt::SkipEmptyParts);
-    int repoIndex = repository.size() == 2
-                        ? repoIndexFor(repository.at(0), repository.at(1))
-                        : -1;
-    if (repoIndex >= 0 && repoIndex < m_repositories.size() &&
-        m_repositories.at(repoIndex).localPath.isEmpty())
-        repoIndex = -1;
-    if (repoIndex < 0)
-        repoIndex = issuesRepoIndex();
+    auto choice = promptAreaAgentChoice();
+    if (!agentProviderIsKnown(choice.provider) ||
+        agentIsCloudflareAiProvider(choice.provider))
+        choice = {defaultAgentProvider(), QString()};
+    if (agentIsCloudflareAiProvider(choice.provider))
+        choice = {kFallbackAgentProvider, QString()};
+    const QString provider = choice.provider;
+    const QString model = choice.model;
+
+    const QString repositoryName = taskText(task, QStringLiteral("repository"));
+    const QStringList repository = repositoryName.split(QLatin1Char('/'));
+    int repoIndex = -1;
+    if (repositoryName.isEmpty()) {
+        repoIndex = resolveAgentRepositoryIndex(-1);
+    } else if (repository.size() == 2) {
+        const int namedIndex = repoIndexFor(repository.at(0), repository.at(1));
+        if (namedIndex >= 0)
+            repoIndex = resolveAgentRepositoryIndex(namedIndex);
+    }
     if (repoIndex < 0) {
-        m_organizationTasksStatus->setText(QStringLiteral(
-            "Open a repository with a local checkout to run this task's "
-            "agent."));
+        notify(repositoryName.isEmpty()
+                   ? QStringLiteral("Open a repository with a local checkout to run this task's agent.")
+                   : QStringLiteral("Clone or open a local checkout of %1 to run this task's agent.")
+                         .arg(repositoryName),
+               true);
         return;
     }
 
-    addOrganizationTaskToPrompt();
     QString prompt = m_issueQuickAdd ? m_issueQuickAdd->toPlainText().trimmed()
-                                     : organizationTaskPromptText(task);
-    if (prompt.isEmpty())
-        return;
+                                     : QString();
+    const QString taskPrompt = organizationTaskPromptText(task);
+    if (!prompt.contains(taskPrompt)) {
+        if (!prompt.isEmpty())
+            prompt += QStringLiteral("\n\n");
+        prompt += taskPrompt;
+    }
     const QStringList images = m_quickAddImages;
     for (const QString &attachment : images) {
         if (!prompt.endsWith(QLatin1Char('\n')))
@@ -4567,12 +4581,9 @@ void MainWindow::startOrganizationTaskAgentFromPrompt()
         prompt += promptAttachmentLine(attachment);
     }
 
-    const QString model = (provider == QLatin1String("claude-code") ||
-                           agentIsCodexProvider(provider))
-                              ? selectedModelComboValue(m_quickAddClaudeModel)
-                              : QString();
     const bool createPr =
         m_quickAddCreatePr && m_quickAddCreatePr->isChecked();
+    notify(QStringLiteral("Starting %1 on this task...").arg(agentProviderName(provider)), false);
     const int sessionId = startAdHocAgentForRepo(
         repoIndex, prompt, provider, createPr, model,
         /*titleOverride=*/title, /*genie=*/false, /*switchToTab=*/true,
@@ -4580,8 +4591,14 @@ void MainWindow::startOrganizationTaskAgentFromPrompt()
         /*baseBranch=*/QString(),
         /*priority=*/task.value(QStringLiteral("priority")).toInt(50));
     if (sessionId <= 0) {
-        m_organizationTasksStatus->setText(
-            QStringLiteral("Could not start an agent on this task."));
+        notify(QStringLiteral("Could not start an agent on this task. Check the Log for details."), true);
+        return;
+    }
+    const AgentSession *session = findAgentSession(sessionId);
+    if (session && session->status == AgentStatus::Failed) {
+        notify(QStringLiteral("Agent session #%1 could not start: %2")
+                   .arg(sessionId)
+                   .arg(session->lastError), true);
         return;
     }
     if (m_issueQuickAdd)
@@ -4594,15 +4611,14 @@ void MainWindow::startOrganizationTaskAgentFromPrompt()
     if (m_quickAddModeSelector)
         details << m_quickAddModeSelector->currentText();
     const QString started =
-        QStringLiteral("Started %1 agent session #%2 on this task%3.")
+        QStringLiteral("Opened %1 agent session #%2 on this task%3. Follow its progress in Agents.")
             .arg(agentProviderName(provider))
             .arg(sessionId)
             .arg(details.isEmpty()
                      ? QString()
                      : QStringLiteral(" (%1)")
                            .arg(details.join(QStringLiteral(", "))));
-    m_organizationTasksStatus->setText(started);
-    logSystem(started);
+    notify(started, false);
     renderOrganizationTaskDetail();
 }
 
