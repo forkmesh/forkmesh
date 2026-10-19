@@ -46,10 +46,8 @@ struct AppRootView: View {
                 .ignoresSafeArea()
             if let services = boot.services {
                 ThemedAppView(services: services)
-                    .transition(.opacity)
             }
         }
-        .animation(.easeOut(duration: FmMotion.normal), value: boot.services != nil)
         .fmTracksUserActivity()
         .fmDismissesKeyboardOnTap()
         .task {
