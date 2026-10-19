@@ -57,7 +57,8 @@ def test_install_creates_schema_and_uninstall_exports_purges_and_reverses():
     assert (entry["installed"], entry["installedBy"]) == (True, "alice")
     assert crm_tables(runtime) == [
         "crm_contacts", "crm_deck_links", "crm_deck_page_views",
-        "crm_deck_sessions", "crm_email_sends", "crm_email_tracking", "crm_list_activity",
+        "crm_deck_sessions", "crm_email_reading", "crm_email_sends", "crm_email_tracking",
+        "crm_list_activity",
         "crm_mail_messages",
         "crm_outreach_log", "crm_outreach_team", "crm_settings",
         "crm_view_shares", "crm_views"]
@@ -118,7 +119,8 @@ def test_schema_survives_until_the_last_organization_uninstalls():
     assert first["data"]["schemaDropped"] is False
     assert crm_tables(runtime) == [
         "crm_contacts", "crm_deck_links", "crm_deck_page_views",
-        "crm_deck_sessions", "crm_email_sends", "crm_email_tracking", "crm_list_activity",
+        "crm_deck_sessions", "crm_email_reading", "crm_email_sends", "crm_email_tracking",
+        "crm_list_activity",
         "crm_mail_messages",
         "crm_outreach_log", "crm_outreach_team", "crm_settings",
         "crm_view_shares", "crm_views"]

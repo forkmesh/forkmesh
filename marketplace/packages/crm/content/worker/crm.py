@@ -310,8 +310,8 @@ AUTO_EMAIL_RULES = (
     "You write one short, personal outreach email for a small team. "
     "The body is plain text: no markdown, no HTML, no emoji, no [placeholders]. "
     "Use only facts given in the request; leave out anything you cannot back up. "
-    "Put the tracked link exactly as given on its own line, once, and add no "
-    "other link unless it appears in the request. Sign off with the sender's name.")
+    "When the request gives a tracked link, put it exactly as given on its own line, once. "
+    "Add no other link unless it appears in the request. Sign off with the sender's name.")
 AUTO_EMAIL_SYSTEM = AUTO_EMAIL_RULES + (
     " Reply with JSON only: {\"subject\": \"...\", \"body\": \"...\"}.")
 AUTO_EMAIL_AGENT_REPLY = (
@@ -350,7 +350,14 @@ TRACK_LOGO = "https://app.forkmesh.com/assets/logo-96.png"
 TRACK_HOME = "https://forkmesh.com"
 TRACK_QUIET_MS = 30 * 1000
 TRACK_PATH_RE = re.compile(
-    r"/api/crm/-/t/(o|c)/([0-9a-f]{32})\.([0-9a-f]{24})(?:\.png)?")
+    r"/api/crm/-/t/(o|c|r|d)/([0-9a-f]{32})\.([0-9a-f]{24})(?:\.([0-9]{1,3}))?(?:\.png)?")
+READ_MARKS = (5, 15, 30, 60, 120, 300)
+DEPTH_MARKS = (25, 50, 75, 100)
+READ_LAG_SHARE = 0.8
+DEPTH_MIN_LAG_MS = 1500
+READ_PING_SECONDS = 30
+EMAIL_ASSETS = "https://forkmesh.com/assets/email/"
+EMAIL_FONT = "https://forkmesh.com/assets/fonts/ABCFavorit-Bold.woff2"
 TRACK_AGENT_CHARS = 200
 WHOIS_RDAP = "https://rdap.org/ip/"
 WHOIS_DEPTH = 3
@@ -534,6 +541,14 @@ DATA_SCHEMA_UP = [
         last_at INTEGER NOT NULL DEFAULT 0 CHECK (last_at >= 0))""",
     "CREATE INDEX IF NOT EXISTS idx_crm_email_tracking_org "
     "ON crm_email_tracking(org_bi,last_at DESC)",
+    """CREATE TABLE IF NOT EXISTS crm_email_reading (
+        send_id TEXT PRIMARY KEY REFERENCES crm_email_sends(send_id) ON DELETE CASCADE,
+        org_bi TEXT NOT NULL,
+        view_at INTEGER NOT NULL DEFAULT 0 CHECK (view_at >= 0),
+        read_seconds INTEGER NOT NULL DEFAULT 0 CHECK (read_seconds >= 0),
+        depth INTEGER NOT NULL DEFAULT 0 CHECK (depth BETWEEN 0 AND 100),
+        read_at INTEGER NOT NULL DEFAULT 0 CHECK (read_at >= 0),
+        last_at INTEGER NOT NULL DEFAULT 0 CHECK (last_at >= 0))""",
     """CREATE TABLE IF NOT EXISTS crm_settings (
         org_bi TEXT PRIMARY KEY,
         updated_by_bi TEXT NOT NULL,
@@ -680,6 +695,7 @@ DATA_SCHEMA_DOWN = [
     "DROP TABLE IF EXISTS crm_view_shares",
     "DROP TABLE IF EXISTS crm_mail_messages",
     "DROP TABLE IF EXISTS crm_views",
+    "DROP TABLE IF EXISTS crm_email_reading",
     "DROP TABLE IF EXISTS crm_email_tracking",
     "DROP TABLE IF EXISTS crm_email_sends",
     "DROP TABLE IF EXISTS crm_contacts",
@@ -1125,7 +1141,8 @@ def _route(path):
         return "zoho-callback", "", "zoho", "callback"
     tracked = TRACK_PATH_RE.fullmatch(clean)
     if tracked:
-        return "track", "", tracked.group(1), tracked.group(2) + "." + tracked.group(3)
+        return "track", "", tracked.group(1), ".".join(
+            part for part in tracked.group(2, 3, 4) if part)
     opened = re.fullmatch(r"/api/crm/-/open/([0-9a-f]{32})", clean)
     if opened:
         return "open", "", "open", opened.group(1)
@@ -1338,8 +1355,11 @@ EMAIL_SELECT = (
     "s.send_id,s.org_bi,s.org_name,s.contact_id,s.sender_name,s.transport,s.status,"
     "s.external_id,s.created_at,s.sent_at,s.status_at,s.data,"
     "COALESCE(t.opens,0) AS opens,COALESCE(t.clicks,0) AS clicks,"
-    "COALESCE(t.opened_at,0) AS opened_at,COALESCE(t.clicked_at,0) AS clicked_at "
-    "FROM crm_email_sends s LEFT JOIN crm_email_tracking t ON t.send_id=s.send_id")
+    "COALESCE(t.opened_at,0) AS opened_at,COALESCE(t.clicked_at,0) AS clicked_at,"
+    "COALESCE(r.read_seconds,0) AS read_seconds,COALESCE(r.depth,0) AS read_depth,"
+    "COALESCE(r.read_at,0) AS read_at "
+    "FROM crm_email_sends s LEFT JOIN crm_email_tracking t ON t.send_id=s.send_id "
+    "LEFT JOIN crm_email_reading r ON r.send_id=s.send_id")
 
 
 async def _email_row(runtime, org_bi, send_id):
@@ -1379,6 +1399,9 @@ async def _email_project(runtime, row, include_content=True):
         "clicks": _integer(row.get("clicks")),
         "openedAt": _integer(row.get("opened_at")),
         "clickedAt": _integer(row.get("clicked_at")),
+        "readSeconds": _integer(row.get("read_seconds")),
+        "scrollDepth": _integer(row.get("read_depth")),
+        "readAt": _integer(row.get("read_at")),
         "automated": bool(data.get("auto")),
         "linkKind": _clean(data.get("linkKind"), 20),
         "rating": _integer(data.get("rating")),
@@ -5880,10 +5903,12 @@ def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
             if mode == "reach" else
             "We are already in touch with %s: pick up where the conversation below "
             "left off, answer anything they asked, and do not repeat the first pitch." % name)
-    link_note = ("This is %s's own link to our investor deck; we see when they open it. "
-                 "Ask them to look at it." % name if investor else
-                 "This is our referral link; it counts every visit. Invite them to try "
+    link_note = ("This is our referral link; it counts every visit. Invite them to try "
                  "%s through it." % org_name)
+    deck_note = ("Our whole investor deck, all fourteen slides from the problem to the round, "
+                 "is laid out in this email right under your note. Do not summarize it and do "
+                 "not add any link: keep the note to a few sentences, say the deck is just "
+                 "below, and ask them to reply with any questions.")
     notes = _text(contact.get("notes"), 20000).strip()
     if len(notes) > AUTO_EMAIL_NOTES_CHARS:
         notes = "…" + notes[-AUTO_EMAIL_NOTES_CHARS:]
@@ -5900,7 +5925,11 @@ def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
         "that would fit anyone. Plain, warm words, short paragraphs, no hype.",
         "Keep the body under %d words with one clear, low-effort ask, signed by %s." % (
             180 if investor else 140, sender),
-        "", "## The tracked link (include it exactly once, on its own line)", link, link_note,
+    ]
+    lines += (["", "## The investor deck", deck_note] if investor else
+              ["", "## The tracked link (include it exactly once, on its own line)", link,
+               link_note])
+    lines += [
         "", "## About us: " + org_name,
         brief or "(No description saved: describe us only in general terms.)",
         "", "## About " + name,
@@ -5928,7 +5957,7 @@ def _auto_email_draft(subject, body, link, prompt):
         return None
     if any(url != link and url not in prompt for url in _urls(body)):
         return None
-    if link not in _urls(body):
+    if link and link not in _urls(body):
         body += "\n\n" + link
     return subject, body
 
@@ -5964,23 +5993,586 @@ async def _click_signature(runtime, send_id, url):
     return (await runtime.blind("crm-click:%s:%s" % (send_id, url)))[:24]
 
 
-async def _tracked_email_html(runtime, send_id, text, origin):
+MAIL_SANS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif"
+MAIL_DISPLAY = "'FM Favorit'," + MAIL_SANS
+MAIL_MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
+MAIL_INK = "#101012"
+MAIL_BODY = "#5f6270"
+MAIL_FAINT = "#9a9ca8"
+MAIL_LINE = "#e4e5ea"
+MAIL_ACCENT = "#0969da"
+DECK_MAIL_PROBLEM = (
+    ("01", "Work is fragmented",
+     "Tasks, transcripts, branches, pull requests and reviews live across disconnected tools."),
+    ("02", "Accountability is shallow",
+     "Teams need model, cost, tool-use, authorship and approval evidence for every delegated "
+     "change."),
+    ("03", "Control is rented",
+     "Code, identity, collaboration, and often the agent experience, stay bound to a central "
+     "platform."),
+)
+DECK_MAIL_STEPS = (
+    ("01 · Assign", "Start from an issue or a task"),
+    ("02 · Choose", "Run Claude Code or Codex"),
+    ("03 · Isolate", "A worktree and branch per session"),
+    ("04 · Orchestrate", "Sessions in parallel"),
+    ("05 · Prove", "Capture metadata and patch"),
+    ("06 · Gate", "A human inspects and merges"),
+)
+DECK_MAIL_PROOF = (
+    ("51,457", "Commits in the repository"),
+    ("90", "Days since the first commit"),
+    ("24", "Contributors, human and agent"),
+    ("63", "Community pull requests through the ledger"),
+    ("54", "Repositories on the live network"),
+)
+DECK_MAIL_DEVICES = (
+    ("Watch", "Follow, prompt, stop and review agents from the wrist.", "In build"),
+    ("AR glasses", "A 201\u2033 virtual workspace for repos, sessions and diffs.", "R&amp;D"),
+)
+DECK_MAIL_LADDER = (
+    ("20", "$0.5M ARR", "Round milestone"),
+    ("400", "$10M ARR", "Scale proof"),
+    ("4,000", "$100M ARR", "Venture outcome"),
+)
+DECK_MAIL_FUNDS = (
+    ("Product &amp; engineering", 55, "$550K"),
+    ("Infrastructure &amp; security", 20, "$200K"),
+    ("GTM &amp; developer ecosystem", 15, "$150K"),
+    ("Legal, ops &amp; contingency", 10, "$100K"),
+)
+DECK_MAIL_TARGETS = (
+    ("20", " paid organizations at a $25K blended ACV target"),
+    ("$500K ARR", " plus referenceable deployment evidence"),
+    ("Proven", " faster issue-to-accepted-PR cycles, with retention"),
+    ("Hardened", " agent controls, multi-mainnode reliability and an independent security "
+                 "review"),
+)
+DECK_MAIL_TEAM = (
+    ("jett", "Jett Vale", "CEO · Founder",
+     "10+ years across software, startups and hardware. Built and exited a prior company."),
+    ("kaif", "Md. Kaif", "CTO · Co-founder",
+     "Distributed systems and Git workflow builder. 65+ merged open-source contributions "
+     "informed the problem."),
+)
+DECK_MAIL_WHY_STATS = (
+    ("180M+", "Developers building on GitHub"),
+    ("4.7M", "Paid GitHub Copilot subscribers"),
+    ("+75%", "Paid Copilot growth, year over year"),
+)
+DECK_MAIL_WHY_FLOW = (
+    ("Model choice", "Teams use multiple coding agents",
+     "Claude, Codex and the next one. No single vendor wins every task."),
+    ("Macro delegation", "Agents own tasks, not just autocomplete",
+     "Issues in, reviewed pull requests out."),
+    ("Control plane", "Provenance, policy and trusted merges become mandatory",
+     "Someone has to own the record of who did what, with which model, at what cost."),
+)
+DECK_MAIL_PROOF_NOTES = (
+    "<b>Verified in source and Git history.</b> Agent branches are merged into main "
+    "continuously; every merge carries the session's model, cost and patch.",
+    "<b>Live in production.</b> Desktop nodes host repositories, mirrors serve clones, and "
+    "the deck is itself served by the platform.",
+)
+DECK_MAIL_ROADMAP = (
+    ("Live in production", "Agent-native forge shipped", (
+        "Issue or prompt &rarr; Claude Code / Codex session",
+        "Isolated worktree and branch for every agent run",
+        "Parallel sessions with stream, steer, stop and resume",
+        "Patch capture, session metadata and a reviewable pull request",
+        "Signed collaboration events and a deliberate human merge")),
+    ("Funded roadmap", "Enterprise control plane", (
+        "Per-agent cryptographic identity, policy and cost controls",
+        "Universal sandbox enforcement for every runtime",
+        "SSO, RBAC, audit exports and admin controls",
+        "Multiple mainnodes with measured failover reliability",
+        "Security hardening, independent review and a SOC 2 program")),
+)
+DECK_MAIL_ICP = (
+    "<b>Buyer:</b> CTO, VP Engineering, Security",
+    "<b>Trigger:</b> agent throughput rises faster than reviewer trust and control",
+    "<b>Land:</b> one agent workflow, no big-bang migration",
+)
+DECK_MAIL_MOTION = (
+    ("Prove", "Dogfooding plus a live issue-to-agent-to-PR demo."),
+    ("Pilot", "A design partner delegates one real issue queue."),
+    ("Convert", "The team buys orchestration, governance and support."),
+    ("Expand", "More agents, repositories, policies and nodes."),
+)
+DECK_MAIL_PLANS = (
+    ("Community", "Free, open source", (
+        "Local-first Git forge", "Claude and Codex sessions", "Signed issues and pull requests")),
+    ("Agent team", "Subscription plus usage", (
+        "Multi-agent orchestration", "Sessions, usage and provenance",
+        "Managed collaboration and support")),
+    ("Enterprise", "Annual contract", (
+        "Policy, RBAC and audit controls", "Self-hosted and federated options",
+        "Security, SLA and support")),
+)
+DECK_MAIL_RIVALS = (
+    ("Hosted AI forges", "Copilot · GitLab Duo", "Integrated forge and agents",
+     "Platform-controlled code and control plane", "Sovereign alternative"),
+    ("Coding agents", "Claude · Codex · Cursor", "Best-in-class coding",
+     "Not a shared Git system of record", "Orchestrate"),
+    ("Peer-to-peer Git", "Radicle", "Sovereign collaboration",
+     "Agent orchestration is not the core", "Closest infrastructure peer"),
+    ("Self-hosted forges", "Forgejo · Gitea", "Instance deployment control",
+     "Agent workflow remains fragmented", "Agent-native evolution"),
+)
+DECK_MAIL_SOURCES = (
+    ("ForkMesh Git history", "Agent workflow and dogfooding snapshot through 13 Sep 2026"),
+    ("ForkMesh live network", "Catalog and node counts from the public status API, 13 Sep 2026"),
+    ("GitHub Octoverse 2025", "180M+ developers; AI-coding adoption context"),
+    ("Microsoft FY26 Q2", "4.7M paid Copilot subscribers; +75% year over year; Agent HQ"),
+    ("GitLab Duo · Radicle", "Incumbent agent capability and the peer-to-peer comparator"),
+    ("Definitions", "Dogfooding metrics are internal Git history, not customer traction. ARR "
+     "and ACV figures are forward-looking targets."),
+)
+
+
+def _mail_eyebrow(text, dark=False):
+    return ('<div style="margin:0 0 14px;font:600 11px/1.4 %s;letter-spacing:.08em;'
+            'text-transform:uppercase;color:%s"><span style="display:inline-block;width:8px;'
+            'height:8px;margin-right:8px;border-radius:3px;background:%s;vertical-align:0">'
+            '</span>%s</div>') % (MAIL_MONO, "#a3a3a3" if dark else MAIL_FAINT,
+                                  "#58a6ff" if dark else MAIL_ACCENT, text)
+
+
+def _mail_heading(text, size=28, dark=False):
+    return ('<h2 class="fm-h" style="margin:0;font:700 %dpx/1.1 %s;letter-spacing:-.03em;'
+            'color:%s">%s</h2>') % (size, MAIL_DISPLAY, "#f5f5f5" if dark else MAIL_INK, text)
+
+
+def _mail_lede(text, dark=False):
+    return ('<p style="margin:12px 0 0;font:400 15px/1.6 %s;color:%s">%s</p>'
+            % (MAIL_SANS, "#a3a3a3" if dark else MAIL_BODY, text))
+
+
+def _mail_card(inner, dark=False):
+    return ('<tr><td style="padding:0 0 14px"><table role="presentation" width="100%%" '
+            'cellpadding="0" cellspacing="0" class="fm-rise" style="border-collapse:separate;'
+            'background:%s;border:1px solid %s;border-radius:18px"><tr><td class="fm-pad" '
+            'style="padding:30px 32px">%s</td></tr></table></td></tr>') % (
+                "#0b0b0c" if dark else "#ffffff", "#0b0b0c" if dark else MAIL_LINE, inner)
+
+
+def _mail_image(name, width, alt, radius=12):
+    return ('<img src="%s%s" width="%d" alt="%s" style="display:block;width:100%%;'
+            'max-width:%dpx;height:auto;border:0;border-radius:%dpx;outline:none">') % (
+                EMAIL_ASSETS, name, width, escape(alt, quote=True), width, radius)
+
+
+def _mail_tone(dark):
+    return ("#f5f5f5", "#a3a3a3", "#2a2a2e", "#58a6ff") if dark else (
+        MAIL_INK, MAIL_BODY, MAIL_LINE, MAIL_ACCENT)
+
+
+def _mail_bullets(items, dark=False, top=14):
+    ink, body, _, accent = _mail_tone(dark)
+    return '<ul style="margin:%dpx 0 0;padding:0 0 0 18px">%s</ul>' % (top, "".join(
+        '<li style="margin:0 0 7px;font:400 14px/1.55 %s;color:%s">%s</li>' % (
+            MAIL_SANS, body, item.replace("<b>", '<b style="color:%s">' % ink))
+        for item in items))
+
+
+def _mail_kicker(text, dark=False):
+    return ('<div style="margin:0 0 6px;font:600 10.5px/1.4 %s;letter-spacing:.08em;'
+            'text-transform:uppercase;color:%s">%s</div>') % (
+                MAIL_MONO, _mail_tone(dark)[3], text)
+
+
+def _mail_chain(items, joiner="&rarr;"):
+    parts = ['<span style="display:inline-block;padding:4px 11px;border:1px solid %s;'
+             'border-radius:99px;white-space:nowrap">%s</span>' % (MAIL_LINE, item)
+             for item in items]
+    return ('<p style="margin:18px 0 0;font:600 12.5px/2.3 %s;color:%s">%s</p>' % (
+        MAIL_SANS, MAIL_INK, (' <span style="color:%s">%s</span> ' % (MAIL_FAINT, joiner))
+        .join(parts)))
+
+
+def _mail_note(text, dark=False):
+    return ('<p style="margin:14px 0 0;font:400 12.5px/1.5 %s;color:%s">%s</p>'
+            % (MAIL_SANS, "#6b6b74" if dark else MAIL_FAINT, text))
+
+
+def _mail_marker(depth):
+    return ('<tr><td class="fm-d%d" style="height:1px;line-height:1px;font-size:1px;'
+            'background-repeat:no-repeat;background-size:1px 1px">&#8203;</td></tr>' % depth)
+
+
+def _mail_style(beacon, deck):
+    reads = "".join(
+        ".fm-r%d{animation:fm-r%d 1ms linear %ds forwards}"
+        "@keyframes fm-r%d{to{background-image:url(\"%s\")}}" % (
+            mark, mark, mark, mark, beacon("r", mark)) for mark in READ_MARKS)
+    depths = "".join(
+        ".fm-d%d{animation:fm-d%d linear both;animation-timeline:view();"
+        "animation-range:entry 0%% entry 100%%}"
+        "@keyframes fm-d%d{0%%,90%%{background-image:none}"
+        "100%%{background-image:url(\"%s\")}}" % (
+            mark, mark, mark, beacon("d", mark)) for mark in DEPTH_MARKS) if deck else ""
+    layout = (
+        "<style>@font-face{font-family:'FM Favorit';src:url(\"" + EMAIL_FONT + "\") "
+        "format('woff2');font-weight:700}"
+        "@media (max-width:620px){.fm-pad{padding:24px 22px!important}"
+        ".fm-h1{font-size:34px!important}.fm-h{font-size:24px!important}"
+        ".fm-plan{max-width:none!important;margin-right:0!important}}"
+        "a.fm-btn:hover,a.fm-cta:hover{opacity:.88}</style>")
+    motion = (
+        "<style>@keyframes fm-shine{0%,62%{background-position:180% 0}"
+        "100%{background-position:-80% 0}}"
+        ".fm-cta{background-image:linear-gradient(110deg,#1c1c1f 38%,#4a4a52 50%,#1c1c1f 62%);"
+        "background-size:250% 100%;animation:fm-shine 4.5s ease-in-out infinite}"
+        "@keyframes fm-grow{from{width:0}}"
+        ".fm-fill{animation:fm-grow 1.8s cubic-bezier(.2,.7,.2,1) both}"
+        "@keyframes fm-live{0%{box-shadow:0 0 0 0 rgba(63,185,80,.55)}"
+        "70%,100%{box-shadow:0 0 0 9px rgba(63,185,80,0)}}"
+        ".fm-live{animation:fm-live 2.4s ease-out infinite}"
+        "@keyframes fm-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}"
+        ".fm-float{animation:fm-float 6s ease-in-out infinite}"
+        + reads +
+        "@supports (animation-timeline: view()){"
+        ".fm-rise{animation:fm-rise linear both;animation-timeline:view();"
+        "animation-range:entry 0% cover 26%}"
+        "@keyframes fm-rise{from{opacity:.35;transform:translateY(26px) scale(.97)}"
+        "to{opacity:1;transform:none}}"
+        ".fm-fill{animation:fm-grow linear both;animation-timeline:view();"
+        "animation-range:entry 30% cover 45%}" + depths + "}</style>")
+    return layout + motion
+
+
+def _mail_reads():
+    return "".join(
+        '<div class="fm-r%d" style="width:1px;height:1px;line-height:1px;font-size:1px;'
+        'background-repeat:no-repeat;background-size:1px 1px">&#8203;</div>' % mark
+        for mark in READ_MARKS)
+
+
+def _mail_deck_sections():
+    rows = []
+    rows.append('<tr><td style="padding:0 0 14px">%s</td></tr>' % _mail_image(
+        "mesh.gif", 600, "ForkMesh mirrors your repositories across independent hosts.", 18))
+    rows.append(_mail_card(
+        _mail_eyebrow("ForkMesh · Investor deck · September 2026")
+        + '<h1 class="fm-h fm-h1" style="margin:0;font:700 42px/1.04 %s;letter-spacing:-.04em;'
+          'color:%s">Code with agents.<br>Own the forge.</h1>' % (MAIL_DISPLAY, MAIL_INK)
+        + _mail_lede("ForkMesh turns Claude Code and Codex into attributable contributors on a "
+                     "local-first Git platform you control.")
+        + '<p style="margin:22px 0 22px"><span style="display:inline-block;padding:11px 16px;'
+          'border-radius:12px;background:#1c1c1f;color:#ffffff;font:700 13px/1 %s">'
+          'Raising $1.0M · 18-month plan</span></p>' % MAIL_SANS
+        + _mail_image("hero.jpg", 536, "The ForkMesh desktop app on a laptop and the mobile app "
+                      "on a phone.", 12)))
+    problem = "".join(
+        '<tr><td valign="top" style="padding:14px 14px 14px 0;border-top:1px solid %s;'
+        'font:600 11px/1.6 %s;color:%s;width:28px">%s</td><td style="padding:14px 0;'
+        'border-top:1px solid %s"><div style="font:700 16px/1.35 %s;color:%s">%s</div>'
+        '<div style="margin-top:4px;font:400 14px/1.55 %s;color:%s">%s</div></td></tr>' % (
+            MAIL_LINE, MAIL_MONO, MAIL_ACCENT, k, MAIL_LINE, MAIL_SANS, MAIL_INK, title,
+            MAIL_SANS, MAIL_BODY, text) for k, title, text in DECK_MAIL_PROBLEM)
+    rows.append(_mail_card(
+        _mail_eyebrow("Problem · 02") + _mail_heading("Agents work differently. The forge does not.")
+        + _mail_lede("Coding is shifting from autocomplete to delegated work, but orchestration, "
+                     "accountability and ownership remain fragmented across three control "
+                     "planes.")
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+          'style="margin-top:18px">%s</table>' % problem
+        + _mail_chain(("IDE / CLI", "Hosted forge", "Model vendor"))
+        + '<p style="margin:6px 0 0;font:600 14px/1.5 %s;color:%s">Three control planes, one '
+          'overloaded reviewer. More code is cheap. Trusted merges are scarce.</p>' % (
+              MAIL_SANS, MAIL_INK)))
+    stats = "".join(
+        '<td valign="top" width="33%%" style="padding:0 10px 0 0"><div style="font:700 26px/1 '
+        '%s;letter-spacing:-.03em;color:%s">%s</div><div style="margin-top:8px;font:600 10px/1.45 '
+        '%s;letter-spacing:.06em;text-transform:uppercase;color:#a3a3a3">%s</div></td>' % (
+            MAIL_DISPLAY, "#58a6ff" if index == 2 else "#f5f5f5", value, MAIL_MONO, label)
+        for index, (value, label) in enumerate(DECK_MAIL_WHY_STATS))
+    why = "".join(
+        '<div style="padding:12px 0;border-top:1px solid #2a2a2e">%s<div style="font:700 15px/1.35 '
+        '%s;color:#f5f5f5">%s</div><div style="margin-top:3px;font:400 13.5px/1.5 %s;'
+        'color:#a3a3a3">%s</div></div>' % (_mail_kicker(k, True), MAIL_SANS, title, MAIL_SANS, text)
+        for k, title, text in DECK_MAIL_WHY_FLOW)
+    rows.append(_mail_card(
+        _mail_eyebrow("Why now · 03", dark=True)
+        + _mail_heading("AI coding is already a budget line. Agent governance is next.", dark=True)
+        + _mail_lede("The winning platform will coordinate many models, preserve provenance and "
+                     "keep the system of record under customer control.", dark=True)
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+          'style="margin:22px 0 18px"><tr>%s</tr></table>' % stats + why
+        + _mail_note("GitHub Octoverse 2025 · Microsoft FY26 Q2", True), dark=True))
+    rows.append(_mail_marker(25))
+    steps = "".join(
+        '<div style="padding:10px 0;border-top:1px solid %s"><div style="font:600 10.5px/1.4 '
+        '%s;letter-spacing:.08em;text-transform:uppercase;color:%s">%s</div><div '
+        'style="margin-top:3px;font:700 14.5px/1.35 %s;color:%s">%s</div></div>' % (
+            MAIL_LINE, MAIL_MONO, MAIL_ACCENT, k, MAIL_SANS, MAIL_INK, title)
+        for k, title in DECK_MAIL_STEPS)
+    rows.append(_mail_card(
+        _mail_eyebrow("Product · 04")
+        + _mail_heading("One prompt becomes a reviewed, attributable pull request.")
+        + _mail_lede("ForkMesh is the orchestration and system-of-record layer around the "
+                     "coding agents teams already choose.")
+        + '<div style="margin-top:20px;font-size:0;text-align:center">'
+          '<div style="display:inline-block;width:100%%;max-width:240px;vertical-align:top;'
+          'text-align:center"><div class="fm-float">%s</div></div>'
+          '<div style="display:inline-block;width:100%%;max-width:268px;vertical-align:top;'
+          'text-align:left;padding-left:4px">%s</div></div>' % (
+              _mail_image("agent-flow.gif", 240, "The mobile app moving one prompt from "
+                          "assignment to a reviewed merge.", 0), steps)
+        + '<p style="margin:16px 0 0;font:600 13.5px/1.6 %s;color:%s">Replace the '
+          'Copilot-bound workflow · Keep model choice · Keep forge ownership</p>' % (
+              MAIL_SANS, MAIL_INK)))
+    proof = "".join(
+        '<tr><td style="padding:11px 16px 11px 0;border-top:1px solid %s;font:700 24px/1 %s;'
+        'letter-spacing:-.03em;color:%s;white-space:nowrap;width:96px">%s</td><td '
+        'style="padding:11px 0;border-top:1px solid %s;font:400 14px/1.45 %s;color:%s">%s'
+        '</td></tr>' % (MAIL_LINE, MAIL_DISPLAY, MAIL_INK, value, MAIL_LINE, MAIL_SANS,
+                        MAIL_BODY, label) for value, label in DECK_MAIL_PROOF)
+    rows.append(_mail_card(
+        _mail_eyebrow("Product proof · 05")
+        + _mail_heading("ForkMesh is already building ForkMesh.")
+        + _mail_lede("Dogfooding proves the issue &rarr; agent &rarr; pull request &rarr; merge "
+                     "loop. Numbers are from the repository's own Git history and the live "
+                     "network on 13 September 2026.")
+        + '<div style="margin:20px 0 6px">%s</div>' % _mail_image(
+            "count.gif", 536, "7,416 agent branches merged into main.", 0)
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
+          % proof
+        + _mail_bullets(DECK_MAIL_PROOF_NOTES, top=16)
+        + _mail_note("Dogfooding proof, not customer traction · Round objective: repeatable "
+                     "paid adoption")))
+    roadmap = []
+    for index, (kicker, title, items) in enumerate(DECK_MAIL_ROADMAP):
+        dark = index == 1
+        roadmap.append(
+            '<tr><td style="padding:%s"><table role="presentation" width="100%%" cellpadding="0" '
+            'cellspacing="0" style="border-collapse:separate;background:%s;border:1px solid %s;'
+            'border-radius:14px"><tr><td style="padding:18px 20px">%s<div style="font:700 16px/1.3 '
+            '%s;color:%s">%s</div>%s</td></tr></table></td></tr>' % (
+                "12px 0 0" if index else "18px 0 0", "#141416" if dark else "#ffffff",
+                "#141416" if dark else MAIL_LINE, _mail_kicker(kicker, dark), MAIL_SANS,
+                "#f5f5f5" if dark else MAIL_INK, title, _mail_bullets(items, dark, 10)))
+    rows.append(_mail_card(
+        _mail_eyebrow("Roadmap · 06")
+        + _mail_heading("The agent loop works. This round hardens it.")
+        + _mail_lede("Exactly what is live today, and what the capital is designed to unlock.")
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
+          % "".join(roadmap)
+        + _mail_note("Milestones are targets, not current traction")))
+    devices = "".join(
+        '<tr><td style="padding:12px 0;border-top:1px solid #2a2a2e"><div style="font:700 '
+        '15px/1.35 %s;color:#f5f5f5">%s</div><div style="margin-top:3px;font:400 13.5px/1.5 %s;'
+        'color:#a3a3a3">%s</div></td><td align="right" valign="middle" style="padding:12px 0 12px '
+        '12px;border-top:1px solid #2a2a2e"><span style="display:inline-block;padding:6px 9px;'
+        'border-radius:99px;border:1px solid %s;font:600 10.5px/1 %s;letter-spacing:.08em;'
+        'text-transform:uppercase;color:%s;white-space:nowrap">%s</span></td></tr>' % (
+            MAIL_SANS, name, MAIL_SANS, text, "#2f6b3a" if index == 0 else "#2a2a2e", MAIL_MONO,
+            "#3fb950" if index == 0 else "#6b6b74", status)
+        for index, (name, text, status) in enumerate(DECK_MAIL_DEVICES))
+    rows.append(_mail_card(
+        _mail_eyebrow("Beyond the desk · 07", dark=True)
+        + _mail_heading("Agents on your wrist. Your code in the room.", dark=True)
+        + _mail_lede("Work with agents on your watch and be connected with your code in a virtual "
+                     "world where efficiency is seen.", dark=True)
+        + '<div style="margin:20px 0 8px">%s</div>' % _mail_image(
+            "xr.jpg", 536, "AR glasses showing the ForkMesh desktop app and a Claude Code session "
+            "inside the lenses, next to a watch listing running agents.", 0)
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
+          % devices
+        + _mail_note("Pictured: AOC Air Mega AR glasses · 201″ micro-OLED · FHD 120 Hz.",
+                     True), dark=True))
+    rows.append(_mail_marker(50))
+    motion = "".join(
+        '<tr><td valign="top" style="padding:12px 12px 12px 0;border-top:1px solid %s;width:14px">'
+        '<div style="width:8px;height:8px;margin-top:4px;border:2px solid %s;border-radius:50%%">'
+        '</div></td><td style="padding:12px 0;border-top:1px solid %s">%s<div style="font:400 '
+        '14px/1.5 %s;color:%s">%s</div></td></tr>' % (
+            MAIL_LINE, MAIL_ACCENT, MAIL_LINE, _mail_kicker(k), MAIL_SANS, MAIL_BODY, text)
+        for k, text in DECK_MAIL_MOTION)
+    rows.append(_mail_card(
+        _mail_eyebrow("Customer &amp; go-to-market · 08")
+        + _mail_heading("Agent-first teams are the wedge. Sovereign infrastructure expands the "
+                        "deal.")
+        + _mail_lede("A founder-led motion where every step has an observable conversion event.")
+        + '<div style="margin-top:20px">%s<div style="font:700 16px/1.3 %s;color:%s">20 to 200 '
+          'person software teams</div><div style="margin-top:4px;font:400 14px/1.55 %s;color:%s">'
+          'Using multiple coding agents on private code, and feeling the review, provenance and '
+          'platform-control gap.</div>%s</div>' % (
+              _mail_kicker("Initial ICP hypothesis"), MAIL_SANS, MAIL_INK, MAIL_SANS, MAIL_BODY,
+              _mail_bullets(DECK_MAIL_ICP, top=12))
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+          'style="margin-top:8px">%s</table>' % motion
+        + _mail_chain(("Prompt", "Agent PR", "Human-approved merge", "Paid pilot", "ARR",
+                       "Expansion"))
+        + _mail_note("Founder-led until 20 paid organizations")))
+    ladder = "".join(
+        '<tr><td style="padding:0 0 10px"><table role="presentation" width="%d%%" '
+        'cellpadding="0" cellspacing="0" style="border-collapse:separate;border:1px solid %s;'
+        'border-radius:14px;background:#ffffff"><tr><td style="padding:14px 16px;font:700 22px/1 '
+        '%s;letter-spacing:-.03em;color:%s;width:72px">%s</td><td style="padding:14px 0;'
+        'font:400 13.5px/1.4 %s;color:%s">Paid organizations</td><td align="right" '
+        'style="padding:14px 16px;font:700 16px/1.2 %s;color:%s;white-space:nowrap">%s'
+        '<div style="margin-top:4px;font:600 10px/1 %s;letter-spacing:.08em;'
+        'text-transform:uppercase;color:%s">%s</div></td></tr></table></td></tr>' % (
+            width, MAIL_ACCENT if index == 2 else MAIL_LINE, MAIL_DISPLAY, MAIL_INK, orgs,
+            MAIL_SANS, MAIL_BODY, MAIL_DISPLAY, MAIL_INK, arr, MAIL_MONO, MAIL_ACCENT, note)
+        for index, ((orgs, arr, note), width) in enumerate(zip(DECK_MAIL_LADDER, (80, 90, 100))))
+    rows.append(_mail_card(
+        _mail_eyebrow("Market · 09")
+        + _mail_heading("Paid AI coding is proven. ForkMesh sells the control layer around it.")
+        + _mail_lede("A bottom-up model is more credible than an untraceable TAM / SAM / SOM "
+                     "stack: 4.7M paid Copilot subscribers today, and a $25K blended ACV "
+                     "hypothesis per organization.")
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+          'style="margin-top:20px">%s</table>' % ladder
+        + _mail_note("Microsoft FY26 Q2 · Illustrative model: price and conversion are validated "
+                     "in the design-partner phase.")))
+    plans = []
+    for index, (kicker, title, items) in enumerate(DECK_MAIL_PLANS):
+        dark = index == 1
+        plans.append(
+            '<div class="fm-plan" style="display:inline-block;width:100%%;max-width:170px;'
+            'vertical-align:top;margin:0 6px 10px 0;text-align:left"><table role="presentation" width="100%%" '
+            'cellpadding="0" cellspacing="0" style="border-collapse:separate;background:%s;'
+            'border:1px solid %s;border-radius:14px"><tr><td style="padding:16px">%s<div '
+            'style="font:700 15px/1.3 %s;color:%s">%s</div>%s</td></tr></table></div>' % (
+                "#141416" if dark else "#ffffff", "#141416" if dark else MAIL_LINE,
+                _mail_kicker(kicker, dark), MAIL_SANS, "#f5f5f5" if dark else MAIL_INK, title,
+                _mail_bullets(items, dark, 10).replace("14px/1.55", "13px/1.45")))
+    rows.append(_mail_card(
+        _mail_eyebrow("Business model · 10")
+        + _mail_heading("Monetize orchestration and governance, not model lock-in.")
+        + _mail_lede("Teams bring the agents they choose. ForkMesh charges for the shared "
+                     "workflow, the control plane and the forge.")
+        + '<div style="margin-top:20px;font-size:0">%s</div>' % "".join(plans)
+        + _mail_chain(("Land one workflow", "Expand agents and repositories",
+                       "Standardize organization-wide"))
+        + _mail_note("Usage-priced components protect margin as agent workloads scale")))
+    rivals = "".join(
+        '<tr><td style="padding:14px 0;border-top:1px solid %s"><div style="font:700 15px/1.3 '
+        '%s;color:%s">%s <span style="font-weight:400;color:%s">· %s</span></div><div '
+        'style="margin-top:4px;font:400 13.5px/1.5 %s;color:%s">Best at %s. %s.</div><div '
+        'style="margin-top:6px;font:700 12.5px/1.4 %s;color:%s">ForkMesh: %s</div></td></tr>' % (
+            MAIL_LINE, MAIL_SANS, MAIL_INK, category, MAIL_FAINT, examples, MAIL_SANS, MAIL_BODY,
+            best[0].lower() + best[1:], tradeoff, MAIL_SANS, MAIL_ACCENT, role)
+        for category, examples, best, tradeoff, role in DECK_MAIL_RIVALS)
+    rows.append(_mail_card(
+        _mail_eyebrow("Competition · 11")
+        + _mail_heading("ForkMesh owns the intersection others optimize separately.")
+        + _mail_lede("The alternatives are strong. The wedge is model-flexible agents, the full "
+                     "forge workflow and local-first ownership, together.")
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+          'style="margin-top:18px">%s</table>' % rivals
+        + _mail_note("GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle")))
+    rows.append(_mail_marker(75))
+    team = "".join(
+        '<div style="display:inline-block;width:100%%;max-width:258px;vertical-align:top;'
+        'margin:0 0 12px;text-align:left"><table role="presentation" cellpadding="0" '
+        'cellspacing="0"><tr><td valign="top" style="padding:0 14px 0 0"><img src="%s%s.png" '
+        'width="56" height="56" alt="" style="display:block;width:56px;height:56px;border:0;'
+        'border-radius:14px"></td><td valign="top"><div style="font:700 17px/1.2 %s;'
+        'letter-spacing:-.02em;color:%s">%s</div><div style="margin:4px 0 6px;font:600 10.5px/1 '
+        '%s;letter-spacing:.08em;text-transform:uppercase;color:%s">%s</div><div style="font:400 '
+        '13.5px/1.5 %s;color:%s">%s</div></td></tr></table></div>' % (
+            EMAIL_ASSETS, key, MAIL_DISPLAY, MAIL_INK, name, MAIL_MONO, MAIL_ACCENT, role,
+            MAIL_SANS, MAIL_BODY, bio) for key, name, role, bio in DECK_MAIL_TEAM)
+    rows.append(_mail_card(
+        _mail_eyebrow("Team · 12")
+        + _mail_heading("Company-building experience meets founder-problem fit.")
+        + _mail_lede("Operating experience on one side, protocol, Git and distributed-systems "
+                     "execution on the other. The pain became the protocol.")
+        + '<div style="margin-top:20px;font-size:0">%s</div>' % team))
+    funds = "".join(
+        '<tr><td style="padding:0 0 12px"><div style="font:600 13.5px/1.4 %s;color:#f5f5f5">%s'
+        '<span style="float:right;font:600 12px/1.4 %s;color:#a3a3a3">%s · %d%%</span></div>'
+        '<div style="margin-top:6px;height:8px;border-radius:99px;background:#2a2a2e">'
+        '<div class="fm-fill" style="width:%d%%;height:8px;border-radius:99px;'
+        'background:#58a6ff"></div></div></td></tr>' % (
+            MAIL_SANS, label, MAIL_MONO, amount, share, share)
+        for label, share, amount in DECK_MAIL_FUNDS)
+    targets = "".join(
+        '<li style="margin:0 0 8px;font:400 14px/1.55 %s;color:#a3a3a3"><b style="color:#f5f5f5">'
+        '%s</b>%s</li>' % (MAIL_SANS, lead, rest) for lead, rest in DECK_MAIL_TARGETS)
+    rows.append(_mail_card(
+        _mail_eyebrow("The round · 13", dark=True)
+        + _mail_heading("$1M turns product proof into enterprise pull.", dark=True)
+        + _mail_lede("An 18-month plan to win 20 paid teams and harden the control plane. "
+                     "Average budget envelope: about $55.6K per month.", dark=True)
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+          'style="margin-top:22px">%s</table>' % funds
+        + '<div style="margin-top:10px;padding:18px 20px;border:1px solid #2f4a6b;'
+          'border-radius:14px"><div style="margin:0 0 10px;font:600 10.5px/1.4 %s;'
+          'letter-spacing:.08em;text-transform:uppercase;color:#58a6ff"><span class="fm-live" '
+          'style="display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%%;'
+          'background:#3fb950"></span>Target · Q4 2027 · Series A readiness</div><ul '
+          'style="margin:0;padding:0 0 0 18px">%s</ul></div>' % (MAIL_MONO, targets)
+        + _mail_note("Milestones are targets, not current traction", True), dark=True))
+    sources = "".join(
+        '<tr><td valign="top" style="padding:10px 14px 10px 0;border-top:1px solid %s;'
+        'font:700 13px/1.45 %s;color:%s;width:40%%">%s</td><td style="padding:10px 0;'
+        'border-top:1px solid %s;font:400 13px/1.45 %s;color:%s">%s</td></tr>' % (
+            MAIL_LINE, MAIL_SANS, MAIL_INK, name, MAIL_LINE, MAIL_SANS, MAIL_BODY, text)
+        for name, text in DECK_MAIL_SOURCES)
+    rows.append(_mail_card(
+        _mail_eyebrow("Sources &amp; contact · 14")
+        + _mail_heading("Let's build the forge teams own.", size=30)
+        + _mail_lede("The agent-native, local-first Git platform for teams that refuse to rent "
+                     "their system of record. Raising $1.0M.")
+        + '<p style="margin:18px 0 0;font:600 15px/1.5 %s;color:%s">Just reply to this email: '
+          'it goes straight to the founders.</p>' % (MAIL_SANS, MAIL_INK)
+        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+          'style="margin-top:20px">%s</table>' % sources))
+    rows.append(_mail_marker(100))
+    return "".join(rows)
+
+
+async def _tracked_email_html(runtime, send_id, text, origin, link_kind="", link="",
+                              reader="", subject=""):
     token = await _track_token(runtime, send_id)
+    deck = link_kind == "deck" and DECK_LINK_MARK in link
     tracked = {}
     for url in _urls(text) + [TRACK_HOME]:
         tracked[url] = "%s/api/crm/-/t/c/%s?%s" % (origin, token, urlencode({
             "u": url, "s": await _click_signature(runtime, send_id, url)}))
+    beacon = lambda action, mark: "%s/api/crm/-/t/%s/%s.%d.png" % (origin, action, token, mark)
     paragraphs = "".join(
         '<p style="margin:0 0 14px">%s</p>' % _linked_html(block.strip(), tracked)
         .replace("\n", "<br>")
         for block in re.split(r"\n\s*\n", text.strip()) if block.strip())
-    logo = ('<a href="%s"><img src="%s/api/crm/-/t/o/%s.png" width="20" height="20" '
-            'alt="ForkMesh" style="display:block;width:20px;height:20px;border:0;'
-            'border-radius:4px"></a>') % (
-                escape(tracked[TRACK_HOME], quote=True), origin, token)
-    return ('<div style="font:15px/1.5 -apple-system,Segoe UI,Helvetica,Arial,'
-            'sans-serif;color:#18181b">%s<div style="margin-top:18px">%s</div></div>'
-            % (paragraphs, logo))
+    first = re.split(r"\n\s*\n", text.strip())[0] if text.strip() else ""
+    preheader = _clean(re.sub(r"\s+", " ", AUTO_EMAIL_URL_RE.sub("", first)), 140)
+    header = (
+        '<tr><td style="padding:4px 4px 18px"><table role="presentation" width="100%%" '
+        'cellpadding="0" cellspacing="0"><tr><td valign="middle"><a href="%s" '
+        'style="text-decoration:none"><img src="%s/api/crm/-/t/o/%s.png" width="26" height="30" '
+        'alt="ForkMesh" style="display:inline-block;width:26px;height:30px;border:0;'
+        'vertical-align:middle"><span class="fm-h" style="margin-left:9px;font:700 21px/30px %s;'
+        'letter-spacing:-.035em;color:%s;vertical-align:middle">forkmesh</span></a></td>%s</tr>'
+        '</table></td></tr>') % (
+            escape(tracked[TRACK_HOME], quote=True), origin, token, MAIL_DISPLAY, MAIL_INK,
+            ('<td align="right" valign="middle" style="font:600 12px/1 %s;color:%s">'
+             'Investor deck</td>' % (MAIL_SANS, MAIL_BODY)) if deck else "")
+    note = _mail_card('<div style="font:400 16px/1.6 %s;color:#18181b">%s</div>' % (
+        MAIL_SANS, paragraphs))
+    prepared = (" · Prepared for %s" % escape(reader)) if reader and deck else ""
+    footer = (
+        '<tr><td style="padding:8px 8px 0;font:400 12px/1.6 %s;color:%s">%s%s<br>'
+        'ForkMesh · forkmesh.com</td></tr><tr><td>%s</td></tr>') % (
+            MAIL_SANS, MAIL_FAINT, "Confidential" if deck else "Sent with ForkMesh", prepared,
+            _mail_reads())
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
+        'content="width=device-width,initial-scale=1"><meta name="color-scheme" '
+        'content="light only"><meta name="supported-color-schemes" content="light"><title>'
+        + escape(subject or "ForkMesh") + '</title>' + _mail_style(beacon, deck)
+        + '</head><body style="margin:0;padding:0;background:#f4f4f6">'
+        '<div style="display:none;max-height:0;overflow:hidden;opacity:0">'
+        + escape(preheader) + '</div><table role="presentation" width="100%" cellpadding="0" '
+        'cellspacing="0" style="background:#f4f4f6"><tr><td align="center" '
+        'style="padding:28px 12px 36px"><table role="presentation" width="600" cellpadding="0" '
+        'cellspacing="0" style="width:100%;max-width:600px">'
+        + header + note + (_mail_deck_sections() if deck else "") + footer
+        + '</table></td></tr></table></body></html>')
 
 
 async def _auto_email_link(runtime, flows, org_bi, org_name, account_bi, actor,
@@ -6055,6 +6647,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
     brief = _text(settings.get("messageBrief"), MESSAGE_BRIEF_LIMIT).strip() or (
         AUTO_EMAIL_FORKMESH_BRIEF if org_name == "forkmesh" else "")
     sends = await _auto_email_history(runtime, org_bi, now)
+    note_link = "" if link_kind == "deck" else link
     prompt = _auto_email_prompt(
         org_name, from_name, brief, contact, mode, link_kind, link,
         _auto_email_angle([_clean(data.get("list"), 80), flow_name]), flow_name,
@@ -6066,12 +6659,12 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
                 "linkKind": link_kind, "mode": mode, "learning": learning}
     model = ""
     if data.get("subject") or data.get("text"):
-        draft = _auto_email_draft(data.get("subject"), data.get("text"), link, prompt)
+        draft = _auto_email_draft(data.get("subject"), data.get("text"), note_link, prompt)
         model = _clean(data.get("model"), 120) or "client"
         if not draft:
             return _response(runtime, dict(fallback, error="draft_unusable"), 422)
     else:
-        draft, model, failure = await _auto_email_write(runtime, account_bi, prompt, link)
+        draft, model, failure = await _auto_email_write(runtime, account_bi, prompt, note_link)
         if not draft:
             reason = _clean((failure or {}).get("error"), 60) or "provider_error"
             if reason == "rate_limited":
@@ -6095,7 +6688,9 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
                    "server no longer has, so nothing was sent."), 409)
     via = "zoho" if zoho else "mailtrap"
     send_id = runtime.new_id()
-    html = await _tracked_email_html(runtime, send_id, text, _track_origin(runtime))
+    html = await _tracked_email_html(
+        runtime, send_id, text, _track_origin(runtime), link_kind, link,
+        _contact_label(contact).split(" ")[0] if contact.get("name") else "", subject)
     envelope = {
         "to": recipient, "fromEmail": from_email, "fromName": from_name,
         "subject": subject, "text": text, "html": html, "providerUrl": "", "error": "",
@@ -6229,14 +6824,23 @@ async def _auto_email_rate(runtime, org_bi, actor, role, data):
 
 
 def _track_miss(runtime, action):
-    if action == "o":
+    if action in ("o", "r", "d"):
         return _redirect(runtime, TRACK_LOGO)
     return _response(runtime, {"error": "link_not_found"}, 404)
 
 
 async def _track(runtime, action, token):
-    send_id = token.partition(".")[0]
+    send_id, _, rest = token.partition(".")
+    signature, _, mark = rest.partition(".")
+    token = send_id + "." + signature
     if not hmac.compare_digest((await _track_token(runtime, send_id)), token):
+        return _track_miss(runtime, action)
+    if action in ("r", "d"):
+        marks = READ_MARKS if action == "r" else DEPTH_MARKS
+        if mark.isdigit() and int(mark) in marks:
+            await _track_reading(runtime, send_id, action, int(mark))
+        return _redirect(runtime, TRACK_LOGO)
+    if mark:
         return _track_miss(runtime, action)
     target = ""
     if action == "c":
@@ -6256,8 +6860,83 @@ async def _track(runtime, action, token):
     return _redirect(runtime, TRACK_LOGO if action == "o" else target)
 
 
+async def _track_reading(runtime, send_id, action, mark):
+    row = await runtime.d1_first(
+        "SELECT org_bi,contact_id,sender_name,sent_at,data FROM crm_email_sends "
+        "WHERE send_id=?", send_id)
+    now = runtime.now()
+    if not row or now - _integer(row.get("sent_at")) < TRACK_QUIET_MS:
+        return
+    reading = await runtime.d1_first(
+        "SELECT view_at,read_seconds,depth FROM crm_email_reading WHERE send_id=?", send_id)
+    reading = reading or {}
+    view_at = _integer(reading.get("view_at"))
+    lag = now - view_at
+    if not view_at or lag < (mark * 1000 * READ_LAG_SHARE if action == "r"
+                             else DEPTH_MIN_LAG_MS):
+        return
+    before_seconds = _integer(reading.get("read_seconds"))
+    before_depth = _integer(reading.get("depth"))
+    seconds = max(before_seconds, mark) if action == "r" else before_seconds
+    depth = max(before_depth, mark) if action == "d" else before_depth
+    if (seconds, depth) == (before_seconds, before_depth):
+        return
+    await runtime.d1_run(
+        "UPDATE crm_email_reading SET read_seconds=?,depth=?,"
+        "read_at=CASE WHEN read_at=0 THEN ? ELSE read_at END,last_at=? WHERE send_id=?",
+        seconds, depth, now, now, send_id)
+    if before_seconds < READ_PING_SECONDS <= seconds:
+        await _ping_reading(runtime, row, send_id, "read", seconds, depth)
+    if before_depth < 100 <= depth:
+        await _ping_reading(runtime, row, send_id, "end", seconds, depth)
+
+
+def _reading_copy(seconds, depth):
+    if seconds >= 60:
+        minutes = seconds // 60
+        spent = "%d min+" % minutes
+    else:
+        spent = "%ds+" % seconds if seconds else "under 5s"
+    scrolled = ("to the end" if depth >= 100 else "%d%% of the way" % depth
+                if depth else "no scroll reported yet")
+    return "Reading time: %s · scrolled %s" % (spent, scrolled)
+
+
+async def _send_contact(runtime, row):
+    data = await runtime.open(row.get("data"))
+    data = data if isinstance(data, dict) else {}
+    contact = {"email": data.get("to")}
+    contact_id = str(row.get("contact_id") or "")
+    found = await _contact_row(runtime, str(row.get("org_bi") or ""), contact_id) \
+        if contact_id else None
+    if found:
+        opened = await runtime.open(found.get("data"))
+        contact = opened if isinstance(opened, dict) else contact
+    return contact, _clean(data.get("subject"), 140)
+
+
+async def _ping_reading(runtime, row, send_id, kind, seconds, depth):
+    notify = getattr(runtime, "notify", None)
+    sender = _clean(row.get("sender_name"), 64).lower()
+    if notify is None or not sender:
+        return
+    contact, subject = await _send_contact(runtime, row)
+    label = _contact_label(contact)
+    title = ("📖 %s is reading your email" if kind == "read"
+             else "🏁 %s read your email to the end") % label
+    lines = ["“%s”" % subject] if subject else []
+    lines.append(_reading_copy(seconds, depth))
+    await notify(sender, "plugin_activity", title, body="\n".join(lines),
+                 href=CRM_PAGE_PATH, dedupe="crm-email-%s:%s" % (kind, send_id))
+
+
 async def _record_track(runtime, row, send_id, event, now, visitor=None):
     org_bi = str(row.get("org_bi") or "")
+    if event == "open":
+        await runtime.d1_run(
+            "INSERT INTO crm_email_reading(send_id,org_bi,view_at,last_at) VALUES(?,?,?,?) "
+            "ON CONFLICT(send_id) DO UPDATE SET view_at=excluded.view_at,"
+            "last_at=excluded.last_at", send_id, org_bi, now, now)
     count, stamp = ("opens", "opened_at") if event == "open" else ("clicks", "clicked_at")
     before = await runtime.d1_first(
         "SELECT " + count + " AS n FROM crm_email_tracking WHERE send_id=?", send_id)
@@ -6274,16 +6953,8 @@ async def _record_track(runtime, row, send_id, event, now, visitor=None):
     sender = _clean(row.get("sender_name"), 64).lower()
     if notify is None or not sender:
         return
-    data = await runtime.open(row.get("data"))
-    data = data if isinstance(data, dict) else {}
-    contact = {"email": data.get("to")}
-    contact_id = str(row.get("contact_id") or "")
-    found = await _contact_row(runtime, org_bi, contact_id) if contact_id else None
-    if found:
-        opened = await runtime.open(found.get("data"))
-        contact = opened if isinstance(opened, dict) else contact
+    contact, subject = await _send_contact(runtime, row)
     label = _contact_label(contact)
-    subject = _clean(data.get("subject"), 140)
     lines = ["“%s”" % subject] if subject else []
     lines += await _track_visitor_lines(runtime, visitor)
     await notify(sender, "plugin_activity",

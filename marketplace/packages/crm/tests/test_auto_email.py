@@ -34,7 +34,8 @@ def _contact(runtime, **body):
 
 def _draft(subject, link_from_prompt=True, extra=""):
     def write(prompt):
-        link = prompt.split("## The tracked link (include it exactly once, on its own line)\n")[1].split("\n")[0]
+        marker = "## The tracked link (include it exactly once, on its own line)\n"
+        link = prompt.split(marker)[1].split("\n")[0] if marker in prompt else ""
         body = ("Hi there, I saw your recent piece on code hosting and thought "
                 "ForkMesh fits the story you are telling.\n\n"
                 + (link if link_from_prompt else "") + extra + "\n\nAcme Founders")
@@ -60,7 +61,7 @@ def _visit(runtime, url):
     return call(runtime.use("GET", "nobody", query=query), parsed.path)
 
 
-def test_an_investor_gets_a_model_written_email_with_their_tracked_deck_link():
+def test_an_investor_gets_a_model_written_note_without_a_deck_link():
     runtime = AiRuntime([_draft("A story for your readers")])
     ivy = _contact(runtime, name="Ivy Investor", email="ivy@fund.example",
                    flow="investment", stage="sourced")
@@ -68,7 +69,9 @@ def test_an_investor_gets_a_model_written_email_with_their_tracked_deck_link():
     assert sent["status"] == 201, sent
     data = sent["data"]
     assert data["linkKind"] == "deck"
-    assert "/pitch-deck/" in data["link"] and data["link"] in data["text"]
+    assert "/pitch-deck/" in data["link"] and "/pitch-deck/" not in data["text"]
+    assert "## The tracked link" not in runtime.prompts[0]
+    assert "## The investor deck" in runtime.prompts[0]
     assert data["email"]["automated"] is True and data["email"]["linkKind"] == "deck"
     assert "as an investor" in runtime.prompts[0]
     assert "No tracked emails yet" in runtime.prompts[0]
@@ -582,3 +585,106 @@ def test_the_page_sync_runs_at_most_every_fifteen_minutes():
     runtime.clock += crm.ZOHO_AUTO_SYNC_MS
     later = call(runtime.use("POST", body={"auto": True}), "/api/crm/acme/mail/import")
     assert not later["data"].get("skipped")
+
+
+def _beacons(sent_html, action):
+    return {int(mark): url for url, mark in re.findall(
+        r'url\("([^"]+/api/crm/-/t/%s/[0-9a-f]{32}\.[0-9a-f]{24}\.([0-9]+)\.png)"\)' % action,
+        sent_html)}
+
+
+def _hit(runtime, url, wait_ms):
+    runtime.clock += wait_ms
+    return call(runtime.use("GET", "nobody"), urlparse(url).path)
+
+
+def test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links():
+    runtime = AiRuntime([_draft("A story for your readers")])
+    ivy = _contact(runtime, name="Ivy Investor", email="ivy@fund.example",
+                   flow="investment", stage="sourced")
+    sent = _send(runtime, ivy)
+    assert sent["status"] == 201, sent
+    page = runtime.mailtrap_calls[-1][1]["html"]
+    assert page.startswith("<!doctype html>")
+    headings = ("Code with agents.<br>Own the forge.",
+                "Agents work differently. The forge does not.",
+                "AI coding is already a budget line. Agent governance is next.",
+                "One prompt becomes a reviewed, attributable pull request.",
+                "ForkMesh is already building ForkMesh.",
+                "The agent loop works. This round hardens it.",
+                "Agents on your wrist. Your code in the room.",
+                "Agent-first teams are the wedge.",
+                "Paid AI coding is proven. ForkMesh sells the control layer around it.",
+                "Monetize orchestration and governance, not model lock-in.",
+                "ForkMesh owns the intersection others optimize separately.",
+                "Company-building experience meets founder-problem fit.",
+                "$1M turns product proof into enterprise pull.",
+                "Let's build the forge teams own.")
+    places = [page.index(heading) for heading in headings]
+    assert places == sorted(places)
+    assert "Prepared for Ivy" in page
+    for number in range(2, 15):
+        assert "· %02d</div>" % number in page, number
+    for asset in ("mesh.gif", "hero.jpg", "agent-flow.gif", "count.gif", "xr.jpg", "jett.png"):
+        assert crm.EMAIL_ASSETS + asset in page
+    _, links = _tracking_urls(page)
+    targets = {parse_qs(urlparse(link).query)["u"][0] for link in links}
+    assert targets == {crm.TRACK_HOME}
+    assert "/pitch-deck/" not in page and "Full slide" not in page
+    assert len(page.encode()) < 100 * 1024
+    assert sorted(_beacons(page, "r")) == list(crm.READ_MARKS)
+    assert sorted(_beacons(page, "d")) == list(crm.DEPTH_MARKS)
+    assert "all fourteen slides" in runtime.prompts[0]
+
+
+def test_other_contacts_get_the_plain_note_with_read_beacons_but_no_deck():
+    runtime = AiRuntime([_draft("Try ForkMesh on your repos")])
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="customers")
+    _send(runtime, sam)
+    page = runtime.mailtrap_calls[-1][1]["html"]
+    assert "Code with agents." not in page and "agent-flow.gif" not in page
+    assert sorted(_beacons(page, "r")) == list(crm.READ_MARKS)
+    assert _beacons(page, "d") == {}
+
+
+def test_reading_time_and_depth_count_only_after_a_real_open_and_ping_twice():
+    runtime = AiRuntime([_draft("Hello")])
+    sam = _contact(runtime, name="Sam Dev", email="sam@example.com", flow="investment",
+                   stage="sourced")
+    send_id = _send(runtime, sam)["data"]["email"]["id"]
+    page = runtime.mailtrap_calls[-1][1]["html"]
+    opener, _ = _tracking_urls(page)
+    reads, depths = _beacons(page, "r"), _beacons(page, "d")
+    runtime.pings.clear()
+
+    early = _hit(runtime, reads[30], crm.TRACK_QUIET_MS)
+    assert early["status"] == 302 and early["headers"]["location"] == crm.TRACK_LOGO
+    assert runtime.db.execute("SELECT COUNT(*) FROM crm_email_reading").fetchone()[0] == 0
+
+    _hit(runtime, opener, 0)
+    _hit(runtime, reads[30], 1000)
+    _hit(runtime, depths[100], 200)
+    row = runtime.db.execute(
+        "SELECT read_seconds,depth FROM crm_email_reading WHERE send_id=?", (send_id,)).fetchone()
+    assert tuple(row) == (0, 0)
+
+    _hit(runtime, depths[50], 2000)
+    _hit(runtime, reads[30], 28000)
+    _hit(runtime, reads[60], 30000)
+    _hit(runtime, depths[100], 1000)
+    _hit(runtime, reads[60], 1000)
+    email = call(runtime.use("GET"), f"/api/crm/acme/emails/{send_id}")["data"]["email"]
+    assert (email["readSeconds"], email["scrollDepth"]) == (60, 100) and email["readAt"] > 0
+    pings = [ping for ping in runtime.pings if ping["recipient"] == "alice"]
+    assert [ping["title"] for ping in pings] == [
+        "📬 Sam Dev opened your email", "📖 Sam Dev is reading your email",
+        "🏁 Sam Dev read your email to the end"]
+    assert "Reading time: 30s+ · scrolled 50% of the way" in pings[1]["body"]
+    assert "Reading time: 1 min+ · scrolled to the end" in pings[2]["body"]
+
+    odd = _hit(runtime, reads[60].replace(".60.png", ".7.png"), 1000)
+    assert odd["headers"]["location"] == crm.TRACK_LOGO
+    forged = _hit(runtime, reads[300].replace(send_id, "f" * 32), 400000)
+    assert forged["headers"]["location"] == crm.TRACK_LOGO
+    assert runtime.db.execute(
+        "SELECT read_seconds FROM crm_email_reading WHERE send_id=?", (send_id,)).fetchone()[0] == 60

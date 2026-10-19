@@ -3440,7 +3440,9 @@ window.ForkMeshDashboard.registerPage("crm", ({
       at: email.sentAt || email.createdAt || 0,
       label: [`${email.direction === "inbound" ? "Received" : email.automated ? "Sent by AI" : "Sent"} · ${crmProviderLabel(email)}`,
         Number(email.opens) ? `${email.opens} open${Number(email.opens) === 1 ? "" : "s"}` : "",
-        Number(email.clicks) ? `${email.clicks} click${Number(email.clicks) === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "),
+        Number(email.clicks) ? `${email.clicks} click${Number(email.clicks) === 1 ? "" : "s"}` : "",
+        Number(email.readSeconds) ? `read ${Number(email.readSeconds) >= 60 ? `${Math.floor(Number(email.readSeconds) / 60)} min+` : `${Number(email.readSeconds)}s+`}` : "",
+        Number(email.scrollDepth) ? (Number(email.scrollDepth) >= 100 ? "scrolled to the end" : `scrolled ${Number(email.scrollDepth)}%`) : ""].filter(Boolean).join(" · "),
       text: email.subject || "No subject",
       url: crmHttpsUrl(email.providerUrl),
     }));
