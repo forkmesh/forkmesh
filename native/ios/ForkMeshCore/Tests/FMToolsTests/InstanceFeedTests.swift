@@ -149,4 +149,10 @@ final class InstanceFeedTests: XCTestCase {
         XCTAssertTrue(InstanceFeed.validAuthor("ada-l"))
         XCTAssertFalse(InstanceFeed.validAuthor("-ada"))
     }
+
+    func testUserFacingNamesSayFeed() {
+        XCTAssertEqual(InstanceFeedModel.title, "Feed")
+        XCTAssertEqual(InstanceFeedModel.notInstalledTitle, "Install Feed")
+        XCTAssertEqual(InstanceFeedModel.unavailableTitle, "The feed is unavailable")
+    }
 }

@@ -2,7 +2,7 @@
   "$schema": "../../manifest.schema.json",
   "schemaVersion": 1,
   "id": "instance-feed",
-  "name": "Instance Feed",
+  "name": "Feed",
   "creator": {
     "id": "did:forkmesh:forkmesh",
     "handle": "forkmesh",
@@ -16,7 +16,7 @@
   "screenshots": [
     {
       "path": "preview/market.svg",
-      "alt": "Instance Feed with a compose box and a timeline of posts from people on the instance"
+      "alt": "Feed with a compose box and a timeline of posts from people on the instance"
     }
   ],
   "license": {
@@ -39,10 +39,10 @@
       "entrypoint": "dashboard-view",
       "config": {
         "route": "/dashboard/instance-feed",
-        "title": "Instance feed",
+        "title": "Feed",
         "description": "Short posts from the people on this instance, newest first, with replies, favourites and boosts.",
         "script": "dashboard-script",
-        "navigation": { "label": "Instance feed", "icon": "messages-square", "order": 47 }
+        "navigation": { "label": "Feed", "icon": "messages-square", "order": 47 }
       }
     }
   ],
