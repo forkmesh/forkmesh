@@ -292,6 +292,41 @@ final class InboxFeedTests: XCTestCase {
         XCTAssertNotNil(log.record(surface: "s", title: "later", message: "m"))
     }
 
+    @MainActor func testBannerNoticesSurviveRateLimitAndRelaunch() async {
+        let store = InMemoryKeyValueStore()
+        let clock = FixedClock(epochMillis: 50_000_000)
+        let local = LocalPingLog(store: store, clock: clock)
+        let model = InboxModel(client: FakeInboxClient(), node: { "alice" }, store: store, localPings: local)
+        await model.load()
+        for index in 0..<LocalPingLog.maxPerHour {
+            local.record(surface: "background", title: "Failure \(index)", message: "Offline")
+        }
+        clock.advance(by: 1)
+        let message = "Auto-send is waiting: Zoho is unavailable token=secretvalue"
+        let failure = local.recordNotice(surface: "genie", title: "Mail needs attention", message: message, isError: true)
+        XCTAssertNotNil(failure)
+        XCTAssertFalse(failure!.message.contains("secretvalue"))
+        XCTAssertEqual(model.items.first?.body, failure?.message)
+        XCTAssertEqual(model.items.first?.tone, .danger)
+        local.markRead(failure!.id)
+        clock.advance(by: 1)
+        XCTAssertEqual(local.recordNotice(surface: "genie", title: "Mail needs attention", message: message, isError: true)?.id, failure?.id)
+        XCTAssertEqual(local.pings.count, LocalPingLog.maxPerHour + 1)
+        XCTAssertEqual(local.pings.first?.read, false)
+        clock.advance(by: 1)
+        let update = local.recordNotice(surface: "shell", title: "ForkMesh", message: "Settings saved")
+        XCTAssertEqual(model.items.first?.remoteId, update?.id)
+        XCTAssertEqual(model.items.first?.tone, .info)
+        XCTAssertEqual(model.items.first?.icon, "info_outline")
+        XCTAssertEqual(LocalPingLog(store: store).pings, local.pings)
+        XCTAssertNil(local.recordNotice(surface: "shell", title: "ForkMesh", message: " \n"))
+        for index in 0..<LocalPingLog.maxEntries {
+            local.recordNotice(surface: "shell", title: "ForkMesh", message: "Notice \(index)")
+        }
+        XCTAssertEqual(local.pings.count, LocalPingLog.maxEntries)
+        XCTAssertEqual(LocalPingLog(store: store).pings.first?.message, "Notice \(LocalPingLog.maxEntries - 1)")
+    }
+
     @MainActor func testChatPingsShowInTheInboxAsTheyArrive() async {
         let store = InMemoryKeyValueStore()
         let local = LocalPingLog(store: store)

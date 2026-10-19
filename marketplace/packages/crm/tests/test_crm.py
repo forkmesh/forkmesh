@@ -515,6 +515,7 @@ def test_zoho_connection_is_encrypted_redacted_and_imports_grouped_mail_boxes():
     assert public.pop("connectedAt") > 0
     assert public == {"connected": True, "region": "eu",
                       "accountId": "123456789", "lastSyncAt": 0,
+                      "clientId": "client-id", "hasClientSecret": True,
                       "oneClick": False, "managed": False, "canSend": True,
                       "lastSentAt": 0, "lastSyncError": "",
                       "lastSyncErrorAt": 0,
@@ -523,6 +524,7 @@ def test_zoho_connection_is_encrypted_redacted_and_imports_grouped_mail_boxes():
     raw = runtime.db.execute("SELECT data FROM crm_settings").fetchone()[0]
     assert raw.startswith("sealed:") and "refresh-secret" in raw
     assert "refreshToken" not in json.dumps(public)
+    assert "client-secret" not in json.dumps(public)
 
     runtime.zoho_messages = [
         {"providerMessageId": "m1", "threadId": "thread-7",
@@ -746,6 +748,31 @@ def test_zoho_self_client_code_is_exchanged_on_the_server():
     assert again["status"] == 200
     assert "client_id=self-id" in runtime.outbound_calls[0][3]
     assert "client_secret=self-secret" in runtime.outbound_calls[0][3]
+
+    assert again["data"]["settings"]["zoho"]["clientId"] == "self-id"
+    assert again["data"]["settings"]["zoho"]["hasClientSecret"] is True
+    changed = call(runtime.use("POST", body={
+        "clientId": "different-client", "code": "fresh"}), path)
+    assert changed["data"]["error"] == "zoho_code_incomplete"
+
+
+def test_zoho_credentials_survive_settings_saves_and_reloads():
+    runtime = ZohoSelfClientRuntime()
+    connected = call(runtime.use("POST", body={
+        "clientId": "self-id", "clientSecret": "self-secret", "code": "fresh"}),
+        "/api/crm/acme/zoho/exchange")
+    public = connected["data"]["settings"]["zoho"]
+    for update in ({"fromName": "Saved name"}, {"zoho": public},
+                   {"zoho": {"clientId": "", "clientSecret": "", "refreshToken": ""}}):
+        assert call(runtime.use("PUT", body=update), "/api/crm/acme/settings")["status"] == 200
+        saved = call(runtime.use("GET"), "/api/crm/acme/settings")["data"]["settings"]["zoho"]
+        assert saved["connected"] and saved["hasClientSecret"]
+        assert saved["clientId"] == "self-id"
+        assert "self-secret" not in json.dumps(saved)
+        raw = runtime.db.execute("SELECT data FROM crm_settings").fetchone()[0]
+        stored = json.loads(raw.removeprefix("sealed:"))["zoho"]
+        assert stored["clientSecret"] == "self-secret"
+        assert stored["refreshToken"] == "self-refresh"
 
 
 def test_zoho_callback_refuses_stale_forged_and_demoted_states():

@@ -195,13 +195,25 @@ public final class LocalPingLog {
 
     @discardableResult
     public func record(surface: String, title: String, message: String) -> LocalPing? {
+        record(surface: surface, title: title, message: message, kind: nil, rateLimited: true)
+    }
+
+    @discardableResult
+    public func recordNotice(surface: String, title: String, message: String, isError: Bool = false) -> LocalPing? {
+        guard !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return record(surface: surface, title: title, message: message,
+                      kind: isError ? "local_failure" : "local_notice", rateLimited: false)
+    }
+
+    private func record(surface: String, title: String, message: String, kind: String?, rateLimited: Bool) -> LocalPing? {
         let now = clock.nowMillis
         let clean = LocalPingLog.redact(message)
-        let cleanTitle = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+        let cleanTitle = String(LocalPingLog.redact(title).trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
         guard !cleanTitle.isEmpty else { return nil }
         if let index = pings.firstIndex(where: { $0.surface == surface && $0.title == cleanTitle && $0.message == clean }) {
             pings[index].tsMs = now
             pings[index].read = false
+            pings[index].kind = kind
             let moved = pings.remove(at: index)
             pings.insert(moved, at: 0)
             save()
@@ -209,8 +221,8 @@ public final class LocalPingLog {
             return moved
         }
         let recent = pings.filter { now - $0.tsMs < 3_600_000 }.count
-        guard recent < LocalPingLog.maxPerHour else { return nil }
-        let ping = LocalPing(id: makeId(), surface: String(surface.prefix(60)), title: cleanTitle, message: clean, tsMs: now, read: false)
+        guard !rateLimited || recent < LocalPingLog.maxPerHour else { return nil }
+        let ping = LocalPing(id: makeId(), surface: String(surface.prefix(60)), title: cleanTitle, message: clean, tsMs: now, read: false, kind: kind)
         pings.insert(ping, at: 0)
         if pings.count > LocalPingLog.maxEntries { pings.removeLast(pings.count - LocalPingLog.maxEntries) }
         save()

@@ -308,7 +308,7 @@ and the login screen runs as `Debian-gdm`. The journal showed it: boot at
 03:07:59, every ForkMesh line stops at 03:23:02, the next at 12:54 when
 someone woke the machine, and `/sys/power/suspend_stats/success` was 1.
 
-Two parts, code `desktop/src/KeepAwake.{h,cpp}` and
+Three parts, code `desktop/src/KeepAwake.{h,cpp}` and
 `BackgroundMode.cpp`:
 
 - **A sleep inhibitor.** Every instance runs a `SleepInhibitor`
@@ -323,23 +323,49 @@ Two parts, code `desktop/src/KeepAwake.{h,cpp}` and
   administrator. The limit is polkit: `inhibit-block-sleep` is `yes` for a
   process in an active session (or a user service of a user who has one) but
   `auth_admin_keep` with no session at all, which is exactly the state right
-  after a reboot. So the inhibitor protects a log-out (it was taken while the
+  after a reboot. The boot permission below covers that missing session.
+  Without it, the inhibitor protects a log-out (it was taken while the
   user was logged in and survives the log-out) and any later log-in, but not
   the first boot on its own. Refusals are logged once per distinct message.
   Only `sleep` is inhibited: not `idle`, so screen locking keeps working, and
   not the lid switch, which polkit refuses without a session and would make
   the whole request fail.
+- **Permission before login.** Enabling **Start at boot** installs
+  `/usr/share/polkit-1/rules.d/49-forkmesh-sleep-<uid>.rules` through `pkexec`, with
+  one administrator authentication. Existing installations with a boot unit
+  request this permission on their next graphical launch; headless starts
+  never ask for authentication. The rule grants only
+  `org.freedesktop.login1.inhibit-block-sleep` to this account, resolved from
+  the process UID. It allows the existing inhibitor to work before any
+  session exists, including the first 15 minutes after reboot. It grants no
+  shutdown, suspend, or other administrative action. The policy persists
+  across restarts and applies to all this account's processes; the sleep
+  block itself lasts only while a process holds its descriptor. Closing
+  ForkMesh without background operation releases its block. Disabling start
+  at boot leaves the permission available for background operation but does
+  not hold a block. If authentication is dismissed or unavailable, startup
+  remains registered and Settings reports that sleep remains possible; the
+  next graphical launch retries. Already masked sleep targets need no extra
+  permission. The regression test executes the policy installation command
+  only against a temporary directory and checks persistence, dismissal,
+  account isolation, and that an existing policy does not prompt again.
+  Account matching uses the stable `subject.user` field from the
+  [polkit rules API](https://polkit.pages.freedesktop.org/polkit/polkit.8.html),
+  so it does not depend on newer systemd-unit subject properties. The rule
+  lives in the readable application rules directory so an unprivileged
+  desktop can verify its exact installed contents; it does not loosen the
+  permissions on the administrator's `/etc/polkit-1/rules.d` directory.
 - **Never let this computer go to sleep** (Settings → General → STARTUP).
   Runs `pkexec systemctl mask sleep.target suspend.target hibernate.target
   hybrid-sleep.target suspend-then-hibernate.target` (`unmask` to undo). A
   masked target cannot be started, so nothing can suspend the machine: not the
-  login screen, a user session, the power key or the lid. This is the part
-  that covers the first boot. The box shows checked when `systemctl
+  login screen, a user session, the power key or the lid, even when ForkMesh
+  is not running. The box shows checked when `systemctl
   is-enabled` reports every target `masked`. Without pkexec, or when the
   password prompt is dismissed, the status line gives the command to run with
-  `sudo`. While the box is off and ForkMesh is set to keep running or to start
-  at boot, the status line warns that the login screen can still put the
-  computer to sleep.
+  `sudo`. Without this setting or the boot permission, when ForkMesh is set
+  to keep running or to start at boot, the status line warns that the login
+  screen can still put the computer to sleep.
 
 By hand, the same thing:
 

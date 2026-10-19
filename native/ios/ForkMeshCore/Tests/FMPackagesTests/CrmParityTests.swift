@@ -6,6 +6,28 @@ import XCTest
 final class CrmParityTests: XCTestCase {
     let hexC = String(repeating: "c", count: 32)
 
+    func testZohoReconnectRetainsClientIDAndUsesSavedSecretOnlyForThatClient() {
+        let status = CrmZohoStatus(json: [
+            "connected": true, "region": "eu", "clientId": "saved-id", "hasClientSecret": true,
+        ])
+        var code = CrmZohoCode(status: status)
+        XCTAssertEqual(code.clientId, "saved-id")
+        XCTAssertEqual(code.region, "eu")
+        XCTAssertTrue(code.clientSecret.isEmpty)
+        XCTAssertTrue(code.usesSavedSecret)
+        XCTAssertFalse(code.isComplete)
+        code.code = "fresh-code"
+        XCTAssertTrue(code.isComplete)
+        XCTAssertEqual(code.body.str("clientSecret"), "")
+        code.clientId = "different-id"
+        XCTAssertFalse(code.usesSavedSecret)
+        XCTAssertFalse(code.isComplete)
+        code.clientSecret = "new-secret"
+        XCTAssertTrue(code.isComplete)
+        let legacy = CrmZohoStatus(json: ["connected": true])
+        XCTAssertFalse(CrmZohoCode(status: legacy).usesSavedSecret)
+    }
+
     func summary() -> JSONObject {
         [
             "organization": "acme", "role": "owner", "canManageSettings": true,

@@ -323,7 +323,14 @@ contacted, with a tap to draft an email or a Mastodon post.
   in Zoho Mail, the deck link failed) is a `ShellMailStatus.say` line under the
   top bar (`shell-mail-notice`), shown at once whether or not the Spider is on
   screen, announced to VoiceOver, and dismissed by its close button or after
-  8 s plus reading time.
+  8 s plus reading time. Each line is also saved immediately in device-local
+  Pings, including auto-send pauses and failures. General notices at the top
+  of the shell use the same saved history. Dismissing or replacing the banner
+  does not remove its ping, and the history survives reopening the app.
+  These visible notices bypass the background-error hourly limit, redact
+  secrets, and retain the newest 50 local pings; identical notices update
+  their existing entry. Informational notices use the info colour, failures
+  the error colour. Opening Zoho from the top bar creates only one ping.
 - **Review popup** (`ShellAutoSendReview`): every sent email opens a sheet with
   recipient, sender, Zoho, the writer, subject and body. Pick 1-5 stars and,
   optionally, write a line on what to change; **Save** posts

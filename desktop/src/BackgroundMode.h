@@ -28,6 +28,7 @@ struct StartStatus {
     bool atBoot = false;
     bool afterLogout = false;
     bool sleepDisabled = false;
+    bool bootSleepProtected = false;
 };
 
 struct LegacyEngine {
@@ -41,6 +42,8 @@ class StartManager
 public:
     QString home;
     QString configHome;
+    QString polkitRulesHome = QStringLiteral("/usr/share/polkit-1/rules.d");
+    QString account;
     qint64 uid = 0;
     CommandRunner run;
 
@@ -52,6 +55,10 @@ public:
     bool unitInstalled(const QString &project) const;
     bool refreshUnit(const QString &binary, const QString &project) const;
     bool sleepDisabled() const;
+    QString bootSleepPolicyPath() const;
+    QString bootSleepPolicy() const;
+    bool bootSleepProtected() const;
+    bool ensureBootSleepPermission(QString *error = nullptr) const;
     bool keepAcrossLogout(const QString &binary, const QString &project,
                           QString *error = nullptr) const;
     void dropLogoutHandOver(const QString &project) const;

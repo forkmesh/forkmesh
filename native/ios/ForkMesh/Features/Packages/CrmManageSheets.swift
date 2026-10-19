@@ -586,8 +586,13 @@ struct CrmSettingsSheet: View {
 
 struct CrmZohoCodeSheet: View {
     @Bindable var model: CrmModel
-    @State private var code = CrmZohoCode()
+    @State private var code: CrmZohoCode
     @Environment(\.dismiss) private var dismiss
+
+    init(model: CrmModel) {
+        self.model = model
+        _code = State(initialValue: CrmZohoCode(status: model.data?.settings.zoho))
+    }
 
     var body: some View {
         Form {
@@ -602,7 +607,7 @@ struct CrmZohoCodeSheet: View {
             }
             Section {
                 TextField("Client ID", text: $code.clientId).textInputAutocapitalization(.never).autocorrectionDisabled()
-                SecureField("Client secret", text: $code.clientSecret)
+                SecureField(code.usesSavedSecret ? "Saved secret (leave blank to keep)" : "Client secret", text: $code.clientSecret)
                 TextField("Code", text: $code.code).textInputAutocapitalization(.never).autocorrectionDisabled()
                 Picker("Data center", selection: $code.region) {
                     ForEach(CrmZohoCode.regions, id: \.self) { Text($0).tag($0) }

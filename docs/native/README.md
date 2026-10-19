@@ -210,6 +210,21 @@ Shortcuts (`.forkmesh/shortcuts/`):
   `FORKMESH_ANDROID_KEY_PASSWORD` (without them a `com.forkmesh.nativeapp`
   release build uses the debug key).
 
+The CRM's Zoho Self Client settings retain the client ID, secret and refresh
+token in the server's encrypted organization settings. The iOS reconnect form
+loads the saved client ID and data center and labels the secret as saved;
+leaving it blank reuses it only for that same client ID. The API returns a
+`hasClientSecret` flag rather than the secret itself. Partial settings saves
+and redacted or empty credential fields preserve the existing credentials;
+disconnecting explicitly removes them.
+
+Zoho refresh failures caused by connectivity, rate limits or server outages
+remain retryable and do not mark the saved sign-in as rejected. Only a
+definitive OAuth credential error requires reconnection. A successful sync or
+send also clears rejection markers left by earlier failures, and refresh
+responses that omit scopes retain the known permissions so a mailbox-specific
+send refusal does not incorrectly become a read-only grant.
+
 ## Build, run, test
 
 ```sh

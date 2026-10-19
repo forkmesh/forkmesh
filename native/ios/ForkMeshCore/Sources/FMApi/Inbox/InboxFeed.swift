@@ -121,7 +121,9 @@ public struct InboxItem: Equatable, Hashable, Sendable, Identifiable {
     public var icon: String {
         switch source {
         case .task: return "task_alt"
-        case .local: return kind == LocalPingLog.chatKind ? "chat_bubble_outline" : "error_outline"
+        case .local:
+            if kind == LocalPingLog.chatKind { return "chat_bubble_outline" }
+            return kind == "local_notice" ? "info_outline" : "error_outline"
         case .ping: return category == .approval ? "verified_user_outlined" : notificationIconForKind(kind)
         }
     }
@@ -129,7 +131,9 @@ public struct InboxItem: Equatable, Hashable, Sendable, Identifiable {
     public var tone: PingTone {
         switch (source, category) {
         case (.task, _): return .accent
-        case (.local, _): return kind == LocalPingLog.chatKind ? .accent : .danger
+        case (.local, _):
+            if kind == LocalPingLog.chatKind { return .accent }
+            return kind == "local_notice" ? .info : .danger
         case (_, .approval): return .warning
         case (_, .review): return .accent
         case (_, .mention): return .info

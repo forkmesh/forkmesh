@@ -45,6 +45,7 @@ final class ShellMailStatus {
     }
 
     func say(_ line: String, isError: Bool = false) {
+        InboxLocalPings.notice(surface: "genie", title: isError ? "Mail needs attention" : "Mail update", message: line, isError: isError)
         count += 1
         let id: Int = count
         withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {

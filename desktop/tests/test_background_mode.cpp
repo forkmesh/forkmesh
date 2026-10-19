@@ -7,6 +7,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QProcess>
 #include <QTemporaryDir>
 
 #include <atomic>
@@ -73,7 +74,9 @@ bg::StartManager manager(const QString &home, Recorder *recorder)
     bg::StartManager m;
     m.home = home;
     m.configHome = home + QStringLiteral("/.config");
+    m.polkitRulesHome = home + QStringLiteral("/polkit rules");
     m.uid = 501;
+    m.account = QStringLiteral("forkmesh-test");
     m.run = [recorder](const QString &program, const QStringList &arguments) {
         return recorder->run(program, arguments);
     };
@@ -217,6 +220,56 @@ void testSleepDisabled()
     check(!m.sleepDisabled(), "a short answer is not trusted");
 }
 
+void testBootSleepPermission()
+{
+    QTemporaryDir home;
+    Recorder recorder;
+    bg::StartManager m = manager(home.path(), &recorder);
+    int prompts = 0;
+    bool approve = false;
+    m.run = [&](const QString &program, const QStringList &arguments) {
+        if (program != QLatin1String("pkexec"))
+            return recorder.run(program, arguments);
+        ++prompts;
+        if (!approve)
+            return bg::CommandResult{false, "authentication dismissed"};
+        check(arguments.value(4).startsWith(home.path()), "the policy directory is inside the test home");
+        check(arguments.value(5).startsWith(home.path()), "the policy file is inside the test home");
+        if (!arguments.value(4).startsWith(home.path()) || !arguments.value(5).startsWith(home.path()))
+            return bg::CommandResult{};
+        QProcess process;
+        process.start(arguments.first(), arguments.mid(1));
+        const bool finished = process.waitForFinished(5000);
+        return bg::CommandResult{finished && process.exitCode() == 0, process.readAllStandardError()};
+    };
+    check(!m.bootSleepProtected(), "an absent permission does not claim boot sleep protection");
+    QString error;
+    check(!m.ensureBootSleepPermission(&error) && error.contains(QLatin1String("authentication")),
+          "dismissed authentication reports that pre-login sleep remains possible");
+    check(!m.bootSleepProtected(), "dismissed authentication installs no policy");
+    approve = true;
+    check(m.ensureBootSleepPermission(), "approved authentication installs the boot permission");
+    check(m.bootSleepProtected() && m.status(QStringLiteral("forkmesh")).bootSleepProtected,
+          "the installed policy is detected across manager instances");
+    const bg::StartManager restarted = manager(home.path(), &recorder);
+    check(restarted.bootSleepProtected(), "boot protection survives a restart");
+    check(m.ensureBootSleepPermission() && prompts == 2, "an installed policy never prompts again");
+    check(read(m.bootSleepPolicyPath()) == m.bootSleepPolicy(), "the policy text is installed unchanged");
+    check(m.bootSleepPolicy().contains(QLatin1String("subject.user === \"forkmesh-test\"")) &&
+              m.bootSleepPolicy().count(QLatin1String("action.id")) == 1 &&
+              m.bootSleepPolicy().contains(QLatin1String("org.freedesktop.login1.inhibit-block-sleep")),
+          "only the configured account may acquire the sleep block permission");
+    m.uid = 502;
+    check(!m.bootSleepProtected(), "the permission does not apply to another account");
+    recorder.sleepStates = "masked\nmasked\nmasked\nmasked\nmasked\n";
+    check(m.ensureBootSleepPermission() && prompts == 2,
+          "an already sleep-disabled computer needs no extra permission");
+    recorder.sleepStates = "static\nstatic\nstatic\nstatic\nstatic\n";
+    m.account.clear();
+    check(!m.bootSleepProtected() && !m.ensureBootSleepPermission() && prompts == 2,
+          "an unresolved account cannot install a permission");
+}
+
 void testRefreshUnit()
 {
     QTemporaryDir home;
@@ -274,6 +327,8 @@ void testSystemd()
     check(!m.status(QStringLiteral("forkmesh")).enabled, "off before enabling");
     QString error;
     check(m.enable(binary, QStringLiteral("forkmesh"), &error), "enable succeeds");
+    check(recorder.calls.filter(QStringLiteral("pkexec ")).size() == 1,
+          "enabling boot startup also requests the missing sleep permission");
     const bg::StartStatus status = m.status(QStringLiteral("forkmesh"));
     check(status.enabled && status.binary == binary && status.atBoot, "enabled at boot with the binary");
     check(recorder.called(QStringLiteral("systemctl --user enable forkmesh-headless-forkmesh.service")),
@@ -405,6 +460,11 @@ void testHandOverMessage()
     forkmesh::setBackgroundInstance();
     check(!askWindowFromAnotherThread() && !handedOver,
           "a windowless instance ignores hand-over");
+    Recorder recorder;
+    const bg::StartManager m = manager(root.path(), &recorder);
+    check(m.enable(fakeBinary(root.path()), QStringLiteral("headless")) &&
+              recorder.calls.filter(QStringLiteral("pkexec ")).isEmpty(),
+          "a headless instance never opens administrator authentication");
     forkmesh::releaseSingleInstance();
 }
 
@@ -420,6 +480,7 @@ int main(int argc, char **argv)
     testLogout();
     testShuttingDown();
     testSleepDisabled();
+    testBootSleepPermission();
     testRefreshUnit();
 #if defined(Q_OS_LINUX)
     testLegacyEngine();
