@@ -1201,6 +1201,8 @@ repo_alias_redirect = _static_routes.export("repo_alias_redirect")
 external_site_route = _static_routes.export("external_site_route")
 external_site_delivery = _static_routes.export("external_site_delivery")
 site_document_asset_path = _static_routes.export("site_document_asset_path")
+world_asset_path = _static_routes.export("world_asset_path")
+world_asset_cache_control = _static_routes.export("world_asset_cache_control")
 looks_like_repo_route = _static_routes.export("looks_like_repo_route")
 dashboard_repo_redirect = _static_routes.export("dashboard_repo_redirect")
 
@@ -1342,6 +1344,7 @@ mail_providers = _LazyModule("mail_providers")
 instance_features = _LazyModule("instance_features")
 instance_pages = _LazyModule("instance_pages")
 instance_legal = _LazyModule("instance_legal")
+instance_registry = _LazyModule("instance_registry")
 instance_theme = _LazyModule("instance_theme")
 mail_tracking = _LazyModule("mail_tracking")
 marketing_email = _LazyModule("marketing_email")
@@ -6369,6 +6372,7 @@ _probe_ban = _LazyModule("probe_ban")
 _probe_ban_local = {}
 _instance_directory_admin = _LazyModule("instance_directory_admin")
 _server_update_admin = _LazyModule("server_update_admin")
+_instance_console = _LazyModule("instance_console")
 repo_short_urls = _LazyModule("repo_short_urls")
 repo_projects = _LazyModule("repo_projects")
 _ids_console = _LazyModule("ids_console")
@@ -52251,6 +52255,8 @@ def _cron_due_phases(minute_slot):
         phases.append("attribution-maintenance")
     elif hourly == 57:
         phases.append("badge-sweep")
+    elif hourly == 32:
+        phases.append("instance-announce")
     # Once a day, copy the cumulative per-repository clone counters into a
     # dated snapshot; the acquisition dashboard reads per-day clones as the
     # delta between snapshots instead of touching the clone path itself.
@@ -52370,6 +52376,8 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _distribute_central_fund(env)
     if phase == "instance-health":
         return await _instance_directory_admin.health_cron(env)
+    if phase == "instance-announce":
+        return await _instance_console.announce_cron(env)
     if phase == "chat-prune":
         await chat_history_prune_expired(env)
         return await chat_direct_media_api.sweep(

@@ -37,6 +37,9 @@ class Runtime:
             .split("INSERT INTO schema_meta")[0])
         self.db.executescript(
             (ROOT / "migrations" / "0257_instance_directory.sql").read_text())
+        self.db.executescript(
+            (ROOT / "migrations" / "0273_instance_registrations.sql")
+            .read_text())
         self.clock = NOW
         self.ids = 0
         self.method_value = "POST"

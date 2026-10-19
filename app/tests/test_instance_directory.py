@@ -58,7 +58,9 @@ def test_a_finished_launch_gets_a_hexagon_and_a_homepage_row():
     assert entries == [{
         "id": launch_id, "name": "Acme Code", "url": "https://code.example.com/",
         "logo": "/api/start/instances/%s/logo?v=%d" % (launch_id, runtime.clock),
-        "listed": True, "world": True, "slot": 0, "createdAt": runtime.clock,
+        "listed": True, "world": True, "slot": 0, "worldUrl": "",
+        "status": "checking", "checkedAt": 0,
+        "createdAt": runtime.clock,
     }]
     image = logo(runtime, launch_id)
     assert image["type"] == "image/png" and image["body"] == PNG
@@ -192,6 +194,22 @@ def test_an_offline_instance_is_hidden_after_two_missed_checks_and_returns():
     check(runtime)
     assert urls(runtime) == ["https://code.example.com/", "https://two.example.com/"]
     assert runtime.pings == []
+
+
+def test_the_list_says_whether_each_instance_answered_its_last_check():
+    runtime = Health()
+    launch(runtime)
+    assert [entry["status"] for entry in listed(runtime)] == ["checking"]
+    check(runtime)
+    assert [entry["status"] for entry in listed(runtime)] == ["online"]
+    runtime.down.add("code.example.com")
+    check(runtime)
+    entry = listed(runtime)[0]
+    assert entry["status"] == "checking"
+    assert entry["checkedAt"] == runtime.clock
+    runtime.down.clear()
+    check(runtime)
+    assert listed(runtime)[0]["status"] == "online"
 
 
 def test_one_ping_asks_whether_to_delete_after_a_day_offline():

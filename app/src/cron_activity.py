@@ -132,6 +132,10 @@ CRON_PHASE_CATALOG = (
     ("attribution-maintenance", 60, (27,), "retention",
      "Flag bounce sessions, purge 24h attribution IP digests and expired "
      "attribution rows."),
+    ("instance-announce", 60, (32,), "nodes",
+     "On a self-hosted instance that joined the forkmesh.com directory, "
+     "announce it again when due so its name, logo and choices stay "
+     "current."),
     ("badge-sweep", 60, (57,), "rewards",
      "Read pull and issue records of changed repositories and award "
      "achievement badges."),

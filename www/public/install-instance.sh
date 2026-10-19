@@ -305,6 +305,13 @@ for page, entry in legal.items():
     legal[page] = entry
 legal = {page: entry for page, entry in legal.items() if entry not in (None, False)}
 values["legalPages"] = json.dumps(legal, separators=(",", ":"), sort_keys=True) if legal else ""
+directory = c.get("directory") or {}
+if update:
+    directory = {}
+if not isinstance(directory, dict) or not set(directory) <= {"listed", "world"} or \
+        not all(isinstance(value, bool) for value in directory.values()):
+    sys.exit("Setting directory may only set listed and world, each true or false.")
+values["directory"] = json.dumps(directory, separators=(",", ":"), sort_keys=True) if directory else ""
 for key, value in values.items():
     print("CFG_%s=%s" % (key, shlex.quote(value)))
 ' "$CONFIG_MODE"
@@ -328,6 +335,8 @@ fi
 RUNNER_UNIT="forkmesh-runner@$CFG_ownerName.service"
 DOMAIN="$CFG_domain"
 ORIGIN="https://$DOMAIN"
+DIRECTORY_URL="https://app.forkmesh.com"
+DIRECTORY_HOST="app.forkmesh.com"
 REPO_URL="$ORIGIN/$CFG_ownerName/forkmesh"
 if [ "${CFG_singleOrganization:-0}" = "1" ]; then REPO_URL="$ORIGIN/forkmesh"; fi
 NEW_INSTANCE=0
@@ -671,6 +680,8 @@ build_app() {
   (
     cd "$SRC/app/host"
     FORKMESH_EXCLUDED_PLUGINS="$EXCLUDED_PACKAGES" "$VENV/bin/python" -m forkmesh_host build 2>&1 | lines
+    cd "$SRC/app"
+    "$VENV/bin/python" tools/build_site_assets.py instance-world 2>&1 | lines
   )
   local brand_args=(--name "$CFG_projectName" --dist "$SRC/app/dist") logo
   logo="$(logo_file)"
@@ -759,6 +770,7 @@ print(encode(seed), encode(public))
     echo "APP_ORIGIN=$ORIGIN"
     echo "WWW_ORIGIN=$ORIGIN"
     echo "WORLD_ORIGIN=$ORIGIN"
+    echo "INSTANCE_DIRECTORY_URL=$DIRECTORY_URL"
     echo "CORS_ALLOWED_ORIGINS=$ORIGIN"
     echo "NODE_NAME=$NODE_NAME"
     echo "HOSTED_GIT_CORE_NODES=$NODE_NAME"
@@ -860,6 +872,7 @@ WorkingDirectory=$SRC/app/host
 Environment=HOME=$VAR
 Environment=FORKMESH_PUBLIC_HOSTS=$DOMAIN
 Environment=FORKMESH_HOST_REPO_GATEWAY=http://127.0.0.1:$GATEWAY_PORT
+Environment=FORKMESH_EGRESS_PRODUCTION_ALLOW=$DIRECTORY_HOST
 Environment=MALLOC_ARENA_MAX=2
 Environment=PYTHONUNBUFFERED=1
 ExecStart=$VENV/bin/python -m forkmesh_host serve --no-build --host 127.0.0.1 --port $APP_PORT --env-file $APP_ENV --db sqlite:$VAR/app.db --data-dir $VAR/data
@@ -1364,17 +1377,19 @@ create_admin() {
   setup_git_node
   local result
   result="$(
-    cd "$SRC/app/host" && printf '%s\n%s\n%s' "$OWNERS_JSON" "${CFG_legalPages:-}" "$ADMIN_PASSWORD" | python3 -c '
+    cd "$SRC/app/host" && printf '%s\n%s\n%s\n%s' "$OWNERS_JSON" "${CFG_legalPages:-}" "${CFG_directory:-}" "$ADMIN_PASSWORD" | python3 -c '
 import json, sys
 owners = json.loads(sys.stdin.readline())
 legal = json.loads(sys.stdin.readline().strip() or "{}")
+directory = json.loads(sys.stdin.readline().strip() or "{}")
 print(json.dumps({
     "adminUsername": sys.argv[1], "adminEmail": sys.argv[2],
     "adminPassword": sys.stdin.read(), "ownerType": sys.argv[3],
     "ownerName": sys.argv[4], "projectName": sys.argv[5],
     "nodePublicKey": sys.argv[6], "owners": owners,
     "theme": json.loads(sys.argv[7]) if sys.argv[7].startswith("{") else sys.argv[7],
-    "singleOrganization": sys.argv[8] == "1", "legalPages": legal}))
+    "singleOrganization": sys.argv[8] == "1", "legalPages": legal,
+    "directory": directory}))
 ' "$CFG_adminUsername" "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_projectName" "$NODE_PUBLIC_KEY" "$CFG_theme" "$CFG_singleOrganization" \
       | host_cli instance-bootstrap 2>&1 | tail -n 1
   )" || true

@@ -121,6 +121,13 @@ def _shown_on(row):
     return ", ".join(places) or "Nowhere"
 
 
+def _source(row, now):
+    if row.get("public_key"):
+        return "Joined from its own console, announced %s" % (
+            _admin_shell.time_html(row.get("announced_at"), now))  # noqa: F821
+    return "Started from /start"
+
+
 def _action_form(action, row, label, csrf_field, admin_query, danger=False):
     confirm = (
         '<label class="hint"><input type="checkbox" name="confirm" '
@@ -146,12 +153,13 @@ def render(rows, csrf_field, admin_query, now):
         body.append(
             "<tr><td><strong>%s</strong><br>"
             '<a class="muted mono" href="%s" rel="noopener" '
-            'target="_blank">%s</a></td>'
+            'target="_blank">%s</a><br><span class="muted">%s</span></td>'
             "<td>%s</td><td>%s</td><td>%s</td><td>%s</td>"
             '<td class="r">%s %s</td></tr>' % (
                 _html_escape(row.get("name") or ""),  # noqa: F821
                 _html_escape(row.get("url") or ""),  # noqa: F821
                 _html_escape(row.get("domain") or ""),  # noqa: F821
+                _source(row, now),
                 _html_escape(_shown_on(row)),  # noqa: F821
                 _status(row, now),
                 shell.time_html(row.get("checked_at"), now)
@@ -168,13 +176,16 @@ def render(rows, csrf_field, admin_query, now):
         body, "No instance has asked to be listed or to have a hexagon yet.")
     return shell.page_head(
         "Instances",
-        "Instances started from /start that asked for a homepage listing or "
-        "a World hexagon.") + shell.card(
+        "Instances started from /start, or self-hosted ones that joined from "
+        "their own admin console, that asked for a homepage listing or a "
+        "World hexagon.") + shell.card(
         title="Instance directory",
         description="Every 15 minutes up to %d instances are asked for "
         "/readyz. After %d missed checks in a row an instance is not shown, "
         "and after a day offline the admins get one ping asking whether to "
-        "delete it. Hide keeps an instance off both even while it answers."
+        "delete it. Hide keeps an instance off both even while it answers. "
+        "An instance that joined by itself comes back after a Delete on its "
+        "next announcement; Hide keeps it off."
         % (instance_directory.HEALTH_BATCH,
            instance_directory.OFFLINE_FAILURES),
         table=table)

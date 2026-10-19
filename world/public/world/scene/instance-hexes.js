@@ -27,6 +27,25 @@ const LANDMARK_INSET = CONTINUOUS_CITY_RADIUS * 0.55;
 const MESH_ROAD_DROP = 0.02;
 
 function flowerRoadGeometry(THREE) {
+
+export function instanceHexArrival(slot) {
+  const tile = instanceHexSlot(slot);
+  if (!tile) return null;
+  const reach = LANDMARK_INSET + 18;
+  return {
+    x: tile.x - tile.normalX * reach,
+    z: tile.z - tile.normalZ * reach,
+    heading: Math.atan2(tile.normalX, tile.normalZ),
+    space: "town-square",
+  };
+}
+
+export function instanceHexSlot(slot) {
+  const index = Number(slot);
+  return Number.isInteger(index) ? INSTANCE_HEX_SLOTS[index] || null : null;
+}
+
+function roadRingGeometry(THREE, tile) {
   const outer = roundedHexagonOutline(
     CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
     CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
@@ -200,6 +219,10 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
     object.userData.url = instance.world;
     object.userData.label = instance.name;
     object.userData.host = instance.host;
+    object.userData.worldUrl = instance.worldUrl || "";
+    object.userData.arrivalSlot = Number.isInteger(instance.arrivalSlot)
+      ? instance.arrivalSlot
+      : instance.slot;
     interactive.push(object);
   };
 
@@ -270,7 +293,9 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
   const label = makeLabelSprite(
     THREE,
     String(instance.name || "ForkMesh instance").slice(0, 22),
-    String(instance.host || "").slice(0, 32),
+    instance.worldUrl
+      ? `portal · ${String(instance.host || "")}`.slice(0, 32)
+      : String(instance.host || "").slice(0, 32),
     "#9ef7c6",
   );
   label.scale.set(15, 5, 1);

@@ -24,6 +24,25 @@ SCHEMA = (
     ON instance_directory(created_at)""",
     """CREATE INDEX IF NOT EXISTS idx_instance_directory_checked
     ON instance_directory(checked_at)""",
+    """CREATE TABLE IF NOT EXISTS instance_registrations (
+    domain TEXT PRIMARY KEY,
+    public_key TEXT NOT NULL,
+    world_url TEXT NOT NULL DEFAULT '',
+    announced_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+)""",
+    """CREATE TABLE IF NOT EXISTS instance_register_attempts (
+    client_key TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    at INTEGER NOT NULL
+)""",
+    """CREATE INDEX IF NOT EXISTS idx_instance_register_attempts_at
+    ON instance_register_attempts(at)""",
+    """CREATE INDEX IF NOT EXISTS idx_instance_register_attempts_client
+    ON instance_register_attempts(client_key, at)""",
+    """CREATE INDEX IF NOT EXISTS idx_instance_register_attempts_domain
+    ON instance_register_attempts(domain, at)""",
 )
 ID_RE = re.compile(r"^[0-9a-f]{32}$")
 LOGO_RE = re.compile(
@@ -38,6 +57,8 @@ HEALTH_BATCH = 20
 PING_AFTER_MS = 24 * 60 * 60 * 1000
 VISIBLE = ("hidden=0 AND failures<%d AND (listed=1 OR (world=1 AND slot>=0))"
            % OFFLINE_FAILURES)
+VISIBLE_D = ("d.hidden=0 AND d.failures<%d AND (d.listed=1 OR "
+             "(d.world=1 AND d.slot>=0))" % OFFLINE_FAILURES)
 DOMAIN_RE = re.compile(
     r"^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$")
 _SCHEMA_READY = False
@@ -110,6 +131,13 @@ async def publish(runtime, launch_id, domain, entry):
     return slot
 
 
+def world_url(row, world):
+    value = str(row.get("world_url") or "")
+    url = str(row.get("url") or "")
+    return value if world and url.startswith("https://") and \
+        value == url + "world/" else ""
+
+
 def public_entry(row):
     world = bool(row.get("world")) and int(row.get("slot", -1)) >= 0
     logo = ""
@@ -124,6 +152,10 @@ def public_entry(row):
         "listed": bool(row.get("listed")),
         "world": world,
         "slot": int(row.get("slot", -1)) if world else -1,
+        "worldUrl": world_url(row, world),
+        "status": "online" if int(row.get("checked_at") or 0) and not int(
+            row.get("failures") or 0) else "checking",
+        "checkedAt": int(row.get("checked_at") or 0),
         "createdAt": int(row.get("created_at") or 0),
     }
 
@@ -131,9 +163,12 @@ def public_entry(row):
 async def instances(runtime):
     await ensure(runtime)
     rows = await runtime.d1_all(
-        "SELECT id,name,url,logo<>'' AS has_logo,world,listed,slot,"
-        "created_at,updated_at FROM instance_directory WHERE " + VISIBLE +
-        " ORDER BY created_at, domain LIMIT ?",
+        "SELECT d.id,d.name,d.url,d.logo<>'' AS has_logo,d.world,d.listed,"
+        "d.slot,d.created_at,d.updated_at,d.checked_at,d.failures,"
+        "r.world_url AS world_url "
+        "FROM instance_directory d LEFT JOIN instance_registrations r "
+        "ON r.domain=d.domain WHERE " + VISIBLE_D +
+        " ORDER BY d.created_at, d.domain LIMIT ?",
         MAX_ENTRIES)
     return runtime.public_response(
         {"ok": True, "instances": [public_entry(row) for row in rows or []]},
@@ -224,9 +259,12 @@ async def check_health(runtime):
 async def admin_rows(runtime):
     await ensure(runtime)
     rows = await runtime.d1_all(
-        "SELECT domain,id,name,url,world,listed,slot,hidden,failures,"
-        "offline_since,checked_at,pinged_at,created_at FROM instance_directory "
-        "ORDER BY created_at, domain LIMIT ?", MAX_ENTRIES)
+        "SELECT d.domain,d.id,d.name,d.url,d.world,d.listed,d.slot,d.hidden,"
+        "d.failures,d.offline_since,d.checked_at,d.pinged_at,d.created_at,"
+        "r.announced_at AS announced_at,r.public_key AS public_key "
+        "FROM instance_directory d LEFT JOIN instance_registrations r "
+        "ON r.domain=d.domain ORDER BY d.created_at, d.domain LIMIT ?",
+        MAX_ENTRIES)
     return [dict(row) for row in rows or []]
 
 
@@ -253,4 +291,6 @@ async def delete(runtime, entry_id):
     if not row:
         return None
     await runtime.d1_run("DELETE FROM instance_directory WHERE id=?", entry_id)
+    await runtime.d1_run(
+        "DELETE FROM instance_registrations WHERE domain=?", row["domain"])
     return row["domain"]

@@ -414,6 +414,30 @@ def site_document_asset_path(pathname):
     return pathname
 
 
+WORLD_IMMUTABLE_CACHE = "public, max-age=31536000, immutable"
+WORLD_SHELL_CACHE = "no-store, max-age=0, must-revalidate"
+
+
+def world_asset_path(pathname):
+    parts = path_parts(pathname)
+    if (not parts or parts[0] != "world"
+            or any(unquote(part) in (".", "..") for part in parts)):
+        return ""
+    if len(parts) == 1:
+        return "/world/index.html"
+    return "/" + "/".join(parts)
+
+
+def world_asset_cache_control(pathname, query):
+    parts = path_parts(pathname)
+    versioned = any(
+        item.startswith("v=") and len(item) > 2
+        for item in str(query or "").split("&"))
+    if len(parts) > 1 and (versioned or parts[1] == "vendor"):
+        return WORLD_IMMUTABLE_CACHE
+    return WORLD_SHELL_CACHE
+
+
 def looks_like_repo_route(pathname):
     parts = path_parts(pathname)
     if len(parts) < 2:

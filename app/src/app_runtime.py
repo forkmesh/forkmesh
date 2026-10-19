@@ -59,6 +59,28 @@ SITE_DOCUMENT_FALLBACK_SECURITY_HEADERS = {
     "x-frame-options": "DENY",
 }
 
+WORLD_DOCUMENT_SECURITY_HEADERS = {
+    "content-security-policy": (
+        "default-src 'self'; base-uri 'self'; object-src 'none'; "
+        "frame-ancestors 'none'; form-action 'self'; "
+        "script-src 'self' 'unsafe-inline' "
+        "https://static.cloudflareinsights.com; style-src 'self' "
+        "'unsafe-inline'; img-src 'self' data: blob: https:; "
+        "font-src 'self' data:; connect-src 'self' https: wss:; "
+        "media-src 'self' blob: https:; frame-src 'self' https:; "
+        "worker-src 'self' blob:; manifest-src 'self'; "
+        "upgrade-insecure-requests"
+    ),
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": (
+        "camera=(), geolocation=(), payment=(), usb=(), serial=(), "
+        "browsing-topics=(), microphone=(self), clipboard-write=(self)"
+    ),
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+}
+
 
 class Default:
     """Request implementation for per-event global HTTP and cron handlers."""
@@ -891,6 +913,7 @@ class Default:
         if maintenance is not None:
             return self._with_fast_cors(request, maintenance)
         if instance_features.branded(self.env):
+            await self._instance_plugins_load()
             plugin_path = urlparse(str(request.url)).path
             switched_off = instance_features.blocked(self.env, plugin_path)
             if switched_off:
@@ -1200,6 +1223,10 @@ class Default:
                 account_cookie_name)
         if params.get("view", [""])[0] == _instance_directory_admin.VIEW:
             return await _instance_directory_admin.admin_handler(
+                self.env, request, params, csrf_field, admin_query,
+                account_cookie_name)
+        if params.get("view", [""])[0] in _instance_console.VIEWS:
+            return await _instance_console.admin_handler(
                 self.env, request, params, csrf_field, admin_query,
                 account_cookie_name)
         if params.get("view", [""])[0] in _server_update_admin.VIEWS:
@@ -1681,6 +1708,59 @@ class Default:
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "public, max-age=300"}))
 
+    async def _instance_plugins_load(self):
+        now = int(Date.now())
+        if instance_features.fresh(now):
+            return
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_features.SETTING_KEY)
+        except Exception:
+            instance_features.remember(instance_features.current(), now)
+            return
+        instance_features.remember(
+            instance_features.parse((row or {}).get("doc") or ""), now)
+
+    async def _instance_directory_setting(self):
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_registry.SETTING_KEY)
+        except Exception:
+            row = None
+        if row is None:
+            return None
+        return instance_registry.parse_setting(row.get("doc") or "")
+
+    async def _instance_directory_document(self, request):
+        setting = await self._instance_directory_setting()
+        domain = instance_registry.domain_of(
+            getattr(self.env, "PUBLIC_BASE_URL", "") or "")
+        public_key = _https_mirror_router_public_key(self.env)
+        if setting is None or not domain or not public_key:
+            return json_response({"error": "not_found"}, status=404,
+                                 cache_control="no-store")
+        return self._without_head_body(request, json_response(
+            instance_registry.document(
+                domain, instance_name(self.env),
+                getattr(self.env, "INSTANCE_LOGO", "") or "", setting,
+                "world" in instance_features.enabled_ids(self.env),
+                public_key), cache_control="no-store"))
+
+    async def _instance_directory_links(self):
+        if not instance_branded(self.env):
+            return None
+        setting = await self._instance_directory_setting()
+        if setting is None:
+            return None
+        return {
+            "listed": setting["listed"],
+            "world": setting["world"],
+            "portal": instance_registry.world_portal(
+                setting, "world" in instance_features.enabled_ids(self.env)),
+        }
+
     async def _instance_legal_setting(self):
         if not instance_branded(self.env):
             return instance_legal.default()
@@ -1805,6 +1885,7 @@ class Default:
                     await self._instance_legal_setting(),
                     instance_branded(self.env)),
                 "repoAddresses": await self._repo_addresses_doc(),
+                "directory": await self._instance_directory_links(),
             }, cache_control="public, max-age=60")
         if url.path == "/api/instance/theme" and instance_branded(self.env) \
                 and method_name(request) in ("PUT", "POST"):
@@ -1815,6 +1896,10 @@ class Default:
                 instance_theme.css(await self._instance_theme()), status=200,
                 headers={"content-type": "text/css; charset=utf-8",
                          "cache-control": "public, max-age=60"}))
+        if instance_branded(self.env) and \
+                url.path == instance_registry.DOC_PATH and \
+                method_name(request) in ("GET", "HEAD"):
+            return await self._instance_directory_document(request)
         if instance_branded(self.env):
             legal_page = await self._instance_legal_route(request, url)
             if legal_page is not None:
@@ -2028,6 +2113,8 @@ class Default:
             if mode == "proxy":
                 return await self._serve_site_document(
                     request, url, destination_origin)
+            if external_owner == "world":
+                return await self._serve_world_asset(request, url)
             return await self._serve_site_document(request, url, "")
 
         if url.path in BLOCKED_STATIC_HTML_PATHS:
@@ -4197,6 +4284,26 @@ class Default:
         except Exception:
             pass
         return await self._serve_not_found_page(url)
+
+    async def _serve_world_asset(self, request, url):
+        path = world_asset_path(url.path)
+        if not path:
+            return await self._serve_not_found_page(url)
+        base = url.scheme + "://" + url.netloc
+        try:
+            local = await self.env.ASSETS.fetch(base + path)
+            if int(getattr(local, "status", 0) or 0) != 200:
+                return await self._serve_not_found_page(url)
+            headers = dict(WORLD_DOCUMENT_SECURITY_HEADERS)
+            headers["content-type"] = str(
+                local.headers.get("content-type")
+                or "application/octet-stream")
+            headers["cache-control"] = world_asset_cache_control(
+                url.path, url.query)
+            return self._without_head_body(request, JsResponse.new(
+                local.body, to_js({"status": 200, "headers": headers})))
+        except Exception:
+            return await self._serve_not_found_page(url)
 
     async def _proxy_site_document(self, request, url, upstream):
         destination = upstream + url.path + (

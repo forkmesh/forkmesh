@@ -96,6 +96,9 @@ def read_spec(raw):
     legal = spec.get("legalPages")
     if legal not in (None, "", {}) and not isinstance(legal, dict):
         raise BootstrapError("legalPages must be an object")
+    directory = spec.get("directory")
+    if directory not in (None, "", {}) and not isinstance(directory, dict):
+        raise BootstrapError("directory must be an object")
     return {
         "admin": admin,
         "email": email,
@@ -108,6 +111,7 @@ def read_spec(raw):
         "theme": theme or "",
         "singleOrganization": single,
         "legalPages": legal or {},
+        "directory": directory or {},
     }
 
 
@@ -240,6 +244,22 @@ async def ensure_legal_pages(entry, env, value):
     return True
 
 
+async def ensure_directory(entry, env, value):
+    try:
+        setting = entry.instance_registry.from_install(value)
+    except ValueError as error:
+        raise BootstrapError(str(error)) from error
+    if setting is None:
+        return False
+    await entry.d1_run(
+        env,
+        "INSERT INTO instance_settings (k, doc, updated_at) "
+        "VALUES (?, ?, ?) ON CONFLICT(k) DO NOTHING",
+        entry.instance_registry.SETTING_KEY,
+        entry.instance_registry.dump_setting(setting), int(entry.Date.now()))
+    return True
+
+
 def repo_paths_doc(owner, canonical=True):
     return json.dumps({"canonical": bool(canonical), "owner": owner,
                        "short": True}, sort_keys=True, separators=(",", ":"))
@@ -308,6 +328,8 @@ async def bootstrap(runtime, spec, bot_seed=""):
         await ensure_repo_paths(entry, env, spec["owner"])
     if spec.get("legalPages"):
         await ensure_legal_pages(entry, env, spec["legalPages"])
+    if spec.get("directory"):
+        await ensure_directory(entry, env, spec["directory"])
     bot = ""
     if bot_seed:
         if not SEED_RE.fullmatch(bot_seed):

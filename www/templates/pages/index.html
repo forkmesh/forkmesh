@@ -4551,6 +4551,64 @@
         white-space: nowrap;
       }
 
+      #instances .inst-status {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        color: var(--home-muted);
+        font-size: 0.75rem;
+      }
+
+      #instances .inst-dot {
+        width: 0.5rem;
+        height: 0.5rem;
+        border-radius: 50%;
+        background: var(--home-muted);
+      }
+
+      #instances .inst-status[data-state="online"] .inst-dot {
+        background: #3fb950;
+      }
+
+      #instances .inst-empty {
+        margin: 1.75rem auto 0;
+        color: var(--home-muted);
+        font-family: var(--landing-body-font);
+      }
+
+      #instances .inst-empty[hidden] {
+        display: none;
+      }
+
+      #instances .inst-actions {
+        display: flex;
+        justify-content: center;
+        margin-top: 1.75rem;
+      }
+
+      #instances .inst-start {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        padding: 0.625rem 1rem;
+        border: 1px solid var(--btn-secondary-border);
+        border-radius: 999px;
+        background: var(--btn-secondary-fill);
+        box-shadow: var(--btn-secondary-shadow);
+        color: var(--btn-secondary-fg);
+        font-family: var(--landing-body-font);
+        font-weight: 600;
+        text-decoration: none;
+      }
+
+      #instances .inst-start:hover {
+        background: var(--btn-secondary-fill-hover);
+      }
+
+      #instances .inst-start[hidden] {
+        display: none;
+      }
+
       #ecosystem {
         --eco-cols: 4;
         --eco-gap: 1.25rem;
@@ -9335,12 +9393,17 @@
 
       <section id="instances" aria-labelledby="instances-title" data-instances-section hidden>
         <div class="inst-shell">
-          <h2 id="instances-title">ForkMesh instances</h2>
+          <h2 id="instances-title">Federated instances</h2>
           <p class="inst-lede">
-            Independent ForkMesh hosts, each on its own server and domain.
-            <a href="/start">Start your own instance</a> and it can join this list.
+            Independent ForkMesh hosts, each on its own server and domain, with
+            a hexagon of their own in the ForkMesh World. Start one here, or
+            list one you already run from its admin console.
           </p>
-          <ul class="inst-list" role="list" aria-label="ForkMesh instances" data-instances-list></ul>
+          <ul class="inst-list" role="list" aria-label="Federated instances" data-instances-list></ul>
+          <p class="inst-empty" data-instances-empty hidden>No instance has joined yet. Yours can be the first.</p>
+          <div class="inst-actions">
+            <a class="inst-start" href="/start" data-instances-start data-forkmesh-product-action="home-start-instance">Start an instance <svg class="btn-chevron" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M6 3.5 10.5 8 6 12.5" /></svg></a>
+          </div>
         </div>
       </section>
 
@@ -10065,6 +10128,9 @@
         const section = document.querySelector("[data-instances-section]");
         if (!section) return;
         const list = section.querySelector("[data-instances-list]");
+        const empty = section.querySelector("[data-instances-empty]");
+        const onInstance = Boolean(document.querySelector("script[data-instance-brand]"));
+        if (onInstance) section.querySelector("[data-instances-start]").hidden = true;
         const el = (tag, className, text) => {
           const node = document.createElement(tag);
           if (className) node.className = className;
@@ -10101,7 +10167,11 @@
             mark.textContent = name.charAt(0).toUpperCase();
           }
           const text = el("span", "inst-text");
-          text.append(el("span", "inst-name", name), el("span", "inst-host", url.hostname));
+          const online = instance.status === "online";
+          const status = el("span", "inst-status");
+          status.dataset.state = online ? "online" : "checking";
+          status.append(el("span", "inst-dot"), document.createTextNode(online ? "Online" : "Checking"));
+          text.append(el("span", "inst-name", name), el("span", "inst-host", url.hostname), status);
           link.append(mark, text);
           item.append(link);
           return item;
@@ -10116,11 +10186,13 @@
               .filter((instance) => instance && instance.listed === true)
               .map(card)
               .filter(Boolean);
-            if (!cards.length) return;
             list.replaceChildren(...cards);
-            section.hidden = false;
+            empty.hidden = cards.length > 0;
+            section.hidden = onInstance && !cards.length;
           })
-          .catch(() => {});
+          .catch(() => {
+            section.hidden = onInstance;
+          });
       })();
     </script>
 {% endblock %}

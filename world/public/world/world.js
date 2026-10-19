@@ -71,12 +71,24 @@ import {
 } from "./world-debug-log.js";
 import { proceduralAvatarFaceDataURL } from "./world-avatar-face.js";
 import {
+  PORTAL_PARAM,
+  homePortalHex,
+  instanceKeepsDirectory,
+  instancePluginOff,
+  portalDestination,
+  requestedPortalSlot,
+  withHomePortal,
+  worldPortalURL,
+} from "./world-instance-portals.js";
+import {
   WORLD_MEMBER_DIRECTORY_PATH,
   installWorldBoot,
   readWorldBootPrefs,
   startWorldBootPrefetch,
 } from "./world-boot.js";
+import { installCanvasBrand } from "./world-brand.js";
 
+if (typeof window !== "undefined") installCanvasBrand();
 if (typeof window !== "undefined") startWorldBootPrefetch(window);
 const WORLD_BOOT = typeof window === "undefined" ? null : installWorldBoot(window);
 WORLD_BOOT?.mark("runtime", "World runtime module evaluated", "module");
@@ -3592,6 +3604,39 @@ function normalizeInactiveWorldPlayers(value) {
     }));
 }
 
+function normalizeInstanceHexes(value) {
+  const seen = new Set();
+  return (Array.isArray(value?.instances) ? value.instances : [])
+    .map((item) => {
+      const url = safeHTTPURL(item?.url);
+      const slot = Number(item?.slot);
+      if (
+        item?.world !== true ||
+        !url.startsWith("https://") ||
+        !Number.isInteger(slot) ||
+        slot < 0 ||
+        seen.has(slot) ||
+        !/^[a-f0-9]{32}$/.test(String(item?.id || ""))
+      ) {
+        return null;
+      }
+      seen.add(slot);
+      const logo = String(item?.logo || "");
+      return {
+        id: String(item.id),
+        name: sanitizePresenceText(item?.name, "ForkMesh instance", 40),
+        url,
+        host: new URL(url).hostname,
+        logo: /^\/api\/start\/instances\/[0-9a-f]{32}\/logo\?v=\d+$/.test(logo)
+          ? logo
+          : "",
+        slot,
+        worldUrl: worldPortalURL(item?.worldUrl, new URL(url).hostname),
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeFederatedInstances(value) {
   return (Array.isArray(value?.instances) ? value.instances : [])
     .map((item) => ({
@@ -6394,6 +6439,9 @@ class ForkMeshWorld extends HTMLElement {
     this.worldMesh = { self: null, worlds: [] };
     this.meshLinks = null;
     this.meshVisitId = "";
+    this.instanceHexes = [];
+    this.homePortal = undefined;
+    this.pendingPortalSlot = requestedPortalSlot(location.search);
     this.communityPlacement = null;
     this.networkAd = null;
     this.networkAdLoad = null;
@@ -7934,10 +7982,17 @@ class ForkMeshWorld extends HTMLElement {
         onStartWorldSignSelect: (plot) => this.openStartInstance(plot),
         onDrinkWater: () =>
           this.hudNotice("Fresh garden water — hydration restored. 💧"),
-        onInstanceHexagonSelect: ({ label, host }) => {
-          this.hudNotice(
-            `${label || "ForkMesh world"}${host ? ` · ${host}` : ""}: walk onto its hexagon to visit.`,
-          );
+        onInstanceHexagonSelect: ({ url, label, worldUrl, arrivalSlot }) => {
+          const portal = portalDestination(worldUrl, arrivalSlot);
+          if (portal) {
+            this.hudNotice(`Through the portal to ${label || "a ForkMesh World"}…`);
+            window.location.assign(portal);
+            return;
+          }
+          const destination = safeHTTPURL(url);
+          if (!destination.startsWith("https://")) return;
+          this.hudNotice(`Opening ${label || "ForkMesh instance"}…`);
+          window.open(destination, "_blank", "noopener,noreferrer");
         },
         onFederatedWorldTravel: ({ origin, label }) => {
           const destination = safeHTTPURL(origin);
@@ -8668,9 +8723,11 @@ class ForkMeshWorld extends HTMLElement {
           timeout: 4000,
           cache: "no-store",
         }),
-        this.fetchJSON(
-          "/api/world/community-ads/placements?context=town-square",
-          { auth: false, timeout: 4000, cache: "no-store" },
+        this.whenInstancePlugin("ads", () =>
+          this.fetchJSON(
+            "/api/world/community-ads/placements?context=town-square",
+            { auth: false, timeout: 4000, cache: "no-store" },
+          ),
         ),
         this.fetchJSON("/api/world/fediverse-mentions", {
           auth: false,
@@ -8735,12 +8792,14 @@ class ForkMeshWorld extends HTMLElement {
       this.networkAd = null;
       return Promise.resolve();
     }
-    this.networkAdLoad = this.fetchJSON(NETWORK_AD_SERVE_PATH, {
-      auth: false,
-      credentials: "omit",
-      timeout: 4000,
-      maxAge: NETWORK_AD_MAX_AGE_MS,
-    })
+    this.networkAdLoad = this.whenInstancePlugin("ads", () =>
+      this.fetchJSON(NETWORK_AD_SERVE_PATH, {
+        auth: false,
+        credentials: "omit",
+        timeout: 4000,
+        maxAge: NETWORK_AD_MAX_AGE_MS,
+      }),
+    )
       .then(
         (payload) => normalizeNetworkAd(payload),
         // A failed or cooling-down serve call is an empty slot, not an error.
@@ -10883,11 +10942,13 @@ class ForkMeshWorld extends HTMLElement {
         // absent: loadRepositoryCatalog() issues them when a character
         // reaches the repository district.
         this.fetchJSON("/api/version", { auth: false, timeout: 5000 }),
-        this.fetchJSON("/api/accounts/central-fund", {
-          auth: false,
-          timeout: 5000,
-          cache: "no-store",
-        }),
+        this.whenInstancePlugin("rewards", () =>
+          this.fetchJSON("/api/accounts/central-fund", {
+            auth: false,
+            timeout: 5000,
+            cache: "no-store",
+          }),
+        ),
         this.fetchJSON("/api/world/organizations", {
           auth: hasSession,
           timeout: 5000,
@@ -10914,10 +10975,12 @@ class ForkMeshWorld extends HTMLElement {
           timeout: 4000,
         }),
         hasSession
-          ? this.fetchJSON("/api/rewards/pending", {
-              timeout: 5000,
-              cache: "no-store",
-            })
+          ? this.whenInstancePlugin("rewards", () =>
+              this.fetchJSON("/api/rewards/pending", {
+                timeout: 5000,
+                cache: "no-store",
+              }),
+            )
           : Promise.resolve({ rewards: [] }),
         hasSession && session?.nodeName
           ? this.fetchJSON(
@@ -10940,13 +11003,15 @@ class ForkMeshWorld extends HTMLElement {
           timeout: 5000,
           cache: "no-store",
         }),
-        this.fetchJSON(
-          "/api/world/community-ads/placements?context=town-square",
-          {
-            auth: false,
-            timeout: 4000,
-            cache: "no-store",
-          },
+        this.whenInstancePlugin("ads", () =>
+          this.fetchJSON(
+            "/api/world/community-ads/placements?context=town-square",
+            {
+              auth: false,
+              timeout: 4000,
+              cache: "no-store",
+            },
+          ),
         ),
         this.fetchJSON("/api/world/fediverse-mentions", {
           auth: false,
@@ -11170,7 +11235,14 @@ class ForkMeshWorld extends HTMLElement {
       this.world?.updateFederatedInstances?.(instances);
       this.celebrateRecentInstance(instances);
     } catch (_) {}
+    const instance = await this.instanceInfo();
+    if (this.homePortal === undefined) {
+      this.homePortal = homePortalHex(instance);
+    }
     try {
+      if (!instanceKeepsDirectory(instance)) {
+        throw new Error("instance_directory_not_here");
+      }
       const payload = await this.fetchJSON(
         `/api/world/mesh?refresh=${Math.floor(Date.now() / 300_000)}`,
         {
@@ -11181,7 +11253,16 @@ class ForkMeshWorld extends HTMLElement {
       );
       this.worldMesh = normalizeWorldMesh(payload);
       this.placeWorldMesh();
-    } catch (_) {}
+      this.instanceHexes = withHomePortal(
+        normalizeInstanceHexes(payload),
+        this.homePortal,
+      );
+      this.world?.updateInstanceHexes?.(this.instanceHexes);
+    } catch (_) {
+      this.instanceHexes = withHomePortal([], this.homePortal);
+      this.world?.updateInstanceHexes?.(this.instanceHexes);
+    }
+    this.applyPortalArrival();
     try {
       const payload = await this.fetchJSON(
         `/api/world/installs?refresh=${Math.floor(Date.now() / 30_000)}`,
@@ -11194,6 +11275,22 @@ class ForkMeshWorld extends HTMLElement {
       this.celebrateRecentInstall(
         Array.isArray(payload?.installs) ? payload.installs : [],
       );
+    } catch (_) {}
+  }
+
+  applyPortalArrival() {
+    const slot = this.pendingPortalSlot;
+    if (slot < 0 || !this.world?.setSpawn) return;
+    const hex = this.instanceHexes.find((item) => item.slot === slot);
+    const spawn = hex ? this.world.instanceHexArrival?.(slot) : null;
+    if (!spawn) return;
+    this.pendingPortalSlot = -1;
+    this.world.setSpawn(spawn);
+    this.hudNotice(`Arrived through the portal at ${hex.name}`);
+    try {
+      const url = new URL(location.href);
+      url.searchParams.delete(PORTAL_PARAM);
+      history.replaceState(history.state, "", url.href);
     } catch (_) {}
   }
 
@@ -15674,7 +15771,34 @@ class ForkMeshWorld extends HTMLElement {
     }
   }
 
+  instanceInfo() {
+    if (!this.instanceInfoRequest) {
+      this.instanceInfoRequest = this.fetchJSON("/api/instance", {
+        auth: false,
+        timeout: 5000,
+        credentials: "omit",
+      }).catch(() => null);
+    }
+    return this.instanceInfoRequest;
+  }
+
+  async whenInstancePlugin(id, request) {
+    if (instancePluginOff(await this.instanceInfo(), id)) {
+      throw new Error("plugin_disabled");
+    }
+    return request();
+  }
+
   async refreshRewardState({ force = false } = {}) {
+    if (instancePluginOff(await this.instanceInfo(), "rewards")) {
+      this.pendingRewards = [];
+      this.setLandmarkCapability(
+        "fountain",
+        false,
+        LANDMARK_CONSTRUCTION_REASONS.fountain,
+      );
+      return;
+    }
     const hasSession =
       this.sessionAuthenticated && Boolean(validWorldSession());
     const [pool, pending] = await Promise.allSettled([

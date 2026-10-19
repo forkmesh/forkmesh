@@ -52,6 +52,7 @@ extra organization owners); optional mail provider; listing choices
 | `GET /api/start/launches/<id>` | state, steps, message, log, URL; the 128-bit id is the capability |
 | `GET /api/start/instances` | public list of listed instances and World slots |
 | `GET /api/start/instances/<id>/logo` | an instance's logo, served with a sandboxing CSP and `nosniff` |
+| `POST /api/start/instances/register` | a self-installed instance joins or leaves the directory ([app/instance-federation.md](app/instance-federation.md)) |
 
 - No account needed. Rate limits per client (stored only as a salted hash)
   and a global concurrency cap.
@@ -414,9 +415,9 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   JSON and refuses one with other modes, odd token names or non-hex values.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
-  pages and others) are off on an instance unless listed in
-  `INSTANCE_PLUGINS`. A disabled plugin's routes answer 404 before any other
-  route; tagged UI (`data-instance-plugin`) is hidden.
+  pages and others) are off on an instance unless turned on. A disabled
+  plugin's routes answer 404 before any other route; tagged UI
+  (`data-instance-plugin`) is hidden. See [Plugins](#plugins) below.
 - **Market packages:** every account on an instance has the
   pre-marketplace packages (repository tabs, Chat, Network, Agents, ...)
   installed until it removes one itself, because an instance has no Market
@@ -451,6 +452,137 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   and never turns a page on. forkmesh.com keeps its own pages and links.
   Details: [app/instance-legal-pages.md](app/instance-legal-pages.md).
 
+## Plugins
+
+An admin turns optional plugins on and off from the admin console, Platform →
+Plugins (`app/src/instance_console.py`). The choice applies without a
+reinstall or restart.
+
+| Plugin | On an instance |
+|---|---|
+| `world` | The instance's own World at `/world` with the Office and its chat. With a World listing ([Directory](#directory)) a portal joins it to the ForkMesh World. |
+| `guestbook` | The agent guestbook in the instance's chat. |
+| `genie` | The tip spider at the bottom of each page. |
+| `developer-docs` | The dashboard's Developer docs, read from the instance's read-only `forkmesh` mirror. |
+
+Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
+`discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
+`blog`, `status`, `ios-testers`, `website`) needs forkmesh.com's own
+accounts, ledger, keys or content. The page lists them under "forkmesh.com
+services" with the reason (`FORKMESH_ONLY`) and offers no switch;
+`/api/instance` reports each plugin's `scope` (`instance` or `forkmesh`) and
+`note`. An operator who really wants one can still name it in
+`INSTANCE_PLUGINS`; a saved choice keeps it as it is.
+
+- **Where the choice lives.** Saving writes the `instance_settings` row
+  `plugins` (`{"enabled": [...]}`), CSRF-checked and audited as
+  `admin.console_save_plugins` with the plugins turned on and off. Until the
+  first save, `INSTANCE_PLUGINS` (the install setting `plugins`) decides;
+  once the row exists it wins. The installer never writes the row and
+  `--update` only rewrites `INSTANCE_PLUGINS`, so an update keeps the
+  admin's choice.
+- **How it applies.** Every request on an instance passes
+  `Default._instance_plugins_load` before the plugin gate. It reads the row
+  at most every 30 seconds (`CACHE_MS`) into a process cache that
+  `enabled_ids` uses; a failed read keeps the last value. The saving process
+  updates its cache at once, so the admin sees the result on the next page;
+  `/api/instance` (cached 60 s) and the brand script follow within a minute.
+- forkmesh.com never reads the row: every plugin stays on there, and the page
+  says so instead of showing the form.
+- **The most specific prefix wins.** `feature_for` picks the plugin with the
+  longest matching path prefix, so `/api/world/store` and `/api/world/wallet`
+  belong to `rewards` and `/api/world/community-ads` to `ads` even while
+  `world` (which owns `/api/world`) is on. Before, the first listed plugin
+  won and turning the World on also opened those forkmesh.com-only routes.
+
+### The World on an instance
+
+The World client lives in `world/public/world`, not in `app/public`, and
+forkmesh.com serves it from a separate `world/dist`. The instance build
+therefore runs `app/tools/build_site_assets.py instance-world` after
+`forkmesh_host build` and before `apply_instance_brand.py`
+(`build_app` in the installer). It builds `world/dist` as for
+world.forkmesh.com (bundled scene, minified and versioned modules,
+three.js r184 vendored under `/world/vendor/`) and copies it into
+`app/dist`: all of `world/`, plus the World-only files the app bundle lacks
+(bot avatars, marketplace World packages, `security/latest.json`). It never
+overwrites an app file and drops the World's `_headers`. The World
+document's canonical link to forkmesh.com is removed. The result is about
+10 MB on disk (6 MB of it source maps); the build needs the same esbuild the
+Office build already installs. The target is not part of a plain
+`build_site_assets.py` run, so forkmesh.com's app bundle is unchanged.
+
+The World is always bundled; the plugin decides at request time. The
+installer sets `WORLD_ORIGIN` to the instance's own origin, so
+`external_site_delivery` answers `local` and `_serve_world_asset`
+(`app/src/app_runtime.py`) serves `/world` and `/world/` from
+`world/index.html` and every other `/world/...` path from the exact bundled
+file (`static_routes.world_asset_path`; dot segments and unknown files are
+404). Headers:
+
+- `content-type` from the file (`text/javascript` for modules, `image/webp`
+  and so on).
+- `cache-control`: `public, max-age=31536000, immutable` for a `?v=` URL and
+  for `/world/vendor/`; `no-store, max-age=0, must-revalidate` for the
+  document and any unversioned file, as on world.forkmesh.com, so a rebuild
+  never mixes module graphs.
+- The World CSP (`WORLD_DOCUMENT_SECURITY_HEADERS`): `script-src 'self'
+  'unsafe-inline' https://static.cloudflareinsights.com` with no CDN, since
+  three.js is local. The Cloudflare origin is the Web Analytics beacon that
+  Cloudflare injects into pages of a proxied instance; the site-wide CSP
+  already allows it, and without it every World load logged a CSP error.
+  `connect-src 'self'
+  https: wss:` for the API and the `/api/world/ws` presence socket; frames
+  `'self'` for the embedded chat; `frame-ancestors 'none'` (nothing frames
+  the World on an instance, and the global HTML layer sets
+  `X-Frame-Options: DENY`).
+
+With the plugin off, the plugin gate answers 404 for `/world`, `/world/*`,
+`/api/world/*` and `/office` before any of this runs.
+
+Every API the World calls is relative to the page, and `api-client.js` keeps
+`location.origin` on any host that is not forkmesh.com, so presence, chat,
+the Office, plots, notes and preferences reach the instance's own app and
+accounts. The World's server code calls no forkmesh.com address (satellites
+read celestrak.org, social boards x.com and reddit.com), so the egress guard
+needs no new allowance.
+
+Branding: the brand tool renames the World's title ("Acme Code World") and
+adds the brand script, which renames "ForkMesh" in the World's HTML. Text
+the scene paints on canvases (signs such as "FORKMESH OFFICE") is renamed by
+`world/public/world/world-brand.js`: on a page that carries the brand script
+it wraps `fillText`, `strokeText` and `measureText` of the 2D canvas
+contexts so measured and painted text match. It leaves "ForkMesh World" (the
+portal home), "ForkMesh Desktop", `forkmesh.com` addresses, `@forkmesh`
+handles and lower-case repository names alone. The logo comes from
+`/assets/logo.svg`, which the brand tool replaces with the instance logo.
+
+What does not work on an instance: the rewards and ledger parts (World
+store, wallet, central fund, pending rewards), community ads, the ForkMesh
+blog board, the `forkmesh/forkmesh` mirror and agent-bot boards (they read
+that repository, which an instance does not have under that name), Discord,
+and the relay federation towers. The World shows those boards empty.
+
+The World asks `/api/instance` once (`instanceInfo()` in `world.js`) and
+does not request what the instance has switched off, so a visitor's console
+stays clean: with `rewards` off it skips `/api/accounts/central-fund` and
+`/api/rewards/pending`; with `ads` off the community placement and
+`/api/ads/serve`; and on any instance (`branded: true`) the forkmesh.com
+directory `/api/start/instances`, which only forkmesh.com fills (only the
+home portal is drawn). `instancePluginOff` and `instanceKeepsDirectory` in
+`world-instance-portals.js` decide. `/api/accounts/central-fund` belongs to
+the `rewards` plugin on the server too, so it answers 404 rather than 503.
+The one error left for a signed-out visitor is the 401 from
+`/api/accounts/sessions`: the session cookie is HttpOnly, so asking is the
+only way to learn there is none, as on forkmesh.com.
+
+The World never changes the page address by itself: it opens repositories,
+issues and other sites with `window.open(..., "_blank")` and travels only
+when a visitor clicks a portal or the site menu. An embedded browser that
+loads `_blank` windows in the same tab, or a tool that drives the active tab
+of a shared browser, can look like the World navigating away on its own; a
+plain browser left on `/world/` stays there.
+
 ## Dashboard on an instance
 
 The dashboard knows it runs on an instance from the
@@ -483,11 +615,29 @@ never carry it.
 
 After a successful launch, `instance_directory.publish` writes an
 `instance_directory` row keyed by domain (name, URL, logo, choices, World
-slot). The World has 12 instance slots: the flowers around forkmesh.com on
-the shared World map, where visitors walk between worlds without leaving the
-page ([World mesh](world/README.md#world-mesh)). Cron phase `instance-health` probes
+slot). An instance installed directly with the installer joins the same
+directory from its admin console (Platform → ForkMesh directory) or with the
+install setting `"directory": {"listed": true, "world": true}`: it publishes
+`/.well-known/forkmesh-instance.json` and sends a signed announcement that
+forkmesh.com checks against that document before writing the row, and it
+announces again every six hours; the protocol is in
+[app/instance-federation.md](app/instance-federation.md). The World has 12
+instance slots. Cron phase `instance-health` probes
 `https://<domain>/readyz`; two misses in a row hide the entry, a day offline
-pings the admins once per outage. The admin console's Instances view can
+pings the admins once per outage.
+
+The forkmesh.com homepage's "Federated instances" section
+(`www/templates/pages/index.html`) reads `/api/start/instances` without
+credentials and shows each listed instance's logo, name, address and status:
+"Online" when its last `/readyz` check answered, "Checking" before the first
+check or after one miss (each entry carries `status` and `checkedAt`;
+instances that missed two checks are not in the list at all). Under the list
+is a "Start an instance" button to `/start`, styled as a secondary button
+because the page's green call to action is its sign-up button. On
+forkmesh.com the section always shows, with "No instance has joined yet."
+when the list is empty; on an instance (whose own directory is empty) the
+section and the button stay hidden. Tests:
+`app/tests/test_homepage_federated_instances.py`. The admin console's Instances view can
 hide, show or delete entries (CSRF-protected and audited); deleting does not
 touch the instance.
 
@@ -509,7 +659,9 @@ to every provider.
   reset check with `hostname_mismatch`.
 - Without a fingerprint the first host key is trusted (and shown).
 - SSH credentials pass through the app once, in memory only.
-- The instance app's egress guard refuses forkmesh.com; nothing needs it.
+- The instance app's egress guard refuses forkmesh.com except
+  `app.forkmesh.com` (`FORKMESH_EGRESS_PRODUCTION_ALLOW` in the app unit),
+  which only the directory announcement uses.
 - Brand renaming happens in the browser; plain-text server messages still
   say ForkMesh.
 
@@ -518,6 +670,7 @@ to every provider.
 `app/tests/test_instance_launch.py`, `test_install_instance_script.py`,
 `test_start_instance_page.py`, `test_instance_white_label.py`,
 `test_instance_theme.py`, `test_instance_pages.py`,
+`test_instance_plugins.py`, `test_instance_registry.py`,
 `test_instance_legal_pages.py`, `test_server_update.py`,
 `test_instance_directory.py`, `test_instance_git_routing.py`,
 `test_instance_node_reconnect_frontend.py`,
