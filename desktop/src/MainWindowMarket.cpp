@@ -3296,6 +3296,16 @@ void MainWindow::syncNativePackagePages()
         host.openNetworkShare = [this](const QString &url, bool guest) {
             openNetworkShareLocation(url, guest);
         };
+        host.openWebPage = [this](const QString &path) {
+            const QUrl url = forkmesh::market::nativePackageWebPageUrl(
+                catalogApiUrl(), path);
+            if (!url.isValid()) {
+                flashMessage(QStringLiteral(
+                    "No ForkMesh host is set, so there is no page to open."));
+                return;
+            }
+            QDesktopServices::openUrl(url);
+        };
         if (permissionIds.contains(QStringLiteral("desktop.models.usage.read")))
             host.agentUsagePage = [this](QWidget *parent) {
                 return buildAgentUsagePage(parent);
