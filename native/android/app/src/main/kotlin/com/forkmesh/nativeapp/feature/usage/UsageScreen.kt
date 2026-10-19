@@ -80,8 +80,11 @@ internal class UsageScreen : Screen() {
             if (model.loading) return
             refreshing = pulled
             scope.launch {
-                opsIo { model.refresh(reread) }
-                refreshing = false
+                try {
+                    opsIo { model.refresh(reread) }
+                } finally {
+                    refreshing = false
+                }
                 AgentOpsFeature.scheduleUsageReminders(context.applicationContext, model.reminders, model.nowMs)
             }
         }
