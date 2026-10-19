@@ -64,9 +64,26 @@ public:
     virtual QList<DesktopBranchAction> branchActions() const { return {}; }
 };
 
+using DesktopPackageExtensionFactory = std::function<DesktopPackageExtension *()>;
+
+class DesktopPackageExtensionRegistration
+{
+public:
+    DesktopPackageExtensionRegistration(const QString &entrypoint,
+                                        DesktopPackageExtensionFactory factory);
+
+    bool accepted() const { return m_accepted; }
+
+private:
+    bool m_accepted = false;
+};
+
 std::unique_ptr<DesktopPackageExtension>
 createDesktopPackageExtension(const QString &entrypoint);
 bool hasDesktopPackageExtension(const QString &entrypoint);
+void setDesktopPackageExtensionModules(
+    std::function<bool(const QString &entrypoint)> provides,
+    std::function<bool(const QString &entrypoint)> load);
 
 } // namespace forkmesh::market
 

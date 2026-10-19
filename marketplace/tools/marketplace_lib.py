@@ -709,6 +709,173 @@ def manifest_entries(catalog: Catalog) -> Iterable[tuple[PackageEntry, dict]]:
         yield entry, load_manifest(catalog.root / entry.manifest)
 
 
+PLUGIN_SELECTION_FILE = "plugins.json"
+PLUGIN_SELECTION_DEFAULT = "default"
+PLUGIN_SELECTION_NONE = "none"
+PLUGIN_SELECTION_ALL = "all"
+
+
+def package_root(catalog: Catalog, entry: PackageEntry) -> Path:
+    return (catalog.root / entry.manifest).parent.resolve()
+
+
+def is_plugin(catalog: Catalog, entry: PackageEntry) -> bool:
+    return (package_root(catalog, entry) / "content").is_dir()
+
+
+def plugin_ids(catalog: Catalog) -> list[str]:
+    return [entry.package_id for entry in catalog.packages if is_plugin(catalog, entry)]
+
+
+def _selection_ids(raw: str) -> list[str]:
+    return [item for item in re.split(r"[\s,;]+", raw) if item]
+
+
+def load_plugin_selection_file(catalog: Catalog) -> list[str]:
+    path = catalog.root / PLUGIN_SELECTION_FILE
+    if not path.is_file():
+        return []
+    root = _read_json_object(path, "plugin selection")
+    if root.get("schemaVersion") != 1 or set(root) - {"$schema", "schemaVersion", "plugins"}:
+        raise MarketplaceError(f"{path} must use schemaVersion 1 with a plugins list")
+    plugins = root.get("plugins")
+    if not isinstance(plugins, list) or any(not isinstance(item, str) for item in plugins):
+        raise MarketplaceError(f"{path} plugins must be an array of package ids")
+    if len(plugins) != len(set(plugins)):
+        raise MarketplaceError(f"{path} lists a plugin twice")
+    return list(plugins)
+
+
+def plugin_selection(
+    catalog: Catalog,
+    requested: str | None = None,
+    excluded: str | None = None,
+) -> frozenset[str]:
+    plugins = plugin_ids(catalog)
+    request = (requested or "").strip()
+    if not request or request == PLUGIN_SELECTION_DEFAULT:
+        chosen = load_plugin_selection_file(catalog)
+    elif request == PLUGIN_SELECTION_NONE:
+        chosen = []
+    elif request == PLUGIN_SELECTION_ALL:
+        chosen = list(plugins)
+    else:
+        chosen = _selection_ids(request)
+    known = {entry.package_id for entry in catalog.packages}
+    for package_id in chosen:
+        if package_id not in known:
+            raise MarketplaceError(f"plugin selection names unknown package {package_id}")
+        if package_id not in plugins:
+            raise MarketplaceError(
+                f"plugin selection names {package_id}, a core feature switch with no plugin content"
+            )
+    selected = set(chosen)
+    manifests = {
+        entry.package_id: manifest for entry, manifest in manifest_entries(catalog)
+    }
+
+    def plugin_dependencies(package_id: str) -> list[str]:
+        return [
+            str(item.get("id") or "")
+            for item in manifests[package_id].get("dependencies") or ()
+            if str(item.get("id") or "") in plugins
+        ]
+
+    removed = set(_selection_ids(excluded or "")) & known
+    selected -= removed
+    changed = True
+    while changed:
+        changed = False
+        for package_id in sorted(selected):
+            if any(dependency in removed for dependency in plugin_dependencies(package_id)):
+                selected.discard(package_id)
+                removed.add(package_id)
+                changed = True
+    for package_id in sorted(selected):
+        missing = [
+            dependency for dependency in plugin_dependencies(package_id)
+            if dependency not in selected
+        ]
+        if missing:
+            raise MarketplaceError(
+                f"plugin {package_id} needs plugin {', '.join(missing)}, which the selection leaves out"
+            )
+    return frozenset(selected)
+
+
+def environment_plugin_selection(catalog: Catalog) -> frozenset[str]:
+    return plugin_selection(
+        catalog,
+        os.environ.get("FORKMESH_PLUGINS", ""),
+        os.environ.get("FORKMESH_EXCLUDED_PLUGINS", ""),
+    )
+
+
+def included(catalog: Catalog, entry: PackageEntry, selection: frozenset[str]) -> bool:
+    return entry.package_id in selection or not is_plugin(catalog, entry)
+
+
+def selected_manifest_entries(
+    catalog: Catalog, selection: frozenset[str]
+) -> Iterable[tuple[PackageEntry, dict]]:
+    for entry, manifest in manifest_entries(catalog):
+        if included(catalog, entry, selection):
+            yield entry, manifest
+
+
+def selected_catalog_document(catalog: Catalog, selection: frozenset[str]) -> dict:
+    raw = json.loads(catalog.path.read_text(encoding="utf-8"))
+    kept = {
+        entry.package_id for entry in catalog.packages
+        if included(catalog, entry, selection)
+    }
+    raw["packages"] = [
+        item for item in raw.get("packages") or () if item.get("id") in kept
+    ]
+    return raw
+
+
+def selected_onboarding_documents(
+    catalog: Catalog, selection: frozenset[str]
+) -> tuple[dict | None, dict | None]:
+    kept = {
+        entry.package_id for entry in catalog.packages
+        if included(catalog, entry, selection)
+    }
+
+    def narrowed(items: list) -> list:
+        out = []
+        for item in items:
+            listed = item.get("packages") if isinstance(item, dict) else None
+            if isinstance(listed, list) and listed:
+                item["packages"] = [package_id for package_id in listed if package_id in kept]
+                if not item["packages"]:
+                    if not item.get("pack"):
+                        continue
+                    del item["packages"]
+            out.append(item)
+        return out
+
+    packs_path = catalog.root / "packs.json"
+    guides_path = catalog.root / "guides.json"
+    packs = _read_json_object(packs_path, "packs file") if packs_path.is_file() else None
+    guides = _read_json_object(guides_path, "guides file") if guides_path.is_file() else None
+    pack_ids: set[str] = set()
+    if packs is not None:
+        packs["packs"] = narrowed(packs.get("packs") or [])
+        pack_ids = {str(item.get("id") or "") for item in packs["packs"]}
+    if guides is not None:
+        guides["guides"] = [
+            item for item in narrowed(guides.get("guides") or [])
+            if not item.get("pack") or item.get("pack") in pack_ids
+        ]
+    if packs is not None and not packs["packs"]:
+        packs = None
+    if guides is not None and not guides["guides"]:
+        guides = None
+    return packs, guides
+
+
 def _run_git(arguments: list[str], cwd: Path | None = None) -> None:
     try:
         result = subprocess.run(

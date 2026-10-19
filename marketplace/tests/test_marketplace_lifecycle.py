@@ -233,15 +233,20 @@ def test_git_transport_is_provider_neutral(url, provider):
 def test_core_build_and_world_discovery_are_generated_from_package_metadata():
     repository = Path(__file__).resolve().parents[2]
     catalog = repository / "marketplace" / "catalog.json"
-    qrc, cmake, factory_registry = generate_desktop_packages.generate(catalog)
+    qrc, cmake, documents, plugin_qrcs = generate_desktop_packages.generate(catalog)
     assert 'alias="catalog.json"' in qrc
+    assert json.loads(documents["catalog.json"])["packages"] == json.loads(
+        catalog.read_text())["packages"]
     assert "FORKMESH_MARKETPLACE_SOURCES" in cmake
     assert "FORKMESH_MARKETPLACE_TEST_IDS" in cmake
     assert "FORKMESH_PACKAGE_SENTRY_TEST_SOURCES" in cmake
     assert "SentryDesktopExtension.cpp" in cmake
     assert "test_sentry_client.cpp" in cmake
-    assert "content/desktop/SentryDesktopExtension.cpp" in factory_registry
-    assert "createSentryDesktopExtension" in factory_registry
+    assert "packages/sentry/content/" not in qrc and "sentry" in plugin_qrcs
+    sentry_source = (repository / "marketplace/packages/sentry/content/desktop/"
+                     "SentryDesktopExtension.cpp").read_text()
+    assert ('DesktopPackageExtensionRegistration registration(\n'
+            '    QStringLiteral("content/desktop/SentryDesktopExtension.cpp")') in sentry_source
     core_cmake = (repository / "desktop" / "CMakeLists.txt").read_text()
     for package_id in ("capture", "ledger", "discord", "sentry"):
         assert f"marketplace/packages/{package_id}" not in core_cmake
@@ -361,9 +366,11 @@ def test_desktop_packages_embed_only_named_repository_folders(tmp_path):
 def test_docs_package_bundles_the_web_library():
     repository = Path(__file__).resolve().parents[2]
     catalog = repository / "marketplace" / "catalog.json"
-    qrc, cmake, _ = generate_desktop_packages.generate(catalog)
-    assert 'alias="packages/docs/repository/www/docs/README.md"' in qrc
-    assert 'alias="packages/docs/repository/www/docs/terminology.json"' in qrc
+    qrc, cmake, _, plugin_qrcs = generate_desktop_packages.generate(catalog)
+    assert 'alias="packages/docs/repository/www/docs/README.md"' in plugin_qrcs["docs"]
+    assert 'alias="packages/docs/repository/www/docs/terminology.json"' in plugin_qrcs["docs"]
+    assert "packages/docs/repository/" not in qrc
+    assert 'alias="packages/docs/manifest.json"' in qrc
     assert f'"{(repository / "www" / "docs").as_posix()}/*"' in cmake
     manifest = load_manifest(repository / "marketplace" / "packages" / "docs" / "manifest.json")
     assert manifest["entrypoints"]["desktop"] == "builtin:docs"

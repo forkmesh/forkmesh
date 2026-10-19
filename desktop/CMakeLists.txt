@@ -1,10 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
 project(ForkMesh VERSION 1.2.8 LANGUAGES CXX)
 
-# Packages own their desktop build descriptors and resources. Reconfiguring
-# discovers every catalogued package, so adding/removing a package never
-# requires another source/include/resource list in this core CMake file.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(FORKMESH_PLUGINS "default" CACHE STRING
+    "Plugins added to the core: default (marketplace/plugins.json), none, all, or a list of package ids")
 set(FORKMESH_MARKETPLACE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../marketplace")
 set(FORKMESH_MARKETPLACE_GENERATED_DIR
     "${CMAKE_CURRENT_BINARY_DIR}/generated/marketplace")
@@ -12,6 +11,7 @@ file(GLOB_RECURSE FORKMESH_MARKETPLACE_CONFIGURE_INPUTS CONFIGURE_DEPENDS
     "${FORKMESH_MARKETPLACE_ROOT}/catalog.json"
     "${FORKMESH_MARKETPLACE_ROOT}/packs.json"
     "${FORKMESH_MARKETPLACE_ROOT}/guides.json"
+    "${FORKMESH_MARKETPLACE_ROOT}/plugins.json"
     "${FORKMESH_MARKETPLACE_ROOT}/catalog.schema.json"
     "${FORKMESH_MARKETPLACE_ROOT}/manifest.schema.json"
     "${FORKMESH_MARKETPLACE_ROOT}/agent.schema.json"
@@ -24,8 +24,7 @@ execute_process(
             --catalog "${FORKMESH_MARKETPLACE_ROOT}/catalog.json"
             --qrc "${FORKMESH_MARKETPLACE_GENERATED_DIR}/marketplace.qrc"
             --cmake "${FORKMESH_MARKETPLACE_GENERATED_DIR}/packages.cmake"
-            --registry-cpp
-                "${FORKMESH_MARKETPLACE_GENERATED_DIR}/DesktopPackageFactories.cpp"
+            "--plugins=${FORKMESH_PLUGINS}"
     RESULT_VARIABLE FORKMESH_MARKETPLACE_GENERATE_RESULT
     ERROR_VARIABLE FORKMESH_MARKETPLACE_GENERATE_ERROR)
 if(NOT FORKMESH_MARKETPLACE_GENERATE_RESULT EQUAL 0)
@@ -33,6 +32,11 @@ if(NOT FORKMESH_MARKETPLACE_GENERATE_RESULT EQUAL 0)
         "Marketplace package discovery failed: ${FORKMESH_MARKETPLACE_GENERATE_ERROR}")
 endif()
 include("${FORKMESH_MARKETPLACE_GENERATED_DIR}/packages.cmake")
+message(STATUS "ForkMesh plugins: ${FORKMESH_SELECTED_PLUGINS}")
+if(FORKMESH_CORE_LINKED_PLUGINS)
+    message(STATUS "ForkMesh plugins the core still links: ${FORKMESH_CORE_LINKED_PLUGINS}")
+endif()
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForkMeshPackageModules.cmake")
 if(FORKMESH_MARKETPLACE_RESOURCE_GLOBS)
     file(GLOB_RECURSE FORKMESH_MARKETPLACE_RESOURCE_INPUTS CONFIGURE_DEPENDS
         ${FORKMESH_MARKETPLACE_RESOURCE_GLOBS})
@@ -605,8 +609,10 @@ if(NOT FORKMESH_THEME_QRC_OLD STREQUAL FORKMESH_THEME_QRC_TEXT)
     file(WRITE "${FORKMESH_THEME_QRC}" "${FORKMESH_THEME_QRC_TEXT}")
 endif()
 
+forkmesh_linked_plugin_resources(FORKMESH_LINKED_PLUGIN_QRCS)
 qt_add_big_resources(FORKMESH_MARKETPLACE_RESOURCE_OBJECTS
-    ${FORKMESH_MARKETPLACE_GENERATED_DIR}/marketplace.qrc)
+    ${FORKMESH_MARKETPLACE_GENERATED_DIR}/marketplace.qrc
+    ${FORKMESH_LINKED_PLUGIN_QRCS})
 add_custom_target(forkmesh-marketplace-resources
     DEPENDS ${FORKMESH_MARKETPLACE_RESOURCE_OBJECTS})
 
@@ -1159,6 +1165,8 @@ set(FORKMESH_APP_SOURCES
     src/SystemPressure.cpp
     src/SystemStats.h
     src/SystemStats.cpp
+    src/AgentNetworkSampler.h
+    src/AgentNetworkSampler.cpp
     src/SuggestedApps.h
     src/SuggestedApps.cpp
     src/NodeDiagnostics.h
@@ -1205,7 +1213,7 @@ set(FORKMESH_APP_SOURCES
     src/McpConnector.h
     src/McpConnector.cpp
     src/DesktopPackageExtension.h
-    "${FORKMESH_MARKETPLACE_GENERATED_DIR}/DesktopPackageFactories.cpp"
+    src/DesktopPackageExtension.cpp
     ${FORKMESH_MARKETPLACE_SOURCES}
     src/StartupTrace.h
     src/MainWindowInternal.h
@@ -1221,7 +1229,6 @@ set(FORKMESH_APP_SOURCES
     ${FORKMESH_MAIN_WINDOW_SOURCES}
 )
 
-include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/ForkMeshPackageModules.cmake")
 forkmesh_package_modules_partition()
 qt_add_executable(forkmesh
     src/main.cpp

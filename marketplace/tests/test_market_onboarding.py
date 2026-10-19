@@ -70,7 +70,7 @@ def test_shipped_packs_and_guides_validate_against_the_catalog():
 
 
 def test_desktop_resources_carry_the_packs_and_guides():
-    qrc, _, _ = generate_desktop_packages.generate(MARKETPLACE / "catalog.json")
+    qrc, *_ = generate_desktop_packages.generate(MARKETPLACE / "catalog.json")
     assert 'alias="packs.json"' in qrc
     assert 'alias="guides.json"' in qrc
 

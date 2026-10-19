@@ -13,8 +13,9 @@ from the Market like any other package.
   page it paints in software; Full screen moves it into a window of its own
   that renders on the GPU, so the main window never switches to OpenGL
   composition.
-- `content/desktop/AgentNetworkSampler.{h,cpp}`: per-agent sockets via
-  `sock_diag` and `/proc/<pid>/fd`, diffed into bytes per host.
+- `desktop/src/AgentNetworkSampler.{h,cpp}` (core, also used by the
+  window's local control insights): per-agent sockets via `sock_diag` and
+  `/proc/<pid>/fd`, diffed into bytes per host.
 - `content/desktop/AgentTrafficWindow.{h,cpp}`: the list opened by clicking
   a host or a connection line: its connections by process, address and port,
   and its traffic flowing in live, newest first.
