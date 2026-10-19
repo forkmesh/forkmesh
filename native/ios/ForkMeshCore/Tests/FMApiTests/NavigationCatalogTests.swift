@@ -21,7 +21,7 @@ final class NavigationCatalogTests: XCTestCase {
         XCTAssertFalse(routes.contains(.allAgents), "the Agents tab lists every agent")
         XCTAssertTrue(routes.contains(.hosts))
         XCTAssertEqual(
-            groups.first { $0.id == "operate" }?.items.map(\.id), ["desktops", "teammates", "shortcuts", "hosts", "network", "logs", "diagnostics"])
+            groups.first { $0.id == "operate" }?.items.map(\.id), ["desktops", "teammates", "shortcuts", "hosts", "runners", "network", "logs", "diagnostics"])
         XCTAssertTrue(routes.contains(.logs))
         XCTAssertTrue(routes.contains(.diagnostics))
         XCTAssertTrue(routes.contains(.market(filter: nil)))

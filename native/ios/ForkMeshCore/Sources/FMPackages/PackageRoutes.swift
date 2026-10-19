@@ -117,6 +117,7 @@ public enum PackageRoutes {
         case "teammates": return .teammates
         case "shortcuts": return .shortcuts(nil)
         case "hosts": return .hosts
+        case "runners": return .runners
         case "network": return .network(section: nil)
         case "coves": return .coves(nil)
         case "localAI": return .localAI

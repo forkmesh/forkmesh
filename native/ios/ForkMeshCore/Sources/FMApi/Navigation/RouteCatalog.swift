@@ -147,6 +147,7 @@ public enum RouteCatalog {
         case .desktop: return "Desktop"
         case .hosts: return "Hosts & fleet"
         case .host: return "Host"
+        case .runners: return "Runners"
         case .provision: return "Provisioning"
         case .network: return "Network & nodes"
         case .node: return "Node"
@@ -240,6 +241,7 @@ public enum RouteCatalog {
         case .timers: return "timer"
         case .desktops, .desktop: return "desktopcomputer"
         case .hosts, .host, .provision: return "server.rack"
+        case .runners: return "externaldrive.connected.to.line.below"
         case .network, .node: return "network"
         case .market, .package: return "bag"
         case .crm, .contact, .crmOrg: return "person.crop.rectangle.stack"
@@ -376,6 +378,7 @@ public enum HubCatalog {
         .destination(.teammates),
         .destination(.shortcuts(nil)),
         .destination(.hosts, guestAction: "manage your hosts"),
+        .destination(.runners, guestAction: "manage your runners"),
         .destination(.network(section: nil)),
         .destination(.logs),
         .destination(.diagnostics),
