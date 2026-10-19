@@ -44,7 +44,10 @@ characters, lowest-ranked sections are trimmed first and say so):
   rate as the heartbeat) sees such a gap too, and the time it missed is
   taken out of heartbeat lags, frame gaps and the telemetry `FRAME`.
 - `RELAY` is relay frames received. Before 2026-10-17 the hook was never
-  wired and it always read 0.
+  wired and it always read 0. Its `max` is the busiest second: dozens in
+  one second is the relay (re)joining a busy room (`world-general` answers a
+  hello from every peer), and every frame is opened and handled on the main
+  actor without a named section.
 - `Stalls by name` (before 2026-10-17 merged into `Slow events by name`,
   where operations pushed the stalls out as `... N more`):
   `eventLoop ui-isolate blocked` is the heartbeat catching a blocked main
@@ -58,12 +61,22 @@ characters, lowest-ranked sections are trimmed first and say so):
   stall, summed per name. Sections nest (`relay.event` holds
   `relay.control`, which holds the delta handling under it), so an outer
   name's time includes its inner ones. A stall with no sections ran
-  unnamed work: SwiftUI's own updates, or code not wrapped yet.
+  unnamed work: SwiftUI's own updates, code not wrapped yet, or many short
+  main-actor jobs queued back to back (the heartbeat waits behind all of
+  them, so 65 relay frames of a few ms each read as one unnamed stall; look
+  at `RELAY` max). Since 2026-10-19 main-thread sections of 1 ms or more
+  are kept (the last 256), so such a burst sums under its name, and each
+  chat relay frame is a `relay.frame` section.
   `surfaces.publish` (the widget, Live Activity and Shortcuts snapshot after
   agent row changes) has been named since 2026-10-18. `watchSections` hands
   every main-thread section of 1 ms or more to one watcher; the DJ studio
   uses it to put app work in its long frames
   ([../marketplace/video-mix-dj-studio-performance.md](../marketplace/video-mix-dj-studio-performance.md)).
+- `Stalls by time since shown` (since 2026-10-19): each stall's `shown`
+  (`launch` for the first time the app became visible, `resume` after) and
+  `shownMs`, how long after that it began, grouped into the first 10 s and
+  `later`. A stall in the first seconds of a resume belongs to the resume
+  burst whatever screen it lands on.
 - `Stalls by screen` (since 2026-10-17): the same stalls grouped by the
   tab and navigation stack showing when each was recorded
   (`AppRouter.screenTitle`, the `screen` detail, also in `stalls.log`
@@ -77,11 +90,15 @@ characters, lowest-ranked sections are trimmed first and say so):
   the last 5 minutes, so compare the same window. An operation that sits
   near 8 s (`/api/repo/` reads) or 12 s (other GETs) is the request
   timeout of `getJson`, not the main thread; one retried after a 5xx can
-  reach 24 s. Longer ones (31-32 s in the 2026-10-18 bundle) span the app
-  being suspended: look for empty minutes in the per-minute rows. Waiting
-  for the main actor between hops adds at most about the `LOOP` max per
-  hop (once `LOOP` is not a suspension); it explains an operation a few hundred ms slower than its endpoint,
-  not seconds.
+  reach 24 s. Longer ones (31-32 s in the 2026-10-18 bundle, 534 s repo
+  reads in the 2026-10-19 one) were open while the app was in the
+  background: look for empty minutes in the per-minute rows. Since
+  2026-10-19 the time hidden or paused is taken out of an operation and
+  shown as `awayMs`, so such a read no longer tops the list and pushes the
+  rest into `... N more`. Waiting for the main actor between hops adds at
+  most about the `LOOP` max per hop (once `LOOP` is not a suspension); it
+  explains an operation a few hundred ms slower than its endpoint, not
+  seconds.
 - `In flight or finished during stalls`: requests open while a stall was
   recorded. Correlation, not cause: a request that is in flight in many
   stalls usually marks the burst the stalls happen in (resume, a ring, a
@@ -93,6 +110,12 @@ characters, lowest-ranked sections are trimmed first and say so):
 - `stalls.log tail`: the last lines of `diagnostics/stalls.log`. Release
   stacks are unsymbolicated addresses; `libswift_Concurrency` under
   `ForkMesh` frames means a main-actor task job, which is most app code.
+  Event-loop and frame stalls carry no stack (the probe runs after the
+  block); the stacks are where slow operations and `sync` sections started.
+  Since 2026-10-19 each frame of an operation's stack also gives
+  `+0x<offset>` from its image's load address; `atos -o
+  ForkMesh.app.dSYM/Contents/Resources/DWARF/ForkMesh -l 0x100000000
+  <0x100000000 + offset>` against the dSYM of the bundle's build names it.
 - `App log` and `Busiest log lines` are optional (the user can leave logs
   out). `Connected to ... room` counts relay (re)connects; each one follows a
   resume or a dropped socket.
@@ -101,6 +124,57 @@ characters, lowest-ranked sections are trimmed first and say so):
 
 Newest first. Each entry: date and branch; what the bundle showed; the
 cause; the fix; what was ruled out; what the bundle lacked.
+
+- 2026-10-19, `2321-slow-ios-app-performance` (1.4.1 (291), commit
+  63b65a9, iPhone16,2, Code tab root after Shortcuts and
+  fmnext-n1/forkmesh; the user: "laggy when we switch to it"). Showed: 11
+  stalls in 24 minutes, none in the last 5; 6 on Chat (up to 368 ms), 2 on
+  Agents (1262 ms at 16:22:00, when the 24 minute uptime began, so the
+  launch), one each on the repository and Shortcuts; no named section in
+  any; chat direct messages, channels and reads, desktops and app commands
+  in flight, the requests a return starts; `RELAY` up to 65 frames in one
+  second (66 in the hour) and two `Connected to app.forkmesh.com · room
+  world-general` in 5 minutes; after three empty minutes (the app in the
+  background) the return minute's worst `LOOP` was 185 ms and `FRAME`
+  224 ms. The top slow operations were repository reads (tree, blobs,
+  branches, history) of about 534 s each. Cause (the largest measured; the
+  phone's Keychain time is not measured): every fresh sealed relay frame,
+  and a rejoined `world-general` answers with a hello from every peer, made
+  `ChatKeyring.recordSeen` re-encode the room's whole replay book (up to
+  256 senders by 1024 counters; 68 KB for 60 senders by 300) and write it
+  with `SecItemDelete` plus `SecItemAdd`, synchronously on the main actor.
+  Each frame is its own short main-actor job outside any section, so the
+  heartbeat saw the queue of them as one unnamed stall. Measured on x86
+  (release, about one A17 core): one encode of that book 1.9 ms, so 65
+  frames about 125 ms before any Keychain time (3.1 s in a debug build).
+  Fix: the book is marked dirty and written at most once per 250 ms per
+  room on a utility queue,
+  and at once when the app leaves the foreground
+  (`ChatKeyring.persistPendingReplay`); the 65 frames then cost 0.6 ms
+  on the caller and one write (a test fails without it: 65 writes on the
+  calling thread). The shell also archived its navigation into
+  `@SceneStorage` on the inactive step of every return; the archive carries
+  `savedAt`, so it always changed and rebuilt the root shell as the app came
+  back. It is archived only on `.background` now. Ruled out: the 534 s
+  operations are requests left open while the app was in the background
+  (the same endpoints answered in 228-254 ms in the last 5 minutes), not
+  slow reads; the relay's own resume (presence only, while connected); the
+  direct-message history replay as the main cost (the server replays only
+  unacknowledged frames, under a message and byte cap). Not fixed: on every
+  return from the background the direct messages close and reopen each
+  watched room (up to 16) and open every replayed frame in full, seen or
+  not; every `.resumed`, closing Control Center included, refreshes chat
+  channels, direct messages and read marks (read marks twice, again on the
+  event channel's connect), and `records`, `rooms` and `loading` are
+  written unconditionally; `nextCounter` writes the counter to the Keychain
+  on every send (it must be durable before the frame leaves). The 1262 ms
+  launch stall is unexplained (no section). Bundle gaps closed: main-thread
+  sections of 1 ms or more are kept, so a burst of short jobs sums by name,
+  and chat relay frames are `relay.frame`; stalls carry `shown` and
+  `shownMs`, grouped in "Stalls by time since shown"; operations leave out
+  time hidden or paused (`awayMs`); operation stacks give image offsets
+  for `atos`. Still missing: the main thread's stack during an event-loop
+  stall; the phone's Keychain write time.
 
 - 2026-10-18, `2284-slow-ios-app-performance` (1.4.1 (284), commit
   d11bec0, iPhone16,2, Agents tab root). Showed: "froze for 86.0 s (4
@@ -177,8 +251,10 @@ cause; the fix; what was ruled out; what the bundle lacked.
   re-downloads every sealed snapshot with its 16 KB transcript tail, twice
   with a watch (the bridge runs its own `AgentsListModel`); the list needs
   only the metadata, so the desktop should seal the transcript apart
-  (desktop, relay and both phones). Each new chat message writes its
-  ratchet and replay book to the Keychain on the main actor. Bundle gaps
+  (desktop, relay and both phones). Every fresh sealed frame, hellos and
+  presence included and not only chat messages, wrote the replay book to
+  the Keychain on the main actor (fixed 2026-10-19, below); a v4 message
+  still writes its ratchet there. Bundle gaps
   closed: stalls carry `sections`, the named main-actor work over 8 ms that
   ran inside them, summed in "Main-actor work during stalls"; nested
   sections record one `sync` stall; sections wrap relay frames

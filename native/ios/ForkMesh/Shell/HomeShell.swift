@@ -871,7 +871,7 @@ struct HomeShell: View {
             }
             .onChange(of: scenePhase) { (_: ScenePhase, phase: ScenePhase) in
                 if phase != .active {
-                    savedNavigation = router.archiveData()
+                    if phase == .background { savedNavigation = router.archiveData() }
                     voice.cancel()
                     return
                 }
