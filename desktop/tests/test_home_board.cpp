@@ -341,6 +341,17 @@ int main(int argc, char *argv[])
     QCoreApplication::processEvents();
     check(!board.animating(), "no live tile means no timer");
 
+    QVector<HomeGroup> offline = quiet;
+    offline[0].tiles[0].desktopOffline = true;
+    check(offline != quiet, "the desktop offline mark changes the tile");
+    board.setGroups(offline);
+    QCoreApplication::processEvents();
+    check(board.animating(), "a desktop offline dot keeps the board animating");
+    board.repaint();
+    board.setGroups(quiet);
+    QCoreApplication::processEvents();
+    check(!board.animating(), "clearing the offline dot stops the timer");
+
     HomePageDots dots;
     dots.resize(200, 24);
     int picked = -1;

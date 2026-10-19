@@ -20,6 +20,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -111,11 +112,13 @@ import com.forkmesh.nativeapp.feature.insights.StatusPageFeature
 import com.forkmesh.nativeapp.feature.market.PackageGateFeature
 import com.forkmesh.nativeapp.market.PackageSurfaces
 import com.forkmesh.nativeapp.feature.navigation.CommandPaletteSheet
+import com.forkmesh.nativeapp.feature.navigation.DesktopOfflineDot
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.feature.navigation.ShellFirstRun
 import com.forkmesh.nativeapp.feature.navigation.ShellMenuBadge
 import com.forkmesh.nativeapp.feature.navigation.ShellMenuEntry
 import com.forkmesh.nativeapp.feature.navigation.ShellMenuSheet
+import com.forkmesh.nativeapp.feature.navigation.rememberDesktopOffline
 import com.forkmesh.nativeapp.feature.navigation.UpdateRequiredView
 import com.forkmesh.nativeapp.feature.navigation.YouHubSheet
 import com.forkmesh.nativeapp.feature.planning.PlanningFeature
@@ -477,6 +480,7 @@ class HomeShell : Screen() {
                 }
             },
         ) {
+            val desktopOffline = rememberDesktopOffline()
             if (wide) {
                 Row(Modifier.fillMaxSize()) {
                     NavigationRail(
@@ -495,6 +499,7 @@ class HomeShell : Screen() {
                                         badgeColor = if (item.agents && needsYou == 0) Fm.colors.accent else Fm.colors.danger,
                                         pulse = if (item.agents) LaunchFlight.landings else 0,
                                         modifier = if (item.agents) Modifier.launchTarget() else Modifier,
+                                        desktopOffline = item.agents && desktopOffline,
                                     )
                                 },
                                 label = { Text(item.title) },
@@ -722,6 +727,26 @@ private fun BadgeIcon(
     badgeColor: androidx.compose.ui.graphics.Color = Fm.colors.danger,
     pulse: Int = 0,
     modifier: Modifier = Modifier,
+    desktopOffline: Boolean = false,
+) {
+    Box {
+        BadgeIconBody(icon, count, tint, size, description, badgeColor, pulse, modifier)
+        if (desktopOffline) {
+            DesktopOfflineDot(Modifier.align(Alignment.BottomStart).offset(x = (-4).dp, y = 4.dp))
+        }
+    }
+}
+
+@Composable
+private fun BadgeIconBody(
+    icon: String,
+    count: Int,
+    tint: androidx.compose.ui.graphics.Color,
+    size: Int,
+    description: String?,
+    badgeColor: androidx.compose.ui.graphics.Color,
+    pulse: Int,
+    modifier: Modifier,
 ) {
     val reduced = Fm.reducedMotion
     val pop = remember { Animatable(1f) }
@@ -799,6 +824,7 @@ private fun HomePage(entries: List<ShellMenuEntry>, badges: Map<Route.Kind, Shel
 @Composable
 private fun GlassTabBar(items: List<BarItem>, agentsRunning: Boolean) {
     val c = Fm.colors
+    val desktopOffline = rememberDesktopOffline()
     Row(
         modifier = Modifier
             .padding(start = ShellBar.margin, end = ShellBar.margin, top = FmSpace.x1, bottom = ShellBar.bottomInset())
@@ -848,6 +874,7 @@ private fun GlassTabBar(items: List<BarItem>, agentsRunning: Boolean) {
                         badgeColor = c.accent,
                         pulse = LaunchFlight.landings,
                         modifier = Modifier.launchTarget(),
+                        desktopOffline = desktopOffline,
                     )
                 } else {
                     BadgeIcon(item.icon, count, iconColor, 24, badgeColor = c.accent)

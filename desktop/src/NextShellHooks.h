@@ -33,6 +33,8 @@ struct RailButtonPaintState {
     bool captionVisible = false;
     bool blink = false;
     bool blinkOn = false;
+    bool desktopOffline = false;
+    double desktopOfflineLevel = 1.0;
     std::function<void(QPainter &, const QRect &, const QColor &)> iconPainter;
 };
 

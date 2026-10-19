@@ -335,6 +335,19 @@ bool paintRailButtonHook(QWidget *button, QPainter &painter,
         painter.setBrush(Theme::color(Theme::Role::Success));
         painter.drawEllipse(lamp);
     }
+
+    if (state.desktopOffline) {
+        const int d = 8;
+        const QRect dot(iconRect.left() - d + 2, iconRect.bottom() - d + 1, d, d);
+        painter.save();
+        painter.setOpacity(state.desktopOfflineLevel);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(canvas);
+        painter.drawEllipse(dot.adjusted(-2, -2, 2, 2));
+        painter.setBrush(Theme::color(Theme::Role::Warning));
+        painter.drawEllipse(dot);
+        painter.restore();
+    }
     return true;
 }
 

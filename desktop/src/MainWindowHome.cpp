@@ -267,6 +267,7 @@ QVector<HomeGroup> MainWindow::homeGridGroups() const
             tile.pending = rail->pendingSyncCount();
             tile.live = rail->syncing() || rail->activityBlink();
             tile.alert = rail->alertTint();
+            tile.desktopOffline = rail->desktopOffline();
         }
         if (key == QLatin1String("code"))
             tile.badge = repoOpenPullCount();
