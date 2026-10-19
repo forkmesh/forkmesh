@@ -110,6 +110,15 @@ final class GlassesWatcher: NSObject {
         ring(GlassesSighting(id: "test", label: "Test alarm", maker: .luxottica, namedAsGlasses: true, rssi: -58, seenAt: Date()))
     }
 
+    func hush() {
+        guard player != nil else { return }
+        player?.stop()
+        player = nil
+        if !PromptDictation.isListening && DesktopAlarm.shared.ringing == nil {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
+    }
+
     func silence() {
         timeout?.cancel()
         timeout = nil
@@ -298,7 +307,7 @@ final class GlassesWatcher: NSObject {
     }
 
     private func startSound() {
-        guard player == nil,
+        guard player == nil, !OtherAppCall.inProgress,
             let url = Bundle.main.url(forResource: DesktopAlarm.soundName, withExtension: "wav"),
             let sound = try? AVAudioPlayer(contentsOf: url)
         else { return }

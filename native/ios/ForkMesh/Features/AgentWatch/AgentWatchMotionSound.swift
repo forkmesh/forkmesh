@@ -118,7 +118,7 @@ final class WatchMotionSound {
     }
 
     private func start() {
-        if PromptDictation.isListening { return }
+        if PromptDictation.isListening || OtherAppCall.inProgress { return }
         PromptDictation.holdOverhearing(10)
         let session = AVAudioSession.sharedInstance()
         if session.category != .playback || !session.categoryOptions.contains(.mixWithOthers) {

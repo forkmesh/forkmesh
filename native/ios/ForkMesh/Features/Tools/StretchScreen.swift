@@ -68,7 +68,7 @@ final class StretchVoice: StretchSpeaker {
         }
         PromptDictation.yieldOverhearing()
         let session: AVAudioSession = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [.duckOthers])
+        try? session.setCategory(.playback, mode: .spokenAudio, options: OtherAppCall.duckingOptions)
         try? session.setActive(true)
         synthesizer.speak(AppleSpeechEngine.utterance(text, voiceId: voiceId, rate: rate, pitch: 1))
     }

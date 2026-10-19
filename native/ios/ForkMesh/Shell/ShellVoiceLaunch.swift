@@ -15,7 +15,7 @@ final class VoiceLaunchSounds {
     @discardableResult
     func play(_ chime: VoiceLaunchChime) -> Double {
         guard FmSoundCues.isEnabled, !FmCuePlayer.shared.isQuiet, !MessagesVoiceRecorder.isRecording,
-              !PromptDictation.isListening
+              !PromptDictation.isListening, !OtherAppCall.inProgress
         else { return 0 }
         guard let player = players[chime] else {
             load()

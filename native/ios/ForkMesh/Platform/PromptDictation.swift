@@ -68,6 +68,7 @@ final class PromptDictation {
 
     static var mayOverhear: Bool {
         !isListening && !MessagesVoiceRecorder.isRecording && !AppleSpeechEngine.talking && Date() >= heldUntil
+            && !OtherAppCall.inProgress
     }
 
     static var refused: Bool {
@@ -315,7 +316,7 @@ final class PromptDictation {
 
     private func startEngine(_ tap: @escaping AVAudioNodeTapBlock) throws {
         let session: AVAudioSession = AVAudioSession.sharedInstance()
-        let options: AVAudioSession.CategoryOptions = ambient ? [.mixWithOthers, .defaultToSpeaker] : [.duckOthers, .defaultToSpeaker]
+        let options: AVAudioSession.CategoryOptions = ambient ? [.mixWithOthers, .defaultToSpeaker] : OtherAppCall.duckingOptions.union(.defaultToSpeaker)
         try session.setCategory(.playAndRecord, mode: .measurement, options: options)
         try session.setActive(true, options: .notifyOthersOnDeactivation)
         guard session.isInputAvailable else {
