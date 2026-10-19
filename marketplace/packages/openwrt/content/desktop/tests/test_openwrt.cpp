@@ -81,6 +81,8 @@ public:
     bool fstabMissing = false;
     bool fstabWritten = false;
     bool ksmbdInstalled = false;
+    bool ksmbdConfigMissing = false;
+    bool ksmbdWritten = false;
     QStringList packageCommands;
     QStringList installedPackages;
 
@@ -166,6 +168,13 @@ private:
                                                                    {QStringLiteral(".anonymous"), true}, {QStringLiteral(".index"), 0}, {QStringLiteral("anon_mount"), QStringLiteral("0")}});
             return QJsonArray{0, QJsonObject{{QStringLiteral("values"), values}}};
         }
+        if (object == QStringLiteral("file") && method == QStringLiteral("write") && args.value(QStringLiteral("path")).toString() == QStringLiteral("/etc/config/ksmbd")) {
+            if (!args.value(QStringLiteral("data")).toString().startsWith(QStringLiteral("config globals\n")))
+                return QJsonArray{UbusPermissionDenied};
+            ksmbdConfigMissing = false;
+            ksmbdWritten = true;
+            return QJsonArray{0};
+        }
         if (object == QStringLiteral("file") && method == QStringLiteral("write")) {
             if (args.value(QStringLiteral("path")).toString() != QStringLiteral("/etc/config/fstab") || !args.value(QStringLiteral("data")).toString().contains(QStringLiteral("global")))
                 return QJsonArray{UbusPermissionDenied};
@@ -183,11 +192,13 @@ private:
             return QJsonArray{0, QJsonObject{{QStringLiteral("data"), QStringLiteral("major minor  #blocks  name\n\n  31        0       1024 mtdblock0\n   8        0   15000000 sda\n   8        1   14999000 sda1\n")}}};
         if (object == QStringLiteral("uci") && method == QStringLiteral("configs")) {
             QJsonArray configs{QStringLiteral("fstab"), QStringLiteral("network")};
-            if (ksmbdInstalled)
+            if (ksmbdInstalled && !ksmbdConfigMissing)
                 configs.append(QStringLiteral("ksmbd"));
             return QJsonArray{0, QJsonObject{{QStringLiteral("configs"), configs}}};
         }
         if (object == QStringLiteral("uci") && method == QStringLiteral("get") && args.value(QStringLiteral("config")).toString() == QStringLiteral("ksmbd")) {
+            if (ksmbdConfigMissing)
+                return QJsonArray{UbusNotFound};
             const QJsonObject values{{QStringLiteral("cfg02"), QJsonObject{{QStringLiteral(".name"), QStringLiteral("cfg02")}, {QStringLiteral(".type"), QStringLiteral("share")},
                                                                          {QStringLiteral(".anonymous"), true}, {QStringLiteral(".index"), 0},
                                                                          {QStringLiteral("name"), QStringLiteral("media")}, {QStringLiteral("path"), QStringLiteral("/mnt/sda1")},
@@ -695,8 +706,12 @@ void testFeature()
             QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
         }
     });
+    router.ksmbdConfigMissing = true;
     installSharing->click();
     check(waitFor([&] { return statusText().contains(QStringLiteral("Network sharing is installed")); }), QStringLiteral("installing network sharing finishes"));
+    check(router.ksmbdWritten && router.lastCall(QStringLiteral("file"), QStringLiteral("write")).at(3).toObject().value(QStringLiteral("mode")).toInt() == 0600
+              && log->toPlainText().contains(QStringLiteral("Created /etc/config/ksmbd on the router.")),
+          QStringLiteral("when the installed ksmbd-server left no /etc/config/ksmbd, ForkMesh creates it with the package's default settings"));
     check(router.packageCommands == QStringList({QStringLiteral("update"), QStringLiteral("install ksmbd-server"), QStringLiteral("install luci-app-ksmbd")}),
           QStringLiteral("the package lists are updated, then ksmbd-server and luci-app-ksmbd are installed one at a time"));
     check(log->toPlainText().contains(QStringLiteral("luci-app-ksmbd is installed.")), QStringLiteral("the install progress goes to the Storage log"));
