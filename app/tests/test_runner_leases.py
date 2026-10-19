@@ -347,7 +347,6 @@ def test_claim_authentication_failures():
     assert call(request, "/api/runners/report")["status"] == 401
 
 
-
 def test_a_paused_runner_claims_nothing_until_resumed():
     runtime = FakeRuntime()
     key = Key()
@@ -379,6 +378,7 @@ def test_a_paused_runner_claims_nothing_until_resumed():
     assert toggle("pause")["status"] == 409
     assert call(runtime.use(b"{}", actor="root", method="GET"),
                 "/api/runners/pause")["status"] == 405
+
 
 # --- claim eligibility and grants -----------------------------------------
 
