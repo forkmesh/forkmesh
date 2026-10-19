@@ -6971,7 +6971,9 @@ private:
     void testOpenAiAgentKey();
     void refreshClaudeSpend();
     void refreshClaudeCodeUsage(bool fromHover = false);
-    void applyClaudeUsageResponse(const QJsonObject &response);
+    void refreshAgentUsageAccounts(std::function<void()> done);
+    void applyClaudeUsageResponse(const QJsonObject &response,
+                                  const QString &accountId = QString());
     void applyClaudeUsageCredits(const QJsonValue &extraUsage);
     void showAgentAccountMenu(const QString &provider,
                               const QPoint &globalPosition);
