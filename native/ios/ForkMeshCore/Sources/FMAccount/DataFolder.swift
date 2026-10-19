@@ -323,11 +323,12 @@ public final class DataFolderStore: @unchecked Sendable {
 
     private func copy(_ source: URL, to target: URL) throws {
         try files.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let partial = target.deletingLastPathComponent().appendingPathComponent(target.lastPathComponent + DataFolder.partialSuffix)
-        if files.fileExists(atPath: partial.path) { try files.removeItem(at: partial) }
+        let partial = target.deletingLastPathComponent()
+            .appendingPathComponent("\(target.lastPathComponent).\(UUID().uuidString)\(DataFolder.partialSuffix)")
         try files.copyItem(at: source, to: partial)
-        if files.fileExists(atPath: target.path) { try files.removeItem(at: target) }
-        try files.moveItem(at: partial, to: target)
+        guard rename(partial.path, target.path) == 0 else {
+            throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: target.path])
+        }
     }
 
     private func write(_ data: Data, to target: URL) throws {
