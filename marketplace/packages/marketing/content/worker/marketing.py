@@ -431,6 +431,7 @@ APP_STORE_TONES = ("action", "pending", "good", "neutral")
 GITHUB_CHANNEL = "github"
 EMAIL_CHANNEL = "email"
 EMAIL_DAYS = 30
+EMAIL_REFRESH_MS = 6 * 60 * 60 * 1000
 GOOGLE_CHANNEL = "google-search"
 GOOGLE_VISIT_DAYS = 30
 REFERRING_SITES_LIMIT = 12
@@ -5717,16 +5718,42 @@ async def _refresh_channel(runtime, org_bi, org_name, role, account_bi, actor,
     if channel_id != EMAIL_CHANNEL and not _https(channel.get("profileUrl")):
         return _response(runtime, {"error": "channel_url_required",
                                    "channel": channel_id}, 400)
-    now = runtime.now()
-    source, error = await refresher(runtime, dict(channel, orgBi=org_bi))
+    refresh, error = await _read_channel(runtime, org_bi, org_name, account_bi, actor,
+                                         channel_id, channel)
     if error:
-        previous = dict(channel.get("feed") or {})
-        previous["lastErrorAt"] = (_integer(previous.get("lastErrorAt")) or now
-                                   if previous.get("lastError") == error else now)
-        previous["lastError"] = error
-        await _store_channel_feed(runtime, org_bi, account_bi, actor, channel_id,
-                                  previous, now)
         return _response(runtime, {"error": error, "channel": channel_id}, 502)
+    return await _overview(runtime, org_bi, org_name, role, refresh, account_bi)
+
+
+async def _refresh_stale_email(runtime, org_bi, org_name, account_bi, actor):
+    settings = await _settings(runtime, org_bi)
+    channel = next((item for item in settings.get("channels", [])
+                    if item.get("id") == EMAIL_CHANNEL), None)
+    if channel is None or not channel.get("enabled", True):
+        return
+    last_read = _integer((channel.get("feed") or {}).get("lastReadAt"))
+    if runtime.now() - last_read < EMAIL_REFRESH_MS:
+        return
+    try:
+        await _read_channel(runtime, org_bi, org_name, account_bi, actor,
+                            EMAIL_CHANNEL, channel, keep_error=False)
+    except Exception:
+        return
+
+
+async def _read_channel(runtime, org_bi, org_name, account_bi, actor, channel_id,
+                        channel, keep_error=True):
+    now = runtime.now()
+    source, error = await REFRESHERS[channel_id](runtime, dict(channel, orgBi=org_bi))
+    if error:
+        if keep_error:
+            previous = dict(channel.get("feed") or {})
+            previous["lastErrorAt"] = (_integer(previous.get("lastErrorAt")) or now
+                                       if previous.get("lastError") == error else now)
+            previous["lastError"] = error
+            await _store_channel_feed(runtime, org_bi, account_bi, actor, channel_id,
+                                      previous, now)
+        return None, error
     imported = await _import_feed_items(
         runtime, org_bi, org_name, account_bi, actor, channel_id, source, now)
     refresh = {"channel": channel_id, "imported": imported,
@@ -5770,7 +5797,7 @@ async def _refresh_channel(runtime, org_bi, org_name, role, account_bi, actor,
                                      source["appStore"], now)
     await runtime.audit(actor, "marketing.channel.refresh", "organization", org_bi)
     refresh["feed"] = _feed_data(feed_state)
-    return await _overview(runtime, org_bi, org_name, role, refresh, account_bi)
+    return refresh, ""
 
 
 async def _capture_channel(runtime, org_bi, org_name, role, account_bi, actor, data):
@@ -8224,6 +8251,7 @@ async def handle(runtime, path):
 async def _organization_resource(runtime, method, org_bi, org_name, role, account_bi,
                                  actor, resource, item, data):
     if not resource:
+        await _refresh_stale_email(runtime, org_bi, org_name, account_bi, actor)
         return await _overview(runtime, org_bi, org_name, role, account_bi=account_bi)
     if resource == "settings":
         if method == "GET":
