@@ -41,6 +41,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 import edge_routing as https_routing  # noqa: E402
+from protection_fakes import UNPROTECTED  # noqa: E402
 
 
 NOW = 1_783_000_000_000
@@ -73,6 +74,7 @@ def _load(names, extra_globals):
         "hashlib": hashlib,
         "urlparse": urlparse,
         "parse_qs": parse_qs,
+        "_branch_protection": UNPROTECTED,
         **extra_globals,
     }
     exec(compile(module, str(ENTRY), "exec"), namespace)

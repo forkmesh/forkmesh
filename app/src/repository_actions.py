@@ -506,6 +506,11 @@ async def _instance_actions_control(env, request, owner, repo):
             env, actor, "repository.actions_control", "repository", target,
             "denied", {"action": action})
         return _instance_error("forbidden", 403)
+    if action in ("dispatch", "rerun") and await (
+            _branch_protection.actions_off(env, owner, repo)):
+        return _instance_error(
+            "actions_disabled", 403,
+            "Actions are turned off for this repository.")
     import runner_actions
     runtime = _runner_runtime(env)
     await runtime.ensure_schema()
@@ -648,6 +653,10 @@ async def repository_actions_control_handler(env, request, owner, repo):
         return json_response({"error": "method_not_allowed"}, status=405)
     if _instance_actions(env):
         return await _instance_actions_control(env, request, owner, repo)
+    if await _branch_protection.actions_off(env, owner, repo):
+        return json_response(
+            {"error": "actions_disabled"}, status=403,
+            cache_control="no-store")
     try:
         context = await _https_mirror_public_context(env, owner, repo)
     except _HttpsMirrorContextUnavailable:

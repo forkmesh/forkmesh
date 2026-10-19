@@ -435,7 +435,7 @@ STREAMED_REQUEST_BODY_SHA256 = hashlib.sha256(
 OPERATION_QUERY_FIELDS = {
     "git-info-refs": frozenset({"service"}),
     "git-upload-pack": frozenset(),
-    "git-receive-pack": frozenset({"service", "tagMoves"}),
+    "git-receive-pack": frozenset({"service", "tagMoves", "protect"}),
     "tree": frozenset({"path", "ref"}),
     "blobs": frozenset({"path", "ref"}),
     "blob": frozenset({"path", "ref"}),
@@ -1187,6 +1187,8 @@ def receive_pack_commands(
 PUSH_MAX_PREAMBLE_LINES = 4096
 TAG_MOVES_QUERY_FIELD = "tagMoves"
 MAX_TAG_MOVES = 8
+PROTECT_QUERY_FIELD = "protect"
+MAX_PROTECTED_REFS = 8
 REF_UPDATES_HEADER = "X-ForkMesh-Ref-Updates"
 REF_UPDATES_MAX = 40
 REF_UPDATE_COMMIT_COUNT_LIMIT = 10000
@@ -1217,6 +1219,38 @@ def parse_tag_moves(value: Any) -> dict[str, str]:
             raise GatewayError("tag move grant is invalid") from exc
         moves[ref] = oid
     return moves
+
+
+def parse_protected_refs(value: Any) -> list[str]:
+    text = str(value or "")
+    if not text:
+        return []
+    items = text.split(" ")
+    if len(items) > MAX_PROTECTED_REFS:
+        raise GatewayError("branch protection is invalid")
+    refs = []
+    for item in items:
+        name = item[:-1] if item.endswith("/") else item
+        if not name.startswith("refs/heads/") or len(name) <= len("refs/heads/"):
+            raise GatewayError("branch protection is invalid")
+        try:
+            if _safe_ref(name) != name:
+                raise GatewayError("branch protection is invalid")
+        except GatewayError as exc:
+            raise GatewayError("branch protection is invalid") from exc
+        refs.append(item)
+    return refs
+
+
+def enforce_protected_refs(
+    commands: list[tuple[str, str, str]], protected: list[str]
+) -> None:
+    for _old, _new, ref in commands:
+        for item in protected:
+            if ref == item or (item.endswith("/") and ref.startswith(item)):
+                raise GatewayError(
+                    "%s is protected: it changes only by merging an approved "
+                    "pull request" % ref)
 
 
 def enforce_push_ref_policy(
@@ -10372,7 +10406,7 @@ class GatewayApplication:
                 }
                 if (
                     method != "POST"
-                    or set(query) - {TAG_MOVES_QUERY_FIELD}
+                    or set(query) - {TAG_MOVES_QUERY_FIELD, PROTECT_QUERY_FIELD}
                     or normalized_headers.get("content-type", "")
                     .split(";", 1)[0]
                     .strip()
@@ -10381,15 +10415,17 @@ class GatewayApplication:
                     raise GatewayError("Git service is not available")
                 tag_moves = parse_tag_moves(
                     query.get(TAG_MOVES_QUERY_FIELD, ""))
+                protected = parse_protected_refs(
+                    query.get(PROTECT_QUERY_FIELD, ""))
                 decoded_body = _decode_git_body(
                     body,
                     normalized_headers.get("content-encoding", ""),
                     max(MAX_REQUEST_BODY, self.config.receive_max_input_bytes),
                 )
-                enforce_push_ref_policy(
-                    receive_pack_commands(
-                        decoded_body, PUSH_MAX_PREAMBLE_LINES),
-                    tag_moves)
+                commands = receive_pack_commands(
+                    decoded_body, PUSH_MAX_PREAMBLE_LINES)
+                enforce_push_ref_policy(commands, tag_moves)
+                enforce_protected_refs(commands, protected)
                 return self._run_receive_pack(
                     repository, owner, name, decoded_body)
             if method not in ("GET", "HEAD"):

@@ -14,6 +14,7 @@ SRC = ROOT / "app" / "src"
 sys.path.insert(0, str(SRC))
 
 import agent_branches  # noqa: E402
+from protection_fakes import UNPROTECTED  # noqa: E402
 
 
 A = "a" * 40
@@ -286,6 +287,7 @@ def world(monkeypatch):
         "_random_bytes": lambda n: (str(next(counter)) * n).encode()[:n],
         "valid_node_name": lambda value: bool(
             re.fullmatch(r"[a-z][a-z0-9-]{0,62}", str(value or ""))),
+        "_branch_protection": UNPROTECTED,
     }
     for name, value in fakes.items():
         monkeypatch.setattr(agent_branches, name, value, raising=False)

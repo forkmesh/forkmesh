@@ -4429,6 +4429,16 @@ async def repository_pull_merge_handler(
                            "reason": "rules_required"})
             return json_response(
                 blocked, status=409, cache_control="no-store")
+        protection = await _branch_protection.merge_refusal(
+            env, context["owner"], context["repo"], int(pull_number),
+            override_review)
+        if protection is not None:
+            await _audit_sensitive_action(
+                env, actor, profile["action"], "repository", target,
+                "denied", {"pullNumber": int(pull_number),
+                           "reason": protection[1].get("error", "")})
+            return json_response(
+                protection[1], status=protection[0], cache_control="no-store")
     if row is None:
         if not await _repo_merge_jobs_make_room(
                 env, context["repoBi"], now):
@@ -5070,6 +5080,21 @@ async def repository_branch_ops_handler(env, request, owner, repo):
             or len(requests) > MAX_PENDING_BRANCH_OPS):
         return json_response({"error": "invalid_request"}, status=400)
     default_branch = branch_op_name(data.get("defaultBranch", ""))
+    touched = []
+    for item in requests:
+        if isinstance(item, dict):
+            touched_record, _ = _branch_op_record(item, default_branch, actor)
+            if touched_record:
+                touched.append(touched_record["branch"])
+                if touched_record["op"] == "merge":
+                    touched.append(touched_record.get("base", ""))
+    protection = await _branch_protection.branch_refusal(
+        env, owner, repo, touched)
+    if protection is not None:
+        await _audit_sensitive_action(
+            env, actor, "repository.branch_ops", "repository", target,
+            "denied", {"reason": "branch_protected"})
+        return protection
     if "ops" not in data and data.get("queue") is not True:
         record, error = _branch_op_record(data, default_branch, actor)
         if error is not None:
