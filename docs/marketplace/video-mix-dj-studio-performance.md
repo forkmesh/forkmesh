@@ -44,11 +44,14 @@ performance report (see the app-wide page) if there is room.
 - Header: how many seconds of frames were measured and the probe's rate. The
   probe (`DjFrameProbe`, `VideoMixDjStudioDiagnostics.swift`) is a
   `CADisplayLink` on the main run loop held to 60 Hz, so it does not force a
-  ProMotion screen to 120 Hz by itself, but the studio's own animations can:
-  long frames that are not multiples of 16.7 ms (42, 58, 62 ms) mean the
-  screen was running faster than the probe. It runs only while the studio
-  is on screen; the first frame after it starts and any gap over a second (the
-  app was in the background) are not counted. The second line gives the span
+  ProMotion screen to 120 Hz by itself, but the studio's own animations can.
+  Long frames that are not multiples of 16.7 ms (42, 58, 62 ms) were read as
+  the screen running faster than the probe; that is unproven: the `2330`
+  check's 52-62 ms frames are not multiples of 8.3 ms either, and ProMotion
+  varies its rate. It runs only while the studio is on screen; the first
+  frame after it starts and any gap over a second (the app was in the
+  background: since the `2330` check the moments say `app in background` and
+  `app back`) are not counted. The second line gives the span
   the counters cover: `Main-thread work`, `Player ticks` and `Web view
   scripts` count from the moment the app-wide studio model started (at launch
   when a set resumes) with the studio open or closed, so divide them by that
@@ -64,25 +67,45 @@ performance report (see the app-wide page) if there is room.
   that with dropped frames means the frames were lost elsewhere (the render
   server, the GPU, the web view's processes, or iOS throttling a hot phone).
   The average hides bursts: long frames whose busy time equals their length
-  mean the main thread was blocked, even at 450 ms/s. `of it layout and
-  drawing ms/s` (since the `2289` check) is the part from just before UIKit's
+  mean the main thread was blocked, even at 450 ms/s. Busy is not the same as
+  computing: `of it on the CPU ms/s` (since the `2330` check, the main
+  thread's own CPU clock read at each probe frame) is how much of it the
+  main thread actually ran. CPU near busy means it computed (find the work);
+  CPU well under busy means it waited: a synchronous call (WebKit,
+  `AVAudioSession`, `UserDefaults`, a file, a lock) or no free core, and
+  `app CPU, all threads ms/s` (the whole process, so it can pass 1000 on
+  several cores) says whether the app's other threads were taking them.
+  `run-loop wakes a second` tells one long item from a storm of small ones
+  (the probe alone wakes it 60 times a second). `of it layout and drawing
+  ms/s` (since the `2289` check) is the part from just before UIKit's
   pre-commit handler to the run loop's sleep (a third observer at order
   1,998,000; UIKit's handler is at 1,999,000, Core Animation's commit at
-  2,000,000): view layout, SwiftUI's pending updates and Canvas drawing. The
-  rest of the busy time is run-loop sources, timers, display-link callbacks
-  and main-actor tasks. If SwiftUI updates outside that commit on some iOS
-  version, they show as the rest. `main thread busy each second` is one number
-  per second, like the worst-frame series.
+  2,000,000). That is where UIKit lays out, updates SwiftUI and commits only
+  up to iOS 17. From iOS 18 UIKit runs that update from a run-loop source
+  (`_UIUpdateSequenceRun` under a source-0 callout), so the observers see
+  nothing: iOS 27 read 0 ms over 56 s, a 156 ms busy frame included, and the
+  report now prints `not seen` instead of 0 once 50 ms of busy time has
+  passed with none of it in the commit. There, layout and drawing are inside
+  the rest. A source can't be timed from observers either: after a turn
+  that ran a source, CFRunLoop polls without calling its before-waiting and
+  after-waiting observers, so nothing marks where the source ended. Use the
+  studio view updates instead (below). `main thread busy each second` is one
+  number per second, like the worst-frame series.
 - `## Long frames`: each frame of 50 ms or more, how much of it the main
-  thread was busy and how much of that was layout and drawing, the work that
+  thread was busy, on the CPU (since the `2330` check) and in layout and
+  drawing (left out where it is `not seen`), how many times the run loop
+  woke and how many studio view bodies SwiftUI evaluated in it (both since
+  the `2330` check), the work that
   finished inside it (`inside:`, items of 1 ms or more: studio kinds, and
   since the `2289` check the app's named main-actor sections as `app <name>`) and the
   moments recorded within half a second before it (`around:`). A busy frame
-  that is mostly layout and drawing is SwiftUI or Core Animation work; a busy
-  frame with neither layout nor an `inside:` item is unnamed main-actor work
-  (a task, a notification, a network reply): wrap the suspect in
-  `PerformanceMonitorService.section` and it shows here next time. A long
-  frame with the main thread mostly idle was not lost on the main thread.
+  that is mostly layout and drawing, or one with hundreds of studio view
+  updates, is SwiftUI or Core Animation work; a busy frame on the CPU with few
+  view updates and no `inside:` item is unnamed main-actor work (a task, a
+  notification, a network reply): wrap the suspect in
+  `PerformanceMonitorService.section` and it shows here next time. A busy
+  frame mostly off the CPU was a wait (see `of it on the CPU`). A long frame
+  with the main thread mostly idle was not lost on the main thread.
 - `## Main-thread work`: count, average, maximum and how many went over 4 ms,
   per kind (`DjWork`): `player tick` and `player event` (`DjStudioModel.handle`),
   `waveform draw` (the Canvas in `DjWaveform`; divided by the seconds on
@@ -98,6 +121,14 @@ performance report (see the app-wide page) if there is room.
   forwarded through `watchSections` while the probe runs, 1 ms or more) by
   total time: count, average, maximum, total. Sections nest, so an outer
   name includes its inner ones.
+- `## Studio view updates` (since the `2330` check): how many times SwiftUI
+  evaluated each studio view's body (`DjDiagnostics.viewed`, one call at the
+  top of each body; `waveform frame` and `clock time` are the timeline
+  contents, `record view` the record's `updateUIView`), since the studio
+  first opened, and per second measured. A view far above its own pace (the
+  waveform frame at the `pace`, the clock time at 4, the rest only on a
+  change) re-evaluates because something it reads changes: find that
+  property. A new studio view gets the same call.
 - `## Player ticks`: per deck, ticks seen, the longest gap while playing, how
   many were late, the largest drift and how many corrections snapped (over
   0.3 s). Late ticks with smooth frames point at the web view or YouTube, not
@@ -108,7 +139,8 @@ performance report (see the app-wide page) if there is room.
 - `## Recent moments`: what the user and the studio did, newest first: start,
   pause, stop, load, scratch and release, fade and fade done, audio read and
   BPM, player errors, pace changes, and since the `2289` check each sheet opened or
-  closed. Jam replies are not moments (see `jam reply`). A deck that was
+  closed, since the `2330` check the app going to the background and coming
+  back. Jam replies are not moments (see `jam reply`). A deck that was
   already playing when the studio opened has no `START`.
 - `## Studio and device`: both decks (playing, rate, waveform bars, scratch
   audio), the `pace` the animations asked for (and whether it was eased),
@@ -223,7 +255,7 @@ performance report (see the app-wide page) if there is room.
   steps, 1 write, against 150 before). `surfaces.publish` is now a named
   section.
   Gaps closed: busy time split into layout and drawing and the rest, per
-  second and per long frame; a busy series per second; the app's named
+  second and per long frame (it works only up to iOS 17: see the next check); a busy series per second; the app's named
   sections inside long frames and summed while the studio is on screen
   (`PerformanceMonitorService.watchSections`); a moment for each sheet. Next
   check: if the long frames are mostly layout and drawing, look at SwiftUI
@@ -245,6 +277,67 @@ performance report (see the app-wide page) if there is room.
   with no touch. Something kept the screen above 60 Hz for a while, perhaps
   the web view's video or the people icons' timelines.
 
+- 2026-10-19, `2330-fixing-video-mix-dj`: 1.4.1 build 293 (commit
+  09cff25, the studio code of the check above), iPhone 15 Pro Max, iOS 27.2,
+  portrait, thermal state nominal, no Low Power Mode, 120 Hz screen. No jam,
+  AUTOMIX off, empty queue. The load sheet for the queue was open from -72.6
+  to -15.8 s. Deck A was loaded at -10.8 s and started at -8.3 s; its audio
+  was read and its BPM found at -6.1 s. Deck B was loaded and stopped.
+  Evidence: 51.9 fps against the 60 Hz probe over 56 s, 126 ms of hitches a
+  second (230 in the last 10 s). The worst frame, 728 ms, came while the
+  load sheet was open, at the app report's 845 ms stall on the studio screen
+  (18:27:02, -72 s), before the alert's 30 s. The main thread was busy
+  403 ms a second. It stayed at 333-423 even in seconds with nothing playing
+  and 17 ms worst frames (-15 to -10 s). It peaked at 877 at -19 s, the first
+  second measured after a 10 s gap in the series (most likely the app coming
+  back from the background, which was not a moment then), and at 672-844
+  from -6 to -4 s, Deck A's start and audio read. Right after those came 12
+  frames of 52-62 ms in 1.1 s, each busy 42-60 ms, then a 160 ms frame
+  (156 busy) at -2.0 s with nothing around it. Layout and drawing read 0 ms
+  in every column and every long frame. No long frame had studio or app work
+  inside it. The studio's work stayed small: record steps (1622, 29 a
+  second, both decks at the 15 Hz idle pace, 0.01 ms average, 2.8 ms
+  at most), waveform draws (419, about 52 a second over Deck A's 8 s of
+  play), ticks and saves (0.01-0.03 ms).
+  Cause: not found; the bundle could not tell what fills about 40% of
+  the main thread. What it got wrong: the layout and drawing column. The
+  observers that time it sit around UIKit's commit in the run loop's
+  before-waiting step, where UIKit committed up to iOS 17. iOS 18 and later
+  run layout, SwiftUI and the commit from a run-loop source, so the 0 ms
+  meant "not measured". The `2289` check's advice for frames with neither
+  layout nor an `app` item did not apply. These long frames could be the
+  studio's SwiftUI updates, unnamed main-actor work, or a main thread
+  waiting on a call or a core, and the bundle had nothing to tell those
+  apart.
+  Fix: no studio code changed, because nothing in the bundle pointed at
+  studio code. The report says `not seen` instead of a misleading 0 when
+  busy time passes with no commit time
+  (`DjVitalsTests.testBusyTimeWithNoLayoutAndDrawingSaysItWasNotSeenInsteadOfZero`).
+  Gaps closed (`DjVitalsTests.testLongFramesTellComputingFromWaitingByTheMainThreadsCpuTime`,
+  `testStudioViewUpdatesAreCountedPerViewAndPerLongFrame`):
+  - the main thread's CPU time, a second and per long frame, to tell
+    computing from waiting;
+  - the whole app's CPU time, to tell whether other threads took the cores;
+  - run-loop wakes, a second and per long frame;
+  - studio view updates per view and per long frame, which stand in for
+    the layout split on iOS 18 and later;
+  - `app in background`, `app back` and `app closing` moments.
+  Next check: a long frame on the CPU with many studio view updates is the
+  studio's SwiftUI work. Find what the busiest view reads that keeps
+  changing. One on the CPU with few view updates and no `inside:` item is
+  unnamed app work, so wrap the next suspect. One mostly off the CPU is a
+  wait, so compare the app's CPU and look for synchronous calls.
+  Ruled out:
+  - studio work on the main thread (above);
+  - player ticks (Deck A's longest gap 0.30 s, none late, one 0.32 s snap,
+    the first correction after START) and web view scripts (12 sent);
+  - the app's named sections (`relay.frame` 9 times, 6.3 ms average and
+    20.3 ms at most; `surfaces.publish` 4 times, 6.2 ms; `relay.send.hello`
+    and `relay.send.presence` 9-13 ms). Each one is over the 4 ms budget, but
+    together they came to 113 ms, and none fell inside a long frame;
+  - heat and Low Power Mode;
+  - the diagnostics sheet, opened at the end.
+
 ## Adding a check
 
 1. Check out the bundle's commit (in the app report header) and read the code
@@ -258,6 +351,7 @@ performance report (see the app-wide page) if there is room.
    ruled out), and correct "Budgets" or "Reading the bundle" where they misled
    you.
 5. If you had to guess because the bundle lacked something, make the studio
-   collect it in the same change (a new `DjWork` kind, a `mark`, a context
-   line in `DjDiagnostics.context`, or a new section in `DjVitals.report`)
+   collect it in the same change (a new `DjWork` kind, a `mark`, a
+   `DjDiagnostics.viewed` call, a context line in `DjDiagnostics.context`, or
+   a new section in `DjVitals.report`)
    and list it as a gap closed.

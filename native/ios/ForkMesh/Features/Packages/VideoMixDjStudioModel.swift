@@ -292,13 +292,17 @@ final class DjStudioModel {
         for name in [UIApplication.didEnterBackgroundNotification, UIApplication.willTerminateNotification] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
+                    DjDiagnostics.mark(name == UIApplication.didEnterBackgroundNotification ? "app in background" : "app closing")
                     self?.save(now: true)
                     self?.store.flush()
                 }
             }
         }
         center.addObserver(forName: UIApplication.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.comeBack() }
+            MainActor.assumeIsolated {
+                DjDiagnostics.mark("app back")
+                self?.comeBack()
+            }
         }
         for name in [ProcessInfo.thermalStateDidChangeNotification, Notification.Name.NSProcessInfoPowerStateDidChange] {
             center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in

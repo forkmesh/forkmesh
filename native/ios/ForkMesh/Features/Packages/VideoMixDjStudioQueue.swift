@@ -44,6 +44,7 @@ struct DjQueueView: View {
     let vertical: Bool
 
     var body: some View {
+        let _ = DjDiagnostics.viewed("queue")
         let items = model.shownQueue
         let layout = vertical ? AnyLayout(VStackLayout(spacing: 6 * u)) : AnyLayout(HStackLayout(spacing: 8 * u))
         layout {
