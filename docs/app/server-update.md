@@ -333,6 +333,9 @@ route and lands on an address that canonical mode never redirects again.
   Issues label filter.
 - The `history` read takes an optional `path`: the gateway runs
   `git log ... -- <path>`, and the app does not cache path-filtered history.
+  On a node the host's repository fast path forwards `path` for `history`
+  too (`docs/host/README.md`); `test_repo_fastpath_history_path.py` reads a
+  folder's history through the fast path and a real gateway.
 - An old owner whose name is also the short-address owner keeps its real
   repository (`/<owner>/<repo>`); only names in the table redirect. Git
   paths (`.git`) never redirect.
