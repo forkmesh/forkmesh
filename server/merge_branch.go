@@ -69,6 +69,38 @@ func validManagedBranch(value string) string {
 	return branch
 }
 
+const gitBranchMaxBytes = 255
+
+func gitBranchName(value string) string {
+	name := strings.TrimSpace(value)
+	if name == "" || len(name) > gitBranchMaxBytes || name == "HEAD" || name == "@" ||
+		strings.HasPrefix(name, "-") || strings.HasPrefix(name, "/") ||
+		strings.HasSuffix(name, "/") || strings.HasSuffix(name, ".") ||
+		strings.Contains(name, "//") || strings.Contains(name, "..") || strings.Contains(name, "@{") ||
+		strings.ContainsAny(name, " ~^:?*[\\") {
+		return ""
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return ""
+		}
+	}
+	for _, part := range strings.Split(name, "/") {
+		if strings.HasPrefix(part, ".") || strings.HasSuffix(part, ".lock") {
+			return ""
+		}
+	}
+	return name
+}
+
+func validDeletableBranch(value string) string {
+	branch := gitBranchName(value)
+	if branch == "" || strings.HasPrefix(branch, "forkmesh/") || branch == agentBranchPrefix {
+		return ""
+	}
+	return branch
+}
+
 func validMergeBase(value string) string {
 	return validManagedBranch(value)
 }
@@ -96,6 +128,9 @@ func parseBranchMutation(request *pullMutationRequest) error {
 	request.ExpectedBaseOid = strings.ToLower(strings.TrimSpace(request.ExpectedBaseOid))
 	request.ExpectedHeadOid = strings.ToLower(strings.TrimSpace(request.ExpectedHeadOid))
 	branch := validManagedBranch(request.Branch)
+	if request.profile.executorType == branchDeleteExecutorType {
+		branch = validDeletableBranch(request.Branch)
+	}
 	base := validMergeBase(request.Base)
 	if branch == base {
 		branch = ""

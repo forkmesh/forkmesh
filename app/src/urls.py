@@ -85,6 +85,8 @@ REPO_BRANCH_OPS_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/branches/ops$")
 REPO_BRANCH_OP_RESULTS_RE = re.compile(
     r"^/api/repo/([^/]+)/([^/]+)/branches/ops/results$")
+REPO_BRANCH_DELETE_RE = re.compile(
+    r"^/api/repo/([^/]+)/([^/]+)/branches/delete$")
 # Owner/write-authorized, bounded redacted run summaries from an attested
 # mirror Actions executor. No workflow variables or public catalog data use
 # this endpoint.

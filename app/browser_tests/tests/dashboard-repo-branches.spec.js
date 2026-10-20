@@ -181,55 +181,114 @@ test("the branches page shows divergence and conflicts from the mirror", async (
   ]);
 });
 
+function deleteJob(results, state, id = 1) {
+  const counts = { deleted: 0, queued: 0, pending: 0, refused: 0, failed: 0, waiting: 0 };
+  results.forEach((result) => { counts[result.status] = (counts[result.status] || 0) + 1; });
+  return {
+    id, state, total: results.length, done: results.length - counts.waiting,
+    current: state === "running" ? (results.find((result) => result.status === "waiting")?.branch || "") : "",
+    counts, results, defaultBranch: "main", limit: 200,
+  };
+}
+
+function branchDeleteApi({ deletes, answer, listing = () => BRANCH_LISTING, progress = null }) {
+  let pending = [];
+  let job = null;
+  const queued = [];
+  const handler = async (url, request) => {
+    if (url.pathname === "/api/repo/alice/proj/branches") {
+      return { body: listing() };
+    }
+    if (url.pathname === "/api/repo/alice/proj/merge-preview") {
+      return { body: { ok: true, clean: true, conflicts: [] } };
+    }
+    if (url.pathname === "/api/repo/alice/proj/branches/delete") {
+      if (request.method() === "GET") {
+        if (!job) return { body: { ok: true, job: null } };
+        job = progress ? progress(job) : job;
+        return { body: { ok: true, job, ops: pending } };
+      }
+      const body = request.postDataJSON();
+      deletes.push({ authorization: request.headers().authorization, body });
+      const reply = answer(body);
+      pending = pending.concat(reply.results
+        .filter((result) => result.status === "queued")
+        .map((result) => ({
+          id: pending.length + 1, op: "delete", branch: result.branch,
+          base: "", expectedOid: OLD, startOid: "", requestedBy: "alice", queuedAt: 1,
+        })));
+      job = deleteJob(reply.results, reply.state || "done");
+      return { status: job.state === "running" ? 202 : 200, body: { ok: true, job, ops: pending } };
+    }
+    if (url.pathname === "/api/repo/alice/proj/branches/ops") {
+      if (request.method() === "POST") {
+        const body = request.postDataJSON();
+        queued.push({ authorization: request.headers().authorization, body });
+        pending = pending.concat([{
+          id: pending.length + 1,
+          op: body.op,
+          branch: body.branch,
+          base: body.base || "",
+          expectedOid: body.expectedOid || "",
+          startOid: body.startOid || "",
+          requestedBy: "alice",
+          queuedAt: 1,
+        }]);
+      }
+      if (request.method() === "DELETE") pending = [];
+      return { body: { ok: true, queued: true, ops: pending } };
+    }
+    return { body: { ok: true } };
+  };
+  return { handler, queued };
+}
+
+function failOnDialogs(page) {
+  page.on("dialog", (dialog) => {
+    throw new Error(`unexpected ${dialog.type()} dialog: ${dialog.message()}`);
+  });
+}
+
 test("the owner deletes, updates and creates branches from the web", async ({
   page,
 }) => {
-  const queued = [];
-  let pending = [];
+  const deletes = [];
+  const api = branchDeleteApi({
+    deletes,
+    answer: (body) => ({
+      results: body.branches.map((item) => ({
+        branch: item.name, status: "queued", error: "",
+        message: `Queued the deletion of ${item.name} for this repository's node.`,
+      })),
+    }),
+  });
+  const { queued } = api;
   await stageRepoPage(page, {
     session: { nodeName: "alice", sessionToken: "test-session", status: "active" },
     repositories: [REPOSITORY],
-    api: async (url, request) => {
-      if (url.pathname === "/api/repo/alice/proj/branches") {
-        return { body: BRANCH_LISTING };
-      }
-      if (url.pathname === "/api/repo/alice/proj/merge-preview") {
-        return { body: { ok: true, clean: true, conflicts: [] } };
-      }
-      if (url.pathname === "/api/repo/alice/proj/branches/ops") {
-        if (request.method() === "POST") {
-          const body = request.postDataJSON();
-          queued.push({
-            authorization: request.headers().authorization,
-            body,
-          });
-          pending = pending.concat([{
-            id: pending.length + 1,
-            op: body.op,
-            branch: body.branch,
-            base: body.base || "",
-            expectedOid: body.expectedOid || "",
-            startOid: body.startOid || "",
-            requestedBy: "alice",
-            queuedAt: 1,
-          }]);
-        }
-        return { body: { ok: true, queued: true, ops: pending } };
-      }
-      return { body: { ok: true } };
-    },
+    api: api.handler,
   });
 
   await page.goto("/alice/proj/branches");
   const row = (name) => page.locator(`[data-repo-branches-row-name="${name}"]`);
   await expect(row("feature/stale")).toBeVisible();
 
-  // The default branch is never offered for deletion.
+  // The default branch is never offered for deletion or selection.
   await expect(row("main").locator("[data-repo-branch-delete]")).toHaveCount(0);
+  await expect(row("main").locator("[data-repo-branch-select]")).toHaveCount(0);
 
-  // Deleting asks first, then queues the exact tip the page showed.
-  page.once("dialog", (dialog) => dialog.accept());
+  // Deleting asks inline in the row, and Cancel sends nothing.
+  failOnDialogs(page);
   await row("agent/merged-work").locator("[data-repo-branch-delete]").click();
+  const confirmation = row("agent/merged-work").locator("[data-repo-branch-delete-confirmation]");
+  await expect(confirmation).toContainText("Delete agent/merged-work?");
+  await confirmation.locator("[data-repo-branch-delete-cancel]").click();
+  await expect(confirmation).toHaveCount(0);
+  expect(deletes).toEqual([]);
+
+  // Confirming sends the exact tip the page showed.
+  await row("agent/merged-work").locator("[data-repo-branch-delete]").click();
+  await row("agent/merged-work").locator("[data-repo-branch-delete-confirm]").click();
   await expect(page.locator("[data-repo-branches-status]")).toContainText(
     "Queued the deletion of agent/merged-work",
   );
@@ -238,15 +297,11 @@ test("the owner deletes, updates and creates branches from the web", async ({
   // A queued branch has no second delete offered until the node takes it.
   await expect(row("agent/merged-work").locator("[data-repo-branch-delete]"))
     .toBeDisabled();
-  expect(queued).toEqual([{
+  expect(deletes).toEqual([{
     authorization: "Bearer test-session",
-    body: {
-      op: "delete",
-      branch: "agent/merged-work",
-      expectedOid: OLD,
-      defaultBranch: "main",
-    },
+    body: { branches: [{ name: "agent/merged-work", expectedOid: OLD }] },
   }]);
+  page.removeAllListeners("dialog");
 
   // "Update from main" is only offered for a branch that is actually behind.
   await expect(row("main").locator("[data-repo-branch-update]")).toHaveCount(0);
@@ -254,7 +309,7 @@ test("the owner deletes, updates and creates branches from the web", async ({
   await expect(page.locator("[data-repo-branches-status]")).toContainText(
     "Queued an update of feature/stale from main",
   );
-  expect(queued[1].body).toEqual({
+  expect(queued[0].body).toEqual({
     op: "update",
     branch: "feature/stale",
     expectedOid: STALE,
@@ -268,7 +323,7 @@ test("the owner deletes, updates and creates branches from the web", async ({
   await expect(page.locator("[data-repo-branches-status]")).toContainText(
     "Queued the creation of release/2026-09 from main",
   );
-  expect(queued[2].body).toEqual({
+  expect(queued[1].body).toEqual({
     op: "create",
     branch: "release/2026-09",
     startOid: TIP,
@@ -276,7 +331,6 @@ test("the owner deletes, updates and creates branches from the web", async ({
   });
 
   // Cancelling a queued operation takes it back off the node's queue.
-  pending = [];
   await row("agent/merged-work")
     .locator("[data-repo-branch-op-cancel]").click();
   await expect(page.locator("[data-repo-branches-status]")).toContainText(
@@ -286,40 +340,197 @@ test("the owner deletes, updates and creates branches from the web", async ({
     .toHaveCount(0);
 });
 
-test("merged branches are deletable in one action", async ({ page }) => {
+test("the merged filter preselects merged branches for one deletion", async ({ page }) => {
   const deletes = [];
+  let deleted = new Set();
+  const api = branchDeleteApi({
+    deletes,
+    listing: () => ({
+      ...BRANCH_LISTING,
+      branches: BRANCH_LISTING.branches.filter((branch) => !deleted.has(branch.name)),
+    }),
+    answer: (body) => {
+      body.branches.forEach((item) => deleted.add(item.name));
+      return {
+        results: body.branches.map((item) => ({
+          branch: item.name, status: "deleted", error: "", message: `Deleted ${item.name}.`,
+        })),
+      };
+    },
+  });
   await stageRepoPage(page, {
     session: { nodeName: "alice", sessionToken: "test-session", status: "active" },
     repositories: [REPOSITORY],
-    api: async (url, request) => {
-      if (url.pathname === "/api/repo/alice/proj/branches") {
-        return { body: BRANCH_LISTING };
-      }
-      if (url.pathname === "/api/repo/alice/proj/merge-preview") {
-        return { body: { ok: true, clean: true, conflicts: [] } };
-      }
-      if (url.pathname === "/api/repo/alice/proj/branches/ops") {
-        if (request.method() === "POST") {
-          deletes.push(request.postDataJSON());
-        }
-        return { body: { ok: true, queued: true, queuedCount: 1, ops: [] } };
-      }
-      return { body: { ok: true } };
-    },
+    api: api.handler,
   });
+  failOnDialogs(page);
 
   await page.goto("/alice/proj/branches");
-  const merged = page.locator("[data-repo-branch-delete-merged]");
+  const filter = page.locator("[data-repo-branches-filter-merged]");
   // Only agent/merged-work contributes nothing of its own.
-  await expect(merged).toContainText("Delete 1 merged");
-  page.once("dialog", (dialog) => dialog.accept());
-  await merged.click();
-  await expect.poll(() => deletes).toEqual([{
-    ops: [{ op: "delete", branch: "agent/merged-work", expectedOid: OLD }],
-    defaultBranch: "main",
+  await expect(filter).toContainText("Merged into main");
+  await expect(filter).toContainText("1");
+  await expect(filter).toHaveAttribute("aria-pressed", "false");
+  await filter.click();
+  await expect(filter).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-repo-branches-row]")).toHaveCount(1);
+  await expect(page.locator('[data-repo-branch-select="agent/merged-work"]')).toBeChecked();
+  await expect(page.locator("[data-repo-branches-selected-count]")).toHaveText("1 selected");
+
+  await page.locator("[data-repo-branches-delete-selected]").click();
+  const summary = page.locator("[data-repo-branches-delete-summary]");
+  await expect(summary).toContainText("Delete 1 branch?");
+  await expect(summary).toContainText("All of them are merged into main.");
+  await expect(summary.locator("[data-repo-branches-delete-names]")).toHaveText("agent/merged-work");
+  expect(deletes).toEqual([]);
+  await summary.locator("[data-repo-branches-delete-selected-confirm]").click();
+
+  await expect.poll(() => deletes.map((entry) => entry.body)).toEqual([{
+    branches: [{ name: "agent/merged-work", expectedOid: OLD }],
+  }]);
+  await expect(page.locator("[data-repo-branches-status]")).toContainText("Deleted agent/merged-work.");
+  await expect(page.locator('[data-repo-branch-delete-result-row][data-repo-branch-delete-result-status="deleted"]'))
+    .toHaveCount(1);
+  await expect(page.locator('[data-repo-branches-row-name="agent/merged-work"]')).toHaveCount(0);
+  await expect(page.locator("[data-repo-branches-selection]")).toBeHidden();
+
+  // Turning the filter off shows every branch again.
+  await page.locator("[data-repo-branches-filter-merged]").click();
+  await expect(page.locator("[data-repo-branches-row]")).toHaveCount(3);
+});
+
+test("selected branches are deleted together and each reports its own result", async ({
+  page,
+}) => {
+  const deletes = [];
+  let deleted = new Set();
+  const api = branchDeleteApi({
+    deletes,
+    listing: () => ({
+      ...BRANCH_LISTING,
+      branches: BRANCH_LISTING.branches.filter((branch) => !deleted.has(branch.name)),
+    }),
+    answer: (body) => ({
+      results: body.branches.map((item) => {
+        if (item.name === "feature/stale") {
+          return { branch: item.name, status: "refused", error: "stale_head",
+                   message: "feature/stale moved since the page read it, so it was kept. Refresh and try again." };
+        }
+        deleted.add(item.name);
+        return { branch: item.name, status: "deleted", error: "", message: `Deleted ${item.name}.` };
+      }),
+    }),
+  });
+  await stageRepoPage(page, {
+    session: { nodeName: "alice", sessionToken: "test-session", status: "active" },
+    repositories: [REPOSITORY],
+    api: api.handler,
+  });
+  failOnDialogs(page);
+
+  await page.goto("/alice/proj/branches");
+  await page.locator('[data-repo-branch-select="feature/stale"]').check();
+  await page.locator('[data-repo-branch-select="feature/clean"]').check();
+  await expect(page.locator("[data-repo-branches-selected-count]")).toHaveText("2 selected");
+  await page.locator("[data-repo-branches-delete-selected]").click();
+  const summary = page.locator("[data-repo-branches-delete-summary]");
+  await expect(summary).toContainText("Delete 2 branches?");
+  await expect(summary).toContainText("2 of them have commits not merged into main.");
+  // Cancel keeps the selection and sends nothing.
+  await summary.locator("[data-repo-branches-delete-selected-cancel]").click();
+  await expect(page.locator("[data-repo-branches-selected-count]")).toHaveText("2 selected");
+  expect(deletes).toEqual([]);
+
+  await page.locator("[data-repo-branches-delete-selected]").click();
+  await page.locator("[data-repo-branches-delete-selected-confirm]").click();
+  await expect.poll(() => deletes.map((entry) => entry.body)).toEqual([{
+    branches: [
+      { name: "feature/stale", expectedOid: STALE },
+      { name: "feature/clean", expectedOid: DIVERGED },
+    ],
   }]);
   await expect(page.locator("[data-repo-branches-status]"))
-    .toContainText("Queued 1 merged branch deletion");
+    .toContainText("Deleting 2 branches: 1 deleted, 1 not deleted.");
+  const results = page.locator("[data-repo-branch-delete-result-row]");
+  await expect(results).toHaveCount(2);
+  await expect(page.locator('[data-repo-branch-delete-result-branch="feature/stale"]'))
+    .toContainText("moved since the page read it");
+  await expect(page.locator('[data-repo-branch-delete-result-branch="feature/clean"]'))
+    .toContainText("Deleted feature/clean.");
+  // The kept branch stays listed, marked, and still selected for a retry.
+  const stale = page.locator('[data-repo-branches-row-name="feature/stale"]');
+  await expect(stale.locator('[data-repo-branch-delete-result="refused"]')).toHaveText("not deleted");
+  await expect(stale.locator("[data-repo-branch-select]")).toBeChecked();
+  await expect(page.locator('[data-repo-branches-row-name="feature/clean"]')).toHaveCount(0);
+
+  await page.locator("[data-repo-branch-delete-results-clear]").click();
+  await expect(results).toHaveCount(0);
+});
+
+test("a large deletion runs as one job, shows progress and leaves no stale list", async ({
+  page,
+}) => {
+  const deletes = [];
+  const deleted = new Set();
+  let listings = 0;
+  const api = branchDeleteApi({
+    deletes,
+    listing: () => {
+      listings += 1;
+      return {
+        ...BRANCH_LISTING,
+        branches: BRANCH_LISTING.branches.filter((branch) => !deleted.has(branch.name)),
+      };
+    },
+    answer: (body) => ({
+      state: "running",
+      results: body.branches.map((item) => ({
+        branch: item.name, status: "waiting", error: "", message: "Waiting to be deleted.",
+      })),
+    }),
+    progress: (job) => {
+      const results = job.results.map((result) => ({ ...result }));
+      const next = results.find((result) => result.status === "waiting");
+      if (next) {
+        next.status = "deleted";
+        next.message = `Deleted ${next.branch}.`;
+        deleted.add(next.branch);
+      }
+      const done = !results.some((result) => result.status === "waiting");
+      return deleteJob(results, done ? "done" : "running");
+    },
+  });
+  await stageRepoPage(page, {
+    session: { nodeName: "alice", sessionToken: "test-session", status: "active" },
+    repositories: [REPOSITORY],
+    api: api.handler,
+  });
+  failOnDialogs(page);
+
+  await page.goto("/alice/proj/branches");
+  for (const name of ["agent/merged-work", "feature/stale", "feature/clean"]) {
+    await page.locator(`[data-repo-branch-select="${name}"]`).check();
+  }
+  await page.locator("[data-repo-branches-delete-selected]").click();
+  await page.locator("[data-repo-branches-delete-selected-confirm]").click();
+  // One request carries every branch; the server deletes them one by one.
+  await expect.poll(() => deletes.length).toBe(1);
+  expect(deletes[0].body.branches.map((item) => item.name)).toEqual([
+    "agent/merged-work", "feature/stale", "feature/clean",
+  ]);
+  await expect(page.locator("[data-repo-branches-delete-progress]")).toContainText(/Deleted [12] of 3/);
+  // Each branch leaves the list as soon as the job reports it deleted.
+  await expect(page.locator('[data-repo-branches-row-name="agent/merged-work"]')).toHaveCount(0);
+  await expect(page.locator("[data-repo-branches-status]"))
+    .toContainText("Deleting 3 branches: 3 deleted.", { timeout: 15000 });
+  expect(deletes.length).toBe(1);
+  await expect(page.locator("[data-repo-branches-row]")).toHaveCount(1);
+  await expect(page.locator("[data-repo-branches-total]")).toHaveText("1 branch");
+  expect(listings).toBeGreaterThan(1);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("forkmesh.repositoryCatalog.v1") || "null"));
+  if (stored) {
+    expect(stored.repositories.find((repo) => repo.name === "proj").branchCount).toBe("1");
+  }
 });
 
 test("every branch behind the default one is updatable in one action", async ({
@@ -397,7 +608,8 @@ test("a visitor who cannot manage the repo sees a read-only list", async ({
   await expect(page.locator("[data-repo-branch-delete]")).toHaveCount(0);
   await expect(page.locator("[data-repo-branch-update]")).toHaveCount(0);
   await expect(page.locator("[data-repo-branch-create]")).toHaveCount(0);
-  await expect(page.locator("[data-repo-branch-delete-merged]")).toHaveCount(0);
+  await expect(page.locator("[data-repo-branches-filter-merged]")).toHaveCount(0);
+  await expect(page.locator("[data-repo-branch-select]")).toHaveCount(0);
   await expect(page.locator("[data-repo-branch-update-all]")).toHaveCount(0);
   expect(writes).toEqual([]);
 });

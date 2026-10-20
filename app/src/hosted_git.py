@@ -466,6 +466,36 @@ async def record_hosted_stats(env, owner, repo, digest, stats):
     return True
 
 
+async def record_hosted_branch_count(env, owner, repo, count):
+    owner = safe_segment(owner)
+    repo = safe_segment(repo)
+    try:
+        count = int(count)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if not owner or not repo or count < 1:
+        return False
+    key_bi = await blind_index(env, owner + "/" + repo)
+    row = await d1_first(
+        env, "SELECT owner_bi,data FROM repositories WHERE key_bi=?", key_bi)
+    if not row:
+        return False
+    record = await decrypt_row(env, row.get("data"))
+    if (not isinstance(record, dict) or record.get("source") != HOSTED_SOURCE
+            or str(record.get("branchCount") or "") == str(count)):
+        return False
+    record["branchCount"] = str(count)
+    _, owner_rec = await _account_row(env, owner)
+    if not owner_rec:
+        return False
+    encrypted = await encrypt_row(env, record)
+    await _contribution_write_catalog_state(
+        env, record, row.get("owner_bi"), owner_rec, key_bi, encrypted)
+    await edge_cache_delete(CATALOG_CACHE_KEY)
+    await _bump_catalog_rev(env)
+    return True
+
+
 async def _remote_url(env, origin, owner, name):
     clone_url = globals().get("_repo_clone_url")
     if callable(clone_url):

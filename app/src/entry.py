@@ -1128,7 +1128,7 @@ _URL_EXPORT_NAMES = (
     "CHAT_DIRECT_MESSAGE_PENDING_RE", "CHAT_DIRECT_MESSAGE_DELIVERED_RE",
     "CHAT_DIRECT_MESSAGE_WS_RE", "CHAT_READS_RE", "REPO_ISSUES_RE", "REPO_PULLS_RE",
     "REPO_PULL_MERGE_RE", "REPO_PULL_UPDATE_RE", "REPO_PULL_RULES_RE",
-    "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE",
+    "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE", "REPO_BRANCH_DELETE_RE",
     "REPO_ACTION_RUNS_RE", "REPO_ACTION_CONTROL_RE", "REPO_DISCUSSIONS_RE",
     "REPO_ACTION_RUN_LOG_RE", "REPO_ACTION_SECRETS_RE",
     "ORG_ACTION_SECRETS_RE",
@@ -13498,7 +13498,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "b757172124ea52f42581b43e267268ba4e227b53eb8dffa9b561f308dfb3c1b9"
+    "5ffdfea001d97bb56881a9bbee7a9d9fe108b171f3fc0b48e889c5e07041914a"
 )
 
 
@@ -16163,6 +16163,8 @@ verify_hosted_push_credential = _hosted_git.export(
     "verify_hosted_push_credential")
 has_hosted_push_credential = _hosted_git.export("has_hosted_push_credential")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
+record_hosted_branch_count = _hosted_git.export(
+    "record_hosted_branch_count")
 # Repositories the Next core nodes host (HOSTED_GIT_CORE_NODES,
 # docs/HOSTED_REPOS.md): push routing, the per-repository size limit, and the
 # private (capability-only) read path.
@@ -51019,6 +51021,8 @@ org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")
 repository_branch_op_results_handler = _route_handlers.export(
     "repository_branch_op_results_handler")
+repository_branch_delete_handler = _route_handlers.export(
+    "repository_branch_delete_handler")
 
 
 async def _https_mirror_proxy(

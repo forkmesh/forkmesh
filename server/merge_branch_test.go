@@ -383,3 +383,57 @@ func TestTheDefaultBranchIsNeverDeleted(t *testing.T) {
 		t.Fatal("a refused request moved a ref")
 	}
 }
+
+func TestBranchDeleteAcceptsEveryNameGitAllows(t *testing.T) {
+	for name, want := range map[string]bool{
+		"feature/researchPapersFeature+": true,
+		"fix#12":                         true,
+		"release/v1.0_rc,2":              true,
+		"naïve-branch":                   true,
+		"a.b/c":                          true,
+		"-leading-dash":                  false,
+		"double//slash":                  false,
+		"dots..here":                     false,
+		"ends.":                          false,
+		"ends/":                          false,
+		"/starts":                        false,
+		".hidden/x":                      false,
+		"x/.hidden":                      false,
+		"x.lock":                         false,
+		"x.lock/y":                       false,
+		"has space":                      false,
+		"tilde~1":                        false,
+		"caret^":                         false,
+		"colon:":                         false,
+		"question?":                      false,
+		"star*":                          false,
+		"bracket[":                       false,
+		"back\\slash":                    false,
+		"at@{1}":                         false,
+		"@":                              false,
+		"HEAD":                           false,
+		"ctl\x01":                        false,
+		strings.Repeat("a", 256):         false,
+	} {
+		if got := gitBranchName(name) != ""; got != want {
+			t.Errorf("gitBranchName(%q) = %v, want %v", name, got, want)
+		}
+	}
+	if validDeletableBranch("forkmesh/pulls") != "" || validDeletableBranch("agent/") != "" {
+		t.Fatal("an internal ref was deletable")
+	}
+}
+
+func TestBranchDeleteRemovesABranchWithAPlusInItsName(t *testing.T) {
+	f := newMergeFixture(t)
+	const name = "team/feature/researchPapersFeature+"
+	run(t, f.source, "git", "push", "-q", f.bare, "main:refs/heads/"+name)
+	deleted := f.mustBranch(t, "execute", branchDeleteExecutorType, map[string]any{
+		"branch": name, "expectedHeadOid": f.mainOid, "discard": true})
+	if deleted["status"] != "deleted" || f.refOrEmpty("refs/heads/"+name) != "" {
+		t.Fatalf("delete of %q: %+v", name, deleted)
+	}
+	if f.ref(t, deleted["trashRef"].(string)) != f.mainOid {
+		t.Fatal("the tip was not kept in the trash")
+	}
+}

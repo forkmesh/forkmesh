@@ -3456,6 +3456,15 @@ class Default:
             return await repository_branch_ops_handler(
                 self.env, request, owner, repo)
 
+        branch_delete_match = REPO_BRANCH_DELETE_RE.match(url.path)
+        if branch_delete_match:
+            owner = safe_segment(branch_delete_match.group(1))
+            repo = safe_segment(branch_delete_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await repository_branch_delete_handler(
+                self.env, request, owner, repo)
+
         branch_op_results_match = REPO_BRANCH_OP_RESULTS_RE.match(url.path)
         if branch_op_results_match:
             owner = safe_segment(branch_op_results_match.group(1))

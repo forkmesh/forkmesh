@@ -55,6 +55,11 @@
     repoBranchOutcome: {},
     repoBranchResume: {},
     repoBranchHeld: {},
+    repoBranchSelection: {},
+    repoBranchFilter: {},
+    repoBranchConfirm: {},
+    repoBranchDeleting: {},
+    repoBranchDeleteResults: {},
     repoPullMetadataCommits: {},
     repoPullMetadataInflight: {},
     repoCollectionPages: {},
@@ -17755,11 +17760,11 @@
   }
 
   async function fetchRepoJson(path, options = {}) {
-    const seeded = await seededRepoRead(path);
+    const seeded = options.canonical ? null : await seededRepoRead(path);
     if (seeded) return seeded;
-    const early = await earlyRepoRead(path);
+    const early = options.canonical ? null : await earlyRepoRead(path);
     if (early) return early;
-    const direct = directRepoRequestCandidates(path);
+    const direct = options.canonical ? [] : directRepoRequestCandidates(path);
     let response = null;
     for (const candidate of direct) {
       try {
@@ -17782,7 +17787,7 @@
       // answers an unchanged tree or file with 304), but a revisit no longer
       // downloads the same bytes again.
       response = await fetch(path, {
-        cache: "no-cache",
+        cache: options.canonical ? "no-store" : "no-cache",
         headers: { accept: "application/json" },
         signal: options.signal,
       });
@@ -35008,7 +35013,7 @@
     if (!refresh && state.repoBranches[key]?.loaded) {
       return state.repoBranches[key].branches;
     }
-    const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`);
+    const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`, { canonical: refresh });
     const branches = (Array.isArray(data.branches) ? data.branches : [])
       .map(normalizeRepoBranch)
       .filter(Boolean);
@@ -35059,8 +35064,12 @@
 
   function filterRepoBranchesPage(repo, branches) {
     const query = repoBranchesQuery(repo).trim().toLowerCase();
-    if (!query) return branches;
-    return branches.filter((branch) => String(branch.name || "").toLowerCase().includes(query));
+    const defaultBranch = repoDefaultBranch(repo);
+    const mergedOnly = repoBranchFilter(repo) === "merged";
+    return branches.filter((branch) => (
+      (!query || String(branch.name || "").toLowerCase().includes(query))
+      && (!mergedOnly || (branch.name !== defaultBranch && branch.ahead === 0))
+    ));
   }
 
   // How a queued operation reads while the owner's node has not taken it yet.
@@ -35205,13 +35214,19 @@
     const busy = repoBranchBusy(repo) === name;
     const running = repoBranchRunning(repo);
     const runningHere = running && running.branch === name ? running : null;
-    const disabled = Boolean(pending || busy);
+    const disabled = Boolean(pending || busy || repoBranchDeleting(repo));
+    const deletable = manage && repoBranchDeletable(repo, branch, defaultBranch);
+    const selected = deletable && repoBranchSelection(repo).has(name);
+    const confirm = state.repoBranchConfirm[repoKey(repo)];
+    const confirming = manage && confirm?.kind === "one" && confirm.branch === name;
+    const deleteResult = repoBranchDeleteResultFor(repo, name);
     const action = (attribute, icon, label, extra = "") => `
       <button type="button" ${attribute} data-repo-branch-target="${escapeHtml(name)}" data-repo-branch-oid="${escapeHtml(hash)}"${disabled ? " disabled" : ""} class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium ${extra || "text-muted-foreground hover:bg-secondary hover:text-foreground"} transition-colors disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="${icon}" class="h-3.5 w-3.5"></i>${label}</button>`;
     return `
-      <div data-repo-branches-row data-repo-branches-row-name="${escapeHtml(name)}" class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-3 transition-colors hover:bg-secondary/30">
+      <div data-repo-branches-row data-repo-branches-row-name="${escapeHtml(name)}" class="grid grid-cols-1 items-center gap-3 border-t border-border px-4 py-3 transition-colors hover:bg-secondary/30 sm:grid-cols-[minmax(0,1fr)_auto]">
         <div class="min-w-0">
           <div class="flex min-w-0 flex-wrap items-center gap-2">
+            ${manage ? (deletable ? `<input type="checkbox" data-repo-branch-select="${escapeHtml(name)}" aria-label="Select ${escapeHtml(name)}"${selected ? " checked" : ""}${disabled ? " disabled" : ""} class="h-3.5 w-3.5 shrink-0 cursor-pointer accent-primary disabled:cursor-not-allowed" />` : '<span aria-hidden="true" class="inline-block h-3.5 w-3.5 shrink-0"></span>') : ""}
             <i data-lucide="git-branch" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
             <button type="button" data-repo-branch-name="${escapeHtml(name)}" class="min-w-0 truncate text-sm font-semibold text-foreground hover:underline">${escapeHtml(name)}</button>
             ${name === defaultBranch ? '<span data-repo-branch-default class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-semibold text-foreground">default</span>' : ""}
@@ -35219,17 +35234,24 @@
             ${divergence ? `<span data-repo-branch-divergence class="shrink-0 rounded-full border border-border px-2 py-0.5 text-[10px] font-medium text-muted-foreground">${escapeHtml(divergence)}</span>` : ""}
             ${conflicted ? `<span data-repo-branch-conflicts title="${escapeHtml(`Conflicts with ${defaultBranch} in ${(trial.conflicts || []).slice(0, 8).join(", ") || "one or more files"}`)}" class="shrink-0 rounded-full border border-destructive/40 px-2 py-0.5 text-[10px] font-semibold text-destructive">conflicts</span>` : ""}
             ${runningHere ? `<span data-repo-branch-running title="${escapeHtml(runningHere.message || "")}" class="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold text-foreground"><i data-lucide="loader-circle" class="h-3 w-3 animate-spin"></i>${escapeHtml(REPO_BRANCH_OP_RUNNING_LABELS[runningHere.op] || "working…")}</span>` : ""}
+            ${deleteResult && deleteResult.status !== "deleted" ? `<span data-repo-branch-delete-result="${escapeHtml(deleteResult.status)}" title="${escapeHtml(deleteResult.message || "")}" class="shrink-0 rounded-full border ${deleteResult.status === "queued" || deleteResult.status === "pending" ? "border-border text-muted-foreground" : "border-destructive/40 text-destructive"} px-2 py-0.5 text-[10px] font-semibold">${escapeHtml(REPO_BRANCH_DELETE_STATUS_LABELS[deleteResult.status] || deleteResult.status)}</span>` : ""}
             ${pending ? `<span data-repo-branch-pending class="inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">${escapeHtml((pending.held ? REPO_BRANCH_HELD_LABELS : REPO_BRANCH_OP_LABELS)[pending.op] || "queued")}${manage ? `<button type="button" data-repo-branch-op-cancel data-repo-branch-op-id="${escapeHtml(String(pending.id))}" aria-label="Cancel the queued ${escapeHtml(pending.op)} of ${escapeHtml(name)}" class="text-muted-foreground hover:text-foreground">✕</button>` : ""}</span>` : ""}
           </div>
           <div class="mt-1 min-w-0 truncate text-xs text-muted-foreground">${escapeHtml(tip)}</div>
         </div>
-        <div class="flex shrink-0 items-center gap-2">
+        ${confirming ? `
+        <div data-repo-branch-delete-confirmation role="group" aria-label="Confirm deleting ${escapeHtml(name)}" class="flex flex-wrap items-center gap-2 sm:justify-end">
+          <span class="text-xs text-foreground">Delete <span class="font-semibold">${escapeHtml(name)}</span>${branch.ahead > 0 ? ` and its ${formatCount(branch.ahead)} unmerged commit${branch.ahead === 1 ? "" : "s"}` : ""}?</span>
+          <button type="button" data-repo-branch-delete-confirm data-repo-branch-target="${escapeHtml(name)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-semibold text-destructive hover:bg-destructive/10 transition-colors"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete</button>
+          <button type="button" data-repo-branch-delete-cancel class="inline-flex h-7 items-center rounded-md border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
+        </div>` : `
+        <div class="flex flex-wrap items-center gap-2 sm:justify-end">
           ${shortHash ? `<button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" data-dashboard-commit-short-hash class="font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(shortHash)}</button>` : ""}
           ${manage && branch.behind > 0 ? action("data-repo-branch-update", "git-pull-request-arrow", `Update from ${escapeHtml(defaultBranch)}`) : ""}
           ${manage && branch.ahead > 0 ? action("data-repo-branch-merge", "git-merge", `Merge into ${escapeHtml(defaultBranch)}`, "text-foreground hover:bg-secondary") : ""}
           <button type="button" data-repo-branch-name="${escapeHtml(name)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="code-2" class="h-3.5 w-3.5"></i>Browse</button>
-          ${manage ? action("data-repo-branch-delete", "trash-2", "Delete", "text-destructive hover:bg-destructive/10") : ""}
-        </div>
+          ${deletable ? `<button type="button" data-repo-branch-delete data-repo-branch-target="${escapeHtml(name)}" aria-label="Delete ${escapeHtml(name)}" title="Delete ${escapeHtml(name)}"${disabled ? " disabled" : ""} class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors disabled:cursor-not-allowed disabled:opacity-50"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ""}
+        </div>`}
       </div>`;
   }
 
@@ -35245,10 +35267,11 @@
     const defaultBranch = repoDefaultBranch(repo);
     const merged = repoMergedRepoBranches(repo, defaultBranch);
     const behind = repoBranchesBehindDefault(repo, defaultBranch);
+    const mergedOnly = repoBranchFilter(repo) === "merged";
     slot.innerHTML = `
       <button type="button" data-repo-branch-create class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"><i data-lucide="git-branch-plus" class="h-3.5 w-3.5"></i>New branch</button>
       ${behind.length ? `<button type="button" data-repo-branch-update-all class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-foreground hover:bg-secondary transition-colors"><i data-lucide="git-merge" class="h-3.5 w-3.5"></i>Update ${formatCount(behind.length)} from ${escapeHtml(defaultBranch)}</button>` : ""}
-      ${merged.length ? `<button type="button" data-repo-branch-delete-merged class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10 transition-colors"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete ${formatCount(merged.length)} merged</button>` : ""}
+      ${merged.length || mergedOnly ? `<button type="button" data-repo-branches-filter-merged aria-pressed="${mergedOnly ? "true" : "false"}" title="${mergedOnly ? "Show every branch" : `Show and select the branches already merged into ${escapeHtml(defaultBranch)}`}" class="inline-flex h-8 items-center gap-1.5 rounded-md border ${mergedOnly ? "border-primary bg-primary/10 text-primary" : "border-border bg-background text-foreground hover:bg-secondary"} px-2.5 text-xs font-medium transition-colors"><i data-lucide="git-merge" class="h-3.5 w-3.5"></i>Merged into ${escapeHtml(defaultBranch)}<span class="font-mono text-[10px]">${formatCount(merged.length)}</span></button>` : ""}
       <button type="button" data-repo-branches-refresh class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>`;
   }
 
@@ -35284,11 +35307,14 @@
     const rows = filterRepoBranchesPage(repo, all);
     const total = $("[data-repo-branches-total]");
     if (total) total.textContent = `${formatCount(all.length)} ${all.length === 1 ? "branch" : "branches"}`;
+    pruneRepoBranchSelection(repo);
     container.innerHTML = rows.length
       ? rows.map((branch) => renderRepoBranchesRow(
         repo, branch, repoSelectedBranch(repo), repoDefaultBranch(repo))).join("")
-      : '<div class="px-4 py-3 text-sm text-muted-foreground">No branches match this search.</div>';
+      : `<div class="px-4 py-3 text-sm text-muted-foreground">${repoBranchFilter(repo) === "merged" ? `No branches are merged into ${escapeHtml(repoDefaultBranch(repo))}.` : "No branches match this search."}</div>`;
     renderRepoBranchesActions(repo);
+    renderRepoBranchSelection(repo);
+    renderRepoBranchDeleteResults(repo);
     renderRepoBranchResults(repo);
     window.lucide?.createIcons();
   }
@@ -36014,18 +36040,382 @@
     announceRepoBranchOp(parts.join(" "), Boolean(outcome.error));
   }
 
-  const REPO_BRANCH_DELETE_NO_CONFIRM_QUERY = "(max-width: 767px), (pointer: coarse)";
+  const REPO_BRANCH_DELETE_LIMIT = 200;
+  const REPO_BRANCH_DELETE_POLL_MS = 1500;
+  const REPO_BRANCH_DELETE_POLL_FAILURES = 20;
 
-  async function deleteRepoBranch(repo, branch, commit) {
-    if (!repo || !branch) return;
-    if (!window.matchMedia?.(REPO_BRANCH_DELETE_NO_CONFIRM_QUERY)?.matches && !window.confirm(
-      `Delete branch "${branch}"? Its commits stay recoverable from the reflog `
-      + `on the node that hosts ${repo.owner || "this repository"}, but the branch is removed for everyone.`,
-    )) return;
-    await queueRepoBranchOp(
-      repo, { op: "delete", branch, expectedOid: commit },
-      `Queued the deletion of ${branch} for this repository's node.`,
+  const REPO_BRANCH_DELETE_STATUS_LABELS = {
+    deleted: "deleted",
+    queued: "deletion queued",
+    pending: "still deleting",
+    refused: "not deleted",
+    failed: "not deleted",
+  };
+
+  const REPO_BRANCH_DELETE_ERRORS = {
+    not_authorized: "Only the repository owner or an organization admin can delete branches.",
+    read_only_mirror: "This repository is a read-only mirror, so its branches cannot be deleted here.",
+    too_many_branches: `At most ${REPO_BRANCH_DELETE_LIMIT} branches can be deleted in one request.`,
+  };
+
+  function repoBranchSelection(repo) {
+    const key = repoKey(repo);
+    if (!(state.repoBranchSelection[key] instanceof Set)) state.repoBranchSelection[key] = new Set();
+    return state.repoBranchSelection[key];
+  }
+
+  function repoBranchFilter(repo) {
+    return repo ? state.repoBranchFilter[repoKey(repo)] || "" : "";
+  }
+
+  function repoBranchDeleting(repo) {
+    return repo ? state.repoBranchDeleting[repoKey(repo)] || null : null;
+  }
+
+  function repoBranchDeleteResults(repo) {
+    const results = repo ? state.repoBranchDeleteResults[repoKey(repo)] : null;
+    return Array.isArray(results) ? results : [];
+  }
+
+  function repoBranchDeleteResultFor(repo, name) {
+    return repoBranchDeleteResults(repo).find((result) => result.branch === name) || null;
+  }
+
+  function repoBranchDeletable(repo, branch, defaultBranch) {
+    const name = String(branch?.name || "");
+    return Boolean(name && name !== defaultBranch && branch.commit && !name.startsWith("forkmesh/"));
+  }
+
+  function repoBranchSelectedBranches(repo) {
+    const defaultBranch = repoDefaultBranch(repo);
+    const selected = repoBranchSelection(repo);
+    return repoBranchList(repo).filter((branch) => (
+      selected.has(branch.name)
+      && repoBranchDeletable(repo, branch, defaultBranch)
+      && !repoBranchOpFor(repo, branch.name)
+    ));
+  }
+
+  function pruneRepoBranchSelection(repo) {
+    if (!repo) return;
+    state.repoBranchSelection[repoKey(repo)] = new Set(
+      repoBranchSelectedBranches(repo).map((branch) => branch.name));
+  }
+
+  function setRepoBranchSelected(repo, name, selected) {
+    if (!repo || !name) return;
+    const selection = repoBranchSelection(repo);
+    if (selected) selection.add(name);
+    else selection.delete(name);
+    const key = repoKey(repo);
+    if (state.repoBranchConfirm[key]?.kind === "batch") delete state.repoBranchConfirm[key];
+    renderRepoBranchSelection(repo);
+  }
+
+  function toggleRepoBranchMergedFilter(repo) {
+    if (!repo) return;
+    const key = repoKey(repo);
+    const on = repoBranchFilter(repo) !== "merged";
+    state.repoBranchFilter[key] = on ? "merged" : "";
+    const selection = repoBranchSelection(repo);
+    if (on) {
+      repoMergedRepoBranches(repo, repoDefaultBranch(repo)).forEach((branch) => selection.add(branch.name));
+    } else {
+      selection.clear();
+    }
+    delete state.repoBranchConfirm[key];
+    renderRepoBranchesList(repo);
+  }
+
+  function setRepoBranchConfirm(repo, confirm) {
+    if (!repo) return;
+    const key = repoKey(repo);
+    if (confirm) state.repoBranchConfirm[key] = confirm;
+    else delete state.repoBranchConfirm[key];
+    renderRepoBranchesList(repo);
+    const focus = confirm?.kind === "one"
+      ? $(`[data-repo-branches-row-name="${CSS.escape(confirm.branch)}"] [data-repo-branch-delete-cancel]`)
+      : confirm?.kind === "batch" ? $("[data-repo-branches-delete-selected-cancel]") : null;
+    focus?.focus();
+  }
+
+  function repoBranchDeleteSummary(branches, defaultBranch) {
+    const unmerged = branches.filter((branch) => branch.ahead > 0);
+    const names = branches.slice(0, 10).map((branch) => branch.name);
+    const more = branches.length - names.length;
+    return {
+      names,
+      more,
+      text: unmerged.length
+        ? `${formatCount(unmerged.length)} of them ${unmerged.length === 1 ? "has" : "have"} commits not merged into ${defaultBranch}.`
+        : `All of them are merged into ${defaultBranch}.`,
+      unmerged: unmerged.length,
+    };
+  }
+
+  function renderRepoBranchSelection(repo) {
+    const slot = $("[data-repo-branches-selection]");
+    if (!slot) return;
+    const branches = repoBranchManageAllowed(repo) ? repoBranchSelectedBranches(repo) : [];
+    const deleting = repoBranchDeleting(repo);
+    if (!branches.length && !deleting) {
+      slot.innerHTML = "";
+      slot.hidden = true;
+      return;
+    }
+    slot.hidden = false;
+    const defaultBranch = repoDefaultBranch(repo);
+    const count = branches.length;
+    const noun = `branch${count === 1 ? "" : "es"}`;
+    const button = "inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-background px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50";
+    if (deleting) {
+      slot.innerHTML = `
+        <div class="flex flex-wrap items-center gap-2 border-b border-border bg-secondary/30 px-4 py-2 text-xs text-foreground">
+          <i data-lucide="loader-circle" class="h-3.5 w-3.5 animate-spin text-muted-foreground"></i>
+          <span data-repo-branches-delete-progress>${deleting.id ? `Deleted ${formatCount(deleting.deleted)} of ${formatCount(deleting.total)}${deleting.current ? ` · now ${escapeHtml(deleting.current)}` : ""}…` : `Starting to delete ${formatCount(deleting.total)} ${deleting.total === 1 ? "branch" : "branches"}…`}</span>
+        </div>`;
+      window.lucide?.createIcons();
+      return;
+    }
+    const confirming = state.repoBranchConfirm[repoKey(repo)]?.kind === "batch";
+    if (confirming) {
+      const summary = repoBranchDeleteSummary(branches, defaultBranch);
+      slot.innerHTML = `
+        <div data-repo-branches-delete-summary role="group" aria-label="Confirm deleting ${formatCount(count)} ${noun}" class="grid gap-2 border-b border-border bg-secondary/30 px-4 py-3 text-xs text-foreground">
+          <span class="font-semibold">Delete ${formatCount(count)} ${noun}? They are removed for everyone; each tip stays in the branch trash on the cores.</span>
+          <span class="${summary.unmerged ? "text-destructive" : "text-muted-foreground"}">${escapeHtml(summary.text)}</span>
+          <span data-repo-branches-delete-names class="break-words font-mono text-[11px] text-muted-foreground">${summary.names.map(escapeHtml).join(", ")}${summary.more > 0 ? ` and ${formatCount(summary.more)} more` : ""}</span>
+          <span class="flex flex-wrap items-center gap-2">
+            <button type="button" data-repo-branches-delete-selected-confirm class="${button} font-semibold text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete ${formatCount(count)} ${noun}</button>
+            <button type="button" data-repo-branches-delete-selected-cancel class="${button} text-muted-foreground hover:bg-secondary hover:text-foreground">Cancel</button>
+          </span>
+        </div>`;
+    } else {
+      slot.innerHTML = `
+        <div class="flex flex-wrap items-center gap-2 border-b border-border bg-secondary/30 px-4 py-2 text-xs text-foreground">
+          <span data-repo-branches-selected-count class="font-medium">${formatCount(count)} selected</span>
+          <button type="button" data-repo-branches-delete-selected class="${button} text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete selected</button>
+          <button type="button" data-repo-branches-select-clear class="${button} text-muted-foreground hover:bg-secondary hover:text-foreground">Clear selection</button>
+        </div>`;
+    }
+    window.lucide?.createIcons();
+  }
+
+  function repoBranchDeleteResultTone(result) {
+    if (result.status === "deleted") return { icon: "circle-check", tone: "text-foreground" };
+    if (result.status === "queued" || result.status === "pending") return { icon: "circle-dot", tone: "text-muted-foreground" };
+    return { icon: "circle-x", tone: "text-destructive" };
+  }
+
+  function renderRepoBranchDeleteResults(repo) {
+    const slot = $("[data-repo-branch-delete-results]");
+    if (!slot) return;
+    const results = repoBranchManageAllowed(repo) ? repoBranchDeleteResults(repo) : [];
+    if (!results.length) {
+      slot.innerHTML = "";
+      slot.hidden = true;
+      return;
+    }
+    slot.hidden = false;
+    slot.innerHTML = `
+      <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/30 px-4 py-2">
+        <span class="text-xs font-medium text-foreground">Last deletion: ${escapeHtml(repoBranchDeleteCountsText(results))}</span>
+        <button type="button" data-repo-branch-delete-results-clear class="fm-btn fm-btn-sm fm-btn-invisible">Dismiss</button>
+      </div>
+      <div class="max-h-64 divide-y divide-border overflow-y-auto border-b border-border">${results.map((result) => {
+        const { icon, tone } = repoBranchDeleteResultTone(result);
+        return `
+        <div data-repo-branch-delete-result-row data-repo-branch-delete-result-branch="${escapeHtml(result.branch || "")}" data-repo-branch-delete-result-status="${escapeHtml(result.status || "")}" class="flex min-w-0 items-center gap-2 px-4 py-2 text-xs">
+          <i data-lucide="${icon}" class="h-3.5 w-3.5 shrink-0 ${tone}"></i>
+          <span class="shrink-0 font-mono text-[11px] text-foreground">${escapeHtml(result.branch || "")}</span>
+          <span class="min-w-0 flex-1 truncate ${tone}" title="${escapeHtml(result.message || "")}">${escapeHtml(result.message || REPO_BRANCH_DELETE_STATUS_LABELS[result.status] || result.status || "")}</span>
+        </div>`;
+      }).join("")}</div>`;
+  }
+
+  function repoBranchDeleteCountsText(results) {
+    const count = (status) => results.filter((result) => result.status === status).length;
+    const parts = [];
+    if (count("deleted")) parts.push(`${formatCount(count("deleted"))} deleted`);
+    if (count("queued")) parts.push(`${formatCount(count("queued"))} queued for the node`);
+    if (count("pending")) parts.push(`${formatCount(count("pending"))} still deleting`);
+    const kept = count("refused") + count("failed");
+    if (kept) parts.push(`${formatCount(kept)} not deleted`);
+    return parts.join(", ") || "nothing to do";
+  }
+
+  async function repoBranchDeleteRequest(repo, method, { body = null, job = 0 } = {}) {
+    const token = state.session?.sessionToken || "";
+    const headers = { accept: "application/json" };
+    if (body) headers["content-type"] = "application/json";
+    if (token) headers.authorization = "Bearer " + token;
+    try {
+      const response = await fetch(`${repoApiBase(repo)}/branches/delete${job ? `?job=${encodeURIComponent(job)}` : ""}`, {
+        method,
+        cache: "no-store",
+        credentials: "same-origin",
+        headers,
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const data = await response.json().catch(() => ({}));
+      return { status: response.status, data: data && typeof data === "object" ? data : {} };
+    } catch (_) {
+      return { status: 0, data: {} };
+    }
+  }
+
+  function repoBranchDeleteJobResults(job) {
+    return (Array.isArray(job?.results) ? job.results : []).map((result) => ({
+      branch: String(result.branch || ""),
+      status: String(result.status || "failed"),
+      error: String(result.error || ""),
+      message: String(result.message || ""),
+    }));
+  }
+
+  function rememberRepoBranchCount(repo, count) {
+    if (!repo || !Number.isFinite(count) || count < 1) return;
+    const keys = new Set([repoKey(repo).toLowerCase(), repoCanonicalKey(repo).toLowerCase()]);
+    const matches = (item) => item && (keys.has(repoKey(item).toLowerCase()) || keys.has(repoCanonicalKey(item).toLowerCase()));
+    repo.branchCount = String(count);
+    (state.repositories || []).filter(matches).forEach((item) => { item.branchCount = String(count); });
+    try {
+      const stored = JSON.parse(localStorage.getItem(REPOSITORY_CATALOG_STORAGE_KEY) || "null");
+      if (stored && Array.isArray(stored.repositories) && stored.repositories.some(matches)) {
+        stored.repositories.filter(matches).forEach((item) => { item.branchCount = String(count); });
+        localStorage.setItem(REPOSITORY_CATALOG_STORAGE_KEY, JSON.stringify(stored));
+      }
+    } catch (_) {}
+  }
+
+  function dropRepoBranchesFromList(repo, names) {
+    const listing = state.repoBranches[repoKey(repo)];
+    if (!names.length || !Array.isArray(listing?.branches)) return;
+    const gone = new Set(names);
+    listing.branches = listing.branches.filter((branch) => !gone.has(branch.name));
+    rememberRepoBranchCount(repo, listing.branches.length);
+  }
+
+  function applyRepoBranchDeleteJob(repo, job) {
+    const key = repoKey(repo);
+    const results = repoBranchDeleteJobResults(job);
+    state.repoBranchDeleteResults[key] = results;
+    dropRepoBranchesFromList(repo, results.filter((result) => result.status === "deleted").map((result) => result.branch));
+    const selection = repoBranchSelection(repo);
+    results.filter((result) => result.status === "deleted" || result.status === "queued")
+      .forEach((result) => selection.delete(result.branch));
+    if (job?.state === "running") {
+      state.repoBranchDeleting[key] = {
+        id: Number(job.id) || 0,
+        done: Number(job.done) || 0,
+        total: Number(job.total) || results.length,
+        deleted: Number(job.counts?.deleted) || 0,
+        current: String(job.current || ""),
+      };
+    } else {
+      delete state.repoBranchDeleting[key];
+    }
+    return results;
+  }
+
+  async function finishRepoBranchDeleteJob(repo, job, ops) {
+    const results = applyRepoBranchDeleteJob(repo, job);
+    if (Array.isArray(ops)) setRepoBranchOpsState(repo, { ops });
+    const kept = results.filter((result) => result.status === "refused" || result.status === "failed").length;
+    announceRepoBranchOp(
+      results.length === 1 ? results[0].message : `Deleting ${formatCount(results.length)} branches: ${repoBranchDeleteCountsText(results)}.`,
+      kept > 0 && kept === results.length,
     );
+    if (results.some((result) => result.status === "deleted" || result.status === "pending")) {
+      try {
+        await fetchRepoBranches(repo, { refresh: true });
+        rememberRepoBranchCount(repo, repoBranchList(repo).length);
+      } catch (_) {
+      }
+      updateRepoBranchControls(repo, null);
+    }
+    renderRepoBranchesList(repo);
+    const queued = results.filter((result) => result.status === "queued").map((result) => result.branch);
+    if (queued.length) {
+      watchRepoBranchOps(repo, repoBranchOps(repo).filter((op) => op.op === "delete" && queued.includes(op.branch)).map((op) => op.id));
+    }
+  }
+
+  async function followRepoBranchDeleteJob(repo, job, ops) {
+    const key = repoKey(repo);
+    let current = job;
+    let latestOps = ops;
+    let failures = 0;
+    while (current?.state === "running") {
+      applyRepoBranchDeleteJob(repo, current);
+      if (state.selectedRepo === repo && state.activeRepoTab === "branches") renderRepoBranchesList(repo);
+      await new Promise((resolve) => setTimeout(resolve, REPO_BRANCH_DELETE_POLL_MS));
+      const answer = await repoBranchDeleteRequest(repo, "GET", { job: current.id });
+      if (answer.status === 200 && answer.data.job) {
+        failures = 0;
+        current = answer.data.job;
+        latestOps = answer.data.ops;
+        continue;
+      }
+      failures += 1;
+      if (failures >= REPO_BRANCH_DELETE_POLL_FAILURES) {
+        delete state.repoBranchDeleting[key];
+        announceRepoBranchOp("Lost track of the deletion; it keeps running on the server. Refresh to see where it is.", true);
+        renderRepoBranchesList(repo);
+        return;
+      }
+    }
+    await finishRepoBranchDeleteJob(repo, current, latestOps);
+  }
+
+  async function resumeRepoBranchDeleteJob(repo) {
+    if (!repo || repoBranchDeleting(repo)) return;
+    const answer = await repoBranchDeleteRequest(repo, "GET");
+    const job = answer.status === 200 ? answer.data.job : null;
+    if (job?.state !== "running") return;
+    await followRepoBranchDeleteJob(repo, job, answer.data.ops);
+  }
+
+  async function deleteRepoBranches(repo, names) {
+    if (!repo || !names.length || repoBranchDeleting(repo)) return;
+    const key = repoKey(repo);
+    const listed = new Map(repoBranchList(repo).map((branch) => [branch.name, branch]));
+    const items = names.map((name) => ({ name, expectedOid: String(listed.get(name)?.commit || "") }));
+    delete state.repoBranchConfirm[key];
+    state.repoBranchDeleting[key] = { id: 0, done: 0, total: items.length, deleted: 0, current: "" };
+    setRepoBranchesStatus("");
+    renderRepoBranchesList(repo);
+    const answer = await repoBranchDeleteRequest(repo, "POST", { body: { branches: items } });
+    const data = answer.data;
+    if ((answer.status === 200 || answer.status === 202 || answer.status === 409) && data.job) {
+      if (answer.status === 409) announceRepoBranchOp(data.message || "Branches are being deleted already.");
+      await followRepoBranchDeleteJob(repo, data.job, data.ops);
+      return;
+    }
+    const message = (data.error === "read_only_mirror" && data.message)
+      || REPO_BRANCH_DELETE_ERRORS[data.error]
+      || data.message
+      || "The request failed, so nothing was deleted. Try again.";
+    await finishRepoBranchDeleteJob(repo, {
+      state: "done",
+      results: items.map((item) => ({ branch: item.name, status: "failed", error: String(data.error || `http_${answer.status}`), message })),
+    });
+  }
+
+  async function confirmRepoBranchDelete(repo, branch) {
+    if (!repo || !branch) return;
+    await deleteRepoBranches(repo, [branch]);
+  }
+
+  async function confirmRepoBranchesDeleteSelected(repo) {
+    if (!repo) return;
+    await deleteRepoBranches(repo, repoBranchSelectedBranches(repo).map((branch) => branch.name));
+  }
+
+  function clearRepoBranchDeleteResults(repo) {
+    if (!repo) return;
+    delete state.repoBranchDeleteResults[repoKey(repo)];
+    renderRepoBranchesList(repo);
   }
 
   async function updateRepoBranchFromDefault(repo, branch, commit) {
@@ -36060,32 +36450,6 @@
     const already = requested - queued;
     return `Queued ${queued} ${noun}${queued === 1 ? "" : "s"} ${tail}`
       + (already > 0 ? ` ${already} ${already === 1 ? "was" : "were"} already queued.` : "");
-  }
-
-  async function deleteMergedRepoBranches(repo) {
-    if (!repo) return;
-    const defaultBranch = repoDefaultBranch(repo);
-    const merged = repoMergedRepoBranches(repo, defaultBranch);
-    if (!merged.length) return;
-    if (!window.confirm(
-      `Delete ${merged.length} branch${merged.length === 1 ? "" : "es"} already merged into ${defaultBranch}?\n\n`
-      + merged.map((branch) => branch.name).join("\n"),
-    )) return;
-    await runRepoBranchBatch(
-      repo,
-      merged.map((branch) => ({
-        op: "delete",
-        branch: branch.name,
-        expectedOid: branch.commit,
-      })),
-      (queued) => repoBranchBatchStatus(
-        queued,
-        merged.length,
-        "merged branch deletion",
-        "for this repository's node.",
-      ),
-      "Deleted",
-    );
   }
 
   async function updateAllRepoBranchesFromDefault(repo) {
@@ -36170,6 +36534,7 @@
       if (refresh || !state.repoBranchOps[key]) await loadRepoBranchOps(repo);
       renderRepoBranchesList(repo);
       if (repoBranchOps(repo).length) watchRepoBranchOps(repo);
+      void resumeRepoBranchDeleteJob(repo);
     }
     await probeRepoBranchTrials(repo);
   }
@@ -37403,7 +37768,7 @@
 	                </div>
 	              </div>
 		            </section>
-            <section data-dashboard-repo-tab-panel="branches" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-branch" class="h-3.5 w-3.5 text-muted-foreground"></i>Branches<span data-repo-branches-total class="font-mono text-[10px] font-normal text-muted-foreground"></span></span><label class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs text-muted-foreground focus-within:ring-1 focus-within:ring-foreground/20 sm:max-w-64"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><input data-repo-branches-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a branch..." aria-label="Find a branch" class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" /></label><div data-repo-branches-actions class="flex shrink-0 flex-wrap items-center gap-2"></div></div><div data-repo-branches-status role="status" aria-live="polite" hidden class="border-b border-border px-4 py-2 text-xs text-muted-foreground"></div><div data-repo-branch-results hidden></div><div data-repo-branches></div></div></section>
+            <section data-dashboard-repo-tab-panel="branches" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-branch" class="h-3.5 w-3.5 text-muted-foreground"></i>Branches<span data-repo-branches-total class="font-mono text-[10px] font-normal text-muted-foreground"></span></span><label class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs text-muted-foreground focus-within:ring-1 focus-within:ring-foreground/20 sm:max-w-64"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><input data-repo-branches-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a branch..." aria-label="Find a branch" class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" /></label><div data-repo-branches-actions class="flex max-w-full flex-wrap items-center gap-2"></div></div><div data-repo-branches-status role="status" aria-live="polite" hidden class="border-b border-border px-4 py-2 text-xs text-muted-foreground"></div><div data-repo-branches-selection hidden></div><div data-repo-branch-delete-results hidden></div><div data-repo-branch-results hidden></div><div data-repo-branches></div></div></section>
             <section data-dashboard-repo-tab-panel="commits" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits</span><span class="font-mono text-[10px] text-muted-foreground">live mirror history</span></div><div data-repo-commits></div></div></section>
             <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><span class="font-mono text-[10px] text-muted-foreground">signed release manifests</span></div><div data-repo-releases></div></div></section>
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
@@ -39753,13 +40118,52 @@
       // Branch management (adhoc #2098). Checked before the browse handler
       // below: these controls sit in the same row as the branch name, and a
       // delete must never be read as "browse this branch instead".
+      const branchSelect = event.target.closest("[data-repo-branch-select]");
+      if (branchSelect && state.selectedRepo) {
+        setRepoBranchSelected(state.selectedRepo, branchSelect.dataset.repoBranchSelect || "", branchSelect.checked);
+        return;
+      }
+
       const branchDelete = event.target.closest("[data-repo-branch-delete]");
       if (branchDelete && state.selectedRepo) {
-        await deleteRepoBranch(
-          state.selectedRepo,
-          branchDelete.dataset.repoBranchTarget || "",
-          branchDelete.dataset.repoBranchOid || "",
-        );
+        setRepoBranchConfirm(state.selectedRepo, { kind: "one", branch: branchDelete.dataset.repoBranchTarget || "" });
+        return;
+      }
+
+      const branchDeleteConfirm = event.target.closest("[data-repo-branch-delete-confirm]");
+      if (branchDeleteConfirm && state.selectedRepo) {
+        await confirmRepoBranchDelete(state.selectedRepo, branchDeleteConfirm.dataset.repoBranchTarget || "");
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branch-delete-cancel], [data-repo-branches-delete-selected-cancel]") && state.selectedRepo) {
+        setRepoBranchConfirm(state.selectedRepo, null);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branches-delete-selected]") && state.selectedRepo) {
+        setRepoBranchConfirm(state.selectedRepo, { kind: "batch" });
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branches-delete-selected-confirm]") && state.selectedRepo) {
+        await confirmRepoBranchesDeleteSelected(state.selectedRepo);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branches-select-clear]") && state.selectedRepo) {
+        repoBranchSelection(state.selectedRepo).clear();
+        setRepoBranchConfirm(state.selectedRepo, null);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branches-filter-merged]") && state.selectedRepo) {
+        toggleRepoBranchMergedFilter(state.selectedRepo);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branch-delete-results-clear]") && state.selectedRepo) {
+        clearRepoBranchDeleteResults(state.selectedRepo);
         return;
       }
 
@@ -39815,11 +40219,6 @@
 
       if (event.target.closest("[data-repo-branch-update-all]") && state.selectedRepo) {
         await updateAllRepoBranchesFromDefault(state.selectedRepo);
-        return;
-      }
-
-      if (event.target.closest("[data-repo-branch-delete-merged]") && state.selectedRepo) {
-        await deleteMergedRepoBranches(state.selectedRepo);
         return;
       }
 

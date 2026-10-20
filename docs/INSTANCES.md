@@ -429,7 +429,7 @@ Labelling and read-only:
   (`mirrorOfFor` checks `sameRelay`), so a forkmesh.com fleet node that copied
   an instance config cannot mark the canonical repository read-only there.
 - The app refuses writes with HTTP 403 `read_only_mirror` (`file-edit`,
-  `branches/ops`, `pulls`, `pulls/<n>/merge|update`), and a `git push` gets
+  `branches/ops`, `branches/delete`, `pulls`, `pulls/<n>/merge|update`), and a `git push` gets
   `remote: This repository is a read-only mirror of
   https://forkmesh.com/forkmesh/forkmesh. Send changes upstream there, or
   fork this repository and change your fork.` (git prints a `text/plain`

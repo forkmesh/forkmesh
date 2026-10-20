@@ -142,6 +142,9 @@ def _app(executor):
     app._merge_threads = {}
     app._merge_results = {}
     app._merge_payload_digests = {}
+    app._prewarm_lock = threading.Lock()
+    app._prewarm_due = None
+    app._prewarm_thread = None
     app.reload_from_disk = lambda **_: None
     return app
 
@@ -268,3 +271,77 @@ def test_operations_are_write_only_routed_and_need_the_executor():
     go = (ROOT / "server" / "merge_branch.go").read_text("utf-8")
     assert 'agentBranchMergeOp       = "merge-agent-branch"' in go
     assert 'agentBranchDeleteOp      = "delete-agent-branch"' in go
+
+
+def test_a_delete_accepts_every_branch_name_git_allows():
+    plus = "team/feature/researchPapersFeature+"
+    parsed = parse(body("delete", branch=plus, discard=True),
+                   "delete-agent-branch")
+    assert parsed["branch"] == plus
+    for name in ("has space", "a..b", "-x", "x.lock", "forkmesh/pulls",
+                 "HEAD", "a@{1}", "q?"):
+        with pytest.raises(gateway.GatewayError):
+            parse(body("delete", branch=name, discard=True),
+                  "delete-agent-branch")
+    with pytest.raises(gateway.GatewayError):
+        parse(body(branch=plus), "merge-agent-branch")
+
+
+def test_back_to_back_deletes_share_one_low_priority_cache_warmup(
+        monkeypatch):
+    monkeypatch.setattr(gateway, "PREWARM_AFTER_MERGE_QUIET_SECONDS", 0.2)
+    priorities = []
+    monkeypatch.setattr(gateway, "_lower_thread_priority",
+                        lambda increment=10: priorities.append(
+                            threading.current_thread().name))
+    warmups = []
+    app = _app(None)
+    app.prewarm_memory_caches = lambda: warmups.append(time.monotonic())
+    for _ in range(5):
+        app._schedule_prewarm()
+        time.sleep(0.05)
+    deadline = time.time() + 3
+    while time.time() < deadline and (
+            not warmups or app._prewarm_thread is not None):
+        time.sleep(0.02)
+    assert len(warmups) == 1
+    assert priorities == ["forkmesh-merge-prewarm"]
+    app._schedule_prewarm()
+    deadline = time.time() + 3
+    while time.time() < deadline and len(warmups) < 2:
+        time.sleep(0.02)
+    assert len(warmups) == 2
+
+
+def test_the_delete_job_thread_runs_at_low_priority(monkeypatch):
+    lowered = []
+    monkeypatch.setattr(gateway, "_lower_thread_priority",
+                        lambda increment=10: lowered.append(
+                            threading.current_thread().name))
+
+    class Executor:
+        def call(self, request, timeout=20):
+            del timeout
+            if request["action"] == "status":
+                return {"ok": True, "status": "missing",
+                        "requestId": request["requestId"],
+                        "generationReady": False}
+            if request["action"] == "execute":
+                return {"ok": True, "status": "deleted",
+                        "requestId": request["requestId"], "head": OID_B,
+                        "branch": request["branch"],
+                        "base": request["base"], "branchDeleted": True,
+                        "generationReady": True}
+            return {"ok": True, "status": "registered",
+                    "requestId": request["requestId"]}
+
+    app = _app(Executor())
+    app._schedule_prewarm = lambda: None
+    plus = "team/feature/x+"
+    raw = body("delete", branch=plus, discard=True)
+    app._dispatch_merge_pull("fmnext-n1", "forkmesh", raw,
+                             "delete-agent-branch")
+    done = _settle(app, raw, "delete-agent-branch")
+    assert done.status == 200
+    assert json.loads(done.body)["branch"] == plus
+    assert lowered == ["forkmesh-pull-merge"]
