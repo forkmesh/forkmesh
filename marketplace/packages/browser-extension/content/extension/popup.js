@@ -62,6 +62,7 @@ function humanError(result) {
   if (code === "too_many_reddit_accounts") return "The Reddit desk keeps up to 10 accounts.";
   if (code === "organization_admin_required") return "Only organization owners and admins can change the Reddit desk's accounts.";
   if (code === "invalid_reddit_thread_url") return "Paste a Reddit thread or comment link, like https://www.reddit.com/r/devops/comments/….";
+  if (code === "reddit_thread_exists") return "That thread is already in the thread log.";
   if (code === "reddit_check_running") return "A check is already running.";
   if (code === "reddit_walk_running") return "A walk is already running.";
   if (code === "reddit_profile_not_read") return "This Reddit page could not be read: reload it, then try again.";
@@ -420,6 +421,7 @@ async function renderReddit(result) {
       ? `Last send ${ago(sync.at)} stopped: ${sync.error.replaceAll("_", " ")}.`
       : `Last send ${ago(sync.at)}: ${sync.threads} new thread${sync.threads === 1 ? "" : "s"}, ${sync.already} already logged, ${sync.rules} rule set${sync.rules === 1 ? "" : "s"}${sync.failed ? `, ${sync.failed} refused` : ""}.`);
   }
+  if (stats.ownWaiting) lines.push(`${stats.ownWaiting} of your accounts' thread${stats.ownWaiting === 1 ? "" : "s"} to log.`);
   if (stats.readingsWaiting) lines.push(`${stats.readingsWaiting} monitored reading${stats.readingsWaiting === 1 ? "" : "s"} to send.`);
   if (stats.signedIn) lines.push(`Signed in to Reddit as u/${stats.signedIn} (seen ${ago(stats.signedInAt)}).`);
   const auto = stats.lastAuto || {};
@@ -484,6 +486,24 @@ function renderRedditMonitored(stats) {
   $("[data-reddit-account-add]").disabled = !stats.connected || accounts.length >= 10;
   $("[data-reddit-check]").disabled = !stats.connected || (!monitored.length && !stats.mine) || Boolean(stats.checking);
   $("[data-reddit-monitor-add]").disabled = !stats.connected;
+  $("[data-reddit-log-add]").disabled = !stats.connected;
+}
+
+async function redditLogAdd() {
+  const url = $("[data-reddit-monitor-url]").value.trim();
+  if (!url) return;
+  $("[data-reddit-log-add]").disabled = true;
+  const result = await send({ type: "fm-reddit-log-add", url });
+  $("[data-reddit-log-add]").disabled = false;
+  if (!result.ok) return note("[data-reddit-status]", humanError(result));
+  $("[data-reddit-monitor-url]").value = "";
+  await renderReddit(result);
+  const logged = result.logged || {};
+  note("[data-reddit-status]", `${logged.title ? `“${logged.title}”` : `The r/${logged.subreddit} thread`} is in the thread log, to review${logged.comment ? ", with your comment" : ""}. Its numbers are read from your Reddit tab.`);
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (Number.isInteger(tab?.id) && /^https:\/\/(?:www\.|old\.)?reddit\.com\//i.test(String(tab.url || ""))) {
+    void chrome.tabs.sendMessage(tab.id, { type: "fm-reddit-scan" }).catch(() => null);
+  }
 }
 
 async function redditMonitorAdd() {
@@ -1015,6 +1035,7 @@ document.addEventListener("DOMContentLoaded", () => {
     void redditPrefillMonitor();
   });
   $("[data-reddit-monitor-add]").addEventListener("click", () => void redditMonitorAdd());
+  $("[data-reddit-log-add]").addEventListener("click", () => void redditLogAdd());
   $("[data-reddit-monitor-url]").addEventListener("keydown", (event) => {
     if (event.key === "Enter") void redditMonitorAdd();
   });

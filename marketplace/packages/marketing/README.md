@@ -374,6 +374,18 @@ page.
   the account that posted. The desktop's watch list dialog, the web watch
   list, the iPhone and Android watch forms and the extension's popup all edit
   the same 10 accounts.
+- **Our own threads go to the log** (1.45.0, extension 2.27.0). Before
+  1.45.0 a post by u/forkmesh added under **Your posts** (or recorded by the
+  extension from a profile) stayed out of the thread log, and the extension
+  read threads only in watched subreddits, so our own posts elsewhere never
+  showed up. Now a new `reddit` posted link that is a post, not a comment,
+  also creates a thread (`to_review`, the link's title, posting day and
+  numbers as a first reading, optional `author` on the posted link) unless the
+  post is already logged; `POST /posts` with `posts` answers
+  `threadsLogged`. Only a new posted link does this, so a thread deleted from
+  the log is not brought back when its views update. The extension logs a
+  thread by itself when one of the desk's accounts posted it (see the
+  extension's README), and its popup's **Log thread** adds any thread.
 - **Your posts**: the `reddit` posted links (see Posted links), newest first,
   with views, points and comments and when they were read. **Add post** logs
   one by hand (address, title, posting day, numbers, note; numbers that

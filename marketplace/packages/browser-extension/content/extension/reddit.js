@@ -97,7 +97,9 @@
     }
     const postId = String(parts[3] || "").toLowerCase();
     if (section === "comments" && watch.monitored.has(postId)) return { kind: "thread", subreddit, postId, monitored: true };
-    if (!watch.subreddits.has(subreddit)) return null;
+    if (!watch.subreddits.has(subreddit)) {
+      return section === "comments" && POST_ID.test(postId) && watch.accounts.size ? { kind: "thread", subreddit, postId, own: true } : null;
+    }
     if (section === "comments" && POST_ID.test(String(parts[3] || "").toLowerCase())) {
       return { kind: "thread", subreddit, postId: parts[3].toLowerCase() };
     }
@@ -431,6 +433,11 @@
     let found = posts();
     if (where.kind === "thread") found = found.filter((item) => item.id === where.postId);
     if (where.kind === "listing") found = found.filter((item) => item.subreddit.toLowerCase() === where.subreddit);
+    if (where.own) {
+      found = found.filter((item) => watch.accounts.has(item.author.toLowerCase()));
+      const reading = found.length ? threadReading(where.postId, "") : null;
+      return found.length ? { ...where, posts: found, ...(reading ? { reading } : {}) } : null;
+    }
     const monitor = where.monitored ? monitorReading(where.postId) : null;
     if (monitor) return { ...where, posts: found, monitor };
     return found.length ? { ...where, posts: found } : null;

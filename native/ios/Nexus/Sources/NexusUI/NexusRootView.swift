@@ -67,9 +67,11 @@ public final class NexusDashboardModel: ObservableObject {
 
 public struct NexusRootView: View {
     @StateObject private var model: NexusDashboardModel
+    private let onClose: (@MainActor @Sendable () -> Void)?
 
-    public init(client: NexusClient = NexusClient(), store: NexusStore? = nil) {
+    public init(client: NexusClient = NexusClient(), store: NexusStore? = nil, onClose: (@MainActor @Sendable () -> Void)? = nil) {
         _model = StateObject(wrappedValue: NexusDashboardModel(client: client, store: store))
+        self.onClose = onClose
     }
 
     public var body: some View {
@@ -81,6 +83,7 @@ public struct NexusRootView: View {
             NexusHistoryView(model: model).tabItem { Label("History", systemImage: "clock.arrow.circlepath") }
             NexusSettingsView().tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        .environment(\.nexusClose, onClose)
         .tint(.cyan)
         .preferredColorScheme(.dark)
         .task { model.loadHistory() }

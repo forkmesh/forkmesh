@@ -247,7 +247,8 @@ open on `www.reddit.com` and `old.reddit.com`, and only these:
 - listings of a watched subreddit (subreddit, id, title, link, author, comment
   count, score, time per post);
 - a search whose text is a watched search;
-- a thread in a watched subreddit, or any thread already in the thread log
+- a thread in a watched subreddit, any thread already in the thread log, or
+  a thread posted by an account on the desk's accounts list
   (views, points, comments, and a followed comment's points and views);
 - a watched subreddit's rules page (rule titles and descriptions);
 - the profile of an account on the desk's accounts list.
@@ -303,6 +304,24 @@ so the log stays current without pressing anything.
   `reddit_rules_on_file` when there are none. This is why
   `https://www.reddit.com/*` and `https://old.reddit.com/*` are in
   `host_permissions`.
+
+**Your accounts' threads and Log thread** (2.27.0). Before 2.27.0 a thread
+posted by one of the desk's accounts outside the watched subreddits was
+never read, and a thread could reach the log only through **Send to Reddit
+desk** (watched subreddits and searches) or **Monitor**. Now:
+
+- A thread page in any subreddit is read when its post's author is on the
+  desk's accounts list (someone else's thread there is still left alone). The
+  post, with the views Reddit shows its author, goes to the thread log by
+  itself a few seconds later (`POST /reddit`, `to_review`,
+  `source: "extension"`, `author`), as do the posts (not comments) read on one
+  of your accounts' profiles. Each is sent once; one already in the log is
+  skipped.
+- **Log thread** in the popup (`fm-reddit-log-add`, popup only) adds the
+  thread in the box, filled from the Reddit tab you are on, to the thread log
+  without monitoring it, and asks that tab to read it again so its numbers
+  follow. A comment link attaches the comment to an already logged thread;
+  otherwise an already logged thread says so (`reddit_thread_exists`).
 
 **Automatic thread updates and several Reddit accounts** (2.25.0). Before
 2.25.0 a thread logged from Marketing stayed at "not read yet" until someone
