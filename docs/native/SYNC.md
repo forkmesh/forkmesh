@@ -34,6 +34,10 @@ python3 tools/native_sync.py triage <ios-sha>       # every iOS commit up to her
 python3 tools/native_sync.py check [--strict]       # validate; --strict also fails on untriaged commits
 ```
 
+`check` also fails a `synced` row whose Android commit does not resolve in
+this repository: a row cites the commit that is on `main`, never a local or
+rewritten one. Commit arguments are passed to git after `--end-of-options`.
+
 The triage marker below names the last iOS commit that has been looked at;
 `untracked` lists the iOS commits after it that no row cites. A commit
 whose only change under `native/ios` is the shared icon font

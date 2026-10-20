@@ -72,6 +72,16 @@ def git(*args: str) -> str:
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True, check=True).stdout
 
 
+def resolves(sha: str) -> bool:
+    return subprocess.run(["git", "rev-parse", "--verify", "--quiet", "--end-of-options", sha + "^{commit}"],
+                          cwd=ROOT, capture_output=True, text=True).returncode == 0
+
+
+def unresolved(rows: list[Row]) -> list[str]:
+    return [f"{row.id}: synced Android commit {sha} is not in this repository"
+            for row in rows if row.android == "synced" for sha in SHA.findall(row.ref) if not resolves(sha)]
+
+
 def problems(rows: list[Row]) -> list[str]:
     found = []
     seen = set()
@@ -153,8 +163,8 @@ def cmd_add(args) -> int:
     head, rows, tail, _ = read_ledger()
     if args.kind not in KINDS or args.android not in STATES:
         raise SystemExit("bad --kind or --android")
-    date = args.date or git("log", "-1", "--format=%ad", "--date=short", args.sha).strip()
-    sha = git("rev-parse", "--short=10", args.sha).strip()
+    date = args.date or git("log", "-1", "--format=%ad", "--date=short", "--end-of-options", args.sha).strip()
+    sha = git("rev-parse", "--short=10", "--end-of-options", args.sha).strip()
     row = Row(next_id(rows), date, args.area, args.kind, args.change, sha, args.android, args.ref or "")
     rows.append(row)
     bad = problems([row])
@@ -173,7 +183,7 @@ def cmd_mark(args) -> int:
         raise SystemExit(f"unknown IDs: {', '.join(sorted(wanted - {row.id for row in hit}))}")
     for row in hit:
         if args.synced:
-            row.android, row.ref = "synced", git("rev-parse", "--short=10", args.synced).strip()
+            row.android, row.ref = "synced", git("rev-parse", "--short=10", "--end-of-options", args.synced).strip()
         elif args.na:
             row.android, row.ref = "n/a", args.na
         elif args.doing:
@@ -190,7 +200,7 @@ def cmd_mark(args) -> int:
 def cmd_triage(args) -> int:
     text = LEDGER.read_text()
     _, rows, _, since = read_ledger()
-    sha = git("rev-parse", "--short=10", args.sha or "HEAD").strip()
+    sha = git("rev-parse", "--short=10", "--end-of-options", args.sha or "HEAD").strip()
     after = set(git("log", "--no-merges", "--abbrev=10", "--format=%h", f"{sha}..HEAD", "--", *IOS_PATHS).split())
     missing = [item for item in untracked(rows, since) if not is_cited(item[0], after)]
     if missing and not args.force:
@@ -205,7 +215,7 @@ def cmd_triage(args) -> int:
 
 def cmd_check(args) -> int:
     _, rows, _, since = read_ledger()
-    bad = problems(rows)
+    bad = problems(rows) + unresolved(rows)
     if not since:
         bad.append("missing <!-- triaged-through: <sha> --> marker")
     if args.strict:
