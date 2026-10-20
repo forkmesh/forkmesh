@@ -27558,6 +27558,153 @@
     });
   }
 
+  // Commit authors that are automation, not people: GitHub's Actions and app
+  // bots, "<name> Bot"/"<name>-bot" accounts, Actions runners that commit as
+  // "<platform> Actions" or a "<slug>-actions" machine account, and the
+  // deploy script's "ForkMesh Deploy". They are
+  // left out of the About rail's avatars and its count.
+  function repoContributorIsBot(contributor) {
+    const name = String(contributor?.name || "").trim();
+    const email = String(contributor?.email || "").trim().toLowerCase();
+    if (!name && !email) return false;
+    if (/\[bot\]$/i.test(name) || /\[bot\]@/i.test(email)) return true;
+    if (/^github[\s_-]?actions?$/i.test(name)) return true;
+    if (/^(?:dependabot|renovate)$/i.test(name)) return true;
+    if (/(?:^|[\s_-])bot$/i.test(name)) return true;
+    if (/^[a-z0-9][a-z0-9_-]*-actions$/i.test(name)) return true;
+    const platform = String(typeof platformName === "function" ? platformName() : "").trim().toLowerCase();
+    const lowered = name.toLowerCase();
+    if (["forkmesh actions", "forkmesh deploy"].includes(lowered)
+      || (platform && lowered === `${platform} actions`)) return true;
+    return email === "actions@forkmesh.local";
+  }
+
+  // .forkmesh/contributors/contributors.json is a repository's own curated
+  // contributor roster ({count, contributors: [{slug, name, commits, profile,
+  // ...}]}, with an avatar per contributor at .forkmesh/contributors/<slug>.png).
+  // When a repository ships one it is the About rail's source of truth: git
+  // author names cannot tell one person's several identities apart, and they
+  // carry no pictures.
+  const REPO_CONTRIBUTOR_ROSTER_DIR = ".forkmesh/contributors";
+  const REPO_CONTRIBUTOR_ROSTER_PATH = `${REPO_CONTRIBUTOR_ROSTER_DIR}/contributors.json`;
+  const REPO_CONTRIBUTOR_ROSTER_MAX_CHARS = 2 * 1024 * 1024;
+  const REPO_CONTRIBUTOR_ROSTER_MAX_ROWS = 10000;
+  const REPO_CONTRIBUTOR_ROSTER_SHOWN = 8;
+
+  function repoContributorProfileUrl(value) {
+    try {
+      const raw = String(value || "").trim();
+      if (!raw || raw.length > 2048) return "";
+      const url = new URL(raw);
+      return url.protocol === "https:" && !url.username && !url.password && url.hostname ? url.href : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function parseRepoContributorRoster(text) {
+    if (typeof text !== "string" || !text || text.length > REPO_CONTRIBUTOR_ROSTER_MAX_CHARS) return null;
+    let data;
+    try { data = JSON.parse(text); } catch (_) { return null; }
+    const list = data && typeof data === "object" && Array.isArray(data.contributors) ? data.contributors : null;
+    if (!list || !list.length || list.length > REPO_CONTRIBUTOR_ROSTER_MAX_ROWS) return null;
+    const rows = [];
+    list.forEach((row, index) => {
+      if (!row || typeof row !== "object") return;
+      const slug = String(row.slug || "").trim();
+      const safeSlug = /^[a-z0-9][a-z0-9._-]{0,99}$/i.test(slug) && !slug.includes("..") ? slug : "";
+      const name = String(row.name || row.login || slug || "").replace(/\s+/g, " ").trim().slice(0, 120);
+      if (!name) return;
+      const commits = Number(row.commits);
+      rows.push({
+        slug: safeSlug,
+        name,
+        commits: Number.isFinite(commits) && commits > 0 ? Math.floor(commits) : 0,
+        profile: repoContributorProfileUrl(row.profile),
+        index,
+      });
+    });
+    if (!rows.length) return null;
+    rows.sort((a, b) => b.commits - a.commits || a.index - b.index);
+    const declared = Number(data.count);
+    const count = Number.isInteger(declared) && declared > 0 && declared <= 10_000_000 ? declared : rows.length;
+    return { count, rows };
+  }
+
+  // One blob read, and only for a repository whose .forkmesh folder has a
+  // contributors folder (the listing is shared with every other optional
+  // .forkmesh read and a miss is remembered), so other repositories pay nothing.
+  async function loadRepoContributorRoster(repo) {
+    try {
+      if (!repo || repoOptionalTreeMissed(repo, REPO_CONTRIBUTOR_ROSTER_PATH)) return null;
+      if (!(await repoOptionalTreeParentHas(repo, REPO_CONTRIBUTOR_ROSTER_DIR))) {
+        rememberRepoOptionalTreeMiss(repo, REPO_CONTRIBUTOR_ROSTER_PATH);
+        return null;
+      }
+      const blobs = await fetchRepoBlobs(repo, [REPO_CONTRIBUTOR_ROSTER_PATH]);
+      const blob = blobs?.[REPO_CONTRIBUTOR_ROSTER_PATH];
+      if (!blob) {
+        rememberRepoOptionalTreeMiss(repo, REPO_CONTRIBUTOR_ROSTER_PATH);
+        return null;
+      }
+      if (blob.truncated) return null;
+      return parseRepoContributorRoster(blobText(blob));
+    } catch (_) {
+      return null; // host offline: the /stats authors are the fallback
+    }
+  }
+
+  function repoRosterContributorAvatar(repo, contributor) {
+    const name = String(contributor?.name || "?");
+    const commits = Number(contributor?.commits) || 0;
+    const words = name.split(/[\s._@-]+/).filter(Boolean);
+    const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
+    const title = name + (commits ? ` — ${formatCount(commits)} commit${commits === 1 ? "" : "s"}` : "");
+    const classes = "relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground";
+    const picture = contributor?.slug ? repoRawUrl(repo, `${REPO_CONTRIBUTOR_ROSTER_DIR}/${contributor.slug}.png`) : "";
+    const inner = `<span>${escapeHtml(initials)}</span>` + (picture
+      ? `<img src="${escapeHtml(picture)}" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />`
+      : "");
+    const profile = repoContributorProfileUrl(contributor?.profile);
+    const attrs = `title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}" data-repo-contributor-avatar class="${classes}"`;
+    return profile
+      ? `<a href="${escapeHtml(profile)}" target="_blank" rel="noopener noreferrer nofollow ugc" ${attrs}>${inner}</a>`
+      : `<span ${attrs}>${inner}</span>`;
+  }
+
+  function renderRepoAboutRoster(repo, roster) {
+    const rows = Array.isArray(roster?.rows) ? roster.rows : [];
+    if (!rows.length) return false;
+    const section = $("[data-repo-about-contribs]");
+    const count = $("[data-repo-about-contribs-count]");
+    const list = $("[data-repo-about-contribs-list]");
+    if (!section || !count || !list) return false;
+    const total = Number(roster.count) || rows.length;
+    count.textContent = String(total);
+    const shown = rows.slice(0, REPO_CONTRIBUTOR_ROSTER_SHOWN);
+    const more = total - shown.length;
+    const everyone = repoLinkUrl(repo, "blob", REPO_CONTRIBUTOR_ROSTER_PATH);
+    list.innerHTML = shown.map((row) => repoRosterContributorAvatar(repo, row)).join("") +
+      (more > 0
+        ? `<a href="${escapeHtml(everyone)}" title="All ${escapeHtml(formatCount(total))} contributors" class="!ml-2 text-[11px] text-muted-foreground hover:text-foreground hover:underline">+${formatCount(more)}</a>`
+        : "");
+    dropBrokenContributorAvatars(list);
+    section.removeAttribute("data-repo-about-pending");
+    section.classList.remove("hidden");
+    return true;
+  }
+
+  // The git-author fallback, used only when the repository ships no valid
+  // roster. Bots are dropped from both the avatars and the count.
+  async function renderRepoAboutAuthors(repo, roster, contributors, total) {
+    if (await roster) return; // loadRepoAboutInsights renders the roster
+    if (!repoAboutStillCurrent(repo)) return;
+    const rows = Array.isArray(contributors) ? contributors : [];
+    const people = rows.filter((row) => !repoContributorIsBot(row));
+    const known = Number(total) || rows.length;
+    renderRepoAboutContributors(people, Math.max(people.length, known - (rows.length - people.length)));
+  }
+
   // contributors: [{name, email, commits}, ...] sorted desc. total overrides the
   // rendered count (the host knows the full-history total even though only the
   // top few avatars are shown).
@@ -27584,7 +27731,7 @@
   // and contributors span the whole history. Returns false (→ fall back to the
   // per-directory walk + capped history) when the host is offline or too old to
   // know the op.
-  async function loadRepoAboutStats(repo) {
+  async function loadRepoAboutStats(repo, roster = null) {
     let data;
     try {
       data = await fetchRepoJson(repoLiveUrl(repo, "stats"));
@@ -27603,7 +27750,7 @@
       if (weight > 0) tally[language] = (tally[language] || 0) + weight;
     });
     renderRepoAboutLanguages(Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 6));
-    renderRepoAboutContributors(data.contributors, Number(data.contributorCount) || 0);
+    await renderRepoAboutAuthors(repo, roster, data.contributors, Number(data.contributorCount) || 0);
     return true;
   }
 
@@ -27623,7 +27770,7 @@
     } catch (_) { /* host offline — sections stay hidden */ }
   }
 
-  async function loadRepoAboutContributors(repo) {
+  async function loadRepoAboutContributors(repo, roster = null) {
     try {
       const data = await fetchRepoJson(repoLiveUrl(repo, "history"));
       const commits = Array.isArray(data?.commits) ? data.commits : [];
@@ -27634,7 +27781,7 @@
         if (author) tally[author] = (tally[author] || 0) + 1;
       });
       const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]);
-      renderRepoAboutContributors(
+      await renderRepoAboutAuthors(repo, roster,
         ranked.map(([name, commitCount]) => ({ name, commits: commitCount })),
         ranked.length);
     } catch (_) { /* host offline — section stays hidden */ }
@@ -28102,9 +28249,14 @@
 
   async function loadRepoAboutInsights(repo) {
     loadRepoAboutSizeMapWhenNear(repo);
-    if (!await loadRepoAboutStats(repo)) {
-      await Promise.allSettled([loadRepoAboutFilesAndLanguages(repo), loadRepoAboutContributors(repo)]);
+    // A committed contributor roster outranks the git authors; it is read in
+    // parallel and the author renderers wait for it before drawing anything.
+    const roster = loadRepoContributorRoster(repo);
+    if (!await loadRepoAboutStats(repo, roster)) {
+      await Promise.allSettled([loadRepoAboutFilesAndLanguages(repo), loadRepoAboutContributors(repo, roster)]);
     }
+    const committed = await roster;
+    if (committed && repoAboutStillCurrent(repo)) renderRepoAboutRoster(repo, committed);
     if (repoAboutStillCurrent(repo)) settleRepoAboutPending();
   }
 

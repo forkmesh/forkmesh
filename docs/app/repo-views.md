@@ -129,6 +129,33 @@ contributor's picture drawn over them when one is known:
   use) and its avatar replaces the initials when the account exists and is
   public. Names with spaces keep initials.
 
+**Contributor roster.** A repository can ship its own list at
+`.forkmesh/contributors/contributors.json`, with one avatar per contributor at
+`.forkmesh/contributors/<slug>.png`:
+
+```json
+{"about": "How the list was made.", "count": 3,
+ "contributors": [{"slug": "alice", "name": "Alice", "login": "alice",
+   "profile": "https://example.com/@alice", "commits": 120,
+   "first": "2024-01-02", "last": "2026-10-01", "projects": ["acme-api"]}]}
+```
+
+When the file is there, the Contributors section shows `count` (else the
+number of rows) and the top 8 rows by `commits`, each picture read through the
+raw route at the selected branch (`repoRawUrl`, as README images are). The
+tooltip is the name and commit count; an avatar links to `profile` only when it
+is a plain `https:` URL; a missing picture keeps the initials; "+N" opens the
+roster file. Other fields are ignored. The file is read with the optional
+`.forkmesh` folder machinery below (no request unless `.forkmesh` has a
+`contributors` folder; a miss is remembered), at most 2 MiB and 10,000 rows;
+a slug must match `[a-z0-9][a-z0-9._-]*`. Without a valid roster the section
+uses the `stats` authors as before, minus bots (`… [bot]`, `GitHub Action(s)`,
+`… Bot` / `…-bot`, `<slug>-actions`, `<platform> Actions` /
+`actions@forkmesh.local` and `ForkMesh Deploy`), which are dropped from both the avatars and the
+count. Code: `loadRepoContributorRoster`, `renderRepoAboutRoster`,
+`repoContributorIsBot` in `06-repo-content.js`; tests in
+`app/tests/test_repo_contributor_roster.py`.
+
 Commit emails are not sent to the browser. Direct
 access lists online mirrors as plain rows with no green: the node name, its
 version or, for the node serving the page, the response time, and an
