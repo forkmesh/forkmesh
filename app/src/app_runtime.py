@@ -276,6 +276,22 @@ class Default:
             "vary": "Origin",
         }
 
+    @staticmethod
+    def _with_headers(response, values):
+        current = [
+            (str(name).lower(), value)
+            for name, value in response.headers.items()
+            if str(name).lower() not in values
+            and str(name).lower() != "access-control-allow-credentials"
+        ]
+        current.extend(values.items())
+        return Response(
+            response.body,
+            status=int(getattr(response, "status", 200) or 200),
+            status_text=str(getattr(response, "status_text", "") or ""),
+            headers=current,
+        )
+
     def _with_fast_cors(self, request, response):
         values = self._fast_cors_headers(request)
         if not values:
@@ -1037,8 +1053,20 @@ class Default:
                 if denied is not None:
                     return denied
 
-            response = _api_cors_preflight_response(
-                self.env, request, url.path)
+            # A neighbour World's page may call the federated World
+            # endpoints: its exact origin, no credentials, bearer tokens.
+            cross_origin = _request_origin(request)
+            fed_cors = (
+                await world_federation_cors(self.env, request, url.path)
+                if cross_origin
+                and cross_origin != _request_target_origin(request)
+                and url.path.startswith("/api/")
+                and world_federated_path(url.path) else {})
+            response = (
+                Response("", status=204, headers=fed_cors)
+                if fed_cors and method_name(request) == "OPTIONS"
+                else _api_cors_preflight_response(
+                    self.env, request, url.path))
             if response is not None:
                 response = self._control_response(response)
 
@@ -1065,6 +1093,8 @@ class Default:
                     "/api/repositories", "/api/repositories/search"):
                 response = await self._repo_canonical_json(
                     request, url, response)
+            if fed_cors and method_name(request) != "OPTIONS":
+                response = self._with_headers(response, fed_cors)
         except RequestBodyTooLarge:
             response = json_response(
                 {"error": "request_too_large"},
@@ -2219,6 +2249,10 @@ class Default:
         if url.path in ("/api/world/visa", "/api/world/visa/"):
             return await world_visa_handler(self.env, request)
 
+        if url.path in ("/api/world/visa/session",
+                        "/api/world/visa/session/"):
+            return await world_visa_session_handler(self.env, request)
+
         if url.path in ("/api/world/visa/verify", "/api/world/visa/verify/"):
             return await world_visa_verify_handler(self.env, request)
 
@@ -2481,9 +2515,19 @@ class Default:
                         )
             else:
                 visa_values = query.get("visa") or []
+                visitor_values = query.get("visitor") or []
                 mesh_visitor = await world_mesh_visitor(
                     self.env, request,
-                    visa_values[0] if len(visa_values) == 1 else "")
+                    "" if visitor_values
+                    else visa_values[0] if len(visa_values) == 1 else "")
+                # A visitor token minted here (POST /api/world/visa/session)
+                # stands in for the one-minute visa, so reconnects keep the
+                # walker's name for the token's quarter of an hour.
+                if mesh_visitor and len(visitor_values) == 1:
+                    claim = world_visitor_claim(
+                        self.env, visitor_values[0], mesh_visitor["home"])
+                    mesh_visitor = ({**mesh_visitor, "claim": claim}
+                                    if claim else {"error": "invalid_visitor"})
                 if not mesh_visitor:
                     return json_response(
                         {"error": "origin_not_allowed"}, status=403)

@@ -1525,6 +1525,11 @@ world_neighbour_icon_handler = _world_routes.export(
 world_visa_handler = _world_routes.export("world_visa_handler")
 world_visa_verify_handler = _world_routes.export("world_visa_verify_handler")
 world_mesh_visitor = _world_routes.export("world_mesh_visitor")
+world_visa_session_handler = _world_routes.export("world_visa_session_handler")
+world_federation_cors = _world_routes.export("world_federation_cors")
+world_federated_path = _world_routes.export("world_federated_path")
+world_bearer_visitor = _world_routes.export("world_bearer_visitor")
+world_visitor_claim = _world_routes.export("world_visitor_claim")
 world_visitors_handler = _world_routes.export("world_visitors_handler")
 world_wallet_badge_handler = _world_routes.export("world_wallet_badge_handler")
 
