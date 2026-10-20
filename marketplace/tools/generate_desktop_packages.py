@@ -11,7 +11,8 @@ import re
 import sys
 
 from marketplace_lib import (
-    MarketplaceError, load_catalog, load_onboarding, manifest_entries, safe_relative_path,
+    MarketplaceError, load_catalog, load_onboarding, plugin_selection, safe_relative_path,
+    selected_catalog_document, selected_manifest_entries, selected_onboarding_documents,
 )
 
 
@@ -30,11 +31,29 @@ TEST_LIBRARIES = {
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HOST_SOURCE_DIR = REPOSITORY_ROOT / "desktop" / "src"
 HOST_SOURCE_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]*\.(?:h|cpp)")
+LISTING_FILES = {"manifest.json", "README.md", "LICENSE"}
+
+
+def _listing_file(relative: Path) -> bool:
+    return relative.parts[0] == "preview" or (
+        len(relative.parts) == 1 and relative.name in LISTING_FILES
+    )
+
+
+def _qrc(entries: list[tuple[str, Path]]) -> str:
+    rows = ["<RCC>", '  <qresource prefix="/forkmesh-market">']
+    for alias, path in sorted(entries):
+        rows.append(
+            f'    <file alias="{html.escape(alias, quote=True)}">'
+            f"{html.escape(str(path), quote=True)}</file>"
+        )
+    rows += ["  </qresource>", "</RCC>", ""]
+    return "\n".join(rows)
 
 
 def _descriptor(
     package_root: Path,
-) -> tuple[list[Path], list[Path], Path, list[Path], list[str], str, list[Path]] | None:
+) -> tuple[list[Path], list[Path], Path, list[Path], list[str], bool, list[Path]] | None:
     descriptor_path = package_root / "content" / "desktop" / "build.json"
     if not descriptor_path.is_file():
         return None
@@ -46,7 +65,7 @@ def _descriptor(
         raise MarketplaceError(f"{descriptor_path} must use schemaVersion 1")
     if set(descriptor) - {
         "schemaVersion", "sources", "mocHeaders", "testSources", "testLibraries",
-        "testHostSources", "desktopFactory", "repositoryResources",
+        "testHostSources", "coreLinked", "repositoryResources",
     }:
         raise MarketplaceError(f"{descriptor_path} has unsupported fields")
     source_dir = descriptor_path.parent.resolve()
@@ -104,13 +123,9 @@ def _descriptor(
         test_sources.append(target)
     if not set(moc_headers).issubset(sources):
         raise MarketplaceError(f"{descriptor_path} mocHeaders must also be sources")
-    desktop_factory = descriptor.get("desktopFactory", "")
-    if not isinstance(desktop_factory, str) or (
-        desktop_factory and not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", desktop_factory)
-    ):
-        raise MarketplaceError(
-            f"{descriptor_path} desktopFactory must be a C++ identifier"
-        )
+    core_linked = descriptor.get("coreLinked", False)
+    if not isinstance(core_linked, bool):
+        raise MarketplaceError(f"{descriptor_path} coreLinked must be true or false")
     repository_resources = descriptor.get("repositoryResources", [])
     if not isinstance(repository_resources, list):
         raise MarketplaceError(f"{descriptor_path} repositoryResources must be an array")
@@ -131,32 +146,53 @@ def _descriptor(
         resource_dirs.append(target)
     return (
         sources, moc_headers, source_dir, test_sources, test_libraries,
-        desktop_factory, resource_dirs,
+        core_linked, resource_dirs,
     )
 
 
-def generate(catalog_path: Path) -> tuple[str, str, str]:
+def core_linked_plugins(catalog_path: Path) -> list[str]:
     catalog = load_catalog(catalog_path)
+    linked = []
+    for entry in catalog.packages:
+        descriptor = _descriptor((catalog.root / entry.manifest).parent.resolve())
+        if descriptor and descriptor[5]:
+            linked.append(entry.package_id)
+    return linked
+
+
+def generate(
+    catalog_path: Path, plugins: str = "", generated_dir: Path | None = None,
+) -> tuple[str, str, dict[str, str], dict[str, str]]:
+    catalog = load_catalog(catalog_path)
+    load_onboarding(catalog)
+    selection = plugin_selection(catalog, plugins) | set(core_linked_plugins(catalog_path))
+    selection = plugin_selection(catalog, ";".join(sorted(selection)) or "none")
+    generated_dir = generated_dir or catalog.root
+    documents = {"catalog.json": json.dumps(
+        selected_catalog_document(catalog, selection), indent=2) + "\n"}
+    packs, guides = selected_onboarding_documents(catalog, selection)
+    if packs:
+        documents["packs.json"] = json.dumps(packs, indent=2) + "\n"
+    if guides:
+        documents["guides.json"] = json.dumps(guides, indent=2) + "\n"
     resource_paths = {
-        catalog.path,
         catalog.root / "catalog.schema.json",
         catalog.root / "manifest.schema.json",
         catalog.root / "agent.schema.json",
     }
-    packs, guides = load_onboarding(catalog)
-    if packs:
-        resource_paths.add(catalog.root / "packs.json")
-    if guides:
-        resource_paths.add(catalog.root / "guides.json")
-    resource_aliases: dict[Path, str] = {}
+    resource_aliases: dict[Path, str] = {
+        (generated_dir / name).resolve(): name for name in documents
+    }
     configure_globs: list[str] = []
     sources: list[Path] = []
     moc_headers: list[Path] = []
     include_dirs: list[Path] = []
     package_sources: dict[str, list[Path]] = {}
     package_tests: dict[str, tuple[list[Path], list[str]]] = {}
-    desktop_factories: list[tuple[str, str]] = []
-    for entry, manifest in manifest_entries(catalog):
+    module_candidates: list[str] = []
+    core_linked: list[str] = []
+    module_resources: dict[str, list[tuple[str, Path]]] = {}
+    for entry, manifest in selected_manifest_entries(catalog, selection):
         package_root = (catalog.root / entry.manifest).parent.resolve()
         descriptor = _descriptor(package_root)
         if descriptor:
@@ -166,9 +202,11 @@ def generate(catalog_path: Path) -> tuple[str, str, str]:
                 include_dir,
                 package_test_sources,
                 package_test_libraries,
-                desktop_factory,
+                linked,
                 resource_dirs,
             ) = descriptor
+            if not linked:
+                module_resources[manifest["id"]] = []
             package_alias = package_root.relative_to(catalog.root.resolve()).as_posix()
             for resource_dir in resource_dirs:
                 repository_alias = resource_dir.relative_to(REPOSITORY_ROOT).as_posix()
@@ -183,10 +221,14 @@ def generate(catalog_path: Path) -> tuple[str, str, str]:
                             raise MarketplaceError(
                                 f"{manifest['id']} repository resource leaves the repository: {path}"
                             ) from error
-                        resource_aliases[path.resolve()] = (
+                        alias = (
                             f"{package_alias}/repository/{repository_alias}/"
                             f"{path.relative_to(resource_dir).as_posix()}"
                         )
+                        if linked:
+                            resource_aliases[path.resolve()] = alias
+                        else:
+                            module_resources[manifest["id"]].append((alias, path.resolve()))
             sources.extend(package_source_files)
             moc_headers.extend(package_moc)
             include_dirs.append(include_dir)
@@ -196,13 +238,7 @@ def generate(catalog_path: Path) -> tuple[str, str, str]:
                     package_test_sources,
                     package_test_libraries,
                 )
-            if desktop_factory:
-                entrypoint = manifest.get("entrypoints", {}).get("desktop", "")
-                if not entrypoint or entrypoint.startswith("builtin:"):
-                    raise MarketplaceError(
-                        f"{manifest['id']} desktopFactory requires a content desktop entrypoint"
-                    )
-                desktop_factories.append((entrypoint, desktop_factory))
+            (core_linked if linked else module_candidates).append(manifest["id"])
         for path in package_root.rglob("*"):
             if (
                 path.is_file()
@@ -210,27 +246,24 @@ def generate(catalog_path: Path) -> tuple[str, str, str]:
                 and path.suffix.lower() not in SOURCE_SUFFIXES
                 and "tests" not in path.relative_to(package_root).parts
             ):
-                resource_paths.add(path.resolve())
+                relative = path.relative_to(package_root)
+                if manifest["id"] in module_resources and not _listing_file(relative):
+                    module_resources[manifest["id"]].append(
+                        (path.resolve().relative_to(catalog.root.resolve()).as_posix(),
+                         path.resolve()))
+                else:
+                    resource_paths.add(path.resolve())
 
     missing_resources = sorted(str(path) for path in resource_paths if not path.is_file())
     if missing_resources:
         raise MarketplaceError("missing marketplace resources: " + ", ".join(missing_resources))
-    entrypoints = [entrypoint for entrypoint, _ in desktop_factories]
-    if len(entrypoints) != len(set(entrypoints)):
-        raise MarketplaceError("desktop package entrypoints must be unique")
-    factories = [factory for _, factory in desktop_factories]
-    if len(factories) != len(set(factories)):
-        raise MarketplaceError("desktop package factory symbols must be unique")
 
-    qrc = ["<RCC>", '  <qresource prefix="/forkmesh-market">']
     entries = [(path.relative_to(catalog.root).as_posix(), path) for path in resource_paths]
     entries += [(alias, path) for path, alias in resource_aliases.items()]
-    for alias, path in sorted(entries):
-        qrc.append(
-            f'    <file alias="{html.escape(alias, quote=True)}">'
-            f"{html.escape(str(path), quote=True)}</file>"
-        )
-    qrc += ["  </qresource>", "</RCC>", ""]
+    qrc = _qrc(entries)
+    plugin_qrcs = {
+        package_id: _qrc(files) for package_id, files in module_resources.items() if files
+    }
 
     def cmake_set(name: str, values: list[Path | str]) -> list[str]:
         rows = [f"set({name}"]
@@ -248,6 +281,9 @@ def generate(catalog_path: Path) -> tuple[str, str, str]:
         *cmake_set("FORKMESH_MARKETPLACE_INCLUDE_DIRS", include_dirs),
         *cmake_set("FORKMESH_MARKETPLACE_TEST_IDS", list(package_tests)),
         *cmake_set("FORKMESH_MARKETPLACE_RESOURCE_GLOBS", configure_globs),
+        *cmake_set("FORKMESH_SELECTED_PLUGINS", sorted(selection)),
+        *cmake_set("FORKMESH_PLUGIN_MODULE_CANDIDATES", module_candidates),
+        *cmake_set("FORKMESH_CORE_LINKED_PLUGINS", core_linked),
     ]
     for package_id, values in sorted(package_sources.items()):
         variable_id = re.sub(r"[^A-Za-z0-9]", "_", package_id).upper()
@@ -260,44 +296,14 @@ def generate(catalog_path: Path) -> tuple[str, str, str]:
         cmake += cmake_set(
             f"FORKMESH_PACKAGE_{variable_id}_TEST_LIBRARIES", test_libraries
         )
+    for package_id in sorted(plugin_qrcs):
+        variable_id = re.sub(r"[^A-Za-z0-9]", "_", package_id).upper()
+        cmake.append(
+            f'set(FORKMESH_PACKAGE_{variable_id}_QRC '
+            f'"{(generated_dir / "plugins" / (package_id + ".qrc")).resolve().as_posix()}")'
+        )
     cmake.append("")
-    registry = [
-        "// Generated by marketplace/tools/generate_desktop_packages.py; do not edit.",
-        '#include "DesktopPackageExtension.h"',
-        "",
-        "namespace forkmesh::market {",
-    ]
-    for _, factory in desktop_factories:
-        registry.append(f"DesktopPackageExtension *{factory}();")
-    registry += [
-        "",
-        "std::unique_ptr<DesktopPackageExtension>",
-        "createDesktopPackageExtension(const QString &entrypoint)",
-        "{",
-    ]
-    for entrypoint, factory in desktop_factories:
-        literal = json.dumps(entrypoint, ensure_ascii=True)
-        registry += [
-            f"    if (entrypoint == QStringLiteral({literal}))",
-            f"        return std::unique_ptr<DesktopPackageExtension>({factory}());",
-        ]
-    registry += [
-        "    return {};",
-        "}",
-        "",
-        "bool hasDesktopPackageExtension(const QString &entrypoint)",
-        "{",
-    ]
-    if desktop_factories:
-        comparisons = [
-            f"entrypoint == QStringLiteral({json.dumps(entrypoint, ensure_ascii=True)})"
-            for entrypoint, _ in desktop_factories
-        ]
-        registry.append("    return " + " ||\n           ".join(comparisons) + ";")
-    else:
-        registry.append("    Q_UNUSED(entrypoint);\n    return false;")
-    registry += ["}", "", "} // namespace forkmesh::market", ""]
-    return "\n".join(qrc), "\n".join(cmake), "\n".join(registry)
+    return qrc, "\n".join(cmake), documents, plugin_qrcs
 
 
 def main(arguments: list[str]) -> int:
@@ -305,19 +311,36 @@ def main(arguments: list[str]) -> int:
     parser.add_argument("--catalog", required=True, type=Path)
     parser.add_argument("--qrc", required=True, type=Path)
     parser.add_argument("--cmake", required=True, type=Path)
-    parser.add_argument("--registry-cpp", required=True, type=Path)
+    parser.add_argument("--plugins", default="")
     options = parser.parse_args(arguments)
+    generated_dir = options.qrc.parent
     try:
-        qrc, cmake, registry = generate(options.catalog)
+        qrc, cmake, documents, plugin_qrcs = generate(
+            options.catalog, options.plugins, generated_dir)
     except MarketplaceError as error:
         print(f"generate_desktop_packages: {error}", file=sys.stderr)
         return 2
-    options.qrc.parent.mkdir(parents=True, exist_ok=True)
+    generated_dir.mkdir(parents=True, exist_ok=True)
     options.cmake.parent.mkdir(parents=True, exist_ok=True)
-    options.qrc.write_text(qrc, encoding="utf-8")
+    for name in ("catalog.json", "packs.json", "guides.json"):
+        target = generated_dir / name
+        if name in documents:
+            if not target.is_file() or target.read_text(encoding="utf-8") != documents[name]:
+                target.write_text(documents[name], encoding="utf-8")
+        elif target.is_file():
+            target.unlink()
+    plugin_dir = generated_dir / "plugins"
+    plugin_dir.mkdir(exist_ok=True)
+    for stale in plugin_dir.glob("*.qrc"):
+        if stale.stem not in plugin_qrcs:
+            stale.unlink()
+    for package_id, text in plugin_qrcs.items():
+        target = plugin_dir / (package_id + ".qrc")
+        if not target.is_file() or target.read_text(encoding="utf-8") != text:
+            target.write_text(text, encoding="utf-8")
+    if not options.qrc.is_file() or options.qrc.read_text(encoding="utf-8") != qrc:
+        options.qrc.write_text(qrc, encoding="utf-8")
     options.cmake.write_text(cmake, encoding="utf-8")
-    options.registry_cpp.parent.mkdir(parents=True, exist_ok=True)
-    options.registry_cpp.write_text(registry, encoding="utf-8")
     return 0
 
 

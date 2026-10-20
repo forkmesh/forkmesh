@@ -1,40 +1,16 @@
 set(FORKMESH_PACKAGE_MODULE_API 1)
-set(FORKMESH_PACKAGE_MODULE_DEFAULT
-    app-store-status aquarium backups calories cleanup computer-security
-    crm marketing openwrt people rss-reader sleep steps stretch sugar-break
-    voice-changer water)
 if(UNIX AND NOT APPLE)
     set(_forkmesh_package_modules_default ON)
 else()
     set(_forkmesh_package_modules_default OFF)
 endif()
 option(FORKMESH_PACKAGE_MODULES
-    "Build optional marketplace packages as lazily loaded modules instead of linking them into the app"
+    "Build every selected plugin the core does not link as its own lazily loaded module"
     ${_forkmesh_package_modules_default})
-set(FORKMESH_PACKAGE_MODULE_IDS "${FORKMESH_PACKAGE_MODULE_DEFAULT}" CACHE STRING
-    "Marketplace packages built as modules when FORKMESH_PACKAGE_MODULES is ON")
-set(FORKMESH_PACKAGE_HOST_SHARED_SOURCES "/packages/agent-watch/content/desktop/AgentNetworkSampler\\.cpp$")
-
-function(forkmesh_package_host_shared out source)
-    set(_shared FALSE)
-    foreach(_pattern IN LISTS FORKMESH_PACKAGE_HOST_SHARED_SOURCES)
-        if(source MATCHES "${_pattern}")
-            set(_shared TRUE)
-        endif()
-    endforeach()
-    set(${out} ${_shared} PARENT_SCOPE)
-endfunction()
 
 function(forkmesh_package_module_sources out id)
     forkmesh_package_variable_id(_variable "${id}")
-    set(_sources "")
-    foreach(_source IN LISTS FORKMESH_PACKAGE_${_variable}_SOURCES)
-        forkmesh_package_host_shared(_shared "${_source}")
-        if(NOT _shared)
-            list(APPEND _sources "${_source}")
-        endif()
-    endforeach()
-    set(${out} "${_sources}" PARENT_SCOPE)
+    set(${out} "${FORKMESH_PACKAGE_${_variable}_SOURCES}" PARENT_SCOPE)
 endfunction()
 
 function(forkmesh_package_variable_id out id)
@@ -43,12 +19,25 @@ function(forkmesh_package_variable_id out id)
     set(${out} "${_variable}" PARENT_SCOPE)
 endfunction()
 
+function(forkmesh_linked_plugin_resources out)
+    set(_qrcs "")
+    if(NOT FORKMESH_PACKAGE_MODULES)
+        foreach(_id IN LISTS FORKMESH_PLUGIN_MODULE_CANDIDATES)
+            forkmesh_package_variable_id(_variable "${_id}")
+            if(DEFINED FORKMESH_PACKAGE_${_variable}_QRC)
+                list(APPEND _qrcs "${FORKMESH_PACKAGE_${_variable}_QRC}")
+            endif()
+        endforeach()
+    endif()
+    set(${out} "${_qrcs}" PARENT_SCOPE)
+endfunction()
+
 function(forkmesh_package_modules_partition)
     set(_modules "")
     set(_module_sources "")
     set(_module_headers "")
     if(FORKMESH_PACKAGE_MODULES)
-        foreach(_id IN LISTS FORKMESH_PACKAGE_MODULE_IDS)
+        foreach(_id IN LISTS FORKMESH_PLUGIN_MODULE_CANDIDATES)
             forkmesh_package_variable_id(_variable "${_id}")
             if(NOT DEFINED FORKMESH_PACKAGE_${_variable}_SOURCES)
                 continue()
@@ -127,8 +116,13 @@ extern \"C\" __attribute__((visibility(\"default\"))) const char *forkmesh_packa
 ")
         configure_file("${_generated}/${_id}/module.cpp.in" "${_generated}/${_id}/module.cpp" COPYONLY)
         forkmesh_package_module_sources(_sources "${_id}")
+        set(_resources "")
+        if(DEFINED FORKMESH_PACKAGE_${_variable}_QRC)
+            qt_add_resources(_resources "${FORKMESH_PACKAGE_${_variable}_QRC}")
+        endif()
         add_library(${_target} MODULE
             ${_sources}
+            ${_resources}
             "${_generated}/${_id}/module.cpp")
         if(_headers)
             set(_mocs "")

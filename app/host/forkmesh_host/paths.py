@@ -21,9 +21,9 @@ def default_data_dir():
 
 
 def ensure_import_paths(src_dir=None):
-    """Put the shims first, then the staged Worker modules, on sys.path."""
+    """Put the shims first, then the staged Worker modules, then the plugins."""
     src_dir = Path(src_dir or SRC_BUILD_DIR)
-    wanted = [str(SHIMS_DIR), str(src_dir), str(HOST_DIR)]
+    wanted = [str(SHIMS_DIR), str(src_dir), str(HOST_DIR), str(src_dir / "plugins")]
     for entry in reversed(wanted):
         while entry in sys.path:
             sys.path.remove(entry)

@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "coreLinked": true,
   "sources": [
     "LedgerFeature.h",
     "LedgerFeature.cpp"
