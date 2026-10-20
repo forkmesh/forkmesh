@@ -12317,8 +12317,30 @@
   // repositories from organizations the account actually belongs to. The
   // global admin shortcut used by sessionCanAssignAgent intentionally does not
   // apply here: it was what exposed every public repository in this menu.
+  // The label each agent-modal choice is listed under: a repository an
+  // organization owns is named by the organization (owner/repo), never by the
+  // account node behind it, so it is listed once.
+  const agentModalRepoLabels = new WeakMap();
+
+  function agentModalRepoLabel(repo) {
+    if (repoHasShortAddress(repo)) return String(repo.name);
+    return agentModalRepoLabels.get(repo) || repoDisplayKey(repo);
+  }
+
   function agentModalRepoChoices() {
     const byPublicAddress = new Map();
+    const add = (key, repo) => {
+      const publicKey = String(key || "").toLowerCase();
+      if (!isRepoKey(publicKey) || byPublicAddress.has(publicKey)) return;
+      byPublicAddress.set(publicKey, repo);
+      agentModalRepoLabels.set(repo, key);
+    };
+    // Organization repositories first, so a repository both the organization
+    // and the signed-in account's node hold keeps the organization's name.
+    for (const repo of state.homeOrganizationRepositories || []) {
+      if (!repo?.owner || !repo?.name) continue;
+      add(repoDisplayKey(repo), repo);
+    }
     const groups = mergeGroupsByPublicAddress(
       groupRepositories(state.repositories || []),
     );
@@ -12327,20 +12349,11 @@
       const owned = members.find((repo) =>
         repo?.owner && repo?.name && sessionOwnsRepo(repo));
       if (!owned) continue;
-      const publicKey = repoDisplayKey(owned).toLowerCase();
-      if (isRepoKey(publicKey) && !byPublicAddress.has(publicKey)) {
-        byPublicAddress.set(publicKey, owned);
-      }
-    }
-    for (const repo of state.homeOrganizationRepositories || []) {
-      if (!repo?.owner || !repo?.name) continue;
-      const publicKey = repoDisplayKey(repo).toLowerCase();
-      if (isRepoKey(publicKey) && !byPublicAddress.has(publicKey)) {
-        byPublicAddress.set(publicKey, repo);
-      }
+      const organization = groupOrganizationAlias(group) || repoPublicOwner(owned);
+      add(organization ? `${organization}/${owned.name}` : repoDisplayKey(owned), owned);
     }
     return [...byPublicAddress.values()].sort((a, b) =>
-      repoDisplayKey(a).localeCompare(repoDisplayKey(b)));
+      agentModalRepoLabel(a).localeCompare(agentModalRepoLabel(b)));
   }
 
   function agentModalPreferredRepo(choices) {
@@ -12372,7 +12385,7 @@
       repoKey(repo).toLowerCase() === previous) ||
       agentModalPreferredRepo(choices);
     repoSelect.innerHTML = choices.length
-      ? choices.map((repo) => `<option value="${escapeHtml(repoKey(repo))}"${repo === preferred ? " selected" : ""}>${escapeHtml(repoDisplayName(repo))}</option>`).join("")
+      ? choices.map((repo) => `<option value="${escapeHtml(repoKey(repo))}"${repo === preferred ? " selected" : ""}>${escapeHtml(agentModalRepoLabel(repo))}</option>`).join("")
       : '<option value="">No repositories you belong to</option>';
     repoSelect.disabled = !choices.length;
   }
