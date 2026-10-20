@@ -151,6 +151,15 @@ def test_a_migration_without_its_down_file_is_rejected(tmp_path):
         load_manifest(source / "manifest.json")
 
 
+def test_screenshot_alt_text_is_limited_to_the_manifest_bound(tmp_path):
+    source = tmp_path / "source"
+    manifest = _package(source)
+    manifest["screenshots"][0]["alt"] = "x" * 161
+    (source / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(MarketplaceError, match="screenshot alt text is invalid"):
+        load_manifest(source / "manifest.json")
+
+
 def test_instance_scoped_migrations_use_the_same_reversible_lifecycle(tmp_path):
     source = tmp_path / "source"
     manifest = _package(source)
