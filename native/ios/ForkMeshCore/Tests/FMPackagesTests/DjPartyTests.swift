@@ -120,4 +120,21 @@ final class DjPartyTests: XCTestCase {
         let cued = DjAutomixDeck(loaded: true, duration: 180)
         XCTAssertEqual(DjAutomix.step(a: ending, b: cued, favoured: .a, queued: true), .mix(from: .a, to: .b, seconds: 8))
     }
+    func testAnEndReportedOneSecondIntoASongDoesNotMakeAutomixLoadAnotherSong() {
+        let spentA = DjAutomixDeck(loaded: true, position: 129, duration: 129)
+        let started = DjAutomixDeck(loaded: true, playing: true, position: 1.2, duration: 245)
+        XCTAssertEqual(DjEnd.judge(position: 1.2, duration: 245, doubtedSince: nil, intended: true, at: 10), .doubted)
+        XCTAssertEqual(DjAutomix.step(a: spentA, b: started, favoured: .b, queued: true), .preload(.a))
+        let believed = DjAutomixDeck(loaded: true, position: 245, duration: 245)
+        XCTAssertEqual(DjAutomix.step(a: spentA, b: believed, favoured: .b, queued: true), .preload(.b))
+        XCTAssertEqual(DjEnd.judge(position: 2.5, duration: 245, doubtedSince: 10, intended: true, at: 11.3), .doubted)
+        XCTAssertEqual(DjEnd.judge(position: 4.2, duration: 245, doubtedSince: 10, intended: true, at: 13), .failed)
+        XCTAssertEqual(DjEnd.judge(position: 4.2, duration: 245, doubtedSince: 10, intended: false, at: 13), .doubted)
+    }
+
+    func testARealEndIsBelievedNearTheEndOrWhenTheLengthIsUnknown() {
+        XCTAssertEqual(DjEnd.judge(position: 243.9, duration: 245, doubtedSince: nil, intended: true, at: 0), .ended)
+        XCTAssertEqual(DjEnd.judge(position: 245, duration: 245, doubtedSince: nil, intended: true, at: 0), .ended)
+        XCTAssertEqual(DjEnd.judge(position: 1, duration: 0, doubtedSince: nil, intended: true, at: 0), .ended)
+    }
 }

@@ -74,6 +74,7 @@ final class DjDeck {
     @ObservationIgnored var audioFor = ""
     @ObservationIgnored var vinyl = false
     @ObservationIgnored var settleUntil: CFTimeInterval = 0
+    @ObservationIgnored var doubtedEnd: CFTimeInterval?
     @ObservationIgnored var rateTask: Task<Void, Never>?
     @ObservationIgnored var brakeTask: Task<Void, Never>?
     @ObservationIgnored var brakeStart: CFTimeInterval = 0
@@ -244,6 +245,8 @@ final class DjStudioModel {
     @ObservationIgnored private var searchTask: Task<Void, Never>?
     @ObservationIgnored private var similarTask: Task<Void, Never>?
     @ObservationIgnored private var sectionTasks: [DjDeckSide: Task<Void, Never>] = [:]
+    @ObservationIgnored private var readTasks: [DjDeckSide: Task<Void, Never>] = [:]
+    @ObservationIgnored var smartTask: Task<Void, Never>?
     @ObservationIgnored private var previousCategory: AVAudioSession.Category?
     @ObservationIgnored private var previousOptions: AVAudioSession.CategoryOptions = []
     @ObservationIgnored private var previousIdle = false
@@ -321,7 +324,7 @@ final class DjStudioModel {
             guard type == .ended, options.contains(.shouldResume) else { return }
             MainActor.assumeIsolated { self?.comeBack() }
         }
-        refreshSmart()
+        refreshSmart(now: true)
         refreshPace()
     }
 
@@ -445,6 +448,7 @@ final class DjStudioModel {
         searchTask?.cancel()
         for task in sectionTasks.values { task.cancel() }
         sectionTasks = [:]
+        for deck in [a, b] { stopReading(deck) }
         sampler.scratch(level: 0, speed: 0)
         sampler.stop()
         host.reset()
@@ -532,6 +536,8 @@ final class DjStudioModel {
 
     func load(_ side: DjDeckSide, id: String, title: String = "", author: String = "") {
         DjDiagnostics.mark("load Deck \(side.label)")
+        let began = CACurrentMediaTime()
+        defer { DjVitalsRecorder.shared.work(.load, from: began, to: CACurrentMediaTime()) }
         let deck = deck(side)
         prepare(deck, id: id, title: title, author: author, start: 0, keepSettings: false)
         show(title.isEmpty ? "Deck \(side.label) loaded." : "Deck \(side.label): \(title)")
@@ -556,6 +562,7 @@ final class DjStudioModel {
 
     func prepare(_ deck: DjDeck, id: String, title: String, author: String, start: Double, keepSettings: Bool) {
         sectionTasks[deck.side]?.cancel()
+        stopReading(deck)
         deck.videoId = id
         deck.title = title
         deck.author = author
@@ -577,6 +584,7 @@ final class DjStudioModel {
         deck.advancing = false
         deck.counted = false
         deck.failed = false
+        deck.doubtedEnd = nil
         if !keepSettings {
             deck.cue = 0
             deck.bpm = 0
@@ -594,6 +602,7 @@ final class DjStudioModel {
     func eject(_ side: DjDeckSide) {
         let deck = deck(side)
         sectionTasks[side]?.cancel()
+        stopReading(deck)
         deck.player.stop()
         deck.videoId = ""
         deck.title = ""
@@ -626,6 +635,7 @@ final class DjStudioModel {
         case let .source(id, url):
             analyse(deck, id: id, source: url)
         case let .tick(time, duration, state):
+            guard believes(state, deck, reported: duration) else { return }
             if duration > 0, abs(duration - deck.duration) > 0.5 { deck.duration = duration }
             guard !deck.scratching else { return }
             let now = CACurrentMediaTime()
@@ -651,6 +661,7 @@ final class DjStudioModel {
             }
             if deck.playing, now - savedAt > 5 { save(now: true) }
         case let .state(state):
+            guard believes(state, deck, reported: 0) else { return }
             apply(state, deck)
             if state == 1 { advance(true, deck) }
         case let .meta(title, author):
@@ -673,11 +684,7 @@ final class DjStudioModel {
             }
         case let .failed(code):
             DjDiagnostics.mark("Deck \(deck.side.label) player error \(code)")
-            deck.playing = false
-            deck.keepsPlaying = false
-            deck.failed = true
-            if deck.loaded { unplayable.insert(deck.videoId) }
-            advance(false, deck)
+            fail(deck)
             switch code {
             case 2: show("Deck \(deck.side.label): that YouTube link is not valid.")
             case 100: show("Deck \(deck.side.label): that video was removed or is private.")
@@ -685,6 +692,43 @@ final class DjStudioModel {
             case -1: show("YouTube could not be reached. Check your connection.")
             default: show("Deck \(deck.side.label): YouTube could not play this video.")
             }
+        }
+    }
+
+    private func fail(_ deck: DjDeck) {
+        deck.playing = false
+        deck.keepsPlaying = false
+        deck.failed = true
+        deck.doubtedEnd = nil
+        if deck.loaded { unplayable.insert(deck.videoId) }
+        advance(false, deck)
+    }
+
+    private func believes(_ state: Int, _ deck: DjDeck, reported: Double) -> Bool {
+        guard state == 0, !deck.scratching else {
+            deck.doubtedEnd = nil
+            return true
+        }
+        let now = CACurrentMediaTime()
+        let length = reported > 0 ? reported : deck.duration
+        let position = deck.position(at: now)
+        let at = String(format: "%.1f of %.1f s", position, length)
+        switch DjEnd.judge(position: position, duration: length, doubtedSince: deck.doubtedEnd, intended: deck.keepsPlaying, at: now) {
+        case .ended:
+            if deck.keepsPlaying || deck.doubtedEnd != nil { DjDiagnostics.mark("Deck \(deck.side.label) ended at \(at)") }
+            deck.doubtedEnd = nil
+            return true
+        case .doubted:
+            if deck.doubtedEnd == nil {
+                deck.doubtedEnd = now
+                DjDiagnostics.mark("Deck \(deck.side.label) end report ignored at \(at)")
+            }
+            return false
+        case .failed:
+            DjDiagnostics.mark("Deck \(deck.side.label) stopped at \(at), skipped")
+            fail(deck)
+            show("Deck \(deck.side.label): YouTube stopped this video at once, so it is skipped.")
+            return false
         }
     }
 
@@ -754,6 +798,8 @@ final class DjStudioModel {
     }
 
     func play(_ deck: DjDeck) {
+        let began = CACurrentMediaTime()
+        defer { DjVitalsRecorder.shared.work(.start, from: began, to: CACurrentMediaTime()) }
         host.dock()
         claimAudio()
         deck.player.play()
@@ -767,6 +813,12 @@ final class DjStudioModel {
         save()
     }
 
+    private func stopReading(_ deck: DjDeck) {
+        readTasks[deck.side]?.cancel()
+        readTasks[deck.side] = nil
+        if deck.reading { analysed.remove(deck.videoId) }
+    }
+
     private func analyse(_ deck: DjDeck, id: String, source: URL) {
         guard deck.videoId == id, deck.audioFor != id else { return }
         deck.audioFor = id
@@ -776,12 +828,18 @@ final class DjStudioModel {
             analysed.insert(id)
             deck.reading = true
         }
-        Task { [weak self, weak deck] in
+        readTasks[deck.side]?.cancel()
+        readTasks[deck.side] = Task { [weak self, weak deck] in
             while self?.automixing == true, !Task.isCancelled {
                 try? await Task.sleep(for: .milliseconds(250))
             }
+            guard !Task.isCancelled else { return }
             DjDiagnostics.mark("Deck \(side) reading audio")
             let read = await DjWaveSource.read(for: id, source: source, bars: wantsBars)
+            if Task.isCancelled {
+                DjDiagnostics.mark("Deck \(side) audio read stopped")
+                return
+            }
             DjDiagnostics.mark("Deck \(side) audio read\(read.bars == nil && read.audio == nil ? " failed" : "")")
             if wantsBars, read.bars == nil { self?.analysed.remove(id) }
             guard let deck, deck.videoId == id else { return }

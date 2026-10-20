@@ -84,8 +84,10 @@ performance report (see the app-wide page) if there is room.
   up to iOS 17. From iOS 18 UIKit runs that update from a run-loop source
   (`_UIUpdateSequenceRun` under a source-0 callout), so the observers see
   nothing: iOS 27 read 0 ms over 56 s, a 156 ms busy frame included, and the
-  report now prints `not seen` instead of 0 once 50 ms of busy time has
-  passed with none of it in the commit. There, layout and drawing are inside
+  report prints `not seen` instead of 0 once 50 ms of busy time has passed
+  with under 2% of it in the commit (`DjVitals.commitShareSeen`; until the
+  `2363` check any commit time at all counted as seen, so 8 minutes on
+  iOS 27 printed `0 | 0 | 0` again). There, layout and drawing are inside
   the rest. A source can't be timed from observers either: after a turn
   that ran a source, CFRunLoop polls without calling its before-waiting and
   after-waiting observers, so nothing marks where the source ended. Use the
@@ -115,7 +117,10 @@ performance report (see the app-wide page) if there is room.
   it committed its own Core Animation transaction, so its maximum could hold
   the whole window's layout and drawing), `crossfade step` (one frame of `fade`), `automix step`,
   `scratch move`, `jam reply` (`receive`) and `state save` (building the saved
-  state; encoding runs on `DjStore`'s queue).
+  state; encoding runs on `DjStore`'s queue). Since the `2363` check `deck
+  load` (`DjStudioModel.load`) and `deck start` (`play`) are timed too; they
+  run inside an `automix step` when AUTOMIX loads or starts a deck, so they
+  tell which part of a slow step it was.
 - `## App work on the main thread while the studio was on screen` (since
   check 3): the app's named sections (`PerformanceMonitorService.section`,
   forwarded through `watchSections` while the probe runs, 1 ms or more) by
@@ -140,7 +145,13 @@ performance report (see the app-wide page) if there is room.
   pause, stop, load, scratch and release, fade and fade done, audio read and
   BPM, player errors, pace changes, and since the `2289` check each sheet opened or
   closed, since the `2330` check the app going to the background and coming
-  back. Jam replies are not moments (see `jam reply`). A deck that was
+  back. Since the `2363` check: `Deck B ended at 244.8 of 245.0 s` when a
+  playing song ends, `Deck B end report ignored at 1.2 of 245.0 s` when the
+  player says a song ended that the deck cannot have reached (`DjEnd`, see
+  that check), `Deck B stopped at …, skipped` when such reports go on for
+  3 s, and `audio read stopped` for a read cancelled because its song left
+  the deck. Every moment of the last 30 s is listed (up to 40), not only the
+  newest 16. Jam replies are not moments (see `jam reply`). A deck that was
   already playing when the studio opened has no `START`.
 - `## Studio and device`: both decks (playing, rate, waveform bars, scratch
   audio), the `pace` the animations asked for (and whether it was eased),
@@ -337,6 +348,90 @@ performance report (see the app-wide page) if there is room.
     together they came to 113 ms, and none fell inside a long frame;
   - heat and Low Power Mode;
   - the diagnostics sheet, opened at the end.
+
+- 2026-10-20, `2363-fixing-video-mix-dj`: 1.4.1 build 298 (commit
+  7fdfc5d), iPhone 15 Pro Max, iOS 27.2, portrait, thermal state nominal, no
+  Low Power Mode, 120 Hz screen. AUTOMIX and AUTO DJ on (7 choices), empty
+  queue, no jam. Deck A stopped (129 s song), Deck B playing (410 s), 8 min
+  measured.
+  Evidence: 54.3 fps over the 8 minutes, 47 ms of hitches a second (129 in
+  the last 10 s), worst frame 292 ms. The last 30 s had bad seconds at
+  -19 s (139 ms), -16 and -14 s (85 ms), then every second from -10 to -4 s
+  (47-66 ms). The 12 long frames listed (-7.2 to -4.1 s) were 50-54 ms with
+  the main thread busy only 3-16 ms, 6-15 wakes, 2-3 view updates and no
+  work inside, so they were not lost on the main thread. The moments around
+  them show AUTOMIX loading Deck B at about -9.5, -7.9 and -5.9 s, each
+  load followed 0.4-0.6 s later by `fade to B over 0.4 s`. A load with
+  nothing playing is `DjAutomix.step`'s `.preload`, which it returns only
+  when neither deck is cued, and a 0.4 s fade with nothing playing is its
+  `.start`. So each song AUTO DJ put on Deck B was started, and 1.2-1.6 s
+  later was no longer playing and counted as finished, with no player
+  error. Only an end report does that: `apply` moves the position to the
+  song's length on state 0. The third song kept playing. An audio read also
+  finished at -1.2 s for a song that had already left the deck: the reads
+  started at -9.3 and -7.7 s were never stopped. The app's CPU was
+  336 ms a second in the last 10 s against 189 on the main thread. The only
+  studio work over 4 ms was `automix step` (67.6 ms at most, 3 over) and
+  `player event` (3.75 ms average, 23.5 at most, 16 of 67 over). Both run
+  `refreshSmart`: `play` counts the play, and a `.meta` title change
+  retitles the library. That call rebuilt every smart playlist
+  (`DjSmart.lists`) on the main thread at every song start: 26.5 ms for
+  500 songs in a release build on a desktop CPU, enough for the 23.5 ms
+  event.
+  Cause: AUTOMIX believed a player report that a song had ended about a
+  second after it started, and loaded the next AUTO DJ pick onto the deck:
+  three songs in four seconds. Each reload costs the web view's player and
+  stream, a new audio download and decode, the artwork, a 0.4 s fade of 25
+  volume scripts, and a song start on the main thread. That load landed off
+  the main thread, in the web view's processes and the app's other threads,
+  which is why the long frames had an idle main thread. Where the false end
+  came from is not proven, because the bundle had no moment for a song's end.
+  Two paths can deliver one. The host page's tick reads `getPlayerState`
+  right after `cueVideoById`. A voice message the frame posted before it
+  learned the new `gen` is still accepted by the host page and counts for
+  1.5 s. A song YouTube really stops at once would look the same.
+  Separately, the studio's main-thread outliers (the 67.6 ms step, the
+  slow events) were the smart playlists rebuilt at every song start, which
+  the reloads multiplied.
+  Fix (`DjPartyTests.testAnEndReportedOneSecondIntoASongDoesNotMakeAutomixLoadAnotherSong`,
+  `testARealEndIsBelievedNearTheEndOrWhenTheLengthIsUnknown`):
+  - `DjEnd.judge` (`FMPackages/DjParty.swift`) believes an end report only
+    within 5 s of the song's length, or when the length is unknown. Any
+    other end report is ignored, so the deck keeps playing and AUTOMIX
+    waits. If it goes on for 3 s while the deck should play, the song counts
+    as failed: it is skipped for the session like a player error, and
+    AUTOMIX loads the next one.
+  - `refreshSmart` builds the lists on a background task, with only the
+    newest result kept. It still runs at once when the studio is created,
+    so a saved smart focus is not dropped.
+  - An audio read is cancelled when its song leaves the deck (load, eject,
+    Reset All), and the cancel reaches the detached download.
+  Gaps closed (`DjVitalsTests.testACommitSliverInMinutesOfBusyTimeStillSaysNotSeenInsteadOfZero`,
+  `testRecentMomentsCoverTheAlertsThirtySecondsNotJustTheLastSixteen`):
+  - moments for a song's end, an ignored end report, a song skipped for
+    one, and an audio read stopped;
+  - `deck load` and `deck start` work kinds, to split a slow automix step;
+  - every moment of the last 30 s, up to 40, where the newest 16 had cut
+    the first reload out of this bundle;
+  - `layout and drawing` prints `not seen` instead of `0` when a sliver of
+    commit time was seen (see Reading the bundle).
+  Ruled out:
+  - heat and Low Power Mode;
+  - the app's named sections (`relay.send.presence` 11 times at 18 ms,
+    `relay.frame`, `surfaces.publish`: 309 ms in 8 minutes, none inside a
+    long frame);
+  - web view scripts (3.5 ms average round trip, 1 of 35 over 16 ms);
+  - waveform draws at the pace (59 a second against 60) and record steps
+    (0.05 ms);
+  - the diagnostics sheet, opened at the end.
+  Not explained: the steady 47 ms of hitches a second over all 8 minutes,
+  outside the reloads too, with the main thread about 25% busy and view
+  updates at their pace. Player ticks were often late (Deck B 267 of 1282
+  over 0.6 s, longest gap 1.02 s; Deck A's longest 1.24 s, one 0.86 s snap)
+  with an idle main thread, which points at the web view's processes.
+  Next check: if the long frames still have an idle main thread with AUTO
+  DJ quiet, measure the web view. `DjPlayerHost.dock` keeps it in the window
+  behind the studio, decoding both decks' video.
 
 ## Adding a check
 
