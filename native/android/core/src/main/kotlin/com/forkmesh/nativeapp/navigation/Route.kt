@@ -171,6 +171,12 @@ sealed class Route {
     data class Coves(val repo: RepoRef?) : Route() { override val kind get() = Kind.Coves }
     data class Cove(val id: String) : Route() { override val kind get() = Kind.Cove }
     data object Calories : Route() { override val kind get() = Kind.Calories }
+    data object Steps : Route() { override val kind get() = Kind.Steps }
+    data object Water : Route() { override val kind get() = Kind.Water }
+    data object Sleep : Route() { override val kind get() = Kind.Sleep }
+    data object SugarBreak : Route() { override val kind get() = Kind.SugarBreak }
+    data object Stretch : Route() { override val kind get() = Kind.Stretch }
+    data object FoodGuide : Route() { override val kind get() = Kind.FoodGuide }
     data object GlassesAlert : Route() { override val kind get() = Kind.GlassesAlert }
     data object PhoneSecurity : Route() { override val kind get() = Kind.PhoneSecurity }
     data class Ember(val repo: RepoRef?) : Route() { override val kind get() = Kind.Ember }
@@ -182,9 +188,11 @@ sealed class Route {
     data object Runners : Route() { override val kind get() = Kind.Runners }
     data object Usage : Route() { override val kind get() = Kind.Usage }
     data object RssReader : Route() { override val kind get() = Kind.RssReader }
+    data object VideoMixDjStudio : Route() { override val kind get() = Kind.VideoMixDjStudio }
     data class InstanceFeed(val post: String?) : Route() { override val kind get() = Kind.InstanceFeed }
     data object SecureDrive : Route() { override val kind get() = Kind.SecureDrive }
     data object Files : Route() { override val kind get() = Kind.Files }
+    data object Nexus : Route() { override val kind get() = Kind.Nexus }
     data object Workflows : Route() { override val kind get() = Kind.Workflows }
     data object LocalAI : Route() { override val kind get() = Kind.LocalAI }
     data object Activity : Route() { override val kind get() = Kind.Activity }
@@ -225,7 +233,9 @@ sealed class Route {
         CrmOrg("crmOrg", "WS19"), Marketing("marketing", "WS19"), Analytics("analytics", "WS19"),
         Competitors("competitors", "WS19"), Ads("ads", "WS19"), Ledger("ledger", "WS19"),
         Vault("vault", "WS21"), Coves("coves", "WS21"), Cove("cove", "WS21"), Calories("calories", "existing"),
-        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Workflows("workflows", "existing"),
+        Steps("steps", "existing"), Water("water", "existing"), Sleep("sleep", "existing"), SugarBreak("sugarBreak", "existing"),
+        Stretch("stretch", "existing"), FoodGuide("foodGuide", "existing"),
+        GlassesAlert("glassesAlert", "existing"), PhoneSecurity("phoneSecurity", "existing"), Ember("ember", "existing"), Strata("strata", "existing"), Synapse("synapse", "existing"), OpenWrtRouter("openWrtRouter", "existing"), FaceChanger("faceChanger", "existing"), AppStoreStatus("appStoreStatus", "WS20"), Runners("runners", "WS7"), VideoMixDjStudio("videoMixDjStudio", "S045"), Usage("usage", "WS10"), RssReader("rssReader", "WS20"), InstanceFeed("instanceFeed", "WS20"), SecureDrive("secureDrive", "WS23"), Files("files", "existing"), Nexus("nexus", "existing"), Workflows("workflows", "existing"),
         LocalAI("localAI", "existing"), Activity("activity", "WS20"),
         Stats("stats", "WS20"), Status("status", "WS20"), Admin("admin", "WS20"),
         Settings("settings", "WS18"), Orgs("orgs", "existing"), Org("org", "existing"), InstalledApps("installedApps", "WS22"),

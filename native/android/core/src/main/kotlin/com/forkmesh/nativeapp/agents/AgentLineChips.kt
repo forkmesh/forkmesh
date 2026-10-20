@@ -7,19 +7,24 @@ enum class AgentListView(val key: String, val caption: String) {
     Compact("compact", "Compact"),
     Zen("zen", "Zen"),
     Full("full", "Full"),
+    Eagle("eagle", "Eagle"),
     ;
 
     val next: AgentListView
         get() = when (this) {
             Compact -> Zen
             Zen -> Full
-            Full -> Compact
+            Full -> Eagle
+            Eagle -> Compact
         }
 
     companion object {
         const val PREF_KEY = "agents/listView"
+        const val EAGLE_DEFAULT_KEY = "agents/listViewEagleDefault"
 
-        fun fromKey(key: String?): AgentListView = entries.firstOrNull { it.key == key } ?: Compact
+        fun fromKey(key: String?): AgentListView = entries.firstOrNull { it.key == key } ?: Eagle
+
+        fun stored(key: String?, eagleDefaulted: Boolean): AgentListView = if (eagleDefaulted) fromKey(key) else Eagle
     }
 }
 

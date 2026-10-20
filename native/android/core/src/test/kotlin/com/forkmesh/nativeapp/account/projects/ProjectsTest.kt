@@ -234,6 +234,8 @@ class ProjectsTest {
         val named = probe.check("relay.example.com")
         assertEq("Connected to Acme Code 1.2.4.", named.message)
         assertEq("https://relay.example.com/instance-logo.png", named.logoUrl)
+        assertEq("Acme Code", named.project!!.label)
+        assertEq("Work", probe.check("relay.example.com", label = "Work").project!!.label)
         instance = response(200, "{\"ok\":true,\"name\":\"Acme Code\",\"logo\":\"//evil.example.com/x.png\"}")
         assertEq("", probe.check("relay.example.com").logoUrl)
         instance = response(404, "")
@@ -241,6 +243,7 @@ class ProjectsTest {
         assertEq(ProbeStatus.ok, older.status)
         assertEq("Connected to ForkMesh 1.2.4.", older.message)
         assertEq("", older.logoUrl)
+        assertEq(older.project!!.id, older.project!!.label)
         expect(!older.branded)
     }
 

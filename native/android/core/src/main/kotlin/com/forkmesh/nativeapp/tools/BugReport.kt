@@ -230,6 +230,7 @@ data class BugReportInboxState(
     fun requesting(status: String = this.status): BugReportInboxState = copy(status = status, loading = true)
 
     fun received(inbox: BugReportInbox, offset: Int): BugReportInboxState {
+        if (inbox.cancelled) return copy(loading = false)
         if (!inbox.ok) {
             return copy(loading = false, loaded = true, problem = inbox.message,
                 reports = if (offset == 0) emptyList() else reports, nextOffset = null)
@@ -245,5 +246,5 @@ data class BugReportInboxState(
     }
 }
 
-fun loadBugReportInbox(api: ApiService?, status: String, offset: Int = 0): BugReportInbox =
-    api?.bugReportInbox(status, offset) ?: BugReportInbox.failure(BugReportInboxCopy.UNAVAILABLE)
+fun loadBugReportInbox(api: ApiService?, status: String, offset: Int = 0, limit: Int = 0): BugReportInbox =
+    api?.bugReportInbox(status, offset, limit) ?: BugReportInbox.failure(BugReportInboxCopy.UNAVAILABLE)

@@ -367,6 +367,21 @@ class ChatExtrasTest {
         }
     }
 
+    fun testANotificationOpenAsksTheScreenToRevealTheConversation() {
+        val (hub, relay) = hubWith()
+        var reveals = 0
+        hub.onReveal = { reveals++ }
+        assertEq(0, hub.revealRequests)
+        hub.select("#random")
+        assertEq(0, hub.revealRequests, "picking a room inside Chat reveals nothing")
+        hub.switchConversation("#random")
+        assertEq(1, hub.revealRequests, "the same room opened from a notification still closes what covers it")
+        hub.switchConversation("#ops")
+        assertEq(2, hub.revealRequests)
+        assertEq(2, reveals)
+        assertEq("#ops", relay.currentConversation)
+    }
+
     fun testSlashCommandsAreHandledBeforeSending() {
         val (hub, _) = hubWith()
         val notices = ArrayList<String>()
@@ -396,7 +411,7 @@ class ChatExtrasTest {
         assertEq(snapshot, ChatHistoryCodec.decode(ChatHistoryCodec.encode(snapshot)))
         expect(ChatHistoryCodec.scopeName("a", "b") != ChatHistoryCodec.scopeName("a", "c"))
         assertEq("af63f14c8602103b", ChatHistoryCodec.scopeName("", ""))
-        assertEq(null, ChatHistoryCodec.decode("{\"v\":2}"))
+        assertEq(null, ChatHistoryCodec.decode("{\"v\":0}"))
     }
 
     fun testReactionCatalogTranslatesBothWays() {

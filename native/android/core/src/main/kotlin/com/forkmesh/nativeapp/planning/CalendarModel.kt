@@ -17,6 +17,7 @@ class CalendarModel(
     val firstWeekday: Int = WeekFields.of(Locale.getDefault()).firstDayOfWeek.value % 7 + 1,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    @Volatile
     var events: List<CalendarEvent> = emptyList()
         private set
     var calendars: List<CalendarInfo> = listOf(CalendarInfo("personal", "Personal", "personal"))
@@ -28,6 +29,12 @@ class CalendarModel(
         private set
     val hiddenCalendars: MutableSet<String> = linkedSetOf()
     private var loadedRange: CalendarRange? = null
+    private val lock = Any()
+    private var loadToken = 0
+    private var revision = 0
+    private val localChanges = ArrayList<LocalChange>()
+
+    private class LocalChange(val revision: Int, val id: String, val event: CalendarEvent?)
 
     val range: CalendarRange get() = CalendarMath.range(mode, anchor, firstWeekday, zone)
 
@@ -84,9 +91,16 @@ class CalendarModel(
         val wanted = range
         val start = CalendarMath.addDays(wanted.start, -31, zone)
         val end = CalendarMath.addDays(wanted.end, 31, zone)
+        val (token, seen) = synchronized(lock) {
+            loadToken++
+            loadToken to revision
+        }
         try {
             val data = api.accountApiCall("GET", "/api/calendar?start=$start&end=$end", null)
-            events = data.maps("events").take(500).mapNotNull(CalendarEvent::fromJson)
+            synchronized(lock) {
+                if (token != loadToken) return
+                events = merged(data.maps("events").take(500).mapNotNull(CalendarEvent::fromJson), seen)
+            }
             val infos = data.maps("calendars").mapNotNull { map ->
                 val id = map.str("id", map.str("name"))
                 if (id.isEmpty()) null else CalendarInfo(id, map.str("name", id), map.str("scope"), map.str("role"))
@@ -96,8 +110,30 @@ class CalendarModel(
             loadedRange = CalendarRange(start, end)
             error = null
         } catch (thrown: Exception) {
-            error = PlanningErrors.text(thrown, "The calendar could not be loaded.")
+            synchronized(lock) {
+                if (token != loadToken) return
+                error = PlanningErrors.text(thrown, "The calendar could not be loaded.")
+            }
         }
+    }
+
+    private fun merged(server: List<CalendarEvent>, seen: Int): List<CalendarEvent> {
+        localChanges.removeAll { it.revision <= seen }
+        var result = server
+        for (change in localChanges) {
+            result = result.filter { it.id != change.id }
+            change.event?.let { result = result + it }
+        }
+        return result
+    }
+
+    private fun recordChange(id: String, event: CalendarEvent?) {
+        revision++
+        localChanges.add(LocalChange(revision, id, event))
+    }
+
+    fun clearError() {
+        error = null
     }
 
     fun event(id: String): CalendarEvent? = events.firstOrNull { it.id == id }
@@ -109,7 +145,7 @@ class CalendarModel(
         }
         try {
             val data = api.accountApiCall("GET", "/api/calendar/$id", null)
-            upsert(data)
+            upsert(data, local = false)
             if (actor.isEmpty()) actor = data.str("actor").lowercase()
             error = null
         } catch (thrown: Exception) {
@@ -142,9 +178,12 @@ class CalendarModel(
         null
     }
 
-    private fun upsert(data: JsonMap): CalendarEvent? {
+    private fun upsert(data: JsonMap, local: Boolean = true): CalendarEvent? {
         val event = data.obj("event").takeIf { it.isNotEmpty() }?.let(CalendarEvent::fromJson) ?: return null
-        events = events.filter { it.id != event.id } + event
+        synchronized(lock) {
+            events = events.filter { it.id != event.id } + event
+            if (local) recordChange(event.id, event)
+        }
         return event
     }
 
@@ -163,7 +202,10 @@ class CalendarModel(
 
     fun delete(id: String): Boolean {
         if (!validId(id) || mutate("DELETE", "/api/calendar/$id", null, "The event was not deleted.") == null) return false
-        events = events.filter { it.id != id }
+        synchronized(lock) {
+            events = events.filter { it.id != id }
+            recordChange(id, null)
+        }
         return true
     }
 
@@ -171,10 +213,13 @@ class CalendarModel(
         if (!validId(id) || status !in listOf("accepted", "declined", "tentative")) return false
         val data = mutate("POST", "/api/calendar/$id/rsvp", mapOf("status" to status), "Your answer was not sent.") ?: return false
         if (upsert(data) == null) {
-            events = events.map { event ->
-                if (event.id != id) event else event.copy(
-                    attendees = event.attendees.map { if (it.name.lowercase() == actor) it.copy(status = status) else it },
-                )
+            synchronized(lock) {
+                events = events.map { event ->
+                    if (event.id != id) event else event.copy(
+                        attendees = event.attendees.map { if (it.name.lowercase() == actor) it.copy(status = status) else it },
+                    )
+                }
+                event(id)?.let { recordChange(id, it) }
             }
         }
         return true

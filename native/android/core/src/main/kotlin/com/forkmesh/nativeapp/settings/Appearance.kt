@@ -7,6 +7,8 @@ object AppearanceKeys {
     const val SURFACE = "appearance/surface"
     const val READABLE_COLORS = "appearance/readableColors"
     const val THEME_COLORS = "appearance/themeColors"
+    const val BACKGROUND_IMAGE = "appearance/backgroundImage"
+    const val BACKGROUND_DIM = "appearance/backgroundDim"
 }
 
 enum class ThemeModeChoice(val label: String) {
@@ -56,7 +58,11 @@ enum class AccentChoice(
     }
 }
 
-data class Appearance(val themeMode: ThemeModeChoice = ThemeModeChoice.system, val theme: AppTheme = AppTheme.standard) {
+data class Appearance(
+    val themeMode: ThemeModeChoice = ThemeModeChoice.system,
+    val theme: AppTheme = AppTheme.standard,
+    val wallpaper: Wallpaper = Wallpaper(),
+) {
     val accent: AccentChoice get() = theme.accent
 
     fun isDark(systemDark: Boolean): Boolean = themeMode.isDark(systemDark)
@@ -64,8 +70,14 @@ data class Appearance(val themeMode: ThemeModeChoice = ThemeModeChoice.system, v
     companion object {
         fun read(get: (String) -> String?): Appearance = read(get) { get(it)?.toBooleanStrictOrNull() }
 
-        fun read(get: (String) -> String?, getBool: (String) -> Boolean?): Appearance =
-            Appearance(ThemeModeChoice.fromName(get(AppearanceKeys.THEME_MODE)), readTheme(get, getBool))
+        fun read(get: (String) -> String?, getBool: (String) -> Boolean?): Appearance = read(get, getBool) { null }
+
+        fun read(get: (String) -> String?, getBool: (String) -> Boolean?, getDouble: (String) -> Double?): Appearance =
+            Appearance(
+                ThemeModeChoice.fromName(get(AppearanceKeys.THEME_MODE)),
+                readTheme(get, getBool),
+                Wallpaper.read(get, getDouble),
+            )
 
         fun readTheme(get: (String) -> String?, getBool: (String) -> Boolean?): AppTheme {
             val accentName = get(AppearanceKeys.ACCENT)

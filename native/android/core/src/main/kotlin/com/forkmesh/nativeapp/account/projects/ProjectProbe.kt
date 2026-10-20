@@ -99,16 +99,18 @@ class ProjectProbe(
         if (!features.hasCore) return ProbeResult(ProbeStatus.missingCore, statusCode = response.status, features = features)
         val rev = (body["rev"] ?: "").toString()
         val instance = describe(candidate)
+        val instanceName = (instance["name"] as? String).orEmpty().trim()
+        val label = if (candidate.label == candidate.id && instanceName.isNotEmpty()) instanceName else candidate.label
         return ProbeResult(
             status = ProbeStatus.ok,
             statusCode = response.status,
             rev = rev,
             version = (body["version"] ?: "").toString(),
             features = features,
-            instanceName = (instance["name"] as? String).orEmpty().trim(),
+            instanceName = instanceName,
             logoUrl = logoUrl(candidate, instance),
             branded = instance["branded"] == true,
-            project = candidate.copy(verifiedAt = clock(), verifiedRev = rev, features = features),
+            project = candidate.copy(label = label, verifiedAt = clock(), verifiedRev = rev, features = features),
         )
     }
 

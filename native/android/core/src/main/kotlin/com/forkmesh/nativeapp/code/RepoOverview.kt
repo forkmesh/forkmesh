@@ -114,7 +114,7 @@ class RepoOverviewModel(repo: Repository, private val client: RepoOverviewClient
         return try {
             when (section) {
                 RepoHubSection.Issues -> api.issues(owner, name).count { it.isOpen }
-                RepoHubSection.Pulls -> api.pulls(owner, name).count { it.status == "open" }
+                RepoHubSection.Pulls -> api.pulls(owner, name).count { it.isOpen }
                 RepoHubSection.Commits -> api.commits(owner, name).size
                 RepoHubSection.Branches -> api.branches(owner, name).size
                 RepoHubSection.Releases -> api.releases(owner, name).size

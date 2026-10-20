@@ -59,6 +59,9 @@ class PerformanceMonitorService(
     @Volatile
     var onHeartbeatLag: ((Long) -> Unit)? = null
 
+    @Volatile
+    var screenName: (() -> String)? = null
+
     val stallCount: Int get() = synchronized(lock) { stalls }
 
     val events: List<PerformanceEvent> get() = synchronized(lock) { recorded.toList() }
@@ -215,7 +218,11 @@ class PerformanceMonitorService(
     ) {
         val floorMs = if (kind == PerformanceEventKind.Operation) thresholdMs else stallThresholdMs
         if (!enabled || durationMicros < floorMs * 1000) return
-        val event = PerformanceEvent(kind, name, durationMicros, now(), java.util.Collections.unmodifiableMap(LinkedHashMap(details)), stackTrace)
+        val merged = LinkedHashMap(details)
+        if (kind != PerformanceEventKind.Operation && !merged.containsKey("screen")) {
+            currentScreen()?.let { merged["screen"] = it }
+        }
+        val event = PerformanceEvent(kind, name, durationMicros, now(), java.util.Collections.unmodifiableMap(merged), stackTrace)
         synchronized(lock) {
             if (event.isStall) stalls++
             recorded.add(0, event)
@@ -223,6 +230,15 @@ class PerformanceMonitorService(
         }
         log(event)
         notifyListeners()
+    }
+
+    private fun currentScreen(): String? {
+        val source = screenName ?: return null
+        return try {
+            source().takeIf { it.isNotEmpty() }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun clear() {

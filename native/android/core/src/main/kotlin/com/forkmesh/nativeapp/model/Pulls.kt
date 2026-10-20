@@ -71,4 +71,6 @@ data class PublishedPull(
     val signed: Boolean = false,
     val events: List<PullEvent> = emptyList(),
     val branchBacked: Boolean = false,
-)
+) {
+    val isOpen: Boolean get() = status != "closed" && status != "merged"
+}
