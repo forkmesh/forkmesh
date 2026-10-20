@@ -54,6 +54,14 @@ class GeneralSettingsScreen : Screen() {
                     }
                 }
             }
+            item { SettingsCard("Genie") { com.forkmesh.nativeapp.feature.genie.GenieSpiderSwitchRow() } }
+            item {
+                SettingsCard("Suggestion mode") {
+                    com.forkmesh.nativeapp.feature.genie.SuggestionModeRow()
+                    com.forkmesh.nativeapp.feature.genie.SuggestionModeNote()
+                    com.forkmesh.nativeapp.feature.pocket.PocketModeRow(onClose = {})
+                }
+            }
         }
     }
 }

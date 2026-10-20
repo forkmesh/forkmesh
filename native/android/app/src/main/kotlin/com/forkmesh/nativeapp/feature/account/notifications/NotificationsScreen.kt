@@ -281,7 +281,7 @@ private fun NotificationFilterChip(label: String, selected: Boolean, onSelected:
         label = {
             Text(
                 label,
-                style = TextStyle(fontSize = FmType.small, fontWeight = if (selected) FmType.emphasis else FmType.regular),
+                style = TextStyle(fontFamily = FmType.ui, fontSize = FmType.small, fontWeight = if (selected) FmType.emphasis else FmType.regular),
             )
         },
         shape = RoundedCornerShape(FmRadius.sm),

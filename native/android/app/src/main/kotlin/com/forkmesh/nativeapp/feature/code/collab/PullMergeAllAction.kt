@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code.collab
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.collab.PullMergeAllConfirmation
 import com.forkmesh.nativeapp.collab.PullMergeAllRemote
 import com.forkmesh.nativeapp.collab.PullMergeAllResult
@@ -24,12 +25,7 @@ internal suspend fun CollabEnv.mergeAllPullsWithAi(repo: Repository) {
         status.error(PullMergeAllRemote.message(error))
         return
     }
-    val confirmed = messenger.showConfirmDialog(
-        "${PullMergeAllRules.TITLE}?",
-        body = confirmation.summary,
-        confirmLabel = "Merge all",
-        destructive = true,
-    )
+    val confirmed = messenger.confirmAction(PullMergeAllRules.TITLE, PullMergeAllRules.TITLE, confirmation.summary)
     if (!confirmed) return
     status.show("Asking the desktop to start the merge agent…")
     val result: PullMergeAllResult = try {

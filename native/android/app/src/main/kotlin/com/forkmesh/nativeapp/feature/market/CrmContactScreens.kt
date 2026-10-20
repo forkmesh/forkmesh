@@ -149,7 +149,7 @@ class ContactScreen(private val ref: CrmContactRef) : Screen() {
         @Suppress("UNUSED_EXPRESSION") CrmRevision.value
         val data = model.data
         val contact = model.contact(ref.contactId)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             val plugin = rememberScreenPluginMenu()
             ToolsAppBar(contact?.displayName ?: "Contact", navigator, pluginMenu = contact == null) {
                 if (contact != null) {
@@ -379,7 +379,7 @@ class ContactEditorScreen(private val model: CrmModel, private val original: Crm
         val scope = rememberCoroutineScope()
         val runner = remember { CrmRunner(scope, model) }
         val data = model.data
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator) {
                 FmTextButton(onClick = {
                     val next = edit.copy(value = value.trim().toLongOrNull() ?: 0)
@@ -476,7 +476,7 @@ class CrmMergeScreen(private val model: CrmModel, private val contact: CrmContac
         val duplicates = data.duplicatesOf(contact)
         val others = data.contacts.filter { it.id != contact.id && it !in duplicates && it.matches(query) }
         val candidates = if (query.isEmpty()) duplicates + others.take(40) else duplicates.filter { it.matches(query) } + others
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Merge ${contact.displayName}", navigator)
             Text(
                 "Its details fill the blanks of the contact you keep, its email history and deck links move over, and then it is deleted.",
@@ -513,7 +513,7 @@ class CrmOwnerScreen(private val model: CrmModel, private val ids: List<String>)
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
         val runner = remember { CrmRunner(scope, model) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Owner of ${ids.size} contact${if (ids.size == 1) "" else "s"}", navigator) {
                 FmTextButton(onClick = { runner.run({ bulk(CrmBulkAction.Owner(owner.trim()), ids) }) { ok -> if (ok) navigator.pop() } }) { Text("Apply") }
             }
@@ -546,7 +546,7 @@ class CrmEmailScreen(private val model: CrmModel, private val email: CrmActivity
             fetched = true
         }
         val shown = detail ?: email
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Email", navigator) {
                 if (shown.providerUrl.startsWith("https://")) FmIconButton("open_in_new", "Open in mailbox", onPressed = { crmOpen(context, shown.providerUrl) }, color = Fm.colors.textPrimary)
                 Box {
@@ -626,7 +626,7 @@ class CrmComposeScreen(private val model: CrmModel, start: CrmEmailDraft, outrea
             "outreach" -> draft.isValid && (outreach?.remaining ?: 0) > 0
             else -> draft.isValid
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(contact?.let { "Email ${it.displayName}" } ?: "New email", navigator) {
                 FmTextButton(onClick = {
                     when (mode) {

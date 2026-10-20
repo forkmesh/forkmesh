@@ -1473,6 +1473,45 @@ int main(int argc, char *argv[])
               "a never-pushed branch is kept against the served listing");
     }
 
+    {
+        const QString repo = root.filePath(QStringLiteral("restore-deleted"));
+        QDir().mkpath(repo);
+        check(git(repo, {QStringLiteral("init"), QStringLiteral("-q"),
+                         QStringLiteral("-b"), QStringLiteral("main")}) &&
+                  commitFile(repo, QStringLiteral("a.txt"),
+                             QByteArrayLiteral("a\n"), QStringLiteral("base")),
+              "seed the restore repository");
+        const QString branch = QStringLiteral("2368-agent-branch");
+        const QString tombstone =
+            forkmesh::upstream::deletedBranchTombstoneRef(branch);
+        check(git(repo, {QStringLiteral("checkout"), QStringLiteral("-q"),
+                         QStringLiteral("-b"), branch}) &&
+                  commitFile(repo, QStringLiteral("b.txt"),
+                             QByteArrayLiteral("b\n"), QStringLiteral("work")) &&
+                  git(repo, {QStringLiteral("checkout"), QStringLiteral("-q"),
+                             QStringLiteral("main")}),
+              "commit agent work on its branch");
+        const QString work = revParse(repo, branch);
+        check(git(repo, {QStringLiteral("update-ref"), tombstone, work}) &&
+                  git(repo, {QStringLiteral("branch"), QStringLiteral("-D"),
+                             branch}),
+              "delete the agent branch behind a tombstone");
+        check(forkmesh::upstream::restoreDeletedBranch(repo, branch) == work,
+              "restoring returns the tombstoned tip");
+        check(revParse(repo, QStringLiteral("refs/heads/") + branch) == work,
+              "the agent branch is back at its deleted tip");
+        check(revParse(repo, tombstone).isEmpty(),
+              "the tombstone is cleared so the sync keeps the branch");
+        check(forkmesh::upstream::restoreDeletedBranch(repo, branch).isEmpty(),
+              "a branch that already exists is left alone");
+        check(forkmesh::upstream::restoreDeletedBranch(
+                  repo, QStringLiteral("never-deleted"))
+                  .isEmpty() &&
+                  revParse(repo, QStringLiteral("refs/heads/never-deleted"))
+                      .isEmpty(),
+              "a branch without a tombstone is not invented");
+    }
+
     if (failures == 0)
         std::printf("test_upstream_checkout_sync: all checks passed\n");
     return failures == 0 ? 0 : 1;

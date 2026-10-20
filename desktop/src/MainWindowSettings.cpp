@@ -4502,7 +4502,7 @@ void MainWindow::showAgentRecycleBinDialog()
                 const QList<int> ids = selectedIds();
                 int restored = 0;
                 for (int id : ids) {
-                    if (m_agentStore->restoreRecycledSession(id))
+                    if (restoreRecycledAgentSession(id))
                         restored += 1;
                 }
                 if (restored > 0) {

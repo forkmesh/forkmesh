@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.codeinsight
 
 import androidx.compose.animation.core.Animatable
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -376,8 +377,8 @@ private fun StrataGraphCanvas(model: StrataModel, state: StrataPageState, contex
     val fills = remember(scene, colorBy) {
         scene.items.map { if (it.module) strataModuleColor(model, it.index, colorBy) else strataFileColor(model, it.index, colorBy) }
     }
-    val titleStyle = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-    val captionStyle = TextStyle(fontSize = 10.sp)
+    val titleStyle = TextStyle(fontFamily = FmType.ui, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+    val captionStyle = TextStyle(fontFamily = FmType.ui, fontSize = 10.sp)
     val titles = remember(scene) { HashMap<Int, TextLayoutResult>() }
     val captions = remember(scene) { HashMap<Int, TextLayoutResult>() }
     fun hit(p: Offset): Int {

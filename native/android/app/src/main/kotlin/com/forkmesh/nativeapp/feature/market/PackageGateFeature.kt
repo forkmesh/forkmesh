@@ -6,6 +6,7 @@ import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.api.PrefStore
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AuthService
+import com.forkmesh.nativeapp.feature.aquarium.AquariumFeature
 import com.forkmesh.nativeapp.feature.insights.StatusPageFeature
 import com.forkmesh.nativeapp.market.OrgPackageState
 import com.forkmesh.nativeapp.market.PackageGate
@@ -144,5 +145,6 @@ object PackageGateFeature {
 
     fun publish() {
         surfacesState.value = PackageSurfaces.of(::isInstalled)
+        AquariumFeature.refresh()
     }
 }

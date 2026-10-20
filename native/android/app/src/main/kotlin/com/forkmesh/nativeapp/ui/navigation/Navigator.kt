@@ -2,9 +2,6 @@ package com.forkmesh.nativeapp.ui.navigation
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -119,19 +116,18 @@ fun NavigatorHost(navigator: Navigator, onExit: () -> Unit) {
     BackHandler {
         if (!navigator.handleBack()) onExit()
     }
-    var lastDepth = navigator.depth
     AnimatedContent(
         targetState = navigator.top,
         transitionSpec = {
-            val forward = navigator.depth >= lastDepth
-            lastDepth = navigator.depth
-            val duration = FmMotion.normal
+            val from = navigator.stack.indexOf(initialState)
+            val to = navigator.stack.indexOf(targetState)
+            val forward = from >= 0 && (to > from || to < 0)
             if (forward) {
-                (slideInHorizontally(tween(duration)) { it / 4 } + fadeIn(tween(duration))) togetherWith
-                    fadeOut(tween(duration))
+                (slideInHorizontally(FmMotion.push()) { it } togetherWith slideOutHorizontally(FmMotion.push()) { -it * 3 / 10 })
+                    .apply { targetContentZIndex = 1f }
             } else {
-                fadeIn(tween(duration)) togetherWith
-                    (slideOutHorizontally(tween(duration)) { it / 4 } + fadeOut(tween(duration)))
+                (slideInHorizontally(FmMotion.push()) { -it * 3 / 10 } togetherWith slideOutHorizontally(FmMotion.push()) { it })
+                    .apply { targetContentZIndex = -1f }
             }
         },
         label = "navigator",

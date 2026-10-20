@@ -114,21 +114,50 @@ class DirectMessagesTest {
         val ref = OfficeFrames.sentRef(r.socket.sent.last())
         val first = r.dm.messages(r.conversation).single().id
         assertEq(ChatReceipt.SENDING, r.hub.rows(r.conversation).single().receipt)
+        expect(r.dm.receiptTime(first).isEmpty)
         r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1, "ref" to ref, "recipients" to 2)))
         assertEq(ChatReceipt.SENT, r.dm.receipt(first))
+        expect(r.dm.receiptTime(first).isEmpty)
         r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf("f".repeat(40)))))
         assertEq(ChatReceipt.SENT, r.dm.receipt(first))
         r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-delivered", "v" to 1, "refs" to listOf(ref, "nope"))))
         assertEq(ChatReceipt.DELIVERED, r.hub.rows(r.conversation).single().receipt)
         r.socket.onText(Json.stringify(mapOf("kind" to "forkmesh-recipients", "v" to 1, "ref" to ref, "recipients" to 2)))
         assertEq(ChatReceipt.DELIVERED, r.dm.receipt(first))
+        val deliveredAt = r.dm.receiptTime(first).delivered!!
+        assertEq(null, r.dm.receiptTime(first).read)
         expect(r.dm.send(r.conversation, "second"))
         val second = r.dm.messages(r.conversation).last().id
         r.socket.onText("""{"kind":"forkmesh-read","v":1}""")
         assertEq(ChatReceipt.READ, r.dm.receipt(first))
+        assertEq(deliveredAt, r.dm.receiptTime(first).delivered, "reading keeps the delivered time")
+        expect(r.dm.receiptTime(first).read!! >= deliveredAt)
+        assertEq(r.dm.receiptTime(first), r.hub.receiptTimes(r.dm.messages(r.conversation).first()))
         assertEq(ChatReceipt.SENDING, r.dm.receipt(second))
+        expect(r.dm.receiptTime(second).isEmpty)
         r.fromPeer(peerChat("pat-1", "hello"), "a".repeat(40))
         assertEq(null, r.hub.rows(r.conversation).first { it.message.id == "pat-1" }.receipt)
+    }
+
+    fun testMessagingAUsernameFromOutsideChatOpensTheirAccountDirectMessage() {
+        val api = FakeAccountApi()
+        api.replies["POST /api/chat/direct-messages"] = mapOf("ok" to true, "conversation" to mapOf("id" to conversationId, "otherUser" to "pat"))
+        val dm = service(api, FakeOfficeConnector())
+        val relay = FakeChatRelay()
+        val hub = ChatHub(relay)
+        hub.direct = dm
+        hub.switchConversation("@Pat")
+        assertEq("direct:$conversationId", hub.currentConversation)
+        assertEq(1, hub.revealRequests)
+        assertEq(listOf<Any?>("pat"), api.calls.filter { it.first == "POST" && it.second == "/api/chat/direct-messages" }.map { it.third?.get("username") })
+        hub.select("#general")
+        hub.switchConversation("@pat")
+        assertEq("direct:$conversationId", hub.currentConversation)
+        assertEq(1, api.calls.count { it.first == "POST" && it.second == "/api/chat/direct-messages" })
+        relay.peers.add(com.forkmesh.nativeapp.model.Member(id = "peer-9", name = "Pat", online = true, owner = "pat"))
+        hub.switchConversation("@peer-9")
+        assertEq("@peer-9", hub.currentConversation)
+        dm.closeAll()
     }
 
     fun testOwnFramesComingBackFromTheRelayAreIgnored() {

@@ -108,9 +108,11 @@ internal class RssArticleScreen(
         val feed = remember(version, article?.feedId) { article?.let { library?.feed(it.feedId) } }
         val order = ids()
         val index = order.indexOf(currentId)
+        val unread = remember(version, scope) { library?.counts(System.currentTimeMillis())?.of(scope) ?: 0 }
         RssScaffold(
             feed?.displayTitle ?: "",
             navigator,
+            unread = unread,
             actions = {
                 FmIconButton("keyboard_arrow_up", "Previous Article", onPressed = if (index > 0) ({ open(order[index - 1], -1) }) else null, iconSize = 28.dp)
                 FmIconButton("keyboard_arrow_down", "Next Article", onPressed = if (index >= 0 && index < order.size - 1) ({ open(order[index + 1]) }) else null, iconSize = 28.dp)

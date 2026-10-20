@@ -299,6 +299,25 @@ class OfficeChannelService(
 
     fun receipt(messageId: String): ChatReceipt? = synchronized(lock) { if (messageId in sendingIds) ChatReceipt.SENDING else null }
 
+    fun historySnapshot(): Map<String, List<ChatMessage>> = synchronized(lock) { HashMap(history) }
+
+    fun restore(messages: List<ChatMessage>) {
+        val changed = synchronized(lock) {
+            var any = false
+            for (message in messages) {
+                if (!OfficeFrames.isOffice(message.conversation)) continue
+                val list = history[message.conversation].orEmpty()
+                if (list.any { it.id == message.id }) continue
+                var next = insertSorted(list, message).toList()
+                if (next.size > OfficeFrames.MAX_MESSAGES_PER_ROOM) next = next.takeLast(OfficeFrames.MAX_MESSAGES_PER_ROOM)
+                history[message.conversation] = next
+                any = true
+            }
+            any
+        }
+        if (changed) notifyListeners()
+    }
+
     fun isConnected(conversation: String): Boolean {
         val room = room(conversation) ?: return false
         return synchronized(lock) { sockets[room.id]?.socket != null }
@@ -438,7 +457,13 @@ class OfficeChannelService(
             message.recipients?.let { setRecipients(it, message.id, message.conversation) }
             return@synchronized false
         }
-        var list = insertSorted(history[message.conversation].orEmpty(), message).toList()
+        val current = history[message.conversation].orEmpty()
+        val restored = current.indexOfFirst { it.id == message.id }
+        if (restored >= 0) {
+            history[message.conversation] = current.toMutableList().also { it[restored] = message }
+            return@synchronized false
+        }
+        var list = insertSorted(current, message).toList()
         if (list.size > OfficeFrames.MAX_MESSAGES_PER_ROOM) list = list.takeLast(OfficeFrames.MAX_MESSAGES_PER_ROOM)
         history[message.conversation] = list
         true

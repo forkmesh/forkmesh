@@ -127,7 +127,7 @@ internal class StatsScreen : Screen() {
             }
         }
         LaunchedEffect(model) { reload() }
-        DetailScaffold(title, navigator, actions = {
+        DetailScaffold(title, navigator, largeTitle = true, actions = {
             FmIconButton(if (editing) "check" else "edit", if (editing) "Done" else "Edit", onPressed = { editing = !editing }, color = c.textPrimary)
             FmIconButton("refresh", "Refresh", onPressed = { reload() }, color = c.textPrimary)
         }) {
@@ -268,7 +268,7 @@ internal class StatusScreen : Screen() {
             }
         }
         LaunchedEffect(Unit) { reload() }
-        DetailScaffold(title, navigator, actions = { FmIconButton("refresh", "Refresh", onPressed = { reload() }, color = c.textPrimary) }) {
+        DetailScaffold(title, navigator, largeTitle = true, actions = { FmIconButton("refresh", "Refresh", onPressed = { reload() }, color = c.textPrimary) }) {
             LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                 val value = report.valueOrNull
                 when {
@@ -371,7 +371,7 @@ internal class NetworkScreen(initial: NetworkSection) : Screen() {
             }
         }
         LaunchedEffect(Unit) { reload() }
-        DetailScaffold(title, navigator, actions = { FmIconButton("refresh", "Refresh", onPressed = { reload() }, color = c.textPrimary) }) {
+        DetailScaffold(title, navigator, largeTitle = true, actions = { FmIconButton("refresh", "Refresh", onPressed = { reload() }, color = c.textPrimary) }) {
             Column(Modifier.fillMaxSize()) {
                 FmSegmentTabBar(NetworkSection.entries.map { FmSegmentTab(it.title) }, section.ordinal, onChanged = { section = NetworkSection.entries[it] })
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {

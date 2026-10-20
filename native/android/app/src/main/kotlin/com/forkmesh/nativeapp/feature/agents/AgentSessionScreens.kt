@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.feature.agents
 
+import com.forkmesh.nativeapp.ui.kit.FmSheetAction
+import com.forkmesh.nativeapp.ui.kit.showActionSheet
 import com.forkmesh.nativeapp.ci.RepoRef
 import com.forkmesh.nativeapp.composer.PromptDraftStore
 import androidx.compose.foundation.layout.Arrangement
@@ -475,12 +477,12 @@ internal class LaunchedAgentSessionScreen(
         }
         val drop: () -> Unit = {
             run {
-                val confirmed = messenger.showConfirmDialog(
-                    "Drop this session?",
-                    "The queue entry and its record here go away. Work already running on the node keeps going there.",
-                    confirmLabel = "Drop",
-                    destructive = true,
-                )
+                val confirmed = messenger.showActionSheet(
+                    title = "Drop this session?",
+                    message = "The queue entry and its record here go away. Work already running on the node keeps going there.",
+                    actions = listOf(FmSheetAction("Drop", destructive = true)),
+                    cancelLabel = "Keep",
+                ) == 0
                 if (confirmed) {
                     withContext(Dispatchers.IO) { AgentsFeature.queue.cancel(repo.owner, repo.name, session.sessionId, session.orgScope) }
                     navigator.pop()

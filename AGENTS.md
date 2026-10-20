@@ -72,6 +72,16 @@ comments or docstrings. Put the reason for a change in the matching
 lines, build tags and `//go:embed`, lint/type directives, license headers,
 build markers in templates, and user-facing help or UI text.
 
+## Phone apps: register iOS changes for Android
+
+New phone features and UI changes land in `native/ios` first. A pull request
+that changes something an iPhone user can see (a feature, a UI change, a
+noticeable fix) also adds a row to `docs/native/SYNC.md` with
+`python3 tools/native_sync.py add <sha> "<one plain sentence>" --area <Area> --kind feature|ui|fix`.
+Android work takes `pending` rows, builds them to look and behave like iOS
+(the same Liquid Glass theme), and closes them with
+`python3 tools/native_sync.py mark <ID> --synced <android-sha>`.
+
 ## Web dashboard styling
 
 Before building or restyling any dashboard page, read

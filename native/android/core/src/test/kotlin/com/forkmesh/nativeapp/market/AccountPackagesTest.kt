@@ -315,4 +315,40 @@ class AccountPackagesTest {
         expect(CommandPalette.sections("status", context).flatMap { it.entries }.none { it.command == open })
         assertEq(listOf<PaletteCommand>(PaletteCommand.Open(Route.Notes)), CommandPalette.sections("", context).first { it.id == "recent" }.entries.map { it.command })
     }
+
+    fun testUpdateDotsFollowSeenAndLatestVersions() {
+        val prefs = MemoryPrefStore()
+        val store = AccountPackagesStore(null, prefs)
+        expect(store.updated.isEmpty(), "no catalog, no dots")
+        store.rememberCatalog(listOf(MarketPackage(id = "crm", name = "CRM", version = "1.38.0"), MarketPackage(id = "notes", name = "Notes", version = "2.0.0")))
+        assertEq(setOf("crm", "notes"), store.updated)
+        expect(store.isUpdated("crm"), "never opened counts as updated")
+        store.markViewed("crm")
+        assertEq(setOf("notes"), store.updated)
+        store.rememberCatalog(listOf(MarketPackage(id = "crm", name = "CRM", version = "1.39.0")))
+        assertEq(setOf("crm", "notes"), store.updated)
+        store.markAllViewed()
+        expect(store.updated.isEmpty(), "all viewed")
+        expect(store.canShowUpdates, "dots can be shown again")
+        store.markAllUnviewed()
+        assertEq(setOf("crm", "notes"), store.updated)
+        val again = AccountPackagesStore(null, prefs)
+        assertEq(setOf("crm", "notes"), again.updated)
+        expect(prefs.getString(AccountPackagesStore.VERSIONS_KEY).orEmpty().contains("\"latest\""), "stored under packages/versions")
+    }
+
+    fun testUpdateDotsMapHubItemsToPackages() {
+        val store = AccountPackagesStore(null, MemoryPrefStore())
+        val crmKind = PackageGate.ROUTE_KINDS.entries.first { it.value == "crm" }.key
+        store.rememberCatalog(listOf(MarketPackage(id = "crm", name = "CRM", version = "1.0.0")))
+        expect(store.isUpdated("crm-hub-item", crmKind), "a hub item maps to its package by route")
+        store.markViewed("crm-hub-item", crmKind)
+        expect(!store.isUpdated("crm"), "viewing the hub item marks the package")
+        expect(store.canMarkUpdated("crm-hub-item", crmKind), "a viewed package can show its dot again")
+    }
+
+    fun testVersionMapIgnoresBadEntries() {
+        assertEq(mapOf("crm" to "1.0.0"), AccountPackagesStore.versionMap(mapOf("crm" to "1.0.0", "bad id" to "1.0.0", "notes" to "", "x" to 3)))
+        assertEq(setOf("b"), AccountPackagesStore.changed(mapOf("a" to "1"), mapOf("a" to "1", "b" to "2")))
+    }
 }

@@ -239,7 +239,11 @@ def clean_fields(data, partial=False):
     if "description" in data or not partial:
         description = str(data.get("description") or "")
         description = description.replace("\r\n", "\n").replace("\r", "\n")
-        if len(description.encode("utf-8")) > DESCRIPTION_MAX:
+        try:
+            size = len(description.encode("utf-8"))
+        except UnicodeEncodeError:
+            return None, "invalid_text"
+        if size > DESCRIPTION_MAX:
             return None, "description_too_large"
         out["description"] = description.strip("\n")
     if "severity" in data or not partial:
@@ -643,11 +647,11 @@ async def _email_security_contact(env, ctx, record):
     severity = (record.get("severity") or {}).get("level") or "not set"
     text = (
         "A private vulnerability report was filed against %s.\n\n"
-        "Advisory: %s\nReporter: %s\nSeverity: %s\nTitle: %s\n%s%s\n\n%s\n"
-        % (ctx["repository"], record["id"], record.get("reporter", ""),
-           severity, record.get("title", ""), _origin(env),
-           _repo_href(ctx["repository"], record["id"]),
-           record.get("description", "")))
+        "Advisory: %s\nSeverity: %s\n%s%s\n\n"
+        "The report itself is not sent by email: the repository's "
+        "maintainers read it at the link.\n"
+        % (ctx["repository"], record["id"], severity, _origin(env),
+           _repo_href(ctx["repository"], record["id"])))
     try:
         await _send_email(
             env, dest, "[Security] Vulnerability report for "
@@ -1280,6 +1284,10 @@ async def repo_route(env, request, owner, repo):
             return _error("invalid_json")
         if not isinstance(data, dict):
             return _error("invalid_json")
+        try:
+            json.dumps(data, ensure_ascii=False).encode("utf-8")
+        except (UnicodeEncodeError, ValueError, TypeError):
+            return _error("invalid_json")
     elif method not in ("GET", "HEAD"):
         return _error("method_not_allowed", 405)
     ctx = await context(env, request, owner, repo, data or None)
@@ -1322,6 +1330,31 @@ def _views(rows):
     return out
 
 
+async def _still_public(env, views):
+    is_private = globals().get("_repo_is_private")
+    if is_private is None:
+        return views
+    org_node = globals().get("_org_repo_node")
+    hidden = {}
+    out = []
+    for view in views:
+        owner, _, repo = str(view.get("repository") or "").partition("/")
+        key = (owner.lower(), repo.lower())
+        if key not in hidden:
+            closed = True
+            if owner and repo:
+                try:
+                    backing = (await org_node(env, owner, repo)
+                               if org_node else "") or owner
+                    closed = bool(await is_private(env, backing, repo))
+                except Exception:
+                    closed = True
+            hidden[key] = closed
+        if not hidden[key]:
+            out.append(view)
+    return out
+
+
 def _since(value):
     text = str(value or "").strip()
     if not text:
@@ -1343,7 +1376,8 @@ async def feed(env, request):
         limit = 100
     since = _since(params.get("since", [""])[0])
     origin = _origin(env)
-    views = _views(await _published_rows(env, limit, since))
+    views = await _still_public(
+        env, _views(await _published_rows(env, limit, since)))
     return _json({
         "ok": True,
         "schema_version": OSV_SCHEMA_VERSION,
@@ -1357,7 +1391,7 @@ async def _public_view_by_id(env, advisory_id):
     row = await d1_first(
         env, "SELECT public_data FROM security_advisories WHERE id=? "
         "AND state IN ('published','withdrawn')", advisory_id)
-    views = _views([row] if row else [])
+    views = await _still_public(env, _views([row] if row else []))
     return views[0] if views else None
 
 
@@ -1397,7 +1431,8 @@ def _severity_label(severity):
 
 async def advisories_page(env, request):
     import instance_pages
-    views = _views(await _published_rows(env, LIST_LIMIT))
+    views = await _still_public(
+        env, _views(await _published_rows(env, LIST_LIMIT)))
     rows = "".join(
         "<tr><td class=\"mono\"><a href=\"%s\">%s</a></td><td>%s%s</td>"
         "<td><a href=\"/%s\">%s</a></td><td><span class=\"sev\">%s</span>"
@@ -1586,10 +1621,14 @@ async def _refresh_public(env, advisory_id):
     if not isinstance(record, dict):
         return
     credits = await _credits(env, advisory_id)
+    now = _now()
+    view = public_view(record, credits)
+    view["updatedAt"] = max(int(view.get("updatedAt") or 0), now)
     await d1_run(
-        env, "UPDATE security_advisories SET public_data=? WHERE id=?",
-        json.dumps(public_view(record, credits), separators=(",", ":"),
-                   ensure_ascii=False), advisory_id)
+        env, "UPDATE security_advisories SET public_data=?, updated_at=? "
+        "WHERE id=?",
+        json.dumps(view, separators=(",", ":"), ensure_ascii=False),
+        view["updatedAt"], advisory_id)
 
 
 def is_public_path(path):

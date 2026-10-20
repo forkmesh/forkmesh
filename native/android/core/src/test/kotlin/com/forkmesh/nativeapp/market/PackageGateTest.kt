@@ -357,6 +357,20 @@ class PackageGateTest {
         assertEq("Files", RouteCatalog.title(Route.Kind.Files))
     }
 
+    fun testNexusIsAlwaysShownInWorkspace() {
+        expect(HubCatalog.workspace.any { it.route == Route.Nexus })
+        assertEq("NEXUS", RouteCatalog.title(Route.Kind.Nexus))
+        assertEq(null, PackageGate.ROUTE_KINDS[Route.Kind.Nexus])
+        assertEq(null, PackageGate.HUB_ITEMS[Route.Kind.Nexus.raw])
+        expect(PackageSurfaces.of(store(legacy = false)::shows).showsRoute(Route.Nexus))
+        val hidden = PackageSurfaces.of(store(legacy = false)::shows).hubItems
+        val ids = HubCatalog.groups(guest = false, hidden = hidden) { true }.flatMap { it.items }.map { it.id }
+        expect("nexus" in ids)
+        assertEq(listOf(Route.Nexus), RouteParser.parse("https://app.forkmesh.com/dashboard/nexus")!!.stack)
+        assertEq(listOf(Route.Nexus), RouteParser.parse("forkmesh://nexus")!!.stack)
+        assertEq(null, RouteParser.parse("https://app.forkmesh.com/dashboard/nexus/x"))
+    }
+
     fun testWorkflowsIsAGatedPackage() {
         assertEq("workflows", PackageGate.HUB_ITEMS["workflows"])
         expect("workflows" in PackageGate.GATED)

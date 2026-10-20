@@ -57,13 +57,28 @@ data class CrmNoteDraft(
     }
 }
 
-data class CrmZohoCode(val clientId: String = "", val clientSecret: String = "", val code: String = "", val region: String = "com") {
-    val isComplete: Boolean get() = listOf(clientId, clientSecret, code).none { it.isBlank() }
+data class CrmZohoCode(
+    val clientId: String = "",
+    val clientSecret: String = "",
+    val code: String = "",
+    val region: String = "com",
+    val savedClientId: String = "",
+) {
+    val isComplete: Boolean
+        get() = listOf(clientId, code).none { it.isBlank() } && (usesSavedSecret || clientSecret.isNotBlank())
+
+    val usesSavedSecret: Boolean
+        get() = savedClientId.isNotEmpty() && clientId.trim() == savedClientId && clientSecret.isBlank()
 
     val body: Map<String, Any?>
         get() = linkedMapOf("clientId" to clientId.trim(), "clientSecret" to clientSecret.trim(), "code" to code.trim(), "region" to region)
 
     companion object {
+        fun of(status: CrmZohoStatus?): CrmZohoCode {
+            if (status == null) return CrmZohoCode()
+            return CrmZohoCode(clientId = status.clientId, region = status.region, savedClientId = if (status.hasClientSecret) status.clientId else "")
+        }
+
         val REGIONS = listOf("com", "eu", "in", "com.au", "jp", "ca")
         const val CONSOLE_URL = "https://api-console.zoho.com/"
         const val SCOPES = "ZohoMail.messages.READ,ZohoMail.messages.CREATE,ZohoMail.folders.READ,ZohoMail.accounts.READ"

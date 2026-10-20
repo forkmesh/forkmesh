@@ -304,7 +304,7 @@ the line under the cursor and restores the cursor, so nothing scrolls.
 - **Views** (`agents/listView`): Compact, Zen (title only), Full (one-word
   columns: status, provider, host, age, conflicts, files, `+added−removed`,
   worktree or branch, columns dropped from the end when they do not fit), and
-  on iOS Eagle (the default). Android has the first three. Logic in
+  Eagle (the default on both). Logic in
   `AgentLines.chips` / `AgentListView` (iOS FMAgents) and `AgentLineChips`
   (Android core).
 - **Row**: agent dot with status, title, short age, a meta line (host glyph,
@@ -343,6 +343,10 @@ and a dialog ticker in the rest of the line.
   the screen leaves Eagle).
 - A missing or unknown `agents/listView` reads as Eagle; a phone that stored
   another view is switched once (`agents/listViewEagleDefault`).
+- Android (since 2026-10-20) has the same view: `AgentEagleFeed` and
+  `AgentEagle.dialog` in `core/.../agents/AgentEagleFeed.kt`, the row and
+  ticker in `feature/agents/AgentEagleViews.kt`. See
+  [ANDROID.md](ANDROID.md) section 26.
 
 ### Sorting
 
@@ -549,6 +553,28 @@ in `LocalControlAgentOps.cpp`), capability `agentops.bin`:
 `RecycleBinScreen` on both phones: retention menu, Restore all, Empty bin,
 selection, per-row restore and delete; deleting for good always confirms.
 State in `RecycleBinModel`.
+
+### Restoring brings the branch back
+
+Deleting an agent also removes its worktree and runs `git branch -D`, keeping
+the tip under `refs/forkmesh/trash/deleted/<branch>` and trashing the branch on
+the cores. Moving the session out of the bin alone used to leave a row whose
+branch was gone: a resume runs `git worktree add <path> <branch>` and failed.
+A branch that only came back locally was pruned again on the next converge,
+because the cores still list it as trashed and only a checked-out branch is
+safe from that.
+
+Every restore (bin dialog, Restore all, `agentops.bin.restore`) now goes
+through `MainWindow::restoreRecycledAgentSession`. After the store moves the
+session back, `restoreDeletedAgentBranch` runs off the UI thread:
+`forkmesh::upstream::restoreDeletedBranch` recreates the branch at the
+tombstone tip and clears the tombstone, then the worktree is added back at the
+session's `worktreeName` under `.worktrees/`. A branch that still exists, or
+one with no tombstone, is left alone. Uncommitted files in the deleted
+worktree are gone either way; only committed work comes back.
+
+Seen 2026-10-20 (task 2373): agent #2368 was deleted at 18:08:37 and restored
+from the bin at 18:08:56. The branch and worktree had to be recreated by hand.
 
 ## Moving a phone agent to the desktop
 

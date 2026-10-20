@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -19,6 +21,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 
+class DictationSession(
+    val holds: () -> Boolean,
+    val onSegment: () -> Unit,
+    val onFinished: () -> Unit,
+    val onLevel: (Float) -> Unit,
+    val silenceMs: Long,
+)
+
 class SpeechDictation internal constructor(private val context: Context) {
     var listening by mutableStateOf(false)
         private set
@@ -29,10 +39,18 @@ class SpeechDictation internal constructor(private val context: Context) {
     private var onError: (String) -> Unit = {}
     internal var askPermission: (() -> Unit)? = null
     private var waitingForPermission = false
+    private var session: DictationSession? = null
+    private var restart: Runnable? = null
+    private val main = Handler(Looper.getMainLooper())
 
     val available: Boolean get() = SpeechRecognizer.isRecognitionAvailable(context)
 
-    fun start(onWords: (String) -> Unit, onError: (String) -> Unit, onQuiet: () -> Unit = {}) {
+    fun prime() {
+        if (recognizer == null && available) recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+    }
+
+    fun start(onWords: (String) -> Unit, onError: (String) -> Unit, onQuiet: () -> Unit = {}, session: DictationSession? = null) {
+        this.session = session
         this.onWords = onWords
         this.onQuiet = onQuiet
         this.onError = onError
@@ -59,7 +77,9 @@ class SpeechDictation internal constructor(private val context: Context) {
         speech.setRecognitionListener(object : RecognitionListener {
             override fun onReadyForSpeech(params: Bundle?) {}
             override fun onBeginningOfSpeech() {}
-            override fun onRmsChanged(rmsdB: Float) {}
+            override fun onRmsChanged(rmsdB: Float) {
+                session?.onLevel?.invoke(rmsdB)
+            }
             override fun onBufferReceived(buffer: ByteArray?) {}
             override fun onEndOfSpeech() {}
             override fun onEvent(eventType: Int, params: Bundle?) {}
@@ -71,12 +91,22 @@ class SpeechDictation internal constructor(private val context: Context) {
             override fun onResults(results: Bundle?) {
                 val heard = words(results)
                 heard?.let(onWords)
+                val voice = session
+                if (voice != null) {
+                    carryOn(voice)
+                    return
+                }
                 val quiet = listening && !heard.isNullOrBlank()
                 listening = false
                 if (quiet) onQuiet()
             }
 
             override fun onError(error: Int) {
+                val voice = session
+                if (voice != null && error in endings) {
+                    carryOn(voice)
+                    return
+                }
                 listening = false
                 when (error) {
                     SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT, SpeechRecognizer.ERROR_CLIENT -> {}
@@ -92,7 +122,8 @@ class SpeechDictation internal constructor(private val context: Context) {
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
-            .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 4000L)
+            .putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, session?.silenceMs ?: 4000L)
+            .apply { if (session != null) putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true) }
             .apply {
                 val chosen = com.forkmesh.nativeapp.core.Services.get<com.forkmesh.nativeapp.api.PrefStore>()
                     ?.let(com.forkmesh.nativeapp.settings.DeviceSettings::dictationLocale).orEmpty()
@@ -107,21 +138,69 @@ class SpeechDictation internal constructor(private val context: Context) {
         }
     }
 
+    private fun carryOn(voice: DictationSession) {
+        if (!voice.holds()) {
+            listening = false
+            voice.onFinished()
+            return
+        }
+        voice.onSegment()
+        val again = Runnable {
+            restart = null
+            if (session === voice && voice.holds()) listen() else finish(voice)
+        }
+        restart = again
+        main.postDelayed(again, RESTART_MS)
+    }
+
+    private fun finish(voice: DictationSession) {
+        listening = false
+        voice.onFinished()
+    }
+
     private fun words(bundle: Bundle?): String? =
         bundle?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
 
     fun stop() {
         if (!listening) return
-        listening = false
+        val waiting = restart
+        if (waiting != null) {
+            main.removeCallbacks(waiting)
+            restart = null
+            session?.let(::finish)
+            return
+        }
+        if (session == null) listening = false
         recognizer?.stopListening()
     }
 
+    fun cancel() {
+        waitingForPermission = false
+        restart?.let(main::removeCallbacks)
+        restart = null
+        session = null
+        listening = false
+        recognizer?.cancel()
+    }
+
     internal fun release() {
+        restart?.let(main::removeCallbacks)
+        restart = null
+        session = null
         listening = false
         recognizer?.destroy()
         recognizer = null
     }
 }
+
+private val endings = setOf(
+    SpeechRecognizer.ERROR_NO_MATCH,
+    SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
+    SpeechRecognizer.ERROR_CLIENT,
+    SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+)
+
+private const val RESTART_MS = 120L
 
 @Composable
 fun rememberSpeechDictation(): SpeechDictation {

@@ -25,6 +25,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentSize
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.platform.testTag
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListLayoutInfo
 import androidx.compose.foundation.lazy.LazyListState
@@ -92,6 +97,7 @@ import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.ui.kit.FmTextButton
 import com.forkmesh.nativeapp.ui.kit.FmTextField
 import com.forkmesh.nativeapp.ui.kit.FmTooltip
+import com.forkmesh.nativeapp.ui.kit.fmGlass
 import com.forkmesh.nativeapp.ui.kit.rememberFmStatus
 import com.forkmesh.nativeapp.ui.theme.Fm
 import com.forkmesh.nativeapp.ui.theme.FmHaptics
@@ -328,15 +334,36 @@ private fun TinyButton(icon: String, label: String, active: Boolean = false, ena
     }
 }
 
+private object DiffTool {
+    val side = 30.dp
+    val gap = 4.dp
+    val icon = 17.dp
+    val shape = RoundedCornerShape(8.dp)
+}
+
 @Composable
-private fun ToolbarSeparator() {
-    Box(
-        Modifier
-            .padding(horizontal = 3.dp)
-            .width(1.dp)
-            .height(18.dp)
-            .background(Fm.colors.border),
-    )
+private fun ToolSquare(icon: String, label: String, active: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+    val c = Fm.colors
+    val haptics = FmHaptics.current
+    FmTooltip(label) {
+        Box(
+            Modifier
+                .size(DiffTool.side)
+                .fmGlass(DiffTool.shape, tint = if (active) c.accentSubtle else null, shadow = false)
+                .clickable(enabled = enabled) {
+                    haptics.selection()
+                    onClick()
+                }
+                .semantics {
+                    role = Role.Button
+                    contentDescription = label
+                    selected = active
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            FmIcon(icon, size = DiffTool.icon, tint = if (active) c.accent else if (enabled) c.textSecondary else c.textDisabled)
+        }
+    }
 }
 
 @Composable
@@ -356,53 +383,59 @@ private fun StreamToolbar(
     Row(
         Modifier
             .fillMaxWidth()
-            .background(c.bgRaised)
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp, vertical = 2.dp),
+            .padding(horizontal = FmSpace.x2, vertical = FmSpace.x1)
+            .testTag("diff-toolbar"),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(DiffTool.gap),
     ) {
-        Row(
-            Modifier
-                .height(32.dp)
-                .clickable(onClick = onFiles)
-                .semantics { contentDescription = "${model.viewedLabel}. Files" }
-                .padding(horizontal = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FmIcon("format_list_bulleted", size = 16.dp, tint = c.textSecondary)
-            Spacer(Modifier.width(4.dp))
-            Text(
-                "${model.seen}/${model.files.size}",
-                style = Fm.mono(size = 12.sp, weight = FmType.emphasis, color = if (done) c.success else c.textPrimary),
-            )
+        FmTooltip("File list: ${model.viewedLabel}") {
+            Row(
+                Modifier
+                    .heightIn(min = DiffTool.side)
+                    .widthIn(min = DiffTool.side)
+                    .fmGlass(DiffTool.shape, shadow = false)
+                    .clickable(onClick = onFiles)
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = "${model.viewedLabel}. Files"
+                    }
+                    .padding(horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center,
+            ) {
+                FmIcon("format_list_bulleted", size = 16.dp, tint = c.textSecondary)
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    "${model.seen}/${model.files.size}",
+                    style = Fm.mono(size = 12.sp, weight = FmType.emphasis, color = if (done) c.success else c.textPrimary),
+                )
+            }
         }
-        ToolbarSeparator()
-        TinyButton("keyboard_arrow_up", "Previous change", onClick = onPreviousChange)
-        TinyButton("keyboard_arrow_down", "Next change", onClick = onNextChange)
-        TinyButton("skip_next", "Next file to review", onClick = onNextFile)
-        ToolbarSeparator()
-        TinyButton("search", "Find in diff", active = finding, onClick = onFind)
-        TinyButton(
+        ToolSquare("keyboard_arrow_up", "Previous change", onClick = onPreviousChange)
+        ToolSquare("keyboard_arrow_down", "Next change", onClick = onNextChange)
+        ToolSquare("skip_next", "Next file to review", onClick = onNextFile)
+        ToolSquare("search", "Find in diff", active = finding, onClick = onFind)
+        ToolSquare(
             if (DiffViewSettings.split) "view_agenda_outlined" else "vertical_split_outlined",
             if (DiffViewSettings.split) "Unified view" else "Side-by-side view",
             active = DiffViewSettings.split,
             onClick = DiffViewSettings::toggleSplit,
         )
-        TinyButton("wrap_text", "Wrap lines", active = DiffViewSettings.wrap, onClick = DiffViewSettings::toggleWrap)
-        TinyButton("code", "Syntax highlighting", active = DiffViewSettings.syntax, onClick = DiffViewSettings::toggleSyntax)
-        TinyButton("flag_outlined", "Show findings on lines", active = DiffViewSettings.findings, onClick = DiffViewSettings::toggleFindings)
-        TinyButton(
+        ToolSquare("wrap_text", "Wrap lines", active = DiffViewSettings.wrap, onClick = DiffViewSettings::toggleWrap)
+        ToolSquare("code", "Syntax highlighting", active = DiffViewSettings.syntax, onClick = DiffViewSettings::toggleSyntax)
+        ToolSquare("flag_outlined", "Show findings on lines", active = DiffViewSettings.findings, onClick = DiffViewSettings::toggleFindings)
+        ToolSquare(
             if (DiffViewSettings.autoViewed) "visibility_outlined" else "visibility_off_outlined",
             "Automatically mark files as viewed while scrolling",
             active = DiffViewSettings.autoViewed,
             onClick = DiffViewSettings::toggleAutoViewed,
         )
-        ToolbarSeparator()
-        TinyButton("text_decrease", "Smaller diff text", enabled = DiffViewSettings.fontSize > DiffViewSettings.minFontSize) { DiffViewSettings.resize(-1f) }
-        TinyButton("text_increase", "Larger diff text", enabled = DiffViewSettings.fontSize < DiffViewSettings.maxFontSize) { DiffViewSettings.resize(1f) }
+        ToolSquare("text_decrease", "Smaller diff text", enabled = DiffViewSettings.fontSize > DiffViewSettings.minFontSize) { DiffViewSettings.resize(-1f) }
+        ToolSquare("text_increase", "Larger diff text", enabled = DiffViewSettings.fontSize < DiffViewSettings.maxFontSize) { DiffViewSettings.resize(1f) }
         if (extra.isNotEmpty()) {
             Box {
-                TinyButton("more_horiz", "More") { more = true }
+                ToolSquare("more_horiz", "More") { more = true }
                 FmDropdownMenu(expanded = more, onDismissRequest = { more = false }) {
                     for (action in extra) {
                         FmDropdownMenuItem(text = action.label, icon = action.icon, onClick = { more = false; action.onClick() })
@@ -411,12 +444,6 @@ private fun StreamToolbar(
             }
         }
     }
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .height(1.dp)
-            .background(c.border),
-    )
 }
 
 @Composable

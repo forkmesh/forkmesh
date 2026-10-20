@@ -1672,6 +1672,20 @@ void MainWindow::applyWorkflowScan(const QString &owner, const QString &name,
         cancelSupersededRuns(created);
         if (approved)
             m_actionQueue.append(created.id);
+        else if (run.firstTimePullAuthor && pull.authorPullOrdinal > 1)
+            notifyActionEvent(
+                ActionPingEvent::Approval,
+                QStringLiteral("%1 pull request needs your approval")
+                    .arg(PullAuthorTrust::ordinal(pull.authorPullOrdinal)),
+                QString::fromUtf8(
+                    "%1 \xC2\xB7 %2/%3 #%4 by %5 \xE2\x80\x94 their %6 pull "
+                    "request here and none merged yet, so this run stays held "
+                    "until you approve it")
+                    .arg(wf.name, owner, name)
+                    .arg(run.pullNumber)
+                    .arg(run.pullAuthor,
+                         PullAuthorTrust::ordinal(pull.authorPullOrdinal)),
+                false, created.id);
         else
             notifyActionEvent(
                 ActionPingEvent::Approval,
@@ -1681,7 +1695,7 @@ void MainWindow::applyWorkflowScan(const QString &owner, const QString &name,
                 run.firstTimePullAuthor
                     ? QString::fromUtf8(
                           "%1 \xC2\xB7 %2/%3 #%4 by %5 \xE2\x80\x94 their first "
-                          "contribution here, so this run stays held until you "
+                          "pull request here, so this run stays held until you "
                           "approve it")
                           .arg(wf.name, owner, name)
                           .arg(run.pullNumber)
@@ -1941,6 +1955,7 @@ MainWindow::pullCheckCandidate(const PullRequest &pr,
     candidate.firstTimeAuthor = !PullAuthorTrust::isEstablished(
         pr, history,
         {m_profileIdentity.publicKey(), accountOwner(), repo.owner, m_userName});
+    candidate.authorPullOrdinal = PullAuthorTrust::pullOrdinal(pr, history);
     return candidate;
 }
 
@@ -2090,6 +2105,7 @@ void MainWindow::resolvePullCheckHeads(RepositoryRecord repo,
                 head.author = candidate.author;
                 head.base = candidate.base;
                 head.firstTimeAuthor = candidate.firstTimeAuthor;
+                head.authorPullOrdinal = candidate.authorPullOrdinal;
                 head.ref = QStringLiteral("refs/heads/pr/%1").arg(candidate.number);
                 QStringList refs{
                     QStringLiteral("refs/pr/%1/head").arg(candidate.number),
@@ -2264,6 +2280,7 @@ void MainWindow::applyPullCheckHeads(const QString &owner, const QString &name,
         context.author = head.author;
         context.base = head.base;
         context.firstTimeAuthor = head.firstTimeAuthor;
+        context.authorPullOrdinal = head.authorPullOrdinal;
         queueWorkflowsForCommit(repoIndex, owner, name, head.commit, head.ref,
                                 trigger, context);
         ++queued;

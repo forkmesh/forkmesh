@@ -81,6 +81,27 @@ class PerformanceDiagnosticsTest {
         val long = DiagnosticsBundle.prompt("x", "line\n".repeat(5000), includeLogs = true)
         expect(long.length <= DiagnosticsBundle.MAX_PROMPT_CHARS && long.endsWith("[cut to fit the prompt]"))
     }
+
+    fun testStallsAreGroupedByNameAndByTheScreenThatWasShowing() {
+        val utc = java.time.ZoneOffset.UTC
+        val noon = java.time.LocalDateTime.of(2026, 10, 17, 12, 0, 0).toInstant(utc).toEpochMilli()
+        val events = listOf(
+            PerformanceEvent(PerformanceEventKind.Frame, "frame", 354_000, noon + 30_000, mapOf("screen" to "Inbox > Shortcuts")),
+            PerformanceEvent(PerformanceEventKind.EventLoop, "ui-isolate blocked", 324_000, noon + 30_000, mapOf("screen" to "Inbox > Shortcuts")),
+            PerformanceEvent(PerformanceEventKind.Operation, "api.GET /api/tasks", 2_000_000, noon + 10_000),
+            PerformanceEvent(PerformanceEventKind.EventLoop, "ui-isolate blocked", 250_000, noon),
+        )
+        val report = DiagnosticsBundle.report(emptyList(), null, events, emptyList(), noon + 60_000, utc)
+        expect(
+            report.contains(
+                "## Stalls by screen\n2x     total 678ms max 354ms last 12:00:30 Inbox > Shortcuts\n" +
+                    "1x     total 250ms max 250ms last 12:00:00 not recorded\n",
+            ),
+            report,
+        )
+        expect(report.contains("## Stalls by name\n2x     total 574ms max 324ms last 12:00:30 eventLoop ui-isolate blocked\n1x     total 354ms max 354ms last 12:00:30 frame\n"), report)
+        expect(report.contains("## Slow operations by name\n1x     total 2000ms max 2000ms operation api.GET /api/tasks\n"), report)
+    }
 }
 
 class AppChangelogTest {

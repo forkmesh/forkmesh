@@ -120,7 +120,7 @@ private class ProjectsScreenImpl(repo: PlanningRepo) : PlanningLoadScreen(repo) 
         val model = model ?: return
         Loader()
         @Suppress("UNUSED_EXPRESSION") version
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Projects · ${repo.slug}", navigator) {
                 FmIconButton("flag", "Milestones", onPressed = { navigator.push(MilestonesScreen(repo)) }, color = Fm.colors.textPrimary)
                 FmIconButton("refresh", "Refresh", onPressed = { refresh++ }, color = Fm.colors.textPrimary)
@@ -179,7 +179,7 @@ class ProjectDetailScreen(private val repo: PlanningRepo, private val number: In
         }
         @Suppress("UNUSED_EXPRESSION") version
         val project = model.project(number)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(project?.let { "#${it.number} ${it.title}" } ?: "Project", navigator)
             when {
                 loading && project == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
@@ -228,7 +228,7 @@ class MilestonesScreen(private val repo: PlanningRepo) : Screen() {
             version++
         }
         @Suppress("UNUSED_EXPRESSION") version
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Milestones · ${repo.slug}", navigator) {
                 FmIconButton("refresh", "Refresh", onPressed = { refresh++ }, color = Fm.colors.textPrimary)
             }

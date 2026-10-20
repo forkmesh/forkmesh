@@ -1,5 +1,9 @@
 package com.forkmesh.nativeapp.feature.rssreader
 
+import java.text.NumberFormat
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.forkmesh.nativeapp.feature.market.PluginMenuButton
 import android.content.Context
 import android.content.Intent
@@ -83,6 +87,7 @@ internal fun RssScaffold(
     title: String,
     navigator: Navigator,
     subtitle: String? = null,
+    unread: Int = 0,
     actions: @Composable RowScope.() -> Unit = {},
     bottomBar: (@Composable RowScope.() -> Unit)? = null,
     content: @Composable BoxScope.() -> Unit,
@@ -94,6 +99,14 @@ internal fun RssScaffold(
                 Row(Modifier.fillMaxWidth().height(56.dp).padding(end = FmSpace.x1), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.width(56.dp), contentAlignment = Alignment.Center) {
                         FmIconButton("arrow_back", "Back", onPressed = { navigator.pop() }, color = c.textPrimary, iconSize = 24.dp)
+                    }
+                    if (unread > 0) {
+                        Text(
+                            NumberFormat.getIntegerInstance().format(unread),
+                            Modifier.semantics { contentDescription = "${NumberFormat.getIntegerInstance().format(unread)} unread" }.testTag("rss-article-unread-count"),
+                            style = Fm.text.bodyMedium.copy(color = c.textSecondary, fontFeatureSettings = "tnum"),
+                            maxLines = 1,
+                        )
                     }
                     Spacer(Modifier.width(FmSpace.x2))
                     Column(Modifier.weight(1f)) {

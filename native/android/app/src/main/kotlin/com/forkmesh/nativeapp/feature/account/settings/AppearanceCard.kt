@@ -106,6 +106,10 @@ fun AppearanceCard(navigator: Navigator) {
             minHeight = 52.dp,
             padding = PaddingValues(vertical = FmSpace.x1),
         )
+        Box(Modifier.height(FmSpace.x4))
+        Text("Background", style = label)
+        Box(Modifier.height(FmSpace.x2))
+        AppearanceBackgroundRow()
     }
     if (picking) {
         ThemeColorPickerDialog(

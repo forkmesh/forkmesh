@@ -1,5 +1,23 @@
 package com.forkmesh.nativeapp.ui.kit
 
+import com.forkmesh.nativeapp.ui.theme.FmHaptics
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import com.forkmesh.nativeapp.ui.theme.FmPalette
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.BoxScope
@@ -34,7 +52,6 @@ import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextFieldColors
@@ -80,7 +97,7 @@ fun FmTooltip(message: String, modifier: Modifier = Modifier, content: @Composab
                 containerColor = if (colors.dark) colors.bgElevated else colors.textPrimary,
                 contentColor = if (colors.dark) colors.textPrimary else Color.White,
             ) {
-                Text(message, style = TextStyle(fontSize = FmType.meta, fontWeight = FmType.medium))
+                Text(message, style = TextStyle(fontFamily = FmType.ui, fontSize = FmType.meta, fontWeight = FmType.medium))
             }
         },
         state = rememberTooltipState(),
@@ -392,13 +409,13 @@ fun FmDropdownMenu(
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismissRequest,
-        modifier = modifier.fmTapSounds(),
+        modifier = modifier.fmTapSounds().widthIn(min = 250.dp),
         offset = offset,
-        shape = RoundedCornerShape(FmRadius.lg),
-        containerColor = if (c.dark) c.bgOverlay else c.bgRaised,
+        shape = RoundedCornerShape(FmMenu.corner),
+        containerColor = FmMenu.surface(c),
         tonalElevation = 0.dp,
-        shadowElevation = if (c.dark) 12.dp else 8.dp,
-        border = BorderStroke(1.dp, c.border),
+        shadowElevation = 8.dp,
+        border = BorderStroke(0.5.dp, if (c.dark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f)),
         content = content,
     )
 }
@@ -415,17 +432,18 @@ fun FmDropdownMenuItem(
     val c = Fm.colors
     val tone = textColor ?: c.textPrimary
     DropdownMenuItem(
-        text = { Text(text, style = FmMaterialTypography.bodyMedium.copy(fontWeight = FmType.medium)) },
+        text = { Text(text, style = FmMaterialTypography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 22.sp, fontWeight = FmType.regular)) },
         onClick = {
             FmSoundCues.play(SoundCue.forLabel(text, SoundCue.CLICK))
             onClick()
         },
-        modifier = modifier,
-        leadingIcon = icon?.let { name -> { FmIcon(name, size = 20.dp) } },
+        modifier = modifier.heightIn(min = 44.dp),
+        leadingIcon = icon?.let { name -> { FmIcon(name, size = 20.dp, outlined = true) } },
         enabled = enabled,
+        contentPadding = PaddingValues(horizontal = FmSpace.x4),
         colors = MenuDefaults.itemColors(
             textColor = tone,
-            leadingIconColor = c.textSecondary,
+            leadingIconColor = tone,
             disabledTextColor = c.textPrimary.copy(alpha = .38f),
             disabledLeadingIconColor = c.textPrimary.copy(alpha = .38f),
         ),
@@ -468,32 +486,16 @@ fun FmPullToRefreshBox(
 }
 
 @Composable
-fun FmSwitch(
-    checked: Boolean,
-    onCheckedChange: ((Boolean) -> Unit)?,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-) {
-    Switch(
-        checked = checked,
-        onCheckedChange = onCheckedChange?.let { change ->
-            { on: Boolean ->
-                FmSoundCues.play(SoundCue.toggle(on))
-                change(on)
-            }
-        },
-        modifier = modifier,
-        enabled = enabled,
-    )
-}
-
-@Composable
 fun FmCheckbox(
     checked: Boolean,
     onCheckedChange: ((Boolean) -> Unit)?,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    colors: CheckboxColors = CheckboxDefaults.colors(),
+    colors: CheckboxColors = CheckboxDefaults.colors(
+        checkedColor = Fm.colors.accent,
+        uncheckedColor = Fm.colors.textTertiary,
+        checkmarkColor = Fm.colors.onAccent,
+    ),
 ) {
     Checkbox(
         checked = checked,
@@ -508,3 +510,61 @@ fun FmCheckbox(
         colors = colors,
     )
 }
+
+object FmMenu {
+    val corner = 22.dp
+
+    fun surface(c: FmPalette): Color = if (c.dark) Color(0xFF2C2C2E) else Color(0xFFFFFFFF)
+}
+
+@Composable
+fun FmActionMenu(
+    expanded: Boolean,
+    onDismissRequest: () -> Unit,
+    modifier: Modifier = Modifier,
+    offset: DpOffset = DpOffset(0.dp, 0.dp),
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    val c = Fm.colors
+    DropdownMenu(
+        expanded = expanded,
+        onDismissRequest = onDismissRequest,
+        modifier = modifier.fmTapSounds().width(260.dp),
+        offset = offset,
+        shape = RoundedCornerShape(32.dp),
+        containerColor = FmMenu.surface(c),
+        tonalElevation = 0.dp,
+        shadowElevation = 8.dp,
+        border = BorderStroke(0.5.dp, if (c.dark) Color.White.copy(alpha = 0.08f) else Color.Black.copy(alpha = 0.04f)),
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+
+@Composable
+fun FmActionMenuButton(text: String, onClick: () -> Unit, destructive: Boolean = false, enabled: Boolean = true) {
+    val c = Fm.colors
+    val haptics = FmHaptics.current
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(48.dp)
+            .clip(CircleShape)
+            .background(c.textPrimary.copy(alpha = if (c.dark) 0.1f else 0.06f))
+            .clickable(enabled = enabled) {
+                haptics.tap(SoundCue.forLabel(text, SoundCue.CLICK))
+                onClick()
+            }
+            .semantics { role = Role.Button },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            Modifier.padding(horizontal = FmSpace.x4),
+            style = FmMaterialTypography.bodyLarge.copy(fontSize = 17.sp, lineHeight = 22.sp, color = if (!enabled) c.textDisabled else if (destructive) c.danger else c.accent),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+

@@ -95,7 +95,7 @@ class PhoneSecurityScreen : Screen() {
         all.firstOrNull { it.check.id == selected }?.let { finding ->
             FindingSheet(finding, onDismiss = { selected = null })
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Phone Security", navigator)
             LazyColumn(Modifier.fillMaxSize()) {
                 item(key = "summary") {

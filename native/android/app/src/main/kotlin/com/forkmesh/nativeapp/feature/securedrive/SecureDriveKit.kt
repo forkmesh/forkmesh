@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.securedrive
 
 import android.app.Activity
+import com.forkmesh.nativeapp.ui.theme.FmType
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -32,7 +33,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.feature.chat.ChatPrivacy
@@ -131,7 +131,7 @@ internal fun SdScaffold(
 
 @Composable
 internal fun SdSafetyNumber(number: String, modifier: Modifier = Modifier) {
-    Text(number, modifier, style = Fm.text.titleLarge.copy(fontFamily = FontFamily.Monospace, color = Fm.colors.textPrimary))
+    Text(number, modifier, style = Fm.text.titleLarge.copy(fontFamily = FmType.mono, color = Fm.colors.textPrimary))
 }
 
 @Composable

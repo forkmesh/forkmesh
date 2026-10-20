@@ -109,7 +109,7 @@ private abstract class OrgPackageScreen<P : Any>(private val screenTitle: String
         }
         @Suppress("UNUSED_EXPRESSION") version
         val payload = model.payload
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar(screenTitle, navigator) {
                     Actions()
@@ -368,7 +368,7 @@ private class AdsScreenImpl : Screen() {
         }
         @Suppress("UNUSED_EXPRESSION") version
         val account = model.account
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Ads", navigator) { FmIconButton("refresh", "Refresh", onPressed = { reload++ }, color = Fm.colors.textPrimary) }
             if (model.isReviewer) FmSegmentTabBar(listOf(FmSegmentTab("My ads", account?.ads?.size), FmSegmentTab("Review", model.queue?.ads?.size)), tab, onChanged = { tab = it })
             ErrorLine(model.errorText)

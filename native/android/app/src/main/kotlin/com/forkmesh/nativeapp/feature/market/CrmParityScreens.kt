@@ -74,7 +74,7 @@ class CrmNoteDraftsScreen(private val model: CrmModel) : Screen() {
         val runner = remember { CrmRunner(scope, model) }
         @Suppress("UNUSED_EXPRESSION") CrmRevision.value
         val drafts = model.noteDrafts
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Unsent drafts", navigator)
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 CrmRunnerStatus(runner, model)
@@ -130,7 +130,7 @@ class CrmNoteDraftsScreen(private val model: CrmModel) : Screen() {
 class CrmZohoCodeScreen(private val model: CrmModel) : Screen() {
     override val title: String get() = "Zoho Self Client"
 
-    private var code by mutableStateOf(CrmZohoCode())
+    private var code by mutableStateOf(CrmZohoCode.of(model.data?.settings?.zoho))
     private var regionMenu by mutableStateOf(false)
 
     @Composable
@@ -138,7 +138,7 @@ class CrmZohoCodeScreen(private val model: CrmModel) : Screen() {
         val scope = rememberCoroutineScope()
         val context = LocalContext.current
         val runner = remember { CrmRunner(scope, model) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Zoho Self Client", navigator) {
                 FmTextButton(onClick = { runner.run({ exchangeZoho(code) }) { ok -> if (ok) navigator.pop() } }, enabled = code.isComplete && runner.busy == 0) { Text("Connect") }
             }
@@ -150,7 +150,7 @@ class CrmZohoCodeScreen(private val model: CrmModel) : Screen() {
                 FmToneButton("Open the Zoho API Console", onPressed = { crmOpen(context, CrmZohoCode.CONSOLE_URL) }, icon = "open_in_new")
                 FmListRow(CrmZohoCode.SCOPES, subtitle = "Scope (tap to copy)", onTap = { crmCopy(context, CrmZohoCode.SCOPES) }, showChevron = false)
                 FmTextField(code.clientId, { code = code.copy(clientId = it) }, hint = "Client ID")
-                FmTextField(code.clientSecret, { code = code.copy(clientSecret = it) }, hint = "Client secret", visualTransformation = PasswordVisualTransformation())
+                FmTextField(code.clientSecret, { code = code.copy(clientSecret = it) }, hint = if (code.usesSavedSecret) "Saved secret (leave blank to keep)" else "Client secret", visualTransformation = PasswordVisualTransformation())
                 FmTextField(code.code, { code = code.copy(code = it) }, hint = "Code")
                 Box {
                     FmListRow(code.region, subtitle = "Data center", onTap = { regionMenu = true })

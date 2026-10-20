@@ -169,7 +169,7 @@ internal class AdminScreen(initial: AdminSection) : Screen() {
             }
         }
         LaunchedEffect(section) { reload() }
-        DetailScaffold(title, navigator, actions = { FmIconButton("refresh", "Refresh", onPressed = { reload() }, color = c.textPrimary) }) {
+        DetailScaffold(title, navigator, largeTitle = true, actions = { FmIconButton("refresh", "Refresh", onPressed = { reload() }, color = c.textPrimary) }) {
             Column(Modifier.fillMaxSize()) {
                 FmSegmentTabBar(AdminSection.entries.map { FmSegmentTab(it.title) }, section.ordinal, onChanged = { section = AdminSection.entries[it] })
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {

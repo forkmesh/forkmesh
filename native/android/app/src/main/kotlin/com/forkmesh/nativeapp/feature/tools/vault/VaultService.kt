@@ -20,7 +20,10 @@ import com.forkmesh.nativeapp.security.SecretStore
 import com.forkmesh.nativeapp.vault.VaultClient
 import com.forkmesh.nativeapp.vault.VaultCrypto
 import com.forkmesh.nativeapp.vault.VaultException
+import com.forkmesh.nativeapp.vault.VaultImportReport
 import com.forkmesh.nativeapp.vault.VaultItem
+import com.forkmesh.nativeapp.vault.VaultTransfer
+import com.forkmesh.nativeapp.vault.VaultTransferLogin
 import com.forkmesh.nativeapp.vault.VaultLoginAnswer
 import com.forkmesh.nativeapp.vault.VaultScreenLogic
 import com.forkmesh.nativeapp.vault.VaultRecipient
@@ -300,6 +303,37 @@ class VaultService(
         val saved = io { client.save(fields, id) }
         reload()
         return saved
+    }
+
+    suspend fun importLogins(logins: List<VaultTransferLogin>): VaultImportReport {
+        touch()
+        if (!client.unlocked) throw VaultException("vault_locked")
+        val plan = VaultTransfer.plan(logins, client.items)
+        var added = 0
+        var stoppedBy = ""
+        for (login in plan.fresh) {
+            try {
+                io { client.save(login.fields) }
+                added++
+                touch()
+            } catch (error: Exception) {
+                stoppedBy = VaultScreenLogic.errorText(error)
+                break
+            }
+        }
+        runCatching { reload() }
+        return VaultImportReport(added, plan.duplicates, plan.fresh.size - added, stoppedBy)
+    }
+
+    fun exportLogins(): List<VaultTransferLogin> {
+        touch()
+        if (!client.unlocked) throw VaultException("vault_locked")
+        return VaultTransfer.logins(client.items)
+    }
+
+    fun existingItems(): List<VaultItem> {
+        touch()
+        return client.items
     }
 
     suspend fun saveLogin(title: String, url: String, username: String, password: String): VaultLoginAnswer {

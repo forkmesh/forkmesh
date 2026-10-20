@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.composer
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -197,7 +198,7 @@ private fun MarkupEditor(source: Bitmap, name: String, confirmLabel: String, don
             return
         }
         scope.launch {
-            if (messenger.showConfirmDialog("Discard this markup?", confirmLabel = "Discard", destructive = true)) done(null)
+            if (messenger.confirmAction("Discard this markup?", "Discard")) done(null)
         }
     }
 

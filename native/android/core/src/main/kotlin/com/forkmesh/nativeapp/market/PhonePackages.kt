@@ -5,17 +5,27 @@ import com.forkmesh.nativeapp.api.PrefStore
 object PhonePackages {
     const val SIGN_IN = PackageGate.SIGN_IN
     const val SIGN_IN_KEY = "packages/sign-in/on"
+    const val CAPTURE = "capture"
+    const val CAPTURE_KEY = "packages/capture/on"
+    const val AQUARIUM = "aquarium"
+    const val AQUARIUM_KEY = "packages/aquarium/on"
     const val REMOVED_KEY = "packages/removed"
 
+    val DEVICE_SWITCHED: Set<String> = setOf(AQUARIUM, SIGN_IN)
+
     fun isOn(id: String, prefs: PrefStore?, legacy: Boolean): Boolean? = when (id) {
+        AQUARIUM -> prefs?.getBool(AQUARIUM_KEY) ?: false
         SIGN_IN -> prefs?.getBool(SIGN_IN_KEY) ?: true
+        CAPTURE -> prefs?.getBool(CAPTURE_KEY) ?: true
         in PackageGate.ORGANIZATION_PACKAGES -> id !in removed(prefs)
         else -> null
     }
 
     fun set(id: String, on: Boolean, prefs: PrefStore?) {
         when (id) {
+            AQUARIUM -> prefs?.putBool(AQUARIUM_KEY, on)
             SIGN_IN -> prefs?.putBool(SIGN_IN_KEY, on)
+            CAPTURE -> prefs?.putBool(CAPTURE_KEY, on)
             in PackageGate.ORGANIZATION_PACKAGES -> setRemoved(id, !on, prefs)
         }
     }

@@ -6,6 +6,7 @@ import com.forkmesh.nativeapp.inbox.LocalPingLog
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.ChatReceipt
+import com.forkmesh.nativeapp.model.ChatReceiptTimes
 import com.forkmesh.nativeapp.model.ChatRetention
 import com.forkmesh.nativeapp.model.Member
 import com.forkmesh.nativeapp.model.MemberGroup
@@ -200,13 +201,17 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         set(value) {
             value?.retention = retention
             value?.addListener { purgePrivatePings() }
+            field = value
+            restoreOfficeHistory()
             value?.onMessage = {
                 filePing(it)
                 if (relay.currentConversation == it.conversation) queueReadMark(it.conversation)
                 else if (!isReadElsewhere(it)) relay.noteUnread(it.conversation)
             }
-            field = value
         }
+
+    @Volatile
+    var live: DirectLiveEngine? = null
 
     @Volatile
     var direct: DirectMessageService? = null
@@ -224,6 +229,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
                     value.bumpUnread(message.conversation)
                 }
             }
+            restoreDirectHistory()
         }
 
     @Volatile
@@ -252,13 +258,28 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
     var onNotice: ((String) -> Unit)? = null
 
     @Volatile
+    var revealRequests = 0
+        private set
+
+    @Volatile
+    var onReveal: (() -> Unit)? = null
+
+    @Volatile
     var selfName: () -> String = { relay.roster().firstOrNull { it.self }?.name ?: "" }
 
     private var history: ChatHistoryStore? = null
     private var historyScope: () -> String = { "" }
+    private var historyFormerScopes: () -> List<String> = { emptyList() }
 
     @Volatile
     private var loadedScope = ""
+
+    private class DirectHeld(val messages: List<ChatMessage>, val receipts: Map<String, ChatReceipt>, val times: Map<String, ChatReceiptTimes>)
+
+    private val heldLock = Any()
+    private var directRestore: DirectHeld? = null
+    private var officeRestore: List<ChatMessage>? = null
+    private var directAccount = ""
 
     init {
         extras.sink = relay
@@ -304,9 +325,10 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         onNotice?.invoke(text)
     }
 
-    fun attachHistory(store: ChatHistoryStore, scope: () -> String) {
+    fun attachHistory(store: ChatHistoryStore, formerScopes: () -> List<String> = { emptyList() }, scope: () -> String) {
         history = store
         historyScope = scope
+        historyFormerScopes = formerScopes
         restoreHistoryIfNeeded()
     }
 
@@ -333,33 +355,97 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
 
     private fun live(message: ChatMessage, nowMs: Long): Boolean = !retention.isExpired(message.timestamp, message.conversation, nowMs)
 
-    fun restoreHistoryIfNeeded() {
-        val store = history ?: return
+    fun restoreHistoryIfNeeded(): Boolean {
+        val store = history ?: return false
         val scope = historyScope()
-        if (scope.isEmpty() || scope == loadedScope) return
+        if (scope.isEmpty()) return false
+        if (scope == loadedScope) return true
+        val snapshot = when (val load = store.read(scope, historyFormerScopes())) {
+            ChatHistoryLoad.Unreadable -> return false
+            ChatHistoryLoad.Missing -> {
+                loadedScope = scope
+                return true
+            }
+            is ChatHistoryLoad.Loaded -> load.snapshot
+        }
         loadedScope = scope
-        val snapshot = store.load(scope) ?: return
         val now = System.currentTimeMillis()
         extras.restoreChannels(snapshot.privateChannels, snapshot.hiddenChannels)
-        relay.restoreHistory(snapshot.messages.filter { it.conversation !in snapshot.hiddenChannels && live(it, now) })
+        val shown = snapshot.messages.filter { it.conversation !in snapshot.hiddenChannels && live(it, now) }
+        relay.restoreHistory(shown.filter { !DirectMessageFrames.isDirect(it.conversation) && !OfficeFrames.isOffice(it.conversation) })
+        synchronized(heldLock) {
+            officeRestore = shown.filter { OfficeFrames.isOffice(it.conversation) }
+            directRestore = DirectHeld(
+                snapshot.messages.filter { DirectMessageFrames.isDirect(it.conversation) },
+                snapshot.receipts,
+                snapshot.receiptTimes,
+            )
+        }
+        restoreOfficeHistory()
+        restoreDirectHistory()
         extras.restore(snapshot.replies.filter { live(it, now) }, snapshot.replyRoots, snapshot.reactions, snapshot.reactionOrder, snapshot.edits, snapshot.stickers)
         extras.restoreHiddenMessages(snapshot.hiddenMessages)
+        return true
+    }
+
+    private fun restoreDirectHistory() {
+        val service = direct ?: return
+        val saved = synchronized(heldLock) { directRestore.also { directRestore = null } } ?: return
+        service.restore(saved.messages, saved.receipts, saved.times)
+    }
+
+    private fun restoreOfficeHistory() {
+        val service = office ?: return
+        val saved = synchronized(heldLock) { officeRestore.also { officeRestore = null } } ?: return
+        service.restore(saved)
+    }
+
+    fun directSessionChanged(account: String) {
+        val name = account.trim().lowercase()
+        if (name.isEmpty()) {
+            val service = direct ?: return
+            synchronized(heldLock) {
+                val held = (service.historySnapshot().values.flatten() + directRestore?.messages.orEmpty()).distinctBy { it.id }
+                val receipts = LinkedHashMap(directRestore?.receipts.orEmpty()).apply { putAll(service.receiptSnapshot()) }
+                val times = LinkedHashMap(directRestore?.times.orEmpty()).apply { putAll(service.receiptTimeSnapshot()) }
+                if (held.isNotEmpty()) directRestore = DirectHeld(held, receipts, times)
+            }
+            return
+        }
+        synchronized(heldLock) {
+            if (directAccount.isNotEmpty() && directAccount != name) directRestore = null
+            directAccount = name
+        }
+        restoreDirectHistory()
     }
 
     fun saveHistory() {
         val store = history ?: return
-        restoreHistoryIfNeeded()
-        val scope = loadedScope
-        if (scope.isEmpty()) return
-        store.save(historySnapshot(), scope)
+        if (!restoreHistoryIfNeeded()) return
+        store.save(historySnapshot(), loadedScope)
     }
 
     fun historySnapshot(nowMs: Long = System.currentTimeMillis()): ChatHistorySnapshot {
-        val messages = ChatHistoryCodec.bounded(relay.historySnapshot(), retention, nowMs)
+        val conversations = LinkedHashMap(relay.historySnapshot())
+        for (source in listOf(direct?.historySnapshot().orEmpty(), office?.historySnapshot().orEmpty())) {
+            for ((key, list) in source) if (key !in conversations) conversations[key] = list
+        }
+        val (heldDirect, heldOffice) = synchronized(heldLock) { directRestore to officeRestore }
+        for (held in listOf(heldDirect?.messages.orEmpty(), heldOffice.orEmpty())) {
+            for ((conversation, list) in held.groupBy { it.conversation }) {
+                val ids = conversations[conversation].orEmpty().map { it.id }.toSet()
+                val missing = list.filter { it.id !in ids }
+                if (missing.isEmpty()) continue
+                conversations[conversation] = (conversations[conversation].orEmpty() + missing).sortedBy { it.timestamp }
+            }
+        }
+        val messages = ChatHistoryCodec.bounded(conversations, retention, nowMs)
         val kept = messages.map { it.id }.toSet()
         val replies = extras.snapshotThreads().filter { live(it, nowMs) }
         val replyIds = replies.map { it.id }.toSet()
         val known = kept + replyIds
+        val receipts = LinkedHashMap(heldDirect?.receipts.orEmpty()).apply { putAll(direct?.receiptSnapshot().orEmpty()) }
+        val times = LinkedHashMap(heldDirect?.times.orEmpty()).apply { putAll(direct?.receiptTimeSnapshot().orEmpty()) }
         return ChatHistorySnapshot(
             messages = messages,
             replies = replies,
@@ -371,6 +457,8 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             privateChannels = extras.privateChannels.sorted(),
             hiddenChannels = extras.hiddenChannels.sorted(),
             hiddenMessages = extras.snapshotHiddenMessages(),
+            receipts = receipts.filterKeys { it in kept },
+            receiptTimes = times.filterKeys { it in kept },
         )
     }
 
@@ -420,6 +508,18 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             OfficeFrames.isOffice(message.conversation) -> office?.receipt(message.id)
             else -> null
         } ?: ChatReceipt.SENT
+    }
+
+    fun receiptTimes(message: ChatMessage): ChatReceiptTimes {
+        if (!message.self || !DirectMessageFrames.isDirect(message.conversation)) return ChatReceiptTimes()
+        return direct?.receiptTime(message.id) ?: ChatReceiptTimes()
+    }
+
+    fun expiresAt(message: ChatMessage): Long = message.timestamp + retentionMs(message.conversation)
+
+    fun isOnServer(message: ChatMessage, receipt: ChatReceipt?): Boolean {
+        if (!message.self || receipt != ChatReceipt.SENT || !DirectMessageFrames.isDirect(message.conversation)) return false
+        return direct?.serverCopies(message.conversation) != 0
     }
 
     fun rows(conversation: String): List<ChatRow> {
@@ -640,6 +740,18 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         return extras.isPrivate(conversation)
     }
 
+    fun isConversation(conversation: String): Boolean {
+        if (conversation.startsWith("@") || DirectMessageFrames.isDirect(conversation)) return true
+        office?.room(conversation)?.let { return it.isPrivate && !it.serverVisible && !it.readOnly }
+        return extras.isPrivate(conversation)
+    }
+
+    fun isGroupConversation(conversation: String): Boolean =
+        isConversation(conversation) && !conversation.startsWith("@") && !DirectMessageFrames.isDirect(conversation)
+
+    fun conversationItems(conversation: String): List<ChatConversationItem> =
+        ChatConversationLayout.items(rows(conversation), isGroupConversation(conversation))
+
     fun isServerVisible(conversation: String): Boolean = office?.room(conversation)?.serverVisible == true
 
     fun isReadOnly(conversation: String): Boolean = office?.room(conversation)?.readOnly == true
@@ -806,7 +918,38 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         null
     }
 
-    fun switchConversation(conversation: String) = select(resolve(conversation) ?: conversation)
+    fun accountRecipient(conversation: String): String? {
+        if (!conversation.startsWith("@")) return null
+        val name = conversation.drop(1).trim()
+        if (name.isEmpty()) return null
+        val others = relay.roster().filter { !it.self }
+        if (others.any { it.id == name }) return null
+        val folded = name.lowercase()
+        val matches = others.filter { it.owner.lowercase() == folded || it.name.lowercase() == folded || it.nodeName.lowercase() == folded }
+        val peer = matches.firstOrNull { it.online } ?: matches.firstOrNull()
+        return peer?.owner?.lowercase()?.ifEmpty { null } ?: folded
+    }
+
+    fun switchConversation(conversation: String) {
+        val account = accountRecipient(conversation)
+        val service = direct
+        revealRequests++
+        if (account != null && service != null) {
+            val record = service.records.firstOrNull { it.otherUser == account }
+            if (record != null) {
+                select(record.conversation)
+            } else {
+                try {
+                    select(service.start(account).conversation)
+                } catch (error: Exception) {
+                    notice(error.message ?: "The direct message could not be opened.")
+                }
+            }
+        } else {
+            select(resolve(conversation) ?: conversation)
+        }
+        onReveal?.invoke()
+    }
 
     fun reply(channel: String, text: String) {
         val body = text.trim()

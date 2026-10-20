@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.code.review
 
 import androidx.compose.foundation.layout.Arrangement
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -174,7 +175,7 @@ internal fun Note(text: String, color: Color = Fm.colors.textSecondary) {
 
 @Composable
 internal fun Mono(text: String, color: Color = Fm.colors.textPrimary) {
-    Text(text, color = color, style = Fm.text.bodySmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace))
+    Text(text, color = color, style = Fm.text.bodySmall.copy(fontFamily = FmType.mono))
 }
 
 @Composable

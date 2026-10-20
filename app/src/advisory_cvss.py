@@ -152,16 +152,28 @@ def _v3_roundup(value):
     return (math.floor(whole / 10000) + 1) / 10.0
 
 
+V3_OPTIONAL = (
+    ("E", "XUPFH"), ("RL", "XOTWU"), ("RC", "XURC"),
+    ("CR", "XLMH"), ("IR", "XLMH"), ("AR", "XLMH"),
+    ("MAV", "XNALP"), ("MAC", "XLH"), ("MPR", "XNLH"), ("MUI", "XNR"),
+    ("MS", "XUC"), ("MC", "XNLH"), ("MI", "XNLH"), ("MA", "XNLH"),
+)
+
+
 def score_v3(vector):
     parsed = _pairs(vector, "CVSS:3.1/") or _pairs(vector, "CVSS:3.0/")
     if not parsed:
         return None
     metrics, order = parsed
     names = [name for name, _ in V3_METRICS]
-    if order != names:
+    if order[:len(names)] != names:
         return None
+    optional = dict(V3_OPTIONAL)
+    for name in order[len(names):]:
+        if name not in optional or metrics[name] not in tuple(optional[name]):
+            return None
     for name, allowed in V3_METRICS:
-        if metrics[name] not in allowed:
+        if metrics[name] not in tuple(allowed):
             return None
     changed = metrics["S"] == "C"
     iss = 1 - ((1 - V3_CIA[metrics["C"]]) * (1 - V3_CIA[metrics["I"]])

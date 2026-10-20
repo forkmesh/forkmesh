@@ -53,6 +53,39 @@ gets **Select area to copy…** instead, so one hold never opens two menus.
   after the pop-up closes, as with the composer's capture.
 - Turning the package off stops the hold at once; nothing else changes.
 
+## Android: long-press a blank area to copy part of the screen
+
+The same feature, with the same `capture` package switch
+(`packages/capture/on`, on by default, `PhonePackages.CAPTURE`), since
+2026-10-20. `feature/composer/CaptureHold.kt`, installed by
+`ComposerFeature.install`:
+
+- A wrapper around `MainActivity`'s `Window.Callback` sees every touch
+  without consuming it. A finger held still (touch slop) for 0.6 s on a blank
+  point fires; the content then gets `ACTION_CANCEL` and the rest of that
+  touch is swallowed, so nothing underneath also reacts.
+- Blank is decided from the Compose semantics tree (`RootForTest`): no node
+  under the finger with a click, long-click or text-input action, and no
+  node with text or a content description smaller than half the screen
+  (`CaptureAreaRules.isBlank`, in core with the iOS geometry). Non-Compose
+  views (web views, text views, video and camera surfaces, clickable views)
+  count as content. A control with its own hold (the New agent button, menus)
+  carries a long-click action, so its hold never opens the pop-up; the check
+  runs at touch-down and again when the hold fires, which covers the
+  overlay-opened-during-the-hold case iOS fixed with `noteHandled`.
+- The pop-up is the kit's capsule `FmActionMenu` at the finger with
+  Select Area and Whole Screen, in a `ComposeView` added over the window's
+  content. The screen is drawn with `PixelCopy` 350 ms after the pop-up
+  closes. Select Area shows the frozen screen dimmed; dragging a box (16 dp
+  minimum) crops it. The crop opens the composer's markup editor
+  (`FmMessenger.markUp`) with Copy in place of Add; Copy flattens it (at most
+  2048 px), writes it to `cache/capture-copy/` and puts a `FileProvider`
+  URI on the clipboard, then shows "Copied to clipboard". Discard leaves the
+  clipboard alone.
+- Home's background menu does not yet have "Select area to copy…": that menu
+  lives in `shell/`, which this change does not touch (one line there can
+  call `CaptureOverlay.show`).
+
 ## iOS: PencilKit
 
 `ForkMesh/Platform/PromptMarkup.swift`. A `PKCanvasView` sits over the

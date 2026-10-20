@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -71,15 +72,17 @@ fun FmAvatar(
     modifier: Modifier = Modifier,
     avatarPng: String = "",
     textStyle: TextStyle = Fm.text.titleMedium,
+    corner: Dp? = null,
 ) {
     val image = remember(avatarPng) { decodeAvatarPng(avatarPng) }
+    val shape = if (corner != null) RoundedCornerShape(corner) else CircleShape
     if (image != null) {
         Image(
             bitmap = image,
             contentDescription = null,
             modifier = modifier
                 .size(size)
-                .clip(CircleShape),
+                .clip(shape),
             contentScale = ContentScale.Crop,
         )
         return
@@ -87,7 +90,7 @@ fun FmAvatar(
     Box(
         modifier
             .size(size)
-            .background(FmColors.senderColor(name), CircleShape),
+            .background(FmColors.senderColor(name), shape),
         contentAlignment = Alignment.Center,
     ) {
         Text(initialOf(name), style = textStyle.copy(color = Color.White, fontWeight = FmType.emphasis))

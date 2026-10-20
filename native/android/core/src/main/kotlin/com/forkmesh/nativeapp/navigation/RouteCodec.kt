@@ -173,6 +173,12 @@ object RouteCodec {
             Route.Kind.Coves -> Route.Coves(repo)
             Route.Kind.Cove -> req("id")?.let(Route::Cove)
             Route.Kind.Calories -> Route.Calories
+            Route.Kind.Steps -> Route.Steps
+            Route.Kind.Water -> Route.Water
+            Route.Kind.Sleep -> Route.Sleep
+            Route.Kind.SugarBreak -> Route.SugarBreak
+            Route.Kind.Stretch -> Route.Stretch
+            Route.Kind.FoodGuide -> Route.FoodGuide
             Route.Kind.GlassesAlert -> Route.GlassesAlert
             Route.Kind.PhoneSecurity -> Route.PhoneSecurity
             Route.Kind.Ember -> Route.Ember(repo)
@@ -184,9 +190,11 @@ object RouteCodec {
             Route.Kind.Runners -> Route.Runners
             Route.Kind.Usage -> Route.Usage
             Route.Kind.RssReader -> Route.RssReader
+            Route.Kind.VideoMixDjStudio -> Route.VideoMixDjStudio
             Route.Kind.InstanceFeed -> Route.InstanceFeed(s("post"))
             Route.Kind.SecureDrive -> Route.SecureDrive
             Route.Kind.Files -> Route.Files
+            Route.Kind.Nexus -> Route.Nexus
             Route.Kind.Workflows -> Route.Workflows
             Route.Kind.LocalAI -> Route.LocalAI
             Route.Kind.Activity -> Route.Activity

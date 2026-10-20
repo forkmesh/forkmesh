@@ -194,6 +194,10 @@ QString identityOf(const PullRequest &pr);
 bool isEstablished(const PullRequest &pr, const QList<PullRequest> &history,
                    const QStringList &trusted);
 
+int pullOrdinal(const PullRequest &pr, const QList<PullRequest> &history);
+
+QString ordinal(int n);
+
 } // namespace PullAuthorTrust
 
 // The owner-authored reward estimate a pull carries. The estimate itself is

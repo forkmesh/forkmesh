@@ -73,6 +73,8 @@ object TeammatesFeature {
 
     val shortcuts: ShortcutsStore get() = runtime().shortcuts
 
+    val startedShortcuts: ShortcutsStore? get() = runtime?.shortcuts
+
     fun reset() {
         synchronized(lock) {
             runtime?.dispose()

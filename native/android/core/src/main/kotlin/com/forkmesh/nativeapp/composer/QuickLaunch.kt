@@ -115,6 +115,8 @@ sealed class QuickLaunchOutcome {
     data class NeedsFix(val fix: QuickLaunchFix, val message: String) : QuickLaunchOutcome()
 
     data class Failed(val message: String) : QuickLaunchOutcome()
+
+    data class Done(val message: String) : QuickLaunchOutcome()
 }
 
 data class QuickLaunchRunOptions(val yolo: Boolean = false, val worktree: Boolean = true) {
@@ -187,7 +189,82 @@ class QuickAgentLauncher(
     var runOptions: QuickLaunchRunOptions = QuickLaunchRunOptions.read(prefs)
         private set
 
-    val takesRunOptions: Boolean get() = destination is QuickLaunchDestination.Desktop
+    var actions: QuickPromptActions? = null
+    private val storedAction = prefs?.getString(QuickPromptAction.STORE_KEY)
+    var actionChosen: Boolean = storedAction != null
+        private set
+    var chosenAction: QuickPromptAction? = QuickPromptAction.of(storedAction)
+        private set
+    var defaultsToBugReport: Boolean = false
+        private set
+    var taskPeople: QuickTaskPeople? = null
+        private set
+    var taskAssignee: String = prefs?.getString(QuickPromptAction.ASSIGNEE_KEY) ?: ""
+        private set
+    var loadingTaskPeople: Boolean = false
+        private set
+
+    val action: QuickPromptAction?
+        get() {
+            if (actions == null) return null
+            if (actionChosen) return chosenAction
+            return if (defaultsToBugReport) QuickPromptAction.BugReport else null
+        }
+
+    val chip: AgentModelChoice get() = action?.choice ?: model
+
+    val hasAgent: Boolean
+        get() {
+            if (!backend.signedIn()) return false
+            return when (destination) {
+                null -> false
+                QuickLaunchDestination.Device -> backend.hasDeviceCredentials()
+                else -> true
+            }
+        }
+
+    private fun settleDefault() {
+        if (plan?.loading == true) return
+        defaultsToBugReport = !hasAgent
+    }
+
+    fun chooseAction(action: QuickPromptAction) {
+        rememberAction(action)
+        if (action == QuickPromptAction.Task && taskPeople == null) loadTaskPeople()
+    }
+
+    private fun rememberAction(action: QuickPromptAction?) {
+        chosenAction = action
+        actionChosen = true
+        prefs?.putString(QuickPromptAction.STORE_KEY, action?.raw ?: "")
+    }
+
+    fun loadTaskPeople() {
+        val actions = actions ?: return
+        if (loadingTaskPeople) return
+        loadingTaskPeople = true
+        try {
+            runCatching { actions.taskPeople() }.getOrNull()?.let { taskPeople = it }
+        } finally {
+            loadingTaskPeople = false
+        }
+    }
+
+    val taskAssignees: List<String>
+        get() = listOf("") + (taskPeople?.names ?: if (taskAssignee.isEmpty()) emptyList() else listOf(taskAssignee))
+
+    fun taskAssigneeLabel(name: String): String = when {
+        name.isEmpty() -> "Unassigned"
+        name == taskPeople?.actor -> "@$name (you)"
+        else -> "@$name"
+    }
+
+    fun chooseAssignee(name: String) {
+        taskAssignee = name
+        prefs?.putString(QuickPromptAction.ASSIGNEE_KEY, name)
+    }
+
+    val takesRunOptions: Boolean get() = action == null && destination is QuickLaunchDestination.Desktop
 
     val takesNoWorktree: Boolean get() = takesRunOptions && !QuickLaunchRunOptions.cutsOwnWorktree(model.provider)
 
@@ -206,6 +283,16 @@ class QuickAgentLauncher(
 
     val contextLine: String
         get() {
+            when (action) {
+                QuickPromptAction.BugReport -> return "Bug report · ForkMesh team"
+                QuickPromptAction.Task -> return "Task for ${taskAssigneeLabel(taskAssignee)}"
+                QuickPromptAction.Note -> return "Note · your account"
+                QuickPromptAction.Issue, QuickPromptAction.ActivityPub -> {
+                    if (targets == null) return "Finding a repository…"
+                    return repository?.label ?: "Choose a repository"
+                }
+                null -> {}
+            }
             val target = repository
             if (targets == null) return "Finding a repository…"
             if (target == null) return "Choose a repository"
@@ -232,7 +319,8 @@ class QuickAgentLauncher(
         }
 
     val modelChoices: List<AgentModelChoice>
-        get() = AgentModelCatalog.nodeChoices(plan?.options?.models ?: emptyMap())
+        get() = (if (actions == null) emptyList() else QuickPromptAction.entries.map { it.choice }) +
+            AgentModelCatalog.nodeChoices(plan?.options?.models ?: emptyMap())
 
     private fun desktop(): QuickLaunchDestination.Desktop? {
         if (repository?.isOnMesh != true) return null
@@ -278,6 +366,8 @@ class QuickAgentLauncher(
             refreshOptions()
         }
         destination = resolveDestination()
+        settleDefault()
+        if (action == QuickPromptAction.Task && taskPeople == null) loadTaskPeople()
     }
 
     fun refresh() {
@@ -288,6 +378,7 @@ class QuickAgentLauncher(
             else -> true
         }
         if (!kept) destination = resolveDestination()
+        settleDefault()
     }
 
     private fun refreshOptions(): Boolean {
@@ -306,14 +397,21 @@ class QuickAgentLauncher(
         memory.rememberRepo(target.key)
         select(target)
         destination = resolveDestination()
+        settleDefault()
     }
 
     fun choose(destination: QuickLaunchDestination) {
         this.destination = destination
         repository?.key?.let { memory.rememberDestination(it, destination) }
+        settleDefault()
     }
 
     fun chooseModel(choice: AgentModelChoice) {
+        QuickPromptAction.of(choice)?.let {
+            chooseAction(it)
+            return
+        }
+        rememberAction(null)
         model = choice
         prefs?.let { NodeModelPreference(it).write(choice) }
         val current = destination
@@ -327,6 +425,7 @@ class QuickAgentLauncher(
 
     fun credentialsChanged() {
         if (destination == null) destination = resolveDestination()
+        settleDefault()
     }
 
     fun resolveDestination(): QuickLaunchDestination? {
@@ -354,6 +453,63 @@ class QuickAgentLauncher(
     }
 
     fun send(prompt: String, images: List<PromptAttachment>): QuickLaunchOutcome {
+        if (prompt.isBlank() && images.isEmpty()) return QuickLaunchOutcome.Ignored
+        if (action == null && (!prepared || targets == null)) prepare()
+        action?.let { return send(it, prompt, images) }
+        return sendAgent(prompt, images)
+    }
+
+    private fun send(action: QuickPromptAction, prompt: String, images: List<PromptAttachment>): QuickLaunchOutcome {
+        val actions = actions ?: return QuickLaunchOutcome.Failed("${action.label} is unavailable in this build.")
+        val text = prompt.trim()
+        if (text.isEmpty()) {
+            return QuickLaunchOutcome.Failed(if (action == QuickPromptAction.BugReport) "Describe what went wrong." else "Type something first.")
+        }
+        if (!action.takesPhotos && images.isNotEmpty()) {
+            return QuickLaunchOutcome.Failed("${action.label} cannot include photos yet. Remove them, or send a bug report.")
+        }
+        if (action.needsAccount && !backend.signedIn()) {
+            return QuickLaunchOutcome.NeedsFix(QuickLaunchFix.SignInAccount, "Sign in to use ${action.label}.")
+        }
+        val (title, body) = QuickPromptAction.titleAndBody(text)
+        return try {
+            when (action) {
+                QuickPromptAction.BugReport -> {
+                    actions.reportBug(text, images)
+                    QuickLaunchOutcome.Done("Sent to the ForkMesh team as a bug report.")
+                }
+                QuickPromptAction.Task -> {
+                    val repo = repository?.let { "${it.owner}/${it.name}" } ?: ""
+                    actions.createTask(title, text, taskAssignee, repo)
+                    QuickLaunchOutcome.Done(if (taskAssignee.isEmpty()) "Created an unassigned task on General." else "Created a task for @$taskAssignee.")
+                }
+                QuickPromptAction.Note -> {
+                    actions.takeNote(title, body)
+                    QuickLaunchOutcome.Done("Saved as a note.")
+                }
+                QuickPromptAction.Issue, QuickPromptAction.ActivityPub -> {
+                    if (!prepared || targets == null) prepare()
+                    val repo = repository?.repo ?: return QuickLaunchOutcome.NeedsFix(
+                        QuickLaunchFix.ChooseRepository,
+                        "Choose a published repository for ${action.label}.",
+                    )
+                    if (action == QuickPromptAction.Issue) {
+                        actions.createIssue(repo.owner, repo.name, title, body)
+                        QuickLaunchOutcome.Done("Filed an issue on ${repo.owner}/${repo.name}.")
+                    } else {
+                        actions.postToActivityPub(repo.owner, repo.name, title.take(240), body.take(4000))
+                        QuickLaunchOutcome.Done("Published to ActivityPub for ${repo.owner}/${repo.name}.")
+                    }
+                }
+            }
+        } catch (error: QuickActionError) {
+            QuickLaunchOutcome.Failed(error.message)
+        } catch (error: Exception) {
+            QuickLaunchOutcome.Failed("${action.label} did not go through. Try again.")
+        }
+    }
+
+    fun sendAgent(prompt: String, images: List<PromptAttachment>): QuickLaunchOutcome {
         if (prompt.isBlank() && images.isEmpty()) return QuickLaunchOutcome.Ignored
         if (!prepared || targets == null) prepare()
         if (!backend.signedIn()) {

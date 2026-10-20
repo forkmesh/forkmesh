@@ -19,6 +19,7 @@ Topic pages:
 
 | Page | Covers |
 | --- | --- |
+| [SYNC.md](SYNC.md) | iOS → Android sync ledger: every iOS feature or UI change Android still has to match, and `tools/native_sync.py` |
 | [PARITY.md](PARITY.md) | Phone feature matrix, platform decisions, iOS workstream hooks, the watchOS app, bundle ids |
 | [DESKTOP_PARITY.md](DESKTOP_PARITY.md) | Parity with the Qt desktop, route contract, desktop control families, extension targets |
 | [NAVIGATION.md](NAVIGATION.md) | Tabs, routes, Home grid, bars, sitemap and URLs |

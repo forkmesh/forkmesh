@@ -136,9 +136,14 @@ internal fun AgentTwoLineRow(
     trailing: (@Composable () -> Unit)? = null,
     facts: AgentChipFacts? = null,
     unread: Boolean? = null,
+    eagle: AgentEagleSource? = null,
 ) {
     val c = Fm.colors
     val view = if (facts == null) AgentListView.Compact else LocalAgentListView.current
+    if (view == AgentListView.Eagle && facts != null) {
+        AgentEagleRow(title, facts, onTap, unread, eagle, trailing)
+        return
+    }
     Row(
         Modifier
             .fillMaxWidth()

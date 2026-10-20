@@ -82,7 +82,7 @@ class GlassesAlertScreen : Screen() {
                 onDismiss = { picked = null },
             )
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Glasses Alert", navigator)
             LazyColumn(Modifier.fillMaxSize()) {
                 item {

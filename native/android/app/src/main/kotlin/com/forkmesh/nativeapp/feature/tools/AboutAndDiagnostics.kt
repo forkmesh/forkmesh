@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.tools
 
 import android.app.ActivityManager
+import com.forkmesh.nativeapp.ui.theme.FmType
 import android.app.ApplicationExitInfo
 import android.content.Context
 import android.os.Build
@@ -38,7 +39,6 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.api.PrefStore
@@ -158,7 +158,7 @@ object AppAboutFeature {
         if (target == null || "${target.owner}/${target.name}".lowercase() != DiagnosticsBundle.REPOSITORY) {
             return "${DiagnosticsBundle.REPOSITORY} is not among the repositories this phone can start agents in."
         }
-        return when (val outcome = quick.send(prompt, emptyList())) {
+        return when (val outcome = quick.send(prompt, emptyList(), agentOnly = true)) {
             is QuickLaunchOutcome.Queued -> {
                 AgentsFeature.ring()
                 openAgent(AgentsFeature.launchedSessionScreen(outcome.repo, outcome.session))
@@ -181,6 +181,7 @@ object AppAboutFeature {
             is QuickLaunchOutcome.NeedsFix -> outcome.message
             is QuickLaunchOutcome.Failed -> outcome.message
             QuickLaunchOutcome.Ignored -> "There was nothing to send."
+            is QuickLaunchOutcome.Done -> outcome.message
         }
     }
 
@@ -213,23 +214,26 @@ fun HubVersionRow(onWhatsNew: () -> Unit, onDiagnostics: () -> Unit) {
         }
     }
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4, vertical = FmSpace.x2),
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(c.bgElevated)
+            .padding(horizontal = FmSpace.x2, vertical = FmSpace.x2),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
             Modifier
                 .weight(1f)
-                .heightIn(min = 44.dp)
-                .clip(RoundedCornerShape(FmRadius.md))
+                .heightIn(min = 36.dp)
                 .clickable(onClick = onWhatsNew)
                 .semantics(mergeDescendants = true) {
                     role = Role.Button
                     contentDescription = "${version.label}. What's new"
                 },
-            verticalArrangement = Arrangement.Center,
+            verticalArrangement = Arrangement.spacedBy(2.dp, Alignment.CenterVertically),
         ) {
-            Text(version.label, style = Fm.text.bodySmall.copy(color = c.textSecondary))
-            Text("What's new", style = Fm.text.bodySmall.copy(color = c.accent))
+            Text(version.label, style = Fm.text.labelSmall.copy(color = c.textSecondary, fontFeatureSettings = "tnum"))
+            Text("What's new", style = Fm.text.labelMedium.copy(color = c.accent))
         }
         Spacer(Modifier.width(FmSpace.x2))
         DiagnosticsButton(alert, onDiagnostics)
@@ -426,7 +430,7 @@ fun DiagnosticsSendPage(onBack: () -> Unit, onSent: () -> Unit) {
                     if (showPreview) {
                         Text(
                             preview.ifEmpty { "Building the report…" },
-                            style = Fm.text.bodySmall.copy(color = c.textSecondary, fontFamily = FontFamily.Monospace),
+                            style = Fm.text.bodySmall.copy(color = c.textSecondary, fontFamily = FmType.mono),
                             modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(FmRadius.md)).background(c.bgOverlay).padding(FmSpace.x3),
                         )
                     }
