@@ -59,6 +59,14 @@ package does.
 
 ## Scanning
 
+The Scan section fills an empty **Target** with the range of the network this
+computer is on whenever it is shown, and **This network** refills it after it
+was edited. `localNetwork()` lists the addresses of every running,
+non-loopback interface and `suggestedLocalNetwork` takes the first private
+IPv4 one (not link-local), with its prefix narrowed to at least /24, so a /16
+network suggests the /24 around this computer's address and stays inside the
+256-host limit. The iPhone does the same with `LocalNetwork` in `NexusCore`.
+
 `TcpScanner` opens up to *Connections at once* (default 48, 1–256)
 `QTcpSocket`s, each with *Connection timeout* (default 1.5 s, 0.2–30 s):
 
