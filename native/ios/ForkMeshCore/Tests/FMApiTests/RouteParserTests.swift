@@ -144,6 +144,7 @@ final class RouteParserTests: XCTestCase {
         XCTAssertNil(web("/dashboard/ember/extra"))
         XCTAssertEqual(web("/dashboard/openwrt"), [.openWrtRouter])
         XCTAssertEqual(web("/dashboard/files"), [.fileExplorer])
+        XCTAssertEqual(web("/dashboard/nexus"), [.nexus])
         XCTAssertEqual(web("/dashboard/face-changer"), [.faceChanger])
         XCTAssertEqual(web("/dashboard/video-mix-dj-studio"), [.videoMixDjStudio])
         XCTAssertEqual(web("/dashboard/app-store-status"), [.appStoreStatus])

@@ -939,6 +939,9 @@ struct HomeShell: View {
                     available: updateCheck.available,
                     onClose: updateCheck.blocksUse ? nil : { router.dismissPresented() })
             }
+            .fullScreenCover(isPresented: nexusShown) {
+                RouteDestinationView(route: .nexus)
+            }
     }
 
     private func sheets<Content: View>(_ content: Content) -> some View {
@@ -1007,8 +1010,19 @@ struct HomeShell: View {
         return Binding<Bool>(
             get: {
                 guard let route = router.presented else { return false }
-                return route != .updateRequired
+                return route != .updateRequired && route != .nexus
             },
+            set: { (shown: Bool) in
+                if !shown {
+                    router.dismissPresented()
+                }
+            })
+    }
+
+    private var nexusShown: Binding<Bool> {
+        let router: AppRouter = self.router
+        return Binding<Bool>(
+            get: { router.presented == .nexus },
             set: { (shown: Bool) in
                 if !shown {
                     router.dismissPresented()

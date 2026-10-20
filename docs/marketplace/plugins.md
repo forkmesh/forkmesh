@@ -19,7 +19,7 @@ none of them unless a build explicitly adds them.
 A package is a **plugin** when it has a `content/` folder: code or material
 that some host builds or ships (desktop sources from `content/desktop/build.json`,
 a Worker module, dashboard or `www` pages, World modules, themes, agent
-descriptors, Workflows packs). There are 88.
+descriptors, Workflows packs). There are 89.
 
 A package without `content/` is a **switch**: it only turns a core feature on
 or off (Chat, Issues, Agents, the repository tabs, see
@@ -72,7 +72,7 @@ dropped, and so is a guide whose pack is gone.
   loads.
 - Every listed plugin with `content/desktop/build.json` that the core does not
   call is built as its own module (`packages/<id>.so` and sidecar,
-  [package-modules](../desktop/package-modules.md)): 36 today, against 17
+  [package-modules](../desktop/package-modules.md)): 37 today, against 17
   before. The hand-kept module list is gone; the generator emits
   `FORKMESH_PLUGIN_MODULE_CANDIDATES`.
 - Desktop extensions (Sentry, VSCodium) register themselves with

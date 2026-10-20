@@ -1,5 +1,7 @@
 # NEXUS iOS network intelligence
 
+The desktop counterpart is the `nexus` Market package, written in Qt with the same safety policy and service table ([../marketplace/nexus.md](../marketplace/nexus.md)).
+
 NEXUS is the native, Nmap-inspired network inspection package at `native/ios/Nexus`. It uses supported iOS APIs only: `Network.framework` for TCP connections, UDP DNS queries and Bonjour browsing; `URLSession` for HTTP and TLS-validated web requests; and SwiftData for the optional local history. It does not use raw sockets, ARP tables, ICMP, a bundled Nmap executable, background scans or fabricated MAC/vendor data.
 
 ## Package layout
@@ -34,6 +36,8 @@ import NexusUI
 
 NexusRootView()
 ```
+
+The ForkMesh iPhone app lists NEXUS in the You hub's Workspace group (`Route.nexus`, `/dashboard/nexus`). It is not a Market package, so `PackageGate` never hides it. `Route.nexus` is modal: `HomeShell` presents it as a full-screen cover rather than pushing it, because `NexusRootView` is a `TabView` whose tabs each own a `NavigationStack`, and nesting those inside the app's stack or the generic route sheet doubles the navigation bars. The host passes `onClose`, which puts a Done button on each tab's root screen; without `onClose` there is no Done button, so a host that embeds the view directly is unchanged.
 
 For a custom host experience, link `NexusKit` and inject transports or test doubles into `NexusClient`:
 

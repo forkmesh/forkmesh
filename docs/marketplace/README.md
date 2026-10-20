@@ -293,7 +293,10 @@ Every package lives in `marketplace/packages/<id>/` with its own README. Groups:
   the user's LAN from the desktop, iPhone and Android over its ubus JSON-RPC
   endpoint; [openwrt.md](openwrt.md)), and `files` (a file explorer for each
   device's files and SMB network shares, such as the router's shared disk, on
-  the desktop, iPhone and Android; [files.md](files.md)).
+  the desktop, iPhone and Android; [files.md](files.md)), and `nexus` (desktop
+  network inspection: multicast DNS discovery, TCP connect scans, DNS lookups
+  and web/TLS checks on networks the user may test; the iPhone has its own
+  NEXUS screen; [nexus.md](nexus.md)).
 - **Desktop and phone extras:** `capture` (on the iPhone, long-press a blank
   area to select, mark up and copy part of the screen;
   [../native/CAPTURE_MARKUP.md](../native/CAPTURE_MARKUP.md)), `discord`,
@@ -455,5 +458,5 @@ catalog fails the configure with "Marketplace package discovery failed".
 
 - [`marketplace/README.md`](../../marketplace/README.md): package format, lifecycle, publishing.
 - [`www/docs/plugins/README.md`](../../www/docs/plugins/README.md): planned plugins.
-- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
+- [core-plugins.md](core-plugins.md), [status-page.md](status-page.md), [app-store-status.md](app-store-status.md), [people.md](people.md), [aquarium.md](aquarium.md), [spider-room.md](spider-room.md), [cleanup.md](cleanup.md), [computer-security.md](computer-security.md), [phone-security.md](phone-security.md), [eye-control.md](eye-control.md), [openwrt.md](openwrt.md), [files.md](files.md), [nexus.md](nexus.md), [instance-feed.md](instance-feed.md), [runners.md](runners.md).
 - [`docs/desktop/README.md`](../desktop/README.md), [`docs/app/README.md`](../app/README.md), [`docs/world/README.md`](../world/README.md).
