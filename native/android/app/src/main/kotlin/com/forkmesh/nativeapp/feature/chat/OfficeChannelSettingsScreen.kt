@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -143,12 +144,7 @@ class OfficeChannelSettingsScreen(private val roomId: String) : Screen() {
             FmTextButton(
                 onClick = {
                     scope.launch {
-                        val ok = messenger.showConfirmDialog(
-                            title = "Delete #${room.name}?",
-                            body = "The channel and its history go away for every member.",
-                            confirmLabel = "Delete for everyone",
-                            destructive = true,
-                        )
+                        val ok = messenger.confirmAction("Delete #${room.name}?", "Delete for everyone", "The channel and its history go away for every member.")
                         if (!ok) return@launch
                         run({ service.delete(room) }) { navigator.pop() }
                     }

@@ -50,7 +50,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.PaddingValues
@@ -505,7 +504,7 @@ fun ChatMessageBody(text: String) {
                     Text(
                         part.text,
                         softWrap = false,
-                        style = Fm.text.bodyMedium.copy(fontFamily = FontFamily.Monospace, lineHeight = Fm.text.bodyMedium.fontSize * FmType.leadingSnug),
+                        style = Fm.text.bodyMedium.copy(fontFamily = FmType.mono, lineHeight = Fm.text.bodyMedium.fontSize * FmType.leadingSnug),
                     )
                 }
             } else {

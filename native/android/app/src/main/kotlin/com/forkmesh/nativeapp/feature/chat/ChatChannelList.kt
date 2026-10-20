@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
+import com.forkmesh.nativeapp.chat.ChatPeerPresence
+import com.forkmesh.nativeapp.chat.peerPresence
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -91,6 +94,7 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
     val channels = remember(relay.channels, revision) { hub?.channels ?: relay.channels }
     val offices = remember(revision) { hub?.officeChannels.orEmpty() }
     val directs = remember(relay, revision) { hub?.directListRows().orEmpty() }
+    val liveRevision by DirectLiveFeature.revision.collectAsState()
     val previews = remember(relay, revision, channels, offices) {
         (channels + offices).mapNotNull { conversation -> hub?.listPreview(conversation)?.let { conversation to it } }.toMap()
     }
@@ -213,12 +217,7 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
                                 FmDropdownMenuItem("Leave channel", icon = "logout", textColor = Fm.colors.danger, onClick = {
                                     menu = false
                                     scope.launch {
-                                        val ok = messenger.showConfirmDialog(
-                                            title = "Leave $channel?",
-                                            body = "It disappears from this phone. Messages others send there stop arriving here.",
-                                            confirmLabel = "Leave channel",
-                                            destructive = true,
-                                        )
+                                        val ok = messenger.confirmAction("Leave $channel?", "Leave channel", "It disappears from this phone. Messages others send there stop arriving here.")
                                         if (!ok) return@launch
                                         withContext(Dispatchers.IO) {
                                             val chat = ChatDepth.hub ?: return@withContext
@@ -276,14 +275,12 @@ fun ChatChannelPanel(navigator: Navigator, relay: RelaySnapshot, mesh: MeshSnaps
             item { Spacer(Modifier.height(FmSpace.x2)) }
             for ((record, preview) in directs) {
                 item(key = "direct:${record.id}") {
-                    val presence = groups.firstOrNull { !it.self && it.name.equals(record.otherUser, ignoreCase = true) }?.let { group ->
-                        val now = System.currentTimeMillis()
-                        val away = group.online && group.members.firstNotNullOfOrNull { it.userStatus }?.visible(now)?.away == true
-                        when {
-                            away -> Fm.colors.warning
-                            group.online -> Fm.colors.success
-                            else -> Fm.colors.offline
-                        }
+                    val state = remember(record.conversation, relay, revision, liveRevision) { hub?.peerPresence(record.conversation) }
+                    val presence = when (state) {
+                        ChatPeerPresence.AWAY -> Fm.colors.warning
+                        ChatPeerPresence.ONLINE -> Fm.colors.success
+                        ChatPeerPresence.OFFLINE -> Fm.colors.offline
+                        null -> null
                     }
                     ChannelTile(
                         title = record.otherUser,

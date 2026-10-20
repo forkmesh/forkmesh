@@ -1,5 +1,8 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.showActionSheet
+import com.forkmesh.nativeapp.ui.kit.FmSheetAction
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
 import com.forkmesh.nativeapp.chat.ChatProfileLink
@@ -356,31 +359,16 @@ private fun MessageActionRow(action: MessageAction, onTap: () -> Unit) {
 
 private suspend fun deleteScopeFlow(messenger: FmMessenger, forEveryone: Boolean, forMe: Boolean): Boolean? {
     if (forEveryone && forMe) {
-        return messenger.showModalBottomSheet<Boolean> { close ->
-            Spacer(Modifier.height(FmSpace.x2))
-            Column {
-                FmListRow(
-                    title = "Delete for everyone",
-                    subtitle = "Removes it for anyone whose device syncs this room.",
-                    leading = { FmIconTile(icon = "delete_outline", tint = Fm.colors.danger) },
-                    onTap = { close(true) },
-                )
-                FmRowDivider()
-                FmListRow(
-                    title = "Delete for me",
-                    subtitle = "Removes it from this phone only.",
-                    leading = { FmIconTile(icon = "visibility_off_outlined") },
-                    onTap = { close(false) },
-                )
-            }
-            Spacer(Modifier.height(FmSpace.x2))
+        return when (messenger.showActionSheet("Delete message?", null, listOf(FmSheetAction("Delete for everyone", destructive = true), FmSheetAction("Delete for me", destructive = true)))) {
+            0 -> true
+            1 -> false
+            else -> null
         }
     }
-    val ok = messenger.showConfirmDialog(
-        title = "Delete message?",
-        body = if (forEveryone) "This removes it for anyone whose device syncs this room." else "It is removed from this phone only. Others still see it.",
-        confirmLabel = "Delete",
-        destructive = true,
+    val ok = messenger.confirmAction(
+        "Delete message?",
+        if (forEveryone) "Delete for everyone" else "Delete for me",
+        if (forEveryone) "This removes it for anyone whose device syncs this room." else "It is removed from this phone only. Others still see it.",
     )
     return if (ok) forEveryone else null
 }

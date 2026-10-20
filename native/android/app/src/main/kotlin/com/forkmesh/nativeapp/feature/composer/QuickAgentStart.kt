@@ -44,8 +44,11 @@ internal class QuickAgentActions(
     val status: FmStatus,
     val openContextPicker: () -> Unit,
     val runFix: (QuickLaunchFix) -> Unit,
-    val send: (prompt: String, images: List<PromptAttachment>, onSent: () -> Unit) -> Unit,
-)
+    val sendReporting: (prompt: String, images: List<PromptAttachment>, onSent: () -> Unit, onOutcome: (QuickLaunchOutcome) -> Unit) -> Unit,
+) {
+    val send: (prompt: String, images: List<PromptAttachment>, onSent: () -> Unit) -> Unit =
+        { prompt, images, onSent -> sendReporting(prompt, images, onSent) {} }
+}
 
 @Composable
 internal fun rememberQuickAgentActions(
@@ -54,6 +57,7 @@ internal fun rememberQuickAgentActions(
     repoContext: String?,
     onStarted: () -> Unit = {},
     openRun: (Screen) -> Unit = { navigator.push(it) },
+    notice: FmStatus? = null,
 ): QuickAgentActions {
     val messenger = LocalFmMessenger.current
     val status = rememberFmStatus()
@@ -64,12 +68,14 @@ internal fun rememberQuickAgentActions(
     val latestStarted by rememberUpdatedState(onStarted)
     val latestOpenRun by rememberUpdatedState(openRun)
     val latestClone by rememberUpdatedState(cloneToDevice)
+    val latestNotice by rememberUpdatedState(notice)
 
     fun openContextPicker() {
         scope.launch {
             when (val picked = pickQuickContext(messenger, quick)) {
                 is QuickPick.Repo -> quick.choose(picked.target)
                 is QuickPick.Where -> quick.choose(picked.destination)
+                is QuickPick.Assignee -> quick.chooseAssignee(picked.name)
                 null -> {}
             }
         }
@@ -108,12 +114,14 @@ internal fun rememberQuickAgentActions(
         }
     }
 
-    fun send(prompt: String, images: List<PromptAttachment>, onSent: () -> Unit) {
+    fun send(prompt: String, images: List<PromptAttachment>, onSent: () -> Unit, onOutcome: (QuickLaunchOutcome) -> Unit) {
         status.clear()
         LaunchFlight.charge()
         scope.launch {
             try {
-                when (val outcome = quick.send(prompt, images)) {
+                val outcome = quick.send(prompt, images)
+                onOutcome(outcome)
+                when (outcome) {
                     is QuickLaunchOutcome.Queued -> {
                         if (images.isNotEmpty()) {
                             AgentsFeature.sentPhotos.record(outcome.session.sessionId, prompt.trim().ifEmpty { "See the attached photos." }, images)
@@ -142,6 +150,12 @@ internal fun rememberQuickAgentActions(
                         latestStarted()
                         LaunchFlight.launch(SurfacesFeature.agents.value.active.size, outcome.message)
                         latestOpenRun(AgentsFeature.allAgentsScreen())
+                    }
+                    is QuickLaunchOutcome.Done -> {
+                        FmSoundCues.play(SoundCue.SUCCESS)
+                        val shown = latestNotice
+                        onSent()
+                        (shown ?: status).show(outcome.message)
                     }
                     is QuickLaunchOutcome.NeedsFix, is QuickLaunchOutcome.Failed -> FmSoundCues.play(SoundCue.ERROR)
                     else -> {}
@@ -184,9 +198,9 @@ fun AgentQuickStart(navigator: Navigator, onStarted: () -> Unit = {}, onSent: ()
         },
         hint = "New agent · type / for commands",
         busy = quick.sending,
-        modelLabel = quick.model.label,
+        modelLabel = quick.chip.label,
         modelChoices = quick.modelChoices,
-        selectedModel = quick.model,
+        selectedModel = quick.chip,
         onSelectModel = { picked -> scope.launch { quick.chooseModel(picked) } },
         attachments = photos,
         onAttachmentsChanged = { photos = it },

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -221,7 +222,7 @@ class DiscordChannelScreen(private val channelId: String) : Screen() {
                                 status.error(it.message ?: it.toString())
                                 return@launch
                             }
-                            val ok = messenger.showConfirmDialog(title = "Send to Discord?", body = confirmation.summary, confirmLabel = "Send")
+                            val ok = messenger.confirmAction("Send through your desktop?", "Send", confirmation.summary, destructive = false)
                             if (!ok) return@launch
                             val sent = withContext(Dispatchers.IO) { runCatching { bridge.send(confirmation) } }
                             sent.onSuccess {

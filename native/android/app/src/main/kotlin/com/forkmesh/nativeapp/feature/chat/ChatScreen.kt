@@ -1,5 +1,11 @@
 package com.forkmesh.nativeapp.feature.chat
 
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import com.forkmesh.nativeapp.chat.peerPresence
+import com.forkmesh.nativeapp.chat.peerOnline
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.ui.unit.IntSize
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import androidx.compose.ui.semantics.contentDescription
@@ -64,9 +70,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.forkmesh.nativeapp.chat.ChatConversationLayout
 import com.forkmesh.nativeapp.chat.ChatRow
 import com.forkmesh.nativeapp.chat.DirectMessageFrames
 import com.forkmesh.nativeapp.chat.MESH_CONVERSATION
@@ -105,7 +111,16 @@ import com.forkmesh.nativeapp.ui.theme.FmIcon
 import com.forkmesh.nativeapp.ui.theme.FmSpace
 import com.forkmesh.nativeapp.ui.theme.FmType
 import com.forkmesh.nativeapp.platform.AppLifecycle
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import com.forkmesh.nativeapp.chat.ChatMessageInfo
+import com.forkmesh.nativeapp.ui.theme.FmHaptics
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -117,10 +132,43 @@ class ChatScreen : Screen() {
     private var channelsOpen by mutableStateOf(false)
     private val status = FmStatus()
     private val follower = TranscriptFollower()
+    private var infoId by mutableStateOf<String?>(null)
+    private var infoOpen by mutableStateOf(false)
+    private var infoSettle by mutableIntStateOf(0)
+    private val infoReveal = Animatable(0f)
+
+    private fun settleInfo(open: Boolean) {
+        infoOpen = open
+        infoSettle++
+    }
+
+    private val sheets = ArrayList<Job>()
+
+    private fun CoroutineScope.sheet(block: suspend CoroutineScope.() -> Unit) {
+        val job = launch(block = block)
+        synchronized(sheets) { sheets.add(job) }
+        job.invokeOnCompletion { synchronized(sheets) { sheets.remove(job) } }
+    }
+
+    private fun revealConversation() {
+        channelsOpen = false
+        if (infoId != null) settleInfo(false)
+        val open = synchronized(sheets) { sheets.toList() }
+        for (job in open) job.cancel()
+    }
+
+    private fun openInfo(id: String) {
+        infoId = id
+        settleInfo(true)
+    }
 
     override val title: String get() = "Chat"
 
     override fun onBack(): Boolean {
+        if (infoId != null) {
+            settleInfo(false)
+            return true
+        }
         if (channelsOpen) {
             channelsOpen = false
             return true
@@ -147,6 +195,14 @@ class ChatScreen : Screen() {
             issueFromCommand(messenger, status, argument, snapshot?.currentConversation.orEmpty(), author)
         }
         val revision by ChatDepth.revision.collectAsState()
+        val reveal by ChatDepth.revealRequests.collectAsState()
+        var revealSeen by remember { mutableIntStateOf(reveal) }
+        LaunchedEffect(reveal) {
+            if (reveal != revealSeen) {
+                revealSeen = reveal
+                revealConversation()
+            }
+        }
         val sessionToken = Services.get<AuthService>()?.session?.collectAsState()?.value?.sessionToken.orEmpty()
         LaunchedEffect(sessionToken) { if (sessionToken.isNotEmpty()) ChatDepth.loadAppCommands() }
         LaunchedEffect(revision) {
@@ -170,6 +226,11 @@ class ChatScreen : Screen() {
             ""
         }
         LaunchedEffect(focusedConversation) { withContext(Dispatchers.IO) { ChatDepth.direct?.screenFocus(focusedConversation) } }
+        val liveConversation = if (foreground && DirectMessageFrames.isDirect(snapshot.currentConversation)) snapshot.currentConversation else ""
+        DisposableEffect(liveConversation) {
+            if (liveConversation.isNotEmpty()) DirectLiveFeature.startSharing(liveConversation)
+            onDispose { if (liveConversation.isNotEmpty()) DirectLiveFeature.stopSharing(liveConversation) }
+        }
         DisposableEffect(Unit) {
             onDispose { AppLifecycle.scope.launch(Dispatchers.IO) { ChatDepth.direct?.screenFocus("") } }
         }
@@ -233,6 +294,7 @@ class ChatScreen : Screen() {
         }
     }
 
+    @OptIn(ExperimentalLayoutApi::class)
     @Composable
     private fun Transcript(
         navigator: Navigator,
@@ -266,9 +328,51 @@ class ChatScreen : Screen() {
             }
         }
         val messages = rows.map { it.message }
+        val bubbles = remember(conversation, revision, inMesh) {
+            !inMesh && (ChatDepth.hub?.isConversation(conversation) ?: conversation.startsWith("@"))
+        }
+        val group = remember(conversation, revision) { ChatDepth.hub?.isGroupConversation(conversation) == true }
+        val items = remember(rows, bubbles, group) { if (bubbles) ChatConversationLayout.items(rows, group) else emptyList() }
+        val bubbleColors = ChatBubbleColors(Fm.dark)
+        val liveRevision by DirectLiveFeature.revision.collectAsState()
+        val liveEngine = DirectLiveFeature.engine
+        val liveHere = inDirect && liveEngine != null
+        var drawing by remember(conversation) { mutableStateOf(false) }
+        var transcriptSize by remember { mutableStateOf(IntSize.Zero) }
+        val imeVisible = WindowInsets.isImeVisible
+        var tapbackId by remember(conversation) { mutableStateOf<String?>(null) }
         val list = rememberLazyListState()
         val scope = rememberCoroutineScope()
         val focus = LocalFocusManager.current
+        val haptics = FmHaptics.current
+        var pageWidth by remember { mutableIntStateOf(0) }
+        val width = pageWidth.toFloat().coerceAtLeast(1f)
+        LaunchedEffect(conversation) {
+            infoId = null
+            infoOpen = false
+            infoReveal.snapTo(0f)
+        }
+        LaunchedEffect(infoSettle) {
+            if (infoId == null) return@LaunchedEffect
+            infoReveal.animateTo(if (infoOpen) 1f else 0f, spring(dampingRatio = 0.9f, stiffness = 340f))
+            if (!infoOpen) infoId = null
+        }
+        val lastOwn = remember(rows) { if (inDirect) ChatMessageInfo.lastOwnId(rows) else null }
+        val pullInfo: (String, Float) -> Unit = { id, dx ->
+            if (infoId != id) {
+                infoId = id
+                infoOpen = false
+            }
+            focus.clearFocus()
+            scope.launch { infoReveal.snapTo((-dx / width).coerceIn(0f, 1f)) }
+        }
+        val releaseInfo: (Float, Float) -> Unit = { dx, fling ->
+            if (infoId != null && !infoOpen) {
+                val open = ChatMessageInfo.opens(dx, fling, width)
+                if (open) haptics.selection()
+                settleInfo(open)
+            }
+        }
         val statuses = remember(relay.roster) { relay.roster.associate { it.id to it.userStatus } }
         var tick by remember { mutableLongStateOf(0L) }
         LaunchedEffect(conversation) {
@@ -278,6 +382,7 @@ class ChatScreen : Screen() {
             }
         }
         val typing = remember(conversation, revision, tick) { typingLabelFor(conversation) }
+        val endIndex = if (bubbles) items.lastIndex + (if (typing.isNotEmpty()) 1 else 0) else messages.lastIndex
         LaunchedEffect(conversation, messages.lastOrNull()?.id) {
             val action = follower.onMessages(conversation, messages) {
                 val info = list.layoutInfo
@@ -285,8 +390,8 @@ class ChatScreen : Screen() {
                 info.totalItemsCount == 0 || last >= info.totalItemsCount - 1 - FOLLOW_SLACK_ITEMS
             }
             when (action) {
-                TranscriptFollower.Action.JUMP_TO_END -> if (messages.isNotEmpty()) list.scrollToItem(messages.lastIndex)
-                TranscriptFollower.Action.ANIMATE_TO_END -> if (messages.isNotEmpty()) list.animateScrollToItem(messages.lastIndex)
+                TranscriptFollower.Action.JUMP_TO_END -> if (endIndex >= 0) list.scrollToItem(endIndex)
+                TranscriptFollower.Action.ANIMATE_TO_END -> if (endIndex >= 0) list.animateScrollToItem(endIndex)
                 TranscriptFollower.Action.NONE -> {}
             }
         }
@@ -294,7 +399,14 @@ class ChatScreen : Screen() {
         val topic = remember(conversation, revision) { ChatDepth.office?.room(conversation)?.topic.orEmpty() }
         val privateRoom = remember(conversation, revision) { ChatDepth.hub?.isPrivateRoom(conversation) ?: conversation.startsWith("@") }
         val otherRoomsUnread = relay.totalUnread > 0 || (!inMesh && mesh?.hasUnread == true)
-        Column(Modifier.fillMaxSize().imePadding()) {
+        Box(Modifier.fillMaxSize().onSizeChanged { pageWidth = it.width }) {
+        Box(Modifier.fillMaxSize().imePadding().graphicsLayer { translationX = -infoReveal.value * 0.3f * width }) {
+            var chromeTop by remember { mutableIntStateOf(0) }
+            var chromeBottom by remember { mutableIntStateOf(0) }
+            val density = androidx.compose.ui.platform.LocalDensity.current
+            val topInset = with(density) { chromeTop.toDp() }
+            val bottomInset = with(density) { chromeBottom.toDp() }
+            val canvas = if (bubbles) bubbleColors.canvas else colors.bgBase
             val badgeLabel = if (inMesh) {
                 meshBadge(mesh?.networkActive == true, mesh?.bluetoothActive == true, mesh?.peerCount ?: 0)
             } else {
@@ -303,7 +415,7 @@ class ChatScreen : Screen() {
             val showSeal = {
                 val summary = ChatDepth.hub?.sealSummary(conversation).orEmpty()
                 if (summary.isNotEmpty()) {
-                    scope.launch {
+                    scope.sheet {
                         messenger.showConfirmDialog(
                             title = if (privateRoom) "End-to-end encryption" else "Public channel",
                             body = summary,
@@ -312,12 +424,33 @@ class ChatScreen : Screen() {
                     }
                 }
             }
-            val detail = listOfNotNull(
+            val oneToOne = bubbles && !group
+            val peerOnline = remember(conversation, relay, revision, liveRevision, typing) {
+                oneToOne && ChatDepth.hub?.peerOnline(conversation) == true
+            }
+            val presenceLabel = remember(conversation, relay, revision, liveRevision, typing) {
+                if (oneToOne) ChatDepth.hub?.peerPresence(conversation)?.label.orEmpty() else ""
+            }
+            val detail = if (oneToOne) {
+                listOfNotNull(
+                    if (peerOnline) null else presenceLabel.ifEmpty { null },
+                    route.ifEmpty { null },
+                    ChatDepth.hub?.serverCopiesLine(conversation)?.ifEmpty { null },
+                ).joinToString(" \u00B7 ")
+            } else listOfNotNull(
                 route.ifEmpty { null },
                 if (!inMesh && !inDirect && relay.onlineCount > 0) "${relay.onlineCount} online" else null,
                 badgeLabel,
                 ChatDepth.hub?.serverCopiesLine(conversation)?.ifEmpty { null },
-            ).joinToString(" \u2022 ")
+            ).joinToString(" \u00B7 ")
+            com.forkmesh.nativeapp.ui.kit.FmBackdropHost(Modifier.fillMaxSize(), overlay = {
+            Column(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .background(androidx.compose.ui.graphics.Brush.verticalGradient(0f to canvas, 0.6f to canvas.copy(alpha = 0.7f), 1f to canvas.copy(alpha = 0f)))
+                    .onSizeChanged { chromeTop = it.height },
+            ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = FmSpace.x3, vertical = FmSpace.x2),
                 horizontalArrangement = Arrangement.spacedBy(FmSpace.x2),
@@ -327,11 +460,12 @@ class ChatScreen : Screen() {
                     ChatGlassCircle("chevron_left", "Channels", onOpenChannels, dot = otherRoomsUnread)
                 }
                 var roomMenu by remember { mutableStateOf(false) }
+                Box(Modifier.weight(1f)) {
                 Row(
                     Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
                         .heightIn(min = 48.dp)
-                        .fmGlass(RoundedCornerShape(24.dp))
+                        .fmGlass(RoundedCornerShape(24.dp), interactive = true)
                         .clickable { roomMenu = true }
                         .padding(horizontal = FmSpace.x4),
                     verticalAlignment = Alignment.CenterVertically,
@@ -351,10 +485,10 @@ class ChatScreen : Screen() {
                         }
                         FmDropdownMenuItem("Messages disappear after", icon = "timer_outlined", onClick = {
                             roomMenu = false
-                            scope.launch { chatRetentionFlow(messenger, status, conversation, title) }
+                            scope.sheet { chatRetentionFlow(messenger, status, conversation, title) }
                         })
                     }
-                    FmIcon(
+                    if (liveHere) Spacer(Modifier.size(DirectLiveGeometry.PHONE_SLOT, 38.dp)) else FmIcon(
                         when {
                             inMesh -> "lan_outlined"
                             title.startsWith("@") -> "alternate_email"
@@ -373,22 +507,49 @@ class ChatScreen : Screen() {
                             overflow = TextOverflow.Ellipsis,
                             style = Fm.text.titleSmall.copy(fontSize = 16.sp, fontWeight = FontWeight.Bold, color = colors.textPrimary),
                         )
-                        Text(detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(5.dp),
+                            modifier = Modifier.semantics(mergeDescendants = true) {
+                                if (peerOnline) contentDescription = listOf("Online", detail).filter { it.isNotEmpty() }.joinToString(", ")
+                            },
+                        ) {
+                            if (peerOnline) DirectLiveOnlineLight(colors.success)
+                            if (detail.isNotEmpty()) {
+                                Text(detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
+                            }
+                        }
                     }
                     DirectCallButtons(conversation)
                 }
-                if (onOpenChannels != null) ChatGlassCircle("edit_outlined", "New message", onOpenChannels)
-                if (com.forkmesh.nativeapp.feature.market.PackageGateFeature.surfaces.collectAsState().value.agents) {
+                if (liveHere) {
+                    DirectLivePartnerPhone(
+                        conversation,
+                        title.removePrefix("@"),
+                        Fm.dark,
+                        Modifier.align(Alignment.CenterStart).padding(start = FmSpace.x4),
+                    )
+                }
+                }
+                if (liveHere) {
+                    DirectLiveTouchButton(drawing) {
+                        focus.clearFocus()
+                        haptics.selection()
+                        drawing = !drawing
+                    }
+                }
+                if (!bubbles && onOpenChannels != null) ChatGlassCircle("edit_outlined", "New message", onOpenChannels)
+                if (!bubbles && com.forkmesh.nativeapp.feature.market.PackageGateFeature.surfaces.collectAsState().value.agents) {
                     com.forkmesh.nativeapp.feature.composer.PromptButton("Chat", onClick = {
                         com.forkmesh.nativeapp.feature.navigation.NavigationFeature.shell()?.openPrompt()
                     })
                 }
                 val account by com.forkmesh.nativeapp.feature.account.AccountFeature.shellState.collectAsState()
                 val avatarPng = com.forkmesh.nativeapp.core.Services.get<com.forkmesh.nativeapp.feature.account.AuthService>()?.session?.collectAsState()?.value?.avatarPng.orEmpty()
-                Box(
+                if (!bubbles) Box(
                     Modifier
                         .height(48.dp)
-                        .fmGlass(RoundedCornerShape(24.dp))
+                        .fmGlass(RoundedCornerShape(24.dp), interactive = true)
                         .clickable { com.forkmesh.nativeapp.feature.navigation.NavigationFeature.shell()?.openHub() }
                         .semantics { contentDescription = "You: projects, tools and settings" }
                         .padding(horizontal = FmSpace.x2 + 5.dp),
@@ -397,8 +558,6 @@ class ChatScreen : Screen() {
                     FmAvatar(account.label, 30.dp, avatarPng = avatarPng, textStyle = Fm.text.labelMedium)
                 }
             }
-            Box(Modifier.weight(1f).fillMaxWidth()) {
-                Column(Modifier.fillMaxSize()) {
                     if (topic.isNotEmpty()) {
                         Text(
                             topic,
@@ -414,19 +573,47 @@ class ChatScreen : Screen() {
                         UnreadBanner(relay.totalUnread) {
                             scope.launch {
                                 withContext(Dispatchers.IO) { ChatDepth.hub?.markAllRead() ?: ChatFeature.relay?.markAllRead() }
-                                if (messages.isNotEmpty()) list.animateScrollToItem(messages.lastIndex)
+                                if (endIndex >= 0) list.animateScrollToItem(endIndex)
                             }
                         }
                     }
+            }
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .onSizeChanged { chromeBottom = it.height },
+            ) {
+                FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x4))
+                if (!bubbles) ChatTypingLine(typing)
+                Composer(relay, inMesh)
+            }
+            }) {
                     Box(
                         Modifier
-                            .weight(1f)
-                            .fillMaxWidth()
-                            .background(colors.bgBase)
-                            .clickable(indication = null, interactionSource = null) { focus.clearFocus() },
+                            .fillMaxSize()
+                            .background(canvas)
+                            .onSizeChanged { transcriptSize = it }
+                            .then(
+                                if (liveHere && liveEngine != null) {
+                                    Modifier.pointerInput(conversation, imeVisible) {
+                                        detectTapGestures { offset ->
+                                            if (imeVisible) {
+                                                focus.clearFocus()
+                                            } else {
+                                                liveEngine.tap(conversation, DirectLiveGeometry.point(offset, size))
+                                                DirectLiveHaptics.sent(context)
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    Modifier.clickable(indication = null, interactionSource = null) { focus.clearFocus() }
+                                },
+                            ),
                     ) {
+                        if (liveHere) DirectLiveInkLayer(conversation)
                         if (rows.isEmpty()) {
-                            FmEmptyState(
+                            Box(Modifier.fillMaxSize().padding(top = topInset, bottom = bottomInset)) { FmEmptyState(
                                 icon = if (inMesh) "lan_outlined" else "chat_bubble_outline",
                                 title = "No messages yet",
                                 message = if (inMesh) {
@@ -434,20 +621,50 @@ class ChatScreen : Screen() {
                                 } else {
                                     "Encrypted relay messages will appear here."
                                 },
-                            )
+                            ) }
                         } else {
                             LazyColumn(
                                 state = list,
                                 modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(horizontal = FmSpace.x2, vertical = FmSpace.x3),
+                                contentPadding = if (bubbles) PaddingValues(top = topInset + FmSpace.x2, bottom = bottomInset + 6.dp) else PaddingValues(start = FmSpace.x2, end = FmSpace.x2, top = topInset + FmSpace.x3, bottom = bottomInset + FmSpace.x3),
                             ) {
+                                if (bubbles) {
+                                    conversationItems(
+                                        items = items,
+                                        group = group,
+                                        colors = bubbleColors,
+                                        typing = typing,
+                                        lastOwn = lastOwn,
+                                        revision = revision,
+                                        infoOpen = infoOpen,
+                                        canReact = !inOffice,
+                                        pullInfo = pullInfo,
+                                        releaseInfo = releaseInfo,
+                                        onLongPress = { row -> scope.sheet { messageActionsFlow(messenger, context, navigator, row, inThread = false, status) } },
+                                        onTapback = { id ->
+                                            haptics.selection()
+                                            tapbackId = id
+                                        },
+                                        onThread = { id -> navigator.push(ChatThreadScreen(conversation, id)) },
+                                        onInfo = { id -> openInfo(id) },
+                                    )
+                                    return@LazyColumn
+                                }
                                 itemsIndexed(rows, key = { _, r -> r.message.id }) { index, row ->
                                     val message = row.message
                                     if (message.senderId == DirectMessageFrames.SYSTEM_SENDER && message.ephemeral) {
                                         ChatSystemLine(message.text)
                                         return@itemsIndexed
                                     }
-                                    Column {
+                                    val swipeable = !inMesh && !message.ephemeral && row.viewOnce == null
+                                    Column(
+                                        Modifier.sideSwipe(
+                                            ChatSwipeHeading.LEFT,
+                                            enabled = swipeable && !infoOpen,
+                                            moved = { dx -> pullInfo(message.id, dx) },
+                                            ended = releaseInfo,
+                                        ),
+                                    ) {
                                         if (startsNewDay(rows.getOrNull(index - 1)?.message, message)) {
                                             ChatDayDivider(message.timestamp)
                                         }
@@ -459,22 +676,70 @@ class ChatScreen : Screen() {
                                                 statuses[message.senderId]
                                             },
                                             queued = inMesh && message.self && mesh?.queued?.contains(message.id) == true,
-                                            onLongPress = if (message.ephemeral || row.viewOnce != null) null else ({ scope.launch { messageActionsFlow(messenger, context, navigator, row, inThread = false, status) } }),
+                                            onLongPress = if (message.ephemeral || row.viewOnce != null) null else ({ scope.sheet { messageActionsFlow(messenger, context, navigator, row, inThread = false, status) } }),
                                             onToggleReaction = if (inMesh || inOffice) null else ({ value ->
                                                 scope.launch(Dispatchers.IO) { ChatDepth.hub?.toggleReaction(message, value) }
                                             }),
                                             onOpenThread = { navigator.push(ChatThreadScreen(conversation, message.id)) },
                                         )
+                                        if (message.id == lastOwn) {
+                                            val receiptText = remember(row.receipt, revision) {
+                                                val times = ChatDepth.hub?.receiptTimes(message) ?: com.forkmesh.nativeapp.model.ChatReceiptTimes()
+                                                ChatMessageInfo.receiptStatus(message, row.receipt, times, System.currentTimeMillis())
+                                            }
+                                            if (receiptText != null) ChatReceiptLine(receiptText) { openInfo(message.id) }
+                                        }
                                     }
                                 }
                             }
                         }
+                        if (liveHere && drawing) DirectLiveTouchSurface(conversation) { drawing = false }
                     }
-                    FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x4))
-                    ChatTypingLine(typing)
-                    Composer(relay, inMesh)
-                }
                 drawer()
+            }
+        }
+            val tapbackRow = tapbackId?.let { id -> rows.firstOrNull { it.message.id == id } }
+            if (tapbackRow != null) {
+                ChatTapbackOverlay(
+                    tapbackRow.reactions,
+                    onPick = { value ->
+                        haptics.tap()
+                        tapbackId = null
+                        scope.launch(Dispatchers.IO) { ChatDepth.hub?.toggleReaction(tapbackRow.message, value) }
+                    },
+                    onDismiss = { tapbackId = null },
+                )
+            }
+            val shownId = infoId
+            val infoRow = if (shownId == null) null else rows.firstOrNull { it.message.id == shownId }
+            if (infoRow != null) {
+                val hub = ChatDepth.hub
+                val info = remember(infoRow, revision) {
+                    val message = infoRow.message
+                    ChatMessageInfo.page(
+                        infoRow,
+                        hub?.receiptTimes(message) ?: com.forkmesh.nativeapp.model.ChatReceiptTimes(),
+                        expiresAt = hub?.expiresAt(message),
+                        onServer = hub?.isOnServer(message, infoRow.receipt) == true,
+                        nowMs = System.currentTimeMillis(),
+                    )
+                }
+                ChatMessageInfoPageView(
+                    infoRow,
+                    info,
+                    onClose = { settleInfo(false) },
+                    modifier = Modifier
+                        .graphicsLayer {
+                            translationX = (1f - infoReveal.value) * width
+                            shadowElevation = 12.dp.toPx() * infoReveal.value
+                        }
+                        .sideSwipe(
+                            ChatSwipeHeading.RIGHT,
+                            enabled = infoOpen,
+                            moved = { dx -> scope.launch { infoReveal.snapTo(1f - dx.coerceAtLeast(0f) / width) } },
+                            ended = { dx, fling -> settleInfo(!ChatMessageInfo.closes(dx, fling, width)) },
+                        ),
+                )
             }
         }
     }
@@ -563,7 +828,7 @@ class ChatScreen : Screen() {
                 modifier = Modifier.weight(1f),
                 maxLines = if (expanded) 16 else 2,
                 overflow = TextOverflow.Ellipsis,
-                style = Fm.text.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = FmType.micro, color = colors.textTertiary),
+                style = Fm.text.bodySmall.copy(fontFamily = FmType.mono, fontSize = FmType.micro, color = colors.textTertiary),
             )
             FmIconButton(
                 icon = "copy",
@@ -609,7 +874,7 @@ private fun ChatGlassCircle(icon: String, label: String, onClick: () -> Unit, do
     Box(
         Modifier
             .size(48.dp)
-            .fmGlass(CircleShape)
+            .fmGlass(CircleShape, interactive = true)
             .clickable(onClick = onClick)
             .semantics {
                 role = Role.Button

@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.chat
 
 import android.app.Activity
+import com.forkmesh.nativeapp.ui.theme.FmType
 import android.content.Context
 import android.content.ContextWrapper
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -31,12 +32,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.forkmesh.nativeapp.chat.DirectDevice
 import com.forkmesh.nativeapp.chat.DirectMessageFrames
+import com.forkmesh.nativeapp.chat.DirectSafetyScan
+import com.forkmesh.nativeapp.chat.DirectTrustNotice
+import com.forkmesh.nativeapp.chat.DirectTrustText
 import com.forkmesh.nativeapp.feature.account.settings.QrScannerScreen
 import com.forkmesh.nativeapp.ui.kit.FmElevatedButton
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
@@ -82,7 +84,7 @@ fun ChatLockGate(content: @Composable () -> Unit) {
         }
     }
     LaunchedEffect(Unit) { ask() }
-    Box(Modifier.fillMaxSize().background(Fm.colors.bgBase), contentAlignment = Alignment.Center) {
+    Box(Modifier.fillMaxSize().background(Fm.colors.canvas), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             FmIcon("lock_outline", size = 40.dp, tint = Fm.colors.textTertiary)
             Spacer(Modifier.height(FmSpace.x4))
@@ -132,18 +134,14 @@ fun ChatSystemLine(text: String) {
 @Composable
 fun PendingDeviceBanner(conversation: String, revision: Int) {
     val scope = rememberCoroutineScope()
-    val pending by produceState(emptyList<DirectDevice>(), conversation, revision) {
-        value = withContext(Dispatchers.IO) { ChatDepth.direct?.pendingDevices(conversation).orEmpty() }
+    val pending by produceState(emptyList<DirectTrustNotice>(), conversation, revision) {
+        value = withContext(Dispatchers.IO) { ChatDepth.direct?.trustNotices(conversation).orEmpty() }
     }
     if (pending.isEmpty()) return
-    val other = ChatDepth.direct?.record(conversation)?.otherUser.orEmpty()
     val colors = Fm.colors
     Column(Modifier.fillMaxWidth().background(colors.bgRaised).padding(horizontal = FmSpace.x4, vertical = FmSpace.x2)) {
         for (device in pending) {
-            Text(
-                DirectMessageFrames.pendingDeviceLine(if (device.acct == other) other else "your account"),
-                style = Fm.text.bodySmall.copy(color = colors.textSecondary),
-            )
+            Text(device.text, style = Fm.text.bodySmall.copy(color = colors.textSecondary))
             Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
                 FmTextButton(onClick = {
                     scope.launch(Dispatchers.IO) { ChatDepth.direct?.approveDevice(conversation, device.kid) }
@@ -186,14 +184,14 @@ class SafetyNumberScreen(private val conversation: String) : Screen() {
             for (row in DirectMessageFrames.safetyGroups(current.digits).chunked(4)) {
                 Text(
                     row.joinToString("  "),
-                    style = Fm.text.bodyLarge.copy(fontFamily = FontFamily.Monospace, fontSize = 20.sp),
+                    style = Fm.text.bodyLarge.copy(fontFamily = FmType.mono, fontSize = 20.sp),
                 )
             }
             Spacer(Modifier.height(FmSpace.x4))
             QrImage(current.qr, size = 220.dp, description = "Safety number QR code")
             Spacer(Modifier.height(FmSpace.x3))
             Text(
-                "Compare these numbers with ${other.ifEmpty { "the other person" }}, or scan the code on their phone. They change when either of you adds or removes a device.",
+                DirectTrustText.safetyExplainer(other.ifEmpty { "the other person" }),
                 textAlign = TextAlign.Center,
                 style = Fm.text.bodySmall.copy(color = colors.textSecondary),
             )
@@ -214,8 +212,10 @@ class SafetyNumberScreen(private val conversation: String) : Screen() {
                 navigator.push(
                     QrScannerScreen("Scan their safety number") { scanned ->
                         scope.launch {
-                            val ok = withContext(Dispatchers.IO) { ChatDepth.direct?.verifyScanned(conversation, scanned) == true }
-                            notice = if (ok) "The numbers match. Marked as verified." else "That code does not match this conversation's safety number."
+                            val result = withContext(Dispatchers.IO) {
+                                ChatDepth.direct?.verifySafetyCode(conversation, scanned) ?: DirectSafetyScan.NOT_SAFETY_CODE
+                            }
+                            notice = result.message
                         }
                     },
                 )
