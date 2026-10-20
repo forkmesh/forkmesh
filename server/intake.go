@@ -479,7 +479,7 @@ func (d *Daemon) ackCollaboration(ctx context.Context, repo Repository,
 		return nil
 	}
 	query.Set("ids", strings.Join(parts, ","))
-	state, err := refsSHA256(ctx, repo.GitDir)
+	state, err := routingRefsSHA256(ctx, repo.GitDir)
 	if err != nil {
 		return err
 	}
