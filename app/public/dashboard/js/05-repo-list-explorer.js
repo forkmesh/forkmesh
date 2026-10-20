@@ -452,7 +452,7 @@
     const url = String(value || "");
     return (
       /^data:image\/(?:svg\+xml|png|jpeg|webp)(?:;|,)/i.test(url)
-      || /^\/api\/repo\/[^/?#]+\/[^/?#]+\/(?:raw\?[^#]+|media\/logo\.png(?:\?[^#]*)?)$/i.test(url)
+      || /^\/api\/repo\/[^/?#]+\/[^/?#]+\/(?:raw\?[^#]+|dir-logo\?[^#]+|media\/logo\.png(?:\?[^#]*)?)$/i.test(url)
     )
       ? url
       : "";

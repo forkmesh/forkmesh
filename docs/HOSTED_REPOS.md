@@ -90,6 +90,38 @@ git clone ─► app ─► public: a core whose signed refs proof matches the p
   Tests: `test_a_new_pin_moves_the_catalog_head_to_the_default_branch_tip` and
   the tests after it in `app/tests/test_hosted_repositories.py`,
   `test_an_admitted_core_push_moves_the_hosted_catalog_head`.
+- **Online badge:** the catalog's `liveHost` is normally "the record owner's
+  node has a fresh, verified HTTPS endpoint". A hosted record is owned by a
+  user account (`alice/project`), never by a node, so a hosted repository always
+  read *offline* on the dashboard and repository pages, even while the core
+  beside it served it and the instance's own mirror read *online*. The
+  catalog (`catalog_routes.catalog_handler`) now also marks a `hosted-web`
+  record live when a core that reported a non-empty copy in
+  `hosted_repo_copies` has a fresh verified endpoint. Tests:
+  `test_hosted_repository_is_online_while_a_live_core_serves_its_copy` and
+  the two after it in `app/tests/test_catalog_signed_endpoint_liveness.py`.
+
+- **Commit count and activity:** a node-published record carries
+  `commitCount`, `mergeCount` and the 52-week activity series from
+  `server/catalog.go`; a hosted record is written by the app, so it had none
+  (a web-created repository) or a count capped at 10,000 by `instance-repo`.
+  Each core now adds the stats of its copy to the replica report
+  (`hostedCopyState`: `commit`, `commitCount`, `mergeCount`,
+  `activityWeeks`, `mergeActivityWeeks`). The full `git rev-list --count` and
+  the 52-week walk run once per default-branch tip per UTC day
+  (`hostedReplicator.historyStats`) and are reused on every other exchange.
+  The app (`hosted_repos.clean_stats`, `hosted_git.record_hosted_stats`)
+  writes them into the catalog record when the reporting copy's routing digest
+  is the pinned `stateHash` and its tip is the record's `commit`, so a copy
+  that is behind never overwrites the counts. Writes happen only when a value
+  changed, at most once per copy refresh (`COPY_REFRESH_MS`). This is a
+  `server/` change: a node only reports stats after its binary is rebuilt.
+  Until then, rerunning `instance-repo` refreshes an imported repository.
+  Tests: `test_a_current_copy_reports_the_true_commit_count_and_activity` and
+  the two after it in `app/tests/test_hosted_core.py`,
+  `test_hosted_stats_update_only_the_record_whose_pin_they_describe` in
+  `app/tests/test_hosted_repositories.py`,
+  `TestHostedCopyStateReportsTheWholeHistoryCachedPerTip`.
 
 ### Private repositories
 

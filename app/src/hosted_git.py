@@ -425,6 +425,46 @@ async def _pin_hosted_state(env, owner, repo, key_bi, row, record, digest,
     return digest
 
 
+HOSTED_STATS_FIELDS = ("commitCount", "activityWeeks", "mergeCount",
+                       "mergeActivityWeeks")
+
+
+async def record_hosted_stats(env, owner, repo, digest, stats):
+    owner = safe_segment(owner)
+    repo = safe_segment(repo)
+    stats = _hosted_repos.clean_stats(stats)
+    digest = clean_string(digest, 64).strip().lower()
+    if not owner or not repo or not stats or not re.fullmatch(
+            r"[0-9a-f]{64}", digest):
+        return False
+    key_bi = await blind_index(env, owner + "/" + repo)
+    row = await d1_first(
+        env, "SELECT owner_bi,data FROM repositories WHERE key_bi=?", key_bi)
+    if not row:
+        return False
+    record = await decrypt_row(env, row.get("data"))
+    if (not isinstance(record, dict) or record.get("source") != HOSTED_SOURCE
+            or record.get("stateHash") != digest):
+        return False
+    commit = str(record.get("commit") or "").lower()
+    if commit and commit != stats["commit"]:
+        return False
+    changed = {key: stats[key] for key in HOSTED_STATS_FIELDS
+               if key in stats and record.get(key) != stats[key]}
+    if not changed:
+        return False
+    record.update(changed)
+    _, owner_rec = await _account_row(env, owner)
+    if not owner_rec:
+        return False
+    encrypted = await encrypt_row(env, record)
+    await _contribution_write_catalog_state(
+        env, record, row.get("owner_bi"), owner_rec, key_bi, encrypted)
+    await edge_cache_delete(CATALOG_CACHE_KEY)
+    await _bump_catalog_rev(env)
+    return True
+
+
 async def _remote_url(env, origin, owner, name):
     clone_url = globals().get("_repo_clone_url")
     if callable(clone_url):
@@ -786,6 +826,13 @@ class _ReplicaRuntime:
         if pinned:
             await _notify_cores(self.env, owner, name)
         return pinned
+
+    async def record_stats(self, owner, name, digest, stats):
+        try:
+            return await record_hosted_stats(
+                self.env, owner, name, digest, stats)
+        except Exception:
+            return False
 
     async def push_mirror_keys(self):
         try:

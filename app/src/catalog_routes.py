@@ -338,6 +338,28 @@ async def catalog_handler(env, request):
             for row in live_rows or []
             if str(row.get("node_bi") or "")
         }
+        hosted_serving = {}
+        hosted_cores = globals().get("hosted_core_nodes")
+        if callable(hosted_cores) and hosted_cores(env):
+            try:
+                copy_rows = await d1_all(
+                    env,
+                    "SELECT h.key_bi AS key_bi, c.node AS node "
+                    "FROM hosted_repos h JOIN hosted_repo_copies c "
+                    "ON c.repo_id=h.id WHERE h.deleted_at=0 AND c.empty=0",
+                )
+            except Exception:
+                copy_rows = []
+            node_bis = {}
+            for row in copy_rows or []:
+                node = clean_string(row.get("node", ""), MAX_NODE_NAME).lower()
+                key = str(row.get("key_bi") or "")
+                if not node or not key:
+                    continue
+                if node not in node_bis:
+                    node_bis[node] = str(await blind_index(env, node) or "")
+                if node_bis[node] in live_endpoint_nodes:
+                    hosted_serving.setdefault(key, set()).add(node)
         terms_rows = await d1_all(
             env,
             "SELECT repo_bi,category FROM repo_terms_flags WHERE active=1",
@@ -404,6 +426,9 @@ async def catalog_handler(env, request):
                         str(r.get("key_bi") or ""))
                 rec["liveHost"] = (
                     str(owner_bi or "") in live_endpoint_nodes
+                    or (rec.get("source") == "hosted-web"
+                        and bool(hosted_serving.get(
+                            str(r.get("key_bi") or ""))))
                 )
                 authority_node_id = authority_by_repo.get(
                     str(r.get("key_bi") or ""), "")

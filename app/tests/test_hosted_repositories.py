@@ -963,3 +963,40 @@ def test_an_unreadable_head_still_pins_the_state_and_keeps_the_commit():
 def test_the_head_comes_only_from_a_well_formed_branch_listing(listing, head):
     module = _install(recorder=_Recorder())
     assert module.hosted_head_from_branches(listing) == head
+
+
+def _hosted_stats(commit="2" * 40, count=62162):
+    return {"commit": commit, "commitCount": count,
+            "activityWeeks": [0] * 51 + [3]}
+
+
+def test_hosted_stats_update_only_the_record_whose_pin_they_describe():
+    recorder = _Recorder()
+    module = _install(recorder=recorder, stored=_hosted_record(
+        commit="2" * 40, stateHash="c" * 64, commitCount="10000"))
+    assert asyncio.run(module.record_hosted_stats(
+        _Env(), "alice", "app", "c" * 64, _hosted_stats())) is True
+    written = recorder.rows[0][3]
+    assert written["commitCount"] == "62162"
+    assert written["activityWeeks"] == [0] * 51 + [3]
+    assert (written["stateHash"], written["updatedAt"]) == ("c" * 64, "1")
+
+
+def test_hosted_stats_skip_a_stale_pin_another_commit_or_a_node_record():
+    for stored, digest, stats in (
+        (_hosted_record(stateHash="c" * 64), "d" * 64, _hosted_stats()),
+        (_hosted_record(stateHash="c" * 64, commit="3" * 40), "c" * 64,
+         _hosted_stats()),
+        (_hosted_record(stateHash="c" * 64, source="remote-clone"), "c" * 64,
+         _hosted_stats()),
+        (_hosted_record(stateHash="c" * 64, commitCount="62162",
+                        activityWeeks=[0] * 51 + [3]), "c" * 64,
+         _hosted_stats()),
+        (_hosted_record(stateHash="c" * 64), "c" * 64,
+         _hosted_stats(commit="nope")),
+    ):
+        recorder = _Recorder()
+        module = _install(recorder=recorder, stored=stored)
+        assert asyncio.run(module.record_hosted_stats(
+            _Env(), "alice", "app", digest, stats)) is False
+        assert recorder.rows == []
