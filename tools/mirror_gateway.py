@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import argparse
 import base64
-from collections import OrderedDict
+import bisect
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import gzip
@@ -237,6 +238,7 @@ WEBSITE_COUNTER_OPERATIONS = frozenset({
     "sizes",
     "release-blob",
     "merge-preview",
+    "pulse",
 })
 SERVICE_COUNTER_ROW_FIELDS = ("clonesServed", "websiteServed", "updatedAt")
 # Optional per-row extension: when the last clone / website request was served
@@ -345,6 +347,7 @@ DIRECT_PUBLIC_READ_OPERATIONS = frozenset({
     "sizes",
     "release-blob",
     "merge-preview",
+    "pulse",
 })
 # Mutating pull operations share one operator-owned executor command and one
 # job runner. Everything that differs between them is data: the wire type the
@@ -421,7 +424,7 @@ BRANCH_TRASH_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 FULL_COMMIT_ID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 MAX_BRANCH_TRASH_ENTRIES = 5000
 LOG_OPERATIONS = PUBLIC_OPERATIONS | {
-    "private-replica", "dashboard", BRANCH_TRASH_OPERATION}
+    "private-replica", "dashboard", BRANCH_TRASH_OPERATION, "pulse"}
 NODE_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,80}$")
@@ -453,6 +456,7 @@ OPERATION_QUERY_FIELDS = {
     "branches": frozenset(),
     "search": frozenset({"path", "ref"}),
     "stats": frozenset({"ref"}),
+    "pulse": frozenset({"period", "person"}),
     "sizes": frozenset({"ref"}),
     "release-blob": frozenset({"sha256", "path"}),
     "merge-pull": frozenset(),
@@ -3642,6 +3646,354 @@ def _dependency_depths(
     return memo
 
 
+PULSE_OPERATION = "pulse"
+PULSE_CARRIER_OPERATION = "stats"
+PULSE_DEFAULT_PERIOD = "1w"
+PULSE_PERIODS = {
+    "24h": {"seconds": 86400, "bucket": 300, "step": 3600},
+    "3d": {"seconds": 3 * 86400, "bucket": 900, "step": 6 * 3600},
+    "1w": {"seconds": 7 * 86400, "bucket": 1800, "step": 86400},
+    "1m": {"seconds": 30 * 86400, "bucket": 3600, "step": 86400},
+    "all": {"seconds": 0, "bucket": 3600, "step": 0},
+}
+PULSE_ALL_TIME_COMPARE_SECONDS = 7 * 86400
+PULSE_SCORE_WEIGHTS = {
+    "merged": 10,
+    "commits": 1,
+    "issuesClosed": 3,
+    "reviews": 4,
+    "comments": 1,
+}
+PULSE_COMMITS_PER_DAY = 5
+PULSE_COMMENTS_PER_THREAD = 3
+PULSE_LIST_LIMIT = 200
+PULSE_LEADERBOARD_LIMIT = 50
+PULSE_COMMITTERS_LIMIT = 20
+PULSE_NEWCOMERS_LIMIT = 20
+PULSE_HISTORY_COMMITS = 250_000
+PULSE_WINDOW_COMMITS = 20_000
+PULSE_NUMSTAT_COMMITS = 1_000
+PULSE_NUMSTAT_BATCH = 100
+PULSE_NUMSTAT_SECONDS = 3.0
+PULSE_DIFF_FILE_LIMIT = "256k"
+PULSE_NUMSTAT_MEMO = 4_000
+PULSE_NUMSTAT_PATHS = 2_000
+PULSE_MAX_PULLS = 5_000
+PULSE_MAX_ISSUES = 10_000
+PULSE_RECORD_BYTES = 256 * 1024
+PULSE_READ_BATCH_BYTES = 16 * 1024 * 1024
+PULSE_PERSON_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,100}$")
+PULSE_BUG_LABEL_RE = re.compile(r"bug|defect|security|vulnerab", re.IGNORECASE)
+PULSE_EVENT_FILE_RE = re.compile(r"^[0-9]{4,}-([a-z][a-z-]{0,39})\.md$")
+PULSE_ISSUE_PATH_RE = re.compile(
+    r"^\.forkmesh/issues/(?:(open|closed)/)?([1-9][0-9]{0,8})/"
+    r"issue-([1-9][0-9]{0,8})\.json$")
+PULSE_PULL_COMMENT_TYPES = frozenset({
+    "comment", "line-comment", "thread-comment", "thread-reply"})
+PULSE_MERGED_STATUSES = frozenset({"merged", "closed-merged"})
+PULSE_FINISHED_STATUSES = frozenset({"closed", "merged", "closed-merged"})
+
+
+PULSE_PARTIAL_HEADER = "X-ForkMesh-Partial"
+
+
+def _pulse_response(value: Mapping[str, Any]) -> "GatewayResponse":
+    response = json_response(value)
+    if (value.get("summary") or {}).get("partial"):
+        response.headers[PULSE_PARTIAL_HEADER] = "1"
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+def pulse_period(query: Mapping[str, str]) -> str:
+    period = str(query.get("period") or PULSE_DEFAULT_PERIOD)
+    if period not in PULSE_PERIODS:
+        raise GatewayError("invalid pulse period")
+    return period
+
+
+def pulse_person(query: Mapping[str, str]) -> str:
+    raw = str(query.get("person") or "")
+    person = " ".join(raw.split())
+    if "person" in query and not (
+            PULSE_PERSON_RE.fullmatch(raw) and person):
+        raise GatewayError("invalid pulse person")
+    return person
+
+
+def pulse_window_end(period: str, now_seconds: int) -> int:
+    bucket = PULSE_PERIODS[period]["bucket"]
+    return -(-max(0, int(now_seconds)) // bucket) * bucket
+
+
+def _pulse_ms(value: Any) -> int:
+    try:
+        number = int(float(str(value if value is not None else "").strip()
+                           or 0))
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if number <= 0:
+        return 0
+    return number * 1000 if number < 10_000_000_000 else number
+
+
+def _pulse_key(name: Any) -> str:
+    return " ".join(str(name or "").split()).casefold()
+
+
+def _pulse_is_bot(name: Any, email: Any = "") -> bool:
+    name = " ".join(str(name or "").split())
+    email = str(email or "").strip().lower()
+    if not name and not email:
+        return True
+    lowered = name.lower()
+    return bool(
+        re.search(r"\[bot\]$", name, re.IGNORECASE)
+        or "[bot]@" in email
+        or re.fullmatch(r"github[\s_-]?actions?", name, re.IGNORECASE)
+        or lowered in ("dependabot", "renovate")
+        or re.search(r"(?:^|[\s_-])bot$", name, re.IGNORECASE)
+        or re.fullmatch(r"[a-z0-9][a-z0-9_-]*-actions", name, re.IGNORECASE)
+        or lowered in ("forkmesh actions", "forkmesh deploy")
+        or email == "actions@forkmesh.local"
+    )
+
+
+def _pulse_document(raw: bytes) -> tuple[dict[str, str], str]:
+    text = raw.decode("utf-8", "replace").lstrip()
+    fields = _pull_record_fields(text)
+    if not fields:
+        return {}, ""
+    end = text.find("\n---", 3)
+    return fields, (text[end + 4:] if end >= 0 else "").strip()
+
+
+def _pulse_pull_record(
+    number: int, files: Mapping[str, bytes]
+) -> dict[str, Any] | None:
+    fields, _body = _pulse_document(files.get("pull.md", b""))
+    if not fields:
+        return None
+    status = str(fields.get("status") or "open").strip().lower()
+    if status == "deleted":
+        return None
+    opened = _pulse_ms(fields.get("ts"))
+    closed = 0
+    events: list[tuple[int, str, str]] = []
+    for name in sorted(files):
+        match = PULSE_EVENT_FILE_RE.fullmatch(name)
+        if not match:
+            continue
+        event, body = _pulse_document(files[name])
+        kind = str(event.get("type") or match.group(1)).strip().lower()
+        at = _pulse_ms(event.get("ts"))
+        if not at:
+            continue
+        if kind == "status" and str(
+                event.get("state") or "").strip().lower() == "closed":
+            closed = max(closed, at)
+        elif kind == "review" or (
+                kind in PULSE_PULL_COMMENT_TYPES and not body.startswith("/")):
+            events.append((
+                at, "review" if kind == "review" else "comment",
+                str(event.get("authorName") or "").strip()[:100]))
+    newest = max([opened] + [item[0] for item in events])
+    merged = 0
+    if status in PULSE_MERGED_STATUSES:
+        merged = _pulse_ms(fields.get("mergedAt")) or closed or newest
+        closed = closed or merged
+    elif status in PULSE_FINISHED_STATUSES:
+        closed = closed or newest
+    else:
+        closed = 0
+    return {
+        "number": number,
+        "title": str(fields.get("title") or "")[:300],
+        "author": str(fields.get("authorName") or "").strip()[:100],
+        "status": status,
+        "opened": opened,
+        "merged": merged,
+        "closed": closed,
+        "events": tuple(events),
+    }
+
+
+def _pulse_issue_record(number: int, raw: bytes) -> dict[str, Any] | None:
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    status = str(data.get("status") or "open").strip().lower()
+    if status == "deleted":
+        return None
+    labels = data.get("labels") if isinstance(data.get("labels"), list) else []
+    closed, closer = 0, ""
+    events: list[tuple[int, str, str]] = []
+    for event in data.get("events") if isinstance(
+            data.get("events"), list) else []:
+        if not isinstance(event, dict):
+            continue
+        kind = str(event.get("type") or "")
+        at = _pulse_ms(event.get("ts"))
+        who = str(event.get("authorName") or "").strip()[:100]
+        if not at:
+            continue
+        if kind == "status" and str(
+                event.get("status") or "").strip().lower() == "closed":
+            if at >= closed:
+                closed, closer = at, who
+        elif kind == "comment" and not str(
+                event.get("body") or "").lstrip().startswith("/"):
+            events.append((at, "comment", who))
+    if status != "closed":
+        closed, closer = 0, ""
+    elif not closed:
+        closed = _pulse_ms(data.get("updatedAt"))
+    return {
+        "number": number,
+        "title": str(data.get("title") or "")[:300],
+        "author": str(data.get("authorName") or "").strip()[:100],
+        "status": "closed" if status == "closed" else "open",
+        "opened": _pulse_ms(data.get("createdAt")),
+        "closed": closed,
+        "closer": closer,
+        "bug": any(PULSE_BUG_LABEL_RE.search(str(label)) for label in labels),
+        "events": tuple(events),
+    }
+
+
+def _pulse_tree_entries(raw: bytes, oid_bytes: int) -> dict[str, str]:
+    entries: dict[str, str] = {}
+    cursor = 0
+    while cursor < len(raw):
+        space = raw.find(b" ", cursor)
+        nul = raw.find(b"\0", space + 1)
+        if space < 0 or nul < 0 or nul + 1 + oid_bytes > len(raw):
+            break
+        mode = raw[cursor:space]
+        name = raw[space + 1:nul].decode("utf-8", "replace")
+        oid = raw[nul + 1:nul + 1 + oid_bytes].hex()
+        cursor = nul + 1 + oid_bytes
+        if mode in (b"100644", b"100755"):
+            entries[name] = oid
+    return entries
+
+
+def _pulse_streaks(days: list[int], today: int) -> tuple[int, int]:
+    longest = run = 0
+    previous = None
+    for day in days:
+        if day > today:
+            break
+        run = run + 1 if previous is not None and day == previous + 1 else 1
+        longest = max(longest, run)
+        previous = day
+    current = run if previous is not None and previous >= today - 1 else 0
+    return longest, current
+
+
+def _pulse_iso(seconds: int) -> str:
+    return datetime.fromtimestamp(
+        max(0, int(seconds)), timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _pulse_ranking(
+    scores: Mapping[str, tuple[int, dict[str, int]]],
+    names: Mapping[str, str],
+) -> list[tuple[int, str, int, dict[str, int]]]:
+    ordered = sorted(
+        scores.items(),
+        key=lambda item: (-item[1][0], names.get(item[0], item[0]).casefold()),
+    )
+    ranked: list[tuple[int, str, int, dict[str, int]]] = []
+    previous_score = None
+    rank = 0
+    for position, (key, (score, parts)) in enumerate(ordered, 1):
+        if score != previous_score:
+            rank = position
+            previous_score = score
+        ranked.append((rank, key, score, parts))
+    return ranked
+
+
+def _pulse_empty_parts() -> dict[str, int]:
+    return {name: 0 for name in PULSE_SCORE_WEIGHTS}
+
+
+def _pulse_scores(
+    ledger: Mapping[str, Any], start: int, end: int
+) -> dict[str, tuple[int, dict[str, int]]]:
+    parts: dict[str, dict[str, int]] = {}
+    events = ledger["events"]
+    threads: Counter[tuple[str, str]] = Counter()
+    fields = {"merged": "merged", "review": "reviews", "closed": "issuesClosed"}
+    for _at, key, kind, thread, _number, _bug in events[
+            bisect.bisect_left(events, (start,)):
+            bisect.bisect_left(events, (end,))]:
+        field = fields.get(kind, "")
+        if kind == "comment":
+            threads[(key, thread)] += 1
+            if threads[(key, thread)] <= PULSE_COMMENTS_PER_THREAD:
+                field = "comments"
+        if field:
+            parts.setdefault(key, _pulse_empty_parts())[field] += 1
+    for key, times in ledger["commits"].items():
+        low = bisect.bisect_left(times, start)
+        high = bisect.bisect_left(times, end)
+        if low < high:
+            days = Counter(at // 86400 for at in times[low:high])
+            parts.setdefault(key, _pulse_empty_parts())["commits"] += sum(
+                min(PULSE_COMMITS_PER_DAY, count) for count in days.values())
+    return {
+        key: (sum(PULSE_SCORE_WEIGHTS[name] * value
+                  for name, value in row.items()), row)
+        for key, row in parts.items()
+        if any(row.values())
+    }
+
+
+def _pulse_totals(
+    ledger: Mapping[str, Any], key: str, end: int, today: int
+) -> dict[str, Any]:
+    events = ledger["byPerson"].get(key, [])
+    upto = events[:bisect.bisect_left(events, (end,))]
+    kinds = Counter(event[2] for event in upto)
+    times = ledger["commits"].get(key, [])
+    commits = bisect.bisect_left(times, end)
+    days = sorted(
+        {at // 86400 for at in times[:commits]}
+        | {event[0] // 86400 for event in upto})
+    longest, current = _pulse_streaks(days, today)
+    stamps = ([times[0]] if commits else []) + ([upto[0][0]] if upto else [])
+    merged = [event[0] for event in upto if event[2] == "merged"]
+    return {
+        "commits": commits,
+        "mergedPulls": kinds["merged"],
+        "openedPulls": kinds["pull"],
+        "reviews": kinds["review"],
+        "comments": kinds["comment"],
+        "issuesOpened": kinds["issue"],
+        "issuesClosed": kinds["closed"],
+        "bugsClosed": sum(1 for event in upto
+                          if event[2] == "closed" and event[5]),
+        "longestStreak": longest,
+        "currentStreak": current,
+        "activeDays": len(days),
+        "firstActivityAt": min(stamps) * 1000 if stamps else None,
+        "firstMergedAt": merged[0] * 1000 if merged else None,
+    }
+
+
+def _pulse_person_entry(ledger: Mapping[str, Any], key: str) -> dict[str, Any]:
+    entry: dict[str, Any] = {"name": ledger["names"].get(key, key)}
+    avatar = ledger["avatars"].get(key)
+    if avatar:
+        entry["avatarUrl"] = avatar
+    return entry
+
+
 class GitRepository:
     def __init__(self, config: RepositoryConfig, git_dir: Path) -> None:
         self.config = config
@@ -3659,6 +4011,17 @@ class GitRepository:
         self._deleted_pulls_key = ""
         self._deleted_pulls_value: dict[str, int] = {}
         self._upload_objects_lock = threading.Lock()
+        self._pulse_lock = threading.Lock()
+        self._pulse_numstat_lock = threading.Lock()
+        self._pulse_commits: dict[str, Any] = {}
+        self._pulse_issues: tuple[str, list[dict[str, Any]]] = ("\0", [])
+        self._pulse_issue_records: dict[str, dict[str, Any] | None] = {}
+        self._pulse_pulls: tuple[tuple[str, str], list[dict[str, Any]]] = (
+            ("\0", "\0"), [])
+        self._pulse_pull_records: dict[str, dict[str, Any] | None] = {}
+        self._pulse_ledger: dict[str, Any] = {}
+        self._pulse_numstat_memo: OrderedDict[
+            str, tuple[int, int, tuple[int, ...], bool] | None] = OrderedDict()
         self._upload_objects_key = ""
         self._upload_objects: frozenset[str] = frozenset()
         # Ref -> commit within one cache generation (see cache_ref).
@@ -5390,32 +5753,7 @@ class GitRepository:
             ["shortlog", "-nse", commit],
             max_output=2 * 1024 * 1024,
         )
-        contributor_avatars: dict[str, str] = {}
-        try:
-            info_raw = _run_git(
-                self.git_dir,
-                ["show", commit + ":.forkmesh/info.json"],
-                max_output=256 * 1024,
-            )
-            info = json.loads(info_raw.decode("utf-8"))
-            for item in (
-                info.get("contributors", [])
-                if isinstance(info, dict)
-                else []
-            )[:500]:
-                if not isinstance(item, dict):
-                    continue
-                name = str(
-                    item.get("name") or item.get("login") or ""
-                ).strip().casefold()
-                avatar = _public_https_url(
-                    item.get("avatarUrl") or item.get("avatar"))
-                if name and avatar:
-                    contributor_avatars[name] = avatar
-        except (GitError, UnicodeDecodeError, json.JSONDecodeError):
-            # Avatar metadata is optional. Git remains the contributor source
-            # of truth and every author still receives a deterministic circle.
-            pass
+        contributor_avatars = self._contributor_avatars(commit)
         contributors = []
         for row in shortlog.decode("utf-8", "replace").splitlines():
             match = re.match(r"^\s*([0-9]+)\s+(.+?)(?:\s+<([^>]*)>)?\s*$", row)
@@ -5493,6 +5831,656 @@ class GitRepository:
             "activityStart": activity_start.isoformat(),
             "counts": self._root_collaboration_counts(commit),
         }
+
+    def _contributor_avatars(self, commit: str) -> dict[str, str]:
+        avatars: dict[str, str] = {}
+        try:
+            info_raw = _run_git(
+                self.git_dir,
+                ["show", commit + ":.forkmesh/info.json"],
+                max_output=256 * 1024,
+            )
+            info = json.loads(info_raw.decode("utf-8"))
+            for item in (
+                info.get("contributors", [])
+                if isinstance(info, dict)
+                else []
+            )[:500]:
+                if not isinstance(item, dict):
+                    continue
+                name = str(
+                    item.get("name") or item.get("login") or ""
+                ).strip().casefold()
+                avatar = _public_https_url(
+                    item.get("avatarUrl") or item.get("avatar"))
+                if name and avatar:
+                    avatars[name] = avatar
+        except (GitError, UnicodeDecodeError, json.JSONDecodeError):
+            pass
+        return avatars
+
+    def _pulse_sizes(self, specs: list[str]) -> dict[str, tuple[str, str, int]]:
+        if not specs:
+            return {}
+        output = _run_git(
+            self.git_dir,
+            ["cat-file", "--batch-check"],
+            input_bytes="".join(spec + "\n" for spec in specs).encode("utf-8"),
+            max_output=len(specs) * 256 + 1024,
+        )
+        found: dict[str, tuple[str, str, int]] = {}
+        for spec, line in zip(
+                specs, output.decode("utf-8", "replace").splitlines()):
+            fields = line.split()
+            if len(fields) == 3 and fields[2].isdigit():
+                found[spec] = (fields[0].lower(), fields[1], int(fields[2]))
+        return found
+
+    def _pulse_read(self, items: list[tuple[str, int]]) -> dict[str, bytes]:
+        found: dict[str, bytes] = {}
+        batches: list[list[tuple[str, int]]] = [[]]
+        total = 0
+        for oid, size in items:
+            if batches[-1] and total + size > PULSE_READ_BATCH_BYTES:
+                batches.append([])
+                total = 0
+            batches[-1].append((oid, size))
+            total += size
+        for batch in batches:
+            if not batch:
+                continue
+            output = _run_git(
+                self.git_dir,
+                ["cat-file", "--batch"],
+                input_bytes="".join(
+                    oid + "\n" for oid, _size in batch).encode("ascii"),
+                max_output=sum(size for _oid, size in batch)
+                + len(batch) * 160 + 1024,
+            )
+            cursor = 0
+            for oid, _size in batch:
+                line_end = output.find(b"\n", cursor)
+                if line_end < 0:
+                    break
+                header = output[cursor:line_end].split()
+                cursor = line_end + 1
+                if len(header) != 3:
+                    continue
+                try:
+                    size = int(header[2])
+                except ValueError:
+                    break
+                if size < 0 or cursor + size > len(output):
+                    break
+                found[oid] = output[cursor:cursor + size]
+                cursor += size + 1
+        return found
+
+    def _pulse_commit_index(self, main: str) -> dict[str, Any]:
+        state = self._pulse_commits
+        if state.get("commit") == main:
+            return state
+        people: dict[str, tuple[str, str]] = {}
+        times: dict[str, list[int]] = {}
+        revision = main
+        if state.get("commit"):
+            code, _output = _run_git_status(
+                self.git_dir,
+                ["merge-base", "--is-ancestor", state["commit"], main],
+                max_output=256,
+                allowed_codes=(0, 1),
+            )
+            if code == 0:
+                revision = state["commit"] + ".." + main
+                people = dict(state["people"])
+                times = dict(state["times"])
+        output = _run_git(
+            self.git_dir,
+            ["log", "--no-merges", "-n", str(PULSE_HISTORY_COMMITS),
+             "--format=%aN%x1f%aE%x1f%ct", revision],
+            max_output=64 * 1024 * 1024,
+        )
+        added: dict[str, list[int]] = {}
+        for row in output.decode("utf-8", "replace").splitlines():
+            fields = row.split("\x1f")
+            if len(fields) != 3 or not fields[2].isdigit():
+                continue
+            name = " ".join(fields[0].split())[:100]
+            email = fields[1].strip()[:200]
+            if _pulse_is_bot(name, email):
+                continue
+            key = _pulse_key(name or email)
+            if not key:
+                continue
+            added.setdefault(key, []).append(int(fields[2]))
+            people.setdefault(key, (name or email, email))
+        for key, values in added.items():
+            times[key] = sorted(times.get(key, []) + values)
+        state = {"commit": main, "people": people, "times": times}
+        self._pulse_commits = state
+        return state
+
+    def _pulse_issue_index(self, main: str) -> tuple[str, list[dict[str, Any]]]:
+        code, output = _run_git_status(
+            self.git_dir,
+            ["rev-parse", "--verify", "--quiet", main + ":.forkmesh/issues"],
+            max_output=256,
+            allowed_codes=(0, 1),
+        )
+        tree = output.decode("ascii", "replace").strip().lower() \
+            if code == 0 else ""
+        if tree == self._pulse_issues[0]:
+            return self._pulse_issues
+        records: list[dict[str, Any]] = []
+        fresh: dict[str, dict[str, Any] | None] = {}
+        if tree:
+            listing = _run_git(
+                self.git_dir,
+                ["ls-tree", "-r", "-l", "-z", tree],
+                max_output=64 * 1024 * 1024,
+            )
+            chosen: dict[int, tuple[int, str, int]] = {}
+            for entry in listing.split(b"\0"):
+                meta, _tab, path = entry.partition(b"\t")
+                fields = meta.split()
+                if len(fields) != 4 or fields[1] != b"blob" \
+                        or not fields[3].isdigit():
+                    continue
+                match = PULSE_ISSUE_PATH_RE.fullmatch(
+                    ".forkmesh/issues/" + path.decode("utf-8", "replace"))
+                if not match or match.group(2) != match.group(3):
+                    continue
+                number = int(match.group(2))
+                priority = 1 if match.group(1) else 0
+                current = chosen.get(number)
+                if current is None or priority > current[0]:
+                    chosen[number] = (
+                        priority, fields[2].decode("ascii").lower(),
+                        int(fields[3]))
+            numbers = sorted(chosen, reverse=True)[:PULSE_MAX_ISSUES]
+            cache = self._pulse_issue_records
+            blobs = self._pulse_read([
+                (chosen[number][1], chosen[number][2]) for number in numbers
+                if chosen[number][1] not in cache
+                and chosen[number][2] <= MAX_JSON_BLOB
+            ])
+            for number in numbers:
+                oid = chosen[number][1]
+                if oid in cache:
+                    record = cache[oid]
+                elif oid in blobs:
+                    record = _pulse_issue_record(number, blobs[oid])
+                else:
+                    continue
+                fresh[oid] = record
+                if record:
+                    records.append(record)
+        self._pulse_issue_records = fresh
+        self._pulse_issues = (tree, records)
+        return self._pulse_issues
+
+    def _pulse_pull_index(
+        self,
+    ) -> tuple[tuple[str, str], list[dict[str, Any]]]:
+        try:
+            pulls_commit = self.resolve_commit("refs/heads/forkmesh/pulls")
+        except GatewayError:
+            pulls_commit = ""
+        raw, refs = self._independent_pull_refs()
+        key = (pulls_commit, raw)
+        if key == self._pulse_pulls[0]:
+            return self._pulse_pulls
+        folders: dict[str, str] = {}
+        if pulls_commit:
+            listing = _run_git(
+                self.git_dir,
+                ["ls-tree", "-d", "-z", pulls_commit, "--",
+                 ":(top,literal).forkmesh/pulls/"],
+                max_output=16 * 1024 * 1024,
+            )
+            for entry in listing.split(b"\0"):
+                meta, _tab, path = entry.partition(b"\t")
+                fields = meta.split()
+                match = re.fullmatch(
+                    rb"\.forkmesh/pulls/([1-9][0-9]{0,8})", path)
+                if len(fields) == 3 and fields[1] == b"tree" and match:
+                    folders[match.group(1).decode("ascii")] = \
+                        fields[2].decode("ascii").lower()
+        live = self._live_independent_pull_refs(pulls_commit, refs)
+        specs = {
+            number: "%s:.forkmesh/pulls/%s" % (oid, number)
+            for number, oid in live.items()
+        }
+        sizes = self._pulse_sizes(list(specs.values()))
+        for number, spec in specs.items():
+            found = sizes.get(spec)
+            if found and found[1] == "tree":
+                folders[number] = found[0]
+        numbers = sorted(folders, key=int, reverse=True)[:PULSE_MAX_PULLS]
+        cache = self._pulse_pull_records
+        missing = sorted({
+            folders[number] for number in numbers
+            if folders[number] not in cache
+        })
+        folder_files: dict[str, dict[str, str]] = {}
+        blobs: dict[str, bytes] = {}
+        if missing:
+            tree_sizes = self._pulse_sizes(missing)
+            trees = self._pulse_read([
+                (oid, tree_sizes[oid][2]) for oid in missing
+                if oid in tree_sizes and tree_sizes[oid][1] == "tree"
+            ])
+            for oid in missing:
+                folder_files[oid] = {
+                    name: blob
+                    for name, blob in _pulse_tree_entries(
+                        trees.get(oid, b""), len(oid) // 2).items()
+                    if name == "pull.md" or PULSE_EVENT_FILE_RE.fullmatch(name)
+                }
+            wanted = sorted({
+                blob for files in folder_files.values()
+                for blob in files.values()
+            })
+            blob_sizes = self._pulse_sizes(wanted)
+            blobs = self._pulse_read([
+                (blob, blob_sizes[blob][2]) for blob in wanted
+                if blob in blob_sizes
+                and blob_sizes[blob][2] <= PULSE_RECORD_BYTES
+            ])
+        records: list[dict[str, Any]] = []
+        fresh: dict[str, dict[str, Any] | None] = {}
+        for number in numbers:
+            oid = folders[number]
+            if oid in cache:
+                record = cache[oid]
+            else:
+                record = _pulse_pull_record(int(number), {
+                    name: blobs[blob]
+                    for name, blob in folder_files.get(oid, {}).items()
+                    if blob in blobs
+                })
+            fresh[oid] = record
+            if record:
+                records.append(record)
+        self._pulse_pull_records = fresh
+        self._pulse_pulls = (key, records)
+        return self._pulse_pulls
+
+    def _pulse_index(self) -> dict[str, Any]:
+        main = self.resolve_commit("HEAD")
+        commits = self._pulse_commit_index(main)
+        issues_key, issues = self._pulse_issue_index(main)
+        pulls_key, pulls = self._pulse_pull_index()
+        key = (main, issues_key, pulls_key)
+        if self._pulse_ledger.get("key") == key:
+            return self._pulse_ledger
+        names: dict[str, str] = {}
+
+        def person(name: str) -> str:
+            identity = _pulse_key(name)
+            if not identity or _pulse_is_bot(name):
+                return ""
+            names.setdefault(identity, " ".join(str(name).split()))
+            return identity
+
+        events: list[tuple[int, str, str, str, int, bool]] = []
+        for pull in pulls:
+            number = pull["number"]
+            thread = "p%d" % number
+            author = person(pull["author"])
+            if author and pull["opened"]:
+                events.append((
+                    pull["opened"] // 1000, author, "pull", thread, number,
+                    False))
+            if author and pull["merged"]:
+                events.append((
+                    pull["merged"] // 1000, author, "merged", thread, number,
+                    False))
+            reviewers: set[str] = set()
+            for at, kind, who in pull["events"]:
+                identity = person(who)
+                if not identity:
+                    continue
+                if kind == "review":
+                    if identity == author or identity in reviewers:
+                        continue
+                    reviewers.add(identity)
+                events.append((at // 1000, identity, kind, thread, number,
+                               False))
+        for issue in issues:
+            number = issue["number"]
+            thread = "i%d" % number
+            author = person(issue["author"])
+            if author and issue["opened"]:
+                events.append((
+                    issue["opened"] // 1000, author, "issue", thread, number,
+                    False))
+            closer = person(issue["closer"])
+            if closer and issue["closed"]:
+                events.append((
+                    issue["closed"] // 1000, closer, "closed", thread, number,
+                    bool(issue["bug"])))
+            for at, _kind, who in issue["events"]:
+                identity = person(who)
+                if identity:
+                    events.append((at // 1000, identity, "comment", thread,
+                                   number, False))
+        events.sort()
+        for identity, (name, _email) in commits["people"].items():
+            names.setdefault(identity, name)
+        by_person: dict[str, list[tuple[int, str, str, str, int, bool]]] = {}
+        first: dict[str, tuple[int, str, int]] = {}
+        for identity, values in commits["times"].items():
+            if values:
+                first[identity] = (values[0], "commit", 0)
+        for event in events:
+            by_person.setdefault(event[1], []).append(event)
+            known = first.get(event[1])
+            if known is None or event[0] < known[0]:
+                first[event[1]] = (event[0], event[2], event[4])
+        avatars = self._contributor_avatars(main)
+        for identity, (_name, email) in commits["people"].items():
+            if identity not in avatars:
+                avatar = _github_noreply_avatar(email)
+                if avatar:
+                    avatars[identity] = avatar
+        ledger = {
+            "key": key,
+            "main": main,
+            "names": names,
+            "avatars": avatars,
+            "commits": commits["times"],
+            "events": events,
+            "byPerson": by_person,
+            "first": first,
+            "pulls": pulls,
+            "issues": issues,
+        }
+        self._pulse_ledger = ledger
+        return ledger
+
+    def _pulse_numstat(
+        self, commits: list[str]
+    ) -> dict[str, tuple[int, int, tuple[int, ...], bool] | None]:
+        with self._pulse_numstat_lock:
+            memo = self._pulse_numstat_memo
+            missing = [commit for commit in commits if commit not in memo]
+            deadline = time.monotonic() + PULSE_NUMSTAT_SECONDS
+            for offset in range(0, len(missing), PULSE_NUMSTAT_BATCH):
+                if time.monotonic() > deadline:
+                    break
+                chunk = missing[offset:offset + PULSE_NUMSTAT_BATCH]
+                try:
+                    output = _run_git(
+                        self.git_dir,
+                        ["-c", "core.bigFileThreshold=" + PULSE_DIFF_FILE_LIMIT,
+                         "log", "--no-walk=unsorted", "--stdin", "--numstat",
+                         "--no-renames", "--format=%x1e%H"],
+                        input_bytes=("\n".join(chunk) + "\n").encode("ascii"),
+                        max_output=32 * 1024 * 1024,
+                    )
+                except GitError:
+                    output = b""
+                for block in output.split(b"\x1e")[1:]:
+                    lines = block.decode("utf-8", "replace").split("\n")
+                    commit = lines[0].strip().lower()
+                    additions = deletions = changed = 0
+                    paths: list[int] = []
+                    for line in lines[1:]:
+                        parts = line.split("\t", 2)
+                        if len(parts) != 3:
+                            continue
+                        additions += int(parts[0]) if parts[0].isdigit() else 0
+                        deletions += int(parts[1]) if parts[1].isdigit() else 0
+                        changed += 1
+                        if len(paths) < PULSE_NUMSTAT_PATHS:
+                            paths.append(hash(parts[2]))
+                    memo[commit] = (
+                        additions, deletions, tuple(paths),
+                        changed > PULSE_NUMSTAT_PATHS)
+                for commit in chunk:
+                    if commit not in memo:
+                        memo[commit] = None
+            found = {}
+            for commit in commits:
+                if commit in memo:
+                    memo.move_to_end(commit)
+                    found[commit] = memo[commit]
+            while len(memo) > PULSE_NUMSTAT_MEMO:
+                memo.popitem(last=False)
+            return found
+
+    def _pulse_commit_window(
+        self, ledger: Mapping[str, Any], start: int, end: int, step: int
+    ) -> dict[str, Any]:
+        window = ["--since=@%d" % start, "--until=@%d" % max(start, end - 1)]
+        branch_rows = _run_git(
+            self.git_dir,
+            ["log", "--no-merges", "-n", str(PULSE_WINDOW_COMMITS), *window,
+             "--format=%H%x1f%aN%x1f%aE", "--exclude=forkmesh/*",
+             "--branches"],
+            max_output=MAX_JSON_OUTPUT,
+        ).decode("utf-8", "replace").splitlines()
+        authors: set[str] = set()
+        every: set[str] = set()
+        for row in branch_rows:
+            fields = row.split("\x1f")
+            if len(fields) == 3:
+                every.add(fields[0])
+                authors.add(_pulse_key(fields[1] or fields[2]))
+        main_rows = []
+        for row in _run_git(
+            self.git_dir,
+            ["log", "--no-merges", "-n", str(PULSE_WINDOW_COMMITS), *window,
+             "--format=%H%x1f%aN%x1f%aE%x1f%ct", ledger["main"]],
+            max_output=MAX_JSON_OUTPUT,
+        ).decode("utf-8", "replace").splitlines():
+            fields = row.split("\x1f")
+            if len(fields) == 4 and fields[3].isdigit():
+                main_rows.append((
+                    fields[0].lower(), " ".join(fields[1].split())[:100],
+                    fields[2].strip(), int(fields[3])))
+                authors.add(_pulse_key(fields[1] or fields[2]))
+                every.add(fields[0])
+        stats = self._pulse_numstat(
+            [row[0] for row in main_rows[:PULSE_NUMSTAT_COMMITS]])
+        truncated = (
+            len(main_rows) > PULSE_NUMSTAT_COMMITS
+            or len(main_rows) >= PULSE_WINDOW_COMMITS
+            or len(branch_rows) >= PULSE_WINDOW_COMMITS
+        )
+        measured = 0
+        buckets = [
+            {"commits": 0, "additions": 0, "deletions": 0}
+            for _ in range(max(1, -(-(end - start) // step)))
+        ]
+        additions = deletions = 0
+        files: set[int] = set()
+        committers: Counter[str] = Counter()
+        committer_names: dict[str, tuple[str, str]] = {}
+        for commit, name, email, at in main_rows:
+            key = _pulse_key(name or email)
+            committers[key] += 1
+            committer_names.setdefault(key, (name or email, email))
+            bucket = buckets[min(len(buckets) - 1, max(0, (at - start) // step))]
+            bucket["commits"] += 1
+            if commit not in stats:
+                continue
+            stat = stats[commit]
+            if stat is None:
+                truncated = True
+                continue
+            measured += 1
+            additions += stat[0]
+            deletions += stat[1]
+            bucket["additions"] += stat[0]
+            bucket["deletions"] += stat[1]
+            files.update(stat[2])
+            truncated = truncated or stat[3]
+        top = sorted(
+            committers.items(),
+            key=lambda item: (-item[1], committer_names[item[0]][0].casefold()),
+        )[:PULSE_COMMITTERS_LIMIT]
+        committer_rows = []
+        for key, count in top:
+            name, email = committer_names[key]
+            row: dict[str, Any] = {"name": name, "commits": count}
+            avatar = ledger["avatars"].get(key) or _github_noreply_avatar(email)
+            if avatar:
+                row["avatarUrl"] = avatar
+            committer_rows.append(row)
+        return {
+            "summary": {
+                "authors": len(authors - {""}),
+                "main": len(main_rows),
+                "all": len(every),
+                "filesChanged": len(files),
+                "additions": additions,
+                "deletions": deletions,
+                "measuredCommits": measured,
+                "partial": any(
+                    row[0] not in stats
+                    for row in main_rows[:PULSE_NUMSTAT_COMMITS]),
+                "truncated": truncated,
+            },
+            "committers": committer_rows,
+            "committerCount": len(committers),
+            "series": {
+                "start": _pulse_iso(start),
+                "stepSeconds": step,
+                "buckets": buckets,
+            },
+        }
+
+    def pulse(self, query: Mapping[str, str], now_seconds: int) -> dict[str, Any]:
+        period = pulse_period(query)
+        person = pulse_person(query)
+        spec = PULSE_PERIODS[period]
+        now_seconds = max(0, int(now_seconds))
+        end = pulse_window_end(period, now_seconds)
+        start = max(0, end - spec["seconds"]) if spec["seconds"] else 0
+        with self._pulse_lock:
+            ledger = self._pulse_index()
+        today = now_seconds // 86400
+        response: dict[str, Any] = {
+            "ok": True,
+            "commit": ledger["main"],
+            "branch": self.default_branch_ref()[len("refs/heads/"):],
+            "period": period,
+            "since": _pulse_iso(start) if spec["seconds"] else None,
+            "until": _pulse_iso(min(end, now_seconds)),
+            "generatedAt": _pulse_iso(now_seconds),
+            "refreshSeconds": spec["bucket"],
+            "scoring": {
+                "weights": dict(PULSE_SCORE_WEIGHTS),
+                "commitsPerDay": PULSE_COMMITS_PER_DAY,
+                "commentsPerThread": PULSE_COMMENTS_PER_THREAD,
+            },
+        }
+        if spec["seconds"]:
+            previous_bounds = (max(0, start - spec["seconds"]), start)
+        else:
+            previous_bounds = (0, max(0, end - PULSE_ALL_TIME_COMPARE_SECONDS))
+        scores = _pulse_scores(ledger, start, end)
+        ranked = _pulse_ranking(scores, ledger["names"])
+        if person:
+            key = _pulse_key(person)
+            mine = next((row for row in ranked if row[1] == key), None)
+            before_end = start if spec["seconds"] else previous_bounds[1]
+            response["person"] = {
+                **_pulse_person_entry(ledger, key),
+                "found": key in ledger["names"],
+                "rank": mine[0] if mine else None,
+                "score": mine[2] if mine else 0,
+                "breakdown": mine[3] if mine else _pulse_empty_parts(),
+                "totals": _pulse_totals(ledger, key, end, today),
+                "before": _pulse_totals(
+                    ledger, key, before_end, max(0, before_end - 1) // 86400),
+            }
+            return response
+        previous = {
+            row[1]: row[0] for row in _pulse_ranking(
+                _pulse_scores(ledger, *previous_bounds), ledger["names"])
+        }
+        first = ledger["first"]
+        leaderboard = []
+        for rank, key, score, parts in ranked[:PULSE_LEADERBOARD_LIMIT]:
+            totals = _pulse_totals(ledger, key, end, today)
+            leaderboard.append({
+                **_pulse_person_entry(ledger, key),
+                "rank": rank,
+                "previousRank": previous.get(key),
+                "score": score,
+                "breakdown": parts,
+                "streak": totals["currentStreak"],
+                "achievements": {
+                    name: totals[name] for name in (
+                        "mergedPulls", "reviews", "bugsClosed",
+                        "longestStreak")
+                },
+                "newcomer": bool(spec["seconds"]) and key in first
+                and start <= first[key][0] < end,
+            })
+        response["leaderboard"] = leaderboard
+        response["leaderboardTotal"] = len(ranked)
+        if not spec["seconds"]:
+            return response
+        response.update(self._pulse_commit_window(
+            ledger, start, end, spec["step"]))
+        newcomers = sorted(
+            (
+                (at, key, kind, number)
+                for key, (at, kind, number) in first.items()
+                if start <= at < end
+            ),
+            reverse=True,
+        )
+        response["newcomers"] = [
+            {
+                **_pulse_person_entry(ledger, key),
+                "at": at * 1000,
+                "kind": kind,
+                "number": number or None,
+            }
+            for at, key, kind, number in newcomers[:PULSE_NEWCOMERS_LIMIT]
+        ]
+        response["newcomerCount"] = len(newcomers)
+        lower, upper = start * 1000, end * 1000
+
+        def listing(records: list[dict[str, Any]], field: str) -> dict[str, Any]:
+            chosen = sorted(
+                (record for record in records
+                 if lower <= record[field] < upper),
+                key=lambda record: (-record[field], -record["number"]),
+            )
+            return {
+                "count": len(chosen),
+                "authors": len({
+                    _pulse_key(record["author"]) for record in chosen
+                    if record["author"]
+                }),
+                "items": [
+                    {
+                        "number": record["number"],
+                        "title": record["title"],
+                        "author": record["author"],
+                        "status": record["status"],
+                        "at": record[field],
+                    }
+                    for record in chosen[:PULSE_LIST_LIMIT]
+                ],
+                "truncated": len(chosen) > PULSE_LIST_LIMIT,
+            }
+
+        response["pulls"] = {
+            "merged": listing(ledger["pulls"], "merged"),
+            "opened": listing(ledger["pulls"], "opened"),
+        }
+        response["issues"] = {
+            "closed": listing(ledger["issues"], "closed"),
+            "opened": listing(ledger["issues"], "opened"),
+        }
+        return response
 
     def sizes(self, query: Mapping[str, str]) -> dict[str, Any]:
         commit = self.resolve_commit(query.get("ref", ""))
@@ -5988,6 +6976,8 @@ def _repository_serves(repository: Any, operation: str) -> bool:
     operations = repository.config.operations
     if operation == BRANCH_TRASH_OPERATION:
         return BRANCH_TRASH_CARRIER_OPERATION in operations
+    if operation == PULSE_OPERATION:
+        return PULSE_CARRIER_OPERATION in operations
     return operation in operations
 
 
@@ -10089,6 +11079,7 @@ class GatewayApplication:
         if (
             response.stream is None
             and response.status == 200
+            and response.headers.get(PULSE_PARTIAL_HEADER) != "1"
             and len(response.body) <= MEMORY_RESPONSE_CACHE_OBJECT_BYTES
         ):
             stored = _copy_cached_response(response)
@@ -10583,6 +11574,10 @@ class GatewayApplication:
                     raise GatewayError("Git protocol is not available")
                 cache_key = self._repository_response_cache_key(
                     repository, operation, query, git_protocol)
+            elif method in ("GET", "HEAD") and operation == PULSE_OPERATION:
+                cache_key = self._repository_response_cache_key(
+                    repository, operation, query, "until:%d" % pulse_window_end(
+                        pulse_period(query), int(self.clock_ms()) // 1000))
             elif method in ("GET", "HEAD") and operation in (
                 DIRECT_PUBLIC_READ_OPERATIONS - {"raw", "release-blob"}
             ):
@@ -10763,6 +11758,14 @@ class GatewayApplication:
                         "ETag": f'"sha256-{stream.filename}"',
                     },
                     stream=stream,
+                )
+            if operation == PULSE_OPERATION:
+                assert cache_key is not None
+                now_seconds = int(self.clock_ms()) // 1000
+                return self._single_flight(
+                    cache_key,
+                    lambda: _pulse_response(
+                        repository.pulse(query, now_seconds)),
                 )
             function = {
                 "tree": repository.tree,

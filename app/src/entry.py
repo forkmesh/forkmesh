@@ -49593,6 +49593,10 @@ def _https_mirror_request_query(url, operation, release_sha=""):
     elif operation in ("tree", "blob", "raw", "commit", "history"):
         if params.get("path"):
             output["path"] = _repository_read_path(params["path"][0])
+    elif operation == "pulse":
+        for key in ("period", "person"):
+            if params.get(key):
+                output[key] = params[key][0]
     # Only operations that resolve a ref accept one. compare/merge-preview
     # resolve both endpoints from base/head, and `commit` addresses one object
     # by path, so forwarding the browser's ambient branch selection to them is
