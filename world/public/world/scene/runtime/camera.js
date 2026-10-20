@@ -394,6 +394,15 @@ export function functions({
       fns.constrainTownOfficeWalls(ctx.player.position.clone());
     }
     ctx.player.rotation.y = arrivalFacingHeading(x, z, heading);
+    // A walker arriving from another World looks the way they are walking:
+    // the camera goes behind them instead of keeping its old bearing, which
+    // otherwise shows them facing back the way they came.
+    if (spawn.faceCamera === true) {
+      ctx.cameraYaw = Math.atan2(
+        Math.sin(ctx.player.rotation.y),
+        Math.cos(ctx.player.rotation.y),
+      );
+    }
     ctx.lastPosition.copy(ctx.player.position);
     ctx.wasWalking = false;
     ctx.cameraFocus = null;

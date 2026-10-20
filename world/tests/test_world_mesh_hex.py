@@ -196,6 +196,7 @@ def test_arrivals_are_sanitized_and_land_outside_the_crossed_edge(result):
     assert (round(west["x"]), round(west["z"])) == (1000 - 389, 512)
     assert abs(west["heading"] - 1.5707963267948966) < 1e-9
     assert west["space"] == "town-square"
+    assert west["faceCamera"] is True
     # (10, 380) is nearest the 60-degree edge: the walker lands 389 out
     # along that edge's normal.
     normal = (0.5, 3 ** 0.5 / 2)
@@ -231,3 +232,11 @@ def test_the_replaced_desert_petal_steps_aside():
     assert "sign.visible = !petals.has(petal);" in plots
     assert ("ctx.desertPlots?.userData?.replacePetals?.("
             "worldMeshReplacedPetals());") in network
+
+
+def test_an_arrival_turns_the_camera_to_face_into_the_world():
+    camera = (WORLD / "scene" / "runtime" / "camera.js").read_text(
+        encoding="utf-8")
+    assert "if (spawn.faceCamera === true) {" in camera
+    assert "ctx.cameraYaw = Math.atan2(\n        Math.sin(ctx.player.rotation.y)," \
+        in camera

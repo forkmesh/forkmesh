@@ -492,5 +492,6 @@ export function worldMeshHexEdgeArrival(center, pos) {
     z: center.z + normal.z * depth + normal.x * along,
     heading: Math.atan2(-normal.x, -normal.z),
     space: "town-square",
+    faceCamera: true,
   };
 }
