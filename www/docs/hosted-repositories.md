@@ -15,9 +15,15 @@ account.
 
 ## Contributing without write access
 
+The usual way: open the repository, choose **Forks → Fork this repository**,
+create a push credential for your fork (Settings → SSH keys → Push code over
+HTTPS, `<you>/<name>`), push any branch to it, and choose **Contribute: Open
+pull request** on your fork. A fork shares the original's history, so it is
+created at once whatever the repository's size.
+
 On a repository the operator opened to contributors, anyone signed in with a
-verified email address can push a branch and open a pull request without a
-fork:
+verified email address can also push a branch and open a pull request without
+a fork:
 
 1. **Settings → SSH keys → Push code over HTTPS**: enter `<owner>/<name>` and
    choose **Create push credential**.

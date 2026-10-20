@@ -112,6 +112,7 @@ data class ForkNotification(
             "pull_submitted" -> "Pull request"
             "issue_assigned" -> "Assignment"
             "repo_shared" -> "Repo share"
+            "security_advisory" -> "Security advisory"
             "bounty_funded", "bounty_paid" -> "Bounty"
             "tip_sent" -> "Tip"
             "release_published" -> "Release"

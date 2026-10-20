@@ -98,6 +98,7 @@ public struct ForkNotification: Equatable, Hashable, Sendable, Identifiable {
         case "pull_submitted": return "Pull request"
         case "issue_assigned": return "Assignment"
         case "repo_shared": return "Repo share"
+        case "security_advisory": return "Security advisory"
         case "bounty_funded", "bounty_paid": return "Bounty"
         case "tip_sent": return "Tip"
         case "release_published": return "Release"

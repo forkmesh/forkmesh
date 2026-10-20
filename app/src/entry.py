@@ -855,6 +855,7 @@ NOTIFICATION_KINDS = frozenset({
     "calendar_reminder",
     "calendar_rsvp",
     "chat_webhook",
+    "security_advisory",
     "channel_unread",
     "direct_unread",
     "account_email_sent",
@@ -983,6 +984,7 @@ NOTIFICATION_EMAIL_DEFAULTS = {
     "calendar_reminder": True,
     "calendar_rsvp": True,
     "package_review": True,
+    "security_advisory": True,
     "channel_unread": True,
     "direct_unread": True,
 }
@@ -13503,7 +13505,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "ea85061f75e5602fc9c86c7d07a8c15583c2cdc95ead6a0463968bfd0031400c"
+    "c42d16ef4a1708560657263b86ef151172e3f35dae0b14f9f8ae36fcc7562e21"
 )
 
 
@@ -16168,6 +16170,7 @@ verify_hosted_push_credential = _hosted_git.export(
     "verify_hosted_push_credential")
 has_hosted_push_credential = _hosted_git.export("has_hosted_push_credential")
 verify_hosted_push_access = _hosted_git.export("verify_hosted_push_access")
+hosted_fork_create = _hosted_git.export("hosted_fork_create")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
 record_hosted_branch_count = _hosted_git.export(
     "record_hosted_branch_count")
@@ -18803,6 +18806,11 @@ _REPO_SCOPED_TABLES = (
     ("repo_provider_mirror_links", "repo_bi"),
     ("repo_provider_mirror_outbox", "repo_bi"),
     ("world_fediverse_mentions", "repo_bi"),
+    ("security_advisories", "repo_bi"),
+    ("security_advisory_members", "repo_bi"),
+    ("security_advisory_comments", "repo_bi"),
+    ("security_advisory_credits", "repo_bi"),
+    ("security_advisory_settings", "repo_bi"),
     ("repository_fork_jobs", "source_repo_bi"),
     ("repository_fork_jobs", "target_repo_bi"),
 )
@@ -35730,6 +35738,10 @@ async def repo_forks_handler(env, request, owner, repo):
     public_owner = await _public_repo_owner(
         env, request, owner, repo, REPO_FORKS_RE)
     if method == "POST":
+        hosted = await hosted_fork_create(
+            env, request, owner, public_owner, repo)
+        if hosted is not None:
+            return hosted
         return await _web_fork_create(
             env, request, public_owner, repo)
     repo_bi = await blind_index(env, public_owner + "/" + repo)

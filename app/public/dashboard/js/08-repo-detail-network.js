@@ -141,6 +141,8 @@
           ? `${repoLinkUrl(repo)}/actions/runs/${actionsRunId}`
           : routeKind === "pulls" && routeParts[3] === "send"
             ? pullBatchUrl(repo)
+          : routeKind === "security"
+            ? `${repoLinkUrl(repo)}/security${routeParts.slice(3).map((part) => `/${part}`).join("")}`
             : repoTabRoutesFor(repo).includes(routeKind)
               ? `${repoLinkUrl(repo)}/${routeKind}`
               : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
@@ -162,6 +164,7 @@
       projects: { label: "Projects", icon: "chart-gantt", count: "" },
       pulls: { label: "Pull requests", icon: "git-pull-request", count: pullsCount },
       actions: { label: "Actions", icon: "workflow", count: "" },
+      security: { label: "Security", icon: "shield", count: "" },
       discussions: { label: "Discussions", icon: "message-square", count: discussionsCount },
       agents: { label: "Agents", icon: "bot", count: "" },
       settings: { label: "Settings", icon: "settings", count: "" },
@@ -295,7 +298,7 @@
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">
           <div class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
-            ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
+            ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
               const meta = tabMeta[tab];
               const isDiscussions = tab === "discussions";
               const discussionCount = Number(meta.count);
@@ -402,6 +405,7 @@
             <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><span class="font-mono text-[10px] text-muted-foreground">signed release manifests</span></div><div data-repo-releases></div></div></section>
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
             <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><span class="font-mono text-[10px] text-muted-foreground">linked issues · milestones · gantt</span></div><div data-repo-projects></div></div></section>
+            <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
             <section data-dashboard-repo-tab-panel="actions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions</span><span class="font-mono text-[10px] text-muted-foreground">workflows in .forkmesh/ · runs from the mirror executor</span></div><div data-repo-actions></div></div></section>
@@ -472,7 +476,7 @@
                 <div data-repo-fork-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] p-3 text-left">
                   <p class="text-xs font-semibold text-foreground">Forks of this repository</p>
                   <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Each fork is its own repository on the mesh, sharing this one's history instead of copying it.</p>
-                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Create fork on my mirror</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">The website queues this durably, so neither your mirror nor the original node has to be online right now.</p>` : ""}
+                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Fork this repository</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">Your own copy under your account, linked to this one. Push any branch to it, then open a pull request back here.</p>` : ""}
                   <div data-repo-fork-list class="mt-2 max-h-52 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
                   <div data-repo-remote-forks class="mt-3 border-t border-border pt-2">
                     <p class="text-xs font-semibold text-foreground">Forks on other instances</p>
@@ -574,6 +578,7 @@
       refreshServedCounts(repo);
     }
     loadRepoFeaturePanels(repo, recordRoute, compareRoute, commitHash);
+    if (initialTab === "security") void loadRepoSecurity(repo);
     loadRepoStarState(repo, $("[data-repo-action-star]"));
     loadRepoForks(repo);
   }
@@ -1105,6 +1110,7 @@
       code_push: "git-commit-horizontal",
       issue_assigned: "circle-dot",
       repo_shared: "share-2",
+      security_advisory: "shield-alert",
       bounty_funded: "badge-dollar-sign",
       bounty_paid: "circle-dollar-sign",
       release_published: "tag",
@@ -2967,6 +2973,18 @@
         return;
       }
 
+      if (event.target.closest("[data-repo-contribute]") && state.selectedRepo) {
+        event.preventDefault();
+        if (!state.session?.nodeName) {
+          location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+          return;
+        }
+        const forkRepo = state.selectedRepo;
+        activateRepoTab("pulls");
+        requestAnimationFrame(() => openPullCompose(forkRepo));
+        return;
+      }
+
       const pullNewButton = event.target.closest("[data-repo-pull-new]");
       if (pullNewButton && state.selectedRepo && !repoReadOnlyMirror(state.selectedRepo)) {
         if (!state.session?.nodeName) {
@@ -4320,6 +4338,7 @@
           // Feature tab (issues, pulls, etc.): restore without re-loading
           // records since they cache in state.
           setRepoTab(kind);
+          if (kind === "security") void loadRepoSecurity(repo);
           if (kind === "commits") {
             const commitHash = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (/^[0-9a-f]{7,64}$/i.test(commitHash)) loadRepoCommitDetail(repo, commitHash);

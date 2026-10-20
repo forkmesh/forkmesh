@@ -1203,7 +1203,7 @@
         .filter((item) => /^[^*/\s]+\/[^*/\s]+$/.test(String(item)));
       const account = String(state.session?.nodeName || state.session?.name || "").toLowerCase();
       if (note && listed.length) {
-        note.textContent = `Anyone with a verified email address can push branches named pr/${account || "<your-name>"}/… to ${listed.join(", ")} and open a pull request from them. Other branches stay with the owners.`;
+        note.textContent = `To contribute, Fork the repository from its page (Forks, then Fork this repository), push any branch to your fork with a credential for it, and open a pull request back. Without a fork, anyone with a verified email address can also push branches named pr/${account || "<your-name>"}/… to ${listed.join(", ")} directly. Other branches stay with the owners.`;
         note.classList.remove("hidden");
       }
       if (input && !input.value && listed.length) input.value = listed[0];
@@ -4138,6 +4138,7 @@
     pull_submitted: true,
     issue_assigned: true,
     repo_shared: true,
+    security_advisory: true,
     bounty_funded: true,
     bounty_paid: true,
     release_published: true,
@@ -4220,6 +4221,7 @@
       { kind: "repo_activity", label: "Merged pull requests", email: false },
       { kind: "release_published", label: "Releases", email: true },
       { kind: "repo_shared", label: "Repositories shared with you", email: true },
+      { kind: "security_advisory", label: "Security advisories", email: true },
       { kind: "mirror_request", label: "Mirror requests", email: true },
       { kind: "repository_hosted", label: "Imports finished hosting", email: false },
     ] },
@@ -5140,6 +5142,7 @@
     renderProfileContributionGraph();
     renderProfileTips(session);
     renderProfileBadges(session);
+    void renderProfileSecurityCredits(session);
     renderProfileFediverse(session);
   }
 

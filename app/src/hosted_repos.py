@@ -365,11 +365,18 @@ async def ensure_tables(runtime):
     _TABLES_READY.add(key)
 
 
-async def count_for_creator(runtime, creator_bi):
-    row = await runtime.d1_first(
-        "SELECT COUNT(*) AS n FROM hosted_repos "
-        "WHERE creator_bi=? AND deleted_at=0", creator_bi)
-    return int((row or {}).get("n") or 0)
+async def count_for_creator(runtime, creator_bi, forks=False):
+    count = 0
+    for row in await runtime.d1_all(
+            "SELECT data FROM hosted_repos "
+            "WHERE creator_bi=? AND deleted_at=0", creator_bi) or []:
+        try:
+            record = await runtime.open(row.get("data"))
+        except Exception:
+            record = None
+        if bool(fork_of(record)) == bool(forks):
+            count += 1
+    return count
 
 
 async def find_by_key(runtime, key_bi):
@@ -410,6 +417,32 @@ async def size_of(runtime, repo_id):
         "SELECT MAX(size_bytes) AS n FROM hosted_repo_copies WHERE repo_id=?",
         repo_id)
     return int((row or {}).get("n") or 0)
+
+
+DEFAULT_MAX_FORKS_PER_ACCOUNT = 20
+
+
+def max_forks_per_account(env):
+    return _int_setting(env, "HOSTED_MAX_FORKS_PER_ACCOUNT",
+                        DEFAULT_MAX_FORKS_PER_ACCOUNT)
+
+
+def fork_of(record):
+    fork = record.get("fork") if isinstance(record, dict) else None
+    if not isinstance(fork, dict):
+        return None
+    parent = str(fork.get("of") or "")
+    network = str(fork.get("network") or parent)
+    if (not ID_RE.fullmatch(parent) or not ID_RE.fullmatch(network)
+            or parent == str(record.get("id") or "")):
+        return None
+    return parent, network
+
+
+async def rows_for_creator(runtime, creator_bi):
+    return await runtime.d1_all(
+        "SELECT id,key_bi,data FROM hosted_repos "
+        "WHERE creator_bi=? AND deleted_at=0", creator_bi) or []
 
 
 # --- the replica exchange ---------------------------------------------------
@@ -540,6 +573,9 @@ async def replicas(runtime, raw):
         copies.setdefault(row["repo_id"], {})[row["node"]] = row
     live = await runtime.live_core_nodes(cores)
     endpoints = await runtime.core_endpoints(cores)
+    public_ids = {str(row.get("id") or "") for row in rows or []
+                  if not int(row.get("deleted_at") or 0)
+                  and row.get("visibility") != "private"}
     repositories = []
     removed = []
     for row in rows or []:
@@ -600,6 +636,9 @@ async def replicas(runtime, raw):
         }
         if caller == primary and isinstance(record.get("init"), dict):
             item["init"] = record["init"]
+        fork = fork_of(record)
+        if fork and item["visibility"] == "public" and fork[0] in public_ids:
+            item["forkOf"], item["network"] = fork
         push_report = push_reports.get(repo_id)
         if isinstance(push_report, dict) and hasattr(
                 runtime, "record_push_mirror"):
