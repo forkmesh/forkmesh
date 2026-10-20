@@ -89,7 +89,8 @@ desktop embeds the same page.
   `world/src/world_element_store.py`.
 - `GET /api/start/instances/<id>/logo`: an instance logo, drawn on its
   hexagon.
-- `GET /api/world/mesh`, `POST /api/world/visa`,
+- `GET /api/world/mesh`, `GET /api/world/neighbour-scene`,
+  `GET /api/world/neighbour-icon`, `POST /api/world/visa`,
   `POST /api/world/visa/verify` and the `watch` / `visa` forms of
   `/api/world/ws`: the [World mesh](#world-mesh).
 
@@ -617,9 +618,28 @@ them without changing page.
   origin, so a scene cannot make every hub visitor's browser call third-party
   hosts; any other icon is dropped and the bug shows its initial. The body is
   refused when it is over 64 KB in bytes, by `content-length` or once read.
-  `buildNeighbourScene()` draws it with shared primitives on a shared ground
-  material; a scene that arrives after its hex layer was replaced is ignored,
-  and when it is missing or refused the logo hexagon stays.
+  `buildNeighbourScene()` draws it with shared primitives; a scene that
+  arrives after its hex layer was replaced is ignored, and when it is missing
+  or refused the logo hexagon stays. A `circuit` ground gets a tiled canvas of
+  traces in the accent colour, which glow faintly (`neighbourGroundMaterial`);
+  `plain` is a flat colour. The terrarium glass does not write depth, or it
+  hid every bug drawn after it. A house, its label and each bug with an https
+  `url` are `instance-hexagon` picks, so clicking one opens that link in a new
+  tab.
+- **Bug icons through home.** An instance's raw-file route sends no CORS
+  header, so a cross-origin icon cannot be drawn into a WebGL texture and
+  every bug fell back to its initial. The World loads each icon from its own
+  server instead: `GET /api/world/neighbour-icon?world=<id>&path=<path>`
+  (`neighbourIconURL()`, `world_neighbour_icon_handler`). The server answers
+  only for a hexagon neighbour in its directory that lists a scene (never
+  itself), builds the URL as that neighbour's `world` origin plus the path
+  (`neighbour_icon_source()`: starts with one `/`, at most 300 URL-safe
+  characters, no `#`), fetches it without credentials and with redirects
+  refused (4 seconds, 64 KB), and relays it only when the bytes are PNG,
+  JPEG, GIF, WebP or ICO (`icon_type()`; never SVG). The reply carries the
+  sniffed type, `access-control-allow-origin: *`, `nosniff`, a sandbox CSP
+  and an hour of public cache; the server keeps up to 96 icons in memory for
+  an hour, and a failure for a minute.
 - **Publishing a scene.** Every instance World serves that route
   (`world_neighbour_scene_handler`, `neighbour_scene()` in `world_mesh.py`)
   with `access-control-allow-origin: *` and a 5-minute public cache; the

@@ -1,4 +1,5 @@
 export const NEIGHBOUR_SCENE_PATH = "/api/world/neighbour-scene";
+export const NEIGHBOUR_ICON_PATH = "/api/world/neighbour-icon";
 export const NEIGHBOUR_SCENE_VERSION = 1;
 export const NEIGHBOUR_SCENE_MAX_BYTES = 64 * 1024;
 export const NEIGHBOUR_SCENE_MAX_OBJECTS = 48;
@@ -47,6 +48,14 @@ export function neighbourSceneLink(value) {
 export function neighbourSceneURL(world) {
   const origin = neighbourSceneLink(world);
   return origin ? new URL(NEIGHBOUR_SCENE_PATH, origin).href : "";
+}
+
+export function neighbourIconURL(worldId, icon) {
+  const link = neighbourSceneLink(icon);
+  if (!link || !/^[0-9a-f]{32}$/.test(String(worldId || ""))) return "";
+  const url = new URL(link);
+  const query = new URLSearchParams({ world: worldId, path: `${url.pathname}${url.search}` });
+  return `${NEIGHBOUR_ICON_PATH}?${query}`;
 }
 
 function placed(item) {

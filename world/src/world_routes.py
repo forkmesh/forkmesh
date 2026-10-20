@@ -3320,6 +3320,71 @@ def world_neighbour_scene_handler(env, request):
         extra_headers={"access-control-allow-origin": "*"})
 
 
+_WORLD_ICON_CACHE = {}
+WORLD_ICON_CACHE_LIMIT = 96
+
+
+async def _world_neighbour_icon_fetch(source):
+    try:
+        resp = await js_fetch_with_timeout(
+            source,
+            {"method": "GET", "headers": {"accept": "image/*"},
+             "redirect": "error"},
+            WORLD_MESH_FETCH_TIMEOUT_SECONDS)
+        if int(getattr(resp, "status", 0)) != 200:
+            return b""
+        if int(resp.headers.get("content-length") or 0) > \
+                world_mesh.ICON_MAX_BYTES:
+            return b""
+        raw = bytes(Uint8Array.new(await resp.arrayBuffer()).to_py())
+    except Exception:
+        return b""
+    return raw if len(raw) <= world_mesh.ICON_MAX_BYTES else b""
+
+
+async def world_neighbour_icon_handler(env, request):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            extra_headers={"allow": "GET"})
+    params = parse_qs(urlparse(request.url).query)
+    worlds = await world_mesh_directory(env)
+    source = world_mesh.neighbour_icon_source(
+        env, worlds, (params.get("world") or [""])[0],
+        (params.get("path") or [""])[0])
+    if not source:
+        return json_response({"error": "not_found"}, status=404)
+    now = int(Date.now())
+    cached = _WORLD_ICON_CACHE.get(source)
+    if cached is None or now >= cached["until"]:
+        raw = await _world_neighbour_icon_fetch(source)
+        kind = world_mesh.icon_type(raw)
+        if len(_WORLD_ICON_CACHE) >= WORLD_ICON_CACHE_LIMIT:
+            _WORLD_ICON_CACHE.pop(next(iter(_WORLD_ICON_CACHE)))
+        cached = {
+            "raw": raw if kind else b"", "type": kind,
+            "until": now + (world_mesh.ICON_MAX_AGE * 1000 if kind
+                            else world_mesh.ICON_FAILURE_MS),
+        }
+        _WORLD_ICON_CACHE[source] = cached
+    if not cached["type"]:
+        return json_response(
+            {"error": "icon_unavailable"}, status=404,
+            extra_headers={"access-control-allow-origin": "*"})
+    return JsResponse.new(Uint8Array.new(_to_js(cached["raw"])), to_js({
+        "status": 200,
+        "headers": {
+            "content-type": cached["type"],
+            "content-length": str(len(cached["raw"])),
+            "cache-control": "public, max-age=%d" % world_mesh.ICON_MAX_AGE,
+            "access-control-allow-origin": "*",
+            "cross-origin-resource-policy": "cross-origin",
+            "content-security-policy": "default-src 'none'; sandbox",
+            "x-content-type-options": "nosniff",
+        },
+    }))
+
+
 async def world_visa_handler(env, request):
     no_store = "no-store, max-age=0, must-revalidate"
     if method_name(request) != "POST":

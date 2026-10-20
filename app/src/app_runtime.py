@@ -2211,6 +2211,11 @@ class Default:
         ):
             return world_neighbour_scene_handler(self.env, request)
 
+        if url.path in (
+            "/api/world/neighbour-icon", "/api/world/neighbour-icon/"
+        ):
+            return await world_neighbour_icon_handler(self.env, request)
+
         if url.path in ("/api/world/visa", "/api/world/visa/"):
             return await world_visa_handler(self.env, request)
 

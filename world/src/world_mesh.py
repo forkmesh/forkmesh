@@ -24,6 +24,10 @@ SCENE_TEXT_MAX = 40
 SCENE_LAMP_RING = 30
 SCENE_TREE_RING = 280
 SCENE_TREES = 12
+ICON_MAX_BYTES = 64 * 1024
+ICON_MAX_AGE = 3600
+ICON_FAILURE_MS = 60 * 1000
+ICON_PATH_RE = re.compile(r"^/(?!/)[A-Za-z0-9._~!$&'()*+,;=:@%/?-]{0,299}$")
 MAX_WORLDS = SLOTS + 1
 DIRECTORY_MAX_AGE = 60
 DIRECTORY_CACHE_MS = 5 * 60 * 1000
@@ -168,6 +172,33 @@ def neighbour_scene(env):
     host = origin_host(world)
     return configured_scene(setting(env, "WORLD_NEIGHBOUR_SCENE")) \
         or default_scene(clean_name(setting(env, "INSTANCE_NAME"), host), host)
+
+
+def neighbour_icon_source(env, worlds, world_id, path):
+    path = str(path or "")
+    if not ICON_PATH_RE.fullmatch(path):
+        return ""
+    own = self_id(env, worlds)
+    for entry in worlds:
+        if entry["id"] == str(world_id or "") and entry["id"] != own \
+                and entry.get("scene"):
+            return entry["world"] + path
+    return ""
+
+
+def icon_type(raw):
+    raw = bytes(raw or b"")
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if raw.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    if raw[:4] == b"\x00\x00\x01\x00" and len(raw) > 6:
+        return "image/x-icon"
+    return ""
 
 
 def hub_entry(env):
