@@ -480,3 +480,19 @@ def test_an_inbox_refusal_stops_the_change_and_is_audited():
     assert answer == {"status": 429, "data": {"error": "author_quota"}}
     assert len(world.submitted) == 1
     assert world.audits[0][4] == "failed"
+
+
+def test_bot_events_on_an_org_repository_are_signed_under_the_org_address():
+    world = World()
+    world.add_job()
+
+    async def public_owner(_env, _owner, _repo):
+        return "acme"
+
+    world.module.public_owner = public_owner
+    world.call("/api/actions/job/issues/3/comments",
+               Request("POST", {"body": "Thanks!"}))
+    owner, repo, repo_bi, data, keys, from_job = world.submitted[-1]
+    assert keys == ("acme/site", "forkmesh/site")
+    assert data["event"]["authorName"] == "acme-actions"
+    verify(data["event"], owner="acme", number=3)

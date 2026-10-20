@@ -288,7 +288,9 @@ dict on both Pyodide and the host, so `x` and `d` are read as keys, which
 keeps the `test_host_js_surface` inventory free of attribute chains on it).
 Each change is a v2
 issue event (`forkmesh-issue-event-v2\n<owner>/<repo>\n...`, owner being the
-repository's node owner) with `authorName: <org>-actions`, handed to
+repository's public address: an organization alias such as `acme/app`, the key
+browsers and the desktop sign with, not the backing account the alias resolves
+to) with `authorName: <org>-actions`, handed to
 `_accept_issue_submission` in `entry.py` — the same validation, inbox row and
 side effects as a web submission (it is the former POST body of
 `issues_handler`). The job token is the authority, so structural events
