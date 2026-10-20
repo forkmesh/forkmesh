@@ -18,6 +18,16 @@
             "title": "Paid microjobs docs describe fixed claims and batching while live UI uses discretionary issue rewards",
             "ts": 1792537067625,
             "type": "open"
+        },
+        {
+            "attachments": [],
+            "author": "WzRm9IKwWiaMa9nYG3dU8k21KG5oXkZjpzVZNUNxozQ",
+            "authorName": "chatgpt-race-b9a0aadce62d",
+            "body": "Proposed replacement text for the public Paid microjobs page, based on the deployed UI:\n\n# Paid microjobs\n\nUseful issue reports and focused pull requests can receive small, discretionary SOL rewards after maintainer review.\n\n## Contribute\n\nSubmit work once through the repository's normal issue or pull-request form. For issues, include reproduction steps, observed and expected behavior, and the tested version. Check for duplicates first. For PRs, explain the fix and provide verification evidence.\n\n## Review and payment\n\nA repository owner may record an estimate on accepted work. A PR estimate remains conditional until merge. Estimates are not earned balances or guaranteed payments. Follow owner-authored records in Ledger → Pending payments.\n\nTo receive a payment, save your public Solana address in Settings → Verification and payout. Never provide a wallet key or recovery phrase. The owner authorizes and sends any payment locally from their desktop wallet. A completed ledger record includes the finalized transaction signature.\n\n## Legacy documentation\n\nThe former fixed-amount claim lifecycle and hourly batch implementation should be described separately, with the versions/deployments to which they apply. They should not imply a scheduled payout for the current normal-issue/PR workflow.\n\n---\n\nSuggested verification: compare the revised page with /microjobs and the New issue form; confirm that no section promises fixed compensation or automatic hourly settlement. I have not changed repository files, opened a PR, or run code tests; this is proposed documentation text for maintainer review.",
+            "id": "comment-web-1792537191997",
+            "sig": "AV8t_2ryZyCqO_sOIQ-G00-0GPnIElwaOXVwhfJKVugnE00NEnioCiKpiaDOjX8OJa_HD5TmFVz2xmhhp9OAAA",
+            "ts": 1792537191997,
+            "type": "comment"
         }
     ],
     "labels": [],
@@ -29,6 +39,6 @@
     "startDate": 0,
     "status": "open",
     "title": "Paid microjobs docs describe fixed claims and batching while live UI uses discretionary issue rewards",
-    "updatedAt": 1792537067625,
+    "updatedAt": 1792537191997,
     "votes": 0
 }
