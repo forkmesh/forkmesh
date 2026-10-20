@@ -42,15 +42,18 @@ retired core's account stay core-held while pushes go only to live cores.
 `git_http.with_sideband_message`). A contributor who pushed a branch to their
 fork had to find the compare page themselves. After an accepted receive-pack
 (`POST`, 200) whose `X-ForkMesh-Ref-Updates` name a new or moved branch other
-than the default, on a repository whose catalog record has `forkedFrom`, the
-proxy reads the result and adds one side-band 2 packet before the final flush:
+than the default, on a repository whose catalog record has `forkedFrom` (or
+a contributor's `pr/<account>/` branch on the repository itself, see
+[HOSTED_REPOS.md](HOSTED_REPOS.md)), the proxy reads the result and adds one
+side-band 2 packet before the final flush:
 
 ```
 remote: Open a pull request for 'fix' by visiting:
 remote:      https://app.forkmesh.com/<you>/<repo>/compare/main...fix
 ```
 
-That page targets the parent (`pullRequestParent`). Results without side-band
+On a fork that page targets the parent (`pullRequestParent`); for a `pr/`
+branch it opens a pull request on the repository itself. Results without side-band
 (`docs_book.py`'s report-status push) and non-fork pushes are passed through
 untouched, and the body is only read when the line applies. Up to five
 branches are listed. `_https_mirror_push_send` is unchanged. Tests:

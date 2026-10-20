@@ -52157,11 +52157,14 @@ async def _fork_push_notice(env, request, owner, repo, alias_owner,
     if not branches:
         return None
     record = await _repo_catalog_record(env, owner, repo)
-    if not isinstance(record, dict) or not clean_string(
-            record.get("forkedFrom", ""), 170):
+    if not isinstance(record, dict):
         return None
+    fork = bool(clean_string(record.get("forkedFrom", ""), 170))
     default = clean_string(record.get("branch", ""), 200) or "main"
-    branches = [branch for branch in branches if branch != default][:5]
+    branches = [
+        branch for branch in branches
+        if branch != default and (fork or branch.startswith("pr/"))
+    ][:5]
     parsed = urlparse(str(getattr(request, "url", "") or ""))
     if not branches or parsed.scheme not in ("https", "http") or (
             not parsed.netloc):

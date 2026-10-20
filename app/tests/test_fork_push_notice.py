@@ -4,7 +4,8 @@
 the final flush of a receive-pack result, which stock git prints as
 ``remote:`` lines. ``_fork_push_notice`` (entry.py) decides when: a new or
 updated branch other than the default, on a repository whose catalog record
-says it is a fork. docs/CORE_PUSH.md.
+says it is a fork, or a contributor's ``pr/<account>/`` branch on the
+repository itself. docs/CORE_PUSH.md.
 """
 
 import ast
@@ -140,6 +141,14 @@ def test_a_new_branch_on_a_fork_gets_the_compare_link():
         b"     https://git.example.test/alice/BLT/compare/main...demo/demo"
         b"\n\n")
     assert result == _sideband_result()[:-4] + band + b"0000"
+
+
+def test_a_contributor_branch_on_the_repository_itself_gets_the_link():
+    plain = {("alice", "BLT"): {"owner": "alice", "name": "BLT",
+                                "branch": "main"}}
+    result, _upstream = _run(plain, [_branch("pr/bob/fix", old=ZERO)])
+    assert b"compare/main...pr/bob/fix" in result
+    assert b"Open a pull request for 'pr/bob/fix'" in result
 
 
 @pytest.mark.parametrize("records,updates", [
