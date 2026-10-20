@@ -10,7 +10,7 @@ being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
 
 - **Build.** `FORKMESH_PACKAGE_MODULES` (default on for Linux, off elsewhere)
   and `FORKMESH_PACKAGE_MODULE_IDS` (default: app-store-status, aquarium,
-  backups, calories, cleanup, computer-security, crm, marketing, openwrt,
+  backups, calories, cleanup, computer-security, crm, marketing, nexus, openwrt,
   people, rss-reader, sleep, steps, stretch, sugar-break, voice-changer, water). Disk
   Cleanup reaches the window only through its host socket and
   `NativePackageRegistration`, and loads in under a millisecond when

@@ -1,0 +1,75 @@
+{
+  "$schema": "../../manifest.schema.json",
+  "schemaVersion": 1,
+  "id": "nexus",
+  "name": "NEXUS",
+  "creator": {
+    "id": "did:forkmesh:forkmesh",
+    "handle": "forkmesh",
+    "displayName": "ForkMesh",
+    "verified": true
+  },
+  "type": "extension.native",
+  "category": "Utilities",
+  "version": "1.0.0",
+  "summary": "Network inspection on the desktop: discover devices with multicast DNS, scan TCP ports, look up DNS records and check web servers' redirects, TLS and security headers, on networks you own or may test.",
+  "screenshots": [
+    {
+      "path": "preview/market.svg",
+      "alt": "The NEXUS page on its Scan section, with a 192.168.1.0/24 target and a table of open ports identified as SSH, HTTP and IPP"
+    }
+  ],
+  "license": {
+    "model": "free-open-source",
+    "spdx": "MIT",
+    "creatorRetainsOwnership": true,
+    "terms": "Included under the ForkMesh repository licence."
+  },
+  "price": {
+    "amount": 0,
+    "currency": "USD"
+  },
+  "entrypoints": {
+    "desktop": "builtin:nexus",
+    "settings": "builtin:package"
+  },
+  "permissions": [
+    {
+      "id": "network.lan.discover",
+      "label": "Send multicast DNS (Bonjour) queries on this network and list the devices that answer",
+      "risk": "low"
+    },
+    {
+      "id": "network.tcp.scan",
+      "label": "Connect to the hosts and ports you scan: private networks only, unless you allow internet targets and confirm",
+      "risk": "sensitive"
+    },
+    {
+      "id": "network.dns.lookup",
+      "label": "Look up DNS records with this computer's resolver",
+      "risk": "low"
+    },
+    {
+      "id": "network.web.inspect",
+      "label": "Request a web address you enter, through the desktop firewall, and report its redirects, certificate and headers",
+      "risk": "low"
+    }
+  ],
+  "dependencies": [],
+  "trust": {
+    "sourceAvailable": true,
+    "reproducibleBuild": true,
+    "signature": "verified-bundle"
+  },
+  "install": {
+    "bundled": true,
+    "default": false
+  },
+  "lifecycle": {
+    "migrations": []
+  },
+  "dataLifecycle": {
+    "scope": "none",
+    "localData": true
+  }
+}

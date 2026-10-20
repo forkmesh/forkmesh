@@ -1,5 +1,7 @@
 # NEXUS iOS network intelligence
 
+The desktop counterpart is the `nexus` Market package, written in Qt with the same safety policy and service table ([../marketplace/nexus.md](../marketplace/nexus.md)).
+
 NEXUS is the native, Nmap-inspired network inspection package at `native/ios/Nexus`. It uses supported iOS APIs only: `Network.framework` for TCP connections, UDP DNS queries and Bonjour browsing; `URLSession` for HTTP and TLS-validated web requests; and SwiftData for the optional local history. It does not use raw sockets, ARP tables, ICMP, a bundled Nmap executable, background scans or fabricated MAC/vendor data.
 
 ## Package layout
