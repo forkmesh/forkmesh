@@ -140,9 +140,9 @@ contributor's picture drawn over them when one is known:
    "first": "2024-01-02", "last": "2026-10-01", "projects": ["acme-api"]}]}
 ```
 
-When the file is there, the Contributors section shows `count` (else the
-number of rows) and the top 8 rows by `commits`, each picture read through the
-raw route at the selected branch (`repoRawUrl`, as README images are). The
+When the file is there, the Contributors section shows `count` (never below
+the number of valid rows) and the top 8 rows by `commits`, each picture read
+through the raw route at the selected branch (`repoRawUrl`, as README images are). The
 tooltip is the name and commit count; an avatar links to `profile` only when it
 is a plain `https:` URL; a missing picture keeps the initials; "+N" opens the
 roster file. Other fields are ignored. The file is read with the optional

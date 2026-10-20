@@ -1,10 +1,3 @@
-"""The About rail's Contributors section reads a committed contributor roster.
-
-`.forkmesh/contributors/contributors.json` (with `<slug>.png` avatars beside
-it) outranks the git authors from `/stats`; without it the authors are used,
-minus bots. The functions run under node against a tiny DOM stand-in.
-"""
-
 import json
 import re
 import subprocess
@@ -108,7 +101,7 @@ console.log(JSON.stringify({
 """ % json.dumps(_roster(count=40)))
     assert out["drawn"] and out["shown"]
     assert out["count"] == 40 and out["text"] == "40"
-    assert out["first"] == "User 11"  # sorted by commits, not file order
+    assert out["first"] == "User 11"
     html = out["html"]
     srcs = re.findall(r'<img src="([^"]+)"', html)
     assert len(srcs) == 8
@@ -117,22 +110,23 @@ console.log(JSON.stringify({
     assert 'title="User 11 — 110 commits"' in html
     assert '<a href="https://example.com/@user11" target="_blank" rel="noopener noreferrer nofollow ugc"' in html
     assert html.count("data-repo-contributor-avatar") == 8
-    # "+N" counts everyone the roster names and opens the roster file.
     assert '<a href="/acme/space/blob/.forkmesh/contributors/contributors.json"' in html
     assert ">+32</a>" in html
 
 
 def test_the_count_falls_back_to_the_number_of_rows():
     out = _node("""
-const roster = parseRepoContributorRoster(%s);
-console.log(JSON.stringify({ count: roster.count, rows: roster.rows.length }));
-""" % json.dumps(_roster(count="many", rows=3)))
-    assert out == {"count": 3, "rows": 3}
+const invalid = parseRepoContributorRoster(%s);
+const understated = parseRepoContributorRoster(%s);
+console.log(JSON.stringify({ invalid: invalid.count, understated: understated.count }));
+""" % (json.dumps(_roster(count="many", rows=3)),
+       json.dumps(_roster(count=1, rows=3))))
+    assert out == {"invalid": 3, "understated": 3}
 
 
 def test_invalid_rosters_are_rejected():
-    big = json.dumps({"contributors": [{"name": "x" * 50}] * 50000})  # over 2 MiB
-    many = json.dumps({"contributors": [{"name": "x"}] * 10001})  # over the row cap
+    big = json.dumps({"contributors": [{"name": "x" * 50}] * 50000})
+    many = json.dumps({"contributors": [{"name": "x"}] * 10001})
     out = _node("""
 console.log(JSON.stringify([%s].map((text) => parseRepoContributorRoster(text))));
 """ % ", ".join(json.dumps(value) for value in (
@@ -162,7 +156,6 @@ console.log(JSON.stringify({ html: element("data-repo-about-contribs-list").inne
     assert "javascript:" not in html and "http://example.com/bob" not in html and "u:p@" not in html
     assert "<script>" not in html and "%22%3E%3Cscript%3E" in html
     assert "secret" not in html and "onerror=\\\"x" not in html and 'onerror="x' not in html
-    # Only bob and carol have safe slugs, so only they get a picture.
     assert re.findall(r"contributors%2F([a-z]+)\.png", html) == ["bob", "carol"]
 
 
@@ -188,7 +181,7 @@ console.log(JSON.stringify({ html: element("data-repo-about-contribs-list").inne
 """ % json.dumps(contributors))
     titles = re.findall(r'title="([^"]+)"', out["html"])
     assert titles == ["Alice — 200 commits", "Bob &lt;b&gt; — 50 commits", "Abbot — 40 commits"]
-    assert out["count"] == "11"  # 20 authors minus the 9 bots in the list
+    assert out["count"] == "11"
     assert "<b>" not in out["html"]
 
 

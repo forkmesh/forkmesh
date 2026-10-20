@@ -27558,11 +27558,6 @@
     });
   }
 
-  // Commit authors that are automation, not people: GitHub's Actions and app
-  // bots, "<name> Bot"/"<name>-bot" accounts, Actions runners that commit as
-  // "<platform> Actions" or a "<slug>-actions" machine account, and the
-  // deploy script's "ForkMesh Deploy". They are
-  // left out of the About rail's avatars and its count.
   function repoContributorIsBot(contributor) {
     const name = String(contributor?.name || "").trim();
     const email = String(contributor?.email || "").trim().toLowerCase();
@@ -27579,12 +27574,6 @@
     return email === "actions@forkmesh.local";
   }
 
-  // .forkmesh/contributors/contributors.json is a repository's own curated
-  // contributor roster ({count, contributors: [{slug, name, commits, profile,
-  // ...}]}, with an avatar per contributor at .forkmesh/contributors/<slug>.png).
-  // When a repository ships one it is the About rail's source of truth: git
-  // author names cannot tell one person's several identities apart, and they
-  // carry no pictures.
   const REPO_CONTRIBUTOR_ROSTER_DIR = ".forkmesh/contributors";
   const REPO_CONTRIBUTOR_ROSTER_PATH = `${REPO_CONTRIBUTOR_ROSTER_DIR}/contributors.json`;
   const REPO_CONTRIBUTOR_ROSTER_MAX_CHARS = 2 * 1024 * 1024;
@@ -27627,13 +27616,12 @@
     if (!rows.length) return null;
     rows.sort((a, b) => b.commits - a.commits || a.index - b.index);
     const declared = Number(data.count);
-    const count = Number.isInteger(declared) && declared > 0 && declared <= 10_000_000 ? declared : rows.length;
+    const count = Number.isInteger(declared) && declared > 0 && declared <= 10_000_000
+      ? Math.max(declared, rows.length)
+      : rows.length;
     return { count, rows };
   }
 
-  // One blob read, and only for a repository whose .forkmesh folder has a
-  // contributors folder (the listing is shared with every other optional
-  // .forkmesh read and a miss is remembered), so other repositories pay nothing.
   async function loadRepoContributorRoster(repo) {
     try {
       if (!repo || repoOptionalTreeMissed(repo, REPO_CONTRIBUTOR_ROSTER_PATH)) return null;
@@ -27650,7 +27638,7 @@
       if (blob.truncated) return null;
       return parseRepoContributorRoster(blobText(blob));
     } catch (_) {
-      return null; // host offline: the /stats authors are the fallback
+      return null;
     }
   }
 
@@ -27694,10 +27682,8 @@
     return true;
   }
 
-  // The git-author fallback, used only when the repository ships no valid
-  // roster. Bots are dropped from both the avatars and the count.
   async function renderRepoAboutAuthors(repo, roster, contributors, total) {
-    if (await roster) return; // loadRepoAboutInsights renders the roster
+    if (await roster) return;
     if (!repoAboutStillCurrent(repo)) return;
     const rows = Array.isArray(contributors) ? contributors : [];
     const people = rows.filter((row) => !repoContributorIsBot(row));
@@ -28249,8 +28235,6 @@
 
   async function loadRepoAboutInsights(repo) {
     loadRepoAboutSizeMapWhenNear(repo);
-    // A committed contributor roster outranks the git authors; it is read in
-    // parallel and the author renderers wait for it before drawing anything.
     const roster = loadRepoContributorRoster(repo);
     if (!await loadRepoAboutStats(repo, roster)) {
       await Promise.allSettled([loadRepoAboutFilesAndLanguages(repo), loadRepoAboutContributors(repo, roster)]);
