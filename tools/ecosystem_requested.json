@@ -177,5 +177,72 @@
    "overlap": "high",
    "notes": "Requested by the user on 2026-10-20. The GitHub repository holds only the issue tracker; the source is closed."
   }
+ },
+ {
+  "slug": "fossil",
+  "name": "Fossil",
+  "tagline": "Distributed version control with a built-in bug tracker, wiki, forum, chat and web interface",
+  "summary": "Fossil is a distributed version control system from the makers of SQLite. One self-contained executable carries version control together with bug tracking, a wiki, a forum, email alerts, chat, technotes and a themeable web interface, so a project website can be stood up in minutes on a small VPS or a Raspberry Pi. A repository is a single SQLite database with atomic transactions, and autosync sends each commit to the parent repository straight away. It syncs over HTTPS or SSH, has no rebase by design, and can mirror a repository to GitHub, though tickets and wiki do not carry over to a Git mirror.",
+  "watching": "Fossil has long kept a project's tickets, wiki and forum alongside its code in one repository that every clone carries. ForkMesh makes the same choice for Git, storing issues, pull requests and reviews as signed records under .forkmesh/ in the repository.",
+  "url": "https://fossil-scm.org/",
+  "repo": "https://fossil-scm.org/home/timeline",
+  "category": "version-control",
+  "tags": [
+   "vcs",
+   "distributed",
+   "sqlite",
+   "issue-tracker",
+   "wiki",
+   "forum",
+   "self-hosted",
+   "single-binary"
+  ],
+  "openSource": true,
+  "license": "BSD-2-Clause",
+  "gitNative": false,
+  "maker": "D. Richard Hipp and the Fossil developers",
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A distributed version control system with bug tracking, wiki, forum, chat and a web interface built into one executable.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories."
+   },
+   {
+    "topic": "Version control",
+    "project": "Its own format: each repository is a single SQLite database, and history cannot be rebased or squashed.",
+    "forkmesh": "Works with stock Git; clones, pushes and branches are ordinary Git operations."
+   },
+   {
+    "topic": "Project records",
+    "project": "Tickets, wiki pages, forum posts and technotes live in the same repository database as the code and sync with it.",
+    "forkmesh": "Issues, pull requests and reviews are signed records stored in the repository under .forkmesh/, so they travel with the code."
+   },
+   {
+    "topic": "Hosting model",
+    "project": "Any repository can serve its own website; most projects run on a small VPS or a Raspberry Pi, syncing over HTTPS or SSH.",
+    "forkmesh": "Repositories live on developer-operated nodes and core nodes, any node can mirror a public repository, and relays can be self-hosted."
+   },
+   {
+    "topic": "Sync",
+    "project": "Autosync sends each commit to the parent repository at once, so explicit pushes are uncommon.",
+    "forkmesh": "Commit and push stay separate as in Git, and a stable URL clones from whichever mirror is healthy."
+   },
+   {
+    "topic": "License",
+    "project": "BSD-2-Clause.",
+    "forkmesh": "MIT."
+   }
+  ],
+  "reviewed": "2026-10-20",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://fossil-scm.org/home/doc/trunk/www/index.wiki",
+    "https://fossil-scm.org/home/doc/trunk/www/fossil-v-git.wiki"
+   ],
+   "overlap": "medium",
+   "notes": "Requested by the user on 2026-10-20."
+  }
  }
 ]
