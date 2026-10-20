@@ -20,6 +20,33 @@
   "gitNative": false,
   "maker": "Jan Wrobel",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A rootless Linux sandbox that runs coding agents and third-party programs in disposable, virtualenv-style environments.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Isolation",
+    "project": "User namespaces give each environment its own home directory and expose only files and local services a TOML config allows; gVisor is optional.",
+    "forkmesh": "Each agent works in its own Git worktree on the desktop; cloud runners can run agent jobs and hold no core secret."
+   },
+   {
+    "topic": "Repository access",
+    "project": "Mounts a project's .git directory read-only by default.",
+    "forkmesh": "Agents commit in their own worktree, and finished work becomes a pull request stored as a signed record in the repository."
+   },
+   {
+    "topic": "Platforms",
+    "project": "Linux, on the user's existing distribution.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -50,6 +77,33 @@
   "gitNative": false,
   "maker": "naw103",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A coordination layer that flags intent conflicts between parallel coding agents before code is merged.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Coordination data",
+    "project": "Agents declare the symbols and targets they will change in a shared SQLite store inside the project's .git directory.",
+    "forkmesh": "Issues, pull requests and reviews are signed records stored in the repository under .forkmesh/, not only in a hosted database."
+   },
+   {
+    "topic": "Parallel agents",
+    "project": "Detects semantic collisions between agents working in separate worktrees.",
+    "forkmesh": "Agents run from the desktop app in separate Git worktrees, and each finished task becomes its own pull request."
+   },
+   {
+    "topic": "Interface",
+    "project": "A Rust CLI, a JSON API and an MCP server.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -80,6 +134,33 @@
   "gitNative": true,
   "maker": "Zabaca",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "An anonymous public Git host where agents create repositories by pushing to a name.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories."
+   },
+   {
+    "topic": "Identity",
+    "project": "No accounts; pushes can be SSH-signed for provenance.",
+    "forkmesh": "Each device has a local Ed25519 node identity, and an optional account gives a portable public username."
+   },
+   {
+    "topic": "Refs and pushes",
+    "project": "Refs are append-only, and the first push to a name creates the repository.",
+    "forkmesh": "Works with stock Git over HTTPS; pushes are fast-forward only."
+   },
+   {
+    "topic": "Retention",
+    "project": "Repositories expire 24 hours after their last push.",
+    "forkmesh": "Repositories persist on their hosts, and any node can mirror a public repository so it stays reachable when its source goes offline."
+   },
+   {
+    "topic": "Watching changes",
+    "project": "A companion CLI watches a repository over a WebSocket and reports incoming pushes.",
+    "forkmesh": "Clients browse repositories and their signed collaboration records from the desktop, mobile and web apps."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -110,6 +191,28 @@
   "gitNative": false,
   "maker": "Skillsync",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A local-first desktop app that collects, searches and converts coding-agent sessions across tools and teammates.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agent sessions",
+    "project": "Collects sessions from Claude Code, Codex, Cursor and others and converts a session between agents' native formats.",
+    "forkmesh": "Agent sessions run from the desktop app in isolated Git worktrees with live transcripts and diffs."
+   },
+   {
+    "topic": "Team sharing",
+    "project": "Shared workspaces sync sessions across a team.",
+    "forkmesh": "Finished agent work becomes a pull request, a signed record in the repository that collaborators review."
+   },
+   {
+    "topic": "License",
+    "project": "Its conversion engine, txcript, is an open-source Rust library and CLI.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -140,6 +243,28 @@
   "gitNative": false,
   "maker": "assistant-ui",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Creates Git linked worktrees whose unchanged files share copy-on-write filesystem blocks.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Worktrees",
+    "project": "Unchanged files share blocks through APFS, reflink or OverlayFS on Linux, or ReFS on Windows, instead of full checkouts.",
+    "forkmesh": "The desktop app runs each coding agent in its own isolated Git worktree."
+   },
+   {
+    "topic": "Audience",
+    "project": "Developers and coding agents working on many branches at once.",
+    "forkmesh": "Developers and their coding agents; finished agent work becomes a pull request."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -170,6 +295,33 @@
   "gitNative": false,
   "maker": "savvasioakeim",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Tauri desktop workspace where an orchestrator turns a goal into tasks and starts an agent for each.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agent isolation",
+    "project": "Creates a Git worktree and branch for each task, and manages dev servers and ports.",
+    "forkmesh": "Each agent runs in its own isolated Git worktree with a live transcript and diff."
+   },
+   {
+    "topic": "Review",
+    "project": "Offers a multi-agent planning mode and a QA review flow.",
+    "forkmesh": "Finished agent work becomes a pull request, stored as a signed record in the repository under .forkmesh/."
+   },
+   {
+    "topic": "Platforms",
+    "project": "Windows and macOS.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -200,6 +352,33 @@
   "gitNative": false,
   "maker": "Overboard",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Mac app that schedules and dispatches Claude Code agents organized into departments.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "How agents get work",
+    "project": "Runs on schedules or on demand; a captain agent reviews runs and dispatches new work, and tasks can come from Telegram or Slack.",
+    "forkmesh": "A person assigns an issue to a coding agent from the desktop app."
+   },
+   {
+    "topic": "Finished work",
+    "project": "Each department's captain agent reviews its runs.",
+    "forkmesh": "Finished agent work becomes a pull request, stored as a signed record in the repository under .forkmesh/."
+   },
+   {
+    "topic": "Platforms",
+    "project": "macOS.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "Pricing",
+    "project": "A paid app with a 14-day trial.",
+    "forkmesh": "The protocol, self-hosting, public read and clone are free; only bounded hosted work such as hosted agent runs is charged for."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -230,6 +409,33 @@
   "gitNative": false,
   "maker": "Thurbeen",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A tmux-based TUI and CLI for running several coding agents side by side.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agents",
+    "project": "Launches unmodified agent CLIs such as Claude Code, Codex and aider in tmux sessions that survive restarts.",
+    "forkmesh": "Runs Claude Code, Codex and other agents, plus local models through Ollama or llama.cpp."
+   },
+   {
+    "topic": "Isolation",
+    "project": "Optional Git worktrees per repository so agents do not share a checkout.",
+    "forkmesh": "Each agent runs in an isolated Git worktree with a live transcript and diff."
+   },
+   {
+    "topic": "Interface",
+    "project": "Terminal panes defined in user-editable Lua files, plus a headless CLI.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -260,6 +466,28 @@
   "gitNative": false,
   "maker": "madarco",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Runs coding agents in a dedicated Docker-based box per project, locally or on cloud providers.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Where agents run",
+    "project": "The local machine, a remote Docker host, or providers such as Hetzner, Vercel, Daytona and E2B.",
+    "forkmesh": "From the desktop app in isolated Git worktrees; cloud runners can also run agent jobs."
+   },
+   {
+    "topic": "Environment",
+    "project": "Each box has persistent shells, a browser, IDE access and checkpoints, and carries Claude Code, Codex or OpenCode settings.",
+    "forkmesh": "Agent sessions show live transcripts and diffs, and finished work becomes a pull request."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -290,6 +518,33 @@
   "gitNative": false,
   "maker": "NOFire AI",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Runs a coding agent such as Claude Code or Codex inside an ephemeral microVM.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Isolation",
+    "project": "Each agent gets its own Linux kernel, and only the chosen project is mounted read-write.",
+    "forkmesh": "Each agent works in its own Git worktree on the desktop; cloud runners can run agent jobs and hold no core secret."
+   },
+   {
+    "topic": "Credentials",
+    "project": "Credentials reach the agent only when the user provides them.",
+    "forkmesh": "Runners that run agent and Actions jobs hold no core secret."
+   },
+   {
+    "topic": "Platforms",
+    "project": "macOS and Linux.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -320,6 +575,33 @@
   "gitNative": false,
   "maker": "Minoan Security",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A dependency-free macOS microVM sandbox for Claude Code and other agents.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Isolation",
+    "project": "Launches an ephemeral Linux microVM with the current directory mounted, with host-approved file drops and network toggles.",
+    "forkmesh": "Each agent works in its own Git worktree on the desktop; cloud runners can run agent jobs and hold no core secret."
+   },
+   {
+    "topic": "Platforms",
+    "project": "macOS on Apple silicon, using only Apple frameworks on the host.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "Maturity",
+    "project": "Described as a research prototype.",
+    "forkmesh": "Actively developed with a real public network, not yet a finished replacement for every centralized forge workflow."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -350,6 +632,33 @@
   "gitNative": false,
   "maker": "Cordum",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "The local policy firewall of the Cordum agent control plane, gating agents' tool calls and shell commands.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agent control",
+    "project": "Enforces policy and human approval before risky tool calls and commands from agents such as Claude Code.",
+    "forkmesh": "Agents run in isolated Git worktrees, and their finished work becomes a pull request for review."
+   },
+   {
+    "topic": "Audit trail",
+    "project": "Records audit evidence of what agents did.",
+    "forkmesh": "Agent sessions keep live transcripts and diffs, and pull requests and reviews are signed records in the repository."
+   },
+   {
+    "topic": "Components",
+    "project": "The full stack adds a gateway, scheduler, safety kernel and dashboard.",
+    "forkmesh": "Core nodes, runner nodes and Go mirror servers, all self-hostable."
+   },
+   {
+    "topic": "License",
+    "project": "BUSL-1.1.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -380,6 +689,33 @@
   "gitNative": false,
   "maker": "Forkbench",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A macOS terminal app for supervising coding agents with shared task boards.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agent work",
+    "project": "Each agent runs in its own terminal tab inside a Thread and claims work from that Thread's task board.",
+    "forkmesh": "Issues are assigned to coding agents from the desktop app, and each agent runs in an isolated Git worktree."
+   },
+   {
+    "topic": "Collaboration",
+    "project": "Invited teammates can join a single Thread from their own machine.",
+    "forkmesh": "Issues, pull requests and reviews are signed records shared through the network, alongside encrypted repository chat rooms."
+   },
+   {
+    "topic": "Where repositories live",
+    "project": "Repositories and history stay on the local Mac.",
+    "forkmesh": "On developer-operated desktop and headless mirror nodes and ForkMesh's core nodes; any node can mirror a public repository."
+   },
+   {
+    "topic": "Platforms",
+    "project": "macOS.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -410,6 +746,28 @@
   "gitNative": false,
   "maker": "TonyStef",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Captures decisions and reasoning from AI coding sessions and shares them as team memory.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "How it attaches",
+    "project": "Runs as a proxy or MCP integration for Claude Code, Cursor and similar tools.",
+    "forkmesh": "Agents run from the desktop app in isolated Git worktrees with live transcripts and diffs; cloud runners can also run agent jobs."
+   },
+   {
+    "topic": "Where context lives",
+    "project": "In a shared team store, with relevant memories injected into later sessions.",
+    "forkmesh": "Issues, discussions, pull requests and reviews are signed records stored in the repository under .forkmesh/."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -440,6 +798,33 @@
   "gitNative": false,
   "maker": "pizza-bot-app",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A local-first inbox for long-running and scheduled AI agent tasks.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Clients",
+    "project": "Electron, web and CLI clients over a DeepAgents/LangGraph api-server.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "Background work",
+    "project": "Runs continue after the user disconnects; finished work lands in an Unread queue and approval requests in an Action queue.",
+    "forkmesh": "Agents run in isolated Git worktrees or on cloud runners, and finished work becomes a pull request for review."
+   },
+   {
+    "topic": "Triggers and models",
+    "project": "Cron and webhook triggers, several model providers and explicit per-folder file access.",
+    "forkmesh": "Issues are assigned to agents from the desktop app; Claude Code, Codex and others, plus local models through Ollama or llama.cpp."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -470,6 +855,33 @@
   "gitNative": false,
   "maker": "Amika",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Shared cloud VM workstations, called Rigs, where teams run and steer coding agents.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Where agents run",
+    "project": "VMs on Kubernetes or sandbox clouds, loaded with a team's Git repos, dev services and chosen agents.",
+    "forkmesh": "From the desktop app in isolated Git worktrees; cloud runners can also run agent jobs."
+   },
+   {
+    "topic": "Steering",
+    "project": "From the web, Slack, Linear, SSH, a CLI or an API.",
+    "forkmesh": "From the desktop app, with live transcripts and diffs."
+   },
+   {
+    "topic": "Sharing",
+    "project": "Rigs expose preview URLs and can be shared among teammates.",
+    "forkmesh": "Finished agent work becomes a pull request that collaborators review as a signed record in the repository."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -500,6 +912,33 @@
   "gitNative": false,
   "maker": "brucehsu",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A keyboard-driven Tauri desktop app for running Claude Code and Codex sessions in Git worktrees.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Layout",
+    "project": "Groups sessions by repository, each with an agent pane, a terminal and a Git pane for diffs and commits.",
+    "forkmesh": "Agent sessions show live transcripts and diffs, and finished work becomes a pull request."
+   },
+   {
+    "topic": "Isolation",
+    "project": "Each session can optionally run in its own worktree.",
+    "forkmesh": "Each agent runs in an isolated Git worktree."
+   },
+   {
+    "topic": "Platforms",
+    "project": "macOS and Linux.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "License",
+    "project": "GPL-3.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -530,6 +969,33 @@
   "gitNative": false,
   "maker": "ChatML",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A macOS app that runs parallel Claude Code sessions in isolated worktrees.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agents",
+    "project": "One Claude Agent SDK session per task, each on its own worktree and branch.",
+    "forkmesh": "Claude Code, Codex and other agents, plus local models through Ollama or llama.cpp, each in an isolated Git worktree."
+   },
+   {
+    "topic": "Pull requests and CI",
+    "project": "Creates GitHub pull requests and tracks CI status, with built-in review.",
+    "forkmesh": "Finished agent work becomes a signed pull request record in the repository; Actions run on desktop or server runner nodes."
+   },
+   {
+    "topic": "Platforms",
+    "project": "macOS.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "License",
+    "project": "GPL-3.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -560,6 +1026,33 @@
   "gitNative": false,
   "maker": "Jon Wiggins",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Self-hosted orchestration of coding-agent sessions on Kubernetes or team laptops.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "How work starts",
+    "project": "Tickets, schedules, webhooks or messages start sessions, which can be chained into workflows and agent swarms.",
+    "forkmesh": "A person assigns an issue to a coding agent from the desktop app."
+   },
+   {
+    "topic": "Where agents run",
+    "project": "Kubernetes pods or team laptops, running Claude Code, Codex or Gemini.",
+    "forkmesh": "Desktop app worktrees or cloud runners, running Claude Code, Codex and others, or local models through Ollama or llama.cpp."
+   },
+   {
+    "topic": "Ticket to merge",
+    "project": "Can carry a ticket through to a merged pull request.",
+    "forkmesh": "Finished agent work becomes a pull request, stored as a signed record in the repository under .forkmesh/."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -590,6 +1083,33 @@
   "gitNative": false,
   "maker": "superhq-ai",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Rust/GPUI macOS app that runs coding agents in microVM sandboxes behind a credential gateway.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Isolation",
+    "project": "Claude Code, Codex and other agents run in isolated VM workspaces with port forwarding.",
+    "forkmesh": "Each agent works in its own Git worktree on the desktop; cloud runners can run agent jobs and hold no core secret."
+   },
+   {
+    "topic": "Credentials",
+    "project": "A host-side proxy injects API credentials so agents never see real keys.",
+    "forkmesh": "Runners that run agent and Actions jobs hold no core secret."
+   },
+   {
+    "topic": "Review",
+    "project": "A diff review panel shows agent changes.",
+    "forkmesh": "Live transcripts and diffs per agent; finished work becomes a pull request."
+   },
+   {
+    "topic": "Platforms and maturity",
+    "project": "An early alpha for Apple silicon Macs.",
+    "forkmesh": "Actively developed; desktop app for Linux, macOS and Windows plus native mobile and web apps."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -620,6 +1140,33 @@
   "gitNative": false,
   "maker": "Nikita Dmitrieff",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Bash loop that runs a team of role-playing Claude Code agents as an autonomous company.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "How agents get work",
+    "project": "On a timer, a few of 14 role-based agents (CEO, CTO, engineer, QA and others) decide, build and deploy each cycle.",
+    "forkmesh": "A person assigns an issue to a coding agent from the desktop app."
+   },
+   {
+    "topic": "Project state",
+    "project": "Kept in Markdown files.",
+    "forkmesh": "Issues, pull requests and reviews are signed records stored in the repository under .forkmesh/, not only in a hosted database."
+   },
+   {
+    "topic": "Shipping",
+    "project": "Agents deploy the software themselves; templates bootstrap SaaS, docs-site and API projects.",
+    "forkmesh": "Finished agent work becomes a pull request; Actions handle checks and release publishing on runner nodes."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -650,6 +1197,33 @@
   "gitNative": false,
   "maker": "Sandgarden",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A goal-driven local multi-agent software factory with a supervision dashboard.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Input",
+    "project": "A goal in GOAL.md, which a coordinator agent delegates to developer, reviewer and other specialist agents.",
+    "forkmesh": "An issue assigned to a coding agent from the desktop app."
+   },
+   {
+    "topic": "When work is done",
+    "project": "Tests or linting decide, while the user answers agents' questions from a web dashboard.",
+    "forkmesh": "Finished work becomes a pull request for review, and Actions can run checks on runner nodes."
+   },
+   {
+    "topic": "Agent runtime",
+    "project": "Runs locally on top of opencode.",
+    "forkmesh": "Runs Claude Code, Codex and other agents, plus local models through Ollama or llama.cpp."
+   },
+   {
+    "topic": "License",
+    "project": "MIT with a no-competing-SaaS clause.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -680,6 +1254,33 @@
   "gitNative": false,
   "maker": "pld",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Rust CLI that wraps Git worktrees and tmux sessions for parallel coding agents.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Worktrees",
+    "project": "Creates a worktree and branch per task under the repository and drops the user into it.",
+    "forkmesh": "The desktop app creates an isolated Git worktree for each agent."
+   },
+   {
+    "topic": "Session tracking",
+    "project": "Tracks agent sessions in tmux, showing which are active or idle.",
+    "forkmesh": "The desktop app shows a live transcript and diff for each agent."
+   },
+   {
+    "topic": "Issues",
+    "project": "A Claude Code skill turns a GitHub issue into a worktree and seeded agent session.",
+    "forkmesh": "Issues are signed records in the repository and can be assigned to a coding agent from the desktop app."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -710,6 +1311,33 @@
   "gitNative": true,
   "maker": "open-gitagent",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "An open standard and CLI that define an AI agent as version-controlled files in a Git repository.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "What lives in Git",
+    "project": "The agent's agent.yaml, SOUL.md, rules, skills and memory.",
+    "forkmesh": "Code plus signed collaboration records such as issues, pull requests, reviews and releases under .forkmesh/."
+   },
+   {
+    "topic": "Review",
+    "project": "Branches, pull requests and history version and review agent changes.",
+    "forkmesh": "Pull requests and reviews are signed records, and finished agent work arrives as a pull request."
+   },
+   {
+    "topic": "Agent runtimes",
+    "project": "Runs or exports agents to frameworks such as Claude Code, OpenAI Agents SDK and CrewAI.",
+    "forkmesh": "Runs Claude Code, Codex and other agents, plus local models through Ollama or llama.cpp."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -740,6 +1368,33 @@
   "gitNative": false,
   "maker": "acartine",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A keyboard-first local web UI for staging, dispatching and reviewing agent work.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Task tracking",
+    "project": "Sits on memory-manager backends such as Knots and Beads.",
+    "forkmesh": "Issues are signed records stored in the repository under .forkmesh/."
+   },
+   {
+    "topic": "Dispatch",
+    "project": "Queues and breaks down work, then dispatches agent CLIs across repositories.",
+    "forkmesh": "Issues are assigned to a coding agent from the desktop app, each running in an isolated Git worktree."
+   },
+   {
+    "topic": "Review",
+    "project": "Users review results and session history.",
+    "forkmesh": "Live transcripts and diffs; finished work becomes a pull request."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -770,6 +1425,28 @@
   "gitNative": false,
   "maker": "BuildBetter",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Mac app and CLI from BuildBetter that records team coding-agent sessions and derives reusable skills.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agent sessions",
+    "project": "Records sessions across a team and supports handing a session to a teammate.",
+    "forkmesh": "Agent sessions run from the desktop app with live transcripts and diffs."
+   },
+   {
+    "topic": "Pull requests",
+    "project": "Derives skills from PR reviews and can block pull requests that skip required skills.",
+    "forkmesh": "Pull requests and reviews are signed records in the repository, and finished agent work becomes a pull request."
+   },
+   {
+    "topic": "Platforms",
+    "project": "A macOS app plus a CLI.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -800,6 +1477,28 @@
   "gitNative": false,
   "maker": "spencermarx",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Bash framework that fans work out to orchestrator and engineer agents in Git worktrees.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Branches and worktrees",
+    "project": "Each goal gets its own branch; orchestrator agents split it into work items for engineer agents in isolated worktrees.",
+    "forkmesh": "Each agent runs in its own isolated Git worktree, and finished work becomes a pull request."
+   },
+   {
+    "topic": "Review and merge",
+    "project": "Review, merge and delivery hooks follow the agent work.",
+    "forkmesh": "Pull requests and reviews are signed records; Actions run checks and release publishing on runner nodes."
+   },
+   {
+    "topic": "Runtime",
+    "project": "Runs on the user's existing agent CLIs, with no daemon or server.",
+    "forkmesh": "A desktop app plus self-hostable core, runner and mirror nodes."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -830,6 +1529,33 @@
   "gitNative": false,
   "maker": "Rivet",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A static Rust binary and SDK for controlling coding agents that run inside sandboxes.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Where agents run",
+    "project": "Inside sandboxes such as E2B, Daytona, Modal or Docker.",
+    "forkmesh": "From the desktop app in isolated Git worktrees, or on cloud runners."
+   },
+   {
+    "topic": "Agents",
+    "project": "Drives Claude Code, Codex, OpenCode, Cursor, Amp or Pi through one HTTP/SSE API and a TypeScript SDK.",
+    "forkmesh": "Runs Claude Code, Codex and other agents, plus local models through Ollama or llama.cpp."
+   },
+   {
+    "topic": "Sessions",
+    "project": "Normalizes agent events into a universal session schema for storage and replay.",
+    "forkmesh": "Agent sessions show live transcripts and diffs, and finished work becomes a pull request."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -860,6 +1586,28 @@
   "gitNative": false,
   "maker": "igornast",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A desktop app that runs coding agents in parallel, each in its own Git worktree.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agents",
+    "project": "Claude, Codex or opencode sessions with a real PTY, resumable across restarts.",
+    "forkmesh": "Claude Code, Codex and others, plus local models through Ollama or llama.cpp, with live transcripts and diffs."
+   },
+   {
+    "topic": "Editing",
+    "project": "An editor mode with diffs, Git history, blame, and database and Docker views.",
+    "forkmesh": "Editing comes through Market packages such as ForkMesh IDE and the VSCodium plugin."
+   },
+   {
+    "topic": "Platforms",
+    "project": "macOS, Linux and Windows, free of charge.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -890,6 +1638,33 @@
   "gitNative": true,
   "maker": "dsifry",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A multi-agent orchestration framework that takes work from issue to merged pull request.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Agents",
+    "project": "Personas, skills and commands for Claude Code, Gemini CLI and Codex CLI.",
+    "forkmesh": "Runs Claude Code, Codex and other agents, plus local models through Ollama or llama.cpp."
+   },
+   {
+    "topic": "Workflow",
+    "project": "Phased work with design review gates, TDD, adversarial review and PR shepherding.",
+    "forkmesh": "Issues are assigned to agents, finished work becomes a pull request, and Actions run checks on runner nodes."
+   },
+   {
+    "topic": "Records in the repository",
+    "project": "Tasks are tracked with Beads, and learnings are kept in a JSONL knowledge base in the repository.",
+    "forkmesh": "Issues, pull requests, reviews and milestones are signed records stored in the repository under .forkmesh/."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -920,6 +1695,33 @@
   "gitNative": false,
   "maker": "clawkwork",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Gives each coding agent a disposable Linux VM with the current repository mounted.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Isolation",
+    "project": "A network allow-list and a forwarded ssh-agent keep host files and keys outside the VM.",
+    "forkmesh": "Each agent works in its own Git worktree on the desktop; cloud runners can run agent jobs and hold no core secret."
+   },
+   {
+    "topic": "Agents",
+    "project": "Claude Code, Codex, pi or a shell, running without permission prompts; sessions can be reattached.",
+    "forkmesh": "Claude Code, Codex and others, plus local models through Ollama or llama.cpp, with live transcripts and diffs."
+   },
+   {
+    "topic": "Finished work",
+    "project": "The agent can push to Git remotes from inside the VM.",
+    "forkmesh": "Finished agent work becomes a pull request, stored as a signed record in the repository under .forkmesh/."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -950,6 +1752,33 @@
   "gitNative": true,
   "maker": "jan-bogaerts",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "An Electron desktop app that organizes agent coding work as Markdown feature cards with worktrees.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Planning data",
+    "project": "Each feature or bug request is a Markdown card stored in the repository.",
+    "forkmesh": "Issues, projects and milestones are signed records stored in the repository under .forkmesh/."
+   },
+   {
+    "topic": "Agent work",
+    "project": "Each card carries a Git worktree, a coding agent, chat history, commits and notes.",
+    "forkmesh": "Issues are assigned to coding agents that run in isolated Git worktrees with live transcripts and diffs."
+   },
+   {
+    "topic": "Merging",
+    "project": "Merges worktree branches, with agent-assisted conflict resolution.",
+    "forkmesh": "Finished agent work becomes a pull request for review."
+   },
+   {
+    "topic": "License",
+    "project": "AGPL-3.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -980,6 +1809,33 @@
   "gitNative": false,
   "maker": "MindFlock",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Turns tickets assigned to the user into local agent sessions in their own Git worktrees.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Issue source",
+    "project": "Watches GitHub Issues, Jira, Linear, Shortcut or Asana.",
+    "forkmesh": "Issues are signed records in the repository, assigned to a coding agent from the desktop app."
+   },
+   {
+    "topic": "Environment",
+    "project": "Creates a worktree, installed environment and seeded agent session per ticket.",
+    "forkmesh": "Each agent runs in an isolated Git worktree with a live transcript and diff."
+   },
+   {
+    "topic": "Pull requests",
+    "project": "The user reviews the diff, then commits, pushes, opens and merges the PR; review comments can become sessions.",
+    "forkmesh": "Finished agent work becomes a pull request, stored as a signed record in the repository under .forkmesh/."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -1010,6 +1866,33 @@
   "gitNative": true,
   "maker": "aaronkazah",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Git remote helper and filesystem mount that store repositories in object storage, Postgres, SFTP, file shares or local disk.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories."
+   },
+   {
+    "topic": "Where repositories live",
+    "project": "Git objects and refs live directly in the chosen storage backend, with no Git server.",
+    "forkmesh": "On developer-operated desktop and headless mirror nodes and ForkMesh's core nodes; any node can mirror a public repository."
+   },
+   {
+    "topic": "Ref updates",
+    "project": "Compare-and-swap ref updates on the storage backend.",
+    "forkmesh": "Pushes over HTTPS are fast-forward only."
+   },
+   {
+    "topic": "Git compatibility",
+    "project": "Stock Git uses any backend as a remote through the git-remote-trunks helper.",
+    "forkmesh": "Works with stock Git: clone, fetch and push over HTTPS."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -1040,6 +1923,28 @@
   "gitNative": false,
   "maker": "Docker Inc.",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "Docker's microVM sandboxes for running coding agents locally or in Docker's cloud.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Isolation",
+    "project": "Agents run in microVMs with network and filesystem policies and proxied credentials.",
+    "forkmesh": "Each agent works in its own Git worktree on the desktop; cloud runners can run agent jobs and hold no core secret."
+   },
+   {
+    "topic": "Where agents run",
+    "project": "Through the sbx CLI, on the local machine or in Docker's cloud, and a sandbox can move between them.",
+    "forkmesh": "From the desktop app, or on runner nodes that can be self-hosted."
+   },
+   {
+    "topic": "Agents",
+    "project": "Claude Code, Codex and other agents.",
+    "forkmesh": "Runs Claude Code, Codex and other agents, plus local models through Ollama or llama.cpp."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {
@@ -1070,6 +1975,28 @@
   "gitNative": false,
   "maker": "mutable-state-inc",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A Rust CLI and Claude Code plugin in which many agents decompose and prove Lean 4 theorems in parallel.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Coordination",
+    "project": "Agents claim goals and share state through the hosted Ensue Memory Network.",
+    "forkmesh": "Agents work in separate Git worktrees; issues assign work and pull requests return it, both as signed records in the repository."
+   },
+   {
+    "topic": "Agents",
+    "project": "Many concurrent Claude Code agents.",
+    "forkmesh": "Runs Claude Code, Codex and other agents, plus local models through Ollama or llama.cpp."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-09-30",
   "published": true,
   "internal": {

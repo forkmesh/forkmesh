@@ -402,6 +402,28 @@ def test_third_parties_forkmesh_runs_on_have_their_own_vocabulary():
     assert len(set(eco.CATEGORY_LABELS.values())) == len(eco.CATEGORIES)
 
 
+def test_comparison_rows_are_checked_and_public():
+    eco = Harness().eco
+    row = {"topic": "Where repositories live", "project": "  On  GitHub ",
+           "forkmesh": "On developer-operated nodes and signed mirrors"}
+    entry, errors = eco.normalize(dict(RADICLE, comparison=[row]),
+                                  now_ms=NOW)
+    assert errors == []
+    assert entry["comparison"][0]["project"] == "On GitHub"
+    project = eco.public_project(dict(entry, slug="radicle"))
+    assert project["comparison"] == entry["comparison"]
+    assert eco.normalize(dict(RADICLE, comparison=None),
+                         now_ms=NOW)[0]["comparison"] == []
+    for value in ([row] * 7, [dict(row, topic="x" * 41)],
+                  [dict(row, project="x" * 201)], [dict(row, forkmesh="")],
+                  [dict(row, extra="x")], [{"topic": "Focus"}], ["Focus"],
+                  {"topic": "Focus"}, [dict(row, project=5)]):
+        _, errors = eco.normalize(dict(RADICLE, comparison=value),
+                                  now_ms=NOW)
+        assert any("comparison must be a list" in error
+                   for error in errors), value
+
+
 def test_the_public_api_lists_only_published_projects_and_public_fields():
     h = Harness()
     h.import_json([GIT_BUG, RADICLE, dict(RADICLE, slug="tangled",
@@ -420,8 +442,9 @@ def test_the_public_api_lists_only_published_projects_and_public_fields():
         "slug", "name", "tagline", "summary", "watching", "url", "repo",
         "category", "categoryLabel", "tags", "openSource", "license",
         "gitNative", "maker", "compatibility", "compatibilityLabel",
-        "integration", "integrationLabel", "integrations", "reviewed",
-        "reviewedLabel", "featured"}
+        "integration", "integrationLabel", "integrations", "comparison",
+        "reviewed", "reviewedLabel", "featured"}
+    assert project["comparison"] == []
     assert project["compatibilityLabel"] == "Not yet assessed"
     assert project["integrationLabel"] == "Watching"
     assert project["reviewedLabel"] == "Sep 2026"

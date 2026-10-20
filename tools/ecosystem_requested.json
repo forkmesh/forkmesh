@@ -20,6 +20,28 @@
   "gitNative": false,
   "maker": "Magnitude",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "An inference engine, desktop app and CLI that run open-weight models locally for coding agents.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Models",
+    "project": "Compiles and tunes its kernels on the user's device, on Apple Silicon, NVIDIA, AMD or a CPU alone.",
+    "forkmesh": "Desktop agents can use local models through Ollama or llama.cpp, or agents such as Claude Code and Codex."
+   },
+   {
+    "topic": "Agent connection",
+    "project": "One click connects Pi, OpenCode, Hermes, Codex, Claude Code and Cline; other tools use its OpenAI-compatible API.",
+    "forkmesh": "Agents run from the desktop app in isolated Git worktrees with live transcripts and diffs; cloud runners can also run agent jobs."
+   },
+   {
+    "topic": "License",
+    "project": "Apache-2.0.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-10-01",
   "published": true,
   "internal": {
@@ -51,6 +73,33 @@
   "gitNative": false,
   "maker": "Vlad Shvedov",
   "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A small code editor written in x86-64 assembly, with a terminal, a Git view and an agents panel.",
+    "forkmesh": "An open-source network for hosting, mirroring and collaborating on Git repositories, with coding agents as one part of its desktop app."
+   },
+   {
+    "topic": "Git",
+    "project": "Stages, commits, pulls and pushes, shows diffs and history, and can draft commit messages with Claude, Codex or a local Ollama model.",
+    "forkmesh": "Works with stock Git, and issues and pull requests are signed records stored in the repository under .forkmesh/."
+   },
+   {
+    "topic": "Agents",
+    "project": "An agents panel shows Claude Code and Codex sessions as they work.",
+    "forkmesh": "Agents run from the desktop app in isolated Git worktrees with live transcripts and diffs; cloud runners can also run agent jobs."
+   },
+   {
+    "topic": "Platforms",
+    "project": "Linux, Windows and Apple Silicon Macs.",
+    "forkmesh": "A Qt desktop app for Linux, macOS and Windows, native iOS and Android apps, and a web app."
+   },
+   {
+    "topic": "License",
+    "project": "MIT.",
+    "forkmesh": "MIT."
+   }
+  ],
   "reviewed": "2026-10-02",
   "published": true,
   "internal": {
@@ -58,6 +107,75 @@
     "https://news.ycombinator.com/item?id=49926726"
    ],
    "notes": "Requested by the user on 2026-10-02 from its Show HN post."
+  }
+ },
+ {
+  "slug": "zide",
+  "name": "Zide",
+  "tagline": "Native desktop workspace for code, Git, issues, pull requests, CI, terminals and AI agents",
+  "summary": "Zide is a desktop app for macOS, Windows and Linux, built with Tauri and Rust, that puts an editor with language servers, a full Git client (hunk staging, interactive rebase, bisect, worktrees, submodules, LFS), terminals, a browser and a multi-repository workspace in one window. It connects to GitHub, GitHub Enterprise, GitLab and Bitbucket for issues, pull or merge requests, reviews and CI. Its agent, Zide Assist, works across files and repositories on hosted, bring-your-own-key or local models; QuickTree starts a worktree from a prompt, Crosscheck sends each agent commit to a second reviewer model, and CLI agents such as Claude Code, Codex and Gemini run alongside it.",
+  "watching": "It is the closest desktop counterpart to ForkMesh's own: issues, worktrees, coding agents, diffs, pull requests and CI in one native app. It takes the opposite position on hosting, leaving repositories and collaboration on GitHub, GitLab or Bitbucket.",
+  "url": "https://zide.dev/",
+  "repo": null,
+  "category": "agent-workspaces",
+  "tags": [
+   "agent-workspace",
+   "desktop",
+   "git-client",
+   "worktrees",
+   "code-review",
+   "ci",
+   "tauri",
+   "rust"
+  ],
+  "openSource": false,
+  "license": "Proprietary",
+  "gitNative": false,
+  "maker": "Zide Software",
+  "integration": "watching",
+  "comparison": [
+   {
+    "topic": "Focus",
+    "project": "A desktop workspace that brings an editor, a Git client, issues, pull requests, CI and AI agents to repositories hosted elsewhere.",
+    "forkmesh": "A network for hosting, mirroring and collaborating on repositories, with a desktop app as one of its clients."
+   },
+   {
+    "topic": "Where repositories live",
+    "project": "On GitHub, GitHub Enterprise, GitLab (including self-hosted) or Bitbucket; Zide is a client to them.",
+    "forkmesh": "On developer-operated nodes and signed mirrors; a stable URL clones from whichever mirror is healthy."
+   },
+   {
+    "topic": "Issues and pull requests",
+    "project": "Read and acted on through the host's API: issues from GitHub and GitLab, pull or merge requests and CI from all three hosts.",
+    "forkmesh": "Signed records stored in the repository under .forkmesh/, so they travel with the code; a pull request to an offline owner is queued."
+   },
+   {
+    "topic": "Coding agents",
+    "project": "Zide Assist on hosted, own-key or local models; QuickTree starts a worktree from a prompt; Crosscheck reviews agent commits with a second model.",
+    "forkmesh": "An issue is assigned to an agent such as Claude Code or Codex, which runs in its own worktree with a live transcript and diff and ends in a pull request."
+   },
+   {
+    "topic": "Platforms",
+    "project": "Tauri and Rust desktop app for macOS, Windows and Linux.",
+    "forkmesh": "Qt desktop app for Linux, macOS and Windows, iOS and Android apps, a web app and a headless Go mirror node."
+   },
+   {
+    "topic": "License and price",
+    "project": "Proprietary. Free tier; paid plans from $10 to $200 a month add AI credits, and 12 paid months earn a perpetual license.",
+    "forkmesh": "MIT. Protocol, self-hosting, public read and clone are free; only bounded hosted work such as hosted agent runs is paid."
+   }
+  ],
+  "reviewed": "2026-10-20",
+  "published": true,
+  "internal": {
+   "sources": [
+    "https://zide.dev/",
+    "https://zide.dev/pricing",
+    "https://zide.dev/faq",
+    "https://github.com/zide-software/Zide"
+   ],
+   "overlap": "high",
+   "notes": "Requested by the user on 2026-10-20. The GitHub repository holds only the issue tracker; the source is closed."
   }
  }
 ]

@@ -20,6 +20,11 @@ table `ecosystem_projects`, tests `app/tests/test_ecosystem.py`. Website:
 - **Descriptive, not evaluative**: no scores or rankings in public fields.
   `compatibility` defaults to `unknown`, `integration` to `watching`;
   `integrations` lists only integrations that exist.
+- **Comparisons state facts, not verdicts**: `comparison` rows put the
+  project and ForkMesh side by side on one topic each (focus, where
+  repositories live, agents, platforms, license). For a dependency the rows
+  compare roles. Every seeded listing has one; write a new listing's rows
+  from its own site and only claim ForkMesh features that exist.
 - **Dependencies are listed** with `integration: "uses"` and
   `integrations` entries of the form `"<surface>: <purpose>"`.
 - **Two write modes**: an import merges by slug (missing fields kept, `null`
@@ -68,6 +73,7 @@ count}], projects: [...]}` with published projects only, ordered by
 | `compatibility` | `unknown`, `none`, `partial`, `full` |
 | `integration` | `watching`, `exploring`, `planned`, `building`, `available`, `uses` |
 | `integrations` | Up to 8 phrases |
+| `comparison` | Up to 6 rows `{"topic", "project", "forkmesh"}`: topic ≤ 40 characters, cells ≤ 200, all three required; `null` clears |
 | `reviewed` | `YYYY-MM` or `YYYY-MM-DD` |
 | `published`, `featured`, `position` | Visibility, landing priority, sort order |
 | `internal` | Private: `overlap`, `threat`, `opportunity`, `confidence`, `action`, `notes`, `sources`, other short values |
@@ -82,7 +88,9 @@ Unknown top-level fields, `NaN` and `Infinity` are rejected.
   apostrophe).
 - `/ecosystem/<slug>` (lowercase slugs) serves the same document for one
   project; the site router maps it explicitly so it is not taken for a
-  repository path.
+  repository path. Its "Compared with ForkMesh" table (topic, project,
+  ForkMesh) shows when `comparison` has rows; below 640 px each row stacks
+  with the column name before each cell.
 - The landing section shows eight tiles and hides itself when the API fails
   or nothing is published.
 - Pages build nodes with `textContent`, accept only http(s) links, and fetch
