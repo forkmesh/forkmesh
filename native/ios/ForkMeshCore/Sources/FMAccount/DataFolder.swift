@@ -5,7 +5,6 @@ import Foundation
 public enum DataFolderNeed: Equatable, Sendable {
     case chooseFolder
     case reconnectFolder
-    case saveIdentity
 }
 
 public struct DataFolderProject: Equatable, Sendable {
@@ -82,8 +81,8 @@ public enum DataFolder {
         "ForkMesh keeps your projects in its own folder, and the phone deletes that folder with the app. Choose a folder in Files, for example On My iPhone or iCloud Drive: each project keeps its data there, data/core for settings and the identity key and one folder per plugin, so you can reinstall and pick the same folder to get everything back."
     public static let reconnectMessage =
         "The folder holding your ForkMesh projects can't be opened. Choose it again so ForkMesh can keep your data safe."
-    public static let identityMessage =
-        "Your projects folder doesn't hold this project's identity key yet. Save it there with a passphrase so a reinstall can bring the account back."
+    public static let folderNameHint =
+        "Suggested name: “\(defaultFolderName)”. In the picker, make a new folder with that name and choose it."
     public static let insideApp =
         "That folder is inside ForkMesh's own storage, which is deleted with the app. Pick a folder outside it, for example in On My iPhone or iCloud Drive."
 
@@ -114,19 +113,20 @@ public enum DataFolder {
 
     public static func kitKey(_ slug: String) -> String { kitKeyPrefix + slug }
 
-    public static func need(prefs: KeyValueStore, slug: String, publicKey: String, reachable: Bool,
-                            insideApp: Bool) -> DataFolderNeed? {
+    public static func need(reachable: Bool, insideApp: Bool) -> DataFolderNeed? {
         if !reachable { return .reconnectFolder }
         if insideApp { return .chooseFolder }
-        if !publicKey.isEmpty && prefs.string(forKey: kitKey(slug)) != publicKey { return .saveIdentity }
         return nil
+    }
+
+    public static func identitySaved(prefs: KeyValueStore, slug: String, publicKey: String) -> Bool {
+        publicKey.isEmpty || prefs.string(forKey: kitKey(slug)) == publicKey
     }
 
     public static func message(for need: DataFolderNeed) -> String {
         switch need {
         case .chooseFolder: return alertMessage
         case .reconnectFolder: return reconnectMessage
-        case .saveIdentity: return identityMessage
         }
     }
 

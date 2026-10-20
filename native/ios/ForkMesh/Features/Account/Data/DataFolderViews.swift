@@ -64,6 +64,9 @@ struct DataFolderSetupSheet: View {
                 VStack(alignment: .leading, spacing: FmSpace.x3) {
                     SettingsNote(text: DataFolder.alertMessage)
                     SettingsNote(text: model.summary, color: model.reachable ? fm.textPrimary : fm.danger)
+                    if !model.chosen {
+                        SettingsNote(text: DataFolder.folderNameHint)
+                    }
                     FmFilledButton(model.chosen ? "Choose another folder" : "Choose a folder in Files",
                                    icon: "folder_open_outlined", fillWidth: true,
                                    onPressed: model.working ? nil : { picking = true })
@@ -73,7 +76,7 @@ struct DataFolderSetupSheet: View {
                     }
                     if !model.restorable.isEmpty {
                         restoreSection
-                    } else if model.need == .saveIdentity {
+                    } else if model.need == nil && !model.identitySaved {
                         identitySection
                     }
                     if !model.status.isEmpty {
@@ -123,7 +126,7 @@ struct DataFolderSetupSheet: View {
 
     @ViewBuilder
     private var identitySection: some View {
-        SettingsNote(text: "Save your identity key in the folder, encrypted with a passphrase of at least \(RecoveryKit.minPassphrase) characters. Nobody can recover the passphrase for you.")
+        SettingsNote(text: "Optional: save your identity key in the folder too, encrypted with a passphrase of at least \(RecoveryKit.minPassphrase) characters, so a reinstall can bring the account back. Nobody can recover the passphrase for you.")
         SettingsTextField(label: "Passphrase", text: $passphrase, secure: true)
         SettingsTextField(label: "Passphrase again", text: $confirm, secure: true)
         FmFilledButton(model.working ? "Encrypting…" : "Save identity key", icon: "save_outlined", fillWidth: true,
@@ -132,7 +135,7 @@ struct DataFolderSetupSheet: View {
                            let again: String = confirm
                            Task { @MainActor in
                                await model.saveIdentity(passphrase: secret, confirm: again)
-                               if model.need != .saveIdentity {
+                               if model.identitySaved {
                                    passphrase = ""
                                    confirm = ""
                                }

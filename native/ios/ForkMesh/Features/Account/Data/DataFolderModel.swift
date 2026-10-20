@@ -94,9 +94,14 @@ final class DataFolderModel {
 
     var need: DataFolderNeed? {
         _ = revision
-        guard let prefs else { return .chooseFolder }
-        return DataFolder.need(prefs: prefs, slug: slug, publicKey: publicKey, reachable: reachable,
-                               insideApp: insideApp)
+        guard prefs != nil else { return .chooseFolder }
+        return DataFolder.need(reachable: reachable, insideApp: insideApp)
+    }
+
+    var identitySaved: Bool {
+        _ = revision
+        guard let prefs else { return false }
+        return DataFolder.identitySaved(prefs: prefs, slug: slug, publicKey: publicKey)
     }
 
     var showsAlert: Bool { need != nil && !dismissedThisLaunch && !showSetup && !needsRestart }
