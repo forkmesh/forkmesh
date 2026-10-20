@@ -549,6 +549,52 @@ function message(request, sender) {
     void poll();
   });
 
+  const threadsNow = async () => (await alice("GET", "/api/marketing/acme/reddit")).data.redditThreads;
+  const profileThreads = await threadsNow();
+  check("your accounts' posts read on a profile go to the thread log too, their comments do not",
+    ["jjj111", "jjj222", "fff001"].every((id) => profileThreads.some((item) => item.postId === id && item.status === "to_review"))
+    && profileThreads.find((item) => item.postId === "jjj111").author === "ada_lovelace"
+    && !profileThreads.some((item) => item.postId === "hhh888"), JSON.stringify(profileThreads.map((item) => [item.postId, item.author])));
+  const launchPost = (id, sub, who, extra = {}) => node({ id: `t3_${id}`, permalink: `/r/${sub}/comments/${id}/launch_day/`,
+    "post-title": "Launch day", author: who, "comment-count": "4", score: "9", "created-timestamp": "2026-10-18T09:00:00Z", ...extra });
+  const strangerPage = await readPage("https://www.reddit.com/r/programming/comments/sss001/launch_day/",
+    { "shreddit-post": [launchPost("sss001", "programming", "grace_h")] }, accountsWatch);
+  check("someone else's thread in an unwatched subreddit is left alone", !strangerPage.sent.some((item) => item.type === "fm-reddit-observe"));
+  const ownPage = await readPage("https://www.reddit.com/r/programming/comments/own001/launch_day/",
+    { "shreddit-post": [launchPost("own001", "programming", "forkmesh")],
+      'shreddit-post[id="t3_own001"]': [launchPost("own001", "programming", "forkmesh", { "view-count": "250" })] }, accountsWatch);
+  const ownSeen = ownPage.sent.find((item) => item.type === "fm-reddit-observe");
+  check("a thread one of your accounts posted is read in any subreddit, with its views", ownSeen && ownSeen.observation.own === true
+    && ownSeen.observation.posts[0].author === "forkmesh" && ownSeen.observation.reading.views === 250, JSON.stringify(ownSeen));
+  const ownBefore = fetched.length;
+  await message({ type: "fm-reddit-observe", observation: ownSeen.observation, fresh: true },
+    { id: "ext", url: "https://www.reddit.com/r/programming/comments/own001/launch_day/", tab: { id: 12 } });
+  await settled();
+  const ownLogged = (await threadsNow()).find((item) => item.postId === "own001");
+  check("and goes to the thread log by itself, without Send", ownLogged && ownLogged.status === "to_review"
+    && ownLogged.source === "extension" && ownLogged.author === "forkmesh" && ownLogged.title === "Launch day"
+    && ownLogged.views === 250 && ownLogged.score === 9 && ownLogged.comments === 4 && ownLogged.checkedAt > 0
+    && deskWritesSince(ownBefore).filter((item) => item.method === "POST" && item.path === "/api/marketing/acme/reddit").length === 1,
+  JSON.stringify(ownLogged));
+  const ownAgain = fetched.length;
+  await message({ type: "fm-reddit-observe", observation: { ...ownSeen.observation, reading: { ...ownSeen.observation.reading, views: 260 } }, fresh: false },
+    { id: "ext", url: "https://www.reddit.com/r/programming/comments/own001/launch_day/", tab: { id: 12 } });
+  await settled();
+  check("a logged thread of yours is not logged twice", !deskWritesSince(ownAgain).some((item) => item.method === "POST" && item.path === "/api/marketing/acme/reddit"));
+
+  check("a page cannot log a thread", (await message({ type: "fm-reddit-log-add",
+    url: "https://www.reddit.com/r/rust/comments/rrr001/" }, TAB)).error === "forbidden_sender");
+  check("Log thread refuses a link that is not a thread", (await message({ type: "fm-reddit-log-add",
+    url: "https://www.reddit.com/r/rust/" }, POPUP)).error === "invalid_reddit_thread_url");
+  const loggedByHand = await message({ type: "fm-reddit-log-add", url: "https://old.reddit.com/r/rust/comments/rrr001/asking_about_mirrors/?utm_source=share" }, POPUP);
+  const handThread = (await threadsNow()).find((item) => item.postId === "rrr001");
+  check("Log thread adds any thread to the thread log, unmonitored, and the reader learns it", loggedByHand.ok
+    && loggedByHand.logged.subreddit === "rust" && handThread && handThread.status === "to_review" && handThread.monitored === false
+    && handThread.url === "https://www.reddit.com/r/rust/comments/rrr001/"
+    && (await message({ type: "fm-reddit-watch" }, TAB)).monitored.some((item) => item.postId === "rrr001"), JSON.stringify([loggedByHand.logged, handThread]));
+  check("Log thread says when the thread is already logged", (await message({ type: "fm-reddit-log-add",
+    url: "https://www.reddit.com/r/rust/comments/rrr001/" }, POPUP)).error === "reddit_thread_exists");
+
   browserActor = "charlie";
   tabReply = (request) => (request.type === "fm-reddit-profile-read"
     ? { ok: true, account: "someone_else", items: [] } : null);

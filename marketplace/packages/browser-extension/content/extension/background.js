@@ -896,6 +896,7 @@ const REDDIT_AUTO_MIN_MS = 20 * 60 * 1000;
 const REDDIT_AUTO_STALE_MS = 12 * 60 * 60 * 1000;
 const REDDIT_AUTO_LIMIT = 10;
 const REDDIT_SIGNED_IN_FRESH_MS = 10 * 60 * 1000;
+const REDDIT_MAX_OWN = 200;
 
 let redditQueue = Promise.resolve();
 const redditSerial = (work) => (redditQueue = redditQueue.then(work, work));
@@ -923,6 +924,7 @@ async function redditState() {
     },
     posts: stored.posts || {}, rules: stored.rules || {},
     mine: stored.mine || {}, mineSent: stored.mineSent || {}, mineCheck: stored.mineCheck || null,
+    own: stored.own || {}, ownSent: stored.ownSent || {},
     sent: stored.sent || {}, rulesSent: stored.rulesSent || {},
     readings: stored.readings || {}, readingsSent: stored.readingsSent || {},
     errors: Array.isArray(stored.errors) ? stored.errors : [],
@@ -989,6 +991,65 @@ const redditMineUnsent = (state) =>
 const redditAccount = (state, name) =>
   state.watch.accounts.find((item) => item.toLowerCase() === String(name || "").toLowerCase()) || "";
 
+const redditOwnUnsent = (state) => Object.values(state.own)
+  .filter((entry) => !state.ownSent[entry.id] && !redditTrackedPost(state, entry.id))
+  .sort((one, two) => one.at - two.at);
+
+function redditOwnKeep(state, raw, views = null, readAs = "") {
+  const post = redditPost(raw);
+  const author = post && redditAccount(state, post.author);
+  if (!author) return false;
+  const previous = state.own[post.id] || null;
+  const read = redditCount(views) !== null && views >= 0;
+  const next = {
+    ...previous, ...post, author,
+    title: post.title || previous?.title || "",
+    comments: post.comments ?? previous?.comments ?? null, score: post.score ?? previous?.score ?? null,
+    postedAt: post.postedAt || previous?.postedAt || 0,
+    views: read ? views : previous?.views ?? null,
+    readAt: read ? Date.now() : Number(previous?.readAt || 0),
+    readAs: (read && redditName(readAs)) || previous?.readAs || "",
+    at: Number(previous?.at || Date.now()),
+  };
+  if (previous && ["title", "comments", "score", "postedAt", "views"].every((key) => next[key] === previous[key])) return false;
+  state.own[post.id] = next;
+  state.own = redditTrim(state.own, REDDIT_MAX_OWN);
+  state.ownSent = Object.fromEntries(Object.entries(state.ownSent).filter(([id]) => id in state.own));
+  return !state.ownSent[post.id];
+}
+
+function redditOwnFromMine(state, item) {
+  if (item.kind !== "post") return false;
+  const raw = { id: item.postId, subreddit: item.subreddit, url: item.url, title: item.title, author: item.account,
+    comments: item.comments, score: item.score, postedAt: item.postedAt };
+  return redditOwnKeep(state, raw, item.views);
+}
+
+async function redditSendOwn(state, base, result) {
+  let logged = 0;
+  for (const entry of redditOwnUnsent(state).slice(0, REDDIT_SYNC_LIMIT)) {
+    const body = {
+      url: entry.url, title: entry.title, status: "to_review", source: "extension", author: entry.author,
+      comments: entry.comments, score: entry.score, postedAt: entry.postedAt || null,
+    };
+    if (entry.views !== null && entry.readAt) {
+      Object.assign(body, { checkedAt: entry.readAt, views: entry.views });
+      if (entry.readAs) body.readAs = entry.readAs;
+    }
+    try {
+      await api(`${base}/reddit`, "POST", body);
+      logged += 1;
+    } catch (error) {
+      if (!error?.status || error.status === 401 || error.status >= 500) throw error;
+      if (error.code !== "reddit_thread_exists") redditRemember(state, `r/${entry.subreddit} ${entry.id}: ${error.message || "request failed"}`);
+    }
+    state.ownSent[entry.id] = Date.now();
+  }
+  result.ownThreads = Number(result.ownThreads || 0) + logged;
+  if (logged) await redditFetchWatch(state);
+  return logged;
+}
+
 function redditRulesUnsent(state) {
   return Object.values(state.rules).filter((entry) => redditWatchedSubreddit(state, entry.subreddit)
     && entry.readAt > Number(state.rulesSent[entry.subreddit.toLowerCase()] || 0));
@@ -1018,7 +1079,7 @@ async function redditStats() {
         waiting: Boolean(reading && reading.at > entry.checkedAt && reading.at > Number(state.readingsSent[entry.postId] || 0)),
       };
     }),
-    readingsWaiting: redditReadingsUnsent(state).length,
+    readingsWaiting: redditReadingsUnsent(state).length, ownWaiting: redditOwnUnsent(state).length,
     accounts: state.watch.accounts, mine: Object.keys(state.mine).length, mineWaiting: redditMineUnsent(state).length,
     mineCheck: state.mineCheck, mineChecking: redditMineChecking,
     checking: redditChecking, autoCheck: state.autoCheck, lastCheck: state.lastCheck,
@@ -1049,6 +1110,7 @@ async function redditFetchWatch(state) {
     state.readings = {};
     state.readingsSent = {};
     state.mineSent = {};
+    state.ownSent = {};
   }
   const entries = (payload.redditThreads || []).map(redditMonitorEntry).filter(Boolean);
   const monitored = entries.filter((entry) => entry.monitored).slice(0, REDDIT_MONITOR_LIMIT);
@@ -1232,7 +1294,7 @@ function redditRules(raw) {
 
 function redditWaiting(state) {
   return redditUnsent(state).length + redditRulesUnsent(state).length + redditReadingsUnsent(state).length
-    + redditMineUnsent(state).length;
+    + redditMineUnsent(state).length + redditOwnUnsent(state).length;
 }
 
 function redditActivity(state, seen, url) {
@@ -1266,7 +1328,7 @@ async function redditObserve({ observation, fresh }, sender) {
     let changed = false;
     const read = kind === "thread" && seen.monitor && redditKeepReading(state, seen.monitor);
     if (read) changed = true;
-    const reader = redditName(seen.readAs || seen.monitor?.readAs);
+    const reader = redditName(seen.readAs || seen.monitor?.readAs || seen.reading?.readAs);
     const switched = reader && reader.toLowerCase() !== String(state.signedIn?.name || "").toLowerCase();
     if (reader && (switched || now - Number(state.signedIn?.at || 0) > REDDIT_SIGNED_IN_FRESH_MS)) {
       state.signedIn = { name: reader, at: now };
@@ -1287,18 +1349,28 @@ async function redditObserve({ observation, fresh }, sender) {
     const thread = kind === "thread" && redditWatchedSubreddit(state, subreddit);
     const postId = String(seen.postId || "").toLowerCase();
     const account = kind === "profile" ? redditAccount(state, seen.account) : "";
+    let own = false;
     if (account) {
       for (const raw of Array.isArray(seen.posts) ? seen.posts.slice(0, 100) : []) {
         const item = redditMineItem(raw, account);
         if (item && redditMineKeep(state, item, now)) changed = true;
+        if (item && redditOwnFromMine(state, state.mine[item.key])) own = true;
       }
     }
+    if (kind === "thread" && REDDIT_POST_ID.test(postId)) {
+      const reading = seen.reading || seen.monitor || null;
+      for (const raw of Array.isArray(seen.posts) ? seen.posts.slice(0, 5) : []) {
+        if (String(raw?.id || "").toLowerCase() !== postId) continue;
+        if (redditOwnKeep(state, raw, reading?.views ?? null, reading?.readAs || "")) own = true;
+      }
+    }
+    if (own) changed = true;
     const marked = [
       account && `reddit:user:${account.toLowerCase()}`,
       listing && `reddit:sub:${subreddit.toLowerCase()}`,
       searched && `reddit:search:${searched}`,
       kind === "rules" && redditWatchedSubreddit(state, subreddit) && `reddit:rules:${subreddit.toLowerCase()}`,
-      (thread || (kind === "thread" && redditTrackedPost(state, postId))) && REDDIT_POST_ID.test(postId) && `reddit:thread:${postId}`,
+      (thread || (kind === "thread" && (redditTrackedPost(state, postId) || state.own[postId]))) && REDDIT_POST_ID.test(postId) && `reddit:thread:${postId}`,
     ].filter(Boolean);
     await refreshMark(marked, sender?.tab?.id, fresh === true);
     if (searched || listing || thread) {
@@ -1328,7 +1400,7 @@ async function redditObserve({ observation, fresh }, sender) {
       redditMineTrim(state);
       await redditSave(state);
     }
-    if (read) redditSendSoon();
+    if (read || own) redditSendSoon();
     if (switched) void redditAccountSwitched(reader).catch(() => null);
     if (fresh === true && marked.length) void activityReport(redditActivity(state, seen, sender?.tab?.url), marked[0]);
     return { ok: true };
@@ -1399,10 +1471,12 @@ function redditSendSoon() {
     redditSendPending = false;
     if (!(await settings()).sessionToken) return;
     const state = await redditState();
-    if (!state.watch.organization || !redditReadingsUnsent(state).length) return;
+    if (!state.watch.organization || (!redditReadingsUnsent(state).length && !redditOwnUnsent(state).length)) return;
     const result = { readings: 0, failed: 0 };
+    const base = `/api/marketing/${encodeURIComponent(state.watch.organization)}`;
     try {
-      await redditSendReadings(state, `/api/marketing/${encodeURIComponent(state.watch.organization)}`, result);
+      await redditSendOwn(state, base, result);
+      await redditSendReadings(state, base, result);
     } catch (error) {
       redditRemember(state, `Reddit thread update: ${error?.message || "request failed"}`);
     }
@@ -1411,7 +1485,7 @@ function redditSendSoon() {
 }
 
 async function redditSync(state) {
-  const result = { at: Date.now(), organization: "", threads: 0, already: 0, rules: 0, readings: 0, failed: 0, error: "", sentBefore: 0, unmatched: 0, linksAdded: 0, linksUpdated: 0 };
+  const result = { at: Date.now(), organization: "", threads: 0, already: 0, rules: 0, readings: 0, failed: 0, error: "", sentBefore: 0, unmatched: 0, linksAdded: 0, linksUpdated: 0, ownThreads: 0 };
   try {
     await redditFetchWatch(state);
     const candidates = redditCandidates(state);
@@ -1420,6 +1494,7 @@ async function redditSync(state) {
     const organization = state.watch.organization;
     result.organization = organization;
     const base = `/api/marketing/${encodeURIComponent(organization)}`;
+    await redditSendOwn(state, base, result);
     for (const post of redditUnsent(state).slice(0, REDDIT_SYNC_LIMIT)) {
       const body = {
         url: post.url, title: post.title, status: "to_review", source: "extension",
@@ -1493,6 +1568,25 @@ const redditMonitorAdd = ({ url }) => redditSerial(async () => {
   await redditFetchWatch(state);
   await redditSave(state);
   return redditStats();
+});
+
+const redditLogAdd = ({ url }) => redditSerial(async () => {
+  if (!(await settings()).sessionToken) throw new ApiError("not_signed_in", 401);
+  const link = redditLink(url);
+  if (!link) throw new ApiError("invalid_reddit_thread_url", 400);
+  const state = await redditState();
+  const known = state.own[link.postId] || state.posts[link.postId] || null;
+  const body = { url: link.url, status: "to_review", source: "extension" };
+  if (known) {
+    Object.assign(body, { title: known.title, author: known.author, comments: known.comments, score: known.score,
+      postedAt: known.postedAt || null });
+  }
+  const reply = await api(`${await redditBase()}/reddit`, "POST", body);
+  state.sent[link.postId] = Date.now();
+  if (state.own[link.postId]) state.ownSent[link.postId] = Date.now();
+  await redditFetchWatch(state);
+  await redditSave(state);
+  return { ...(await redditStats()), logged: { title: String(reply?.thread?.title || ""), subreddit: link.subreddit, comment: Boolean(link.commentId) } };
 });
 
 const redditMonitorRemove = ({ deskId }) => redditSerial(async () => {
@@ -1811,8 +1905,10 @@ async function redditMineRecord(state, base, account, items, result) {
     if (!item) continue;
     result.found += 1;
     redditMineKeep(state, item, now);
+    redditOwnFromMine(state, state.mine[item.key]);
   }
   redditMineTrim(state);
+  await redditSendOwn(state, base, result);
   await redditSendMine(state, base, result);
 }
 
@@ -3224,7 +3320,7 @@ const X_SETUP_PORTAL_ONLY = new Set(["fm-x-setup-keys", "fm-x-setup-mark", "fm-x
 const REDDIT_WALK_SENDERS = new Set(["fm-reddit-walk", "fm-reddit-walk-state", "fm-reddit-walk-stop", "fm-reddit-accounts-update", "fm-reddit-threads-update"]);
 
 const POPUP_ONLY = new Set(["fm-reddit-stats", "fm-reddit-refresh", "fm-reddit-sync",
-  "fm-reddit-clear-errors", "fm-reddit-monitor-add", "fm-reddit-monitor-remove", "fm-reddit-check", "fm-reddit-profile-update", "fm-reddit-auto-check", "fm-reddit-auto-update", "fm-reddit-accounts-change", "fm-open-reddit-desk", "fm-marketing-capture-tab", "fm-marketing-setup", "fm-x-live-stop",
+  "fm-reddit-clear-errors", "fm-reddit-monitor-add", "fm-reddit-log-add", "fm-reddit-monitor-remove", "fm-reddit-check", "fm-reddit-profile-update", "fm-reddit-auto-check", "fm-reddit-auto-update", "fm-reddit-accounts-change", "fm-open-reddit-desk", "fm-marketing-capture-tab", "fm-marketing-setup", "fm-x-live-stop",
   "fm-refresh-plan", "fm-refresh-run", "fm-refresh-channel"]);
 POPUP_ONLY.add("fm-toot-set-track");
 const CAPTURE_PAGE_ONLY = new Set(["fm-marketing-capture-job", "fm-marketing-capture-continue"]);
@@ -3296,6 +3392,7 @@ const HANDLERS = {
   "fm-reddit-sync": redditSyncNow,
   "fm-reddit-clear-errors": redditClearErrors,
   "fm-reddit-monitor-add": redditMonitorAdd,
+  "fm-reddit-log-add": redditLogAdd,
   "fm-reddit-monitor-remove": redditMonitorRemove,
   "fm-reddit-check": redditCheck,
   "fm-reddit-profile-update": redditProfileUpdate,

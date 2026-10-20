@@ -6454,6 +6454,55 @@ def _posts_full(error):
     return "marketing_posts_full" in str(error or "")
 
 
+def _reddit_own_thread_data(envelope, author):
+    url = envelope.get("url")
+    if _reddit_comment_url(url) or not _reddit_thread_url(url):
+        return None
+    data = {"url": url, "title": envelope.get("title") or "", "status": "to_review",
+            "source": envelope.get("source"), "author": _reddit_author(author) or "",
+            "postedAt": envelope.get("postedAt") or None}
+    counts = {"views": envelope.get("views"), "score": envelope.get("likes"),
+              "comments": envelope.get("replies")}
+    checked = _integer(envelope.get("checkedAt"))
+    if checked > 0 and any(value is not None for value in counts.values()):
+        data.update(counts, checkedAt=checked)
+    thread, error = _reddit_thread_data(data)
+    if error and "checkedAt" in data:
+        for key in ("checkedAt", *counts):
+            data.pop(key, None)
+        thread, error = _reddit_thread_data(data)
+    return None if error else thread
+
+
+async def _log_own_reddit_post(runtime, org_bi, org_name, account_bi, actor, envelope,
+                               author=""):
+    thread = _reddit_own_thread_data(envelope, author)
+    if not thread:
+        return False
+    post_bi = await runtime.blind(
+        "marketing-reddit-thread-v1\n" + org_bi + "\n" + thread["postId"])
+    if await runtime.d1_first(
+            "SELECT thread_id FROM marketing_reddit_threads WHERE org_bi=? AND post_bi=?",
+            org_bi, post_bi):
+        return False
+    now = runtime.now()
+    thread_id = runtime.new_id()
+    try:
+        await runtime.d1_run(
+            "INSERT INTO marketing_reddit_threads(thread_id,org_bi,org_name,post_bi,status,"
+            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,created_at,"
+            "updated_at,decided_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            thread_id, org_bi, org_name, post_bi, "to_review", account_bi, actor, account_bi,
+            actor, now, now, 0, await runtime.seal(thread))
+    except Exception as failure:
+        if "marketing_reddit_threads_full" not in str(failure or ""):
+            raise
+        return False
+    await runtime.audit(actor, "marketing.reddit_thread.create", "marketing_reddit_thread",
+                        thread_id)
+    return True
+
+
 async def _save_post(runtime, row, org_bi, org_name, account_bi, actor, data):
     now = runtime.now()
     existing = await runtime.open(row.get("data")) if row else None
@@ -6486,6 +6535,9 @@ async def _save_post(runtime, row, org_bi, org_name, account_bi, actor, data):
         return _response(runtime, {"error": "marketing_posts_full"}, 409)
     await runtime.audit(actor, "marketing.post.update" if row else "marketing.post.create",
                         "marketing_post", post_id)
+    if not row and channel == "reddit":
+        await _log_own_reddit_post(runtime, org_bi, org_name, account_bi, actor, envelope,
+                                   data.get("author"))
     return _response(runtime, {"ok": True, "post": await _post_project(
         runtime, await _post_row(runtime, org_bi, post_id))}, 200 if row else 201)
 
@@ -6494,7 +6546,7 @@ async def _import_posts(runtime, org_bi, org_name, account_bi, actor, items):
     if not isinstance(items, list) or len(items) > POST_BATCH_LIMIT:
         return _response(runtime, {"error": "invalid_posts"}, 400)
     now = runtime.now()
-    created = updated = skipped = 0
+    created = updated = skipped = threads = 0
     full = ready_closed = False
     reddit_keys = None
     for index, item in enumerate(items):
@@ -6545,6 +6597,9 @@ async def _import_posts(runtime, org_bi, org_name, account_bi, actor, items):
             updated += 1
         else:
             created += 1
+            if channel == "reddit" and await _log_own_reddit_post(
+                    runtime, org_bi, org_name, account_bi, actor, envelope, item.get("author")):
+                threads += 1
             if channel in READY_POST_CHANNELS and not ready_closed:
                 ready_closed = await _ready_mark_posted(
                     runtime, org_bi, account_bi, actor, channel, envelope.get("title"), url)
@@ -6558,6 +6613,7 @@ async def _import_posts(runtime, org_bi, org_name, account_bi, actor, items):
     posts = await _posts(runtime, org_bi)
     return _response(runtime, {"ok": True, "created": created, "updated": updated,
                                "skipped": skipped, "full": full,
+                               "threadsLogged": threads,
                                "readyPostClosed": ready_closed,
                                "postsSummary": _posts_summary(posts)})
 

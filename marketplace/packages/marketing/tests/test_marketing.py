@@ -1769,6 +1769,48 @@ def test_reddit_posts_entered_by_hand_and_read_by_the_extension_stay_one_row():
     assert next(item for item in posts if item["id"] == comment["id"])["views"] == 40
 
 
+def test_our_reddit_posts_land_in_the_thread_log_once():
+    runtime = Runtime()
+    posts, reddit = "/api/marketing/acme/posts", "/api/marketing/acme/reddit"
+    threads = lambda: call(runtime.use("GET"), reddit)["data"]["redditThreads"]
+    manual = call(runtime.use("POST", body={
+        "url": "https://www.reddit.com/r/selfhosted/comments/abc123/our_launch_post/",
+        "channel": "reddit", "title": "Our launch post", "postedAt": 1_990_000_000_000}), posts)
+    assert manual["status"] == 201
+    assert [(item["postId"], item["status"], item["title"], item["source"], item["postedAt"])
+            for item in threads()] == [
+        ("abc123", "to_review", "Our launch post", "manual", 1_990_000_000_000)]
+    call(runtime.use("POST", body={
+        "url": "https://www.reddit.com/r/git/comments/ccc333/comment/def456/"}), posts)
+    call(runtime.use("POST", body={"url": "https://x.com/forkmesh/status/123"}), posts)
+    assert [item["postId"] for item in threads()] == ["abc123"]
+
+    read = call(runtime.use("POST", body={"posts": [
+        {"url": "https://www.reddit.com/r/devops/comments/eee555/mirrors/", "channel": "reddit",
+         "title": "Mirrors", "author": "forkmesh", "checkedAt": runtime.now(), "views": 300,
+         "likes": 12, "replies": 3},
+        {"url": "https://www.reddit.com/r/devops/comments/eee555/mirrors/fff666/",
+         "channel": "reddit", "title": "Comment in r/devops", "views": 8}]}), posts)["data"]
+    assert (read["created"], read["threadsLogged"]) == (2, 1)
+    mirrors = next(item for item in threads() if item["postId"] == "eee555")
+    assert (mirrors["author"], mirrors["source"], mirrors["views"], mirrors["score"],
+            mirrors["comments"], len(mirrors["history"])) == ("forkmesh", "extension", 300, 12, 3, 1)
+
+    logged = call(runtime.use("POST", body={
+        "url": "https://www.reddit.com/r/rust/comments/ggg777/", "note": "ours"}), reddit)
+    assert logged["status"] == 201
+    again = call(runtime.use("POST", body={"posts": [
+        {"url": "https://www.reddit.com/r/rust/comments/ggg777/", "channel": "reddit"}]}), posts)
+    assert again["data"]["threadsLogged"] == 0 and len(threads()) == 3
+
+    assert call(runtime.use("DELETE"), f"{reddit}/{mirrors['id']}")["status"] == 200
+    reread = call(runtime.use("POST", body={"posts": [
+        {"url": "https://www.reddit.com/r/devops/comments/eee555/mirrors/", "channel": "reddit",
+         "checkedAt": runtime.now() + 1, "views": 340}]}), posts)["data"]
+    assert (reread["updated"], reread["threadsLogged"]) == (1, 0)
+    assert "eee555" not in [item["postId"] for item in threads()]
+
+
 def test_the_web_reddit_page_lists_and_edits_our_posts_and_asks_the_extension():
     view = (PACKAGE / "content/web/view.html").read_text()
     page = (PACKAGE / "content/web/page.js").read_text()
