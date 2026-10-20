@@ -39,8 +39,12 @@ when reporting is on. It is on by default for public repositories and off for
 private ones (`security_advisory_settings`, one row per repository once an
 admin changes it). A report starts in `triage`, notifies the maintainers
 (`_org_fanout_recipients`, ping kind `security_advisory`) and, when
-`SECURITY_EMAIL` is set, mails the site's security contact with the report
-(kind `security_report` in the mail log). The report form says so. A reporter
+`SECURITY_EMAIL` is set, mails the site's security contact that a report was
+filed (kind `security_report` in the mail log): the repository, the advisory
+ID, the severity and a link, never the title or description. The contact is
+site-wide and covers private repositories too, while the report may only be
+read by the reporter, the maintainers and the people they invite, so the
+proof of concept never leaves the site by email. The report form says so. A reporter
 may have ten open triage reports per repository, and a repository holds at most
 200 in triage. A maintainer using the same button creates a `draft` instead and
 nobody is mailed.
@@ -72,7 +76,13 @@ history) so the instance lists and feeds never decrypt.
   9.0-10 critical). The CVSS 4.0 macro-vector table and interpolation are
   FIRST's reference calculator (BSD-2-Clause), ported from the RedHat `cvss`
   package; the test cross-checks both versions against that package when it is
-  installed.
+  installed. A 3.x vector lists the eight base metrics first, in the
+  specification's order, and may then carry temporal and environmental
+  metrics (`E`, `RL`, `RC`, `CR`/`IR`/`AR`, `MAV` ... `MA`), which published
+  advisories often include; they are validated and kept in the vector but do
+  not change the base score. Every metric value is a single letter from its
+  allowed set. Request bodies that cannot be encoded as UTF-8 (a lone
+  surrogate) are refused with `invalid_json`.
 - **CVE ID**: entered by hand. There is no CNA integration.
 - **Affected products**: ecosystem (OSV's names) and package, or a folder of
   the repository, an affected range (`>= 1.0, < 1.4.2`) and patched versions.
@@ -88,7 +98,11 @@ use), like issue events:
 
 1. `{"action":"prepare","kind":"publish|update|withdraw","fields":{...}}`
    returns the OSV record the advisory will have, its `contentHash`
-   (SHA-256 of the canonical JSON: sorted keys, `,`/`:` separators, UTF-8)
+   (SHA-256 of the canonical JSON: Python `json.dumps` with `sort_keys`,
+   `,`/`:` separators and `ensure_ascii=False`, UTF-8; this is not RFC 8785,
+   so a third-party verifier must reproduce exactly that form). The browser
+   signs the `contentHash` the server returns without recomputing it, so the
+   signature attests to the record the server prepared.
    a `preparedAt` time that becomes `published`/`modified`/`withdrawn`, and
    the record's `revision` (bumped on every stored change).
 2. The browser signs
@@ -130,6 +144,13 @@ update.
   one OSV 1.6 record. `/advisories/<ID>` redirects to the repository page.
 - `/security-researchers` and `/api/security-advisories/hall-of-fame`.
 
+The instance-wide surfaces (`/advisories`, `/advisories.json` and
+`/advisories/<ID>.json`) read the stored public view, so they re-check that
+each advisory's repository is still public (`_still_public`: the alias's
+backing node, then `_repo_is_private`, failing closed): a repository made
+private after publishing takes its advisories, and its name, off them at once.
+The researchers page counts credits only and names no repository.
+
 OSV mapping: `summary` is the title, `details` the description, `aliases` the
 CVE, `severity` the vector (`CVSS_V3`/`CVSS_V4`),
 `database_specific.severity` the level and `cwe_ids` the CWEs. A package entry
@@ -157,6 +178,9 @@ sees pending and declined ones).
 The researchers page ranks accepted credits on published (not withdrawn)
 advisories by points: critical 10, high 6, moderate 3, low 1, unrated 1. It is
 cached for five minutes per process and refreshed on any publish or decision.
+A credit decision or a recorded ledger commit changes the public view (OSV
+`credits`), so it moves the view's `updatedAt` and the row's `updated_at` to
+now: OSV `modified` advances and scanners polling `?since=` see the change.
 
 ## Repository API
 

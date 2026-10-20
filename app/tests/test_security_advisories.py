@@ -174,7 +174,11 @@ def world(monkeypatch):
         state.commits.append((path, json.loads(content), message))
         return "c" * 40
 
+    async def repo_is_private(env, owner, repo):
+        return state.repos.get((owner, repo)) != "public"
+
     runtime = {
+        "_repo_is_private": repo_is_private,
         "d1_all": d1.all, "d1_first": d1.first, "d1_run": d1.run,
         "blind_index": blind_index, "encrypt_row": encrypt_row,
         "decrypt_row": decrypt_row, "json_response": json_response,
@@ -261,6 +265,9 @@ def test_report_is_private_triage_and_notifies_maintainers(world):
     assert recipients == {"alice", "mia"}
     assert {kind for _, kind, _ in world.notes} == {"security_advisory"}
     assert world.emails and world.emails[0][0] == "security@example.org"
+    assert advisory_id in world.emails[0][2]
+    assert REPORT["description"] not in world.emails[0][2]
+    assert REPORT["title"] not in world.emails[0][2]
     row = world.d1.db.execute(
         "SELECT data, public_data FROM security_advisories").fetchone()
     assert "SQL injection" not in row["data"] and row["public_data"] == ""
@@ -406,6 +413,10 @@ def test_publish_records_a_signed_ledger_entry_and_valid_osv(world):
         assert_valid_osv(item)
     page = public(world, "GET", "/advisories")
     assert advisory_id in page.body and "SQL injection" in page.body
+    world.repos[("acme", "widget")] = "private"
+    assert public(world, "GET", "/advisories.json").data["advisories"] == []
+    assert advisory_id not in public(world, "GET", "/advisories").body
+    assert public(world, "GET", "/advisories/%s.json" % advisory_id).status == 404
 
 
 def test_signed_kinds_refuse_stale_content_and_withdraw_is_recorded(world):
@@ -586,6 +597,12 @@ def test_cvss_known_scores_and_rejects_malformed_vectors():
                 "SC:N/SI:S/SA:N", "CVSS:2.0/AV:N", ""):
         assert advisory_cvss.score(bad)[0] is None
     assert advisory_cvss.level_for_score(6.9) == "moderate"
+    base = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+    assert advisory_cvss.score(base + "/E:P/RL:O/RC:C") == (9.8, "CVSS_V3")
+    assert advisory_cvss.score(base + "/CR:H/MAV:L") == (9.8, "CVSS_V3")
+    for bad in (base + "/E:Q", base + "/XX:H",
+                "CVSS:3.1/AV:NA/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"):
+        assert advisory_cvss.score(bad)[0] is None
 
 
 def assert_valid_osv(osv):
@@ -660,3 +677,9 @@ def test_ledger_commit_writes_the_file_through_the_web_edit_path(tmp_path,
     assert fe.git_out(bare, "show", "main:README.md") == "# Widget\n"
     fe.git(bare, "fsck", "--strict", "--no-dangling")
     assert calls["pushes"][0][2] == "alice"
+
+
+def test_a_lone_surrogate_is_refused_not_a_server_error(world):
+    response = api(world, "POST", "/advisories", "bob",
+                   dict(REPORT, description="bad \ud800 text"))
+    assert response.status == 400 and response.data["error"] == "invalid_json"
