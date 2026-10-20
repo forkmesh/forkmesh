@@ -238,6 +238,17 @@ final class AppRouterTests: XCTestCase {
         XCTAssertTrue(router.currentPath.isEmpty)
     }
 
+    @MainActor func testRemoveDropsARouteFromEveryTabAndKeepsTheRest() async {
+        let router = AppRouter()
+        router.setPath([.videoMixDjStudio, .repo(repo, section: nil)], for: .agents)
+        router.setPath([.shortcuts(nil), .videoMixDjStudio], for: .inbox)
+        router.focus(.inbox)
+        router.remove(.videoMixDjStudio)
+        XCTAssertEqual(router.path(for: .agents), [.repo(repo, section: nil)])
+        XCTAssertEqual(router.path(for: .inbox), [.shortcuts(nil)])
+        XCTAssertEqual(router.selectedTab, .inbox)
+    }
+
     @MainActor func testInterceptTakesRoutes() async {
         let router = AppRouter()
         var taken: [Route] = []

@@ -34,6 +34,18 @@ public enum DjAutoDj {
         "remastered", "remaster", "explicit", "clean", "version", "full", "feat", "ft", "featuring", "topic",
     ]
 
+    static let notSongs = [
+        "got talent", "agt", "bgt", "x factor", "xfactor", "the voice", "american idol", "pop idol", "idols", "golden buzzer",
+        "audition", "auditions", "judges", "simon cowell", "reaction", "reactions", "reacts", "reacting", "first time hearing",
+        "first time listening", "vocal coach", "cover by", "covered by", "cover of", "acoustic cover", "piano cover", "guitar cover",
+        "drum cover", "bass cover", "karaoke", "backing track", "sing along", "tutorial", "lesson", "how to play", "how to sing",
+        "remix", "mashup", "nightcore", "sped up", "slowed", "reverb", "8d", "bass boosted", "parody", "medley", "interview",
+        "trailer", "episode", "compilation", "highlights", "rehearsal", "behind the scenes", "documentary", "podcast",
+        "live at", "live from", "live performance", "full performance", "concert", "tiny desk", "sings", "performs", "tribute",
+    ]
+
+    static let notOriginal = ["live", "cover", "covers", "acoustic", "unplugged", "instrumental", "karaoke", "remix", "session", "sessions", "demo"]
+
     public static func candidates(_ data: Data) -> [DjAutoDjCandidate] {
         guard let object = try? JSONSerialization.jsonObject(with: data) else { return [] }
         let rows = (object as? [String: Any])?["recommendedVideos"] as? [[String: Any]] ?? object as? [[String: Any]] ?? []
@@ -94,11 +106,50 @@ public enum DjAutoDj {
         DjSmart.text(text).split(separator: " ").map(String.init).filter { !noise.contains($0) }.joined(separator: " ")
     }
 
+    static func qualifiers(_ title: String) -> [String] {
+        var parts: [String] = []
+        for (open, close) in [("(", ")"), ("[", "]"), ("{", "}")] {
+            var rest = title[...]
+            while let start = rest.range(of: open), let end = rest.range(of: close, range: start.upperBound..<rest.endIndex) {
+                parts.append(String(rest[start.upperBound..<end.lowerBound]))
+                rest = rest[end.upperBound...]
+            }
+        }
+        let piped = title.components(separatedBy: " | ")
+        parts += piped.dropFirst()
+        var dashed = piped[0]
+        for dash in [" – ", " — "] { dashed = dashed.replacingOccurrences(of: dash, with: " - ") }
+        parts += dashed.components(separatedBy: " - ").dropFirst(2)
+        return parts.map(DjSmart.text)
+    }
+
+    public static func isSong(_ candidate: DjAutoDjCandidate) -> Bool {
+        let text = DjSmart.text(candidate.title + " " + candidate.author)
+        guard !notSongs.contains(where: { text.contains(" \($0) ") }) else { return false }
+        let words = DjSmart.text(candidate.title).split(separator: " ")
+        if let last = words.last, ["cover", "covers", "karaoke", "instrumental"].contains(String(last)) { return false }
+        return !qualifiers(candidate.title).contains { part in notOriginal.contains { part.contains(" \($0) ") } }
+    }
+
+    public static func isOriginal(_ candidate: DjAutoDjCandidate) -> Bool {
+        let author = DjSmart.text(candidate.author)
+        if author.hasSuffix(" topic ") || author.contains("vevo") { return true }
+        let title = DjSmart.text(candidate.title)
+        if [" official ", " remastered ", " remaster ", " original "].contains(where: title.contains) { return true }
+        var name = candidate.title
+        for dash in [" – ", " — ", " | "] { name = name.replacingOccurrences(of: dash, with: " - ") }
+        let parts = name.components(separatedBy: " - ")
+        let artist = key(author)
+        return parts.count > 1 && !artist.isEmpty && key(parts[0]) == artist
+    }
+
     public static func eligible(_ found: [DjAutoDjCandidate], seed: DjTrack, avoid: Set<String>, heard: [String]) -> [DjAutoDjCandidate] {
         var keys = Set(([seed.title] + heard).map(songKey).filter { !$0.isEmpty })
-        return found.filter { candidate in
+        let songs = found.filter { candidate in
             guard candidate.id != seed.id, !avoid.contains(candidate.id) else { return false }
-            guard candidate.seconds >= shortest, candidate.seconds <= longest else { return false }
+            return candidate.seconds >= shortest && candidate.seconds <= longest && isSong(candidate)
+        }
+        return (songs.filter(isOriginal) + songs.filter { !isOriginal($0) }).filter { candidate in
             let key = songKey(candidate.title)
             return key.isEmpty || keys.insert(key).inserted
         }
@@ -115,6 +166,8 @@ public enum DjAutoDj {
         let span = (found.map(\.rank).max() ?? 0) + 1
         return found.enumerated()
             .sorted {
+                let original = (isOriginal($0.element), isOriginal($1.element))
+                if original.0 != original.1 { return original.0 }
                 let left = score($0.element, among: span)
                 let right = score($1.element, among: span)
                 return left != right ? left > right : $0.offset < $1.offset

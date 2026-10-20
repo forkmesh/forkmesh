@@ -152,6 +152,11 @@ final class DjStudioHub {
         guard PackageGate.allows("video-mix-dj-studio"), DjSaved.decode(UserDefaults.standard.data(forKey: DjStudio.storageKey)).playing else { return }
         studio().resumePlayback()
     }
+
+    @discardableResult
+    func stepAside() -> Bool {
+        model?.stepAside() ?? false
+    }
 }
 
 @MainActor
@@ -225,6 +230,7 @@ final class DjStudioModel {
     @ObservationIgnored private(set) var unplayable: Set<String> = []
 
     @ObservationIgnored var onLeave: (() -> Void)?
+    @ObservationIgnored var onStepAside: (() -> Void)?
     @ObservationIgnored let host: DjPlayerHost
     @ObservationIgnored let defaults: UserDefaults
     @ObservationIgnored private let store: DjStore
@@ -414,6 +420,18 @@ final class DjStudioModel {
     func leave() {
         disappear()
         onLeave?()
+    }
+
+    @discardableResult
+    func stepAside() -> Bool {
+        guard onScreen else { return false }
+        leavingAfterSheet = false
+        resettingAfterSheet = false
+        confirmingReset = false
+        sheet = nil
+        disappear()
+        onStepAside?()
+        return true
     }
 
     func stopAll() {
