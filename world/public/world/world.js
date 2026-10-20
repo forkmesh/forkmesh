@@ -11258,8 +11258,6 @@ class ForkMeshWorld extends HTMLElement {
         },
       );
       this.worldMesh = normalizeWorldMesh(payload);
-      // The mesh owns the neighbour layer. Redrawing it from the legacy
-      // portal list (empty in a mesh payload) would erase every neighbour.
       this.instanceHexes = withHomePortal(
         normalizeInstanceHexes(payload),
         this.homePortal,
@@ -11321,8 +11319,6 @@ class ForkMeshWorld extends HTMLElement {
         self ? self.shape : "flower",
       ) || [];
     this.meshHexNeighbors = placed.filter((world) => world.shape === "hex");
-    // Flowers are walked into in place over their socket; a single hexagon
-    // is its own World page, reached by walking onto its land.
     this.worldMeshLinks()?.setNeighbors(
       placed.filter((world) => world.shape !== "hex"),
     );
@@ -11332,7 +11328,6 @@ class ForkMeshWorld extends HTMLElement {
 
   applyWorldMeshArrival() {
     const arrival = this.pendingMeshArrival;
-    // Wait for the directory: only a listed single hexagon can send walkers.
     if (!arrival || !this.world?.setSpawn || !this.worldMesh?.self) return;
     this.pendingMeshArrival = null;
     const hex = (this.meshHexNeighbors || []).find(

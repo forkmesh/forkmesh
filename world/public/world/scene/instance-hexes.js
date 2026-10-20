@@ -177,8 +177,6 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
   ground.userData.ground = true;
   group.add(ground);
 
-  // A single-hexagon neighbour has no desert of its own: it sits between
-  // two of the town's desert hexagons and shares their roads.
   const single = instance.shape === WORLD_MESH_HEX_SHAPE;
   if (!single) {
     const sand = new THREE.Mesh(

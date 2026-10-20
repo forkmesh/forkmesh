@@ -71,8 +71,6 @@ export function normalizeWorldMesh(payload) {
       api,
       logo: LOGO_RE.test(String(item?.logo || "")) ? String(item.logo) : "",
       slot,
-      // A single-hexagon neighbour is drawn beside the town and entered by
-      // walking onto it, which loads its own World page.
       shape: item?.shape === "hex" && slot >= 0 && slot < 6 ? "hex" : "flower",
     });
     if (worlds.length > WORLD_MESH_SLOT_COUNT) break;
@@ -399,10 +397,6 @@ export class WorldMeshLinks {
   }
 }
 
-// Single-hexagon neighbours run their own World page, so walking onto one is
-// a page load. The address names where the walker came from, the slot, and
-// where they stepped off relative to the hexagon's centre; a signed-in
-// walker's visa rides in the fragment, which no server or Referer sees.
 export const WORLD_MESH_FROM_PARAM = "from";
 export const WORLD_MESH_SLOT_PARAM = "slot";
 export const WORLD_MESH_POS_PARAM = "pos";
@@ -411,8 +405,6 @@ export const WORLD_MESH_POS_LIMIT = 400;
 const POS_RE = /^-?\d{1,3}(?:\.\d)?,-?\d{1,3}(?:\.\d)?$/;
 const VISA_RE = /^[A-Za-z0-9_-]{1,1950}\.[0-9a-f]{64}$/;
 const FROM_RE = /^(?:forkmesh|[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?)$/;
-// scene/layout.js is bundled with the scene, so this module keeps its own
-// copy of the two sizes it needs (a test holds them equal).
 export const WORLD_MESH_HEX_APOTHEM = 365;
 export const WORLD_MESH_ROAD_WIDTH = 10;
 const ARRIVAL_EDGE_REACH = 150;
@@ -469,8 +461,6 @@ export function withoutWorldMeshArrival(href) {
   }
 }
 
-// Where a walker coming back off a single-hexagon neighbour lands: just
-// outside the edge they crossed, on the road side, facing away from it.
 export function worldMeshHexEdgeArrival(center, pos) {
   const x = Number(pos?.x);
   const z = Number(pos?.z);

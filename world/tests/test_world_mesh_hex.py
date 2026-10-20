@@ -194,8 +194,6 @@ def test_arrivals_are_sanitized_and_land_outside_the_crossed_edge(result):
     assert (round(west["x"]), round(west["z"])) == (1000 - 389, 512)
     assert abs(west["heading"] - 1.5707963267948966) < 1e-9
     assert west["space"] == "town-square"
-    # (10, 380) is nearest the 60-degree edge: the walker lands 389 out
-    # along that edge's normal.
     normal = (0.5, 3 ** 0.5 / 2)
     depth = (south["x"] - 1000) * normal[0] + (south["z"] - 500) * normal[1]
     assert round(depth) == 389
@@ -214,7 +212,5 @@ def test_the_world_draws_and_crosses_single_hexagons():
 
 
 def test_the_mesh_layer_is_not_redrawn_from_the_legacy_portal_list():
-    # Only the no-directory fallback still draws the legacy portal list; after
-    # a mesh payload, placeWorldMesh() owns the neighbour layer.
     assert APP.count("this.world?.updateInstanceHexes?.(this.instanceHexes);") == 1
     assert "if (!arrival || !this.world?.setSpawn || !this.worldMesh?.self) return;" in APP

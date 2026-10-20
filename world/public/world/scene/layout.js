@@ -196,10 +196,6 @@ export const WORLD_MESH_FLOWER_HEXES = Object.freeze(
   ),
 );
 export const WORLD_MESH_FLOWER_REACH = WORLD_HEX_PITCH + CONTINUOUS_CITY_RADIUS * 1.2;
-// A neighbour drawn as one hexagon instead of a flower sits in the notch
-// between two of the town's desert hexagons, sharing an edge with each. Slot
-// k's hexagon is the flower-k hexagon nearest the town, so it never overlaps
-// another slot's flower.
 export const WORLD_MESH_HEX_SHAPE = "hex";
 export const NEIGHBOUR_HEX_SLOT_COUNT = 6;
 const NEIGHBOUR_HEX_OFFSETS = Object.freeze(

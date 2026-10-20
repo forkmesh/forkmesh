@@ -162,9 +162,10 @@ def test_walking_into_a_neighbour_switches_worlds_without_a_page_change():
     assert "safe.space = WORLD_MESH_VISITING_SPACE;" in APP
     assert "this.world?.worldMeshOwner?.(x, z)" in APP
     assert "Entering ${world.name}" in APP
-    assert "walk onto its hexagon to visit" in APP
-    assert "window.open(destination" not in APP.split(
-        "onInstanceHexagonSelect")[1].split("onFederatedWorldTravel")[0]
+    assert "this.worldMeshLinks()?.setNeighbors(" in APP
+    portal_handler = APP.split("onInstanceHexagonSelect")[1].split(
+        "const destination = safeHTTPURL(url);")[0]
+    assert "window.open(" not in portal_handler
     assert 'url.searchParams.set("watch", "1")' in MESH
     assert 'url.searchParams.set("visa", visa)' in MESH
     assert "/api/world/ws" in MESH

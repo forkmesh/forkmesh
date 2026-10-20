@@ -593,8 +593,6 @@ export function functions({
     if (!flower) return null;
     const owner = { id: flower.id, dx: flower.dx, dz: flower.dz };
     if (flower.shape !== WORLD_MESH_HEX_SHAPE) return owner;
-    // Only the land counts for a single hexagon: its road is shared with the
-    // town's desert, and stepping off the road is the crossing.
     return {
       ...owner,
       shape: WORLD_MESH_HEX_SHAPE,
