@@ -116,7 +116,7 @@ test("the fork icon opens the list of people who forked the repo", async ({
   const forkButton = page.locator("[data-repo-action-fork]");
   await expect(forkButton).toBeVisible();
   // Real count, not a placeholder and not a mock number.
-  await expect(page.locator("[data-repo-fork-count]")).toHaveText("2");
+  await expect(page.locator("[data-repo-about-actions] [data-repo-fork-count]")).toHaveText("2");
 
   const menu = page.locator("[data-repo-fork-menu]");
   await expect(menu).toBeHidden();
@@ -126,7 +126,7 @@ test("the fork icon opens the list of people who forked the repo", async ({
 
   // Forking stays entirely on the website: it records a durable job for the
   // caller's managed mirror instead of launching a desktop protocol URL.
-  const create = page.locator("[data-repo-fork-create]");
+  const create = menu.locator("[data-repo-fork-create]");
   await expect(create).toHaveAttribute("type", "button");
   await expect(menu).toContainText("has to be online right now");
   await create.click();

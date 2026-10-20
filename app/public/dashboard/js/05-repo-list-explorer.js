@@ -490,6 +490,8 @@
           // with it so the card swaps instead of showing a broken image.
           fallbackDataUrl: nativeRepositoryLogoDataUrl(
             body?.logo?.fallbackDataUrl),
+          // "owner" when the logo is the one uploaded from Settings.
+          source: String(body?.logo?.source || ""),
         };
       }).catch(() => {
         // Do not negatively cache authorization failures or transient errors.
@@ -2683,6 +2685,7 @@
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
     if (tab === "settings") {
       loadRepoFediverse(state.selectedRepo);
+      void loadRepoSettingsLogo(state.selectedRepo);
       loadRepoDigestPreview(state.selectedRepo);
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
