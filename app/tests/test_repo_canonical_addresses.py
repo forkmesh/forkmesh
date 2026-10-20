@@ -772,7 +772,9 @@ console.log(JSON.stringify({ before, after, prefixed, other }));
 
 def test_the_dashboard_loads_the_setting_before_the_first_render():
     loader = js_function(HELPERS, "loadRepoAddresses")
-    assert 'fetch("/api/instance"' in loader
+    # The page's one shared /api/instance read (test_dashboard_shared_reads).
+    assert "await sharedInstanceDocument()" in loader
+    assert 'fetch("/api/instance"' in js_function(HELPERS, "sharedInstanceDocument")
     assert "REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())" in loader
     assert BOOT.index("const repoAddressesLoaded = loadRepoAddresses();") < \
         BOOT.index("(PAGE_INITS[currentPage()] || initHomePage)();")

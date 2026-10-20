@@ -1953,11 +1953,26 @@
   let instanceInfoRequest = null;
   let instanceGitNode = "";
 
+  // GET /api/instance is the same public document for every visitor. One
+  // request per page serves every reader: an instance page starts it from
+  // the first inline script (tools/apply_instance_brand.py), and
+  // instance-brand.js and genie-spider.js share the same window promise, so
+  // whichever asks first sends it and the rest wait on that answer.
+  function sharedInstanceDocument() {
+    let pending = window.__forkmeshInstanceInfo;
+    if (!pending || typeof pending.then !== "function") {
+      pending = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+      window.__forkmeshInstanceInfo = pending;
+    }
+    return pending;
+  }
+
   function instanceInfo() {
     if (!dashboardOnInstance()) return Promise.resolve(null);
     if (!instanceInfoRequest) {
-      instanceInfoRequest = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      instanceInfoRequest = sharedInstanceDocument()
         .then((info) => {
           instanceGitNode = String(info?.gitNode || "").toLowerCase();
           return info;
@@ -2137,8 +2152,7 @@
   async function loadRepoAddresses() {
     if (REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())) return null;
     try {
-      const response = await fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } });
-      const data = response.ok ? await response.json() : null;
+      const data = await sharedInstanceDocument();
       if (data && typeof data === "object" && data.ok !== false) return applyRepoAddresses(data.repoAddresses || null);
     } catch (_) {}
     return repoAddresses();
@@ -2483,6 +2497,19 @@
     return data && typeof data === "object" && data.ok !== false ? data : null;
   }
 
+  // One-shot: a JSON read the repository page started before this script ran
+  // (partials/repo-early-reads.html early.json), taken over by exact path. It
+  // was sent with the page's cookies and no bearer token, so it only stands in
+  // for a request that would carry the same identity.
+  async function takeEarlyJsonRead(path) {
+    const early = globalThis.__forkmeshEarly;
+    const pending = early?.json?.[path];
+    if (!pending) return null;
+    delete early.json[path];
+    const data = await pending;
+    return data && typeof data === "object" && data.ok !== false ? data : null;
+  }
+
   async function fetchJson(path, options = {}) {
     const fresh = options.fresh === true;
     const cacheBust = options.cacheBust !== false;
@@ -2524,6 +2551,9 @@
       // (partials/views/repo.html); take that answer over instead of asking
       // again.
       let data = anonymousPublicRead && !noStore ? await takeEarlyPublicRead() : null;
+      if (!data && !noStore && !anonymousPublicRead && (!token || token === "cookie")) {
+        data = await takeEarlyJsonRead(path);
+      }
       if (!data) for (let attempt = 0; ; attempt += 1) {
         const last = attempt >= FETCH_JSON_RETRY_DELAYS_MS.length;
         let response;

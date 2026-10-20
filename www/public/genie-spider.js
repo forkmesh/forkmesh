@@ -873,8 +873,16 @@
       return true;
     }
     instancePlugin = "asking";
-    fetch("/api/instance", { credentials: "same-origin", headers: { accept: "application/json" } })
-      .then((response) => (response.ok ? response.json() : null))
+    // One /api/instance request per page, shared with instance-brand.js and
+    // the dashboard (window.__forkmeshInstanceInfo).
+    let shared = window.__forkmeshInstanceInfo;
+    if (!shared || typeof shared.then !== "function") {
+      shared = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+      window.__forkmeshInstanceInfo = shared;
+    }
+    shared
       .then((data) => {
         const plugins = data && Array.isArray(data.plugins) ? data.plugins : [];
         instancePlugin = plugins.some((plugin) => plugin && plugin.id === "genie" && plugin.enabled) ? "on" : "off";

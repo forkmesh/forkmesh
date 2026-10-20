@@ -22,7 +22,8 @@
           const parts = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
           const shortName = document.querySelector('meta[name="forkmesh-repo-short"]')?.content || "";
           const shortOwner = document.querySelector('meta[name="forkmesh-repo-owner"]')?.content || "";
-          if (shortName && shortOwner && parts.length && parts[0].toLowerCase() === shortName.toLowerCase()) {
+          const shortAddress = Boolean(shortName && shortOwner && parts.length && parts[0].toLowerCase() === shortName.toLowerCase());
+          if (shortAddress) {
             const routed = parts.length < 2 || ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "agents", "settings", "tree", "blob", "compare"].includes(parts[1]);
             parts.splice(1, 0, ...(routed ? [] : ["tree"]));
             parts.unshift(shortOwner);
@@ -44,6 +45,25 @@
           // app/host/forkmesh_host/repo_views.py), and this origin reads the
           // repository locally.
           if (window.__forkmeshView?.base === early.base) early.local = true;
+          // An organization's repository is listed in the catalog under the
+          // node that hosts it, so the page resolves owner/name through the
+          // organization's list (findOrganizationRepository) — one more round
+          // trip after the catalog, which itself waits for the bundle to run.
+          // Ask for that list now and fetchJson takes it over
+          // (takeEarlyJsonRead): at once for the site's short address (its
+          // owner is the site's organization), otherwise once the catalog
+          // shows it does not hold owner/name itself.
+          const orgPath = `/api/orgs/${encodeURIComponent(owner)}/repos`;
+          const orgRead = () => fetch(orgPath, { credentials: "same-origin", headers: { accept: "application/json" } })
+            .then((r) => (r.ok ? r.json() : null));
+          early.json = {
+            [orgPath]: (shortAddress ? orgRead() : early.catalog.then((catalog) => {
+              const wanted = `${owner}/${name}`.toLowerCase();
+              const listed = (Array.isArray(catalog?.repositories) ? catalog.repositories : [])
+                .some((repo) => `${repo?.owner || ""}/${repo?.name || ""}`.toLowerCase() === wanted);
+              return listed ? null : orgRead();
+            })).catch(() => null),
+          };
           if (kind && !["tree", "blob", "commits"].includes(kind)) return;
           // The host may have rendered the root view into this page already
           // (app/host/forkmesh_host/repo_ssr.py); its tree and README are the
