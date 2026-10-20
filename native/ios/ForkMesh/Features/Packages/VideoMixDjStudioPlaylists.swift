@@ -19,8 +19,20 @@ extension DjStudioModel {
             + crate.tracks.filter { !played.contains($0.id) }.reversed()
     }
 
-    func refreshSmart() {
-        crate.categorize(librarySongs, library: library, now: Date().timeIntervalSince1970)
+    func refreshSmart(now: Bool = false) {
+        smartTask?.cancel()
+        let songs = librarySongs
+        let library = library
+        let time = Date().timeIntervalSince1970
+        guard !now else {
+            crate.categorize(songs, library: library, now: time)
+            return
+        }
+        smartTask = Task { [weak self] in
+            let lists = await Task.detached(priority: .userInitiated) { DjSmart.lists(songs, library: library, now: time) }.value
+            guard !Task.isCancelled, let self, self.crate.smart != lists else { return }
+            self.crate.setSmart(lists)
+        }
     }
 
     func similarSongs(_ side: DjDeckSide) -> [DjSimilarSong] {

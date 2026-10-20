@@ -261,7 +261,11 @@ public struct DjCrate: Codable, Equatable, Sendable {
     public var unshuffled: Set<String> { Set(tracks.filter(\.noShuffle).map(\.id)) }
 
     public mutating func categorize(_ songs: [DjTrack], library: [DjPlayedSong], now: Double) {
-        smart = DjSmart.lists(songs, library: library, now: now)
+        setSmart(DjSmart.lists(songs, library: library, now: now))
+    }
+
+    public mutating func setSmart(_ lists: [DjSmartList]) {
+        smart = lists
         if focus.isSmart, !knows(focus) { setFocus(.everything) }
     }
 
