@@ -8928,9 +8928,9 @@ class GatewayApplication:
             pass
 
     def _schedule_prewarm(self) -> None:
-        with self._prewarm_lock:
+        with self.__dict__.setdefault("_prewarm_lock", threading.Lock()):
             self._prewarm_due = time.monotonic() + PREWARM_AFTER_MERGE_QUIET_SECONDS
-            running = self._prewarm_thread
+            running = getattr(self, "_prewarm_thread", None)
             if running is not None and running.is_alive():
                 return
             self._prewarm_thread = threading.Thread(
