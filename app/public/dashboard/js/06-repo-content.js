@@ -129,15 +129,9 @@
       + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" />';
   }
 
-  // A bare http(s) URL in already-escaped text. It stops at whitespace, at the
-  // parking and hard-break sentinels and at an escaped <, >, " or ' - those
-  // never belong to a URL written in prose.
   const MD_BARE_URL =
     /(^|[^A-Za-z0-9/])(https?:\/\/(?:(?!&(?:lt|gt|quot|#039);)[^\s\u0000\u0001<>"'])+)/gi;
 
-  // GFM's extended-autolink trimming: trailing sentence punctuation and an
-  // entity reference ("&amp;") are not part of the URL, and a closing
-  // parenthesis is only kept while it balances one opened inside the URL.
   function mdTrimAutolink(url) {
     let end = url;
     for (;;) {
@@ -172,10 +166,6 @@
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
         park(mdLinkHtml(renderMarkdownInline(label, context, false, parked), url, context)))
       .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
-      // Autolinks run once links, images and code spans are parked, so a URL
-      // that is already a link target or sits in code is not linked twice.
-      // Inside a link label (linkRecordReferences false) they stay text, as an
-      // anchor cannot nest in another.
       .replace(/&lt;(https?:\/\/(?:(?!&[lg]t;)[^\s\u0000\u0001<>"'])+)&gt;/gi, (whole, url) =>
         (linkRecordReferences ? park(mdLinkHtml(url, url, context)) : whole))
       .replace(MD_BARE_URL, (whole, prefix, candidate) => {

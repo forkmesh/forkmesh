@@ -405,7 +405,6 @@ def test_bare_urls_and_angle_autolinks_render_as_links():
         "https://docs.example.com/a_b_c",
         "https://example.com/q?a=1&amp;b=2",
     ]
-    # Same treatment as an explicit [label](url) link.
     assert html.count('class="dashboard-accent-link underline') == 3
     assert html.count('target="_blank" rel="noopener noreferrer nofollow ugc"') == 3
     assert ">https://example.com/acme/widgets/-/issues/18</a>.</p>" in html
