@@ -71,7 +71,7 @@ export function normalizeWorldMesh(payload) {
       api,
       logo: LOGO_RE.test(String(item?.logo || "")) ? String(item.logo) : "",
       slot,
-      shape: item?.shape === "hex" && slot >= 0 && slot < 6 ? "hex" : "flower",
+      shape: item?.shape === "hex" && slot >= 0 && slot < 5 ? "hex" : "flower",
     });
     if (worlds.length > WORLD_MESH_SLOT_COUNT) break;
   }

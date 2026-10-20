@@ -48,6 +48,7 @@ import {
   roundedHexagonContains,
   setWorldMeshFlowers,
   worldMeshOwnerAt,
+  worldMeshReplacedPetals,
 } from "../movement.js";
 import { safeRepositoryPath } from "../repositories.js";
 import * as resources from "../resources.js";
@@ -581,6 +582,7 @@ export function functions({
       if (hex) layer.add(hex);
     });
     setWorldMeshFlowers(placed);
+    ctx.desertPlots?.userData?.replacePetals?.(worldMeshReplacedPetals());
     ctx.world.add(layer);
     ctx.world.userData.instanceHexLayer = layer;
     ctx.world.userData.instanceHexKey = key;

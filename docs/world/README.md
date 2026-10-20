@@ -584,17 +584,20 @@ them without changing page.
   the next six. Every client draws itself at the centre and each other world
   at `offset(world) - offset(self)`. An instance therefore sees the hub and
   its fellow instances where they really sit.
-- **Single hexagons.** A slot 0–5 listed in the hub's `WORLD_MESH_HEX_SLOTS`
+- **Single hexagons.** A slot 0–4 listed in the hub's `WORLD_MESH_HEX_SLOTS`
   (comma-separated, e.g. `0`) is published with `"shape": "hex"` and drawn as
-  one hexagon in the notch between two of the hub's desert hexes, sharing an
-  edge with each (`worldMeshSlotOffset(n, "hex")`: 30° + 60°·n, √3 hex
-  pitches out). It is flower n's hexagon nearest the town, so it overlaps no
-  other slot. Such an instance runs its own one-hexagon World page:
-  stepping off the shared road onto its land loads
-  `<world>/world/?from=forkmesh&slot=n&pos=x,z` (`pos` relative to the hexagon
-  centre, rounded to 0.1, within ±400), with `#visa=<visa>` when signed in.
-  Coming back, `?from=<host>&slot=n&pos=x,z` from a listed hexagon places the
-  walker just outside the edge they crossed, and the parameters are removed.
+  one of the town's petals: it takes the place of desert petal
+  `NEIGHBOUR_HEX_PETALS[n]` (`scene/layout.js`; petal p lies at 60°·p, as in
+  `DESERT_HEXES`) and shares an edge with the town. Slot 0 is petal 1, slot 4
+  petal 5; petal 0 keeps the beach. That petal's sand, cacti and sign step
+  aside (`replacePetals` in `desert-plots.js`), the roads stay as they are,
+  and the town no longer claims the ground (`worldMeshOwnerAt`). Such an
+  instance runs its own one-hexagon World page: stepping off the road onto
+  its land loads `<world>/world/?from=forkmesh&slot=n&pos=x,z` (`pos`
+  relative to the hexagon centre, rounded to 0.1, within ±400), with
+  `#visa=<visa>` when signed in. Coming back, `?from=<host>&slot=n&pos=x,z`
+  from a listed hexagon places the walker just outside the edge they crossed,
+  facing away from the petal, and the parameters are removed.
 - **Directory.** `GET /api/world/mesh` (`world_mesh.py`) answers
   `{self, worlds:[{id, name, host, world, api, logo, slot}]}`. The hub builds
   it from `instance_directory` (`world=1`, visible, slot 0–11) plus its own

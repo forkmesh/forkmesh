@@ -17,7 +17,7 @@ NODE = shutil.which("node")
 HUB_ENV = SimpleNamespace(
     WORLD_ORIGIN="https://world.forkmesh.com",
     APP_ORIGIN="https://app.forkmesh.com",
-    WORLD_MESH_HEX_SLOTS="0, 4,7,x",
+    WORLD_MESH_HEX_SLOTS="0, 4,5,x",
 )
 
 SCRIPT = r"""
@@ -25,6 +25,7 @@ import * as l from "./scene/layout.js";
 import * as m from "./world-mesh.js";
 import {
   desertWalkSurfaceContains, setWorldMeshFlowers, worldMeshOwnerAt,
+  worldMeshReplacedPetals,
 } from "./scene/movement.js";
 
 const pitch = l.CONTINUOUS_CITY_RADIUS * 2 + l.WORLD_ROAD_WIDTH;
@@ -34,31 +35,27 @@ const absolute = (offset) => ({
   z: l.CONTINUOUS_CITY_CENTER_Z + offset.z,
 });
 const out = {};
-out.hexes = Array.from({ length: 6 }, (_, slot) => {
-  const hex = l.worldMeshSlotOffset(slot, "hex");
-  const angle = Math.PI / 6 + (slot * Math.PI) / 3;
-  const flower = l.worldMeshSlotOffset(slot);
+out.hexes = Array.from({ length: 5 }, (_, slot) => {
+  const hex = absolute(l.worldMeshSlotOffset(slot, "hex"));
+  const petal = l.neighbourHexPetal(slot);
   const touching = l.WORLD_HEX_TILES.filter((tile) =>
-    Math.abs(near(tile, absolute(hex)) - pitch) < 1e-6).length;
+    Math.abs(near(tile, hex) - pitch) < 1e-6).length;
   const overlaps = Array.from({ length: 12 }, (_, other) => other)
-    .filter((other) => other !== slot)
     .some((other) => {
-      const center = l.worldMeshSlotOffset(other);
+      const center = absolute(l.worldMeshSlotOffset(other));
       return l.WORLD_MESH_FLOWER_HEXES.some((tile) =>
         near({ x: center.x + tile.x, z: center.z + tile.z }, hex) < pitch - 1e-6);
     });
   return {
-    reach: Math.abs(near(hex, { x: 0, z: 0 }) - pitch * Math.sqrt(3)) < 1e-6,
-    angle: Math.abs(Math.atan2(hex.z, hex.x) - Math.atan2(Math.sin(angle), Math.cos(angle))) < 1e-9,
-    insideOwnFlower: l.WORLD_MESH_FLOWER_HEXES.some((tile) =>
-      near({ x: flower.x + tile.x, z: flower.z + tile.z }, hex) < 1e-6),
+    petal,
+    onPetal: near(l.DESERT_HEXES[petal], hex) < 1e-6,
+    sharesTownEdge: Math.abs(near(l.WORLD_HEX_TILES[0], hex) - pitch) < 1e-6,
     touching,
     overlaps,
-    town: near(l.WORLD_HEX_TILES[0], absolute(hex)) > pitch,
   };
 });
 out.shapes = [
-  l.worldMeshShape("hex", 0), l.worldMeshShape("hex", 5), l.worldMeshShape("hex", 6),
+  l.worldMeshShape("hex", 0), l.worldMeshShape("hex", 4), l.worldMeshShape("hex", 5),
   l.worldMeshShape("flower", 0), l.worldMeshShape("hex", -1),
 ];
 out.flowerUnchanged = JSON.stringify(l.worldMeshSlotOffset(7)) ===
@@ -73,25 +70,26 @@ out.normalized = m.normalizeWorldMesh({
   worlds: [
     { id: "forkmesh", world: "https://world.example.com", api: "https://app.example.com", slot: -1 },
     { id: "a".repeat(32), world: "https://code.example.org", api: "https://code.example.org", slot: 0, shape: "hex" },
-    { id: "b".repeat(32), world: "https://far.example.org", api: "https://far.example.org", slot: 8, shape: "hex" },
+    { id: "b".repeat(32), world: "https://far.example.org", api: "https://far.example.org", slot: 5, shape: "hex" },
   ],
 }).worlds.map((world) => world.shape);
 
 const hex = absolute(l.worldMeshSlotOffset(0, "hex"));
+const town = l.WORLD_HEX_TILES[0];
 setWorldMeshFlowers([{ id: "a".repeat(32), x: hex.x, z: hex.z, shape: "hex", slot: 0 }]);
-const flowerZero = absolute(l.worldMeshSlotOffset(0));
-const desert = l.WORLD_HEX_TILES[1];
-const toward = { x: (desert.x - hex.x) / pitch, z: (desert.z - hex.z) / pitch };
+const toward = { x: (town.x - hex.x) / pitch, z: (town.z - hex.z) / pitch };
 const road = (step) => ({ x: hex.x + toward.x * (pitch / 2 + step), z: hex.z + toward.z * (pitch / 2 + step) });
 out.walk = {
   land: desertWalkSurfaceContains(hex.x, hex.z),
   owner: worldMeshOwnerAt(hex.x, hex.z)?.slot,
-  noDesert: desertWalkSurfaceContains(flowerZero.x, flowerZero.z),
-  sharedRoad: worldMeshOwnerAt(road(1).x, road(1).z) === null,
+  replaced: worldMeshReplacedPetals(),
+  townSide: worldMeshOwnerAt(road(1).x, road(1).z) === null,
   hexRoad: worldMeshOwnerAt(road(-3).x, road(-3).z)?.slot,
   roadWalkable: desertWalkSurfaceContains(road(-3).x, road(-3).z),
+  otherPetal: worldMeshOwnerAt(l.DESERT_HEXES[2].x, l.DESERT_HEXES[2].z),
 };
 setWorldMeshFlowers([]);
+out.walk.cleared = worldMeshReplacedPetals();
 
 const visa = "eyJ2IjoxfQ." + "a".repeat(64);
 out.urls = [
@@ -135,17 +133,20 @@ def result():
     return json.loads(run.stdout)
 
 
-def test_a_single_hexagon_sits_in_the_notch_beside_the_town(result):
+def test_a_single_hexagon_is_a_petal_sharing_an_edge_with_the_town(result):
+    assert [item["petal"] for item in result["hexes"]] == [1, 2, 3, 4, 5]
     for slot, item in enumerate(result["hexes"]):
-        assert item == {"reach": True, "angle": True, "insideOwnFlower": True,
-                        "touching": 2, "overlaps": False, "town": True}, slot
+        assert item["onPetal"] and item["sharesTownEdge"], slot
+        # The town and the two neighbouring desert petals.
+        assert item["touching"] == 3, slot
+        assert item["overlaps"] is False, slot
     assert result["shapes"] == ["hex", "hex", "flower", "flower", "flower"]
     assert result["flowerUnchanged"] is True
     assert (result["hexCount"], result["flowerCount"]) == (1, 7)
     assert result["sizes"] is True
 
 
-def test_only_slots_zero_to_five_can_be_single_hexagons(result):
+def test_only_slots_zero_to_four_can_be_single_hexagons(result):
     assert result["normalized"] == ["flower", "hex", "flower"]
     assert world_mesh.hex_slots(HUB_ENV) == frozenset({0, 4})
     worlds = world_mesh.build_directory(
@@ -165,10 +166,11 @@ def test_only_slots_zero_to_five_can_be_single_hexagons(result):
     assert world_mesh.hex_slots(SimpleNamespace()) == frozenset()
 
 
-def test_the_hexagon_is_walkable_only_on_its_own_land(result):
-    assert result["walk"] == {"land": True, "owner": 0, "noDesert": False,
-                              "sharedRoad": True, "hexRoad": 0,
-                              "roadWalkable": True}
+def test_the_petal_belongs_to_the_neighbour_and_the_town_keeps_its_road(result):
+    assert result["walk"] == {"land": True, "owner": 0, "replaced": [1],
+                              "townSide": True, "hexRoad": 0,
+                              "roadWalkable": True, "otherPetal": None,
+                              "cleared": []}
 
 
 def test_walking_on_carries_origin_slot_position_and_visa(result):
@@ -214,3 +216,14 @@ def test_the_world_draws_and_crosses_single_hexagons():
 def test_the_mesh_layer_is_not_redrawn_from_the_legacy_portal_list():
     assert APP.count("this.world?.updateInstanceHexes?.(this.instanceHexes);") == 1
     assert "if (!arrival || !this.world?.setSpawn || !this.worldMesh?.self) return;" in APP
+
+
+def test_the_replaced_desert_petal_steps_aside():
+    plots = (WORLD / "scene" / "desert-plots.js").read_text(encoding="utf-8")
+    network = (WORLD / "scene" / "runtime" / "network.js").read_text(
+        encoding="utf-8")
+    assert "group.userData.replacePetals = (list = []) => {" in plots
+    assert "sand.geometry = sandGeometry(petals);" in plots
+    assert "sign.visible = !petals.has(petal);" in plots
+    assert ("ctx.desertPlots?.userData?.replacePetals?.("
+            "worldMeshReplacedPetals());") in network
