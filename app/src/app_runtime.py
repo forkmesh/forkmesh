@@ -2426,7 +2426,24 @@ class Default:
                 )
             query = parse_qs(url.query, keep_blank_values=False)
             mesh_visitor = None
-            if not world_websocket_origin_allowed(request, self.env):
+            arrival = False
+            if world_websocket_origin_allowed(request, self.env):
+                # A walker who crossed in from a neighbouring World's page
+                # carries that World's visa instead of a local ticket.
+                visa_values = query.get("visa") or []
+                if len(visa_values) == 1 and not query.get("ticket"):
+                    arrival = True
+                    mesh_visitor = await world_mesh_visitor(
+                        self.env, request, visa_values[0], arrival=True)
+                    if not mesh_visitor or mesh_visitor.get("error") \
+                            or not mesh_visitor.get("claim"):
+                        return json_response(
+                            {"error": "invalid_world_session"},
+                            status=401,
+                            cache_control=(
+                                "no-store, max-age=0, must-revalidate"),
+                        )
+            else:
                 visa_values = query.get("visa") or []
                 mesh_visitor = await world_mesh_visitor(
                     self.env, request,
@@ -2510,7 +2527,7 @@ class Default:
                         await world_durable_object_request(
                             request, trusted_claim, moderation_tokens,
                             mesh_home=(mesh_visitor or {}).get("home", ""),
-                            watch=bool(mesh_visitor) and (
+                            watch=bool(mesh_visitor) and not arrival and (
                                 query.get("watch") or [""])[0] == "1"))
                 except Exception as error:
                     last_error = error
