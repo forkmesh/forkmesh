@@ -3458,8 +3458,6 @@ def world_federated_path(path):
 
 
 async def world_federation_cors(env, request, path):
-    """CORS for a neighbour World's page on the federated World endpoints:
-    its exact origin, no credentials, bearer tokens allowed."""
     if not world_mesh.federated_path(path):
         return {}
     try:
@@ -3477,7 +3475,6 @@ async def world_federation_cors(env, request, path):
 
 
 def world_visitor_claim(env, token, home_host):
-    """The presence claim a visitor token gives a walker from home_host."""
     verified = world_mesh.visitor_verify(
         _account_session_secret(env), token, int(Date.now()),
         world_mesh.own_world_origin(env))
@@ -3493,7 +3490,6 @@ def world_visitor_claim(env, token, home_host):
 
 
 def world_bearer_visitor(env, request):
-    """The visitor a request's bearer visitor token names, or None."""
     try:
         header = request.headers.get("authorization") or ""
     except Exception:
@@ -3507,7 +3503,6 @@ def world_bearer_visitor(env, request):
 
 
 async def world_visa_session_handler(env, request):
-    """Exchange a neighbour's one-minute visa for a visitor token here."""
     no_store = "no-store, max-age=0, must-revalidate"
     if method_name(request) != "POST":
         return json_response(
@@ -3528,7 +3523,6 @@ async def world_visa_session_handler(env, request):
         origin = world_mesh.clean_origin(request.headers.get("origin") or "")
     except Exception:
         origin = ""
-    # A browser call must come from the visitor's own World page.
     if origin and world_mesh.origin_host(origin) != visitor["home"]:
         return json_response(
             {"ok": False, "error": "origin_not_allowed"}, status=403,

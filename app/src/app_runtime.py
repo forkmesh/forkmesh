@@ -278,6 +278,11 @@ class Default:
 
     @staticmethod
     def _with_headers(response, values):
+        values = dict(values)
+        if "vary" in values:
+            values["vary"] = _merge_vary(", ".join(
+                str(value) for name, value in response.headers.items()
+                if str(name).lower() == "vary"), values["vary"])
         current = [
             (str(name).lower(), value)
             for name, value in response.headers.items()
@@ -1053,8 +1058,6 @@ class Default:
                 if denied is not None:
                     return denied
 
-            # A neighbour World's page may call the federated World
-            # endpoints: its exact origin, no credentials, bearer tokens.
             cross_origin = _request_origin(request)
             fed_cors = (
                 await world_federation_cors(self.env, request, url.path)
@@ -2520,9 +2523,6 @@ class Default:
                     self.env, request,
                     "" if visitor_values
                     else visa_values[0] if len(visa_values) == 1 else "")
-                # A visitor token minted here (POST /api/world/visa/session)
-                # stands in for the one-minute visa, so reconnects keep the
-                # walker's name for the token's quarter of an hour.
                 if mesh_visitor and len(visitor_values) == 1:
                     claim = world_visitor_claim(
                         self.env, visitor_values[0], mesh_visitor["home"])

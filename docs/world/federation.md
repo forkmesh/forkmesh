@@ -42,6 +42,22 @@ the owner, and as `?visitor=fmwv1...` on the owner's presence socket
 (`wss://<api>/api/world/ws`), where it replaces the one-minute visa, so
 reconnects keep the walker's name.
 
+Limits of the design, accepted on purpose:
+
+- The page sends a visa once, but the owner does not record used visas: a
+  visa can be exchanged again during its minute. Each exchange is checked
+  with home, so it only ever yields a token for the walker the visa names.
+- A token cannot be revoked. A walker who signs out at home keeps visitor
+  rights at the neighbour until the token's quarter of an hour runs out.
+- On the socket the token travels in the URL (`?visitor=`), like `?visa=`
+  and `?ticket=` before it.
+- Every well-formed visa that reaches the exchange makes the owner call
+  home's `visa/verify`, with no rate limit of its own.
+
+A neighbour's page calling a federated endpoint gets `Vary: Origin` merged
+into the response's existing `Vary` (`_with_headers` in
+`app/src/app_runtime.py`), so caching keys such as `Accept-Encoding` are kept.
+
 ## CORS
 
 The owner answers CORS only for a neighbour's World page origin (an entry's

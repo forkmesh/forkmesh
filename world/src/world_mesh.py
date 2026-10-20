@@ -422,13 +422,6 @@ def visa_for(name, home, destination, nonce, now):
     }
 
 
-# --- visitor tokens -----------------------------------------------------------
-# A visa proves "this person is signed in at home" for one minute. A walker who
-# stays on a neighbour's hexagons exchanges it once at that neighbour
-# (POST /api/world/visa/session) for a visitor token: signed by the
-# neighbour, bound to it (aud), scoped to the World, and valid for a quarter
-# of an hour. It is sent as a bearer token or as ?visitor= on the presence
-# socket; it never opens the visitor's home account and no cookie crosses.
 VISITOR_PREFIX = "fmwv1."
 VISITOR_LABEL = b"forkmesh-world-visitor-v1\n"
 VISITOR_TTL_MS = 15 * 60 * 1000
@@ -499,9 +492,6 @@ def bearer_visitor_token(header):
     return token if token.startswith(VISITOR_PREFIX) else ""
 
 
-# World endpoints a neighbour World's page may call cross-origin, with no
-# cookies: reads of public World data, the visa exchange, and the office's
-# visitor entry. Anything else keeps the same-origin rules.
 FEDERATED_PATHS = frozenset({
     "/api/world/visa/session",
     "/api/world/mesh",
@@ -522,7 +512,6 @@ def federated_path(path):
 
 
 def neighbour_world_origin(env, worlds, origin):
-    """The neighbour whose World page this Origin is, or None."""
     origin = clean_origin(origin)
     if not origin:
         return None
