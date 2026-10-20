@@ -265,7 +265,13 @@ QWidget *NexusFeature::buildScan()
     m_target->setObjectName(QStringLiteral("nexusTarget"));
     m_target->setPlaceholderText(QStringLiteral("Host, IP address, range (192.168.1.10-40) or CIDR (192.168.1.0/24)"));
     m_target->setAccessibleName(QStringLiteral("Scan target"));
-    form->addRow(QStringLiteral("Target"), m_target);
+    auto *targetRow = new QHBoxLayout;
+    targetRow->addWidget(m_target, 1);
+    m_detectNetwork = button(QStringLiteral("This network"), false);
+    m_detectNetwork->setObjectName(QStringLiteral("nexusDetectNetwork"));
+    m_detectNetwork->setToolTip(QStringLiteral("Fill in the range of the network this computer is on, worked out from its IP address"));
+    targetRow->addWidget(m_detectNetwork);
+    form->addRow(QStringLiteral("Target"), targetRow);
     auto *portRow = new QHBoxLayout;
     m_ports = new QLineEdit(describePorts(presetPorts(PortPreset::Quick)));
     m_ports->setObjectName(QStringLiteral("nexusPorts"));
@@ -308,6 +314,15 @@ QWidget *NexusFeature::buildScan()
     m_results->sortByColumn(1, Qt::AscendingOrder);
     layout->addWidget(m_results, 1);
 
+    connect(m_detectNetwork, &QPushButton::clicked, this, [this] {
+        const QString network = localNetwork();
+        if (network.isEmpty()) {
+            m_scanStatus->setText(QStringLiteral("No local network found. Connect to Wi-Fi or Ethernet, or type a range."));
+            return;
+        }
+        m_target->setText(network);
+        m_target->setFocus();
+    });
     connect(m_presets, &QComboBox::activated, this, [this](int index) {
         const int preset = m_presets->itemData(index).toInt();
         if (preset >= 0)
@@ -466,6 +481,8 @@ void NexusFeature::showSection(Section section)
     if (QAbstractButton *sectionButton = m_sections->button(section))
         sectionButton->setChecked(true);
     m_stack->setCurrentIndex(section);
+    if (section == Scan && m_target->text().trimmed().isEmpty())
+        m_target->setText(localNetwork());
 }
 
 void NexusFeature::refresh()
