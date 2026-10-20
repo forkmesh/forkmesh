@@ -61,16 +61,25 @@ near, and on its land a visit socket that moves the walker's presence to the
 owner's relay (`safe.space = visiting` at home). With a visitor token the
 visit socket is `?visitor=`; both sides see each other live.
 
-## Rendering and routing *(planned)*
+## Rendering and routing
 
-- **Lazy load.** A neighbour's data is fetched only when the walker comes
-  within its watch reach, and cached per owner and path.
-- **Routing.** The World client keeps one data context per owner:
-  `{api, token}`. Each building's runtime (office, boards, districts) is
-  handed the `fetchJSON` of the owner of the hexagon it stands on, so its
-  reads and actions go to that owner with the visitor token.
+- **Client.** `WorldFederation` (`world/public/world/world-federation.js`)
+  keeps one context per owner: its API origin and visitor token. Nothing is
+  fetched until something on that owner's ground needs it; the token is
+  shared by concurrent callers, renewed a minute before it expires, and
+  dropped to a plain visa only for an owner that answers 404 to the
+  exchange. Calls carry `Authorization: Bearer`, `credentials: "omit"` and
+  `mode: "cors"`, and only paths in `FEDERATED_PATHS` (the same list as the
+  server's) are ever sent. Reads are cached per owner and path for `maxAge`.
+- **Routing.** `fetchJSONAt(x, z, path)` sends a call for something standing
+  at a point to that point's owner (`worldMeshOwnerAt`), or to this World
+  when the ground is its own. A building's runtime is given the `fetchJSON`
+  of the owner of the hexagon it stands on. `visitorSession(world)` is the
+  identity shown there (`name@home`).
+- **Visits.** The visit socket asks the federation for its credential:
+  `?visitor=<token>`, or `?visa=` for an owner without the exchange.
 - **Owner-only actions** (administration, an owner's private rooms) stay
-  read-only for visitors, with a note, instead of failing.
+  read-only for visitors, with a note, instead of failing. *(planned)*
 
 ## Rollout
 

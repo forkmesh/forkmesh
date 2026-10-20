@@ -54,6 +54,7 @@ import {
 import { buildRepositoryGraphEntities } from "./world-repository-graph.js";
 import { officeFloorsForTeam } from "./world-office-tower.js";
 import { createWorldSocketRecoveryTimers } from "./world-socket-recovery.js";
+import { WorldFederation } from "./world-federation.js";
 import {
   WORLD_MESH_OUTDOOR_SPACES,
   WORLD_MESH_SPACE,
@@ -6463,6 +6464,7 @@ class ForkMeshWorld extends HTMLElement {
     this.federatedInstances = [];
     this.worldMesh = { self: null, worlds: [] };
     this.meshLinks = null;
+    this.federation = null;
     this.meshVisitId = "";
     this.arrivalVisa = takeArrivalVisa();
     this.instanceHexes = [];
@@ -11379,7 +11381,7 @@ class ForkMeshWorld extends HTMLElement {
         },
         onVisitChanged: (world, previous) =>
           this.handleWorldMeshVisit(world, previous),
-        requestVisa: (world) => this.requestWorldVisa(world),
+        requestVisa: (world) => this.worldFederation().credential(world),
         presenceFrame: () => this.presencePayload(),
         moveIntervalMs: MOVEMENT_SEND_INTERVAL_MS,
       });
@@ -11416,6 +11418,30 @@ class ForkMeshWorld extends HTMLElement {
     }
     this.sendPresenceNow({ type: "presence" });
     this.schedulePeerRender();
+  }
+
+  // One federation client per page: the per-owner visitor tokens and the
+  // World calls routed to the owner of the ground they are for.
+  worldFederation() {
+    if (!this.federation) {
+      this.federation = new WorldFederation({
+        requestVisa: (world) => this.requestWorldVisa(world),
+      });
+    }
+    return this.federation;
+  }
+
+  // A World call for something standing at (x, z): the owner's API with
+  // this page's visitor token when that ground is a neighbour's, else this
+  // World's own API.
+  fetchJSONAt(x, z, path, options = {}) {
+    const owner = this.world?.worldMeshOwner?.(x, z);
+    const world = owner
+      ? this.worldMesh?.worlds?.find((entry) => entry.id === owner.id)
+      : null;
+    return world
+      ? this.worldFederation().fetchJSON(world, path, options)
+      : this.fetchJSON(path, options);
   }
 
   async requestWorldVisa(world) {

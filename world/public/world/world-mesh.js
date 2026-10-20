@@ -82,12 +82,13 @@ export function normalizeWorldMesh(payload) {
   return { self, worlds: self ? worlds : [] };
 }
 
-export function worldMeshSocketURL(api, { watch = false, visa = "" } = {}) {
+export function worldMeshSocketURL(api, { watch = false, visa = "", visitor = "" } = {}) {
   const origin = httpsOrigin(api);
   if (!origin) return "";
   const url = new URL("/api/world/ws", origin);
   url.protocol = "wss:";
   if (watch) url.searchParams.set("watch", "1");
+  else if (visitor) url.searchParams.set("visitor", visitor);
   else if (visa) url.searchParams.set("visa", visa);
   return url.href;
 }
@@ -197,16 +198,23 @@ export class WorldMeshLinks {
     link.retryTimer = 0;
     const world = this.neighbors.get(link.id);
     if (!world || this.destroyed) return;
-    let visa = "";
+    // A visit carries the walker's name: a visitor token minted by the
+    // neighbour (federation), or a plain visa where the neighbour has none.
+    let credential = {};
     if (link.mode === "visit") {
       try {
-        visa = String((await this.requestVisa(world)) || "");
+        const answer = await this.requestVisa(world);
+        credential = typeof answer === "string" ? { visa: answer } : answer || {};
       } catch (_) {
-        visa = "";
+        credential = {};
       }
     }
     if (this.destroyed || link.generation !== generation || this.links.get(link.id) !== link) return;
-    const url = worldMeshSocketURL(world.api, { watch: link.mode === "watch", visa });
+    const url = worldMeshSocketURL(world.api, {
+      watch: link.mode === "watch",
+      visa: String(credential.visa || ""),
+      visitor: String(credential.visitor || ""),
+    });
     if (!url) return;
     let socket;
     try {
