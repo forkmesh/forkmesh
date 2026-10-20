@@ -819,6 +819,12 @@ QPushButton#runnerSignInBadge[severity="expiring"] {
 QPushButton#runnerSignInBadge[severity="expiring"]:hover {
     background-color: #bb8009;
 }
+QPushButton#backgroundRunnerBadge {
+    background: transparent; border: 1px solid #30363d; border-radius: 6px;
+    color: #8b949e; font-size: 12px; padding: 0 8px;
+}
+QPushButton#backgroundRunnerBadge:hover { background-color: #161b22; color: #e6edf3; }
+QPushButton#backgroundRunnerBadge[severity="error"] { border-color: #da3633; }
 
 #agentsNavBadge {
     color: #656d76; font-size: 13px; font-weight: 600;
@@ -3066,6 +3072,12 @@ QPushButton#runnerSignInBadge[severity="expiring"] {
 QPushButton#runnerSignInBadge[severity="expiring"]:hover {
     background-color: #7d4e00;
 }
+QPushButton#backgroundRunnerBadge {
+    background: transparent; border: 1px solid #d0d7de; border-radius: 6px;
+    color: #656d76; font-size: 12px; padding: 0 8px;
+}
+QPushButton#backgroundRunnerBadge:hover { background-color: #f6f8fa; color: #1f2328; }
+QPushButton#backgroundRunnerBadge[severity="error"] { border-color: #cf222e; }
 
 #agentsNavBadge {
     color: #8b949e; font-size: 13px; font-weight: 600;

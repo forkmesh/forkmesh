@@ -1,6 +1,8 @@
 
 #include "Tooltips.h"
 #include "GitRefusal.h"
+#include "BackgroundRunnerBadge.h"
+#include "SettingsSectionsView.h"
 #include "HomeBoard.h"
 #include "MainWindow.h"
 #include "MainWindowInternal.h"
@@ -753,6 +755,14 @@ QWidget *MainWindow::buildBreadcrumb()
         [this] { return currentNativePackageId(); }, chrome);
     m_packageActionsButton->hide();
     chromeRow->addWidget(m_packageActionsButton);
+    chromeRow->addWidget(new BackgroundRunnerBadge([this] {
+        showSection(1);
+        if (!m_settingsSections)
+            return;
+        if (auto *box = m_settingsSections->findChild<QWidget *>(
+                QStringLiteral("backgroundSettings")))
+            m_settingsSections->revealWidget(box);
+    }), 0, Qt::AlignVCenter);
     // The view switcher sits just before the window controls, so it stays in
     // the top-right corner whichever view hides the rail or the status strip.
     chromeRow->addWidget(buildViewModeButton());

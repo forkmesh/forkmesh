@@ -15,6 +15,7 @@ final class FakeRouterState: @unchecked Sendable {
     private var fstabMissing = false
     private var ksmbdMissing = false
     private var shareAclFromLogin = 0
+    private var configListHidesKsmbd = false
 
     var logins: Int { lock.withLock { loginCount } }
     var session: String { lock.withLock { sessionValue } }
@@ -25,6 +26,7 @@ final class FakeRouterState: @unchecked Sendable {
     func removeKsmbdConfig() { lock.withLock { ksmbdMissing = true } }
     func grantShareAclOnNextLogin() { lock.withLock { shareAclFromLogin = loginCount + 1 } }
     func setShareAcl(_ granted: Bool) { lock.withLock { shareAclFromLogin = granted ? 0 : Int.max } }
+    func hideKsmbdFromConfigList() { lock.withLock { configListHidesKsmbd = true } }
 
     func last(_ object: String, _ method: String) -> [JSONValue]? {
         lock.withLock { calls.last { $0.count > 2 && $0[1].text == object && $0[2].text == method } }
@@ -72,7 +74,7 @@ final class FakeRouterState: @unchecked Sendable {
             return reply([0])
         }
         if object == "uci" && method == "configs" {
-            let shared = lock.withLock { loginCount >= shareAclFromLogin && !ksmbdMissing }
+            let shared = lock.withLock { loginCount >= shareAclFromLogin && !ksmbdMissing && !configListHidesKsmbd }
             return reply([0, ["configs": .array((["network", "fstab"] + (shared ? ["ksmbd"] : [])).map { .string($0) })]])
         }
         if object == "uci" && method == "get" {
@@ -104,7 +106,9 @@ final class FakeRouterState: @unchecked Sendable {
         if object == "file" && method == "exec" {
             switch args.str("command") {
             case "/bin/false": return reply([0, ["code": 1, "stderr": "nope"]])
-            case "/bin/opkg": return reply([0, ["code": 0, "stdout": "base-files - 1-r1\nluci - git-24\n"]])
+            case "/bin/opkg":
+                let extra = lock.withLock { configListHidesKsmbd } ? "ksmbd-server - 3.5.2-r1\nluci-app-ksmbd - git-24\n" : ""
+                return reply([0, ["code": 0, "stdout": .string("base-files - 1-r1\nluci - git-24\n" + extra)]])
             case "/sbin/block": return reply([0, ["code": 0, "stdout": "config 'global'\n\toption\tanon_mount\t'0'\n"]])
             case "/bin/dmesg": return reply([0, ["code": 0, "stdout": "<6>[    5.1] usb 1-1: new high-speed USB device number 2\n<5>[    6.0] random: crng init done\n"]])
             default: return reply([6])
@@ -433,6 +437,22 @@ final class OpenWrtClientTests: XCTestCase {
         XCTAssertEqual(state.last("file", "write")?[3].int("mode"), 0o600)
         let after = await router.loadSnapshot(now: 0)
         XCTAssertEqual(after.shareConfig, "ksmbd")
+    }
+
+    func testShareConfigMissingFromConfigListIsReadDirectly() async {
+        XCTAssertEqual(OpenWrtModel.shareConfigCandidates(["luci-app-ksmbd"]), ["ksmbd"])
+        XCTAssertEqual(OpenWrtModel.shareConfigCandidates(["samba4-server"]), ["samba4"])
+        XCTAssertEqual(OpenWrtModel.shareConfigCandidates(["luci"]), [])
+
+        let state = FakeRouterState()
+        state.hideKsmbdFromConfigList()
+        let (router, _) = client(state)
+        _ = await router.signIn(user: "root", password: "secret")
+        let snapshot = await router.loadSnapshot(now: 0)
+        XCTAssertFalse(snapshot.configNames.isEmpty)
+        XCTAssertEqual(snapshot.shareConfig, "ksmbd")
+        XCTAssertEqual(snapshot.shares.first?.name, "Media")
+        XCTAssertFalse(OpenWrtModel.needsShareSessionRenewal(snapshot))
     }
 
     func testSnapshotStageAndApply() async {

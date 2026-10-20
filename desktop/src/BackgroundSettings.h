@@ -13,6 +13,9 @@ class BackgroundSettings : public QWidget
 {
 public:
     explicit BackgroundSettings(QWidget *parent = nullptr);
+    ~BackgroundSettings() override;
+
+    static void refreshAll();
 
 private:
     void refresh();

@@ -310,7 +310,7 @@ class OpenWrtClient(private val transport: OpenWrtTransport, base: String) {
         val problems = mutableListOf<String>()
         val board = call("system", "board")
         if (!board.ok) problems += board.error
-        val configNames = call("uci", "configs").data.strings("configs").sorted()
+        var configNames = call("uci", "configs").data.strings("configs").sorted()
         val wanted = BASE_CONFIGS + listOfNotNull(OpenWrtModel.shareConfig(configNames).ifEmpty { null })
         val configs = linkedMapOf<String, JsonMap>()
         val missingConfigs = mutableSetOf<String>()
@@ -332,6 +332,15 @@ class OpenWrtClient(private val transport: OpenWrtTransport, base: String) {
         }
         val blocks = call("luci", "getBlockDevices")
         val packages = listPackages(preferredTool)
+        if (OpenWrtModel.shareConfig(configNames).isEmpty()) {
+            for (config in OpenWrtModel.shareConfigCandidates(packages.second.map { it.name })) {
+                val result = call("uci", "get", mapOf("config" to config))
+                if (!result.ok) continue
+                configs[config] = result.data.obj("values")
+                configNames = (configNames + config).sorted()
+                break
+            }
+        }
         return OpenWrtSnapshot(
             board = board.data,
             info = call("system", "info").data,

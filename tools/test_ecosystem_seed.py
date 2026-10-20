@@ -199,3 +199,15 @@ def test_the_requested_file_imports_cleanly_without_overlap():
         assert raw["slug"] not in elsewhere, raw["slug"]
         assert raw["published"] is True, raw["slug"]
         assert raw["internal"]["sources"], raw["slug"]
+
+
+def test_every_seeded_listing_compares_itself_with_forkmesh():
+    server = _server_side()
+    for name in ("ecosystem_third_parties.json", "ecosystem_hn_launches.json",
+                 "ecosystem_requested.json"):
+        for raw in json.loads((HERE / name).read_text(encoding="utf-8")):
+            rows = raw.get("comparison")
+            assert rows and 3 <= len(rows) <= server.MAX_COMPARISON_ROWS, (
+                raw["slug"])
+            assert len({row["topic"] for row in rows}) == len(rows), (
+                raw["slug"])

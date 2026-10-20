@@ -3171,6 +3171,76 @@ void checkReplayedBacklogRepaintsOnce(MainWindow &window)
     QApplication::processEvents();
 }
 
+QPushButton *transcriptEarlierButton(MainWindow &window)
+{
+    QWidget *container = window.findChild<QWidget *>(
+        QStringLiteral("messageContainer"));
+    if (!container)
+        return nullptr;
+    for (QPushButton *button : container->findChildren<QPushButton *>()) {
+        if (!button->isHidden() &&
+            button->text().startsWith(QStringLiteral("Show earlier messages")))
+            return button;
+    }
+    return nullptr;
+}
+
+void checkLongFeedRendersRecentWindow(MainWindow &window)
+{
+    const QString room = QStringLiteral("#long-feed-window");
+    const QString current = window.testCurrentConversation();
+    const QString restore =
+        current.isEmpty() ? QStringLiteral("#general") : current;
+    window.testShowChatSection();
+    window.testSwitchConversation(room);
+    QApplication::processEvents();
+
+    const int total = 40;
+    const qint64 base = QDateTime::currentMSecsSinceEpoch() - 120'000;
+    const QString body =
+        QString::fromUtf8("\xF0\x9F\x93\xA8 delivered to inbox ").repeated(80);
+    for (int index = 0; index < total; ++index) {
+        window.testDeliverChatMessageAt(
+            room, QStringLiteral("system:mail-log"), QStringLiteral("mail log"),
+            QStringLiteral("mail %1 ").arg(index) + body, base + index * 100);
+    }
+    window.testSwitchConversation(restore);
+    QApplication::processEvents();
+    window.testSwitchConversation(room);
+    QApplication::processEvents();
+
+    const int firstWindow = window.testTranscriptRowCount();
+    check(firstWindow >= 5 && firstWindow < total,
+          QString("opening a feed of long messages renders only its newest "
+                  "rows (rows = %1 of %2)")
+              .arg(firstWindow)
+              .arg(total));
+    const QStringList order = window.testTranscriptRowOrder();
+    check(!order.isEmpty() &&
+              order.constLast().startsWith(
+                  QStringLiteral("mail %1 ").arg(total - 1)),
+          QStringLiteral("the rendered window ends with the newest message"));
+    QPushButton *earlier = transcriptEarlierButton(window);
+    check(earlier != nullptr,
+          QStringLiteral("a windowed transcript offers Show earlier messages"));
+    if (earlier) {
+        earlier->click();
+        QApplication::processEvents();
+        check(window.testTranscriptRowCount() > firstWindow,
+              QString("Show earlier messages renders more rows (rows = %1, "
+                      "was %2)")
+                  .arg(window.testTranscriptRowCount())
+                  .arg(firstWindow));
+    }
+
+    window.testSwitchConversation(restore);
+    QApplication::processEvents();
+    window.testForgetConversation(room);
+    window.testClearPageNotices();
+    window.testShowLogSection();
+    QApplication::processEvents();
+}
+
 // A chat message arriving is an unsolicited ping: it is filed on the Pings
 // page and raises no card and no inline notice on the page being read.
 void checkChatPingRaisesNoCard(MainWindow &window)
@@ -14959,6 +15029,7 @@ else:
         checkChatUnreadSurface(window);
         checkChatListPreviewsAndDmThreads(window);
         checkReplayedBacklogRepaintsOnce(window);
+        checkLongFeedRendersRecentWindow(window);
         stopChildProcesses(window);
         return failures == 0 ? 0 : 1;
     }
@@ -22299,6 +22370,7 @@ else:
     checkChatPingRaisesNoCard(window);
     checkPrivateChatNotFiledAsPing(window);
     checkReplayedBacklogRepaintsOnce(window);
+    checkLongFeedRendersRecentWindow(window);
     checkCloudLogMonitorAlert(window);
     checkCloudLogMerged(window);
     checkLogCategoryMuteAndDelete(window);

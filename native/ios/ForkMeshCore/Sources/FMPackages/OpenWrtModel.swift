@@ -1059,6 +1059,13 @@ public enum OpenWrtModel {
         return ""
     }
 
+    public static func shareConfigCandidates(_ installed: [String]) -> [String] {
+        var candidates: [String] = []
+        if installed.contains(where: { ["ksmbd-server", "luci-app-ksmbd"].contains($0) }) { candidates.append("ksmbd") }
+        if installed.contains(where: { ["samba4-server", "luci-app-samba4"].contains($0) }) { candidates.append("samba4") }
+        return candidates
+    }
+
     public static func needsShareSessionRenewal(_ snapshot: OpenWrtSnapshot) -> Bool {
         snapshot.shareConfig.isEmpty && snapshot.pendingCount == 0
             && snapshot.packages.contains { ["luci-app-ksmbd", "luci-app-samba4"].contains($0.name) }

@@ -969,6 +969,16 @@ QString shareConfig(const QStringList &configs)
     return {};
 }
 
+QStringList shareConfigCandidates(const QStringList &installed)
+{
+    QStringList candidates;
+    if (installed.contains(QStringLiteral("ksmbd-server")) || installed.contains(QStringLiteral("luci-app-ksmbd")))
+        candidates << QStringLiteral("ksmbd");
+    if (installed.contains(QStringLiteral("samba4-server")) || installed.contains(QStringLiteral("luci-app-samba4")))
+        candidates << QStringLiteral("samba4");
+    return candidates;
+}
+
 QString shareSectionType(const QString &config)
 {
     if (config == QStringLiteral("ksmbd"))
