@@ -86,6 +86,28 @@ A committed `.forkmesh/info.json` still wins for every field it sets. The web
 page looks for a folder About when the folder contains a `.forkmesh` folder,
 `logo.svg` or `logo.png`, so a project folder needs one of them.
 
+## Contributor roster
+
+The repository page's Contributors section counts git author names, so bots
+are left out but one person with several commit names still counts more than
+once, and there are no pictures. To show your own list, commit
+`.forkmesh/contributors/contributors.json` at the repository root:
+
+```json
+{
+  "count": 2,
+  "contributors": [
+    {"slug": "alice", "name": "Alice", "commits": 120, "profile": "https://example.com/@alice"},
+    {"slug": "bob", "name": "Bob", "commits": 40}
+  ]
+}
+```
+
+and a square picture for each person at `.forkmesh/contributors/<slug>.png`.
+The page shows `count`, the eight people with the most `commits` (name and
+commit count on hover, a link to `profile` when it is an `https://` address,
+initials when there is no picture), and a "+N" link to the file.
+
 ## What stays the same
 
 Folders without an About file (and not in a project table) look exactly as
