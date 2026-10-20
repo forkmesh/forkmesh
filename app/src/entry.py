@@ -48446,10 +48446,12 @@ GIT_ERROR_MESSAGES = {
     "push_unavailable": "ForkMesh could not reach the node that accepts "
                         "pushes for this repository. Try again in a minute.",
     "push_unauthorized": "Pushing over HTTPS needs your ForkMesh account "
-                         "name and the repository's push credential.",
+                         "name or email and your password, or the "
+                         "repository's push credential.",
     "authentication_required": "This repository is private. Sign in with "
-                               "your ForkMesh account name and the "
-                               "repository's credential.",
+                               "your ForkMesh account name or email and "
+                               "your password, or the repository's "
+                               "credential.",
     "method_not_allowed": "This Git address does not accept that request.",
 }
 GIT_ERROR_KEPT_HEADERS = (
@@ -52253,7 +52255,8 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             alias_owner=alias_owner)
     else:
         account, push_prefix = await verify_hosted_push_access(
-            env, owner, repo, authorization, method, alias=alias_owner)
+            env, owner, repo, authorization, method, alias=alias_owner,
+            request=request)
     if not account:
         return _git_push_basic_challenge()
     core_held = str(owner or "").strip().lower() in _core_push_nodes(env)

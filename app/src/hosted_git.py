@@ -58,6 +58,7 @@ HOSTED_PUSH_SCHEME = "fmp1"
 # without a trip back to the browser, short enough that a credential pasted
 # into a shell history or a .git/config does not outlive the work.
 HOSTED_PUSH_TTL_MS = 7 * 24 * 60 * 60 * 1000
+GIT_PASSWORD_AUTH_SETTING = "GIT_PASSWORD_AUTH"
 HOSTED_PUSH_PASSWORD_RE = re.compile(
     r"^fmp1\.([A-Za-z0-9_-]{24,64})\.([0-9]{10,16})\.([0-9a-f]{64})$")
 # The same character set the create modal validates client-side.
@@ -123,8 +124,8 @@ def _basic_credentials(header):
     if not separator:
         return "", ""
     return (
-        clean_string(username, MAX_NODE_NAME).strip().lower(),
-        clean_string(password, 200).strip(),
+        clean_string(username, 254).strip().lower(),
+        password[:256],
     )
 
 
@@ -135,7 +136,7 @@ def has_hosted_push_credential(header):
     body; this lets it keep doing that without also turning away a plain
     ``git push`` that is about to authenticate.
     """
-    return bool(_basic_credentials(header)[1])
+    return bool(_basic_credentials(header)[1].strip())
 
 
 async def _session_account_matches(env, session_id, account):
@@ -159,8 +160,42 @@ async def _session_account_matches(env, session_id, account):
     return str(row.get("account_bi") or "") == await blind_index(env, account)
 
 
+def git_password_auth_enabled(env):
+    value = str(getattr(env, GIT_PASSWORD_AUTH_SETTING, "") or "").strip()
+    return value.lower() not in ("0", "false", "off", "no")
+
+
+async def _account_name_for_email(env, email):
+    row = await d1_first(
+        env, "SELECT data FROM users WHERE email_bi=?",
+        await blind_index(env, email))
+    rec = await decrypt_row(env, row.get("data")) if row else None
+    if not rec or rec.get("status") != "active":
+        return ""
+    return clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
+
+
+async def _password_git_account(env, identifier, password, request=None):
+    if not git_password_auth_enabled(env) or not identifier or not password:
+        return ""
+    if request is not None:
+        attempt_keys = await _login_attempt_keys(env, request, identifier)
+    else:
+        attempt_keys = [await blind_index(env, "login-local:" + identifier)]
+    _name_bi, rec, error = await _account_password_record(
+        env, {"identifier": identifier, "password": password})
+    if error or not rec:
+        for attempt_key in attempt_keys:
+            await _login_record_fail(env, attempt_key)
+        return ""
+    for attempt_key in attempt_keys:
+        await _login_clear(env, attempt_key)
+    name = clean_string(rec.get("name", ""), MAX_NODE_NAME).lower()
+    return name if valid_node_name(name) else ""
+
+
 async def verify_hosted_push_credential(env, owner, repo, header, method="",
-                                        access="push"):
+                                        access="push", request=None):
     """Return the account authorized to push by a Basic credential, or "".
 
     ``access="read"`` checks read permission instead (a private hosted
@@ -175,12 +210,12 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
     authorized by ``verify_hosted_push_access`` alone.
     """
     account, _prefix = await _verify_hosted_credential(
-        env, owner, repo, header, method, access)
+        env, owner, repo, header, method, access, request=request)
     return account
 
 
 async def verify_hosted_push_access(env, owner, repo, header, method="",
-                                    alias=""):
+                                    alias="", request=None):
     """Authorize a Basic-credential push: ``(account, ref_prefix)``.
 
     ``ref_prefix`` is "" for an owner or organization writer (the ordinary
@@ -190,11 +225,12 @@ async def verify_hosted_push_access(env, owner, repo, header, method="",
     """
     return await _verify_hosted_credential(
         env, owner, repo, header, method, "push", contributor=True,
-        alias=alias)
+        alias=alias, request=request)
 
 
 async def _verify_hosted_credential(env, owner, repo, header, method, access,
-                                    contributor=False, alias=""):
+                                    contributor=False, alias="",
+                                    request=None):
     owner = safe_segment(owner)
     repo = safe_segment(repo)
     account, password = _basic_credentials(header)
@@ -217,27 +253,46 @@ async def _verify_hosted_credential(env, owner, repo, header, method, access,
                 "repository", owner + "/" + repo, "denied", audit_details)
         return "", ""
 
-    if not owner or not repo or not account or not valid_node_name(account):
+    if not owner or not repo or not account:
         return await denied()
-    match = HOSTED_PUSH_PASSWORD_RE.match(password)
+    match = HOSTED_PUSH_PASSWORD_RE.match(password.strip())
     if not match:
-        return await denied()
-    session_id, expires_raw, mac = match.groups()
-    try:
-        expires_at = int(expires_raw)
-    except (TypeError, ValueError):
-        return await denied()
-    expected = hosted_push_mac(
-        env, account, owner, repo, session_id, expires_at)
-    if not hmac.compare_digest(expected, mac):
-        return await denied()
-    if expires_at <= int(Date.now()):
-        return await denied(audit=True)
+        try:
+            await ensure_schema(env)
+            account = await _password_git_account(
+                env, account, password, request)
+        except Exception:
+            account = ""
+        if not account:
+            return await denied()
+        audit_details["credential"] = "password"
+    else:
+        if "@" in account:
+            try:
+                account = await _account_name_for_email(env, account)
+            except Exception:
+                account = ""
+        if not account or not valid_node_name(account):
+            return await denied()
+        session_id, expires_raw, mac = match.groups()
+        try:
+            expires_at = int(expires_raw)
+        except (TypeError, ValueError):
+            return await denied()
+        expected = hosted_push_mac(
+            env, account, owner, repo, session_id, expires_at)
+        if not hmac.compare_digest(expected, mac):
+            return await denied()
+        if expires_at <= int(Date.now()):
+            return await denied(audit=True)
+        try:
+            await ensure_schema(env)
+            if not await _session_account_matches(env, session_id, account):
+                return await denied(audit=True)
+        except Exception:
+            return await denied(audit=True)
     prefix = ""
     try:
-        await ensure_schema(env)
-        if not await _session_account_matches(env, session_id, account):
-            return await denied(audit=True)
         if access == "read":
             allowed = await _hosted_read_allowed(env, owner, repo, account)
         else:
@@ -1625,7 +1680,8 @@ async def hosted_private_read(env, request, owner, repo, operation):
     account = ""
     if has_hosted_push_credential(authorization):
         account = await verify_hosted_push_credential(
-            env, owner, repo, authorization, method, access="read")
+            env, owner, repo, authorization, method, access="read",
+            request=request)
     else:
         try:
             account = await _authed_account_name(env, request, {})
