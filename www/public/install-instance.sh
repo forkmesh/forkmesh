@@ -1079,7 +1079,7 @@ print(encode(seed), encode(public))
     echo "MIRROR_ROUTER_SIGNING_SEED=$seed"
     echo "MIRROR_ROUTER_PUBLIC_KEY=$public_key"
     if [ -r "$APP_ENV" ]; then
-      grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY)=' "$APP_ENV" || true
+      grep -E '^(TURNSTILE_SITE_KEY|TURNSTILE_SECRET_KEY|HOSTED_GIT_CONTRIBUTOR_PUSH)=' "$APP_ENV" || true
     fi
     if [ -r "$APP_ENV" ] && grep -qE '^TURNSTILE_HOSTNAMES=.' "$APP_ENV"; then
       grep -E '^TURNSTILE_HOSTNAMES=' "$APP_ENV"
