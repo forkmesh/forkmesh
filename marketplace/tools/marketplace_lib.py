@@ -485,8 +485,11 @@ def load_manifest(path: Path | str) -> dict:
         if not relative.startswith("preview/"):
             raise MarketplaceError(f"package {package_id} screenshot must be under preview/")
         _manifest_reference(package_root, relative, "screenshot")
-        if not str(raw.get("alt") or "").strip():
+        alt = str(raw.get("alt") or "").strip()
+        if not alt:
             raise MarketplaceError(f"package {package_id} screenshot alt text is required")
+        if len(alt) > 160:
+            raise MarketplaceError(f"package {package_id} screenshot alt text is invalid")
     entrypoints = _object(root.get("entrypoints"), f"package {package_id} entrypoints")
     if not entrypoints or not str(entrypoints.get("settings") or ""):
         raise MarketplaceError(f"package {package_id} needs an entrypoint and settings page")

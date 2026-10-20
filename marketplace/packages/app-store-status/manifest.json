@@ -16,7 +16,7 @@
   "screenshots": [
     {
       "path": "preview/market.webp",
-      "alt": "App Store Status page with a needs-action banner, App Store versions with review state badges, download totals, TestFlight builds, groups, and the latest reviews"
+      "alt": "App Store Status shows needs-action alerts, versions and review badges, downloads, TestFlight builds and groups, plus recent reviews"
     }
   ],
   "license": {
