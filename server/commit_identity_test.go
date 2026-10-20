@@ -33,4 +33,12 @@ func TestCommitIdentityRefusesUnsafeSettings(t *testing.T) {
 	if got := commitIdentityEmail("box"); got != "box@users.noreply.forkmesh.com" {
 		t.Fatalf("email %q", got)
 	}
+	t.Setenv("FORKMESH_COMMIT_NAME", "Acme\x1bCode")
+	t.Setenv("FORKMESH_COMMIT_EMAIL", "a@b\x01.test")
+	if got := commitIdentityName("box"); got != "box" {
+		t.Fatalf("control name %q", got)
+	}
+	if got := commitIdentityEmail("box"); got != "box@users.noreply.forkmesh.com" {
+		t.Fatalf("control email %q", got)
+	}
 }
