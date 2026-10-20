@@ -933,7 +933,8 @@ def _write_settings(tmp_path, mode, new, before):
         "DIRECTORY_URL=https://directory.example.org",
         "write_settings", ""])
     result = run_functions(
-        tmp_path, ["env_value", "new_admin_path", "choose_admin_path", "write_settings"], body)
+        tmp_path, ["env_value", "resolve_runner_name", "new_admin_path",
+                   "choose_admin_path", "write_settings"], body)
     assert result.returncode == 0, result.stderr + result.stdout
     return app_env.read_text(), (etc / "instance.json").read_text()
 
