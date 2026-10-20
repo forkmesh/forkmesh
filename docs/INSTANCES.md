@@ -944,12 +944,17 @@ The forkmesh.com homepage's "Federated instances" section
 credentials and shows each listed instance's logo, name, address and status:
 "Online" when its last `/readyz` check answered, "Checking" before the first
 check or after one miss (each entry carries `status` and `checkedAt`;
-instances that missed two checks are not in the list at all). Under the list
-is a "Start an instance" button to `/start`, styled as a secondary button
-because the page's green call to action is its sign-up button. On
-forkmesh.com the section always shows, with "No instance has joined yet."
-when the list is empty; on an instance (whose own directory is empty) the
-section and the button stay hidden. Tests:
+instances that missed two checks are not in the list at all). The list always
+starts with a fixed OWASP BLT card (its logo, `www/public/assets/owasp-blt-logo.svg`,
+copied from the instance's `/instance-logo.svg`) linking to
+`https://git.owaspblt.org/BLT`; a directory entry on `git.owaspblt.org` is
+skipped so it does not show twice (the host is the `data-instances-pinned`
+value). It always ends with an "Add your instance" box to `/start`, a dashed
+card rather than a button because the page's green call to action is its
+sign-up button; it replaced the "Start an instance" button and the "No
+instance has joined yet." line in October 2026. On forkmesh.com the section
+always shows; on an instance (whose own directory is empty) the section and
+the add box stay hidden. Tests:
 `app/tests/test_homepage_federated_instances.py`. The admin console's Instances view can
 hide, show or delete entries (CSRF-protected and audited); deleting does not
 touch the instance.
