@@ -31,8 +31,6 @@ from datetime import datetime, timezone
 
 CARD_W = 1200
 CARD_H = 630
-# Bumped when the card's look changes, so link-preview caches that key on the
-# og:image URL fetch the new card instead of keeping the old picture.
 CARD_REVISION = "3"
 
 _BG = (1, 4, 9)            # --background
@@ -430,17 +428,6 @@ def format_age(value, now_s):
         return "%dmo ago" % (delta // (30 * 86400))
     return "%dy ago" % (delta // (365 * 86400))
 
-
-# --- Repository card: a terminal window ---------------------------------------
-#
-# The repository card is drawn as a terminal session: a rounded window with a
-# title bar (three traffic-light dots and the repository's address), and in it
-# a short shell session - the repository shown by name, its description, the
-# counts that are not zero, and the clone command with a block cursor. Text is
-# Geist Mono, pre-rasterised into coverage atlases by
-# tools/embed_og_mono_font.py (the worker cannot rasterise a font); a glyph row
-# is blended over the flat background with three bytes.translate() calls, so a
-# whole card is still a few thousand row-slice writes.
 
 MONO_GLYPHS = "".join(chr(c) for c in range(32, 127)) + "\u2014\u2026\u2588\u00b7"
 _MONO_INDEX = {ch: index for index, ch in enumerate(MONO_GLYPHS)}
@@ -1110,7 +1097,6 @@ _TERM_ASCII = {
 
 
 def _mono(face):
-    """(cell_w, cell_h, ascent, glyph rows) for one of the embedded faces."""
     font = _mono_memo.get(face)
     if font is None:
         cell_w, cell_h, ascent, chunks = _MONO_FONTS[face]
@@ -1126,8 +1112,6 @@ def _mono(face):
 
 
 def terminal_text(value):
-    """value as the glyphs the card can draw: accents dropped, typographic
-    quotes and dashes folded to ASCII, anything else a '?'."""
     out = []
     for ch in unicodedata.normalize("NFKD", str(value or "")):
         if ch in _MONO_INDEX:
@@ -1158,13 +1142,9 @@ def _blend_tables(fg, bg):
 
 
 def _mono_text(canvas, x, y, text, face, fg, bg):
-    """Draw text (already terminal_text) with its cell's top-left at (x, y),
-    blended over the flat colour bg; returns the x after the last cell."""
     cell_w, cell_h, _, glyphs = _mono(face)
     fallback = _MONO_INDEX["?"]
     end = x + len(text) * cell_w
-    # Trailing blanks only advance the pen: drawing them would paint the
-    # background colour over whatever lies past the text.
     picks = [glyphs[_MONO_INDEX.get(ch, fallback)] for ch in text.rstrip(" ")]
     x0 = max(0, x)
     x1 = min(canvas.w, x + len(picks) * cell_w)
@@ -1193,7 +1173,6 @@ def _mix(a, b, t):
 
 
 def _coverage(px, py, cx, cy, radius):
-    """Share of pixel (px, py) inside the circle at (cx, cy), 4x4 samples."""
     if radius <= 0:
         return 0.0
     inside = 0
@@ -1223,7 +1202,6 @@ def _disc(canvas, cx, cy, radius, color, bg):
 
 def _round_corners(canvas, x, y, w, h, radius, top_fill, bottom_fill,
                    border, backdrop):
-    """Round the window's four corners (anti-aliased, with a 1px border)."""
     corners = (
         (x, y, x + radius, y + radius, top_fill),
         (x + w - radius, y, x + w - radius, y + radius, top_fill),
@@ -1245,7 +1223,6 @@ def _round_corners(canvas, x, y, w, h, radius, top_fill, bottom_fill,
 
 
 def _dim_rows(canvas, x, w, rows, factor):
-    """Scale the brightness of the given rows between x and x + w."""
     table = bytes(int(v * factor) for v in range(256))
     stride = canvas.w * 3
     for yy in rows:
@@ -1255,7 +1232,6 @@ def _dim_rows(canvas, x, w, rows, factor):
 
 
 def parse_color(value):
-    """'#rrggbb' or an (r, g, b) triple as a tuple, else None."""
     if isinstance(value, (tuple, list)) and len(value) == 3:
         try:
             return tuple(max(0, min(255, int(v))) for v in value)
@@ -1271,8 +1247,6 @@ def parse_color(value):
 
 
 def logo_accent(logo):
-    """The logo's dominant saturated colour (the red of a red mark), or None
-    for a logo with no clear colour (grey, black, white)."""
     if not logo:
         return None
     _, _, rgba = logo
@@ -1296,7 +1270,6 @@ def logo_accent(logo):
 
 
 def _legible(color):
-    """Lighten an accent until it reads on the near-black terminal."""
     for _ in range(8):
         if 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2] >= 105:
             break
@@ -1312,7 +1285,6 @@ def _count(info, key):
         return 0
 
 
-# (label, info key) in the order the card lists them.
 _TERM_COUNTS = (
     ("commits", "commits"),
     ("contributors", "contributors"),
@@ -1325,9 +1297,6 @@ _TERM_COUNTS = (
 
 
 def repo_card_stats(info, now_s):
-    """The (label, value) pairs the card lists. A count of zero is left out
-    (as is a single mirror - the repository itself), so a new repository's
-    card is not a row of zeros."""
     pairs = []
     for label, key in _TERM_COUNTS:
         n = _count(info, key)
@@ -1344,14 +1313,6 @@ def repo_card_stats(info, now_s):
     return pairs
 
 
-# --- Live counts ------------------------------------------------------------
-#
-# The card counts what the repository page counts, read from the repository
-# itself: open issues are the numbered folders of the issue ledger, branches
-# the current branch list, contributors the committed roster (else the
-# commit authors without bots). The catalog record's issueCount/branchCount
-# are what a publisher last reported and can be far out of date.
-
 ISSUES_OPEN_PATH = ".forkmesh/issues/open"
 ROSTER_DIR = ".forkmesh/contributors"
 ROSTER_PATH = ROSTER_DIR + "/contributors.json"
@@ -1366,7 +1327,6 @@ _BOT_PATTERNS = (
 
 
 def open_issue_count(tree):
-    """Open issues in a tree listing of .forkmesh/issues/open, or None."""
     if not isinstance(tree, dict) or not isinstance(tree.get("entries"), list):
         return None
     return sum(1 for entry in tree["entries"]
@@ -1375,7 +1335,6 @@ def open_issue_count(tree):
 
 
 def branch_count(listing):
-    """Branches in a /branches answer, or None."""
     if not isinstance(listing, dict) or not isinstance(
             listing.get("branches"), list):
         return None
@@ -1384,7 +1343,6 @@ def branch_count(listing):
 
 
 def has_roster(listing):
-    """Whether a tree listing of .forkmesh has the contributors folder."""
     entries = listing.get("entries") if isinstance(listing, dict) else None
     return any(isinstance(entry, dict) and entry.get("type") == "tree"
                and entry.get("name") == "contributors"
@@ -1392,9 +1350,6 @@ def has_roster(listing):
 
 
 def roster_count(text):
-    """The contributor count of a committed contributors.json roster, the
-    way the About rail reads it (its declared count, else its named rows),
-    or None when the roster is unusable."""
     if not isinstance(text, str) or not text or len(text) > _ROSTER_MAX_CHARS:
         return None
     try:
@@ -1433,8 +1388,6 @@ def _is_bot(row, platform=""):
 
 
 def stats_contributor_count(stats, platform=""):
-    """Commit authors in a /stats answer without bots (the About rail's
-    count for a repository with no roster), or None."""
     if not isinstance(stats, dict):
         return None
     rows = [row for row in stats.get("contributors") or []
@@ -1450,8 +1403,6 @@ def stats_contributor_count(stats, platform=""):
 
 
 def counts_token(counts):
-    """A short cache-key token for the live counts, so a card rendered with
-    other numbers is never served for these."""
     counts = counts or {}
     return "i%s.b%s.c%s" % tuple(
         "-" if counts.get(key) is None else int(counts[key])
@@ -1459,7 +1410,6 @@ def counts_token(counts):
 
 
 def _stat_grid(pairs, max_cols):
-    """Lay the pairs out as aligned columns, as many as fit in max_cols."""
     for ncols in (3, 2, 1):
         columns = [pairs[c::ncols] for c in range(ncols)]
         widths = [(max([len(k) for k, _ in col] or [0]),
@@ -1525,7 +1475,6 @@ def render_repo_card(info, now_s, logo=None):
     accent = _legible(parse_color(info.get("accent"))
                       or logo_accent(mark) or _TERM_DEFAULT_ACCENT)
 
-    # Backdrop: a dark wash of the accent, fading downwards.
     top_wash = _mix(_TERM_BACKDROP, accent, 0.16)
     bottom_wash = _mix(_TERM_BACKDROP, accent, 0.05)
 
@@ -1536,7 +1485,6 @@ def render_repo_card(info, now_s, logo=None):
     for yy in range(CARD_H):
         canvas.fill_rect(0, yy, CARD_W, 1, backdrop(yy))
 
-    # Window: title bar over the body, 1px border, rounded corners.
     wx = wy = TERM_MARGIN
     ww, wh = CARD_W - 2 * wx, CARD_H - 2 * wy
     bar_h = TERM_BAR_H
@@ -1550,7 +1498,6 @@ def render_repo_card(info, now_s, logo=None):
         _disc(canvas, wx + 28 + index * 24, wy + bar_h / 2.0, 7, color,
               _TERM_BAR)
 
-    # Title: host - path, centred in the bar.
     tw, th, _, _ = _mono("r20")
     title = _fit_cols("%s \u2014 %s" % (host, path), (ww - 2 * 120) // tw)
     _mono_text(canvas, wx + (ww - len(title) * tw) // 2,
@@ -1563,13 +1510,11 @@ def render_repo_card(info, now_s, logo=None):
     cols = (ww - 2 * pad) // cw
     body_top = wy + bar_h + 30
 
-    # The repository's mark, neofetch-style, in the body's top-right corner.
     mark_w, mark_h, mark_rgba = mark
     mark_x = wx + ww - pad - mark_w
     canvas.blit_rgba(mark_x, body_top + 4, mark_w, mark_h, mark_rgba)
     text_cols = (mark_x - 28 - left) // cw
 
-    # $ forkmesh repo show <path>
     y = body_top
     x = _mono_text(canvas, left, y, "$ ", _TERM_BOLD, accent, _TERM_BODY)
     x = _mono_text(canvas, x, y, "forkmesh repo show ", _TERM_FACE, _TERM_DIM,
@@ -1588,7 +1533,6 @@ def render_repo_card(info, now_s, logo=None):
         _mono_text(canvas, left, y, line, _TERM_FACE, _TERM_TEXT, _TERM_BODY)
         y += line_h
 
-    # Counts, as aligned key/value columns.
     y = max(y + 16, body_top + 4 + mark_h + 20)
     clone_y = wy + wh - 34 - ch
     room = max(1, (clone_y - 16 - y) // line_h)
@@ -1599,7 +1543,6 @@ def render_repo_card(info, now_s, logo=None):
             x = _mono_text(canvas, x, y, value, _TERM_BOLD, _TERM_TEXT, _TERM_BODY)
         y += line_h
 
-    # $ git clone https://<host>/<path>.git, with a block cursor.
     y = clone_y
     url = _fit_cols("https://%s/%s.git" % (host, path), cols - 13)
     x = _mono_text(canvas, left, y, "$ ", _TERM_BOLD, accent, _TERM_BODY)
@@ -1607,7 +1550,6 @@ def render_repo_card(info, now_s, logo=None):
     x = _mono_text(canvas, x, y, url, _TERM_FACE, _TERM_TEXT, _TERM_BODY)
     canvas.fill_rect(x + 4, y + 4, cw - 2, ch - 8, accent)
 
-    # Faint scanlines over the body.
     _dim_rows(canvas, wx + 1, ww - 2,
               range(wy + bar_h + 2, wy + wh - 14, 2), _TERM_SCANLINE)
     return canvas.png()

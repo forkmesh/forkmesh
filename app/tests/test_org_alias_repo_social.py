@@ -349,8 +349,8 @@ def _render_alias_card(counts):
     cache_puts = []
     count_reads = []
 
-    async def repo_card_counts(_env, owner, repo, version):
-        count_reads.append((owner, repo, version))
+    async def repo_card_counts(_env, owner, repo):
+        count_reads.append((owner, repo))
         return dict(counts)
 
     async def repo_is_private(_env, owner, repo):
@@ -433,7 +433,7 @@ def test_alias_card_renders_public_identity_after_internal_route_rewrite():
 
     assert response.status == 200
     # The counts are read from the backing repository, keyed by card version.
-    assert count_reads == [("mirror2", "forkmesh", "test-rev")]
+    assert count_reads == [("mirror2", "forkmesh")]
     assert rendered[0]["owner"] == "forkmesh"
     assert rendered[0]["repo"] == "forkmesh"
     assert rendered[0]["description"] == "Catalog from mirror2"

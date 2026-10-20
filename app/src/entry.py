@@ -35065,24 +35065,22 @@ def _repository_social_version(record):
     return ""
 
 
-# The card's live counts are read through the router like any public read of
-# the repository, then remembered per (repository, card version) for a few
-# minutes so a burst of link-preview fetches costs one set of reads.
 REPO_CARD_READ_ORIGIN = "https://forkmesh.internal"
 REPO_CARD_COUNTS_TTL_MS = 5 * 60 * 1000
 REPO_CARD_COUNTS_MAX = 256
 _repo_card_counts_memo = {}
 
 
-async def _repo_card_read(env, owner, repo, operation, query=None):
-    """One public read of the repository as a JSON object, or None."""
+async def _repo_card_read(env, owner, repo, operation, query=None,
+                          context_cache=None):
     url = "%s/api/repo/%s/%s/%s" % (
         REPO_CARD_READ_ORIGIN, quote(owner, safe=""), quote(repo, safe=""),
         operation)
     if query:
         url += "?" + urlencode(query)
     try:
-        response = await _routed_repository_read(env, url, operation)
+        response = await _routed_repository_read(
+            env, url, operation, context_cache=context_cache)
         if int(getattr(response, "status", 0) or 0) != 200:
             return None
         value = json.loads(str(await response.text()) or "null")
@@ -35093,33 +35091,34 @@ async def _repo_card_read(env, owner, repo, operation, query=None):
     return value
 
 
-async def _repo_card_counts(env, owner, repo, version):
-    """Open issues, branches and contributors as the repository page counts
-    them: the issue ledger's open folders, the current branch list, and the
-    committed contributor roster (else the commit authors without bots).
-    A count that could not be read is None and the caller falls back to the
-    catalog record."""
-    key = (str(owner).lower(), str(repo).lower(), str(version or ""))
+async def _repo_card_counts(env, owner, repo):
+    key = (str(owner).lower(), str(repo).lower())
     now_ms = int(time.time() * 1000)
     hit = _repo_card_counts_memo.get(key)
     if hit and 0 <= now_ms - hit[0] < REPO_CARD_COUNTS_TTL_MS:
         return dict(hit[1])
+    context_cache = {}
     branches, issues, listing = await asyncio.gather(
-        _repo_card_read(env, owner, repo, "branches"),
+        _repo_card_read(env, owner, repo, "branches",
+                        context_cache=context_cache),
         _repo_card_read(env, owner, repo, "tree",
-                        {"path": og_card.ISSUES_OPEN_PATH}),
-        _repo_card_read(env, owner, repo, "tree", {"path": ".forkmesh"}))
+                        {"path": og_card.ISSUES_OPEN_PATH},
+                        context_cache=context_cache),
+        _repo_card_read(env, owner, repo, "tree", {"path": ".forkmesh"},
+                        context_cache=context_cache))
     contributors = None
     if og_card.has_roster(listing):
         blobs = await _repo_card_read(
-            env, owner, repo, "blobs", {"path": og_card.ROSTER_PATH})
+            env, owner, repo, "blobs", {"path": og_card.ROSTER_PATH},
+            context_cache=context_cache)
         blob = ((blobs or {}).get("blobs") or {}).get(og_card.ROSTER_PATH)
         if isinstance(blob, dict) and not blob.get("truncated") \
                 and blob.get("encoding") != "base64":
             contributors = og_card.roster_count(str(blob.get("content") or ""))
     if contributors is None:
         contributors = og_card.stats_contributor_count(
-            await _repo_card_read(env, owner, repo, "stats"),
+            await _repo_card_read(env, owner, repo, "stats",
+                                  context_cache=context_cache),
             instance_name(env))
     counts = {
         "issues": og_card.open_issue_count(issues),
@@ -35133,7 +35132,6 @@ async def _repo_card_counts(env, owner, repo, version):
 
 
 async def _repo_card_accent(env):
-    """The instance theme's accent colour ('#rrggbb'), or ''."""
     if not instance_branded(env):
         return ""
     try:
@@ -35147,9 +35145,6 @@ async def _repo_card_accent(env):
 
 
 async def repo_card_handler(env, request, owner, repo):
-    # Social-preview card (adhoc #46): the repo page's og:image points here,
-    # so a Mastodon/Slack/Twitter unfurl shows the repo as a terminal session
-    # - its name, description and live counts, with the ForkMesh mark -
     # instead of a full-bleed logo. Public — same visibility gate as the page
     # it previews — and edge-cached so link-preview fetch bursts after a share
     # cost one render per colo per TTL.
@@ -35184,9 +35179,7 @@ async def repo_card_handler(env, request, owner, repo):
     card_version = parse_qs(parts.query).get("v", [""])[0]
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", card_version):
         card_version = ""
-    # The rendered card is cached under its live counts as well as its
-    # version, so a card drawn with other numbers is never served for these.
-    counts = await _repo_card_counts(env, owner, repo, card_version)
+    counts = await _repo_card_counts(env, owner, repo)
     cache_key = _ap_origin(env, request) + parts.path
     if card_version:
         cache_key += "?v=" + quote(card_version, safe="") + "&"

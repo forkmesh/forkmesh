@@ -467,7 +467,8 @@ def _live_reads(roster=True):
     }
     calls = []
 
-    async def read(_env, owner, repo, operation, query=None):
+    async def read(_env, owner, repo, operation, query=None,
+                   context_cache=None):
         key = (operation, tuple(sorted((query or {}).items())))
         calls.append(key)
         return answers.get(key)
@@ -489,21 +490,22 @@ def test_card_counts_read_the_ledger_branches_and_roster():
     import asyncio
     read, calls = _live_reads()
     counts_of = _counts_function(read)
-    counts = asyncio.run(counts_of(None, "acme", "tool", "v1"))
+    counts = asyncio.run(counts_of(None, "acme", "tool"))
     assert counts == {"issues": 39, "branches": 2, "contributors": 261}
-    assert ("stats", ()) not in calls  # the roster answers first
-    # Remembered per version: a second fetch of the card reads nothing.
+    assert ("stats", ()) not in calls
     before = len(calls)
-    assert asyncio.run(counts_of(None, "acme", "tool", "v1")) == counts
+    assert asyncio.run(counts_of(None, "acme", "tool")) == counts
     assert len(calls) == before
-    asyncio.run(counts_of(None, "acme", "tool", "v2"))
+    assert asyncio.run(counts_of(None, "ACME", "Tool")) == counts
+    assert len(calls) == before
+    asyncio.run(counts_of(None, "acme", "other"))
     assert len(calls) > before
 
 
 def test_card_counts_fall_back_to_the_bot_filtered_authors():
     import asyncio
     read, calls = _live_reads(roster=False)
-    counts = asyncio.run(_counts_function(read)(None, "o", "r", ""))
+    counts = asyncio.run(_counts_function(read)(None, "o", "r"))
     assert counts["contributors"] == 3
     assert ("stats", ()) in calls
 
@@ -511,7 +513,7 @@ def test_card_counts_fall_back_to_the_bot_filtered_authors():
 def test_card_handler_keys_the_cache_on_the_live_counts():
     handler = ENTRY_SRC.split("async def repo_card_handler", 1)[1]
     handler = handler.split("\nasync def ", 1)[0]
-    assert "await _repo_card_counts(env, owner, repo, card_version)" in handler
+    assert "await _repo_card_counts(env, owner, repo)" in handler
     assert handler.index("_repo_card_counts(") < handler.index(
         "edge_cache_match_media")
     assert '"n=" + og_card.counts_token(counts)' in handler

@@ -4692,8 +4692,6 @@ class Default:
                 fediverse_origin, owner.lower(), repo.lower())
             # OpenGraph/Twitter card so social + fediverse shares of the repo
             # URL (the preview under a federated "new pull request" post, a
-            # Slack unfurl, etc.) render the repo's rendered card — a terminal
-            # session with its name, description and live counts
             # (adhoc #46, see repo_card_handler / og_card.py) — instead of a
             # full-bleed logo. og:description carries the catalog description
             # so the unfurl text matches the repo, not the generic shell copy.

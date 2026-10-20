@@ -195,6 +195,54 @@ GitHub reference screenshots).
   `discussion.md`. New discussion explains that discussions are created from
   the desktop app, since they are signed by the author's node.
 
+## Repository share card
+
+The repository page's `og:image` points at `repo_card_handler`
+(`app/src/entry.py`), so a Mastodon, Slack or Twitter unfurl shows the
+repository as a terminal session: a rounded window with a title bar (three
+traffic-light dots and `host - owner/repo`), and in it a short shell session
+(`forkmesh repo show <path>`), the description (at most three lines), the
+counts that are not zero (a single mirror, the repository itself, is left
+out too), and `git clone https://<host>/<path>.git` with a block cursor. The
+repository's mark sits neofetch-style in the body's top-right corner, over a
+dark wash of the instance accent (`_repo_card_accent`, lightened until it
+reads on the near-black terminal) and faint scanlines.
+
+- **Visibility before cache.** The signed catalog record is checked first, so
+  making a repository private revokes its cached card at once rather than
+  after the TTL. Organization aliases keep their public owner on the card
+  while every lookup uses the backing node.
+- **Live counts.** The card counts what the repository page counts, read
+  through the router like any public read (`_repo_card_counts`): open issues
+  are the numbered folders of `.forkmesh/issues/open`, branches the current
+  branch list, contributors the committed `contributors.json` roster (its
+  declared count, else its named rows), else the commit authors without bots.
+  The catalog's `issueCount`/`branchCount` are what a publisher last reported
+  and are only the fallback for a count that could not be read. The counts are
+  remembered per repository (owner and name lowercased) for five minutes, and
+  the reads of one card share a routing context, so a burst of link-preview
+  fetches costs one set of reads; the caller's `?v=` does not key this memo,
+  so varying it cannot force fresh reads.
+- **Edge cache.** The rendered PNG is cached under its version and a short
+  token of the live counts (`og_card.counts_token`), so a card drawn with
+  other numbers is never served for these.
+- **Text.** Every string goes through `og_card.terminal_text`: accents are
+  dropped, typographic quotes and dashes fold to ASCII, anything else becomes
+  `?`. Trailing blanks only advance the pen, so they never paint over what lies
+  past the text. `CARD_REVISION` is bumped when the card's look changes, so
+  link-preview caches that key on the `og:image` URL fetch the new card.
+- **Font.** Text is Geist Mono (SIL OFL 1.1, licence in
+  `desktop/resources/fonts/Geist-OFL.txt`). The Pyodide worker cannot
+  rasterise a TrueType font, so `app/tools/embed_og_mono_font.py` (needs
+  Pillow) rasterises every glyph of `og_card.MONO_GLYPHS` into 8-bit coverage
+  atlases at authoring time: one fixed cell after another, zlib-compressed and
+  base64-encoded, spliced between the generated-block markers in
+  `og_card.py`. Geist Mono advances 0.6 em, so the sizes (20 and 35 px) are
+  multiples of 5 and every cell is a whole number of pixels wide. A glyph row
+  is blended over the flat background with three `bytes.translate()` calls, so
+  a whole card is still a few thousand row-slice writes. Run the tool after
+  changing the sizes or the glyph set.
+
 ## Optional folder reads, repository logos and SVG images
 
 Seen on an instance in October 2026: every repository page logged a 404 for
