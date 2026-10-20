@@ -97,12 +97,30 @@ visit socket is `?visitor=`; both sides see each other live.
 - **Owner-only actions** (administration, an owner's private rooms) stay
   read-only for visitors, with a note, instead of failing. *(planned)*
 
+## The page's federation client
+
+`world/public/world/world-federation.js` keeps one context per owner: its API
+origin and a visitor token minted there from a visa this World issued.
+Tokens are fetched lazily, the first time something on that owner's ground
+needs one, shared by concurrent callers, cached until a minute before they
+expire, and sent as a bearer header with credentials omitted, so no cookie
+crosses origins. A visa lives a minute, so the one just tried is reused for
+the socket fallback rather than asking again. Reads are cached per owner and
+path for `maxAge`, and nothing outside `FEDERATED_PATHS` is ever sent
+across. `visitorSession` is the identity the page holds at that owner
+(`name@home`), for the owner's UI.
+
 ## Rollout
 
 Each step works with either side ahead:
 
-- A World without `/api/world/visa/session` answers 404; the walker keeps
-  the one-minute visa on the visit socket (today's behaviour).
+- A World without `/api/world/visa/session` answers 404, or refuses the
+  cross-origin preflight so the browser reports a network error; either way
+  the walker keeps the one-minute visa on the visit socket (today's
+  behaviour). `WorldFederation.credential` falls back to the visa whenever it
+  has no token, and after a failed exchange it waits 30 s
+  (`EXCHANGE_RETRY_MS`) before trying the exchange again, so a signed-in
+  walker does not pay a visa and an exchange on every call.
 - A World without federated CORS cannot be read cross-origin; its hexagons
   keep the logo or the published scene.
 - Old visit sockets with `?visa=` keep working beside `?visitor=`.

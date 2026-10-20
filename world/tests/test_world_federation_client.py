@@ -51,6 +51,13 @@ const old = { id: "b".repeat(32), api: "https://old.example.org", world: "https:
 session = { status: 404, body: { error: "not_found" } };
 out.fallback = await fed.credential(old);
 out.unsupportedOnce = (await fed.token(old)) === "" && calls.filter((call) => call.url.startsWith("https://old.example.org")).length === 1;
+const strict = { id: "c".repeat(32), api: "https://strict.example.org", world: "https://strict.example.org" };
+const blocked = new WorldFederation({ requestVisa: async () => { visas += 1; return "visa-" + visas; },
+  fetchImpl: async (url) => { calls.push({ url }); throw new TypeError("Failed to fetch"); }, now: () => clock });
+out.corsFallback = await blocked.credential(strict);
+const strictCalls = calls.filter((call) => call.url.startsWith("https://strict.example.org")).length;
+out.corsBackoff = (await blocked.credential(strict)).visa !== undefined
+  && calls.filter((call) => call.url.startsWith("https://strict.example.org")).length === strictCalls;
 const guest = new WorldFederation({ requestVisa: async () => "", fetchImpl, now: () => clock });
 out.guest = await guest.credential(hub);
 out.sockets = [
@@ -97,6 +104,8 @@ def test_tokens_are_shared_renewed_and_fall_back_to_the_visa(result):
     assert result["fallback"] == {"visa": "visa-3"}
     assert result["unsupportedOnce"] is True
     assert result["guest"] == {}
+    assert result["corsFallback"] == {"visa": "visa-4"}
+    assert result["corsBackoff"] is True
     token = "fmwv1.eyJ2IjoxfQ." + "c" * 64
     assert result["sockets"] == [
         "wss://app.example.com/api/world/ws?visitor=" + token,
@@ -110,7 +119,6 @@ def test_only_federated_world_paths_cross_and_only_to_https_owners(result):
     assert result["badOrigins"] == ["", "", "https://app.example.com"]
     assert result["federated"] == ["/api/world/office/floors/",
                                    "/api/world/office/floors?x=1", ""]
-    # The client's list is the server's list.
     assert set(result["paths"]) == set(world_mesh.FEDERATED_PATHS)
 
 

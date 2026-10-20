@@ -1,10 +1,3 @@
-// Federated hexes: the World page talks to the owner of a neighbour's hexagons
-// for what stands on them. Each owner has one context: its API origin and a
-// visitor token minted there (POST /api/world/visa/session) from a one-minute
-// visa issued by this World. Tokens are fetched lazily, the first time
-// something on that owner's ground needs one, cached until shortly before they
-// expire, and sent as a bearer header with credentials omitted, so no cookie
-// ever crosses origins. Only the owner's federated World endpoints are called.
 export const FEDERATION_SESSION_PATH = "/api/world/visa/session";
 export const FEDERATED_PATHS = Object.freeze([
   "/api/world/visa/session",
@@ -21,6 +14,7 @@ export const FEDERATED_PATHS = Object.freeze([
 ]);
 const TOKEN_RE = /^fmwv1\.[A-Za-z0-9_-]{1,1950}\.[0-9a-f]{64}$/;
 const RENEW_MARGIN_MS = 60 * 1000;
+const EXCHANGE_RETRY_MS = 30 * 1000;
 const MAX_BODY_CHARS = 512 * 1024;
 const HOST_RE = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9](?::\d{1,5})?$/;
 
@@ -62,21 +56,19 @@ export class WorldFederation {
     let context = this.contexts.get(id);
     if (!context || context.api !== api) {
       context = { id, api, world: federationOrigin(world?.world), token: "",
-        expiresAt: 0, name: "", home: "", pending: null, unsupported: false };
+        expiresAt: 0, name: "", home: "", pending: null, unsupported: false, retryAt: 0 };
       this.contexts.set(id, context);
     }
     return context;
   }
 
-  // The visitor token for an owner, minted there from a fresh visa. "" when
-  // the walker is not signed in, the owner predates federation (404) or the
-  // owner refuses; callers then carry on as a guest.
   async token(world) {
     const context = this.context(world);
     if (!context || context.unsupported) return "";
     if (context.token && context.expiresAt - RENEW_MARGIN_MS > this.now()) {
       return context.token;
     }
+    if (context.retryAt > this.now()) return "";
     if (context.pending) return context.pending;
     context.pending = (async () => {
       try {
@@ -96,13 +88,17 @@ export class WorldFederation {
         const payload = response.ok ? await this.read(response) : null;
         const token = String(payload?.token || "");
         const expiresAt = Number(payload?.expiresAt);
-        if (!TOKEN_RE.test(token) || !Number.isFinite(expiresAt)) return "";
+        if (!TOKEN_RE.test(token) || !Number.isFinite(expiresAt)) {
+          context.retryAt = this.now() + EXCHANGE_RETRY_MS;
+          return "";
+        }
         context.token = token;
         context.expiresAt = expiresAt;
         context.name = String(payload?.name || "").slice(0, 64);
         context.home = String(payload?.home || "").slice(0, 253);
         return token;
       } catch (_) {
+        context.retryAt = this.now() + EXCHANGE_RETRY_MS;
         return "";
       } finally {
         context.pending = null;
@@ -111,20 +107,16 @@ export class WorldFederation {
     return context.pending;
   }
 
-  // What a socket to the owner should carry: the visitor token, or the visa
-  // itself when the owner does not exchange visas yet.
   async credential(world) {
     const token = await this.token(world);
     if (token) return { visitor: token };
     const context = this.context(world);
-    if (!context?.unsupported) return {};
-    // A visa lives a minute; reuse the one just tried rather than ask again.
+    if (!context) return {};
     const fresh = context.visa && this.now() - context.visaAt < 45 * 1000;
     const visa = fresh ? context.visa : String((await this.requestVisa(world)) || "");
     return visa ? { visa } : {};
   }
 
-  // The identity this page holds at the owner, for that owner's UI.
   visitorSession(world) {
     const context = this.context(world);
     if (!context?.token || context.expiresAt <= this.now()) return null;
@@ -164,9 +156,6 @@ export class WorldFederation {
     return JSON.parse(text);
   }
 
-  // A World call routed to the owner of the ground it is for. Reads are
-  // cached per owner and path for maxAge; nothing outside FEDERATED_PATHS is
-  // ever sent across.
   async fetchJSON(world, path, { method = "GET", body, maxAge = 0, auth = true } = {}) {
     const context = this.context(world);
     const route = federatedPath(path);

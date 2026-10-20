@@ -11420,8 +11420,6 @@ class ForkMeshWorld extends HTMLElement {
     this.schedulePeerRender();
   }
 
-  // One federation client per page: the per-owner visitor tokens and the
-  // World calls routed to the owner of the ground they are for.
   worldFederation() {
     if (!this.federation) {
       this.federation = new WorldFederation({
@@ -11431,9 +11429,6 @@ class ForkMeshWorld extends HTMLElement {
     return this.federation;
   }
 
-  // A World call for something standing at (x, z): the owner's API with
-  // this page's visitor token when that ground is a neighbour's, else this
-  // World's own API.
   fetchJSONAt(x, z, path, options = {}) {
     const owner = this.world?.worldMeshOwner?.(x, z);
     const world = owner
