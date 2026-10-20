@@ -598,7 +598,8 @@ them without changing page.
   relative to the hexagon centre, rounded to 0.1, within ±400), with
   `#visa=<visa>` when signed in. Coming back, `?from=<host>&slot=n&pos=x,z`
   from a listed hexagon places the walker just outside the edge they crossed,
-  facing away from the petal, and the parameters are removed.
+  facing away from the petal with the third-person camera behind them, and
+  the parameters are removed.
 - **Directory.** `GET /api/world/mesh` (`world_mesh.py`) answers
   `{self, worlds:[{id, name, host, world, api, logo, slot}]}`. The hub builds
   it from `instance_directory` (`world=1`, visible, slot 0–11) plus its own
