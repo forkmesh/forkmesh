@@ -388,6 +388,38 @@ instance is gone, after 90 s if none appeared, or after 2 minutes with no
 system tray. The window keeps its own tray icon while it is open.
 `forkmesh --stop-background [--project <slug>]` does what the menu item does.
 
+### The top-bar badge
+
+Asked for on 2026-10-20: when ForkMesh is set to start without a window at
+boot, the window says so, shows whether it runs, and offers to turn it off.
+Code: `desktop/src/BackgroundRunnerBadge.{h,cpp}` (the chip, left of the view
+switcher in the top-right corner), `StartManager::diagnose`, `turnOff`,
+`runnerBadge` and `runnerReport` in `BackgroundMode.cpp`. Test:
+`testDiagnostics` in `forkmesh-background-mode-tests`.
+
+- **Shown only when registered.** Every 60 s (first after 5 s, again on each
+  click, and whenever the settings box applies a change) the chip checks for
+  `forkmesh-headless-<project>.service` or its XDG entry. Neither present: it
+  stays hidden and runs no command. Present: a pool thread runs
+  `systemctl --user show` on the unit plus the checks the settings box uses,
+  and reads `state/forkmesh-background.pid` (it counts only if
+  `/proc/<pid>/cmdline` carries `--headless`).
+- **States**, with a dot coloured by severity: *Running* (the unit is
+  `active` or the windowless instance is alive), *Ready* (enabled and waiting:
+  the normal state while a window is open, because a window takes over the
+  lock and the unit exits 0), *At log-in* (no lingering), *Restarting*
+  (`activating`, systemd's back-off), *Failed*, *Not enabled* (the unit file
+  is there but systemd does not report `enabled`), *Broken* (the program in
+  `ExecStart` is gone) and *Unknown* (`systemctl --user` did not answer).
+- **Menu**: *Diagnostics…* opens a report (systemd state, main pid, restart
+  count, last exit status, start and stop times, lingering, log-out
+  hand-over, sleep protection and the last 20 lines of
+  `journalctl --user-unit=<unit>`), with Refresh and Copy. *Startup
+  settings…* scrolls Settings → General to the box. *Turn off start at boot*
+  asks first, then runs `systemctl --user stop --no-block` and `reset-failed`
+  on the unit (never from the windowless instance itself), and the same
+  `disable` as the settings box.
+
 ### Several desktops at once
 
 Every piece is keyed by project: the lock and socket in the project's state

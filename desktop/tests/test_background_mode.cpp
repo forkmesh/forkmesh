@@ -36,6 +36,9 @@ struct Recorder {
     QByteArray userState = "running\n";
     bool preparingForShutdown = false;
     QByteArray sleepStates = "static\nstatic\nstatic\nstatic\nstatic\n";
+    QByteArray unitShow = "UnitFileState=enabled\nActiveState=inactive\nSubState=dead\n"
+                          "Result=success\nMainPID=0\nNRestarts=0\nExecMainStatus=0\n";
+    QByteArray journal = "2026-10-20T08:00:00+0200 box forkmesh[42]: started\n";
 
     bg::CommandResult run(const QString &program, const QStringList &arguments)
     {
@@ -53,6 +56,10 @@ struct Recorder {
             result.output = sleepStates;
             result.ok = !sleepStates.startsWith("masked");
         }
+        if (arguments.value(1) == QLatin1String("show"))
+            result.output = unitShow;
+        if (program == QLatin1String("journalctl"))
+            result.output = journal;
         if (program == QLatin1String("busctl"))
             result.output = preparingForShutdown ? "b true\n" : "b false\n";
         if (program == QLatin1String("loginctl")) {
@@ -351,6 +358,86 @@ void testSystemd()
     check(!m.enable(binary, QStringLiteral("../x"), &error), "an invalid project is refused");
 }
 
+void testDiagnostics()
+{
+    QTemporaryDir home;
+    Recorder recorder;
+    const bg::StartManager m = manager(home.path(), &recorder);
+    const QString project = QStringLiteral("forkmesh");
+    check(!bg::runnerBadge(m.diagnose(project)).visible, "no badge while nothing is registered");
+    check(!bg::runnerReport(m.diagnose(project)).isEmpty(), "an unregistered report still explains");
+    QString error;
+    check(m.enable(fakeBinary(home.path()), project, &error), "enable succeeds");
+
+    bg::RunnerDiagnostics ready = m.diagnose(project);
+    check(ready.unit == QStringLiteral("forkmesh-headless-forkmesh.service") &&
+              ready.systemdReachable && ready.unitFileState == QStringLiteral("enabled") &&
+              ready.activeState == QStringLiteral("inactive") && ready.binaryExecutable,
+          "diagnose reads the unit state");
+    check(ready.journal.isEmpty() && !recorder.calls.filter(QStringLiteral("journalctl")).size(),
+          "the journal is read only when asked");
+    bg::RunnerBadge badge = bg::runnerBadge(ready);
+    check(badge.visible && badge.text == QStringLiteral("Background: Ready") &&
+              badge.severity == QStringLiteral("ok"),
+          "an enabled unit standing by is ready");
+
+    recorder.unitShow = "UnitFileState=enabled\nActiveState=active\nSubState=running\n"
+                        "MainPID=4242\nNRestarts=2\n";
+    const bg::RunnerDiagnostics running = m.diagnose(project);
+    badge = bg::runnerBadge(running);
+    check(running.mainPid == 4242 && running.restarts == 2 &&
+              badge.text == QStringLiteral("Background: Running") &&
+              badge.toolTip.contains(QStringLiteral("4242")),
+          "an active unit shows as running with its pid");
+
+    recorder.unitShow = "UnitFileState=enabled\nActiveState=failed\nSubState=failed\n"
+                        "Result=exit-code\nExecMainStatus=3\n";
+    badge = bg::runnerBadge(m.diagnose(project));
+    check(badge.text == QStringLiteral("Background: Failed") &&
+              badge.severity == QStringLiteral("error") &&
+              badge.toolTip.contains(QStringLiteral("exit-code")),
+          "a failed unit is an error");
+
+    recorder.unitShow = "UnitFileState=enabled\nActiveState=activating\nSubState=auto-restart\n";
+    check(bg::runnerBadge(m.diagnose(project)).severity == QStringLiteral("warn"),
+          "a restarting unit is a warning");
+
+    recorder.unitShow = "UnitFileState=disabled\nActiveState=inactive\n";
+    check(bg::runnerBadge(m.diagnose(project)).text == QStringLiteral("Background: Not enabled"),
+          "a unit file systemd does not start is reported");
+
+    recorder.unitShow = "UnitFileState=enabled\nActiveState=inactive\n";
+    recorder.linger = false;
+    check(bg::runnerBadge(m.diagnose(project)).text == QStringLiteral("Background: At log-in"),
+          "without lingering it starts only at log-in");
+    recorder.linger = true;
+
+    bg::RunnerDiagnostics full = m.diagnose(project, 0, true);
+    full.keepRunning = true;
+    const QString report = bg::runnerReport(full);
+    check(full.journal.contains(QStringLiteral("started")) &&
+              report.contains(QStringLiteral("journalctl --user-unit=forkmesh-headless-forkmesh.service")) &&
+              report.contains(QStringLiteral("started")) &&
+              report.contains(QStringLiteral("Keep running after the window closes: yes")),
+          "the report carries the state and the recent log");
+
+    QFile::remove(ready.start.binary);
+    check(bg::runnerBadge(m.diagnose(project)).text == QStringLiteral("Background: Broken"),
+          "a unit whose program is gone is broken");
+
+    recorder.calls.clear();
+    check(m.turnOff(project, &error), "turn off succeeds");
+    check(recorder.called(QStringLiteral("systemctl --user stop --no-block forkmesh-headless-forkmesh.service")) &&
+              recorder.called(QStringLiteral("systemctl --user reset-failed forkmesh-headless-forkmesh.service")) &&
+              recorder.called(QStringLiteral("systemctl --user disable forkmesh-headless-forkmesh.service")),
+          "turning off stops, clears and disables the unit");
+    check(!QFileInfo::exists(m.systemdUnitPath(project)) &&
+              !bg::runnerBadge(m.diagnose(project)).visible,
+          "the badge goes away once it is turned off");
+    check(!bg::headlessProcessRunning(0) && !bg::headlessProcessRunning(QCoreApplication::applicationPid()),
+          "only a --headless process counts as the windowless instance");
+}
+
 void testUserLinger()
 {
     QTemporaryDir home;
@@ -475,6 +562,7 @@ int main(int argc, char **argv)
     QCoreApplication app(argc, argv);
     testTexts();
     testSystemd();
+    testDiagnostics();
     testUserLinger();
     testXdg();
     testLogout();
