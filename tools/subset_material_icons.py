@@ -84,7 +84,13 @@ def selected_names(table: dict[str, int]) -> set[str]:
     names |= {resolve(table, name) for name in ALWAYS} - {None}
     codes = ios_codepoints()
     names |= {name for name, code in table.items() if code in codes}
+    names |= {outlined(name) for name in names} & set(table)
     return names
+
+
+def outlined(name: str) -> str:
+    base = name[:-len("_baseline")] if name.endswith("_baseline") else name
+    return base + "_outlined"
 
 
 def full_font_bytes(font: str | None) -> bytes:
