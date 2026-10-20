@@ -157,6 +157,7 @@ else
 fi
 BIN="$PREFIX/usr/local/bin/forkmesh-mirror-node"
 NFT="$ETC_ROOT/jobs.nft"
+NFT_LOCAL="$ETC_ROOT/jobs.d"
 PF_RULES="$ETC_ROOT/jobs.pf"
 PF_ANCHOR="com.apple/forkmesh-runner"
 FIREWALL_LABEL="com.forkmesh.runner-firewall"
@@ -870,7 +871,11 @@ write_firewall_linux() {
     done
     printf '\t}\n'
     printf '}\n'
+    # Local rules (for example `add rule inet forkmesh_runner output ...`)
+    # live in jobs.d, which this script never rewrites.
+    printf 'include "%s/*.nft"\n' "$(live_path "$NFT_LOCAL")"
   } >"$NFT.new"
+  install -d -m 0700 "$NFT_LOCAL"
   chmod 0600 "$NFT.new"
   mv "$NFT.new" "$NFT"
 }
