@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
@@ -71,7 +72,7 @@ fun StarterPackScreen(onContinue: (StarterPack) -> Unit) {
             modifier = Modifier.widthIn(max = 520.dp).fillMaxWidth().padding(horizontal = FmSpace.x5, vertical = FmSpace.x4)
                 .heightIn(min = 52.dp).testTag("starter-pack-continue"),
         ) {
-            Text("Continue", style = Fm.text.labelLarge)
+            Text("Continue", style = Fm.text.labelLarge.copy(color = Color.Unspecified))
         }
     }
 }

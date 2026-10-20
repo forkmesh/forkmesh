@@ -1,5 +1,12 @@
 package com.forkmesh.nativeapp.feature.appstorestatus
 
+import com.forkmesh.nativeapp.market.AppStoreStatusLoader
+import com.forkmesh.nativeapp.market.AppStoreDesktopException
+import com.forkmesh.nativeapp.control.HubControlCalling
+import com.forkmesh.nativeapp.control.LocalControlException
+import com.forkmesh.nativeapp.control.ControlErrorText
+import com.forkmesh.nativeapp.feature.agents.AgentsFeature
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -94,9 +101,13 @@ internal class AppStoreStatusScreen : Screen() {
             }
             loading = true
             refreshing = pulled
+            val desktop = desktopSource()
             scope.launch {
-                val result = withContext(Dispatchers.IO) { runCatching { AppStoreStatus.load(client) } }
-                result.onSuccess { reply = it; error = "" }.onFailure { error = PackagesException.describe(it) }
+                val result = withContext(Dispatchers.IO) {
+                    AppStoreStatusLoader.load({ client.call("GET", AppStoreStatus.API) }, desktop) { PackagesException.describe(it) }
+                }
+                if (result.reply != null) reply = result.reply
+                error = result.error
                 loading = false
                 refreshing = false
             }
@@ -159,6 +170,15 @@ internal class AppStoreStatusScreen : Screen() {
 
         section("Tester feedback", "feedback", snapshot, AppStoreStatus.FEEDBACK, snapshot.feedback.size, "No tester feedback.")
         itemsIndexed(snapshot.feedback, key = { index, _ -> "feedback-$index" }) { _, row -> FeedbackCard(row) }
+        if (snapshot.lacksScreenshots && snapshot.unavailable(AppStoreStatus.FEEDBACK).isEmpty()) {
+            item(key = "feedback-screenshots-not-published") {
+                Text(
+                    AppStoreStatus.SCREENSHOTS_NOT_PUBLISHED,
+                    Modifier.testTag("app-store-status-screenshots-not-published"),
+                    style = Fm.text.bodySmall.copy(color = Fm.colors.textSecondary),
+                )
+            }
+        }
 
         section("Customer reviews", "reviews", snapshot, AppStoreStatus.REVIEWS, snapshot.reviews.size, "No customer reviews yet.")
         itemsIndexed(snapshot.reviews, key = { index, _ -> "review-$index" }) { _, row -> ReviewCard(row) }
@@ -191,8 +211,14 @@ private fun Header(reply: AppStoreStatusReply, snapshot: AppStoreSnapshot) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 val published = reply.publishedAt.takeIf { it > 0 } ?: snapshot.generatedAt
+                val source = when {
+                    reply.fromDesktop && published > 0 -> "From your desktop ${relativeTime(published)}"
+                    reply.fromDesktop -> "From your desktop"
+                    published > 0 -> "Published ${relativeTime(published)}"
+                    else -> null
+                }
                 val facts = listOfNotNull(
-                    if (published > 0) "Published ${relativeTime(published)}" else null,
+                    source,
                     snapshot.appId.takeIf { it.isNotEmpty() }?.let { "App ID $it" },
                 )
                 if (facts.isNotEmpty()) Text(facts.joinToString(" · "), style = Fm.text.bodySmall.copy(color = c.textSecondary))
@@ -483,3 +509,16 @@ private fun stampText(stamp: String): String {
 }
 
 private fun humanize(raw: String): String = raw.lowercase().replace('_', ' ').trim()
+
+private fun desktopSource(): (() -> Map<String, Any?>)? {
+    val hub = runCatching { AgentsFeature.hub }.getOrNull()?.takeIf { it.desktop != null } ?: return null
+    val control = HubControlCalling(hub)
+    return {
+        try {
+            control.request(AppStoreStatusLoader.DESKTOP_METHOD, emptyMap(), AppStoreStatusLoader.DESKTOP_TIMEOUT_MS)
+        } catch (failure: LocalControlException) {
+            val reason = if (failure.code.startsWith("app_store_") && failure.reason.isNotBlank()) failure.reason.trim() else ControlErrorText.describe(failure)
+            throw AppStoreDesktopException(failure.code, reason)
+        }
+    }
+}

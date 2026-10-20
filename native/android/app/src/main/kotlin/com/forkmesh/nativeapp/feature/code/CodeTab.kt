@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.code
 
 import androidx.compose.foundation.background
+import com.forkmesh.nativeapp.ui.kit.FmSheet
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
@@ -372,7 +373,7 @@ private fun ColumnScope.GoToFileSheet(repo: Repository, ref: String, close: (Str
         results.reload { repoApi.searchRepo(repo.owner, repo.name, query, ref = ref).code }
     }
     val maxHeight = with(LocalDensity.current) { (LocalWindowInfo.current.containerSize.height * .78f).toDp() }
-    val shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg)
+    val shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner)
     Column(
         Modifier
             .fillMaxWidth()

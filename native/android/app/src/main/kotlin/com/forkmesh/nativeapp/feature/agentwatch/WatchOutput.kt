@@ -13,6 +13,7 @@ import com.forkmesh.nativeapp.agentwatch.Note
 import com.forkmesh.nativeapp.agentwatch.Pulse
 import com.forkmesh.nativeapp.agentwatch.kWatchSampleRate
 import com.forkmesh.nativeapp.agentwatch.renderNotes
+import com.forkmesh.nativeapp.platform.OtherAppCall
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
@@ -133,6 +134,7 @@ internal class AndroidAgentWatchOutput(context: Context) : AgentWatchOutput {
     }
 
     override fun play(notes: List<Note>, now: Double) {
+        if (OtherAppCall.inProgress) return
         val wanted = generation.get()
         val asked = System.nanoTime()
         renderer.execute {

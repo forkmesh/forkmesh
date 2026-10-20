@@ -81,7 +81,7 @@ class FaceChangerScreen : Screen() {
             permitted = mediaPermitted(context)
         }
         LaunchedEffect(Unit) { if (!permitted) ask.launch(MEDIA_PERMISSIONS) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Face Changer", navigator)
             when {
                 !asked -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { FmCircularProgressIndicator() }
@@ -135,11 +135,12 @@ private fun FaceChangerStudio(modifier: Modifier) {
             val folder = File(context.cacheDir, SHARE_DIR).apply { mkdirs() }
             folder.listFiles()?.forEach { if (it.isFile) it.delete() }
             val target = File(folder, "face-changer-${System.currentTimeMillis()}.mp4")
-            val made = runCatching { peer.finishRecording(target) }.getOrNull()
+            val result = runCatching { peer.finishRecording(target) }
+            val made = result.getOrNull()
             phase = StudioPhase.READY
             if (made == null) {
                 target.delete()
-                notice = "The clip could not be saved. Try again."
+                notice = saveFailure(result.exceptionOrNull())
                 return@run
             }
             val file = if (made.mime == "video/mp4") target else File(folder, target.nameWithoutExtension + ".webm").also { target.renameTo(it) }
@@ -304,6 +305,13 @@ private fun FaceChangerStudio(modifier: Modifier) {
         }
     }
 }
+
+private fun saveFailure(error: Throwable?): String =
+    if (generateSequence(error) { it.cause }.any { it.message == "empty_recording" }) {
+        "Nothing was recorded. Record for a little longer, then stop."
+    } else {
+        "The clip could not be saved. Try again."
+    }
 
 private fun recordFailure(error: Throwable): String = when (error.message) {
     "face_not_ready", "face_unavailable", "background_unavailable" -> "The face or background could not start here, so nothing was recorded."

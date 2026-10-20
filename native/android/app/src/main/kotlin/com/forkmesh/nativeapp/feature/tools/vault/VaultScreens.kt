@@ -599,7 +599,7 @@ class VaultShareScreen(private val itemId: String) : Screen() {
                 emptyList()
             }
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(if (item == null) "Share" else "Share ${item.title}", navigator)
             if (item == null) {
                 FmEmptyState("lock_outline", "The vault is locked")
@@ -735,7 +735,7 @@ class VaultSettingsScreen(private val onRecoveryCode: (String) -> Unit) : Screen
             }
         }
         LaunchedEffect(foreground) { if (foreground) vault.refreshAutofillStatus() }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Vault settings", navigator)
             FormColumn {
                 FmSectionHeader("Fill logins in other apps")
@@ -764,6 +764,7 @@ class VaultSettingsScreen(private val onRecoveryCode: (String) -> Unit) : Screen
                         if (!status.enabled) AccountOutlinedButton("Open autofill settings", { vault.openAutofillSettings(context.findActivity()) })
                     }
                 }
+                VaultTransferSection(vault)
                 FmSectionHeader("Locking")
                 Text("Lock after", style = Fm.text.labelMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {

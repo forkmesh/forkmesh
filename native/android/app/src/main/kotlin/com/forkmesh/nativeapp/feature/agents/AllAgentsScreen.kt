@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.agents
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.agents.AgentAttachmentRef
 import com.forkmesh.nativeapp.agents.AgentLaunchSession
 import com.forkmesh.nativeapp.agents.AgentLiveEvent
@@ -300,7 +301,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                 } else {
                     "The desktop picks it up on the same branch with the conversation so far, and the run on $runner is deleted."
                 }
-                if (!messenger.showConfirmDialog("Continue on $name?", body, confirmLabel = "Continue on desktop")) return@launch
+                if (!messenger.confirmAction("Continue on $name?", "Continue on desktop", body, destructive = false)) return@launch
                 busy = true
                 status.clear()
                 try {
@@ -325,11 +326,12 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
             scope.launch {
                 if (row.isActive || active) {
                     val label = agentProviderLabel(row.provider)
-                    val confirmed = messenger.showConfirmDialog(
+                    val confirmed = messenger.confirmAction(
                         "Open in $label's terminal?",
+                        "Open terminal",
                         "The desktop stops this run and resumes its conversation in $label in a terminal you watch and " +
                             "type into here. Send \"continue\" there to pick the work up.",
-                        confirmLabel = "Open terminal",
+                        destructive = false,
                     )
                     if (!confirmed) return@launch
                 }

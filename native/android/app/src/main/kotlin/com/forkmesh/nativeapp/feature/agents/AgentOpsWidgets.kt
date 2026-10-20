@@ -36,7 +36,6 @@ import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.agents.ops.AgentListSort
 import com.forkmesh.nativeapp.agents.ops.AgentUsageModel
@@ -425,7 +424,7 @@ internal fun MergeStatsBlock(stats: MergeStats) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(FmSpace.x1)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("LANDED", modifier = Modifier.weight(1f), style = Fm.text.labelSmall.copy(color = c.textTertiary))
-                    Text(stats.shortCommit, style = Fm.text.bodySmall.copy(color = c.textTertiary, fontFamily = FontFamily.Monospace))
+                    Text(stats.shortCommit, style = Fm.text.bodySmall.copy(color = c.textTertiary, fontFamily = FmType.mono))
                 }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(FmSpace.x3)) {
                     stats.commits?.takeIf { it > 0 }?.let { MergeFigure("$it", if (it == 1) "commit" else "commits") }

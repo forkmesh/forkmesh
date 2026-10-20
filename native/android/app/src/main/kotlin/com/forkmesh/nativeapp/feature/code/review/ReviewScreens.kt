@@ -1,6 +1,8 @@
 package com.forkmesh.nativeapp.feature.code.review
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.background
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -25,7 +27,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.ci.RepoRef
 import com.forkmesh.nativeapp.code.ConflictResolution
@@ -339,9 +340,9 @@ private fun DiffRow(line: DiffLine, selected: Boolean, onTap: () -> Unit) {
             .horizontalScroll(rememberScrollState())
             .padding(horizontal = FmSpace.x2),
     ) {
-        Text(if (line.oldNumber > 0) "${line.oldNumber}" else "", Modifier.width(36.dp), color = c.textTertiary, style = Fm.text.bodySmall.copy(fontFamily = FontFamily.Monospace))
-        Text(if (line.newNumber > 0) "${line.newNumber}" else "", Modifier.width(36.dp), color = c.textTertiary, style = Fm.text.bodySmall.copy(fontFamily = FontFamily.Monospace))
-        Text("$marker${line.text}", color = c.textPrimary, style = Fm.text.bodySmall.copy(fontFamily = FontFamily.Monospace), softWrap = false)
+        Text(if (line.oldNumber > 0) "${line.oldNumber}" else "", Modifier.width(36.dp), color = c.textTertiary, style = Fm.text.bodySmall.copy(fontFamily = FmType.mono))
+        Text(if (line.newNumber > 0) "${line.newNumber}" else "", Modifier.width(36.dp), color = c.textTertiary, style = Fm.text.bodySmall.copy(fontFamily = FmType.mono))
+        Text("$marker${line.text}", color = c.textPrimary, style = Fm.text.bodySmall.copy(fontFamily = FmType.mono), softWrap = false)
     }
 }
 
@@ -497,7 +498,7 @@ internal class MergeQueueScreen(private val repo: Repository?) : Screen() {
         }
         suspend fun perform(request: MergeQueueRequest) {
             val r = remote ?: return
-            if (request.action.isDestructive && !messenger.showConfirmDialog("${request.action.title}?", confirmLabel = request.action.title, destructive = true)) return
+            if (request.action.isDestructive && !messenger.confirmAction(request.action.title, request.action.title)) return
             val outcome = io { runCatching { r.perform(request).message }.fold({ it to false }, { MergeQueueRemote.message(it) to true }) }
             if (outcome.first.isNotEmpty()) status.report(outcome.first, outcome.second) else status.clear()
             load()

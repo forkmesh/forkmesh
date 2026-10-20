@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.files
 
+import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -40,7 +41,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -147,7 +147,7 @@ private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = Fm.text.bodyMedium, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        FmSwitch(checked = checked, onCheckedChange = onChange)
     }
 }
 
@@ -183,7 +183,7 @@ private fun PasswordPrompt(share: SavedShare, onConfirm: (String, Boolean) -> Un
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false), modifier = Modifier.padding(top = FmSpace.x2))
                 Row(Modifier.clickable { keep = !keep }.padding(top = FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
                     Text("Remember password", style = Fm.text.bodyMedium, modifier = Modifier.weight(1f))
-                    Switch(checked = keep, onCheckedChange = { keep = it })
+                    FmSwitch(checked = keep, onCheckedChange = { keep = it })
                 }
             }
         },
@@ -234,7 +234,7 @@ class FilesHomeScreen : Screen() {
                 navigator.push(FolderScreen(store.shareSource(updated, password), "", updated))
             }, { passwordFor = null })
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator)
             LazyColumn(Modifier.fillMaxSize()) {
                 if (message.isNotEmpty()) item(key = "message") { Line(message, messageIsError) }
@@ -318,7 +318,7 @@ class AddShareScreen(host: String = "", share: String = "", private val existing
     override fun Content(navigator: Navigator) {
         val scope = rememberCoroutineScope()
         fun parsed() = FilesModel.parseAddress(address)
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false)
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             LazyColumn(Modifier.fillMaxSize().imePadding()) {
@@ -616,7 +616,7 @@ class FolderScreen(val source: FileSource, val path: String, private val share: 
                 dismissButton = { TextButton(onClick = { copyToClipboard(context, where); info = null }) { Text("Copy path") } },
             )
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false) {
                 Box {
                     TextButton(onClick = { sortMenu = true }) { Text(store.sort.label) }
@@ -764,7 +764,7 @@ class TextFileScreen(private val source: FileSource, private val item: FileItem)
                 }
             }
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false) {
                 TextButton(onClick = ::save, enabled = dirty && !saving) { Text("Save") }
             }
@@ -818,7 +818,7 @@ class ImageFileScreen(private val source: FileSource, private val item: FileItem
             offsetX = if (scale == 1f) 0f else offsetX + pan.x
             offsetY = if (scale == 1f) 0f else offsetY + pan.y
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(title, navigator, pluginMenu = false)
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 val shown = bitmap

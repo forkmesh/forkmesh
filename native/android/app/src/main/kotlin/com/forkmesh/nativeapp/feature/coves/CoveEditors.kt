@@ -1,6 +1,8 @@
 package com.forkmesh.nativeapp.feature.coves
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.BorderStroke
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -31,7 +33,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,7 +79,7 @@ class CoveDocumentScreen(private val repo: CoveRepo, private val coveId: String,
         if (!dirty) return false
         val messenger = messengerRef ?: return false
         com.forkmesh.nativeapp.platform.ProjectLifecycle.scope.launch {
-            if (messenger.showConfirmDialog("Discard your changes?", confirmLabel = "Discard", destructive = true)) {
+            if (messenger.confirmAction("Discard your changes?", "Discard")) {
                 text = original
                 navigatorRef?.pop()
             }
@@ -100,7 +101,7 @@ class CoveDocumentScreen(private val repo: CoveRepo, private val coveId: String,
             original = document.body
             loaded = true
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(documentName, navigator) {
                 if (dirty) FmTextButton(onClick = { onBack() }) { Text("Discard") }
                 FmTextButton(
@@ -140,7 +141,7 @@ class CoveDocumentScreen(private val repo: CoveRepo, private val coveId: String,
                         minLines = 12,
                         maxLines = Int.MAX_VALUE,
                         keyboardOptions = if (json) KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Ascii) else KeyboardOptions.Default,
-                        textStyle = if (json) Fm.text.bodyMedium.copy(fontFamily = FontFamily.Monospace) else Fm.text.bodyLarge,
+                        textStyle = if (json) Fm.text.bodyMedium.copy(fontFamily = FmType.mono) else Fm.text.bodyLarge,
                     )
                 }
             }
@@ -233,7 +234,7 @@ private fun CovePipelineEditor(text: String, actor: String, onChange: (String) -
                 modifier = Modifier.fillMaxWidth().padding(top = FmSpace.x3),
                 minLines = 10,
                 maxLines = Int.MAX_VALUE,
-                textStyle = Fm.text.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                textStyle = Fm.text.bodySmall.copy(fontFamily = FmType.mono),
             )
         }
         return

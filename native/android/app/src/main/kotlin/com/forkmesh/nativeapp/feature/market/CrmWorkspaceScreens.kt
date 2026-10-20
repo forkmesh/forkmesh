@@ -373,7 +373,7 @@ class CrmDeckScreen(private val model: CrmModel, private val link: CrmDeckLink) 
         }
         @Suppress("UNUSED_EXPRESSION") CrmRevision.value
         val current = model.data?.decks?.firstOrNull { it.token == link.token } ?: detail?.link ?: link
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Deck link", navigator) {
                 FmIconButton("content_copy", "Copy link", onPressed = { crmCopy(context, current.url); runner.status.show("Link copied.") }, color = Fm.colors.textPrimary)
                 FmIconButton("share", "Share link", onPressed = { crmShare(context, current.url) }, color = Fm.colors.textPrimary)
@@ -459,7 +459,7 @@ class CrmSharedViewScreen(private val model: CrmModel, private val view: CrmView
             bundle = withContext(Dispatchers.IO) { model.sharedView(view) }
             fetched = true
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(view.name, navigator) {
                 FmTextButton(onClick = { runner.run({ copySharedView(view) }) { result -> if (result != null) navigator.pop() } }, enabled = runner.busy == 0) { Text("Copy to ${model.organization}") }
             }

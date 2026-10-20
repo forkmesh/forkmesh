@@ -86,7 +86,7 @@ class ActivityScreen : Screen() {
             leaderboards = withContext(Dispatchers.IO) { ActivityRules.loadLeaderboards(api) }
         }
         val log by ToolsFeature.relayLog.collectAsState()
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Activity", navigator)
             LazyColumn(contentPadding = PaddingValues(FmSpace.x4), modifier = Modifier.fillMaxSize()) {
                 item { ChatFeature.NodeActivitySection(navigator) }

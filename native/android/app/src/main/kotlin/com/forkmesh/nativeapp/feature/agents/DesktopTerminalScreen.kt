@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.agents
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -129,11 +130,10 @@ internal class DesktopTerminalScreen(
         }
         fun end() {
             scope.launch {
-                val confirmed = messenger.showConfirmDialog(
+                val confirmed = messenger.confirmAction(
                     "End ${current.providerLabel}?",
-                    "This closes its terminal on the desktop and stops the agent. Anything it has not saved is lost.",
-                    confirmLabel = "End",
-                    destructive = true,
+                    "End",
+                    "The desktop closes its terminal, which stops the agent. Leaving this screen instead keeps it running.",
                 )
                 if (!confirmed) return@launch
                 ending = true

@@ -102,7 +102,7 @@ class LedgerScreen(initial: LedgerSection) : Screen() {
             onDispose { wallet.stop() }
         }
         @Suppress("UNUSED_EXPRESSION") version
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Ledger & tips", navigator) { FmIconButton("refresh", "Refresh", onPressed = { reload++ }, color = Fm.colors.textPrimary) }
                 val sections = LedgerSection.entries

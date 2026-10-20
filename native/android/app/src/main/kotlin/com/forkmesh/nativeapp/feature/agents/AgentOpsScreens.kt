@@ -30,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.agents.ops.AgentListFilter
@@ -184,7 +183,7 @@ internal class ApprovalScreen(private val approvalId: String) : Screen() {
                                     if (approval.command.isEmpty()) {
                                         Text(approval.question, style = Fm.text.bodyMedium.copy(color = c.textPrimary))
                                     } else {
-                                        Text(approval.command, style = Fm.text.bodyMedium.copy(color = c.textPrimary, fontFamily = FontFamily.Monospace))
+                                        Text(approval.command, style = Fm.text.bodyMedium.copy(color = c.textPrimary, fontFamily = FmType.mono))
                                     }
                                 }
                             }

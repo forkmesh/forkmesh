@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.coves
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -108,7 +109,7 @@ class ActionsSecretsScreen : Screen() {
         val scope = rememberCoroutineScope()
         val model = model
         revision
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Actions secrets", navigator) {
                 if (model != null) {
                     FmIconButton("refresh", "Refresh", onPressed = {
@@ -164,11 +165,10 @@ class ActionsSecretsScreen : Screen() {
                                 })
                                 FmIconButton("delete_outline", "Delete", onPressed = {
                                     scope.launch {
-                                        val confirmed = messenger.showConfirmDialog(
+                                        val confirmed = messenger.confirmAction(
                                             "Delete ${row.name}?",
-                                            "Workflows that use it will stop finding it.",
-                                            confirmLabel = "Delete",
-                                            destructive = true,
+                                            "Delete",
+                                            "Actions that use it will no longer receive it.",
                                         )
                                         if (!confirmed) return@launch
                                         if (!CovesFeature.authenticate(context, messenger, "Delete an Actions secret on your desktop")) return@launch

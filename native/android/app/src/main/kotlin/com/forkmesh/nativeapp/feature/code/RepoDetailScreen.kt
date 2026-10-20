@@ -44,6 +44,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.code.ApiRepoOverviewClient
+import com.forkmesh.nativeapp.shell.ShellBadges
+import com.forkmesh.nativeapp.shell.ShellLoadingOverlay
 import com.forkmesh.nativeapp.code.RepoCatalog
 import com.forkmesh.nativeapp.code.RepoHubSection
 import com.forkmesh.nativeapp.code.RepoMetaItem
@@ -132,6 +134,7 @@ internal class RepoDetailScreen(
                     .map { section -> async(Dispatchers.IO) { section to overview.count(section) } }
                     .awaitAll()
                     .forEach { (section, count) -> overview.record(section, count) }
+                ShellBadges.adoptRepoCounts(ref, overview.counts)
                 tiles = overview.tiles(hiddenSections())
                 counted = true
             } finally {
@@ -257,6 +260,7 @@ internal class RepoDetailScreen(
                     RepoReadmeRow { navigator.push(RepoFileScreen(shown, "README.md")) }
                     Spacer(Modifier.height(navigationBarBottom()))
                 }
+                ShellLoadingOverlay(loading, Modifier.align(Alignment.TopCenter))
             }
         }
     }

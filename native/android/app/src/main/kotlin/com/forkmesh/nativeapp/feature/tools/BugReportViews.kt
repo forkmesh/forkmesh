@@ -72,6 +72,8 @@ import com.forkmesh.nativeapp.tools.BugReportInboxState
 import com.forkmesh.nativeapp.tools.ReportBugCopy
 import com.forkmesh.nativeapp.tools.ReportBugDraft
 import com.forkmesh.nativeapp.tools.loadBugReportInbox
+import com.forkmesh.nativeapp.shell.ShellBadges
+import com.forkmesh.nativeapp.feature.navigation.ShellHomeCountMark
 import com.forkmesh.nativeapp.tools.sendBugReport
 import com.forkmesh.nativeapp.ui.kit.FmField
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
@@ -125,6 +127,8 @@ internal fun BugReportOverlayView(screen: String, sharedText: MutableStateFlow<S
             val opacity by animateFloatAsState(if (active) 1f else BugButtonGeometry.IDLE_OPACITY, label = "bugOpacity")
             val scale by animateFloatAsState(if (dragAt != null) 1.08f else if (pressed) 0.94f else 1f, label = "bugScale")
             val c = Fm.colors
+            val badges by ShellBadges.counts.collectAsState()
+            val admin = Services.get<AuthService>()?.session?.collectAsState()?.value?.isAdmin == true
             Box(
                 Modifier
                     .offset { IntOffset(with(density) { at.x.dp.roundToPx() }, with(density) { at.y.dp.roundToPx() }) }
@@ -161,6 +165,21 @@ internal fun BugReportOverlayView(screen: String, sharedText: MutableStateFlow<S
             ) {
                 FmIcon("bug_report_outlined", size = 21.dp, tint = c.textSecondary)
             }
+            val newReports = if (admin) badges.bugReports ?: 0 else 0
+            if (newReports > 0) {
+                Box(
+                    Modifier
+                        .offset { IntOffset(with(density) { (at.x - 8).dp.roundToPx() }, with(density) { (at.y - 8).dp.roundToPx() }) }
+                        .size((BugButtonGeometry.SIZE_DP + 16).dp)
+                        .alpha(opacity),
+                ) {
+                    ShellHomeCountMark(
+                        if (newReports > 999) "999+" else "$newReports",
+                        unread = true,
+                        modifier = Modifier.align(Alignment.TopEnd),
+                    )
+                }
+            }
         }
     }
     if (sheetOpen) {
@@ -195,6 +214,7 @@ internal fun ReportBugSheet(
         }
     }
     LaunchedEffect(admin) { if (admin) loadInbox(inbox.status) }
+    LaunchedEffect(inbox.counts) { if (inbox.loaded && inbox.counts.isNotEmpty()) ShellBadges.adoptBugReports(inbox.counts) }
     fun setInboxStatus(id: String, value: String) {
         if (!inbox.canSet(id, value)) return
         inbox = inbox.updatingStarted(id)

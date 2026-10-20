@@ -40,6 +40,7 @@ import com.forkmesh.nativeapp.rssreader.RssFormat
 import com.forkmesh.nativeapp.rssreader.RssScope
 import com.forkmesh.nativeapp.rssreader.RssSettings
 import com.forkmesh.nativeapp.ui.kit.FmCircularProgressIndicator
+import com.forkmesh.nativeapp.shell.ShellLoadingOverlay
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
 import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
@@ -162,6 +163,7 @@ internal class RssTimelineScreen(private val scope: RssScope) : Screen() {
                             }
                         }
                     }
+                    ShellLoadingOverlay(refreshing, Modifier.align(Alignment.TopCenter))
                 }
             }
             if (confirm) {

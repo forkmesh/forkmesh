@@ -74,7 +74,7 @@ class TimersScreen : Screen() {
                 delay(if (timers.any { it.isRunning }) 250 else 1_000)
             }
         }
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Timers", navigator) {
                     if (timers.any { it.isFinished }) {

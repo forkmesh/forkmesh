@@ -1,5 +1,7 @@
 package com.forkmesh.nativeapp.feature.openwrt
 
+import com.forkmesh.nativeapp.ui.kit.FmSwitch
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +26,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,7 +39,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -87,7 +87,7 @@ private fun CoroutineScope.guard(block: suspend () -> Unit) = launch {
 
 @Composable
 private fun RouterPage(title: String, navigator: Navigator, root: Boolean = false, content: LazyListScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+    Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
         ToolsAppBar(title, navigator, pluginMenu = root)
         if (state.busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         LazyColumn(Modifier.fillMaxSize()) {
@@ -161,7 +161,7 @@ private fun Toggle(label: String, checked: Boolean, onChange: (Boolean) -> Unit)
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = Fm.text.bodyMedium, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = onChange)
+        FmSwitch(checked = checked, onCheckedChange = onChange)
     }
 }
 
@@ -231,7 +231,7 @@ class OpenWrtScreen : Screen() {
             AlertDialog(
                 onDismissRequest = { reviewing = false },
                 title = { Text("Waiting changes") },
-                text = { Text(state.snapshot.pendingLines.joinToString("\n"), fontFamily = FontFamily.Monospace) },
+                text = { Text(state.snapshot.pendingLines.joinToString("\n"), fontFamily = FmType.mono) },
                 confirmButton = { TextButton(onClick = { reviewing = false }) { Text("Done") } },
             )
         }
@@ -289,7 +289,7 @@ class OpenWrtScreen : Screen() {
                 }
                 if (state.pendingCertificate.isNotEmpty()) {
                     Header("Certificate fingerprint (SHA-256)")
-                    Text(state.pendingCertificate, style = Fm.text.bodySmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = FmSpace.x4))
+                    Text(state.pendingCertificate, style = Fm.text.bodySmall, fontFamily = FmType.mono, modifier = Modifier.padding(horizontal = FmSpace.x4))
                     Note("Compare it with the fingerprint the router shows before you trust it.")
                     Actions { TextButton(onClick = { scope.guard { state.trustCertificate() } }) { Text("Trust this certificate") } }
                 }
@@ -804,7 +804,7 @@ class OpenWrtStorageScreen : Screen() {
                     if (state.storageLog.isNotEmpty()) {
                         Header("USB storage check")
                         SelectionContainer {
-                            Text(state.storageLog, style = Fm.text.bodySmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
+                            Text(state.storageLog, style = Fm.text.bodySmall, fontFamily = FmType.mono, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
                         }
                     }
                     Header("Disks")
@@ -924,7 +924,7 @@ class OpenWrtPackagesScreen : Screen() {
                         TextButton(onClick = { scope.guard { state.packageAction("update", emptyList()) } }, enabled = !state.busy) { Text("Update lists") }
                     }
                     if (state.packageOutput.isNotEmpty()) {
-                        Text(state.packageOutput, style = Fm.text.bodySmall, fontFamily = FontFamily.Monospace, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
+                        Text(state.packageOutput, style = Fm.text.bodySmall, fontFamily = FmType.mono, modifier = Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2))
                     }
                     Field("Filter installed packages", query, { query = it })
                     Header("Installed (${state.snapshot.packages.size})")
