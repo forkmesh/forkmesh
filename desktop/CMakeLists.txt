@@ -722,6 +722,8 @@ set(FORKMESH_APP_SOURCES
     src/BackgroundMode.cpp
     src/BackgroundSettings.h
     src/BackgroundSettings.cpp
+    src/BackgroundRunnerBadge.h
+    src/BackgroundRunnerBadge.cpp
     src/KeepAwake.h
     src/KeepAwake.cpp
     src/StartupSplash.h

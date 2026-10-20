@@ -76,6 +76,7 @@ private:
     void loadStorage();
     void loadPackages();
     void loadAdvancedConfigs();
+    void probeShareConfig(QStringList candidates);
 
     void stage(const QString &config, const QString &section, const QJsonObject &values,
                const QStringList &removed, const QString &what, const Client::Done &after = {});

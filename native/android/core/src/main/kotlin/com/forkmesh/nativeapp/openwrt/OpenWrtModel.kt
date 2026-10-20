@@ -861,6 +861,11 @@ object OpenWrtModel {
         else -> ""
     }
 
+    fun shareConfigCandidates(installed: List<String>): List<String> = listOfNotNull(
+        "ksmbd".takeIf { installed.any { it in listOf("ksmbd-server", "luci-app-ksmbd") } },
+        "samba4".takeIf { installed.any { it in listOf("samba4-server", "luci-app-samba4") } },
+    )
+
     fun needsShareSessionRenewal(snapshot: OpenWrtSnapshot): Boolean =
         snapshot.shareConfig.isEmpty() && snapshot.pendingCount == 0 &&
             snapshot.packages.any { it.name in listOf("luci-app-ksmbd", "luci-app-samba4") }
