@@ -9,9 +9,10 @@ BANNED_SHA256 = frozenset({
     "230c8bf08fe52694cc370a2a128009933a7c3327dc1ed56578001b334788500a",
     "4bf55a9ce713ee0c1ca0a4d517cc5a5c3b83f7dd4dc5f9009b19b3346191e8cd",
     "1ec32ca39b427db9f1eb69a2c43f6aadb055d665340177848b00c24554251b09",
+    "d358b73fc52d75708ca1344b2ee3d2a868500547e455c7f14db9127fe916877b",
 })
-BANNED_LENGTHS = (5, 6, 9)
-WORD = re.compile(r"[a-z0-9]+")
+BANNED_LENGTHS = (5, 6, 9, 16)
+WORD = re.compile(r"[a-z0-9_]+")
 MAX_BYTES = 4 * 1024 * 1024
 
 

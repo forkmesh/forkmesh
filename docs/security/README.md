@@ -144,4 +144,7 @@ mostly one identical row per desktop status heartbeat.
   needs nonces.
 - `app/tests/test_no_banned_identifiers.py` guards against personal
   identifiers returning through branches cut from rewritten history; rebuild
-  such branches on `main`.
+  such branches on `main`. Since 2026-10-19 it also bans the owner's personal
+  Reddit handle (words joined by `_` count as one word, so the 16-character
+  handle matches as a whole). Docs and tests use the desk's accounts or the
+  `ada_lovelace` placeholder.
