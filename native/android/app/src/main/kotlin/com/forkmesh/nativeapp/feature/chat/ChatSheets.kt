@@ -185,6 +185,12 @@ suspend fun pickReaction(messenger: FmMessenger): String? = messenger.showModalB
     ChatReactionPicker(Modifier.weight(1f, fill = false)) { close(it) }
 }
 
+suspend fun pickSticker(messenger: FmMessenger): String? = messenger.showModalBottomSheet<String> { close ->
+    Text("Add sticker", modifier = Modifier.padding(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x4, bottom = FmSpace.x1), style = Fm.text.titleMedium)
+    ChatStickerPicker { close(it) }
+    Spacer(Modifier.height(FmSpace.x2))
+}
+
 suspend fun pickEmoji(messenger: FmMessenger): String? = messenger.showModalBottomSheet<String> { close ->
     Text("Emoji", modifier = Modifier.padding(FmSpace.x4), style = Fm.text.titleMedium)
     ChatEmojiGrid(ChatComposerTools.emojiPicker) { close(ChatComposerTools.emojiPicker[it]) }
@@ -281,6 +287,7 @@ suspend fun messageActionsFlow(
     if (!relayRoom && copyText.isEmpty() && profileName == null && !deletable && !hideable) return
     val sections = listOf(
         listOfNotNull(
+            if (relayRoom && chat.canSticker(conversation)) MessageAction("sticker", "Add sticker", "sticky_note_2_outlined") else null,
             if (relayRoom && !inThread && chat.canReplyInThread(conversation)) MessageAction("thread", "Reply in thread", "forum_outlined") else null,
             if (relayRoom && row.editable) MessageAction("edit", "Edit message", "edit_outlined") else null,
             if (copyText.isNotEmpty()) MessageAction("copy", "Copy text", "copy_outlined") else null,
@@ -314,6 +321,10 @@ suspend fun messageActionsFlow(
         choice == "more" -> {
             val value = pickReaction(messenger) ?: return
             withContext(Dispatchers.IO) { chat?.toggleReaction(message, value) }
+        }
+        choice == "sticker" -> {
+            val slug = pickSticker(messenger) ?: return
+            withContext(Dispatchers.IO) { chat?.toggleSticker(message, slug) }
         }
         choice == "thread" -> navigator.push(ChatThreadScreen(conversation, message.id))
         choice == "copy" -> copyMessageText(context, copyText, status)

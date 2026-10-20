@@ -566,6 +566,7 @@ private struct ChatTranscript<Drawer: View>: View {
         let relayRoom: Bool = !hub.inMesh && !hub.isReadOnly(message.conversation)
         let channel: String = message.conversation
         var react: ((String) -> Void)? = nil
+        var sticker: ((String) -> Void)? = nil
         var thread: (() -> Void)? = nil
         var reply: (() -> Void)? = nil
         var edit: (() -> Void)? = nil
@@ -574,6 +575,7 @@ private struct ChatTranscript<Drawer: View>: View {
         let ephemeral: Bool = message.app?.ephemeral == true
         if relayRoom && !ephemeral {
             react = { (value: String) in hub.toggleReaction(message, value: value) }
+            sticker = { (slug: String) in hub.toggleSticker(message, slug: slug) }
             if ChatHub.hasThreads(channel) {
                 thread = { onRoute(.thread(channel: channel, id: message.id)) }
             }
@@ -629,7 +631,8 @@ private struct ChatTranscript<Drawer: View>: View {
             onRemind: ephemeralNote ? nil : { (option: ChatReminderOption) in
                 let place: String = hub.conversationLabel(message.conversation)
                 Task { onNotice(await ChatReminders.schedule(option, message: message, text: text, place: place)) }
-            })
+            },
+            onSticker: sticker)
     }
 
     private func loadDraft(_ conversation: String) {
@@ -799,6 +802,7 @@ struct ChatRowActions {
     var onShare: (() -> Void)? = nil
     var onReply: (() -> Void)? = nil
     var onRemind: ((ChatReminderOption) -> Void)? = nil
+    var onSticker: ((String) -> Void)? = nil
 }
 
 struct ChatDayDivider: View {
@@ -964,7 +968,7 @@ struct ChatMessageRow: View {
                         .padding(.top, 2)
                 }
                 if let onReact = actions.onReact {
-                    ChatReactionBar(chips: row.reactions, onToggle: onReact)
+                    ChatReactionBar(chips: row.reactions, onToggle: onReact, onSticker: actions.onSticker)
                 }
                 if let summary = row.thread, let onThread = actions.onThread {
                     ChatThreadSummaryButton(summary: summary, onOpen: onThread)
@@ -977,6 +981,11 @@ struct ChatMessageRow: View {
                     ChatReceiptMark(receipt: receipt, muted: fm.textTertiary, background: fm.bgBase)
                         .padding(.top, 3)
                 }
+            }
+            .padding(.top, row.stickers.isEmpty ? 0 : 6)
+            .overlay(alignment: .topTrailing) {
+                ChatStickerStack(chips: row.stickers, onToggle: actions.onSticker)
+                    .offset(x: 4, y: -10)
             }
         }
         .padding(.horizontal, FmSpace.x3)
@@ -1022,6 +1031,9 @@ struct ChatMessageRow: View {
                 }
             }
             ChatReactionMenu(onPick: onReact)
+        }
+        if let onSticker = actions.onSticker {
+            ChatStickerMenu(onPick: onSticker)
         }
         if let onThread = actions.onThread {
             Button(action: onThread) { Label("Reply", systemImage: "arrowshape.turn.up.left") }

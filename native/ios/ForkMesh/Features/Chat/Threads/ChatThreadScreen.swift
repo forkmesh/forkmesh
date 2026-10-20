@@ -147,7 +147,8 @@ private struct ChatThreadBody: View {
         ChatRowActions(
             onCopied: { notice = FmNotice("Copied to clipboard") },
             onReact: { (value: String) in hub.toggleReaction(root, value: value) }, onThread: nil, onEdit: nil, onDelete: nil,
-            onIssue: nil, onPrompt: nil, onProfile: nil, onHide: { hub.hide(root) })
+            onIssue: nil, onPrompt: nil, onProfile: nil, onHide: { hub.hide(root) },
+            onSticker: { (slug: String) in hub.toggleSticker(root, slug: slug) })
     }
 
     private func replyActions(_ row: ChatRow) -> ChatRowActions {
@@ -170,7 +171,8 @@ private struct ChatThreadBody: View {
         return ChatRowActions(
             onCopied: { notice = FmNotice("Copied to clipboard") },
             onReact: { (value: String) in hub.toggleReaction(message, value: value) }, onThread: nil, onEdit: edit,
-            onDelete: delete, onIssue: nil, onPrompt: nil, onProfile: profile, onHide: { hub.hide(message) })
+            onDelete: delete, onIssue: nil, onPrompt: nil, onProfile: profile, onHide: { hub.hide(message) },
+            onSticker: { (slug: String) in hub.toggleSticker(message, slug: slug) })
     }
 
     private func send() {

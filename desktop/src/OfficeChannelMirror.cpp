@@ -3,6 +3,7 @@
 #include "ChatRecipients.h"
 #include "ServerNode.h"
 #include "SettingsWrite.h"
+#include "StickerCatalog.h"
 
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -410,11 +411,12 @@ bool roomMutationFromPlain(const QJsonObject &plain, RoomMutation *out)
         mutation.senderId.isEmpty())
         return false;
     if (mutation.type == QLatin1String("reaction")) {
-        mutation.emoji = plain.value(QStringLiteral("emoji")).toString();
+        const QString wireEmoji = plain.value(QStringLiteral("emoji")).toString();
         const QJsonValue added = plain.value(QStringLiteral("added"));
-        if (mutation.emoji.trimmed().isEmpty() || mutation.emoji.size() > 32 ||
+        if (wireEmoji.trimmed().isEmpty() || wireEmoji.size() > 32 ||
             !added.isBool())
             return false;
+        mutation.emoji = stickers::valueFromWire(plain);
         mutation.added = added.toBool();
         const QString reactorId =
             plain.value(QStringLiteral("reactorId")).toString().left(64);
@@ -1135,7 +1137,7 @@ QJsonObject OfficeChannelMirror::directPlain(const Room &room,
         plain.insert(QStringLiteral("type"), QStringLiteral("reaction"));
         plain.insert(QStringLiteral("conversation"), channel);
         plain.insert(QStringLiteral("target"), pending.target);
-        plain.insert(QStringLiteral("emoji"), pending.emoji);
+        stickers::writeWire(plain, pending.emoji);
         plain.insert(QStringLiteral("reactorId"), m_selfId);
         plain.insert(QStringLiteral("reactorName"), name);
         plain.insert(QStringLiteral("added"), pending.added);

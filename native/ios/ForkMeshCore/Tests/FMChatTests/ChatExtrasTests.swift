@@ -118,6 +118,98 @@ final class ChatExtrasTests: XCTestCase {
         await h.close()
     }
 
+    @MainActor func testStickersArriveInCatalogOrderAndNeverCollideWithTheSameEmojiReaction() async throws {
+        let (hub, h) = try await hub()
+        try h.sendPlain(peerFrame("chat", ["channel": "#general", "text": "ready to merge"], id: "m-s"))
+        let shown = await waitUntil { hub.rows.count == 1 }
+        XCTAssertTrue(shown)
+        func sticker(_ slug: String, _ emoji: String, by node: String, name: String, added: Bool = true) -> JSONObject {
+            peerFrame(
+                "reaction",
+                [
+                    "conversation": "#general", "target": "m-s", "emoji": .string(emoji), "sticker": .string(slug),
+                    "reactorId": .string(node), "reactorName": .string(name), "added": .bool(added),
+                ], sender: node)
+        }
+        try await h.sendProtected(sticker("party", "\u{1F389}", by: "peer-1", name: "Pat"))
+        try await h.sendProtected(sticker("lgtm", "\u{2705}", by: "peer-1", name: "Pat"))
+        try await h.sendProtected(sticker("lgtm", "\u{2705}", by: "peer-2", name: "Sam"))
+        try await h.sendProtected(
+            peerFrame(
+                "reaction",
+                ["conversation": "#general", "target": "m-s", "emoji": "\u{1F389}", "reactorId": "peer-1", "added": true]))
+        let placed = await waitUntil { hub.rows[0].stickers.count == 2 && hub.rows[0].reactions.count == 1 }
+        XCTAssertTrue(placed)
+        XCTAssertEqual(hub.rows[0].stickers.map(\.id), ["lgtm", "party"])
+        XCTAssertEqual(hub.rows[0].stickers[0].count, 2)
+        XCTAssertEqual(hub.rows[0].stickers[0].countLabel, "\u{00D7}2")
+        XCTAssertEqual(hub.rows[0].stickers[0].names, ["Pat", "Sam"])
+        XCTAssertEqual(hub.rows[0].stickers[1].countLabel, "")
+        XCTAssertEqual(hub.rows[0].reactions.map(\.value), ["celebrate"])
+
+        try await h.sendProtected(sticker("party", "\u{1F389}", by: "peer-1", name: "Pat", added: false))
+        let unstuck = await waitUntil { hub.rows[0].stickers.map(\.id) == ["lgtm"] }
+        XCTAssertTrue(unstuck)
+        XCTAssertEqual(hub.rows[0].reactions.map(\.value), ["celebrate"], "taking the sticker off leaves the 🎉 reaction")
+
+        var spoofed = sticker("party", "\u{1F389}", by: "intruder", name: "Mallory")
+        spoofed["reactorId"] = "peer-2"
+        try await h.sendProtected(spoofed)
+        try await h.sendProtected(sticker("hypothetical-new", "\u{1F680}", by: "peer-2", name: "Sam"))
+        let fellBack = await waitUntil { hub.rows[0].reactions.count == 2 }
+        XCTAssertTrue(fellBack)
+        XCTAssertEqual(hub.rows[0].reactions.map(\.value), ["celebrate", "rocket"], "an unknown sticker shows as its fallback reaction")
+        XCTAssertEqual(hub.rows[0].stickers.map(\.id), ["lgtm"])
+        XCTAssertEqual(hub.rows[0].stickers[0].count, 2, "a spoofed placer is refused")
+
+        let restored = try XCTUnwrap(ChatHistoryCodec.decode(ChatHistoryCodec.encode(hub.historySnapshot())))
+        XCTAssertEqual(restored.stickers["m-s"]?["lgtm"], ["peer-1": "Pat", "peer-2": "Sam"])
+        await h.close()
+    }
+
+    @MainActor func testPlacingAStickerSendsAReactionFrameWithTheFallbackAndTogglesOff() async throws {
+        let (hub, h) = try await hub()
+        try h.sendPlain(peerFrame("chat", ["channel": "#general", "text": "deployed"], id: "m-t"))
+        let shown = await waitUntil { hub.rows.count == 1 }
+        XCTAssertTrue(shown)
+        try await h.sendProtected(
+            peerFrame(
+                "reaction",
+                ["conversation": "#general", "target": "m-t", "emoji": "\u{1F680}", "sticker": "ship-it", "reactorId": "peer-1", "added": true]))
+        let theirs = await waitUntil { hub.rows[0].stickers.first?.count == 1 }
+        XCTAssertTrue(theirs)
+        let message = hub.rows[0].message
+        hub.toggleSticker(message, slug: "ship-it")
+        XCTAssertEqual(hub.rows[0].stickers.first?.count, 2)
+        XCTAssertEqual(hub.rows[0].stickers.first?.mine, true)
+        XCTAssertTrue(hub.rows[0].reactions.isEmpty)
+        let sentFrame = await waitUntil { h.openFrames().contains { $0["sticker"]?.text == "ship-it" } }
+        XCTAssertTrue(sentFrame)
+        let frame = try XCTUnwrap(h.openFrames().first { $0["sticker"]?.text == "ship-it" })
+        XCTAssertEqual(frame["type"]?.text, "reaction")
+        XCTAssertEqual(frame["emoji"]?.text, "\u{1F680}")
+        XCTAssertEqual(frame["target"]?.text, "m-t")
+        XCTAssertEqual(frame["reactorId"]?.text, h.relay.selfId)
+        XCTAssertEqual(frame["added"], .bool(true))
+        XCTAssertEqual(frame["conversation"]?.text, "#general")
+
+        hub.toggleSticker(message, slug: "ship-it")
+        XCTAssertEqual(hub.rows[0].stickers.first?.count, 1)
+        XCTAssertEqual(hub.rows[0].stickers.first?.mine, false)
+        hub.toggleSticker(message, slug: "not-a-sticker")
+        XCTAssertTrue(hub.rows[0].reactions.isEmpty)
+        await h.close()
+    }
+
+    func testStickerFieldsAndCatalog() {
+        XCTAssertEqual(StickerCatalog.entry("love-it")?.fallback, "\u{2764}\u{FE0F}")
+        XCTAssertEqual(StickerCatalog.entries.map(\.slug), ["lgtm", "ship-it", "nice", "thanks", "on-it", "wow", "love-it", "party"])
+        XCTAssertTrue(StickerCatalog.entries.allSatisfy { $0.fallback.count <= 16 })
+        let fields = ChatExtras.stickerFields(added: false, messageId: "m", sticker: StickerCatalog.entries[0], selfId: "me")
+        XCTAssertEqual(
+            fields, ["target": "m", "emoji": "\u{2705}", "sticker": "lgtm", "reactorId": "me", "added": false])
+    }
+
     @MainActor func testOnlyTheAuthorCanEdit() async throws {
         let (hub, h) = try await hub()
         try h.sendPlain(peerFrame("chat", ["channel": "#general", "text": "original"], id: "m-2"))

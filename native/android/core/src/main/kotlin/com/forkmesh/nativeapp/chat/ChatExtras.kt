@@ -54,6 +54,12 @@ data class ReactionChip(val value: String, val count: Int, val names: List<Strin
     val label: String get() = ReactionCatalog.label(value)
 }
 
+data class StickerChip(val slug: String, val count: Int, val names: List<String>, val mine: Boolean) {
+    val entry: StickerEntry? get() = StickerCatalog.entry(slug)
+    val text: String get() = entry?.text ?: slug
+    val label: String get() = if (count > 1) "$text \u00d7$count" else text
+}
+
 data class ChatTypingPeer(val name: String, val untilMs: Long)
 
 class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
@@ -112,6 +118,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
     private val rootChannel = HashMap<String, String>()
     private val reactionState = HashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>>()
     private val reactionOrder = HashMap<String, List<String>>()
+    private val stickerState = HashMap<String, LinkedHashMap<String, LinkedHashMap<String, String>>>()
     private val editedText = HashMap<String, String>()
     private val typingState = HashMap<String, LinkedHashMap<String, ChatTypingPeer>>()
     private val files = HashMap<String, ChatAttachment>()
@@ -187,6 +194,22 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
     fun hasReacted(messageId: String, value: String): Boolean {
         val me = selfId
         return me.isNotEmpty() && synchronized(lock) { reactionState[messageId]?.get(value)?.containsKey(me) == true }
+    }
+
+    fun hasStuck(messageId: String, slug: String): Boolean {
+        val me = selfId
+        return me.isNotEmpty() && synchronized(lock) { stickerState[messageId]?.get(slug)?.containsKey(me) == true }
+    }
+
+    fun stickers(messageId: String): List<StickerChip> = synchronized(lock) {
+        val state = stickerState[messageId] ?: return@synchronized emptyList()
+        val me = selfId
+        state.keys.sortedBy(StickerCatalog::index).mapNotNull { slug ->
+            val placers = state[slug]
+            if (placers.isNullOrEmpty()) return@mapNotNull null
+            val names = placers.keys.sorted().map { placers[it] ?: "" }.filter { it.isNotEmpty() }
+            StickerChip(slug, placers.size, names, placers.containsKey(me))
+        }
     }
 
     fun text(message: ChatMessage): String = synchronized(lock) { editedText[message.id] ?: message.text }
@@ -284,10 +307,16 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val target = jsonText(frame["target"])
         val raw = jsonText(frame["emoji"])
         val reactorId = frame["reactorId"]?.let(::jsonText) ?: senderId
-        if (target.isEmpty() || raw.isEmpty() || raw.codePointCount(0, raw.length) > 16 || reactorId.isEmpty()) return
+        if (target.isEmpty() || reactorId.isEmpty()) return
         if (senderId.isNotEmpty() && reactorId != senderId) return
-        val value = ReactionCatalog.valueForEmoji(raw)
         val name = (frame["reactorName"] ?: frame["sender"])?.let(::jsonText).orEmpty().take(ChatLimits.MAX_DISPLAY_NAME_CHARS)
+        val sticker = jsonText(frame["sticker"])
+        if (StickerCatalog.isKnown(sticker)) {
+            applySticker(target, sticker, reactorId, name, frame["added"] == true)
+            return
+        }
+        if (raw.isEmpty() || raw.codePointCount(0, raw.length) > 16) return
+        val value = ReactionCatalog.valueForEmoji(raw)
         val state = reactionState[target] ?: LinkedHashMap()
         val order = ArrayList(reactionOrder[target].orEmpty())
         val reactors = state[value] ?: LinkedHashMap()
@@ -304,6 +333,20 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         val kept = order.filter { state.containsKey(it) }
         if (state.isEmpty()) reactionState.remove(target) else reactionState[target] = state
         if (kept.isEmpty()) reactionOrder.remove(target) else reactionOrder[target] = kept
+        changed()
+    }
+
+    private fun Batch.applySticker(target: String, slug: String, reactorId: String, name: String, added: Boolean) {
+        val state = stickerState[target] ?: LinkedHashMap()
+        val placers = state[slug] ?: LinkedHashMap()
+        if (added) {
+            if (placers.containsKey(reactorId) || placers.size >= MAX_REACTORS_PER_REACTION) return
+            placers[reactorId] = name
+        } else if (placers.remove(reactorId) == null) {
+            return
+        }
+        if (placers.isEmpty()) state.remove(slug) else state[slug] = placers
+        if (state.isEmpty()) stickerState.remove(target) else stickerState[target] = state
         changed()
     }
 
@@ -356,6 +399,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         editedText.remove(id)
         reactionState.remove(id)
         reactionOrder.remove(id)
+        stickerState.remove(id)
         val file = files.remove(id)
         if (file != null) {
             fileBytes -= file.data.size
@@ -583,6 +627,29 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         return false
     }
 
+    fun toggleSticker(conversation: String, messageId: String, slug: String): Boolean {
+        val target = sink ?: return false
+        val entry = StickerCatalog.entry(slug) ?: return false
+        if (messageId.isEmpty()) return false
+        val me = target.selfId
+        val added = synchronized(lock) { stickerState[messageId]?.get(slug)?.containsKey(me) != true }
+        val frame = target.makeFrame("reaction")
+        frame["target"] = messageId
+        frame["emoji"] = entry.fallback
+        frame["sticker"] = slug
+        frame["reactorId"] = me
+        frame["reactorName"] = jsonText(frame["sender"])
+        frame["added"] = added
+        routed(frame, conversation, persist = true, private = isPrivate(conversation))
+        target.applyFrame(frame)
+        if (target.sendFrame(frame)) return true
+        val undo = target.makeFrame("reaction")
+        for ((key, v) in frame) if (key != "id" && key != "ts") undo[key] = v
+        undo["added"] = !added
+        target.applyFrame(undo)
+        return false
+    }
+
     fun edit(conversation: String, messageId: String, text: String): Boolean {
         val body = text.trim().take(ChatLimits.MAX_TEXT_CHARS)
         val target = sink ?: return false
@@ -692,6 +759,10 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
 
     fun snapshotReactionOrder(): Map<String, List<String>> = synchronized(lock) { HashMap(reactionOrder) }
 
+    fun snapshotStickers(): Map<String, Map<String, Map<String, String>>> = synchronized(lock) {
+        stickerState.mapValues { (_, state) -> state.mapValues { LinkedHashMap(it.value) } }
+    }
+
     fun snapshotEdits(): Map<String, String> = synchronized(lock) { HashMap(editedText) }
 
     fun restore(
@@ -700,6 +771,7 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
         reactions: Map<String, Map<String, Map<String, String>>>,
         order: Map<String, List<String>>,
         edits: Map<String, String>,
+        stickers: Map<String, Map<String, Map<String, String>>> = emptyMap(),
     ) = batch {
         for (reply in replies) {
             val root = roots[reply.id] ?: continue
@@ -714,6 +786,12 @@ class ChatExtras(private val now: () -> Long = System::currentTimeMillis) {
             for ((value, reactors) in state) copy[value] = LinkedHashMap(reactors)
             reactionState[id] = copy
             reactionOrder[id] = (order[id] ?: state.keys.sorted()).filter { copy.containsKey(it) }
+        }
+        for ((id, state) in stickers) {
+            if (stickerState.containsKey(id)) continue
+            val copy = LinkedHashMap<String, LinkedHashMap<String, String>>()
+            for ((slug, placers) in state) if (StickerCatalog.isKnown(slug) && placers.isNotEmpty()) copy[slug] = LinkedHashMap(placers)
+            if (copy.isNotEmpty()) stickerState[id] = copy
         }
         for ((id, text) in edits) if (!editedText.containsKey(id)) editedText[id] = text
         changed()

@@ -197,6 +197,44 @@ class DirectMessagesTest {
         assertEq("love", r.hub.rows(r.conversation).last().reactions.single().value)
     }
 
+    fun testStickersTravelBothWaysInADirectMessage() {
+        val r = rig()
+        r.fromPeer(peerChat("pat-1", "root"), "a".repeat(40))
+        r.fromPeer(
+            r.peerFrame(
+                "reaction", "pat-2", "target" to "pat-1", "emoji" to "🎉", "sticker" to "party",
+                "reactorId" to "pat-node", "reactorName" to "pat", "added" to true,
+            ),
+        )
+        val row = r.hub.rows(r.conversation).single()
+        assertEq(listOf("party"), row.stickers.map { it.slug })
+        expect(row.reactions.isEmpty(), "a known sticker is not also a reaction")
+        expect(r.hub.canSticker(r.conversation))
+        val before = r.socket.sent.size
+        r.hub.toggleSticker(row.message, "ship-it")
+        assertEq(listOf("ship-it", "party"), r.hub.rows(r.conversation).single().stickers.map { it.slug })
+        val (envelope, sent) = r.sealedSent(before).single()
+        assertEq("reaction", sent["type"])
+        assertEq("pat-1", sent["target"])
+        assertEq("🚀", sent["emoji"])
+        assertEq("ship-it", sent["sticker"])
+        assertEq(true, sent["added"])
+        assertEq("me-node", sent["reactorId"])
+        assertEq(true, envelope["persist"])
+        assertEq(null, envelope["notify"])
+        val off = r.socket.sent.size
+        r.hub.toggleSticker(row.message, "ship-it")
+        assertEq(false, r.sealedSent(off).single().second["added"])
+        assertEq(listOf("party"), r.hub.rows(r.conversation).single().stickers.map { it.slug })
+        r.fromPeer(
+            r.peerFrame(
+                "reaction", "pat-3", "target" to "pat-1", "emoji" to "🎉", "sticker" to "party",
+                "reactorId" to "pat-node", "added" to false,
+            ),
+        )
+        expect(r.hub.rows(r.conversation).single().stickers.isEmpty())
+    }
+
     fun testDirectThreadRepliesStayInTheThreadAndCarryTheirOwnMarks() {
         val r = rig()
         r.fromPeer(peerChat("pat-1", "root"), "a".repeat(40))

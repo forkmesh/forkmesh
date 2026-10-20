@@ -305,8 +305,12 @@ struct MessagesBubbleRow: View {
                     avatarSlot
                 }
                 content
-                    .overlay(alignment: mine ? .topLeading : .topTrailing) { tapbacks }
-                    .padding(.top, row.reactions.isEmpty ? 0 : 14)
+                    .overlay(alignment: tapbacksLead ? .topLeading : .topTrailing) { tapbacks }
+                    .overlay(alignment: .topTrailing) {
+                        ChatStickerStack(chips: row.stickers, onToggle: actions.onSticker)
+                            .offset(x: 6, y: -14)
+                    }
+                    .padding(.top, row.reactions.isEmpty && row.stickers.isEmpty ? 0 : 14)
                     .contextMenu { menu }
                     .onTapGesture(count: 2) { if actions.onReact != nil { onTapback() } }
                 if !mine { Spacer(minLength: 56) }
@@ -518,6 +522,8 @@ struct MessagesBubbleRow: View {
         return CGSize(width: max(120, width * scale), height: max(90, height * scale))
     }
 
+    private var tapbacksLead: Bool { mine || !row.stickers.isEmpty }
+
     @ViewBuilder private var tapbacks: some View {
         if !row.reactions.isEmpty {
             MessagesTapbackBadge(chips: row.reactions, colors: colors, onTap: { onTapback() })
@@ -533,6 +539,9 @@ struct MessagesBubbleRow: View {
                 }
             }
             ChatReactionMenu(onPick: onReact)
+        }
+        if let onSticker = actions.onSticker {
+            ChatStickerMenu(onPick: onSticker)
         }
         if let onReply = actions.onReply ?? actions.onThread {
             Button(action: onReply) { Label("Reply", systemImage: "arrowshape.turn.up.left") }

@@ -143,6 +143,31 @@ object ReactionCatalog {
     }
 }
 
+data class StickerEntry(val slug: String, val text: String, val color: Long, val tilt: Float, val fallback: String)
+
+object StickerCatalog {
+    val entries: List<StickerEntry> = listOf(
+        StickerEntry("lgtm", "LGTM", 0xFF8250DF, -6f, "✅"),
+        StickerEntry("ship-it", "Ship it", 0xFF0969DA, 5f, "🚀"),
+        StickerEntry("nice", "Nice!", 0xFFBF3989, -4f, "👍"),
+        StickerEntry("thanks", "Thanks!", 0xFFBC4C00, 6f, "🙏"),
+        StickerEntry("on-it", "On it", 0xFF57606A, -5f, "👀"),
+        StickerEntry("wow", "Wow!", 0xFFCF222E, 4f, "😮"),
+        StickerEntry("love-it", "Love it", 0xFFD6336C, -3f, "❤️"),
+        StickerEntry("party", "Party!", 0xFF9A6700, 7f, "🎉"),
+    )
+
+    fun entry(slug: String): StickerEntry? = entries.firstOrNull { it.slug == slug }
+
+    fun isKnown(slug: String): Boolean = entry(slug) != null
+
+    fun index(slug: String): Int = entries.indexOfFirst { it.slug == slug }.let { if (it < 0) entries.size else it }
+
+    fun canOffer(conversation: String): Boolean =
+        (conversation.startsWith("#") || conversation.startsWith("@") || DirectMessageFrames.isDirect(conversation)) &&
+            conversation != MESH_CONVERSATION && !OfficeFrames.isOffice(conversation)
+}
+
 interface ChatFrameSink {
     val selfId: String
 

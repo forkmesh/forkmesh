@@ -6,6 +6,7 @@
 #include "ChatRecipients.h"
 #include "DiscordClient.h"
 #include "ReactionCatalog.h"
+#include "StickerCatalog.h"
 #include "LocalMeshNode.h"
 #include "MeshFirewall.h"
 #include "OfficeChannelMirror.h"
@@ -4443,6 +4444,45 @@ void testOfficeRoomMutationFrames()
     noDirection.remove("added");
     check(!roomMutationFromPlain(noDirection, &mutation),
           "a reaction must say whether it adds or removes");
+    QJsonObject stuck = reaction;
+    stuck.insert("emoji", QString::fromUcs4(U"\u2705"));
+    stuck.insert("sticker", "lgtm");
+    stuck.insert("added", true);
+    check(roomMutationFromPlain(stuck, &mutation) &&
+              mutation.emoji == stickers::valueForSlug(QStringLiteral("lgtm")) &&
+              stickers::isSticker(mutation.emoji) && mutation.added,
+          "a reaction frame naming a sticker is read as that sticker");
+    QJsonObject unknownSticker = stuck;
+    unknownSticker.insert("sticker", "from-a-newer-build");
+    check(roomMutationFromPlain(unknownSticker, &mutation) &&
+              mutation.emoji == QString::fromUcs4(U"\u2705"),
+          "an unknown sticker falls back to its emoji reaction");
+    QJsonObject longSticker = stuck;
+    longSticker.insert("emoji", QString(40, QLatin1Char('x')));
+    check(!roomMutationFromPlain(longSticker, &mutation),
+          "a sticker frame keeps the reaction emoji length limit");
+
+    QJsonObject wire;
+    stickers::writeWire(wire, stickers::valueForSlug(QStringLiteral("love-it")));
+    check(wire.value("sticker").toString() == QStringLiteral("love-it") &&
+              wire.value("emoji").toString() == QString::fromUcs4(U"\u2764\uFE0F") &&
+              stickers::valueFromWire(wire) ==
+                  stickers::valueForSlug(QStringLiteral("love-it")),
+          "a sticker goes out with its fallback emoji and comes back as itself");
+    QJsonObject plainReaction;
+    stickers::writeWire(plainReaction, QStringLiteral("like"));
+    check(plainReaction.value("emoji").toString() == QStringLiteral("like") &&
+              !plainReaction.contains("sticker") &&
+              stickers::valueFromWire(plainReaction) == QStringLiteral("like"),
+          "an ordinary reaction carries no sticker field");
+    bool everyStickerFallsBack = stickers::catalog().size() == 8;
+    for (const stickers::CatalogEntry &entry : stickers::catalog())
+        everyStickerFallsBack = everyStickerFallsBack &&
+                                reactions::valueForUnicode(entry.fallback) !=
+                                    entry.fallback &&
+                                stickers::valueForSlug(entry.slug).size() <= 32;
+    check(everyStickerFallsBack,
+          "every sticker falls back to a reaction older builds can draw");
     const QJsonObject edit{{"type", "edit"},
                            {"id", "e-1"},
                            {"senderId", "bob-node"},

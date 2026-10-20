@@ -95,6 +95,138 @@ class ChatExtrasTest {
         expect(hub.rows("#general")[0].reactions.isEmpty())
     }
 
+    private fun sticker(slug: String, emoji: String, added: Boolean = true, reactor: String = "peer-1", target: String = "m-1"): Map<String, Any?> =
+        peerFrame(
+            "reaction",
+            mapOf(
+                "conversation" to "#general", "target" to target, "emoji" to emoji, "sticker" to slug,
+                "reactorId" to reactor, "reactorName" to "Pat", "added" to added,
+            ),
+            sender = reactor,
+        )
+
+    fun testAPeerStickerArrivesAndComesOffAgain() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "ready"), id = "m-1"))
+        relay.handle(sticker("lgtm", "✅"))
+        val chip = hub.rows("#general")[0].stickers.single()
+        assertEq("lgtm", chip.slug)
+        assertEq("LGTM", chip.text)
+        assertEq(-6f, chip.entry?.tilt)
+        assertEq(0xFF8250DF, chip.entry?.color)
+        assertEq(listOf("Pat"), chip.names)
+        expect(!chip.mine)
+        expect(hub.rows("#general")[0].reactions.isEmpty())
+        relay.handle(sticker("lgtm", "✅"))
+        assertEq(1, hub.rows("#general")[0].stickers.single().count)
+        relay.handle(sticker("lgtm", "✅", reactor = "intruder").plus("senderId" to "peer-1"))
+        assertEq(1, hub.rows("#general")[0].stickers.single().count)
+        relay.handle(sticker("lgtm", "✅", added = false))
+        expect(hub.rows("#general")[0].stickers.isEmpty())
+    }
+
+    fun testTogglingAStickerSendsItsFallbackAndTurnsItOff() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "ship"), id = "m-1"))
+        relay.handle(sticker("lgtm", "✅"))
+        val message = hub.rows("#general")[0].message
+        hub.toggleSticker(message, "lgtm")
+        val sent = relay.sentOfType("reaction").single()
+        assertEq("m-1", sent["target"])
+        assertEq("✅", sent["emoji"])
+        assertEq("lgtm", sent["sticker"])
+        assertEq("me-node", sent["reactorId"])
+        assertEq(true, sent["added"])
+        assertEq(true, sent["persist"])
+        assertEq("#general", sent["conversation"])
+        val chip = hub.rows("#general")[0].stickers.single()
+        assertEq(2, chip.count)
+        expect(chip.mine)
+        assertEq("LGTM ×2", chip.label)
+        assertEq(listOf("Me", "Pat"), chip.names)
+        hub.toggleSticker(message, "lgtm")
+        assertEq(false, relay.sentOfType("reaction").last()["added"])
+        assertEq(1, hub.rows("#general")[0].stickers.single().count)
+        expect(!hub.rows("#general")[0].stickers.single().mine)
+        hub.toggleSticker(message, "not-a-sticker")
+        assertEq(2, relay.sentOfType("reaction").size)
+        relay.online = false
+        hub.toggleSticker(message, "party")
+        assertEq(listOf("lgtm"), hub.rows("#general")[0].stickers.map { it.slug })
+    }
+
+    fun testAStickerAndTheSameEmojiReactionNeverUndoEachOther() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "launch"), id = "m-1"))
+        relay.handle(sticker("party", "🎉"))
+        relay.handle(peerFrame("reaction", mapOf("conversation" to "#general", "target" to "m-1", "emoji" to "🎉", "reactorId" to "peer-1", "added" to true)))
+        assertEq(listOf("party"), hub.rows("#general")[0].stickers.map { it.slug })
+        assertEq(listOf("celebrate"), hub.rows("#general")[0].reactions.map { it.value })
+        relay.handle(peerFrame("reaction", mapOf("conversation" to "#general", "target" to "m-1", "emoji" to "🎉", "reactorId" to "peer-1", "added" to false)))
+        assertEq(listOf("party"), hub.rows("#general")[0].stickers.map { it.slug })
+        expect(hub.rows("#general")[0].reactions.isEmpty())
+        relay.handle(peerFrame("reaction", mapOf("conversation" to "#general", "target" to "m-1", "emoji" to "🎉", "reactorId" to "peer-1", "added" to true)))
+        relay.handle(sticker("party", "🎉", added = false))
+        expect(hub.rows("#general")[0].stickers.isEmpty())
+        assertEq(listOf("celebrate"), hub.rows("#general")[0].reactions.map { it.value })
+    }
+
+    fun testAnUnknownStickerShowsAsItsFallbackReaction() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "x"), id = "m-1"))
+        relay.handle(sticker("moon-shot", "🚀"))
+        val row = hub.rows("#general")[0]
+        expect(row.stickers.isEmpty())
+        assertEq(listOf("rocket"), row.reactions.map { it.value })
+        relay.handle(sticker("moon-shot", "🚀", added = false))
+        expect(hub.rows("#general")[0].reactions.isEmpty())
+    }
+
+    fun testStickersShowInCatalogOrder() {
+        val (hub, relay) = hubWith()
+        relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "x"), id = "m-1"))
+        relay.handle(sticker("party", "🎉"))
+        relay.handle(sticker("wow", "😮", reactor = "peer-2"))
+        relay.handle(sticker("lgtm", "✅", reactor = "peer-3"))
+        assertEq(listOf("lgtm", "wow", "party"), hub.rows("#general")[0].stickers.map { it.slug })
+        assertEq(
+            listOf("lgtm", "ship-it", "nice", "thanks", "on-it", "wow", "love-it", "party"),
+            StickerCatalog.entries.map { it.slug },
+        )
+        assertEq("❤️", StickerCatalog.entry("love-it")?.fallback)
+        for (entry in StickerCatalog.entries) expect(ReactionCatalog.hasEmoji(ReactionCatalog.valueForEmoji(entry.fallback)), entry.slug)
+    }
+
+    fun testStickersAreOfferedOnlyInRelayRoomsAndDirectMessages() {
+        val (hub, _) = hubWith()
+        expect(hub.canSticker("#general"))
+        expect(hub.canSticker("@peer-1"))
+        expect(!hub.canSticker(MESH_CONVERSATION))
+        expect(!hub.canSticker(OfficeFrames.conversation("design")))
+        expect(!hub.canSticker(""))
+    }
+
+    fun testStickersPersistWithTheHistory() {
+        val dir = Files.createTempDirectory("chat-history").toFile()
+        try {
+            val (hub, relay) = hubWith()
+            hub.attachHistory(ChatHistoryStore(dir)) { "scope-s" }
+            relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "keep me"), id = "m-1"))
+            relay.handle(sticker("thanks", "🙏"))
+            hub.toggleSticker(hub.rows("#general")[0].message, "nice")
+            hub.saveHistory()
+            val (other, _) = hubWith()
+            other.attachHistory(ChatHistoryStore(dir)) { "scope-s" }
+            val row = other.rows("#general").single()
+            assertEq(listOf("nice", "thanks"), row.stickers.map { it.slug })
+            expect(row.stickers.first().mine)
+            expect(row.reactions.isEmpty())
+        } finally {
+            dir.listFiles()?.forEach { it.delete() }
+            dir.delete()
+        }
+    }
+
     fun testOnlyTheAuthorCanEdit() {
         val (hub, relay) = hubWith()
         relay.handle(peerFrame("chat", mapOf("channel" to "#general", "text" to "original"), id = "m-2"))

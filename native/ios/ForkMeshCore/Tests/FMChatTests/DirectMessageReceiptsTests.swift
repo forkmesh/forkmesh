@@ -395,6 +395,54 @@ final class DirectMessageReceiptsTests: XCTestCase {
         await h.close()
     }
 
+    @MainActor func testStickersTravelBothWaysInADirectMessage() async throws {
+        let ws = FakeWebSocketConnector()
+        let service = base.makeService(api: base.preparedApi(), ws: ws)
+        let (hub, h) = try await hub(service)
+        let room = try await openRoom(service, ws: ws)
+        hub.select(room.conversation)
+        let now = Date().epochMillis
+        try peerSends(room, chat("pat-1", "merged it", conversation: room.conversation, ts: now - 60_000))
+        let shown = await waitUntil { hub.rows.map(\.id) == ["pat-1"] }
+        XCTAssertTrue(shown)
+        let message = try XCTUnwrap(hub.rows.first).message
+
+        hub.toggleSticker(message, slug: "lgtm")
+        let placed = await waitUntil { hub.rows.first?.stickers.first?.mine == true }
+        XCTAssertTrue(placed)
+        XCTAssertTrue(hub.rows.first?.reactions.isEmpty == true)
+        let sent = try XCTUnwrap(peerFrames(room).first { $0["type"]?.text == "reaction" })
+        XCTAssertEqual(sent["sticker"]?.text, "lgtm")
+        XCTAssertEqual(sent["emoji"]?.text, "\u{2705}")
+        XCTAssertEqual(sent["target"]?.text, "pat-1")
+        XCTAssertEqual(sent["reactorId"]?.text, "me-node")
+        XCTAssertEqual(sent["added"], .bool(true))
+        XCTAssertEqual(sent["conversation"]?.text, room.conversation)
+
+        try peerSends(room, [
+            "type": "reaction", "id": "r-1", "senderId": "pat-node", "sender": "pat", "conversation": .string(room.conversation),
+            "target": "pat-1", "emoji": "\u{2705}", "sticker": "lgtm", "reactorId": "pat-node", "reactorName": "pat",
+            "added": true, "ts": .int(now),
+        ])
+        try peerSends(room, [
+            "type": "reaction", "id": "r-2", "senderId": "pat-node", "sender": "pat", "conversation": .string(room.conversation),
+            "target": "pat-1", "emoji": "\u{2705}", "reactorId": "pat-node", "reactorName": "pat", "added": true, "ts": .int(now),
+        ])
+        let both = await waitUntil { hub.rows.first?.stickers.first?.count == 2 && hub.rows.first?.reactions.count == 1 }
+        XCTAssertTrue(both)
+        XCTAssertEqual(hub.rows.first?.reactions.map(\.value), ["check"])
+
+        hub.toggleSticker(message, slug: "lgtm")
+        let off = await waitUntil { hub.rows.first?.stickers.first?.mine == false }
+        XCTAssertTrue(off)
+        XCTAssertEqual(hub.rows.first?.stickers.first?.names, ["pat"])
+        let undo = try XCTUnwrap(peerFrames(room).last { $0["type"]?.text == "reaction" })
+        XCTAssertEqual(undo["sticker"]?.text, "lgtm")
+        XCTAssertEqual(undo["added"], .bool(false))
+        await service.closeAll()
+        await h.close()
+    }
+
     @MainActor func testThreadRepliesFromEitherSideBuildTheDirectMessageThread() async throws {
         let ws = FakeWebSocketConnector()
         let service = base.makeService(api: base.preparedApi(), ws: ws)

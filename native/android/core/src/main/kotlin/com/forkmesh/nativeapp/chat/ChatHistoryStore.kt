@@ -15,6 +15,7 @@ data class ChatHistorySnapshot(
     val replyRoots: Map<String, String> = emptyMap(),
     val reactions: Map<String, Map<String, Map<String, String>>> = emptyMap(),
     val reactionOrder: Map<String, List<String>> = emptyMap(),
+    val stickers: Map<String, Map<String, Map<String, String>>> = emptyMap(),
     val edits: Map<String, String> = emptyMap(),
     val privateChannels: List<String> = emptyList(),
     val hiddenChannels: List<String> = emptyList(),
@@ -78,19 +79,38 @@ object ChatHistoryCodec {
         )
     }
 
-    fun encode(snapshot: ChatHistorySnapshot): String {
-        val reactions = LinkedHashMap<String, Any?>()
-        for ((id, state) in snapshot.reactions) {
+    private fun encodeReactors(source: Map<String, Map<String, Map<String, String>>>): Map<String, Any?> {
+        val out = LinkedHashMap<String, Any?>()
+        for ((id, state) in source) {
             val perValue = LinkedHashMap<String, Any?>()
             for ((value, reactors) in state) perValue[value] = LinkedHashMap<String, Any?>(reactors)
-            reactions[id] = perValue
+            out[id] = perValue
         }
+        return out
+    }
+
+    private fun decodeReactors(source: Any?): Map<String, Map<String, Map<String, String>>> {
+        val out = LinkedHashMap<String, Map<String, Map<String, String>>>()
+        for ((id, value) in source.asJsonMap()) {
+            val state = LinkedHashMap<String, Map<String, String>>()
+            for ((key, reactors) in value.asJsonMap()) {
+                val names = LinkedHashMap<String, String>()
+                for ((reactor, name) in reactors.asJsonMap()) names[reactor] = jsonText(name)
+                if (names.isNotEmpty()) state[key] = names
+            }
+            if (state.isNotEmpty()) out[id] = state
+        }
+        return out
+    }
+
+    fun encode(snapshot: ChatHistorySnapshot): String {
         val root = linkedMapOf<String, Any?>(
             "v" to VERSION,
             "messages" to snapshot.messages.map(::encodeMessage),
             "replies" to snapshot.replies.map(::encodeMessage),
             "roots" to LinkedHashMap<String, Any?>(snapshot.replyRoots),
-            "reactions" to reactions,
+            "reactions" to encodeReactors(snapshot.reactions),
+            "stickers" to encodeReactors(snapshot.stickers),
             "order" to LinkedHashMap<String, Any?>(snapshot.reactionOrder),
             "edits" to LinkedHashMap<String, Any?>(snapshot.edits),
             "private" to snapshot.privateChannels,
@@ -107,21 +127,12 @@ object ChatHistoryCodec {
             return null
         }
         if (jsonLong(root["v"], -1) != VERSION.toLong()) return null
-        val reactions = LinkedHashMap<String, Map<String, Map<String, String>>>()
-        for ((id, value) in root["reactions"].asJsonMap()) {
-            val state = LinkedHashMap<String, Map<String, String>>()
-            for ((emoji, reactors) in value.asJsonMap()) {
-                val names = LinkedHashMap<String, String>()
-                for ((reactor, name) in reactors.asJsonMap()) names[reactor] = jsonText(name)
-                if (names.isNotEmpty()) state[emoji] = names
-            }
-            if (state.isNotEmpty()) reactions[id] = state
-        }
         return ChatHistorySnapshot(
             messages = jsonMaps(root["messages"]).mapNotNull(::decodeMessage),
             replies = jsonMaps(root["replies"]).mapNotNull(::decodeMessage),
             replyRoots = root["roots"].asJsonMap().mapValues { jsonText(it.value) },
-            reactions = reactions,
+            reactions = decodeReactors(root["reactions"]),
+            stickers = decodeReactors(root["stickers"]),
             reactionOrder = root["order"].asJsonMap().mapValues { (_, v) -> (v as? List<*>).orEmpty().map(::jsonText) },
             edits = root["edits"].asJsonMap().mapValues { jsonText(it.value) },
             privateChannels = (root["private"] as? List<*>).orEmpty().map(::jsonText),
