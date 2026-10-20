@@ -19,8 +19,6 @@ const (
 	hostedPushMaxToken     = 512
 	hostedPushMaxError     = 300
 	hostedPushInvalid      = "invalid push mirror"
-	// hostedPushMaxDeletes bounds the branch deletions one default-branch
-	// push sends, so a huge or hostile target cannot blow up the argv.
 	hostedPushMaxDeletes = 1000
 
 	hostedPushRefsAll     = "all"
@@ -40,8 +38,6 @@ type hostedPushMirror struct {
 	Username string `json:"username"`
 	Token    string `json:"token"`
 	Prune    bool   `json:"prune"`
-	// Refs is "all" (every branch and tag, the default when empty) or
-	// "default" (the default branch and tags only).
 	Refs string `json:"refs,omitempty"`
 }
 
@@ -253,8 +249,6 @@ func (r *hostedReplicator) pushMirror(ctx context.Context, item hostedDesired) b
 	}
 	mode := hostedPushRefsMode(mirror)
 	if mode == hostedPushRefsDefault {
-		// Only HEAD's branch and the tags are pushed, which is what the
-		// routing digest covers; other branches moving is no reason to push.
 		allRefs = digest
 	}
 	if !r.pushMirrorDue(item.ID, mirror.Revision, mode, digest, allRefs, now) {
@@ -312,8 +306,6 @@ func (r *hostedReplicator) pushMirror(ctx context.Context, item hostedDesired) b
 	return true
 }
 
-// hostedPushListError carries the output of a failed ls-remote so the report
-// shows (redacted) what the target said.
 type hostedPushListError struct {
 	err            error
 	stdout, stderr string
@@ -322,11 +314,6 @@ type hostedPushListError struct {
 func (e *hostedPushListError) Error() string { return e.err.Error() }
 func (e *hostedPushListError) Unwrap() error { return e.err }
 
-// hostedPushRefspecs returns the refspecs after the URL. With refs "all"
-// every branch and tag is pushed. With "default" only the branch HEAD points
-// at and the tags are pushed; with prune the other branches on the target are
-// listed and deleted in the same push, because --prune only removes refs that
-// match a pushed pattern and a single-branch refspec matches no other branch.
 func hostedPushRefspecs(ctx context.Context, gitDir string, mirror hostedPushMirror, env []string,
 	runner hostedPushRunner) ([]string, error) {
 	if hostedPushRefsMode(mirror) != hostedPushRefsDefault {
@@ -348,9 +335,6 @@ func hostedPushRefspecs(ctx context.Context, gitDir string, mirror hostedPushMir
 	return append(refspecs, hostedPushExtraBranchDeletes(stdout, head)...), nil
 }
 
-// hostedPushExtraBranchDeletes turns ls-remote --heads output into deletion
-// refspecs for every branch except keep. Names git would refuse, or that could
-// be read as a pattern or option, are skipped.
 func hostedPushExtraBranchDeletes(lsRemote, keep string) []string {
 	var deletes []string
 	seen := map[string]bool{}

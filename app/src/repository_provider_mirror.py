@@ -27,8 +27,6 @@ OUTBOX_BASE_DELAY_MS = 60 * 1000
 OUTBOX_MAX_DELAY_MS = 60 * 60 * 1000
 REQUEST_TIMEOUT_SECONDS = 15
 MAX_RESPONSE_CHARS = 2 * 1024 * 1024
-# Which branches the code push sends: every branch, or only the default one
-# (tags are always pushed).
 PUSH_REFS = ("all", "default")
 RETRY_STATUSES = frozenset({0, 408, 425, 429, 500, 502, 503, 504})
 

@@ -640,7 +640,6 @@ def test_push_refs_setting_is_saved_returned_and_sent_to_the_daemon():
     assert config["revision"] != first_revision
     assert _call({"action": "get"}).body["mirror"]["refs"] == "default"
 
-    # Leaving refs out keeps the stored choice; a bad value is refused.
     _Date.clock[0] += 1000
     _call({"action": "save", "provider": "github", "remote": "octo/engine",
            "token": "", "prune": True})

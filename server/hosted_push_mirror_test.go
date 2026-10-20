@@ -411,7 +411,6 @@ func TestHostedPushMirrorDefaultBranchOnly(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	// The first reconcile creates the hosted repository (and pushes main).
 	if err := node.hosted.reconcile(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -423,7 +422,6 @@ func TestHostedPushMirrorDefaultBranchOnly(t *testing.T) {
 	run(t, work, "git", "push", "--quiet", "origin", "main:refs/heads/feature", "main:refs/heads/stale")
 	run(t, work, "git", "tag", "v1")
 	run(t, work, "git", "push", "--quiet", "origin", "v1")
-	// A branch that exists only on the target, as if pushed there by hand.
 	run(t, work, "git", "push", "--quiet", remote, "main:refs/heads/only-there")
 	run(t, work, "git", "push", "--quiet", "origin", ":refs/heads/stale")
 
@@ -448,7 +446,6 @@ func TestHostedPushMirrorDefaultBranchOnly(t *testing.T) {
 		t.Fatalf("report = %+v", report)
 	}
 
-	// Another branch moving does not push in default-branch mode.
 	run(t, work, "git", "commit", "--quiet", "--allow-empty", "-m", "feature work")
 	run(t, work, "git", "push", "--quiet", "origin", "HEAD:refs/heads/feature")
 	before = runner.count()
@@ -459,7 +456,6 @@ func TestHostedPushMirrorDefaultBranchOnly(t *testing.T) {
 		t.Fatal("a non-default branch change pushed a default-branch mirror")
 	}
 
-	// Prune lists the target and deletes every other branch in the same push.
 	mu.Lock()
 	mirror.Revision = "rev-3"
 	mirror.Prune = true
@@ -492,7 +488,6 @@ func TestHostedPushMirrorDefaultBranchOnly(t *testing.T) {
 		t.Fatalf("report = %+v", report)
 	}
 
-	// Switching the setting alone, with the same revision, pushes again.
 	mu.Lock()
 	mirror.Refs = "all"
 	mu.Unlock()
@@ -516,7 +511,6 @@ func TestHostedPushMirrorDefaultBranchOnly(t *testing.T) {
 		t.Fatalf("remote refs back to default = %q", got)
 	}
 
-	// A failed ls-remote is reported, redacted, and nothing is pushed.
 	runner.mu.Lock()
 	runner.fail = errors.New("exit status 128")
 	runner.mu.Unlock()
