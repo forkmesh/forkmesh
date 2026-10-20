@@ -3307,6 +3307,19 @@ async def world_mesh_handler(env, request):
         cache_seconds=world_mesh.DIRECTORY_MAX_AGE)
 
 
+def world_neighbour_scene_handler(env, request):
+    if method_name(request) != "GET":
+        return json_response(
+            {"error": "method_not_allowed"}, status=405,
+            extra_headers={"allow": "GET"})
+    scene = world_mesh.neighbour_scene(env)
+    if scene is None:
+        return json_response({"error": "not_found"}, status=404)
+    return json_response(
+        scene, cache_seconds=world_mesh.SCENE_MAX_AGE,
+        extra_headers={"access-control-allow-origin": "*"})
+
+
 async def world_visa_handler(env, request):
     no_store = "no-store, max-age=0, must-revalidate"
     if method_name(request) != "POST":

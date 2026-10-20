@@ -101,7 +101,9 @@ desktop embeds the same page.
 `www/wrangler.toml`. The served host is `world_host` in `deploy/fleet.toml`
 `[production]`. `WORLD_MESH_HUB` (default `https://app.forkmesh.com`) is
 where an instance reads the World mesh directory; an App without
-`INSTANCE_NAME` is the hub itself. `world/wrangler.toml` still carries legacy Worker settings;
+`INSTANCE_NAME` is the hub itself. `WORLD_NEIGHBOUR_SCENE` (optional, on an
+instance) is the scene its single hexagon shows in the hub's World (see
+Neighbour scenes below). `world/wrangler.toml` still carries legacy Worker settings;
 the served stack reads only its `run_worker_first` list and `[build]`
 command. It holds no secrets.
 
@@ -615,6 +617,17 @@ them without changing page.
   `buildNeighbourScene()` draws it with shared primitives on a shared ground
   material; a scene that arrives after its hex layer was replaced is ignored,
   and when it is missing or refused the logo hexagon stays.
+- **Publishing a scene.** Every instance World serves that route
+  (`world_neighbour_scene_handler`, `neighbour_scene()` in `world_mesh.py`)
+  with `access-control-allow-origin: *` and a 5-minute public cache; the
+  hub answers 404, since it is never anyone's neighbour. Without settings
+  it publishes a default scene: a plaza with lamps, a sign with
+  `INSTANCE_NAME` and the World's host, and a ring of trees at 280 (outside
+  the landmark at 0.55 of the apothem, inside the 330 reach). An operator
+  can replace it by putting their own scene JSON in `WORLD_NEIGHBOUR_SCENE`.
+  The server only checks the outline (64 KB, version 1, 1–48 object
+  entries) and falls back to the default if the outline is wrong; the hub's
+  World still checks every field.
 - **Directory.** `GET /api/world/mesh` (`world_mesh.py`) answers
   `{self, worlds:[{id, name, host, world, api, logo, slot}]}`. The hub builds
   it from `instance_directory` (`world=1`, visible, slot 0–11) plus its own

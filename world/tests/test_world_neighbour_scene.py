@@ -151,3 +151,86 @@ def test_the_scene_is_drawn_on_the_hexagon_or_the_logo_stays():
     assert "group.add(buildNeighbourScene(THREE, scene));" in HEXES
     assert 'image.crossOrigin = "anonymous";' in HEXES
     assert "innerHTML" not in HEXES
+
+
+INSTANCE_ENV = SimpleNamespace(INSTANCE_NAME="Acme <Code>",
+                               WORLD_ORIGIN="https://code.example.org",
+                               APP_ORIGIN="https://code.example.org")
+HUB_ENV = SimpleNamespace(WORLD_ORIGIN="https://world.forkmesh.com",
+                          APP_ORIGIN="https://app.forkmesh.com")
+CHECK = r"""
+import * as s from "./world-neighbour-scene.js";
+const scene = JSON.parse(process.argv[1]);
+console.log(JSON.stringify(s.normalizeNeighbourScene(scene, "https://code.example.org")));
+"""
+
+
+def checked_by_the_hub(scene):
+    if not NODE:
+        pytest.skip("node is not installed")
+    run = subprocess.run([NODE, "--input-type=module", "-e", CHECK,
+                          json.dumps(scene)],
+                         cwd=WORLD, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stderr
+    return json.loads(run.stdout)
+
+
+def test_an_instance_publishes_a_scene_the_hub_accepts_whole():
+    scene = world_mesh.neighbour_scene(INSTANCE_ENV)
+    assert scene["v"] == 1
+    sign = next(item for item in scene["objects"] if item["type"] == "sign")
+    assert sign["title"] == "Acme Code"
+    assert sign["text"] == "code.example.org"
+    assert len(json.dumps(scene)) < world_mesh.SCENE_MAX_BYTES
+    checked = checked_by_the_hub(scene)
+    assert len(checked["objects"]) == len(scene["objects"])
+    assert [item["type"] for item in checked["objects"]] == [
+        item["type"] for item in scene["objects"]]
+    assert world_mesh.neighbour_scene(HUB_ENV) is None
+    assert world_mesh.neighbour_scene(
+        SimpleNamespace(INSTANCE_NAME="Acme")) is None
+
+
+def test_an_operator_scene_replaces_the_default_only_when_it_fits():
+    own = {"v": 1, "objects": [{"type": "lamp", "x": 1, "z": 2}]}
+    env = SimpleNamespace(**vars(INSTANCE_ENV),
+                          WORLD_NEIGHBOUR_SCENE=json.dumps(own))
+    assert world_mesh.neighbour_scene(env) == own
+    default = world_mesh.neighbour_scene(INSTANCE_ENV)
+    for raw in ("not json", json.dumps({"v": 2, "objects": own["objects"]}),
+                json.dumps({"v": 1, "objects": []}),
+                json.dumps({"v": 1, "objects": ["x"]}),
+                json.dumps({"v": 1, "objects": own["objects"] * 49}),
+                json.dumps({"v": 1, "objects": own["objects"],
+                            "pad": "x" * world_mesh.SCENE_MAX_BYTES})):
+        env = SimpleNamespace(**vars(INSTANCE_ENV), WORLD_NEIGHBOUR_SCENE=raw)
+        assert world_mesh.neighbour_scene(env) == default, raw[:40]
+
+
+def test_the_scene_route_is_public_cacheable_and_get_only(monkeypatch):
+    import world_routes
+
+    def json_response(data, status=200, cache_seconds=None,
+                      extra_headers=None, **_):
+        return SimpleNamespace(data=data, status=status,
+                               cache_seconds=cache_seconds,
+                               headers=extra_headers or {})
+
+    monkeypatch.setattr(world_routes, "world_mesh", world_mesh, raising=False)
+    monkeypatch.setattr(world_routes, "json_response", json_response,
+                        raising=False)
+    monkeypatch.setattr(world_routes, "method_name",
+                        lambda request: request.method, raising=False)
+    handler = world_routes.world_neighbour_scene_handler
+    reply = handler(INSTANCE_ENV, SimpleNamespace(method="GET"))
+    assert reply.status == 200
+    assert reply.data == world_mesh.neighbour_scene(INSTANCE_ENV)
+    assert reply.cache_seconds == world_mesh.SCENE_MAX_AGE
+    assert reply.headers == {"access-control-allow-origin": "*"}
+    assert handler(HUB_ENV, SimpleNamespace(method="GET")).status == 404
+    assert handler(INSTANCE_ENV, SimpleNamespace(method="POST")).status == 405
+    runtime = (ROOT / "app" / "src" / "app_runtime.py").read_text(
+        encoding="utf-8")
+    assert '"/api/world/neighbour-scene", "/api/world/neighbour-scene/"' \
+        in runtime
+    assert "world_neighbour_scene_handler(self.env, request)" in runtime

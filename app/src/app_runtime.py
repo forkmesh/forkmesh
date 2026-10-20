@@ -2206,6 +2206,11 @@ class Default:
         if url.path in ("/api/world/mesh", "/api/world/mesh/"):
             return await world_mesh_handler(self.env, request)
 
+        if url.path in (
+            "/api/world/neighbour-scene", "/api/world/neighbour-scene/"
+        ):
+            return world_neighbour_scene_handler(self.env, request)
+
         if url.path in ("/api/world/visa", "/api/world/visa/"):
             return await world_visa_handler(self.env, request)
 
