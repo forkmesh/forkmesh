@@ -1185,7 +1185,7 @@ final class DjStudioModel {
             return
         }
         let incoming = deck(live.side.other)
-        if !incoming.playing, !snapshot(incoming).fresh, !preload(incoming.side) {
+        if !incoming.playing, autoDjOn && incoming.counted || !snapshot(incoming).fresh, !preload(incoming.side), !snapshot(incoming).fresh {
             show("Queue a song to shake into it.")
             return
         }
