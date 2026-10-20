@@ -88,36 +88,120 @@ def test_card_is_a_valid_og_sized_png():
     assert (w, h) == (og_card.CARD_W, og_card.CARD_H) == (1200, 630)
 
 
-def test_card_paints_background_panel_and_logo():
+# The terminal window's geometry (see og_card.render_repo_card).
+WIN = og_card.TERM_MARGIN
+BAR_BOTTOM = WIN + og_card.TERM_BAR_H
+BODY_TOP = BAR_BOTTOM + 30
+LEFT = WIN + og_card.TERM_PAD
+
+
+def _unscanned(y):
+    """A body row the scanline pass leaves at full brightness."""
+    return y if (y - BAR_BOTTOM) % 2 else y + 1
+
+
+def test_card_draws_a_terminal_window():
     png = og_card.render_repo_card(SAMPLE, NOW_S)
     _, _, rows = decode_png_rgb(png)
-    # Page background outside the panel, panel fill + border inside.
-    assert pixel(rows, 2, 2) == (1, 4, 9)
-    assert pixel(rows, 29, 29) == (48, 54, 61)
-    assert pixel(rows, 600, 60) == (13, 17, 23)
-    # The logo blit must land in the top-right corner area: something there is
-    # neither background nor panel fill.
-    logo_region = {
-        pixel(rows, x, y)
-        for x in range(og_card.CARD_W - 28 - og_card._LOGO_W,
-                       og_card.CARD_W - 28)
-        for y in range(68, 68 + og_card._LOGO_H, 4)
-    }
-    assert logo_region - {(1, 4, 9), (13, 17, 23), (48, 54, 61)}
-    # And it stays small: the left half of the card at logo height is text on
-    # panel fill, not logo pixels (the old full-bleed logo failure mode).
-    assert pixel(rows, 320, 300) in {(13, 17, 23), (240, 246, 252)}
+    # Backdrop outside the window, title bar, then the near-black body.
+    assert pixel(rows, 2, 2) not in {og_card._TERM_BODY, og_card._TERM_BAR}
+    assert pixel(rows, og_card.CARD_W - WIN - 30, WIN + 8) == og_card._TERM_BAR
+    blank = (og_card.CARD_W - WIN - 20, _unscanned(og_card.CARD_H - 120))
+    assert pixel(rows, *blank) == og_card._TERM_BODY
+    # Faint scanlines: the next body row is the same black, a little dimmer.
+    dim = pixel(rows, blank[0], blank[1] + 1)
+    assert dim != og_card._TERM_BODY and sum(dim) < sum(og_card._TERM_BODY)
+    # Three traffic-light dots at the left of the title bar.
+    middle = WIN + og_card.TERM_BAR_H // 2
+    for index, color in enumerate(og_card._TERM_DOTS):
+        assert pixel(rows, WIN + 28 + index * 24, middle) == color
+    # Rounded corners: the window's very corner pixel is backdrop.
+    assert pixel(rows, WIN, WIN) not in {og_card._TERM_BAR, og_card._TERM_BORDER}
 
 
-def test_card_renders_title_text_pixels():
+def _bright_pixels(rows, top, height, color=og_card._TERM_TEXT):
+    return sum(1 for y in range(top, top + height)
+               for x in range(LEFT, og_card.CARD_W - 200)
+               if pixel(rows, x, y) == color)
+
+
+def test_card_renders_the_command_and_description():
     with_title = og_card.render_repo_card(SAMPLE, NOW_S)
     without = og_card.render_repo_card(dict(SAMPLE, owner="x", repo="y"),
                                        NOW_S)
-    assert with_title != without  # title actually reaches the pixels
+    assert with_title != without  # the repository name reaches the pixels
     _, _, rows = decode_png_rgb(with_title)
-    fg = sum(1 for x in range(72, 1000)
-             for y in range(96, 138) if pixel(rows, x, y) == (240, 246, 252))
-    assert fg > 500  # a real run of bright title pixels
+    assert _bright_pixels(rows, BODY_TOP, 40) > 300     # $ ... forkmesh/forkmesh
+    assert _bright_pixels(rows, BODY_TOP + 60, 40) > 300  # description
+
+
+def test_short_and_long_descriptions_lay_out_within_the_window():
+    cols = 40
+    assert og_card._wrap_cols("My shell config.", cols, 3) == ["My shell config."]
+    lines = og_card._wrap_cols("a deliberately long description " * 20, cols, 3)
+    assert len(lines) == 3
+    assert all(len(line) <= cols for line in lines)
+    assert lines[-1].endswith("\u2026")
+    short = og_card.render_repo_card(dict(SAMPLE, description="Tiny."), NOW_S)
+    long = og_card.render_repo_card(
+        dict(SAMPLE, description="word " * 200), NOW_S)
+    _, _, short_rows = decode_png_rgb(short)
+    _, _, long_rows = decode_png_rgb(long)
+    third_line = BODY_TOP + 60 + 2 * 52
+    assert _bright_pixels(long_rows, third_line, 36) > 300
+    # The short card has no third description line: that band holds the
+    # dimmer stats labels and bold values, not description text.
+    assert _bright_pixels(short_rows, third_line, 36) < \
+        _bright_pixels(long_rows, third_line, 36)
+    for png in (short, long):
+        assert decode_png_rgb(png)[:2] == (1200, 630)
+
+
+def test_zero_counts_are_left_off_the_card():
+    zeros = dict(SAMPLE, stars=0, pulls="", mirrors=1, followers=0,
+                 contributors=0)
+    labels = [label for label, _ in og_card.repo_card_stats(zeros, NOW_S)]
+    assert labels == ["commits", "issues", "branches", "size", "updated"]
+    full = dict(SAMPLE, contributors=273)
+    pairs = dict(og_card.repo_card_stats(full, NOW_S))
+    assert pairs["contributors"] == "273"
+    assert pairs["stars"] == "12" and pairs["mirrors"] == "61"
+    assert pairs["issues"] == "46" and pairs["updated"] == "9h ago"
+    assert og_card.repo_card_stats({"owner": "o", "repo": "r"}, NOW_S) == []
+    assert og_card.render_repo_card(zeros, NOW_S) != og_card.render_repo_card(
+        dict(zeros, stars=5), NOW_S)
+
+
+def test_stat_grid_aligns_columns_and_narrows_to_fit():
+    pairs = [("commits", "45.5k"), ("contributors", "273"), ("issues", "39"),
+             ("branches", "2"), ("size", "382.9 MB"), ("updated", "1h ago")]
+    wide = og_card._stat_grid(pairs, 60)
+    assert [len(row) for row in wide] == [3, 3]
+    narrow = og_card._stat_grid(pairs, 48)
+    assert [len(row) for row in narrow] == [2, 2, 2]
+    # Keys in a column are padded to one width, so the values line up.
+    assert len({len(row[0][0]) for row in narrow}) == 1
+
+
+def test_accent_comes_from_the_theme_else_the_logo():
+    side = 40
+    red = (side, side, b"\xe7\x4c\x3c\xff" * (side * side))
+    assert og_card.logo_accent(red) == (0xe7, 0x4c, 0x3c)
+    grey = (side, side, b"\x80\x80\x80\xff" * (side * side))
+    assert og_card.logo_accent(grey) is None
+    assert og_card.parse_color("#10b981") == (16, 185, 129)
+    assert og_card.parse_color("nope") is None
+    _, _, rows = decode_png_rgb(og_card.render_repo_card(
+        dict(SAMPLE, accent="#ff3030"), NOW_S, red))
+    themed = sum(1 for y in range(BODY_TOP, BODY_TOP + 40)
+                 for x in range(LEFT, LEFT + 30)
+                 if pixel(rows, x, y) == (255, 48, 48))
+    assert themed > 20  # the prompt's "$" is drawn in the theme accent
+    _, _, rows = decode_png_rgb(og_card.render_repo_card(SAMPLE, NOW_S, red))
+    from_logo = sum(1 for y in range(BODY_TOP, BODY_TOP + 40)
+                    for x in range(LEFT, LEFT + 30)
+                    if pixel(rows, x, y) == (0xe7, 0x4c, 0x3c))
+    assert from_logo > 20
 
 
 def test_missing_stats_render_as_zeros_not_errors():
@@ -195,7 +279,8 @@ def test_repo_page_og_tags_point_at_card():
     assert 'og_image = origin + "/assets/logo.png"' not in ENTRY_SRC
     # ...replaced by the rendered card, with large-image hints so Mastodon
     # renders it full width instead of as a thumbnail.
-    assert 'og_image += "?v=" + quote(social_version, safe="")' in ENTRY_SRC
+    # The card revision rides on the version, so a redesign refreshes caches.
+    assert '"%s.%s" % (social_version, og_card.CARD_REVISION)' in ENTRY_SRC
     assert "social_version = _repository_social_version(repo_record)" in ENTRY_SRC
     assert "_build_rev(self.env)" not in ENTRY_SRC[
         ENTRY_SRC.index("async def _serve_repo_page"):
@@ -283,3 +368,151 @@ def test_binary_response_bodies_are_copied_into_js_owned_buffers():
     assert "JsResponse.new(_to_js(bytes(" not in ENTRY_SRC
     for site in ("bytes(data)", "bytes(raw)", "bytes(png)"):
         assert "Uint8Array.new(_to_js(%s))" % site in ENTRY_SRC
+def test_card_titles_the_public_address():
+    short = og_card.render_repo_card(dict(SAMPLE, path="/forkmesh"), NOW_S)
+    full = og_card.render_repo_card(SAMPLE, NOW_S)
+    explicit = og_card.render_repo_card(
+        dict(SAMPLE, path="/forkmesh/forkmesh"), NOW_S)
+    assert explicit == full and short != full
+
+
+# --- Live counts: the sources the repository page uses ----------------------
+
+def test_open_issues_are_the_ledgers_numbered_folders():
+    tree = {"ok": True, "entries": [
+        {"type": "tree", "name": "1"}, {"type": "tree", "name": "38"},
+        {"type": "tree", "name": "120"}, {"type": "blob", "name": "7"},
+        {"type": "tree", "name": "README"}, {"type": "tree", "name": "0"}]}
+    assert og_card.open_issue_count(tree) == 3
+    assert og_card.open_issue_count({"entries": []}) == 0
+    assert og_card.open_issue_count(None) is None
+
+
+def test_branches_are_the_current_branch_list():
+    listing = {"ok": True, "defaultBranch": "main", "branches": [
+        {"name": "main", "commit": "a" * 40},
+        {"name": "feature/x", "commit": "b" * 40}]}
+    assert og_card.branch_count(listing) == 2
+    assert og_card.branch_count({"ok": True}) is None
+
+
+def test_contributors_come_from_the_roster_else_the_authors():
+    import json as _json
+    roster = _json.dumps({"count": 261, "contributors": [
+        {"slug": "a", "name": "A", "commits": 3}]})
+    assert og_card.roster_count(roster) == 261
+    undeclared = _json.dumps({"contributors": [
+        {"name": "A"}, {"login": "b"}, {"name": ""}, "junk"]})
+    assert og_card.roster_count(undeclared) == 2
+    assert og_card.roster_count("not json") is None
+    assert og_card.roster_count(_json.dumps({"contributors": []})) is None
+    assert og_card.has_roster({"entries": [
+        {"type": "tree", "name": "contributors"}]})
+    assert not og_card.has_roster({"entries": [
+        {"type": "blob", "name": "contributors"}]})
+    stats = {"contributorCount": 5, "contributors": [
+        {"name": "Author A", "email": "a1@example.com"},
+        {"name": "Author B", "email": "b1@example.com"},
+        {"name": "dependabot[bot]", "email": "x@example.com"},
+        {"name": "Acme Code Actions", "email": "a@example.com"},
+    ]}
+    # 5 authors, of whom the two listed bots are not people.
+    assert og_card.stats_contributor_count(stats, "Acme Code") == 3
+    assert og_card.stats_contributor_count({"contributors": []}) is None
+
+
+def test_counts_token_changes_with_every_count():
+    base = {"issues": 39, "branches": 2, "contributors": 261}
+    token = og_card.counts_token(base)
+    assert token == "i39.b2.c261"
+    for key in base:
+        assert og_card.counts_token(dict(base, **{key: base[key] + 1})) != token
+    assert og_card.counts_token({}) == "i-.b-.c-"
+
+
+def test_card_revision_is_bumped_for_the_terminal_card():
+    assert og_card.CARD_REVISION == "3"
+
+
+def _load_entry_function(name, namespace):
+    import ast
+    tree = ast.parse(ENTRY_SRC)
+    node = next(n for n in tree.body
+                if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and n.name == name)
+    scope = dict(namespace)
+    exec(compile(ast.Module(body=[node], type_ignores=[]), "entry.py",
+                 "exec"), scope)
+    return scope[name]
+
+
+def _live_reads(roster=True):
+    import json as _json
+    answers = {
+        ("branches", ()): {"ok": True, "branches": [
+            {"name": "main"}, {"name": "feature"}]},
+        ("tree", (("path", ".forkmesh/issues/open"),)): {
+            "ok": True, "entries": [{"type": "tree", "name": str(n)}
+                                    for n in range(1, 40)]},
+        ("tree", (("path", ".forkmesh"),)): {"ok": True, "entries": (
+            [{"type": "tree", "name": "contributors"}] if roster else [])
+            + [{"type": "tree", "name": "issues"}]},
+        ("blobs", (("path", og_card.ROSTER_PATH),)): {"ok": True, "blobs": {
+            og_card.ROSTER_PATH: {"encoding": "utf8", "truncated": False,
+                                  "content": _json.dumps({
+                                      "count": 261,
+                                      "contributors": [{"name": "A"}]})}}},
+        ("stats", ()): {"contributorCount": 4, "contributors": [
+            {"name": "A"}, {"name": "B"}, {"name": "github-actions"}]},
+    }
+    calls = []
+
+    async def read(_env, owner, repo, operation, query=None):
+        key = (operation, tuple(sorted((query or {}).items())))
+        calls.append(key)
+        return answers.get(key)
+    return read, calls
+
+
+def _counts_function(read):
+    import asyncio
+    import time
+    return _load_entry_function("_repo_card_counts", {
+        "_repo_card_read": read, "og_card": og_card, "asyncio": asyncio,
+        "time": time, "instance_name": lambda _env: "ForkMesh",
+        "_repo_card_counts_memo": {}, "REPO_CARD_COUNTS_TTL_MS": 300000,
+        "REPO_CARD_COUNTS_MAX": 256,
+    })
+
+
+def test_card_counts_read_the_ledger_branches_and_roster():
+    import asyncio
+    read, calls = _live_reads()
+    counts_of = _counts_function(read)
+    counts = asyncio.run(counts_of(None, "acme", "tool", "v1"))
+    assert counts == {"issues": 39, "branches": 2, "contributors": 261}
+    assert ("stats", ()) not in calls  # the roster answers first
+    # Remembered per version: a second fetch of the card reads nothing.
+    before = len(calls)
+    assert asyncio.run(counts_of(None, "acme", "tool", "v1")) == counts
+    assert len(calls) == before
+    asyncio.run(counts_of(None, "acme", "tool", "v2"))
+    assert len(calls) > before
+
+
+def test_card_counts_fall_back_to_the_bot_filtered_authors():
+    import asyncio
+    read, calls = _live_reads(roster=False)
+    counts = asyncio.run(_counts_function(read)(None, "o", "r", ""))
+    assert counts["contributors"] == 3
+    assert ("stats", ()) in calls
+
+
+def test_card_handler_keys_the_cache_on_the_live_counts():
+    handler = ENTRY_SRC.split("async def repo_card_handler", 1)[1]
+    handler = handler.split("\nasync def ", 1)[0]
+    assert "await _repo_card_counts(env, owner, repo, card_version)" in handler
+    assert handler.index("_repo_card_counts(") < handler.index(
+        "edge_cache_match_media")
+    assert '"n=" + og_card.counts_token(counts)' in handler
+    assert '"accent": await _repo_card_accent(env),' in handler

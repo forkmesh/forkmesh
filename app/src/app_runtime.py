@@ -4692,15 +4692,15 @@ class Default:
                 fediverse_origin, owner.lower(), repo.lower())
             # OpenGraph/Twitter card so social + fediverse shares of the repo
             # URL (the preview under a federated "new pull request" post, a
-            # Slack unfurl, etc.) render the repo's rendered info card — name,
-            # description and stats grid with the ForkMesh mark in the corner
+            # Slack unfurl, etc.) render the repo's rendered card — a terminal
+            # session with its name, description and live counts
             # (adhoc #46, see repo_card_handler / og_card.py) — instead of a
             # full-bleed logo. og:description carries the catalog description
             # so the unfurl text matches the repo, not the generic shell copy.
-            og_image = "%s/api/repo/%s/%s/card.png" % (
-                origin, quote(owner), quote(repo))
-            if social_version:
-                og_image += "?v=" + quote(social_version, safe="")
+            og_image = "%s/api/repo/%s/%s/card.png?v=%s" % (
+                origin, quote(owner), quote(repo), quote(
+                    "%s.%s" % (social_version, og_card.CARD_REVISION)
+                    if social_version else og_card.CARD_REVISION, safe=""))
             shown = short_name if canonical_short else "%s/%s" % (
                 owner, repo)
             og_description = str(
