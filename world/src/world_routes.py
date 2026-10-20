@@ -3267,7 +3267,8 @@ async def _world_mesh_load(env):
             rows = []
         return world_mesh.build_directory(
             world_mesh.hub_entry(env), rows,
-            world_mesh.own_api_origin(env)), world_mesh.DIRECTORY_CACHE_MS
+            world_mesh.own_api_origin(env),
+            world_mesh.hex_slots(env)), world_mesh.DIRECTORY_CACHE_MS
     try:
         resp = await js_fetch_with_timeout(
             world_mesh.hub_api(env) + "/api/world/mesh",

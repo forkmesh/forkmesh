@@ -35,12 +35,12 @@ import {
   WORLD_BIKE_LANE_CENTER_Z,
   WORLD_BIKE_LANE_CORNER_RADIUS,
   WORLD_HEX_TILES,
-  WORLD_MESH_FLOWER_HEXES,
   WORLD_MESH_FLOWER_REACH,
   WORLD_RADIUS,
   WORLD_ROAD_JUNCTIONS,
   WORLD_ROAD_JUNCTION_WALK_RADIUS,
   WORLD_ROAD_WIDTH,
+  worldMeshHexesFor,
 } from "./layout.js";
 import { clamp } from "./object-utils.js";
 
@@ -191,7 +191,7 @@ export function setWorldMeshFlowers(flowers = []) {
     (flower) => flower && Number.isFinite(flower.x) && Number.isFinite(flower.z),
   );
   worldMeshHexes = worldMeshFlowers.flatMap((flower) =>
-    WORLD_MESH_FLOWER_HEXES.map((hex) => ({ x: flower.x + hex.x, z: flower.z + hex.z })),
+    worldMeshHexesFor(flower.shape).map((hex) => ({ x: flower.x + hex.x, z: flower.z + hex.z })),
   );
   worldMeshJunctions = worldMeshHexes.flatMap(hexCorners);
 }
@@ -229,10 +229,11 @@ export function worldMeshFlowerAt(x, z, radius = 0) {
   for (let index = 0; index < worldMeshFlowers.length; index += 1) {
     const flower = worldMeshFlowers[index];
     if (Math.hypot(px - flower.x, pz - flower.z) > WORLD_MESH_FLOWER_REACH) continue;
-    for (let hex = 0; hex < WORLD_MESH_FLOWER_HEXES.length; hex += 1) {
+    const hexes = worldMeshHexesFor(flower.shape);
+    for (let hex = 0; hex < hexes.length; hex += 1) {
       const tile = {
-        x: flower.x + WORLD_MESH_FLOWER_HEXES[hex].x,
-        z: flower.z + WORLD_MESH_FLOWER_HEXES[hex].z,
+        x: flower.x + hexes[hex].x,
+        z: flower.z + hexes[hex].z,
       };
       if (grownHexContains(px, pz, tile, margin)) return flower;
     }
