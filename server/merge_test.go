@@ -253,10 +253,13 @@ func TestMergeExecutorMergesBranchBackedPullAtomicallyAndIdempotently(t *testing
 		t.Fatalf("merged record rewrote more than the lifecycle fields:\n%q\nwant\n%q", afterRaw, expected)
 	}
 	verifyAttestation(t, f.identity, result, "forkmesh")
-	digest, _ := refsSHA256(context.Background(), f.bare)
-	if result["state"] != digest {
-		t.Fatalf("attested %v want live digest %s", result["state"], digest)
+	// The attested state is what the router checks clones against: the default
+	// branch plus tags (the gateway's routing digest), not every branch.
+	routing, _ := routingRefsSHA256(context.Background(), f.bare)
+	if result["state"] != routing {
+		t.Fatalf("attested %v want live routing digest %s", result["state"], routing)
 	}
+	digest, _ := refsSHA256(context.Background(), f.bare)
 	// The gateway configuration was re-pinned for both owner aliases.
 	gateway, _, err := loadGatewayConfig(f.gatewayPath)
 	if err != nil {

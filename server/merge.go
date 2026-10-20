@@ -1372,7 +1372,7 @@ func (e *PullMutationExecutor) attestation(ctx context.Context, gitDir string, r
 	if e.Identity == nil {
 		return nil
 	}
-	digest, err := refsSHA256(ctx, gitDir)
+	digest, err := routingRefsSHA256(ctx, gitDir)
 	if err != nil || !digestPattern.MatchString(digest) {
 		return nil
 	}
