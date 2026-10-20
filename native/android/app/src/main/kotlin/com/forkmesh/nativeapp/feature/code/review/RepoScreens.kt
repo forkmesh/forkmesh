@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code.review
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -142,10 +143,10 @@ internal class BranchesScreen(private val repo: Repository) : Screen() {
             if (running != null) return
             scope.launch {
                 if (resume == null && request.op != BranchOpKind.Update) {
-                    val confirmed = messenger.showConfirmDialog(
+                    val confirmed = messenger.confirmAction(
                         BranchOpWording.confirmTitle(request),
+                        BranchOpWording.label(request.op, request.target, request.deleteBranch),
                         BranchOpWording.confirmBody(request),
-                        confirmLabel = BranchOpWording.label(request.op, request.target, request.deleteBranch),
                         destructive = request.op == BranchOpKind.Delete || request.deleteBranch,
                     )
                     if (!confirmed) return@launch

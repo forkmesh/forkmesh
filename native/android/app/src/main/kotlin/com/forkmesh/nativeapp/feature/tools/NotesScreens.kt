@@ -169,7 +169,7 @@ class NotesScreen : Screen() {
         }
         val top = navigator.top
         LaunchedEffect(top) { if (top === this@NotesScreen) generation++ }
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Notes", navigator) {
                     FmIconButton("refresh", "Refresh", onPressed = { generation++ }, color = Fm.colors.textPrimary)
@@ -400,7 +400,7 @@ class NoteEditorScreen(private val noteId: String?) : Screen() {
         val existing = id != null
         val owner = NotesLogic.role(note) == "owner"
         val public = note?.get("visibility") == "public"
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase).imePadding()) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas).imePadding()) {
             val plugin = rememberScreenPluginMenu()
             FmNavBar(if (existing) (if (canEdit) "Edit note" else "Note") else "New note", onBack = { navigator.handleBack() }) {
                 if (!loading && error.isEmpty()) {

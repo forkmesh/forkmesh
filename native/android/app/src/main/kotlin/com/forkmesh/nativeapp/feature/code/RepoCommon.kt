@@ -74,6 +74,7 @@ import com.forkmesh.nativeapp.ui.kit.FmListRow
 import com.forkmesh.nativeapp.ui.kit.FmRowDivider
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
+import com.forkmesh.nativeapp.ui.kit.fmScrollEdge
 import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.rememberFmStatus
@@ -162,6 +163,7 @@ internal fun CodeAppBar(
     actions: @Composable RowScope.() -> Unit = {},
     bottom: (@Composable () -> Unit)? = null,
     pluginMenu: Boolean = true,
+    titleAlpha: Float = 1f,
 ) {
     val c = Fm.colors
     Column(
@@ -169,7 +171,7 @@ internal fun CodeAppBar(
             .fillMaxWidth()
             .background(c.bgBase),
     ) {
-        com.forkmesh.nativeapp.ui.kit.FmNavBar(title, onBack = { navigator.pop() }) {
+        com.forkmesh.nativeapp.ui.kit.FmNavBar(title, onBack = { navigator.pop() }, titleAlpha = titleAlpha) {
             actions()
             if (pluginMenu) PluginMenuButton()
         }
@@ -184,14 +186,16 @@ internal fun DetailScaffold(
     actions: @Composable RowScope.() -> Unit = {},
     status: FmStatus? = null,
     pluginMenu: Boolean = true,
+    largeTitle: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
+    val large = com.forkmesh.nativeapp.ui.kit.rememberFmLargeTitle()
     Column(
         Modifier
             .fillMaxSize()
             .background(Fm.colors.bgBase),
     ) {
-        CodeAppBar(title, navigator, actions = actions, pluginMenu = pluginMenu)
+        CodeAppBar(title, navigator, actions = actions, pluginMenu = pluginMenu, titleAlpha = if (largeTitle) large.barTitleAlpha else 1f)
         if (status != null) {
             FmInlineStatus(
                 status,
@@ -200,12 +204,17 @@ internal fun DetailScaffold(
                     .padding(horizontal = FmSpace.x4),
             )
         }
-        Box(
-            Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-            content = content,
-        )
+        if (largeTitle) {
+            com.forkmesh.nativeapp.ui.kit.FmLargeTitleBox(title, large, Modifier.weight(1f).fillMaxWidth(), content)
+        } else {
+            Box(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .fmScrollEdge(),
+                content = content,
+            )
+        }
     }
 }
 

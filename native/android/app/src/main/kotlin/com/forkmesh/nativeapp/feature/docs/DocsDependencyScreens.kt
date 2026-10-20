@@ -25,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.forkmesh.nativeapp.docs.DocsAuthor
@@ -174,7 +173,7 @@ class DocsDependencyScreen(private val id: String) : Screen() {
             Text(dependency.title, style = Fm.text.headlineSmall.copy(fontWeight = FmType.emphasis, color = Fm.colors.textPrimary))
             if (dependency.title != dependency.name) {
                 Spacer(Modifier.height(FmSpace.x1))
-                Text(dependency.name, style = Fm.text.bodyMedium.copy(fontFamily = FontFamily.Monospace, color = Fm.colors.textSecondary))
+                Text(dependency.name, style = Fm.text.bodyMedium.copy(fontFamily = FmType.mono, color = Fm.colors.textSecondary))
             }
             if (dependency.description.isNotEmpty()) {
                 Spacer(Modifier.height(FmSpace.x3))
@@ -219,7 +218,7 @@ class DocsDependencyScreen(private val id: String) : Screen() {
                 overflow = TextOverflow.Ellipsis,
                 style = Fm.text.bodyMedium.copy(
                     color = Fm.colors.accent,
-                    fontFamily = if (monospace) FontFamily.Monospace else null,
+                    fontFamily = if (monospace) FmType.mono else null,
                 ),
                 modifier = Modifier.weight(1f),
             )

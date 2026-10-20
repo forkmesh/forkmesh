@@ -98,7 +98,7 @@ internal fun DocsFrame(
 ) {
     val load = rememberDocsLibrary()
     val library = (load as? DocsLoad.Ready)?.library
-    Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+    Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
         ToolsAppBar(title(library), navigator) { if (library != null) actions(library) }
         Column(Modifier.fillMaxSize().windowInsetsPadding(fmSafeAreaInsets(top = false))) {
             when (load) {

@@ -205,7 +205,7 @@ private class MarketingScreenImpl(section: MarketingSection) : Screen() {
         }
         @Suppress("UNUSED_EXPRESSION") MarketingRevision.value
         val overview = model.overview
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Marketing", navigator) {
                     FmIconButton("refresh", "Refresh", onPressed = { reload++ }, color = Fm.colors.textPrimary)

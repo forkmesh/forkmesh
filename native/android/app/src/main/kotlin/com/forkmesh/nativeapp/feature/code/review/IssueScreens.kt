@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code.review
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -145,11 +146,10 @@ internal fun IssueToolsCard(repo: Repository, issue: Issue, navigator: Navigator
                 FmToneButton(if (moving) "Moving…" else "Move to task", onPressed = {
                     if (moving) return@FmToneButton
                     scope.launch {
-                        if (!messenger.showConfirmDialog(
+                        if (!messenger.confirmAction(
                                 "Move issue #${issue.number} to a task?",
-                                body = "An organization task is created from its title and description, then the issue is deleted. If the issue cannot be deleted, the new task is moved to trash.",
-                                confirmLabel = "Move to task",
-                                destructive = true,
+                                "Move to task",
+                                "An organization task is created from its title and description, then the issue is deleted. If the issue cannot be deleted, the new task is moved to trash.",
                             )
                         ) return@launch
                         moving = true
@@ -170,7 +170,7 @@ internal fun IssueToolsCard(repo: Repository, issue: Issue, navigator: Navigator
             if (IssueFields.canDeleteOwn(issue, CodeServices.identity?.publicKeyB64url.orEmpty())) {
                 FmToneButton("Delete", onPressed = {
                     scope.launch {
-                        if (messenger.showConfirmDialog("Delete issue #${issue.number}?", confirmLabel = "Delete", destructive = true)) {
+                        if (messenger.confirmAction("Delete issue #${issue.number}?", "Delete", "A signed delete hides the issue everywhere once the owner's node applies it. Only you, its author, can do this.")) {
                             if (apply(listOf(IssueEdit.deleteOwnIssue()), "Delete requested.")) navigator.pop()
                         }
                     }

@@ -448,7 +448,7 @@ class CaloriesScreen : Screen() {
                 sheet = "photoHint"
             }
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Calorie Counter", navigator) {
                 FmIconButton("refresh", "Refresh", onPressed = { generation++ }, color = Fm.colors.textPrimary)
             }

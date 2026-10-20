@@ -153,6 +153,7 @@ private fun MetricSquare(
 ) {
     val c = Fm.colors
     val style = TextStyle(
+        fontFamily = FmType.ui,
         fontSize = FmType.micro,
         lineHeight = FmType.micro,
         letterSpacing = 0.sp,
@@ -217,6 +218,7 @@ private fun LogLight(category: LogCategory, count: Int, onTap: () -> Unit) {
             compactCount(count),
             maxLines = 1,
             style = TextStyle(
+                fontFamily = FmType.ui,
                 fontSize = FmType.micro,
                 lineHeight = FmType.micro,
                 letterSpacing = 0.sp,

@@ -87,6 +87,7 @@ import com.forkmesh.nativeapp.ui.kit.FmRowDivider
 import com.forkmesh.nativeapp.ui.kit.FmSectionHeader
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTab
 import com.forkmesh.nativeapp.ui.kit.FmSegmentTabBar
+import com.forkmesh.nativeapp.shell.ShellBadges
 import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.FmTextButton
@@ -137,13 +138,14 @@ class TasksScreen(private val initialFilter: Int = 0) : Screen() {
             error = ""
             try {
                 board = withContext(Dispatchers.IO) { api.board() }
+                board?.let(ShellBadges::adoptTasks)
             } catch (thrown: Exception) {
                 error = TasksLogic.errorText(thrown, "Tasks are unavailable right now.")
             }
             loading = false
         }
         val current = board
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Tasks", navigator) {
                     current?.let { com.forkmesh.nativeapp.feature.planning.TaskListTools(it.tasks, it.canManage, listStatus) { generation++ } }
@@ -283,7 +285,7 @@ class TaskDetailScreen(private val taskId: String, private val actor: String, pr
             }
         }
         val current = task
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase).imePadding()) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas).imePadding()) {
             ToolsAppBar("Task", navigator) {
                 if (current != null) com.forkmesh.nativeapp.feature.planning.TaskToolsButton(taskId, navigator)
                 if (current != null && canManage) {

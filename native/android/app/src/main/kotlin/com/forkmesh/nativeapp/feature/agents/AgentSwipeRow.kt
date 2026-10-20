@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.agents
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -92,12 +93,7 @@ internal fun AgentSwipeToDelete(
     }
 }
 
-internal suspend fun confirmOutsideDelete(messenger: FmMessenger): Boolean = messenger.showConfirmDialog(
-    AgentSwipeDelete.OUTSIDE_CONFIRM_TITLE,
-    AgentSwipeDelete.OUTSIDE_CONFIRM_TEXT,
-    confirmLabel = "Delete",
-    destructive = true,
-)
+internal suspend fun confirmOutsideDelete(messenger: FmMessenger): Boolean = messenger.confirmAction(AgentSwipeDelete.OUTSIDE_CONFIRM_TITLE, "Delete", AgentSwipeDelete.OUTSIDE_CONFIRM_TEXT)
 
 internal suspend fun deleteAgentTarget(target: AgentDeleteTarget): AgentDeleteOutcome = when (target) {
     is AgentDeleteTarget.Desktop, is AgentDeleteTarget.Outside -> {

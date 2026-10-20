@@ -44,6 +44,12 @@ object CodeFeature {
         currentRepoState.value = RepoRef(repo.owner, repo.name)
     }
 
+    fun follow(ref: RepoRef) {
+        if (ref.owner.isEmpty() || ref.name.isEmpty() || currentRepoState.value == ref) return
+        CurrentRepoMemory(Services.get<PrefStore>()).remember(ref.owner, ref.name)
+        currentRepoState.value = ref
+    }
+
     fun currentRepository(): Repository? {
         val ref = currentRepoState.value ?: CurrentRepoMemory(Services.get<PrefStore>()).ref ?: return null
         return records[ref.slug.lowercase()] ?: Repository(ref.owner, ref.name)

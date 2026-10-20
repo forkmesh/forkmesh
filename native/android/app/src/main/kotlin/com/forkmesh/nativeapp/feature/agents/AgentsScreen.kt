@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -38,6 +39,7 @@ import com.forkmesh.nativeapp.agents.AgentDeleteTarget
 import com.forkmesh.nativeapp.agents.AgentEntry
 import com.forkmesh.nativeapp.agents.AgentLaunchSession
 import com.forkmesh.nativeapp.agents.AgentLineChips
+import com.forkmesh.nativeapp.agents.AgentListRings
 import com.forkmesh.nativeapp.agents.AgentListView
 import com.forkmesh.nativeapp.agents.AgentRepoGroup
 import com.forkmesh.nativeapp.agents.AgentSwipeDelete
@@ -57,6 +59,7 @@ import com.forkmesh.nativeapp.platform.Prefs
 import com.forkmesh.nativeapp.ui.kit.FmCard
 import com.forkmesh.nativeapp.ui.kit.FmConfirmDialog
 import com.forkmesh.nativeapp.ui.kit.FmEmptyState
+import com.forkmesh.nativeapp.shell.ShellLoadingOverlay
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmNeedsDesktopNote
@@ -102,6 +105,8 @@ internal class AgentsScreen : Screen() {
     private var loaded by mutableStateOf(false)
     private var error by mutableStateOf<String?>(null)
     private var generation by mutableIntStateOf(0)
+    private var request by mutableIntStateOf(0)
+    private val rings = AgentListRings()
     private var tabIndex by mutableIntStateOf(0)
     private val status = FmStatus()
 
@@ -119,10 +124,11 @@ internal class AgentsScreen : Screen() {
         reload()
     }
 
-    private suspend fun load(before: List<AgentRepoGroup>): List<AgentRepoGroup> = withContext(Dispatchers.IO) {
+    private suspend fun load(before: List<AgentRepoGroup>, token: Int): List<AgentRepoGroup> = withContext(Dispatchers.IO) {
         val api = Services.require<ApiService>()
         val queue = AgentsFeature.queue
         val repos = api.repositories()
+        rings.readsSent(token)
         coroutineScope {
             repos.map { repo ->
                 async {
@@ -151,27 +157,50 @@ internal class AgentsScreen : Screen() {
         val signal by AgentsFeature.listSignal.collectAsState()
         val center = AgentsFeature.control
         rememberCenterTick(center)
-        LaunchedEffect(generation, signal) {
-            if (signal > 0 && loaded) delay(600)
+        LaunchedEffect(generation, request) {
+            val token = rings.begin()
             center.refreshAsync()
             loading = true
+            var again = false
             try {
-                groups = load(groups)
+                groups = load(groups, token)
                 error = null
+                again = rings.finish(token)
             } catch (cancelled: CancellationException) {
+                rings.abandon(token)
                 throw cancelled
             } catch (failure: Exception) {
                 error = failure.message ?: failure.toString()
+                again = rings.finish(token)
             } finally {
                 loading = false
                 loaded = true
             }
+            if (again) request++
+        }
+        LaunchedEffect(signal) {
+            if (signal == 0 || !rings.ring()) return@LaunchedEffect
+            if (loaded) delay(600)
+            if (rings.ring()) request++
         }
         val hasDesktopNode = AgentsFeature.hasDesktopNode()
         val context = LocalContext.current
         val prefs = remember { Prefs(context.applicationContext) }
         AgentReadMarks.Load()
-        var listView by remember { mutableStateOf(AgentListView.fromKey(prefs.getString(AgentListView.PREF_KEY))) }
+        var listView by remember {
+            val defaulted = prefs.getString(AgentListView.EAGLE_DEFAULT_KEY) != null
+            val stored = AgentListView.stored(prefs.getString(AgentListView.PREF_KEY), defaulted)
+            if (!defaulted) {
+                prefs.putString(AgentListView.PREF_KEY, stored.key)
+                prefs.putString(AgentListView.EAGLE_DEFAULT_KEY, "1")
+            }
+            mutableStateOf(stored)
+        }
+        val eagle = remember { AgentEagleState() }
+        val eagleOn = listView == AgentListView.Eagle
+        val eagleKey = if (eagleOn) AgentEagleState.watchKey(center.rows) else ""
+        LaunchedEffect(eagleKey) { if (eagleOn) eagle.follow(center.rows) }
+        DisposableEffect(eagleOn) { onDispose { eagle.stop() } }
         Column(
             Modifier
                 .fillMaxSize()
@@ -191,7 +220,7 @@ internal class AgentsScreen : Screen() {
             )
             FmSegmentTabBar(tabs, tabIndex, onChanged = { tabIndex = it })
             FmPullToRefreshBox(isRefreshing = loading && loaded, onRefresh = { reload() }, modifier = Modifier.weight(1f)) {
-                CompositionLocalProvider(LocalAgentListView provides listView) {
+                CompositionLocalProvider(LocalAgentListView provides listView, LocalAgentEagle provides if (eagleOn) eagle else null) {
                     when (tabIndex) {
                         0 -> ListTab(navigator, hasDesktopNode)
                         1 -> CloudTab(navigator, hasDesktopNode)
@@ -201,6 +230,7 @@ internal class AgentsScreen : Screen() {
                         }
                     }
                 }
+                ShellLoadingOverlay(loading, Modifier.align(Alignment.TopCenter))
             }
         }
     }
@@ -242,6 +272,7 @@ internal class AgentsScreen : Screen() {
                         AgentListView.Compact -> "view_list_outlined"
                         AgentListView.Zen -> "dark_mode_outlined"
                         AgentListView.Full -> "visibility_outlined"
+                        AgentListView.Eagle -> "flutter_dash"
                     },
                     "Agent list view: ${listView.caption}",
                     onPressed = onNextView,
@@ -318,7 +349,7 @@ internal class AgentsScreen : Screen() {
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = FmSpace.x4, end = FmSpace.x4, top = FmSpace.x3, bottom = FmSpace.x5),
-            verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
+            verticalArrangement = Arrangement.spacedBy(if (LocalAgentListView.current == AgentListView.Eagle) 0.dp else FmSpace.x2),
             content = content,
         )
     }
@@ -449,6 +480,7 @@ internal class AgentsScreen : Screen() {
                     },
                     facts = AgentLineChips.facts(session),
                     unread = AgentReadMarks.unread(repo.name, session),
+                    eagle = AgentEagleSource.Desktop(repo.name, session.id, session.isActive),
                 )
             }
             liveDesktopItems(navigator, live, status)
@@ -513,6 +545,7 @@ internal fun LazyListScope.liveDesktopItems(
                 trailing = if (position > 0) ({ QueueMoveToTopButton(row, status) }) else null,
                 facts = AgentLineChips.facts(row),
                 unread = AgentReadMarks.unread(row),
+                eagle = AgentEagleSource.Control(row),
             )
         }
     }
@@ -544,6 +577,7 @@ internal fun DesktopSessionRow(navigator: Navigator, repo: Repository, session: 
         },
         facts = AgentLineChips.facts(session),
         unread = AgentReadMarks.unread(repo.name, session),
+        eagle = AgentEagleSource.Desktop(repo.name, session.id, session.isActive),
     )
 }
 
@@ -579,6 +613,7 @@ internal fun LaunchedSessionRow(
         },
         facts = AgentLineChips.facts(session, cloud),
         unread = AgentReadMarks.unread(session),
+        eagle = AgentEagleSource.Launched("${repo.fullName}:${session.sessionId.ifEmpty { session.taskKey }}", session),
         trailing = if (!session.isRetryable) null else {
             {
                 if (busy) {

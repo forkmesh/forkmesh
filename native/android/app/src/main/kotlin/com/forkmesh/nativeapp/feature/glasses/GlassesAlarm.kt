@@ -21,6 +21,7 @@ import android.os.VibratorManager
 import com.forkmesh.nativeapp.R
 import com.forkmesh.nativeapp.glasses.GlassesSighting
 import com.forkmesh.nativeapp.glasses.GlassesSignatures
+import com.forkmesh.nativeapp.platform.OtherAppCall
 
 internal class GlassesAlarm private constructor(private val context: Context) {
     companion object {
@@ -49,6 +50,10 @@ internal class GlassesAlarm private constructor(private val context: Context) {
         fun get(context: Context): GlassesAlarm =
             shared ?: synchronized(this) { shared ?: GlassesAlarm(context.applicationContext).also { shared = it } }
 
+        fun hushIfRinging() {
+            shared?.hush()
+        }
+
         fun canBreakTotalSilence(context: Context): Boolean =
             context.getSystemService(NotificationManager::class.java)?.isNotificationPolicyAccessGranted == true
     }
@@ -74,7 +79,7 @@ internal class GlassesAlarm private constructor(private val context: Context) {
         ensureChannel(context)
         notifications?.notify(NOTIFICATION_ID, notification(sighting))
         main.removeCallbacks(stopper)
-        if (!ringing) {
+        if (!ringing && !OtherAppCall.inProgress) {
             liftTotalSilence()
             raiseAlarmVolume()
             playSound()
@@ -83,6 +88,16 @@ internal class GlassesAlarm private constructor(private val context: Context) {
         ringing = true
         GlassesWatchService.publishRinging(true)
         main.postDelayed(stopper, RING_MS)
+    }
+
+    fun hush() {
+        main.post {
+            if (ringtone == null) return@post
+            runCatching { ringtone?.stop() }
+            ringtone = null
+            savedAlarmVolume?.let { volume -> runCatching { audio?.setStreamVolume(AudioManager.STREAM_ALARM, volume, 0) } }
+            savedAlarmVolume = null
+        }
     }
 
     fun stop() {

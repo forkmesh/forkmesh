@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.workflows
 
 import androidx.compose.foundation.background
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -172,7 +172,7 @@ class WorkflowsScreen : Screen() {
         }
         val top = navigator.top
         LaunchedEffect(top) { if (top === this@WorkflowsScreen) generation++ }
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar(WorkflowsText.TITLE, navigator) {
                     FmIconButton("lock_outline", "Credentials", onPressed = { session?.let { navigator.push(WorkflowCredentialsScreen(it)) } },
@@ -312,7 +312,7 @@ class WorkflowEditorScreen(private val session: WorkflowsSession, private val wo
             }
         }
         val catalog = session.catalog.value
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar(draft?.name ?: WorkflowsText.TITLE, navigator, pluginMenu = false) {
                     if (busy == "save") {
@@ -628,7 +628,7 @@ class WorkflowStepScreen(private val session: WorkflowsSession, private val edit
         val node = draft?.node(nodeId)
         val catalog = session.catalog.value
         val kind = node?.let { catalog.kind(it.type) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(node?.name ?: "Step", navigator, pluginMenu = false)
             if (draft == null || node == null) {
                 FmEmptyState("error_outline", "This step was removed")
@@ -759,7 +759,7 @@ private fun FieldEditor(field: WorkflowField, node: WorkflowNode, operators: Lis
             hint = field.placeholder.ifEmpty { null },
             minLines = if (field.multiline) 3 else 1,
             maxLines = if (field.multiline) 12 else 1,
-            textStyle = if (field.mono) Fm.text.bodyMedium.copy(fontFamily = FontFamily.Monospace) else Fm.text.bodyLarge,
+            textStyle = if (field.mono) Fm.text.bodyMedium.copy(fontFamily = FmType.mono) else Fm.text.bodyLarge,
         )
     }
 }
@@ -769,7 +769,7 @@ class WorkflowRunScreen(private val run: WorkflowRun, private val draft: Workflo
 
     @Composable
     override fun Content(navigator: Navigator) {
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(WorkflowsText.status(run.status), navigator, pluginMenu = false)
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -803,7 +803,7 @@ class WorkflowRunScreen(private val run: WorkflowRun, private val draft: Workflo
                                 val prefix = if (step.outputs.size == 1) "" else name.replaceFirstChar { it.uppercase() } + ": "
                                 Text(prefix + if (count == 1L) "1 item" else "$count items", style = Fm.text.labelMedium, color = Fm.colors.textSecondary)
                                 for (item in items) {
-                                    Text(Json.stringify(item), style = Fm.text.bodySmall.copy(fontFamily = FontFamily.Monospace), color = Fm.colors.textSecondary, maxLines = 6)
+                                    Text(Json.stringify(item), style = Fm.text.bodySmall.copy(fontFamily = FmType.mono), color = Fm.colors.textSecondary, maxLines = 6)
                                 }
                                 if (count > items.size) Text("and ${count - items.size} more", style = Fm.text.bodySmall, color = Fm.colors.textTertiary)
                             }
@@ -844,7 +844,7 @@ class WorkflowCredentialsScreen(private val session: WorkflowsSession) : Screen(
         }
         val credentials = session.credentials.value
         val catalog = session.catalog.value
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 ToolsAppBar("Credentials", navigator, pluginMenu = false) {
                     FmIconButton("refresh", "Refresh", onPressed = { generation++ }, color = Fm.colors.textPrimary)

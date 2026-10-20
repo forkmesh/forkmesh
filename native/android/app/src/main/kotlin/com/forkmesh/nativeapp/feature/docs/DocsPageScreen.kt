@@ -44,7 +44,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -254,7 +253,7 @@ internal fun DocsBlockView(block: DocsBlock, references: Map<String, String>, on
             Text(
                 block.text,
                 softWrap = false,
-                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp, color = Fm.colors.textPrimary),
+                style = TextStyle(fontFamily = FmType.mono, fontSize = 13.sp, lineHeight = 19.sp, color = Fm.colors.textPrimary),
             )
         }
         is DocsBlock.Table -> DocsTable(block, references, onLink)
@@ -281,7 +280,7 @@ internal fun docsAnnotated(spans: List<DocsSpan>, accent: Color, codeBackground:
             val style = SpanStyle(
                 fontWeight = if (span.bold) FontWeight.SemiBold else null,
                 fontStyle = if (span.italic) FontStyle.Italic else null,
-                fontFamily = if (span.code) FontFamily.Monospace else null,
+                fontFamily = if (span.code) FmType.mono else null,
                 background = if (span.code) codeBackground else Color.Unspecified,
                 textDecoration = if (span.strike) TextDecoration.LineThrough else null,
             )

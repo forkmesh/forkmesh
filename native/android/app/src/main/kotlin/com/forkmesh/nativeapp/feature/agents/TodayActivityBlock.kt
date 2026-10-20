@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.agents
 
 import androidx.compose.foundation.Canvas
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -104,7 +105,7 @@ internal fun TodayActivityBlock(counts: IntArray, nowSlot: Int, otherKinds: List
 private fun ActivityHeatGrid(counts: IntArray, nowSlot: Int, peak: Int) {
     val c = Fm.colors
     val measurer = rememberTextMeasurer()
-    val labelStyle = TextStyle(color = c.textTertiary, fontSize = 9.sp)
+    val labelStyle = TextStyle(fontFamily = FmType.ui, color = c.textTertiary, fontSize = 9.sp)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val gutter = 24.dp
         val axis = 14.dp

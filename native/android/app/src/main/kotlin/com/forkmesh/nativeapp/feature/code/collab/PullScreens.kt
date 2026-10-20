@@ -16,7 +16,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,7 +39,9 @@ import com.forkmesh.nativeapp.collab.dartErrorText
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.model.PublishedPull
 import com.forkmesh.nativeapp.model.Repository
+import com.forkmesh.nativeapp.shell.ShellPullsWatch
 import com.forkmesh.nativeapp.ui.kit.FmInboxPendingNote
+import com.forkmesh.nativeapp.ui.kit.FmPullToRefreshBox
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmStatus
 import com.forkmesh.nativeapp.ui.kit.FmTone
@@ -49,24 +54,71 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val PUBLISH_RETRY_DELAYS_MS = listOf(1_500L, 3_000L, 6_000L, 12_000L, 24_000L)
 
 @Composable
 internal fun PullsTabContent(repo: Repository, navigator: Navigator) {
-    val state = rememberLoad(repo.owner, repo.name) {
-        Services.require<ApiService>().publishedPulls(repo.owner, repo.name)
+    val ref = com.forkmesh.nativeapp.navigation.RepoRef(repo.owner, repo.name)
+    val watched by ShellPullsWatch.state.collectAsState()
+    val rings by ShellPullsWatch.rings.collectAsState()
+    val baseline = remember { rings }
+    var state by remember(repo.owner, repo.name) { mutableStateOf<Loadable<List<PublishedPull>>>(Loadable.Loading) }
+    var refreshing by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    suspend fun read() {
+        try {
+            val pulls = withContext(Dispatchers.IO) { Services.require<ApiService>().publishedPulls(repo.owner, repo.name) }
+            state = Loadable.Ready(pulls)
+            ShellPullsWatch.viewed(ref, pulls)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (state !is Loadable.Ready) state = Loadable.Failed(dartErrorText(error))
+        }
     }
-    AsyncListBody(state, empty = "No published pull requests yet.") { pull ->
-        MobileCard(
-            icon = "call_merge",
-            iconColor = toneColor(PullCard.tone(pull)),
-            title = pull.title,
-            subtitle = PullCard.subtitle(pull),
-            badge = PullCard.badge(pull),
-            onTap = { navigator.push(PullDetailScreen(repo, pull.number, pull)) },
-        )
+
+    suspend fun reload() {
+        if (ShellPullsWatch.isCurrent(ref)) ShellPullsWatch.refresh() else read()
+    }
+
+    DisposableEffect(ref) {
+        ShellPullsWatch.opened(ref)
+        onDispose { ShellPullsWatch.closed(ref) }
+    }
+    LaunchedEffect(ref) { read() }
+    LaunchedEffect(watched.revision) {
+        if (watched.holds(ref) && state is Loadable.Ready) state = Loadable.Ready(watched.pulls)
+    }
+    LaunchedEffect(rings) {
+        if (rings != baseline && !ShellPullsWatch.isCurrent(ref)) read()
+    }
+    FmPullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = {
+            scope.launch {
+                refreshing = true
+                try {
+                    reload()
+                } finally {
+                    refreshing = false
+                }
+            }
+        },
+    ) {
+        AsyncListBody(state, empty = "No published pull requests yet.") { pull ->
+            MobileCard(
+                icon = "call_merge",
+                iconColor = toneColor(PullCard.tone(pull)),
+                title = pull.title,
+                subtitle = PullCard.subtitle(pull),
+                badge = PullCard.badge(pull),
+                onTap = { navigator.push(PullDetailScreen(repo, pull.number, pull)) },
+            )
+        }
     }
 }
 

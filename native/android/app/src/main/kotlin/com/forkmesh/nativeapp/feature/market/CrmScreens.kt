@@ -143,7 +143,7 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
         var orgMenu by remember { mutableStateOf(false) }
         var addMenu by remember { mutableStateOf(false) }
         var moreMenu by remember { mutableStateOf(false) }
-        Box(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Box(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             Column(Modifier.fillMaxSize()) {
                 val plugin = rememberScreenPluginMenu()
                 ToolsAppBar(if (selecting) "${selection.size} selected" else model.organization.ifEmpty { "CRM" }, navigator, pluginMenu = !selecting && data == null) {
@@ -217,7 +217,7 @@ class CrmScreen(private val organization: String?, private val flow: String?) : 
                     }
                     data == null -> FmEmptyState("contacts", "No CRM here yet", message = "Install the CRM package for an organization in the Market.")
                     else -> {
-                        CrmHeader(model, data)
+                        CrmHeader(model, data, runner)
                         if (!selecting) CrmRunnerStatus(runner, model, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
                         val tab = model.activeTab
                         when {
@@ -294,7 +294,7 @@ private fun CrmInstallPanel(model: CrmModel, installing: Boolean, onInstall: () 
 }
 
 @Composable
-private fun CrmHeader(model: CrmModel, data: CrmOrganizationData) {
+private fun CrmHeader(model: CrmModel, data: CrmOrganizationData, runner: CrmRunner) {
     Column(Modifier.fillMaxWidth().background(Fm.colors.bgRaised).padding(top = 8.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             CrmStatTile("${data.contacts.size}", "Contacts", "groups", CrmColors.blue)
@@ -302,6 +302,7 @@ private fun CrmHeader(model: CrmModel, data: CrmOrganizationData) {
             CrmStatTile("${data.activity.size}", "Emails", "send", CrmColors.purple)
             CrmStatTile("${data.decks.count { it.active }}", "Decks", "slideshow", CrmColors.orange)
         }
+        CrmZohoBar(model, data, runner, Modifier.padding(horizontal = 16.dp))
         FmTextField(model.query, { model.query = it; CrmRevision.bump() }, Modifier.padding(horizontal = 16.dp), hint = "Search contacts")
         LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp), contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp)) {
             items(data.contactTabs, key = { it.tab.id }) { item -> CrmTabChip(model, item) }

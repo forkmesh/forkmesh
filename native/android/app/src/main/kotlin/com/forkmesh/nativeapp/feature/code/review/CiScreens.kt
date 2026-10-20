@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.code.review
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -115,7 +116,7 @@ internal class ActionsScreen(private val repo: Repository, private val commit: S
             }
         }
         suspend fun control(kind: ActionsControlKind, runId: Int? = null, workflow: String? = null, branch: String? = null, enabled: Boolean? = null) {
-            if (kind.isDestructive && !messenger.showConfirmDialog("${kind.label}?", confirmLabel = kind.label, destructive = true)) return
+            if (kind.isDestructive && !messenger.confirmAction(kind.label, kind.label)) return
             io { model.send(kind, runId, workflow, branch, enabled) }
             tick.bump()
             model.notice?.let { status.report(it.text, !it.good) }
@@ -282,7 +283,7 @@ internal class ActionRunScreen(
                             for (kind in model.actions(run)) {
                                 FmToneButton(kind.label, onPressed = {
                                     scope.launch {
-                                        if (kind.isDestructive && !messenger.showConfirmDialog("${kind.label} run #${run.id}?", confirmLabel = kind.label, destructive = true)) return@launch
+                                        if (kind.isDestructive && !messenger.confirmAction(kind.label, kind.label)) return@launch
                                         io { model.send(kind, runId = run.id) }
                                         tick.bump()
                                         model.notice?.let { runStatus.report(it.text, !it.good) }
@@ -526,7 +527,7 @@ internal class WebhooksScreen(private val repo: Repository) : Screen() {
                                 FmToneButton("Rotate secret", onPressed = { scope.launch { io { model.rotate(hook.id) }; tick.bump() } })
                                 FmToneButton("Delete", onPressed = {
                                     scope.launch {
-                                        if (messenger.showConfirmDialog("Delete this webhook?", confirmLabel = "Delete", destructive = true)) {
+                                        if (messenger.confirmAction("Delete this webhook?", "Delete")) {
                                             io { model.delete(hook.id) }
                                             tick.bump()
                                         }

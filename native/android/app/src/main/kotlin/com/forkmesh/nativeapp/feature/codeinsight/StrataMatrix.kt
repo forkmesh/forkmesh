@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.codeinsight
 
 import androidx.compose.animation.core.Animatable
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.animation.core.exponentialDecay
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -87,10 +88,10 @@ internal fun StrataMatrixView(model: StrataModel, state: StrataPageState) {
         val column = if (p.x >= header) ((p.x - header + sx) / cell).toInt().takeIf { it in 0 until n } ?: -1 else -2
         return row to column
     }
-    val labelStyle = TextStyle(fontSize = 11.sp, color = c.textPrimary)
-    val boldStyle = TextStyle(fontSize = 11.sp, color = c.accent, fontWeight = FontWeight.Bold)
-    val numberStyle = TextStyle(fontSize = 10.sp, fontWeight = FontWeight.Medium)
-    val keyStyle = TextStyle(fontSize = 10.sp, color = c.textSecondary)
+    val labelStyle = TextStyle(fontFamily = FmType.ui, fontSize = 11.sp, color = c.textPrimary)
+    val boldStyle = TextStyle(fontFamily = FmType.ui, fontSize = 11.sp, color = c.accent, fontWeight = FontWeight.Bold)
+    val numberStyle = TextStyle(fontFamily = FmType.ui, fontSize = 10.sp, fontWeight = FontWeight.Medium)
+    val keyStyle = TextStyle(fontFamily = FmType.ui, fontSize = 10.sp, color = c.textSecondary)
     val keys = remember(c.textSecondary) {
         listOf("Row uses column", "Column uses row", "Both ways: cycle", "Numbers count file imports.", "Tap a cell to list them.")
             .map { measurer.measure(it, keyStyle) }

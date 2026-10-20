@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.agents
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.composer.PromptDraftStore
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -256,7 +257,7 @@ internal class AgentScreen(
         val name = desktop.desktopName
         val body = (if (sessions.isRunning) "The agent stops here. " else "") +
             "Its work is committed and pushed, and the desktop picks it up on the same branch with the conversation so far."
-        if (!messenger.showConfirmDialog("Continue on $name?", body, confirmLabel = "Continue on desktop")) return
+        if (!messenger.confirmAction("Continue on $name?", "Continue on desktop", body, destructive = false)) return
         moving = true
         error = null
         status.clear()

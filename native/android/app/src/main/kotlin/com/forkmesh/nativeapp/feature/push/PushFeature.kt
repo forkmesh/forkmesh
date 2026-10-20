@@ -270,7 +270,7 @@ object PushFeature {
             withContext(Dispatchers.IO) {
                 runCatching {
                     hub.direct?.refresh()
-                    hub.select(direct)
+                    hub.switchConversation(direct)
                 }
             }
         } else if (relay != null) {

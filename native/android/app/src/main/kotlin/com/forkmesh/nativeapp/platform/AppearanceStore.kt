@@ -8,6 +8,7 @@ import com.forkmesh.nativeapp.settings.AppearanceKeys
 import com.forkmesh.nativeapp.settings.ThemeColor
 import com.forkmesh.nativeapp.settings.ThemeModeChoice
 import com.forkmesh.nativeapp.settings.ThemeSurface
+import com.forkmesh.nativeapp.settings.Wallpaper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,7 +32,24 @@ object AppearanceStore {
         state.value = read(p)
     }
 
-    private fun read(p: Prefs): Appearance = Appearance.read({ p.getString(it) }) { p.getBool(it) }
+    private fun read(p: Prefs): Appearance =
+        Appearance.read({ p.getString(it) }, { p.getBool(it) }) { key -> if (p.contains(key)) p.getDouble(key, Wallpaper.DEFAULT_DIM) else null }
+
+    fun setWallpaperImage(name: String) {
+        val clean = Wallpaper.cleanName(name)
+        prefs?.putString(AppearanceKeys.BACKGROUND_IMAGE, clean.ifEmpty { null })
+        state.value = state.value.copy(wallpaper = state.value.wallpaper.withImage(clean))
+    }
+
+    fun previewWallpaperDim(dim: Double) {
+        state.value = state.value.copy(wallpaper = state.value.wallpaper.withDim(dim))
+    }
+
+    fun setWallpaperDim(dim: Double) {
+        val clamped = Wallpaper.clampDim(dim)
+        prefs?.putDouble(AppearanceKeys.BACKGROUND_DIM, clamped)
+        state.value = state.value.copy(wallpaper = state.value.wallpaper.withDim(clamped))
+    }
 
     fun setThemeMode(mode: ThemeModeChoice) {
         prefs?.putString(AppearanceKeys.THEME_MODE, mode.name)

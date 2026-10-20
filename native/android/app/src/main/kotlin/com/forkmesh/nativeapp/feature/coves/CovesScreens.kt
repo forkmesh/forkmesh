@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.coves
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.feature.market.rememberScreenPluginMenu
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -116,7 +117,7 @@ class CovesRepoPickerScreen : Screen() {
         val filtered = repos
             .sortedWith(compareBy<Repository>({ if (it.displayOwner.lowercase() == me) 0 else 1 }, { it.fullName.lowercase() }))
             .filter { needle.isEmpty() || "${it.displayOwner}/${it.name}".lowercase().contains(needle) }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Coves", navigator)
             FmTextField(
                 value = query,
@@ -207,7 +208,7 @@ class CovesScreen(private val repo: CoveRepo) : Screen() {
     override fun Content(navigator: Navigator) {
         val model = remember { CovesFeature.model(repo) }
         if (model == null) {
-            Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+            Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
                 ToolsAppBar("Coves", navigator)
                 FmEmptyState("lock", "Sign in to open coves", message = "Coves belong to your ForkMesh account.")
             }
@@ -240,7 +241,7 @@ class CovesScreen(private val repo: CoveRepo) : Screen() {
                 }
             }
         }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             val plugin = rememberScreenPluginMenu()
             ToolsAppBar("Coves", navigator, pluginMenu = false) {
                 plugin?.Host()
@@ -321,7 +322,7 @@ class CoveLinkScreen(private val id: String) : Screen() {
     override fun Content(navigator: Navigator) {
         val target = remember { CoveFiles.parseRouteId(id) }
         if (target == null) {
-            Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+            Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
                 ToolsAppBar("Cove", navigator)
                 FmEmptyState("lock", "Cove link not recognised", message = "Open coves from their repository, or from a forkmesh://cove link.")
             }
@@ -330,7 +331,7 @@ class CoveLinkScreen(private val id: String) : Screen() {
         val repo = CoveRepo(target.owner, target.repository)
         val model = remember { CovesFeature.model(repo) }
         if (model == null) {
-            Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+            Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
                 ToolsAppBar("Cove", navigator)
                 FmEmptyState("lock", "Sign in to open coves")
             }
@@ -345,7 +346,7 @@ class CoveLinkScreen(private val id: String) : Screen() {
         val messenger = LocalFmMessenger.current
         val scope = rememberCoroutineScope()
         LaunchedEffect(model) { if (model.phase == CovesPhase.Idle) withContext(Dispatchers.IO) { model.load() } }
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar("Cove", navigator)
             when {
                 model.phase == CovesPhase.Loading || model.phase == CovesPhase.Idle -> CenteredProgress()
@@ -377,7 +378,7 @@ class CoveScreen(private val repo: CoveRepo, private val coveId: String) : Scree
     override fun Content(navigator: Navigator) {
         val model = remember { CovesFeature.model(repo) }
         if (model == null) {
-            Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+            Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
                 ToolsAppBar("Cove", navigator)
                 FmEmptyState("lock", "Sign in to open coves")
             }
@@ -500,11 +501,10 @@ private fun CoveBody(navigator: Navigator, model: CovesModel, repo: CoveRepo, co
                                     FmDropdownMenuItem(text = "Delete", onClick = {
                                         rowMenu = false
                                         scope.launch {
-                                            val confirmed = messenger.showConfirmDialog(
+                                            val confirmed = messenger.confirmAction(
                                                 "Delete ${document.name}?",
+                                                "Delete",
                                                 "The deletion is proposed like any other cove change.",
-                                                confirmLabel = "Delete",
-                                                destructive = true,
                                             )
                                             if (confirmed) run { model.deleteDocument(coveId, document.name) }
                                         }

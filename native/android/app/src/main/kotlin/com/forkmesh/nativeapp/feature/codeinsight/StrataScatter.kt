@@ -1,6 +1,7 @@
 package com.forkmesh.nativeapp.feature.codeinsight
 
 import androidx.compose.foundation.Canvas
+import com.forkmesh.nativeapp.ui.theme.FmType
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -69,11 +70,11 @@ internal fun StrataScatterView(model: StrataModel, state: StrataPageState) {
         val side = plot.width
         return (4.0 * density + side * 0.04 * sqrt(nodes[m].codeLines / maxLines)).coerceIn(4.0 * density, max(4.0 * density, side * 0.05)).toFloat()
     }
-    val labelStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textPrimary)
+    val labelStyle = TextStyle(fontFamily = FmType.ui, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textPrimary)
     val selectedStyle = labelStyle.copy(color = c.accent)
-    val axisStyle = TextStyle(fontSize = 10.sp, color = c.textSecondary)
-    val titleStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textPrimary)
-    val zoneStyle = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+    val axisStyle = TextStyle(fontFamily = FmType.ui, fontSize = 10.sp, color = c.textSecondary)
+    val titleStyle = TextStyle(fontFamily = FmType.ui, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = c.textPrimary)
+    val zoneStyle = TextStyle(fontFamily = FmType.ui, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
     Column(Modifier.fillMaxSize()) {
         Canvas(
             Modifier

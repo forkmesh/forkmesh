@@ -45,7 +45,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.feature.agents.opsIo
@@ -339,7 +338,7 @@ private fun ShortcutRow(
                         Spacer(Modifier.width(FmSpace.x1))
                         Text(
                             status.line.ifEmpty { if (status.running) "running" else "no output" },
-                            style = Fm.text.bodySmall.copy(color = c.textSecondary, fontFamily = FontFamily.Monospace),
+                            style = Fm.text.bodySmall.copy(color = c.textSecondary, fontFamily = FmType.mono),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -386,7 +385,7 @@ private fun ShortcutRunCard(run: ShortcutRun) {
             SelectionContainer {
                 Text(
                     shown.joinToString("\n") + if (run.running) "\n\u2588" else "",
-                    style = Fm.text.bodySmall.copy(color = c.textPrimary, fontFamily = FontFamily.Monospace),
+                    style = Fm.text.bodySmall.copy(color = c.textPrimary, fontFamily = FmType.mono),
                     modifier = Modifier.fillMaxWidth().padding(FmSpace.x2),
                 )
             }

@@ -125,7 +125,7 @@ class TaskToolsScreen(private val taskId: String) : Screen() {
             }
         }
         val current = task
-        Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+        Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
             ToolsAppBar(current?.str("title")?.ifEmpty { null } ?: "Task", navigator) {
                 FmIconButton("refresh", "Refresh", onPressed = { generation++ }, color = Fm.colors.textPrimary)
             }
