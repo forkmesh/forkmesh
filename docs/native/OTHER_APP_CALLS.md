@@ -47,3 +47,18 @@ While a call is up:
 Things a person starts on purpose (playing a voice message, a DJ deck,
 dictating into the composer) still work during a call. Only their ducking
 changes.
+
+## Android
+
+`platform/OtherAppCall.kt` reads `AudioManager.mode` (a mode above normal
+means a call, cellular or VoIP), listening with `addOnModeChangedListener`
+on Android 12+ and polling every 2 s while the app is in the foreground
+below that; every check also reads the mode fresh. ForkMesh's own direct call
+(`DirectCallFeature.engine.phase`) does not count. While a call is up
+(wired in `App.onCreate`): interface sounds are quietened
+(`FmSoundCues.quieten`), Agent Watch plays nothing, and Glasses Alert still
+notifies and vibrates but plays no ring; a ring already sounding stops and
+the alarm volume is restored. ForkMesh on Android never asks for audio focus
+for these sounds, so it already mixes instead of ducking. The diff scroll
+ratchet in `ui/kit/FmSoundCues.kt` does not check `quieten`; that kit file
+is owned by the design-layer work and is left as it is.

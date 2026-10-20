@@ -304,7 +304,7 @@ the line under the cursor and restores the cursor, so nothing scrolls.
 - **Views** (`agents/listView`): Compact, Zen (title only), Full (one-word
   columns: status, provider, host, age, conflicts, files, `+added−removed`,
   worktree or branch, columns dropped from the end when they do not fit), and
-  on iOS Eagle (the default). Android has the first three. Logic in
+  Eagle (the default on both). Logic in
   `AgentLines.chips` / `AgentListView` (iOS FMAgents) and `AgentLineChips`
   (Android core).
 - **Row**: agent dot with status, title, short age, a meta line (host glyph,
@@ -343,6 +343,10 @@ and a dialog ticker in the rest of the line.
   the screen leaves Eagle).
 - A missing or unknown `agents/listView` reads as Eagle; a phone that stored
   another view is switched once (`agents/listViewEagleDefault`).
+- Android (since 2026-10-20) has the same view: `AgentEagleFeed` and
+  `AgentEagle.dialog` in `core/.../agents/AgentEagleFeed.kt`, the row and
+  ticker in `feature/agents/AgentEagleViews.kt`. See
+  [ANDROID.md](ANDROID.md) section 26.
 
 ### Sorting
 

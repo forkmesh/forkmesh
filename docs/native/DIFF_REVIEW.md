@@ -60,12 +60,16 @@ One sideways-scrolling row of small buttons:
 
 All settings are saved under `diff/*` in app preferences.
 
-On iOS the row has no bar behind it (2026-10-18): each button is its own
+On both platforms the row has no bar behind it (iOS 2026-10-18, Android
+2026-10-20): each button is its own
 glass square with an accent tint when on, like the Inbox squares. The squares
 are 30 pt with a 17 pt icon and 4 pt gaps; 36 pt squares with 20 pt icons
 pushed most of the row off an iPhone screen. Holding any of them shows its
 name in a small popover (`FmHoldName`, `native/ios/ForkMesh/Kit`), and the tap
-that ends the hold is dropped so it does not also flip the switch.
+that ends the hold is dropped so it does not also flip the switch. Android
+draws the same 30 dp squares with `fmGlass` and shows the name with
+`FmTooltip`, whose long press consumes the release, so the hold does not
+also tap.
 
 The **health strip** shows `+A −D` and six pills (Merge, Complexity, Quality,
 Security, Network, Practices), each an icon and score tinted green, orange or

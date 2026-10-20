@@ -850,8 +850,197 @@ default in new projects except the chosen starter pack
     notification (server work). The ringback tone follows the voice-call
     stream, so it is quiet through the earpiece on some phones.
 
+### Chat rows ported from iOS (SYNC.md S022 to S027)
+
+- **Chat history file (S024).** The file is
+  `chat-history/relay-<scope>.json` in the project's support folder, and its
+  scope is now `ChatHistoryCodec.projectScope(projectId, room)`
+  (`"project-" + scopeName(projectId, room)`, the project id falling back to
+  the relay URL), the same name iOS uses, so a relay URL change or a move to
+  another relay host no longer starts an empty history. On first read the
+  store adopts the files kept under `formerScopes(serverUrl, room)` (the URL
+  hash of the current URL, the retired `rooms/general` path and the
+  production aliases, as on iOS), merges them newest file first, writes the
+  project file and renames each old one to `<name>.migrated`. A file that
+  does not parse is renamed `<name>.unreadable-<ms>` and history starts
+  empty; a file that exists but cannot be read (permissions, a locked
+  volume) blocks every save to that path until a later read succeeds, so it
+  is never overwritten. The codec accepts any `v >= 1`, as iOS does, so a
+  file from a newer build still loads.
+- **What the file holds on Android.** Relay rooms as before, plus direct
+  messages (`direct:<id>` conversations) with their `receipts` (`delivered`
+  or `read`, the iOS wire names) and Office `#office/<name>` channels. Office
+  messages restored from disk are replaced in place when the live copy
+  arrives. Android writes the iOS keys it has data for and leaves out the
+  ones it has no feature for yet (`removed`, `looks`, `lookEvents`, the
+  quoted-reply `r` field); iOS reads a file without them, and both apps
+  ignore keys they do not know.
+- **Receipt times and Message Info (S022).** `DirectMessageService` stamps
+  `ChatReceiptTimes` (delivered, read) from its clock the first time a
+  message reaches each mark, as iOS does (the relay frames carry no time);
+  restoring from disk never stamps, and evicting or removing a receipt drops
+  its times. They are saved as `receiptTimes` (`{"delivered", "read"}` epoch
+  ms) beside `receipts`. In the transcript a mostly-horizontal leftward drag
+  on a message (1.5 times more sideways than vertical, so scrolling and the
+  long-press menu are untouched) pulls the Message Info page in from the
+  right while the transcript eases 30% left; it opens past 30% of the width
+  or on a fling and springs back otherwise, and Back or a rightward swipe
+  closes it. The page content, labels and colours come from
+  `ChatMessageInfo.page` and match iOS (`MessagesMessageInfo.swift`); the
+  dates use the iOS wording ("Today at 11:04 PM", seconds underneath). Under
+  the latest own message in a direct conversation a small line reads
+  "Delivered 11:04 PM" / "Read Yesterday 3:20 PM" (just "Delivered"/"Read"
+  without a recorded time, hidden while sending or only sent); tapping it
+  opens Message Info. Android rows are still the list style until S011
+  brings the iMessage bubbles, so the swipe and line sit on those rows.
+- **A notification tap reveals the conversation (S025).** Opening a
+  conversation from a notification or a route goes through
+  `ChatHub.switchConversation`, which counts `revealRequests` like iOS
+  (picking a room inside Chat does not). `ChatDepth.revealRequests` carries
+  the count to `ChatScreen`, which then closes the channel drawer, the
+  Message Info page and the sheets and dialogs it opened (their coroutines
+  are cancelled, which removes the overlay, since `FmMessenger` has no
+  dismiss call). Pushed pages were already popped by the push and route
+  handlers.
+- **Route label, own-device notices and safety scans (S026).** The
+  conversation header already showed the route label ("Direct · Wi-Fi",
+  "Direct · Bluetooth", "Direct only"); its detail line now joins its parts
+  with " · " like iOS. The new-device banner uses `DirectTrustNotices`: a
+  pending device on your own account (its account equals this device's
+  seal account) reads "A new device was added to your account. Approve it if
+  it is yours, otherwise block it.", anyone else's keeps the "wants to join
+  this chat" line. Scanning a safety-number QR returns a `DirectSafetyScan`
+  with the iOS wording: verified, not a ForkMesh safety number, a
+  different conversation (the scope between `forkmesh-safety:3:` and the
+  last `:` differs), or a mismatch.
+- **Message from People opens the account's DM (S027).** People's Message
+  button opens `Route.Dm(name)`, which reached chat as "@name" and became a
+  relay "@peer" chat. `ChatHub.switchConversation` now treats "@name" that is
+  not a roster peer id as an account, as iOS does (a matching roster peer
+  gives its owner account): it selects that account's existing direct
+  conversation, or starts one with `POST /api/chat/direct-messages`. An
+  exact peer id, or no direct-message service (signed out), keeps the relay
+  path. `Route.Dm` also accepts a `direct:<id>` conversation unchanged.
+- **Direct messages across a sign-out (S024).** `ChatHub.directSessionChanged`
+  mirrors iOS: on sign-out the hub holds the service's DMs and receipts
+  before `DirectMessageService.clear()` empties it, a save while signed out
+  keeps them, and the next sign-in restores them only for the same account
+  (compared trimmed and lower-cased); another account drops them.
+
+### Message bubbles (SYNC.md S011)
+
+- **Which rooms.** `ChatHub.isConversation` is iOS's rule: relay DMs
+  (`@<peer>`), server DMs (`direct:<id>`), relay private channels and private
+  office rooms that are neither server-visible nor read-only. Those draw as
+  bubbles (`ChatConversationList.kt`, `ChatBubbles.kt`); public channels,
+  office channels and `#mesh` keep the Slack-style rows.
+- **Layout.** `ChatConversationLayout` (core) ports iOS's: a bold time line
+  after a 15-minute gap or a new day ("Today 3:42 PM", "Yesterday …",
+  the weekday within a week, "Oct 1 at …", then with the year), runs of one
+  sender joined at 5 dp corners on the sender's side and 2 dp apart (8 dp
+  before a run), the sender's name at the start of a run in groups and the
+  avatar beside the last bubble, own messages always carrying a receipt
+  (Sent when nothing newer is known), and up to three emoji alone drawn at
+  52 sp without a bubble. System lines (new device, own device) break runs
+  instead of being bubbles. Emoji detection uses `BreakIterator` grapheme
+  clusters and a table of Emoji_Presentation ranges, because
+  `Character.isEmojiPresentation` needs Android 15 and core also runs on the
+  JVM.
+- **Bubble.** `ChatBubbleShape` is iOS's path (18 dp corners, a 5 dp inset on
+  the sender's side where a tail used to be, cubic corners at 0.45, mirrored
+  for own messages); there are no tails. Sent bubbles are 0A84FF with white
+  text, received E9E9EB (light) or 26262A (dark). Over a backdrop picture a
+  bubble is the shared glass (`fmGlass`) tinted with that colour at 88% for
+  own and 50% for others, as iOS 26 tints `glassEffect`; on the solid canvas,
+  where glass has nothing to bend, it is iOS's pre-26 sheen (a fill gradient,
+  a top highlight, a hairline rim and a soft shadow), so the colours stay
+  readable. The transcript behind bubbles is pure white or black like iOS.
+- **Time, expiry ring and receipt inside the bubble.** Every bubble ends in
+  the 12-hour send time, an 11 dp clock (`ChatExpiryRing`: a hand sweeping
+  from 12 and a faint wedge for the time left of the room's retention,
+  refreshed every minute, read as "Disappears in 5 hours") and the receipt
+  mark, with a 4 dp dot before the time while an own DM is still stored on the
+  server. The meta sits on the text's last line when it fits and drops under
+  it otherwise; photos carry it in a dark capsule in the corner, and large
+  emoji and view-once messages put it under the bubble.
+- **Gestures.** Long press keeps Android's message actions sheet. A double tap
+  (and a tap on the reaction badge) opens iOS's tapback picker: the quick
+  reactions in a glass capsule over a dimmed page, with who reacted listed
+  under it. Reactions show as a capsule badge on the bubble's outer top
+  corner instead of chips. Swipe left for Message Info and the
+  "Delivered/Read" line under the last own message work as before. The typing
+  line becomes a received bubble with three pulsing dots.
+
+### Live touch in direct messages (SYNC.md S023)
+
+- **Wire format.** `DirectLiveEngine` and `DirectLiveFrames` (core
+  `DirectLive.kt`) port iOS's: sealed `type: "live"` frames with `taps`
+  (flat `[x, y]` in thousandths, `y` from the middle in widths), `ink` chunks
+  (`s`, `p`, `c`, `w` in tenths, `e`), `motion` samples (`[dt, gx, gy, gz, ax,
+  ay, az]` in hundredths of g against the frame's `ts`), `clear` and
+  `motionOff`. Scaled numbers round half away from zero like Swift's
+  `rounded()`, not Kotlin's half-even, so both phones send the same integers.
+  `DirectMessageService.sendLive` sends over the mesh first, then the relay
+  with `"live": true` and no `persist` or `notify`, dropping an envelope over
+  16 KiB; the relay's `forkmesh-live` budget sets the pace
+  (`windowMs * 4 / (perWindow * 3)`, at least 80 ms, 120 ms until it
+  arrives). Received live frames never become messages and get no mesh ack.
+  The engine batches on an `EventLoop` timer per conversation and prunes
+  taps (1.4 s) and ink (45 s, fading over the last 5 s) once a second.
+- **Tilt.** `DirectLiveMotionFeed` samples at 100 Hz like iOS. iOS reads
+  CoreMotion gravity and user acceleration; Android reads the fused
+  `TYPE_GRAVITY` and `TYPE_LINEAR_ACCELERATION` sensors (built from the same
+  sensor fusion as the rotation vector, and already split into the two
+  vectors the pose needs), falling back to the raw accelerometer with the
+  same 0.1 low-pass iOS uses. Android reports reaction force in m/s²; the
+  feed divides by -9.81 so a phone held upright sends `gy = -1` like an
+  iPhone. Sharing runs while a direct conversation is on screen and the app
+  is in the foreground; an impact of 1.4 g sends a centred tap (at most one
+  per 500 ms).
+- **Buzz.** A received tap always vibrates (a strong thud, then a 0.55
+  click 90 ms later, `VibrationEffect` compositions where the motor supports
+  them, a one-shot otherwise), even with haptics off in Settings, because the
+  tap is the message; sending one gives a light tick. Received ink ticks only
+  with haptics on.
+- **Transcript.** A short tap on a direct conversation's transcript (not on
+  a bubble) sends a tap at that spot; with the keyboard up the first tap only
+  closes it. Ink and tap ripples (white for yours, pink for theirs) draw
+  behind the bubbles at 30 fps while any are alive.
+- **Drawing.** The pencil beside the conversation header opens the canvas:
+  a glass toolbar at its top (current colour with a chevron that opens a 4 by
+  2 colour grid, Clear, Done) and a "Tap to buzz. Draw on the background."
+  hint. A drag past 8 dp draws a 5 dp stroke, a short touch sends a tap.
+- **Partner phone.** In a server DM the header's room icon gives way to the
+  partner's 3D phone (`DirectLivePhonePose`, 76 dp tall hanging out of the
+  50 dp slot, drawn outside the glass so it is not clipped): the projected
+  silhouette with real thickness, their avatar on a screen mapped by the face
+  affine, the strongest bump of the last 260 ms held and faded, redrawn every
+  frame while they share. It is grey and upright when they are not sharing
+  and swallows touches. iOS removed the floating large 3D view and the
+  phone's tap and long press on 2026-10-18, so Android has neither; TalkBack
+  gets a "Send a tap" action on the phone instead.
+- **Presence.** `ChatHub.peerPresence` (core `ChatPresence.kt`) finds a
+  server DM's person on the roster by the nodes of the devices the DM trusts
+  (`DirectDevice.node`), then by account owner, then by name; typing, a tap
+  or shared motion from them, or a "Direct only" route, also counts as
+  online. The header shows a blinking green light instead of the word
+  "Online" (steady with reduced motion), and the DM list's dot uses the same
+  rule, so server DMs no longer show Offline while the person is chatting.
+
 ## 15. You hub, diagnostics and docs
 
+- **The hub drops down from the avatar** (`YouHubPanel`,
+  `A/feature/navigation/NavigationScreens.kt`), as iOS `HomeShell.hubDropdown`
+  and `Navigation/YouHubSheet.swift` do on a phone (sync ledger S013): a
+  floating card 320 dp wide (at most 640 dp tall), 54 dp below the status bar
+  and 12 dp from the right edge, 18 dp corners, a 24 dp shadow at 28%, over a
+  20% black scrim that closes it. It unrolls from the top right with the iOS
+  spring (damping 0.86, about 0.36 s). Inside: the avatar and name with the
+  status text, a "Set a status" chip, the Diagnostics switch, the account
+  actions as small chips (Settings, Sign in or Sign out; every other hub link
+  is on Home and the bar, as on iOS), and the version capsule. What's new and
+  Send diagnostics open as sheets over it. Until 2026-10-20 the hub was a
+  full-height bottom sheet listing recents and every hub group.
 - The hub's last row shows `versionName (versionCode)`, opens `WhatsNewPage`
   from the bundled `changelog.json` ([MAC_BUILD.md](MAC_BUILD.md)), and has
   Send diagnostics (the prompt points the agent at
@@ -904,7 +1093,7 @@ bottom bar.
   on a phone: no fill, 16 dp side and 4 dp vertical padding; the 40 dp project
   icon (`AccountFeature.ProjectSlot`, opens the project drawer; a long press
   closes the hub and palette and selects Home, as on iOS), the Glasses
-  chip, then the new-agent button and the avatar (36 dp, 12 dp corners). A
+  chip, then the new-agent button and the avatar (36 dp, corners 28% of its size, as iOS `AvatarWithDot(rounded:)`: the account picture or its initial, a 2 dp ring in the status colour 3 dp outside it, and the status emoji on its bottom-left corner; S014). A
   guest sees a person icon and a "Sign in" chip instead, and no guest banner.
   Search is not in the phone bar (iOS shows it only on iPad); it is on Home.
   The telemetry strip is the iOS one: 12 x 10 dp sparklines centred in the
@@ -937,3 +1126,1030 @@ bottom bar.
 - **Sheets** keep the iOS pre-26 look (sheetSurface, 12 dp corners, 35% and 55%
   scrim); a blurred sheet would need `Window.setBackgroundBlurRadius` on the
   sheet's own window.
+
+## 17. iOS controls (sync ledger S005, S008, S009)
+
+Android used Material's ripple, switch and icon button, which do not look or
+feel like the iPhone app. Since 2026-10-20 the kit draws the iOS versions:
+
+- **Press feedback.** `ForkMeshTheme` provides `FmPressIndication`
+  (`ui/kit/FmPress.kt`) as `LocalIndication` and turns the Material ripple
+  off (`LocalRippleConfiguration provides null`). A pressed control shows a
+  flat wash, `textPrimary` at 8%, the iOS `FmPressStyle`, with no spreading
+  circle. List rows (`FmListRow`) use `accentSubtle`, as iOS settings rows do.
+- **Switch.** `FmSwitch` is the iOS switch: a 51 x 31 dp capsule, accent track
+  when on and grey (`#787880` at 16% light, 32% dark) when off, a white 27 dp
+  thumb with a soft shadow that springs across, and the selection haptic. The
+  Material switch took its "on" colour from `primary`, which is `textPrimary`
+  here, so it was black in light mode. Every switch in the app goes through
+  `FmSwitch`.
+- **Checkbox.** `FmCheckbox` is accent-filled with an `onAccent` tick (iOS uses
+  accent check circles).
+- **Icon buttons.** `FmIconButton` matches iOS `FmIconButton`: a 48 dp target,
+  24 dp glyph in `textPrimary` by default (Android had 20 dp in
+  `textSecondary`), a 40 dp circular wash at 8% while pressed, and 38% opacity
+  when disabled.
+- **Kit details (S008).** Filled accent buttons and dialog confirm buttons
+  have white labels in both themes (iOS `FmToneButton`, `FmDialogActions`;
+  Android used `onAccent`, near-black in dark mode); confirm dialogs have
+  14 dp corners; `FmBottomBar` is the iOS glass capsule (50 dp, 8 dp side and
+  4 dp vertical margin) instead of a flat strip with a top rule.
+- **Copy and send to agent (S008).** As on iOS (`Kit/FmMessageTools.swift`),
+  messages carry two 13 dp icons, copy and send to agent
+  (`ui/kit/FmMessageTools.kt`): `FmEmptyState`, `FmInlineStatus`,
+  `FmConnectionBanner` and `FmConfirmDialog` include them. Send to agent opens
+  the composer with `C/navigation/MessageHandoff.agentPrompt` ("The ForkMesh
+  Android app showed this message: …"); `NavigationFeature.install` sets the
+  hook (`FmMessageHandoff.compose`) so the kit does not depend on feature code.
+- **Haptics.** `FmHaptics` gains `send`, `palette`, `success`, `warning` and
+  `error`, the iOS cues; success and error use the platform `Confirm` and
+  `Reject` patterns.
+- **Menus.** `FmDropdownMenu` (every menu in the app) is the iOS 26 pull-down
+  menu: an opaque rounded panel (22 dp corners, `FmMenu.surface`: `#2C2C2E`
+  dark, white light, a 0.5 dp hairline), at least 250 dp wide, 44 dp rows
+  with a leading outlined icon in the text colour and 17 sp text. The surface
+  must stay opaque: the menu's shadow draws under the whole shape and the
+  popup window clips it, so a translucent fill shows a grey rectangle.
+- **Action popover.** `FmActionMenu` and `FmActionMenuButton` are the iOS 26
+  confirmation popover (a 32 dp panel of stacked 48 dp capsule buttons with
+  centred accent text, red for destructive). Home's touch-and-hold menu uses
+  it, centred on the press point, with the iOS items and wording ("Show all
+  update dots", "Clear all update dots", "Home settings…", "Bottom bar
+  settings…").
+
+## 18. Home grid (sync ledger S010)
+
+Home draws the iOS outline icons (`ShellHomeTile`,
+`A/feature/navigation/NavigationScreens.kt`, after iOS
+`Shell/ShellHomeIcon.swift`): 5 across, 66 dp tiles, a 22 dp glyph in a
+39 dp box (`iconSize * 1.75`) painted with the iOS vertical gradient
+(`textPrimary` to 82% light / 74% dark, accent when selected or running), a
+12 sp label (medium, semibold when selected), the iOS count pill
+(`ShellHomeCountMark`: accent capsule for unread, a blue-tinted pill for
+running counts, `FmPalette.count`) at the glyph's top right, and the
+desktop-offline dot at its bottom left.
+
+`ShellHomeGrid` (`A/shell/ShellHome.kt`, after iOS `Shell/ShellHome.swift`)
+lays Home out with `C/shell/ShellHomeStyle.arranged` and the iOS key
+`shell/home-style`: icon style (outline, filled, accent, tiles), 4/5/6
+across, eight sorts, grouping, category titles, category order, hidden
+categories, the frequent-use glow (`ShellBarOrder.heat` over the usage that
+every Home tap records) and counts. Rows shrink to fit the screen
+(`ShellBarOrder.fittedTile`, 50 dp at least) as on iOS. Touch and hold the
+background or any icon for "Home screen settings…" and "Bottom bar
+settings…"; touch and hold a category title to hide it. The settings sheet
+(`ShellHomeSettingsForm`) is the iOS form; "Hide icons in the bottom bar"
+stays the existing Android setting (`home/hideBarIcons`). Not yet ported:
+dragging icons to reorder Home and the Home search field (S010 stays
+`doing`).
+
+
+## 19. Outline icons (sync ledger S002)
+
+iOS draws its chrome with SF Symbols: outline glyphs that switch to the filled
+variant when selected. SF Symbols may not ship in an Android app (Apple's
+licence), so Android uses the closest family it has, Material Icons
+**Outlined**: `FmIcon(name, outlined = true)` picks `<name>_outlined` when the
+font has it and falls back to the regular glyph. The tab bar uses outlined
+glyphs when idle and filled when selected; Home tiles (the iOS "Outline"
+style) and the hub's rows and chips are outlined. Home glyphs are drawn at
+26 dp in their 22 dp slot because Material glyphs carry 2 dp of padding
+inside the em box where SF Symbols do not.
+
+`tools/subset_material_icons.py` now keeps the `_outlined` twin of every icon
+it keeps (the font grew from 112 KB to 194 KB; the iOS copy is the same file
+and only gains glyphs). The full font used to come from git history
+(`FULL_FONT_REVISION`), which a shallow or rewritten clone does not have;
+pass `--font` with any full `MaterialIcons-Regular.otf`. The Flutter SDK's
+`bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf` has all 8,825
+codepoints of `tools/material_icons/MaterialIcons.codepoints`, and its
+glyphs are identical to the ones the subset shipped (checked 2026-10-20).
+
+## 20. Bottom bar look and settings (sync ledger S012)
+
+The tab bar is drawn from the iOS bar style (`ShellStyledBar` and
+`ShellBarRows`, `A/shell/ShellBottomBar.kt`, after iOS
+`Shell/ShellBottomBar.swift` and `ShellBarLook.swift`), stored under the iOS
+key `shell/bar-style` through `C/shell/ShellBarPrefs`:
+
+- Shape (capsule, panel, squares, circles, icons only), fill (glass, clear,
+  tinted, solid), corner and spacing sliders, full width or fit, and Single or
+  **Double** height. Double height splits the icons into two rows
+  (`ShellBarStyle.rowSplit`) inside one rounded panel; slots keep the iOS
+  64 dp cap, so a short row starts at the leading edge as on iOS.
+- Icon style (outline, filled, accent, tiles), size S to XL, labels (always,
+  selected, never), the selected mark (fill, outline, glow, dot, line,
+  none), counts, activity, badges like Home or plain, highlight frequently
+  used, and Reset bar look.
+- Touch and hold any bar icon for "Bottom bar settings…", which opens
+  `ShellBarSettingsSheet`: the iOS form with a live preview over the accent
+  gradient, choice chips, segmented pickers, sliders (`FmIosSlider`, the
+  iOS round thumb), a stepper and switches.
+- `ShellBar.clearance()` follows the bar's measured height, so pages clear a
+  double-height bar.
+
+**Choosing what sits in the bar** follows iOS `ShellBarCustomize.swift`. Every
+Home item is a bar candidate (`rememberShellBarCandidates`, `A/shell/ShellHome.kt`):
+the tabs first (ids `home`, the `AppTab.raw` names, `repos`, `code`), then the
+Home entries, the current repository's sections (so Pull requests can sit in
+the bar with its open count, S017) and every hub item. The saved layout
+(`shell/bar-layout`: hidden, folders, order and the explicit bar list) picks
+the slots through `C/shell/ShellBarPrefs`. Touch and hold a bar icon for the
+iOS item menu: Remove from bar, Move left / right / to the front / to the end,
+Move to folder… (or New folder…), Take out of the folder, Reset bar layout and
+Bottom bar settings…. Touch and hold a Home icon for the same menu with "Add
+to bar", or "Add to bar in place of…" when the bar is full. A folder shows a
+2×2 grid of its first icons with the summed badge; tapping it opens its
+members in a popover, and holding it offers Open, Move, Rename folder…, New
+folder…, Remove folder from bar and Remove folder (keeps its items). With
+"Hide icons in the bottom bar" on, Home hides exactly what the bar holds, so an
+icon removed from the bar reappears on Home. Drag to reorder is not ported
+(the Move items do the same), so S012 stays `doing`.
+
+## 21. Update dots on Home (sync ledger S018)
+
+As iOS `AccountPackagesStore` does, `C/market/AccountPackages.kt` remembers
+each plugin's latest Market version and the version you last opened, under
+the iOS key `packages/versions` (`{"seen": {...}, "latest": {...}}`). A
+plugin whose latest version differs from the one you saw, including one you
+never opened since installing, is "updated": its Home tile shows the iOS
+accent dot at the glyph's bottom right (`ShellHomeUpdateDot`), and opening it
+from Home marks it viewed. Hub items map to their plugin through
+`PackageGate.HUB_ITEMS` and `ROUTE_KINDS`. Touch and hold Home for "Clear
+update dots" (`markAllViewed`) or, when none are left, "Show all update
+dots" (`markAllUnviewed`). The latest versions come from every catalog the
+app reads (the Market, and the catalog refresh each time the app comes to
+the foreground).
+
+## 22. Shell badges, repository icons and slow-load bar (sync ledger S017, S019, S020)
+
+**Badges (S017).** Android has no Pull requests icon of its own in the bar
+(choosing bar items is not ported, S012), so the open count lives where the
+repository does on Android: the Code icon in the bar and on Home, plus a new
+Home category named after the current repository (`ShellRepoGroup`, id
+`repo`, the iOS `repo-<section>` tile ids: Pull requests, Issues, Commits,
+Branches, Releases, Actions, Discussions, each gated by
+`PackageSurfaces.showsRepoSection`). The bar and Home draw one pill, so a
+count of new pull requests (accent) wins over the open count (tinted pill on
+Home, accent on the bar); iOS draws both. A pull counts as open unless it is
+closed or merged (`PublishedPull.isOpen`, also used by the repository
+overview).
+
+- `ShellPullsWatch` (`A/shell/ShellPullsWatch.kt`, after iOS
+  `ShellPullsWatch.swift`) is the one reader of the current repository's pull
+  list. It reads on a repository change, when the app comes to the
+  foreground, when the account socket reconnects, on the relay `pulls` frame
+  (`ShellBadges.install` chains `AccountEventChannel.onTopic`), and every 20 s
+  (`NewPullsMarker.pollEvery`: 5 minutes in battery saver or at thermal status
+  severe, none from critical; the loop only runs in the foreground). A read
+  that lands while one is running queues one more. The Pull requests page
+  (`PullsTabContent`) takes the watch's list when it changes, supports pull to
+  refresh, keeps its list when a refresh fails, and marks pulls seen while it
+  is open.
+- `NewPullsMarker` (`C/shell/NewPulls.kt`) keeps the highest pull number seen
+  per repository under the iOS key `shell/pulls-seen`, 40 repositories, a
+  first sight recording a baseline without a badge. Android's `PrefStore` has
+  no string list, so the value is the iOS lines (`<number> <slug>`) joined by
+  newlines in one string.
+- `ShellBadges` (`A/shell/ShellBadges.kt`) holds the other counts. Tasks
+  shows the open tasks assigned to the signed-in user (`TaskBoard.mineOpen`,
+  first page of the board), refreshed with Home, on every `pings` frame and
+  whenever the Tasks page loads. RSS Reader shows the Unread smart feed's
+  count (`RssLibrary.counts().unread`, recomputed on each library version;
+  Home opens the library and refreshes feeds that are due, as iOS does).
+  Both ride `hubBadges` in `HomeShell` as `ShellMenuBadge`.
+- The Bug icon is the floating bug button (Android has no Bug tile on Home):
+  for administrators it shows the number of reports still `new`, read with
+  `bugReportInbox(status = "new", limit = 1)` and written back whenever the
+  Report a bug sheet's inbox loads or a status changes.
+
+**Repository icons follow the composer (S019).** `HomeShell` watches the
+composer's repository (`QuickSendState.repository`, `AgentStartTarget.ref`,
+owner and name as iOS) and calls `CodeFeature.follow`, which moves
+`CodeFeature.currentRepo` and the `code/current-repo` key. Opening a
+repository in Code already moves the composer back
+(`ComposerFeature.FollowRepository`). Android prepares the composer when it
+first opens, not at launch, so the very first repository it settles on is
+followed from then on.
+
+**Slow-load bar and Agents first load (S020).** `ShellLoadingOverlay`
+(`A/shell/ShellLoadingBar.kt`) is the iOS `fmLoading` bar: 2 dp, accent at
+75%, a 30% segment sweeping in 1.2 s, shown only after the load has run
+250 ms, a steady 40% bar under reduced motion. It sits in `shell/` because
+`ui/kit` was being changed in parallel; move it to the kit when the kit's own
+loading bar (S008) lands. It shows on Home (counts, tasks, RSS, repository
+counts), the Agents list, the repository overview and the RSS timeline.
+`AgentListRings` (`C/agents/AgentListRings.kt`) is the iOS ring rule for the
+Agents list: a ring never restarts a load in flight, one that lands before
+the per-repository reads go out is answered by them, a later one queues one
+more load after the current one has published. `AgentsScreen` used to key one
+`LaunchedEffect` on the ring signal, so the ring at connect cancelled the
+first load and read every repository twice.
+
+## 23. Liquid Glass renderer (sync ledger S003)
+
+`fmGlass` (`A/ui/kit/FmGlass.kt`) moved from the iOS pre-26 frosted look
+(`bgRaised` at 55/66% over a 24 dp blur, hairline edge) toward iOS 26 Liquid
+Glass:
+
+- **Refraction.** On Android 13 and later the sampled backdrop goes through
+  an AGSL lens (`FmGlass.LENS`, a `RuntimeShader` chained after the blur):
+  within 18 dp of the shape's edge, samples are pulled inward along the edge
+  normal by up to 9 dp, so content behind the rim magnifies and bends as it
+  does under iOS glass. The shader reads the rounded-rectangle radius from the
+  shape's outline. Android 12 keeps the plain blur; below 12, inside a
+  recorded page, and with high-contrast text the solid fill stays.
+- **Clearer glass.** An 18 dp blur and a lighter tint (`bgRaised` at 30% dark,
+  34% light) with a softer top highlight, so the content behind keeps its
+  colour.
+- **Specular rim.** A 1 dp gradient stroke, bright at the top (white 85%
+  light, 28% dark) fading to a faint edge at the bottom, instead of the flat
+  hairline.
+
+`half` is a type in AGSL; a variable named `half` makes the shader fail to
+compile at run time, and `FmGlass.lens` then falls back to the plain blur.
+Press response and merging neighbouring glass pieces are not ported.
+
+## 24. Navigation motion (sync ledger S006, S009)
+
+- **Push and pop** (`TabStack`, `A/shell/HomeShell.kt`, and `NavigatorHost`,
+  `A/ui/navigation/Navigator.kt`) move like `UINavigationController`: the new
+  page slides in full width from the right while the page under it slides
+  30% to the left, 350 ms on `FmMotion.pushEasing`
+  (cubic-bezier 0.2, 0.8, 0.2, 1); a pop reverses it with the leaving page on
+  top. Android used a 25% slide with a fade, 200 ms.
+- **Interactive back.** `TabStack` drives its transition from a
+  `SeekableTransitionState`, and a `PredictiveBackHandler` scrubs the pop with
+  the system back gesture, as the iOS edge swipe does; letting go finishes the
+  pop (`Navigator.handleBack`) and cancelling springs the page back.
+- **Tab switches** do not animate (each tab's stack is keyed on its
+  navigator), as iOS shows a tab's pages in place.
+- Reduce motion snaps instead of sliding and turns the interactive back off.
+
+## 25. Area parity with iOS (ledger rows)
+
+Rows of [SYNC.md](SYNC.md) ported to Android area by area. Each follows the
+cited iOS commit; wire and storage formats are unchanged.
+
+- **Market navigation line (S029).** `A/feature/market/MarketNavBar.kt` draws
+  the iOS `MarketScreen` toolbar as one slim line with no fill: the 44 dp glass
+  Back circle, a 36 dp search capsule in the title's place, then a sort menu
+  and a filter menu whose icons turn accent (and the filter icon fills,
+  `filter_list` to `filter_alt`) when set off the defaults. The filter menu
+  lists every filter as a row that opens its own choice menu (Compose has no
+  nested menus), then Clear filters. `FmNavBar` has no title slot, so the line
+  is local to the Market rather than a kit change. The search field and the
+  chip row under it are gone; the Refresh button became pull to refresh, as
+  iOS `fmRefreshable`.
+- **Inbox bar (S030).** `A/feature/inbox/InboxBar.kt` is iOS `InboxFilterBar`
+  and `InboxToolbarMenu`: one centred row of 28 dp glass squares (8 dp
+  corners, 4 dp apart, 16 dp icons), the six filters then Mark all read,
+  Unread only, a pause menu (bedtime, or a warning-coloured bell-off while
+  paused), Discard changes that could not sync (only when a change ran out of
+  attempts), Ping settings and Delete all pings. The selected filter and an
+  active Unread only take the accent with an accent-subtle glass fill. Counts
+  are a 14 dp badge offset 5 dp up and right, always the blue accent (iOS
+  `fm.count`), "99+" above 99. Holding a square shows its name. A phone too
+  narrow for the row scrolls it sideways. The squares draw glass without the
+  12 dp shadow, which swamps a 28 dp shape.
+- **RSS article unread count (S031).** The article screen passes
+  `RssCounts.of(scope)` for the timeline it was opened from (or the one Next
+  Unread moved to) to `RssScaffold`, which draws it in secondary
+  tabular-figure text right of the Back button, as iOS `RSSUnreadCountToolbar`
+  and NetNewsWire do. Opening an article marks it read, bumps the library
+  version and the count drops. Nothing shows at zero.
+- **Vault import and export (S033).** `C/vault/VaultTransfer.kt` is iOS
+  `FMVault/VaultTransfer.swift`, `VaultZip.swift` and the text of
+  `VaultTransferModel.swift`: the same CSV reader (header aliases, quoted
+  fields, BOM, UTF-8 with a Latin-1 fallback, 16 MB cap), the same source
+  detection order (Bitwarden, Firefox, 1Password before Apple's `OTPAuth`,
+  Chrome, DuckDuckGo), the ZIP reader for Safari's export (`java.util.zip`
+  `Inflater` and `CRC32` stand in for zlib), the duplicate plan and the
+  review, report and error sentences. `VaultTransferTest` runs the iOS test
+  cases with the same ZIP fixtures. `VaultService.importLogins` saves each new
+  login through `VaultClient.save` and stops at the first error, as iOS.
+  `A/feature/tools/vault/VaultTransferSection.kt` is the Move passwords section
+  of Vault settings (between autofill and locking, as iOS): Import from a file
+  opens the system picker (`OpenDocument`), Export to a file asks first and
+  writes `ForkMesh Passwords.csv` through `CreateDocument`. The help text names
+  the Android-side export paths; Credential Exchange is iOS-only, so there is
+  no Send to another app button and no incoming import.
+- **CRM Zoho Mail status (S034).** `CrmZohoStatus.fromJson` reads the
+  `settings.zoho` fields iOS reads (`clientId`, `hasClientSecret`, `canSend`
+  defaulting to `connected` for older servers, `lastSentAt`, `lastSyncError`,
+  `steps` without text dropped). `A/feature/market/CrmZohoBar.kt` is iOS
+  `CrmZohoBar` under the header's stat tiles: a glass card with the status
+  word (Not connected, Read only, Sync failed in orange; Reads and sends in
+  green), last synced and last sent, and each missing step with Sync now or
+  (Re)connect Zoho Mail when the organization has one-click Zoho and the
+  viewer manages it, otherwise the Self Client or ask-an-admin line. CRM
+  settings add Sending (Allowed or Read only) and Reconnect Zoho Mail.
+  `CrmZohoCode.of(status)` prefills the client ID and data centre; the secret
+  field reads "Saved secret (leave blank to keep)" and may stay empty while
+  the client ID is the saved one (`usesSavedSecret`), as iOS `CrmZohoCode`.
+- **App Store Status desktop fallback (S035).** `AppStoreStatusLoader.load`
+  in `C/market/AppStoreStatus.kt` is iOS `AppStoreStatusModel.load`: it asks
+  the paired desktop (`stats.appStoreStatus`, 120 s, through
+  `HubControlCalling`) when the server has no page ("not there" codes or no
+  snapshot) and when the server's snapshot predates tester screenshots
+  (`AppStoreSnapshot.lacksScreenshots`: screenshot feedback exists and none
+  has a picture; crash reports do not count). A stale snapshot is replaced
+  only by a desktop answer that has pictures, and a desktop failure then
+  stays silent; the page keeps the server's snapshot with "Tester screenshots
+  appear once the iOS App Store status shortcut runs again on your desktop."
+  under Tester feedback. A desktop answer reads "From your desktop <time>".
+  Android had no desktop fallback before, so the loader brings the missing-
+  page fallback in the same change.
+- **Reported bugs inbox (S036).** As iOS `ApiService.bugReportInbox`: a 404
+  or 405 from the inbox, a status change (unless the body says
+  `report_missing`) or an attachment (unless `attachment_missing`) means the
+  relay has no inbox route and reads "This relay cannot list reported bugs
+  yet. Update the relay and try again." An interrupted load
+  (`InterruptedIOException` other than a timeout, `ClosedByInterruptException`,
+  `CancellationException`) returns `BugReportInbox.CANCELLED_LOAD`, and
+  `BugReportInboxState.received` then only clears the spinner and stays
+  unloaded, so the next load runs, instead of "Could not reach ForkMesh". A
+  cancelled coroutine already drops its result on Android, so no change was
+  needed in the sheet.
+- **Face Changer empty recording (S037).** The shared `direct-call.html`
+  asset already asks for H.264 level 4.0 (`avc1.42E028`, iOS commit
+  `a4dbcbb101` changed both copies). A stop with nothing recorded
+  (`WebCallPeer.finishRecording` sees size 0, `empty_recording`) now says
+  "Nothing was recorded. Record for a little longer, then stop." instead of
+  "The clip could not be saved. Try again."
+- **Unnamed instance takes the instance's name (S039).** As iOS `RelayProbe`,
+  `ProjectProbe.verify` labels a candidate that has no typed name (its label
+  is still its host) with `/api/instance`'s `name`, and the New project
+  dialog fills an empty Name field with it after Check instance, so the
+  project is saved under "Acme Code" rather than `relay.acme.dev`. A typed
+  name always wins. Android has no separate Add relay form (relays are
+  projects), so the iOS relay change needs nothing more here; the instance
+  logo was already adopted on create.
+- **Calendar saves survive a late list (S040).** As iOS `CalendarModel`,
+  each `load()` takes a token and the change revision it started from. A
+  list that answers after a newer load started is dropped, and a list that
+  answers after a create, update, RSVP or delete is merged with the local
+  changes made since it was requested, so a new event is not lost and a
+  deleted one does not come back; changes the list already reflects are
+  forgotten. Android loads on `Dispatchers.IO` while saves run on other IO
+  threads, so the token, revision and event list are guarded by one lock.
+  `CalendarSaveTest` interleaves a save and a second load inside a list
+  request.
+
+## 26. Typeface (sync ledger S001)
+
+iOS sets every text style in SF Pro, switching from SF Text to SF Display at
+20 pt. SF Pro may not ship in an Android app (Apple's licence), so Android
+uses **Inter** 4.1 (SIL Open Font License; `res/font/inter_variable.ttf`,
+licence in `assets/fonts/Inter-LICENSE.txt`), the variable font from the
+official release (`rsms/inter` v4.1, `Inter-4.1.zip`, SHA-256
+`9883fdd4a49d4fb66bd8177ba6625ef9a64aa45899767dde3d36aa425756b11e`,
+downloaded 2026-10-20). It has a weight axis and an optical-size axis, which
+stand in for SF's two cuts: `FmType.ui` sets `opsz` 14 and `FmType.uiDisplay`
+`opsz` 32, and the type scale (`fmTypography`) picks the display cut at 20 sp
+and above (`FmType.family`). Sizes, weights, leading and tracking are the
+iOS values, unchanged. Text that builds its own `TextStyle(...)` names
+`fontFamily = FmType.ui`; Compose does not merge a fresh `TextStyle` with the
+theme, so a style without a family falls back to Roboto.
+
+Monospace text uses **JetBrains Mono** 2.304 (SIL Open Font License;
+`res/font/jetbrains_mono_variable.ttf`, licence in
+`assets/fonts/JetBrainsMono-LICENSE.txt`) in place of iOS's Menlo, the
+variable font from the official release (`JetBrains/JetBrainsMono` v2.304,
+`JetBrainsMono-2.304.zip`, SHA-256
+`6f6376c6ed2960ea8a963cd7387ec9d76e3f629125bc33d1fdcd7eb7012f7bbf`,
+downloaded 2026-10-20). `FmType.mono` is the only monospace family; code
+names it instead of `FontFamily.Monospace` (Droid Sans Mono).
+
+## 27. Feature parity, second round (ledger rows)
+
+Rows of [SYNC.md](SYNC.md) ported on `android-feature-round2`. Each follows
+the cited iOS commit.
+
+- **Stalls in their own sections (S043).** `DiagnosticsBundle.report` adds
+  Stalls by name, Stalls by screen and Slow operations by name ahead of the
+  Slowest events list, as iOS `PerformanceReport`: one row per name (or
+  screen) with count, total, max and, for stalls, the clock time of the
+  newest, so slow network calls no longer push stalls out of the report.
+  `PerformanceMonitorService.screenName` is read for every frame, event-loop
+  and sync stall that does not already name its screen;
+  `DiagnosticsRuntime` points it at `NavigationFeature.screenTitle()` (the
+  selected tab, then the titles of the screens pushed on it and of any
+  full-screen page above the shell, joined with " > "). iOS reads the screen
+  only on the main thread; Android frame stalls arrive on the frame-metrics
+  thread, so the source is read on any thread (Compose state lists are safe
+  to read there) and a failure leaves the stall without a screen. Stalls
+  without one group under "not recorded".
+- **Diff toolbar squares (S044).** `StreamToolbar` in
+  `A/feature/code/DiffReviewStream.kt` drops the raised bar, its bottom rule
+  and the separators: every button is a 30 dp `fmGlass` square (8 dp
+  corners, 4 dp apart, 17 dp icon, accent icon on an accent-subtle glass when
+  on), and the seen/total file button is a glass square that widens for its
+  count. Holding any square shows its name through `FmTooltip`, as the Inbox
+  squares (S030). Android keeps its own extra buttons (previous and next
+  change, next file, text size) because it has no pinch zoom; the find bar
+  keeps the small flat buttons, as iOS keeps `tiny` there.
+- **Eagle view of agents (S042).** `AgentListView.Eagle` is the fourth view
+  (Compact, Zen, Full, Eagle; the view button shows `flutter_dash`, the
+  nearest Material bird to iOS `bird`) and the default: a missing or unknown
+  `agents/listView` reads as Eagle, and a phone that stored another view is
+  switched once (`agents/listViewEagleDefault`), as iOS. An Eagle row
+  (`feature/agents/AgentEagleViews.kt`) has no card: hairline rules above
+  and below (the list spacing drops to 0 so neighbours share one), the status
+  glyph with the unread dot on it, the title with the file count and churn
+  bars, and a 12 dp ticker of the agent's last line. `AgentEagleStrip` is iOS
+  `AgentEagleStrip`: a train of copies 5 dp apart that scrolls left at 80
+  dp/s after a 0.5 s hold, drawn on a `Canvas` from a frame loop with a
+  faded right edge; only running rows move, a stopped row holds its newest
+  line still, and with animations off (animator duration scale 0) nothing
+  moves. `AgentEagleFeed` (`core/.../agents`) is iOS `AgentEagleFeed`:
+  running desktop rows stream through `ControlWatchFeeds` (at most six,
+  which gained iOS's per-row revision so a row is re-read only when its run
+  moved); cloud runs read `liveText` while running and the last non-user
+  message after (`AgentEagle.dialog`); a stopped desktop row with no line
+  reads its transcript once through `AgentControlCenter.transcript` when it
+  appears, at most three at a time, on background threads. The feed runs
+  only while the Agents screen shows Eagle and stops when it leaves.
+  `AgentEagleState` copies the feed's lines into a Compose state map on the
+  main thread so only the row whose line changed redraws.
+- **Other apps' calls (S038).** See [OTHER_APP_CALLS.md](OTHER_APP_CALLS.md#android):
+  `OtherAppCall` (app `platform/`) with its pure state in
+  `core/.../net/OtherAppCallState.kt` quietens interface sounds, Agent Watch
+  and the Glasses Alert ring during another app's call; ForkMesh's own calls
+  do not count.
+
+## 28. NEXUS network inspection (sync ledger S046)
+
+NEXUS is the port of the iOS package at `native/ios/Nexus` (see
+[NEXUS.md](NEXUS.md#android)). The logic is plain Kotlin in
+`core/.../nexus` so `NexusTest` runs on the host JVM; the screens and the
+Android-only pieces are in `app/.../feature/nexus`.
+
+- **Same split as the Swift targets.** `NexusAddress` (NexusCore addresses,
+  networks, `Hostname`, `LocalNetwork`), `NexusTargets` (target parsing and
+  `ScanAuthorizationPolicy`), `NexusPorts` (port lists, presets, service
+  catalog), `NexusModels` (sessions, results, devices, certificates), `NexusDns`
+  (the UDP wire format and resolver), `NexusScan` (scanner, banner
+  identification, `SecurityInsights`), `NexusDiscovery` (inventory merge and
+  change list), `NexusWeb` (HTTP/TLS inspector and reachability) and
+  `NexusClient` (NexusKit, the remote-agent contract, reports and history).
+  Core has no coroutines, so the scanner runs a fixed thread pool and stops
+  through a `NexusCancel` token; `NexusState` calls it on `Dispatchers.IO`.
+- **java.net in place of Network.framework.** TCP connects are `Socket.connect`
+  with the scan timeout, UDP DNS uses `DatagramSocket`, and `NexusFailures`
+  maps the platform errors (`ECONNREFUSED`, `EHOSTUNREACH`, `ENETUNREACH`,
+  timeouts, `EPERM`) to the iOS `ConnectionFailure` cases, so a refused port is
+  Closed and a timeout is "No response". Hostnames in a scan target resolve
+  through the system resolver, so router-assigned names such as `nas.lan`
+  work; the DNS explorer still queries 1.1.1.1 directly like iOS.
+- **NsdManager in place of Bonjour.** `NsdBrowser` browses each service type
+  for the iOS duration (8 s), then resolves every found service for its
+  addresses, port and TXT record (`registerServiceInfoCallback`-era
+  `resolveService` with an executor on Android 14+). It needs no runtime
+  permission; Android has no equivalent of the iOS Local Network prompt.
+- **More than iOS shows, never less.** The TLS observation comes from an
+  `SSLSocket` handshake with hostname checking on, so Android lists the full
+  chain (issuer, validity, SANs, key size, signature algorithm, serial,
+  SHA-256), the protocol and the cipher suite, where iOS 17 only has the
+  subject. Validation is never bypassed: an untrusted certificate is reported
+  as "Not trusted" with the reason and no chain. Timings add connect and
+  first-byte times to the iOS total. Discovered devices get an *inferred* kind
+  from their advertised services (`DeviceClassifier`), labelled as such.
+- **History and reports.** iOS hosts NEXUS without a `NexusStore`, so its
+  history lasts until the app quits. Android keeps it in
+  `filesDir/nexus/history.json` (50 scans, 20 discoveries, the device list)
+  with a Settings switch to turn that off and a History menu to clear it. A
+  scan's detail screen shares the `NexusReportExporter` JSON or CSV through
+  the share sheet (`nexus-share/` in the FileProvider paths).
+- **Settings are wired to the scanner.** Timeout, concurrency and "Allow
+  internet targets" are stored in the `nexus` preferences and passed into
+  every scan. When the policy answers *requires attestation*, the Scan tab
+  asks for the iOS attestation statement and retries with it; internet ranges,
+  more than four internet hosts and multicast/broadcast targets stay refused.
+- **Not a Market package.** iOS `PackageGate` deliberately has no entry for
+  NEXUS (its `PackageRoutesTests` asserts that), so Android does the same: the
+  You hub's Workspace group always lists it and `/dashboard/nexus` and
+  `forkmesh://nexus` open it. The desktop's `nexus` Market package is a
+  separate desktop feature.
+- **Presentation.** iOS shows `NexusRootView` as a full-screen cover with a
+  bottom `TabView`. `NexusScreen` hides the shell chrome and draws its own
+  glass tab bar (`FmBottomBar`) with the six tabs, and its detail screens push
+  on the normal stack. `Route.Nexus` is not marked modal because Android's
+  router drops modal routes from deep-link stacks.
+
+## 29. Composer actions and screen capture (sync ledger S028, S032)
+
+- **Prompt bar actions that start no agent (S028).** As iOS
+  `QuickPromptActions`, the model menu starts with Bug report, Task · assign,
+  Manual · create issue, ActivityPub · post and Take a note
+  (`C/composer/QuickPromptActions.kt`, provider `prompt-action`). The pick is
+  kept under `agent/quick/action` (`""` once a model is picked); until then
+  the chip shows Bug report whenever nothing can run an agent
+  (`QuickAgentLauncher.hasAgent`: signed out, no destination, or this phone
+  without an API key), so a phone with no agent still has a working Send.
+  Each ends in `QuickLaunchOutcome.Done`, whose message shows in the shell's
+  notice once the composer closes. `A/feature/composer/AppPromptActions.kt`
+  sends them like iOS `ShellPromptActions`: `POST /api/bug-reports` (screen
+  `composer`, photos attached, no account needed), `POST /api/tasks` (first
+  line as title up to 160 characters, the whole prompt as details, General,
+  priority 50), a signed issue through `InboxService`, a signed manual
+  `discussion`/`open` `ap-publish` (`ApiCiClient.announcePost`) and a private
+  account note. A Task shows an Assign to menu above the context line and an
+  Assign to section in the picker (you, then the board's members when you can
+  manage it; `tasks/composerAssignee`). With an action chosen the picker
+  hides Runs on, and shows Repository only for an issue or a post. The
+  diagnostics report always starts an agent (`send(agentOnly = true)`), as
+  iOS keeps spoken and Watch launches agents. Only `feature/composer` and
+  core changed; the shell needs no new call.
+- **Hold a blank area to copy part of the screen (S032).** See
+  [CAPTURE_MARKUP.md](CAPTURE_MARKUP.md#android-long-press-a-blank-area-to-copy-part-of-the-screen).
+  The hold is a feature-level window touch watcher installed from
+  `ComposerFeature.install`, so `shell/` is unchanged; the one thing left for
+  the shell is Home's background menu entry "Select area to copy…".
+
+## 30. Shell and kit parity (sync ledger S003 to S016)
+
+- **Scroll edge, sheets and large titles (S006).** `fmScrollEdge()`
+  (`ui/kit/FmGlass.kt`) fades content into the background under the bar once
+  the page has scrolled, as the iOS 26 soft scroll edge does. `DetailScaffold`
+  and `RoutePage` apply it to every pushed page. `FmModalBottomSheet` opens at
+  the medium detent unless `isScrollControlled`, and every sheet uses
+  `FmSheet.corner` (28 dp). iOS shows large titles on five screens only
+  (Status, Network, Stats, Admin, Search), so both scaffolds take
+  `largeTitle = true` instead of making it the default: `FmLargeTitleBox`
+  draws a 34 sp bold title that a nested scroll connection collapses before
+  the content scrolls and restores when the content is back at the top. The
+  bar's own title fades in over the last 30 % of the collapse.
+- **Chat header and composer are glass over the messages (S004).** The chat
+  room is an `FmBackdropHost`: the transcript is its content and the header
+  (with the topic, mesh, pending-device and unread banners under it) and the
+  composer stack are its overlay, so both bars refract the messages that
+  scroll beneath them. Their measured heights become the list's top and
+  bottom content padding, so the first and last messages still rest clear of
+  the bars. A short gradient from the canvas colour behind the header keeps
+  the status bar readable over messages. `PromptComposer` passes no tint to
+  `fmGlass` when a backdrop is present, so the composer card is clear glass
+  there and stays the solid surface everywhere else.
+
+### Activity halo and the shortcut progress ring (S016)
+
+`shell/ShellBarActivity.kt` ports iOS `ShellActivityHalo` and
+`ShellBarProgressRing`. A bar cell is `active` while its page has work
+running: the Agents tab with running agents, Timers with a running timer,
+Shortcuts with a running run or catalog entry (iOS
+`ShellNavigatorCounts.active`). Active cells draw the breathing glow and the
+turning 70 % arc around the glyph when Show activity is on. While a shortcut
+runs, Shortcuts swaps the halo for the progress ring and the glyph shrinks to
+78 %. `ShellBarProgress` (core) holds the run's start and expected length;
+the ring fills as elapsed over expected, capped at 99 %, redraws twice a
+second, and spins a short arc when there is no earlier run to estimate
+from. When several run it follows the one expected to finish last. The cell
+reads "Running, N percent" to TalkBack. The bar reads
+`TeammatesFeature.startedShortcuts`, so it never starts the shortcuts store
+itself; it looks for it every 2 s until something opens Shortcuts.
+
+### Home search, custom order and drag (S010, S012)
+
+- **Custom order.** `ShellMenuLayout` (core, iOS `ShellMenuLayout`, key
+  `shell/menu-layout`) keeps where you moved each page, per group; pages it
+  does not know keep their place at the end of their own group, and a page
+  that leaves (a repo page with no repo open) comes back to where it was.
+  `ShellBarPrefs.arranged` applies it before Home's own sort, and
+  `moveInMenu` lands a forward move after the target and a backward move
+  before it, as iOS.
+- **Drag.** `shell/ShellDrag.kt` is one drag shared by Home and the bar, the
+  part of iOS `onDrag`/`onDrop` that Compose has no system for. Touch and
+  hold a tile or bar cell, then move: the long-press menu closes, the source
+  dims to 35 % and a glass copy of the icon follows the finger (tinted accent
+  over the bar). The gesture watches the initial pointer pass, so the tile's
+  own press and long-press still work when you do not move, and positions are
+  kept in root coordinates, so a tile that moves under the finger during a
+  reorder does not make the pointer jump. On Home, passing over another
+  tile moves the dragged one there (grouped layouts only, as iOS
+  `reorders`) and switches the sort to Custom order. Dropping on the bar puts
+  the page in the slot under the finger (`putInBar`, replacing it when the
+  bar is full); dropping a bar cell anywhere off the bar takes it out, and
+  dropping it on another cell moves it there. Home stays in the bar.
+- **Search.** Pull Home down 56 dp (`ShellBarOrder.revealsSearch`) for the
+  glass search capsule. It filters pages by title, or a whole group when the
+  group's title matches, shows hidden groups while searching, and opens the
+  first result on the keyboard's Search key. With no text the trailing
+  control is the settings menu (Home settings, Bottom bar settings); with
+  text it clears. "Search everywhere for …" under the results opens global
+  search. The field hides again when it loses focus empty.
+
+### Wallpaper behind the glass (S007)
+
+Settings → Appearance ends with a Background row, as iOS
+`AppearanceBackgroundRow`: a 48 x 84 thumbnail, Choose image / Change image
+(the system photo picker, `PickVisualMedia`, so no permission), Remove, and
+once a picture is set a Dim slider (`FmIosSlider`, 0 to 90 % in 5 % steps,
+default 40 %). The note under it is the iOS text.
+
+The two settings use the iOS keys, `appearance/backgroundImage` (a file name,
+empty for none) and `appearance/backgroundDim` (a double, stored by `Prefs`
+as it stores every double). `Wallpaper` (core, `settings/Wallpaper.kt`, with
+`WallpaperTest`) holds the clamp, the default, the file name rule (a name
+with a `/` is treated as none, as iOS `backgroundImage`) and the sizing
+maths; `Appearance` carries it and `AppearanceStore` has `setWallpaperImage`,
+`previewWallpaperDim` (while the thumb moves, nothing written) and
+`setWallpaperDim` (on release).
+
+The picture is copied into `filesDir/wallpapers/wallpaper-<millis>.jpg`
+(`platform/WallpaperStore.kt`). It is decoded at just over the screen's size
+(`ImageDecoder` on API 28+, `BitmapFactory` with a sample size below), where
+iOS caps the long side at 2800 px; the previous file is deleted when a new
+one is chosen or the picture is removed. Nothing is written outside app
+storage.
+
+`FmWallpaperLayer` draws the picture cropped to fill, then `bgBase` at the dim
+opacity (iOS `FmWallpaperBackdrop` dims with the theme's base colour, not
+black, so a light theme brightens it). It is drawn twice: under the app in
+`MainActivity`, and as the first layer inside `FmBackdropHost`, so the
+bottom bar's glass samples and refracts the picture.
+
+`FmPalette` has the iOS `wallpaper` flag (`ForkMeshTheme(wallpaper = ...)`)
+with `canvas`, `readingSurface` and a 60 % `listSurface`. `canvas` is `bgBase`
+without a picture and transparent with one. The shell's `Surface`, the
+screen host and every page that painted
+`fillMaxSize().background(Fm.colors.bgBase)` (40 files) now paint `canvas`, and
+the Material `background` colour is `canvas`, so Scaffolds clear too; Agents,
+Inbox and Home paint nothing of their own and show the picture directly.
+Without a picture nothing changes.
+
+Left out: the iOS card fills at 62 % and softer borders on the chat channel
+list, the 80 % terminal surface and the pre-glass sheet backgrounds that
+follow `wallpaper`; pages that draw `bgBase` in some other shape than the
+full-screen fill (headers, the Genie mail line, chat bubbles) stay opaque; the
+RSS reader's own theme wrapper and the wide-screen navigation rail do not
+carry the flag. HEIC needs API 28 or later to be read.
+
+### The voice prompt (S015)
+
+Touch and hold the new-agent button to speak a prompt; it listens until you let
+go and starts an agent with your last repository and model. This is the iOS
+voice prompt ([NAVIGATION.md](NAVIGATION.md) section 2.3), and it replaces the
+old long press, which opened the command palette. The palette is now the
+**Commands** button on the voice screen.
+
+What was ported, and where it lives:
+
+- **Gesture** (`PromptButton`, `holdToTalk` in `feature/composer/ShellPrompt.kt`).
+  One pointer gesture instead of a click plus a long click, because a long
+  click ends the moment it fires and cannot tell when the finger lifts. Lifting
+  before 350 ms (`VoiceLaunchRules.HOLD_MS`) is a tap and opens the composer;
+  moving more than 10 dp first does nothing. After 350 ms the voice prompt
+  opens and listens while the finger stays down; letting go sends. TalkBack
+  gets "Speak a prompt" as the long-click action, which opens the screen
+  hands-free (no finger to wait for). The button also shrinks while pressed.
+  It is wired to the top bar button and the wide-layout rail button.
+- **Screen** (`ShellVoiceOverlay.kt`, drawn above the shell and below the
+  launch sparkles). A dimmed, blurred shell (`Modifier.blur`, Android 12 and
+  later; a solid 92% black backdrop on older phones or with high contrast
+  text, as `fmGlass` falls back), the orb springing out of the button into the
+  upper middle with the summon chime and a long-press haptic, 72 spokes that
+  follow the voice meter, ripples that speed up with the voice, the words under
+  the orb, a white arc that fills over the 3 s pause (hands-free only), a
+  spinner arc while sending, a shock ring and stars on launch, and Cancel,
+  Type and Commands under the orb. Tapping outside the orb or Cancel flies the
+  orb back into the button. Type moves the words into the shell composer
+  draft with the keyboard up. Reduce motion (the app's setting) fades instead
+  of flying and stops the ripples, twinkle and burst. Sounds follow the
+  interface sounds setting, and the shell's other cues are silenced while the
+  screen is open (`FmSoundCues.quieten`).
+- **Listening** (`ShellVoiceLaunch.kt`, `SpeechDictation.kt`). The same
+  `SpeechDictation` as the composer, asked to prefer the device. Android's
+  recognizer stops on its own after a quiet spell, so while the finger is down
+  `DictationSession.holds` makes it start again at once and
+  `VoiceTranscript` joins what each pass heard; the words never reset. Letting
+  go keeps the microphone open for another 250 ms, stops the recognizer and
+  sends when its final result arrives (at most 2 s later). Letting go before
+  the microphone opens, or before anything was heard or the meter saw a voice,
+  turns the session into the hands-free mode: it sends after the recognizer's
+  3 s of quiet, or when the orb is tapped. The 120 s limit and the Cancel,
+  Type and nothing-heard paths are the iOS ones (a falling `fizzle` chime and
+  "I didn't hear anything" closing after 2.2 s). The microphone opens after
+  the summon chime (0.42 s held, up to 0.8 s hands-free).
+- **Sending** goes through `rememberQuickAgentActions`, the composer's own
+  launcher, so the run uses the repository, destination, agent and model last
+  used there, and the screen does not switch the repository to the page's.
+  The orb is the source of the launch flight into the Agents cell
+  (`LaunchFlight.source`). A send that needs a fix or fails puts the words in
+  the shell composer draft and opens the composer, where the usual message and
+  fix action are shown.
+- **Chimes** (`core/agentwatch/VoiceLaunchChimes.kt`, test
+  `VoiceLaunchChimeTest`) are the iOS note tables, rendered by the same
+  `renderNotes` synthesiser and played from a `SoundPool`
+  (`ui/kit/VoiceLaunchSounds.kt`, cached under `sound-cues/`).
+- **Pure logic with tests** (`core/composer/VoiceLaunch.kt`, `VoiceLaunchTest`):
+  release rules, hold and pause timings, the pause arc fill, hints and labels,
+  the transcript joiner and the voice meter (`onRmsChanged` decibels to 0..1).
+
+Left out or different:
+
+- No primed recognizer: `SpeechRecognizer` is only created early at touch
+  down (`SpeechDictation.prime`), there is no analyzer model to preload.
+- Partial words arrive as the recognizer sends them; there is no "fast
+  results" switch, and some devices play the system listening beep each time
+  the recognizer restarts while the finger is down.
+- The orb's star field is a fixed twinkle, not tilted by the accelerometer
+  (the button's stars are static for the same reason, section 16).
+- The words do not shimmer; the "Listening" line pulses instead.
+- The microphone permission prompt appears when listening starts, so a first
+  hold ends in the hands-free mode after the prompt is answered.
+
+### Action sheets (S005)
+
+`ui/kit/FmActionSheet.kt` is the iPhone action sheet that iOS
+`confirmationDialog` shows: a 14 dp rounded group at the bottom with the
+title and message centred in 13 sp secondary text, 57 dp rows in 20 sp
+(accent, or the danger colour for a destructive choice) split by hairlines,
+and a detached bold Cancel 8 dp below it. It rises with a spring and drops
+away before the choice is reported. `FmMessenger.showActionSheet` returns the
+chosen index (or null for Cancel and taps outside), and `confirmAction` is
+the one-button form. A confirmation goes through it wherever iOS uses
+`confirmationDialog`; `showConfirmDialog` stays the centred alert for the
+places iOS uses `.alert`. The chat delete-message, delete-channel and
+leave-channel confirmations moved first; the kit gallery's "actions" demo
+shows it.
+
+Screens that now use the action sheet, with the iOS wording (title, message and
+button) copied from the matching `confirmationDialog`:
+
+- Code: delete or merge a branch, delete an issue, move an issue to a task,
+  merge-queue actions, Actions run controls (cancel, re-run and the like),
+  delete a webhook, Merge all with AI, disconnect a provider mirror.
+- Agents: end a desktop terminal, drop a queued session (its Cancel reads
+  "Keep", as on iOS), continue on the desktop (agent and run screens), open a
+  run in the provider's terminal, stop and delete an agent started outside
+  ForkMesh, delete a desktop agent account, close an SSH session.
+- Coves: discard cove edits, delete a cove document, delete an Actions secret.
+- Other: send to Discord through the desktop, discard photo markup, sign out of
+  the project from the You hub, and the Folder or Zip choice when importing a
+  local repository.
+
+Kept as centred alerts because iOS shows them with `.alert` or `fmDialog`
+(`FmConfirmDialog`), or they only inform: discard or delete in the local
+repository and file editor, "not a node yet" and "name is taken", the
+end-to-end encryption note, the merge-without-review waiver, remove an SSH
+key, revoke an installed app, forget a paired desktop, switch account, the
+"Cove proposed" and "Cannot open a pull request" notices, and the passkey
+fallback of "Confirm it's you". Some have no confirmation on iOS at all (log a
+desktop account out of a provider, replace the identity, remove a project, open
+a repository on another project, delete a feed post) and keep their alert.
+Pickers that iOS builds as menus or sheets (the review verdict, the attach
+sheet, message actions, move to group) stay bottom sheets.
+
+### Glass press response (S003) and glass over content (S004)
+
+- `fmGlass(interactive = true)` is iOS `.glassEffect(.regular.interactive())`:
+  while a finger is down the glass swells to 108 % on a soft spring and a
+  white radial light follows the finger (16 % in dark, 30 % in light), fading
+  out over 260 ms on release. It watches the initial pointer pass without
+  consuming, so the control's own click still runs. It is on for the glass
+  circles (back button, icon buttons, chat header circles and pills, the
+  Market bar, the walking chip, live touch); panels and the composer stay
+  still, as iOS keeps non-interactive glass still. Left out: iOS
+  `GlassEffectContainer` morphing, where neighbouring glass shapes melt into
+  one as they approach; Compose has no equivalent, and the shell bar's
+  capsule already draws its cells as one piece.
+- Glass that floats over moving content refracts it: the bottom bar (the
+  shell's `FmBackdropHost`), the chat header and composer (section above),
+  and, with a background picture set, the wallpaper. Pushed pages keep an
+  opaque `bgBase` bar with glass buttons and the scroll-edge fade under it,
+  which is what the iOS 26 bar looks like over a plain background; the
+  action bars at the foot of pushed pages are glass capsules drawn with the
+  solid fallback because they sit below the content, not over it.
+
+## 31. Health tools, Aquarium and Pocket mode (sync ledger S048, S049, S057)
+
+Ported on `android-health-aquarium` from iOS `Features/Tools`,
+`Features/Aquarium` and `Shell/ShellPocket.swift`.
+
+### Health and wellbeing tools (S048)
+
+Routes `Steps`, `Water`, `Sleep`, `SugarBreak`, `Stretch` and `FoodGuide`
+(paths `steps`, `water`, `sleep`, `sugar-break`, `stretch`, `food-guide`;
+package ids the same) sit after Calories in the personal hub group, as iOS.
+`feature/health/HealthFeature.kt` registers the six screens. The logic lives
+in `core/.../health/` with the iOS pref keys (`HealthPrefs`) and the same
+`/api/steps`, `/api/water`, `/api/sleep`, `/api/sugar-break` and
+`/api/stretch` bodies, so web and desktop read the same days.
+
+The app has no Health Connect dependency, and none was added. Where iOS reads
+or writes Apple Health, Android uses the phone's own sensors or leaves the
+part out:
+
+- **Pedometer.** `Sensor.TYPE_STEP_COUNTER` replaces Core Motion and HealthKit.
+  The counter counts from boot, so `StepsDailyLog` turns readings into day
+  totals in `PrefStore` (`health.steps.android.days`, `.last`), notices
+  reboots, and splits steps that span midnight by waking hours. Counting
+  starts when Steps is switched on; earlier days need Add steps. The
+  accelerometer (about 50 Hz, converted to g as Core Motion reports) feeds the
+  ported `StrideMeter` for cadence and running only while the app is open and
+  something listens. Distance is steps x 0.72 m and floors and active energy
+  are 0, since Android has no pedometer distance. `ACTIVITY_RECOGNITION` is
+  asked for when Steps is turned on. `WalkActivity` is iOS
+  `WalkActivityController` without the Live Activity. Synced days carry
+  device `android`. The tap-tempo heart card keeps its logic but not Save to
+  Apple Health.
+- **Sleep.** iOS reads Core Motion activity history; Android has none without
+  Play Services, so `SleepRestLog` keeps 8 days of still/moving spans from the
+  step counter (under 0.02 steps a second is still; a reboot is unknown) and
+  the ported `SleepDetector`, `SleepSchedule` and `SleepUsageLog` run on it.
+  A ride in a car reads as still; the usage log, the schedule window and the
+  3-hour minimum keep false nights out. Apple Health sleep reads and writes are
+  left out.
+- **Water Intake.** Same model and screen; the Apple Health share card and
+  its import/export are left out. Drinks an iPhone imported still show
+  "From Apple Health".
+- **Stretch Break.** The guided session, pose interpolation and logging
+  rules are the iOS ones; cues are spoken with `TextToSpeech`, which cannot
+  pause mid-line, so resume repeats the line. Sessions log with source
+  `android` and `health` false; workout writes are left out.
+- **Sugar Break.** Same model, screen and contract card (drawn on an
+  `android.graphics.Canvas` at 3x and shared as a PNG through the share
+  sheet). Apple Health sugar grams, the per-day grams and the "log that I had
+  sugar" nudge are left out.
+- **Food Guide.** The catalog (99 products, 31 recipes), scoring and diet
+  filters are the iOS ones and run on the phone. The budget comes from the
+  Calorie Counter overview (or 2,000 kcal). The 14-day HealthKit nutrition
+  read is left out, so the guide cannot spot low iron and the like; it uses
+  the everyday fiber and potassium drivers and says the history is not
+  available.
+
+### Aquarium (S049)
+
+`core/.../aquarium/` is a line-for-line port of iOS `AquariumTank` and
+`AquariumFish` (tricks, swimmers, the seeded FNV species and colour pick, and
+the iOS tests with the same seeds); CoreGraphics types became
+`AquariumPoint`/`AquariumSize`/`AquariumRect`, and the Genie landmark types
+the tank reads live beside it. "aquarium" is a phone package as on iOS
+(`PhonePackages.AQUARIUM`, key `packages/aquarium/on`, off until installed on
+this phone from the Market); `PackageGateFeature.publish()` refreshes
+`AquariumFeature.on`. `feature/aquarium/AquariumLayer(hidden, floor)` draws
+the tank on a Compose `Canvas`, steps it from `withFrameNanos` at about 30 fps,
+stops in the background or while hidden, never takes touches (iOS
+`allowsHitTesting(false)`), and maps reduce motion to an animator scale of 0.
+It is an overlay of the home shell, as iOS `HomeShell`:
+`AquariumLayer(hidden = composerOpen || keyboardUp || voiceOpen, floor = <top of the bottom bar>)`
+in `shell/HomeShell.kt`, which belongs to the shell owner. Until agents feed
+`AquariumFeature.setSwimmers` (iOS `AgentsScreen.swimmers`) the tank shows the
+three guest fish, and with no screen scan feeding `setLandmarks` the peek,
+boop and read tricks do not fire; Android has no Genie spider, so its tricks
+stay idle.
+
+### Pocket mode (S057)
+
+`feature/pocket/PocketMode.kt` is iOS `ShellPocket`: `PocketMode.lock()` /
+`unlock()` and `PocketLockOverlay()`, drawn above everything in
+`Features.Root` (iOS presents it as a full-screen cover). The lock screen is
+black with the date and a 72 sp clock that ticks each minute, the Glasses
+Alert radar and counts (or "Glasses Alert is off"), a pings card (unread
+pings and local pings, newest three titles) and a walking card from
+`WalkActivity` (the walking figure badge and steps a minute while stepping;
+"Not walking" or "Walk detection is off" otherwise), then the slide-to-unlock
+slider that unlocks past 85 percent of its travel and springs back short of
+it. Back does nothing while locked, the system bars hide (a swipe shows them
+for a moment) and the screen stays on. Lock plays a commit haptic and unlock
+a success one. The copy and slider rule are `core/.../pocket/PocketText.kt`.
+`PocketModeRow(onClose)` is the You hub row ("Pocket mode", or "Pocket mode,
+walking" with a pulsing walking icon while `WalkActivity.moving`); the hub
+panel belongs to the shell owner, who adds it to `YouHubContent`. The iOS
+Settings button for Pocket mode sits in its Suggestion mode card, which
+Android does not have yet.
+
+## 32. The Genie spider and outreach (sync ledger S047, S058)
+
+The iOS Genie ([GENIE.md](GENIE.md#android)) on Android. Pure logic is in
+`core/.../genie` (tests `GenieOutreachTest`, `GenieAutoSendTest`,
+`GenieGravityTest`, run with `./gradlew :core:coreTest -Pfilter=genie`); the
+views are in `app/.../feature/genie`. Same storage keys and server routes as
+iOS, so a user switching phones keeps the same switches.
+
+- **Spider.** `GenieOverlay` is mounted in `Features.Root` beside
+  `PingCelebrationOverlay`, so it sits over the whole app, and only the 92 dp
+  spider box takes touches. `GeniePainter` is iOS `GeniePainter` drawn with a
+  Compose `Canvas` in the same 100-unit box (aura, tail, eight legs, head,
+  violet turban with silver band, plume, gem, six eyes, mouth); trick poses and
+  particles are left out. It walks the arena of `GenieArena` (screen sides, the
+  ceiling under the status bar plus 56 dp, the floor at `ShellBar.clearance()`)
+  with `GenieGravity.crawl`, `wander` every 5 to 13 s and `silk` from the
+  ceiling, all ported from iOS with the same numbers.
+- **Tilt.** `TYPE_GRAVITY` (rotated to the screen) is the gravity
+  `GenieGravity.fly` pulls with, both across and down the screen, as the iOS
+  App Store build does since 64807bab53; it also tilts the body (`leanX`). A
+  push over 0.25 g from `TYPE_LINEAR_ACCELERATION` knocks it loose, iOS's
+  `loosen`; the liquid tumble, flat-on-a-table glass walk and keep-off-buttons
+  placement are not ported (they lean on iOS's accessibility screen scan).
+- **Touch.** Tap shows the next `GenieHints` line at the top for 5 s
+  (`genie-line`); drag and flick fly it with the finger's velocity; a gentle
+  release near the left or right edge tucks it a third off screen
+  (`genie/parked`). Long-press opens the menu: Talk, Surprise me, Someone to
+  reach out to, Stop suggesting people, Stay put, Come out, Reset size and
+  place, Hide the spider (`genie/hidden`).
+- **Badge cheers (da641ed9a5).** `PingCelebration.badgeLine` (core `model/`)
+  turns a fresh `badge` ping into "You earned Stargazer!" or "You reached
+  Silver Fan Club!"; the overlay shows it and plays the cheer when
+  `NotificationService.celebration` counts up.
+- **Voice.** Talk opens `GenieTalkBubble`: the composer's `SpeechDictation`
+  (Android `SpeechRecognizer`) in, `TextToSpeech` (pitch 0.92) out, the last
+  three lines shown. `GenieChat` keeps four exchanges for 10 minutes, answers
+  "say …" and "stop listening" without a model, and otherwise asks the saved
+  agent key's provider (`AgentCredentialStore`, the strongest model of that
+  provider). Android has no Apple Intelligence or on-device Gemma here, so
+  without a saved key the Genie says it needs one. The iOS tool loop
+  (open screens, read the latest, start agents) and always listening are not
+  ported yet.
+- **Outreach coach.** `GenieOutreachCoach` checks every minute and shows a
+  never-contacted CRM contact beside the spider (`GenieOutreach.pick`, 2 h
+  apart, 3 min after the app comes forward, 30 s on screen, `genie/outreach_*`
+  keys). Tapping the face writes the email with `GenieOutreach.write`
+  (the saved agent key's model, 90 s, else the template) and opens it in Zoho
+  Mail on the CRM's region with the organization's other members on cc
+  (`memberEmails`, read from the raw CRM reply in `GenieCrm` so the shared
+  `CrmOrganizationData` is untouched), else the share sheet; investor
+  pipelines first mint a tracked deck link.
+- **Suggestion mode and the mail chip (S058).** `ShellSuggestions`
+  (`shell/suggestion_mode`) refreshes every 10 minutes; `ShellMailChip` is the
+  44 dp portrait with today's count (top right, accent while auto-send is on,
+  with the 864 s countdown ring redrawn each second), the stage mark (bottom
+  right: search, edit, send, check for 3 s, pause on the warning colour) and a
+  spinner while an email is in progress. Tap writes to the contact;
+  long-press toggles auto-send. `SuggestionModeRow` is the You hub switch.
+- **Auto-send.** `ShellAutoSend` with `GenieAutoSendPace` (`shell/auto_send*`)
+  sends one email every 864 s, 100 a day, through `POST
+  /api/crm/<org>/outreach/auto` to the best email contact in a CRM with Zoho
+  connected, skips refused contacts (up to five a turn), pauses with the
+  reason on anything else, and when the server has no model posts the
+  phone's draft back. It runs only while the app is in front. Every send opens
+  `GenieAutoSendReviewHost`'s sheet (1 to 5 stars and a note, `POST
+  /outreach/rate`, "Sent · 2 more" queue). Messages go through
+  `GenieMailStatus.say` to `GenieMailNoticeLine` (`shell-mail-notice`) and the
+  device-local Pings (`InboxFeature.recordLocalFailure`, which keeps its 8 an
+  hour limit unlike iOS).
+- **Shell hooks.** The top bar, the notice under it and the You hub belong to
+  the shell; they call `ShellMailChip()` (top bar, beside Glasses Alert),
+  `GenieMailNoticeLine()` (under the top bar) and `SuggestionModeRow()` (You
+  hub). `GenieSpiderSwitchRow()` is the Settings "Show the Genie spider"
+  switch.
+- Left out on purpose: hand play (TrueDepth), screen plays and the
+  accessibility screen scanner, tricks and genie effects, vitals (health from
+  code and marketing), the aquarium and pocket mode.
+
+### Shell wiring for the Genie, Pocket mode and walking
+
+The merge into `feat/add-adnriod-updates` placed the hooks where iOS has
+them. The top bar's chip row (iOS `ShellTopBar`) is Glasses Alert,
+`StepsWalkChip` and `ShellMailChip`. `StepsWalkChip`
+(`feature/health/StepsWalkChip.kt`) is the glass walking badge that shows
+while `WalkActivity.stepping` and the Steps package is placed, and opens the
+Pedometer. `GenieMailNoticeLine` sits under the link-problem line, as iOS
+draws the mail notice under the top bar. The You hub has Pocket mode, then
+Suggestion mode, then Diagnostics, the order of iOS `YouHubSheet`. Settings →
+General ends with a Genie card (the spider switch) and a Suggestion mode card
+(the switch, its note and the Pocket mode row), as iOS `GenieSpiderCard` and
+`SuggestionModeCard`. The iOS DJ now-playing chip comes with the DJ studio
+merge.
+The spider's frame clock follows iOS `GenieSpiderLayer.frameRate`: 24 fps
+at rest or crawling, 30 during a reaction, 60 only while it is held or flying.
+Every frame redraws the window, which a software-rendered emulator feels far
+more than a phone does.
+
+## 33. Video Mix DJ Studio (sync ledger S045)
+
+Ported from iOS `Features/Packages/VideoMixDjStudio*.swift` on
+`android-dj-studio` and merged into `feat/add-adnriod-updates`. The package
+id is `video-mix-dj-studio`; the route is `Route.VideoMixDjStudio` (paths
+`video-mix-dj-studio` and `dj-studio`), registered by `DjStudioHub.install`
+with a Home tile and a Market entry, and gated like every other package.
+
+- **Shared logic (core `djstudio/`).** Playlists, tags and smart playlists
+  (`DjCrate`, `DjSmart`), AUTOMIX, BPM detection and the gain curve
+  (`DjAudio`, `DjStudio`), play counts and jam sessions (`DjJam`, and
+  `DjJamApi` for the jam server routes), with their iOS tests.
+- **Decks (`feature/djstudio`).** `DjStudioScreen` lays out two turntables
+  stacked in portrait and side by side in landscape, with the queue and the
+  crossfader between them. `DjPlatter` turns the record with the playback
+  position, scratches under the finger and brakes on stop; `DjControls` has
+  start, pause, stop, restart, cue (SET), loop, the sampler pads, tempo with
+  SYNC and TAP, and the level fader. The sheets (`DjSheets`, `DjCrateSheet`)
+  load a deck from search, a pasted link, recently played or a playlist, and
+  hold deck settings and playlists; `DjStudioJam` runs a jam session.
+- **Audio.** `DjResolver` finds a playable stream for a video id through a
+  hidden YouTube IFrame player and reads YouTube's results page for search,
+  because the public Invidious servers the iOS search relies on now refuse
+  requests. `DjStream` downloads and decodes the audio and draws the
+  waveform; `DjEngine` mixes both decks into one `AudioTrack` with tempo,
+  bend and the crossfader. `DjMediaService` keeps playback going behind the
+  lock screen with a media notification, and `DjStudioHub.relaunch` resumes a
+  set that was playing when the app was closed.
+- **Top bar.** `DjNowPlayingChip` (`DjNowPlaying.kt`) is iOS
+  `DjNowPlayingChip`: while a deck plays and the studio is not on screen, a
+  44 dp record with the track's artwork turns in the top bar's chip row
+  (first, before Glasses Alert, as iOS). Tap opens the studio; touch and hold
+  offers Stop the Music. `DjMiniRecord` turns with the deck's position at
+  30 fps and only while it plays.
+- **Checked on the emulator.** A track loaded and played with its real
+  waveform and 116.1 BPM detected (the song is 116); the landscape layout;
+  the chip appearing on Home, opening the studio and stopping the music.
