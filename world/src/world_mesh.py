@@ -14,8 +14,6 @@ SLOTS = 12
 HEX_SLOTS = 5
 SHAPE_FLOWER = "flower"
 SHAPE_HEX = "hex"
-# A single-hexagon neighbour may publish what stands on it; the hub's World
-# reads it from this fixed path on the neighbour's own origin.
 SCENE_PATH = "/api/world/neighbour-scene"
 MAX_WORLDS = SLOTS + 1
 DIRECTORY_MAX_AGE = 60

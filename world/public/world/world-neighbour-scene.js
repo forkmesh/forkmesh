@@ -1,8 +1,3 @@
-// A neighbouring World may publish what stands on its hexagon so the hub can
-// draw it there instead of only a logo. It is third-party data: it is read as
-// JSON, every field is checked against a small allow-list, text is plain
-// (never HTML), links and icons must be https, and anything that does not fit
-// is dropped. A scene that fails as a whole leaves the logo hexagon as it was.
 export const NEIGHBOUR_SCENE_PATH = "/api/world/neighbour-scene";
 export const NEIGHBOUR_SCENE_VERSION = 1;
 export const NEIGHBOUR_SCENE_MAX_BYTES = 64 * 1024;
@@ -126,8 +121,6 @@ export function normalizeNeighbourScene(payload) {
   };
 }
 
-// Fetched without credentials and read as text first, so an oversized or
-// non-JSON answer is refused before it is parsed.
 export async function loadNeighbourScene(url, { timeoutMs = 6000, fetchImpl = globalThis.fetch } = {}) {
   const target = neighbourSceneLink(url);
   if (!target || !target.endsWith(NEIGHBOUR_SCENE_PATH)) return null;

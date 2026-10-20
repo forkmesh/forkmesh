@@ -309,9 +309,6 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
   pick(label);
   group.add(label);
 
-  // A single-hexagon neighbour that publishes its scene is drawn as it is
-  // laid out at home; until then, or if the scene is missing or refused, it
-  // keeps the logo hexagon above.
   if (single && instance.scene) {
     void loadNeighbourScene(instance.scene).then((scene) => {
       if (!scene || !group.parent) return;
@@ -340,8 +337,6 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
   });
   return group;
 }
-
-// --- a neighbour's published scene ------------------------------------------
 
 function iconTexture(THREE, label, url, ring) {
   const size = 96;

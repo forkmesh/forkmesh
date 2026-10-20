@@ -72,7 +72,6 @@ export function normalizeWorldMesh(payload) {
       logo: LOGO_RE.test(String(item?.logo || "")) ? String(item.logo) : "",
       slot,
       shape: item?.shape === "hex" && slot >= 0 && slot < 5 ? "hex" : "flower",
-      // Only the fixed path on the neighbour's own origin is ever fetched.
       scene: item?.shape === "hex" && item?.scene === `${world}/api/world/neighbour-scene`
         ? item.scene
         : "",
