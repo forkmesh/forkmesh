@@ -134,6 +134,16 @@ git clone ─► app ─► public: a core whose signed refs proof matches the p
   `test_hosted_stats_update_only_the_record_whose_pin_they_describe` in
   `app/tests/test_hosted_repositories.py`,
   `TestHostedCopyStateReportsTheWholeHistoryCachedPerTip`.
+- **Attested state after intake and merges:** the router checks clones
+  against the routing digest (default branch plus tags,
+  `routingRefsSHA256`), and pushes already pinned that. The collaboration
+  intake acknowledgement (`server/intake.go`) and merge results
+  (`server/merge.go`) recorded the all-branches digest instead, so on a
+  repository with more than one branch they added a pin no node could match.
+  Both now attest the routing digest; the gateway's own generation pin still
+  uses the full digest. Test: the merge executor test in
+  `server/merge_test.go` compares the attested state with the live routing
+  digest.
 
 ### Private repositories
 
