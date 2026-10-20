@@ -196,10 +196,39 @@ export const WORLD_MESH_FLOWER_HEXES = Object.freeze(
   ),
 );
 export const WORLD_MESH_FLOWER_REACH = WORLD_HEX_PITCH + CONTINUOUS_CITY_RADIUS * 1.2;
-export function worldMeshSlotOffset(slot) {
+// A neighbour drawn as one hexagon instead of a flower sits in the notch
+// between two of the town's desert hexagons, sharing an edge with each. Slot
+// k's hexagon is the flower-k hexagon nearest the town, so it never overlaps
+// another slot's flower.
+export const WORLD_MESH_HEX_SHAPE = "hex";
+export const NEIGHBOUR_HEX_SLOT_COUNT = 6;
+const NEIGHBOUR_HEX_OFFSETS = Object.freeze(
+  [0, 1, 2, 3, 4, 5].map((side) => {
+    const angle = Math.PI / 6 + (side * Math.PI) / 3;
+    const reach = WORLD_HEX_PITCH * Math.sqrt(3);
+    return Object.freeze({ x: Math.cos(angle) * reach, z: Math.sin(angle) * reach });
+  }),
+);
+export function worldMeshShape(shape, slot) {
+  const index = Number(slot);
+  return shape === WORLD_MESH_HEX_SHAPE &&
+    Number.isInteger(index) && index >= 0 && index < NEIGHBOUR_HEX_SLOT_COUNT
+    ? WORLD_MESH_HEX_SHAPE
+    : "flower";
+}
+export function worldMeshSlotOffset(slot, shape = "flower") {
   const index = Number(slot);
   if (index === -1) return { x: 0, z: 0 };
-  return Number.isInteger(index) ? WORLD_MESH_SLOT_OFFSETS[index] || null : null;
+  if (!Number.isInteger(index)) return null;
+  if (worldMeshShape(shape, index) === WORLD_MESH_HEX_SHAPE) {
+    return NEIGHBOUR_HEX_OFFSETS[index];
+  }
+  return WORLD_MESH_SLOT_OFFSETS[index] || null;
+}
+export function worldMeshHexesFor(shape) {
+  return shape === WORLD_MESH_HEX_SHAPE
+    ? WORLD_MESH_FLOWER_HEXES.slice(0, 1)
+    : WORLD_MESH_FLOWER_HEXES;
 }
 export const INSTANCE_HEX_SLOTS = Object.freeze(
   WORLD_MESH_SLOT_OFFSETS.map((offset) => {

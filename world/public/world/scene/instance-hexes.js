@@ -8,7 +8,9 @@ import {
   WORLD_ROAD_CORNER_SEGMENTS,
   WORLD_ROAD_JUNCTION_REACH,
   WORLD_ROAD_SURFACE_Y,
+  WORLD_MESH_HEX_SHAPE,
   WORLD_ROAD_WIDTH,
+  worldMeshHexesFor,
 } from "./layout.js";
 import { makeSharedMaterial } from "./materials.js";
 import { hexCorners, roundedHexagonOutline } from "./movement.js";
@@ -44,7 +46,7 @@ export function instanceHexSlot(slot) {
   return Number.isInteger(index) ? INSTANCE_HEX_SLOTS[index] || null : null;
 }
 
-function flowerRoadGeometry(THREE) {
+function flowerRoadGeometry(THREE, hexes = WORLD_MESH_FLOWER_HEXES) {
   const outer = roundedHexagonOutline(
     CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH,
     CONTINUOUS_CITY_CORNER_RADIUS + WORLD_ROAD_WIDTH,
@@ -60,7 +62,7 @@ function flowerRoadGeometry(THREE) {
   const indices = [];
   const count = outer.length;
   const fanSegments = 12;
-  WORLD_MESH_FLOWER_HEXES.forEach((hex) => {
+  hexes.forEach((hex) => {
     const cx = hex.x;
     const cy = -hex.z;
     const base = positions.length / 3;
@@ -175,35 +177,41 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
   ground.userData.ground = true;
   group.add(ground);
 
-  const sand = new THREE.Mesh(
-    resources.geometry(THREE, "world-mesh-flower-sand", () =>
-      roundedHexagonGeometry(
-        THREE,
-        CONTINUOUS_CITY_RADIUS,
-        CONTINUOUS_CITY_CORNER_RADIUS,
-        WORLD_ROAD_CORNER_SEGMENTS,
-        {
-          centers: WORLD_MESH_FLOWER_HEXES.slice(1).map((hex) => [hex.x, -hex.z]),
-          uvScale: 1 / DESERT_SAND_TILE,
-        },
+  // A single-hexagon neighbour has no desert of its own: it sits between
+  // two of the town's desert hexagons and shares their roads.
+  const single = instance.shape === WORLD_MESH_HEX_SHAPE;
+  if (!single) {
+    const sand = new THREE.Mesh(
+      resources.geometry(THREE, "world-mesh-flower-sand", () =>
+        roundedHexagonGeometry(
+          THREE,
+          CONTINUOUS_CITY_RADIUS,
+          CONTINUOUS_CITY_CORNER_RADIUS,
+          WORLD_ROAD_CORNER_SEGMENTS,
+          {
+            centers: WORLD_MESH_FLOWER_HEXES.slice(1).map((hex) => [hex.x, -hex.z]),
+            uvScale: 1 / DESERT_SAND_TILE,
+          },
+        ),
       ),
-    ),
-    resources.material(THREE, {
-      color: "#f2dfb8",
-      map: desertSandTexture(THREE),
-      roughness: 1,
-      metalness: 0,
-    }, "MeshStandardMaterial"),
-  );
-  sand.name = "forkmesh-instance-hex-sand";
-  sand.rotation.x = -Math.PI / 2;
-  sand.position.y = DESERT_PLOT_SURFACE_Y;
-  sand.receiveShadow = true;
-  sand.userData.ground = true;
-  group.add(sand);
+      resources.material(THREE, {
+        color: "#f2dfb8",
+        map: desertSandTexture(THREE),
+        roughness: 1,
+        metalness: 0,
+      }, "MeshStandardMaterial"),
+    );
+    sand.name = "forkmesh-instance-hex-sand";
+    sand.rotation.x = -Math.PI / 2;
+    sand.position.y = DESERT_PLOT_SURFACE_Y;
+    sand.receiveShadow = true;
+    sand.userData.ground = true;
+    group.add(sand);
+  }
 
   const road = new THREE.Mesh(
-    resources.geometry(THREE, "world-mesh-flower-road", () => flowerRoadGeometry(THREE)),
+    resources.geometry(THREE, single ? "world-mesh-hex-road" : "world-mesh-flower-road", () =>
+      flowerRoadGeometry(THREE, worldMeshHexesFor(instance.shape))),
     makeSharedMaterial(THREE, "#2b3433", { roughness: 0.92, metalness: 0 }),
   );
   road.name = "forkmesh-instance-hex-road";

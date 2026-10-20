@@ -11,6 +11,11 @@ HUB_NAME = "ForkMesh"
 DEFAULT_HUB_API = "https://app.forkmesh.com"
 DEFAULT_HUB_WORLD = "https://world.forkmesh.com"
 SLOTS = 12
+# Slots 0-5 may be drawn as one hexagon beside the hub's town instead of a
+# full flower; the hub lists them in WORLD_MESH_HEX_SLOTS (e.g. "0,3").
+HEX_SLOTS = 6
+SHAPE_FLOWER = "flower"
+SHAPE_HEX = "hex"
 MAX_WORLDS = SLOTS + 1
 DIRECTORY_MAX_AGE = 60
 DIRECTORY_CACHE_MS = 5 * 60 * 1000
@@ -69,6 +74,20 @@ def is_hub(env):
     return not " ".join(setting(env, "INSTANCE_NAME").split())
 
 
+def hex_slots(env):
+    slots = set()
+    for part in setting(env, "WORLD_MESH_HEX_SLOTS").split(","):
+        part = part.strip()
+        if part.isdigit() and int(part) < HEX_SLOTS:
+            slots.add(int(part))
+    return frozenset(slots)
+
+
+def shape_for(value, slot):
+    return SHAPE_HEX if value == SHAPE_HEX and 0 <= slot < HEX_SLOTS \
+        else SHAPE_FLOWER
+
+
 def hub_api(env):
     return clean_origin(setting(env, "WORLD_MESH_HUB")) or DEFAULT_HUB_API
 
@@ -99,10 +118,11 @@ def hub_entry(env):
         "api": own_api_origin(env) or DEFAULT_HUB_API,
         "logo": "",
         "slot": -1,
+        "shape": SHAPE_FLOWER,
     }
 
 
-def instance_entry(row, api_base):
+def instance_entry(row, api_base, hexes=frozenset()):
     entry_id = str(row.get("id") or "")
     world = clean_origin(row.get("url"))
     try:
@@ -125,15 +145,16 @@ def instance_entry(row, api_base):
         "api": world,
         "logo": api_base + logo if LOGO_PATH_RE.fullmatch(logo) else "",
         "slot": slot,
+        "shape": SHAPE_HEX if slot in hexes else SHAPE_FLOWER,
     }
 
 
-def build_directory(hub, rows, api_base):
+def build_directory(hub, rows, api_base, hexes=frozenset()):
     worlds = [hub]
     slots = set()
     hosts = {hub["host"]}
     for row in rows or []:
-        entry = instance_entry(dict(row), api_base)
+        entry = instance_entry(dict(row), api_base, hexes)
         if not entry or entry["slot"] in slots or entry["host"] in hosts:
             continue
         slots.add(entry["slot"])
@@ -179,6 +200,7 @@ def normalize_world(item):
         "api": api,
         "logo": logo if logo_ok else "",
         "slot": slot,
+        "shape": shape_for(item.get("shape"), slot),
     }
 
 

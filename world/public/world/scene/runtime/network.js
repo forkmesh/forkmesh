@@ -13,8 +13,11 @@ import { canvasTexture } from "../canvas.js";
 import { makeLabelSprite, updatePlayerLabel } from "../labels.js";
 import {
   CONTINUOUS_CITY_CENTER_Z,
+  CONTINUOUS_CITY_CORNER_RADIUS,
+  CONTINUOUS_CITY_RADIUS,
   NODE_PLAZA_MAX_RADIUS,
   WORLD_BIKE_LANE_CENTER_X,
+  WORLD_MESH_HEX_SHAPE,
   worldMeshSlotOffset,
 } from "../layout.js";
 import {
@@ -41,7 +44,11 @@ import {
   formatPlatformLimitBytes,
   systemCapacityMetricPairs,
 } from "../office-infrastructure.js";
-import { setWorldMeshFlowers, worldMeshOwnerAt } from "../movement.js";
+import {
+  roundedHexagonContains,
+  setWorldMeshFlowers,
+  worldMeshOwnerAt,
+} from "../movement.js";
 import { safeRepositoryPath } from "../repositories.js";
 import * as resources from "../resources.js";
 
@@ -541,11 +548,11 @@ export function functions({
     district.userData.federatedInstanceLayer = layer;
   }
 
-  function updateInstanceHexes(worlds = [], selfSlot = -1) {
-    const self = worldMeshSlotOffset(selfSlot);
+  function updateInstanceHexes(worlds = [], selfSlot = -1, selfShape = "flower") {
+    const self = worldMeshSlotOffset(selfSlot, selfShape);
     const placed = [];
     (self && Array.isArray(worlds) ? worlds : []).forEach((world) => {
-      const offset = worldMeshSlotOffset(world?.slot);
+      const offset = worldMeshSlotOffset(world?.slot, world?.shape);
       if (!offset || !world?.id) return;
       const dx = offset.x - self.x;
       const dz = offset.z - self.z;
@@ -583,7 +590,21 @@ export function functions({
 
   function worldMeshOwner(x, z) {
     const flower = worldMeshOwnerAt(x, z);
-    return flower ? { id: flower.id, dx: flower.dx, dz: flower.dz } : null;
+    if (!flower) return null;
+    const owner = { id: flower.id, dx: flower.dx, dz: flower.dz };
+    if (flower.shape !== WORLD_MESH_HEX_SHAPE) return owner;
+    // Only the land counts for a single hexagon: its road is shared with the
+    // town's desert, and stepping off the road is the crossing.
+    return {
+      ...owner,
+      shape: WORLD_MESH_HEX_SHAPE,
+      slot: flower.slot,
+      world: flower.world,
+      name: flower.name,
+      onLand: roundedHexagonContains(
+        x, z, flower.x, flower.z, CONTINUOUS_CITY_RADIUS, CONTINUOUS_CITY_CORNER_RADIUS),
+      local: { x: x - flower.x, z: z - flower.z },
+    };
   }
 
   function updateBots(bots = []) {

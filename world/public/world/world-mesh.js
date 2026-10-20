@@ -71,6 +71,9 @@ export function normalizeWorldMesh(payload) {
       api,
       logo: LOGO_RE.test(String(item?.logo || "")) ? String(item.logo) : "",
       slot,
+      // A single-hexagon neighbour is drawn beside the town and entered by
+      // walking onto it, which loads its own World page.
+      shape: item?.shape === "hex" && slot >= 0 && slot < 6 ? "hex" : "flower",
     });
     if (worlds.length > WORLD_MESH_SLOT_COUNT) break;
   }
@@ -394,4 +397,100 @@ export class WorldMeshLinks {
     for (const id of [...this.links.keys()]) this.closeLink(id);
     this.setVisit("");
   }
+}
+
+// Single-hexagon neighbours run their own World page, so walking onto one is
+// a page load. The address names where the walker came from, the slot, and
+// where they stepped off relative to the hexagon's centre; a signed-in
+// walker's visa rides in the fragment, which no server or Referer sees.
+export const WORLD_MESH_FROM_PARAM = "from";
+export const WORLD_MESH_SLOT_PARAM = "slot";
+export const WORLD_MESH_POS_PARAM = "pos";
+export const WORLD_MESH_VISA_PARAM = "visa";
+export const WORLD_MESH_POS_LIMIT = 400;
+const POS_RE = /^-?\d{1,3}(?:\.\d)?,-?\d{1,3}(?:\.\d)?$/;
+const VISA_RE = /^[A-Za-z0-9_-]{1,1950}\.[0-9a-f]{64}$/;
+const FROM_RE = /^(?:forkmesh|[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?)$/;
+// scene/layout.js is bundled with the scene, so this module keeps its own
+// copy of the two sizes it needs (a test holds them equal).
+export const WORLD_MESH_HEX_APOTHEM = 365;
+export const WORLD_MESH_ROAD_WIDTH = 10;
+const ARRIVAL_EDGE_REACH = 150;
+const ARRIVAL_DEPTH = 14;
+
+function roundedPos(value) {
+  const number = Math.round(Number(value) * 10) / 10;
+  if (!Number.isFinite(number)) return null;
+  return Math.max(-WORLD_MESH_POS_LIMIT, Math.min(WORLD_MESH_POS_LIMIT, number));
+}
+
+export function worldMeshCrossingURL(world, { from, slot, local, visa = "" } = {}) {
+  const origin = httpsOrigin(world);
+  const source = String(from || "").toLowerCase();
+  const x = roundedPos(local?.x);
+  const z = roundedPos(local?.z);
+  if (!origin || !FROM_RE.test(source) || x === null || z === null) return "";
+  const url = new URL("/world/", origin);
+  url.searchParams.set(WORLD_MESH_FROM_PARAM, source);
+  const index = Number(slot);
+  if (Number.isInteger(index) && index >= 0 && index < WORLD_MESH_SLOT_COUNT) {
+    url.searchParams.set(WORLD_MESH_SLOT_PARAM, String(index));
+  }
+  const format = (value) => value.toFixed(1).replace(/\.0$/, "");
+  url.searchParams.set(WORLD_MESH_POS_PARAM, `${format(x)},${format(z)}`);
+  if (VISA_RE.test(String(visa || ""))) {
+    url.hash = new URLSearchParams({ [WORLD_MESH_VISA_PARAM]: visa }).toString();
+  }
+  return url.href;
+}
+
+export function worldMeshArrival(search = "") {
+  const params = new URLSearchParams(String(search || ""));
+  const from = String(params.get(WORLD_MESH_FROM_PARAM) || "").toLowerCase();
+  const rawPos = String(params.get(WORLD_MESH_POS_PARAM) || "");
+  const slotText = String(params.get(WORLD_MESH_SLOT_PARAM) ?? "");
+  if (!FROM_RE.test(from) || !POS_RE.test(rawPos) || !/^\d{1,2}$/.test(slotText)) return null;
+  const slot = Number(slotText);
+  const [x, z] = rawPos.split(",").map(Number);
+  if (slot >= WORLD_MESH_SLOT_COUNT) return null;
+  if (Math.abs(x) > WORLD_MESH_POS_LIMIT || Math.abs(z) > WORLD_MESH_POS_LIMIT) return null;
+  return { from, slot, pos: { x, z } };
+}
+
+export function withoutWorldMeshArrival(href) {
+  try {
+    const url = new URL(String(href || ""));
+    [WORLD_MESH_FROM_PARAM, WORLD_MESH_SLOT_PARAM, WORLD_MESH_POS_PARAM].forEach((key) =>
+      url.searchParams.delete(key));
+    if (new URLSearchParams(url.hash.replace(/^#/, "")).has(WORLD_MESH_VISA_PARAM)) url.hash = "";
+    return url.href;
+  } catch (_) {
+    return "";
+  }
+}
+
+// Where a walker coming back off a single-hexagon neighbour lands: just
+// outside the edge they crossed, on the road side, facing away from it.
+export function worldMeshHexEdgeArrival(center, pos) {
+  const x = Number(pos?.x);
+  const z = Number(pos?.z);
+  if (!center || !Number.isFinite(x) || !Number.isFinite(z)) return null;
+  let normal = { x: 1, z: 0 };
+  let best = -Infinity;
+  for (let side = 0; side < 6; side += 1) {
+    const candidate = { x: Math.cos((side * Math.PI) / 3), z: Math.sin((side * Math.PI) / 3) };
+    const dot = x * candidate.x + z * candidate.z;
+    if (dot > best) {
+      best = dot;
+      normal = candidate;
+    }
+  }
+  const along = Math.max(-ARRIVAL_EDGE_REACH, Math.min(ARRIVAL_EDGE_REACH, -x * normal.z + z * normal.x));
+  const depth = WORLD_MESH_HEX_APOTHEM + WORLD_MESH_ROAD_WIDTH + ARRIVAL_DEPTH;
+  return {
+    x: center.x + normal.x * depth - normal.z * along,
+    z: center.z + normal.z * depth + normal.x * along,
+    heading: Math.atan2(-normal.x, -normal.z),
+    space: "town-square",
+  };
 }
