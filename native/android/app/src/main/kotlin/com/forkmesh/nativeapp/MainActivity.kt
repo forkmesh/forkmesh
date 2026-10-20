@@ -19,6 +19,7 @@ import com.forkmesh.nativeapp.platform.AppLifecycle
 import com.forkmesh.nativeapp.platform.AppearanceStore
 import com.forkmesh.nativeapp.shell.HomeShell
 import com.forkmesh.nativeapp.ui.kit.FmUserActivity
+import com.forkmesh.nativeapp.ui.kit.FmWallpaperLayer
 import com.forkmesh.nativeapp.ui.kit.KitGalleryScreen
 import com.forkmesh.nativeapp.ui.kit.fmTapSounds
 import com.forkmesh.nativeapp.ui.navigation.AppNavigation
@@ -45,8 +46,9 @@ class MainActivity : ComponentActivity() {
                     isAppearanceLightNavigationBars = !dark
                 }
             }
-            ForkMeshTheme(dark = dark, theme = appearance.theme) {
+            ForkMeshTheme(dark = dark, theme = appearance.theme, wallpaper = appearance.wallpaper.active) {
                 Box(Modifier.fmTapSounds(), propagateMinConstraints = true) {
+                    FmWallpaperLayer(Modifier.matchParentSize())
                     if (kitGallery != null) kitGallery.Content(navigator) else Features.Root(navigator, onExit = { moveTaskToBack(true) })
                 }
             }
