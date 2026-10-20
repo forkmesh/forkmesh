@@ -653,6 +653,8 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 	}
 	if job.Trusted {
 		masks = append(masks, job.JobToken, job.PushGrant)
+	} else if job.JobToken != "" {
+		masks = append(masks, job.JobToken)
 	}
 	sink := newMaskingWriter(live, masks)
 	defer sink.Flush()
@@ -728,7 +730,9 @@ func (a *runnerActions) runWorkflow(ctx context.Context, job runnerActionsJob, c
 	} {
 		base.set(pair[0], pair[1])
 	}
-	if job.Trusted && job.JobToken != "" {
+	// A trusted job's token, or the one an untrusted issue or comment job
+	// carries for the job API (this repository's issues only).
+	if job.JobToken != "" {
 		base.set("FORKMESH_TOKEN", job.JobToken)
 		base.set("GITHUB_TOKEN", job.JobToken)
 	}

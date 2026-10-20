@@ -183,6 +183,29 @@ def test_runs_on_contributor_branches_are_never_trusted():
     assert not runner_actions.untrusted_branch("prod")
 
 
+def test_an_outside_issue_job_gets_only_a_job_api_token():
+    runtime, key = setup()
+    add_secret(runtime, "forkmesh", "site", "TOKEN", "repo-value")
+    for event in ("issue_comment", "pull_request"):
+        enqueue(runtime, commit="", event=event,
+                workflow=".forkmesh/%s.yml" % event, trusted=False)
+    jobs = {job["event"]: job for job in lease(runtime, key)}
+    comment = jobs["issue_comment"]
+    assert comment["trusted"] is False
+    assert comment["jobToken"] and comment["apiUrl"]
+    assert column(runtime, comment["jobId"], "token_hash") == hashlib.sha256(
+        comment["jobToken"].encode()).hexdigest()
+    for name in ("secrets", "pushGrant", "pushRef", "botName"):
+        assert name not in comment
+    assert "jobToken" not in jobs["pull_request"]
+    # An untrusted runner hands out no token at all.
+    runtime, key = setup(trusted=False)
+    enqueue(runtime, commit="", event="issue_comment",
+            workflow=".forkmesh/reply.yml", trusted=False)
+    [job] = lease(runtime, key)
+    assert "jobToken" not in job
+
+
 def test_one_active_job_per_workflow():
     runtime, key = setup()
     first = enqueue(runtime, commit="", event="workflow_dispatch",

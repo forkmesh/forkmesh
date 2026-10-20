@@ -49,6 +49,7 @@ _ACTIVE_SQL = "('leased','running','cancelling')"
 # branch executes that branch's workflow files, so it is never trusted: no
 # secrets, job token or push grant, whoever queued or re-ran it.
 CONTRIBUTOR_BRANCH_PREFIX = "pr/"
+ISSUE_EVENTS = ("issues", "issue_comment")
 
 
 def untrusted_branch(branch):
@@ -403,7 +404,15 @@ async def lease(runtime, runner, requested, maximum):
                 runtime, target, repo, "actions-push", "refs/heads/" + branch,
                 runner["name"], runtime.new_id(), now, expires_at,
                 owner=public_owner)
-        if trusted:
+        # An issue or comment event by someone without write access runs
+        # untrusted, yet the default branch's issue workflows (triage,
+        # /assign) still need the job API, which only reads and writes this
+        # repository's issues. Such a job gets a job token, but never
+        # secrets, a push grant or the bot's commit identity.
+        issue_scoped = bool(
+            not trusted and runner.get("actionsTrusted")
+            and event in ISSUE_EVENTS and not untrusted_branch(branch))
+        if trusted or issue_scoped:
             token = runtime.new_id() + runtime.new_id()
         await runtime.d1_run(
             "UPDATE repo_action_jobs SET status='leased',lease_id=?,runner=?,"
@@ -464,6 +473,8 @@ async def lease(runtime, runner, requested, maximum):
             if push_grant:
                 job["pushGrant"] = push_grant
                 job["pushRef"] = "refs/heads/" + branch
+        elif token:
+            job.update({"jobToken": token, "apiUrl": runtime.public_origin()})
         jobs.append(job)
     return jobs
 
