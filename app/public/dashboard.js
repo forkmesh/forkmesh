@@ -16262,6 +16262,26 @@
       + ' class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" />';
   }
 
+  // A bare http(s) URL in already-escaped text. It stops at whitespace, at the
+  // parking and hard-break sentinels and at an escaped <, >, " or ' - those
+  // never belong to a URL written in prose.
+  const MD_BARE_URL =
+    /(^|[^A-Za-z0-9/])(https?:\/\/(?:(?!&(?:lt|gt|quot|#039);)[^\s\u0000\u0001<>"'])+)/gi;
+
+  // GFM's extended-autolink trimming: trailing sentence punctuation and an
+  // entity reference ("&amp;") are not part of the URL, and a closing
+  // parenthesis is only kept while it balances one opened inside the URL.
+  function mdTrimAutolink(url) {
+    let end = url;
+    for (;;) {
+      if (/[.,:;!?*_~]$/.test(end) && !/&[a-z0-9#]+;$/i.test(end)) end = end.slice(0, -1);
+      else if (/&[a-z0-9#]+;$/i.test(end)) end = end.replace(/&[a-z0-9#]+;$/i, "");
+      else if (end.endsWith(")") && (end.match(/\)/g) || []).length > (end.match(/\(/g) || []).length) {
+        end = end.slice(0, -1);
+      } else return end;
+    }
+  }
+
   // Operates on already-`escapeHtml`d text so the captured groups (urls,
   // labels, code) are safe to splice back into HTML without re-escaping.
   //
@@ -16285,6 +16305,17 @@
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label, url) =>
         park(mdLinkHtml(renderMarkdownInline(label, context, false, parked), url, context)))
       .replace(/`([^`]+)`/g, (_, code) => park(`<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">${code}</code>`))
+      // Autolinks run once links, images and code spans are parked, so a URL
+      // that is already a link target or sits in code is not linked twice.
+      // Inside a link label (linkRecordReferences false) they stay text, as an
+      // anchor cannot nest in another.
+      .replace(/&lt;(https?:\/\/(?:(?!&[lg]t;)[^\s\u0000\u0001<>"'])+)&gt;/gi, (whole, url) =>
+        (linkRecordReferences ? park(mdLinkHtml(url, url, context)) : whole))
+      .replace(MD_BARE_URL, (whole, prefix, candidate) => {
+        if (!linkRecordReferences) return whole;
+        const url = mdTrimAutolink(candidate);
+        return `${prefix}${park(mdLinkHtml(url, url, context))}${candidate.slice(url.length)}`;
+      })
       .replace(/(^|[^\w&])((?:pull[-\s]+request|pull|pr)[-\s]*#([1-9]\d*))\b/gi,
         (whole, prefix, label, number) => recordReference(whole, prefix, label, "pulls", number))
       .replace(/(^|[^\w&])(issue[-\s]*#([1-9]\d*))\b/gi,
