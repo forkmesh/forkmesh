@@ -19,6 +19,7 @@ private class FakeRouter : OpenWrtTransport {
     var fstabMissing = false
     var ksmbdMissing = false
     var shareAclFromLogin = 0
+    var configListHidesKsmbd = false
     val installed = mutableListOf<String>()
     val calls = mutableListOf<List<Any?>>()
 
@@ -58,7 +59,7 @@ private class FakeRouter : OpenWrtTransport {
             return reply(listOf(0L))
         }
         if (objectName == "uci" && method == "configs") {
-            return reply(listOf(0L, mapOf("configs" to listOf("network", "fstab") + if (logins >= shareAclFromLogin && !ksmbdMissing) listOf("ksmbd") else emptyList())))
+            return reply(listOf(0L, mapOf("configs" to listOf("network", "fstab") + if (logins >= shareAclFromLogin && !ksmbdMissing && !configListHidesKsmbd) listOf("ksmbd") else emptyList())))
         }
         if (objectName == "uci" && method == "get") {
             val values: Map<String, Any?> = when (args.str("config")) {
@@ -363,6 +364,22 @@ class OpenWrtTest {
         assertEq("/etc/config/ksmbd", written?.get("path"))
         assertEq(384L, (written?.get("mode") as? Number)?.toLong())
         assertEq("ksmbd", client.loadSnapshot(now = 0).shareConfig)
+    }
+
+    fun testShareConfigMissingFromConfigListIsReadDirectly() {
+        assertEq(listOf("ksmbd"), OpenWrtModel.shareConfigCandidates(listOf("luci-app-ksmbd")))
+        assertEq(listOf("samba4"), OpenWrtModel.shareConfigCandidates(listOf("samba4-server")))
+        assertEq(emptyList<String>(), OpenWrtModel.shareConfigCandidates(listOf("luci")))
+        val router = FakeRouter()
+        router.configListHidesKsmbd = true
+        router.installed += listOf("ksmbd-server", "luci-app-ksmbd")
+        val client = OpenWrtClient(router, "http://192.168.1.1")
+        expect(client.signIn("root", "secret").ok)
+        val snapshot = client.loadSnapshot(now = 0)
+        expect(snapshot.configNames.isNotEmpty())
+        assertEq("ksmbd", snapshot.shareConfig)
+        assertEq("Media", snapshot.shares.firstOrNull()?.name)
+        expect(!OpenWrtModel.needsShareSessionRenewal(snapshot))
     }
 
     fun testClientSignInRenewalAndExec() {

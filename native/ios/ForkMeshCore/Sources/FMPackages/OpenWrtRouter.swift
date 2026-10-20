@@ -130,6 +130,15 @@ extension OpenWrtClient {
         let packages = await listPackages(preferred: packageTool)
         snapshot.packageTool = packages.tool
         snapshot.packages = packages.packages
+        if snapshot.shareConfig.isEmpty {
+            for config in OpenWrtModel.shareConfigCandidates(packages.packages.map(\.name)) {
+                let result = await call("uci", "get", ["config": .string(config)])
+                guard result.ok else { continue }
+                snapshot.configs[config] = result.data.obj("values")
+                snapshot.configNames = (snapshot.configNames + [config]).sorted()
+                break
+            }
+        }
         return snapshot
     }
 
