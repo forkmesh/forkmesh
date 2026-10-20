@@ -1177,7 +1177,7 @@ _URL_EXPORT_NAMES = (
     "REPO_PROVIDER_MIRROR_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_VIEW_RE", "REPO_VIEWS_RE",
-    "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE",
+    "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
     globals()[_url_export_name] = _urls.export(_url_export_name)
@@ -13498,7 +13498,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "5ffdfea001d97bb56881a9bbee7a9d9fe108b171f3fc0b48e889c5e07041914a"
+    "ea85061f75e5602fc9c86c7d07a8c15583c2cdc95ead6a0463968bfd0031400c"
 )
 
 
@@ -18775,6 +18775,7 @@ _REPO_SCOPED_TABLES = (
     ("inbox_drain_log", "repo_bi"),
     ("issue_seq", "repo_bi"),
     ("private_mirror_routes", "repo_bi"),
+    ("pull_batch_sent", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
@@ -49503,6 +49504,8 @@ def _https_mirror_request_query(url, operation, release_sha=""):
             output["path"] = query
     elif operation in ("compare", "merge-preview"):
         keys = ("base", "head")
+        if operation == "compare":
+            keys += ("cherry", "limit")
         if operation == "merge-preview":
             keys += ("rules", "pull", "orgRules")
         for key in keys:

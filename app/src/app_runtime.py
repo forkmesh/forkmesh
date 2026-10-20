@@ -3657,6 +3657,21 @@ class Default:
                 await _public_repo_owner(
                     self.env, request, owner, repo, REPO_REMOTE_FORKS_RE))
 
+        pull_batch_match = REPO_PULL_BATCH_RE.match(url.path)
+        if pull_batch_match:
+            owner = safe_segment(pull_batch_match.group(1))
+            repo = safe_segment(pull_batch_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            import pull_batch
+            import remote_forks
+            remote_forks._bind_runtime(globals())
+            pull_batch._bind_runtime(globals())
+            return await pull_batch.handler(
+                self.env, request, owner, repo,
+                await _public_repo_owner(
+                    self.env, request, owner, repo, REPO_PULL_BATCH_RE))
+
         subscribe_match = REPO_SUBSCRIBE_RE.match(url.path)
         if subscribe_match:
             owner = safe_segment(subscribe_match.group(1))

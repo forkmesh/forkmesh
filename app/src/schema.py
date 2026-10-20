@@ -4904,6 +4904,14 @@ SCHEMA_STATEMENTS = [
         created_at INTEGER NOT NULL,
         data TEXT NOT NULL,
         PRIMARY KEY (repo_bi, url_bi))""",
+    """CREATE TABLE IF NOT EXISTS pull_batch_sent (
+        repo_bi TEXT NOT NULL,
+        target_bi TEXT NOT NULL,
+        branch TEXT NOT NULL,
+        head TEXT NOT NULL,
+        number INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (repo_bi, target_bi, branch, head))""",
     """CREATE TABLE IF NOT EXISTS instance_settings (
         k TEXT PRIMARY KEY,
         doc TEXT NOT NULL,
