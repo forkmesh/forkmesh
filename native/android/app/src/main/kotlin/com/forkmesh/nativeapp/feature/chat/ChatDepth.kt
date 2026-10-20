@@ -61,10 +61,12 @@ object ChatDepth {
     private val revisionState = MutableStateFlow(0)
     private val noticeFlow = MutableSharedFlow<String>(extraBufferCapacity = 8)
     private val pendingIssueState = MutableStateFlow<String?>(null)
+    private val revealState = MutableStateFlow(0)
 
     val revision: StateFlow<Int> = revisionState.asStateFlow()
     val notices: SharedFlow<String> = noticeFlow.asSharedFlow()
     val pendingIssue: StateFlow<String?> = pendingIssueState.asStateFlow()
+    val revealRequests: StateFlow<Int> = revealState.asStateFlow()
 
     @Volatile
     var hub: ChatHub? = null
@@ -158,6 +160,7 @@ object ChatDepth {
             if (conversation.isNotEmpty()) prefs?.putString(lastKey, conversation)
         }
         chat.onNotice = { post(it) }
+        chat.onReveal = { revealState.value = revealState.value + 1 }
         chat.selfName = { auth?.session?.value?.nodeName ?: room.persona.name }
         chat.extras.onChange = {
             bump()
@@ -166,9 +169,12 @@ object ChatDepth {
         auth?.let { chat.setRetention(it.chatRetention.value) }
         hub = chat
 
-        val historyScope = { ChatHistoryCodec.scopeName(settings.core.serverUrl, settings.core.room) }
+        val historyScope = {
+            ChatHistoryCodec.projectScope(scopeInfo.projectId.ifEmpty { settings.core.serverUrl }, settings.core.room)
+        }
+        val formerScopes = { ChatHistoryCodec.formerScopes(settings.core.serverUrl, settings.core.room) }
         val historyDir = File(AppFiles.projectSupportDir(app, scopeInfo), "chat-history")
-        chat.attachHistory(ChatHistoryStore(historyDir), historyScope)
+        chat.attachHistory(ChatHistoryStore(historyDir), formerScopes, historyScope)
         room.addListener { scheduleSave() }
         if (prefs != null) groups = ChannelGroupsStore.forProject(prefs, scopeInfo.projectId, settings.core.serverUrl, settings.core.room)
 
@@ -183,7 +189,10 @@ object ChatDepth {
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
                 account = { room.persona.ownerUser },
             )
-            service.addListener { bump() }
+            service.addListener {
+                bump()
+                scheduleSave()
+            }
             office = service
             chat.office = service
             val directService = DirectMessageService(
@@ -195,7 +204,10 @@ object ChatDepth {
                 displayName = { auth?.session?.value?.nodeName ?: room.persona.name },
                 account = { room.persona.ownerUser },
             )
-            directService.addListener { bump() }
+            directService.addListener {
+                bump()
+                scheduleSave()
+            }
             directService.mesh = object : DirectMeshLinks {
                 private fun room(): LocalMeshRoom? = Services.get<LocalMeshRoom>()
 
@@ -211,6 +223,7 @@ object ChatDepth {
             }
             direct = directService
             chat.direct = directService
+            DirectLiveFeature.install(app, chat, directService)
             chat.calls = DirectCallFeature.install(
                 context = app,
                 direct = directService,
@@ -247,6 +260,7 @@ object ChatDepth {
         ProjectLifecycle.onClose {
             withContext(Dispatchers.IO) {
                 chat.calls?.let { DirectCallFeature.uninstall(it, direct) }
+                DirectLiveFeature.uninstall(chat)
                 runCatching { chat.saveHistory() }
                 office?.closeAll()
                 direct?.closeAll()
@@ -274,7 +288,16 @@ object ChatDepth {
                     withContext(Dispatchers.IO) {
                         if (changed) apps?.reset()
                         office?.let { if (token.isEmpty()) it.closeAll() else it.refresh() }
-                        direct?.let { if (token.isEmpty()) it.closeAll() else it.refresh() }
+                        direct?.let {
+                            if (token.isEmpty()) {
+                                chat.directSessionChanged("")
+                                chat.live?.clear()
+                                it.clear()
+                            } else {
+                                chat.directSessionChanged(auth.session.value?.nodeName.orEmpty())
+                                it.refresh()
+                            }
+                        }
                         if (token.isEmpty()) chat.readMarks?.clear() else chat.applyReadMarks()
                     }
                 }

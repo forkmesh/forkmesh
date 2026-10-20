@@ -45,6 +45,7 @@ object ComposerFeature {
     const val DEVICE_NAME = "this phone"
 
     fun install(app: App) {
+        CaptureHold.install(app)
         quickState = null
         draftStore = null
         repoContextState.value = null
@@ -63,7 +64,9 @@ object ComposerFeature {
         get() = draftStore ?: projectPrefs()?.let { PromptDraftStore(it) }?.also { draftStore = it }
 
     internal fun quick(): QuickSendState =
-        quickState ?: QuickSendState(QuickAgentLauncher(AppQuickLaunchBackend, projectPrefs(), DEVICE_NAME)).also { quickState = it }
+        quickState ?: QuickSendState(
+            QuickAgentLauncher(AppQuickLaunchBackend, projectPrefs(), DEVICE_NAME).also { it.actions = AppPromptActions },
+        ).also { quickState = it }
 
     private val sharedAttachmentsState = MutableStateFlow<List<com.forkmesh.nativeapp.agents.PromptAttachment>>(emptyList())
 

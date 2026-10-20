@@ -465,13 +465,8 @@ object ChatFeature {
                 runCatching { relay?.switchConversation(name) }
                 return@launch
             }
-            val target = chat.resolve(name)
-            if (target != null) {
-                chat.select(target)
-            } else {
-                if (name.startsWith("@")) ChatDepth.post("${name.drop(1)} is not online right now.")
-                chat.select(name)
-            }
+            if (chat.resolve(name) == null && name.startsWith("@")) ChatDepth.post("${name.drop(1)} is not online right now.")
+            chat.switchConversation(name)
         }
     }
 

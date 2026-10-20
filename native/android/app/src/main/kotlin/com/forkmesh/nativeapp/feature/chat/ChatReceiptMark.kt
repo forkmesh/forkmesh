@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
@@ -23,11 +24,17 @@ import kotlin.math.PI
 import kotlin.math.min
 
 @Composable
-fun ChatReceiptMark(receipt: ChatReceipt, modifier: Modifier = Modifier) {
+fun ChatReceiptMark(
+    receipt: ChatReceipt,
+    modifier: Modifier = Modifier,
+    mutedColor: Color? = null,
+    accentColor: Color? = null,
+    backgroundColor: Color? = null,
+) {
     val colors = Fm.colors
-    val muted = colors.textTertiary
-    val accent = colors.accent
-    val background = colors.bgBase
+    val muted = mutedColor ?: colors.textTertiary
+    val accent = accentColor ?: colors.accent
+    val background = backgroundColor ?: colors.bgBase
     Canvas(modifier.size(17.dp, 11.dp).semantics { contentDescription = receipt.label }) {
         val s = min(size.width / 22f, size.height / 14f)
         val ox = (size.width - 22f * s) / 2f
