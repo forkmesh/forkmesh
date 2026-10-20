@@ -89,6 +89,24 @@ def test_only_an_instance_with_a_valid_path_moves_the_console():
     assert admin_path.console_base(instance()) == PRIVATE
 
 
+def test_invalid_instance_paths_never_reach_the_console_dispatcher():
+    tree = ast.parse((SRC / "entry.py").read_text(encoding="utf-8"))
+    function = next(node for node in tree.body
+                    if isinstance(node, ast.FunctionDef)
+                    and node.name == "_admin_path")
+    namespace = {
+        "instance_features": SimpleNamespace(
+            branded=lambda env: bool(getattr(env, "INSTANCE_NAME", ""))),
+        "_admin_path_rules": admin_path,
+    }
+    exec(compile(ast.Module(body=[function], type_ignores=[]), "entry.py",
+                 "exec"), namespace)
+    dispatcher_path = namespace["_admin_path"]
+    assert dispatcher_path(instance("/admin")) == ""
+    assert dispatcher_path(instance(PRIVATE)) == PRIVATE[1:]
+    assert dispatcher_path(core()) == "ops-console"
+
+
 def test_the_private_path_hides_every_admin_address():
     env = instance()
     for path in ("/admin", "/admin/", "/admin/theme", "/admin/acquisition",

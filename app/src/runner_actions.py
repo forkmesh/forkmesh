@@ -836,7 +836,7 @@ async def run_log(runtime, owner, repo, run_id):
         return {"log": "", "updatedAt": 0}
     record = await _open(runtime, row.get("data"))
     masks = (await secrets_for(runtime, owner, repo, public)).values()
-    return {"log": mask(record.get("log"), masks),
+    return {"log": _show_runner(runtime, mask(record.get("log"), masks)),
             "updatedAt": int(row.get("updated_at") or 0)}
 
 
@@ -858,7 +858,7 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
     for row in rows:
         node = node or str(row.get("runner") or "")
         event = str(row.get("event") or "push")
-        actor = _line(row.get("actor"), 64)
+        actor = _shown_actor(runtime, _line(row.get("actor"), 64))
         record = await _open(runtime, row.get("data"))
         stored = record.get("runs")
         if isinstance(stored, list) and stored:
@@ -867,6 +867,8 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
                     item = {"event": event, "actor": actor, **run}
                     if masks and item.get("logTail"):
                         item["logTail"] = mask(item["logTail"], masks)
+                    if item.get("logTail"):
+                        item["logTail"] = _show_runner(runtime, item["logTail"])
                     runs.append(item)
         elif str(row.get("status") or "") in (
                 ("queued",) + ACTIVE_STATUSES + tuple(ENDED_STATUSES)):
@@ -907,15 +909,42 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
     }
 
 
+def _shown_actor(runtime, actor):
+    node = runtime.setting("INSTANCE_FLAGSHIP_NODE")
+    name = " ".join(runtime.setting("INSTANCE_NAME").split())[:60]
+    if actor and node and name and actor.lower() == node.lower():
+        return name
+    return actor
+
+
 def _site_host(runtime):
     origin = runtime.runner_app_url() if hasattr(runtime, "runner_app_url") else ""
     host = origin.split("://", 1)[-1].split("/", 1)[0]
     return host if re.fullmatch(r"[A-Za-z0-9.-]{1,253}(:[0-9]{1,5})?", host) else ""
 
 
-def _local_runner(runtime, node):
+def _instance_runners(runtime):
     own = runtime.setting("ACTIONS_INSTANCE_RUNNER").lower()
-    return bool(own) and (not node or node.lower() == own)
+    if not own:
+        return ()
+    node = runtime.setting("INSTANCE_FLAGSHIP_NODE").lower()
+    legacy = node + "-runner" if node else ""
+    return tuple(name for name in (own, legacy) if name)
+
+
+def _show_runner(runtime, text):
+    host = _site_host(runtime)
+    if not text or not host:
+        return text
+    text = str(text)
+    for name in _instance_runners(runtime):
+        text = text.replace("(runner %s;" % name, "(runner %s;" % host)
+    return text
+
+
+def _local_runner(runtime, node):
+    names = _instance_runners(runtime)
+    return bool(names) and (not node or node.lower() in names)
 
 
 def public_summary(full):

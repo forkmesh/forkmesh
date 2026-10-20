@@ -181,7 +181,7 @@ def test_brand_script_credits_forkmesh_and_hides_switched_off_links():
     assert "data-instance-powered-by" in BRAND_JS
     assert 'fetch("/api/instance"' in BRAND_JS
     assert "MutationObserver" in BRAND_JS
-    assert "ForkMesh(?! [Dd]esktop)" in BRAND_JS
+    assert "ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)" in BRAND_JS
 
 
 def test_brand_script_leaves_repository_and_chat_content_alone():

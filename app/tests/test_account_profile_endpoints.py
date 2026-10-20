@@ -435,7 +435,8 @@ def test_public_profile_page_injects_verified_link_tags():
     assert '<link rel=\\"me\\" href=\\"%s\\">' in body
     assert 'application/activity+json' in body
     assert '/ap/users/%s' in body
-    assert '<title>@%s · ForkMesh</title>' in body
+    assert '"<title>@%s · %s</title>" % (' in body
+    assert "instance_features.display_name(self.env)" in body
     assert "origin = _ap_origin(self.env)" in body
     # Eligibility mirrors the fediverse actor: active + not private (node
     # accounts included, matching _ap_user_federates).

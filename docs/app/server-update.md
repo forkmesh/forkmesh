@@ -120,8 +120,12 @@ or organization. `app/src/repo_short_urls.py` holds the rules.
 - The repository page is served at the short address with two meta tags
   (`forkmesh-repo-short`, `forkmesh-repo-owner`). `repoRouteParts` in
   `02-helpers.js` maps the short path back to owner, repository, tab and
-  folder. Links inside the page keep the full address unless the owner is
-  canonical (below). Short-address pages
+  folder. The tags go right after `<head>` so the early-read script
+  (`partials/repo-early-reads.html`), which runs inside the head, maps the
+  short path the same way; before October 2026 they sat before `</head>` and
+  every short-address tab page fired two 404 reads for
+  `/api/repo/<repo>/<tab>/...`. Links inside the page keep the full address
+  unless the owner is canonical (below). Short-address pages
   skip the shared social edge cache because the page differs.
 - The setting is cached for 30 seconds per process
   (`repo_short_urls.cached`); a save clears the local cache.

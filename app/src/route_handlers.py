@@ -931,12 +931,16 @@ async def _mail_token_ok(env, send_id, signature):
     return hmac.compare_digest(expected, str(signature or ""))
 
 
-def _mail_page(text, status=200):
-    return Response(
+def _mail_page(text, status=200, env=None):
+    page = (
         "<!doctype html><meta charset=utf-8><meta name=viewport "
         "content='width=device-width'><title>ForkMesh</title>"
         "<body style='font:16px system-ui;margin:40px auto;max-width:520px'>"
-        + text + "</body>", status=status,
+        + text + "</body>")
+    if env is not None:
+        page = instance_features.rename_html(env, page)
+    return Response(
+        page, status=status,
         headers={"content-type": "text/html; charset=utf-8",
                  "cache-control": "no-store", "x-robots-tag": "noindex"})
 
@@ -992,7 +996,7 @@ async def mail_tracking_handler(env, request, action, value):
     if not await _mail_token_ok(env, send_id, signature):
         if action == "l":
             return _mail_logo_response()
-        return _mail_page("This link is not valid.", 404)
+        return _mail_page("This link is not valid.", 404, env)
     now = int(Date.now())
     minute = str(now // 60000)
     method = method_name(request)
@@ -1014,7 +1018,7 @@ async def mail_tracking_handler(env, request, action, value):
             env, "mail-click:%s:%s" % (send_id, target)))[:24]
         if not target or not hmac.compare_digest(
                 expected, str(url.searchParams.get("s") or "")):
-            return _mail_page("This link is not valid.", 404)
+            return _mail_page("This link is not valid.", 404, env)
         await record_core_mail_event(env, {
             "event_id": "click:%s:%s" % (send_id, minute), "event": "click",
             "send_id": send_id}, now)
@@ -1025,12 +1029,12 @@ async def mail_tracking_handler(env, request, action, value):
         await record_core_mail_event(env, {
             "event_id": "unsubscribe:" + send_id, "event": "unsubscribe",
             "send_id": send_id}, now)
-        return _mail_page("You are unsubscribed from these ForkMesh emails.")
+        return _mail_page("You are unsubscribed from these ForkMesh emails.", env=env)
     if action == "u":
         return _mail_page(
             "<form method=post><p>Stop these ForkMesh emails?</p>"
-            "<button type=submit>Unsubscribe</button></form>")
-    return _mail_page("Not found.", 404)
+            "<button type=submit>Unsubscribe</button></form>", env=env)
+    return _mail_page("Not found.", 404, env)
 
 
 async def mailtrap_webhook_handler(env, request):
@@ -2688,6 +2692,7 @@ async def org_agent_bots_handler(
             f"Saved for {shown_node}. It will run after ForkMesh reconnects "
             "and the required security preflight approves it."
         )
+        queue_message = instance_features.rename(env, queue_message)
     else:
         queue_message = (
             f"Sent to {shown_node}. It will start as soon as the node claims "

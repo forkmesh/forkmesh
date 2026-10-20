@@ -711,7 +711,26 @@ def test_actions_install_job_tools_and_configure_the_app():
     assert 'echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"' in writer
     assert 'echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"' in writer
     assert '"plugins", "actions", "poweredBy", "platformUrl"]' in writer
-    assert 'RUNNER_NAME="$NODE_NAME-runner"' in TEXT
+    assert 'RUNNER_NAME=""' in TEXT
+    assert "  resolve_runner_name\n" in writer
+    assert '[ -n "$RUNNER_NAME" ] || resolve_runner_name' in function("setup_actions_runner")
+
+
+@pytest.mark.parametrize("kept, owner, expected", [
+    ("", "acme", "acme-runner"),
+    ("forkmesh-runner", "acme", "forkmesh-runner"),
+    ("Bad Name", "acme", "acme-runner"),
+    ("", "a" * 60, "instance-runner"),
+])
+def test_the_instance_runner_is_named_after_the_owner_and_keeps_its_name(
+        tmp_path, kept, owner, expected):
+    app_env = tmp_path / "app.env"
+    app_env.write_text("ACTIONS_INSTANCE_RUNNER=%s\n" % kept if kept else "")
+    result = run_functions(
+        tmp_path, ["env_value", "resolve_runner_name"],
+        "APP_ENV=%s\nCFG_ownerName=%s\nresolve_runner_name\necho \"$RUNNER_NAME\"\n"
+        % (shlex.quote(str(app_env)), shlex.quote(owner)))
+    assert result.stdout.strip().splitlines()[-1] == expected
 
 
 def test_the_actions_runner_is_preregistered_after_the_git_node():
@@ -800,6 +819,25 @@ def test_the_installer_writes_and_keeps_the_turnstile_hostname():
     writer = function("write_settings")
     assert "grep -qE '^TURNSTILE_HOSTNAMES=.' \"$APP_ENV\"" in writer
     assert 'echo "TURNSTILE_HOSTNAMES=$DOMAIN"' in writer
+
+
+def test_platform_commits_carry_the_instance_name_and_a_noreply_address():
+    assert 'Environment="FORKMESH_COMMIT_NAME=$CFG_projectName"' in TEXT
+    assert "Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN" in TEXT
+    identity = function("write_runner_identity")
+    assert '/etc/systemd/system/$RUNNER_UNIT.d' in identity
+    assert 'FORKMESH_COMMIT_EMAIL=noreply@%s' in identity
+    assert "  write_runner_identity\n" in function("setup_actions_runner")
+    assert 'rm -f "/etc/systemd/system/forkmesh-runner@$RUNNER_OWNER.service.d/identity.conf"' in TEXT
+    go = (REPO / "server" / "commit_identity.go").read_text(encoding="utf-8")
+    assert 'os.Getenv("FORKMESH_COMMIT_NAME")' in go
+    assert 'os.Getenv("FORKMESH_COMMIT_EMAIL")' in go
+    for name in ("merge.go", "intake.go", "runner.go", "agent_workspace.go",
+                 "issue_reconcile.go", "pull_metadata_refs.go"):
+        source = (REPO / "server" / name).read_text(encoding="utf-8")
+        assert '+ "@users.noreply.forkmesh.com"' not in source, name
+        assert '+"@users.noreply.forkmesh.com"' not in source, name
+
 
 def test_the_platform_mirror_source_is_an_optional_setting(tmp_path):
     found = values(parse(tmp_path, settings()).stdout)
@@ -914,7 +952,8 @@ def _write_settings(tmp_path, mode, new, before):
         "DIRECTORY_URL=https://directory.example.org",
         "write_settings", ""])
     result = run_functions(
-        tmp_path, ["env_value", "new_admin_path", "choose_admin_path", "write_settings"], body)
+        tmp_path, ["env_value", "resolve_runner_name", "new_admin_path",
+                   "choose_admin_path", "write_settings"], body)
     assert result.returncode == 0, result.stderr + result.stdout
     return app_env.read_text(), (etc / "instance.json").read_text()
 

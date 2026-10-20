@@ -55,7 +55,7 @@ def _e(value):
     return html.escape(str(value or ""), quote=True)
 
 
-def page(name, title, current, body):
+def page(name, title, current, body, powered_by=True):
     links = (("/dashboard", "Dashboard"), ("/docs", "Docs"),
              ("/desktop", "Desktop app"))
     nav = "".join(
@@ -71,25 +71,24 @@ def page(name, title, current, body):
         "<style>%s</style></head><body>"
         '<header><a class="brand" href="/dashboard">'
         '<img src="/assets/logo.svg" alt="">%s</a><nav>%s</nav></header>'
-        "<main>%s</main>"
-        '<footer>Powered by <a href="https://forkmesh.com/">ForkMesh</a>'
-        "</footer></body></html>"
-    ) % (_e(title), _e(name), _e(name), STYLE, _e(name), nav, body)
+        "<main>%s</main>%s</body></html>"
+    ) % (_e(title), _e(name), _e(name), STYLE, _e(name), nav, body,
+         '<footer>Powered by <a href="https://forkmesh.com/">ForkMesh</a></footer>'
+         if powered_by else "")
 
 
 def desktop_body(name, origin):
     return (
-        "<h1>Get the ForkMesh desktop app</h1>"
-        '<p class="lead">%(name)s runs on ForkMesh, so the ForkMesh desktop '
-        "app works with it. Download it from forkmesh.com, then add "
-        "%(name)s as an instance.</p>"
+        "<h1>Get the desktop app</h1>"
+        '<p class="lead">The desktop app works with %(name)s. Download it, '
+        "then add %(name)s as an instance.</p>"
         "<h2>1. Download and install</h2>"
         "<p>On Linux or macOS, run this in a terminal:</p>"
         "<pre><code>%(install)s</code></pre>"
         "<p>Or pick an installer for your system: a Windows setup program, a "
         "macOS disk image (Apple silicon or Intel) or a Linux AppImage. Every "
         "release is signed and listed on "
-        '<a href="%(downloads)s" rel="noopener">forkmesh.com/desktop</a>.</p>'
+        '<a href="%(downloads)s" rel="noopener">the download page</a>.</p>'
         '<div class="cards">'
         '<a class="card" href="%(downloads)s" rel="noopener">'
         "<strong>Windows</strong><span>Setup program</span></a>"
@@ -211,13 +210,13 @@ def docs_body(name, origin):
         "request is a signed patch, so the owner can review it even while "
         "your fork is offline.</p>"
         '<h2 id="other-instances">Forks on other instances</h2>'
-        "<p>The same project can live on more than one ForkMesh instance, for "
-        "example here and on forkmesh.com. Link them, and you can send pull "
+        "<p>The same project can live on more than one instance, for "
+        "example here and on another server. Link them, and you can send pull "
         "requests from one to the other:</p>"
         "<ol>"
         "<li>On your repository, open the <strong>Fork</strong> menu and, under "
         "<strong>Forks on other instances</strong>, enter the other copy's "
-        "address, such as <code>https://forkmesh.com/<em>owner</em>/"
+        "address, such as <code>https://git.example.org/<em>owner</em>/"
         "<em>repository</em></code>, and save it.</li>"
         "<li>Choose <strong>New pull request</strong>. In "
         "<strong>Send to</strong>, pick the saved fork, then choose the base "
@@ -234,22 +233,23 @@ def docs_body(name, origin):
         "issue or pull request with <code>#number</code>.</p>"
         '<h2 id="desktop">The desktop app</h2>'
         "<p>Everything above works with plain <code>git</code>. If you prefer a "
-        "desktop app, the ForkMesh desktop app works with %(name)s: "
+        "desktop app, the desktop app works with %(name)s: "
         '<a href="/desktop">download it and connect it</a>.</p>'
     ) % {"name": _e(name), "origin": _e(origin)}
 
 
-def desktop_page(name, origin):
-    return page(name, "Desktop app", "/desktop", desktop_body(name, origin))
+def desktop_page(name, origin, powered_by=True):
+    return page(name, "Desktop app", "/desktop", desktop_body(name, origin),
+                powered_by)
 
 
-def docs_page(name, origin):
-    return page(name, "Docs", "/docs", docs_body(name, origin))
+def docs_page(name, origin, powered_by=True):
+    return page(name, "Docs", "/docs", docs_body(name, origin), powered_by)
 
 
-def page_for(path, name, origin):
+def page_for(path, name, origin, powered_by=True):
     if path in DESKTOP_PATHS:
-        return desktop_page(name, origin)
+        return desktop_page(name, origin, powered_by)
     if path in DOCS_PATHS:
-        return docs_page(name, origin)
+        return docs_page(name, origin, powered_by)
     return ""

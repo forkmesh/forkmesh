@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["calendar"] = (core) => {
-  const { $, $$, escapeHtml, fetchRepoJson, formatCount, groupDisplayOwner, groupRepositories, loadingHtml, mergeGroupsByPublicAddress, repoDataVersion, repoIsLive, repoLiveUrl, sourceOfTruth, state } = core;
+  const { $, $$, escapeHtml, fetchRepoJson, formatCount, groupDisplayOwner, groupRepositories, loadingHtml, mergeGroupsByPublicAddress, platformName, repoDataVersion, repoIsLive, repoLiveUrl, sourceOfTruth, state } = core;
   // ---------------------------------------------------------------------------
   // Calendar page. Private events come from the calendar API; read-only Git
   // activity is fetched directly from each live repository mirror.
@@ -677,7 +677,7 @@
       input.setAttribute("aria-expanded", "false");
       return;
     }
-    list.innerHTML = matches.map((candidate, index) => `<button type="button" role="option" data-calendar-attendee-option="${escapeHtml(candidate.name)}" data-calendar-attendee-index="${index}" class="fm-menu-item focus:bg-secondary"><span class="min-w-0 truncate">@${escapeHtml(candidate.name)}</span><span class="fm-menu-hint">${candidate.organization ? escapeHtml(candidate.organization) + " member" : "ForkMesh user"}</span></button>`).join("");
+    list.innerHTML = matches.map((candidate, index) => `<button type="button" role="option" data-calendar-attendee-option="${escapeHtml(candidate.name)}" data-calendar-attendee-index="${index}" class="fm-menu-item focus:bg-secondary"><span class="min-w-0 truncate">@${escapeHtml(candidate.name)}</span><span class="fm-menu-hint">${candidate.organization ? escapeHtml(candidate.organization) + " member" : `${escapeHtml(platformName())} user`}</span></button>`).join("");
     list.hidden = false;
     input.setAttribute("aria-expanded", "true");
   }

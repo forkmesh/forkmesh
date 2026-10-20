@@ -82,12 +82,12 @@
         <div class="fm-spotlight-search">
           <i data-lucide="search" aria-hidden="true"></i>
           <label for="commandPaletteInput" class="sr-only">Filter commands</label>
-          <input id="commandPaletteInput" data-command-palette-input type="search" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="commandPaletteResults" aria-expanded="true" placeholder="Search ForkMesh" />
+          <input id="commandPaletteInput" data-command-palette-input type="search" autocomplete="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="commandPaletteResults" aria-expanded="true" placeholder="Search ${escapeHtml(platformName())}" />
           <kbd>esc</kbd>
         </div>
         <div id="commandPaletteResults" data-command-palette-results role="listbox" aria-label="Commands" class="fm-spotlight-results"></div>
         <div class="fm-spotlight-footer" aria-hidden="true">
-          <span class="fm-spotlight-brand"><i data-lucide="command"></i>ForkMesh</span>
+          <span class="fm-spotlight-brand"><i data-lucide="command"></i>${escapeHtml(platformName())}</span>
           <span class="fm-spotlight-keys"><span><kbd>↵</kbd>Open</span><span><kbd>↑</kbd><kbd>↓</kbd>Move</span><span><kbd>esc</kbd>Close</span></span>
         </div>
       </section>`;

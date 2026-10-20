@@ -4,6 +4,7 @@ import json
 import re
 from urllib.parse import parse_qsl, urlparse
 
+import instance_features
 import workflow_files as files
 import workflow_desktop as desktop
 import workflow_formats as formats
@@ -337,7 +338,8 @@ async def _credentials_for(env, owner_bi, workflow):
 
 async def _http(method, url, headers, body):
     init = {"method": method, "headers": dict(headers, **{
-        "User-Agent": USER_AGENT}), "redirect": "follow"}
+        "User-Agent": instance_features.user_agent(USER_AGENT, "workflows")}),
+        "redirect": "follow"}
     if body is not None:
         init["body"] = body
     try:
@@ -695,7 +697,8 @@ async def _import_url(url):
     try:
         response = await js_fetch_with_timeout(
             source, {"method": "GET", "redirect": "follow", "headers": {
-                "User-Agent": USER_AGENT, "Accept": "application/json"}},
+                "User-Agent": instance_features.user_agent(USER_AGENT, "workflows"),
+                "Accept": "application/json"}},
             IMPORT_TIMEOUT_SECONDS)
     except Exception:
         response = None

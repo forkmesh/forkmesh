@@ -672,7 +672,7 @@
       input.setAttribute("aria-expanded", "false");
       return;
     }
-    list.innerHTML = matches.map((candidate, index) => `<button type="button" role="option" data-calendar-attendee-option="${escapeHtml(candidate.name)}" data-calendar-attendee-index="${index}" class="fm-menu-item focus:bg-secondary"><span class="min-w-0 truncate">@${escapeHtml(candidate.name)}</span><span class="fm-menu-hint">${candidate.organization ? escapeHtml(candidate.organization) + " member" : "ForkMesh user"}</span></button>`).join("");
+    list.innerHTML = matches.map((candidate, index) => `<button type="button" role="option" data-calendar-attendee-option="${escapeHtml(candidate.name)}" data-calendar-attendee-index="${index}" class="fm-menu-item focus:bg-secondary"><span class="min-w-0 truncate">@${escapeHtml(candidate.name)}</span><span class="fm-menu-hint">${candidate.organization ? escapeHtml(candidate.organization) + " member" : `${escapeHtml(platformName())} user`}</span></button>`).join("");
     list.hidden = false;
     input.setAttribute("aria-expanded", "true");
   }

@@ -573,8 +573,8 @@ func (b *runnerBackend) prepare(ctx context.Context, work agentWork) (*agentSess
 	// The workdir is still the daemon's and untouched by any job here.
 	for _, args := range [][]string{
 		{"checkout", "--quiet", "-B", branch, start},
-		{"config", "user.name", b.node},
-		{"config", "user.email", b.node + "@users.noreply.forkmesh.com"},
+		{"config", "user.name", commitIdentityName(b.node)},
+		{"config", "user.email", commitIdentityEmail(b.node)},
 		{"remote", "set-url", "origin", cloneURL},
 	} {
 		if _, err := b.daemonGit(ctx, dir, "", "", false, args...); err != nil {

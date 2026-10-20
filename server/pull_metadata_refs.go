@@ -49,10 +49,10 @@ func materializePullMetadataCommit(ctx context.Context, gitDir string, number in
 		return "", "", fmt.Errorf("invalid pull metadata source")
 	}
 	if strings.TrimSpace(identityName) == "" {
-		identityName = "ForkMesh mirror"
+		identityName = commitIdentityName("ForkMesh mirror")
 	}
 	if strings.TrimSpace(identityEmail) == "" {
-		identityEmail = "mirror@users.noreply.forkmesh.com"
+		identityEmail = commitIdentityEmail("mirror")
 	}
 	pullPath := fmt.Sprintf(".forkmesh/pulls/%d", number)
 	pullTree := gitValue(ctx, gitDir, "rev-parse", aggregateTip+":"+pullPath)
@@ -332,7 +332,7 @@ func retireMergedPullBranches(ctx context.Context, gitDir, identityName string) 
 		keep := item.tip
 		if !pullRecordRetired(branchRecord) {
 			snapshot, branchTip, err := materializePullMetadataCommit(ctx, gitDir, item.number,
-				ledgerTip, identityName, identityName+"@users.noreply.forkmesh.com")
+				ledgerTip, commitIdentityName(identityName), commitIdentityEmail(identityName))
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("#%d: %v", item.number, err))
 				continue

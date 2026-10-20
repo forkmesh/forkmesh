@@ -456,7 +456,8 @@ def render_repo_card(info, now_s):
     # Description under the title (two lines max).
     description = str(info.get("description") or "").strip()
     if not description:
-        description = "A repository mirrored across the ForkMesh network."
+        description = "A repository mirrored across the %s network." % (
+            str(info.get("site") or "ForkMesh"))
     y = 96 + 7 * scale + 26
     for line in _wrap(description, 3, title_max_w, 2):
         canvas.text(pad, y, line, 3, _TEXT)

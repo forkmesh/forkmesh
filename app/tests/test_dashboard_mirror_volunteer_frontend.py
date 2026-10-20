@@ -115,6 +115,7 @@ def test_success_is_confirmed_on_the_re_rendered_card():
 
 def _steps_for(repository, node):
     script = (
+        "const desktopBrand = () => \"ForkMesh \";\n"
         "const escapeHtml = (v) => String(v).replace(/[&<>\"']/g, (c) => "
         "({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));\n"
         "%s\nconsole.log(JSON.stringify(externalMirrorHandoffSteps(%s, %s)));"

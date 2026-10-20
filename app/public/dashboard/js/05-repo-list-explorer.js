@@ -133,7 +133,7 @@
       /[^a-z-]/gi,
       "",
     ).slice(0, 20);
-    return `<span title="This repository has an active ForkMesh Terms of Service moderation flag${category ? `: ${escapeHtml(category)}` : ""}." class="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/60 bg-destructive/10 ${compact ? "px-1 py-0.5 text-[8px]" : "px-2 py-0.5 text-[10px]"} font-semibold text-destructive"><i data-lucide="flag" class="${compact ? "h-2.5 w-2.5" : "h-3 w-3"}"></i>${compact ? "ToS" : "Terms flag"}</span>`;
+    return `<span title="This repository has an active ${escapeHtml(platformName())} Terms of Service moderation flag${category ? `: ${escapeHtml(category)}` : ""}." class="inline-flex shrink-0 items-center gap-1 rounded-full border border-destructive/60 bg-destructive/10 ${compact ? "px-1 py-0.5 text-[8px]" : "px-2 py-0.5 text-[10px]"} font-semibold text-destructive"><i data-lucide="flag" class="${compact ? "h-2.5 w-2.5" : "h-3 w-3"}"></i>${compact ? "ToS" : "Terms flag"}</span>`;
   }
 
   function groupMatchesGlobalSearch(group, query) {
@@ -676,7 +676,7 @@
     const key = repoKey(origin);
     const label = repoLabelParts(groupDisplayName(group));
     const displayOwner = label.owner;
-    const servedNote = displayOwner && displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
+    const servedNote = !dashboardOnInstance() && displayOwner && displayOwner.toLowerCase() !== String(origin.owner || "").toLowerCase()
       ? ` (published from ${origin.owner || "a node"})`
       : "";
     const fullLabel = displayOwner ? `${displayOwner}/${origin.name || "repository"}` : String(origin.name || "repository");
@@ -713,7 +713,7 @@
                 ${statusText}
               </span>
               ${repositoryTermsBadge(origin)}
-              <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(key)}" class="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground hover:bg-background sm:inline-flex">
+              <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(`${displayOwner || ""}/${origin.name || ""}`)}" class="ml-auto hidden shrink-0 items-center gap-1 rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground hover:bg-background sm:inline-flex">
                 <i data-lucide="star" data-repo-star-icon class="h-3.5 w-3.5 text-muted-foreground"></i>
                 <span data-repo-star-label>Star</span>
                 <span data-repo-star-count class="font-mono text-muted-foreground">${formatCount(0)}</span>
@@ -818,7 +818,7 @@
     const license = String(repo.license || repo.licenseName || "").trim();
     const description = String(repo.description || "").trim();
     const displayOwner = repoLabelParts(groupDisplayName(group)).owner;
-    const publishedFrom = displayOwner && repo.owner &&
+    const publishedFrom = !dashboardOnInstance() && displayOwner && repo.owner &&
       displayOwner.toLowerCase() !== String(repo.owner).toLowerCase()
       ? `<p class="mb-1 text-xs text-muted-foreground">Published from ${escapeHtml(repo.owner)}/${escapeHtml(repo.name || "repository")}</p>`
       : "";
@@ -840,7 +840,7 @@
         <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">${meta}</div>
       </div>
       <div class="flex shrink-0 flex-col items-end justify-between gap-3">
-        <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(key)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-muted">
+        <button data-repo-star-button data-repo-key="${escapeHtml(key)}" type="button" aria-pressed="false" aria-label="Star ${escapeHtml(`${displayOwner || repo.owner || ""}/${repo.name || ""}`)}" class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-xs font-medium text-foreground hover:bg-muted">
           <i data-lucide="star" data-repo-star-icon class="h-4 w-4 text-muted-foreground"></i>
           <span data-repo-star-label>Star</span>
           <span data-repo-star-count class="hidden">${formatCount(0)}</span>
@@ -1128,7 +1128,7 @@
       <${tag}${hrefAttr} data-home-feed-kind="activity" class="flex min-w-0 items-start gap-2.5 rounded-md border border-border bg-background px-3 py-2.5 hover:bg-secondary">
         <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i>
         <span class="min-w-0 flex-1">
-          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "ForkMesh activity")}</span>
+          <span class="block break-words text-sm font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || `${platformName()} activity`)}</span>
           ${item.body ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(repoPublicText(item.body))}</span>` : ""}
           <span class="mt-1 block break-words text-xs text-muted-foreground">${meta}</span>
         </span>
@@ -1233,6 +1233,7 @@
 
   async function loadHomeBlogPosts() {
     if (!$("[data-home-blog-list]")) return;
+    if (!(await instancePluginEnabled("blog"))) return;
     try {
       const response = await fetch(HOME_BLOG_FEED_URL, {
         credentials: "omit",
@@ -1471,7 +1472,7 @@
     const logo = String(repository?.logo?.dataUrl || "");
     const hosted = Boolean(repository?.mirrored && repository?.mirror?.owner && repository?.mirror?.name);
     const status = hosted
-      ? "Fully hosted by ForkMesh"
+      ? `Fully hosted by ${platformName()}`
       : String(repository?.statusLabel || "External repository");
     const provider = String(repository?.attribution?.provider || repository?.provider || "Provider");
     const original = String(repository?.originalUrl || "");
@@ -1523,14 +1524,14 @@
             ${repository?.isPrivate ? '<span class="rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">Private · owner only</span>' : ""}
           </div>
           <p class="mt-1 text-xs leading-5 text-muted-foreground">${escapeHtml(repository?.metadata?.description || "No provider description.")}</p>
-          <p class="mt-2 text-[11px] leading-4 text-muted-foreground">${escapeHtml(hosted ? "The complete Git repository is synced, cloneable, and hosted by ForkMesh." : repository?.mirrorNotice || "This external entry is not mirrored by ForkMesh.")}</p>
+          <p class="mt-2 text-[11px] leading-4 text-muted-foreground">${escapeHtml(hosted ? `The complete Git repository is synced, cloneable, and hosted by ${platformName()}.` : repository?.mirrorNotice || `This external entry is not mirrored by ${platformName()}.`)}</p>
           ${migrationSummary}
           ${incomplete}
           <div class="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             <a href="${escapeHtml(original)}" target="_blank" rel="noopener noreferrer" class="font-medium text-accent hover:underline">Open on ${escapeHtml(provider)}</a>
             ${repository?.targetOwner ? `<span aria-hidden="true">·</span><span>Listed under ${repository?.targetOwnerType === "organization" ? "organization " : ""}<span class="font-mono text-foreground">${escapeHtml(repository.targetOwner)}</span></span>` : ""}
             <span aria-hidden="true">·</span>
-            <span>${hosted ? "Full Git data hosted by ForkMesh" : "ForkMesh does not own or control this repository"}</span>
+            <span>${hosted ? `Full Git data hosted by ${escapeHtml(platformName())}` : `${escapeHtml(platformName())} does not own or control this repository`}</span>
           </div>
         </div>
         <div class="flex shrink-0 flex-col gap-2">
@@ -1618,7 +1619,7 @@
   async function deleteSelectedExternalRepositories() {
     const ids = [...state.externalRepositorySelection];
     if (!ids.length || !state.session?.sessionToken) return;
-    if (!window.confirm(`Delete ${ids.length} selected external ${ids.length === 1 ? "repository" : "repositories"}? This removes ForkMesh metadata and does not delete anything from the source provider.`)) return;
+    if (!window.confirm(`Delete ${ids.length} selected external ${ids.length === 1 ? "repository" : "repositories"}? This removes ${platformName()} metadata and does not delete anything from the source provider.`)) return;
     const button = $("[data-external-repo-delete-selected]");
     if (button) button.disabled = true;
     try {
@@ -1768,7 +1769,7 @@
     return [
       nodeName
         ? `Make sure ${mono(nodeName)} is online and still linked to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`
-        : `Install the ForkMesh desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
+        : `Install the ${desktopBrand()}desktop app and link it to this account under <a href="/dashboard/settings/nodes" class="text-accent hover:underline">Settings › Nodes</a>.`,
       `Open the desktop node's ${ui("Repos")} page, click ${ui("+ Add")}, then choose ${ui("Remote clone URL")}.`,
       `${original ? `Paste ${mono(original)}` : "Paste the repository's clone URL"} and name it ${mono(name)}.`,
       `Publish — the node clones and hosts the mirror.`,
@@ -1789,7 +1790,7 @@
       subtitle: node
         ? `${node} is not an eligible mirror node for this account yet, so no request was recorded.`
         : "This account has no linked desktop node, so there is nothing to volunteer yet.",
-      intro: "Mirroring runs on a ForkMesh desktop node; the browser only lists the repository. Nothing has been requested yet. Complete these steps:",
+      intro: `Mirroring runs on a ${desktopBrand()}desktop node; the browser only lists the repository. Nothing has been requested yet. Complete these steps:`,
     });
     window.setTimeout(() => $("[data-new-repo-close]")?.focus(), 0);
     window.lucide?.createIcons();
@@ -1871,7 +1872,7 @@
       const perAccount = Number(limits.repositoriesPerAccount || 0);
       const megabytes = Math.round(Number(limits.repositoryBytes || 0) / 1048576);
       quota.textContent = core && perAccount
-        ? `ForkMesh hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
+        ? `${platformName()} hosts up to ${perAccount} repositories per account (${Number(hostedSettings.used || 0)} used), ${megabytes} MB each, on every core node. Move one to your own node any time to grow past that.`
         : "";
     }
     setNewRepoSource(newRepoSource());
@@ -1945,24 +1946,24 @@
   }
 
   const NEW_REPO_STEPS_INTRO =
-    "The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ForkMesh desktop node:";
+    `The browser cannot create or queue this mirror. Nothing has been published yet. Complete these steps in your ${desktopBrand()}desktop node:`;
 
   const NEW_REPO_SUBTITLE =
-    "Mirror an existing repository. Your ForkMesh desktop node finishes creating and signing it.";
+    `Mirror an existing repository. Your ${desktopBrand()}desktop node finishes creating and signing it.`;
   // The provider tab imports provider records only. Say so before the import
   // starts, so "complete" is never read as "mirrored" afterwards (issue #678).
   const NEW_REPO_PROVIDER_SUBTITLE =
-    "Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ForkMesh desktop node.";
+    `Import signed provider metadata and collaboration history. Mirroring the Git contents is a separate step on a ${desktopBrand()}desktop node.`;
   // The empty source needs neither a node nor another provider, so it must
   // not repeat the desktop-handoff sentence (issue #676).
   const NEW_REPO_EMPTY_SUBTITLE =
-    "A repository holds your project's files and history. ForkMesh keeps a copy on every core node.";
+    `A repository holds your project's files and history. ${platformName()} keeps a copy on every core node.`;
 
   function newRepoSubtitleFor(source) {
     if (source === "provider") return NEW_REPO_PROVIDER_SUBTITLE;
     if (source === "empty") return NEW_REPO_EMPTY_SUBTITLE;
     if (source === "remote" && hostedCoreMode()) {
-      return "Paste a public repository URL: ForkMesh copies it and hosts it on its own nodes, no desktop app needed.";
+      return `Paste a public repository URL: ${platformName()} copies it and hosts it on its own nodes, no desktop app needed.`;
     }
     return NEW_REPO_SUBTITLE;
   }
@@ -1980,7 +1981,7 @@
     if (title) title.textContent = open ? (copy.title || "Finish creating your repository") : "Create a new repository";
     if (subtitle) {
       subtitle.textContent = open
-        ? (copy.subtitle || "ForkMesh needs your desktop node to publish and mirror this repository.")
+        ? (copy.subtitle || `${platformName()} needs your desktop node to publish and mirror this repository.`)
         : newRepoSubtitleFor(newRepoSource());
     }
     if (intro) intro.textContent = (open && copy.intro) || NEW_REPO_STEPS_INTRO;
@@ -2091,16 +2092,16 @@
       }
     } else if (importing) {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = `ForkMesh copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ForkMesh desktop node.`;
+      if (hint) hint.textContent = `${platformName()} copies a public repository from ${(hostedSettings.importHosts || []).join(", ")} and hosts it on its core nodes. Other URLs need a ${desktopBrand()}desktop node.`;
     } else if (source === "local") {
       if (value) value.placeholder = localRepositoryPlaceholder();
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = "Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ForkMesh mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.";
+      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
-      if (hint) hint.textContent = "ForkMesh clones this URL into a bare mirror you then keep in sync.";
+      if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
     }
   }
 
@@ -2120,7 +2121,7 @@
     const sourceValue = details.sourceValue
       ? ` (<span class="font-mono text-foreground">${escapeHtml(details.sourceValue)}</span>)` : "";
     const steps = [
-      `Open the ForkMesh desktop node and go to the <span class="text-foreground">Repos</span> page.`,
+      `Open the ${desktopBrand()}desktop node and go to the <span class="text-foreground">Repos</span> page.`,
       `Click <span class="text-foreground">+ Add</span>, then choose <span class="text-foreground">${sourceLabel}</span>.`,
       `${pick}${sourceValue} and name it <span class="font-mono text-foreground">${escapeHtml(details.name)}</span>.`,
       `Set visibility to <span class="text-foreground">${details.visibility === "private" ? "Private" : "Public"}</span>${details.description ? ` and add your description` : ""}.`,
@@ -2153,8 +2154,8 @@
     const intro = $("[data-new-repo-steps-intro]");
     if (intro) {
       intro.textContent = urls.length === 1
-        ? "Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so this repository is listed as external until a ForkMesh desktop node hosts it:"
-        : "Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so these repositories stay external until a ForkMesh desktop node hosts each one:";
+        ? `Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so this repository is listed as external until a ${desktopBrand()}desktop node hosts it:`
+        : `Provider metadata and collaboration history are imported and signed. The Git contents are not mirrored, so these repositories stay external until a ${desktopBrand()}desktop node hosts each one:`;
     }
     panel.classList.remove("hidden");
     window.lucide?.createIcons();
@@ -2398,7 +2399,7 @@
     if (code === "email_not_verified") return "Confirm your email address to create a repository.";
     if (code === "blocked") return "That repository name is not available.";
     if (code === "hosted_quota_exceeded") {
-      return "This account hosts as many repositories on ForkMesh as it may. Delete one, or host more from your own node.";
+      return `This account hosts as many repositories on ${platformName()} as it may. Delete one, or host more from your own node.`;
     }
     if (code === "invalid_import_url") {
       return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org"]).join(", ")}.`;
@@ -2409,7 +2410,7 @@
 
   async function createHostedRepository(details) {
     if (!state.session?.sessionToken) {
-      setNewRepoHint("Sign in to create a ForkMesh-hosted repository.", "bad");
+      setNewRepoHint(`Sign in to create a ${platformName()}-hosted repository.`, "bad");
       return;
     }
     const submit = $("[data-new-repo-submit]");
