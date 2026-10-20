@@ -2,6 +2,7 @@
 
 Code: `app/src/branch_protection.py`, wired into the write paths listed
 below. Tests: `app/tests/test_branch_protection.py`,
+`app/tests/host/test_instance_repo_e2e.py`,
 `app/tests/test_instance_actions.py`.
 
 A repository can protect its default branch. The default branch then changes
@@ -35,6 +36,11 @@ to `issues`, `pulls` and `discussions` (`REPO_FEATURE_DEFAULTS` in
   repository no longer needs the owner to have a desktop key
   (`settings_only`): the `account_required` check exists because About text
   is delivered to the owner's desktop, which hosted repositories do not have.
+- **Operator:** `python -m forkmesh_host instance-repo ...
+  --protect-default-branch | --no-protect-default-branch` and
+  `--actions on|off` ([../INSTANCES.md](../INSTANCES.md#importing-a-repository-on-the-server-instance_repopy)).
+  The switches are applied right after the repository row exists and before
+  the fill, so the import's own push hooks already see them.
 
 The default branch is the catalog record's `branch` (what the server
 published), never a value from the request. A repository whose settings or
@@ -55,6 +61,7 @@ review file that names an owner as the approver.
 | Agent branch merge (`agent_branches._merge`) | refused when the merge base is protected |
 | Pull request merge (`repository_pull_merge_handler`) | `merge_refusal` before the job is queued (below) |
 | Actions (`runner_actions.lease`) | a job on a protected branch gets no `actions-push` grant; it still runs, with its token and secrets, but cannot push |
+| Operator `instance-repo` | not checked: the root shell on the server is the authority, and it never counts as a merge |
 
 ## Approvals
 

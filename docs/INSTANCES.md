@@ -369,6 +369,7 @@ cd /opt/forkmesh-instance/src/app/host
   --owner <account> --organization <org> --name <repo> \
   [--description TEXT] [--visibility public|private] \
   --from /root/<repo>.git [--force] [--no-hooks] \
+  [--fork-of <owner>/<repo>] [--protect-default-branch] [--actions on|off] \
   --env-file /etc/forkmesh-instance/app.env \
   --db sqlite:/var/lib/forkmesh-instance/app.db \
   --data-dir /var/lib/forkmesh-instance/data
@@ -376,7 +377,25 @@ cd /opt/forkmesh-instance/src/app/host
 
 It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
 `created`, `branches`, `tags`, `defaultBranch`, `commit`, `refsUpdated`,
-`sizeBytes`, `stateHash`, `gitDir` (or `ok: false` and `error`, exit 1).
+`sizeBytes`, `stateHash`, `gitDir`, `forkedFrom` and `settings` (or
+`ok: false` and `error`, exit 1).
+
+- **Fork link.** `--fork-of <owner>/<repo>` records the repository as a fork
+  of a public repository on the instance exactly as the web Fork action does:
+  `forkedFrom` in the catalog record (the parent's public identity: an
+  organization alias stays the organization, as `_public_repo_owner` keys
+  fork edges) and the `repo_forks` edge (`_index_repo_fork_edge`), so the
+  page shows "forked from" and the parent's fork count includes it. The
+  parent must exist and be public, must not be the repository itself, and
+  must share history: its published `commit` or `rootCommit` has to be in the
+  source (checked before anything is created when `--from` is a directory)
+  and in the filled repository. Later runs without `--fork-of` keep the link;
+  a rerun with it reports `"forkedFrom": "unchanged"`. Objects are not shared
+  with the parent.
+- **Switches.** `--protect-default-branch` / `--no-protect-default-branch`
+  and `--actions on|off` set the repository's feature settings before the
+  fill and are audited as `repository.protection_settings`; see
+  [app/branch-protection.md](app/branch-protection.md).
 
 - **Counts and activity.** The fill writes the default branch's whole
   `commitCount` (`git rev-list --count`), `mergeCount`, and the 52-week

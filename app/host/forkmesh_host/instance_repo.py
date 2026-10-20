@@ -19,6 +19,7 @@ NODE_USER = "forkmesh-node"
 NAME_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,37}[a-z0-9])?$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 ID_RE = re.compile(r"^hr[0-9a-f]{24}$")
+FORK_RE = re.compile(r"^([a-z0-9][a-z0-9._-]{0,79})/([A-Za-z0-9._-]{1,80})$")
 OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 MAINTENANCE_MARKER = "forkmesh-maintenance-due"
 DEFAULT_BRANCHES = ("main", "master", "trunk", "develop")
@@ -50,6 +51,14 @@ def read_spec(args):
     root = Path(args.hosted_root)
     if not root.is_absolute():
         raise RepoError("--hosted-root must be absolute")
+    fork_of = str(getattr(args, "fork_of", "") or "").strip().strip("/")
+    if fork_of and not FORK_RE.fullmatch(fork_of.lower()):
+        raise RepoError("invalid --fork-of (owner/repository)")
+    if fork_of.lower() in ((owner + "/" + name).lower(),
+                           (organization + "/" + name).lower()):
+        raise RepoError("a repository cannot be a fork of itself")
+    protect = getattr(args, "protect_default_branch", None)
+    actions = getattr(args, "actions", None)
     return {
         "owner": owner,
         "organization": organization,
@@ -61,6 +70,9 @@ def read_spec(args):
         "force": bool(args.force),
         "hooks": not args.no_hooks,
         "origin": str(args.origin or "").rstrip("/"),
+        "forkOf": fork_of.lower(),
+        "protect": protect if isinstance(protect, bool) else None,
+        "actions": {"on": True, "off": False}.get(actions),
     }
 
 
@@ -155,6 +167,113 @@ async def prepare(runtime, spec):
         env, replica, target, record, actor=owner, repo_id=repo_id,
         visibility=spec["visibility"], init=None, endpoint=endpoint, now=now)
     return {"id": repo_id, "created": True, "node": endpoint.get("node", "")}
+
+
+async def read_parent(runtime, spec):
+    entry, env = runtime.entry, runtime.env
+    await entry.ensure_schema(env)
+    owner, _, name = spec["forkOf"].partition("/")
+    node = await entry._org_repo_node(env, owner, name) or owner
+    record = None
+    for candidate in (name, name.lower()):
+        record = await entry._repo_catalog_record(env, node, candidate)
+        if isinstance(record, dict):
+            break
+    if not isinstance(record, dict):
+        raise RepoError("--fork-of %s: no such repository on this instance"
+                        % spec["forkOf"])
+    if record.get("visibility") != "public":
+        raise RepoError("--fork-of %s is not public" % spec["forkOf"])
+    stored_name = str(record.get("name") or name).lower()
+    public = owner if node != owner else await _public_owner(
+        entry, env, node, stored_name)
+    parent = public + "/" + stored_name
+    if node == spec["owner"] and stored_name == spec["name"].lower():
+        raise RepoError("a repository cannot be a fork of itself")
+    commits = [value for value in (str(record.get("rootCommit") or ""),
+                                   str(record.get("commit") or ""))
+               if OID_RE.fullmatch(value)]
+    if not commits:
+        raise RepoError("--fork-of %s has no published commits to compare"
+                        % spec["forkOf"])
+    return {"forkedFrom": parent, "commits": commits}
+
+
+async def _public_owner(entry, env, node, name):
+    rows = await entry.d1_all(
+        env, "SELECT o.name AS name FROM org_repos r JOIN orgs o ON "
+        "o.org_bi=r.org_bi WHERE r.node_owner=? AND r.repo=? LIMIT 2",
+        node, name)
+    names = [str(row.get("name") or "").lower() for row in rows or []]
+    return names[0] if len(names) == 1 and NAME_RE.fullmatch(names[0]) \
+        else node
+
+
+def shares_history(git, git_dir, parent, cwd=None):
+    commits = parent.get("commits") or []
+    if _present(git, git_dir, commits, cwd=cwd):
+        return True
+    prefix = ["-C", str(cwd)] if cwd else []
+    completed = git.run(None if cwd else git_dir, *prefix, "rev-list",
+                        "--max-parents=0", "--branches", "--tags",
+                        check=False)
+    roots = set(completed.stdout.decode("utf-8", "replace").split())
+    return bool(roots & set(commits))
+
+
+async def link_fork(runtime, spec, parent):
+    entry, env = runtime.entry, runtime.env
+    hosted_git, _, _ = _modules(entry)
+    owner, name = spec["owner"], spec["name"]
+    changed = {}
+    if parent:
+        key_bi = await entry.blind_index(env, owner + "/" + name)
+        row = await entry.d1_first(
+            env, "SELECT owner_bi,data FROM repositories WHERE key_bi=?",
+            key_bi)
+        catalog = await entry.decrypt_row(env, (row or {}).get("data"))
+        if not isinstance(catalog, dict):
+            raise RepoError("the catalog record of %s/%s is missing"
+                            % (owner, name))
+        prior = dict(catalog)
+        if catalog.get("forkedFrom") != parent["forkedFrom"]:
+            catalog["forkedFrom"] = parent["forkedFrom"]
+            digest = str(catalog.get("stateHash") or "")
+            await hosted_git._pin_hosted_state(
+                env, owner, name, key_bi, row, catalog, digest,
+                notify=False, pusher=owner)
+            changed["forkedFrom"] = parent["forkedFrom"]
+        await entry._index_repo_fork_edge(
+            env, catalog, prior, (row or {}).get("owner_bi"), key_bi)
+    return changed
+
+
+async def apply_settings(runtime, spec):
+    entry, env = runtime.entry, runtime.env
+    owner, name = spec["owner"], spec["name"]
+    changed = {}
+    features = {}
+    if spec["protect"] is not None:
+        features["protectDefaultBranch"] = spec["protect"]
+    if spec["actions"] is not None:
+        features["actions"] = spec["actions"]
+    if features:
+        current = await entry._repo_features_get(env, owner, name)
+        wanted = dict(current, **features)
+        if wanted != current:
+            await entry.d1_run(
+                env,
+                "INSERT INTO repo_feature_settings (repo_bi, data, "
+                "updated_at) VALUES (?,?,?) ON CONFLICT(repo_bi) DO UPDATE "
+                "SET data=excluded.data, updated_at=excluded.updated_at",
+                await entry._repo_features_bi(env, owner, name),
+                json.dumps(wanted, sort_keys=True), int(entry.Date.now()))
+            await entry._audit_sensitive_action(
+                env, owner, "repository.protection_settings", "repository",
+                owner + "/" + name, "success",
+                dict(features, credential="operator"))
+            changed.update(features)
+    return changed
 
 
 class Git:
@@ -671,6 +790,23 @@ def _users(args):
     return users
 
 
+def check_source_history(spec, parent):
+    source = Path(spec["source"])
+    if not parent or not source.is_dir():
+        return
+    if not shares_history(Git(), None, parent, cwd=source):
+        raise RepoError("%s shares no history with %s; refusing --fork-of"
+                        % (spec["source"], parent["forkedFrom"]))
+
+
+def check_filled_history(spec, parent, filled, git_user):
+    if parent and not shares_history(Git(git_user), filled["gitDir"], parent):
+        raise RepoError("%s/%s shares no history with %s; it was filled but "
+                        "not recorded as a fork" % (
+                            spec["owner"], spec["name"],
+                            parent["forkedFrom"]))
+
+
 def run(args, spec):
     from .ops import _runtime
     app_user, git_user = _users(args)
@@ -682,19 +818,31 @@ def run(args, spec):
         def limit():
             runtime = _runtime(args)
             return _modules(runtime.entry)[1].max_bytes(runtime.env)
+        parent = in_app(read_parent) if spec["forkOf"] else {}
+        check_source_history(spec, parent)
         info = in_app(prepare)
+        configured = in_app(apply_settings)
         max_bytes = _forked(app_user, limit)
         filled = fill(spec, info, max_bytes, git_user)
+        check_filled_history(spec, parent, filled, git_user)
         recorded = in_app(record, info, filled)
+        configured.update(in_app(link_fork, parent))
     else:
         runtime = _runtime(args)
 
         async def everything():
+            parent = await read_parent(runtime, spec) if spec[
+                "forkOf"] else {}
+            check_source_history(spec, parent)
             info = await prepare(runtime, spec)
+            configured = await apply_settings(runtime, spec)
             max_bytes = _modules(runtime.entry)[1].max_bytes(runtime.env)
             filled = fill(spec, info, max_bytes, git_user)
-            return info, filled, await record(runtime, spec, info, filled)
-        info, filled, recorded = asyncio.run(everything())
+            check_filled_history(spec, parent, filled, git_user)
+            recorded = await record(runtime, spec, info, filled)
+            configured.update(await link_fork(runtime, spec, parent))
+            return info, filled, recorded, configured
+        info, filled, recorded, configured = asyncio.run(everything())
     return {
         "ok": True,
         "owner": spec["owner"],
@@ -710,6 +858,10 @@ def run(args, spec):
         "sizeBytes": filled["sizeBytes"],
         "stateHash": recorded.get("pinned") or "",
         "gitDir": filled["gitDir"],
+        "forkedFrom": configured.get("forkedFrom", "") or (
+            spec["forkOf"] and "unchanged"),
+        "settings": {key: value for key, value in configured.items()
+                     if key != "forkedFrom"},
     }
 
 
@@ -746,6 +898,20 @@ def add_parser(sub, common):
                          help="allow non-fast-forward branches and moved tags")
     command.add_argument("--no-hooks", action="store_true",
                          help="skip webhooks, pings and Actions for this fill")
+    command.add_argument("--fork-of", dest="fork_of", default="",
+                         help="record the repository as a fork of "
+                              "<owner>/<repository> on this instance, like "
+                              "the web Fork action")
+    command.add_argument("--protect-default-branch", dest="protect_default_branch",
+                         action="store_true", default=None,
+                         help="the default branch changes only by merging a "
+                              "pull request an organization owner or admin "
+                              "approved")
+    command.add_argument("--no-protect-default-branch",
+                         dest="protect_default_branch", action="store_false")
+    command.add_argument("--actions", choices=("on", "off"), default=None,
+                         help="run this repository's workflows on the "
+                              "instance runner (on) or never (off)")
     command.add_argument("--hosted-root", default=HOSTED_ROOT)
     command.add_argument("--origin", default="",
                          help="public origin (default PUBLIC_BASE_URL)")
