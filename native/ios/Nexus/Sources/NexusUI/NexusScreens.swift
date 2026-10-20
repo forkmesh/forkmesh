@@ -62,7 +62,10 @@ struct NexusScanView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section("Target") { TextField("Host, IP, range, or CIDR", text: $target).textInputAutocapitalization(.never).autocorrectionDisabled() }
+                Section("Target") {
+                    TextField("Host, IP, range, or CIDR", text: $target).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    Button { detectNetwork(force: true) } label: { Label("Use this network", systemImage: "wifi") }
+                }
                 Section("Ports") {
                     TextField("Ports", text: $portText).keyboardType(.numbersAndPunctuation)
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -74,12 +77,22 @@ struct NexusScanView: View {
             }
             .navigationTitle("Scan")
             .nexusCloseButton()
+            .onAppear { detectNetwork(force: false) }
             .alert("Scan setup", isPresented: Binding(get: { parseError != nil }, set: { if !$0 { parseError = nil } })) { Button("OK", role: .cancel) {} } message: { Text(parseError ?? "") }
         }
     }
 
     private func begin() {
         do { model.scan(target: target, ports: try PortList(parsing: portText)) } catch { parseError = String(describing: error) }
+    }
+
+    private func detectNetwork(force: Bool) {
+        guard force || target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if let network = LocalNetwork.current() {
+            target = network.description
+        } else if force {
+            parseError = "No local network found. Join a Wi-Fi network, or type a range."
+        }
     }
 }
 

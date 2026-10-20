@@ -858,7 +858,7 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
     for row in rows:
         node = node or str(row.get("runner") or "")
         event = str(row.get("event") or "push")
-        actor = _line(row.get("actor"), 64)
+        actor = _shown_actor(runtime, _line(row.get("actor"), 64))
         record = await _open(runtime, row.get("data"))
         stored = record.get("runs")
         if isinstance(stored, list) and stored:
@@ -907,6 +907,14 @@ async def snapshot(runtime, owner, repo, always=False, masked=True):
         "controlAvailable": bool(runtime.setting("ACTIONS_INSTANCE_RUNNER")),
         "workflows": await catalog(runtime, owner, repo),
     }
+
+
+def _shown_actor(runtime, actor):
+    node = runtime.setting("INSTANCE_FLAGSHIP_NODE")
+    name = " ".join(runtime.setting("INSTANCE_NAME").split())[:60]
+    if actor and node and name and actor.lower() == node.lower():
+        return name
+    return actor
 
 
 def _site_host(runtime):

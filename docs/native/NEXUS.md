@@ -25,6 +25,8 @@ NEXUS is the native, Nmap-inspired network inspection package at `native/ios/Nex
 
 The default policy permits loopback and local-network hosts only. Internet targets require both the user setting and a per-scan `AuthorizationAttestation`. Internet ranges are refused unless the range is in `authorizedNetworks`. Host, probe, timeout and concurrency limits are clamped before a scan begins.
 
+The Scan screen fills an empty target with the range of the network the phone is on. `LocalNetwork.current()` reads the interface addresses with `getifaddrs` and `LocalNetwork.suggested(from:)` picks one: Wi-Fi (`en0`) first, skipping cellular (`pdp_ip`), VPN tunnels (`utun`, `ipsec`), AirDrop links (`awdl`, `llw`), container bridges, loopback, link-local and internet addresses. The prefix comes from the netmask but is narrowed to at least /24, so a /16 home network suggests the /24 around the phone's own address and stays inside the 256-host limit. **Use this network** refills the target after it was edited. Reading interface addresses needs no Local Network permission.
+
 NEXUS uses TCP connect scans, so a closed port means the endpoint refused a connection. A timeout cannot distinguish filtering from an offline endpoint; the UI reports it as “No response.” Scans are foreground work and every stream is cancellation-aware.
 
 ## Host integration

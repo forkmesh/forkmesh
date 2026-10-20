@@ -19,6 +19,25 @@ TITLE_RE = re.compile(r"(<title[^>]*>)(.*?)(</title>)", re.IGNORECASE | re.DOTAL
 META_RE = re.compile(
     r'(<meta\s+(?:name|property)="(?:application-name|apple-mobile-web-app-title|og:site_name)"\s+content=")'
     r'ForkMesh(")', re.IGNORECASE)
+BRAND_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)")
+DESKTOP_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh (?=[Dd]esktop)")
+CODE_BLOCK_RE = re.compile(r"(<(script|style)\b[^>]*>.*?</\2\s*>)", re.IGNORECASE | re.DOTALL)
+
+
+def rename_markup(text: str, escaped: str) -> str:
+    parts = CODE_BLOCK_RE.split(text)
+    out = []
+    index = 0
+    while index < len(parts):
+        chunk = parts[index]
+        if index % 3 == 0:
+            chunk = BRAND_RE.sub(lambda _: escaped, DESKTOP_RE.sub("", chunk))
+            out.append(chunk)
+            index += 1
+        else:
+            out.append(chunk)
+            index += 2
+    return "".join(out)
 OLD_TAG_RE = re.compile(r'<script src="/instance-brand\.js"[^>]*' + MARKER + r'[^>]*></script>')
 THEME_TAG = '<link rel="stylesheet" href="/instance-theme.css" data-instance-theme />'
 ICON_RE = re.compile(r'[ \t]*<link\s+rel="(?:icon|shortcut icon|apple-touch-icon)"[^>]*>[ \t]*\n?', re.IGNORECASE)
@@ -87,6 +106,7 @@ def brand_page(text: str, name: str, logo: str = "", powered_by=True) -> str:
         lambda match: match.group(1) + match.group(2).replace("ForkMesh", escaped) + match.group(3),
         text, count=1)
     text = META_RE.sub(lambda match: match.group(1) + escaped + match.group(2), text)
+    text = rename_markup(text, escaped)
     off = ' data-instance-powered-by="off"' if not powered_by else ""
     tag = THEME_TAG + '<script src="/instance-brand.js" defer data-instance-name="%s"%s %s></script>' % (escaped, off, MARKER)
     lower = text.lower()
@@ -126,6 +146,20 @@ def install_logo(dist: Path, name: str, source: Path) -> str:
     return "/" + target
 
 
+def name_manifest(dist: Path, name: str) -> None:
+    manifest = dist / "favicon" / "site.webmanifest"
+    if not manifest.is_file():
+        return
+    try:
+        app = json.loads(manifest.read_text(encoding="utf-8"))
+    except ValueError:
+        return
+    if not isinstance(app, dict) or (app.get("name") == name and app.get("short_name") == name):
+        return
+    app.update({"name": name, "short_name": name})
+    manifest.write_text(json.dumps(app, separators=(",", ":")), encoding="utf-8")
+
+
 def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = True) -> int:
     if not NAME_RE.fullmatch(name):
         raise SystemExit("instance name: letters, numbers, spaces and ._&+- only, up to 40")
@@ -133,6 +167,7 @@ def apply(dist: Path, name: str, logo: Path | None = None, powered_by: bool = Tr
         raise SystemExit("no such directory: %s" % dist)
     shutil.copyfile(SCRIPT, dist / "instance-brand.js")
     logo_path = install_logo(dist, name, logo) if logo else ""
+    name_manifest(dist, name)
     changed = 0
     for page in sorted(dist.rglob("*.html")):
         original = page.read_text(encoding="utf-8", errors="surrogateescape")

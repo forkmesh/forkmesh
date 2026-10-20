@@ -29,7 +29,8 @@ def _helpers_source():
 
 def _error_text(error_js, base="main", head="agent/fix", target="forkmesh/forkmesh"):
     script = (
-        _helpers_source()
+        "function platformName() { return \"ForkMesh\"; }\n"
+        + _helpers_source()
         + "\nconst error = (() => { " + error_js + " })();"
         + "\nconsole.log(JSON.stringify(webPullSubmitErrorText(error, "
         + ", ".join(json.dumps(value) for value in (base, head, target))

@@ -16,7 +16,7 @@
   "screenshots": [
     {
       "path": "preview/market.webp",
-      "alt": "RSS Reader with smart feeds and folders on the left, an article timeline with unread dots and stars in the middle, and the selected article with its toolbar on the right"
+      "alt": "RSS Reader shows smart feeds and folders, an article timeline with unread dots and stars, and a selected article with toolbar"
     }
   ],
   "license": {

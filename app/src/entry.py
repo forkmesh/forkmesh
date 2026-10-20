@@ -31569,7 +31569,10 @@ def _instance_brand_email(env, text, html):
     logo = instance_logo_path(env) or "assets/logo-96.png"
     text = text.replace("Open ForkMesh: " + FORKMESH_SITE_URL,
                         "Open " + name + ": " + site)
-    text += "\n\nPowered by ForkMesh"
+    text = instance_features.rename(env, text)
+    credit = instance_features.powered_by(env)
+    if credit:
+        text += "\n\nPowered by ForkMesh"
     if html:
         escaped = _html_escape(name)
         html = (html
@@ -31582,13 +31585,15 @@ def _instance_brand_email(env, text, html):
                          _html_escape(site) + "dashboard/settings")
                 .replace("href=\"" + FORKMESH_SITE_URL + "\"",
                          "href=\"" + _html_escape(site) + "\""))
+        html = instance_features.rename(env, html, escaped)
         footer = ("<p data-instance-powered-by style=\"margin:18px 0 0;"
                   "color:#71717a;font-size:12px\">Powered by <a href=\""
                   "https://forkmesh.com/\" style=\"color:#71717a\">"
                   "ForkMesh</a></p>")
         closing = "</div></div></body></html>"
-        html = (html.replace(closing, footer + closing, 1)
-                if closing in html else html + footer)
+        if credit:
+            html = (html.replace(closing, footer + closing, 1)
+                    if closing in html else html + footer)
     return text, html
 MAILTRAP_EMAIL_CATEGORIES = {
     "account": "Account notification",
@@ -31913,6 +31918,7 @@ async def _send_email(env, to_email, subject, text, html=None,
             if closing in html else html + action_html
         )
     html = _light_email_fragment(html)
+    subject = instance_features.rename(env, subject)
     text, html = _instance_brand_email(env, text, html)
     if via_smtp:
         return await _send_email_smtp(env, sender, sender_name, to_email,
@@ -32202,7 +32208,8 @@ async def _repository_provider_fetch(env, provider, path, token=""):
         return {"status": 400, "data": {}, "headers": {}}
     headers = {
         "accept": "application/json",
-        "user-agent": "ForkMesh-repository-metadata/1.0",
+        "user-agent": instance_features.user_agent(
+            "ForkMesh-repository-metadata/1.0", "repository-metadata"),
     }
     if provider == "github":
         headers["accept"] = "application/vnd.github+json"
@@ -33314,6 +33321,8 @@ def _feedback_email_content(name):
 
 
 async def _send_feedback_emails(env):
+    if instance_branded(env):
+        return 0
     now = int(Date.now())
     # Users with no send row yet; the LEFT JOIN keeps re-scans cheap as the
     # sent set grows. Eligibility (user kind, active, verified email, 24h old)
@@ -35128,6 +35137,7 @@ async def repo_card_handler(env, request, owner, repo):
         "description": rec.get("description", ""),
         "branch": rec.get("branch", ""),
         "host": urlparse(_ap_origin(env, request)).netloc or "forkmesh.com",
+        "site": instance_name(env),
         "stars": (stars_row or {}).get("n", 0) or 0,
         "mirrors": max(1, mirrors),
         "issues": rec.get("issueCount", ""),
@@ -48309,7 +48319,7 @@ GIT_ERROR_KEPT_HEADERS = (
 )
 
 
-async def _git_error_as_text(response):
+async def _git_error_as_text(response, env=None):
     try:
         status = int(getattr(response, "status", 0) or 0)
         content_type = str(response.headers.get("content-type") or "")
@@ -48338,6 +48348,9 @@ async def _git_error_as_text(response):
             value = None
         if not js_nullish(value):
             headers[name] = str(value)
+    if env is not None and instance_features.branded(env):
+        return Response(instance_features.rename(env, message) + "\n",
+                        status=status, headers=headers)
     return Response(
         "%s\nHelp: %s\n" % (message, GIT_ERROR_HELP_URL),
         status=status, headers=headers)

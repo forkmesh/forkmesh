@@ -56,17 +56,17 @@
                   <div class="grid min-w-0 content-start gap-6">
                     <section data-profile-about-panel class="overflow-hidden rounded-md border border-border bg-card">
                       <div class="flex items-center justify-between gap-3 px-4 py-3">
-                        <h2 class="min-w-0 truncate text-sm font-semibold text-muted-foreground"><span data-profile-about-owner>forkmesh</span> / <span data-profile-about-label>About yourself</span></h2>
+                        <h2 class="min-w-0 truncate text-sm font-semibold text-muted-foreground"><span data-profile-about-owner></span> / <span data-profile-about-label>About yourself</span></h2>
                         <button data-profile-about-edit type="button" aria-label="Edit about yourself" class="-my-1 flex shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-secondary hover:text-foreground">
                           <i data-lucide="pencil" class="h-4 w-4"></i>
                         </button>
                       </div>
                       <div data-profile-about-body class="grid gap-4 border-t border-border p-5 text-sm leading-6 text-foreground md:p-6">
-                        <p class="text-2xl font-semibold">Hi, this is your ForkMesh profile.</p>
+                        <p class="text-2xl font-semibold">Hi, this is your <span data-platform-name>ForkMesh</span> profile.</p>
                         <p class="text-muted-foreground">Pinned profile content and public activity will live here.</p>
                       </div>
                     </section>
-                    <section data-profile-referrals-panel class="overflow-hidden rounded-md border border-border bg-card">
+                    <section data-profile-referrals-panel data-instance-plugin="referrals" class="overflow-hidden rounded-md border border-border bg-card">
                       <div class="flex items-center justify-between gap-3 px-4 py-3">
                         <h2 class="text-sm font-semibold text-foreground">Referred users</h2>
                         <span data-profile-referrals-count class="fm-label">0 credited</span>
@@ -112,7 +112,7 @@
                             <div data-profile-contribution-empty hidden class="fm-blankslate mb-4">
                               <i data-lucide="activity" aria-hidden="true"></i>
                               <p class="fm-blankslate-title">No public contributions in this period</p>
-                              <p class="fm-blankslate-desc">Publish or contribute to a public ForkMesh repository to begin your native activity skyline.</p>
+                              <p class="fm-blankslate-desc">Publish or contribute to a public <span data-platform-name>ForkMesh</span> repository to begin your native activity skyline.</p>
                             </div>
                             <div data-profile-contribution-error hidden role="alert" class="fm-blankslate min-h-48 content-center">
                               <i data-lucide="circle-alert" aria-hidden="true"></i>
@@ -178,8 +178,8 @@
                           <p data-profile-activity-empty class="text-sm text-muted-foreground">Loading verified contribution activity...</p>
                         </section>
                         <footer data-profile-contribution-footer class="hidden items-center gap-5 pt-10 text-xs text-muted-foreground lg:flex">
-                          <span class="font-semibold text-foreground">ForkMesh</span>
-                          <span>© 2026 ForkMesh, Inc.</span>
+                          <span class="font-semibold text-foreground" data-platform-name>ForkMesh</span>
+                          <span data-instance-plugin="website">© 2026 ForkMesh, Inc.</span>
                           <a href="/terms" class="hover:text-accent hover:underline">Terms</a>
                           <a href="/privacy" class="hover:text-accent hover:underline">Privacy</a>
                           <a href="/security" class="hover:text-accent hover:underline">Security</a>

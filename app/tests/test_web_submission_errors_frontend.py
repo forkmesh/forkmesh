@@ -24,7 +24,8 @@ def _helpers_source():
 
 def _issue_error_text(error_js):
     script = (
-        _helpers_source()
+        "function platformName() { return \"ForkMesh\"; }\n"
+        + _helpers_source()
         + "\nconst error = (() => { " + error_js + " })();"
         + "\nconsole.log(JSON.stringify(webIssueSubmitErrorText(error)));\n"
     )

@@ -18,10 +18,13 @@ import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 from urllib.parse import parse_qs, quote, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = ROOT.parent
+sys.path.insert(0, str(ROOT / "src"))
+import instance_features  # noqa: E402
 ENTRY = ROOT / "src" / "entry.py"
 FEDIVERSE_ROUTES = ROOT / "src" / "fediverse_routes.py"
 DASHBOARD_JS = ROOT / "public" / "dashboard.js"
@@ -73,6 +76,7 @@ def _load(*names, extra_globals=None):
     missing = set(names) - {node.name for node in selected}
     assert not missing, "missing functions: %s" % sorted(missing)
     namespace = dict(extra_globals or {})
+    namespace.setdefault("instance_features", instance_features)
     exec(compile(ast.fix_missing_locations(ast.Module(
         body=_constant_nodes(tree) + selected, type_ignores=[])),
         str(ENTRY), "exec"), namespace)
@@ -92,6 +96,7 @@ def _load_method(class_name, name, extra_globals=None):
         name="_Subject", bases=[], keywords=[], body=[method],
         decorator_list=[])
     namespace = dict(extra_globals or {})
+    namespace.setdefault("instance_features", instance_features)
     exec(compile(ast.fix_missing_locations(ast.Module(
         body=_constant_nodes(tree) + [subject], type_ignores=[])),
         str(ENTRY), "exec"), namespace)
@@ -480,6 +485,7 @@ def _profile_page(media=(), record=None):
         return "<html></html>"
 
     subject = _load_method("Default", "_serve_repo_profile_page", {
+        "instance_features": instance_features,
         "re": re,
         "quote": quote,
         "clean_string": lambda value, cap=0: (
