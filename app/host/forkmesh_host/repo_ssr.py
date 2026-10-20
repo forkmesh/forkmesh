@@ -14,6 +14,11 @@ HTML the Worker returns for ``/<owner>/<repo>``:
   page's early-read script (partials/repo-early-reads.html) hands to the
   dashboard, so it does not ask for them again.
 
+An issue page (``/<owner>/<repo>/issues/<n>``) gets the header, the tab
+strip and the issue itself in the dashboard's own markup (repo_ssr_issue,
+from repo_views' issue bundle), which dashboard.js keeps in place until its
+own render of the same markup replaces it.
+
 The reads start when the request arrives, in parallel with the Worker, and
 are skipped (the page is served as before) when they take longer than
 ``SSR_BUDGET_SECONDS`` or the gateway does not serve the repository publicly.
@@ -194,10 +199,30 @@ class ViewTicket:
     """A pull request, issue or discussion page being rendered
     (repo_views): the bundle build and the tab it opens on."""
 
-    def __init__(self, task, section, target=None):
+    def __init__(self, task, section, target=None, root=None):
         self.task = task
         self.section = section
         self.target = target
+        # An issue page: the repository's first view (header, tab counts),
+        # for the issue drawn in the dashboard's markup (inject_issue).
+        self.root = root
+
+
+# How long an issue page waits for its issue and the repository's first
+# view (both are usually remembered; a cold bundle is a handful of local
+# gateway reads).
+ISSUE_BUDGET_SECONDS = 0.3
+
+
+async def _within(task, seconds):
+    """The task's result if it is ready within ``seconds`` (it keeps
+    running otherwise), else None."""
+    try:
+        return await asyncio.wait_for(asyncio.shield(task), max(0.01, seconds))
+    except asyncio.TimeoutError:
+        return None
+    except Exception:
+        return None
 
 
 _prerendered = {}   # (owner, repo) -> (monotonic time, data)
@@ -258,7 +283,9 @@ def start(fastpath, scope):
         else:
             task = asyncio.ensure_future(repo_views.build(
                 fastpath, owner, repo, name, number))
-        return ViewTicket(task, section, (owner, repo, name, number))
+        root = remembered_prerender(fastpath, owner, repo) \
+            if name == "issue" and not section else None
+        return ViewTicket(task, section, (owner, repo, name, number), root)
     target = page_target(scope)
     if target is None:
         name = short_target(scope)
@@ -359,9 +386,11 @@ async def finish(task, response):
         from . import js as _js
         if isinstance(task, ShortTicket):
             return await _finish_short(task, response)
+        started = asyncio.get_running_loop().time()
         try:
-            data = await asyncio.wait_for(asyncio.shield(task),
-                                          SSR_BUDGET_SECONDS)
+            data = await asyncio.wait_for(asyncio.shield(task), ISSUE_BUDGET_SECONDS
+                                          if view is not None and view.root is not None
+                                          else SSR_BUDGET_SECONDS)
         except asyncio.TimeoutError:
             if view is None or view.target is None:
                 return response
@@ -378,8 +407,15 @@ async def finish(task, response):
             return response
         body = await response._read()
         page = body.decode("utf-8")
-        rendered = inject_view(page, data, view.section) if view \
-            else inject(page, data)
+        rendered = None
+        if view is not None and view.root is not None:
+            root = await _within(view.root, ISSUE_BUDGET_SECONDS - (
+                asyncio.get_running_loop().time() - started))
+            if root:
+                rendered = inject_issue(page, root, data)
+        if rendered is None:
+            rendered = inject_view(page, data, view.section) if view \
+                else inject(page, data)
         if rendered is None:
             return _js.Response(body, response.status, "", response.headers)
         headers = response.headers
@@ -448,6 +484,75 @@ def inject(page, data, short=False):
     page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
         'class="inline-flex', 'class="hidden inline-flex'), 1)
     return page.replace(PLACEHOLDER, render_view(data, short, about), 1)
+
+
+ISSUE_RENDER_SECONDS = 60.0
+
+
+def issue_article(bundle, data, short=False):
+    """The issue's article in the dashboard's markup (repo_ssr_issue), kept
+    on the bundle for a minute (its relative times move), or None."""
+    from . import repo_ssr_issue
+    model = bundle.model or {}
+    if not model.get("issue") or not model.get("issueJson"):
+        return None
+    key = ("dashboard", bool(short))
+    now = time.time()
+    kept = bundle.rendered.get(key)
+    if kept and now - kept[0] < ISSUE_RENDER_SECONDS:
+        return kept[1]
+    owner, repo = data["owner"], data["repo"]
+    link = "/" + urllib.parse.quote(repo) if short else "/%s/%s" % (
+        urllib.parse.quote(owner), urllib.parse.quote(repo))
+    ctx = repo_ssr_issue.Context(link, "/api/repo/%s/%s" % (
+        urllib.parse.quote(owner, safe=""), urllib.parse.quote(repo, safe="")),
+        str(bundle.ref or data.get("ref") or "main"))
+    issue = repo_ssr_issue.parse_issue(model["issueJson"], bundle.number)
+    if issue["deleted"]:
+        return None
+    article = repo_ssr_issue.render_issue(
+        issue, ctx, owner, "%s/issues/%d" % (link, bundle.number),
+        index=repo_ssr_issue.index_rows(model.get("index")), now=now)
+    bundle.rendered[key] = (now, article)
+    return article
+
+
+def inject_issue(page, data, bundle, short=False):
+    """An issue page with its header, tab strip and the issue itself in the
+    dashboard's markup, plus the address of its read bundle; or None."""
+    if 'data-page="repo"' not in page or PLACEHOLDER not in page \
+            or CHARSET not in page or bundle is None or bundle.view != "issue":
+        return None
+    from . import repo_ssr_issue
+    try:
+        article = issue_article(bundle, data, short)
+    except Exception as error:  # the bundle's own first view is still correct
+        print("issue ssr skipped: %r" % (error,))
+        article = None
+    if article is None:
+        return None
+    owner, repo = data["owner"], data["repo"]
+    base = "/" + urllib.parse.quote(repo) if short else "/%s/%s" % (
+        urllib.parse.quote(owner), urllib.parse.quote(repo))
+    tree = data.get("tree") or {}
+    counts = tree.get("counts") if isinstance(tree.get("counts"), dict) else {}
+    tabs = _tabs(base, cached_about(owner, repo), counts, "issues")
+    meta = {"base": ("/api/repo/%s/%s" % (
+        urllib.parse.quote(bundle.owner, safe=""),
+        urllib.parse.quote(bundle.repo, safe=""))).lower(),
+        "view": bundle.view, "number": bundle.number, "url": bundle.url()}
+    page = page.replace(CHARSET, _view_reads_head(meta) + "\n    " + STYLE
+                        + repo_ssr_issue.VIEWER_STYLE, 1)
+    page = page.replace(HEADER_CONTEXT, header_context(data, short), 1)
+    page = page.replace(HEADER_META, HEADER_META.replace(
+        '"hidden shrink-0', '"hidden sm:flex shrink-0'), 1)
+    page = page.replace(HEADER_VISIBILITY, HEADER_VISIBILITY.replace(
+        "></span>", ">public</span>"), 1)
+    page = page.replace(HEADER_AVAILABILITY, HEADER_AVAILABILITY.replace(
+        'class="inline-flex', 'class="hidden inline-flex'), 1)
+    return page.replace(PLACEHOLDER, (
+        '<div data-repo-ssr data-repo-layout="first-view" class="min-w-0">%s%s%s</div>'
+        % (_icon_sprite(), tabs, repo_ssr_issue.FRAME % article)), 1)
 
 
 def _view_reads_head(meta):
@@ -662,11 +767,13 @@ def _count_label(value):
         return ""
 
 
-def _tabs(base, about, counts):
+def _tabs(base, about, counts, selected="code"):
     features = (about or {}).get("features") or {}
     shown = []
     for key, label, icon, count_key in TABS:
-        if key != "code" and about is None:
+        # Without a remembered /about a feature tab's page still draws the
+        # tabs a repository has by default, its own among them.
+        if key != "code" and about is None and selected == "code":
             continue
         if key in ("issues", "pulls", "discussions") and features.get(key) is False:
             continue
@@ -676,7 +783,7 @@ def _tabs(base, about, counts):
             if key != "discussions" or (isinstance(number, int) and number > 0):
                 count = COUNT % html.escape(_count_label(number))
         href = base if key == "code" else "%s/%s" % (base, key)
-        shown.append(TAB % (html.escape(href), "true" if key == "code" else "false",
+        shown.append(TAB % (html.escape(href), "true" if key == selected else "false",
                             _icon(icon, "h-4 w-4", "text-muted-foreground"),
                             label, count))
     return ('<div data-repo-github-header class="border-b border-border"><div class="flex w-full min-w-0 '

@@ -290,6 +290,16 @@
       .split(`${MD_HARD_BREAK} `).join(MD_HARD_BREAK);
   }
 
+  // A record paragraph that is one picture of unknown size (no width/height
+  // on it) is drawn in a fixed frame, img[data-md-figure] in the shell's
+  // style, so the text under it does not move when the picture arrives.
+  // repo_ssr_issue.py lone_image marks the same images in the first view.
+  const MD_LONE_IMAGE = /^(<a [^>]*>)?(<img (?![^>]*\swidth=)[^>]*?) (class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" \/>)(<\/a>)?$/;
+  function mdLoneImage(html) {
+    const match = MD_LONE_IMAGE.exec(html);
+    return match ? `${match[1] || ""}${match[2]} data-md-figure ${match[3]}${match[4] || ""}` : html;
+  }
+
   // Small, dependency-free markdown renderer: headings, fenced code blocks,
   // block quotes, nested ordered/unordered lists, tables, hr, raw HTML blocks,
   // and paragraphs, with basic inline formatting, links and images. Not a full
@@ -476,7 +486,8 @@
       }
       closeLists();
       const paragraph = takeWrappedLines(lines, i + 1);
-      out.push(`<p class="my-2 leading-6">${inline(joinWrappedLines([line, ...paragraph.taken]))}</p>`);
+      const paragraphHtml = inline(joinWrappedLines([line, ...paragraph.taken]));
+      out.push(`<p class="my-2 leading-6">${context?.figures ? mdLoneImage(paragraphHtml) : paragraphHtml}</p>`);
       i = paragraph.next;
     }
     closeLists();
@@ -500,6 +511,7 @@
     if (!text.trim()) return "";
     return renderMarkdown(text, {
       repo: repo || state.selectedRepo || null,
+      figures: true,
       issueTasks: options.issueTasks
         ? { enabled: true, editable: Boolean(options.interactiveTasks) }
         : null,
@@ -6770,6 +6782,29 @@
       </article>`;
   }
 
+  // An issue page a node sent with the issue already drawn, in this file's
+  // own markup (app/host/forkmesh_host/repo_ssr_issue.py): renderRepoDetail
+  // keeps the article before it draws the repository frame over the first
+  // view, and loadRepoRecordDetail puts it in the issue's place instead of
+  // the skeleton, so the first paint is already the final layout.
+  let repoFirstViewIssue = null;
+  function keepRepoFirstViewIssue(detail) {
+    const article = detail?.querySelector?.("article[data-repo-ssr-issue]");
+    if (!article) return;
+    repoFirstViewIssue = {
+      number: String(article.dataset.repoSsrIssue || ""),
+      path: location.pathname,
+      node: article,
+    };
+  }
+
+  function takeRepoFirstViewIssue(repo, number) {
+    const kept = repoFirstViewIssue;
+    repoFirstViewIssue = null;
+    if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
+    return kept.node;
+  }
+
   // The list chrome (views sidebar, heading, search) steps aside while one
   // issue fills the tab, so the page reads as the issue at its own URL.
   function setRepoIssueRecordOpen(open) {
@@ -7355,12 +7390,19 @@
     const recordFile = typeof config.file === "function" ? config.file(Number(number)) : config.file;
     const recordPath = `${config.dir}/${number}/${recordFile}`;
     if (!quietRefresh) {
-      // An issue opens straight onto its page frame, drawn from the list row
-      // where one was clicked; pulls and discussions keep the loading line.
-      container.innerHTML = kind === "issues"
-        ? renderRepoIssueDetailSkeleton(repo, number)
-        : `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml(`Loading ${escapeHtml(config.itemLabel)} #${escapeHtml(number)} from the live mirror...`)}</div>`;
-      if (kind === "issues") window.lucide?.createIcons();
+      // The issue the node drew into the page stays where it is until the
+      // render below replaces it with the same markup (no frame in between).
+      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number) : null;
+      if (firstView) {
+        container.replaceChildren(firstView);
+      } else {
+        // An issue opens straight onto its page frame, drawn from the list row
+        // where one was clicked; pulls and discussions keep the loading line.
+        container.innerHTML = kind === "issues"
+          ? renderRepoIssueDetailSkeleton(repo, number)
+          : `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml(`Loading ${escapeHtml(config.itemLabel)} #${escapeHtml(number)} from the live mirror...`)}</div>`;
+        if (kind === "issues") window.lucide?.createIcons();
+      }
     }
     try {
       await primeRepoViewReads(repo, { pulls: "pull", issues: "issue", discussions: "discussion" }[kind], number);
