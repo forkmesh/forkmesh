@@ -10528,6 +10528,8 @@
         return "Choose GitHub or GitLab.";
       case "invalid_remote":
         return "Enter the repository as owner/name, or paste its https address.";
+      case "invalid_refs":
+        return "Choose all branches or only the default branch.";
       case "token_required":
         return `Paste an access token so ${platformName()} can reach the repository.`;
       case "not_authorized":
@@ -10600,7 +10602,14 @@
       const options = (resource.directions || []).map((value) =>
         `<option value="${escapeHtml(value)}"${value === direction ? " selected" : ""}>${escapeHtml(repoForgeMirrorDirectionLabel(value, providerLabel))}</option>`).join("");
       const codeNote = resource.key === "code"
-        ? `<label class="inline-flex items-start gap-2 text-[10px] text-muted-foreground"><input data-repo-forge-mirror-prune type="checkbox" class="mt-0.5 h-3.5 w-3.5"${body?.mirror?.prune ? " checked" : ""} />Also delete branches and tags there that no longer exist here</label>
+        ? `<label class="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">Branches
+            <select data-repo-forge-mirror-refs aria-label="Branches to push" class="h-6 rounded-md border border-border bg-background px-1.5 text-[11px] text-foreground outline-none focus:border-accent">
+              <option value="all"${body?.mirror?.refs === "default" ? "" : " selected"}>All branches</option>
+              <option value="default"${body?.mirror?.refs === "default" ? " selected" : ""}>Only the default branch</option>
+            </select>
+          </label>
+          <p class="text-[10px] leading-4 text-muted-foreground">Tags are always pushed. With only the default branch, the option below also deletes every other branch there.</p>
+          <label class="inline-flex items-start gap-2 text-[10px] text-muted-foreground"><input data-repo-forge-mirror-prune type="checkbox" class="mt-0.5 h-3.5 w-3.5"${body?.mirror?.prune ? " checked" : ""} />Also delete branches and tags there that no longer exist here</label>
            ${body?.codeHosted ? "" : `<p class="text-[10px] leading-4 text-muted-foreground">Code is pushed by the ${escapeHtml(platformName())} server that holds this repository. This one is served from its owner's node, so the push starts once it is hosted on ${escapeHtml(platformName())}.</p>`}`
         : "";
       return `<div data-repo-forge-mirror-resource="${escapeHtml(resource.key)}" class="grid gap-2 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center ${supported ? "" : "opacity-50"}">
@@ -10668,6 +10677,7 @@
     if (!body?.codeHosted) return { tone: "", text: `Waiting for this repository to be hosted on ${platformName()}.` };
     if (!push.at) return { tone: "", text: "First push is on its way (within a few minutes)." };
     if (!push.ok) return { tone: "bad", text: `Last push failed ${relativeTimeLabel(push.at)}: ${push.error || "unknown error"}` };
+    if (mirror.refs === "default") return { tone: "good", text: `Pushed the default branch and tags (${push.refs || 0} ref${push.refs === 1 ? "" : "s"} changed) ${relativeTimeLabel(push.at)}.` };
     return { tone: "good", text: `Pushed ${push.refs || 0} branch${push.refs === 1 ? "" : "es"} and tags ${relativeTimeLabel(push.at)}.` };
   }
 
@@ -11006,6 +11016,7 @@
         token: form.querySelector("[data-repo-forge-mirror-token]")?.value || "",
         createRemote: Boolean(form.querySelector("[data-repo-forge-mirror-create]")?.checked),
         prune: Boolean(form.querySelector("[data-repo-forge-mirror-prune]")?.checked),
+        refs: form.querySelector("[data-repo-forge-mirror-refs]")?.value === "default" ? "default" : "all",
         description: repo.description || "",
         resources: readRepoForgeMirrorResources(form),
       });

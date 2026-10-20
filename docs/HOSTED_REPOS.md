@@ -167,18 +167,31 @@ the quota, stops routing pushes and moves core copies to `.trash`. Steps:
 
 The owner can mirror a hosted repository to GitHub or GitLab with a personal
 access token. Only the primary pushes. The exchange carries an optional
-`pushMirror` (`revision`, `provider`, `url`, `username`, `token`, `prune`) to
-the primary, and the daemon reports `pushMirrors` results (`revision`,
-`digest`, `ok`, `at`, `error`, `refs`).
+`pushMirror` (`revision`, `provider`, `url`, `username`, `token`, `prune`,
+`refs`) to the primary, and the daemon reports `pushMirrors` results
+(`revision`, `digest`, `ok`, `at`, `error`, and `refs`, the count of updated
+refs).
 
 - Valid only for `github`/`gitlab`, URL exactly
   `https://<host>/<owner>/<name>.git` on `hosted.pushHosts`, a token of at most
   512 characters without whitespace.
 - Push when settings change, when refs change, or every 6 hours; retry
   failures after 10 minutes; each push is limited to 10 minutes.
-- `git push --porcelain [--prune] <url> +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/*`
-  with the token only in an `http.extraHeader` passed through `GIT_CONFIG_*`
-  environment variables, no credential helper, no redirects, HTTPS only.
+- `refs` is `all` (the default, also when absent) or `default`. With `all`:
+  `git push --porcelain [--prune] <url> +refs/heads/*:refs/heads/* +refs/tags/*:refs/tags/*`.
+  With `default`, only the branch the hosted repository's `HEAD` points at,
+  plus tags: `git push --porcelain [--prune] <url> +refs/heads/<head>:refs/heads/<head> +refs/tags/*:refs/tags/*`.
+  `--prune` alone never deletes branches outside that refspec, so with prune
+  the daemon first runs `git ls-remote --heads <url>` (same header, timeout
+  and redaction) and adds `:refs/heads/<name>` for every other branch on the
+  target to the same push (at most 1000; names git would refuse are skipped).
+  In `default` mode only the head and tags count as a change, so pushes to
+  other branches do not trigger a push. Changing `refs` triggers a push even
+  with the same `revision`. The owner sets it in the mirror form ("Branches")
+  or with `refs` in the `save` action of the provider-mirror API.
+- Both commands run with the token only in an `http.extraHeader` passed
+  through `GIT_CONFIG_*` environment variables, no credential helper, no
+  redirects, HTTPS only.
   Errors are redacted (token and header value replaced) and folded to 300
   characters.
 

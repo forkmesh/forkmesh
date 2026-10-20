@@ -27,6 +27,9 @@ OUTBOX_BASE_DELAY_MS = 60 * 1000
 OUTBOX_MAX_DELAY_MS = 60 * 60 * 1000
 REQUEST_TIMEOUT_SECONDS = 15
 MAX_RESPONSE_CHARS = 2 * 1024 * 1024
+# Which branches the code push sends: every branch, or only the default one
+# (tags are always pushed).
+PUSH_REFS = ("all", "default")
 RETRY_STATUSES = frozenset({0, 408, 425, 429, 500, 502, 503, 504})
 
 PROVIDERS = {
@@ -143,6 +146,11 @@ def clean_token(value):
     return token
 
 
+def clean_push_refs(value):
+    value = str(value or "").strip().lower()
+    return value if value in PUSH_REFS else ""
+
+
 def token_hint(token):
     token = str(token or "")
     return ("…" + token[-4:]) if len(token) >= 8 else "…"
@@ -236,6 +244,7 @@ def public_view(row, record):
         "tokenHint": str(record.get("tokenHint") or ""),
         "active": int((row or {}).get("active") or 0) == 1,
         "prune": bool(record.get("prune")),
+        "refs": clean_push_refs(record.get("refs")) or "all",
         "resources": normalize_resources(
             record.get("resources"), provider) if provider else {},
         "createdAt": int((row or {}).get("created_at") or 0),
@@ -1190,6 +1199,7 @@ async def push_config(env, owner, name, aliases=()):
                 "username": PROVIDERS[provider]["username"],
                 "token": record["token"],
                 "prune": bool(record.get("prune")),
+                "refs": clean_push_refs(record.get("refs")) or "all",
             }
     except Exception:
         return None
@@ -1293,6 +1303,12 @@ async def repo_provider_mirror_handler(env, request, owner, repo):
         remote = clean_remote(provider, data.get("remote"))
         if not remote:
             return json_response({"error": "invalid_remote"}, status=400)
+        if "refs" in data and data.get("refs") not in (None, ""):
+            refs = clean_push_refs(data.get("refs"))
+            if not refs:
+                return json_response({"error": "invalid_refs"}, status=400)
+        else:
+            refs = clean_push_refs((record or {}).get("refs")) or "all"
         token = clean_token(data.get("token"))
         if not token and record and record.get("provider") == provider:
             token = record.get("token", "")
@@ -1308,6 +1324,7 @@ async def repo_provider_mirror_handler(env, request, owner, repo):
                 data.get("resources"), provider,
                 previous.get("resources") if same_remote else None),
             "prune": bool(data.get("prune")),
+            "refs": refs,
             "createdBy": previous.get("createdBy") or clean_string(
                 data.get("ownerAccount", ""), MAX_NODE_NAME).lower(),
             "cursors": previous.get("cursors", {}) if same_remote else {},

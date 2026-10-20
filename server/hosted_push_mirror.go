@@ -19,6 +19,12 @@ const (
 	hostedPushMaxToken     = 512
 	hostedPushMaxError     = 300
 	hostedPushInvalid      = "invalid push mirror"
+	// hostedPushMaxDeletes bounds the branch deletions one default-branch
+	// push sends, so a huge or hostile target cannot blow up the argv.
+	hostedPushMaxDeletes = 1000
+
+	hostedPushRefsAll     = "all"
+	hostedPushRefsDefault = "default"
 )
 
 var (
@@ -34,6 +40,9 @@ type hostedPushMirror struct {
 	Username string `json:"username"`
 	Token    string `json:"token"`
 	Prune    bool   `json:"prune"`
+	// Refs is "all" (every branch and tag, the default when empty) or
+	// "default" (the default branch and tags only).
+	Refs string `json:"refs,omitempty"`
 }
 
 type hostedPushReport struct {
@@ -51,6 +60,7 @@ type hostedPushState struct {
 	succeeded      time.Time
 	successDigest  string
 	successAllRefs string
+	refs           string
 }
 
 type hostedPushRunner func(ctx context.Context, gitDir string, args, env []string) (string, string, error)
@@ -67,7 +77,17 @@ func runHostedPush(ctx context.Context, gitDir string, args, env []string) (stri
 	return stdout.String(), stderr.String(), err
 }
 
+func hostedPushRefsMode(mirror hostedPushMirror) string {
+	if mirror.Refs == "" {
+		return hostedPushRefsAll
+	}
+	return mirror.Refs
+}
+
 func validHostedPushMirror(mirror hostedPushMirror, hosts []string) bool {
+	if mode := hostedPushRefsMode(mirror); mode != hostedPushRefsAll && mode != hostedPushRefsDefault {
+		return false
+	}
 	if mirror.Provider != "github" && mirror.Provider != "gitlab" {
 		return false
 	}
@@ -141,11 +161,11 @@ func (r *hostedReplicator) forgetPushMirror(id string) {
 	r.mu.Unlock()
 }
 
-func (r *hostedReplicator) pushMirrorDue(id, revision, digest, allRefs string, now time.Time) bool {
+func (r *hostedReplicator) pushMirrorDue(id, revision, refs, digest, allRefs string, now time.Time) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	state, known := r.pushState[id]
-	if !known || state.report.Revision != revision {
+	if !known || state.report.Revision != revision || state.refs != refs {
 		return true
 	}
 	if !state.report.OK {
@@ -155,11 +175,12 @@ func (r *hostedReplicator) pushMirrorDue(id, revision, digest, allRefs string, n
 		now.Sub(state.succeeded) >= hostedPushRefreshAfter
 }
 
-func (r *hostedReplicator) recordPush(id string, report hostedPushReport, allRefs string, now time.Time) {
+func (r *hostedReplicator) recordPush(id string, report hostedPushReport, refs, allRefs string, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	state := r.pushState[id]
 	state.report = report
+	state.refs = refs
 	state.attempted = now
 	if report.OK {
 		state.succeeded = now
@@ -179,6 +200,7 @@ func (r *hostedReplicator) recordInvalidPush(id, revision string, now time.Time)
 	}
 	state.report = hostedPushReport{Revision: revision, OK: false, At: now.UnixMilli(),
 		Error: hostedPushInvalid}
+	state.refs = ""
 	state.attempted = now
 	r.pushState[id] = state
 }
@@ -229,14 +251,15 @@ func (r *hostedReplicator) pushMirror(ctx context.Context, item hostedDesired) b
 	if err != nil {
 		return false
 	}
-	if !r.pushMirrorDue(item.ID, mirror.Revision, digest, allRefs, now) {
+	mode := hostedPushRefsMode(mirror)
+	if mode == hostedPushRefsDefault {
+		// Only HEAD's branch and the tags are pushed, which is what the
+		// routing digest covers; other branches moving is no reason to push.
+		allRefs = digest
+	}
+	if !r.pushMirrorDue(item.ID, mirror.Revision, mode, digest, allRefs, now) {
 		return false
 	}
-	args := []string{"push", "--porcelain"}
-	if mirror.Prune {
-		args = append(args, "--prune")
-	}
-	args = append(args, mirror.URL, "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
 	env := append(gitNetworkEnvironment(),
 		"GIT_ALLOW_PROTOCOL=https",
 		"GIT_ASKPASS=",
@@ -252,9 +275,25 @@ func (r *hostedReplicator) pushMirror(ctx context.Context, item hostedDesired) b
 	if runner == nil {
 		runner = runHostedPush
 	}
-	stdout, stderr, err := runner(ctx, gitDir, args, env)
-	report := hostedPushReport{Revision: mirror.Revision, Digest: digest, OK: err == nil,
-		At: r.now().UnixMilli(), Refs: hostedPushRefCount(stdout)}
+	report := hostedPushReport{Revision: mirror.Revision, Digest: digest}
+	var stdout, stderr string
+	refspecs, err := hostedPushRefspecs(ctx, gitDir, mirror, env, runner)
+	if err == nil {
+		args := []string{"push", "--porcelain"}
+		if mirror.Prune {
+			args = append(args, "--prune")
+		}
+		args = append(append(args, mirror.URL), refspecs...)
+		stdout, stderr, err = runner(ctx, gitDir, args, env)
+		report.Refs = hostedPushRefCount(stdout)
+	} else {
+		var listed *hostedPushListError
+		if errors.As(err, &listed) {
+			stdout, stderr = listed.stdout, listed.stderr
+		}
+	}
+	report.OK = err == nil
+	report.At = r.now().UnixMilli()
 	if err != nil {
 		text := strings.TrimSpace(stderr)
 		if text == "" {
@@ -269,8 +308,81 @@ func (r *hostedReplicator) pushMirror(ctx context.Context, item hostedDesired) b
 		}
 		log.Printf("hosted %s: push mirror to %s failed: %s", item.ID, mirror.URL, report.Error)
 	}
-	r.recordPush(item.ID, report, allRefs, now)
+	r.recordPush(item.ID, report, mode, allRefs, now)
 	return true
+}
+
+// hostedPushListError carries the output of a failed ls-remote so the report
+// shows (redacted) what the target said.
+type hostedPushListError struct {
+	err            error
+	stdout, stderr string
+}
+
+func (e *hostedPushListError) Error() string { return e.err.Error() }
+func (e *hostedPushListError) Unwrap() error { return e.err }
+
+// hostedPushRefspecs returns the refspecs after the URL. With refs "all"
+// every branch and tag is pushed. With "default" only the branch HEAD points
+// at and the tags are pushed; with prune the other branches on the target are
+// listed and deleted in the same push, because --prune only removes refs that
+// match a pushed pattern and a single-branch refspec matches no other branch.
+func hostedPushRefspecs(ctx context.Context, gitDir string, mirror hostedPushMirror, env []string,
+	runner hostedPushRunner) ([]string, error) {
+	if hostedPushRefsMode(mirror) != hostedPushRefsDefault {
+		return []string{"+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*"}, nil
+	}
+	head := gitValue(ctx, gitDir, "symbolic-ref", "--quiet", "HEAD")
+	if !strings.HasPrefix(head, "refs/heads/") || gitValue(ctx, gitDir, "rev-parse", "--verify",
+		"--quiet", head+"^{commit}") == "" {
+		return nil, errors.New("the default branch has no commits")
+	}
+	refspecs := []string{"+" + head + ":" + head, "+refs/tags/*:refs/tags/*"}
+	if !mirror.Prune {
+		return refspecs, nil
+	}
+	stdout, stderr, err := runner(ctx, gitDir, []string{"ls-remote", "--heads", mirror.URL}, env)
+	if err != nil {
+		return nil, &hostedPushListError{err: err, stdout: stdout, stderr: stderr}
+	}
+	return append(refspecs, hostedPushExtraBranchDeletes(stdout, head)...), nil
+}
+
+// hostedPushExtraBranchDeletes turns ls-remote --heads output into deletion
+// refspecs for every branch except keep. Names git would refuse, or that could
+// be read as a pattern or option, are skipped.
+func hostedPushExtraBranchDeletes(lsRemote, keep string) []string {
+	var deletes []string
+	seen := map[string]bool{}
+	for _, line := range strings.Split(lsRemote, "\n") {
+		fields := strings.Split(strings.TrimRight(line, "\r"), "\t")
+		if len(fields) != 2 {
+			continue
+		}
+		ref := fields[1]
+		if ref == keep || seen[ref] || !strings.HasPrefix(ref, "refs/heads/") ||
+			len(ref) == len("refs/heads/") || len(ref) > 1024 ||
+			strings.ContainsAny(ref, ":*?[\\^~ \t") || strings.Contains(ref, "..") ||
+			strings.HasSuffix(ref, ".lock") || strings.HasSuffix(ref, "/") {
+			continue
+		}
+		bad := false
+		for _, char := range ref {
+			if char < ' ' || char == 0x7f {
+				bad = true
+				break
+			}
+		}
+		if bad {
+			continue
+		}
+		seen[ref] = true
+		deletes = append(deletes, ":"+ref)
+		if len(deletes) == hostedPushMaxDeletes {
+			break
+		}
+	}
+	return deletes
 }
 
 func (r *hostedReplicator) now() time.Time {
