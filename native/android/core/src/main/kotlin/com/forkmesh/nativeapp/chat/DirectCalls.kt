@@ -235,15 +235,10 @@ class DirectCallEngine(
     }
 
     private fun ringTimedOut(id: String) {
-        val missedConversation: String
-        val missedMedia: DirectCallKind
         synchronized(lock) {
             if (callId != id || phase != DirectCallPhase.RINGING) return
-            missedConversation = conversation
-            missedMedia = media
         }
-        end(notifyPeer = true, reason = "missed")
-        onMissed?.invoke(missedConversation, missedMedia)
+        hangUp()
     }
 
     fun acceptInvite() {
@@ -280,7 +275,15 @@ class DirectCallEngine(
     }
 
     fun hangUp() {
-        end(notifyPeer = true, reason = "")
+        val missed = synchronized(lock) {
+            if (caller && phase == DirectCallPhase.RINGING) conversation to media else null
+        }
+        if (missed == null) {
+            end(notifyPeer = true, reason = "")
+            return
+        }
+        end(notifyPeer = true, reason = "missed")
+        onMissed?.invoke(missed.first, missed.second)
     }
 
     fun toggleMute() {

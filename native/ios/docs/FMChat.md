@@ -499,7 +499,8 @@ unchanged.
 
 `DirectCallEngine` (`Direct/DirectCalls.swift`) is the signaling state machine for `direct:`
 rooms; signaling rides the DM room's sealed socket (`direct.sendCallFrame`, `onCallFrame`).
-Missed calls post the same "Missed audio/video call" line as the web.
+Missed calls post the same "Missed audio/video call" line as the web: when the ring times
+out or when the caller hangs up before an answer (`hangUp` while `.ringing`). Android does the same.
 
 - **Media.** `WebCallPeerFactory` loads `direct-call.html` into a `WKWebView` with the base URL
   `https://call.forkmesh.com/` (a secure context for `getUserMedia`) and drives it through the

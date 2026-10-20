@@ -183,10 +183,7 @@ public final class DirectCallEngine {
         ringTask = Task { [weak self] in
             do { try await self?.sleep(DirectCallEngine.ringTimeout) } catch { return }
             guard let self, self.callId == id, self.phase == .ringing else { return }
-            let missedConversation = self.conversation
-            let missedMedia = self.media
-            await self.end(notifyPeer: true, reason: "missed")
-            self.onMissed?(missedConversation, missedMedia)
+            await self.hangUp()
         }
         return true
     }
@@ -216,7 +213,14 @@ public final class DirectCallEngine {
     }
 
     public func hangUp() async {
-        await end(notifyPeer: true, reason: "")
+        guard caller, phase == .ringing else {
+            await end(notifyPeer: true, reason: "")
+            return
+        }
+        let missedConversation = conversation
+        let missedMedia = media
+        await end(notifyPeer: true, reason: "missed")
+        onMissed?(missedConversation, missedMedia)
     }
 
     public func toggleMute() {

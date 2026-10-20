@@ -492,6 +492,27 @@ final class DirectCallsTests: XCTestCase {
         XCTAssertEqual(missed.map(\.1), [.audio])
     }
 
+    @MainActor func testHangingUpBeforeAnAnswerLeavesAMissedCall() async throws {
+        let engine = makeEngine()
+        engine.peerFactory = FakeCallPeerFactory()
+        var missed: [(String, DirectCallKind)] = []
+        engine.onMissed = { missed.append(($0, $1)) }
+        _ = await engine.start(DirectCallsTests.conversation, media: .video)
+        await engine.hangUp()
+        XCTAssertNil(engine.phase)
+        XCTAssertEqual(signalTypes(), ["call-invite", "call-bye"])
+        XCTAssertEqual(signals.last?.2["reason"]?.text, "missed")
+        XCTAssertEqual(missed.map(\.0), [DirectCallsTests.conversation])
+        XCTAssertEqual(missed.map(\.1), [.video])
+        _ = await engine.start(DirectCallsTests.conversation, media: .audio)
+        let callId = signals.last?.2["call"]?.text ?? ""
+        await engine.handleFrame(
+            frame("call-accept", call: callId, extra: ["to": "me-node"]), conversation: DirectCallsTests.conversation)
+        await engine.hangUp()
+        XCTAssertNil(engine.phase)
+        XCTAssertEqual(missed.count, 1)
+    }
+
     @MainActor func testDeclineEndsTheCallerQuietly() async throws {
         let engine = makeEngine()
         engine.peerFactory = FakeCallPeerFactory()

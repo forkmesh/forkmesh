@@ -110,7 +110,15 @@ def test_ring_times_out_and_resends_invites():
     assert "INVITE_RESEND_MS = 3000" in CALLS
     start = _function_source(CALLS, "start")
     assert "call.inviteTimer = setIntervalImpl(ring, INVITE_RESEND_MS)" in start
-    assert "onMissed(missed.channelKey, missed.media)" in start
+    assert "call.ringTimer = setTimeoutImpl(hangUp, RING_TIMEOUT_MS)" in start
+
+
+def test_hanging_up_an_unanswered_call_posts_a_missed_call_line():
+    source = _function_source(CALLS, "hangUp")
+    assert 'call?.role === "caller" && call.phase === "ringing-out"' in source
+    assert 'reason: "missed"' in source
+    assert "onMissed(missed.channelKey, missed.media)" in source
+    assert 'hangupBtn?.addEventListener("click", hangUp)' in CALLS
 
 
 def test_add_person_starts_a_private_group_channel():
