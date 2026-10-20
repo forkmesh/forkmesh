@@ -56,6 +56,7 @@ PING_KIND_CATALOG = (
     ("repo_activity", "repositories", "Merged pull requests"),
     ("release_published", "repositories", "Releases"),
     ("repo_shared", "repositories", "Repositories shared with you"),
+    ("security_advisory", "repositories", "Security advisories"),
     ("mirror_request", "repositories", "Mirror requests"),
     ("repository_hosted", "repositories", "Imports finished hosting"),
     ("package_review", "repositories", "Reviews of your Market packages"),

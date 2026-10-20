@@ -1162,7 +1162,7 @@ def test_dashboard_repository_detail_keeps_code_comments_issues_shell():
         "Copy clone",
         "Open clean URL",
         "data-dashboard-repo-tab=\"${tab}\"",
-        '"code", "issues", "pulls", "discussions", "insights", "projects", "actions", ...(canSeeAgentsTab',
+        '"code", "issues", "pulls", "discussions", "insights", "projects", "actions", "security", ...(canSeeAgentsTab',
         # Releases load lazily on first tab view from .forkmesh/releases/<channel>/release.json.
         "loadRepoReleases(state.selectedRepo)",
         "loadRepoInsights(state.selectedRepo)",
@@ -2782,7 +2782,7 @@ def test_dashboard_restores_feature_tab_on_hard_refresh():
     dashboard_js = _read(PUBLIC / "dashboard.js")
 
     assert "function repoRouteParts()" in dashboard_js
-    assert 'const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions"];' in dashboard_js
+    assert 'const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];' in dashboard_js
 
     render_start = dashboard_js.index("function renderRepoDetail(repo)")
     render_body = dashboard_js[render_start:dashboard_js.index("\n  function findRepository(key)")]

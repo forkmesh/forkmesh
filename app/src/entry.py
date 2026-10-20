@@ -855,6 +855,7 @@ NOTIFICATION_KINDS = frozenset({
     "calendar_reminder",
     "calendar_rsvp",
     "chat_webhook",
+    "security_advisory",
     "channel_unread",
     "direct_unread",
     "account_email_sent",
@@ -983,6 +984,7 @@ NOTIFICATION_EMAIL_DEFAULTS = {
     "calendar_reminder": True,
     "calendar_rsvp": True,
     "package_review": True,
+    "security_advisory": True,
     "channel_unread": True,
     "direct_unread": True,
 }
@@ -13498,7 +13500,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "5ffdfea001d97bb56881a9bbee7a9d9fe108b171f3fc0b48e889c5e07041914a"
+    "33b110eeae047152e57f209197a0f7c659442de5bb7c804713ccad3a5a7ac80e"
 )
 
 
@@ -18796,6 +18798,11 @@ _REPO_SCOPED_TABLES = (
     ("repo_provider_mirror_links", "repo_bi"),
     ("repo_provider_mirror_outbox", "repo_bi"),
     ("world_fediverse_mentions", "repo_bi"),
+    ("security_advisories", "repo_bi"),
+    ("security_advisory_members", "repo_bi"),
+    ("security_advisory_comments", "repo_bi"),
+    ("security_advisory_credits", "repo_bi"),
+    ("security_advisory_settings", "repo_bi"),
     ("repository_fork_jobs", "source_repo_bi"),
     ("repository_fork_jobs", "target_repo_bi"),
 )

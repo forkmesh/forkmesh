@@ -4031,6 +4031,7 @@
     pull_submitted: true,
     issue_assigned: true,
     repo_shared: true,
+    security_advisory: true,
     bounty_funded: true,
     bounty_paid: true,
     release_published: true,
@@ -4113,6 +4114,7 @@
       { kind: "repo_activity", label: "Merged pull requests", email: false },
       { kind: "release_published", label: "Releases", email: true },
       { kind: "repo_shared", label: "Repositories shared with you", email: true },
+      { kind: "security_advisory", label: "Security advisories", email: true },
       { kind: "mirror_request", label: "Mirror requests", email: true },
       { kind: "repository_hosted", label: "Imports finished hosting", email: false },
     ] },
@@ -5033,6 +5035,7 @@
     renderProfileContributionGraph();
     renderProfileTips(session);
     renderProfileBadges(session);
+    void renderProfileSecurityCredits(session);
     renderProfileFediverse(session);
   }
 

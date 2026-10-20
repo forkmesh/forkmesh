@@ -20,6 +20,7 @@ public func notificationIconForKind(_ kind: String) -> String {
     case "pull_submitted": return "call_merge_rounded"
     case "issue_assigned": return "assignment_ind_outlined"
     case "repo_shared": return "folder_special_outlined"
+    case "security_advisory": return "gpp_maybe_outlined"
     case "bounty_funded", "bounty_paid", "tip_sent": return "payments_outlined"
     case "release_published": return "new_releases_outlined"
     case "host_online": return "cloud_done_outlined"

@@ -14,6 +14,7 @@ val PING_KIND_ICONS: Map<String, String> = mapOf(
     "pull_submitted" to "🔀",
     "issue_assigned" to "📌",
     "repo_shared" to "🤝",
+    "security_advisory" to "🛡️",
     "bounty_funded" to "💰",
     "bounty_paid" to "💸",
     "release_published" to "🚀",

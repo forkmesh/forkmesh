@@ -4885,6 +4885,7 @@ QString webPingKindLabel(const QString &kind)
         {QStringLiteral("pull_submitted"), QStringLiteral("Pull request")},
         {QStringLiteral("issue_assigned"), QStringLiteral("Issue assigned")},
         {QStringLiteral("repo_shared"), QStringLiteral("Repo shared")},
+        {QStringLiteral("security_advisory"), QStringLiteral("Security advisory")},
         {QStringLiteral("bounty_funded"), QStringLiteral("Bounty funded")},
         {QStringLiteral("bounty_paid"), QStringLiteral("Bounty paid")},
         {QStringLiteral("release_published"), QStringLiteral("Release")},

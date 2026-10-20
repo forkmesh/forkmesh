@@ -1984,6 +1984,11 @@ class Default:
             if action == "viewer-permission" and len(pieces) == 5:
                 return await repo_viewer_permission_handler(
                     self.env, request, owner, repo)
+            if action == "security":
+                import security_advisories
+                security_advisories._bind_runtime(globals())
+                return await security_advisories.repo_route(
+                    self.env, request, owner, repo)
             if action == "file-edit":
                 import repository_file_edits
                 repository_file_edits._bind_runtime(globals())
@@ -2774,6 +2779,15 @@ class Default:
         # node, so an error nobody was watching still pings the administrators.
         if url.path in ("/api/desktop-errors", "/api/desktop-errors/"):
             return await desktop_error_handler(self.env, request)
+
+        if url.path in ("/advisories", "/advisories/", "/advisories.json",
+                        "/security-researchers", "/security-researchers/") \
+                or url.path.startswith(("/advisories/",
+                                        "/api/security-advisories/")):
+            import security_advisories
+            security_advisories._bind_runtime(globals())
+            return await security_advisories.public_route(
+                self.env, request, url.path)
 
         # Private vulnerability reports — stored encrypted, emailed to security@.
         if url.path in ("/api/security/report", "/api/security/report/"):
