@@ -89,6 +89,25 @@ visit socket is `?visitor=`; both sides see each other live.
 - **Owner-only actions** (administration, an owner's private rooms) stay
   read-only for visitors, with a note, instead of failing.
 
+## Interactive neighbour scenes
+
+A neighbour's published scene (`/api/world/neighbour-scene`, v1) is drawn
+on its hexagon with its interactions:
+
+- **Portal house** (`house` with an https `url`): solid walls; walking into
+  its door, or clicking it, opens the link in the same tab behind a short
+  fade.
+- **Terrarium** (`terrarium`): glass walls and a lid with an open doorway in
+  its front; walkers go in only through it. Each bug is a badge with its
+  favicon (through the home World's icon route); clicking it opens a small
+  card with the bug's name and its https link.
+- **Ground** (`ground.color`, `accent`, `pattern`: `plain` or `circuit`),
+  **plaza**, **sign**, **lamp** and **tree** are drawn as before.
+
+Walls are footprints in each building's own frame
+(`scene/neighbour-footprints.js`), registered per owner while its scene is
+drawn and checked on every walking step.
+
 ## Rollout
 
 Each step works with either side ahead:

@@ -21,6 +21,7 @@ import {
   roundedHexagonGeometry,
 } from "./town.js";
 import * as resources from "./resources.js";
+import { neighbourFootprint, setNeighbourFootprints } from "./neighbour-footprints.js";
 import { loadNeighbourScene, neighbourIconURL } from "../world-neighbour-scene.js";
 
 export const INSTANCE_LOGO_PATH =
@@ -317,8 +318,21 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
       ground.material = neighbourGroundMaterial(THREE, scene.ground);
       groundLogo.visible = false;
       groundLogo.userData.sceneHidden = true;
+      setNeighbourFootprints(instance.id, neighbourSceneFootprints(scene).map((item) =>
+        neighbourFootprint({ ...item, x: centerX + item.x, z: centerZ + item.z })));
       group.add(buildNeighbourScene(THREE, scene, {
         icon: (url) => neighbourIconURL(instance.id, url),
+        door: (object, url, label) => {
+          if (!url) return;
+          object.userData.interactive = "neighbour-door";
+          object.userData.link = { url, label };
+          interactive.push(object);
+        },
+        bug: (sprite, entry) => {
+          sprite.userData.interactive = "neighbour-bug";
+          sprite.userData.bug = { ...entry };
+          interactive.push(sprite);
+        },
         pick: (object, url, label) => {
           if (!url) return;
           object.userData.interactive = "instance-hexagon";
@@ -481,7 +495,7 @@ function sceneHouse(THREE, item, pick) {
   return house;
 }
 
-function sceneTerrarium(THREE, item, accent, icon, pick) {
+function sceneTerrarium(THREE, item, accent, icon, bug) {
   const tank = new THREE.Group();
   const width = 26;
   const depth = 16;
@@ -491,23 +505,42 @@ function sceneTerrarium(THREE, item, accent, icon, pick) {
     makeSharedMaterial(THREE, "#3d3126", { roughness: 1 }),
   );
   soil.position.y = 0.1;
-  const glass = new THREE.Mesh(
-    resources.primitive(THREE, "BoxGeometry", width, height, depth),
-    makeSharedMaterial(THREE, "#bfe8ff", {
-      transparent: true,
-      opacity: 0.16,
-      roughness: 0.05,
-      depthWrite: false,
-    }),
+  // Glass walls and a lid, with an open doorway in the front wall: walkers
+  // go in through it (neighbour-footprints.js keeps them out elsewhere).
+  const glassMaterial = makeSharedMaterial(THREE, "#bfe8ff", {
+    transparent: true,
+    opacity: 0.16,
+    roughness: 0.05,
+    depthWrite: false,
+  });
+  const doorWidth = TERRARIUM_DOOR_WIDTH;
+  const doorHeight = 5.8;
+  const side = (width - doorWidth) / 2;
+  const pane = (sx, sy, sz, x, y, z) => {
+    const mesh = new THREE.Mesh(resources.primitive(THREE, "BoxGeometry", sx, sy, sz), glassMaterial);
+    mesh.position.set(x, y, z);
+    mesh.renderOrder = 5;
+    return mesh;
+  };
+  tank.add(
+    soil,
+    pane(width, height, 0.12, 0, height / 2, -depth / 2),
+    pane(0.12, height, depth, -width / 2, height / 2, 0),
+    pane(0.12, height, depth, width / 2, height / 2, 0),
+    pane(side, height, 0.12, -(doorWidth + side) / 2, height / 2, depth / 2),
+    pane(side, height, 0.12, (doorWidth + side) / 2, height / 2, depth / 2),
+    pane(doorWidth, height - doorHeight, 0.12, 0, doorHeight + (height - doorHeight) / 2, depth / 2),
+    pane(width, 0.12, depth, 0, height, 0),
   );
-  glass.position.y = height / 2;
-  glass.renderOrder = 5;
-  const door = new THREE.Mesh(
-    resources.primitive(THREE, "BoxGeometry", 4.8, 6, 0.4),
-    makeSharedMaterial(THREE, accent, { emissive: accent, emissiveIntensity: 0.25 }),
-  );
-  door.position.set(0, 3, depth / 2);
-  tank.add(soil, glass, door);
+  const frame = makeSharedMaterial(THREE, accent, { emissive: accent, emissiveIntensity: 0.25 });
+  [-1, 1].forEach((sx) => {
+    const post = new THREE.Mesh(resources.primitive(THREE, "BoxGeometry", 0.4, doorHeight, 0.45), frame);
+    post.position.set((sx * (doorWidth + 0.4)) / 2, doorHeight / 2, depth / 2);
+    tank.add(post);
+  });
+  const lintel = new THREE.Mesh(resources.primitive(THREE, "BoxGeometry", doorWidth + 0.8, 0.4, 0.45), frame);
+  lintel.position.set(0, doorHeight, depth / 2);
+  tank.add(lintel);
   item.bugs.forEach((entry, index) => {
     const column = index % 8;
     const row = Math.floor(index / 8);
@@ -519,7 +552,7 @@ function sceneTerrarium(THREE, item, accent, icon, pick) {
     sprite.scale.set(2.2, 2.2, 1);
     sprite.position.set(-width / 2 + 2.5 + column * 3, 1.6 + (index % 3) * 0.5, -depth / 2 + 2.5 + row * 3.2);
     sprite.renderOrder = 6;
-    pick(sprite, entry.url, entry.label);
+    bug(sprite, entry);
     tank.add(sprite);
   });
   if (item.label) {
@@ -531,14 +564,37 @@ function sceneTerrarium(THREE, item, accent, icon, pick) {
   return tank;
 }
 
-export function buildNeighbourScene(THREE, scene, { icon = () => "", pick = () => {} } = {}) {
+// Footprints of a scene's buildings in the hexagon's own frame: a house is
+// solid with a door that opens its link, a terrarium is hollow with a doorway.
+export const NEIGHBOUR_HOUSE = Object.freeze({ width: 14, depth: 12, door: 3.4 });
+export const NEIGHBOUR_TERRARIUM = Object.freeze({ width: 26, depth: 16 });
+const TERRARIUM_DOOR_WIDTH = 4.4;
+
+export function neighbourSceneFootprints(scene) {
+  return (scene?.objects || []).flatMap((item) => {
+    const placed = { x: item.x, z: item.z, rotation: item.facing };
+    if (item.type === "house") {
+      return [{
+        ...placed, ...NEIGHBOUR_HOUSE, hollow: false,
+        link: item.url ? { url: item.url, label: item.label } : null,
+      }];
+    }
+    if (item.type === "terrarium") {
+      return [{ ...placed, ...NEIGHBOUR_TERRARIUM, hollow: true, door: TERRARIUM_DOOR_WIDTH }];
+    }
+    return [];
+  });
+}
+
+export function buildNeighbourScene(THREE, scene, { icon = () => "", pick = () => {}, bug = null, door = null } = {}) {
   const group = new THREE.Group();
   group.name = "forkmesh-instance-hex-scene";
   const accent = scene.ground.accent;
+  const bugPick = bug || ((sprite, entry) => pick(sprite, entry.url, entry.label));
   scene.objects.forEach((item) => {
     let object = null;
-    if (item.type === "house") object = sceneHouse(THREE, item, pick);
-    else if (item.type === "terrarium") object = sceneTerrarium(THREE, item, accent, icon, pick);
+    if (item.type === "house") object = sceneHouse(THREE, item, door || pick);
+    else if (item.type === "terrarium") object = sceneTerrarium(THREE, item, accent, icon, bugPick);
     else if (item.type === "sign") {
       object = makeLabelSprite(THREE, item.title.slice(0, 22), item.text.slice(0, 32), accent);
       object.scale.set(16, 5.3, 1);
