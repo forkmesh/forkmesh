@@ -138,6 +138,23 @@ final class DjVitalsTests: XCTestCase {
         XCTAssertFalse(report.contains("layout and drawing 0 ms"), report)
     }
 
+    func testACommitSliverInMinutesOfBusyTimeStillSaysNotSeenInsteadOfZero() {
+        var vitals = DjVitals()
+        vitals.begin(at: 0)
+        var now = run(&vitals, from: 0, frames: 60)
+        vitals.awake(at: now + 0.001)
+        vitals.committing(at: now + 0.1555)
+        vitals.asleep(at: now + 0.156)
+        now += 0.16
+        vitals.frame(at: now, period: period)
+        now = run(&vitals, from: now, frames: 2)
+        XCTAssertGreaterThan(vitals.commitMs, 0)
+        XCTAssertFalse(vitals.commitSeen)
+        let report = vitals.report(now: now, alert: .none, context: [])
+        XCTAssertTrue(report.contains("of it layout and drawing ms/s " + DjVitals.commitUnseen), report)
+        XCTAssertFalse(report.contains("layout and drawing 0 ms"), report)
+    }
+
     func testLongFramesTellComputingFromWaitingByTheMainThreadsCpuTime() {
         var vitals = DjVitals()
         vitals.begin(at: 0)
@@ -296,6 +313,19 @@ final class DjVitalsTests: XCTestCase {
         XCTAssertEqual(meter?.averageMs ?? 0, 3.5, accuracy: 0.0001)
         XCTAssertEqual(meter?.maxMs, 6)
         XCTAssertEqual(meter?.over, 1)
+    }
+
+    func testRecentMomentsCoverTheAlertsThirtySecondsNotJustTheLastSixteen() {
+        var vitals = DjVitals()
+        vitals.begin(at: 0)
+        for index in 0..<24 { vitals.mark("load \(index)", at: 100 + Double(index)) }
+        let report = vitals.report(now: 124, alert: .none, context: [])
+        XCTAssertTrue(report.contains("-24.0 s load 0"), report)
+        XCTAssertTrue(report.contains("-1.0 s load 23"), report)
+        for index in 0..<10 { vitals.mark("late \(index)", at: 200 + Double(index)) }
+        let later = vitals.report(now: 260, alert: .none, context: [])
+        XCTAssertTrue(later.contains("load 18"), later)
+        XCTAssertFalse(later.contains("load 17"), later)
     }
 
     func testRingsStayBounded() {

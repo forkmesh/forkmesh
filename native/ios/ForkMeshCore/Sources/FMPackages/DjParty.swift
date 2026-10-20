@@ -243,6 +243,23 @@ public struct DjAutomixDeck: Equatable, Sendable {
     }
 }
 
+public enum DjEndReport: Equatable, Sendable {
+    case ended
+    case doubted
+    case failed
+}
+
+public enum DjEnd {
+    public static let slack: Double = 5
+    public static let patience: Double = 3
+
+    public static func judge(position: Double, duration: Double, doubtedSince: Double?, intended: Bool, at now: Double) -> DjEndReport {
+        guard duration > 0, position.isFinite, position < duration - slack else { return .ended }
+        guard intended, let since = doubtedSince, now - since >= patience else { return .doubted }
+        return .failed
+    }
+}
+
 public enum DjAutomix {
     public static let lead: Double = 2
     public static let audible: Double = 3
