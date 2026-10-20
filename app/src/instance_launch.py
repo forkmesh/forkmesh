@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 
+import admin_path
 import instance_directory
 import instance_registry
 import instance_theme
@@ -272,6 +273,11 @@ def validate(data):
         return None, ("weak_admin_password", "The admin password needs at "
                       "least %d characters." % MIN_ADMIN_PASSWORD,
                       "adminPassword")
+    console_path = _text(data, "adminPath", 80) or admin_path.generate()
+    if admin_path.problem(console_path):
+        return None, ("invalid_admin_path", "The admin console address is a / "
+                      "and then 8 to 64 letters, numbers, - or _, and not a "
+                      "built-in address.", "adminPath")
     owner_type = _text(data, "ownerType", 10).lower() or "org"
     if owner_type not in ("org", "user"):
         return None, ("invalid_owner_type", "Choose an organization or a "
@@ -332,6 +338,7 @@ def validate(data):
         "adminUsername": admin,
         "adminEmail": email,
         "adminPassword": admin_password,
+        "adminPath": console_path,
         "ownerType": owner_type,
         "ownerName": owner,
         "owners": owners,
@@ -518,6 +525,7 @@ async def _launch(runtime, data):
         "adminUsername": form["adminUsername"],
         "adminEmail": form["adminEmail"],
         "adminPassword": form["adminPassword"],
+        "adminPath": form["adminPath"],
         "ownerType": form["ownerType"],
         "ownerName": owner,
         "owners": form["owners"],
@@ -545,8 +553,9 @@ async def _launch(runtime, data):
         "installUrl": runtime.instance_install_url(),
         "config": config,
     }
+    console_path = form["adminPath"]
     secrets = [form["sshPassword"], form["sshPassphrase"],
-               form["adminPassword"], form["mailApiKey"]] + [
+               form["adminPassword"], form["mailApiKey"], console_path] + [
                    item["password"] for item in form["owners"]]
     entry = instance_directory.listing(form)
     form.clear()
@@ -563,6 +572,7 @@ async def _launch(runtime, data):
         "hostKey": {"type": key["type"], "fingerprint": key["fingerprint"]},
         "steps": steps,
         "url": instance_url(domain, owner),
+        "adminPath": console_path,
     }, 202)
 
 

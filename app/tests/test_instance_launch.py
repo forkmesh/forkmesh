@@ -542,3 +542,33 @@ def test_other_owners_reach_the_installer_and_their_passwords_stay_hidden():
     runtime.run_spawned()
     dump = stored(runtime)
     assert OWNER_PASSWORD not in dump and OWNER_PASSWORD not in json.dumps(answer)
+
+
+def test_the_admin_console_path_is_made_checked_handed_over_and_hidden():
+    import admin_path
+    runtime = Runtime()
+    chosen = "/manage-x7k2q9"
+    runtime.install_events = [
+        {"out": "Admin console: https://code.example.com%s" % chosen},
+        {"out": 'FMI {"done":true,"url":"https://code.example.com/acme/forkmesh"}'},
+        {"exit": 0},
+    ]
+    answer = post(runtime, form(adminPath=chosen))
+    assert answer["status"] == 202
+    assert answer["data"]["adminPath"] == chosen
+    assert runtime.requests[1]["config"]["adminPath"] == chosen
+    runtime.run_spawned()
+    launch = status(runtime, answer["data"]["id"])["data"]["launch"]
+    assert chosen not in json.dumps(launch)
+    assert "Admin console: https://code.example.com[hidden]" in launch["log"]
+    assert chosen not in stored(runtime)
+
+    made = post(Runtime(), form())["data"]["adminPath"]
+    assert admin_path.GENERATED_RE.fullmatch(made)
+    assert post(Runtime(), form())["data"]["adminPath"] != made
+
+    for bad in ("manage-x7k2q9", "/short", "/admin", "/dashboard", "/a/b/c/d/e/f"):
+        refused = post(Runtime(), form(adminPath=bad))
+        assert refused["status"] == 400, bad
+        assert refused["data"]["error"] == "invalid_admin_path"
+        assert refused["data"]["field"] == "adminPath"

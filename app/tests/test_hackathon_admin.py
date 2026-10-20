@@ -166,3 +166,23 @@ def test_judges_and_results_are_managed_from_the_page(admin):
     done = _redirect_params(_post(admin, {"form": "finalize", "slug": slug}))
     assert done["notice"] == ["finalized"]
     assert admin.db.scalar("SELECT status FROM hackathons") == "closed"
+
+
+def test_a_private_admin_path_moves_every_link_form_and_redirect(admin):
+    slug = admin.campaign(status="live")
+    admin.env.INSTANCE_NAME = "Acme Code"
+    admin.env.ADMIN_PATH = "/manage-x7k2q9"
+    admin.admin_state["actor"] = "root"
+    for tab in ("growth", "judging", "submissions", "ambassadors", "campaign"):
+        page = _get(admin, "?slug=%s&tab=%s" % (slug, tab))
+        assert page.status == 200
+        assert "/admin/" not in page.body, tab
+        assert 'action="/manage-x7k2q9/theme"' in page.body
+    assert 'href="/manage-x7k2q9/hackathon?slug=' in page.body
+    assert 'action="/manage-x7k2q9/hackathon"' in page.body
+    saved = _post(admin, {"form": "add_judge", "slug": slug, "name": "root"})
+    assert saved.headers["location"].startswith("/manage-x7k2q9/hackathon?")
+    admin.admin_state["actor"] = ""
+    signed_out = _get(admin)
+    assert signed_out.headers["location"] == (
+        "/login?next=/manage-x7k2q9/hackathon")

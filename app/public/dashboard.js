@@ -7990,6 +7990,12 @@
       adminButton.classList.toggle("hidden", !adminUrl);
       adminButton.href = adminUrl || "#";
     }
+    const adminMenuLink = $("[data-account-menu-admin]");
+    if (adminMenuLink) {
+      const consoleUrl = session?.isAdmin ? (session?.adminUrl || "") : "";
+      adminMenuLink.classList.toggle("hidden", !consoleUrl);
+      adminMenuLink.href = consoleUrl || "#";
+    }
     // Reconnect affordance next to the avatar: a signed-in user account with no
     // node linked has nothing authenticated to drain its issues/chats/etc. to a
     // desktop, so surface the re-link flow (the Settings > Nodes claim/link

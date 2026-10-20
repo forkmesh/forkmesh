@@ -4,7 +4,11 @@ import ast
 import asyncio
 import json
 import re
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+import admin_path  # noqa: E402
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,6 +81,7 @@ def _load(admins=("root", "alice"), claim=None, origin_ok=True, payload=None):
         "re": re,
         "Date": _Date,
         "MAX_NODE_NAME": 63,
+        "_admin_path_rules": admin_path,
         "clean_string": lambda value, limit: str(value or "")[:limit],
         "valid_node_name": lambda value: bool(
             re.fullmatch(r"[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?", value or "")),

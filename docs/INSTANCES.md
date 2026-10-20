@@ -35,6 +35,14 @@ extra organization owners); optional mail provider; listing choices
   `instance_theme.clean`, the installer checks their shape, and
   `instance-bootstrap` writes the `instance_settings` row on the server, so
   the choice lives only in the instance's own database.
+- **Admin console address.** The page fills `adminPath` with a fresh
+  `/admin-` plus 20 random `[a-z0-9]` characters from
+  `crypto.getRandomValues` each time it opens (about 103 bits), with Copy and
+  New buttons and a note to save it. "Download example zip", "Example
+  settings only" and "Copy example settings" each put a new random
+  `adminPath` into the file they hand out (the zip is rebuilt in the browser,
+  stored, from the static example). See [Private admin console
+  path](#private-admin-console-path).
 - Secret fields are cleared after sending and on `pagehide`; nothing is kept
   in browser storage. The page polls the launch every second, keeps the
   launch id in the URL, and on failure refills non-secret fields from the
@@ -48,7 +56,7 @@ extra organization owners); optional mail provider; listing choices
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/start/launch` | validate, resolve, read the host key, start the run; `202 {id, domain, address, hostKey, steps, url}` |
+| `POST /api/start/launch` | validate, resolve, read the host key, start the run; `202 {id, domain, address, hostKey, steps, url, adminPath}` |
 | `GET /api/start/launches/<id>` | state, steps, message, log, URL; the 128-bit id is the capability |
 | `GET /api/start/instances` | public list of listed instances and World slots |
 | `GET /api/start/instances/<id>/logo` | an instance's logo, served with a sandboxing CSP and `nosniff` |
@@ -64,6 +72,12 @@ extra organization owners); optional mail provider; listing choices
 - The installer prints `FMI {"step":…,"state":…}` lines; success needs exit 0
   and a final `FMI {"done":true,"url":…}` on the instance's own domain.
   Secrets are scrubbed from the log.
+- `adminPath` is checked with `admin_path.problem`; a launch without one gets
+  `admin_path.generate()` (Python `secrets`). It goes to the installer in the
+  settings, is answered once in the `202`, and is never written to
+  `instance_launches`: it is one of the scrubbed secrets, so a log line that
+  contains it is stored as `[hidden]`. The page shows it during the run and
+  does not redirect on success while it is shown, so it can be saved.
 
 ## SSH (`app/host/forkmesh_host/ssh_helper.py`)
 
@@ -85,7 +99,7 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
 | `packages` | swap on small machines; git, Python, Node, Caddy, sqlite3, age; service users |
 | `source` | shallow clone into `/opt/forkmesh-instance/src`; on `--update`, a shallow fetch of `sourceRef` from `sourceUrl` into that checkout (nothing is checked out yet) |
 | `build` | venv and `python -m forkmesh_host build` without ForkMesh-only plugins (`FORKMESH_EXCLUDED_PLUGINS`: their pages, Worker modules and registry rows are left out, [plugins.md](marketplace/plugins.md)), then `app/tools/apply_instance_brand.py`; on a running instance this happens in `src.next` beside the live tree (below) |
-| `configure` | `/etc/forkmesh-instance/app.env` with fresh `DATA_KEY`, `ADMIN_PASS` and router keys (kept on re-runs) and `instance.json` without secrets |
+| `configure` | `/etc/forkmesh-instance/app.env` with fresh `DATA_KEY`, `ADMIN_PASS` and router keys (kept on re-runs), `ADMIN_PATH` (see below), and `instance.json` without secrets |
 | `database` | migrations into a single-node SQLite database |
 | `services` | `forkmesh-instance.service` (uvicorn on loopback, sandboxed) |
 | `https` | Caddyfile for the app and the Git gateway paths, HSTS; waits for DNS |
@@ -215,6 +229,93 @@ keeps serving with the older program until the operator rebuilds it
 (`cd server && go build -trimpath -o forkmesh-mirror-node ./cmd/forkmesh-mirror-node`
 from the running commit on a build machine, copy it over, run
 `FORKMESH_INSTANCE_DAEMON=<binary> bash install-instance.sh --update`).
+
+## Private admin console path
+
+The admin console has always lived at `/<ADMIN_PATH>` (`app_runtime._fetch_inner`,
+`_admin`); its add-on pages (`/admin/theme`, `/admin/acquisition`,
+`/admin/hackathon`) had fixed addresses. On an instance (`INSTANCE_NAME`
+set) with a valid `ADMIN_PATH`, the whole console moves to that one private
+path:
+
+| Page | Address |
+|---|---|
+| Console and every `?view=` page (Update, Repository addresses, Legal pages, Instances, 404s, Support, Ecosystem, IDS, Marketing email, Database, …) | `<ADMIN_PATH>` |
+| Theme switch, Acquisition, Hackathon | `<ADMIN_PATH>/theme`, `<ADMIN_PATH>/acquisition`, `<ADMIN_PATH>/hackathon` |
+| `/admin`, `/admin/` and anything under `/admin/` | the instance's normal 404 page (no redirect, no hint) |
+
+- Rules live in `app/src/admin_path.py`. Valid means: starts with `/`, one
+  segment of 8 to 64 `A-Z a-z 0-9 - _` (so never a `.` and never a file
+  name), and not a built-in address (`admin`, `api`, `dashboard`, every
+  `static_routes.RESERVED_ROUTE_PREFIXES` name, `product-analysis`,
+  `transparency`, …). Example: `/manage-x7k2q9`.
+- Every link, form action and redirect inside the console comes from the
+  same helper: `admin_shell.render_page(..., subpages=shell.subpage_base(env))`
+  draws the sidebar and the theme form, Acquisition and Hackathon build their
+  forms and redirects from `subpage_base(env)`, and the admin notifications
+  (`error_group`, signup failures, website feedback, IDS) link to
+  `admin_path.notification_href(env)`.
+- Console responses on the private path get `cache-control: no-store`,
+  `x-robots-tag: noindex, nofollow` and `referrer-policy: no-referrer` (so
+  an outbound link from the console never carries the path in `Referer`);
+  the pages already had `<meta name="robots" content="noindex, nofollow">`.
+- Console page views are not recorded by acquisition attribution or the
+  site-referral counter, so the path never lands in those tables. The admin
+  path can still appear in the admin-only error log if a console page fails.
+- The path is defense in depth, not authentication: sign-in, the admin
+  session and the CSRF tokens are checked exactly as before. A signed-out
+  visitor who finds the path is sent to `/login`.
+- Not leaked: `/api/instance` has no admin field; `robots.txt` and the
+  sitemaps do not list it; only an admin's own account answer
+  (`_account_public_payload`, sent to the signed-in account at login and
+  session refresh, and `POST /api/accounts/admin-session`) carries
+  `adminUrl`, which the dashboard shows as **Admin console** in the account
+  menu and as the shield button. Error pages and refusals never name it.
+- The admin JSON APIs stay at `/api/admin/...` and `/api/accounts/admin-*`:
+  they are session-gated, the desktop and phone clients call them by those
+  fixed names, and moving them would hide nothing from someone without an
+  admin session.
+- Short repository addresses (`/<repo>`, single-organization instances) do
+  not capture the console: `_fetch_inner` matches the console path before
+  the router and its short-address rewrite. A repository with the same name
+  as the path is reachable at `/<owner>/<repo>`, never at `/<repo>`; the name
+  is not refused, because a refusal would tell anyone who guesses the path
+  that it exists.
+- Unset or invalid `ADMIN_PATH`, and every core (forkmesh.com, no
+  `INSTANCE_NAME`): exactly as before. The console is at `/<ADMIN_PATH>` when
+  set, the add-on pages stay under `/admin/`, and an instance without
+  `ADMIN_PATH` has no console route.
+
+### Setting it
+
+- New installs: the installer writes `ADMIN_PATH` to `app.env` from the
+  `adminPath` setting. Without one, a fresh install generates
+  `/admin-` + 20 random `[a-z0-9]` characters (Python `secrets`, the
+  kernel's `/dev/urandom` source) and prints it in the final summary with
+  the sign-in line. In a detached run that summary is the setup log, so the
+  address is printed only when `/var/log/forkmesh-instance-setup.log` is
+  owned by root with no group or other access (as the installer creates it);
+  otherwise the summary says it is `ADMIN_PATH` in `app.env`. A path that came
+  from the settings is never echoed.
+- `write_settings` rebuilds `app.env` from scratch on every run. Before
+  October 2026 it did not carry `ADMIN_PATH` over, so `--update` (and the
+  admin console's Update button) silently dropped a hand-set value and
+  `/<path>` fell through to the short repository addresses. It now reads the
+  existing value first (`choose_admin_path`).
+- `--update` and re-runs keep an existing `ADMIN_PATH` unchanged, even when
+  the settings name another one (the summary says so), and never add one to
+  an instance that does not have it. `instance.json` never holds it.
+- An existing instance: add one line to `/etc/forkmesh-instance/app.env` and
+  restart the app (`systemctl restart forkmesh-instance`):
+
+  ```
+  ADMIN_PATH=/manage-x7k2q9
+  ```
+
+  Use your own random value, for example
+  `printf '/admin-%s\n' "$(head -c 64 /dev/urandom | base64 | tr -dc a-z0-9 | head -c 20)"`.
+  The dashboard's Admin console link picks it up at the next sign-in or
+  session refresh.
 
 ## Bootstrap (`instance_bootstrap.py`)
 

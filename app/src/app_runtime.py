@@ -1045,6 +1045,12 @@ class Default:
                 response = await self._public_snapshot_response(
                     request, url, snapshot_path)
 
+            elif _admin_path_rules.legacy_hidden(self.env, url.path):
+                response = await self._serve_not_found_page(url)
+            elif (admin_subpage := _admin_path_rules.subpage(
+                    self.env, url.path)):
+                response = await self._admin_subpage(
+                    request, url, admin_subpage)
             # Admin error dashboard at a secret, env-configured path. Its 401/403
             # responses are not logged, but unexpected exceptions are captured.
             elif (
@@ -1114,6 +1120,10 @@ class Default:
         response = _apply_browser_security_headers(
             response, str(getattr(url, "path", "") or "/")
         )
+        private_console = url is not None and _admin_path_rules.is_console(
+            self.env, url.path)
+        if private_console:
+            response = _private_console_headers(response)
         try:
             status = int(getattr(response, "status", 200) or 200)
         except Exception:
@@ -1122,7 +1132,7 @@ class Default:
         # referral counter below — a top-level text/html GET and nothing
         # else — so git, raw-blob and API requests never see it. It can only
         # add a Set-Cookie to a response that already exists.
-        if not read_only:
+        if not read_only and not private_console:
             response = await _attribution.capture_page_view(
                 self.env, request, url, response, status)
         # A failed forkmesh/forkmesh content read is /status evidence that
@@ -1136,7 +1146,7 @@ class Default:
         # Credit the website that sent this visitor. Gated to served page
         # navigations carrying an external Referer, so the extra D1 write only
         # happens on the rare request that is actually an inbound referral.
-        if not read_only:
+        if not read_only and not private_console:
             await record_site_referral(self.env, request, url, status)
         # Blog reach is recorded from the same successfully served top-level
         # navigation. It stores totals, a fixed aggregate HLL projection and
@@ -1167,6 +1177,16 @@ class Default:
                 request=request,
             )
         return response
+
+    async def _admin_subpage(self, request, url, name):
+        if name == "theme":
+            return await admin_theme_handler(self.env, request)
+        if name == "acquisition":
+            return await _attribution.admin_dashboard_handler(
+                self.env, request)
+        if instance_features.blocked(self.env, "/admin/hackathon"):
+            return await self._serve_not_found_page(url)
+        return await hackathon_admin_page_handler(self.env, request)
 
     async def _admin(self, request):
         await ensure_schema(self.env)
@@ -1661,7 +1681,8 @@ class Default:
                 console=_admin_shell.console_base(self.env),
                 theme=_admin_shell.theme_from_request(request),
                 badges=await _admin_shell.nav_badges(self.env),
-                account=account_cookie_name, next_path=next_path),
+                account=account_cookie_name, next_path=next_path,
+                subpages=_admin_shell.subpage_base(self.env)),
             status=200,
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "no-store",

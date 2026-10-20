@@ -2085,14 +2085,16 @@ async def _render_admin_overview(env, stats, admin_query="", now=None):
             title="Hackathon", description="%s · %s" % (
                 campaign.get("slug"), campaign.get("status")),
             actions='<a class="more" href="%s?slug=%s">Manage%s</a>' % (
-                shell.HACKATHON_HREF, quote(str(campaign.get("slug") or "")),
+                shell.subpage_base(env) + "/hackathon",
+                quote(str(campaign.get("slug") or "")),
                 shell.icon("chev")))
     else:
         hackathon_card = shell.card(
             shell.empty("No hackathon campaign exists yet."),
             title="Hackathon",
             actions='<a class="more" href="%s?slug=new">New campaign%s</a>'
-            % (shell.HACKATHON_HREF, shell.icon("chev")))
+            % (shell.subpage_base(env) + "/hackathon",
+               shell.icon("chev")))
 
     network = (
         '<section class="card"><div class="card-h"><div><h2>Live network</h2>'
@@ -2292,7 +2294,8 @@ def _render_admin_database(tables, active, counts, table_html, admin_query="",
 
 
 def render_admin_html(view, content, banner="", admin_query="", console="",
-                      theme="system", badges=None, account="", next_path="/"):
+                      theme="system", badges=None, account="", next_path="/",
+                      subpages="/admin"):
     """A complete console page: the shared admin shell around one section.
 
     The console keeps the product analytics snippet it always loaded, and
@@ -2304,6 +2307,7 @@ def render_admin_html(view, content, banner="", admin_query="", console="",
     return shell.render_page(
         title, banner_html + content, active=view, console=console,
         theme=theme, badges=badges, account=account, next_path=next_path,
+        subpages=subpages,
         head_extra=(
             "<style>" + CONSOLE_STYLE + "</style>"
             "<script src=\"/analytics.js\"></script>"),

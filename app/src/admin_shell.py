@@ -20,6 +20,8 @@ shell only draws.
 import html as _html
 from urllib.parse import quote, parse_qs
 
+import admin_path as _admin_path
+
 
 def _bind_runtime(runtime):
     """Supply the entrypoint primitives the shell uses (Response, D1, env)."""
@@ -29,7 +31,6 @@ def _bind_runtime(runtime):
             namespace[name] = value
 
 
-ADMIN_THEME_PATH = "/admin/theme"
 ADMIN_THEME_COOKIE = "forkmesh_admin_theme"
 ADMIN_THEME_TTL_S = 365 * 24 * 60 * 60
 ADMIN_THEME_MAX_FORM_BYTES = 4096
@@ -38,8 +39,6 @@ THEME_LABELS = {"light": "Light theme", "dark": "Dark theme",
                 "system": "System theme"}
 LOGO = "/assets/logo.svg"
 PRODUCT_ANALYSIS_HREF = "/product-analysis"
-ACQUISITION_HREF = "/admin/acquisition"
-HACKATHON_HREF = "/admin/hackathon"
 MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun",
           "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 
@@ -55,8 +54,8 @@ NAV = (
         ("analytics", "Product analytics", "chart",
          ("path", PRODUCT_ANALYSIS_HREF)),
         ("acquisition", "Acquisition", "megaphone",
-         ("path", ACQUISITION_HREF)),
-        ("hackathon", "Hackathon", "trophy", ("path", HACKATHON_HREF)),
+         ("sub", "acquisition")),
+        ("hackathon", "Hackathon", "trophy", ("sub", "hackathon")),
         ("marketing-email", "Marketing email", "send",
          ("console", "marketing-email")),
         ("ecosystem", "Ecosystem", "globe", ("console", "ecosystem")),
@@ -749,7 +748,7 @@ async def theme_handler(env, request):
     })
 
 
-def theme_control(theme, next_path):
+def theme_control(theme, next_path, subpages=_admin_path.LEGACY_BASE):
     buttons = []
     for key in THEMES:
         selected = key == theme
@@ -761,7 +760,8 @@ def theme_control(theme, next_path):
     return (
         '<form class="seg" method="post" action="%s" aria-label="Theme">'
         '<input type="hidden" name="next" value="%s">%s</form>' % (
-            ADMIN_THEME_PATH, esc(safe_next(next_path)), "".join(buttons)))
+            esc(subpages + "/theme"), esc(safe_next(next_path)),
+            "".join(buttons)))
 
 
 # --- formatting -------------------------------------------------------------------
@@ -1128,14 +1128,19 @@ def gauge(fraction, label=""):
 
 def console_base(env):
     """``/<ADMIN_PATH>`` or ``""`` when the console is not configured."""
-    path = str(getattr(env, "ADMIN_PATH", "") or "").strip("/")
-    return ("/" + quote(path, safe="/-_.~")) if path else ""
+    return _admin_path.console_base(env)
 
 
-def nav_href(console, target):
+def subpage_base(env):
+    return _admin_path.sub_base(env)
+
+
+def nav_href(console, target, subpages=_admin_path.LEGACY_BASE):
     kind, value = target
     if kind == "path":
         return value
+    if kind == "sub":
+        return subpages + "/" + value
     if not console:
         return ""
     return console + "?view=" + quote(value)
@@ -1204,7 +1209,7 @@ async def nav_badges(env):
 
 
 def sidebar(active, console="", badges=None, theme="system", next_path="/",
-            foot_extra="", allowed=None):
+            foot_extra="", allowed=None, subpages=_admin_path.LEGACY_BASE):
     """The grouped section list. ``allowed`` limits which keys are drawn."""
     badges = badges or {}
     groups = []
@@ -1213,7 +1218,7 @@ def sidebar(active, console="", badges=None, theme="system", next_path="/",
         for key, label, icon_name, target in items:
             if allowed is not None and key not in allowed:
                 continue
-            href = nav_href(console, target)
+            href = nav_href(console, target, subpages)
             if not href:
                 continue
             current = key == active
@@ -1239,7 +1244,7 @@ def sidebar(active, console="", badges=None, theme="system", next_path="/",
         '<nav class="ab-nav" aria-label="Sections">%s</nav>'
         '<div class="ab-foot">%s%s</div></aside>' % (
             icon("close"), esc(LOGO), "".join(groups), foot_extra,
-            theme_control(theme, next_path)))
+            theme_control(theme, next_path, subpages)))
 
 
 def top_bar(console="", account="", search_value=""):
@@ -1277,7 +1282,8 @@ def document(title, body, theme="system", head_extra=""):
 
 def render_page(title, content, active="", console="", theme="system",
                 badges=None, account="", next_path="/", search_value="",
-                foot_extra="", allowed=None, head_extra="", body_extra=""):
+                foot_extra="", allowed=None, head_extra="", body_extra="",
+                subpages=_admin_path.LEGACY_BASE):
     """One complete admin page: sidebar, top bar and ``content``."""
     # The drawer checkbox must precede the sidebar, scrim and main column as a
     # sibling so the ``#ab-nav:checked ~`` rules can reach all three.
@@ -1286,7 +1292,7 @@ def render_page(title, content, active="", console="", theme="system",
         + '<div class="ab"><input type="checkbox" id="ab-nav" class="sr" '
           'aria-label="Show navigation">'
         + sidebar(active, console, badges, theme, next_path, foot_extra,
-                  allowed)
+                  allowed, subpages)
         + '<label for="ab-nav" class="ab-scrim" aria-hidden="true"></label>'
         + '<div class="ab-main">'
         + top_bar(console if allowed is None or "users" in allowed else "",

@@ -127,6 +127,10 @@
       .field .help { color: var(--ink-faint); font-size: 12px; margin-top: 5px; line-height: 1.45; }
       .field .help code { font-family: var(--mono); font-size: 11.5px; }
       .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+      .copy-row { display: flex; gap: 6px; align-items: center; }
+      .copy-row input { flex: 1; min-width: 0; font-family: var(--mono); }
+      .admin-path-note { margin: 10px 0 0; font-size: 13px; line-height: 1.5; color: var(--ink); }
+      .admin-path-note code { font-family: var(--mono); overflow-wrap: anywhere; }
       .field-row.three { grid-template-columns: 2fr 1fr 1fr; }
       .field-row.owner-row { grid-template-columns: 1fr 1.4fr 1fr auto; align-items: center; margin-bottom: 8px; }
       @media (max-width: 560px) { .field-row, .field-row.three, .field-row.owner-row { grid-template-columns: 1fr; } }
@@ -372,7 +376,7 @@
             </div>
             <div class="config-links">
               <a href="https://forkmesh.com/docs/start-config/" target="_blank" rel="noopener">How the file works</a>
-              <a href="/start-config.example.zip" download="forkmesh-instance.zip">Download example zip</a>
+              <a href="/start-config.example.zip" download="forkmesh-instance.zip" data-start-config-zip>Download example zip</a>
               <a href="/start-config.example.json" download="forkmesh-instance.json" data-start-config-example>Example settings only</a>
               <button type="button" class="link-btn" data-start-config-copy>Copy example settings</button>
             </div>
@@ -539,6 +543,15 @@
               <input id="start-admin-password" name="adminPassword" type="password" autocomplete="new-password" minlength="10" required />
             </div>
             <div class="field">
+              <label for="start-admin-path">Admin console address <span class="sub">(private)</span></label>
+              <div class="copy-row">
+                <input id="start-admin-path" name="adminPath" type="text" maxlength="65" spellcheck="false" autocomplete="off" required />
+                <button type="button" class="ghost-btn" data-start-admin-path-copy>Copy</button>
+                <button type="button" class="ghost-btn" data-start-admin-path-new>New</button>
+              </div>
+              <p class="help">Your admin console opens only at your instance's address followed by this path, and <code>/admin</code> answers “not found”. Save it now with your password: ForkMesh does not keep it. It is made fresh in your browser each time this page opens.</p>
+            </div>
+            <div class="field">
               <span class="label" id="start-owner-label">Your <code>forkmesh</code> repository belongs to</span>
               <div class="segmented" role="radiogroup" aria-labelledby="start-owner-label">
                 <label><input type="radio" name="ownerType" value="org" checked />An organization</label>
@@ -630,6 +643,7 @@
             <span class="elapsed" data-start-elapsed>0:00</span>
           </div>
           <p class="progress-sub" data-start-progress-sub></p>
+          <p class="admin-path-note" data-start-admin-path-note hidden>Admin console: <code data-start-admin-path-url></code> <button type="button" class="link-btn" data-start-admin-path-note-copy>Copy</button><br />Save this address now. ForkMesh does not keep it, and this page shows it only until you leave.</p>
           <div class="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" data-start-bar><div></div></div>
           <ol class="steps" data-start-steps></ol>
           <div class="log-head"><strong style="font-size: 13px">Live log</strong><span data-start-status role="status" aria-live="polite"></span></div>

@@ -1873,7 +1873,7 @@ async def growth_report(env, row):
 
 def _admin_page(row, campaigns, report, judges, submissions, ambassadors,
                 notice="", error="", tab="growth", admin="", console="",
-                theme="system", badges=None):
+                theme="system", badges=None, page=ADMIN_PAGE_PATH):
     shell = _admin_shell
     slug = str((row or {}).get("slug") or "")
     tab = tab if (row and tab in ADMIN_TAB_KEYS) else (
@@ -1886,7 +1886,7 @@ def _admin_page(row, campaigns, report, judges, submissions, ambassadors,
         campaign_status = str(campaign.get("status") or "")
         switcher.append(
             "<a class=\"camp%s\" href=\"%s?slug=%s\"%s>%s %s</a>" % (
-                " on" if campaign_slug == slug else "", ADMIN_PAGE_PATH,
+                " on" if campaign_slug == slug else "", page,
                 _esc(quote(campaign_slug)),
                 " aria-current=\"page\"" if campaign_slug == slug else "",
                 _esc(campaign_slug),
@@ -1898,7 +1898,7 @@ def _admin_page(row, campaigns, report, judges, submissions, ambassadors,
             "Growth, configuration, judging, submissions and ambassadors for "
             "each campaign.", crumb="Growth",
             actions=("<a class=\"btn btn-primary\" href=\"%s?slug=new\">%sNew "
-                     "campaign</a>" % (ADMIN_PAGE_PATH, shell.icon("plus")))),
+                     "campaign</a>" % (page, shell.icon("plus")))),
         "<nav class=\"campaigns\" aria-label=\"Campaigns\">%s</nav>"
         % "".join(switcher) if switcher else "",
     ]
@@ -1907,12 +1907,12 @@ def _admin_page(row, campaigns, report, judges, submissions, ambassadors,
     if error:
         parts.append(shell.banner(error, "bad"))
     if not row:
-        parts.append(_admin_campaign_form(row))
+        parts.append(_admin_campaign_form(row, page))
         return _admin_render(shell, "".join(parts), admin, console, theme,
-                             badges, "%s?slug=new" % ADMIN_PAGE_PATH)
+                             badges, "%s?slug=new" % page, page)
 
     def tab_href(key):
-        return "%s?slug=%s&amp;tab=%s" % (ADMIN_PAGE_PATH, _esc(quote(slug)),
+        return "%s?slug=%s&amp;tab=%s" % (page, _esc(quote(slug)),
                                           key)
 
     to_review = sum(1 for entry in submissions
@@ -1929,22 +1929,24 @@ def _admin_page(row, campaigns, report, judges, submissions, ambassadors,
     if tab == "growth" and report:
         parts.append(_admin_growth(shell, row, report))
     elif tab == "campaign":
-        parts.append(_admin_campaign_form(row))
+        parts.append(_admin_campaign_form(row, page))
     elif tab == "judging":
-        parts.append(_admin_judging(shell, row, judges))
+        parts.append(_admin_judging(shell, row, judges, page))
     elif tab == "submissions":
-        parts.append(_admin_submissions(shell, row, submissions))
+        parts.append(_admin_submissions(shell, row, submissions, page))
     elif tab == "ambassadors":
-        parts.append(_admin_ambassadors(shell, row, ambassadors))
+        parts.append(_admin_ambassadors(shell, row, ambassadors, page))
     return _admin_render(
         shell, "".join(parts), admin, console, theme, badges,
-        "%s?slug=%s&tab=%s" % (ADMIN_PAGE_PATH, quote(slug), tab))
+        "%s?slug=%s&tab=%s" % (page, quote(slug), tab), page)
 
 
-def _admin_render(shell, content, admin, console, theme, badges, next_path):
+def _admin_render(shell, content, admin, console, theme, badges, next_path,
+                  page=ADMIN_PAGE_PATH):
     return shell.render_page(
         "Hackathon", content, active="hackathon", console=console,
         theme=theme, badges=badges, account=admin, next_path=next_path,
+        subpages=page.rsplit("/", 1)[0],
         head_extra="<style>" + _ADMIN_EXTRA_STYLE + "</style>")
 
 
@@ -2053,7 +2055,7 @@ def _admin_growth(shell, row, report):
         + recruiters_card)
 
 
-def _admin_campaign_form(row):
+def _admin_campaign_form(row, page=ADMIN_PAGE_PATH):
     shell = _admin_shell
     slug = str((row or {}).get("slug") or "")
     config = _config(row) if row else policy.default_config()
@@ -2095,7 +2097,7 @@ def _admin_campaign_form(row):
         "<div class=\"wide form-row\" style=\"justify-content:flex-end\">"
         "<button class=\"btn btn-primary\" type=\"submit\">Save campaign"
         "</button></div></div></form></section>" % (
-            "Campaign" if row else "New campaign", ADMIN_PAGE_PATH,
+            "Campaign" if row else "New campaign", page,
             _esc(slug), " readonly" if row else "", statuses,
             _esc((row or {}).get("title") or "ForkMesh Hackathon"),
             _utc_input((row or {}).get("starts_at")),
@@ -2104,7 +2106,7 @@ def _admin_campaign_form(row):
             _esc(json.dumps(config, indent=2))))
 
 
-def _admin_judging(shell, row, judges):
+def _admin_judging(shell, row, judges, page):
     slug = str(row.get("slug") or "")
     hidden = _admin_hidden(slug)
     judge_rows = [
@@ -2113,7 +2115,7 @@ def _admin_judging(shell, row, judges):
         "name=\"form\" value=\"remove_judge\"><input type=\"hidden\""
         " name=\"name\" value=\"%s\"><button class=\"btn btn-sm btn-danger\" "
         "type=\"submit\">Remove</button></form></td></tr>" % (
-            shell.who(str(judge.get("name") or "")), ADMIN_PAGE_PATH, hidden,
+            shell.who(str(judge.get("name") or "")), page, hidden,
             _esc(judge.get("name")))
         for judge in judges]
     judges_card = shell.card(
@@ -2129,13 +2131,13 @@ def _admin_judging(shell, row, judges):
             "<input id=\"hk-judge\" class=\"grow\" name=\"name\" required "
             "placeholder=\"username\"><button class=\"btn btn-primary\" "
             "type=\"submit\">%sAdd judge</button></form>" % (
-                ADMIN_PAGE_PATH, hidden, shell.icon("plus"))))
+                page, hidden, shell.icon("plus"))))
     can_finalize = str(row.get("status") or "") in ("judging", "closed")
     results_card = shell.card(
         "<form method=\"post\" action=\"%s\">%s<input type=\"hidden\" "
         "name=\"form\" value=\"finalize\"><button class=\"btn btn-primary\" "
         "type=\"submit\"%s>Finalize results</button>%s</form>" % (
-            ADMIN_PAGE_PATH, hidden, "" if can_finalize else " disabled",
+            page, hidden, "" if can_finalize else " disabled",
             "" if can_finalize else " <span class=\"muted\">Set the status "
             "to judging first.</span>"),
         title="Results",
@@ -2148,7 +2150,7 @@ def _admin_judging(shell, row, judges):
     return "<div class=\"grid cols-2\">" + judges_card + results_card + "</div>"
 
 
-def _admin_submissions(shell, row, submissions):
+def _admin_submissions(shell, row, submissions, page):
     hidden = _admin_hidden(str(row.get("slug") or ""))
     tones = {"valid": "ok", "needs_review": "warn", "invalid": "bad"}
     rows = []
@@ -2174,7 +2176,7 @@ def _admin_submissions(shell, row, submissions):
             "for=\"hk-review-%s\">Review status</label><select id=\"hk-review-%s\" "
             "name=\"status\">%s</select><button class=\"btn btn-sm\" "
             "type=\"submit\">Save</button></form>" % (
-                ADMIN_PAGE_PATH, hidden, _esc(entry.get("submission_id")),
+                page, hidden, _esc(entry.get("submission_id")),
                 _esc(entry.get("submission_id")),
                 _esc(entry.get("submission_id")), options))
         rows.append(
@@ -2202,7 +2204,7 @@ def _admin_submissions(shell, row, submissions):
             "<th class=\"r\">Review</th>", rows, "No submissions yet."))
 
 
-def _admin_ambassadors(shell, row, ambassadors):
+def _admin_ambassadors(shell, row, ambassadors, page):
     hidden = _admin_hidden(str(row.get("slug") or ""))
     tones = {"approved": "ok", "rejected": "bad", "pending": "info"}
     rows = []
@@ -2213,7 +2215,7 @@ def _admin_ambassadors(shell, row, ambassadors):
             "<input type=\"hidden\" name=\"form\" value=\"%s\">"
             "<input type=\"hidden\" name=\"name\" value=\"%s\">"
             "<button class=\"btn btn-sm%s\" type=\"submit\">%s</button></form>"
-            % (ADMIN_PAGE_PATH, hidden, action, _esc(entry.get("name")),
+            % (page, hidden, action, _esc(entry.get("name")),
                " btn-primary" if action.startswith("approve") else " btn-danger",
                label)
             for action, label in (("reject_ambassador", "Reject"),
@@ -2259,6 +2261,7 @@ async def admin_page_handler(env, request):
     if method not in ("GET", "HEAD", "POST"):
         return Response("", status=405, headers=dict(headers, allow="GET, POST"))
     await ensure_schema(env)
+    page = _admin_shell.subpage_base(env) + "/hackathon"
     actor = await _admin_page_actor(env, request)
     if not actor:
         if method == "POST":
@@ -2266,7 +2269,7 @@ async def admin_page_handler(env, request):
                             headers=dict(headers, **{
                                 "content-type": "text/plain; charset=utf-8"}))
         return Response("", status=302, headers=dict(headers, location=(
-            "/login?next=" + quote(ADMIN_PAGE_PATH))))
+            "/login?next=" + quote(page))))
     params = parse_qs(urlparse(request.url).query)
     if method == "POST":
         if not _request_origin_allowed(env, request):
@@ -2315,7 +2318,7 @@ async def admin_page_handler(env, request):
             }[form]
         else:
             result, error, _status = None, "unknown_action", 400
-        target = "%s?slug=%s" % (ADMIN_PAGE_PATH, quote(slug or "new"))
+        target = "%s?slug=%s" % (page, quote(slug or "new"))
         if form in ADMIN_FORM_TABS and SLUG_RE.match(slug):
             target += "&tab=" + ADMIN_FORM_TABS[form]
         if error:
@@ -2362,7 +2365,7 @@ async def admin_page_handler(env, request):
         tab=str((params.get("tab") or ["growth"])[0]), admin=actor,
         console=shell.console_base(env),
         theme=shell.theme_from_request(request),
-        badges=await shell.nav_badges(env))
+        badges=await shell.nav_badges(env), page=page)
     return Response(body, status=200, headers=dict(headers, **{
         "content-type": "text/html; charset=utf-8",
         "content-security-policy": (
