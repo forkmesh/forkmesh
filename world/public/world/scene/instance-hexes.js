@@ -21,7 +21,7 @@ import {
   roundedHexagonGeometry,
 } from "./town.js";
 import * as resources from "./resources.js";
-import { loadNeighbourScene } from "../world-neighbour-scene.js";
+import { loadNeighbourScene, neighbourIconURL } from "../world-neighbour-scene.js";
 
 export const INSTANCE_LOGO_PATH =
   /^(?:https:\/\/[a-z0-9.-]+(?::\d{1,5})?)?\/api\/start\/instances\/[0-9a-f]{32}\/logo\?v=\d+$/;
@@ -29,6 +29,8 @@ const LOGO_TEXTURE_SIZE = 256;
 const GROUND_LOGO_SIZE = 150;
 const LANDMARK_INSET = CONTINUOUS_CITY_RADIUS * 0.55;
 const MESH_ROAD_DROP = 0.02;
+const CIRCUIT_TEXTURE_SIZE = 256;
+const CIRCUIT_REPEAT = 5;
 
 export function instanceHexArrival(slot) {
   const tile = instanceHexSlot(slot);
@@ -312,10 +314,21 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
   if (single && instance.scene) {
     void loadNeighbourScene(instance.scene).then((scene) => {
       if (!scene || !group.parent?.parent) return;
-      ground.material = makeSharedMaterial(THREE, scene.ground.color, { roughness: 1, metalness: 0 });
+      ground.material = neighbourGroundMaterial(THREE, scene.ground);
       groundLogo.visible = false;
       groundLogo.userData.sceneHidden = true;
-      group.add(buildNeighbourScene(THREE, scene));
+      group.add(buildNeighbourScene(THREE, scene, {
+        icon: (url) => neighbourIconURL(instance.id, url),
+        pick: (object, url, label) => {
+          if (!url) return;
+          object.userData.interactive = "instance-hexagon";
+          object.userData.url = url;
+          object.userData.label = label;
+          object.userData.host = new URL(url).hostname;
+          object.userData.worldUrl = "";
+          interactive.push(object);
+        },
+      }));
     });
   }
 
@@ -332,6 +345,64 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
     groundLogo.visible = !groundLogo.userData.sceneHidden;
   });
   return group;
+}
+
+function circuitCanvas(THREE, color, accent, glow) {
+  const size = CIRCUIT_TEXTURE_SIZE;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  context.fillStyle = glow ? "#000000" : color;
+  context.fillRect(0, 0, size, size);
+  context.strokeStyle = glow ? "#ffffff" : accent;
+  context.fillStyle = context.strokeStyle;
+  context.globalAlpha = glow ? 0.6 : 0.22;
+  context.lineWidth = 2;
+  context.lineCap = "round";
+  let seed = 7;
+  const next = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  const grid = size / 8;
+  for (let index = 0; index < 10; index += 1) {
+    let x = Math.floor(next() * 8) * grid;
+    let y = Math.floor(next() * 8) * grid;
+    context.beginPath();
+    context.moveTo(x, y);
+    for (let step = 0; step < 4; step += 1) {
+      const run = (1 + Math.floor(next() * 2)) * grid;
+      if (step % 2 === 0) x = (x + (next() < 0.5 ? run : -run) + size) % size;
+      else y = (y + (next() < 0.5 ? run : -run) + size) % size;
+      context.lineTo(x, y);
+    }
+    context.stroke();
+    context.beginPath();
+    context.arc(x, y, 4, 0, Math.PI * 2);
+    context.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(CIRCUIT_REPEAT, CIRCUIT_REPEAT);
+  if (!glow) texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+export function neighbourGroundMaterial(THREE, ground) {
+  if (ground.pattern !== "circuit") {
+    return makeSharedMaterial(THREE, ground.color, { roughness: 1, metalness: 0 });
+  }
+  return resources.uniqueMaterial(THREE, {
+    color: "#ffffff",
+    map: circuitCanvas(THREE, ground.color, ground.accent, false),
+    emissive: ground.accent,
+    emissiveMap: circuitCanvas(THREE, ground.color, ground.accent, true),
+    emissiveIntensity: 0.2,
+    roughness: 1,
+    metalness: 0,
+  }, "MeshStandardMaterial");
 }
 
 function iconTexture(THREE, label, url, ring) {
@@ -377,7 +448,7 @@ function iconTexture(THREE, label, url, ring) {
   return texture;
 }
 
-function sceneHouse(THREE, item) {
+function sceneHouse(THREE, item, pick) {
   const house = new THREE.Group();
   const body = new THREE.Mesh(
     resources.primitive(THREE, "BoxGeometry", 14, 9, 12),
@@ -395,15 +466,22 @@ function sceneHouse(THREE, item) {
     makeSharedMaterial(THREE, item.color, { emissive: item.color, emissiveIntensity: 0.7 }),
   );
   door.position.set(0, 2.7, 6.02);
+  const glass = makeSharedMaterial(THREE, "#ffe9a8", { emissive: "#ffe9a8", emissiveIntensity: 0.9 });
+  const windows = [-4.6, 4.6].map((x) => {
+    const pane = new THREE.Mesh(resources.primitive(THREE, "PlaneGeometry", 2.6, 2.2), glass);
+    pane.position.set(x, 5, 6.02);
+    return pane;
+  });
   const label = makeLabelSprite(THREE, item.label.slice(0, 22),
     item.url ? new URL(item.url).hostname.slice(0, 32) : "", item.color);
   label.scale.set(15, 5, 1);
   label.position.y = 19;
-  house.add(body, roof, door, label);
+  house.add(body, roof, door, ...windows, label);
+  [body, roof, door, label].forEach((object) => pick(object, item.url, item.label));
   return house;
 }
 
-function sceneTerrarium(THREE, item, accent) {
+function sceneTerrarium(THREE, item, accent, icon, pick) {
   const tank = new THREE.Group();
   const width = 26;
   const depth = 16;
@@ -415,7 +493,12 @@ function sceneTerrarium(THREE, item, accent) {
   soil.position.y = 0.1;
   const glass = new THREE.Mesh(
     resources.primitive(THREE, "BoxGeometry", width, height, depth),
-    makeSharedMaterial(THREE, "#bfe8ff", { transparent: true, opacity: 0.16, roughness: 0.05 }),
+    makeSharedMaterial(THREE, "#bfe8ff", {
+      transparent: true,
+      opacity: 0.16,
+      roughness: 0.05,
+      depthWrite: false,
+    }),
   );
   glass.position.y = height / 2;
   glass.renderOrder = 5;
@@ -429,13 +512,14 @@ function sceneTerrarium(THREE, item, accent) {
     const column = index % 8;
     const row = Math.floor(index / 8);
     const sprite = new THREE.Sprite(resources.uniqueMaterial(THREE, {
-      map: iconTexture(THREE, entry.label, entry.icon, accent),
+      map: iconTexture(THREE, entry.label, entry.icon ? icon(entry.icon) : "", accent),
       transparent: true,
       depthWrite: false,
     }, "SpriteMaterial"));
-    sprite.scale.set(1.2, 1.2, 1);
-    sprite.position.set(-width / 2 + 2.5 + column * 3, 1.6 + (index % 3) * 0.4, -depth / 2 + 2.5 + row * 3.2);
+    sprite.scale.set(2.2, 2.2, 1);
+    sprite.position.set(-width / 2 + 2.5 + column * 3, 1.6 + (index % 3) * 0.5, -depth / 2 + 2.5 + row * 3.2);
     sprite.renderOrder = 6;
+    pick(sprite, entry.url, entry.label);
     tank.add(sprite);
   });
   if (item.label) {
@@ -447,14 +531,14 @@ function sceneTerrarium(THREE, item, accent) {
   return tank;
 }
 
-export function buildNeighbourScene(THREE, scene) {
+export function buildNeighbourScene(THREE, scene, { icon = () => "", pick = () => {} } = {}) {
   const group = new THREE.Group();
   group.name = "forkmesh-instance-hex-scene";
   const accent = scene.ground.accent;
   scene.objects.forEach((item) => {
     let object = null;
-    if (item.type === "house") object = sceneHouse(THREE, item);
-    else if (item.type === "terrarium") object = sceneTerrarium(THREE, item, accent);
+    if (item.type === "house") object = sceneHouse(THREE, item, pick);
+    else if (item.type === "terrarium") object = sceneTerrarium(THREE, item, accent, icon, pick);
     else if (item.type === "sign") {
       object = makeLabelSprite(THREE, item.title.slice(0, 22), item.text.slice(0, 32), accent);
       object.scale.set(16, 5.3, 1);

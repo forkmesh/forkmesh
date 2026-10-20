@@ -77,6 +77,12 @@ out.mesh = m.normalizeWorldMesh({ self: "forkmesh", worlds: [
   { id: "b".repeat(32), world: "https://two.example.org", api: "https://two.example.org", slot: 1, shape: "hex",
     scene: "https://evil.example.net/api/world/neighbour-scene" },
 ] }).worlds.map((world) => world.scene);
+out.icons = [
+  s.neighbourIconURL("a".repeat(32), "https://code.example.org/api/repo/o/r/raw?path=a%2Fb.png&ref=main"),
+  s.neighbourIconURL("forkmesh", "https://code.example.org/i.png"),
+  s.neighbourIconURL("a".repeat(32), "http://code.example.org/i.png"),
+  s.neighbourIconURL("a".repeat(32), ""),
+];
 console.log(JSON.stringify(out));
 """
 
@@ -148,9 +154,69 @@ def test_the_hub_directory_names_the_scene_of_single_hexagons():
 def test_the_scene_is_drawn_on_the_hexagon_or_the_logo_stays():
     assert "if (single && instance.scene) {" in HEXES
     assert "if (!scene || !group.parent?.parent) return;" in HEXES
-    assert "group.add(buildNeighbourScene(THREE, scene));" in HEXES
+    assert "group.add(buildNeighbourScene(THREE, scene, {" in HEXES
+    assert "icon: (url) => neighbourIconURL(instance.id, url)," in HEXES
     assert 'image.crossOrigin = "anonymous";' in HEXES
     assert "innerHTML" not in HEXES
+
+
+def test_bugs_show_through_the_glass_and_links_are_clickable():
+    tank = HEXES[HEXES.index("function sceneTerrarium("):
+                 HEXES.index("export function buildNeighbourScene(")]
+    assert "depthWrite: false,\n    })," in tank
+    assert "entry.icon ? icon(entry.icon) : \"\"" in tank
+    assert "pick(sprite, entry.url, entry.label);" in tank
+    assert "pick(object, item.url, item.label)" in HEXES
+    assert 'object.userData.interactive = "instance-hexagon";' in HEXES
+    assert 'if (ground.pattern !== "circuit") {' in HEXES
+
+
+def test_bug_icons_go_through_the_home_worlds_icon_route(result):
+    assert result["icons"] == [
+        "/api/world/neighbour-icon?world=" + "a" * 32
+        + "&path=%2Fapi%2Frepo%2Fo%2Fr%2Fraw%3Fpath%3Da%252Fb.png%26ref%3Dmain",
+        "", "", ""]
+
+
+MESH_WORLDS = [
+    {"id": "forkmesh", "world": "https://world.forkmesh.com",
+     "host": "world.forkmesh.com", "api": "https://app.forkmesh.com"},
+    {"id": "a" * 32, "world": "https://code.example.org",
+     "host": "code.example.org", "api": "https://code.example.org",
+     "scene": "https://code.example.org/api/world/neighbour-scene"},
+    {"id": "b" * 32, "world": "https://two.example.org",
+     "host": "two.example.org", "api": "https://two.example.org"},
+]
+
+
+def test_an_icon_source_is_a_path_on_a_listed_hexagon_neighbour():
+    hub = SimpleNamespace(WORLD_ORIGIN="https://world.forkmesh.com",
+                          APP_ORIGIN="https://app.forkmesh.com")
+    source = world_mesh.neighbour_icon_source
+    assert source(hub, MESH_WORLDS, "a" * 32, "/i.png?v=1") == \
+        "https://code.example.org/i.png?v=1"
+    for world_id, path in (
+            ("b" * 32, "/i.png"), ("forkmesh", "/i.png"), ("c" * 32, "/i.png"),
+            ("a" * 32, "//evil.example.net/i.png"), ("a" * 32, "i.png"),
+            ("a" * 32, "/i.png#x"), ("a" * 32, "/a\\b"), ("a" * 32, "/a b"),
+            ("a" * 32, "/" + "x" * 300), ("a" * 32, "")):
+        assert source(hub, MESH_WORLDS, world_id, path) == "", path
+    own = SimpleNamespace(WORLD_ORIGIN="https://code.example.org",
+                          APP_ORIGIN="https://code.example.org",
+                          INSTANCE_NAME="Acme")
+    assert source(own, MESH_WORLDS, "a" * 32, "/i.png") == ""
+
+
+def test_only_raster_images_are_relayed():
+    kind = world_mesh.icon_type
+    assert kind(b"\x89PNG\r\n\x1a\n....") == "image/png"
+    assert kind(b"\xff\xd8\xff\xe0") == "image/jpeg"
+    assert kind(b"GIF89a..") == "image/gif"
+    assert kind(b"RIFF\0\0\0\0WEBPVP8 ") == "image/webp"
+    assert kind(b"\0\0\1\0\1\0\x10\x10") == "image/x-icon"
+    for raw in (b"", b"<svg xmlns='http://www.w3.org/2000/svg'/>",
+                b"<html>", b"\0\0\1\0"):
+        assert kind(raw) == ""
 
 
 INSTANCE_ENV = SimpleNamespace(INSTANCE_NAME="Acme <Code>",
@@ -234,3 +300,91 @@ def test_the_scene_route_is_public_cacheable_and_get_only(monkeypatch):
     assert '"/api/world/neighbour-scene", "/api/world/neighbour-scene/"' \
         in runtime
     assert "world_neighbour_scene_handler(self.env, request)" in runtime
+
+
+class _Buffer:
+    def __init__(self, raw):
+        self.raw = raw
+
+    def to_py(self):
+        return self.raw
+
+
+def test_the_icon_route_fetches_once_and_answers_cors_open(monkeypatch):
+    import asyncio
+    from urllib.parse import parse_qs, urlparse
+
+    import world_routes
+
+    png = b"\x89PNG\r\n\x1a\n" + b"x" * 40
+    calls = []
+
+    async def fetch(url, init, timeout):
+        calls.append((url, init))
+        body = {"https://code.example.org/i.png": png,
+                "https://code.example.org/page.html": b"<html>"}.get(url)
+
+        async def array_buffer():
+            return body
+        return SimpleNamespace(
+            status=200 if body else 404,
+            headers={"content-length": str(len(body or b""))},
+            arrayBuffer=array_buffer)
+
+    async def directory(env):
+        return MESH_WORLDS
+
+    def json_response(data, status=200, extra_headers=None, **_):
+        return SimpleNamespace(data=data, status=status,
+                               headers=extra_headers or {})
+
+    def response(body, init):
+        return SimpleNamespace(status=init["status"], body=body,
+                               headers=init["headers"])
+
+    values = {
+        "world_mesh": world_mesh, "world_mesh_directory": directory,
+        "js_fetch_with_timeout": fetch, "json_response": json_response,
+        "method_name": lambda request: request.method,
+        "parse_qs": parse_qs, "urlparse": urlparse,
+        "Date": SimpleNamespace(now=lambda: 1000),
+        "Uint8Array": SimpleNamespace(new=lambda value: _Buffer(bytes(value))
+                                      if not isinstance(value, _Buffer)
+                                      else value),
+        "JsResponse": SimpleNamespace(new=response),
+        "_to_js": lambda value: value, "to_js": lambda value: value,
+    }
+    for name, value in values.items():
+        monkeypatch.setattr(world_routes, name, value, raising=False)
+    monkeypatch.setattr(world_routes, "_WORLD_ICON_CACHE", {})
+    hub = SimpleNamespace(WORLD_ORIGIN="https://world.forkmesh.com",
+                          APP_ORIGIN="https://app.forkmesh.com")
+
+    def get(query, method="GET"):
+        request = SimpleNamespace(
+            method=method,
+            url="https://app.forkmesh.com/api/world/neighbour-icon?" + query)
+        return asyncio.run(
+            world_routes.world_neighbour_icon_handler(hub, request))
+
+    ok = "world=%s&path=%%2Fi.png" % ("a" * 32)
+    first = get(ok)
+    assert first.status == 200
+    assert first.body.raw == png
+    assert first.headers["content-type"] == "image/png"
+    assert first.headers["access-control-allow-origin"] == "*"
+    assert first.headers["x-content-type-options"] == "nosniff"
+    assert get(ok).status == 200
+    assert [url for url, _ in calls] == ["https://code.example.org/i.png"]
+    assert calls[0][1]["redirect"] == "error"
+    assert get("world=%s&path=%%2Fpage.html" % ("a" * 32)).status == 404
+    assert get("world=%s&path=%%2Fi.png" % ("b" * 32)).status == 404
+    assert get("world=%s&path=%%2F%%2Fevil.example.net" % ("a" * 32)).status \
+        == 404
+    assert get(ok, method="POST").status == 405
+    assert len(calls) == 2
+    runtime = (ROOT / "app" / "src" / "app_runtime.py").read_text(
+        encoding="utf-8")
+    assert '"/api/world/neighbour-icon", "/api/world/neighbour-icon/"' \
+        in runtime
+    assert "await world_neighbour_icon_handler(self.env, request)" in runtime
