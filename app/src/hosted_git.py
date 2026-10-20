@@ -170,7 +170,31 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
     session minting it was live and belonged to the named account; the push
     permission itself is re-derived here, so revoking ownership or an
     organization role revokes the credential's reach immediately.
+
+    Only full write access answers here; a contributor's namespaced push is
+    authorized by ``verify_hosted_push_access`` alone.
     """
+    account, _prefix = await _verify_hosted_credential(
+        env, owner, repo, header, method, access)
+    return account
+
+
+async def verify_hosted_push_access(env, owner, repo, header, method="",
+                                    alias=""):
+    """Authorize a Basic-credential push: ``(account, ref_prefix)``.
+
+    ``ref_prefix`` is "" for an owner or organization writer (the ordinary
+    push rules apply) and ``refs/heads/pr/<account>/`` for a contributor on a
+    repository the operator opened to contributor pushes; the gateway then
+    refuses every ref outside it. ``("", "")`` is a refusal.
+    """
+    return await _verify_hosted_credential(
+        env, owner, repo, header, method, "push", contributor=True,
+        alias=alias)
+
+
+async def _verify_hosted_credential(env, owner, repo, header, method, access,
+                                    contributor=False, alias=""):
     owner = safe_segment(owner)
     repo = safe_segment(repo)
     account, password = _basic_credentials(header)
@@ -191,7 +215,7 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
                 "git.read_authorize" if access == "read"
                 else "git.push_authorize",
                 "repository", owner + "/" + repo, "denied", audit_details)
-        return ""
+        return "", ""
 
     if not owner or not repo or not account or not valid_node_name(account):
         return await denied()
@@ -209,6 +233,7 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
         return await denied()
     if expires_at <= int(Date.now()):
         return await denied(audit=True)
+    prefix = ""
     try:
         await ensure_schema(env)
         if not await _session_account_matches(env, session_id, account):
@@ -220,15 +245,110 @@ async def verify_hosted_push_credential(env, owner, repo, header, method="",
                 await _account_owns_node(env, account, owner)
                 or await _org_write_allowed(env, owner, repo, account)
             )
+            if not allowed and contributor and await contributor_push_allowed(
+                    env, owner, repo, account, alias=alias):
+                prefix = contributor_ref_prefix(account)
+                allowed = bool(prefix)
     except Exception:
         return await denied(audit=True)
     if not allowed:
         return await denied(audit=True)
+    if prefix:
+        audit_details["refPrefix"] = prefix
     await _audit_sensitive_action(
         env, account,
         "git.read_authorize" if access == "read" else "git.push_authorize",
         "repository", owner + "/" + repo, "success", audit_details)
-    return account
+    return account, prefix
+
+
+# ---------------------------------------------------------------------------
+# Contributor pushes (HOSTED_GIT_CONTRIBUTOR_PUSH)
+# ---------------------------------------------------------------------------
+#
+# Without a node of their own, a signed-in contributor has no fork to push
+# to, so a pull request against a hosted repository was out of reach. An
+# operator can open named public repositories to contributor pushes: any
+# active, email-verified user account may then push branches under
+# ``refs/heads/pr/<account>/`` of the repository itself (the namespace the SSH
+# gateway's pull-request grant uses), with the same session-bound credential
+# an owner uses. Only new objects cross the wire, every other ref stays
+# owner-only, and the gateway enforces the namespace from the router-signed
+# capability, so a contributor cannot widen it.
+
+CONTRIBUTOR_PUSH_ENV = "HOSTED_GIT_CONTRIBUTOR_PUSH"
+CONTRIBUTOR_REF_ROOT = "refs/heads/pr/"
+CONTRIBUTOR_BRANCH_ROOT = "pr/"
+_CONTRIBUTOR_ACCOUNT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+_CONTRIBUTOR_ENTRY_RE = re.compile(
+    r"^(\*|[a-z0-9][a-z0-9._-]{0,62}/(\*|[a-z0-9._-]{1,100}))$")
+
+
+def contributor_push_patterns(env):
+    """The operator's allowlist: ``*``, ``owner/*`` or ``owner/repo`` items.
+
+    Whitespace- or comma-separated, case-insensitive. Unparseable entries are
+    ignored, so a typo narrows access rather than widening it.
+    """
+    raw = str(getattr(env, CONTRIBUTOR_PUSH_ENV, "") or "")
+    patterns = []
+    for item in re.split(r"[\s,]+", raw.strip().lower()):
+        if item and _CONTRIBUTOR_ENTRY_RE.fullmatch(item):
+            patterns.append(item)
+    return patterns
+
+
+def contributor_push_enabled(env, owners, repo):
+    """True when any of ``owners`` (route alias or backing node) is listed."""
+    repo = str(repo or "").strip().lower()
+    patterns = contributor_push_patterns(env)
+    if not repo or not patterns:
+        return False
+    for owner in owners:
+        owner = str(owner or "").strip().lower()
+        if not owner:
+            continue
+        for pattern in patterns:
+            if pattern in ("*", owner + "/*", owner + "/" + repo):
+                return True
+    return False
+
+
+def contributor_ref_prefix(account):
+    """``refs/heads/pr/<account>/`` for a ref-safe account name, else ""."""
+    account = str(account or "").strip().lower()
+    if (
+        not _CONTRIBUTOR_ACCOUNT_RE.fullmatch(account)
+        or ".." in account
+        or account.endswith((".", ".lock"))
+    ):
+        return ""
+    return CONTRIBUTOR_REF_ROOT + account + "/"
+
+
+async def contributor_push_allowed(env, owner, repo, account, alias=""):
+    """May ``account`` push its own pr/ branches to this repository?
+
+    The repository must be listed, public, and the account an active,
+    email-verified user. Fails closed.
+    """
+    if not contributor_ref_prefix(account):
+        return False
+    if not contributor_push_enabled(env, (alias, owner), repo):
+        return False
+    try:
+        if await _repo_is_private(env, owner, repo):
+            return False
+        _bi, rec = await _account_row(env, account)
+    except Exception:
+        return False
+    if not isinstance(rec, dict):
+        return False
+    return (
+        rec.get("status") == "active"
+        and _account_kind(rec) == "user"
+        and rec.get("email_verified") is True
+    )
 
 
 async def record_hosted_push_state(env, owner, repo, endpoint=None,
@@ -727,17 +847,59 @@ async def _mint_push_credential(env, request):
             await _account_owns_node(env, actor, node)
             or await _org_write_allowed(env, node, name, actor)
         )
-    if not allowed:
+    prefix = ""
+    if not allowed and await contributor_push_allowed(
+            env, node, name, actor, alias=owner if owner != node else ""):
+        prefix = contributor_ref_prefix(actor)
+    if not allowed and not prefix:
         return json_response(
-            {"error": "forbidden"}, status=403, cache_control="no-store")
+            {"error": "forbidden",
+             "message": await _push_refusal_message(
+                 env, node, owner, name, actor)},
+            status=403, cache_control="no-store")
     if not _request_account_session_id(request, data):
         return _session_required_response()
     grant = await _hosted_push_grant(
         env, request, data, owner, name, actor, mac_owner=node)
     if grant is None:
         return _unavailable_response()
+    if prefix:
+        grant = _contributor_instructions(grant, prefix)
+    else:
+        grant["access"] = "write"
     return json_response(
         {"ok": True, "push": grant}, cache_control="no-store")
+
+
+async def _push_refusal_message(env, node, owner, name, actor):
+    if contributor_push_enabled(env, (owner, node), name):
+        try:
+            _bi, rec = await _account_row(env, actor)
+        except Exception:
+            rec = None
+        if isinstance(rec, dict) and rec.get("email_verified") is not True:
+            return ("Contributor pushes need a verified email address. "
+                    "Verify it under Settings, Account, then try again.")
+        return "Contributor pushes are not available to this account."
+    return ("You cannot push to this repository. Ask its owner for write "
+            "access, or for contributor pushes to be enabled.")
+
+
+def _contributor_instructions(grant, prefix):
+    """Rewrite a grant's commands for a contributor's own namespace."""
+    branch_prefix = prefix[len("refs/heads/"):]
+    example = branch_prefix + "my-change"
+    grant = dict(grant)
+    grant["access"] = "contributor"
+    grant["refPrefix"] = prefix
+    grant["branchPrefix"] = branch_prefix
+    grant["commands"] = [
+        "git clone " + grant["remoteUrl"],
+        "git switch -c " + example,
+        'git commit -am "Describe the change"',
+        "git push origin " + example,
+    ]
+    return grant
 
 
 async def hosted_repository_handler(env, request, path):
@@ -1060,6 +1222,7 @@ async def _hosted_settings(env, request):
             "repositoriesPerAccount": _hosted_repos.max_per_account(env),
             "repositoryBytes": _hosted_repos.max_bytes(env),
         }
+    body["contributorPush"] = contributor_push_patterns(env)
     if actor and core:
         runtime = _ReplicaRuntime(env, request)
         await ensure_schema(env)
