@@ -918,7 +918,7 @@
       }
       .eco-glossary {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
         width: 100%;
         max-width: 860px;
@@ -1098,6 +1098,43 @@
       .eco-integrations li.is-empty {
         color: var(--fx-body);
       }
+      .eco-compare {
+        width: 100%;
+        margin: 12px 0 0;
+        border-collapse: collapse;
+        color: var(--fx-ink);
+        font-size: 15px;
+        line-height: 22px;
+        text-align: left;
+      }
+      .eco-compare th,
+      .eco-compare td {
+        padding: 10px 12px 10px 0;
+        border-bottom: 1px solid var(--fx-line);
+        vertical-align: top;
+      }
+      .eco-compare th:last-child,
+      .eco-compare td:last-child {
+        padding-right: 0;
+      }
+      .eco-compare thead th {
+        color: var(--fx-body);
+        font-size: 13px;
+        font-weight: 560;
+        line-height: 18px;
+      }
+      .eco-compare tbody th {
+        width: 24%;
+        color: var(--fx-body);
+        font-weight: 560;
+      }
+      .eco-compare tbody td {
+        width: 38%;
+      }
+      .eco-compare tbody tr:last-child th,
+      .eco-compare tbody tr:last-child td {
+        border-bottom: 0;
+      }
       .eco-reviewed {
         margin: 32px 0 0;
         padding-top: 20px;
@@ -1236,6 +1273,29 @@
         .eco-status {
           grid-template-columns: minmax(0, 1fr);
         }
+        .eco-compare thead {
+          display: none;
+        }
+        .eco-compare tbody tr {
+          display: block;
+          padding: 10px 0;
+          border-bottom: 1px solid var(--fx-line);
+        }
+        .eco-compare tbody tr:last-child {
+          border-bottom: 0;
+        }
+        .eco-compare tbody th,
+        .eco-compare tbody td {
+          display: block;
+          width: auto;
+          padding: 2px 0;
+          border-bottom: 0;
+        }
+        .eco-compare tbody td::before {
+          content: attr(data-label) ": ";
+          color: var(--fx-body);
+          font-weight: 560;
+        }
       }
       @media (prefers-reduced-motion: reduce) {
         .eco-card,
@@ -1360,6 +1420,10 @@
           <div>
             <dt>Git-native</dt>
             <dd>The project hosts, replicates or stores its collaboration data in Git.</dd>
+          </div>
+          <div>
+            <dt>Compared with ForkMesh</dt>
+            <dd>Facts about the project and ForkMesh side by side, topic by topic. It shows where they differ or overlap, not which is better.</dd>
           </div>
         </dl>
       </section>
@@ -1796,6 +1860,33 @@
           if (project.summary) profile.append(section("What it does", el("p", "", project.summary)));
           const used = project.integration === "uses";
           if (project.watching) profile.append(section(used ? "How ForkMesh uses it" : "Why we're watching", el("p", "", project.watching)));
+          const comparison = Array.isArray(project.comparison) ? project.comparison : [];
+          if (comparison.length) {
+            const table = el("table", "eco-compare");
+            const head = el("tr");
+            ["", project.name, "ForkMesh"].forEach((label) => {
+              const th = el("th", "", label);
+              th.scope = "col";
+              head.append(th);
+            });
+            const thead = el("thead");
+            thead.append(head);
+            const tbody = el("tbody");
+            comparison.forEach((row) => {
+              const line = el("tr");
+              const topic = el("th", "", row.topic);
+              topic.scope = "row";
+              line.append(topic);
+              [[project.name, row.project], ["ForkMesh", row.forkmesh]].forEach(([label, text]) => {
+                const cell = el("td", "", text);
+                cell.dataset.label = label;
+                line.append(cell);
+              });
+              tbody.append(line);
+            });
+            table.append(thead, tbody);
+            profile.append(section("Compared with ForkMesh", table));
+          }
           const status = el("dl", "eco-status");
           [
             ["Compatible", project.compatibilityLabel || "Not yet assessed"],
