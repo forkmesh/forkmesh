@@ -44,9 +44,14 @@ not copied: it is end-to-end encrypted to the original two participants.
   after accept, trickle ICE with a pre-answer queue, `replaceTrack` instead of
   renegotiation. Frames carry `to` so multi-device accounts converge on one
   answering device.
-- A ring reaches the callee only while the DM's room socket is open. An
-  unanswered 45-second ring posts a persisted "Missed call" chat line, which
-  takes the normal notification path.
+- A ring reaches the callee only while the DM's room socket is open. A call
+  that is never answered posts a persisted "📞 Missed audio/video call" chat
+  line from the caller, which takes the normal notification path, so the
+  person who missed it sees it in the conversation later. That happens both
+  when the 45-second ring runs out and when the caller hangs up while it is
+  still ringing (`hangUp` in `chat-calls.js`; the `call-bye` then carries
+  `reason: "missed"`). Before 2026-10-20 only the timeout posted the line, so
+  a caller who gave up early left no trace. A declined call posts nothing.
 - `/chat` has a `Permissions-Policy` override for camera and microphone and
   `mediastream:` in its CSP `media-src`.
 - **Pre-call check.** The Voice call and Video call buttons no longer ring

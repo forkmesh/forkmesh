@@ -588,6 +588,16 @@ export function createChatCalls({
     teardown();
   }
 
+  function hangUp() {
+    if (call?.role === "caller" && call.phase === "ringing-out") {
+      const missed = call;
+      endCall({ notifyPeer: true, reason: "missed" });
+      onMissed(missed.channelKey, missed.media);
+      return;
+    }
+    endCall({ notifyPeer: true });
+  }
+
   async function localMedia(media) {
     return getUserMediaImpl(callMediaConstraints(media));
   }
@@ -898,11 +908,7 @@ export function createChatCalls({
     const ring = () => void signal("call-invite", { media: kind });
     ring();
     call.inviteTimer = setIntervalImpl(ring, INVITE_RESEND_MS);
-    call.ringTimer = setTimeoutImpl(() => {
-      const missed = call;
-      endCall({ notifyPeer: true, reason: "missed" });
-      if (missed) onMissed(missed.channelKey, missed.media);
-    }, RING_TIMEOUT_MS);
+    call.ringTimer = setTimeoutImpl(hangUp, RING_TIMEOUT_MS);
     onActiveChange();
     return true;
   }
@@ -1129,7 +1135,7 @@ export function createChatCalls({
 
   muteBtn?.addEventListener("click", toggleMute);
   cameraBtn?.addEventListener("click", toggleCamera);
-  hangupBtn?.addEventListener("click", () => endCall({ notifyPeer: true }));
+  hangupBtn?.addEventListener("click", hangUp);
   acceptBtn?.addEventListener("click", () => {
     acceptInvite().catch(() => {});
   });
@@ -1214,7 +1220,7 @@ export function createChatCalls({
     background: () => call?.backgroundId || "",
     stage: () => call?.stage || null,
     handleFrame,
-    hangUp: () => endCall({ notifyPeer: true }),
+    hangUp,
     active: () => Boolean(call),
     activeChannelKey: () => call?.channelKey || "",
     setFace: (id, image = "") => {
