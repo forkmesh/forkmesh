@@ -11,6 +11,7 @@
 #include "ChatFormat.h"
 #include "ChatLinkText.h"
 #include "ChatRecipients.h"
+#include "ChatTranscriptWindow.h"
 #include "ChatVisitorPresence.h"
 #include "AppPaths.h"
 #include "QrCode.h"
@@ -545,6 +546,19 @@ QWidget *MainWindow::chatDayDivider(const QDate &day)
     return divider;
 }
 
+namespace {
+
+qsizetype transcriptRowWeight(const ChatMessage &message)
+{
+    if (message.blocks.isEmpty() ||
+        !forkmesh::chatblocks::senderMayFormat(message.senderId))
+        return message.text.size();
+    return qMax(message.text.size(),
+                forkmesh::chatblocks::html(message.blocks, false).size());
+}
+
+}
+
 MessageRow *MainWindow::addMessageRow(
     const ChatMessage &message,
     const QHash<QString, MemberInfo> *mentionProfiles)
@@ -576,6 +590,7 @@ MessageRow *MainWindow::addMessageRow(
     m_messageLayout->insertWidget(m_messageLayout->count() - 1, row);
     row->show();
     m_visibleRows.insert(message.id, row);
+    m_transcriptRenderedChars += transcriptRowWeight(message);
     return row;
 }
 
@@ -772,12 +787,43 @@ void MainWindow::renderConversationRows()
     // a large user roster showed up as QHash rehashing in the stall samples.
     const QHash<QString, MemberInfo> mentionProfiles =
         teammateChatMentionProfiles();
-    for (const ChatMessage &message : m_history.value(m_currentConversation)) {
-        if (message.threadRootId.isEmpty() ||
-            isDiscordConversation(message.conversation)) {
-            addMessageRow(message, &mentionProfiles);
-        }
+    m_transcriptRenderedChars = 0;
+    const QList<ChatMessage> history = m_history.value(m_currentConversation);
+    QList<int> rows;
+    for (int index = 0; index < history.size(); ++index) {
+        const ChatMessage &message = history.at(index);
+        if (message.deleted ||
+            (!message.threadRootId.isEmpty() &&
+             !isDiscordConversation(message.conversation)))
+            continue;
+        rows.append(index);
     }
+    forkmesh::chattranscript::Budget budget(m_transcriptRenderBatches);
+    int first = int(rows.size());
+    while (first > 0 &&
+           budget.admit(transcriptRowWeight(history.at(rows.at(first - 1)))))
+        --first;
+    if (first > 0) {
+        auto *earlier = new QPushButton(
+            QStringLiteral("Show earlier messages (%1 more)").arg(first));
+        earlier->setObjectName(QStringLiteral("ghostButton"));
+        earlier->setCursor(Qt::PointingHandCursor);
+        connect(earlier, &QPushButton::clicked, this,
+                &MainWindow::showEarlierTranscriptRows);
+        m_messageLayout->insertWidget(0, earlier, 0, Qt::AlignHCenter);
+        earlier->show();
+    }
+    for (int index = first; index < rows.size(); ++index)
+        addMessageRow(history.at(rows.at(index)), &mentionProfiles);
+}
+
+void MainWindow::showEarlierTranscriptRows()
+{
+    QScrollBar *bar = m_messageScroll->verticalScrollBar();
+    m_transcriptKeepFromBottom = qMax(0, bar->maximum() - bar->value());
+    m_stickToBottom = false;
+    ++m_transcriptRenderBatches;
+    renderConversationRows();
 }
 
 void MainWindow::rebuildConversationView()
@@ -814,6 +860,7 @@ void MainWindow::scheduleConversationRebuild(bool keepAtBottom)
 void MainWindow::scrollToBottom()
 {
     m_stickToBottom = true;
+    m_transcriptKeepFromBottom = -1;
     QTimer::singleShot(0, this, [this] {
         QScrollBar *bar = m_messageScroll->verticalScrollBar();
         bar->setValue(bar->maximum());
@@ -915,8 +962,15 @@ void MainWindow::onMessage(const ChatMessage &message)
             scheduleConversationRebuild(wasAtBottom);
         } else {
             addMessageRow(message);
-            if (wasAtBottom)
+            if (wasAtBottom &&
+                forkmesh::chattranscript::overBudget(
+                    m_visibleRows.size(), m_transcriptRenderedChars,
+                    m_transcriptRenderBatches)) {
+                m_transcriptRenderBatches = 1;
+                scheduleConversationRebuild(true);
+            } else if (wasAtBottom) {
                 scrollToBottom();
+            }
         }
         if (message.threadRootId == m_activeChatThreadRootId)
             rebuildChatThreadPane();
@@ -3891,6 +3945,7 @@ void MainWindow::switchConversation(const QString &conversation)
     refreshDirectFocus();
     refreshDirectRoute();
     refreshDevicePendingBanner();
+    m_transcriptRenderBatches = 1;
     rebuildConversationView();
     if (isDiscordConversation(conversation) && m_discordClient)
         m_discordClient->openConversation(conversation);

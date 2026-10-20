@@ -13401,9 +13401,14 @@ QWidget *MainWindow::buildChatMainColumn(QWidget *header, QPushButton *&sendButt
 
     QScrollBar *vbar = m_messageScroll->verticalScrollBar();
     connect(vbar, &QScrollBar::rangeChanged, this, [this](int, int max) {
-        if (m_stickToBottom)
+        if (m_transcriptKeepFromBottom >= 0)
+            m_messageScroll->verticalScrollBar()->setValue(
+                max - m_transcriptKeepFromBottom);
+        else if (m_stickToBottom)
             m_messageScroll->verticalScrollBar()->setValue(max);
     });
+    connect(vbar, &QScrollBar::actionTriggered, this,
+            [this](int) { m_transcriptKeepFromBottom = -1; });
     connect(vbar, &QScrollBar::valueChanged, this, [this](int value) {
         QScrollBar *bar = m_messageScroll->verticalScrollBar();
         m_stickToBottom = value >= bar->maximum() - 4;
