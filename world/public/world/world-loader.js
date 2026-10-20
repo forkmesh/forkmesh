@@ -69,6 +69,7 @@ for (const href of [
   "/world/scene/members-circle.js",
   "/world/scene/mirror-nodes.js",
   "/world/scene/movement.js",
+  "/world/scene/neighbour-footprints.js",
   "/world/scene/object-utils.js",
   "/world/scene/office-aquarium.js",
   "/world/scene/office-building.js",

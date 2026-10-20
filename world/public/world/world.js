@@ -55,6 +55,7 @@ import { buildRepositoryGraphEntities } from "./world-repository-graph.js";
 import { officeFloorsForTeam } from "./world-office-tower.js";
 import { createWorldSocketRecoveryTimers } from "./world-socket-recovery.js";
 import { WorldFederation } from "./world-federation.js";
+import { neighbourSceneLink } from "./world-neighbour-scene.js";
 import {
   WORLD_MESH_OUTDOOR_SPACES,
   WORLD_MESH_SPACE,
@@ -6465,6 +6466,7 @@ class ForkMeshWorld extends HTMLElement {
     this.worldMesh = { self: null, worlds: [] };
     this.meshLinks = null;
     this.federation = null;
+    this.leavingWorld = false;
     this.officeOwner = null;
     this.meshVisitId = "";
     this.arrivalVisa = takeArrivalVisa();
@@ -8054,6 +8056,8 @@ class ForkMeshWorld extends HTMLElement {
         onStartWorldSignSelect: (plot) => this.openStartInstance(plot),
         onDrinkWater: () =>
           this.hudNotice("Fresh garden water — hydration restored. 💧"),
+        onNeighbourDoor: (link) => this.openNeighbourDoor(link),
+        onNeighbourBugSelect: (bug) => this.showNeighbourBug(bug),
         onInstanceHexagonSelect: ({ url, label, worldUrl, arrivalSlot }) => {
           const portal = portalDestination(worldUrl, arrivalSlot);
           if (portal) {
@@ -11461,6 +11465,71 @@ class ForkMeshWorld extends HTMLElement {
     }
     this.sendPresenceNow({ type: "presence" });
     this.schedulePeerRender();
+  }
+
+  openNeighbourDoor({ url, label } = {}) {
+    const destination = neighbourSceneLink(url);
+    if (!destination || this.leavingWorld) return;
+    this.leavingWorld = true;
+    const host = new URL(destination).hostname;
+    const name = label ? `${String(label).slice(0, 40)} · ${host}` : host;
+    const veil = document.createElement("div");
+    veil.className = "world-leaving-veil";
+    veil.setAttribute("role", "status");
+    veil.setAttribute("aria-live", "assertive");
+    veil.textContent = `Entering ${name}…`;
+    document.body.append(veil);
+    window.requestAnimationFrame(() => veil.classList.add("is-active"));
+    const reset = () => {
+      veil.remove();
+      this.leavingWorld = false;
+      window.removeEventListener("pageshow", restored);
+    };
+    const restored = (event) => {
+      if (event.persisted) reset();
+    };
+    window.addEventListener("pageshow", restored);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.setTimeout(() => {
+      window.location.assign(destination);
+      window.setTimeout(() => {
+        if (!document.hidden) reset();
+      }, 8000);
+    }, reduced ? 0 : 450);
+  }
+
+  showNeighbourBug(bug = {}) {
+    const label = String(bug.label || "").slice(0, 40);
+    if (!label) return;
+    let card = this.$("[data-world-neighbour-bug]");
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "world-neighbour-bug";
+      card.dataset.worldNeighbourBug = "";
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-label", "Bug report");
+      const name = document.createElement("strong");
+      const link = document.createElement("a");
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "View bugs";
+      const close = document.createElement("button");
+      close.type = "button";
+      close.setAttribute("aria-label", "Close");
+      close.textContent = "×";
+      close.addEventListener("click", () => {
+        card.hidden = true;
+      });
+      card.append(name, link, close);
+      (this.$("[data-world-hud-notice]")?.parentElement || this.shadowRoot || this)
+        .append(card);
+    }
+    card.querySelector("strong").textContent = label;
+    const link = card.querySelector("a");
+    const href = neighbourSceneLink(bug.url);
+    link.hidden = !href;
+    if (href) link.href = href;
+    card.hidden = false;
   }
 
   worldFederation() {

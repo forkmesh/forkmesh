@@ -170,6 +170,8 @@ export async function createWorldScene({
   onDrinkWater = () => {},
   onFederatedWorldTravel = () => {},
   onInstanceHexagonSelect = () => {},
+  onNeighbourDoor = () => {},
+  onNeighbourBugSelect = () => {},
   onSystemCapacityTableSelect = () => {},
   onQaBoardNearby = () => {},
   onQaBoardAway = () => {},
@@ -923,6 +925,7 @@ export async function createWorldScene({
       fns,
     }),
   );
+  fns.onNeighbourDoor = onNeighbourDoor;
   Object.assign(
     fns,
     pointerRuntime.functions({
@@ -937,6 +940,7 @@ export async function createWorldScene({
       onFederatedWorldTravel,
       onFediverseProfile,
       onInstanceHexagonSelect,
+      onNeighbourBugSelect,
       onFloorTap,
       onForkbotChat,
       onLandmarkSelect,

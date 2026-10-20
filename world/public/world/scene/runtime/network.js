@@ -44,6 +44,7 @@ import {
   formatPlatformLimitBytes,
   systemCapacityMetricPairs,
 } from "../office-infrastructure.js";
+import { clearNeighbourFootprints } from "../neighbour-footprints.js";
 import {
   roundedHexagonContains,
   setWorldMeshFlowers,
@@ -582,6 +583,7 @@ export function functions({
       if (hex) layer.add(hex);
     });
     setWorldMeshFlowers(placed);
+    clearNeighbourFootprints();
     ctx.desertPlots?.userData?.replacePetals?.(worldMeshReplacedPetals());
     ctx.world.add(layer);
     ctx.world.userData.instanceHexLayer = layer;

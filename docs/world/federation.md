@@ -125,6 +125,32 @@ path for `maxAge`, and nothing outside `FEDERATED_PATHS` is ever sent
 across. `visitorSession` is the identity the page holds at that owner
 (`name@home`), for the owner's UI.
 
+## Interactive neighbour scenes
+
+A neighbour's published scene (`/api/world/neighbour-scene`, v1) is drawn
+on its hexagon with its interactions:
+
+- **Portal house** (`house` with an https `url`): solid walls; walking into
+  its door, or clicking it, opens the link in the same tab behind a short
+  fade (none with reduced motion). The fade names the destination's real
+  hostname after the neighbour's label (`Entering <label> · <host>…`), so a
+  neighbour cannot pass another site off under a trusted-sounding name.
+- **Terrarium** (`terrarium`): glass walls and a lid with an open doorway in
+  its front; walkers go in only through it. Each bug is a badge with its
+  favicon (through the home World's icon route); clicking it opens a small
+  card with the bug's name and its https link.
+- **Ground** (`ground.color`, `accent`, `pattern`: `plain` or `circuit`),
+  **plaza**, **sign**, **lamp** and **tree** are drawn as before.
+
+Walls are footprints in each building's own frame
+(`scene/neighbour-footprints.js`), registered per owner while its scene is
+drawn (the network runtime hands them back as each scene loads) and checked
+on every walking step. A footprint is a box whose +z face is the building's
+front, either solid (a house) or hollow with glass walls (a terrarium), with
+a door on that face: a hollow box lets walkers through it, and walking into a
+solid box's door is reported to the page, which opens a portal house's link.
+Moves are checked along their path and slide along the wall they meet.
+
 ## Rollout
 
 Each step works with either side ahead:

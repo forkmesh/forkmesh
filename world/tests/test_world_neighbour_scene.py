@@ -163,9 +163,10 @@ def test_the_scene_is_drawn_on_the_hexagon_or_the_logo_stays():
 def test_bugs_show_through_the_glass_and_links_are_clickable():
     tank = HEXES[HEXES.index("function sceneTerrarium("):
                  HEXES.index("export function buildNeighbourScene(")]
-    assert "depthWrite: false,\n    })," in tank
+    assert "depthWrite: false,\n  });" in tank
     assert "entry.icon ? icon(entry.icon) : \"\"" in tank
-    assert "pick(sprite, entry.url, entry.label);" in tank
+    # A bug opens its card (neighbour-bug); its link is on the card.
+    assert "bug(sprite, entry);" in tank
     assert "pick(object, item.url, item.label)" in HEXES
     assert 'object.userData.interactive = "instance-hexagon";' in HEXES
     assert 'if (ground.pattern !== "circuit") {' in HEXES

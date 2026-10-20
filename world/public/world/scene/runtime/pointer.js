@@ -34,6 +34,7 @@ export function functions({
   onFederatedWorldTravel,
   onFediverseProfile,
   onInstanceHexagonSelect,
+  onNeighbourBugSelect = () => {},
   onFloorTap,
   onForkbotChat,
   onLandmarkSelect,
@@ -766,6 +767,14 @@ export function functions({
         origin: String(hit.object.userData.origin || ""),
         label: String(hit.object.userData.label || "ForkMesh instance"),
       });
+      return;
+    }
+    if (hit?.object?.userData?.interactive === "neighbour-door") {
+      fns.onNeighbourDoor?.({ ...(hit.object.userData.link || {}) });
+      return;
+    }
+    if (hit?.object?.userData?.interactive === "neighbour-bug") {
+      onNeighbourBugSelect({ ...(hit.object.userData.bug || {}) });
       return;
     }
     if (hit?.object?.userData?.interactive === "instance-hexagon") {
