@@ -45744,6 +45744,8 @@ async def repository_security_scans_handler(
 
 def _admin_path(env):
     # Dynamic, secret admin URL segment. Set ADMIN_PATH in Cloudflare vars.
+    if instance_features.branded(env):
+        return _admin_path_rules.private_segment(env)
     return str(getattr(env, "ADMIN_PATH", "") or "").strip("/")
 
 
