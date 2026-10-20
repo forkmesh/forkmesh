@@ -16168,6 +16168,7 @@ verify_hosted_push_credential = _hosted_git.export(
     "verify_hosted_push_credential")
 has_hosted_push_credential = _hosted_git.export("has_hosted_push_credential")
 verify_hosted_push_access = _hosted_git.export("verify_hosted_push_access")
+hosted_fork_create = _hosted_git.export("hosted_fork_create")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
 record_hosted_branch_count = _hosted_git.export(
     "record_hosted_branch_count")
@@ -35730,6 +35731,10 @@ async def repo_forks_handler(env, request, owner, repo):
     public_owner = await _public_repo_owner(
         env, request, owner, repo, REPO_FORKS_RE)
     if method == "POST":
+        hosted = await hosted_fork_create(
+            env, request, owner, public_owner, repo)
+        if hosted is not None:
+            return hosted
         return await _web_fork_create(
             env, request, public_owner, repo)
     repo_bi = await blind_index(env, public_owner + "/" + repo)

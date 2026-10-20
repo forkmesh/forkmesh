@@ -1772,7 +1772,8 @@
     if (!mirrorOf && !parent) return "";
     const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
     if (!mirrorOf) {
-      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>`;
+      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(repoDisplayName(parent.key))}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>${contribute}`;
     }
     const syncedAt = repoMirrorSyncedAt(repo);
     const commit = String(repo?.upstreamCommit || "").trim();
@@ -6342,7 +6343,7 @@
         .filter((item) => /^[^*/\s]+\/[^*/\s]+$/.test(String(item)));
       const account = String(state.session?.nodeName || state.session?.name || "").toLowerCase();
       if (note && listed.length) {
-        note.textContent = `Anyone with a verified email address can push branches named pr/${account || "<your-name>"}/… to ${listed.join(", ")} and open a pull request from them. Other branches stay with the owners.`;
+        note.textContent = `To contribute, Fork the repository from its page (Forks, then Fork this repository), push any branch to your fork with a credential for it, and open a pull request back. Without a fork, anyone with a verified email address can also push branches named pr/${account || "<your-name>"}/… to ${listed.join(", ")} directly. Other branches stay with the owners.`;
         note.classList.remove("hidden");
       }
       if (input && !input.value && listed.length) input.value = listed[0];
@@ -24584,7 +24585,7 @@
     const original = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>Creating fork…';
-    if (status) status.textContent = "Recording the fork on your managed mirror…";
+    if (status) status.textContent = "Creating your fork…";
     try {
       const token = String(state.session.sessionToken || "");
       const response = await fetch(`${repoApiBase(repo)}/forks`, {
@@ -24625,7 +24626,9 @@
       if (status) {
         const message = data.queued
           ? `Queued on ${String(fork.owner || "your mirror")}. It will finish as soon as that mirror can reach any copy of the source.`
-          : "Your fork is ready.";
+          : data.existing
+            ? "You already have a fork of this repository."
+            : "Your fork is ready. Push branches to it, then open a pull request back here.";
         status.innerHTML = `${escapeHtml(message)}${forkUrl ? ` <a href="${escapeHtml(forkUrl)}" class="font-medium text-accent hover:underline">Open fork</a>` : ""}`;
       }
     } catch (error) {
@@ -24633,7 +24636,9 @@
       button.innerHTML = original;
       if (status) {
         const code = String(error?.code || "");
-        status.textContent = code === "headless_mirror_required"
+        status.textContent = code === "email_verification_required"
+          ? "Verify your email address under Settings, Account, then fork."
+          : code === "headless_mirror_required"
           ? "Link a managed headless mirror in Settings first. It may be offline when you create the fork."
           : String(error?.message || "The fork could not be queued. Try again.");
       }
@@ -38703,7 +38708,7 @@
                 <div data-repo-fork-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] p-3 text-left">
                   <p class="text-xs font-semibold text-foreground">Forks of this repository</p>
                   <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Each fork is its own repository on the mesh, sharing this one's history instead of copying it.</p>
-                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Create fork on my mirror</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">The website queues this durably, so neither your mirror nor the original node has to be online right now.</p>` : ""}
+                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Fork this repository</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">Your own copy under your account, linked to this one. Push any branch to it, then open a pull request back here.</p>` : ""}
                   <div data-repo-fork-list class="mt-2 max-h-52 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
                   <div data-repo-remote-forks class="mt-3 border-t border-border pt-2">
                     <p class="text-xs font-semibold text-foreground">Forks on other instances</p>
@@ -41195,6 +41200,18 @@
       const issueTemplateButton = event.target.closest("[data-repo-issue-template]");
       if (issueTemplateButton) {
         downloadIssueCsvTemplate();
+        return;
+      }
+
+      if (event.target.closest("[data-repo-contribute]") && state.selectedRepo) {
+        event.preventDefault();
+        if (!state.session?.nodeName) {
+          location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+          return;
+        }
+        const forkRepo = state.selectedRepo;
+        activateRepoTab("pulls");
+        requestAnimationFrame(() => openPullCompose(forkRepo));
         return;
       }
 

@@ -1203,7 +1203,7 @@
         .filter((item) => /^[^*/\s]+\/[^*/\s]+$/.test(String(item)));
       const account = String(state.session?.nodeName || state.session?.name || "").toLowerCase();
       if (note && listed.length) {
-        note.textContent = `Anyone with a verified email address can push branches named pr/${account || "<your-name>"}/… to ${listed.join(", ")} and open a pull request from them. Other branches stay with the owners.`;
+        note.textContent = `To contribute, Fork the repository from its page (Forks, then Fork this repository), push any branch to your fork with a credential for it, and open a pull request back. Without a fork, anyone with a verified email address can also push branches named pr/${account || "<your-name>"}/… to ${listed.join(", ")} directly. Other branches stay with the owners.`;
         note.classList.remove("hidden");
       }
       if (input && !input.value && listed.length) input.value = listed[0];

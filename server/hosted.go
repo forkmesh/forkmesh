@@ -186,6 +186,8 @@ type hostedDesired struct {
 	// Organization names the repository is also served under (org_repos).
 	Aliases    []string          `json:"aliases,omitempty"`
 	PushMirror *hostedPushMirror `json:"pushMirror,omitempty"`
+	ForkOf     string            `json:"forkOf,omitempty"`
+	Network    string            `json:"network,omitempty"`
 }
 
 type hostedRemoved struct {
@@ -381,7 +383,10 @@ func (r *hostedReplicator) exchange(ctx context.Context) (hostedReplicaResponse,
 func validHostedDesired(item hostedDesired) bool {
 	return hostedIDPattern.MatchString(item.ID) && nodePattern.MatchString(item.Owner) &&
 		repositoryPattern.MatchString(item.Name) && !strings.HasPrefix(item.Name, ".") &&
-		(item.Visibility == "public" || item.Visibility == "private") && item.PushedAt >= 0
+		(item.Visibility == "public" || item.Visibility == "private") && item.PushedAt >= 0 &&
+		(item.ForkOf == "" || (hostedIDPattern.MatchString(item.ForkOf) && item.ForkOf != item.ID &&
+			item.Visibility == "public")) &&
+		(item.Network == "" || (item.ForkOf != "" && hostedIDPattern.MatchString(item.Network)))
 }
 
 // apply makes local state match one response. It reports whether anything a
@@ -414,6 +419,12 @@ func (r *hostedReplicator) apply(ctx context.Context, response hostedReplicaResp
 		}
 		delete(r.fetchedAt, removed.ID)
 	}
+	publicIDs := map[string]bool{}
+	for _, item := range response.Repositories {
+		if item.Visibility != "private" {
+			publicIDs[item.ID] = true
+		}
+	}
 	for _, item := range response.Repositories {
 		if !validHostedDesired(item) {
 			failures = append(failures, "hosted: invalid repository entry")
@@ -445,6 +456,14 @@ func (r *hostedReplicator) apply(ctx context.Context, response hostedReplicaResp
 		changed = changed || created
 		empty := len(gitLines(ctx, gitDir, "for-each-ref", "--count=1",
 			"--format=%(refname)", "refs/heads", "refs/tags")) == 0
+		if empty && item.ForkOf != "" {
+			if filled, err := r.forkFromLocal(ctx, item, gitDir, publicIDs[item.ForkOf]); err != nil {
+				failures = append(failures, "hosted "+key+" fork: "+err.Error())
+			} else if filled {
+				empty = false
+				changed = true
+			}
+		}
 		if empty && item.Primary && item.Init != nil {
 			if err := r.initialize(ctx, gitDir, *item.Init); err != nil {
 				failures = append(failures, "hosted "+key+" init: "+err.Error())
