@@ -6085,24 +6085,38 @@ MAIL_INK = "#101012"
 MAIL_BODY = "#5f6270"
 MAIL_FAINT = "#9a9ca8"
 MAIL_LINE = "#e4e5ea"
-MAIL_ACCENT = "#0969da"
+DECK_SANS = "-apple-system,Roboto,Arial,sans-serif"
+DECK_DISPLAY = "'FM Favorit'," + DECK_SANS
+DECK_MONO = "ui-monospace,Menlo,monospace"
+DECK_SLAB = "#0b0b0c"
+DECK_PAGE = "#ffffff"
+DECK_NIGHT_PAGE = "#18181b"
+DECK_TONES = {
+    "light": {"ink": "#101012", "grey": "#83858f", "body": "#5f6270", "faint": "#9a9ca8",
+              "line": "#e4e5ea", "accent": "#0969da", "live": "#1a7f37", "tile": "#f4f4f5"},
+    "slab": {"ink": "#f5f5f5", "grey": "#8b8b94", "body": "#a3a3a3", "faint": "#71717a",
+             "line": "#232326", "accent": "#58a6ff", "live": "#3fb950", "tile": "#141416"},
+}
+DECK_NIGHT = {"ink": "#f5f5f5", "grey": "#7d7d87", "body": "#a3a3a3", "faint": "#71717a",
+              "line": "#2a2a2e", "accent": "#58a6ff", "live": "#3fb950", "tile": "#222225"}
+DECK_WIDTH = 544
 DECK_MAIL_PROBLEM = (
-    ("01", "Work is fragmented",
+    ("Work is fragmented",
      "Tasks, transcripts, branches, pull requests and reviews live across disconnected tools."),
-    ("02", "Accountability is shallow",
+    ("Accountability is shallow",
      "Teams need model, cost, tool-use, authorship and approval evidence for every delegated "
      "change."),
-    ("03", "Control is rented",
+    ("Control is rented",
      "Code, identity, collaboration, and often the agent experience, stay bound to a central "
      "platform."),
 )
 DECK_MAIL_STEPS = (
-    ("01 · Assign", "Start from an issue or a task"),
-    ("02 · Choose", "Run Claude Code or Codex"),
-    ("03 · Isolate", "A worktree and branch per session"),
-    ("04 · Orchestrate", "Sessions in parallel"),
-    ("05 · Prove", "Capture metadata and patch"),
-    ("06 · Gate", "A human inspects and merges"),
+    ("Assign", "Start from an issue or a task"),
+    ("Choose", "Run Claude Code or Codex"),
+    ("Isolate", "A worktree and branch per session"),
+    ("Orchestrate", "Sessions in parallel"),
+    ("Prove", "Capture metadata and patch"),
+    ("Gate", "A human inspects and merges"),
 )
 DECK_MAIL_PROOF = (
     ("51,457", "Commits in the repository"),
@@ -6113,7 +6127,7 @@ DECK_MAIL_PROOF = (
 )
 DECK_MAIL_DEVICES = (
     ("Watch", "Follow, prompt, stop and review agents from the wrist.", "In build"),
-    ("AR glasses", "A 201\u2033 virtual workspace for repos, sessions and diffs.", "R&amp;D"),
+    ("AR glasses", "A 201″ virtual workspace for repos, sessions and diffs.", "R&amp;D"),
 )
 DECK_MAIL_LADDER = (
     ("20", "$0.5M ARR", "Round milestone"),
@@ -6174,9 +6188,9 @@ DECK_MAIL_ROADMAP = (
         "Security hardening, independent review and a SOC 2 program")),
 )
 DECK_MAIL_ICP = (
-    "<b>Buyer:</b> CTO, VP Engineering, Security",
-    "<b>Trigger:</b> agent throughput rises faster than reviewer trust and control",
-    "<b>Land:</b> one agent workflow, no big-bang migration",
+    ("Buyer", "CTO, VP Engineering, Security"),
+    ("Trigger", "Agent throughput rises faster than reviewer trust and control"),
+    ("Land", "One agent workflow, no big-bang migration"),
 )
 DECK_MAIL_MOTION = (
     ("Prove", "Dogfooding plus a live issue-to-agent-to-PR demo."),
@@ -6213,76 +6227,41 @@ DECK_MAIL_SOURCES = (
     ("Definitions", "Dogfooding metrics are internal Git history, not customer traction. ARR "
      "and ACV figures are forward-looking targets."),
 )
+DECK_MAIL_MATRIX_COLUMNS = ("Agent workflow", "Full forge", "Local-first")
+DECK_MAIL_MATRIX = (
+    ("Hosted AI forges", True, True, False),
+    ("Coding agents", True, False, False),
+    ("Peer-to-peer Git", False, None, True),
+    ("Self-hosted forges", False, True, True),
+    ("ForkMesh", True, True, True),
+)
 
 
-def _mail_eyebrow(text, dark=False):
-    return ('<div style="margin:0 0 14px;font:600 11px/1.4 %s;letter-spacing:.08em;'
-            'text-transform:uppercase;color:%s"><span style="display:inline-block;width:8px;'
-            'height:8px;margin-right:8px;border-radius:3px;background:%s;vertical-align:0">'
-            '</span>%s</div>') % (MAIL_MONO, "#a3a3a3" if dark else MAIL_FAINT,
-                                  "#58a6ff" if dark else MAIL_ACCENT, text)
-
-
-def _mail_heading(text, size=28, dark=False):
-    return ('<h2 class="fm-h" style="margin:0;font:700 %dpx/1.1 %s;letter-spacing:-.03em;'
-            'color:%s">%s</h2>') % (size, MAIL_DISPLAY, "#f5f5f5" if dark else MAIL_INK, text)
-
-
-def _mail_lede(text, dark=False):
-    return ('<p style="margin:12px 0 0;font:400 15px/1.6 %s;color:%s">%s</p>'
-            % (MAIL_SANS, "#a3a3a3" if dark else MAIL_BODY, text))
-
-
-def _mail_card(inner, dark=False):
+def _mail_card(inner):
     return ('<tr><td style="padding:0 0 14px"><table role="presentation" width="100%%" '
-            'cellpadding="0" cellspacing="0" class="fm-rise" style="border-collapse:separate;'
-            'background:%s;border:1px solid %s;border-radius:18px"><tr><td class="fm-pad" '
-            'style="padding:30px 32px">%s</td></tr></table></td></tr>') % (
-                "#0b0b0c" if dark else "#ffffff", "#0b0b0c" if dark else MAIL_LINE, inner)
-
-
-def _mail_image(name, width, alt, radius=12):
-    return ('<img src="%s%s" width="%d" alt="%s" style="display:block;width:100%%;'
-            'max-width:%dpx;height:auto;border:0;border-radius:%dpx;outline:none">') % (
-                EMAIL_ASSETS, name, width, escape(alt, quote=True), width, radius)
-
-
-def _mail_tone(dark):
-    return ("#f5f5f5", "#a3a3a3", "#2a2a2e", "#58a6ff") if dark else (
-        MAIL_INK, MAIL_BODY, MAIL_LINE, MAIL_ACCENT)
-
-
-def _mail_bullets(items, dark=False, top=14):
-    ink, body, _, accent = _mail_tone(dark)
-    return '<ul style="margin:%dpx 0 0;padding:0 0 0 18px">%s</ul>' % (top, "".join(
-        '<li style="margin:0 0 7px;font:400 14px/1.55 %s;color:%s">%s</li>' % (
-            MAIL_SANS, body, item.replace("<b>", '<b style="color:%s">' % ink))
-        for item in items))
-
-
-def _mail_kicker(text, dark=False):
-    return ('<div style="margin:0 0 6px;font:600 10.5px/1.4 %s;letter-spacing:.08em;'
-            'text-transform:uppercase;color:%s">%s</div>') % (
-                MAIL_MONO, _mail_tone(dark)[3], text)
-
-
-def _mail_chain(items, joiner="&rarr;"):
-    parts = ['<span style="display:inline-block;padding:4px 11px;border:1px solid %s;'
-             'border-radius:99px;white-space:nowrap">%s</span>' % (MAIL_LINE, item)
-             for item in items]
-    return ('<p style="margin:18px 0 0;font:600 12.5px/2.3 %s;color:%s">%s</p>' % (
-        MAIL_SANS, MAIL_INK, (' <span style="color:%s">%s</span> ' % (MAIL_FAINT, joiner))
-        .join(parts)))
-
-
-def _mail_note(text, dark=False):
-    return ('<p style="margin:14px 0 0;font:400 12.5px/1.5 %s;color:%s">%s</p>'
-            % (MAIL_SANS, "#6b6b74" if dark else MAIL_FAINT, text))
+            'cellpadding="0" cellspacing="0" style="border-collapse:separate;background:#ffffff;'
+            'border:1px solid %s;border-radius:18px"><tr><td class="fm-pad" '
+            'style="padding:30px 32px">%s</td></tr></table></td></tr>') % (MAIL_LINE, inner)
 
 
 def _mail_marker(slide):
     return ('<tr><td class="fm-s%d" style="height:1px;line-height:1px;font-size:1px;'
             'background-repeat:no-repeat;background-size:1px 1px">&#8203;</td></tr>' % slide)
+
+
+def _mail_night():
+    roles = "".join(".fm-%s{color:%s!important}" % (role, DECK_NIGHT[role])
+                    for role in ("ink", "grey", "body", "faint", "accent", "live"))
+    return (
+        "@media (prefers-color-scheme:dark){.fm-page{background:%s!important}%s"
+        ".fm-line{border-color:%s!important}.fm-tile{background:%s!important}"
+        ".fm-inkbg{background:%s!important}.fm-accentbg{background:%s!important}"
+        ".fm-btn1{background:#ffffff!important;background-image:none!important;"
+        "color:#111113!important;border-color:#f4f4f5!important}"
+        ".fm-btn2{background:#222225!important;color:#f5f5f5!important;"
+        "border-color:#34343a!important}}") % (
+            DECK_NIGHT_PAGE, roles, DECK_NIGHT["line"], DECK_NIGHT["tile"], DECK_NIGHT["ink"],
+            DECK_NIGHT["accent"])
 
 
 def _mail_style(beacon, deck):
@@ -6300,27 +6279,22 @@ def _mail_style(beacon, deck):
     layout = (
         "<style>@font-face{font-family:'FM Favorit';src:url(\"" + EMAIL_FONT + "\") "
         "format('woff2');font-weight:700}"
+        ":root{color-scheme:" + ("light dark" if deck else "light") + "}"
         "@media (max-width:620px){.fm-pad{padding:24px 22px!important}"
-        ".fm-h1{font-size:34px!important}.fm-h{font-size:24px!important}"
-        ".fm-plan{max-width:none!important;margin-right:0!important}}"
-        "a.fm-btn:hover,a.fm-cta:hover{opacity:.88}</style>")
+        ".fm-gut{padding-left:22px!important;padding-right:22px!important}"
+        ".fm-sec{padding-top:56px!important;padding-bottom:56px!important}"
+        ".fm-h1{font-size:42px!important}.fm-h{font-size:28px!important}"
+        ".fm-big{font-size:26px!important}"
+        ".fm-col{display:block!important;max-width:none!important;margin:0 0 10px!important}}"
+        + (_mail_night() if deck else "") + "</style>")
     motion = (
-        "<style>@keyframes fm-shine{0%,62%{background-position:180% 0}"
-        "100%{background-position:-80% 0}}"
-        ".fm-cta{background-image:linear-gradient(110deg,#1c1c1f 38%,#4a4a52 50%,#1c1c1f 62%);"
-        "background-size:250% 100%;animation:fm-shine 4.5s ease-in-out infinite}"
-        "@keyframes fm-grow{from{width:0}}"
+        "<style>@keyframes fm-grow{from{width:0}}"
         ".fm-fill{animation:fm-grow 1.8s cubic-bezier(.2,.7,.2,1) both}"
-        "@keyframes fm-live{0%{box-shadow:0 0 0 0 rgba(63,185,80,.55)}"
-        "70%,100%{box-shadow:0 0 0 9px rgba(63,185,80,0)}}"
-        ".fm-live{animation:fm-live 2.4s ease-out infinite}"
-        "@keyframes fm-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}"
-        ".fm-float{animation:fm-float 6s ease-in-out infinite}"
         + reads +
         "@supports (animation-timeline: view()){"
         ".fm-rise{animation:fm-rise linear both;animation-timeline:view();"
-        "animation-range:entry 0% cover 26%}"
-        "@keyframes fm-rise{from{opacity:.35;transform:translateY(26px) scale(.97)}"
+        "animation-range:entry 0% cover 24%}"
+        "@keyframes fm-rise{from{opacity:.3;transform:translateY(24px)}"
         "to{opacity:1;transform:none}}"
         ".fm-fill{animation:fm-grow linear both;animation-timeline:view();"
         "animation-range:entry 30% cover 45%}" + depths + "}</style>")
@@ -6334,283 +6308,422 @@ def _mail_reads():
         for mark in READ_MARKS)
 
 
-def _mail_deck_sections():
+def _deck_attr(cls):
+    return ' class="%s"' % cls if cls else ""
+
+
+def _deck_tone(slab, role):
+    return DECK_TONES["slab" if slab else "light"][role], "" if slab else "fm-" + role
+
+
+def _deck_text(text, role="body", font="400 15px/1.6", slab=False, margin="0", tag="div",
+               family=DECK_SANS, extra="", cls=""):
+    color, tone = _deck_tone(slab, role)
+    return '<%s%s style="margin:%s;font:%s %s;color:%s%s">%s</%s>' % (
+        tag, _deck_attr(" ".join(part for part in (cls, tone) if part)), margin, font, family,
+        color, ";" + extra if extra else "", text, tag)
+
+
+def _deck_strong(text, slab=False):
+    color, tone = _deck_tone(slab, "ink")
+    return text.replace("<b>", '<b%s style="font-weight:600;color:%s">' % (_deck_attr(tone), color))
+
+
+def _deck_heading(first, second="", size=36, slab=False, tag="h2", cls="fm-h", align="left",
+                  join=" ", margin="0"):
+    grey, tone = _deck_tone(slab, "grey")
+    tail = '%s<span%s style="color:%s">%s</span>' % (join, _deck_attr(tone), grey, second)
+    return _deck_text(first + (tail if second else ""), "ink", "700 %dpx/1.08" % size, slab,
+                      margin, tag, DECK_DISPLAY, "letter-spacing:-.035em;text-align:%s" % align,
+                      cls)
+
+
+def _deck_lede(text, slab=False, align="left"):
+    return _deck_text(text, "body", "400 17px/1.65", slab, "20px 0 0", "p",
+                      extra="text-align:%s" % align)
+
+
+def _deck_note(text, slab=False):
+    return _deck_text(text, "faint", "400 13px/1.6", slab, "36px 0 0", "p")
+
+
+def _deck_label(text, slab=False, top=0, role="faint"):
+    return _deck_text(text, role, "500 13px/1.4", slab, "%dpx 0 10px" % top)
+
+
+def _deck_title(text, slab=False, size=16):
+    return _deck_text(text, "ink", "600 %dpx/1.4" % size, slab)
+
+
+def _deck_display(text, slab=False, size=21, top=0):
+    return _deck_text(text, "ink", "700 %dpx/1.3" % size, slab, "%dpx 0 0" % top,
+                      family=DECK_DISPLAY, extra="letter-spacing:-.02em")
+
+
+def _deck_body(text, slab=False, margin="6px 0 0", size=15):
+    return _deck_text(_deck_strong(text, slab), "body", "400 %spx/1.6" % size, slab, margin)
+
+
+def _deck_band(inner, pad="76px 28px"):
+    return ('<tr><td class="fm-gut fm-sec" style="padding:%s"><div class="fm-rise">%s</div>'
+            '</td></tr>' % (pad, inner))
+
+
+def _deck_edge(name):
+    return ('<tr><td style="font-size:0;line-height:0"><img src="%s%s" width="600" alt="" '
+            'style="display:block;width:100%%;height:auto;border:0"></td></tr>' % (
+                EMAIL_ASSETS, name))
+
+
+def _deck_slab(inner, pad="44px 28px 52px"):
+    return (_deck_edge("slab-top.png")
+            + '<tr><td class="fm-gut" bgcolor="%s" style="background:%s;padding:%s"><div '
+              'class="fm-rise">%s</div></td></tr>' % (DECK_SLAB, DECK_SLAB, pad, inner)
+            + _deck_edge("slab-bottom.png"))
+
+
+def _deck_panel(inner, top=40, pad="32px 28px"):
+    return ('<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+            'style="margin-top:%dpx;border-collapse:separate"><tr><td bgcolor="%s" '
+            'style="background:%s;border-radius:20px;padding:%s">%s</td></tr></table>' % (
+                top, DECK_SLAB, DECK_SLAB, pad, inner))
+
+
+def _deck_image(name, width, alt, top=0, align="center"):
+    return ('<div style="margin-top:%dpx;text-align:%s;font-size:0"><img src="%s%s" width="%d" '
+            'alt="%s" style="display:inline-block;width:100%%;max-width:%dpx;height:auto;'
+            'border:0;outline:none"></div>') % (top, align, EMAIL_ASSETS, name, width,
+                                                escape(alt, quote=True), width)
+
+
+def _deck_table(rows, top=40):
+    return ('<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
+            'style="margin-top:%dpx;border-collapse:collapse">%s</table>' % (top, "".join(rows)))
+
+
+def _deck_cell(inner, slab=False, extra="", rule=True):
+    line, tone = _deck_tone(slab, "line")
+    return '<td valign="top"%s style="padding:22px 0;%s%s">%s</td>' % (
+        _deck_attr(tone if rule else ""), "border-top:1px solid %s;" % line if rule else "",
+        extra, inner)
+
+
+def _deck_item(title, text, label="", slab=False):
+    return '<tr>%s</tr>' % _deck_cell(
+        (_deck_label(label, slab) if label else "") + _deck_title(title, slab)
+        + _deck_body(text, slab), slab)
+
+
+def _deck_figure(value, text, slab=False, role="ink"):
+    return '<tr>%s%s</tr>' % (
+        _deck_cell(_deck_text(value, role, "700 30px/1.05", slab, family=DECK_DISPLAY,
+                              extra="letter-spacing:-.03em;white-space:nowrap"), slab,
+                   "width:132px;padding-right:16px"),
+        _deck_cell(_deck_body(text, slab, "4px 0 0"), slab))
+
+
+def _deck_pair(key, text, slab=False, width=96):
+    return '<tr>%s%s</tr>' % (
+        _deck_cell(_deck_title(key, slab, 15), slab, "width:%dpx;padding-right:16px" % width),
+        _deck_cell(_deck_body(text, slab, "0"), slab))
+
+
+def _deck_marks(items, mark, role, slab=False, top=16, size=15):
+    color, tone = _deck_tone(slab, role)
+    return _deck_table((
+        '<tr><td valign="top"%s style="width:26px;padding:6px 0;font:600 %spx/1.6 %s;color:%s">'
+        '%s</td><td valign="top" style="padding:6px 0">%s</td></tr>' % (
+            _deck_attr(tone), size, DECK_SANS, color, mark, _deck_body(item, slab, "0", size))
+        for item in items), top)
+
+
+def _deck_path(items, slab=False, align="left"):
+    color, tone = _deck_tone(slab, "faint")
+    arrow = ' <span%s style="color:%s">&rarr;</span> ' % (_deck_attr(tone), color)
+    return _deck_text(arrow.join('<span style="white-space:nowrap">%s</span>' % item
+                                 for item in items), "body", "500 14px/1.8", slab, "32px 0 0",
+                      "p", extra="text-align:%s" % align)
+
+
+def _deck_badge(text):
+    return ('<div><span class="fm-tile fm-line fm-body" style="display:inline-block;'
+            'padding:8px 14px;border:1px solid %s;border-radius:99px;background:#ffffff;'
+            'font:500 13px/1.3 %s;color:%s">%s</span></div>') % (
+                DECK_TONES["light"]["line"], DECK_SANS, DECK_TONES["light"]["body"],
+                _deck_strong(text))
+
+
+def _deck_buttons(reply, home, subject, align="left"):
+    buttons = []
+    if reply:
+        buttons.append(
+            '<a href="mailto:%s?subject=%s" class="fm-btn1" style="display:inline-block;'
+            'margin:0 4px 10px;padding:12px 16px;border:1px solid #161616;border-radius:10px;'
+            'background:#262626;background-image:linear-gradient(180deg,#2c2c2c,#222222);'
+            'box-shadow:inset 0 1px 0 rgba(255,255,255,.17),0 1px 2px rgba(0,0,0,.16);'
+            'font:600 14px/1 %s;color:#ffffff;text-decoration:none">Reply to the founders'
+            '&nbsp; <span style="opacity:.55">&rsaquo;</span></a>' % (
+                escape(reply, quote=True), quote("Re: " + subject), DECK_SANS))
+    buttons.append(
+        '<a href="%s" class="fm-btn2" style="display:inline-block;margin:0 4px 10px;'
+        'padding:12px 16px;border:1px solid #e1e2e3;border-radius:10px;background:#ffffff;'
+        'box-shadow:inset 0 -1px 0 rgba(0,0,0,.03),0 1px 2px rgba(0,0,0,.05);'
+        'font:600 14px/1 %s;color:#292929;text-decoration:none">forkmesh.com</a>' % (
+            home, DECK_SANS))
+    return '<div style="margin:32px -4px 0;text-align:%s">%s</div>' % (align, "".join(buttons))
+
+
+def _deck_bar(share, slab=False, fill="ink", height=8):
+    track, tone = _deck_tone(slab, "tile" if not slab else "line")
+    color, fill_tone = _deck_tone(slab, fill)
+    return ('<div%s style="margin-top:12px;height:%dpx;border-radius:99px;background:%s"><div '
+            'class="fm-fill%s" style="width:%d%%;height:%dpx;border-radius:99px;background:%s">'
+            '</div></div>') % (_deck_attr(tone), height, track,
+                               (" " + fill_tone + "bg") if fill_tone else "", share, height,
+                               color)
+
+
+def _deck_check(mark, slab=False, role="ink"):
+    if mark is None:
+        return _deck_text("Partial", "faint", "500 12px/1.6", slab)
+    if not mark:
+        return _deck_text("&mdash;", "faint", "500 15px/1.6", slab)
+    return _deck_text("&#10003;", role, "700 15px/1.6", slab)
+
+
+def _deck_matrix():
+    head = '<tr><td style="padding:0 0 12px"></td>%s</tr>' % "".join(
+        '<td align="center" valign="bottom" width="72" style="padding:0 0 12px">%s</td>' %
+        _deck_text(column, "faint", "500 12px/1.3", extra="text-align:center")
+        for column in DECK_MAIL_MATRIX_COLUMNS)
     rows = []
-    rows.append('<tr><td style="padding:0 0 14px">%s</td></tr>' % _mail_image(
-        "mesh.gif", 600, "ForkMesh mirrors your repositories across independent hosts.", 18))
-    rows.append(_mail_card(
-        _mail_eyebrow("ForkMesh · Investor deck · September 2026")
-        + '<h1 class="fm-h fm-h1" style="margin:0;font:700 42px/1.04 %s;letter-spacing:-.04em;'
-          'color:%s">Code with agents.<br>Own the forge.</h1>' % (MAIL_DISPLAY, MAIL_INK)
-        + _mail_lede("ForkMesh turns Claude Code and Codex into attributable contributors on a "
+    for name, *marks in DECK_MAIL_MATRIX:
+        ours = name == "ForkMesh"
+        rows.append('<tr>%s%s</tr>' % (
+            _deck_cell(_deck_text(name, "ink" if ours else "body",
+                                  "%d 15px/1.5" % (700 if ours else 400)), extra="padding:14px 0"),
+            "".join(_deck_cell(_deck_check(mark, role="accent" if ours else "ink"),
+                               extra="padding:14px 0;text-align:center") for mark in marks)))
+    return _deck_table([head] + rows)
+
+
+def _deck_plans():
+    columns = []
+    for index, (kicker, title, items) in enumerate(DECK_MAIL_PLANS):
+        slab = index == 1
+        columns.append(
+            '<div class="fm-col" style="display:inline-block;width:100%%;max-width:176px;'
+            'margin:0 %dpx 10px 0;vertical-align:top;text-align:left"><table role="presentation" '
+            'width="100%%" cellpadding="0" cellspacing="0" style="border-collapse:separate"><tr>'
+            '<td%s style="padding:22px 18px;border:1px solid %s;border-radius:16px;%s">%s%s%s'
+            '</td></tr></table></div>' % (
+                0 if index == len(DECK_MAIL_PLANS) - 1 else 8,
+                "" if slab else ' class="fm-line"', DECK_SLAB if slab else
+                DECK_TONES["light"]["line"], "background:%s" % DECK_SLAB if slab else "",
+                _deck_label(kicker, slab), _deck_display(title, slab, 18),
+                _deck_marks(items, "&#10003;", "ink" if not slab else "accent", slab, 14, 14)))
+    return '<div style="margin-top:40px;font-size:0">%s</div>' % "".join(columns)
+
+
+def _mail_deck_sections(reply, home, subject):
+    slides = []
+    slides.append(_deck_band(
+        _deck_badge("<b>Raising $1.0M</b>&nbsp; · &nbsp;18-month plan")
+        + _deck_heading("Code with agents.", "Own the forge.", 56, tag="h1",
+                        cls="fm-h fm-h1", join="<br>", margin="28px 0 0")
+        + _deck_lede("ForkMesh turns Claude Code and Codex into attributable contributors on a "
                      "local-first Git platform you control.")
-        + '<p style="margin:22px 0 22px"><span style="display:inline-block;padding:11px 16px;'
-          'border-radius:12px;background:#1c1c1f;color:#ffffff;font:700 13px/1 %s">'
-          'Raising $1.0M · 18-month plan</span></p>' % MAIL_SANS
-        + _mail_image("hero.jpg", 536, "The ForkMesh desktop app on a laptop and the mobile app "
-                      "on a phone.", 12)))
-    problem = "".join(
-        '<tr><td valign="top" style="padding:14px 14px 14px 0;border-top:1px solid %s;'
-        'font:600 11px/1.6 %s;color:%s;width:28px">%s</td><td style="padding:14px 0;'
-        'border-top:1px solid %s"><div style="font:700 16px/1.35 %s;color:%s">%s</div>'
-        '<div style="margin-top:4px;font:400 14px/1.55 %s;color:%s">%s</div></td></tr>' % (
-            MAIL_LINE, MAIL_MONO, MAIL_ACCENT, k, MAIL_LINE, MAIL_SANS, MAIL_INK, title,
-            MAIL_SANS, MAIL_BODY, text) for k, title, text in DECK_MAIL_PROBLEM)
-    rows.append(_mail_card(
-        _mail_eyebrow("Problem · 02") + _mail_heading("Agents work differently. The forge does not.")
-        + _mail_lede("Coding is shifting from autocomplete to delegated work, but orchestration, "
+        + _deck_buttons(reply, home, subject), "56px 28px 48px")
+        + _deck_slab(_deck_image("deck-cover.jpg", DECK_WIDTH, "The ForkMesh desktop app on a "
+                                 "laptop and the mobile app on a phone."), "28px 28px 36px"))
+    slides.append(_deck_band(
+        _deck_heading("Agents work differently.", "The forge does not.")
+        + _deck_lede("Coding is shifting from autocomplete to delegated work, but orchestration, "
                      "accountability and ownership remain fragmented across three control "
                      "planes.")
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:18px">%s</table>' % problem
-        + _mail_chain(("IDE / CLI", "Hosted forge", "Model vendor"))
-        + '<p style="margin:6px 0 0;font:600 14px/1.5 %s;color:%s">Three control planes, one '
-          'overloaded reviewer. More code is cheap. Trusted merges are scarce.</p>' % (
-              MAIL_SANS, MAIL_INK)))
+        + _deck_table(_deck_item(title, text) for title, text in DECK_MAIL_PROBLEM)
+        + _deck_path(("IDE / CLI", "Hosted forge", "Model vendor"))
+        + _deck_display("Three control planes, one overloaded reviewer. More code is cheap. "
+                        "Trusted merges are scarce.", size=22, top=10)))
     stats = "".join(
-        '<td valign="top" width="33%%" style="padding:0 10px 0 0"><div style="font:700 26px/1 '
-        '%s;letter-spacing:-.03em;color:%s">%s</div><div style="margin-top:8px;font:600 10px/1.45 '
-        '%s;letter-spacing:.06em;text-transform:uppercase;color:#a3a3a3">%s</div></td>' % (
-            MAIL_DISPLAY, "#58a6ff" if index == 2 else "#f5f5f5", value, MAIL_MONO, label)
+        '<td valign="top" width="33%%" style="padding:0 12px 0 0"><div class="fm-big" '
+        'style="font:700 36px/1 %s;letter-spacing:-.035em;color:%s;white-space:nowrap">%s</div>'
+        '<div style="margin-top:12px;font:400 13px/1.5 %s;color:%s">%s</div></td>' % (
+            DECK_DISPLAY, DECK_TONES["slab"]["accent" if index == 2 else "ink"], value,
+            DECK_SANS, DECK_TONES["slab"]["body"], label)
         for index, (value, label) in enumerate(DECK_MAIL_WHY_STATS))
-    why = "".join(
-        '<div style="padding:12px 0;border-top:1px solid #2a2a2e">%s<div style="font:700 15px/1.35 '
-        '%s;color:#f5f5f5">%s</div><div style="margin-top:3px;font:400 13.5px/1.5 %s;'
-        'color:#a3a3a3">%s</div></div>' % (_mail_kicker(k, True), MAIL_SANS, title, MAIL_SANS, text)
-        for k, title, text in DECK_MAIL_WHY_FLOW)
-    rows.append(_mail_card(
-        _mail_eyebrow("Why now · 03", dark=True)
-        + _mail_heading("AI coding is already a budget line. Agent governance is next.", dark=True)
-        + _mail_lede("The winning platform will coordinate many models, preserve provenance and "
-                     "keep the system of record under customer control.", dark=True)
+    slides.append(_deck_slab(
+        _deck_heading("AI coding is already a budget line.", "Agent governance is next.",
+                      slab=True)
+        + _deck_lede("The winning platform will coordinate many models, preserve provenance and "
+                     "keep the system of record under customer control.", True)
         + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin:22px 0 18px"><tr>%s</tr></table>' % stats + why
-        + _mail_note("GitHub Octoverse 2025 · Microsoft FY26 Q2", True), dark=True))
-    steps = "".join(
-        '<div style="padding:10px 0;border-top:1px solid %s"><div style="font:600 10.5px/1.4 '
-        '%s;letter-spacing:.08em;text-transform:uppercase;color:%s">%s</div><div '
-        'style="margin-top:3px;font:700 14.5px/1.35 %s;color:%s">%s</div></div>' % (
-            MAIL_LINE, MAIL_MONO, MAIL_ACCENT, k, MAIL_SANS, MAIL_INK, title)
-        for k, title in DECK_MAIL_STEPS)
-    rows.append(_mail_card(
-        _mail_eyebrow("Product · 04")
-        + _mail_heading("One prompt becomes a reviewed, attributable pull request.")
-        + _mail_lede("ForkMesh is the orchestration and system-of-record layer around the "
+          'style="margin:44px 0 36px"><tr>%s</tr></table>' % stats
+        + _deck_table((_deck_item(title, text, label, True)
+                       for label, title, text in DECK_MAIL_WHY_FLOW), 0)
+        + _deck_note("GitHub Octoverse 2025 · Microsoft FY26 Q2", True)))
+    slides.append(_deck_band(
+        _deck_heading("One prompt becomes a reviewed,", "attributable pull request.")
+        + _deck_lede("ForkMesh is the orchestration and system-of-record layer around the "
                      "coding agents teams already choose.")
-        + '<div style="margin-top:20px;font-size:0;text-align:center">'
-          '<div style="display:inline-block;width:100%%;max-width:240px;vertical-align:top;'
-          'text-align:center"><div class="fm-float">%s</div></div>'
-          '<div style="display:inline-block;width:100%%;max-width:268px;vertical-align:top;'
-          'text-align:left;padding-left:4px">%s</div></div>' % (
-              _mail_image("agent-flow.gif", 240, "The mobile app moving one prompt from "
-                          "assignment to a reviewed merge.", 0), steps)
-        + '<p style="margin:16px 0 0;font:600 13.5px/1.6 %s;color:%s">Replace the '
-          'Copilot-bound workflow · Keep model choice · Keep forge ownership</p>' % (
-              MAIL_SANS, MAIL_INK)))
-    proof = "".join(
-        '<tr><td style="padding:11px 16px 11px 0;border-top:1px solid %s;font:700 24px/1 %s;'
-        'letter-spacing:-.03em;color:%s;white-space:nowrap;width:96px">%s</td><td '
-        'style="padding:11px 0;border-top:1px solid %s;font:400 14px/1.45 %s;color:%s">%s'
-        '</td></tr>' % (MAIL_LINE, MAIL_DISPLAY, MAIL_INK, value, MAIL_LINE, MAIL_SANS,
-                        MAIL_BODY, label) for value, label in DECK_MAIL_PROOF)
-    rows.append(_mail_card(
-        _mail_eyebrow("Product proof · 05")
-        + _mail_heading("ForkMesh is already building ForkMesh.")
-        + _mail_lede("Dogfooding proves the issue &rarr; agent &rarr; pull request &rarr; merge "
+        + _deck_panel(_deck_image("deck-flow.gif", 260, "The mobile app moving one prompt from "
+                                  "assignment to a reviewed merge."), 40, "28px 20px 12px")
+        + _deck_table(('<tr>%s%s</tr>' % (
+            _deck_cell(_deck_text("%02d" % index, "faint", "500 13px/1.75", family=DECK_MONO),
+                       extra="width:40px;padding:18px 0"),
+            _deck_cell(_deck_body("<b>%s.</b> %s" % (verb, text), margin="0"),
+                       extra="padding:18px 0"))
+            for index, (verb, text) in enumerate(DECK_MAIL_STEPS, start=1)), 24)
+        + _deck_text("Replace the Copilot-bound workflow · Keep model choice · Keep forge "
+                     "ownership", "ink", "600 15px/1.65", margin="28px 0 0", tag="p")))
+    slides.append(_deck_band(
+        _deck_heading("ForkMesh is already", "building ForkMesh.")
+        + _deck_lede("Dogfooding proves the issue &rarr; agent &rarr; pull request &rarr; merge "
                      "loop. Numbers are from the repository's own Git history and the live "
                      "network on 13 September 2026.")
-        + '<div style="margin:20px 0 6px">%s</div>' % _mail_image(
-            "count.gif", 536, "7,416 agent branches merged into main.", 0)
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
-          % proof
-        + _mail_bullets(DECK_MAIL_PROOF_NOTES, top=16)
-        + _mail_note("Dogfooding proof, not customer traction · Round objective: repeatable "
+        + _deck_panel(
+            _deck_label("Agent branches merged into main", True)
+            + _deck_text("7,416", "ink", "700 76px/1", True, family=DECK_DISPLAY,
+                         extra="letter-spacing:-.045em")
+            + _deck_bar(100, True, "accent", 4)
+            + _deck_table((_deck_figure(value, label, True) for value, label in DECK_MAIL_PROOF),
+                          28), 40, "36px 28px 12px")
+        + "".join(_deck_body(note, margin="20px 0 0" if index else "32px 0 0")
+                  for index, note in enumerate(DECK_MAIL_PROOF_NOTES))
+        + _deck_note("Dogfooding proof, not customer traction · Round objective: repeatable "
                      "paid adoption")))
-    roadmap = []
-    for index, (kicker, title, items) in enumerate(DECK_MAIL_ROADMAP):
-        dark = index == 1
-        roadmap.append(
-            '<tr><td style="padding:%s"><table role="presentation" width="100%%" cellpadding="0" '
-            'cellspacing="0" style="border-collapse:separate;background:%s;border:1px solid %s;'
-            'border-radius:14px"><tr><td style="padding:18px 20px">%s<div style="font:700 16px/1.3 '
-            '%s;color:%s">%s</div>%s</td></tr></table></td></tr>' % (
-                "12px 0 0" if index else "18px 0 0", "#141416" if dark else "#ffffff",
-                "#141416" if dark else MAIL_LINE, _mail_kicker(kicker, dark), MAIL_SANS,
-                "#f5f5f5" if dark else MAIL_INK, title, _mail_bullets(items, dark, 10)))
-    rows.append(_mail_card(
-        _mail_eyebrow("Roadmap · 06")
-        + _mail_heading("The agent loop works. This round hardens it.")
-        + _mail_lede("Exactly what is live today, and what the capital is designed to unlock.")
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
-          % "".join(roadmap)
-        + _mail_note("Milestones are targets, not current traction")))
-    devices = "".join(
-        '<tr><td style="padding:12px 0;border-top:1px solid #2a2a2e"><div style="font:700 '
-        '15px/1.35 %s;color:#f5f5f5">%s</div><div style="margin-top:3px;font:400 13.5px/1.5 %s;'
-        'color:#a3a3a3">%s</div></td><td align="right" valign="middle" style="padding:12px 0 12px '
-        '12px;border-top:1px solid #2a2a2e"><span style="display:inline-block;padding:6px 9px;'
-        'border-radius:99px;border:1px solid %s;font:600 10.5px/1 %s;letter-spacing:.08em;'
-        'text-transform:uppercase;color:%s;white-space:nowrap">%s</span></td></tr>' % (
-            MAIL_SANS, name, MAIL_SANS, text, "#2f6b3a" if index == 0 else "#2a2a2e", MAIL_MONO,
-            "#3fb950" if index == 0 else "#6b6b74", status)
-        for index, (name, text, status) in enumerate(DECK_MAIL_DEVICES))
-    rows.append(_mail_card(
-        _mail_eyebrow("Beyond the desk · 07", dark=True)
-        + _mail_heading("Agents on your wrist. Your code in the room.", dark=True)
-        + _mail_lede("Work with agents on your watch and be connected with your code in a virtual "
-                     "world where efficiency is seen.", dark=True)
-        + '<div style="margin:20px 0 8px">%s</div>' % _mail_image(
-            "xr.jpg", 536, "AR glasses showing the ForkMesh desktop app and a Claude Code session "
-            "inside the lenses, next to a watch listing running agents.", 0)
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0">%s</table>'
-          % devices
-        + _mail_note("Pictured: AOC Air Mega AR glasses · 201″ micro-OLED · FHD 120 Hz.",
-                     True), dark=True))
-    motion = "".join(
-        '<tr><td valign="top" style="padding:12px 12px 12px 0;border-top:1px solid %s;width:14px">'
-        '<div style="width:8px;height:8px;margin-top:4px;border:2px solid %s;border-radius:50%%">'
-        '</div></td><td style="padding:12px 0;border-top:1px solid %s">%s<div style="font:400 '
-        '14px/1.5 %s;color:%s">%s</div></td></tr>' % (
-            MAIL_LINE, MAIL_ACCENT, MAIL_LINE, _mail_kicker(k), MAIL_SANS, MAIL_BODY, text)
-        for k, text in DECK_MAIL_MOTION)
-    rows.append(_mail_card(
-        _mail_eyebrow("Customer &amp; go-to-market · 08")
-        + _mail_heading("Agent-first teams are the wedge. Sovereign infrastructure expands the "
-                        "deal.")
-        + _mail_lede("A founder-led motion where every step has an observable conversion event.")
-        + '<div style="margin-top:20px">%s<div style="font:700 16px/1.3 %s;color:%s">20 to 200 '
-          'person software teams</div><div style="margin-top:4px;font:400 14px/1.55 %s;color:%s">'
-          'Using multiple coding agents on private code, and feeling the review, provenance and '
-          'platform-control gap.</div>%s</div>' % (
-              _mail_kicker("Initial ICP hypothesis"), MAIL_SANS, MAIL_INK, MAIL_SANS, MAIL_BODY,
-              _mail_bullets(DECK_MAIL_ICP, top=12))
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:8px">%s</table>' % motion
-        + _mail_chain(("Prompt", "Agent PR", "Human-approved merge", "Paid pilot", "ARR",
-                       "Expansion"))
-        + _mail_note("Founder-led until 20 paid organizations")))
-    ladder = "".join(
-        '<tr><td style="padding:0 0 10px"><table role="presentation" width="%d%%" '
-        'cellpadding="0" cellspacing="0" style="border-collapse:separate;border:1px solid %s;'
-        'border-radius:14px;background:#ffffff"><tr><td style="padding:14px 16px;font:700 22px/1 '
-        '%s;letter-spacing:-.03em;color:%s;width:72px">%s</td><td style="padding:14px 0;'
-        'font:400 13.5px/1.4 %s;color:%s">Paid organizations</td><td align="right" '
-        'style="padding:14px 16px;font:700 16px/1.2 %s;color:%s;white-space:nowrap">%s'
-        '<div style="margin-top:4px;font:600 10px/1 %s;letter-spacing:.08em;'
-        'text-transform:uppercase;color:%s">%s</div></td></tr></table></td></tr>' % (
-            width, MAIL_ACCENT if index == 2 else MAIL_LINE, MAIL_DISPLAY, MAIL_INK, orgs,
-            MAIL_SANS, MAIL_BODY, MAIL_DISPLAY, MAIL_INK, arr, MAIL_MONO, MAIL_ACCENT, note)
-        for index, ((orgs, arr, note), width) in enumerate(zip(DECK_MAIL_LADDER, (80, 90, 100))))
-    rows.append(_mail_card(
-        _mail_eyebrow("Market · 09")
-        + _mail_heading("Paid AI coding is proven. ForkMesh sells the control layer around it.")
-        + _mail_lede("A bottom-up model is more credible than an untraceable TAM / SAM / SOM "
+    slides.append(_deck_band(
+        _deck_heading("The agent loop works.", "This round hardens it.")
+        + _deck_lede("Exactly what is live today, and what the capital is designed to unlock.")
+        + "".join(
+            _deck_label(kicker, top=48 if index else 44, role="faint" if index else "live")
+            + _deck_display(title)
+            + _deck_marks(items, "&#9675;" if index else "&#10003;",
+                          "faint" if index else "live")
+            for index, (kicker, title, items) in enumerate(DECK_MAIL_ROADMAP))
+        + _deck_note("Milestones are targets, not current traction")))
+    slides.append(_deck_slab(
+        _deck_heading("Agents on your wrist.", "Your code in the room.", slab=True)
+        + _deck_lede("Work with agents on your watch and be connected with your code in a virtual "
+                     "world where efficiency is seen.", True)
+        + _deck_image("xr.jpg", DECK_WIDTH, "AR glasses showing the ForkMesh desktop app and a "
+                      "Claude Code session inside the lenses, next to a watch listing running "
+                      "agents.", 40)
+        + _deck_table(('<tr>%s%s</tr>' % (
+            _deck_cell(_deck_title(name, True) + _deck_body(text, True), True),
+            _deck_cell(_deck_text(status, "live" if index == 0 else "faint", "500 13px/1.6",
+                                  True), True, "padding-left:16px;text-align:right;"
+                       "white-space:nowrap"))
+            for index, (name, text, status) in enumerate(DECK_MAIL_DEVICES)), 32)
+        + _deck_note("Pictured: AOC Air Mega AR glasses · 201″ micro-OLED · FHD 120 Hz.", True)))
+    slides.append(_deck_band(
+        _deck_heading("Agent-first teams are the wedge.",
+                      "Sovereign infrastructure expands the deal.")
+        + _deck_lede("A founder-led motion where every step has an observable conversion event.")
+        + _deck_label("Initial ICP hypothesis", top=44)
+        + _deck_display("20 to 200 person software teams")
+        + _deck_body("Using multiple coding agents on private code, and feeling the review, "
+                     "provenance and platform-control gap.", margin="10px 0 0")
+        + _deck_table((_deck_pair(key, text) for key, text in DECK_MAIL_ICP), 24)
+        + _deck_label("How a team buys", top=44)
+        + _deck_table((_deck_pair(key, text) for key, text in DECK_MAIL_MOTION), 0)
+        + _deck_path(("Prompt", "Agent PR", "Human-approved merge", "Paid pilot", "ARR",
+                      "Expansion"))
+        + _deck_note("Founder-led until 20 paid organizations")))
+    slides.append(_deck_band(
+        _deck_heading("Paid AI coding is proven.", "ForkMesh sells the control layer around it.")
+        + _deck_lede("A bottom-up model is more credible than an untraceable TAM / SAM / SOM "
                      "stack: 4.7M paid Copilot subscribers today, and a $25K blended ACV "
                      "hypothesis per organization.")
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:20px">%s</table>' % ladder
-        + _mail_note("Microsoft FY26 Q2 · Illustrative model: price and conversion are validated "
+        + _deck_table(('<tr>%s</tr>' % _deck_cell(
+            '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0"><tr><td '
+            'valign="bottom">%s</td><td align="right" valign="bottom" style="padding-left:16px;'
+            'white-space:nowrap">%s</td></tr></table>%s%s' % (
+                _deck_text(arr, "accent" if index == 2 else "ink", "700 30px/1.05",
+                           family=DECK_DISPLAY, extra="letter-spacing:-.03em"),
+                _deck_text(note, "faint", "500 13px/1.4"),
+                _deck_bar(share, fill="accent" if index == 2 else "ink"),
+                _deck_body("%s paid organizations" % orgs, margin="10px 0 0")))
+            for index, ((orgs, arr, note), share) in enumerate(
+                zip(DECK_MAIL_LADDER, (6, 34, 100)))))
+        + _deck_note("Microsoft FY26 Q2 · Illustrative model: price and conversion are validated "
                      "in the design-partner phase.")))
-    plans = []
-    for index, (kicker, title, items) in enumerate(DECK_MAIL_PLANS):
-        dark = index == 1
-        plans.append(
-            '<div class="fm-plan" style="display:inline-block;width:100%%;max-width:170px;'
-            'vertical-align:top;margin:0 6px 10px 0;text-align:left"><table role="presentation" width="100%%" '
-            'cellpadding="0" cellspacing="0" style="border-collapse:separate;background:%s;'
-            'border:1px solid %s;border-radius:14px"><tr><td style="padding:16px">%s<div '
-            'style="font:700 15px/1.3 %s;color:%s">%s</div>%s</td></tr></table></div>' % (
-                "#141416" if dark else "#ffffff", "#141416" if dark else MAIL_LINE,
-                _mail_kicker(kicker, dark), MAIL_SANS, "#f5f5f5" if dark else MAIL_INK, title,
-                _mail_bullets(items, dark, 10).replace("14px/1.55", "13px/1.45")))
-    rows.append(_mail_card(
-        _mail_eyebrow("Business model · 10")
-        + _mail_heading("Monetize orchestration and governance, not model lock-in.")
-        + _mail_lede("Teams bring the agents they choose. ForkMesh charges for the shared "
+    slides.append(_deck_band(
+        _deck_heading("Monetize orchestration and governance,", "not model lock-in.")
+        + _deck_lede("Teams bring the agents they choose. ForkMesh charges for the shared "
                      "workflow, the control plane and the forge.")
-        + '<div style="margin-top:20px;font-size:0">%s</div>' % "".join(plans)
-        + _mail_chain(("Land one workflow", "Expand agents and repositories",
-                       "Standardize organization-wide"))
-        + _mail_note("Usage-priced components protect margin as agent workloads scale")))
-    rivals = "".join(
-        '<tr><td style="padding:14px 0;border-top:1px solid %s"><div style="font:700 15px/1.3 '
-        '%s;color:%s">%s <span style="font-weight:400;color:%s">· %s</span></div><div '
-        'style="margin-top:4px;font:400 13.5px/1.5 %s;color:%s">Best at %s. %s.</div><div '
-        'style="margin-top:6px;font:700 12.5px/1.4 %s;color:%s">ForkMesh: %s</div></td></tr>' % (
-            MAIL_LINE, MAIL_SANS, MAIL_INK, category, MAIL_FAINT, examples, MAIL_SANS, MAIL_BODY,
-            best[0].lower() + best[1:], tradeoff, MAIL_SANS, MAIL_ACCENT, role)
-        for category, examples, best, tradeoff, role in DECK_MAIL_RIVALS)
-    rows.append(_mail_card(
-        _mail_eyebrow("Competition · 11")
-        + _mail_heading("ForkMesh owns the intersection others optimize separately.")
-        + _mail_lede("The alternatives are strong. The wedge is model-flexible agents, the full "
+        + _deck_plans()
+        + _deck_path(("Land one workflow", "Expand agents and repositories",
+                      "Standardize organization-wide"))
+        + _deck_note("Usage-priced components protect margin as agent workloads scale")))
+    slides.append(_deck_band(
+        _deck_heading("ForkMesh owns the intersection", "others optimize separately.")
+        + _deck_lede("The alternatives are strong. The wedge is model-flexible agents, the full "
                      "forge workflow and local-first ownership, together.")
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:18px">%s</table>' % rivals
-        + _mail_note("GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle")))
-    team = "".join(
-        '<div style="display:inline-block;width:100%%;max-width:258px;vertical-align:top;'
-        'margin:0 0 12px;text-align:left"><table role="presentation" cellpadding="0" '
-        'cellspacing="0"><tr><td valign="top" style="padding:0 14px 0 0"><img src="%s%s.png" '
-        'width="56" height="56" alt="" style="display:block;width:56px;height:56px;border:0;'
-        'border-radius:14px"></td><td valign="top"><div style="font:700 17px/1.2 %s;'
-        'letter-spacing:-.02em;color:%s">%s</div><div style="margin:4px 0 6px;font:600 10.5px/1 '
-        '%s;letter-spacing:.08em;text-transform:uppercase;color:%s">%s</div><div style="font:400 '
-        '13.5px/1.5 %s;color:%s">%s</div></td></tr></table></div>' % (
-            EMAIL_ASSETS, key, MAIL_DISPLAY, MAIL_INK, name, MAIL_MONO, MAIL_ACCENT, role,
-            MAIL_SANS, MAIL_BODY, bio) for key, name, role, bio in DECK_MAIL_TEAM)
-    rows.append(_mail_card(
-        _mail_eyebrow("Team · 12")
-        + _mail_heading("Company-building experience meets founder-problem fit.")
-        + _mail_lede("Operating experience on one side, protocol, Git and distributed-systems "
+        + _deck_matrix()
+        + _deck_table(('<tr>%s</tr>' % _deck_cell(
+            _deck_title('%s <span class="fm-faint" style="font-weight:400;color:%s">&nbsp;%s'
+                        '</span>' % (category, DECK_TONES["light"]["faint"], examples))
+            + _deck_body("Best at %s. %s." % (best[0].lower() + best[1:], tradeoff))
+            + _deck_text("ForkMesh: " + role, "accent", "600 14px/1.4", margin="10px 0 0"))
+            for category, examples, best, tradeoff, role in DECK_MAIL_RIVALS), 48)
+        + _deck_note("GitLab Duo Agent Platform · Microsoft FY26 Q2 / Agent HQ · Radicle")))
+    slides.append(_deck_band(
+        _deck_heading("Company-building experience", "meets founder-problem fit.")
+        + _deck_lede("Operating experience on one side, protocol, Git and distributed-systems "
                      "execution on the other. The pain became the protocol.")
-        + '<div style="margin-top:20px;font-size:0">%s</div>' % team))
-    funds = "".join(
-        '<tr><td style="padding:0 0 12px"><div style="font:600 13.5px/1.4 %s;color:#f5f5f5">%s'
-        '<span style="float:right;font:600 12px/1.4 %s;color:#a3a3a3">%s · %d%%</span></div>'
-        '<div style="margin-top:6px;height:8px;border-radius:99px;background:#2a2a2e">'
-        '<div class="fm-fill" style="width:%d%%;height:8px;border-radius:99px;'
-        'background:#58a6ff"></div></div></td></tr>' % (
-            MAIL_SANS, label, MAIL_MONO, amount, share, share)
-        for label, share, amount in DECK_MAIL_FUNDS)
-    targets = "".join(
-        '<li style="margin:0 0 8px;font:400 14px/1.55 %s;color:#a3a3a3"><b style="color:#f5f5f5">'
-        '%s</b>%s</li>' % (MAIL_SANS, lead, rest) for lead, rest in DECK_MAIL_TARGETS)
-    rows.append(_mail_card(
-        _mail_eyebrow("The round · 13", dark=True)
-        + _mail_heading("$1M turns product proof into enterprise pull.", dark=True)
-        + _mail_lede("An 18-month plan to win 20 paid teams and harden the control plane. "
-                     "Average budget envelope: about $55.6K per month.", dark=True)
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:22px">%s</table>' % funds
-        + '<div style="margin-top:10px;padding:18px 20px;border:1px solid #2f4a6b;'
-          'border-radius:14px"><div style="margin:0 0 10px;font:600 10.5px/1.4 %s;'
-          'letter-spacing:.08em;text-transform:uppercase;color:#58a6ff"><span class="fm-live" '
-          'style="display:inline-block;width:8px;height:8px;margin-right:8px;border-radius:50%%;'
-          'background:#3fb950"></span>Target · Q4 2027 · Series A readiness</div><ul '
-          'style="margin:0;padding:0 0 0 18px">%s</ul></div>' % (MAIL_MONO, targets)
-        + _mail_note("Milestones are targets, not current traction", True), dark=True))
-    sources = "".join(
-        '<tr><td valign="top" style="padding:10px 14px 10px 0;border-top:1px solid %s;'
-        'font:700 13px/1.45 %s;color:%s;width:40%%">%s</td><td style="padding:10px 0;'
-        'border-top:1px solid %s;font:400 13px/1.45 %s;color:%s">%s</td></tr>' % (
-            MAIL_LINE, MAIL_SANS, MAIL_INK, name, MAIL_LINE, MAIL_SANS, MAIL_BODY, text)
-        for name, text in DECK_MAIL_SOURCES)
-    rows.append(_mail_card(
-        _mail_eyebrow("Sources &amp; contact · 14")
-        + _mail_heading("Let's build the forge teams own.", size=30)
-        + _mail_lede("The agent-native, local-first Git platform for teams that refuse to rent "
-                     "their system of record. Raising $1.0M.")
-        + '<p style="margin:18px 0 0;font:600 15px/1.5 %s;color:%s">Just reply to this email: '
-          'it goes straight to the founders.</p>' % (MAIL_SANS, MAIL_INK)
-        + '<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" '
-          'style="margin-top:20px">%s</table>' % sources))
-    return rows[0] + "".join(card + _mail_marker(slide)
-                             for slide, card in enumerate(rows[1:], start=1))
+        + _deck_table('<tr>%s%s</tr>' % (
+            _deck_cell('<img src="%s%s.png" width="56" height="56" alt="" style="display:block;'
+                       'width:56px;height:56px;border:0;border-radius:14px">' % (
+                           EMAIL_ASSETS, key), extra="width:56px;padding:26px 18px 26px 0"),
+            _deck_cell(_deck_display(name, size=19)
+                       + _deck_label(role, top=4) + _deck_body(bio, margin="0"),
+                       extra="padding:26px 0"))
+            for key, name, role, bio in DECK_MAIL_TEAM)))
+    slides.append(_deck_slab(
+        _deck_heading("$1M turns product proof", "into enterprise pull.", slab=True)
+        + _deck_lede("An 18-month plan to win 20 paid teams and harden the control plane. "
+                     "Average budget envelope: about $55.6K per month.", True)
+        + _deck_table(('<tr><td style="padding:0 0 26px"><table role="presentation" '
+                       'width="100%%" cellpadding="0" cellspacing="0"><tr><td>%s</td><td '
+                       'align="right" style="padding-left:16px;white-space:nowrap">%s</td></tr>'
+                       '</table>%s</td></tr>' % (
+                           _deck_title(label, True, 15),
+                           _deck_text("%s · %d%%" % (amount, share), "body", "500 13px/1.4",
+                                      True, family=DECK_MONO),
+                           _deck_bar(share, True, "accent", 6))
+                       for label, share, amount in DECK_MAIL_FUNDS), 44)
+        + _deck_label("Targets by Q4 2027 · Series A readiness", True, 20)
+        + _deck_table(('<tr>%s</tr>' % _deck_cell(
+            _deck_body("<b>%s</b>%s" % (lead, rest), True, "0"), True, "padding:16px 0")
+            for lead, rest in DECK_MAIL_TARGETS), 0)
+        + _deck_note("Milestones are targets, not current traction", True)))
+    slides.append(_deck_band(
+        _deck_heading("Let's build the forge", "teams own.", 46, align="center")
+        + _deck_lede("The agent-native, local-first Git platform for teams that refuse to rent "
+                     "their system of record. Raising $1.0M.", align="center")
+        + _deck_text("Just reply to this email: it goes straight to the founders.", "ink",
+                     "600 16px/1.6", margin="24px 0 0", tag="p", extra="text-align:center")
+        + _deck_buttons(reply, home, subject, "center")
+        + _deck_label("Sources", top=64)
+        + _deck_table(('<tr>%s</tr>' % _deck_cell(
+            _deck_title(name, size=14) + _deck_body(text, margin="4px 0 0", size=14),
+            extra="padding:16px 0") for name, text in DECK_MAIL_SOURCES), 0),
+        "96px 28px 76px"))
+    return "".join(slide + _mail_marker(index) for index, slide in enumerate(slides, start=1))
+
+
+def _mail_logo(home, origin, token, ink, size, tone=""):
+    return ('<a href="%s" style="text-decoration:none"><img src="%s/api/crm/-/t/o/%s.png" '
+            'width="26" height="30" alt="ForkMesh" style="display:inline-block;width:26px;'
+            'height:30px;border:0;vertical-align:middle"><span%s style="margin-left:9px;'
+            'font:700 %dpx/30px %s;letter-spacing:-.035em;color:%s;vertical-align:middle">'
+            'forkmesh</span></a>') % (home, origin, token, _deck_attr(tone), size, MAIL_DISPLAY,
+                                      ink)
 
 
 async def _tracked_email_html(runtime, send_id, text, origin, link_kind="", link="",
-                              reader="", subject=""):
+                              reader="", subject="", reply=""):
     token = await _track_token(runtime, send_id)
     deck = link_kind == "deck" and DECK_LINK_MARK in link
     tracked = {}
@@ -6624,38 +6737,49 @@ async def _tracked_email_html(runtime, send_id, text, origin, link_kind="", link
         for block in re.split(r"\n\s*\n", text.strip()) if block.strip())
     first = re.split(r"\n\s*\n", text.strip())[0] if text.strip() else ""
     preheader = _clean(re.sub(r"\s+", " ", AUTO_EMAIL_URL_RE.sub("", first)), 140)
-    header = (
-        '<tr><td style="padding:4px 4px 18px"><table role="presentation" width="100%%" '
-        'cellpadding="0" cellspacing="0"><tr><td valign="middle"><a href="%s" '
-        'style="text-decoration:none"><img src="%s/api/crm/-/t/o/%s.png" width="26" height="30" '
-        'alt="ForkMesh" style="display:inline-block;width:26px;height:30px;border:0;'
-        'vertical-align:middle"><span class="fm-h" style="margin-left:9px;font:700 21px/30px %s;'
-        'letter-spacing:-.035em;color:%s;vertical-align:middle">forkmesh</span></a></td>%s</tr>'
-        '</table></td></tr>') % (
-            escape(tracked[TRACK_HOME], quote=True), origin, token, MAIL_DISPLAY, MAIL_INK,
-            ('<td align="right" valign="middle" style="font:600 12px/1 %s;color:%s">'
-             'Investor deck</td>' % (MAIL_SANS, MAIL_BODY)) if deck else "")
-    note = _mail_card('<div style="font:400 16px/1.6 %s;color:#18181b">%s</div>' % (
-        MAIL_SANS, paragraphs))
-    prepared = (" · Prepared for %s" % escape(reader)) if reader and deck else ""
-    footer = (
-        '<tr><td style="padding:8px 8px 0;font:400 12px/1.6 %s;color:%s">%s%s<br>'
-        'ForkMesh · forkmesh.com</td></tr><tr><td>%s</td></tr>') % (
-            MAIL_SANS, MAIL_FAINT, "Confidential" if deck else "Sent with ForkMesh", prepared,
-            _mail_reads())
+    home = escape(tracked[TRACK_HOME], quote=True)
+    if deck:
+        light = DECK_TONES["light"]
+        prepared = (" · Prepared for %s" % escape(reader)) if reader else ""
+        canvas, scheme, page = DECK_PAGE, "light dark", ' class="fm-page"'
+        content = (
+            '<tr><td class="fm-gut" style="padding:36px 28px 0"><table role="presentation" '
+            'width="100%%" cellpadding="0" cellspacing="0"><tr><td valign="middle">%s</td>'
+            '<td align="right" valign="middle" class="fm-faint" style="padding-left:16px;'
+            'white-space:nowrap;font:500 13px/1 %s;color:%s">Investor deck</td></tr></table>'
+            '</td></tr><tr><td class="fm-gut" style="padding:44px 28px 8px"><div class="fm-ink" '
+            'style="font:400 17px/1.7 %s;color:#27272a">%s</div></td></tr>' % (
+                _mail_logo(home, origin, token, light["ink"], 22, "fm-ink"), MAIL_SANS,
+                light["faint"], MAIL_SANS, paragraphs)
+            + _mail_deck_sections(reply, home, subject or "ForkMesh")
+            + '<tr><td class="fm-gut fm-line fm-faint" style="padding:40px 28px 56px;'
+              'border-top:1px solid %s;font:400 13px/1.7 %s;color:%s">Confidential%s<br>'
+              'ForkMesh · forkmesh.com</td></tr>' % (light["line"], MAIL_SANS, light["faint"],
+                                                     prepared))
+        outer = "0"
+    else:
+        canvas, scheme, page = "#f4f4f6", "light only", ""
+        content = (
+            '<tr><td style="padding:4px 4px 18px">%s</td></tr>' % _mail_logo(
+                home, origin, token, MAIL_INK, 21)
+            + _mail_card('<div style="font:400 16px/1.6 %s;color:#18181b">%s</div>' % (
+                MAIL_SANS, paragraphs))
+            + '<tr><td style="padding:8px 8px 0;font:400 12px/1.6 %s;color:%s">Sent with '
+              'ForkMesh<br>ForkMesh · forkmesh.com</td></tr>' % (MAIL_SANS, MAIL_FAINT))
+        outer = "28px 12px 36px"
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" '
         'content="width=device-width,initial-scale=1"><meta name="color-scheme" '
-        'content="light only"><meta name="supported-color-schemes" content="light"><title>'
-        + escape(subject or "ForkMesh") + '</title>' + _mail_style(beacon, deck)
-        + '</head><body style="margin:0;padding:0;background:#f4f4f6">'
-        '<div style="display:none;max-height:0;overflow:hidden;opacity:0">'
-        + escape(preheader) + '</div><table role="presentation" width="100%" cellpadding="0" '
-        'cellspacing="0" style="background:#f4f4f6"><tr><td align="center" '
-        'style="padding:28px 12px 36px"><table role="presentation" width="600" cellpadding="0" '
-        'cellspacing="0" style="width:100%;max-width:600px">'
-        + header + note + (_mail_deck_sections() if deck else "") + footer
-        + '</table></td></tr></table></body></html>')
+        'content="' + scheme + '"><meta name="supported-color-schemes" content="'
+        + scheme.replace(" only", "") + '"><title>' + escape(subject or "ForkMesh") + '</title>' + _mail_style(beacon, deck)
+        + '</head><body' + page + ' style="margin:0;padding:0;background:' + canvas
+        + '" bgcolor="' + canvas + '"><div style="display:none;max-height:0;overflow:hidden;'
+        'opacity:0">' + escape(preheader) + '</div><table' + page + ' role="presentation" '
+        'width="100%" cellpadding="0" cellspacing="0" bgcolor="' + canvas + '" style="background:'
+        + canvas + '"><tr><td align="center" style="padding:' + outer + '"><table' + page
+        + ' role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;'
+        'max-width:600px;background:' + canvas + '">' + content + '<tr><td>' + _mail_reads()
+        + '</td></tr></table></td></tr></table></body></html>')
 
 
 async def _auto_email_link(runtime, flows, org_bi, org_name, account_bi, actor,
@@ -6774,7 +6898,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
     send_id = runtime.new_id()
     html = await _tracked_email_html(
         runtime, send_id, text, _track_origin(runtime), link_kind, link,
-        _contact_label(contact).split(" ")[0] if contact.get("name") else "", subject)
+        _contact_label(contact).split(" ")[0] if contact.get("name") else "", subject, from_email)
     envelope = {
         "to": recipient, "fromEmail": from_email, "fromName": from_name,
         "subject": subject, "text": text, "html": html, "providerUrl": "", "error": "",
