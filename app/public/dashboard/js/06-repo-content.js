@@ -8154,7 +8154,9 @@
     const status = $("[data-repo-fork-status]");
     const original = button.innerHTML;
     button.disabled = true;
-    button.innerHTML = '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>Creating fork…';
+    button.innerHTML = button.hasAttribute("data-repo-fork-go")
+      ? '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"></span><span>Forking…</span>'
+      : '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>Creating fork…';
     if (status) status.textContent = "Creating your fork…";
     try {
       const token = String(state.session.sessionToken || "");
@@ -8190,6 +8192,11 @@
       const forkUrl = /^\/[A-Za-z0-9._:%-]+\/[A-Za-z0-9._:%-]+$/.test(rawUrl)
         ? rawUrl
         : "";
+      // The toolbar's Fork button goes straight to the fork, as GitHub does.
+      if (button.hasAttribute("data-repo-fork-go") && forkUrl && !data.queued) {
+        location.assign(forkUrl);
+        return;
+      }
       button.innerHTML = data.queued
         ? '<i data-lucide="clock-3" class="h-3.5 w-3.5"></i>Fork queued'
         : '<i data-lucide="check" class="h-3.5 w-3.5"></i>Fork created';
@@ -8204,6 +8211,9 @@
     } catch (error) {
       button.disabled = false;
       button.innerHTML = original;
+      // The toolbar button has no room for the reason: show it in the fork
+      // panel beside the About box.
+      if (button.hasAttribute("data-repo-fork-go")) openRepoForkMenuFromMirror();
       if (status) {
         const code = String(error?.code || "");
         status.textContent = code === "email_verification_required"
@@ -10402,7 +10412,7 @@
     const target = $("[data-repo-logo-suggestion-status]");
     if (!target) return;
     target.textContent = message || "";
-    target.className = `text-[11px] ${
+    target.className = `mt-1 block text-[11px] ${
       tone === "bad"
         ? "text-destructive"
         : tone === "good"
@@ -10466,47 +10476,78 @@
               </article>`;
             })
             .join("")
-        : `<p class="text-[11px] text-muted-foreground">No community suggestions yet.</p>`;
+        : `<p class="text-[11px] text-muted-foreground">No suggested artwork.</p>`;
     } catch (_) {
       target.innerHTML = `<p class="text-[11px] text-muted-foreground">Suggestions are temporarily unavailable.</p>`;
     }
   }
 
-  async function submitRepoLogoSuggestion(repo, form) {
-    if (!state.session?.sessionToken) {
-      throw new Error("sign_in_required");
+  function setRepoSettingsLogoStatus(message, tone = "") {
+    const target = $("[data-repo-settings-logo-status]");
+    if (!target) return;
+    target.textContent = message || "";
+    target.className = `text-[11px] ${tone === "bad" ? "text-destructive" : "text-muted-foreground"}`;
+  }
+
+  // The Settings tab's "Repository logo" card: the current logo (through the
+  // same /logo read every repository card uses), the owner's upload, and the
+  // review of suggested artwork. A fresh load drops the cached /logo answer so
+  // an upload or removal shows at once.
+  async function loadRepoSettingsLogo(repo, { fresh = false } = {}) {
+    const frame = $("[data-repo-settings-logo-current]");
+    if (!frame || repo?.isPrivate) return;
+    const endpoint = nativeRepositoryLogoEndpoint(repo);
+    if (fresh && endpoint) {
+      nativeRepositoryLogoCache.delete(nativeRepositoryLogoCacheKey(endpoint));
+      frame.innerHTML = nativeRepositoryLogoMarkup(repo, "h-16 w-16");
+      window.lucide?.createIcons();
     }
-    const file = form.querySelector("[data-repo-logo-suggestion-file]")?.files?.[0];
-    if (!file || file.size > 256 * 1024) throw new Error("logo_too_large");
-    if (!form.querySelector("[data-repo-logo-suggestion-rights]")?.checked) {
-      throw new Error("rights_required");
+    hydrateNativeRepositoryLogos(frame);
+    void loadRepoLogoSuggestions(repo);
+    const logo = endpoint ? await loadNativeRepositoryLogo(endpoint) : null;
+    if (!repoAboutStillCurrent(repo)) return;
+    $("[data-repo-settings-logo-remove]")?.classList.toggle("hidden", logo?.source !== "owner");
+  }
+
+  // Upload (a PNG File) or remove ("") the owner's logo. It is the About
+  // endpoint's logoPng field, so the server's owner/admin check is unchanged.
+  async function saveRepoSettingsLogo(repo, button, file) {
+    const removing = file === "";
+    if (!removing && file.size > 256 * 1024) {
+      setRepoSettingsLogoStatus("The logo must be a PNG up to 256 KB.", "bad");
+      return;
     }
-    const imageData = await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(new Error("image_read_failed"));
-      reader.readAsDataURL(file);
-    });
-    const response = await fetch(`${repoApiBase(repo)}/logo-suggestions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sessionToken: state.session.sessionToken,
-        imageData,
-        rightsConfirmed: true,
-        attribution: String(
-          form.querySelector("[data-repo-logo-suggestion-attribution]")?.value ||
-            "",
-        ).trim(),
-        aiGenerated: Boolean(
-          form.querySelector("[data-repo-logo-suggestion-ai]")?.checked,
-        ),
-      }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body?.error || "logo_suggestion_failed");
-    form.reset();
-    await loadRepoLogoSuggestions(repo);
+    if (button) button.disabled = true;
+    setRepoSettingsLogoStatus(removing ? "Removing…" : "Uploading…");
+    try {
+      const logoPng = removing ? "" : await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("image_read_failed"));
+        reader.readAsDataURL(file);
+      });
+      await saveRepoSettingsFromWeb(repo, { logoPng });
+      $("[data-repo-settings-logo-form]")?.reset();
+      setRepoSettingsLogoStatus(removing ? "Uploaded logo removed." : "Logo updated.", "good");
+      await loadRepoSettingsLogo(repo, { fresh: true });
+      loadRepoFediverse(repo);
+    } catch (error) {
+      const code = String(error?.message || "");
+      setRepoSettingsLogoStatus(
+        code === "not_authorized"
+          ? "Only the repository owner or an organization owner or admin can change the logo."
+          : code === "account_required"
+            ? "Sign in as the source node owner first."
+            : code === "image_too_large"
+              ? "The logo must be a PNG up to 256 KB."
+              : code === "bad_image"
+                ? "The logo must be a PNG file."
+                : removing ? "Could not remove the logo." : "Could not upload the logo.",
+        "bad",
+      );
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
 
   async function reviewRepoLogoSuggestion(repo, suggestionId, action) {
@@ -10522,7 +10563,7 @@
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body?.error || "logo_review_failed");
     await Promise.all([
-      loadRepoLogoSuggestions(repo),
+      loadRepoSettingsLogo(repo, { fresh: true }),
       loadRepoFediverse(repo),
     ]);
   }
@@ -12276,7 +12317,8 @@
 
   // --- Code map (adhoc #187) ---------------------------------------------
   //
-  // The repository toolbar's "Code map" button opens a full-screen treemap of
+  // The "Code map" button under the About box (and in the file view's
+  // toolbar, where the About box is hidden) opens a full-screen treemap of
   // the whole codebase with every directory expanded and each file's source
   // drawn inside its cell, plus a rotatable 3D view where folder height follows
   // folder size. The viewer (and three.js behind its 3D toggle) is a separate
@@ -12307,7 +12349,7 @@
   function repoCodeMapNotice(button, message = "", tone = "info") {
     document.querySelectorAll("[data-repo-codemap-notice]").forEach((node) => node.remove());
     if (!message) return;
-    const anchor = button?.closest("[data-repo-pathbar], [data-repo-root-toolbar]")
+    const anchor = button?.closest("[data-repo-pathbar], [data-repo-root-toolbar], [data-repo-about-codemap]")
       || document.querySelector("[data-repo-root-toolbar]");
     if (!anchor) return;
     const notice = document.createElement("p");
