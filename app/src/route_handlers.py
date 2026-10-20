@@ -5170,11 +5170,17 @@ async def repository_branch_ops_handler(env, request, owner, repo):
     }, cache_control="no-store")
 
 
-MAX_BRANCH_DELETES = 100
+MAX_BRANCH_DELETES = 200
 BRANCH_DELETE_AUDIT_OUTCOMES = {
     "deleted": "success", "queued": "requested", "pending": "requested",
     "refused": "denied", "failed": "failed",
 }
+BRANCH_DELETE_JOBS_KEPT = 10
+BRANCH_DELETE_LEASE_MS = 60 * 1000
+BRANCH_DELETE_YIELD_SECONDS = 0.25
+BRANCH_DELETE_BACKOFF_SECONDS = (1, 2, 3, 5, 8)
+BRANCH_DELETE_WORKER_KEY = "branch-delete-worker"
+BRANCH_DELETE_ITEM_FIELDS = ("branch", "status", "error", "message")
 
 
 def _branch_delete_refusal(branch, error, message):
@@ -5182,7 +5188,7 @@ def _branch_delete_refusal(branch, error, message):
             "message": message}
 
 
-def _branch_delete_wanted(items):
+def _branch_delete_wanted(items, name_of):
     wanted, refused, seen = [], [], set()
     for item in items:
         if isinstance(item, dict):
@@ -5190,8 +5196,8 @@ def _branch_delete_wanted(items):
             expected = item.get("expectedOid", "")
         else:
             raw, expected = item, ""
-        label = clean_string(raw if isinstance(raw, str) else "", 200).strip()
-        name = branch_op_name(raw if isinstance(raw, str) else "")
+        label = clean_string(raw if isinstance(raw, str) else "", 255).strip()
+        name = name_of(raw)
         if name and name in seen:
             continue
         seen.add(name or label)
@@ -5201,7 +5207,7 @@ def _branch_delete_wanted(items):
             refused.append(_branch_delete_refusal(
                 label, "invalid_branch", "That is not a branch name Git can "
                 "use."))
-        elif name.startswith("forkmesh/"):
+        elif name.startswith("forkmesh/") or name == "agent/":
             refused.append(_branch_delete_refusal(
                 name, "reserved_branch", name + " belongs to ForkMesh and "
                 "cannot be deleted here."))
@@ -5308,43 +5314,313 @@ async def _branch_delete_via_node(env, request, owner, repo, repo_bi, wanted,
     return results, "", default
 
 
-async def _branch_delete_on_cores(env, request, owner, repo, repo_bi, target,
-                                  wanted, actor):
+def _branch_delete_projection(row_id, job):
+    items = job.get("items") or []
+    counts = {status: 0 for status in BRANCH_DELETE_AUDIT_OUTCOMES}
+    counts["waiting"] = 0
+    for item in items:
+        counts[item.get("status", "waiting")] = counts.get(
+            item.get("status", "waiting"), 0) + 1
+    return {
+        "id": int(row_id or 0),
+        "state": str(job.get("state") or ""),
+        "defaultBranch": str(job.get("default") or ""),
+        "total": len(items),
+        "done": len(items) - counts["waiting"],
+        "current": str(job.get("current") or "")
+        if job.get("state") == "running" else "",
+        "counts": counts,
+        "results": [{field: str(item.get(field) or "")
+                     for field in BRANCH_DELETE_ITEM_FIELDS}
+                    for item in items],
+        "createdAt": int(job.get("createdAt") or 0),
+        "updatedAt": int(job.get("updatedAt") or 0),
+        "finishedAt": int(job.get("finishedAt") or 0),
+        "limit": MAX_BRANCH_DELETES,
+    }
+
+
+def _d1_changes(result):
+    try:
+        return int(result.meta.changes)
+    except Exception:
+        try:
+            converted = result.to_py() if hasattr(result, "to_py") else result
+            return int((converted.get("meta") or {}).get("changes") or 0)
+        except Exception:
+            return 0
+
+
+async def _branch_delete_job_row(env, repo_bi, job_id=0):
+    if job_id:
+        row = await d1_first(
+            env, "SELECT id, data FROM branch_delete_jobs "
+            "WHERE id=? AND repo_bi=?", job_id, repo_bi)
+    else:
+        row = await d1_first(
+            env, "SELECT id, data FROM branch_delete_jobs WHERE repo_bi=? "
+            "ORDER BY id DESC LIMIT 1", repo_bi)
+    if not row:
+        return 0, None
+    job = await decrypt_row(env, row.get("data"))
+    return (int(row.get("id") or 0), job) if isinstance(job, dict) else (0, None)
+
+
+async def _branch_delete_job_load(env, job_id):
+    row = await d1_first(
+        env, "SELECT id, repo_bi, data FROM branch_delete_jobs WHERE id=?",
+        job_id)
+    if not row:
+        return None
+    job = await decrypt_row(env, row.get("data"))
+    return job if isinstance(job, dict) else None
+
+
+async def _branch_delete_job_save(env, job_id, job, lease_until=None):
+    now = int(Date.now())
+    job["updatedAt"] = now
+    if lease_until is None:
+        await d1_run(
+            env, "UPDATE branch_delete_jobs SET state=?, data=?, updated_at=? "
+            "WHERE id=?", job["state"], await encrypt_row(env, job), now,
+            job_id)
+    else:
+        await d1_run(
+            env, "UPDATE branch_delete_jobs SET state=?, data=?, updated_at=?, "
+            "lease_until=? WHERE id=?", job["state"],
+            await encrypt_row(env, job), now, lease_until, job_id)
+
+
+async def _branch_delete_audit(env, job, items):
+    for item in items:
+        await _audit_sensitive_action(
+            env, job.get("actor", ""), "repository.branch_delete",
+            "repository", job["owner"] + "/" + job["repo"],
+            BRANCH_DELETE_AUDIT_OUTCOMES.get(item["status"], "failed"),
+            {"branch": item["branch"], "op": "delete",
+             "status": item["status"], "error": item.get("error", ""),
+             "batch": len(job.get("items") or []),
+             "cleanupPending": len(item.get("cleanupPending") or [])})
+
+
+async def _branch_delete_job_finish(env, request, job, cache, agent_branches):
+    await agent_branches.branch_delete_job_publish(
+        env, request, job, cache, job.get("actor", ""))
+    deleted = [item for item in job["items"] if item["status"] == "deleted"]
+    if deleted and not job.get("hosted"):
+        now = int(Date.now())
+        await _branch_delete_queue(
+            env, request, job["owner"], job["repo"], job["repoBi"], [{
+                "op": "delete", "branch": item["branch"],
+                "expectedOid": item["tip"], "requestedBy": job.get("actor", ""),
+                "queuedAt": now, "source": "cores",
+            } for item in deleted])
+    job["state"] = "done"
+    job["current"] = ""
+    job["finishedAt"] = int(Date.now())
+
+
+async def _branch_delete_job_drain(env, request, job_id, sleep=None,
+                                   budget=None, lease_ms=BRANCH_DELETE_LEASE_MS):
     import agent_branches
     agent_branches._bind_runtime(globals())
-    results, executable = {}, []
-    for name, expected in wanted:
-        refusal = _branch_delete_screen(
-            name, expected, target["default"], target["protected"],
-            target["tips"])
-        if refusal is not None:
-            results[name] = refusal
+    if sleep is None:
+        import asyncio
+        sleep = asyncio.sleep
+    cache, backoff, steps = {}, 0, 0
+    while True:
+        job = await _branch_delete_job_load(env, job_id)
+        if job is None or job.get("state") != "running":
+            return
+        outcome, finished = await agent_branches.branch_delete_job_step(
+            env, request, job, cache)
+        if finished is not None:
+            await _branch_delete_audit(env, job, [finished])
+        if outcome == "done":
+            await _branch_delete_job_finish(
+                env, request, job, cache, agent_branches)
+        await _branch_delete_job_save(
+            env, job_id, job, int(Date.now()) + lease_ms)
+        if outcome == "done":
+            return
+        steps += 1
+        if budget is not None and steps >= budget:
+            return
+        if outcome == "wait":
+            await sleep(BRANCH_DELETE_BACKOFF_SECONDS[
+                min(backoff, len(BRANCH_DELETE_BACKOFF_SECONDS) - 1)])
+            backoff += 1
         else:
-            executable.append(name)
-    done = await agent_branches.core_delete_branches(
-        env, request, target, executable, actor)
-    for answer in done:
-        results[answer["branch"]] = answer
-    mirror = target["mirror"]
-    deleted = [answer for answer in done if answer["status"] == "deleted"]
-    if deleted and not await _branch_delete_hosted(
-            env, mirror["owner"], mirror["repo"]):
-        now = int(Date.now())
-        await _branch_delete_queue(env, request, owner, repo, repo_bi, [{
-            "op": "delete", "branch": answer["branch"],
-            "expectedOid": target["tips"][answer["branch"]],
-            "requestedBy": actor, "queuedAt": now, "source": "cores",
-        } for answer in deleted])
-    return results
+            backoff = 0
+            await sleep(BRANCH_DELETE_YIELD_SECONDS)
+
+
+async def _branch_delete_claim(env, job_id=0):
+    now = int(Date.now())
+    if job_id:
+        row = {"id": job_id}
+    else:
+        row = await d1_first(
+            env, "SELECT id FROM branch_delete_jobs WHERE state='running' "
+            "AND lease_until<? ORDER BY id LIMIT 1", now)
+    if not row:
+        return 0
+    claimed = await d1_run(
+        env, "UPDATE branch_delete_jobs SET lease_until=? WHERE id=? "
+        "AND state='running' AND lease_until<?",
+        now + BRANCH_DELETE_LEASE_MS, row["id"], now)
+    return int(row["id"]) if _d1_changes(claimed) else 0
+
+
+async def _branch_delete_worker(env, request, sleep=None):
+    idle = 0
+    while idle < 3:
+        job_id = await _branch_delete_claim(env)
+        if not job_id:
+            remaining = await d1_first(
+                env, "SELECT id FROM branch_delete_jobs WHERE "
+                "state='running' LIMIT 1")
+            if not remaining:
+                return
+            idle += 1
+            continue
+        idle = 0
+        await _branch_delete_job_drain(env, request, job_id, sleep=sleep)
+
+
+def _branch_delete_kick(env, request):
+    return _host_background(
+        env, BRANCH_DELETE_WORKER_KEY,
+        lambda: _branch_delete_worker(env, request))
+
+
+async def _branch_delete_status(env, request, repo_bi):
+    try:
+        job_id = int(parse_qs(urlparse(str(request.url)).query).get(
+            "job", ["0"])[0] or 0)
+    except (TypeError, ValueError, OverflowError):
+        job_id = 0
+    row_id, job = await _branch_delete_job_row(env, repo_bi, max(job_id, 0))
+    if job is None:
+        return json_response({"ok": True, "job": None},
+                             cache_control="no-store")
+    if job.get("state") == "running" and not _branch_delete_kick(
+            env, request):
+        if await _branch_delete_claim(env, row_id):
+            await _branch_delete_job_drain(
+                env, request, row_id, budget=1, lease_ms=0)
+            row_id, job = await _branch_delete_job_row(env, repo_bi, row_id)
+    return json_response({
+        "ok": True, "job": _branch_delete_projection(row_id, job),
+        "ops": await _branch_ops_pending(env, repo_bi),
+    }, cache_control="no-store")
+
+
+async def _branch_delete_create(env, request, owner, repo, repo_bi, data,
+                                actor):
+    import agent_branches
+    agent_branches._bind_runtime(globals())
+    items = data.get("branches")
+    if not isinstance(items, list) or not items:
+        return json_response({"error": "branches_required"}, status=400)
+    if len(items) > MAX_BRANCH_DELETES:
+        return json_response(
+            {"error": "too_many_branches", "limit": MAX_BRANCH_DELETES},
+            status=400)
+    row_id, running = await _branch_delete_job_row(env, repo_bi)
+    if running is not None and running.get("state") == "running":
+        _branch_delete_kick(env, request)
+        return json_response({
+            "error": "delete_running",
+            "message": "Branches of this repository are being deleted "
+                       "already; wait for that to finish.",
+            "job": _branch_delete_projection(row_id, running)},
+            status=409, cache_control="no-store")
+    wanted, refused = _branch_delete_wanted(
+        items, agent_branches.git_branch_name)
+    now = int(Date.now())
+    job = {"owner": owner, "repo": repo, "repoBi": repo_bi, "actor": actor,
+           "state": "running", "items": list(refused), "createdAt": now,
+           "default": "", "hosted": True, "branchCount": 0}
+    if wanted:
+        target, reason = await agent_branches.branch_delete_target(
+            env, request, owner, repo)
+        if target is not None:
+            mirror = target["mirror"]
+            job.update({
+                "default": target["default"],
+                "node": target["endpoint"]["node"],
+                "branchCount": len(target["tips"]),
+                "hosted": await _branch_delete_hosted(
+                    env, mirror["owner"], mirror["repo"]),
+            })
+            for name, expected in wanted:
+                refusal = _branch_delete_screen(
+                    name, expected, target["default"], target["protected"],
+                    target["tips"])
+                job["items"].append(refusal or {
+                    "branch": name, "status": "waiting", "error": "",
+                    "message": "Waiting to be deleted.", "phase": "primary",
+                    "tip": target["tips"][name], "requestId": "",
+                    "polls": 0, "tries": 0})
+        elif reason == "not_served":
+            results, reason, default = await _branch_delete_via_node(
+                env, request, owner, repo, repo_bi, wanted, actor)
+            if results is None:
+                target = None
+            else:
+                job.update({"default": default, "hosted": False})
+                job["items"] += [results[name] for name, _ in wanted
+                                 if name in results]
+                reason = ""
+        if target is None and reason:
+            await _audit_sensitive_action(
+                env, actor, "repository.branch_delete", "repository",
+                owner + "/" + repo, "failed",
+                {"reason": reason, "count": len(wanted)})
+            return json_response({
+                "ok": False, "error": reason, "retryable": True,
+                "message": "Branches cannot be deleted right now: the "
+                           "repository's copies could not be checked. "
+                           "Nothing was deleted; try again shortly."},
+                status=503, cache_control="no-store",
+                extra_headers=EXPECTED_DEGRADED_HEADERS)
+    await _branch_delete_audit(env, job, [
+        item for item in job["items"] if item["status"] != "waiting"])
+    if not any(item["status"] == "waiting" for item in job["items"]):
+        job.update({"state": "done", "finishedAt": now})
+    job["updatedAt"] = now
+    inserted = await d1_first(
+        env, "INSERT INTO branch_delete_jobs (repo_bi, state, data, "
+        "created_at, updated_at, lease_until) VALUES (?,?,?,?,?,0) "
+        "RETURNING id", repo_bi, job["state"], await encrypt_row(env, job),
+        now, now)
+    job_id = int((inserted or {}).get("id") or 0)
+    await d1_run(
+        env, "DELETE FROM branch_delete_jobs WHERE repo_bi=? AND "
+        "state!='running' AND id NOT IN (SELECT id FROM branch_delete_jobs "
+        "WHERE repo_bi=? ORDER BY id DESC LIMIT ?)",
+        repo_bi, repo_bi, BRANCH_DELETE_JOBS_KEPT)
+    if job["state"] == "running" and not _branch_delete_kick(env, request):
+        if await _branch_delete_claim(env, job_id):
+            await _branch_delete_job_drain(
+                env, request, job_id, budget=1, lease_ms=0)
+            job = await _branch_delete_job_load(env, job_id) or job
+    return json_response({
+        "ok": True, "job": _branch_delete_projection(job_id, job),
+        "ops": await _branch_ops_pending(env, repo_bi),
+    }, status=202 if job["state"] == "running" else 200,
+        cache_control="no-store")
 
 
 async def repository_branch_delete_handler(env, request, owner, repo):
-    """Delete up to MAX_BRANCH_DELETES branches for the owner, per branch."""
+    """Queue, and report on, a serial deletion job for the owner."""
     await ensure_schema(env)
-    if method_name(request) != "POST":
+    method = method_name(request)
+    if method not in ("GET", "POST"):
         return json_response({"error": "method_not_allowed"}, status=405)
     try:
-        data = await bounded_json_request(request)
+        data = await bounded_json_request(request) if method == "POST" else {}
     except Exception:
         return json_response({"error": "invalid_json"}, status=400)
     if not isinstance(data, dict):
@@ -5356,61 +5632,11 @@ async def repository_branch_delete_handler(env, request, owner, repo):
     _, actor_record = await _account_session_record(env, request, data)
     actor = clean_string(
         (actor_record or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
-    items = data.get("branches")
-    if not isinstance(items, list) or not items:
-        return json_response({"error": "branches_required"}, status=400)
-    if len(items) > MAX_BRANCH_DELETES:
-        return json_response(
-            {"error": "too_many_branches", "limit": MAX_BRANCH_DELETES},
-            status=400)
-    wanted, refused = _branch_delete_wanted(items)
     repo_bi = await blind_index(env, owner + "/" + repo)
-    target_name = owner + "/" + repo
-    results, default = {}, ""
-    if wanted:
-        import agent_branches
-        agent_branches._bind_runtime(globals())
-        target, reason = await agent_branches.branch_delete_target(
-            env, request, owner, repo)
-        if target is not None:
-            default = target["default"]
-            results = await _branch_delete_on_cores(
-                env, request, owner, repo, repo_bi, target, wanted, actor)
-        elif reason == "not_served":
-            results, reason, default = await _branch_delete_via_node(
-                env, request, owner, repo, repo_bi, wanted, actor)
-        else:
-            results = None
-        if results is None:
-            await _audit_sensitive_action(
-                env, actor, "repository.branch_delete", "repository",
-                target_name, "failed",
-                {"reason": reason, "count": len(wanted)})
-            return json_response({
-                "ok": False, "error": reason, "retryable": True,
-                "message": "Branches cannot be deleted right now: the "
-                           "repository's copies could not be checked. "
-                           "Nothing was deleted; try again shortly."},
-                status=503, cache_control="no-store",
-                extra_headers=EXPECTED_DEGRADED_HEADERS)
-    ordered = refused + [results[name] for name, _ in wanted
-                         if name in results]
-    for answer in ordered:
-        await _audit_sensitive_action(
-            env, actor, "repository.branch_delete", "repository", target_name,
-            BRANCH_DELETE_AUDIT_OUTCOMES.get(answer["status"], "failed"),
-            {"branch": answer["branch"], "op": "delete",
-             "status": answer["status"], "error": answer.get("error", ""),
-             "batch": len(items),
-             "cleanupPending": len(answer.get("cleanupPending") or [])})
-    counts = {status: 0 for status in BRANCH_DELETE_AUDIT_OUTCOMES}
-    for answer in ordered:
-        counts[answer["status"]] = counts.get(answer["status"], 0) + 1
-    return json_response({
-        "ok": True, "defaultBranch": default, "results": ordered,
-        "counts": counts, "limit": MAX_BRANCH_DELETES,
-        "ops": await _branch_ops_pending(env, repo_bi),
-    }, cache_control="no-store")
+    if method == "GET":
+        return await _branch_delete_status(env, request, repo_bi)
+    return await _branch_delete_create(
+        env, request, owner, repo, repo_bi, data, actor)
 
 
 PROFILE_CONTRIBUTION_VIEW_FRESH_MS = 60 * 1000

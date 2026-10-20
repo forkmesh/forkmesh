@@ -311,7 +311,7 @@ async def _branch_tips(env, owner, repo):
     for item in value.get("branches") or []:
         if not isinstance(item, dict):
             continue
-        name = valid_branch(item.get("name"))
+        name = git_branch_name(item.get("name"))
         oid = str(item.get("commit") or "").strip().lower()
         if name and OID_RE.fullmatch(oid):
             tips[name] = oid
@@ -1292,7 +1292,32 @@ async def core_branch_trash(env, request, owner, repo):
     }
 
 
-BRANCH_DELETE_ATTEMPTS = 3
+BRANCH_DELETE_MAX_TRIES = 6
+BRANCH_DELETE_MAX_POLLS = 120
+GIT_BRANCH_FORBIDDEN = frozenset(" ~^:?*[\\")
+GIT_BRANCH_MAX_BYTES = 255
+
+
+def git_branch_name(value):
+    if not isinstance(value, str):
+        return ""
+    name = value.strip()
+    if (
+        not name
+        or len(name.encode("utf-8")) > GIT_BRANCH_MAX_BYTES
+        or name in ("HEAD", "@")
+        or name.startswith(("-", "/"))
+        or name.endswith(("/", "."))
+        or "//" in name
+        or ".." in name
+        or "@{" in name
+        or any(ord(ch) < 0x20 or ord(ch) == 0x7f
+               or ch in GIT_BRANCH_FORBIDDEN for ch in name)
+        or any(part.startswith(".") or part.endswith(".lock")
+               for part in name.split("/"))
+    ):
+        return ""
+    return name
 
 
 async def branch_delete_target(env, request, owner, repo):
@@ -1316,81 +1341,182 @@ async def branch_delete_target(env, request, owner, repo):
             "protected": protected or []}, ""
 
 
-async def _delete_branch_on_cores(env, request, target, branch, tip):
-    mirror, endpoint = target["mirror"], target["endpoint"]
-    request_id = _new_request_id()
-    node_request = {
-        "schemaVersion": 1, "type": "forkmesh.branch-delete-v1",
-        "requestId": request_id, "branch": branch,
-        "base": target["default"], "expectedHeadOid": tip, "discard": True,
-    }
-    status, result = 0, None
-    for _attempt in range(BRANCH_DELETE_ATTEMPTS):
-        status, result = await _https_mirror_merge_proxy(
-            env, endpoint, mirror, node_request, "branch-delete")
-        if result is None or (
-                status != 202 and result.get("status") != "processing"):
-            break
-    answer = {"branch": branch, "requestId": request_id,
-              "node": endpoint["node"]}
-    if result is None:
-        answer.update({
-            "status": "failed", "error": "merge_node_unavailable",
-            "message": "The core did not answer, so " + branch
-                       + " was kept. Try again."})
-        return answer
-    if status == 202 or result.get("status") == "processing":
-        answer.update({
-            "status": "pending", "error": "",
-            "message": "Deleting " + branch + " is still running on "
-                       + endpoint["node"] + ". Refresh in a moment."})
-        return answer
-    error = str(result.get("error") or "")
-    if result.get("status") == "deleted" or error == "branch_not_found":
-        pending, _done, refused, _processing = await _fan_out_cleanup(
-            env, request, mirror, branch, target["default"], tip,
-            request_id, {endpoint["node"]}, discard=True)
-        left = pending + refused
-        answer.update({
-            "status": "deleted", "error": "", "cleanupPending": left,
-            "message": "Deleted " + branch + "." if not left else (
-                "Deleted " + branch + "; " + ", ".join(left)
-                + " still has it.")})
-        return answer
+async def _branch_delete_route(env, request, job, cache):
+    if cache.get("mirror") and cache.get("endpoint"):
+        return cache["mirror"], cache["endpoint"]
+    served = await _served_owner(env, job["owner"], job["repo"])
+    mirror, _reason = await _mirror_context(env, served, job["repo"])
+    if mirror is None:
+        return None, None
+    endpoint, _unavailable = await _core_endpoint(
+        env, request, mirror, DELETE_OPERATION, job.get("node", ""))
+    if endpoint is None and job.get("node"):
+        endpoint, _unavailable = await _core_endpoint(
+            env, request, mirror, DELETE_OPERATION)
+    if endpoint is None:
+        return mirror, None
+    cache.update({"mirror": mirror, "endpoint": endpoint})
+    job["node"] = endpoint["node"]
+    return mirror, endpoint
+
+
+def _branch_delete_final(item, status, error, message):
+    item.update({"status": status, "error": error, "message": message,
+                 "phase": "", "polls": 0, "tries": 0})
+    return item
+
+
+def _branch_delete_failure(item, error):
+    branch = item["branch"]
     messages = {
         "stale_head": branch + " moved since the page read it, so it was "
                       "kept. Refresh and try again.",
         "stale_base": "The default branch moved while deleting " + branch
                       + ", so it was kept. Try again.",
         "unsupported_branch": "The default branch cannot be deleted.",
+        "merge_node_unavailable": "The core did not answer after "
+                                  + str(BRANCH_DELETE_MAX_TRIES)
+                                  + " tries, so " + branch + " was kept. "
+                                  "Try again.",
     }
-    answer.update({
-        "status": "failed", "error": error or "failed",
-        "message": messages.get(
-            error, "The core refused to delete " + branch + " ("
-            + (error or "failed") + ").")})
-    return answer
+    return _branch_delete_final(item, "failed", error or "failed", messages.get(
+        error, "The core refused to delete " + branch + " ("
+        + (error or "failed") + ")."))
 
 
-async def core_delete_branches(env, request, target, branches, actor=""):
-    results = []
-    for branch in branches:
-        results.append(await _delete_branch_on_cores(
-            env, request, target, branch, target["tips"][branch]))
-    if any(item["status"] == "deleted" for item in results):
-        mirror, endpoint = target["mirror"], target["endpoint"]
-        try:
-            await record_hosted_push_state(
-                env, mirror["owner"], mirror["repo"], endpoint,
-                pusher=actor)
-        except Exception:
-            pass
-        try:
-            await notify_repo_host(
-                env, mirror["owner"], mirror["repo"], "branches")
-        except Exception:
-            pass
-    return results
+def _branch_delete_request(item, base, request_id):
+    return {
+        "schemaVersion": 1, "type": "forkmesh.branch-delete-v1",
+        "requestId": request_id, "branch": item["branch"], "base": base,
+        "expectedHeadOid": item["tip"], "discard": True,
+    }
+
+
+def _branch_delete_unanswered(item, cache):
+    cache.clear()
+    item["tries"] = int(item.get("tries") or 0) + 1
+    if item["tries"] >= BRANCH_DELETE_MAX_TRIES:
+        return "progress", _branch_delete_failure(
+            item, "merge_node_unavailable")
+    return "wait", None
+
+
+async def _branch_delete_primary(env, request, job, item, mirror, endpoint,
+                                 cache):
+    if not item.get("requestId"):
+        item["requestId"] = _new_request_id()
+    status, result = await _https_mirror_merge_proxy(
+        env, endpoint, mirror,
+        _branch_delete_request(item, job["default"], item["requestId"]),
+        "branch-delete")
+    if result is None:
+        return _branch_delete_unanswered(item, cache)
+    item["tries"] = 0
+    if status == 202 or result.get("status") == "processing":
+        item["polls"] = int(item.get("polls") or 0) + 1
+        if item["polls"] >= BRANCH_DELETE_MAX_POLLS:
+            return "progress", _branch_delete_final(
+                item, "pending", "", "Deleting " + item["branch"]
+                + " is still running on " + endpoint["node"]
+                + ". Refresh in a moment.")
+        return "wait", None
+    error = str(result.get("error") or "")
+    if result.get("status") != "deleted" and error != "branch_not_found":
+        return "progress", _branch_delete_failure(item, error)
+    candidates = await _https_mirror_candidates(
+        env, mirror, world_request_country(request),
+        operation=DELETE_OPERATION)
+    item.update({
+        "phase": "fanout", "polls": 0, "tries": 0,
+        "fanout": [str(entry.get("node") or "") for entry in candidates
+                   if entry.get("node")
+                   and entry.get("node") != endpoint["node"]][:16],
+        "left": [],
+    })
+    return "progress", None
+
+
+async def _branch_delete_fanout(env, request, job, item, mirror):
+    if not item.get("fanout"):
+        left = list(item.get("left") or [])
+        _branch_delete_final(
+            item, "deleted", "", "Deleted " + item["branch"] + "."
+            if not left else "Deleted " + item["branch"] + "; "
+            + ", ".join(left) + " still has it.")
+        item["cleanupPending"] = left
+        return "progress", item
+    node = item["fanout"][0]
+    candidates = await _https_mirror_candidates(
+        env, mirror, world_request_country(request), sticky=node,
+        operation=DELETE_OPERATION)
+    endpoint = next((entry for entry in candidates
+                     if entry.get("node") == node), None)
+
+    def move_on(kept):
+        item["fanout"] = item["fanout"][1:]
+        item["polls"] = item["tries"] = 0
+        if kept:
+            item["left"] = list(item.get("left") or []) + [node]
+        return "progress", None
+
+    if endpoint is None:
+        return move_on(True)
+    status, result = await _https_mirror_merge_proxy(
+        env, endpoint, mirror,
+        _branch_delete_request(item, job["default"], _derived_request_id(
+            item["requestId"], node)),
+        "branch-delete")
+    if result is None:
+        item["tries"] = int(item.get("tries") or 0) + 1
+        return move_on(True) if item["tries"] >= BRANCH_DELETE_MAX_TRIES \
+            else ("wait", None)
+    if status == 202 or result.get("status") == "processing":
+        item["polls"] = int(item.get("polls") or 0) + 1
+        return move_on(True) if item["polls"] >= BRANCH_DELETE_MAX_POLLS \
+            else ("wait", None)
+    return move_on(not (result.get("status") == "deleted"
+                        or result.get("error") == "branch_not_found"))
+
+
+async def branch_delete_job_step(env, request, job, cache):
+    item = next((entry for entry in job["items"]
+                 if entry.get("status") == "waiting"), None)
+    if item is None:
+        return "done", None
+    job["current"] = item["branch"]
+    mirror, endpoint = await _branch_delete_route(env, request, job, cache)
+    if mirror is None or (endpoint is None and item.get("phase") != "fanout"):
+        return _branch_delete_unanswered(item, cache)
+    if item.get("phase") == "fanout":
+        return await _branch_delete_fanout(env, request, job, item, mirror)
+    return await _branch_delete_primary(
+        env, request, job, item, mirror, endpoint, cache)
+
+
+async def branch_delete_job_publish(env, request, job, cache, actor=""):
+    deleted = [item for item in job["items"] if item["status"] == "deleted"]
+    if not deleted:
+        return False
+    mirror, endpoint = await _branch_delete_route(env, request, job, cache)
+    if mirror is None:
+        return False
+    try:
+        await record_hosted_push_state(
+            env, mirror["owner"], mirror["repo"], endpoint, pusher=actor)
+    except Exception:
+        pass
+    try:
+        await record_hosted_branch_count(
+            env, mirror["owner"], mirror["repo"],
+            max(int(job.get("branchCount") or 0) - len(deleted), 1))
+    except Exception:
+        pass
+    try:
+        await notify_repo_host(
+            env, mirror["owner"], mirror["repo"], "branches")
+    except Exception:
+        pass
+    return True
 
 
 async def core_branch_op(env, request, owner, repo, record, data,

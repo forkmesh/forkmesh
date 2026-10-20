@@ -2807,7 +2807,7 @@
     if (!refresh && state.repoBranches[key]?.loaded) {
       return state.repoBranches[key].branches;
     }
-    const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`);
+    const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`, { canonical: refresh });
     const branches = (Array.isArray(data.branches) ? data.branches : [])
       .map(normalizeRepoBranch)
       .filter(Boolean);
@@ -3834,8 +3834,9 @@
     announceRepoBranchOp(parts.join(" "), Boolean(outcome.error));
   }
 
-  const REPO_BRANCH_DELETE_LIMIT = 100;
-  const REPO_BRANCH_DELETE_CHUNK = 20;
+  const REPO_BRANCH_DELETE_LIMIT = 200;
+  const REPO_BRANCH_DELETE_POLL_MS = 1500;
+  const REPO_BRANCH_DELETE_POLL_FAILURES = 20;
 
   const REPO_BRANCH_DELETE_STATUS_LABELS = {
     deleted: "deleted",
@@ -3965,7 +3966,7 @@
       slot.innerHTML = `
         <div class="flex flex-wrap items-center gap-2 border-b border-border bg-secondary/30 px-4 py-2 text-xs text-foreground">
           <i data-lucide="loader-circle" class="h-3.5 w-3.5 animate-spin text-muted-foreground"></i>
-          <span data-repo-branches-delete-progress>Deleting ${formatCount(Math.min(deleting.done + REPO_BRANCH_DELETE_CHUNK, deleting.total))} of ${formatCount(deleting.total)}…</span>
+          <span data-repo-branches-delete-progress>${deleting.id ? `Deleted ${formatCount(deleting.deleted)} of ${formatCount(deleting.total)}${deleting.current ? ` · now ${escapeHtml(deleting.current)}` : ""}…` : `Starting to delete ${formatCount(deleting.total)} ${deleting.total === 1 ? "branch" : "branches"}…`}</span>
         </div>`;
       window.lucide?.createIcons();
       return;
@@ -4037,17 +4038,18 @@
     return parts.join(", ") || "nothing to do";
   }
 
-  async function postRepoBranchDelete(repo, branches) {
+  async function repoBranchDeleteRequest(repo, method, { body = null, job = 0 } = {}) {
     const token = state.session?.sessionToken || "";
-    const headers = { accept: "application/json", "content-type": "application/json" };
+    const headers = { accept: "application/json" };
+    if (body) headers["content-type"] = "application/json";
     if (token) headers.authorization = "Bearer " + token;
     try {
-      const response = await fetch(`${repoApiBase(repo)}/branches/delete`, {
-        method: "POST",
+      const response = await fetch(`${repoApiBase(repo)}/branches/delete${job ? `?job=${encodeURIComponent(job)}` : ""}`, {
+        method,
         cache: "no-store",
         credentials: "same-origin",
         headers,
-        body: JSON.stringify({ branches }),
+        ...(body ? { body: JSON.stringify(body) } : {}),
       });
       const data = await response.json().catch(() => ({}));
       return { status: response.status, data: data && typeof data === "object" ? data : {} };
@@ -4056,46 +4058,63 @@
     }
   }
 
-  async function deleteRepoBranches(repo, names) {
-    if (!repo || !names.length || repoBranchDeleting(repo)) return;
-    const key = repoKey(repo);
-    const listed = new Map(repoBranchList(repo).map((branch) => [branch.name, branch]));
-    const items = names.map((name) => ({ name, expectedOid: String(listed.get(name)?.commit || "") }));
-    delete state.repoBranchConfirm[key];
-    state.repoBranchDeleting[key] = { done: 0, total: items.length };
-    setRepoBranchesStatus("");
-    renderRepoBranchesList(repo);
-    const results = [];
-    for (let index = 0; index < items.length; index += REPO_BRANCH_DELETE_CHUNK) {
-      const chunk = items.slice(index, index + REPO_BRANCH_DELETE_CHUNK);
-      state.repoBranchDeleting[key].done = index;
-      renderRepoBranchSelection(repo);
-      const answer = await postRepoBranchDelete(repo, chunk);
-      const data = answer.data;
-      if (answer.status === 200 && Array.isArray(data.results)) {
-        results.push(...data.results.map((result) => ({
-          branch: String(result.branch || ""),
-          status: String(result.status || "failed"),
-          error: String(result.error || ""),
-          message: String(result.message || ""),
-        })));
-        if (Array.isArray(data.ops)) setRepoBranchOpsState(repo, { ops: data.ops });
-        continue;
+  function repoBranchDeleteJobResults(job) {
+    return (Array.isArray(job?.results) ? job.results : []).map((result) => ({
+      branch: String(result.branch || ""),
+      status: String(result.status || "failed"),
+      error: String(result.error || ""),
+      message: String(result.message || ""),
+    }));
+  }
+
+  function rememberRepoBranchCount(repo, count) {
+    if (!repo || !Number.isFinite(count) || count < 1) return;
+    const keys = new Set([repoKey(repo).toLowerCase(), repoCanonicalKey(repo).toLowerCase()]);
+    const matches = (item) => item && (keys.has(repoKey(item).toLowerCase()) || keys.has(repoCanonicalKey(item).toLowerCase()));
+    repo.branchCount = String(count);
+    (state.repositories || []).filter(matches).forEach((item) => { item.branchCount = String(count); });
+    try {
+      const stored = JSON.parse(localStorage.getItem(REPOSITORY_CATALOG_STORAGE_KEY) || "null");
+      if (stored && Array.isArray(stored.repositories) && stored.repositories.some(matches)) {
+        stored.repositories.filter(matches).forEach((item) => { item.branchCount = String(count); });
+        localStorage.setItem(REPOSITORY_CATALOG_STORAGE_KEY, JSON.stringify(stored));
       }
-      const message = (data.error === "read_only_mirror" && data.message)
-        || REPO_BRANCH_DELETE_ERRORS[data.error]
-        || data.message
-        || "The request failed, so nothing was deleted. Try again.";
-      items.slice(index).forEach((item) => results.push({
-        branch: item.name, status: "failed", error: String(data.error || `http_${answer.status}`), message,
-      }));
-      break;
-    }
-    delete state.repoBranchDeleting[key];
+    } catch (_) {}
+  }
+
+  function dropRepoBranchesFromList(repo, names) {
+    const listing = state.repoBranches[repoKey(repo)];
+    if (!names.length || !Array.isArray(listing?.branches)) return;
+    const gone = new Set(names);
+    listing.branches = listing.branches.filter((branch) => !gone.has(branch.name));
+    rememberRepoBranchCount(repo, listing.branches.length);
+  }
+
+  function applyRepoBranchDeleteJob(repo, job) {
+    const key = repoKey(repo);
+    const results = repoBranchDeleteJobResults(job);
     state.repoBranchDeleteResults[key] = results;
+    dropRepoBranchesFromList(repo, results.filter((result) => result.status === "deleted").map((result) => result.branch));
     const selection = repoBranchSelection(repo);
     results.filter((result) => result.status === "deleted" || result.status === "queued")
       .forEach((result) => selection.delete(result.branch));
+    if (job?.state === "running") {
+      state.repoBranchDeleting[key] = {
+        id: Number(job.id) || 0,
+        done: Number(job.done) || 0,
+        total: Number(job.total) || results.length,
+        deleted: Number(job.counts?.deleted) || 0,
+        current: String(job.current || ""),
+      };
+    } else {
+      delete state.repoBranchDeleting[key];
+    }
+    return results;
+  }
+
+  async function finishRepoBranchDeleteJob(repo, job, ops) {
+    const results = applyRepoBranchDeleteJob(repo, job);
+    if (Array.isArray(ops)) setRepoBranchOpsState(repo, { ops });
     const kept = results.filter((result) => result.status === "refused" || result.status === "failed").length;
     announceRepoBranchOp(
       results.length === 1 ? results[0].message : `Deleting ${formatCount(results.length)} branches: ${repoBranchDeleteCountsText(results)}.`,
@@ -4104,6 +4123,7 @@
     if (results.some((result) => result.status === "deleted" || result.status === "pending")) {
       try {
         await fetchRepoBranches(repo, { refresh: true });
+        rememberRepoBranchCount(repo, repoBranchList(repo).length);
       } catch (_) {
       }
       updateRepoBranchControls(repo, null);
@@ -4113,6 +4133,67 @@
     if (queued.length) {
       watchRepoBranchOps(repo, repoBranchOps(repo).filter((op) => op.op === "delete" && queued.includes(op.branch)).map((op) => op.id));
     }
+  }
+
+  async function followRepoBranchDeleteJob(repo, job, ops) {
+    const key = repoKey(repo);
+    let current = job;
+    let latestOps = ops;
+    let failures = 0;
+    while (current?.state === "running") {
+      applyRepoBranchDeleteJob(repo, current);
+      if (state.selectedRepo === repo && state.activeRepoTab === "branches") renderRepoBranchesList(repo);
+      await new Promise((resolve) => setTimeout(resolve, REPO_BRANCH_DELETE_POLL_MS));
+      const answer = await repoBranchDeleteRequest(repo, "GET", { job: current.id });
+      if (answer.status === 200 && answer.data.job) {
+        failures = 0;
+        current = answer.data.job;
+        latestOps = answer.data.ops;
+        continue;
+      }
+      failures += 1;
+      if (failures >= REPO_BRANCH_DELETE_POLL_FAILURES) {
+        delete state.repoBranchDeleting[key];
+        announceRepoBranchOp("Lost track of the deletion; it keeps running on the server. Refresh to see where it is.", true);
+        renderRepoBranchesList(repo);
+        return;
+      }
+    }
+    await finishRepoBranchDeleteJob(repo, current, latestOps);
+  }
+
+  async function resumeRepoBranchDeleteJob(repo) {
+    if (!repo || repoBranchDeleting(repo)) return;
+    const answer = await repoBranchDeleteRequest(repo, "GET");
+    const job = answer.status === 200 ? answer.data.job : null;
+    if (job?.state !== "running") return;
+    await followRepoBranchDeleteJob(repo, job, answer.data.ops);
+  }
+
+  async function deleteRepoBranches(repo, names) {
+    if (!repo || !names.length || repoBranchDeleting(repo)) return;
+    const key = repoKey(repo);
+    const listed = new Map(repoBranchList(repo).map((branch) => [branch.name, branch]));
+    const items = names.map((name) => ({ name, expectedOid: String(listed.get(name)?.commit || "") }));
+    delete state.repoBranchConfirm[key];
+    state.repoBranchDeleting[key] = { id: 0, done: 0, total: items.length, deleted: 0, current: "" };
+    setRepoBranchesStatus("");
+    renderRepoBranchesList(repo);
+    const answer = await repoBranchDeleteRequest(repo, "POST", { body: { branches: items } });
+    const data = answer.data;
+    if ((answer.status === 200 || answer.status === 202 || answer.status === 409) && data.job) {
+      if (answer.status === 409) announceRepoBranchOp(data.message || "Branches are being deleted already.");
+      await followRepoBranchDeleteJob(repo, data.job, data.ops);
+      return;
+    }
+    const message = (data.error === "read_only_mirror" && data.message)
+      || REPO_BRANCH_DELETE_ERRORS[data.error]
+      || data.message
+      || "The request failed, so nothing was deleted. Try again.";
+    await finishRepoBranchDeleteJob(repo, {
+      state: "done",
+      results: items.map((item) => ({ branch: item.name, status: "failed", error: String(data.error || `http_${answer.status}`), message })),
+    });
   }
 
   async function confirmRepoBranchDelete(repo, branch) {
@@ -4247,6 +4328,7 @@
       if (refresh || !state.repoBranchOps[key]) await loadRepoBranchOps(repo);
       renderRepoBranchesList(repo);
       if (repoBranchOps(repo).length) watchRepoBranchOps(repo);
+      void resumeRepoBranchDeleteJob(repo);
     }
     await probeRepoBranchTrials(repo);
   }

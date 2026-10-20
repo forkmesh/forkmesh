@@ -13496,7 +13496,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "b757172124ea52f42581b43e267268ba4e227b53eb8dffa9b561f308dfb3c1b9"
+    "5ffdfea001d97bb56881a9bbee7a9d9fe108b171f3fc0b48e889c5e07041914a"
 )
 
 
@@ -16161,6 +16161,8 @@ verify_hosted_push_credential = _hosted_git.export(
     "verify_hosted_push_credential")
 has_hosted_push_credential = _hosted_git.export("has_hosted_push_credential")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
+record_hosted_branch_count = _hosted_git.export(
+    "record_hosted_branch_count")
 # Repositories the Next core nodes host (HOSTED_GIT_CORE_NODES,
 # docs/HOSTED_REPOS.md): push routing, the per-repository size limit, and the
 # private (capability-only) read path.

@@ -181,8 +181,19 @@ test("the branches page shows divergence and conflicts from the mirror", async (
   ]);
 });
 
-function branchDeleteApi({ deletes, answer, listing = () => BRANCH_LISTING }) {
+function deleteJob(results, state, id = 1) {
+  const counts = { deleted: 0, queued: 0, pending: 0, refused: 0, failed: 0, waiting: 0 };
+  results.forEach((result) => { counts[result.status] = (counts[result.status] || 0) + 1; });
+  return {
+    id, state, total: results.length, done: results.length - counts.waiting,
+    current: state === "running" ? (results.find((result) => result.status === "waiting")?.branch || "") : "",
+    counts, results, defaultBranch: "main", limit: 200,
+  };
+}
+
+function branchDeleteApi({ deletes, answer, listing = () => BRANCH_LISTING, progress = null }) {
   let pending = [];
+  let job = null;
   const queued = [];
   const handler = async (url, request) => {
     if (url.pathname === "/api/repo/alice/proj/branches") {
@@ -192,6 +203,11 @@ function branchDeleteApi({ deletes, answer, listing = () => BRANCH_LISTING }) {
       return { body: { ok: true, clean: true, conflicts: [] } };
     }
     if (url.pathname === "/api/repo/alice/proj/branches/delete") {
+      if (request.method() === "GET") {
+        if (!job) return { body: { ok: true, job: null } };
+        job = progress ? progress(job) : job;
+        return { body: { ok: true, job, ops: pending } };
+      }
       const body = request.postDataJSON();
       deletes.push({ authorization: request.headers().authorization, body });
       const reply = answer(body);
@@ -201,7 +217,8 @@ function branchDeleteApi({ deletes, answer, listing = () => BRANCH_LISTING }) {
           id: pending.length + 1, op: "delete", branch: result.branch,
           base: "", expectedOid: OLD, startOid: "", requestedBy: "alice", queuedAt: 1,
         })));
-      return { body: { ok: true, ...reply, ops: pending } };
+      job = deleteJob(reply.results, reply.state || "done");
+      return { status: job.state === "running" ? 202 : 200, body: { ok: true, job, ops: pending } };
     }
     if (url.pathname === "/api/repo/alice/proj/branches/ops") {
       if (request.method() === "POST") {
@@ -448,6 +465,72 @@ test("selected branches are deleted together and each reports its own result", a
 
   await page.locator("[data-repo-branch-delete-results-clear]").click();
   await expect(results).toHaveCount(0);
+});
+
+test("a large deletion runs as one job, shows progress and leaves no stale list", async ({
+  page,
+}) => {
+  const deletes = [];
+  const deleted = new Set();
+  let listings = 0;
+  const api = branchDeleteApi({
+    deletes,
+    listing: () => {
+      listings += 1;
+      return {
+        ...BRANCH_LISTING,
+        branches: BRANCH_LISTING.branches.filter((branch) => !deleted.has(branch.name)),
+      };
+    },
+    answer: (body) => ({
+      state: "running",
+      results: body.branches.map((item) => ({
+        branch: item.name, status: "waiting", error: "", message: "Waiting to be deleted.",
+      })),
+    }),
+    progress: (job) => {
+      const results = job.results.map((result) => ({ ...result }));
+      const next = results.find((result) => result.status === "waiting");
+      if (next) {
+        next.status = "deleted";
+        next.message = `Deleted ${next.branch}.`;
+        deleted.add(next.branch);
+      }
+      const done = !results.some((result) => result.status === "waiting");
+      return deleteJob(results, done ? "done" : "running");
+    },
+  });
+  await stageRepoPage(page, {
+    session: { nodeName: "alice", sessionToken: "test-session", status: "active" },
+    repositories: [REPOSITORY],
+    api: api.handler,
+  });
+  failOnDialogs(page);
+
+  await page.goto("/alice/proj/branches");
+  for (const name of ["agent/merged-work", "feature/stale", "feature/clean"]) {
+    await page.locator(`[data-repo-branch-select="${name}"]`).check();
+  }
+  await page.locator("[data-repo-branches-delete-selected]").click();
+  await page.locator("[data-repo-branches-delete-selected-confirm]").click();
+  // One request carries every branch; the server deletes them one by one.
+  await expect.poll(() => deletes.length).toBe(1);
+  expect(deletes[0].body.branches.map((item) => item.name)).toEqual([
+    "agent/merged-work", "feature/stale", "feature/clean",
+  ]);
+  await expect(page.locator("[data-repo-branches-delete-progress]")).toContainText(/Deleted [12] of 3/);
+  // Each branch leaves the list as soon as the job reports it deleted.
+  await expect(page.locator('[data-repo-branches-row-name="agent/merged-work"]')).toHaveCount(0);
+  await expect(page.locator("[data-repo-branches-status]"))
+    .toContainText("Deleting 3 branches: 3 deleted.", { timeout: 15000 });
+  expect(deletes.length).toBe(1);
+  await expect(page.locator("[data-repo-branches-row]")).toHaveCount(1);
+  await expect(page.locator("[data-repo-branches-total]")).toHaveText("1 branch");
+  expect(listings).toBeGreaterThan(1);
+  const stored = await page.evaluate(() => JSON.parse(localStorage.getItem("forkmesh.repositoryCatalog.v1") || "null"));
+  if (stored) {
+    expect(stored.repositories.find((repo) => repo.name === "proj").branchCount).toBe("1");
+  }
 });
 
 test("every branch behind the default one is updatable in one action", async ({

@@ -805,7 +805,7 @@ def test_branches_page_shows_divergence_and_offers_the_owner_the_actions():
     # browser dialog, and sends the exact tip the page showed.
     assert "data-repo-branch-delete-confirmation" in DASHBOARD
     assert "data-repo-branches-delete-summary" in DASHBOARD
-    assert "`${repoApiBase(repo)}/branches/delete`" in DASHBOARD
+    assert "`${repoApiBase(repo)}/branches/delete${job ? `?job=${encodeURIComponent(job)}` : \"\"}`" in DASHBOARD
     assert '({ name, expectedOid: String(listed.get(name)?.commit || "") })' in DASHBOARD
     delete_code = DASHBOARD[DASHBOARD.index("const REPO_BRANCH_DELETE_LIMIT"):
                             DASHBOARD.index("async function updateRepoBranchFromDefault(")]

@@ -135,6 +135,8 @@ PROCESS_TIMEOUT_SECONDS = 30
 STREAM_INITIAL_RESPONSE_TIMEOUT_SECONDS = 60
 STREAM_INACTIVITY_TIMEOUT_SECONDS = 30 * 60
 MERGE_EXECUTOR_TIMEOUT_SECONDS = 10 * 60
+PREWARM_AFTER_MERGE_QUIET_SECONDS = 5.0
+BACKGROUND_MUTATIONS = frozenset({"delete-agent-branch"})
 MAX_MERGE_REQUEST_BODY = 8 * 1024
 MAX_MERGE_JOB_CACHE = 1_000
 # A published mutation result carries the executor's node-signed attestation
@@ -611,6 +613,47 @@ def _managed_branch(name: str) -> bool:
         and name not in ("HEAD", "agent/")
         and not name.startswith("forkmesh/")
     )
+
+
+GIT_BRANCH_FORBIDDEN = frozenset(" ~^:?*[\\")
+GIT_BRANCH_MAX_BYTES = 255
+
+
+def _git_branch_name(name: str) -> bool:
+    return bool(
+        isinstance(name, str)
+        and name
+        and len(name.encode("utf-8")) <= GIT_BRANCH_MAX_BYTES
+        and name not in ("HEAD", "@")
+        and not name.startswith(("-", "/"))
+        and not name.endswith(("/", "."))
+        and "//" not in name
+        and ".." not in name
+        and "@{" not in name
+        and not any(
+            ord(ch) < 0x20 or ord(ch) == 0x7F or ch in GIT_BRANCH_FORBIDDEN
+            for ch in name)
+        and not any(
+            part.startswith(".") or part.endswith(".lock")
+            for part in name.split("/"))
+    )
+
+
+def _deletable_branch(name: str) -> bool:
+    return (
+        _git_branch_name(name)
+        and name != "agent/"
+        and not name.startswith("forkmesh/")
+    )
+
+
+def _lower_thread_priority(increment: int = 10) -> None:
+    try:
+        tid = threading.get_native_id()
+        current = os.getpriority(os.PRIO_PROCESS, tid)
+        os.setpriority(os.PRIO_PROCESS, tid, min(19, current + increment))
+    except (AttributeError, OSError):
+        pass
 
 
 class GatewayError(RuntimeError):
@@ -8185,6 +8228,9 @@ class GatewayApplication:
         self._merge_threads: dict[str, threading.Thread] = {}
         self._merge_results: dict[str, dict[str, Any]] = {}
         self._merge_payload_digests: dict[str, str] = {}
+        self._prewarm_lock = threading.Lock()
+        self._prewarm_due: float | None = None
+        self._prewarm_thread: threading.Thread | None = None
         self._retired_roots: list[
             tuple[float, tempfile.TemporaryDirectory[str]]] = []
         self._temporary_root = tempfile.TemporaryDirectory(
@@ -8648,6 +8694,7 @@ class GatewayApplication:
         except (UnicodeDecodeError, json.JSONDecodeError):
             raise GatewayError("merge request is invalid")
         merging = profile["executorType"] == "forkmesh.branch-merge-executor-v1"
+        branch_ok = _managed_branch if merging else _deletable_branch
         required = {
             "schemaVersion", "type", "requestId", "branch", "base",
             "expectedHeadOid",
@@ -8673,7 +8720,7 @@ class GatewayApplication:
             or not isinstance(delete_branch, bool)
             or not isinstance(discard, bool)
             or not REQUEST_ID_RE.fullmatch(request_id)
-            or not _managed_branch(branch)
+            or not branch_ok(branch)
             or not _managed_branch(base)
             or branch == base
             or any(
@@ -8814,8 +8861,11 @@ class GatewayApplication:
         if profile.get("branch"):
             branch = str(value.get("branch") or "")
             base = str(value.get("base") or "")
+            branch_ok = (
+                _deletable_branch if operation == "delete-agent-branch"
+                else _managed_branch)
             if (
-                not _managed_branch(branch)
+                not branch_ok(branch)
                 or not _managed_branch(base)
                 or not isinstance(value.get("branchDeleted", False), bool)
             ):
@@ -8835,6 +8885,8 @@ class GatewayApplication:
         terminal = PULL_MUTATIONS[operation]["terminal"]
         result: dict[str, Any] = {
             "ok": True, "status": "processing", "requestId": request_id}
+        if operation in BACKGROUND_MUTATIONS:
+            _lower_thread_priority()
         try:
             status_payload = dict(payload, action="status")
             status = self.merge_executor.call(status_payload, timeout=30)
@@ -8854,11 +8906,7 @@ class GatewayApplication:
                     and status.get("generationReady") is True
                 ):
                     self.reload_from_disk(prewarm=False)
-                    threading.Thread(
-                        target=self._prewarm_after_merge,
-                        name="forkmesh-merge-prewarm",
-                        daemon=True,
-                    ).start()
+                    self._schedule_prewarm()
                     registered = self.merge_executor.call(
                         dict(payload, action="register"),
                         timeout=MERGE_EXECUTOR_TIMEOUT_SECONDS,
@@ -8878,6 +8926,35 @@ class GatewayApplication:
             self.prewarm_memory_caches()
         except Exception:  # noqa: BLE001
             pass
+
+    def _schedule_prewarm(self) -> None:
+        with self._prewarm_lock:
+            self._prewarm_due = time.monotonic() + PREWARM_AFTER_MERGE_QUIET_SECONDS
+            running = self._prewarm_thread
+            if running is not None and running.is_alive():
+                return
+            self._prewarm_thread = threading.Thread(
+                target=self._prewarm_when_quiet,
+                name="forkmesh-merge-prewarm",
+                daemon=True,
+            )
+            self._prewarm_thread.start()
+
+    def _prewarm_when_quiet(self) -> None:
+        _lower_thread_priority()
+        while True:
+            with self._prewarm_lock:
+                due = self._prewarm_due
+                if due is None:
+                    self._prewarm_thread = None
+                    return
+                wait = due - time.monotonic()
+                if wait <= 0:
+                    self._prewarm_due = None
+            if wait > 0:
+                time.sleep(min(wait, PREWARM_AFTER_MERGE_QUIET_SECONDS))
+                continue
+            self._prewarm_after_merge()
 
     def _refresh_merge_attestation(
         self,

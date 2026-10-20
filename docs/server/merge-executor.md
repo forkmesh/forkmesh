@@ -146,7 +146,9 @@ Further rules:
 
 - `branch` and `base` may be any Git-legal branch except `HEAD`, a bare
   `agent/` and anything under `forkmesh/`, and must differ
-  (`validManagedBranch`). **Update from the base** is a merge with the roles
+  (`validManagedBranch`). A delete accepts any branch name
+  `git check-ref-format --branch` accepts, except `agent/` and `forkmesh/...`
+  (`validDeletableBranch`). **Update from the base** is a merge with the roles
   swapped. The default branch is never deleted. Removed non-`agent/` branches
   are saved under `refs/forkmesh/trash/branch/<branch>/<token>`. An older core
   refuses non-`agent/` branches and the App queues the operation for the
@@ -155,6 +157,10 @@ Further rules:
   ([../HOSTED_REPOS.md](../HOSTED_REPOS.md)).
 - After `merged` with `generationReady`, the gateway adopts the generation
   with `reload_from_disk(prewarm=False)` and warms caches in the background.
+  The warmup waits until no job finished for 5 s and runs once at a lower
+  CPU priority (`_schedule_prewarm`), so a run of branch deletes costs one
+  warmup instead of one per branch; delete jobs themselves run at nice +10
+  ([../app/branch-ops.md](../app/branch-ops.md#how-the-job-runs)).
 - **Discard.** Deleting a runner run on the phone posts
   `{"action": "cleanup", "discard": true}` before the `DELETE`; the App
   (`agent_branches._cleanup`) sends `discard: true` to every core (request id

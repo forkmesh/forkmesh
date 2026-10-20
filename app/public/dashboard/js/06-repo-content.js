@@ -1536,11 +1536,11 @@
   }
 
   async function fetchRepoJson(path, options = {}) {
-    const seeded = await seededRepoRead(path);
+    const seeded = options.canonical ? null : await seededRepoRead(path);
     if (seeded) return seeded;
-    const early = await earlyRepoRead(path);
+    const early = options.canonical ? null : await earlyRepoRead(path);
     if (early) return early;
-    const direct = directRepoRequestCandidates(path);
+    const direct = options.canonical ? [] : directRepoRequestCandidates(path);
     let response = null;
     for (const candidate of direct) {
       try {
@@ -1563,7 +1563,7 @@
       // answers an unchanged tree or file with 304), but a revisit no longer
       // downloads the same bytes again.
       response = await fetch(path, {
-        cache: "no-cache",
+        cache: options.canonical ? "no-store" : "no-cache",
         headers: { accept: "application/json" },
         signal: options.signal,
       });
