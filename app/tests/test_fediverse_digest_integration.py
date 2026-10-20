@@ -672,7 +672,7 @@ def test_owner_and_org_admin_previews_are_no_store_and_private_safe():
         ENTRY_TEXT.index("async def org_fediverse_handler"):
         ENTRY_TEXT.index("# --- Admins + email-delivery follow-up")
     ]
-    assert 'not in ("owner", "admin")' in org_handler
+    assert '"organization.fediverse.manage"' in org_handler
     assert "await _repo_is_private(env, source_owner, repo)" in org_handler
     assert "ownerEnabled" in org_handler
     assert "Organization controls cannot override repository-owner settings." \
