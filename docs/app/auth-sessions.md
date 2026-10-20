@@ -95,6 +95,28 @@ confirm page shows the masked address. Code: `_send_verification_email`,
 `_verify_email`, `_email_verify_link_valid`; tests
 `app/tests/test_email_verification_link.py`.
 
+### Resend limit
+
+Whoever signs up picks the address, so a resend sends mail to someone who may
+not have asked for it. Two paths can resend: `POST
+/api/accounts/resend-verification` (session only) and the profile POST with
+`resendVerification` (password). Both go through
+`_verification_resend_refusal`: at most one send a minute and five a day per
+account, read from the account's `email_sends` history.
+
+The history is written only after the send, which takes seconds over postfix,
+and the postfix route spends no daily mail budget. On its own, the history
+check would let a burst of parallel requests all pass. So each send also
+claims a row in `notification_email_sends`, keyed by the account name and the
+current minute (`verification-resend:` blind index). The claim is one
+`INSERT OR IGNORE` through rqlite, so only one request a minute wins on any
+core. If the claim cannot be written, the resend is refused. The profile path
+then answers `verificationError` and `verificationRetryAfterMs` instead of
+sending. Each send also pings the admins ("Verification email sent to
+<name>"), so the limit caps those pings too. This came out of a check on the
+`chatgpt-race-b9a0aadce62d` signup on 2026-10-20: one signup and one resend,
+both within the limits. Tests: `app/tests/test_email_verification_resend.py`.
+
 ## Portable sessions for mirror dashboards
 
 Independent mirror dashboards accept a signed, narrow grant
