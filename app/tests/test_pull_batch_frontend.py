@@ -274,3 +274,25 @@ def test_the_page_is_wired_into_the_pull_requests_tab():
     assert "syncRepoPullBatchEntry(repo);" in content
     assert "state.repoRemoteForks.canManage" in source
     assert "submitRemotePullOpen" in source
+
+
+def test_a_compare_base_from_the_file_wins_over_a_single_dependency():
+    out = _run("""
+      const shared = parsePullBatchFile(JSON.stringify({compareBase: "upstream/main", pulls: [
+        {branch: "fm/a", title: "A"},
+        {branch: "fm/b", title: "B", dependsOn: ["fm/a"], compareBase: "fm/a"},
+      ]}), "main").entries;
+      const listed = parsePullBatchFile(JSON.stringify([
+        {branch: "fm/c", title: "C", compareBase: "upstream/main"},
+        {branch: "fm/d", title: "D", dependsOn: ["fm/c"]},
+        {branch: "fm/e", title: "E"},
+      ]), "main").entries;
+      return [...shared, ...listed].map((row) => [row.branch, row.base, pullBatchCompareBase(row)]);
+    """)
+    assert out == [
+        ["fm/a", "main", "upstream/main"],
+        ["fm/b", "main", "fm/a"],
+        ["fm/c", "main", "upstream/main"],
+        ["fm/d", "main", "fm/c"],
+        ["fm/e", "main", ""],
+    ]
