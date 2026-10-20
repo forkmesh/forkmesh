@@ -298,6 +298,7 @@ public final class AddRelayModel {
 public final class AddProjectModel {
     @ObservationIgnored let relays: RelayDirectory
     @ObservationIgnored let probe: RelayProbe
+    @ObservationIgnored let directory: InstanceDirectory?
 
     public var name = ""
     public var host = "" {
@@ -310,11 +311,14 @@ public final class AddProjectModel {
     }
     public private(set) var result: RelayProbeResult?
     public private(set) var checking = false
+    public private(set) var instances: [InstanceDirectoryEntry] = []
+    public private(set) var loadingInstances = false
     @ObservationIgnored private var generation = 0
 
-    public init(relays: RelayDirectory, probe: RelayProbe) {
+    public init(relays: RelayDirectory, probe: RelayProbe, directory: InstanceDirectory? = nil) {
         self.relays = relays
         self.probe = probe
+        self.directory = directory
     }
 
     public var cleanName: String { name.dartTrimmed }
@@ -348,6 +352,31 @@ public final class AddProjectModel {
         checking = false
         result = outcome
         if outcome.ok, cleanName.isEmpty { name = outcome.instanceName }
+    }
+
+    public var logoCandidates: [String] {
+        guard let result, result.ok, let profile = result.profile else { return [] }
+        let listed: String = instances.first(where: { $0.id == profile.id })?.logoUrl ?? ""
+        let favicons: [String] =
+            result.branded ? [] : ["/favicon.ico", "/favicon/favicon.ico"].map { profile.httpOrigin + $0 }
+        var seen: Set<String> = []
+        return ([result.logoUrl, listed] + favicons).filter { !$0.isEmpty && seen.insert($0).inserted }
+    }
+
+    public func loadInstances() async {
+        guard let directory, instances.isEmpty, !loadingInstances else { return }
+        loadingInstances = true
+        instances = await directory.list()
+        loadingInstances = false
+    }
+
+    public func added(_ entry: InstanceDirectoryEntry) -> RelayProfile? { relays.byId(entry.id) }
+
+    public func quickAdd(_ entry: InstanceDirectoryEntry) async {
+        if added(entry) != nil || checking { return }
+        host = entry.id
+        if cleanName.isEmpty { name = entry.name }
+        await check()
     }
 
     public func create(logo: String = "") -> RelayProfile? {

@@ -155,6 +155,16 @@ final class ProjectImages {
         }
     }
 
+    nonisolated static func instanceLogo(_ candidates: [String]) async -> (data: Data, image: UIImage)? {
+        for url in candidates.compactMap({ URL(string: $0) }) {
+            guard let data = await fetchData(url), let shrunk = ProjectLogoStore.shrink(data),
+                let image = UIImage(data: shrunk)
+            else { continue }
+            return (data, image)
+        }
+        return nil
+    }
+
     private nonisolated static func fetch(_ url: URL) async -> UIImage? {
         await fetchData(url).flatMap { UIImage(data: $0) }
     }
