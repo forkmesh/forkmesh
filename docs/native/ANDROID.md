@@ -2110,46 +2110,34 @@ Suggestion mode, then Diagnostics, the order of iOS `YouHubSheet`. Settings →
 General ends with a Genie card (the spider switch) and a Suggestion mode card
 (the switch, its note and the Pocket mode row), as iOS `GenieSpiderCard` and
 `SuggestionModeCard`. The iOS DJ now-playing chip comes with the DJ studio
-merge.
+app (section 33), which is not merged.
 The spider's frame clock follows iOS `GenieSpiderLayer.frameRate`: 24 fps
 at rest or crawling, 30 during a reaction, 60 only while it is held or flying.
 Every frame redraws the window, which a software-rendered emulator feels far
 more than a phone does.
 
-## 33. Video Mix DJ Studio (sync ledger S045)
+## 33. Video Mix DJ Studio (sync ledger S045): shared logic only
 
-Ported from iOS `Features/Packages/VideoMixDjStudio*.swift` on
-`android-dj-studio` and merged into `feat/add-adnriod-updates`. The package
-id is `video-mix-dj-studio`; the route is `Route.VideoMixDjStudio` (paths
-`video-mix-dj-studio` and `dj-studio`), registered by `DjStudioHub.install`
-with a Home tile and a Market entry, and gated like every other package.
+The package id is `video-mix-dj-studio` and the route `Route.VideoMixDjStudio`
+(paths `video-mix-dj-studio` and `dj-studio`) exists in core, but no screen is
+registered for it yet, so the Home tile and Market entry open nothing of
+their own.
 
-- **Shared logic (core `djstudio/`).** Playlists, tags and smart playlists
-  (`DjCrate`, `DjSmart`), AUTOMIX, BPM detection and the gain curve
+- **Merged: shared logic (core `djstudio/`).** Playlists, tags and smart
+  playlists (`DjCrate`, `DjSmart`), AUTOMIX, BPM detection and the gain curve
   (`DjAudio`, `DjStudio`), play counts and jam sessions (`DjJam`, and
-  `DjJamApi` for the jam server routes), with their iOS tests.
-- **Decks (`feature/djstudio`).** `DjStudioScreen` lays out two turntables
-  stacked in portrait and side by side in landscape, with the queue and the
-  crossfader between them. `DjPlatter` turns the record with the playback
-  position, scratches under the finger and brakes on stop; `DjControls` has
-  start, pause, stop, restart, cue (SET), loop, the sampler pads, tempo with
-  SYNC and TAP, and the level fader. The sheets (`DjSheets`, `DjCrateSheet`)
-  load a deck from search, a pasted link, recently played or a playlist, and
-  hold deck settings and playlists; `DjStudioJam` runs a jam session.
-- **Audio.** `DjResolver` finds a playable stream for a video id through a
-  hidden YouTube IFrame player and reads YouTube's results page for search,
-  because the public Invidious servers the iOS search relies on now refuse
-  requests. `DjStream` downloads and decodes the audio and draws the
-  waveform; `DjEngine` mixes both decks into one `AudioTrack` with tempo,
-  bend and the crossfader. `DjMediaService` keeps playback going behind the
-  lock screen with a media notification, and `DjStudioHub.relaunch` resumes a
-  set that was playing when the app was closed.
-- **Top bar.** `DjNowPlayingChip` (`DjNowPlaying.kt`) is iOS
-  `DjNowPlayingChip`: while a deck plays and the studio is not on screen, a
-  44 dp record with the track's artwork turns in the top bar's chip row
-  (first, before Glasses Alert, as iOS). Tap opens the studio; touch and hold
-  offers Stop the Music. `DjMiniRecord` turns with the deck's position at
-  30 fps and only while it plays.
-- **Checked on the emulator.** A track loaded and played with its real
-  waveform and 116.1 BPM detected (the song is 116); the landscape layout;
-  the chip appearing on Home, opening the studio and stopping the music.
+  `DjJamApi` for the jam server routes), with their iOS tests. This code
+  parses links and builds addresses; it fetches nothing itself.
+- **Not merged: the studio app (pull request #475, branch `pr/475`).** Its
+  audio path loaded YouTube's embed page in a 2x2, 1%-opacity WebView,
+  rewrote that page to inject a script that pulled out the raw stream
+  address, then downloaded the whole stream and played it through its own
+  `AudioTrack`, outside YouTube's player and its ads, and searched by
+  scraping YouTube's results page. That breaks YouTube's terms of service and
+  Google Play's policy, and fixing it means replacing the playback engine the
+  pull request is built around, so it was left open. iOS plays through the
+  YouTube IFrame player; an Android studio should do the same (a visible
+  player, YouTube's own controls and ads) before it lands. The top bar's
+  `DjNowPlayingChip`, `DjMediaService` and the `dj-share` file path come with
+  it.
+
