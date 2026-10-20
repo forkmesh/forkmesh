@@ -17,6 +17,7 @@ fun notificationIconForKind(kind: String): String = when (kind.trim().lowercase(
     "pull_submitted" -> "call_merge_rounded"
     "issue_assigned" -> "assignment_ind_outlined"
     "repo_shared" -> "folder_special_outlined"
+    "security_advisory" -> "gpp_maybe_outlined"
     "bounty_funded", "bounty_paid", "tip_sent" -> "payments_outlined"
     "release_published" -> "new_releases_outlined"
     "host_online" -> "cloud_done_outlined"

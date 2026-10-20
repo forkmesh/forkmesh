@@ -40,6 +40,7 @@ REPO_TAB_ROUTES = frozenset({
     "insights",
     "sizemap",
     "settings",
+    "security",
 })
 
 # Repository deep links that are not tabs but still belong to the repo
@@ -69,6 +70,8 @@ CORE_RESERVED_ROUTE_PREFIXES = frozenset({
     "verify-pending",
     "mirror-payouts",
     "security-report",
+    "advisories",
+    "security-researchers",
     "network",
     "world",
     "chat",

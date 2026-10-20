@@ -373,6 +373,7 @@ public struct PingSettings: Equatable, Sendable {
             PingKindOption(kind: "repo_activity", label: "Pushes and merges"),
             PingKindOption(kind: "release_published", label: "Releases", email: true),
             PingKindOption(kind: "repo_shared", label: "Repositories shared with you", email: true),
+            PingKindOption(kind: "security_advisory", label: "Security advisories", email: true),
             PingKindOption(kind: "mirror_request", label: "Mirror requests", email: true),
             PingKindOption(kind: "repository_hosted", label: "Imports finished hosting"),
         ]),
