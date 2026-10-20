@@ -1,7 +1,9 @@
 # Core features as plugins, off by default in new projects
 
 Most of what the Home grid, the bar tabs and the repository tabs offer is a
-Market package. Each package is the feature's on/off switch, Market listing
+Market package. The packages on this page without a `content/` folder are
+switches over core code; packages with one are plugins that a build adds only
+when `marketplace/plugins.json` lists them ([plugins.md](plugins.md)). Each package is the feature's on/off switch, Market listing
 and install state; the feature code stays in each app (desktop, iPhone,
 Android, web). New projects and accounts start with these packages removed,
 except the phone starter pack below; older ones keep what they had. Repos, Search, Market and Settings stay core

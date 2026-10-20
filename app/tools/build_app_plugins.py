@@ -14,7 +14,6 @@ import hashlib
 import html
 import json
 from pathlib import Path
-import os
 import re
 import sys
 import zipfile
@@ -30,8 +29,9 @@ for import_root in (MARKETPLACE_TOOLS, APP_SOURCE):
 
 from marketplace_lib import (  # noqa: E402
     MarketplaceError,
+    environment_plugin_selection,
     load_catalog,
-    manifest_entries,
+    selected_manifest_entries,
 )
 from plugin_sockets import Contribution, discover  # noqa: E402
 import dashboard_shell  # noqa: E402
@@ -68,18 +68,26 @@ def _key(item: Contribution) -> str:
     )
 
 
-def _excluded() -> set[str]:
-    raw = os.environ.get("FORKMESH_EXCLUDED_PLUGINS", "")
-    return {item.strip() for item in raw.split(",") if item.strip()}
+PLUGIN_DIRECTORY = Path("plugins")
+
+
+def selection(catalog_path: Path = CATALOG) -> frozenset[str]:
+    return environment_plugin_selection(load_catalog(catalog_path))
 
 
 def _active(catalog_path: Path, socket: str):
-    """Yield bundled contributions enabled for this App deployment."""
-    excluded = _excluded()
+    """Yield contributions of the plugins this App deployment adds to the core."""
+    chosen = selection(catalog_path)
     for item in discover(catalog_path, {socket}):
         install = item.manifest.get("install") or {}
-        if install.get("bundled") is True and item.package_id not in excluded:
+        if install.get("bundled") is True and item.package_id in chosen:
             yield item
+
+
+def _core_module_names() -> set[str]:
+    return {path.stem for path in APP_SOURCE.glob("*.py")} | {
+        path.name for path in APP_SOURCE.iterdir() if path.is_dir()
+    }
 
 
 def _web_entries(catalog_path: Path = CATALOG) -> list[dict]:
@@ -598,7 +606,7 @@ def registry_source(catalog_path: Path = CATALOG) -> str:
     plugins = {}
     packages = []
     catalog = load_catalog(catalog_path)
-    for entry, manifest in manifest_entries(catalog):
+    for entry, manifest in selected_manifest_entries(catalog, selection(catalog_path)):
         row = market_packages.package_row(manifest, catalog.root, entry.manifest)
         if row and all(row["id"] != item["id"] for item in packages):
             packages.append(row)
@@ -664,7 +672,8 @@ def worker_payloads(catalog_path: Path = CATALOG) -> list[tuple[Path, int, bytes
     # files, making the first production request fail at import time.
     catalog = load_catalog(catalog_path)
     staged_modules = set()
-    for entry, manifest in manifest_entries(catalog):
+    core_modules = _core_module_names()
+    for entry, manifest in selected_manifest_entries(catalog, selection(catalog_path)):
         worker = manifest.get("worker") or {}
         module = str(worker.get("module") or "")
         api = str(worker.get("api") or "")
@@ -694,12 +703,27 @@ def worker_payloads(catalog_path: Path = CATALOG) -> list[tuple[Path, int, bytes
             raise MarketplaceError(
                 f"package {manifest['id']} worker entrypoint is invalid"
             )
+        if module in core_modules:
+            raise MarketplaceError(
+                f"package {manifest['id']} worker module {module} shadows a core module"
+            )
         staged_modules.add(module)
-        raw = source.read_bytes()
-        payloads.append((Path(module + ".py"), len(raw), raw))
+        for path in sorted(source.parent.rglob("*")):
+            relative = path.relative_to(source.parent)
+            if (
+                not path.is_file() or "__pycache__" in relative.parts
+                or any(part.startswith(".") for part in relative.parts)
+            ):
+                continue
+            if path != source and path.suffix == ".py":
+                raise MarketplaceError(
+                    f"package {manifest['id']} worker folder holds a second module {relative}"
+                )
+            raw = path.read_bytes()
+            payloads.append((PLUGIN_DIRECTORY / relative, len(raw), raw))
     for row in _worker_entries(catalog_path):
-        if row["module"] in staged_modules:
+        if row["module"] in staged_modules or row["module"] in core_modules:
             raise MarketplaceError("duplicate staged Worker plugin module")
         raw = row["item"].entrypoint.read_bytes()
-        payloads.append((Path(row["module"] + ".py"), len(raw), raw))
+        payloads.append((PLUGIN_DIRECTORY / (row["module"] + ".py"), len(raw), raw))
     return payloads

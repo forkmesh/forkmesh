@@ -84,7 +84,7 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
 | `system` | supported Debian/Ubuntu, x86_64 or arm64, at least 1 GB RAM and 6 GB disk, ports 80/443 free |
 | `packages` | swap on small machines; git, Python, Node, Caddy, sqlite3, age; service users |
 | `source` | shallow clone into `/opt/forkmesh-instance/src`; on `--update`, a shallow fetch of `sourceRef` from `sourceUrl` into that checkout (nothing is checked out yet) |
-| `build` | venv and `python -m forkmesh_host build` without ForkMesh-only packages (`FORKMESH_EXCLUDED_PLUGINS`), then `app/tools/apply_instance_brand.py`; on a running instance this happens in `src.next` beside the live tree (below) |
+| `build` | venv and `python -m forkmesh_host build` without ForkMesh-only plugins (`FORKMESH_EXCLUDED_PLUGINS`: their pages, Worker modules and registry rows are left out, [plugins.md](marketplace/plugins.md)), then `app/tools/apply_instance_brand.py`; on a running instance this happens in `src.next` beside the live tree (below) |
 | `configure` | `/etc/forkmesh-instance/app.env` with fresh `DATA_KEY`, `ADMIN_PASS` and router keys (kept on re-runs) and `instance.json` without secrets |
 | `database` | migrations into a single-node SQLite database |
 | `services` | `forkmesh-instance.service` (uvicorn on loopback, sandboxed) |

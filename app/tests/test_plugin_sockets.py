@@ -109,6 +109,8 @@ def _fixture(root: Path) -> Path:
     }
     catalog_path = root / "catalog.json"
     catalog_path.write_text(json.dumps(catalog), encoding="utf-8")
+    (root / "plugins.json").write_text(
+        json.dumps({"schemaVersion": 1, "plugins": ["demo-plugin"]}), encoding="utf-8")
     return catalog_path
 
 
@@ -222,8 +224,9 @@ def test_worker_registry_and_module_are_generated_only_for_src_build(tmp_path):
     exec((APP / "src" / "plugin_registry.py").read_text(encoding="utf-8"),
          checked_in)
     assert checked_in["api_prefixes"]() == ()
-    assert any(name.startswith("market_plugin_demo_plugin_api_")
+    assert any(name.startswith("plugins/market_plugin_demo_plugin_api_")
                for name in payloads)
+    assert payloads["plugins/api.py"]
     assert not any(path.name.startswith("market_plugin_demo_plugin")
                    for path in (APP / "src").glob("*.py"))
 
@@ -242,6 +245,71 @@ def test_catalog_publication_does_not_activate_an_opt_in_package(tmp_path):
     assert namespace["HTTP_ROUTES"] == ()
     assert [path.as_posix() for path, *_ in
             build_app_plugins.worker_payloads(catalog)] == ["plugin_registry.py"]
+
+
+def _with_worker(catalog):
+    manifest_path = catalog.parent / "packages/demo-plugin/manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["worker"] = {"module": "api", "api": "/api/demo-plugin"}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    return catalog
+
+
+def _staged(catalog):
+    namespace = {}
+    exec(build_app_plugins.registry_source(catalog), namespace)
+    return namespace, [
+        path.as_posix() for path, *_ in build_app_plugins.worker_payloads(catalog)]
+
+
+def test_a_plugin_left_out_of_plugins_json_is_not_part_of_the_app(tmp_path):
+    catalog = _with_worker(_fixture(tmp_path))
+    (tmp_path / "plugins.json").write_text(
+        json.dumps({"schemaVersion": 1, "plugins": []}), encoding="utf-8")
+
+    namespace, staged = _staged(catalog)
+
+    assert staged == ["plugin_registry.py"]
+    assert namespace["PLUGINS"] == {}
+    assert namespace["MARKET_PACKAGES"] == ()
+    assert namespace["PLUGIN_DASHBOARD_PAGE_ASSETS"] == {}
+    assert namespace["HTTP_ROUTES"] == ()
+
+
+def test_the_environment_adds_or_removes_plugins(tmp_path, monkeypatch):
+    catalog = _with_worker(_fixture(tmp_path))
+
+    monkeypatch.setenv("FORKMESH_PLUGINS", "none")
+    assert _staged(catalog)[1] == ["plugin_registry.py"]
+
+    monkeypatch.setenv("FORKMESH_PLUGINS", "demo-plugin")
+    namespace, staged = _staged(catalog)
+    assert "plugins/api.py" in staged
+    assert set(namespace["PLUGINS"]) == {"demo-plugin"}
+
+    monkeypatch.setenv("FORKMESH_PLUGINS", "default")
+    monkeypatch.setenv("FORKMESH_EXCLUDED_PLUGINS", "demo-plugin")
+    namespace, staged = _staged(catalog)
+    assert staged == ["plugin_registry.py"]
+    assert namespace["PLUGINS"] == {}
+
+
+def test_a_plugin_module_may_not_shadow_a_core_module(tmp_path):
+    import pytest
+    from marketplace_lib import MarketplaceError
+
+    catalog = _fixture(tmp_path)
+    worker = tmp_path / "packages/demo-plugin/content/worker"
+    worker.mkdir(parents=True, exist_ok=True)
+    (worker / "plugin_data.py").write_text("", encoding="utf-8")
+    manifest_path = tmp_path / "packages/demo-plugin/manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["worker"] = {"module": "plugin_data", "api": "/api/demo-plugin"}
+    manifest["entrypoints"]["worker"] = "content/worker/plugin_data.py"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(MarketplaceError, match="shadows a core module"):
+        build_app_plugins.worker_payloads(catalog)
 
 
 def test_a_page_asks_for_camera_and_microphone_through_its_manifest(tmp_path):

@@ -77,6 +77,8 @@ def _fixture(root: Path, route: str = "/handbook", bundled: bool = True) -> Path
         "packages": [{"id": "handbook", "version": "1.0.0",
                       "manifest": "packages/handbook/manifest.json"}],
     }), encoding="utf-8")
+    (root / "plugins.json").write_text(
+        json.dumps({"schemaVersion": 1, "plugins": ["handbook"]}), encoding="utf-8")
     return catalog
 
 

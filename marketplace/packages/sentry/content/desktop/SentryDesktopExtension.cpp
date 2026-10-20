@@ -909,4 +909,10 @@ DesktopPackageExtension *createSentryDesktopExtension()
     return new SentryDesktopExtension;
 }
 
+namespace {
+const DesktopPackageExtensionRegistration registration(
+    QStringLiteral("content/desktop/SentryDesktopExtension.cpp"),
+    [] { return createSentryDesktopExtension(); });
+}
+
 } // namespace forkmesh::market
