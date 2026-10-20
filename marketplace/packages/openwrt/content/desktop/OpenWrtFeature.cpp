@@ -1457,13 +1457,44 @@ void OpenWrtFeature::loadAdvancedConfigs()
         m_advancedPicker->addItems(m_advancedConfigs);
         m_advancedPicker->setCurrentText(m_advancedConfig);
         m_advancedPicker->blockSignals(false);
-        if (const QString shares = shareConfig(m_advancedConfigs); !shares.isEmpty())
+        if (const QString shares = shareConfig(m_advancedConfigs); !shares.isEmpty()) {
             loadConfig(shares);
+        } else {
+            QStringList installed;
+            for (const Package &package : m_packages)
+                installed << package.name;
+            probeShareConfig(shareConfigCandidates(installed));
+        }
         renderStorage();
         if (m_configs.contains(m_advancedConfig))
             renderAdvanced();
         else if (!m_advancedConfig.isEmpty())
             loadConfig(m_advancedConfig);
+    });
+}
+
+void OpenWrtFeature::probeShareConfig(QStringList candidates)
+{
+    if (candidates.isEmpty())
+        return;
+    const QString config = candidates.takeFirst();
+    m_client.call(QStringLiteral("uci"), QStringLiteral("get"), {{QStringLiteral("config"), config}}, [this, config, candidates](const RpcResult &result) {
+        if (!result.ok) {
+            probeShareConfig(candidates);
+            return;
+        }
+        if (!shareConfig(m_advancedConfigs).isEmpty())
+            return;
+        m_advancedConfigs << config;
+        m_advancedConfigs.sort();
+        m_advancedPicker->blockSignals(true);
+        m_advancedPicker->clear();
+        m_advancedPicker->addItems(m_advancedConfigs);
+        m_advancedPicker->setCurrentText(m_advancedConfig);
+        m_advancedPicker->blockSignals(false);
+        m_missingConfigs.remove(config);
+        m_configs.insert(config, result.data.value(QStringLiteral("values")).toObject());
+        renderStorage();
     });
 }
 

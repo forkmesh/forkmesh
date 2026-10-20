@@ -232,6 +232,7 @@ QStringList outputTail(const QString &text, int count = 4);
 QStringList storageFindings(const StorageCheck &check);
 QString storageReport(const StorageCheck &check);
 QString shareConfig(const QStringList &configs);
+QStringList shareConfigCandidates(const QStringList &installed);
 QString shareSectionType(const QString &config);
 QList<Share> parseShares(const QList<UciSection> &sections);
 QString shareNameProblem(const QString &name);
