@@ -21,6 +21,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 )
 
 type CatalogPublisher struct {
@@ -233,7 +234,7 @@ func (p *CatalogPublisher) record(ctx context.Context, repo Repository, stateHas
 		"owner": p.Owner, "name": repo.Name, "visibility": "public",
 		"mirrorEncryption": "", "opaqueRepoId": "", "keyEpoch": 0,
 		"encryptedManifestHash": "", "encryptedManifestSig": "",
-		"sizeBytes": size, "description": "",
+		"sizeBytes": size, "description": catalogDescription(ctx, repo.GitDir),
 		"logoMetadata": map[string]any{"description": "", "languages": map[string]int64{}, "topics": []string{}, "fileStructure": []string{}, "frameworks": []string{}, "projectCategory": ""},
 		"cloneUrl":     p.CloneURL, "solana": "", "channel": "#" + p.Owner + "-" + repo.Name,
 		"hostedSince": "", "lastSync": now, "updatedAt": now,
@@ -367,6 +368,37 @@ func catalogActivityWeeks(ctx context.Context, gitDir string) ([]int, []int) {
 		}
 	}
 	return commits, merges
+}
+
+const (
+	catalogAboutPath      = "HEAD:.forkmesh/info.json"
+	catalogAboutMaxBytes  = 64 << 10
+	catalogDescriptionMax = 240
+)
+
+func catalogDescription(ctx context.Context, gitDir string) string {
+	size, err := strconv.Atoi(gitValue(ctx, gitDir, "cat-file", "-s", catalogAboutPath))
+	if err != nil || size <= 0 || size > catalogAboutMaxBytes {
+		return ""
+	}
+	var about map[string]any
+	if json.Unmarshal([]byte(gitValue(ctx, gitDir, "cat-file", "blob", catalogAboutPath)), &about) != nil {
+		return ""
+	}
+	for _, key := range []string{"about", "description"} {
+		text, _ := about[key].(string)
+		text = strings.Join(strings.FieldsFunc(text, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
+		}), " ")
+		if text == "" {
+			continue
+		}
+		if runes := []rune(text); len(runes) > catalogDescriptionMax {
+			text = strings.TrimSpace(string(runes[:catalogDescriptionMax]))
+		}
+		return text
+	}
+	return ""
 }
 
 func firstLine(value string) string {

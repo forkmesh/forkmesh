@@ -181,3 +181,46 @@ def test_read_only_refusals_show_the_server_message():
     assert "error.data = data;" in _slice(CONTENT, "async function postRepoMutation(", "async function fetchRepoMutation(")
     assert "error.data = data;" in ISSUES_IO
     assert "function repoReadOnlyMirror(" in HELPERS
+
+
+def test_single_org_fork_line_names_the_parent_by_its_short_address():
+    output = _run(
+        "repoProvenanceHtml, applyRepoAddresses, state",
+        """
+const { repoProvenanceHtml, applyRepoAddresses, state } = global.__dashboardExports;
+const fork = { owner: "bob", name: "platform-fork", forkedFrom: "acme/platform" };
+const outside = { owner: "bob", name: "other", forkedFrom: "alice/project" };
+applyRepoAddresses({ owner: "acme", canonical: true });
+console.log(JSON.stringify({ fork: repoProvenanceHtml(fork), outside: repoProvenanceHtml(outside) }));
+""",
+    )
+    result = json.loads(output.strip().splitlines()[-1])
+    assert ">platform</a>" in result["fork"]
+    assert ">acme/platform</a>" not in result["fork"]
+    assert 'href="/platform"' in result["fork"]
+    assert ">alice/project</a>" in result["outside"]
+
+
+def test_a_mirror_without_a_published_description_names_its_upstream():
+    output = _run(
+        "repoDescriptionText",
+        """
+const { repoDescriptionText } = global.__dashboardExports;
+const mirror = { owner: "node", name: "platform", mirrorOf: "https://app.example.test/acme/platform" };
+console.log(JSON.stringify({
+  bare: repoDescriptionText(mirror),
+  own: repoDescriptionText({ ...mirror, description: "  Own words  " }),
+  grouped: repoDescriptionText({ owner: "a", name: "b" }, { ...mirror, description: "Origin words" }),
+  plain: repoDescriptionText({ owner: "a", name: "b" }),
+}));
+""",
+    )
+    result = json.loads(output.strip().splitlines()[-1])
+    assert result == {
+        "bare": "Read-only mirror of example.test/acme/platform",
+        "own": "Own words",
+        "grouped": "Origin words",
+        "plain": "",
+    }
+    assert 'repoDescriptionText(repo, origin) || "No description published."' in EXPLORER
+    assert 'repoDescriptionText(repo) || "No description published."' in DETAIL

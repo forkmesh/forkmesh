@@ -119,7 +119,12 @@ over the unseal socket ([VAULT.md](../VAULT.md)).
   `webhook-outbox` cron phase with up to 6 attempts; private repositories emit
   nothing. The versioned integration contract is `www/docs/integrations.md`.
 - Public snapshots: anonymous GET routes served from validated
-  `public_api_snapshots` rows (`app/src/public_snapshots.py`).
+  `public_api_snapshots` rows (`app/src/public_snapshots.py`). The catalog
+  schema is an exact allow-list: a new public field in `/api/repositories`
+  (for example a mirror's `mirrorOf`, `upstreamCommit`, `lastSyncedAt` or a
+  fork's `forkedFrom`) must be added to `CATALOG_REPOSITORY_KEYS`, or every
+  catalog snapshot is rejected and the route falls back to a live read (or
+  returns 503 while an expired privacy tombstone is still in place).
 - Organization bot tokens (`fmbot_`):
   [organization-bot-scopes.md](organization-bot-scopes.md).
 

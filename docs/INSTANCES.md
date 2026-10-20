@@ -313,6 +313,17 @@ Labelling and read-only:
   hidden there. Issues, Pull requests and Discussions stay off: the bootstrap
   writes them off, and the about answer reports them off for any read-only
   mirror even if an admin turned one on.
+- The mirror's description is the repository's own About text: the git node
+  publishes `about` (else `description`) from `.forkmesh/info.json` at the
+  served HEAD as the catalog `description` (`catalogDescription` in
+  `server/catalog.go`, whitespace collapsed, at most 240 characters). It used
+  to publish an empty string, so the card read "No description published."
+  This is a `server/` change: it needs a rebuilt node binary. Until then, and
+  for any mirror without an About file, the card and the About rail fall back
+  to "Read-only mirror of <upstream>" (`repoDescriptionText`). The fallback is
+  drawn by the page: the relay never edits a signed catalog field.
+  Tests: `TestCatalogDescriptionComesFromTheRepositoryAbout`,
+  `test_a_mirror_without_a_published_description_names_its_upstream`.
 - A node never labels a repository as a mirror of a page on its own relay
   (`mirrorOfFor` checks `sameRelay`), so a forkmesh.com fleet node that copied
   an instance config cannot mark the canonical repository read-only there.
