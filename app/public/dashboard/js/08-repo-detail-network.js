@@ -8,11 +8,7 @@
   }
 
   function openRepoForkMenuFromMirror() {
-    const detail = $("[data-repo-detail]");
-    const about = detail?.querySelector("[data-repo-about]");
-    if (!about) return;
-    if (about.classList.contains("hidden")) activateRepoTab("code");
-    if (about.classList.contains("hidden")) setRepoExplorerFocusMode(false);
+    if (!$("[data-repo-fork-wrap]")) return;
     setRepoForkMenuOpen(true);
     $("[data-repo-fork-wrap]")?.scrollIntoView({ block: "center", behavior: "smooth" });
     ($("[data-repo-fork-create]") || $("[data-repo-action-fork]"))?.focus({ preventScroll: true });
@@ -23,7 +19,7 @@
     const readOnly = repoReadOnlyMirror(repo);
     const slot = $("[data-repo-provenance]");
     if (slot) {
-      const provenance = repoProvenanceHtml(repo);
+      const provenance = repoProvenanceHtml(repo, { forkButton: false });
       slot.innerHTML = provenance;
       slot.classList.toggle("hidden", !provenance);
     }
@@ -171,8 +167,6 @@
     };
     const canSeeAgentsTab = sessionCanAssignAgent(repo);
     const canSeeSettingsTab = canEditAbout;
-    const actionSeed = repoKey(repo);
-    const websiteForkAvailable = !repo.isPrivate;
     // Watch is real: it is the repo's fediverse follower count (see
     // loadRepoFediverse), and the button opens the follow-from-Mastodon card.
     // The public repository actor is the canonical ForkMesh identity. Do not
@@ -328,6 +322,7 @@
             }).join("")}
           </div>
         </div>
+        ${renderRepoTitleRow(repo)}
 	        <div data-repo-content-grid class="mx-auto grid w-full max-w-7xl min-w-0 gap-5 px-3 pb-3 pt-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
 		          <div class="min-w-0">
 		            <section data-dashboard-repo-tab-panel="code">
@@ -361,10 +356,6 @@
 		                  <div data-repo-explorer-tree class="max-h-[35rem] overflow-auto py-2"></div>
 		                </aside>
 		                <div data-repo-code-main class="min-w-0">
-		                  ${(() => {
-		                    const provenance = repoProvenanceHtml(repo);
-		                    return `<div data-repo-provenance class="${provenance ? "" : "hidden "}mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">${provenance}</div>`;
-		                  })()}
 		                  <div data-repo-tree-panel data-repo-file-table class="overflow-hidden rounded-lg border border-border bg-background">
 	                    <div data-repo-commit-summary class="grid gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs sm:grid-cols-[minmax(0,1fr)_auto_auto_auto] sm:items-center">
 	                      <div class="flex min-w-0 items-center gap-2">
@@ -455,7 +446,6 @@
             <div data-repo-about-actions aria-label="Repository details" class="-mx-2 mt-3 grid">
               <a data-repo-about-website href="#" target="_blank" rel="noopener noreferrer" class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Website</span><span data-repo-about-website-label class="dashboard-accent-link min-w-0 truncate text-right"></span></a>
               <a href="${escapeHtml(`${repoLinkUrl(repo)}/releases`)}" data-repo-about-release data-dashboard-releases-button data-plugin-entry="releases" class="hidden grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Release</span><span data-repo-about-release-body class="min-w-0 truncate text-right text-muted-foreground"></span></a>
-              <button type="button" data-repo-action-star data-repo-key="${escapeHtml(actionSeed)}" aria-pressed="false" aria-label="Star repository" title="Star this repository" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Stars</span><span class="inline-flex items-center gap-1.5 justify-self-end text-foreground"><span data-repo-star-label class="sr-only">Star</span><i data-lucide="star" data-repo-star-icon class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-star-count class="font-mono">${formatCount(0)}</span></span></button>
               <div data-repo-watch-wrap class="relative min-w-0">
                 <button type="button" data-repo-action-watch aria-label="Watch repository" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Watchers</span><span class="inline-flex items-center gap-1 justify-self-end text-foreground"><span data-repo-watch-count class="font-mono">–</span><i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></span></button>
                 <div data-repo-watch-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-64 max-w-[calc(100vw-2rem)] p-3 text-left">
@@ -469,27 +459,6 @@
                   <p data-repo-watch-disabled class="mt-1 hidden text-[11px] text-attention">Federation is turned off for this repository.</p>
                   <div data-repo-watch-list class="mt-2 hidden max-h-44 overflow-auto rounded-md border border-border bg-secondary/40 p-2"></div>
                   <a data-repo-mastodon-link href="${escapeHtml(mastodonUrl)}" target="_blank" rel="noopener noreferrer" class="dashboard-accent-link mt-2 inline-flex items-center gap-1.5 text-[11px] hover:underline"><i data-lucide="external-link" class="h-3.5 w-3.5 shrink-0"></i>View on Mastodon</a>
-                </div>
-              </div>
-              <div data-repo-fork-wrap class="relative min-w-0">
-                <button type="button" data-repo-action-fork aria-haspopup="true" aria-expanded="false" aria-label="Show who forked this repository" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Forks</span><span class="inline-flex items-center gap-1 justify-self-end text-foreground"><span data-repo-fork-count class="font-mono">–</span><i data-lucide="chevron-down" class="h-3 w-3 text-muted-foreground"></i></span></button>
-                <div data-repo-fork-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] p-3 text-left">
-                  <p class="text-xs font-semibold text-foreground">Forks of this repository</p>
-                  <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Each fork is its own repository on the mesh, sharing this one's history instead of copying it.</p>
-                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Fork this repository</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">Your own copy under your account, linked to this one. Push any branch to it, then open a pull request back here.</p>` : ""}
-                  <div data-repo-fork-list class="mt-2 max-h-52 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
-                  <div data-repo-remote-forks class="mt-3 border-t border-border pt-2">
-                    <p class="text-xs font-semibold text-foreground">Forks on other instances</p>
-                    <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Copies of this repository on other ForkMesh instances. You can send pull requests to them.</p>
-                    <div data-repo-remote-fork-list class="mt-2 max-h-40 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
-                    <form data-repo-remote-fork-form hidden class="mt-2 grid gap-1.5">
-                      <div class="flex gap-1.5">
-                        <input data-repo-remote-fork-url type="url" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://forkmesh.com/owner/repository" aria-label="Address of the repository on another instance" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus:border-accent" />
-                        <button type="submit" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="plus"></i>Save</button>
-                      </div>
-                      <p data-repo-remote-fork-status aria-live="polite" class="text-[10px] leading-4 text-muted-foreground"></p>
-                    </form>
-                  </div>
                 </div>
               </div>
               <a href="${escapeHtml(`${repoLinkUrl(repo)}/mirrors`)}" data-dashboard-repo-tab="mirrors" aria-label="Show repository mirror status" class="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-secondary/60"><span class="shrink-0 text-muted-foreground">Mirrors</span><span data-dashboard-repo-count="mirrors" data-dashboard-repo-tab-count="mirrors" class="min-w-0 truncate text-right font-mono text-foreground">${tabCountLabel(mirrorsCount)}</span></a>
@@ -579,8 +548,67 @@
     }
     loadRepoFeaturePanels(repo, recordRoute, compareRoute, commitHash);
     if (initialTab === "security") void loadRepoSecurity(repo);
+    hydrateNativeRepositoryLogos(detail.querySelector("[data-repo-title-row]"));
     loadRepoStarState(repo, $("[data-repo-action-star]"));
     loadRepoForks(repo);
+  }
+
+  function renderRepoTitleRow(repo) {
+    const provenance = repoProvenanceHtml(repo, { forkButton: false });
+    const websiteForkAvailable = !repo.isPrivate;
+    const logo = nativeRepositoryLogoMarkup(repo, "h-6 w-6")
+      || `<span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-secondary font-mono text-[11px] font-semibold text-muted-foreground">${escapeHtml(String(repo.owner || "F").slice(0, 1).toUpperCase())}</span>`;
+    return `
+        <div data-repo-title-row class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5">
+          <div class="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b border-border py-4">
+            <div class="flex min-w-0 items-start gap-2">
+              <span class="mt-0.5 shrink-0">${logo}</span>
+              <div class="min-w-0">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <a href="${escapeHtml(repoLinkUrl(repo))}" data-repo-title-name class="min-w-0 truncate text-xl font-semibold leading-7 text-foreground hover:underline">${escapeHtml(repo.name || "")}</a>
+                  <span data-repo-title-visibility class="fm-label">${repo.isPrivate ? "Private" : "Public"}</span>
+                </div>
+                <div data-repo-provenance class="${provenance ? "" : "hidden "}mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">${provenance}</div>
+              </div>
+            </div>
+            <div data-repo-title-actions class="relative ml-auto flex shrink-0 items-center gap-2">
+              <div data-repo-fork-wrap class="inline-flex">
+                <button type="button" data-repo-fork-primary title="Fork this repository" class="fm-btn fm-btn-sm" style="border-top-right-radius:0;border-bottom-right-radius:0"><i data-lucide="git-fork"></i><span data-repo-fork-primary-label>Fork</span><span data-repo-fork-count class="fm-counter">–</span></button>
+                <button type="button" data-repo-action-fork aria-haspopup="true" aria-expanded="false" aria-label="Show who forked this repository" class="fm-btn fm-btn-sm" style="margin-left:-1px;padding:0 6px;border-top-left-radius:0;border-bottom-left-radius:0"><i data-lucide="chevron-down"></i></button>
+                <div data-repo-fork-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] p-3 text-left sm:w-96">
+                  <p class="text-xs font-semibold text-foreground">Forks of this repository</p>
+                  <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Each fork is its own repository on the mesh, sharing this one's history instead of copying it.</p>
+                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Create fork</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">Makes your own copy on ${escapeHtml(platformName())} that you can push to with git, then send pull requests back here.</p><div data-repo-fork-push hidden class="mt-2 grid gap-2 border-t border-border pt-2 text-[11px] text-muted-foreground"></div>` : ""}
+                  <div data-repo-fork-list class="mt-2 max-h-52 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
+                  <div data-repo-remote-forks class="mt-3 border-t border-border pt-2">
+                    <p class="text-xs font-semibold text-foreground">Forks on other instances</p>
+                    <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Copies of this repository on other ForkMesh instances. You can send pull requests to them.</p>
+                    <div data-repo-remote-fork-list class="mt-2 max-h-40 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
+                    <form data-repo-remote-fork-form hidden class="mt-2 grid gap-1.5">
+                      <div class="flex gap-1.5">
+                        <input data-repo-remote-fork-url type="url" required inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://forkmesh.com/owner/repository" aria-label="Address of the repository on another instance" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-[11px] text-foreground outline-none focus:border-accent" />
+                        <button type="submit" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="plus"></i>Save</button>
+                      </div>
+                      <p data-repo-remote-fork-status aria-live="polite" class="text-[10px] leading-4 text-muted-foreground"></p>
+                    </form>
+                  </div>
+                </div>
+              </div>
+              <button type="button" data-repo-action-star data-repo-key="${escapeHtml(repoKey(repo))}" aria-pressed="false" aria-label="Star repository" title="Star this repository" class="fm-btn fm-btn-sm"><i data-lucide="star" data-repo-star-icon class="text-muted-foreground"></i><span data-repo-star-label>Star</span><span data-repo-star-count class="fm-counter">${formatCount(0)}</span></button>
+            </div>
+          </div>
+        </div>`;
+  }
+
+  function startRepoForkFromTitle(button) {
+    const own = String(button?.dataset.repoForkOwnUrl || "");
+    if (own) {
+      location.href = own;
+      return;
+    }
+    setRepoForkMenuOpen(true);
+    const create = $("[data-repo-fork-create]");
+    if (create && !create.disabled) void createRepoForkFromWebsite(create);
   }
 
   // Shows one section of an open pull detail (conversation | commits | checks |
@@ -2450,6 +2478,12 @@
       // Fork popover: the button shows how many repositories were forked from
       // this one and opens the list of who owns them. Refetched on open so a
       // fork published while the page was sitting there shows up.
+      const forkPrimary = event.target.closest("[data-repo-fork-primary]");
+      if (forkPrimary) {
+        event.preventDefault();
+        startRepoForkFromTitle(forkPrimary);
+        return;
+      }
       if (event.target.closest("[data-repo-mirror-fork]")) {
         event.preventDefault();
         openRepoForkMenuFromMirror();
