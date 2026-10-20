@@ -111,3 +111,18 @@ def test_the_cherry_read_needs_commit_ids_and_a_served_upstream(repositories):
     status, plain = _cherry(app, {"base": oids["root"], "head": oids["pending"]},
                             "plain_compare_001")
     assert status == 200 and "patch" in plain
+
+
+def test_an_upstream_too_far_ahead_is_refused_before_git_cherry(
+        repositories, monkeypatch):
+    app, oids = repositories
+    monkeypatch.setattr(gateway, "MAX_CHERRY_UPSTREAM_COMMITS", 1)
+    status, _ = _cherry(app, {
+        "base": oids["upstream"], "head": oids["pending"], "cherry": "up/stream"},
+        "cherry_toolarge_01")
+    assert status != 200
+    monkeypatch.setattr(gateway, "MAX_CHERRY_UPSTREAM_COMMITS", 2)
+    status, _ = _cherry(app, {
+        "base": oids["upstream"], "head": oids["pending"], "cherry": "up/stream"},
+        "cherry_fits_00001")
+    assert status == 200

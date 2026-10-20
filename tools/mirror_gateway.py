@@ -115,6 +115,7 @@ MAX_JSON_BLOB = 2 * 1024 * 1024
 MAX_JSON_OUTPUT = 8 * 1024 * 1024
 MAX_COMPARE_BYTES = 4 * 1024 * 1024
 MAX_COMPARE_COMMITS = 500
+MAX_CHERRY_UPSTREAM_COMMITS = 2000
 # A readiness preview reports which paths a merge would leave conflicted. The
 # list is for a reviewer to read, not to reconstruct a tree from, so it is
 # bounded well below the patch limits above.
@@ -4925,6 +4926,18 @@ class GitRepository:
             raise GitError("repository commit count is invalid") from exc
         if own > MAX_COMPARE_COMMITS:
             raise GatewayError("repository comparison is too large")
+        upstream_raw = git(
+            ["rev-list", "--count",
+             f"--max-count={MAX_CHERRY_UPSTREAM_COMMITS + 1}",
+             "^" + values["head"], values["base"]],
+            max_output=32,
+        )
+        try:
+            upstream = int(upstream_raw)
+        except ValueError as exc:
+            raise GitError("repository commit count is invalid") from exc
+        if upstream > MAX_CHERRY_UPSTREAM_COMMITS:
+            raise GatewayError("upstream comparison is too large")
         arguments = ["cherry", values["base"], values["head"]]
         if values["limit"]:
             arguments.append(values["limit"])

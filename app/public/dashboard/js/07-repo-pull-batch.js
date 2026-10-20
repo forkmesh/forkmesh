@@ -341,6 +341,8 @@
   async function refreshPullBatchStatus(batch, { request = pullBatchRequest } = {}) {
     const remote = batch.remote;
     const local = loadPullBatchSent(batch.repo, remote);
+    const token = (batch.statusToken || 0) + 1;
+    batch.statusToken = token;
     batch.checking = true;
     let data = null;
     try {
@@ -352,7 +354,7 @@
     } catch (_) {
       data = null;
     }
-    if (batch.remote !== remote) return;
+    if (batch.remote !== remote || batch.statusToken !== token) return;
     batch.checking = false;
     batch.upstream = data?.upstream || null;
     batch.statusError = data ? "" : "Could not check which branches are already merged upstream or sent, so every listed branch is shown.";
