@@ -6465,6 +6465,7 @@ class ForkMeshWorld extends HTMLElement {
     this.worldMesh = { self: null, worlds: [] };
     this.meshLinks = null;
     this.federation = null;
+    this.officeOwner = null;
     this.meshVisitId = "";
     this.arrivalVisa = takeArrivalVisa();
     this.instanceHexes = [];
@@ -7692,12 +7693,58 @@ class ForkMeshWorld extends HTMLElement {
     dialog.showModal();
   }
 
+  // The Office drawn on this page can belong to a neighbouring World (a
+  // federated hexagon). Its runtime then reads and acts at that owner, with
+  // this page's visitor token, and shows the walker as name@home there.
+  setOfficeOwner(owner = null) {
+    const id = String(owner?.id || "");
+    if (id === String(this.officeOwner?.id || "")) return;
+    this.officeOwner = id ? owner : null;
+    this.officeController?.destroy?.();
+    this.officeMeeting?.destroy?.();
+    this.officeTasks?.destroy?.();
+    this.officeController = null;
+    this.officeMeeting = null;
+    this.officeTasks = null;
+    this.officeRuntimePromise = null;
+  }
+
+  officeRoot() {
+    const owner = this.officeOwner;
+    if (!owner) return this;
+    const federation = this.worldFederation();
+    const routed = {
+      fetchJSON: (path, options) => federation.fetchJSON(owner, path, options),
+      postJSON: (path, body, options) =>
+        federation.postJSON(owner, path, body, options),
+    };
+    return new Proxy(this, {
+      get: (target, key) => {
+        if (Object.hasOwn(routed, key)) return routed[key];
+        const value = target[key];
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
+  officeSession() {
+    const owner = this.officeOwner;
+    if (!owner) return readSession();
+    const visitor = this.worldFederation().visitorSession(owner);
+    // The marker is never sent: owner calls carry the bearer token.
+    return visitor ? { ...visitor, sessionToken: "visitor" } : null;
+  }
+
   async ensureOfficeRuntime({ userInitiated = false } = {}) {
     if (this.destroyed || !this.world) return null;
     if (this.officeController) return this.officeController;
     if (this.officeRuntimePromise) return this.officeRuntimePromise;
 
     const world = this.world;
+    const owner = this.officeOwner;
+    if (owner) await this.worldFederation().token(owner);
+    const root = this.officeRoot();
+    const getSession = () => this.officeSession();
     this.officeRuntimePromise = Promise.all([
       import("./world-office.js"),
       import("./world-office-meeting.js"),
@@ -7706,9 +7753,9 @@ class ForkMeshWorld extends HTMLElement {
       .then(([officeModule, meetingModule, tasksModule]) => {
         if (this.destroyed || this.world !== world) return null;
         const meeting = meetingModule.createWorldOfficeMeeting({
-          root: this,
+          root,
           scene: world,
-          getSession: readSession,
+          getSession,
           onActivity: (category) => {
             if (!ACTIVITY_OPTIONS.some((option) => option.id === category)) {
               return;
@@ -7720,12 +7767,12 @@ class ForkMeshWorld extends HTMLElement {
           onStepTotal: (message) => this.applyWorldStepTotal(message),
         });
         const tasks = tasksModule.createWorldOfficeTasksController({
-          root: this,
+          root,
           world,
-          fetchJSON: (path, options) => this.fetchJSON(path, options),
+          fetchJSON: (path, options) => root.fetchJSON(path, options),
           postJSON: (path, body, options) =>
-            this.postJSON(path, body, options),
-          getSession: readSession,
+            root.postJSON(path, body, options),
+          getSession,
           notify: (message, options) => this.notice(message, options),
           onQaVerdict: ({ task, verdict }) =>
             this.recordTaskQaVerdict(task, verdict),
@@ -7733,11 +7780,11 @@ class ForkMeshWorld extends HTMLElement {
         let controller;
         try {
           controller = officeModule.createWorldOfficeController({
-            root: this,
+            root,
             world,
             meeting,
             tasks,
-            getSession: readSession,
+            getSession,
           });
         } catch (error) {
           meeting.destroy?.();

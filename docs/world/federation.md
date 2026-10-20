@@ -94,8 +94,16 @@ visit socket is `?visitor=`; both sides see each other live.
   identity shown there (`name@home`).
 - **Visits.** The visit socket asks the federation for its credential:
   `?visitor=<token>`, or `?visa=` for an owner without the exchange.
+- **The Office.** When the Office drawn on a page belongs to a neighbour,
+  `setOfficeOwner(world)` hands its runtime (lobby, floors, attendance board,
+  meetings, task wall) that owner's `fetchJSON`/`postJSON` and the visitor
+  identity. At the owner a visitor token gives the two common floors (lobby
+  and rooftop) as `name@home`; the attendance board is readable and a
+  visitor's punch is accepted without being recorded; meetings answer
+  `members_only` and the page says so. Team floors stay with the owner's
+  members.
 - **Owner-only actions** (administration, an owner's private rooms) stay
-  read-only for visitors, with a note, instead of failing. *(planned)*
+  read-only for visitors, with a note, instead of failing.
 
 ## The page's federation client
 
