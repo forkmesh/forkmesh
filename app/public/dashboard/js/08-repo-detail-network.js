@@ -3610,6 +3610,8 @@
     closeIssuePicker({ apply: true });
   }, true);
 
+  bindMentionAutocomplete();
+
   // The qualifier colouring is painted under a transparent input, so it has to
   // follow the input's horizontal scroll as the caret moves.
   document.addEventListener("selectionchange", () => {

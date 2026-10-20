@@ -783,7 +783,7 @@
   }
 
   function taskMarkdownHtml(value) {
-    const html = renderMarkdown(String(value || ""), { repo: null });
+    const html = renderMarkdown(String(value || ""), { repo: null, mentions: false });
     let literal = 0;
     return `<div class="task-markdown ${MD_BODY_CLASS}">${html.split(/(<[^>]*>)/).map((part, index) => {
       if (index % 2) {

@@ -1505,7 +1505,7 @@
       const latest = events.filter(
         (event) => event?.type === "edit" && event.target === target,
       ).at(-1);
-      const nextBody = window.prompt("Edit comment", latest?.body ?? original.body ?? "");
+      const nextBody = await openIssueCommentEditor(target, latest?.body ?? original.body ?? "");
       if (nextBody === null) return;
       type = "edit";
       fields = { target, body: nextBody, attachments: latest?.attachments || original.attachments || [] };
