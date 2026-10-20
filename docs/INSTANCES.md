@@ -389,7 +389,7 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   parent must exist and be public, must not be the repository itself, and
   must share history: its published `commit` or `rootCommit` has to be in the
   source (checked before anything is created when `--from` is a directory)
-  and in the filled repository. Later runs without `--fork-of` keep the link;
+  and in the staged repository before its objects or refs are migrated. Later runs without `--fork-of` keep the link;
   a rerun with it reports `"forkedFrom": "unchanged"`. Objects are not shared
   with the parent.
 - **Switches.** `--protect-default-branch` / `--no-protect-default-branch`

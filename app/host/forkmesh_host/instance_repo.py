@@ -594,7 +594,7 @@ def _stage(git, spec, git_dir, scratch, current):
     return stage, _refs(git, stage, "refs/heads", "refs/tags")
 
 
-def fill(spec, info, max_bytes, git_user=""):
+def fill(spec, info, max_bytes, git_user="", parent=None):
     if not ID_RE.fullmatch(str(info.get("id") or "")):
         raise RepoError("invalid repository id")
     git = Git(git_user)
@@ -602,12 +602,13 @@ def fill(spec, info, max_bytes, git_user=""):
     git_dir = root / (info["id"] + ".git")
     _ensure_bare(git, root, git_dir)
     base = root.parent / "tmp"
-    parent = base if base.is_dir() else root
-    scratch = tempfile.mkdtemp(prefix="instance-repo-", dir=str(parent))
+    scratch_parent = base if base.is_dir() else root
+    scratch = tempfile.mkdtemp(prefix="instance-repo-", dir=str(scratch_parent))
     git.chown(scratch)
     try:
         current = _refs(git, git_dir, "refs/heads", "refs/tags")
         stage, staged = _stage(git, spec, git_dir, scratch, current)
+        check_staged_history(git, stage, parent)
         updates, rejected = _plan(git, stage, current, staged, spec["force"])
         if rejected:
             raise RepoError("not a fast-forward or a moved tag: %s (rerun "
@@ -624,7 +625,7 @@ def fill(spec, info, max_bytes, git_user=""):
                     % (stored + added, stored, added, max_bytes))
             _migrate(git, packs, git_dir)
     finally:
-        _remove_scratch(scratch, parent)
+        _remove_scratch(scratch, scratch_parent)
     if updates:
         commands = ["update %s %s %s" % (u["ref"], u["new"], u["old"] or (
             "0" * len(u["new"]))) for u in updates]
@@ -799,6 +800,12 @@ def check_source_history(spec, parent):
                         % (spec["source"], parent["forkedFrom"]))
 
 
+def check_staged_history(git, stage, parent):
+    if parent and not shares_history(git, stage, parent):
+        raise RepoError("the source shares no history with %s; refusing "
+                        "--fork-of" % parent["forkedFrom"])
+
+
 def check_filled_history(spec, parent, filled, git_user):
     if parent and not shares_history(Git(git_user), filled["gitDir"], parent):
         raise RepoError("%s/%s shares no history with %s; it was filled but "
@@ -823,7 +830,7 @@ def run(args, spec):
         info = in_app(prepare)
         configured = in_app(apply_settings)
         max_bytes = _forked(app_user, limit)
-        filled = fill(spec, info, max_bytes, git_user)
+        filled = fill(spec, info, max_bytes, git_user, parent)
         check_filled_history(spec, parent, filled, git_user)
         recorded = in_app(record, info, filled)
         configured.update(in_app(link_fork, parent))
@@ -837,7 +844,7 @@ def run(args, spec):
             info = await prepare(runtime, spec)
             configured = await apply_settings(runtime, spec)
             max_bytes = _modules(runtime.entry)[1].max_bytes(runtime.env)
-            filled = fill(spec, info, max_bytes, git_user)
+            filled = fill(spec, info, max_bytes, git_user, parent)
             check_filled_history(spec, parent, filled, git_user)
             recorded = await record(runtime, spec, info, filled)
             configured.update(await link_fork(runtime, spec, parent))

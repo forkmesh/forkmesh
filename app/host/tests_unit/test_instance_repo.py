@@ -172,6 +172,26 @@ def test_a_full_bundle_adds_only_what_the_repository_lacks(hosted, tmp_path):
     git(git_dir, "fsck", "--no-dangling")
 
 
+def test_a_bundle_without_parent_history_is_refused_before_migration(
+        hosted, tmp_path):
+    work, root = hosted
+    unrelated = tmp_path / "unrelated"
+    unrelated.mkdir()
+    git(unrelated, "init", "-q", "-b", "main")
+    commit(unrelated, "unrelated", 64)
+    bundle = tmp_path / "unrelated.bundle"
+    git(unrelated, "bundle", "create", "-q", str(bundle), "--branches")
+    git_dir = root / ("hr" + "f" * 24 + ".git")
+    parent = {"forkedFrom": "acme/project",
+              "commits": [git(work, "rev-parse", "main")]}
+    with pytest.raises(repo.RepoError, match="shares no history"):
+        repo.fill(spec_for(bundle, root), {"id": "hr" + "f" * 24},
+                  64 << 20, parent=parent)
+    assert git(git_dir, "for-each-ref") == ""
+    assert not pack_files(git_dir)
+    assert leftovers(root) == [git_dir.name]
+
+
 def test_a_refused_fill_leaves_the_repository_as_it_was(hosted):
     work, root = hosted
     git_dir = root / (REPO_ID + ".git")
