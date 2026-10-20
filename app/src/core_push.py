@@ -279,7 +279,7 @@ async def _queue_pushed_actions(env, owner, repo, node, account, updates):
 
 async def record_accepted_push(env, owner, repo, endpoint, account, report,
                                core=False, state="", tag_moves=None,
-                               credential=""):
+                               credential="", contributor=False):
     owner = str(owner or "").strip().lower()
     repo = str(repo or "").strip()
     account = str(account or "").strip().lower()
@@ -316,7 +316,7 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
         except Exception:
             pass
         try:
-            if (report or {}).get("actions") is not True:
+            if (report or {}).get("actions") is not True and not contributor:
                 await _queue_pushed_actions(env, owner, repo, node, account,
                                             updates)
         except Exception:

@@ -435,6 +435,7 @@ def _proxy_harness(
     router_ready=True,
     upstreams=None,
     basic_account="",
+    basic_prefix="",
     core_nodes=(),
     core_owners=(),
     alias_owner="",
@@ -514,6 +515,12 @@ def _proxy_harness(
             _env, _owner, _repo, header, _method=""):
         return basic_account if has_hosted_push_credential(header) else ""
 
+    async def verify_hosted_push_access(
+            _env, _owner, _repo, header, _method="", alias=""):
+        if not has_hosted_push_credential(header) or not basic_account:
+            return "", ""
+        return basic_account, basic_prefix
+
     async def record_hosted_push_state(_env, owner, repo, endpoint,
                                        pusher=""):
         pinned.append((owner, repo, endpoint["node"]))
@@ -565,6 +572,7 @@ def _proxy_harness(
         "JsResponse": _JsResponse,
         "has_hosted_push_credential": has_hosted_push_credential,
         "verify_hosted_push_credential": verify_hosted_push_credential,
+        "verify_hosted_push_access": verify_hosted_push_access,
         "record_hosted_push_state": record_hosted_push_state,
     })
     namespace["_pinned_states"] = pinned
@@ -1438,3 +1446,46 @@ def test_core_endpoints_take_a_push_for_a_retired_core_owner():
     held = "fmnext-n1" in namespace["_core_push_nodes"](env)
     assert [e["node"] for e in _run_candidates(
         namespace, env, core_allowed=held)] == ["fmnext-n2", "fmnext-n3"]
+
+
+def test_a_contributor_push_signs_its_namespace_and_skips_owner_paths():
+    # A contributor credential (hosted_git.verify_hosted_push_access) names
+    # refs/heads/pr/<account>/; the router-signed target carries it, the
+    # core organization-owner rule and tag moves do not apply, and the
+    # accepted push is recorded as a contributor's (no Actions).
+    namespace, messages, fetches = _proxy_harness(
+        candidates=[_endpoint()],
+        upstreams=[_Upstream()],
+        basic_account="bob",
+        basic_prefix="refs/heads/pr/bob/",
+        core_nodes=("alice",),
+        core_owners=(),
+        tag_moves={"refs/tags/v1": "1" * 40},
+    )
+    request = _Request(
+        "https://forkmesh.test/alice/app/git-receive-pack",
+        headers=_Headers({"authorization": "Basic Ym9iOmNyZWRlbnRpYWw="}),
+        body=b"pack")
+    response = _run_proxy(namespace, request, is_info=False)
+    assert response["init"]["status"] == 200
+    target = fetches[0][0]
+    assert "pushPrefix=refs%2Fheads%2Fpr%2Fbob%2F" in target
+    assert "tagMoves" not in target
+    assert any("pushPrefix=" in message for message in messages)
+    recorded = namespace["_recorded_pushes"][0]
+    assert recorded[3] == "bob"
+    assert recorded[5]["contributor"] is True
+    assert recorded[5]["credential"] == "contributor"
+    assert recorded[5]["tag_moves"] == {}
+
+    # Without a prefix the same account is an ordinary pusher and the core
+    # organization-owner rule still refuses it.
+    namespace, _messages, fetches = _proxy_harness(
+        candidates=[_endpoint()], upstreams=[_Upstream()],
+        basic_account="bob", core_nodes=("alice",), core_owners=())
+    refused = _run_proxy(namespace, _Request(
+        "https://forkmesh.test/alice/app/git-receive-pack",
+        headers=_Headers({"authorization": "Basic Ym9iOmNyZWRlbnRpYWw="}),
+        body=b"pack"), is_info=False)
+    assert refused["status"] == 403
+    assert not fetches

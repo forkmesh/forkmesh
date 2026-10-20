@@ -1180,6 +1180,112 @@
     return data;
   }
 
+  let gitPushWired = false;
+
+  function setGitPushStatus(message, kind = "") {
+    const target = $("[data-git-push-status]");
+    if (!target) return;
+    target.textContent = message || "";
+    target.className = "min-h-4 text-xs " + (
+      kind === "bad" ? "text-destructive"
+        : kind === "good" ? "text-success"
+        : "text-muted-foreground"
+    );
+  }
+
+  async function loadGitPushSettings() {
+    const note = $("[data-git-push-contributor]");
+    const input = $("[data-git-push-repo]");
+    try {
+      const response = await fetch("/api/hosted-repositories", { headers: { accept: "application/json" } });
+      const data = await response.json().catch(() => ({}));
+      const listed = (Array.isArray(data?.contributorPush) ? data.contributorPush : [])
+        .filter((item) => /^[^*/\s]+\/[^*/\s]+$/.test(String(item)));
+      const account = String(state.session?.nodeName || state.session?.name || "").toLowerCase();
+      if (note && listed.length) {
+        note.textContent = `Anyone with a verified email address can push branches named pr/${account || "<your-name>"}/… to ${listed.join(", ")} and open a pull request from them. Other branches stay with the owners.`;
+        note.classList.remove("hidden");
+      }
+      if (input && !input.value && listed.length) input.value = listed[0];
+    } catch (_) {
+    }
+  }
+
+  function renderGitPushGrant(push) {
+    const target = $("[data-git-push-result]");
+    if (!target) return;
+    const contributor = push?.access === "contributor";
+    const expires = Number(push?.expiresAt || 0);
+    const field = (label, value, attr) => `
+      <label class="grid gap-1 text-xs font-semibold text-foreground">${escapeHtml(label)}
+        <input ${attr} type="text" readonly value="${escapeHtml(value || "")}" class="h-9 rounded-md border border-border bg-secondary px-2 font-mono text-xs font-normal text-foreground" />
+      </label>`;
+    const commands = (Array.isArray(push?.commands) ? push.commands : []).join("\n");
+    target.innerHTML = `
+      ${field("Remote URL", push?.remoteUrl, "data-git-push-remote")}
+      ${field("Username", push?.username, "data-git-push-username")}
+      ${field("Password (shown once; copy it now)", push?.password, "data-git-push-password")}
+      <p class="text-xs text-muted-foreground">${contributor
+        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>. Pushes are fast-forward only: add commits instead of force-pushing, or push a new branch name. Then open a pull request from that branch on the repository's Pull requests tab.`
+        : "You have write access to this repository; its branch protection still applies."}
+        ${expires ? ` Expires ${escapeHtml(formatDate(expires))}.` : ""}</p>
+      <pre class="overflow-x-auto rounded-md border border-border bg-secondary p-3 font-mono text-xs text-foreground">${escapeHtml(commands)}</pre>`;
+    target.classList.remove("hidden");
+  }
+
+  async function mintGitPushCredential() {
+    const raw = String($("[data-git-push-repo]")?.value || "").trim().replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "");
+    const [owner, name, extra] = raw.split("/");
+    if (!owner || !name || extra !== undefined) {
+      setGitPushStatus("Enter the repository as owner/repository.", "bad");
+      return;
+    }
+    const token = state.session?.sessionToken || "";
+    if (!token) {
+      setGitPushStatus("Sign in to create a push credential.", "bad");
+      return;
+    }
+    const button = $("[data-git-push-mint]");
+    if (button) button.disabled = true;
+    setGitPushStatus("Creating a push credential…");
+    try {
+      const response = await fetch("/api/hosted-repositories/push-credential", {
+        method: "POST",
+        headers: { accept: "application/json", "content-type": "application/json" },
+        body: JSON.stringify({ owner, name, sessionToken: token }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.push) {
+        const messages = {
+          unauthorized: "Sign in to create a push credential.",
+          session_required: "Sign in again in this browser to create a push credential.",
+          hosted_git_unavailable: "This server cannot accept pushes right now.",
+        };
+        setGitPushStatus(data.message || messages[data.error] || "A push credential could not be created.", "bad");
+        return;
+      }
+      setGitPushStatus(data.push.access === "contributor" ? "Contributor push credential created." : "Push credential created.", "good");
+      renderGitPushGrant(data.push);
+    } catch (_) {
+      setGitPushStatus("A push credential could not be created.", "bad");
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function wireGitPushPanel() {
+    if (gitPushWired || !$("[data-git-push-panel]")) return;
+    gitPushWired = true;
+    $("[data-git-push-mint]")?.addEventListener("click", () => mintGitPushCredential());
+    $("[data-git-push-repo]")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        mintGitPushCredential();
+      }
+    });
+    loadGitPushSettings();
+  }
+
   function renderSshKeys(data) {
     const list = $("[data-ssh-key-list]");
     if (!list) return;
@@ -1188,7 +1294,7 @@
     if (gateway) {
       gateway.textContent = data?.gatewayConfigured
         ? `SSH gateway: ${data.gatewayHost}${Number(data.gatewayPort) === 22 ? "" : `:${data.gatewayPort}`}`
-        : "SSH gateway is not configured";
+        : "SSH pushes are not available on this server. Push over HTTPS with a push credential instead.";
     }
     if (!keys.length) {
       list.innerHTML = accountBlankslate("key-round", "No SSH keys registered.", "Add a public key above to clone and push over SSH.");
@@ -1212,6 +1318,7 @@
   }
 
   async function loadSshKeys({ force = false } = {}) {
+    wireGitPushPanel();
     if (!$("[data-ssh-key-list]")) return;
     if (sshKeysLoaded && !force) return;
     if (sshKeysLoading) return sshKeysLoading;

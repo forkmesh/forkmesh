@@ -439,7 +439,8 @@ STREAMED_REQUEST_BODY_SHA256 = hashlib.sha256(
 OPERATION_QUERY_FIELDS = {
     "git-info-refs": frozenset({"service"}),
     "git-upload-pack": frozenset(),
-    "git-receive-pack": frozenset({"service", "tagMoves", "protect"}),
+    "git-receive-pack": frozenset(
+        {"service", "tagMoves", "protect", "pushPrefix"}),
     "tree": frozenset({"path", "ref"}),
     "blobs": frozenset({"path", "ref"}),
     "blob": frozenset({"path", "ref"}),
@@ -660,6 +661,10 @@ def _lower_thread_priority(increment: int = 10) -> None:
 
 class GatewayError(RuntimeError):
     """Safe-to-display configuration or request failure."""
+
+
+class PushRefused(GatewayError):
+    pass
 
 
 class GitError(RuntimeError):
@@ -1234,6 +1239,10 @@ TAG_MOVES_QUERY_FIELD = "tagMoves"
 MAX_TAG_MOVES = 8
 PROTECT_QUERY_FIELD = "protect"
 MAX_PROTECTED_REFS = 8
+PUSH_PREFIX_QUERY_FIELD = "pushPrefix"
+PUSH_PREFIX_ROOT = "refs/heads/pr/"
+PUSH_PREFIX_ACCOUNT_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+MAX_CONTRIBUTOR_BRANCHES = 32
 REF_UPDATES_HEADER = "X-ForkMesh-Ref-Updates"
 REF_UPDATES_MAX = 40
 REF_UPDATE_COMMIT_COUNT_LIMIT = 10000
@@ -1296,6 +1305,91 @@ def enforce_protected_refs(
                 raise GatewayError(
                     "%s is protected: it changes only by merging an approved "
                     "pull request" % ref)
+
+
+def parse_push_prefix(value: Any) -> str:
+    text = str(value or "")
+    if not text:
+        return ""
+    account = text[len(PUSH_PREFIX_ROOT):-1]
+    if (
+        not text.startswith(PUSH_PREFIX_ROOT)
+        or not text.endswith("/")
+        or not PUSH_PREFIX_ACCOUNT_RE.fullmatch(account)
+        or ".." in account
+        or account.endswith((".", ".lock"))
+    ):
+        raise GatewayError("contributor push grant is invalid")
+    return text
+
+
+def receive_pack_capabilities(body: bytes) -> set[str]:
+    position = 0
+    while len(body) >= position + 4:
+        try:
+            length = int(body[position:position + 4].decode("ascii"), 16)
+        except (UnicodeDecodeError, ValueError):
+            return set()
+        if length < 5:
+            return set()
+        payload = body[position + 4:position + length]
+        position += length
+        if payload.startswith(b"shallow "):
+            continue
+        _command, _, capabilities = payload.rstrip(b"\n").partition(b"\0")
+        return set(capabilities.decode("utf-8", "replace").split())
+    return set()
+
+
+def _pkt(data: bytes) -> bytes:
+    return b"%04x" % (len(data) + 4) + data
+
+
+def receive_pack_rejection(
+    body: bytes, commands: list[tuple[str, str, str]], reason: str
+) -> bytes:
+    reason = re.sub(r"[^\x20-\x7e]", " ", str(reason or "refused"))[:200]
+    report = _pkt(b"unpack ok\n") + b"".join(
+        _pkt(("ng %s %s\n" % (ref, reason)).encode("utf-8", "replace"))
+        for _old, _new, ref in commands
+    ) + b"0000"
+    capabilities = receive_pack_capabilities(body)
+    if not capabilities & {"report-status", "report-status-v2"}:
+        return b"0000"
+    if not capabilities & {"side-band-64k", "side-band"}:
+        return report
+    chunk = 65515 if "side-band-64k" in capabilities else 995
+    framed = b"".join(
+        _pkt(b"\x01" + report[index:index + chunk])
+        for index in range(0, len(report), chunk)
+    )
+    return framed + b"0000"
+
+
+def enforce_push_prefix(
+    commands: list[tuple[str, str, str]],
+    prefix: str,
+    existing: Mapping[str, str] | None = None,
+) -> None:
+    if not prefix:
+        return
+    for _old, _new, ref in commands:
+        if not ref.startswith(prefix) or len(ref) <= len(prefix):
+            raise PushRefused(
+                "you may push only branches named %s<branch>; open a pull "
+                "request from one" % prefix[len("refs/heads/"):])
+    if existing is None:
+        return
+    branches = {ref for ref in existing if ref.startswith(prefix)}
+    for _old, new, ref in commands:
+        if set(new) == {"0"}:
+            branches.discard(ref)
+        else:
+            branches.add(ref)
+    if len(branches) > MAX_CONTRIBUTOR_BRANCHES:
+        raise PushRefused(
+            "a contributor may keep at most %d branches here; ask a "
+            "maintainer to delete merged ones" % MAX_CONTRIBUTOR_BRANCHES)
 
 
 def enforce_push_ref_policy(
@@ -2958,6 +3052,20 @@ def refs_canonical(git_dir: Path) -> str:
         for line in output.decode("utf-8", "replace").splitlines()
         if line
     )
+
+
+def prefix_refs(git_dir: Path, prefix: str) -> dict[str, str]:
+    output = _run_git(
+        git_dir,
+        ["for-each-ref", "--format=%(objectname) %(refname)", prefix],
+        max_output=1024 * 1024,
+    )
+    refs: dict[str, str] = {}
+    for line in output.decode("utf-8", "replace").splitlines():
+        oid, _, ref = line.partition(" ")
+        if oid and ref:
+            refs[ref] = oid
+    return refs
 
 
 def broken_served_refs(git_dir: Path) -> list[str]:
@@ -10584,7 +10692,9 @@ class GatewayApplication:
                 }
                 if (
                     method != "POST"
-                    or set(query) - {TAG_MOVES_QUERY_FIELD, PROTECT_QUERY_FIELD}
+                    or set(query) - {
+                        TAG_MOVES_QUERY_FIELD, PROTECT_QUERY_FIELD,
+                        PUSH_PREFIX_QUERY_FIELD}
                     or normalized_headers.get("content-type", "")
                     .split(";", 1)[0]
                     .strip()
@@ -10602,8 +10712,25 @@ class GatewayApplication:
                 )
                 commands = receive_pack_commands(
                     decoded_body, PUSH_MAX_PREAMBLE_LINES)
+                push_prefix = parse_push_prefix(
+                    query.get(PUSH_PREFIX_QUERY_FIELD, ""))
+                if push_prefix and tag_moves:
+                    raise GatewayError("contributor push grant is invalid")
                 enforce_push_ref_policy(commands, tag_moves)
                 enforce_protected_refs(commands, protected)
+                try:
+                    enforce_push_prefix(
+                        commands, push_prefix,
+                        prefix_refs(repository.git_dir, push_prefix)
+                        if push_prefix else None)
+                except PushRefused as refused:
+                    return GatewayResponse(
+                        200,
+                        "application/x-git-receive-pack-result",
+                        receive_pack_rejection(
+                            decoded_body, commands, str(refused)),
+                        {"Cache-Control": "no-store"},
+                    )
                 return self._run_receive_pack(
                     repository, owner, name, decoded_body)
             if method not in ("GET", "HEAD"):

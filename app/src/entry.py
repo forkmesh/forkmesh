@@ -16167,6 +16167,7 @@ hosted_repository_handler = _hosted_git.export("hosted_repository_handler")
 verify_hosted_push_credential = _hosted_git.export(
     "verify_hosted_push_credential")
 has_hosted_push_credential = _hosted_git.export("has_hosted_push_credential")
+verify_hosted_push_access = _hosted_git.export("verify_hosted_push_access")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
 record_hosted_branch_count = _hosted_git.export(
     "record_hosted_branch_count")
@@ -52233,18 +52234,19 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             if body_stream is not None:
                 body_digest = https_routing.STREAMED_REQUEST_BODY_SHA256
     alias_owner = await _git_push_alias_owner(env, request, owner, repo)
-    account = (
-        await _git_push_authorize(
+    push_prefix = ""
+    if signed_headers:
+        account = await _git_push_authorize(
             env, owner, repo, method, body_digest, pubkey, ts, sig,
             alias_owner=alias_owner)
-        if signed_headers
-        else await verify_hosted_push_credential(
-            env, owner, repo, authorization, method)
-    )
+    else:
+        account, push_prefix = await verify_hosted_push_access(
+            env, owner, repo, authorization, method, alias=alias_owner)
     if not account:
         return _git_push_basic_challenge()
     core_held = str(owner or "").strip().lower() in _core_push_nodes(env)
-    if core_held and not await _core_push_permitted(env, owner, repo, account):
+    if core_held and not push_prefix and not await _core_push_permitted(
+            env, owner, repo, account):
         await _audit_sensitive_action(
             env, account, "git.push_authorize", "repository",
             owner + "/" + repo, "denied",
@@ -52265,8 +52267,10 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
         env, request, owner, repo, account, method, body, body_stream,
         body_digest, is_info=is_info, alias_owner=alias_owner,
         core_held=core_held,
-        credential="key" if signed_headers else "session",
-        encoding=request.headers.get("content-encoding"))
+        credential="key" if signed_headers else (
+            "contributor" if push_prefix else "session"),
+        encoding=request.headers.get("content-encoding"),
+        push_prefix=push_prefix)
     if upstream is None:
         return json_response(
             {"error": "push_unavailable"}, status=503,
@@ -52294,7 +52298,7 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
 async def _https_mirror_push_send(
         env, request, owner, repo, account, method, body, body_stream,
         body_digest, is_info=False, alias_owner="", core_held=False,
-        credential="session", encoding=None):
+        credential="session", encoding=None, push_prefix=""):
     router_public_key = _https_mirror_router_public_key(env)
     router_seed = _https_mirror_router_seed(env)
     if not router_public_key or not router_seed:
@@ -52306,7 +52310,7 @@ async def _https_mirror_push_send(
         return None, None
     tag_moves = (
         await core_push_pending_tag_moves(env, owner, repo, account)
-        if core_held and method == "POST" else {})
+        if core_held and method == "POST" and not push_prefix else {})
     query = {"service": "git-receive-pack"} if is_info else None
     if tag_moves:
         query = {"tagMoves": " ".join(
@@ -52319,6 +52323,8 @@ async def _https_mirror_push_send(
             return None, None
         if protected:
             query = dict(query or {}, protect=" ".join(protected))
+        if push_prefix:
+            query = dict(query or {}, pushPrefix=push_prefix)
     for endpoint in candidates:
         if body_stream is not None and endpoint is not candidates[0]:
             # A streamed pack is consumed by its first upstream attempt; the
@@ -52408,7 +52414,7 @@ async def _https_mirror_push_send(
                     env, owner, repo, endpoint, account,
                     _ref_updates_from(upstream), core=core_push,
                     state=state, tag_moves=tag_moves,
-                    credential=credential)
+                    credential=credential, contributor=bool(push_prefix))
             except Exception:
                 pass
         return upstream, endpoint

@@ -1038,7 +1038,7 @@ def masked_target_url(base_url, owner, repo, operation, query=None):
     )
     safe_query = {}
     for key in ("path", "ref", "base", "head", "cherry", "limit", "service",
-                "sha256", "tagMoves", "protect"):
+                "sha256", "tagMoves", "protect", "pushPrefix"):
         if key in (query or {}):
             raw = (query or {}).get(key)
             values = raw if isinstance(raw, (list, tuple)) else [raw]

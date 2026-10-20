@@ -178,6 +178,42 @@ points HEAD at `main`, `master`, `trunk` or `develop`. Private sources are not
 supported. The separate metadata importer (`app/src/repository_imports.py`)
 imports issues, pulls and releases only.
 
+### Contributor pushes
+
+Without a node of their own, a signed-in contributor has no fork to push to,
+so a pull request against a hosted repository was out of reach. An operator
+can open named public repositories to contributor pushes
+(`HOSTED_GIT_CONTRIBUTOR_PUSH`, user guide in
+`www/docs/hosted-repositories.md`): any active, email-verified user account
+may then push branches under `refs/heads/pr/<account>/` of the repository
+itself (the namespace the SSH gateway's pull-request grant uses), with the
+same session-bound credential an owner uses.
+
+- **Allowlist** (`hosted_git`): `*`, `owner/*` or `owner/repo` items,
+  separated by whitespace or commas, case-insensitive; a route alias or its
+  backing node matches. Unparseable entries are ignored, so a typo narrows
+  access rather than widening it. The repository must be listed and public,
+  and the account an active, email-verified user; every check fails closed
+  and is repeated on each push.
+- **Credential.** `POST /api/hosted-repositories/push-credential` mints the
+  session-bound Basic credential. Owners and writers get full access; a
+  contributor gets one limited to its namespace, and the push answer names
+  that one ref namespace (an owner or writer gets no prefix). Signing out
+  revokes it.
+- **Enforcement.** The routing Worker signs `pushPrefix` into the
+  receive-pack capability, so a contributor cannot widen it, and the gateway
+  (`tools/mirror_gateway.py`) refuses any command outside it, with at most
+  `MAX_CONTRIBUTOR_BRANCHES` (32) branches there. A refusal is answered as a
+  receive-pack report (`ng <ref> <reason>`), so stock Git prints the reason
+  beside each ref instead of an opaque HTTP failure. Deletes and force pushes
+  are refused for everyone on this path, so only a maintainer removes a
+  contributor's merged branches. Only new objects cross the wire.
+- **No workflows.** A contributor's push runs nobody's workflows
+  (`core_push`): `on: push` would execute untrusted code with the
+  repository's runner access.
+- **No quota.** There is no per-account byte quota or rate limit on this
+  path beyond the gateway's `receive.maxInputSize` per push.
+
 ## Moving to your own node
 
 When the owner's node publishes the repository through the signed catalog,
