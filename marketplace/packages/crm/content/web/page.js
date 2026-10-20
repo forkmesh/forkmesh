@@ -883,7 +883,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     if (detail) openCrmContactDetail(detail.dataset.crmContactDetail);
   }
 
-  const CRM_AUTO_EMAIL_TITLE = "A model writes the email from their record, our past emails and what got opened or clicked, then sends it at once from the outreach sender. It carries their tracked deck link (investor pipelines) or your referral link, and you get a ping when they open it or click.";
+  const CRM_AUTO_EMAIL_TITLE = "A model writes the email from their record, our past emails and what got opened or clicked, then sends it at once from the outreach sender. It carries the whole investor deck in the email (investor pipelines) or your referral link, and you get a ping when they open it or click.";
   const CRM_AUTO_EMAIL_ERRORS = {
     outreach_forbidden: "Only owners, admins and the outreach team can send automated emails.",
     recently_emailed: "They already got an email from the CRM in the last three days.",
@@ -905,7 +905,7 @@ window.ForkMeshDashboard.registerPage("crm", ({
     const contact = crmContactById(contactId);
     if (!contact || !crmEmailAddress(contact)) return;
     const investor = crmFlow(contact.flow)?.icon === "investors" || ["investors", "investment"].includes(contact.flow);
-    const kind = investor ? "their tracked deck link" : "your referral link";
+    const kind = investor ? "the whole investor deck right in the email" : "your referral link";
     const from = state.crmView.settings?.zoho?.connected ? "your connected Zoho Mail mailbox, so it lands in its Sent folder" : "the outreach sender";
     if (!window.confirm(`Write and send an email to ${crmContactLabel(contact)} <${contact.email}> now?\n\nA model writes it from their record and what our past emails got opened or clicked for, with ${kind}. It goes out straight away from ${from}.`)) return;
     if (button) { button.disabled = true; button.textContent = "Sending…"; }

@@ -580,8 +580,8 @@ QString autoEmailTip()
 {
     return QStringLiteral("A model writes the email from their record, our past emails and what "
                           "got opened or clicked, then sends it at once from the outreach sender. "
-                          "It carries their tracked deck link (investor pipelines) or your referral "
-                          "link, and you get a ping when they open it or click.");
+                          "It carries the whole investor deck in the email (investor pipelines) or your "
+                          "referral link, and you get a ping when they open it or click.");
 }
 
 QString autoEmailError(const QString &code, const QString &fallback)
@@ -10880,7 +10880,7 @@ void CrmFeature::sendAutoEmail(const QString &contactId, const QString &mode,
                            "their record and from what our past emails got opened or clicked "
                            "for, with %3. It goes out straight away from %4.")
                 .arg(contactLabel(contact), email,
-                     investor ? QStringLiteral("their tracked deck link")
+                     investor ? QStringLiteral("the whole investor deck right in the email")
                               : QStringLiteral("your referral link"),
                      m_settings.value(QStringLiteral("zoho")).toObject()
                              .value(QStringLiteral("connected")).toBool()
