@@ -136,6 +136,20 @@ normal path, at most once a minute.
 - Every send carries `Auto-Submitted` and `Feedback-ID: <kind>:forkmesh`.
 - `/status` checks that Postfix answers on loopback and that recent sends are
   not stuck.
+- Postfix's own non-delivery notices are DKIM-signed too
+  (`internal_mail_filter_classes = bounce`, OpenDKIM `SubDomains yes`, so
+  `MAILER-DAEMON@nN.next.forkmesh.com` signs as `forkmesh.com`). Unsigned, they
+  failed DMARC: on 2026-10-20 Zoho refused n4's notice to our own sender with
+  `554 5.7.7 Email policy violation`. Rolling this out needs
+  `next_mail.py install nN --execute` on each core.
+- A bounce whose reply says the address does not exist sets
+  `mail_sends.cause = 'recipient'` (`mail_tracking.bounce_cause`, migration
+  `0278_mail_sends_cause`), whatever DSN the server used: Tutanota answers
+  `550 5.7.1 Recipient address rejected: Recipient not available`, which raised
+  a false "security or policy" alert the same day. A reply that also mentions
+  spam, blocking, reputation, policy, SPF, DKIM, DMARC or authentication stays
+  a policy refusal and keeps `/status` red. Either way the address goes into
+  `mail_suppressions`, so it is never mailed again.
 - Setup with `tools/next_mail.py`: `dkim`, `dns`, `rdns` once; per core
   `install` then `restart`; `check`.
 
