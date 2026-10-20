@@ -333,6 +333,35 @@ async def issue_event_payload(env, owner, repo, number, event, item):
     return name, payload
 
 
+async def _event_author_may_write(env, owner, repo, event):
+    """True when the account behind an issue event may write to the repo.
+
+    The account is the session-verified author name when the inbox bound
+    one, else the account the signing key is registered to; a name the
+    client merely claims never counts. Fails closed.
+    """
+    account = ""
+    try:
+        if event.get("authorVerified") is True:
+            account = str(event.get("authorName") or "")
+        else:
+            resolve = globals().get("_git_push_account_for_pubkey")
+            author = str(event.get("author") or "")
+            if callable(resolve) and author:
+                account = str(await resolve(env, author) or "")
+        account = account.strip().lower()
+        if not account:
+            return False
+        owns = globals().get("_account_owns_node")
+        org_write = globals().get("_org_write_allowed")
+        return bool(
+            (callable(owns) and await owns(env, account, owner))
+            or (callable(org_write)
+                and await org_write(env, owner, repo, account)))
+    except Exception:
+        return False
+
+
 async def queue_issue_event(env, owner, repo, number, event, item):
     import runner_actions
     owner, org = await runner_actions.identity(_runtime(env), owner, repo)
@@ -356,9 +385,15 @@ async def queue_issue_event(env, owner, repo, number, event, item):
     name, payload = built
     runtime = _runtime(env)
     branch = await runtime.default_branch(owner, repo)
+    # Anyone may open or comment on an issue. Their event runs the default
+    # branch's workflow, but with secrets, a job token and a push grant only
+    # when its author could have changed the repository anyway: an outside
+    # comment must not be able to steer a privileged job (for example
+    # through ${{ github.event.comment.body }} in a run step).
+    trusted = await _event_author_may_write(env, owner, repo, event)
     return await runner_actions.enqueue_catalog(
         runtime, owner, repo, name, branch, payload,
-        payload["sender"]["login"])
+        payload["sender"]["login"], trusted=trusted)
 
 
 async def _body(request):

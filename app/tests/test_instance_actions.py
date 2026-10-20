@@ -161,6 +161,28 @@ def test_an_untrusted_runner_or_pull_request_gets_no_secrets_or_push():
     assert job["trusted"] is False and "pushGrant" not in job
 
 
+def test_runs_on_contributor_branches_are_never_trusted():
+    runtime, key = setup()
+    add_secret(runtime, "forkmesh", "site", "TOKEN", "repo-value")
+    add_catalog(runtime)
+    job_id, reason, _error = run(runner_actions.dispatch(
+        runtime, "forkmesh", "site", ".forkmesh/deploy.yml",
+        "refs/heads/pr/mallory/x", {}, "ada"))
+    assert job_id and not reason
+    assert column(runtime, job_id, "trusted") == 0
+    # A row stored trusted (an older queue, a re-run) is still leased
+    # without secrets, token or push grant.
+    runtime.db.execute("UPDATE repo_action_jobs SET trusted=1")
+    runtime.db.commit()
+    [job] = lease(runtime, key)
+    assert job["trusted"] is False
+    for name in ("secrets", "jobToken", "pushGrant", "pushRef", "botName"):
+        assert name not in job
+    assert runner_actions.untrusted_branch("pr/a/b")
+    assert not runner_actions.untrusted_branch("main")
+    assert not runner_actions.untrusted_branch("prod")
+
+
 def test_one_active_job_per_workflow():
     runtime, key = setup()
     first = enqueue(runtime, commit="", event="workflow_dispatch",

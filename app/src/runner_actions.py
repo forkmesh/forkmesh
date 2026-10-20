@@ -44,6 +44,17 @@ PUBLIC_RUN_FIELDS = ("id", "workflow", "workflowPath", "event", "commit", "ref",
 _ACTIVE_SQL = "('leased','running','cancelling')"
 
 
+# refs/heads/pr/<account>/ is written by contributors without write access
+# (the SSH gateway's pull-request grant, contributor pushes). A run on such a
+# branch executes that branch's workflow files, so it is never trusted: no
+# secrets, job token or push grant, whoever queued or re-ran it.
+CONTRIBUTOR_BRANCH_PREFIX = "pr/"
+
+
+def untrusted_branch(branch):
+    return str(branch or "").startswith(CONTRIBUTOR_BRANCH_PREFIX)
+
+
 def valid_branch(branch):
     branch = str(branch or "")
     return bool(
@@ -195,6 +206,8 @@ async def enqueue(runtime, owner, repo, branch, commit="", node="",
     if not NAME_RE.fullmatch(node):
         node = ""
     ref = str(ref or "") or "refs/heads/" + branch
+    if untrusted_branch(branch):
+        trusted = False
     actor = _text(pusher, 64)
     now = runtime.now()
     sealed = ""
@@ -374,7 +387,7 @@ async def lease(runtime, runner, requested, maximum):
             continue
         trusted = bool(
             _int(row.get("trusted")) and runner.get("actionsTrusted")
-            and event != "pull_request")
+            and event != "pull_request" and not untrusted_branch(branch))
         lease_id = runtime.new_id()
         expires_at = now + JOB_TIMEOUT_MS
         read_grant = await runner_leases._grant(

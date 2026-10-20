@@ -496,3 +496,40 @@ def test_bot_events_on_an_org_repository_are_signed_under_the_org_address():
     assert keys == ("acme/site", "forkmesh/site")
     assert data["event"]["authorName"] == "acme-actions"
     verify(data["event"], owner="acme", number=3)
+
+
+def _trusted_flags(world):
+    return [row["trusted"] for row in world.db.execute(
+        "SELECT trusted FROM repo_action_jobs WHERE status='queued' "
+        "ORDER BY id")]
+
+
+def test_only_issue_events_by_repository_writers_queue_trusted_jobs():
+    world = World(issue={"number": 3, "title": "Bug", "status": "open",
+                         "labels": [], "authorName": "bob", "events": []})
+    world.db.execute(
+        "INSERT INTO repo_action_workflows (owner,repo,path,events,"
+        "updated_at) VALUES ('forkmesh','site','.forkmesh/reply.yml',?,1)",
+        (json.dumps(["issue_comment"]),))
+
+    async def owns(_env, account, node):
+        return (account, node) == ("ada", "forkmesh")
+
+    async def org_write(_env, owner, repo, account):
+        return account == "wes"
+
+    async def key_account(_env, pubkey):
+        return {"key-of-wes": "wes", "key-of-out": "outsider"}.get(pubkey, "")
+
+    world.module._bind_runtime({
+        "_account_owns_node": owns, "_org_write_allowed": org_write,
+        "_git_push_account_for_pubkey": key_account})
+    comment = {"type": "comment", "id": "c", "body": "$(curl evil)"}
+    # A claimed name proves nothing; an outsider stays untrusted.
+    queue(world, dict(comment, authorName="ada"))
+    queue(world, dict(comment, authorName="mallory", authorVerified=True))
+    queue(world, dict(comment, author="key-of-out", authorName="outsider"))
+    # The session-verified owner, and an org writer by registered key.
+    queue(world, dict(comment, authorName="ada", authorVerified=True))
+    queue(world, dict(comment, author="key-of-wes", authorName="wes"))
+    assert _trusted_flags(world) == [0, 0, 0, 1, 1]
