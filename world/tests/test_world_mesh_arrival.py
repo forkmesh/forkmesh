@@ -1,4 +1,3 @@
-import ast
 import asyncio
 import json
 from pathlib import Path
@@ -6,9 +5,9 @@ from types import SimpleNamespace
 
 import world as world_protocol
 import world_mesh
+import world_routes
 
 ROOT = Path(__file__).resolve().parents[2]
-ROUTES = ROOT / "world" / "src" / "world_routes.py"
 RUNTIME = (ROOT / "app" / "src" / "app_runtime.py").read_text(encoding="utf-8")
 APP = (ROOT / "world" / "public" / "world" / "world.js").read_text(
     encoding="utf-8")
@@ -25,11 +24,7 @@ WORLDS = world_mesh.build_directory(
     "https://app.forkmesh.com")
 
 
-def visitor_function(verify_reply):
-    tree = ast.parse(ROUTES.read_text(encoding="utf-8"))
-    node = next(item for item in tree.body
-                if isinstance(item, ast.AsyncFunctionDef)
-                and item.name == "world_mesh_visitor")
+def visitor_function(monkeypatch, verify_reply):
     calls = []
 
     async def directory(_env):
@@ -38,25 +33,19 @@ def visitor_function(verify_reply):
     async def fetch(url, options, _timeout):
         calls.append((url, json.loads(options["body"])))
         status, payload = verify_reply
+
+        async def text():
+            return json.dumps(payload)
+
         return SimpleNamespace(
-            status=status, text=lambda: _text(json.dumps(payload)))
+            status=status, text=text)
 
-    namespace = {
-        "json": json,
-        "world_mesh": world_mesh,
-        "world_protocol": world_protocol,
-        "world_mesh_directory": directory,
-        "js_fetch_with_timeout": fetch,
-        "WORLD_MESH_FETCH_TIMEOUT_SECONDS": 4,
-    }
-    exec(compile(ast.fix_missing_locations(
-        ast.Module(body=[node], type_ignores=[])), str(ROUTES), "exec"),
-        namespace)
-    return namespace["world_mesh_visitor"], calls
-
-
-async def _text(value):
-    return value
+    monkeypatch.setattr(world_routes, "json", json, raising=False)
+    monkeypatch.setattr(world_routes, "world_mesh", world_mesh, raising=False)
+    monkeypatch.setattr(world_routes, "world_protocol", world_protocol, raising=False)
+    monkeypatch.setattr(world_routes, "world_mesh_directory", directory, raising=False)
+    monkeypatch.setattr(world_routes, "js_fetch_with_timeout", fetch, raising=False)
+    return world_routes.world_mesh_visitor, calls
 
 
 def visa_from(home):
@@ -69,8 +58,8 @@ def same_origin_request():
     return SimpleNamespace(headers={"origin": "https://world.forkmesh.com"})
 
 
-def test_an_arrival_visa_is_vouched_for_by_the_home_it_claims():
-    visit, calls = visitor_function(
+def test_an_arrival_visa_is_vouched_for_by_the_home_it_claims(monkeypatch):
+    visit, calls = visitor_function(monkeypatch,
         (200, {"ok": True, "name": "alice", "nonce": "nonce1234"}))
     visitor = asyncio.run(visit(
         HUB_ENV, same_origin_request(), visa_from("https://code.example.org"),
@@ -83,8 +72,8 @@ def test_an_arrival_visa_is_vouched_for_by_the_home_it_claims():
                        "destination": "https://world.forkmesh.com"})]
 
 
-def test_an_arrival_from_an_unlisted_or_refusing_world_is_not_signed_in():
-    visit, calls = visitor_function((401, {"ok": False}))
+def test_an_arrival_from_an_unlisted_or_refusing_world_is_not_signed_in(monkeypatch):
+    visit, calls = visitor_function(monkeypatch, (401, {"ok": False}))
     request = same_origin_request()
     assert asyncio.run(visit(
         HUB_ENV, request, visa_from("https://evil.example.net"),
@@ -97,8 +86,8 @@ def test_an_arrival_from_an_unlisted_or_refusing_world_is_not_signed_in():
     assert refused == {"error": "invalid_visa"}
 
 
-def test_cross_world_sockets_still_take_their_home_from_the_origin():
-    visit, _calls = visitor_function(
+def test_cross_world_sockets_still_take_their_home_from_the_origin(monkeypatch):
+    visit, _calls = visitor_function(monkeypatch,
         (200, {"ok": True, "name": "alice", "nonce": "nonce1234"}))
     request = SimpleNamespace(headers={"origin": "https://code.example.org"})
     assert asyncio.run(visit(HUB_ENV, request))["home"] == "code.example.org"

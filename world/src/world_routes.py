@@ -3376,13 +3376,6 @@ async def world_visa_verify_handler(env, request):
 
 
 async def world_mesh_visitor(env, request, visa="", arrival=False):
-    """Resolve a neighbouring World's walker from its visa.
-
-    A cross-world socket names its home by its Origin. An arrival is a walker
-    who loaded this World's own page from a neighbour's: its home is the one
-    the visa claims, which must be a listed neighbour, and that neighbour's
-    server is still the one asked to vouch for it.
-    """
     try:
         origin = request.headers.get("origin") or ""
     except Exception:

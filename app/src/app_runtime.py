@@ -2456,8 +2456,6 @@ class Default:
             mesh_visitor = None
             arrival = False
             if world_websocket_origin_allowed(request, self.env):
-                # A walker who crossed in from a neighbouring World's page
-                # carries that World's visa instead of a local ticket.
                 visa_values = query.get("visa") or []
                 if len(visa_values) == 1 and not query.get("ticket"):
                     arrival = True

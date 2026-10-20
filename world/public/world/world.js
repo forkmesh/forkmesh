@@ -6465,9 +6465,6 @@ class ForkMeshWorld extends HTMLElement {
     this.worldMesh = { self: null, worlds: [] };
     this.meshLinks = null;
     this.meshVisitId = "";
-    // A walker who crossed in from a neighbouring World carries its visa in
-    // the fragment. It is taken out of the address at once and spent on the
-    // first presence socket, which the neighbour's server vouches for.
     this.arrivalVisa = takeArrivalVisa();
     this.instanceHexes = [];
     this.homePortal = undefined;
@@ -32004,8 +32001,6 @@ class ForkMeshWorld extends HTMLElement {
       socketURL.searchParams.set("visa", this.arrivalVisa);
       this.hudNotice("Signing you in with your home World…");
     }
-    // A visa is good for one minute and one try: a reconnect, or a visa the
-    // home World refuses, joins as a guest instead of retrying it.
     this.arrivalVisa = "";
     let socket;
     this.socketConnectionAttempts = incrementDiagnosticCounter(
