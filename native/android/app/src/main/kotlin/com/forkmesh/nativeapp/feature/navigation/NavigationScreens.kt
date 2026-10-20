@@ -1,5 +1,44 @@
 package com.forkmesh.nativeapp.feature.navigation
 
+import com.forkmesh.nativeapp.ui.kit.confirmAction
+import com.forkmesh.nativeapp.ui.kit.fmScrollEdge
+import com.forkmesh.nativeapp.ui.kit.FmSheet
+import androidx.compose.foundation.ExperimentalFoundationApi
+import com.forkmesh.nativeapp.ui.theme.FmType
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.draw.drawBehind
+import com.forkmesh.nativeapp.shell.ShellHomeIconStyle
+import androidx.compose.ui.unit.Dp
+import com.forkmesh.nativeapp.feature.account.settings.rememberNowMillis
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.spring
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.forkmesh.nativeapp.ui.kit.FmAvatar
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
 import com.forkmesh.nativeapp.feature.market.PluginMenuButton
 import android.content.ActivityNotFoundException
 import android.content.Intent
@@ -151,15 +190,18 @@ fun RoutePage(
     title: String,
     navigator: Navigator,
     actions: @Composable RowScope.() -> Unit = {},
+    largeTitle: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val c = Fm.colors
+    val large = com.forkmesh.nativeapp.ui.kit.rememberFmLargeTitle()
     Column(Modifier.fillMaxSize().background(c.bgBase)) {
-        com.forkmesh.nativeapp.ui.kit.FmNavBar(title, onBack = { navigator.pop() }) {
+        com.forkmesh.nativeapp.ui.kit.FmNavBar(title, onBack = { navigator.pop() }, titleAlpha = if (largeTitle) large.barTitleAlpha else 1f) {
             actions()
             PluginMenuButton()
         }
-        Box(Modifier.weight(1f).fillMaxWidth(), content = content)
+        if (largeTitle) com.forkmesh.nativeapp.ui.kit.FmLargeTitleBox(title, large, Modifier.weight(1f).fillMaxWidth(), content)
+        else Box(Modifier.weight(1f).fillMaxWidth().fmScrollEdge(), content = content)
     }
 }
 
@@ -441,7 +483,7 @@ class GlobalSearchScreen(initialQuery: String = "", initialScope: SearchScope = 
         }
         savedTick.let { }
         val isSaved = store.contains(query.trim(), scope)
-        RoutePage(title, navigator, actions = {
+        RoutePage(title, navigator, largeTitle = true, actions = {
             if (query.isNotBlank()) {
                 FmIconButton(
                     if (isSaved) "bookmark" else "bookmark_border",
@@ -603,7 +645,7 @@ fun CommandPaletteSheet(
         modifier = Modifier.fmTapSounds(),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = c.bgRaised,
-        shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg),
+        shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
     ) {
         Column(Modifier.padding(horizontal = FmSpace.x3)) {
             Row(
@@ -674,7 +716,7 @@ fun rememberHubItemRunner(scope: CoroutineScope, status: FmStatus): (HubItem) ->
             HubItem.Action.SetStatus -> if (auth != null) scope.launch { showUserStatusSheet(messenger, auth) }
             HubItem.Action.SignIn -> AccountFeature.openSignIn()
             HubItem.Action.SignOut -> scope.launch {
-                if (messenger.showConfirmDialog("Sign out?", "You can sign in again at any time.", confirmLabel = "Sign out", destructive = true)) {
+                if (messenger.confirmAction("Sign out of this project?", "Sign out")) {
                     auth?.logout()
                 }
             }
@@ -684,89 +726,179 @@ fun rememberHubItemRunner(scope: CoroutineScope, status: FmStatus): (HubItem) ->
     return ::run
 }
 
+private enum class HubPage { Main, WhatsNew, Diagnostics }
+
+object YouHubMetrics {
+    val width = 320.dp
+    val maxHeight = 640.dp
+    val drop = 54.dp
+    val corner = 18.dp
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun YouHubSheet(onClose: () -> Unit, scope: CoroutineScope) {
+fun YouHubPanel(open: Boolean, onClose: () -> Unit, scope: CoroutineScope) {
     val c = Fm.colors
-    val auth = Services.get<AuthService>()
-    val guest = auth?.isGuest?.collectAsState()?.value == true
-    val session = auth?.session?.collectAsState()?.value
-    val account by AccountFeature.shellState.collectAsState()
-    val recents by NavigationFeature.recents.collectAsState()
-    val settings = Services.get<SettingsService>()
-    val surfaces by PackageGateFeature.surfaces.collectAsState()
-    val groups = HubCatalog.groups(guest, session?.isAdmin == true, surfaces.hubItems, NavigationFeature::isRegistered)
-    val status = rememberFmStatus()
-    val runHubItem = rememberHubItemRunner(scope, status)
     var page by remember { mutableStateOf(HubPage.Main) }
-    fun activate(item: HubItem) {
-        if (runHubItem(item)) onClose()
+    val reduced = Fm.reducedMotion
+    val spring = spring<Float>(dampingRatio = 0.86f, stiffness = 305f)
+    BackHandler(enabled = open) { onClose() }
+    AnimatedVisibility(open, enter = fadeIn(), exit = fadeOut()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.2f))
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClose),
+        )
     }
-    FmSoundOnShow()
-    ModalBottomSheet(
-        onDismissRequest = onClose,
-        modifier = Modifier.fmTapSounds(),
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = c.bgRaised,
-        shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg),
-    ) {
-        if (page == HubPage.WhatsNew) {
-            WhatsNewPage(onBack = { page = HubPage.Main })
-        } else if (page == HubPage.Diagnostics) {
-            DiagnosticsSendPage(onBack = { page = HubPage.Main }, onSent = onClose)
-        } else LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = FmSpace.x6)) {
-            if (status.message != null) {
-                item(key = "hub-status") { FmInlineStatus(status, Modifier.padding(horizontal = FmSpace.x4)) }
+    BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.statusBars)) {
+        val width = minOf(YouHubMetrics.width, maxWidth - FmSpace.x3 * 2)
+        val height = maxOf(240.dp, minOf(YouHubMetrics.maxHeight, maxHeight - YouHubMetrics.drop - FmSpace.x4))
+        AnimatedVisibility(
+            open,
+            modifier = Modifier.align(Alignment.TopEnd).padding(top = YouHubMetrics.drop, end = FmSpace.x3),
+            enter = if (reduced) fadeIn() else fadeIn(spring) + scaleIn(spring, initialScale = 0.9f, transformOrigin = TransformOrigin(1f, 0f)) +
+                expandVertically(spring(dampingRatio = 0.86f, stiffness = 305f), expandFrom = Alignment.Top) +
+                slideInVertically(spring(dampingRatio = 0.86f, stiffness = 305f)) { -it / 12 },
+            exit = if (reduced) fadeOut() else fadeOut(spring) + scaleOut(spring, targetScale = 0.9f, transformOrigin = TransformOrigin(1f, 0f)) +
+                shrinkVertically(spring(dampingRatio = 0.86f, stiffness = 305f), shrinkTowards = Alignment.Top),
+        ) {
+            Box(
+                Modifier
+                    .width(width)
+                    .heightIn(max = height)
+                    .shadow(24.dp, RoundedCornerShape(YouHubMetrics.corner), ambientColor = Color.Black.copy(alpha = 0.28f), spotColor = Color.Black.copy(alpha = 0.28f))
+                    .clip(RoundedCornerShape(YouHubMetrics.corner))
+                    .background(if (c.dark) c.bgOverlay else c.bgRaised)
+                    .semantics { contentDescription = "You hub" },
+            ) {
+                YouHubContent(scope, onClose, onWhatsNew = { page = HubPage.WhatsNew }, onDiagnostics = { page = HubPage.Diagnostics })
             }
-            if (settings != null) {
-                item(key = "diagnostics-strip") {
-                    val shown by settings.showTelemetryStrip.collectAsState()
-                    Row(
-                        Modifier.padding(horizontal = FmSpace.x4).semantics(mergeDescendants = true) {},
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        FmSwitch(checked = shown, onCheckedChange = settings::setShowTelemetryStrip)
-                        Spacer(Modifier.width(FmSpace.x2))
-                        Text("Diagnostics", style = Fm.text.bodySmall.copy(color = c.textSecondary))
-                    }
-                }
-            }
-            item {
-                Row(Modifier.padding(horizontal = FmSpace.x4, vertical = FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).background(c.bgOverlay), contentAlignment = Alignment.Center) {
-                        Text(account.label.firstOrNull()?.uppercase() ?: "?", style = Fm.text.titleMedium)
-                    }
-                    Spacer(Modifier.width(FmSpace.x3))
-                    Column(Modifier.weight(1f)) {
-                        Text(if (guest) "Guest" else account.label.ifEmpty { "You" }, style = Fm.text.titleMedium)
-                        AccountFeature.ProjectTitle(onOpen = onClose)
-                    }
-                }
-            }
-            val shownRecents = recents.filter(surfaces::showsRoute)
-            if (shownRecents.isNotEmpty()) {
-                item { FmSectionHeader("Recent") }
-                items(shownRecents, key = { "recent:${it.kind.raw}:${it.title}" }) { route ->
-                    ResultRow(RouteCatalog.icon(route.kind), route.title, "") {
-                        onClose()
-                        NavigationFeature.openFromHub(route)
-                    }
-                }
-            }
-            groups.forEach { group ->
-                item(key = "g:${group.id}") { FmSectionHeader(group.title) }
-                items(group.items, key = { "${group.id}:${it.id}" }) { item ->
-                    ResultRow(item.icon, item.title, "") { activate(item) }
-                }
-            }
-            item(key = "hub-version") {
-                HubVersionRow(onWhatsNew = { page = HubPage.WhatsNew }, onDiagnostics = { page = HubPage.Diagnostics })
+        }
+    }
+    if (page != HubPage.Main) {
+        ModalBottomSheet(
+            onDismissRequest = { page = HubPage.Main },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+            containerColor = if (c.dark) c.bgOverlay else c.bgRaised,
+            shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
+        ) {
+            if (page == HubPage.WhatsNew) {
+                WhatsNewPage(onBack = { page = HubPage.Main })
+            } else {
+                DiagnosticsSendPage(onBack = { page = HubPage.Main }, onSent = {
+                    page = HubPage.Main
+                    onClose()
+                })
             }
         }
     }
 }
 
-private enum class HubPage { Main, WhatsNew, Diagnostics }
+@Composable
+private fun YouHubContent(scope: CoroutineScope, onClose: () -> Unit, onWhatsNew: () -> Unit, onDiagnostics: () -> Unit) {
+    val c = Fm.colors
+    val auth = Services.get<AuthService>()
+    val guest = auth?.isGuest?.collectAsState()?.value == true
+    val session = auth?.session?.collectAsState()?.value
+    val account by AccountFeature.shellState.collectAsState()
+    val settings = Services.get<SettingsService>()
+    val surfaces by PackageGateFeature.surfaces.collectAsState()
+    val groups = HubCatalog.groups(guest, session?.isAdmin == true, surfaces.hubItems, NavigationFeature::isRegistered)
+    val status = rememberFmStatus()
+    val runHubItem = rememberHubItemRunner(scope, status)
+    val now = rememberNowMillis()
+    val visible = account.userStatus.visible(now)
+    val described = listOf(visible.emoji, visible.text).filter { it.isNotEmpty() }.joinToString(" ")
+    val all = groups.flatMap { it.items }
+    val setStatus = all.firstOrNull { it.action == HubItem.Action.SetStatus }
+    val accountItems = all.filter { item ->
+        item.route?.kind == Route.Kind.Settings ||
+            (item.route == null && item.action != HubItem.Action.World && item.action != HubItem.Action.DesignSystem &&
+                item.action != HubItem.Action.ReportBug && item.action != HubItem.Action.SetStatus)
+    }
+    fun activate(item: HubItem) {
+        if (runHubItem(item)) onClose()
+    }
+    Column(
+        Modifier.verticalScroll(rememberScrollState()).padding(FmSpace.x3),
+        verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
+    ) {
+        if (status.message != null) FmInlineStatus(status)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+            Box {
+                FmAvatar(account.label.ifEmpty { "Guest" }, 40.dp, avatarPng = session?.avatarPng.orEmpty())
+                Box(
+                    Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(1.dp, 1.dp)
+                        .size(12.dp)
+                        .background(if (visible.away) c.warning else c.success, CircleShape),
+                )
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(if (guest) "Guest" else account.label.ifEmpty { "You" }, style = Fm.text.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (described.isNotEmpty()) Text(described, style = Fm.text.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (setStatus != null) HubChip("mood", "Set a status") { activate(setStatus) }
+        }
+        HubDivider()
+        com.forkmesh.nativeapp.feature.pocket.PocketModeRow(onClose)
+        com.forkmesh.nativeapp.feature.genie.SuggestionModeRow()
+        if (settings != null) {
+            val shown by settings.showTelemetryStrip.collectAsState()
+            HubToggleRow("monitor_heart", "Diagnostics", shown, settings::setShowTelemetryStrip)
+        }
+        if (accountItems.isNotEmpty()) {
+            HubDivider()
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalArrangement = Arrangement.spacedBy(FmSpace.x2)) {
+                accountItems.forEach { item ->
+                    HubChip(item.icon, item.title, destructive = item.action == HubItem.Action.SignOut) { activate(item) }
+                }
+            }
+        }
+        HubVersionRow(onWhatsNew = onWhatsNew, onDiagnostics = onDiagnostics)
+    }
+}
+
+@Composable
+private fun HubDivider() {
+    Box(Modifier.fillMaxWidth().height(0.5.dp).background(Fm.colors.textPrimary.copy(alpha = 0.12f)))
+}
+
+@Composable
+private fun HubToggleRow(icon: String, title: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    val c = Fm.colors
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 36.dp).semantics(mergeDescendants = true) {},
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FmIcon(icon, size = 20.dp, tint = c.accent, outlined = true)
+        Spacer(Modifier.width(FmSpace.x3))
+        Text(title, Modifier.weight(1f), style = Fm.text.bodyLarge.copy(fontSize = Fm.text.bodyMedium.fontSize * 1.15f))
+        FmSwitch(checked = checked, onCheckedChange = onChange)
+    }
+}
+
+@Composable
+private fun HubChip(icon: String, title: String, destructive: Boolean = false, onClick: () -> Unit) {
+    val c = Fm.colors
+    val tint = if (destructive) c.danger else c.textPrimary
+    Row(
+        Modifier
+            .heightIn(min = 34.dp)
+            .clip(CircleShape)
+            .background(tint.copy(alpha = 0.12f))
+            .clickable(onClick = onClick)
+            .padding(horizontal = FmSpace.x3)
+            .semantics(mergeDescendants = true) { role = Role.Button },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FmIcon(icon, size = 18.dp, tint = tint, outlined = true)
+        Spacer(Modifier.width(FmSpace.x2))
+        Text(title, style = Fm.text.labelMedium.copy(color = tint), maxLines = 1)
+    }
+}
 
 class ShellMenuEntry(
     val id: String,
@@ -794,7 +926,7 @@ fun ShellMenuSheet(
         modifier = Modifier.fmTapSounds(),
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = Fm.colors.bgRaised,
-        shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg),
+        shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
     ) {
         ShellMenuGrid(main, hubBadges, onClose, scope, Modifier.fillMaxSize(), PaddingValues(start = FmSpace.x3, end = FmSpace.x3, bottom = FmSpace.x6))
     }
@@ -872,6 +1004,10 @@ private fun LazyGridScope.menuSection(id: String, title: String, plain: Boolean,
 
 @Composable
 private fun ShellMenuTile(icon: String, title: String, badge: Int, selected: Boolean, running: Boolean, plain: Boolean, desktopOffline: Boolean, onClick: () -> Unit) {
+    if (plain) {
+        ShellHomeTile(icon, title, badge, selected, running, desktopOffline, onClick = onClick)
+        return
+    }
     val c = Fm.colors
     val tint = if (selected) c.accent else c.textPrimary
     Column(
@@ -912,5 +1048,200 @@ private fun ShellMenuTile(icon: String, title: String, badge: Int, selected: Boo
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
+    }
+}
+
+object ShellHomeMetrics {
+    val iconSize = 22.dp
+    val glyph = 26.dp
+    val box = 39.dp
+    val tileHeight = 66.dp
+    val gap = 5.dp
+    const val ACROSS = 5
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+internal fun ShellHomeTile(
+    icon: String,
+    title: String,
+    badge: Int,
+    selected: Boolean,
+    running: Boolean,
+    desktopOffline: Boolean,
+    iconStyle: ShellHomeIconStyle = ShellHomeIconStyle.outline,
+    heat: Double = 0.0,
+    tileHeight: Dp = ShellHomeMetrics.tileHeight,
+    updated: Boolean = false,
+    onLongClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val c = Fm.colors
+    val lit = selected || running
+    val accent = lit || iconStyle == ShellHomeIconStyle.accent
+    val top = if (accent) c.accent else c.textPrimary
+    val bottom = if (accent) c.accent.copy(alpha = 0.72f) else c.textPrimary.copy(alpha = if (c.dark) 0.74f else 0.82f)
+    val tiled = iconStyle == ShellHomeIconStyle.tiles
+    val box = ShellHomeMetrics.box
+    val iconSize = ShellHomeMetrics.iconSize
+    val inset = (box - iconSize) / 2
+    val corner = box * 0.3f
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .height(tileHeight)
+            .combinedClickable(onLongClick = onLongClick, onClick = onClick)
+            .semantics(mergeDescendants = true) {
+                role = Role.Button
+                contentDescription = listOfNotNull(
+                    title,
+                    if (badge > 0) "$badge ${if (running) "running" else "new"}" else null,
+                    if (desktopOffline) "desktop offline" else null,
+                ).joinToString(", ")
+            },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Box(Modifier.size(box), contentAlignment = Alignment.Center) {
+            if (heat > 0 && !tiled) {
+                val h = heat.toFloat()
+                Box(
+                    Modifier
+                        .size(box * 1.6f)
+                        .drawBehind {
+                            drawCircle(
+                                Brush.radialGradient(
+                                    listOf(c.accent.copy(alpha = 0.1f + 0.3f * h), c.accent.copy(alpha = 0f)),
+                                    center = center,
+                                    radius = box.toPx() * (0.5f + 0.25f * h),
+                                ),
+                                radius = box.toPx() * (0.5f + 0.25f * h),
+                            )
+                        },
+                )
+            }
+            if (tiled) {
+                val raised = if (c.dark) c.bgElevated else c.bgRaised
+                val shape = RoundedCornerShape(corner)
+                val shadow = Color.Black.copy(alpha = if (c.dark) 0.5f else 0.1f)
+                Box(
+                    Modifier
+                        .size(box)
+                        .shadow(3.dp, shape, clip = false, ambientColor = shadow, spotColor = shadow)
+                        .clip(shape)
+                        .background(Brush.verticalGradient(listOf(raised, c.bgOverlay)))
+                        .then(
+                            if (heat > 0) {
+                                Modifier.background(Brush.radialGradient(listOf(c.accent.copy(alpha = 0.06f + 0.22f * heat.toFloat()), c.accent.copy(alpha = 0f))))
+                            } else {
+                                Modifier
+                            },
+                        )
+                        .border(0.75.dp, Brush.verticalGradient(listOf(Color.White.copy(alpha = if (c.dark) 0.16f else 0.9f), Color.White.copy(alpha = if (c.dark) 0.03f else 0.2f))), shape),
+                )
+            }
+            Box(
+                Modifier
+                    .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                    .drawWithContent {
+                        drawContent()
+                        drawRect(Brush.verticalGradient(listOf(top, bottom)), blendMode = BlendMode.SrcIn)
+                    },
+            ) {
+                FmIcon(
+                    icon,
+                    size = if (tiled) ShellHomeMetrics.glyph * 0.92f else ShellHomeMetrics.glyph,
+                    tint = top,
+                    outlined = iconStyle != ShellHomeIconStyle.filled,
+                )
+            }
+            if (badge > 0) {
+                ShellHomeCountMark(
+                    if (badge > 9999) "${badge / 1000}k" else "%,d".format(badge),
+                    unread = !running,
+                    modifier = Modifier.align(Alignment.TopStart).offset(
+                        x = if (tiled) box - minOf(12.dp, box * 0.28f) else box - inset - iconSize * 0.3f,
+                        y = (if (tiled) minOf(10.dp, box * 0.22f) else inset + 6.dp) - 21.dp,
+                    ),
+                )
+            }
+            if (desktopOffline) {
+                val d = if (tiled) corner * 0.3f else inset
+                DesktopOfflineDot(Modifier.align(Alignment.TopStart).offset(x = d - 5.dp, y = box - d - 5.dp))
+            }
+            if (updated) {
+                val d = if (tiled) corner * 0.3f else inset
+                ShellHomeUpdateDot(Modifier.align(Alignment.TopStart).offset(x = box - d - 5.5.dp, y = box - d - 5.5.dp))
+            }
+        }
+        Spacer(Modifier.height(ShellHomeMetrics.gap))
+        Text(
+            title,
+            style = TextStyle(
+                fontFamily = FmType.ui,
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                color = if (selected) c.accent else c.textSecondary,
+            ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 2.dp),
+        )
+    }
+}
+
+@Composable
+fun ShellHomeUpdateDot(modifier: Modifier = Modifier) {
+    val c = Fm.colors
+    Box(
+        modifier
+            .background(c.bgBase, CircleShape)
+            .padding(1.5.dp)
+            .size(8.dp)
+            .background(c.accent, CircleShape),
+    )
+}
+
+@Composable
+fun ShellHomeCountMark(text: String, unread: Boolean, modifier: Modifier = Modifier) {
+    val c = Fm.colors
+    Box(
+        modifier
+            .background(c.bgBase, CircleShape)
+            .padding(1.5.dp),
+    ) {
+        Box(
+            Modifier
+                .heightIn(min = 19.dp)
+                .widthIn(min = 19.dp)
+                .then(
+                    if (unread) {
+                        Modifier
+                            .background(Brush.verticalGradient(listOf(c.accent, c.accent.copy(alpha = 0.82f))), CircleShape)
+                            .border(0.5.dp, Color.White.copy(alpha = 0.22f), CircleShape)
+                    } else {
+                        Modifier
+                            .background(if (c.dark) c.bgElevated else c.bgRaised, CircleShape)
+                            .background(c.count.copy(alpha = 0.16f), CircleShape)
+                            .border(0.5.dp, c.count.copy(alpha = 0.3f), CircleShape)
+                    },
+                )
+                .padding(horizontal = 5.5.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text,
+                style = TextStyle(
+                    fontFamily = FmType.ui,
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFeatureSettings = "tnum",
+                    color = if (unread) c.onAccent else c.count,
+                ),
+                maxLines = 1,
+            )
+        }
     }
 }

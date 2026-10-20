@@ -7,4 +7,7 @@
     <cache-path name="secure-drive-open" path="secure-drive-open/" />
     <cache-path name="files-open" path="files-open/" />
     <cache-path name="code-insight-share" path="code-insight-share/" />
+    <cache-path name="nexus-share" path="nexus-share/" />
+    <cache-path name="capture-copy" path="capture-copy/" />
+    <cache-path name="dj-share" path="dj-share/" />
 </paths>

@@ -588,7 +588,9 @@ private fun AddProjectDialog(projects: ProjectsService, done: (Project?) -> Unit
         if (checking || !hasHost) return
         checking = true
         scope.launch {
-            result = projects.check(host, name, world)
+            val outcome = projects.check(host, name, world)
+            result = outcome
+            if (outcome.ok && name.isBlank()) name = outcome.instanceName
             checking = false
         }
     }

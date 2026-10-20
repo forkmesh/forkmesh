@@ -660,7 +660,7 @@ private fun DayChip(label: String, selected: Boolean, modifier: Modifier = Modif
         label = {
             Text(
                 label,
-                style = TextStyle(fontSize = FmType.small, fontWeight = if (selected) FmType.emphasis else FmType.regular),
+                style = TextStyle(fontFamily = FmType.ui, fontSize = FmType.small, fontWeight = if (selected) FmType.emphasis else FmType.regular),
             )
         },
         shape = RoundedCornerShape(FmRadius.sm),

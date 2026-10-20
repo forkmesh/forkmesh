@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.account.settings
 
+import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -106,7 +106,7 @@ object SettingsArea {
 
 @Composable
 internal fun SettingsPage(title: String, navigator: Navigator, actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {}, content: LazyListScope.() -> Unit) {
-    Column(Modifier.fillMaxSize().background(Fm.colors.bgBase)) {
+    Column(Modifier.fillMaxSize().background(Fm.colors.canvas)) {
         ToolsAppBar(title, navigator, actions = actions)
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(FmSpace.x4), verticalArrangement = Arrangement.spacedBy(FmSpace.x3), content = content)
     }
@@ -136,9 +136,6 @@ internal fun SettingsSwitch(title: String, subtitle: String?, checked: Boolean, 
             Text(title, style = Fm.text.bodyLarge)
             if (subtitle != null) SettingsNote(subtitle)
         }
-        Switch(checked = checked, onCheckedChange = {
-            FmSoundCues.play(SoundCue.toggle(it))
-            onChange(it)
-        })
+        FmSwitch(checked = checked, onCheckedChange = onChange)
     }
 }

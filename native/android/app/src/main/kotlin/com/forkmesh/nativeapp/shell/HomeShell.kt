@@ -1,5 +1,11 @@
 package com.forkmesh.nativeapp.shell
 
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import com.forkmesh.nativeapp.ui.kit.FmAvatar
 import androidx.compose.foundation.border
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
@@ -63,6 +69,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import kotlin.coroutines.cancellation.CancellationException
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.runtime.key
+import androidx.activity.compose.PredictiveBackHandler
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.rememberTransition
+import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.input.key.Key
@@ -104,7 +117,18 @@ import com.forkmesh.nativeapp.feature.agents.RunnerAttentionFeature
 import com.forkmesh.nativeapp.feature.chat.ChatFeature
 import com.forkmesh.nativeapp.feature.chat.RelayConnection
 import com.forkmesh.nativeapp.feature.code.CodeFeature
+import com.forkmesh.nativeapp.feature.composer.ComposerFeature
+import com.forkmesh.nativeapp.code.RepoHubSection
+import com.forkmesh.nativeapp.platform.AppLifecycle
+import androidx.compose.ui.platform.LocalContext
+import android.os.Build
+import android.os.PowerManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.forkmesh.nativeapp.feature.composer.PromptButton
+import com.forkmesh.nativeapp.feature.composer.PromptVoiceHold
+import com.forkmesh.nativeapp.feature.composer.ShellVoiceLaunchOverlay
+import com.forkmesh.nativeapp.feature.composer.rememberShellVoiceLaunch
+import com.forkmesh.nativeapp.feature.composer.voiceBlur
 import com.forkmesh.nativeapp.feature.composer.ShellPrompt
 import com.forkmesh.nativeapp.feature.glasses.GlassesRadarChip
 import com.forkmesh.nativeapp.feature.inbox.InboxFeature
@@ -120,7 +144,7 @@ import com.forkmesh.nativeapp.feature.navigation.ShellMenuEntry
 import com.forkmesh.nativeapp.feature.navigation.ShellMenuSheet
 import com.forkmesh.nativeapp.feature.navigation.rememberDesktopOffline
 import com.forkmesh.nativeapp.feature.navigation.UpdateRequiredView
-import com.forkmesh.nativeapp.feature.navigation.YouHubSheet
+import com.forkmesh.nativeapp.feature.navigation.YouHubPanel
 import com.forkmesh.nativeapp.feature.planning.PlanningFeature
 import com.forkmesh.nativeapp.feature.push.PushFeature
 import com.forkmesh.nativeapp.feature.push.PushScreens
@@ -253,6 +277,15 @@ class HomeShell : Screen() {
         promptOpen = true
     }
 
+    private fun voiceToComposer(heard: String) {
+        val drafts = com.forkmesh.nativeapp.feature.composer.ComposerFeature.drafts
+        if (heard.isNotBlank() && drafts != null) {
+            val store = com.forkmesh.nativeapp.composer.PromptDraftStore.SHELL
+            drafts.save(store, com.forkmesh.nativeapp.composer.VoiceLaunchRules.typed(drafts.load(store).orEmpty(), heard))
+        }
+        openPrompt()
+    }
+
     fun openHub() {
         hubOpen = true
     }
@@ -301,19 +334,44 @@ class HomeShell : Screen() {
     private fun hubBadges(activeAgents: Int): Map<Route.Kind, ShellMenuBadge> {
         val timers by PlanningFeature.timers.collectAsState()
         val runnerAttention by RunnerAttentionFeature.items.collectAsState()
+        val badges by ShellBadges.counts.collectAsState()
+        val rssUnread by ShellBadges.rssUnread.collectAsState()
         return mapOf(
             Route.Kind.AllAgents to ShellMenuBadge(activeAgents, running = true),
             Route.Kind.Timers to ShellMenuBadge(timers.count { it.isRunning }, running = true),
             Route.Kind.Hosts to ShellMenuBadge(runnerAttention.size),
+            Route.Kind.Tasks to ShellMenuBadge(badges.assignedTasks),
+            Route.Kind.RssReader to ShellMenuBadge(rssUnread),
         )
     }
 
-    private fun homeEntries(surfaces: PackageSurfaces, agentsOn: Boolean, hideBarIcons: Boolean): List<ShellMenuEntry> {
+    private fun openRepoSection(ref: RepoRef, section: RepoHubSection) {
+        val target = com.forkmesh.nativeapp.navigation.RepoSection.of(section.name.lowercase()) ?: return
+        NavigationFeature.open(Route.Repo(ref, target))
+    }
+
+    private fun repoGroup(surfaces: PackageSurfaces, ref: RepoRef?, pulls: ShellPulls, counts: ShellRepoCounts): ShellRepoGroup? {
+        if (ref == null || !surfaces.code) return null
+        val entries = ShellBadges.repoSections.filter(surfaces::showsRepoSection).map { section ->
+            val fresh = if (section == RepoHubSection.Pulls) pulls.newBadge(ref) else 0
+            val open = if (section == RepoHubSection.Pulls) pulls.openCount(ref) ?: counts.of(ref, section) else counts.of(ref, section)
+            ShellMenuEntry(
+                "repo-${section.name.lowercase()}",
+                section.title,
+                section.icon,
+                badge = if (fresh > 0) fresh else open ?: 0,
+                running = fresh == 0,
+            ) { openRepoSection(ref, section) }
+        }
+        return if (entries.isEmpty()) null else ShellRepoGroup(ref.name, entries)
+    }
+
+    private fun homeEntries(surfaces: PackageSurfaces, agentsOn: Boolean, hideBarIcons: Boolean, codeBadge: Int, codeNew: Boolean): List<ShellMenuEntry> {
         val tabs = if (hideBarIcons) emptyList() else AppTab.barOrder.filter(surfaces::showsTab).flatMap { tab ->
             if (tab == AppTab.Code) {
                 listOfNotNull(
                     ShellMenuEntry("repos", CodeButton.REPOS_LABEL, CodeButton.REPOS_ICON) { select(AppTab.Code) },
-                    if (surfaces.code) ShellMenuEntry("code", CodeButton.CODE_LABEL, "code") { openCurrentRepo() } else null,
+                    if (surfaces.code) ShellMenuEntry("code", CodeButton.CODE_LABEL, "code", badge = codeBadge, running = !codeNew) { openCurrentRepo() } else null,
                 )
             } else {
                 listOf(ShellMenuEntry(tab.raw, tab.title, barIcon(tab, false)) { select(tab) })
@@ -358,9 +416,43 @@ class HomeShell : Screen() {
         val hideBarIcons by SettingsArea.homeHidesBarIcons.collectAsState()
         val guest = Services.get<AuthService>()?.isGuest?.collectAsState()?.value == true
         val shellScope = rememberCoroutineScope()
+        val context = LocalContext.current
+        val currentRepo by CodeFeature.currentRepo.collectAsState()
+        val shellPulls by ShellPullsWatch.state.collectAsState()
+        val repoCounts by ShellBadges.repoCounts.collectAsState()
+        val badgesLoading by ShellBadges.loading.collectAsState()
+        val foreground by AppLifecycle.foreground.collectAsState()
+        val composerRepo = ComposerFeature.quick().repository?.ref
+        val codeNew = shellPulls.newBadge(currentRepo)
+        val codeBadge = if (codeNew > 0) codeNew else shellPulls.openCount(currentRepo) ?: repoCounts.of(currentRepo, RepoHubSection.Pulls) ?: 0
+        val rssShown = surfaces.showsRoute(Route.RssReader)
         LaunchedEffect(Unit) {
             AccountFeature.startNotifications()
             Services.get<AuthService>()?.refreshAvatar()
+        }
+        LaunchedEffect(composerRepo) { composerRepo?.let(CodeFeature::follow) }
+        LaunchedEffect(currentRepo) {
+            ShellBadges.refreshRepoCounts()
+            ShellPullsWatch.refresh()
+        }
+        LaunchedEffect(foreground, guest, rssShown) {
+            if (!foreground) return@LaunchedEffect
+            ShellPullsWatch.refresh()
+            ShellBadges.refreshHome(rssShown)
+        }
+        LaunchedEffect(Unit) {
+            val power = context.applicationContext.getSystemService(PowerManager::class.java)
+            ShellPullsWatch.poll(
+                heat = {
+                    val status = if (Build.VERSION.SDK_INT >= 29) power?.currentThermalStatus ?: 0 else 0
+                    when {
+                        status >= 4 -> DeviceHeat.Critical
+                        status == 3 -> DeviceHeat.Warm
+                        else -> DeviceHeat.Calm
+                    }
+                },
+                lowPower = { power?.isPowerSaveMode == true },
+            )
         }
         LaunchedEffect(navigator) {
             snapshotFlow { pushScreen(navigator) }.collect { PushScreens.publish(it) }
@@ -379,6 +471,28 @@ class HomeShell : Screen() {
         }
 
         val tabNav = navigator(selectedTab)
+        val voice = rememberShellVoiceLaunch(
+            navigator = tabNav,
+            onStarted = {
+                navigator(AppTab.Agents).popToRoot()
+                select(AppTab.Agents, reselect = false)
+            },
+            openRun = { navigator(AppTab.Agents).push(it) },
+            onType = { heard -> voiceToComposer(heard) },
+            onCommands = { paletteOpen = true },
+        )
+        val keyboard = LocalSoftwareKeyboardController.current
+        val voiceHold = remember(voice, keyboard) {
+            PromptVoiceHold(
+                onPress = voice::press,
+                onHold = { origin, pressed ->
+                    keyboard?.hide()
+                    hubOpen = false
+                    voice.open(origin, pressed)
+                },
+                onRelease = voice::letGo,
+            )
+        }
         val atRoot = homeSelected || tabNav.depth <= 1
         val shellChromeHidden = !homeSelected && tabNav.stack.any { it.hidesShellChrome }
         val codeItem = CodeButton.selected(selectedTab == AppTab.Code, navigator(AppTab.Code).depth)
@@ -393,13 +507,37 @@ class HomeShell : Screen() {
                     if (!surfaces.code) {
                         null
                     } else {
-                        BarItem(CodeButton.CODE_LABEL, "code", 0, !onHome && codeItem == CodeBarItem.Code, "new") {
+                        BarItem(CodeButton.CODE_LABEL, "code", codeBadge, !onHome && codeItem == CodeBarItem.Code, if (codeNew > 0) "new pull requests" else "open pull requests") {
                             if (openCurrentRepo()) shellStatus.clear() else shellStatus.show(CodeButton.NO_REPO_NOTICE)
                         }
                     },
                 )
             }
         }
+        val barOffline = rememberDesktopOffline()
+        val barRunning = needsYou == 0
+        val baseCells = barItems.mapIndexed { index, item ->
+            ShellBarCell(
+                id = barItemId(item),
+                title = item.title,
+                icon = item.icon,
+                badge = item.badge,
+                selected = item.selected,
+                running = item.agents && barRunning,
+                desktopOffline = item.agents && barOffline,
+                active = item.agents && item.badge > 0,
+                description = buildString {
+                    append("${item.title}, tab ${index + 1} of ${barItems.size}")
+                    if (item.badge > 0) append(if (item.agents && barRunning) ", ${item.badge} running" else ", ${item.badge} ${item.badgeNoun}")
+                },
+                modifier = if (item.agents) Modifier.launchTarget() else Modifier,
+                onClick = item.onClick,
+            )
+        }
+        val homeMain = homeEntries(surfaces, agentsOn, false, codeBadge, codeNew > 0)
+        val homeRepo = repoGroup(surfaces, currentRepo, shellPulls, repoCounts)
+        val homeBadges = hubBadges(agentsSurface.activeCount)
+        val barCandidates = rememberShellBarCandidates(baseCells, homeMain, homeRepo, homeBadges, shellScope)
         val body: @Composable () -> Unit = {
             Column(Modifier.fillMaxSize()) {
                 val chatRoot = !homeSelected && selectedTab == AppTab.Chat && tabNav.depth <= 1
@@ -408,6 +546,7 @@ class HomeShell : Screen() {
                         navigator = tabNav,
                         connection = relay.connection,
                         name = account.label,
+                        avatarPng = Services.get<AuthService>()?.session?.collectAsState()?.value?.avatarPng.orEmpty(),
                         statusEmoji = account.userStatus.displayEmoji(rememberNowMillis()),
                         away = account.userStatus.away,
                         guest = guest,
@@ -416,7 +555,7 @@ class HomeShell : Screen() {
                         onSignIn = { AccountFeature.openSignIn() },
                         onHome = { goHome() },
                         prompt = {
-                            if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }, onLongClick = { paletteOpen = true }, running = agentsSurface.activeCount)
+                            if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }, running = agentsSurface.activeCount, voice = voiceHold)
                         },
                     )
                 } else if (!shellChromeHidden) {
@@ -429,6 +568,7 @@ class HomeShell : Screen() {
                     modifier = Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4),
                     onDismiss = NavigationFeature::clearLinkProblem,
                 )
+                if (!shellChromeHidden) com.forkmesh.nativeapp.feature.genie.GenieMailNoticeLine(Modifier.background(Fm.colors.bgBase).padding(horizontal = FmSpace.x4))
                 if (!shellChromeHidden && wide) FmInlineStatus(shellStatus, Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4))
                 if (!shellChromeHidden && atRoot && (homeSelected || selectedTab != AppTab.Agents) && agentsOn) {
                     RunnerAttentionChip { items ->
@@ -442,7 +582,14 @@ class HomeShell : Screen() {
                 Box(Modifier.weight(1f).fillMaxWidth().consumeWindowInsets(WindowInsets.statusBars)) {
                     ToolsFeature.BugReportOverlay(if (homeSelected) "home" else selectedTab.raw) {
                         if (homeSelected) {
-                            HomePage(homeEntries(surfaces, agentsOn, hideBarIcons), hubBadges(agentsSurface.activeCount), shellScope)
+                            HomePage(
+                                homeMain,
+                                homeBadges,
+                                shellScope,
+                                homeRepo,
+                                badgesLoading,
+                                barCandidates,
+                            )
                         } else {
                             TabStack(tabNav, holder, if (wide || keyboardUp || shellChromeHidden) 0.dp else ShellBar.clearance())
                         }
@@ -465,7 +612,7 @@ class HomeShell : Screen() {
         }
 
         Surface(
-            color = Fm.colors.bgBase,
+            color = Fm.colors.canvas,
             modifier = Modifier.fillMaxSize().onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown || !(event.isCtrlPressed || event.isMetaPressed)) return@onPreviewKeyEvent false
                 when (event.key) {
@@ -482,11 +629,11 @@ class HomeShell : Screen() {
         ) {
             val desktopOffline = rememberDesktopOffline()
             if (wide) {
-                Row(Modifier.fillMaxSize()) {
+                Row(Modifier.fillMaxSize().voiceBlur(voice)) {
                     NavigationRail(
                         containerColor = Fm.colors.bgRaised,
                         modifier = Modifier.windowInsetsPadding(WindowInsets.statusBars),
-                        header = { if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }) },
+                        header = { if (agentsOn) PromptButton(promptLabel(), onClick = { openPrompt() }, voice = voiceHold) },
                     ) {
                         barItems.forEach { item ->
                             val isSelected = item.selected
@@ -520,14 +667,14 @@ class HomeShell : Screen() {
                 }
             } else {
                 FmBackdropHost(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().voiceBlur(voice),
                     overlay = {
                         if (!keyboardUp && !shellChromeHidden) {
                             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth()) {
                                 FmInlineStatus(shellStatus, Modifier.background(Fm.colors.bgRaised).padding(horizontal = FmSpace.x4))
                                 StatusPageFeature.Dots(onOpen = { NavigationFeature.openFromHub(Route.Status) })
                                 if (agentsOn) RunningAgentAccessory()
-                                GlassTabBar(barItems, agentsRunning = needsYou == 0)
+                                ShellStyledBar(barCandidates)
                             }
                         }
                     },
@@ -541,11 +688,13 @@ class HomeShell : Screen() {
                     }
                 }
             }
+            ShellVoiceLaunchOverlay(voice)
             LaunchSparkles()
+            ShellDragPreview()
             update?.let { UpdateRequiredView(it) }
         }
 
-        if (hubOpen) YouHubSheet(onClose = { hubOpen = false }, scope = shellScope)
+        YouHubPanel(open = hubOpen, onClose = { hubOpen = false }, scope = shellScope)
         if (paletteOpen) {
             CommandPaletteSheet(
                 tab = selectedTab,
@@ -564,25 +713,46 @@ private fun TabStack(navigator: Navigator, holder: SaveableStateHolder, clearanc
         navigator.onRemoved = { holder.removeState(it.key) }
         onDispose { navigator.onRemoved = {} }
     }
-    var lastDepth by remember(navigator) { mutableStateOf(navigator.depth) }
-    AnimatedContent(
-        targetState = navigator.top,
-        transitionSpec = {
-            val forward = navigator.depth >= lastDepth
-            lastDepth = navigator.depth
-            val duration = FmMotion.normal
-            if (forward) {
-                (slideInHorizontally(tween(duration)) { it / 4 } + fadeIn(tween(duration))) togetherWith fadeOut(tween(duration))
-            } else {
-                fadeIn(tween(duration)) togetherWith (slideOutHorizontally(tween(duration)) { it / 4 } + fadeOut(tween(duration)))
+    key(navigator) {
+        val top = navigator.top
+        val state = remember { SeekableTransitionState(top) }
+        val transition = rememberTransition(state, label = "tab-stack")
+        val reduced = Fm.reducedMotion
+        LaunchedEffect(top) {
+            if (state.currentState !== top || state.targetState !== top) {
+                if (reduced) state.snapTo(top) else state.animateTo(top, FmMotion.push())
             }
-        },
-        label = "tab-stack",
-    ) { screen ->
-        holder.SaveableStateProvider(screen.key) {
-            CompositionLocalProvider(LocalNavigator provides navigator, LocalScreen provides screen, LocalShellClearance provides clearance) {
-                Box(Modifier.fillMaxSize().padding(bottom = if (screen.extendsUnderTabBar) 0.dp else clearance)) {
-                    screen.Content(navigator)
+        }
+        val previous = navigator.stack.getOrNull(navigator.depth - 2)
+        PredictiveBackHandler(enabled = previous != null && !reduced) { events ->
+            val target = previous ?: return@PredictiveBackHandler
+            try {
+                events.collect { event -> state.seekTo(event.progress.coerceIn(0f, 1f), target) }
+                if (!navigator.handleBack()) state.animateTo(navigator.top, FmMotion.push())
+            } catch (cancel: CancellationException) {
+                state.animateTo(navigator.top, FmMotion.push())
+                throw cancel
+            }
+        }
+        transition.AnimatedContent(
+            transitionSpec = {
+                val from = navigator.stack.indexOf(initialState)
+                val to = navigator.stack.indexOf(targetState)
+                val forward = from >= 0 && (to > from || to < 0)
+                if (forward) {
+                    (slideInHorizontally(FmMotion.push()) { it } togetherWith slideOutHorizontally(FmMotion.push()) { -it * 3 / 10 })
+                        .apply { targetContentZIndex = 1f }
+                } else {
+                    (slideInHorizontally(FmMotion.push()) { -it * 3 / 10 } togetherWith slideOutHorizontally(FmMotion.push()) { it })
+                        .apply { targetContentZIndex = -1f }
+                }
+            },
+        ) { screen ->
+            holder.SaveableStateProvider(screen.key) {
+                CompositionLocalProvider(LocalNavigator provides navigator, LocalScreen provides screen, LocalShellClearance provides clearance) {
+                    Box(Modifier.fillMaxSize().background(Fm.colors.canvas).padding(bottom = if (screen.extendsUnderTabBar) 0.dp else clearance)) {
+                        screen.Content(navigator)
+                    }
                 }
             }
         }
@@ -594,6 +764,7 @@ private fun TopBar(
     navigator: Navigator,
     connection: RelayConnection,
     name: String,
+    avatarPng: String,
     statusEmoji: String,
     away: Boolean,
     guest: Boolean,
@@ -613,7 +784,12 @@ private fun TopBar(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { AccountFeature.ProjectSlot(onLongPress = onHome) }
             Spacer(Modifier.width(FmSpace.x3))
-            if (PackageGateFeature.surfaces.collectAsState().value.shows("glasses-alert")) GlassesRadarChip()
+            Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
+                com.forkmesh.nativeapp.feature.djstudio.DjNowPlayingChip()
+                if (PackageGateFeature.surfaces.collectAsState().value.shows("glasses-alert")) GlassesRadarChip()
+                com.forkmesh.nativeapp.feature.health.StepsWalkChip()
+                com.forkmesh.nativeapp.feature.genie.ShellMailChip()
+            }
             Spacer(Modifier.weight(1f))
             prompt()
             if (guest) {
@@ -633,7 +809,7 @@ private fun TopBar(
                 if (showsSignIn) SignInChip(onSignIn)
             } else {
                 Spacer(Modifier.width(FmSpace.x2))
-                AvatarWithDot(name, connection, statusEmoji, away, onAvatar)
+                AvatarWithDot(name, avatarPng, connection, statusEmoji, away, onAvatar)
             }
         }
     }
@@ -659,38 +835,50 @@ private fun SignInChip(onClick: () -> Unit) {
 }
 
 @Composable
-private fun AvatarWithDot(name: String, connection: RelayConnection, statusEmoji: String, away: Boolean, onClick: () -> Unit) {
-    val dot = when (connection) {
+private fun AvatarWithDot(name: String, avatarPng: String, connection: RelayConnection, statusEmoji: String, away: Boolean, onClick: () -> Unit) {
+    val ring = when (connection) {
         RelayConnection.Connected -> if (away) Fm.colors.warning else Fm.colors.success
         RelayConnection.Connecting -> Fm.colors.warning
         RelayConnection.Offline -> Fm.colors.offline
     }
-    if (statusEmoji.isNotEmpty()) {
-        Text(statusEmoji, fontSize = 17.sp, lineHeight = 17.sp, maxLines = 1)
-        Spacer(Modifier.width(FmSpace.x1))
+    val size = 36.dp
+    val corner = size * 0.28f
+    val status = when (connection) {
+        RelayConnection.Connected -> if (away) "away" else "online"
+        RelayConnection.Connecting -> "connecting"
+        RelayConnection.Offline -> "offline"
     }
-    Box {
+    Box(
+        Modifier
+            .sizeIn(minWidth = 44.dp, minHeight = 44.dp)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .semantics {
+                role = Role.Button
+                contentDescription = "Connection status: $status. Account $name. You, settings and more"
+            },
+        contentAlignment = Alignment.Center,
+    ) {
         Box(
             Modifier
-                .size(36.dp)
-                .clip(RoundedCornerShape(FmRadius.md))
-                .clickable(onClick = onClick)
-                .semantics {
-                    role = Role.Button
-                    contentDescription = "You, settings and more"
-                }
-                .background(Fm.colors.bgOverlay),
+                .size(size + 6.dp)
+                .border(2.dp, ring, RoundedCornerShape(corner + 3.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(name.firstOrNull()?.uppercase() ?: "?", style = MaterialTheme.typography.titleSmall, color = Fm.colors.textPrimary)
+            FmAvatar(name, size, avatarPng = avatarPng, corner = corner)
+            if (statusEmoji.isNotEmpty()) {
+                Text(
+                    statusEmoji,
+                    Modifier.align(Alignment.BottomStart).offset(x = -(size * 0.3f) + 3.dp, y = size * 0.22f - 3.dp),
+                    style = TextStyle(
+                        fontFamily = FmType.ui,
+                        fontSize = (36 * 0.42).sp,
+                        lineHeight = (36 * 0.42).sp,
+                        shadow = Shadow(Color.Black.copy(alpha = 0.35f), Offset(0f, 1f), 2f),
+                    ),
+                    maxLines = 1,
+                )
+            }
         }
-        Box(
-            Modifier
-                .align(Alignment.BottomEnd)
-                .size(11.dp)
-                .clip(CircleShape)
-                .background(dot),
-        )
     }
 }
 
@@ -728,9 +916,10 @@ private fun BadgeIcon(
     pulse: Int = 0,
     modifier: Modifier = Modifier,
     desktopOffline: Boolean = false,
+    outlined: Boolean = false,
 ) {
     Box {
-        BadgeIconBody(icon, count, tint, size, description, badgeColor, pulse, modifier)
+        BadgeIconBody(icon, count, tint, size, description, badgeColor, pulse, modifier, outlined)
         if (desktopOffline) {
             DesktopOfflineDot(Modifier.align(Alignment.BottomStart).offset(x = (-4).dp, y = 4.dp))
         }
@@ -747,6 +936,7 @@ private fun BadgeIconBody(
     badgeColor: androidx.compose.ui.graphics.Color,
     pulse: Int,
     modifier: Modifier,
+    outlined: Boolean = false,
 ) {
     val reduced = Fm.reducedMotion
     val pop = remember { Animatable(1f) }
@@ -758,7 +948,7 @@ private fun BadgeIconBody(
     val iconScale = 1f + (pop.value - 1f) * 0.25f
     val iconModifier = modifier.graphicsLayer { scaleX = iconScale; scaleY = iconScale }
     if (count <= 0) {
-        FmIcon(icon, size = size.dp, tint = tint, contentDescription = description, modifier = iconModifier)
+        FmIcon(icon, size = size.dp, tint = tint, contentDescription = description, modifier = iconModifier, outlined = outlined)
         return
     }
     BadgedBox(
@@ -774,8 +964,15 @@ private fun BadgeIconBody(
             }
         },
     ) {
-        FmIcon(icon, size = size.dp, tint = tint, contentDescription = description, modifier = iconModifier)
+        FmIcon(icon, size = size.dp, tint = tint, contentDescription = description, modifier = iconModifier, outlined = outlined)
     }
+}
+
+private fun barItemId(item: BarItem): String = when (item.title) {
+    "Home" -> ShellBarPrefs.HOME_ID
+    CodeButton.REPOS_LABEL -> "repos"
+    CodeButton.CODE_LABEL -> "code"
+    else -> AppTab.entries.firstOrNull { it.title == item.title }?.raw ?: item.title.lowercase()
 }
 
 private class BarItem(
@@ -804,95 +1001,29 @@ object ShellBar {
     }
 
     @Composable
-    fun clearance(): Dp = bottomInset() + height + FmSpace.x2
+    fun clearance(): Dp = ShellBarStore.measured.takeIf { it > 0.dp }?.let { it + FmSpace.x2 } ?: (bottomInset() + height + FmSpace.x2)
 }
 
 @Composable
-private fun HomePage(entries: List<ShellMenuEntry>, badges: Map<Route.Kind, ShellMenuBadge>, scope: kotlinx.coroutines.CoroutineScope) {
-    ShellMenuGrid(
-        entries,
-        badges,
-        onClose = {},
-        scope = scope,
-        modifier = Modifier.fillMaxSize().background(Fm.colors.bgBase),
-        contentPadding = PaddingValues(start = FmSpace.x1, end = FmSpace.x1, bottom = ShellBar.clearance()),
-        columns = 6,
-        plain = true,
-    )
-}
-
-@Composable
-private fun GlassTabBar(items: List<BarItem>, agentsRunning: Boolean) {
-    val c = Fm.colors
-    val desktopOffline = rememberDesktopOffline()
-    Row(
-        modifier = Modifier
-            .padding(start = ShellBar.margin, end = ShellBar.margin, top = FmSpace.x1, bottom = ShellBar.bottomInset())
-            .fillMaxWidth()
-            .height(ShellBar.height)
-            .fmGlass(RoundedCornerShape(ShellBar.height / 2))
-            .padding(FmSpace.x1),
-        horizontalArrangement = Arrangement.spacedBy(2.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        items.forEachIndexed { index, item ->
-            val isSelected = item.selected
-            val count = item.badge
-            val interaction = remember { MutableInteractionSource() }
-            val pressed by interaction.collectIsPressedAsState()
-            val start = if (index == 0) ShellBar.cornerOuter else ShellBar.cornerInner
-            val end = if (index == items.lastIndex) ShellBar.cornerOuter else ShellBar.cornerInner
-            val shape = RoundedCornerShape(topStart = start, bottomStart = start, topEnd = end, bottomEnd = end)
-            Column(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(ShellBar.cell)
-                    .graphicsLayer {
-                        val k = if (pressed) 0.94f else 1f
-                        scaleX = k
-                        scaleY = k
-                        alpha = if (pressed) 0.7f else 1f
-                    }
-                    .clip(shape)
-                    .background(if (isSelected) c.accent.copy(alpha = 0.14f) else androidx.compose.ui.graphics.Color.Transparent)
-                    .clickable(interactionSource = interaction, indication = null, onClick = item.onClick)
-                    .semantics(mergeDescendants = true) {
-                        role = Role.Tab
-                        this.selected = isSelected
-                        contentDescription = buildString {
-                            append("${item.title}, tab ${index + 1} of ${items.size}")
-                            if (count > 0) append(if (item.agents && agentsRunning) ", $count running" else ", $count ${item.badgeNoun}")
-                        }
-                    },
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                val iconColor = if (isSelected) c.accent else c.textPrimary
-                if (item.agents) {
-                    BadgeIcon(
-                        item.icon, count, iconColor, 24,
-                        badgeColor = c.accent,
-                        pulse = LaunchFlight.landings,
-                        modifier = Modifier.launchTarget(),
-                        desktopOffline = desktopOffline,
-                    )
-                } else {
-                    BadgeIcon(item.icon, count, iconColor, 24, badgeColor = c.accent)
-                }
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    item.title,
-                    style = Fm.text.labelSmall.copy(
-                        fontSize = 10.sp,
-                        lineHeight = 12.sp,
-                        letterSpacing = 0.sp,
-                        fontWeight = if (isSelected) FmType.emphasis else androidx.compose.ui.text.font.FontWeight.Medium,
-                        color = if (isSelected) c.accent else c.textSecondary,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+private fun HomePage(
+    entries: List<ShellMenuEntry>,
+    badges: Map<Route.Kind, ShellMenuBadge>,
+    scope: kotlinx.coroutines.CoroutineScope,
+    repoGroup: ShellRepoGroup?,
+    loading: Boolean,
+    barCells: List<ShellBarCell>,
+) {
+    Box(Modifier.fillMaxSize()) {
+        ShellHomeGrid(
+            entries,
+            badges,
+            scope = scope,
+            contentPadding = PaddingValues(start = FmSpace.x1, end = FmSpace.x1, bottom = ShellBar.clearance()),
+            modifier = Modifier.fillMaxSize().background(Fm.colors.canvas),
+            repoGroup = repoGroup,
+            barCells = barCells,
+        )
+        ShellLoadingOverlay(loading, Modifier.align(Alignment.TopCenter))
     }
 }
+

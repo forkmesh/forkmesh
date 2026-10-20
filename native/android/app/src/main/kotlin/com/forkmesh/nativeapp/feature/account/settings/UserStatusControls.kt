@@ -182,7 +182,7 @@ internal fun UserStatusControls(auth: AuthService) {
             val emoji = status.displayEmoji(now)
             Box(Modifier.size(28.dp), contentAlignment = Alignment.Center) {
                 if (emoji.isNotEmpty()) {
-                    Text(emoji, style = TextStyle(fontSize = 20.sp))
+                    Text(emoji, style = TextStyle(fontFamily = FmType.ui, fontSize = 20.sp))
                 } else {
                     FmIcon("add_reaction_outlined", size = 20.dp, tint = c.textSecondary)
                 }
@@ -468,7 +468,7 @@ private fun EmojiPick(emoji: String, selected: Boolean, onClick: () -> Unit) {
             .clickable(onClickLabel = "Use $emoji", role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Text(emoji, style = TextStyle(fontSize = 22.sp))
+        Text(emoji, style = TextStyle(fontFamily = FmType.ui, fontSize = 22.sp))
     }
 }
 
