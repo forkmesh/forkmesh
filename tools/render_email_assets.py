@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import colorsys
-import math
 import sys
 from pathlib import Path
 
@@ -10,27 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 ASSETS = ROOT / "www" / "public" / "assets"
 OUT = ASSETS / "email"
 
-PAGE = (255, 255, 255)
-INK = (16, 16, 18)
-BODY = (95, 98, 112)
-FAINT = (154, 156, 168)
-LINE = (228, 229, 234)
-PATTERN = (212, 214, 223)
-ACCENT = (9, 105, 218)
-ACCENT_SOFT = (225, 238, 252)
-
-DISPLAY = ASSETS / "fonts" / "ABCFavorit-Bold.woff2"
-MONO = ASSETS / "fonts" / "DejaVuSansMono-Bold.woff2"
+PAGE = (11, 11, 12)
+PATTERN = (58, 58, 64)
+ACCENT = (88, 166, 255)
 
 FLOW_SCREENS = ("prompt", "models", "start-agent", "inbox", "diff", "review")
-FLOW_STEPS = (
-    ("01 · ASSIGN", "Start from an issue or a task"),
-    ("02 · CHOOSE", "Run Claude Code or Codex"),
-    ("03 · ISOLATE", "A worktree and branch per session"),
-    ("04 · ORCHESTRATE", "Sessions in parallel"),
-    ("05 · PROVE", "Capture metadata and patch"),
-    ("06 · GATE", "A human inspects and merges"),
-)
 
 
 def shared_palette(frames, colors):
@@ -57,14 +40,6 @@ def rounded_mask(size, radius):
     return mask
 
 
-def shadow(canvas, box, radius, blur, offset, alpha):
-    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    x0, y0, x1, y1 = box
-    ImageDraw.Draw(layer).rounded_rectangle(
-        (x0, y0 + offset, x1, y1 + offset), radius, fill=(16, 16, 18, alpha))
-    canvas.alpha_composite(layer.filter(ImageFilter.GaussianBlur(blur)))
-
-
 def phone(screen, width):
     pad = max(4, round(width * 0.03))
     inner_w = width - 2 * pad
@@ -80,119 +55,33 @@ def phone(screen, width):
     return body
 
 
-def grid(canvas, step, color):
-    draw = ImageDraw.Draw(canvas)
-    for x in range(0, canvas.width, step):
-        draw.line((x, 0, x, canvas.height), fill=color, width=1)
-    for y in range(0, canvas.height, step):
-        draw.line((0, y, canvas.width, y), fill=color, width=1)
-
-
-def fade_edges(canvas, color, band):
-    overlay = Image.new("RGBA", canvas.size, color + (0,))
-    alpha = Image.new("L", canvas.size, 0)
-    draw = ImageDraw.Draw(alpha)
-    for edge in range(band):
-        draw.rectangle((edge, edge, canvas.width - 1 - edge, canvas.height - 1 - edge),
-                       outline=round(255 * (1 - edge / band)))
-    overlay.putalpha(alpha)
-    canvas.alpha_composite(overlay)
-
-
 def hero():
     w, h = 1200, 720
     canvas = Image.new("RGBA", (w, h), PAGE + (255,))
-    grid(canvas, 48, (241, 241, 244, 255))
-    fade_edges(canvas, PAGE, 140)
     lx0, ly0, lw = 250, 70, 860
     shot = Image.open(ASSETS / "desktop-mockup" / "desktop-app.webp").convert("RGB")
     sw = lw - 24
     sh = round(sw * shot.height / shot.width)
     lh = sh + 24
-    shadow(canvas, (lx0, ly0, lx0 + lw, ly0 + lh), 22, 38, 36, 120)
     draw = ImageDraw.Draw(canvas)
     draw.rounded_rectangle((lx0, ly0, lx0 + lw, ly0 + lh), 22, fill=(32, 34, 37, 255),
-                           outline=(20, 20, 22, 255), width=2)
+                           outline=(64, 66, 72, 255), width=2)
     canvas.paste(shot.resize((sw, sh), Image.LANCZOS), (lx0 + 12, ly0 + 12),
                  rounded_mask((sw, sh), 10))
     notch_w = 120
     draw.rounded_rectangle((lx0 + lw / 2 - notch_w / 2, ly0 + 12, lx0 + lw / 2 + notch_w / 2, ly0 + 32),
                            8, fill=(0, 0, 0, 255))
     base_y = ly0 + lh
-    draw.rounded_rectangle((lx0 - 26, base_y - 2, lx0 + lw + 26, base_y + 18), 10, fill=(40, 42, 46, 255))
+    draw.rounded_rectangle((lx0 - 26, base_y - 2, lx0 + lw + 26, base_y + 18), 10, fill=(52, 54, 59, 255))
     draw.rounded_rectangle((lx0 + lw / 2 - 60, base_y - 2, lx0 + lw / 2 + 60, base_y + 7), 4,
                            fill=(22, 23, 25, 255))
     device = phone(Image.open(ASSETS / "mobile" / "start-agent.webp"), 250)
     px, py = 90, h - device.height - 40
-    shadow(canvas, (px, py, px + device.width, py + device.height), 44, 30, 30, 140)
     canvas.alpha_composite(device, (px, py))
-    canvas.convert("RGB").save(OUT / "hero.jpg", quality=86, optimize=True, progressive=True)
-
-
-def trace_points(path, t):
-    lengths = [math.dist(a, b) for a, b in zip(path, path[1:])]
-    total = sum(lengths)
-    goal = (t % 1.0) * total
-    for (a, b), length in zip(zip(path, path[1:]), lengths):
-        if goal <= length:
-            k = goal / length if length else 0
-            return a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k
-        goal -= length
-    return path[-1]
-
-
-def mesh():
-    w, h = 1200, 300
-    cx, cy = w // 2, h // 2
-    nodes = [(150, 80), (150, 220), (380, 60), (820, 60), (1050, 80), (1050, 220), (380, 240), (820, 240)]
-    paths = []
-    for nx, ny in nodes:
-        mid = (nx + cx) / 2
-        paths.append([(cx, cy), (mid, cy), (mid, ny), (nx, ny)])
-    logo = Image.open(ASSETS / "logo.png").convert("RGBA")
-    logo = logo.resize((round(76 * logo.width / logo.height), 76), Image.LANCZOS)
-    base = Image.new("RGBA", (w, h), PAGE + (255,))
-    grid(base, 30, (244, 244, 246, 255))
-    draw = ImageDraw.Draw(base)
-    for path in paths:
-        draw.line(path, fill=PATTERN + (255,), width=2, joint="curve")
-    for nx, ny in nodes:
-        draw.rounded_rectangle((nx - 34, ny - 22, nx + 34, ny + 22), 10, fill=PAGE + (255,),
-                               outline=(206, 208, 216, 255), width=2)
-        draw.rounded_rectangle((nx - 20, ny - 8, nx + 20, ny - 4), 2, fill=LINE + (255,))
-        draw.rounded_rectangle((nx - 20, ny + 2, nx + 8, ny + 6), 2, fill=LINE + (255,))
-    tile = (cx - 62, cy - 62, cx + 62, cy + 62)
-    shadow(base, tile, 26, 18, 14, 70)
-    draw = ImageDraw.Draw(base)
-    draw.rounded_rectangle(tile, 26, fill=PAGE + (255,), outline=LINE + (255,), width=2)
-    base.alpha_composite(logo, (cx - logo.width // 2, cy - logo.height // 2))
-    fade_edges(base, PAGE, 90)
-    frames = []
-    count = 30
-    for i in range(count):
-        frame = base.copy()
-        draw = ImageDraw.Draw(frame)
-        t = i / count
-        for k, path in enumerate(paths):
-            phase = (t + k / len(paths)) % 1.0
-            for tail in range(6):
-                x, y = trace_points(path, max(0.0, phase - tail * 0.018))
-                r = 6 - tail
-                shade = tuple(round(ACCENT[c] + (PAGE[c] - ACCENT[c]) * tail / 6) for c in range(3))
-                draw.ellipse((x - r, y - r, x + r, y + r), fill=shade + (255,))
-            if phase > 0.93:
-                nx, ny = path[-1]
-                draw.rounded_rectangle((nx - 34, ny - 22, nx + 34, ny + 22), 10,
-                                       outline=ACCENT + (255,), width=3)
-        frames.append(frame.convert("RGB"))
-    save_gif(OUT / "mesh.gif", frames, 48, 70)
-
-
-def caption(draw, w, y, label, title, k_font, t_font, color):
-    lw = draw.textlength(label, font=k_font)
-    draw.text(((w - lw) / 2, y), label, font=k_font, fill=color)
-    tw = draw.textlength(title, font=t_font)
-    draw.text(((w - tw) / 2, y + 34), title, font=t_font, fill=INK)
+    x0, y0, x1, y1 = canvas.convert("RGB").point(lambda v: 255 if v > 14 else 0).getbbox()
+    canvas = canvas.crop((max(0, x0 - 8), max(0, y0 - 8), min(w, x1 + 8), min(h, y1 + 8)))
+    canvas.convert("RGB").save(OUT / "deck-cover.jpg", quality=88, optimize=True, progressive=True,
+                               subsampling=0)
 
 
 def agent_flow():
@@ -200,56 +89,20 @@ def agent_flow():
     screens = [phone(Image.open(ASSETS / "mobile" / (name + ".webp")), pw) for name in FLOW_SCREENS]
     w = 480
     top = 24
-    h = top + screens[0].height + 150
-    k_font = font(MONO, 20)
-    t_font = font(DISPLAY, 30)
+    h = top + screens[0].height + 64
     base = Image.new("RGBA", (w, h), PAGE + (255,))
-    shadow(base, ((w - pw) // 2, top, (w + pw) // 2, top + screens[0].height), 56, 26, 22, 110)
-    frames, durations = [], []
+    frames = []
     for index, device in enumerate(screens):
-        nxt = screens[(index + 1) % len(screens)]
-        label, title = FLOW_STEPS[index]
-        for step in range(3):
-            frame = base.copy()
-            mix = Image.blend(device, nxt, step / 3) if step else device
-            frame.alpha_composite(mix, ((w - pw) // 2, top))
-            draw = ImageDraw.Draw(frame)
-            dots_y = top + device.height + 26
-            for d in range(len(screens)):
-                x = w / 2 + (d - 2.5) * 22
-                color = ACCENT if d == index else PATTERN
-                draw.ellipse((x - 5, dots_y - 5, x + 5, dots_y + 5), fill=color + (255,))
-            caption(draw, w, dots_y + 26, label, title, k_font, t_font, ACCENT)
-            frames.append(frame.convert("RGB"))
-            durations.append(1900 if step == 0 else 110)
-    save_gif(OUT / "agent-flow.gif", frames, 128, durations)
-
-
-def count_up():
-    w, h = 1120, 280
-    big = font(DISPLAY, 150)
-    small = font(MONO, 24)
-    target = 7416
-    label = "AGENT BRANCHES MERGED INTO MAIN"
-    frames, durations = [], []
-    steps = 26
-    for i in range(steps + 1):
-        t = i / steps
-        value = round(target * (1 - (1 - t) ** 3))
-        frame = Image.new("RGB", (w, h), PAGE)
+        frame = base.copy()
+        frame.alpha_composite(device, ((w - pw) // 2, top))
         draw = ImageDraw.Draw(frame)
-        text = "{:,}".format(value)
-        tw = draw.textlength("7,416", font=big)
-        draw.text(((w - tw) / 2, 18), text, font=big, fill=INK)
-        lw = draw.textlength(label, font=small)
-        draw.text(((w - lw) / 2, 200), label, font=small, fill=FAINT)
-        bar_w = 360
-        bx = (w - bar_w) / 2
-        draw.rounded_rectangle((bx, 250, bx + bar_w, 258), 4, fill=LINE)
-        draw.rounded_rectangle((bx, 250, bx + max(8, bar_w * t), 258), 4, fill=ACCENT)
-        frames.append(frame)
-        durations.append(4200 if i == steps else 45)
-    save_gif(OUT / "count.gif", frames, 32, durations)
+        dots_y = top + device.height + 32
+        for d in range(len(screens)):
+            x = w / 2 + (d - 2.5) * 22
+            color = ACCENT if d == index else PATTERN
+            draw.ellipse((x - 5, dots_y - 5, x + 5, dots_y + 5), fill=color + (255,))
+        frames.append(frame.convert("RGB"))
+    save_gif(OUT / "deck-flow.gif", frames, 128, 2100)
 
 
 LENS_LEFT = ((263, 62), (212, 52), (120, 48), (74, 56), (46, 61), (38, 94), (47, 132),
@@ -508,12 +361,26 @@ def avatars():
         out.save(OUT / (name + ".png"), optimize=True)
 
 
+def slab_edges():
+    k = 4
+    w, depth, shoulder, radius = 1200 * k, 40 * k, 168 * k, 48 * k
+    mask = Image.new("L", (w, depth), 0)
+    draw = ImageDraw.Draw(mask)
+    draw.rounded_rectangle((0, 0, w - 1, depth + radius * 2), radius, fill=255)
+    draw.polygon(((shoulder, 0), (w - shoulder, 0), (w - shoulder - depth, depth),
+                  (shoulder + depth, depth)), fill=0)
+    mask = mask.resize((w // k, depth // k), Image.LANCZOS)
+    top = Image.new("RGBA", mask.size, PAGE + (0,))
+    top.putalpha(mask)
+    top.save(OUT / "slab-top.png", optimize=True)
+    top.transpose(Image.FLIP_TOP_BOTTOM).save(OUT / "slab-bottom.png", optimize=True)
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    slab_edges()
     hero()
-    mesh()
     agent_flow()
-    count_up()
     xr()
     avatars()
     for path in sorted(OUT.iterdir()):

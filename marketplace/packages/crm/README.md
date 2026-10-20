@@ -605,32 +605,83 @@ Tests: `tests/test_auto_email.py`.
 Since 20 Oct 2026 an automated email to an investor carries the whole
 investor deck in its body, under the short note the model writes. All
 fourteen slides, from the cover to Sources & contact, are there, with the
-same copy, order, numbering and colours as `app/public/pitch-deck/deck.html`.
-There is no "Full slide" or "Open the full deck" link: the founders asked
-for the deck to arrive as an email, not as a link to click. Before that, the
-email carried a condensed deck (cover, Problem, Product, Proof, Market, Team,
-The round) with a link to each full slide, and the note was told to send the
-reader to the deck link.
+same copy and order as `app/public/pitch-deck/deck.html`. There is no "Full
+slide" or "Open the full deck" link: the founders asked for the deck to
+arrive as an email, not as a link to click. Before that, the email carried a
+condensed deck (cover, Problem, Product, Proof, Market, Team, The round) with
+a link to each full slide, and the note was told to send the reader to the
+deck link.
 
 - **Why it is rebuilt, not copied.** `deck.html` cannot be mailed as it is.
   Mail clients drop its script, CSS variables, grid, `clip-path`, fixed bar
   and web font, and Gmail clips any message over about 102 KB, which would
   also cut off the reading beacons at the bottom. `_mail_deck_sections`
   rebuilds each slide from tables and inline styles, so it lays out in Gmail,
-  Outlook and Apple Mail. Slides 3, 7 and 13 sit in dark cards, as the deck's
-  dark panels do. `test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links`
-  checks the order, the 02–14 numbers, the images, that the only link is the
-  logo's, and that the page stays under 100 KB (66.7 KB on 20 Oct 2026).
+  Outlook and Apple Mail. `test_an_investor_email_carries_all_fourteen_slides_and_no_deck_links`
+  checks the order, the light-and-dark declaration, the images, that the only
+  links are the reply button and the tracked forkmesh.com ones, and that the
+  page stays under 100 KB (80 KB on 21 Oct 2026).
+- **Why it looks like the homepage.** The first version was a light page of
+  white cards, and investors read it on phones in dark mode. Gmail's dark
+  mode recoloured the cards and text but not the white-backed images, and
+  every slide was a card with a blue dot, a "PROBLEM · 02" label and more
+  cards inside it, so on a phone it read as generated rather than designed.
+  A dark-only version fixed that, and on 21 Oct 2026 the founders asked for
+  a light mode in the homepage's style too. The deck now follows
+  `www/public/index.html`: a white page with left-aligned ABC Favorit
+  headings whose second half is grey ("Code with agents. Own the forge."),
+  a white badge pill above the cover title, the textured dark and white
+  button pair, and dark notched "slabs" (`DECK_SLAB` `#0b0b0c`) for the
+  cover image, Why now, Beyond the desk and The round. The notched corners
+  are two transparent PNGs, `slab-top.png` and `slab-bottom.png`, above and
+  below a dark cell, because mail clients drop `clip-path`.
+- **How it survives each mail app's dark mode.** Every screenshot and GIF
+  sits on a dark slab or a dark panel and is drawn on the same `#0b0b0c`,
+  so no image ever shows as a white box. The page declares
+  `color-scheme: light dark`. Apple Mail and Outlook for Mac then apply
+  `_mail_night`, a `prefers-color-scheme: dark` block that recolours every
+  light element through its `fm-ink`, `fm-body`, `fm-line`, `fm-tile`…
+  class to `DECK_NIGHT` on a `#18181b` page, while the slabs stay as they
+  are. Gmail ignores that query and inverts light colours itself; it leaves
+  the dark slabs, panels and images alone, so the result is close to the
+  Apple Mail one. A light element therefore always takes its colour from
+  `DECK_TONES["light"]` plus the matching class, and an element on a slab
+  from `DECK_TONES["slab"]` with no class.
+- **Layout rules.** Light slides are full-width bands with generous padding
+  (76 px, 56 px on a phone); nothing is a card inside a card. No slide
+  carries a section label or number: the heading carries it. Lists are
+  hairline rows or check-marked lines in one column, so nothing squeezes on
+  a 360 px screen. Business model shows the three plans as columns, with
+  Agent team on a dark panel like the homepage's Pro plan, and the columns
+  stack on a phone (`fm-col`). Competition opens with a check matrix
+  (`DECK_MAIL_MATRIX`: agent workflow, full forge, local-first) summarising
+  the rows under it. Small grey labels are sentence case; "Live in
+  production" and "In build" are green because they are status. The
+  headline proof figure, 7,416 merged agent branches, is live text on a dark
+  panel, not a counting GIF, because Outlook shows only a GIF's first frame.
+  "Reply to the founders" is a `mailto:` to the sender with a "Re:" subject;
+  it is the one untracked link, and "forkmesh.com" goes through the click
+  tracker like the logo.
+- **Size.** The deck helpers use a short font stack (`DECK_SANS`) because
+  it repeats on every element, and the email is about 80 KB, under Gmail's
+  102 KB clipping point that would cut off the reading beacons.
 - **Copy lives in `DECK_MAIL_*`.** When a slide's wording changes in
   `deck.html`, change the matching constant too. Nothing copies it across.
-- **Images** come from `https://forkmesh.com/assets/email/` and are drawn by
-  `tools/render_email_assets.py` (Pillow): `hero.jpg`, `mesh.gif`,
-  `agent-flow.gif`, `count.gif`, `xr.jpg` and the two avatars. `xr.jpg` is the
-  "Beyond the desk" slide flattened for email: the desktop app and a Claude
-  Code session seen through AR glasses, with the watch's agent list beside
-  them. The deck draws that slide with CSS, which mail clients cannot.
-  `python3 tools/render_email_assets.py` rewrites every file; to redraw one,
-  import the module and call its function (for example `xr()`).
+- **Images** come from `https://forkmesh.com/assets/email/` and are drawn on
+  the slabs' `#0b0b0c` by `tools/render_email_assets.py` (Pillow):
+  `slab-top.png`, `slab-bottom.png`, `deck-cover.jpg`, `deck-flow.gif` (the
+  mobile app screens, without a caption, since the step list sits under
+  it, and cut between screens rather than crossfaded: the fade frames
+  tripled it to 518 KB, too large to send as a pull request through the
+  API), `xr.jpg` and the two avatars. `xr.jpg` is the "Beyond the desk" slide flattened for email: the
+  desktop app and a Claude Code session seen through AR glasses, with the
+  watch's agent list beside them. The deck draws that slide with CSS, which
+  mail clients cannot. `python3 tools/render_email_assets.py` rewrites every
+  file; to redraw one, import the module and call its function (for example
+  `xr()`). The light images of the first version (`hero.jpg`, `mesh.gif`,
+  `agent-flow.gif`, `count.gif`) stay in the folder because emails already
+  sent load them, but nothing draws or uses them any more; the animated mesh
+  banner under the logo was removed at the founders' request.
 - **The note.** The prompt's "## The investor deck" section tells the model
   that the deck follows its note, so it should keep to a few sentences, add
   no link, and ask for a reply.
