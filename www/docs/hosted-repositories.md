@@ -27,7 +27,7 @@ fork:
 3. Open the pull request from that branch on the repository's **Pull
    requests** tab.
 
-Every other ref is refused, pushes are fast-forward only (add commits instead
+Every other ref is refused (Git prints `[remote rejected]` with the reason), pushes are fast-forward only (add commits instead
 of force-pushing), and a contributor keeps at most 32 branches there. Only new
 objects are sent, so a large repository costs no more than the change.
 

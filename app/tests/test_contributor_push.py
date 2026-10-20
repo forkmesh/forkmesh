@@ -375,3 +375,103 @@ def test_settings_page_explains_how_to_push():
     assert "branchPrefix" in ACCOUNT_JS
     # An unconfigured SSH gateway says so plainly and points at HTTPS.
     assert "SSH pushes are not available on this server" in ACCOUNT_JS
+
+
+# ---------------------------------------------------------------------------
+# End to end: a stock git push through the gateway with a signed namespace
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def contributor_gateway(tmp_path, monkeypatch):
+    import threading
+    from http.server import ThreadingHTTPServer
+    from urllib.parse import quote
+
+    from test_core_push_ref_policy import _GrantingHandler, _push
+    from test_mirror_gateway import (
+        gateway, make_push_application, make_push_client,
+        push_capability_headers)
+
+    class Handler(_GrantingHandler):
+        push_prefix = ""
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length") or 0)
+            body = self.rfile.read(length)
+            parts = self.path.split("/")
+            target = "/v1/repositories/%s/%s/%s" % (
+                parts[1], parts[2], parts[3])
+            if type(self).push_prefix:
+                target += "?pushPrefix=" + quote(
+                    type(self).push_prefix, safe="")
+            headers = push_capability_headers(body)
+            headers["Content-Type"] = self.headers.get("Content-Type", "")
+            response = self.application.dispatch("POST", target, headers, body)
+            type(self).responses.append(response)
+            self._reply(response.status, response.content_type, response.body)
+
+    app, root, _config_path, _logs = make_push_application(tmp_path)
+    monkeypatch.setattr(
+        gateway, "REFRESH_PENDING_PATH", tmp_path / "missing" / "pending")
+    handler = type("H", (Handler,), {
+        "application": app, "push_prefix": "", "responses": []})
+    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    origin = "http://127.0.0.1:%d/mobile-owner/app" % server.server_address[1]
+    source = make_push_client(tmp_path, origin)
+    # The owner's first push, with no namespace.
+    first = _push(source, "origin", "main")
+    assert first.returncode == 0, first.stderr
+    yield handler, source, root / "mobile-owner" / "app.git", _push
+    server.shutdown()
+    server.server_close()
+    thread.join(timeout=5)
+    app.close()
+
+
+def test_a_stock_git_contributor_push_lands_only_in_its_namespace(
+        contributor_gateway):
+    from test_core_push_ref_policy import _commit, _rev
+    handler, source, git_dir, push = contributor_gateway
+    main = _rev(git_dir, "refs/heads/main")
+    handler.push_prefix = "refs/heads/pr/bob/"
+    change = _commit(source, "fix.txt")
+
+    for refused in ("main", "HEAD:refs/heads/topic",
+                    "HEAD:refs/heads/pr/alice/fix"):
+        result = push(source, "origin", refused)
+        assert result.returncode != 0
+        # A per-ref refusal git prints, not an opaque HTTP failure.
+        assert "remote rejected" in result.stdout
+        assert "pr/bob/" in result.stdout
+    assert _rev(git_dir, "refs/heads/main") == main
+    listed = subprocess.run(
+        ["git", "--git-dir", str(git_dir), "for-each-ref",
+         "--format=%(refname)"], capture_output=True, text=True,
+        check=True).stdout.split()
+    assert listed == ["refs/heads/main"]
+
+    accepted = push(source, "origin", "HEAD:refs/heads/pr/bob/fix")
+    assert accepted.returncode == 0, accepted.stderr
+    assert _rev(git_dir, "refs/heads/pr/bob/fix") == change
+    assert _rev(git_dir, "refs/heads/main") == main
+
+
+def test_a_refusal_report_is_framed_the_way_the_client_asked():
+    commands = [(ZERO, ONE, "refs/heads/main")]
+
+    def body(capabilities):
+        text = "%s %s refs/heads/main\0%s\n" % (ZERO, ONE, capabilities)
+        return ("%04x%s0000" % (len(text) + 4, text)).encode()
+
+    report = mirror_gateway.receive_pack_rejection(
+        body("report-status"), commands, "no")
+    assert report == (b"000eunpack ok\n" b"001ang refs/heads/main no\n"
+                      b"0000")
+    framed = mirror_gateway.receive_pack_rejection(
+        body("report-status side-band-64k"), commands, "no")
+    assert framed == b"%04x\x01" % (len(report) + 5) + report + b"0000"
+    assert mirror_gateway.receive_pack_rejection(
+        body("ofs-delta"), commands, "no") == b"0000"
