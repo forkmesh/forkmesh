@@ -103,6 +103,7 @@ def _harness(accounts, send_results=None):
         return "<html>%s|%s|%s|%s</html>" % (heading, intro, body, footer)
 
     ns = _load({
+        "instance_branded": lambda _env: False,
         "Date": _DateStub,
         "mail_budget": MAIL_BUDGET,
         "d1_all": d1_all,

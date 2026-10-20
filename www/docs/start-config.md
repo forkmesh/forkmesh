@@ -29,11 +29,21 @@ Tokens you leave out keep the ForkMesh colour.
 | `hostKeyFingerprint` | Optional `SHA256:` fingerprint |
 | `domain` | Optional; empty uses a free `sslip.io` address |
 | `adminUsername`, `adminEmail`, `adminPassword` | Admin account; password at least 10 characters |
+| `adminPath` | Private admin console address, like `/manage-x7k2q9`: `/` then 8 to 64 letters, numbers, `-` or `_`. Empty keeps the one the page made |
 | `ownerType`, `ownerName` | `org` or `user`; organization name when `org` |
 | `owners` | Up to 20 extra organization owners, each `{"username", "email", "password"}` |
 | `mailProvider`, `mailApiKey`, `mailFrom` | `none`, `mailtrap`, `sendgrid` or `mailgun`; key; sender |
 | `mailgunDomain`, `mailgunRegion` | Mailgun only; region `us` or `eu` |
 | `ownWorld`, `listOnHomepage` | Booleans, default `true` |
+
+## Admin console address
+
+The page makes a fresh random `adminPath` (`/admin-` and 20 random letters
+and numbers, from the browser's `crypto.getRandomValues`) every time it opens,
+and every example zip or settings file it downloads carries a new one. The
+instance serves its admin console only there; `/admin` answers "not found".
+Save it with your password: ForkMesh does not store it, and the setup page
+shows it only until you leave.
 
 ## Privacy
 

@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["agents"] = (core) => {
-  const { $, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, repoPathUrl, repoPublicKey, state } = core;
+  const { $, desktopBrand, escapeHtml, formatCount, formatTimeAgo, loadRunnerAccountsPicker, loadingHtml, orgAgentRequest, parseFlexibleDate, repoPathUrl, repoPublicKey, state } = core;
   const AGENTS_ACTIVE_STATUSES = new Set(["queued", "running", "security_pending"]);
   const AGENTS_FAILED_STATUSES = new Set(["failed", "rejected", "stopped"]);
   const AGENTS_FILTER_KEYS = Object.freeze(["status", "repo", "node"]);
@@ -301,7 +301,7 @@
         ? agentsBlankslate("search", "No agents match these filters",
           `<button data-agents-clear-filters type="button" class="font-medium text-accent hover:underline">Clear filters</button>`)
         : agentsBlankslate("bot", "No agent sessions yet",
-          "Start one with New agent, from a repository's Agents tab, or from the ForkMesh desktop.");
+          `Start one with New agent, from a repository's Agents tab, or from the ${desktopBrand()}desktop.`);
     window.lucide?.createIcons();
   }
 

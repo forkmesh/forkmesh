@@ -1449,6 +1449,59 @@
     return Boolean(document?.querySelector?.("script[data-instance-brand]"));
   }
 
+  function platformName() {
+    const brand = document?.querySelector?.("script[data-instance-brand]");
+    return String(brand?.dataset?.instanceName || "").trim() || "ForkMesh";
+  }
+
+  function desktopBrand() {
+    return dashboardOnInstance() ? "" : "ForkMesh ";
+  }
+
+  function applyPlatformName(root = document) {
+    const name = platformName();
+    root?.querySelectorAll?.("[data-platform-name]").forEach((element) => {
+      if (element.textContent !== name) element.textContent = name;
+    });
+    const desktop = desktopBrand();
+    root?.querySelectorAll?.("[data-desktop-brand]").forEach((element) => {
+      if (element.textContent !== desktop) element.textContent = desktop;
+    });
+  }
+
+  let instanceInfoRequest = null;
+  let instanceGitNode = "";
+
+  function instanceInfo() {
+    if (!dashboardOnInstance()) return Promise.resolve(null);
+    if (!instanceInfoRequest) {
+      instanceInfoRequest = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .then((info) => {
+          instanceGitNode = String(info?.gitNode || "").toLowerCase();
+          return info;
+        })
+        .catch(() => null);
+    }
+    return instanceInfoRequest;
+  }
+
+  function platformAccount(name) {
+    const value = String(name || "").trim().toLowerCase();
+    return Boolean(value) && dashboardOnInstance() && value === instanceGitNode;
+  }
+
+  function shownAccountName(name) {
+    return platformAccount(name) ? platformName() : String(name || "");
+  }
+
+  async function instancePluginEnabled(id) {
+    if (!dashboardOnInstance()) return true;
+    const info = await instanceInfo();
+    const plugins = Array.isArray(info?.plugins) ? info.plugins : [];
+    return plugins.some((plugin) => plugin?.id === id && plugin.enabled);
+  }
+
   const DIRECT_MIRROR_ORIGINS_KEY = "forkmesh.directMirrorOrigins.v1";
 
   function preconnectDirectMirrorOrigins(origins) {
@@ -2079,7 +2132,7 @@
     { kind: "commits", label: "Code quality: commit message format" },
     { kind: "secrets", label: "Security: no secrets in the change" },
     { kind: "paths", label: "Security: protected paths" },
-    { kind: "model", label: "Required AI model (signed by a ForkMesh runner)" },
+    { kind: "model", label: `Required AI model (signed by a ${platformName()} runner)` },
   ];
   const PULL_RULE_MODELS = [
     "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5", "claude-fable-5",
@@ -2131,7 +2184,7 @@
         ${group("commits", field("subjectPattern", "Subject must match (regular expression)", rule.subjectPattern, "^(feat|fix|docs|chore)(\\(.+\\))?: ") + field("maxSubjectLength", "Longest subject", rule.maxSubjectLength || "", "72", "number"))}
         ${group("secrets", `<label class="${PULL_RULE_LABEL} sm:col-span-2">Extra secret patterns, one regular expression per line (API keys, private keys and common tokens are always checked)<textarea data-pull-rule-field="patterns" rows="2" class="w-full rounded-md border border-border bg-secondary px-2 py-1 font-mono text-xs text-foreground outline-none"${disabled}>${escapeHtml((rule.patterns || []).join("\n"))}</textarea></label>` + field("paths", "Only scan these paths (empty = everything)", pullRuleList(rule.kind === "secrets" ? rule.paths : [])))}
         ${group("paths", field("paths", "Protected paths", pullRuleList(rule.kind === "paths" ? rule.paths : []), ".github/workflows/**, deploy/**"))}
-        ${group("model", `<div class="grid gap-1 text-[11px] font-medium text-foreground sm:col-span-2">Allowed models<div class="flex flex-wrap gap-1.5">${modelBoxes}</div><span class="font-normal leading-4 text-muted-foreground">Every commit must carry a ForkMesh-Attestation that a ForkMesh runner signed under a router-issued grant naming one of these models. Commits written by hand, on a desktop or on a personal runner fail this rule; clean merges of the base branch pass.</span></div>`)}
+        ${group("model", `<div class="grid gap-1 text-[11px] font-medium text-foreground sm:col-span-2">Allowed models<div class="flex flex-wrap gap-1.5">${modelBoxes}</div><span class="font-normal leading-4 text-muted-foreground">Every commit must carry a ForkMesh-Attestation that a ${escapeHtml(platformName())} runner signed under a router-issued grant naming one of these models. Commits written by hand, on a desktop or on a personal runner fail this rule; clean merges of the base branch pass.</span></div>`)}
         <label class="${PULL_RULE_LABEL}">How to fix it (optional, shown when the rule fails)
           <textarea data-pull-rule-field="suggestion" rows="2" class="w-full rounded-md border border-border bg-secondary px-2 py-1 text-xs text-foreground outline-none"${disabled}>${escapeHtml(rule.suggestion || "")}</textarea>
         </label>

@@ -470,6 +470,7 @@ async def admin_handler(env, request, params, csrf_field="", admin_query="",
         console=shell.console_base(env),
         theme=shell.theme_from_request(request),
         badges=await shell.nav_badges(env), account=account,
+        subpages=shell.subpage_base(env),
         next_path=url.path + (("?" + url.query) if url.query else ""))
     return _html(page)
 

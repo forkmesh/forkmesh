@@ -433,7 +433,7 @@ async def _ap_purge_repo_digest_queues(env, owner, repo):
 async def _ap_digest_preview(env, scope):
     _, row, rec = await _ap_digest_queue_record(env, scope)
     events = (rec or {}).get("events") if rec else []
-    digest = fedi_digest.build_digest(events, scope)
+    digest = instance_features.rename(env, fedi_digest.build_digest(events, scope))
     return {
         "scope": scope,
         "pending": len(events or []),
@@ -508,7 +508,8 @@ async def _ap_publish_digest_row(env, row):
     if not fanout:
         if not fedi_digest.digest_due(events, last_published, now):
             return False
-        digest = fedi_digest.build_digest(events, scope)
+        digest = instance_features.rename(
+            env, fedi_digest.build_digest(events, scope))
         if not digest:
             await d1_run(
                 env, "DELETE FROM ap_digest_queues WHERE scope_bi=?", scope_bi)
@@ -722,6 +723,8 @@ async def ap_nodeinfo_handler(env, request, index):
     doc = ap.nodeinfo_doc(
         _build_rev(env)[:12], _NODEINFO_CACHE["users"],
         _NODEINFO_CACHE["posts"])
+    if instance_features.branded(env):
+        doc["metadata"]["nodeName"] = instance_features.display_name(env)
     resp = json_response(doc, cache_seconds=3600)
     await edge_cache_put(cache_key, resp)
     return resp
@@ -733,9 +736,12 @@ async def _ap_build_actor_doc(env, origin, kind, handle, rec):
     icon_url = origin + AP_AVATAR_PATH
     image_url = origin + AP_BANNER_PATH
     if kind == AP_ACTOR_INSTANCE:
-        return ap.instance_actor_doc(
+        doc = ap.instance_actor_doc(
             origin, _ap_domain_of(origin), rec["pubkeyPem"],
             icon_url=icon_url, image_url=image_url)
+        if instance_features.branded(env) and isinstance(doc, dict):
+            doc["name"] = instance_features.display_name(env)
+        return doc
     if kind == AP_ACTOR_USER:
         if not await _ap_user_federates(env, handle):
             return None
@@ -747,7 +753,8 @@ async def _ap_build_actor_doc(env, origin, kind, handle, rec):
         bio = clean_string(
             (account_rec or {}).get("profile_bio", "") or "", 500).strip()
         summary = (ap.note_html_from_text(bio) if bio
-                   else "ForkMesh profile of @%s." % handle)
+                   else instance_features.rename(
+                       env, "ForkMesh profile of @%s." % handle))
     else:
         # A repository's header is the repository's own artwork or nothing at
         # all: the brand banner above is this instance's identity, and shipping
@@ -785,9 +792,10 @@ async def _ap_build_actor_doc(env, origin, kind, handle, rec):
         description = clean_string(
             (catalog_rec or {}).get("description", "") or "", 240).strip()
         summary = (ap.note_html_from_text(description) if description
-                   else ("ForkMesh repository %s/%s. Follow for new issues, "
-                         "pull requests, discussions and releases.")
-                   % (owner, repo))
+                   else instance_features.rename(
+                       env, ("ForkMesh repository %s/%s. Follow for new issues, "
+                             "pull requests, discussions and releases.")
+                       % (owner, repo)))
         # Owner-uploaded branding (repo About tab): logo = avatar, banner =
         # header. updated_at rides along as a cache-buster so Mastodon
         # refetches when the image changes.
@@ -1134,7 +1142,8 @@ async def _ap_signed_request(key_id, priv_b64, method, url, body_str=None,
     send_headers = {
         "date": headers["date"],
         "accept": accept,
-        "user-agent": "forkmesh-app/1.0 (+https://forkmesh.com)",
+        "user-agent": instance_features.user_agent(
+            "forkmesh-app/1.0 (+https://forkmesh.com)", "app"),
         "signature": ap.build_signature_header(key_id, names, signature),
     }
     init = {"method": method, "headers": send_headers,

@@ -35,6 +35,14 @@ extra organization owners); optional mail provider; listing choices
   `instance_theme.clean`, the installer checks their shape, and
   `instance-bootstrap` writes the `instance_settings` row on the server, so
   the choice lives only in the instance's own database.
+- **Admin console address.** The page fills `adminPath` with a fresh
+  `/admin-` plus 20 random `[a-z0-9]` characters from
+  `crypto.getRandomValues` each time it opens (about 103 bits), with Copy and
+  New buttons and a note to save it. "Download example zip", "Example
+  settings only" and "Copy example settings" each put a new random
+  `adminPath` into the file they hand out (the zip is rebuilt in the browser,
+  stored, from the static example). See [Private admin console
+  path](#private-admin-console-path).
 - Secret fields are cleared after sending and on `pagehide`; nothing is kept
   in browser storage. The page polls the launch every second, keeps the
   launch id in the URL, and on failure refills non-secret fields from the
@@ -48,7 +56,7 @@ extra organization owners); optional mail provider; listing choices
 
 | Endpoint | Purpose |
 |---|---|
-| `POST /api/start/launch` | validate, resolve, read the host key, start the run; `202 {id, domain, address, hostKey, steps, url}` |
+| `POST /api/start/launch` | validate, resolve, read the host key, start the run; `202 {id, domain, address, hostKey, steps, url, adminPath}` |
 | `GET /api/start/launches/<id>` | state, steps, message, log, URL; the 128-bit id is the capability |
 | `GET /api/start/instances` | public list of listed instances and World slots |
 | `GET /api/start/instances/<id>/logo` | an instance's logo, served with a sandboxing CSP and `nosniff` |
@@ -64,6 +72,12 @@ extra organization owners); optional mail provider; listing choices
 - The installer prints `FMI {"step":…,"state":…}` lines; success needs exit 0
   and a final `FMI {"done":true,"url":…}` on the instance's own domain.
   Secrets are scrubbed from the log.
+- `adminPath` is checked with `admin_path.problem`; a launch without one gets
+  `admin_path.generate()` (Python `secrets`). It goes to the installer in the
+  settings, is answered once in the `202`, and is never written to
+  `instance_launches`: it is one of the scrubbed secrets, so a log line that
+  contains it is stored as `[hidden]`. The page shows it during the run and
+  does not redirect on success while it is shown, so it can be saved.
 
 ## SSH (`app/host/forkmesh_host/ssh_helper.py`)
 
@@ -85,7 +99,7 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
 | `packages` | swap on small machines; git, Python, Node, Caddy, sqlite3, age; service users |
 | `source` | shallow clone into `/opt/forkmesh-instance/src`; on `--update`, a shallow fetch of `sourceRef` from `sourceUrl` into that checkout (nothing is checked out yet) |
 | `build` | venv and `python -m forkmesh_host build` without ForkMesh-only plugins (`FORKMESH_EXCLUDED_PLUGINS`: their pages, Worker modules and registry rows are left out, [plugins.md](marketplace/plugins.md)), then `app/tools/apply_instance_brand.py`; on a running instance this happens in `src.next` beside the live tree (below) |
-| `configure` | `/etc/forkmesh-instance/app.env` with fresh `DATA_KEY`, `ADMIN_PASS` and router keys (kept on re-runs) and `instance.json` without secrets |
+| `configure` | `/etc/forkmesh-instance/app.env` with fresh `DATA_KEY`, `ADMIN_PASS` and router keys (kept on re-runs), `ADMIN_PATH` (see below), and `instance.json` without secrets |
 | `database` | migrations into a single-node SQLite database |
 | `services` | `forkmesh-instance.service` (uvicorn on loopback, sandboxed) |
 | `https` | Caddyfile for the app and the Git gateway paths, HSTS; waits for DNS |
@@ -215,6 +229,93 @@ keeps serving with the older program until the operator rebuilds it
 (`cd server && go build -trimpath -o forkmesh-mirror-node ./cmd/forkmesh-mirror-node`
 from the running commit on a build machine, copy it over, run
 `FORKMESH_INSTANCE_DAEMON=<binary> bash install-instance.sh --update`).
+
+## Private admin console path
+
+The admin console has always lived at `/<ADMIN_PATH>` (`app_runtime._fetch_inner`,
+`_admin`); its add-on pages (`/admin/theme`, `/admin/acquisition`,
+`/admin/hackathon`) had fixed addresses. On an instance (`INSTANCE_NAME`
+set) with a valid `ADMIN_PATH`, the whole console moves to that one private
+path:
+
+| Page | Address |
+|---|---|
+| Console and every `?view=` page (Update, Repository addresses, Legal pages, Instances, 404s, Support, Ecosystem, IDS, Marketing email, Database, …) | `<ADMIN_PATH>` |
+| Theme switch, Acquisition, Hackathon | `<ADMIN_PATH>/theme`, `<ADMIN_PATH>/acquisition`, `<ADMIN_PATH>/hackathon` |
+| `/admin`, `/admin/` and anything under `/admin/` | the instance's normal 404 page (no redirect, no hint) |
+
+- Rules live in `app/src/admin_path.py`. Valid means: starts with `/`, one
+  segment of 8 to 64 `A-Z a-z 0-9 - _` (so never a `.` and never a file
+  name), and not a built-in address (`admin`, `api`, `dashboard`, every
+  `static_routes.RESERVED_ROUTE_PREFIXES` name, `product-analysis`,
+  `transparency`, …). Example: `/manage-x7k2q9`.
+- Every link, form action and redirect inside the console comes from the
+  same helper: `admin_shell.render_page(..., subpages=shell.subpage_base(env))`
+  draws the sidebar and the theme form, Acquisition and Hackathon build their
+  forms and redirects from `subpage_base(env)`, and the admin notifications
+  (`error_group`, signup failures, website feedback, IDS) link to
+  `admin_path.notification_href(env)`.
+- Console responses on the private path get `cache-control: no-store`,
+  `x-robots-tag: noindex, nofollow` and `referrer-policy: no-referrer` (so
+  an outbound link from the console never carries the path in `Referer`);
+  the pages already had `<meta name="robots" content="noindex, nofollow">`.
+- Console page views are not recorded by acquisition attribution or the
+  site-referral counter, so the path never lands in those tables. The admin
+  path can still appear in the admin-only error log if a console page fails.
+- The path is defense in depth, not authentication: sign-in, the admin
+  session and the CSRF tokens are checked exactly as before. A signed-out
+  visitor who finds the path is sent to `/login`.
+- Not leaked: `/api/instance` has no admin field; `robots.txt` and the
+  sitemaps do not list it; only an admin's own account answer
+  (`_account_public_payload`, sent to the signed-in account at login and
+  session refresh, and `POST /api/accounts/admin-session`) carries
+  `adminUrl`, which the dashboard shows as **Admin console** in the account
+  menu and as the shield button. Error pages and refusals never name it.
+- The admin JSON APIs stay at `/api/admin/...` and `/api/accounts/admin-*`:
+  they are session-gated, the desktop and phone clients call them by those
+  fixed names, and moving them would hide nothing from someone without an
+  admin session.
+- Short repository addresses (`/<repo>`, single-organization instances) do
+  not capture the console: `_fetch_inner` matches the console path before
+  the router and its short-address rewrite. A repository with the same name
+  as the path is reachable at `/<owner>/<repo>`, never at `/<repo>`; the name
+  is not refused, because a refusal would tell anyone who guesses the path
+  that it exists.
+- Unset or invalid `ADMIN_PATH`, and every core (forkmesh.com, no
+  `INSTANCE_NAME`): exactly as before. The console is at `/<ADMIN_PATH>` when
+  set, the add-on pages stay under `/admin/`, and an instance without
+  `ADMIN_PATH` has no console route.
+
+### Setting it
+
+- New installs: the installer writes `ADMIN_PATH` to `app.env` from the
+  `adminPath` setting. Without one, a fresh install generates
+  `/admin-` + 20 random `[a-z0-9]` characters (Python `secrets`, the
+  kernel's `/dev/urandom` source) and prints it in the final summary with
+  the sign-in line. In a detached run that summary is the setup log, so the
+  address is printed only when `/var/log/forkmesh-instance-setup.log` is
+  owned by root with no group or other access (as the installer creates it);
+  otherwise the summary says it is `ADMIN_PATH` in `app.env`. A path that came
+  from the settings is never echoed.
+- `write_settings` rebuilds `app.env` from scratch on every run. Before
+  October 2026 it did not carry `ADMIN_PATH` over, so `--update` (and the
+  admin console's Update button) silently dropped a hand-set value and
+  `/<path>` fell through to the short repository addresses. It now reads the
+  existing value first (`choose_admin_path`).
+- `--update` and re-runs keep an existing `ADMIN_PATH` unchanged, even when
+  the settings name another one (the summary says so), and never add one to
+  an instance that does not have it. `instance.json` never holds it.
+- An existing instance: add one line to `/etc/forkmesh-instance/app.env` and
+  restart the app (`systemctl restart forkmesh-instance`):
+
+  ```
+  ADMIN_PATH=/manage-x7k2q9
+  ```
+
+  Use your own random value, for example
+  `printf '/admin-%s\n' "$(head -c 64 /dev/urandom | base64 | tr -dc a-z0-9 | head -c 20)"`.
+  The dashboard's Admin console link picks it up at the next sign-in or
+  session refresh.
 
 ## Bootstrap (`instance_bootstrap.py`)
 
@@ -583,7 +684,8 @@ reinstall or restart.
 
 Everything else (`hackathon`, `challenges`, `pitch-deck`, `ads`, `patreon`,
 `discord`, `microjobs`, `rewards`, `referrals`, `forkbot`, `ecosystem`,
-`blog`, `status`, `ios-testers`, `website`) needs forkmesh.com's own
+`blog`, `status`, `ios-testers`, `website`, `instance-launcher`) needs
+forkmesh.com's own
 accounts, ledger, keys or content. The page lists them under "forkmesh.com
 services" with the reason (`FORKMESH_ONLY`) and offers no switch;
 `/api/instance` reports each plugin's `scope` (`instance` or `forkmesh`) and
@@ -699,6 +801,101 @@ loads `_blank` windows in the same tab, or a tool that drives the active tab
 of a shared browser, can look like the World navigating away on its own; a
 plain browser left on `/world/` stays there.
 
+### Platform name
+
+The instance name replaces "ForkMesh" wherever the platform itself is meant.
+Three layers do it, so that nothing depends on the browser alone:
+
+- **Server.** `instance_features.display_name(env)` is the name (`ForkMesh`
+  without `INSTANCE_NAME`) and `instance_features.rename(env, text)` /
+  `rename_html` swap it into a string; on forkmesh.com both return the text
+  unchanged. They name the repository page's `og:site_name`, `og:title`,
+  `twitter:title` and default description, the profile page `<title>`, the
+  repository fediverse page, the repository card image's default line, every
+  email subject and body (`_send_email`; the "Powered by ForkMesh" footer is
+  added after the rename), the hosted-repository limit messages, the
+  "unavailable" pages, and the plain-text Git errors (`_git_error_as_text`
+  gets the env; on an instance it drops the forkmesh.com help link). The
+  founders' day-one feedback email (from founders@forkmesh.com) is not sent
+  on an instance.
+- **The git node account.** The instance's git node (`INSTANCE_FLAGSHIP_NODE`,
+  `forkmesh`) has authored merge and metadata commits, and it owns the platform
+  mirror internally. `/api/instance`
+  reports it as `gitNode`; the dashboard shows it as the instance name
+  wherever a commit author is shown (latest-commit line, history, commit
+  detail, contributors, Insights) through `shownAccountName()`, the Actions
+  snapshot shows it as the instance name when it is a run's actor, and
+  repository cards drop "published from <node>" on an instance.
+- **Build.** `apply_instance_brand.py` renames `<title>`, the
+  application-name and `og:site_name` metas, and now the platform word inside
+  `description`, `og:title`, `og:description`, `twitter:title` and
+  `twitter:description`.
+- **Dashboard.** `platformName()` in `02-helpers.js` reads the brand tag's
+  `data-instance-name` (default `ForkMesh`). Every platform reference in a
+  dashboard string goes through it, for example the repository Insights
+  panel "<name> traffic", "Could not reach <name>", hosting and import
+  notices, webhook and mirror help, the command palette, the profile link
+  title and the account-search placeholders. Static partial text that sits
+  inside `main` on repository and profile pages (which `instance-brand.js`
+  deliberately leaves alone so READMEs and user text are never rewritten) is
+  wrapped in `<span data-platform-name>`, which `applyPlatformName()` fills
+  at boot. `instance-brand.js` still renames chrome and the other pages; its
+  pattern skips identifiers (`X-ForkMesh-Ref`, `ForkMesh-Attestation`) and
+  "ForkMesh, Inc.", and drops the word before "desktop".
+
+Beyond the dashboard, a branded instance also names itself in: the `/docs`
+and `/desktop` pages (which no longer say "ForkMesh desktop app" or
+"forkmesh.com/desktop", and drop the Powered by footer when `poweredBy` is
+off), the plugin-off page, the email unsubscribe pages, JSON error messages
+(`message`, `hint`, `detail`, `title`, `reason` of any 4xx/5xx JSON answer,
+renamed by `HostRuntime._instance_error_text`), the queued-agent notice,
+nodeinfo `nodeName`, the instance ActivityPub actor's name, the default
+profile and repository actor summaries, the fediverse daily digest, and the
+`User-Agent` of requests other servers see (webhook deliveries, fediverse
+fetches, workflow HTTP steps and imports, provider mirrors and repository
+metadata: `<name-slug>-<kind>/1.0 (+<origin>)`, from
+`instance_features.remember`/`user_agent`). The web manifest takes the name
+even without a logo. The build-time brand tool renames the platform word in
+all page text and shown attributes outside `<script>`/`<style>`, so a page
+reads right before `instance-brand.js` runs. "ForkMesh desktop app" reads
+"desktop app" on an instance (`desktopBrand()` in the dashboard,
+`data-desktop-brand` spans in partials, and both brand passes). The start
+page that launches new instances is the `instance-launcher` plugin, off on an
+instance.
+
+What stays on purpose: the software's own identity where it is a fact, not
+branding ("a ForkMesh node", "runs a ForkMesh version", "other ForkMesh
+instances", "a checkout of ForkMesh itself", nodeinfo `software.name`
+`forkmesh` and its repository); technical names never shown as prose
+(`.forkmesh/` like `.github/`, `forkmesh-actions`, `FORKMESH_*` variables,
+the `forkmesh` MCP server and its config path, header and trailer names, the
+`forkmesh-profile=` DNS verification record, service and file names); the
+`<owner>/forkmesh` platform-source mirror, its description and its "Mirror of
+forkmesh.com/forkmesh/forkmesh" label; the upstream installer command
+`curl -fsSL https://forkmesh.com/install.sh | bash` on `/desktop` and in
+Settings > Nodes; license and credit text, the optional Powered by badge and
+email footer; and the strings of ForkMesh-only plugins (ads, hackathon,
+links, referrals, rewards, Patreon membership, the Market, developer docs,
+the instance launcher), which an instance does not show.
+`app/tests/test_instance_platform_name.py` fails on any other platform
+literal in dashboard JS (its `KEPT` list is the allow-list) and on any
+"forkmesh", in any case, in the shown text of the branded static pages (its
+`PAGE_KEPT` and `GATED_PAGES` lists are the allow-list).
+
+### What an instance hides
+
+Besides plugin routes and `data-instance-plugin` UI: the profile Tips card
+(`rewards`), the profile "Referred users" panel (`referrals`), the profile
+footer's "© ForkMesh, Inc." line and the "Open the dashboard from
+forkmesh.com" setting (`website`), and the Patreon connection and
+membership cards in Settings (`patreon`). The dashboard does not request the
+ads slot (`/api/ads/serve`) or the blog feed (`/rss.xml`) unless
+`instancePluginEnabled()` says the plugin is on, so a switched-off plugin no
+longer costs a 404 on every page. The availability-proof links to
+forkmesh.com docs on the Mirrors tab are left out, and the repository Watch
+handle is the instance's own repository actor (`GET .../about`
+`fediverse.handle`) instead of `@forkmesh.forkmesh@forkmesh.com`.
+
 ## Dashboard on an instance
 
 The dashboard knows it runs on an instance from the
@@ -757,6 +954,22 @@ section and the button stay hidden. Tests:
 hide, show or delete entries (CSRF-protected and audited); deleting does not
 touch the instance.
 
+## Commit identities
+
+Commits the git node and the instance runner make themselves (pull merges and
+their metadata commits, mirror intake, the issue reconciler, agent workspaces)
+are authored as the instance name with `noreply@<domain>`: the installer sets
+`FORKMESH_COMMIT_NAME` and `FORKMESH_COMMIT_EMAIL` on
+`forkmesh-mirror-node.service` and in a
+`forkmesh-runner@<owner>.service.d/identity.conf` drop-in, and
+`server/commit_identity.go` reads them (without them: the node name and
+`<node>@users.noreply.forkmesh.com`, as before). Pull-rule and sync-status
+hints name the platform the same way. The node and runner run the signed
+release binary, so this takes effect with the first release that contains it.
+Web edits and hosted pushes were already authored by the signed-in account
+with `<account>@users.noreply.<host>`, and Actions commit-back by
+`<owner>-actions`.
+
 ## Mail (`app/src/mail_providers.py`)
 
 `MAIL_PROVIDER` selects `mailtrap`, `sendgrid`, `mailgun` or `none`;
@@ -778,8 +991,13 @@ to every provider.
 - The instance app's egress guard refuses forkmesh.com except
   `app.forkmesh.com` (`FORKMESH_EGRESS_PRODUCTION_ALLOW` in the app unit),
   which only the directory announcement uses.
-- Brand renaming happens in the browser; plain-text server messages still
-  say ForkMesh.
+- Server text that is not listed under "Platform name" (admin-only
+  operational alerts, the plugin descriptions on the admin console's
+  Plugins page, Solana/ledger notices of switched-off plugins, the referral
+  preview page) still says ForkMesh.
+- The repository card image keeps the ForkMesh mark in its corner.
+- Commit identities, the runner name and the Go node's own messages change
+  only with a signed release that contains them (see "Commit identities").
 
 ## Tests
 
@@ -787,6 +1005,7 @@ to every provider.
 `test_install_instance_staged_build.py` (staged build, rollback, source
 switch, git node program),
 `test_start_instance_page.py`, `test_instance_white_label.py`,
+`test_instance_platform_name.py`, `test_git_error_text.py`,
 `test_instance_theme.py`, `test_instance_pages.py`,
 `test_instance_plugins.py`, `test_instance_registry.py`,
 `test_instance_legal_pages.py`, `test_server_update.py`,

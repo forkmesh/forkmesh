@@ -97,6 +97,7 @@ private:
     QPushButton *m_scanDevice = nullptr;
 
     QLineEdit *m_target = nullptr;
+    QPushButton *m_detectNetwork = nullptr;
     QLineEdit *m_ports = nullptr;
     QComboBox *m_presets = nullptr;
     QPushButton *m_scanButton = nullptr;

@@ -1355,7 +1355,7 @@ def _admin_denied(request):
             url = urlparse(request.url)
             next_path = url.path + (("?" + url.query) if url.query else "")
         except Exception:
-            next_path = "/admin/acquisition"
+            next_path = "/"
         return Response(
             "Admin login required.", status=302,
             headers={
@@ -1529,14 +1529,15 @@ _DISCOVERY_SCRIPT = (
 
 def render_dashboard_html(report, from_day, to_day, tz_label, include_bots,
                           error=None, admin="", console="", theme="system",
-                          badges=None):
+                          badges=None, subpages="/admin"):
     """Server-rendered /admin/acquisition. Every value is HTML-escaped."""
     shell = _admin_shell
     event_columns = [name for name in EVENT_NAMES if name != "landing_view"]
     query_base = "from=%s&amp;to=%s" % (_quote(from_day), _quote(to_day))
+    page = subpages + "/acquisition"
     filters = "".join([
-        "<form class=\"actions range\" method=\"get\" "
-        "action=\"/admin/acquisition\">",
+        "<form class=\"actions range\" method=\"get\" action=\"",
+        _esc(page), "\">",
         "<label class=\"sr\" for=\"acq-from\">From</label>",
         "<input id=\"acq-from\" type=\"date\" name=\"from\" value=\"",
         _esc(from_day), "\">",
@@ -1550,7 +1551,7 @@ def render_dashboard_html(report, from_day, to_day, tz_label, include_bots,
         "<option value=\"1\"", " selected" if include_bots else "",
         ">Show bots</option></select>",
         "<button class=\"btn\" type=\"submit\">Apply</button>",
-        "<a class=\"btn btn-primary\" href=\"/admin/acquisition?", query_base,
+        "<a class=\"btn btn-primary\" href=\"", _esc(page), "?", query_base,
         "&amp;bots=", "1" if include_bots else "0", "&amp;format=csv\">",
         shell.icon("download"), "Download CSV</a>",
         "</form>",
@@ -1563,9 +1564,10 @@ def render_dashboard_html(report, from_day, to_day, tz_label, include_bots,
         crumb="Growth", actions=filters)]
     page_kwargs = dict(
         active="acquisition", console=console, theme=theme, badges=badges,
-        account=admin,
-        next_path="/admin/acquisition?from=%s&to=%s&bots=%s" % (
-            _quote(from_day), _quote(to_day), "1" if include_bots else "0"),
+        account=admin, subpages=subpages,
+        next_path="%s?from=%s&to=%s&bots=%s" % (
+            page, _quote(from_day), _quote(to_day),
+            "1" if include_bots else "0"),
         head_extra="<style>" + _ACQUISITION_STYLE + "</style>")
     if error:
         parts.append(
@@ -1728,7 +1730,8 @@ async def _admin_page_chrome(env, request):
         admin = ""
     return dict(admin=admin, console=shell.console_base(env),
                 theme=shell.theme_from_request(request),
-                badges=await shell.nav_badges(env))
+                badges=await shell.nav_badges(env),
+                subpages=shell.subpage_base(env))
 
 
 async def admin_dashboard_handler(env, request):

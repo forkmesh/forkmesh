@@ -12,6 +12,9 @@ sys.path.insert(0, str(ROOT / "host"))
 
 from forkmesh_host.workers import Response  # noqa: E402
 
+sys.path.insert(0, str(ROOT / "src"))
+import instance_features  # noqa: E402
+
 
 def _namespace():
     tree = ast.parse(ENTRY.read_text(encoding="utf-8"), filename=str(ENTRY))
@@ -30,6 +33,7 @@ def _namespace():
         "EXPECTED_DEGRADED_HEADER": "x-forkmesh-expected-degraded",
         "clean_string": lambda value, limit=240: str(value or "")[:limit],
         "js_nullish": lambda value: value is None,
+        "instance_features": instance_features,
     }
     exec(compile(ast.Module(body=body, type_ignores=[]), str(ENTRY), "exec"),
          namespace)
@@ -105,3 +109,20 @@ def test_every_info_refs_route_is_wrapped():
     block = source[start:source.index("git_pack = GIT_PACK_RE", start)]
     assert block.count("return await _git_error_as_text(") == 3
     assert block.count("return await") == 3
+
+
+def test_instance_git_errors_name_the_instance_without_the_forkmesh_help_link():
+    from types import SimpleNamespace
+    response = _json({"error": "not_found"}, 404)
+    converted = asyncio.run(NS["_git_error_as_text"](
+        response, SimpleNamespace(INSTANCE_NAME="Acme Code")))
+    text = asyncio.run(converted.text())
+    assert text == ("Acme Code has no public repository at this address. "
+                    "Check the owner and repository name.\n")
+    plain = asyncio.run(NS["_git_error_as_text"](
+        _json({"error": "not_found"}, 404), SimpleNamespace()))
+    assert "forkmesh.com/docs/git-errors/" in asyncio.run(plain.text())
+    source = APP_RUNTIME.read_text(encoding="utf-8")
+    start = source.index("git_info = GIT_INFO_RE.match(url.path)")
+    block = source[start:source.index("git_pack = GIT_PACK_RE", start)]
+    assert block.count("self.env)") >= 3

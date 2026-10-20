@@ -227,10 +227,10 @@ func writeReconcilerMerge(ctx context.Context, gitDir, tree, left, right, messag
 	commitAt++
 	date := fmt.Sprintf("@%d +0000", commitAt)
 	commitEnv := append(os.Environ(),
-		"GIT_AUTHOR_NAME=ForkMesh Mirror Reconciler",
-		"GIT_AUTHOR_EMAIL=mirror-reconciler@users.noreply.forkmesh.com",
-		"GIT_COMMITTER_NAME=ForkMesh Mirror Reconciler",
-		"GIT_COMMITTER_EMAIL=mirror-reconciler@users.noreply.forkmesh.com",
+		"GIT_AUTHOR_NAME="+commitIdentityName("ForkMesh Mirror Reconciler"),
+		"GIT_AUTHOR_EMAIL="+commitIdentityEmail("mirror-reconciler"),
+		"GIT_COMMITTER_NAME="+commitIdentityName("ForkMesh Mirror Reconciler"),
+		"GIT_COMMITTER_EMAIL="+commitIdentityEmail("mirror-reconciler"),
 		"GIT_AUTHOR_DATE="+date,
 		"GIT_COMMITTER_DATE="+date)
 	commitRaw, err := issueGitInput(ctx, 256, []byte(message), commitEnv,

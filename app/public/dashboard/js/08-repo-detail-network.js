@@ -174,7 +174,9 @@
     // loadRepoFediverse), and the button opens the follow-from-Mastodon card.
     // The public repository actor is the canonical ForkMesh identity. Do not
     // derive it from a mirror hostname or replica owner name.
-    const fediHandle = "@forkmesh.forkmesh@forkmesh.com";
+    const fediHandle = dashboardOnInstance()
+      ? `@${String(repo.owner || "").toLowerCase()}.${String(repo.name || "").toLowerCase()}@${location.host}`
+      : "@forkmesh.forkmesh@forkmesh.com";
     const mastodonUrl = fediverseFollowUrl(fediHandle);
     const mirrorButton = (compact) => canSeeSettingsTab
       ? `<a href="${escapeHtml(`${repoLinkUrl(repo)}/settings#mirror`)}" data-repo-forge-mirror-open title="Mirror this repository to GitHub or GitLab" class="inline-flex ${compact ? "h-8" : "h-9"} shrink-0 items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background"><i data-lucide="arrow-left-right" class="h-3.5 w-3.5 text-muted-foreground"></i>Mirror</a>`
@@ -232,7 +234,7 @@
             <span class="font-mono text-[10px] text-muted-foreground">forkmesh-webhook-v1 · signed</span>
           </div>
           <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">ForkMesh POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">www/docs/integrations.md</span>.</p>
+            <p class="text-[11px] leading-5 text-muted-foreground">${escapeHtml(platformName())} POSTs a signed JSON event to each endpoint when this repository moves. Every delivery carries <span class="font-mono">ForkMesh-Webhook-Signature</span> (<span class="font-mono">v1=</span>HMAC-SHA256 over the raw body) so a receiver can prove it came from here. The scheme, the retry rules and a verification snippet are in the repository&rsquo;s <span class="font-mono">www/docs/integrations.md</span>.</p>
             <div data-repo-webhooks-list class="grid gap-2 text-xs text-muted-foreground">Loading webhooks…</div>
             <form data-repo-webhook-form class="grid gap-3 rounded-md border border-border p-3">
               <label class="grid gap-1 text-[11px] font-medium text-foreground">Payload URL
@@ -251,7 +253,7 @@
             </form>
             <div data-repo-webhook-secret hidden class="rounded-md border border-border bg-secondary/40 p-3 text-[11px] leading-5 text-foreground">
               <p class="font-semibold">Signing secret — shown once</p>
-              <p class="mt-1 text-muted-foreground">Store it on the receiving side now. ForkMesh keeps it encrypted and never shows it again; if it is lost, rotate the webhook.</p>
+              <p class="mt-1 text-muted-foreground">Store it on the receiving side now. ${escapeHtml(platformName())} keeps it encrypted and never shows it again; if it is lost, rotate the webhook.</p>
               <code data-repo-webhook-secret-value class="mt-2 block break-all rounded bg-background p-2 font-mono text-[11px]"></code>
             </div>
           </div>
@@ -269,7 +271,7 @@
             <span data-repo-forge-mirror-summary class="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">Loading…</span>
           </div>
           <div class="grid gap-4 p-4">
-            <p class="text-[11px] leading-5 text-muted-foreground">Keep a copy of this repository on GitHub or GitLab with your own access token. Choose, for code, issues, pull requests, discussions and releases, whether each one is sent from ForkMesh, brought in from the other side, both, or neither, and whether imports happen on their own or only for the items you pick.</p>
+            <p class="text-[11px] leading-5 text-muted-foreground">Keep a copy of this repository on GitHub or GitLab with your own access token. Choose, for code, issues, pull requests, discussions and releases, whether each one is sent from ${escapeHtml(platformName())}, brought in from the other side, both, or neither, and whether imports happen on their own or only for the items you pick.</p>
             <div data-repo-forge-mirror-body class="text-xs text-muted-foreground">Loading mirror settings…</div>
             <span data-repo-forge-mirror-status class="text-[11px] text-muted-foreground"></span>
           </div>
@@ -281,7 +283,7 @@
           <div class="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p class="text-sm font-medium text-foreground">Delete this repository</p>
-              <p class="mt-1 text-xs leading-5 text-muted-foreground">Removes the repository from ForkMesh, including relay metadata, pending inboxes, agents, mirror presence, and repository chat history. Source files on the owner's device are not erased.</p>
+              <p class="mt-1 text-xs leading-5 text-muted-foreground">Removes the repository from ${escapeHtml(platformName())}, including relay metadata, pending inboxes, agents, mirror presence, and repository chat history. Source files on the owner's device are not erased.</p>
               <p data-repo-delete-status class="mt-1 text-xs text-muted-foreground"></p>
             </div>
             <button type="button" data-repo-delete class="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-destructive/60 px-3 text-xs font-semibold text-destructive hover:bg-destructive/10"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete repository</button>
@@ -517,7 +519,7 @@
                 <span class="inline-flex items-center gap-1.5"><i data-lucide="image-plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
                 <i data-lucide="chevron-down" class="h-3.5 w-3.5 text-muted-foreground"></i>
               </summary>
-              <p class="mt-2 text-[11px] leading-4 text-muted-foreground">ForkMesh shows the logo committed at the root of the repository (logo.png), and never invents artwork for a project. Signed-in community members may suggest PNG, JPEG, or WebP artwork; the repository owner or a moderator must approve it before it becomes official.</p>
+              <p class="mt-2 text-[11px] leading-4 text-muted-foreground">${escapeHtml(platformName())} shows the logo committed at the root of the repository (logo.png), and never invents artwork for a project. Signed-in community members may suggest PNG, JPEG, or WebP artwork; the repository owner or a moderator must approve it before it becomes official.</p>
               <form data-repo-logo-suggestion-form class="mt-3 grid gap-2">
                 <input data-repo-logo-suggestion-file type="file" accept="image/png,image/jpeg,image/webp" required class="text-xs text-muted-foreground file:mr-2 file:rounded-md file:border file:border-border file:bg-secondary file:px-2 file:py-1 file:text-xs file:text-foreground" />
                 <input data-repo-logo-suggestion-attribution type="text" maxlength="240" placeholder="Artwork attribution (optional)" class="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground outline-none focus:border-accent" />
@@ -630,7 +632,7 @@
             <span class="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground"><i data-lucide="terminal" class="h-3.5 w-3.5 text-muted-foreground"></i>Clone</span>
             <span class="fm-label">HTTPS</span>
           </div>
-          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">Clone this repository from its live ForkMesh mirror over HTTPS.</p>
+          <p class="mt-1 text-[11px] leading-4 text-muted-foreground">Clone this repository from its live ${escapeHtml(platformName())} mirror over HTTPS.</p>
           <div class="mt-2 flex items-center gap-2">
             <input data-repo-clone-url type="text" readonly value="${escapeHtml(url)}" aria-label="Clone URL" class="min-w-0 flex-1 rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground outline-none focus:border-accent" />
             ${copyBtn(url, "Copy clone URL")}
@@ -1170,7 +1172,7 @@
           <i data-notification-kind-icon data-lucide="${notificationIcon(item.kind)}" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i>
           <div class="min-w-0 flex-1">
             <p class="truncate text-xs font-medium text-foreground">${escapeHtml(repoPublicText(item.title) || "Ping")}</p>
-            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || "ForkMesh update")}</p>
+            <p class="mt-0.5 truncate text-[11px] text-muted-foreground">${escapeHtml(repoPublicText(item.body) || repoPublicKey(item.repo) || `${platformName()} update`)}</p>
           </div>
           <span class="shrink-0 text-[10px] text-muted-foreground font-mono">${escapeHtml(notificationTimeLabel(item.ts))}</span>
         </div>
@@ -1196,7 +1198,7 @@
           <p class="mt-1 text-xs text-muted-foreground">${escapeHtml(notificationTimeLabel(item.ts))}${item.repo ? ` · ${escapeHtml(repoPublicKey(item.repo))}` : ""}</p>
         </div>
       </div>
-      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(repoPublicText(item.body) || "ForkMesh notification")}</p>
+      <p class="mt-5 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(repoPublicText(item.body) || `${platformName()} notification`)}</p>
       ${organizationTaskDetailsHtml(item)}
       ${mirrorRequestActionsHtml(item)}
       <div class="mt-5 flex flex-wrap items-center gap-2">

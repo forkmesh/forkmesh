@@ -590,6 +590,33 @@ says "Runs on this server <host>" instead of the runner name. `local` and
 Any other runner keeps "Runs on runner <name>" for members and no name in the
 public summary.
 
+The run log's first line, written by the runner as `==> <workflow> at <sha>
+on <branch> (runner <name>; event <event>)`, is shown with the site host in
+place of the instance runner's name (`_show_runner` in
+`app/src/runner_actions.py`, applied to the full log and the log tail), so
+logs that were already stored read the same way.
+
+New installs name the runner `<owner>-runner` (`resolve_runner_name` in
+`install-instance.sh`; `instance-runner` if that name would be too long). An
+instance that already has `ACTIONS_INSTANCE_RUNNER` in `app.env` keeps that
+name on `--update`, because the name is the runner's identity in
+`runner_nodes`, in its `runner.json`/gateway identity and on every job row.
+
+To move an existing instance to the new name, an operator waits until no job
+is running, sets `ACTIONS_INSTANCE_RUNNER=<owner>-runner` in
+`/etc/forkmesh-instance/app.env` and runs `--update`. The runner installer
+finds the owner's runner on the machine and renames it in place ("<owner>'s
+runner forkmesh-runner on this machine becomes <owner>-runner"), and
+`instance-runner` registers the new name. Then the old row is revoked with
+`UPDATE runner_nodes SET status='revoked' WHERE name='forkmesh-runner'`
+(`revoked` is the status the lease code already uses; a revoked runner gets
+no leases). Job rows keep `runner='forkmesh-runner'`: the snapshot and the log
+header treat both `ACTIONS_INSTANCE_RUNNER` and the old default
+`<INSTANCE_FLAGSHIP_NODE>-runner` as this server (`_instance_runners`), so
+old runs still read "Runs on this server <host>". A job leased by the old
+name at the moment of the rename loses its lease and is retried after the
+lease expires.
+
 ## Install
 
 `install-instance.sh` installs a runner on the instance by default (setting

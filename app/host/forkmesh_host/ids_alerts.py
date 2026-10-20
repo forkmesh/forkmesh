@@ -101,6 +101,11 @@ def message(row):
     return title[:200], "\n".join(lines)[:BODY_MAX]
 
 
+def _console_href(entry, env):
+    rules = getattr(entry, "_admin_path_rules", None)
+    return rules.notification_href(env) if rules is not None else "/admin"
+
+
 class IncidentDispatcher:
     def __init__(self, runtime, membership, node_id, clock=None):
         self.runtime = runtime
@@ -197,7 +202,7 @@ class IncidentDispatcher:
                 for admin in await self._admins(env, entry):
                     if await entry.enqueue_notification(
                             env, admin, KIND, title, body=body,
-                            href="/admin", source="ids",
+                            href=_console_href(entry, env), source="ids",
                             dedupe="ids:%s" % row.get("id"),
                             meta={"incident": str(row.get("id")),
                                   "node": str(row.get("node_id")),

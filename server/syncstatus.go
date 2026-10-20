@@ -282,7 +282,7 @@ func EvaluateSyncStatus(evidence SyncEvidence) SyncStatus {
 		LagMs:           lag,
 	}
 	if code != "" {
-		action := syncStatusActions[code]
+		action := strings.Replace(syncStatusActions[code], "ForkMesh retries", platformDisplayName()+" retries", 1)
 		result.Error = &code
 		result.Action = &action
 		parts = append(parts, action)

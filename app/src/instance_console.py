@@ -371,7 +371,8 @@ async def admin_handler(env, request, params, csrf_field="", admin_query="",
         console=shell.console_base(env),
         theme=shell.theme_from_request(request),
         badges=await shell.nav_badges(env), account=account,
-        next_path=url.path + (("?" + url.query) if url.query else "")))
+        next_path=url.path + (("?" + url.query) if url.query else ""),
+        subpages=shell.subpage_base(env)))
 
 
 async def _handle_post(env, request, view, admin_query, account):

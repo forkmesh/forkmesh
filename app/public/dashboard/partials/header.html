@@ -223,7 +223,7 @@
                     <i data-lucide="key" aria-hidden="true"></i>
                     <span data-agent-modal-login-label>Sign in to agent</span>
                   </button>
-                  <a data-agent-modal-login-desktop href="#" class="text-xs text-accent hover:underline">Or hand this off to the ForkMesh desktop app</a>
+                  <a data-agent-modal-login-desktop href="#" class="text-xs text-accent hover:underline">Or hand this off to the <span data-desktop-brand>ForkMesh </span>desktop app</a>
                 </div>
                 <label class="grid gap-1.5 font-medium text-foreground">Task
                   <textarea data-repo-agent-new-input name="prompt" required maxlength="8000" rows="5" class="w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-5 text-foreground" placeholder="Describe the change you want the agent to make…"></textarea>
@@ -320,6 +320,7 @@
               <a data-account-menu-public-profile href="/dashboard/profile" class="fm-menu-item">Public profile</a>
               <a data-forkmesh-membership href="https://forkmesh.com/#membership" class="fm-menu-item">Membership</a>
               <a href="/dashboard/settings" class="fm-menu-item">Settings</a>
+              <a data-account-menu-admin href="#" class="fm-menu-item hidden">Admin console</a>
               <div class="fm-menu-divider" role="separator"></div>
               <button data-account-menu-status type="button" class="fm-menu-item">Set a status…</button>
               <button data-account-menu-away type="button" class="fm-menu-item">Set yourself away</button>

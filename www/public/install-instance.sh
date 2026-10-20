@@ -62,12 +62,14 @@ RUNNER_INSTALLER="www/public/install-runner.sh"
 RUNNER_ETC="/etc/forkmesh-runner"
 RUNNER_STATE="/var/lib/forkmesh-runner"
 RUNNER_JOB_USER="forkmesh-job"
-RUNNER_NAME="$NODE_NAME-runner"
+RUNNER_NAME=""
 CERT_WAIT_SECONDS="${FORKMESH_CERT_WAIT_SECONDS:-300}"
 PROXY_WAIT_SECONDS="${FORKMESH_PROXY_WAIT_SECONDS:-60}"
 CLOUDFLARE_RANGES="173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22 2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32"
 PROXIED="0"
 APP_CHANGED="0"
+ADMIN_PATH_SOURCE=""
+ADMIN_PATH_VALUE=""
 DAEMON_BEFORE=""
 EXCLUDED_PACKAGES="marketing,crm,competitor,ledger,x-banner-board,reddit-banner-board,forkmesh-sky-office,discord,sentry"
 CURRENT_STEP=""
@@ -187,6 +189,15 @@ optional = {
     "mailgunRegion": r"^(us|eu)$",
     "launchId": r"^[0-9a-f]{32}$",
     "platformUrl": checks["sourceUrl"],
+    "adminPath": r"^/[A-Za-z0-9_-]{8,64}$",
+}
+reserved_paths = {
+    "admin", "api", "assets", "changelog", "dashboard", "developers", "ecosystem",
+    "features", "forgot-password", "forkmesh", "forkmesh-mirror", "hackathon",
+    "instance-theme", "leaderboards", "microjobs", "mirror-payouts", "nodeinfo",
+    "pitch-deck", "product-analysis", "referral", "referrals", "reset-password",
+    "security", "security-report", "simulate-sentry-error", "transparency",
+    "verify-pending", "well-known", "client-error", "cron-runner", "desktop-error",
 }
 values = {}
 c.setdefault("mailProvider", "none")
@@ -209,6 +220,10 @@ for key, pattern in optional.items():
     if value and not re.fullmatch(pattern, value):
         sys.exit("Setting %s is not valid." % key)
     values[key] = value
+if update:
+    values["adminPath"] = ""
+if values["adminPath"][1:].lower() in reserved_paths:
+    sys.exit("Setting adminPath is not valid: it is a built-in address.")
 if "forkmesh" in (values["adminUsername"], values["ownerName"]):
     sys.exit("The name forkmesh is kept for the instance git node.")
 if values["ownerType"] == "org" and values["ownerName"] == values["adminUsername"]:
@@ -359,7 +374,8 @@ if [ "$CONFIG_MODE" != "update" ] && { [ ! -e "$INSTANCE_JSON" ] || [ -e "$CLEAN
   NEW_INSTANCE=1
 fi
 if [ "$PARSE_ONLY" = "1" ]; then
-  printf '%s\n' "$CONFIG_SHELL" | grep -v -e '^CFG_mailApiKey=' -e '^CFG_logoData='
+  printf '%s\n' "$CONFIG_SHELL" | grep -v -e '^CFG_mailApiKey=' -e '^CFG_logoData=' -e '^CFG_adminPath='
+  printf 'ADMIN_PATH_LENGTH=%s\n' "${#CFG_adminPath}"
   printf 'LOGO_DATA_LENGTH=%s\n' "${#CFG_logoData}"
   printf 'ADMIN_PASSWORD_LENGTH=%s\n' "${#ADMIN_PASSWORD}"
   printf 'MAIL_KEY_LENGTH=%s\n' "${#CFG_mailApiKey}"
@@ -890,13 +906,83 @@ upstream_page() {
   printf '%s\n' "$url" | sed -E 's#^https://app\.#https://#'
 }
 
+resolve_runner_name() {
+  local kept
+  kept="$(env_value ACTIONS_INSTANCE_RUNNER)"
+  if [[ "$kept" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    RUNNER_NAME="$kept"
+  elif [[ "$CFG_ownerName-runner" =~ ^[a-z]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    RUNNER_NAME="$CFG_ownerName-runner"
+  else
+    RUNNER_NAME="instance-runner"
+  fi
+}
+
 env_value() {
   [ -r "$APP_ENV" ] || return 0
   awk -F= -v key="$1" '$1 == key {sub(/^[^=]*=/, ""); print; exit}' "$APP_ENV"
 }
 
+new_admin_path() {
+  python3 -c '
+import secrets
+alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+chars = []
+while len(chars) < 20:
+    for byte in secrets.token_bytes(32):
+        if byte < 252 and len(chars) < 20:
+            chars.append(alphabet[byte % 36])
+print("/admin-" + "".join(chars))
+'
+}
+
+choose_admin_path() {
+  local existing
+  existing="$(env_value ADMIN_PATH)"
+  ADMIN_PATH_VALUE=""
+  ADMIN_PATH_SOURCE=""
+  if [ -n "$existing" ]; then
+    ADMIN_PATH_VALUE="$existing"
+    ADMIN_PATH_SOURCE="kept"
+    if [ -n "${CFG_adminPath:-}" ] && [ "$CFG_adminPath" != "$existing" ]; then
+      ADMIN_PATH_SOURCE="kept-other"
+    fi
+  elif [ "$CONFIG_MODE" = "update" ]; then
+    return 0
+  elif [ -n "${CFG_adminPath:-}" ]; then
+    ADMIN_PATH_VALUE="$CFG_adminPath"
+    ADMIN_PATH_SOURCE="settings"
+  elif [ "$NEW_INSTANCE" = "1" ]; then
+    ADMIN_PATH_VALUE="$(new_admin_path)"
+    ADMIN_PATH_SOURCE="generated"
+  fi
+}
+
+setup_log_private() {
+  [ -f "$SETUP_LOG" ] || return 1
+  local owner mode
+  owner="$(stat -c %u "$SETUP_LOG" 2>/dev/null || echo x)"
+  mode="$(stat -c %a "$SETUP_LOG" 2>/dev/null || echo 777)"
+  [ "$owner" = "0" ] && [ $(( 8#$mode & 8#077 )) -eq 0 ]
+}
+
+say_admin_path() {
+  case "$ADMIN_PATH_SOURCE" in
+    generated)
+      if [ "$DETACHED" = "1" ] && ! setup_log_private; then
+        say "Admin console: a private address was created; it is ADMIN_PATH in $APP_ENV."
+      else
+        say "Admin console: $ORIGIN$ADMIN_PATH_VALUE"
+        say "Save this address now: it is the only way into the admin console (also ADMIN_PATH in $APP_ENV)."
+      fi ;;
+    settings) say "Admin console: the private address from your settings (adminPath); save it." ;;
+    kept-other) say "Admin console: this server already had a private address, so it was kept (ADMIN_PATH in $APP_ENV)." ;;
+  esac
+}
+
 write_settings() {
   begin configure "Saving your settings"
+  resolve_runner_name
   local data_key admin_pass seed public_key mail_key env_before login_deadline bot_seed
   env_before="$(files_digest "$APP_ENV")"
   data_key="$(env_value DATA_KEY)"
@@ -905,6 +991,7 @@ write_settings() {
   public_key="$(env_value MIRROR_ROUTER_PUBLIC_KEY)"
   login_deadline="$(env_value INSTANCE_LOGIN_DEADLINE)"
   bot_seed="$(env_value ACTIONS_BOT_SEED)"
+  choose_admin_path
   [[ "$bot_seed" =~ ^[0-9a-f]{64}$ ]] || bot_seed=""
   if [ -z "$bot_seed" ] && [ "$CFG_actions" = "1" ]; then
     bot_seed="$(openssl rand -hex 32)"
@@ -988,6 +1075,7 @@ print(encode(seed), encode(public))
     fi
     echo "DATA_KEY=$data_key"
     echo "ADMIN_PASS=$admin_pass"
+    if [ -n "$ADMIN_PATH_VALUE" ]; then echo "ADMIN_PATH=$ADMIN_PATH_VALUE"; fi
     echo "MIRROR_ROUTER_SIGNING_SEED=$seed"
     echo "MIRROR_ROUTER_PUBLIC_KEY=$public_key"
     if [ -r "$APP_ENV" ]; then
@@ -1445,6 +1533,8 @@ Environment=TZ=UTC
 Environment=HOME=/var/lib/forkmesh
 Environment=XDG_DATA_HOME=/var/lib/forkmesh/.local/share
 Environment=TMPDIR=/var/lib/forkmesh/tmp
+Environment="FORKMESH_COMMIT_NAME=$CFG_projectName"
+Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN
 ExecStartPre=$DAEMON --config $DAEMON_CONFIG --check
 ExecStart=$DAEMON --config $DAEMON_CONFIG
 Restart=on-failure
@@ -1657,6 +1747,7 @@ start_git_node() {
 }
 
 setup_actions_runner() {
+  [ -n "$RUNNER_NAME" ] || resolve_runner_name
   if [ "$CFG_actions" != "1" ]; then
     if systemctl is-enabled --quiet "$RUNNER_UNIT" 2>/dev/null; then
       systemctl disable --now "$RUNNER_UNIT" >/dev/null 2>&1 || true
@@ -1692,8 +1783,19 @@ setup_actions_runner() {
     warn "could not register the Actions runner $RUNNER_NAME with the app"
     return 0
   fi
+  write_runner_identity
   systemctl restart "$RUNNER_UNIT" >/dev/null 2>&1 || true
   say "The Actions runner $RUNNER_NAME runs workflows for $CFG_ownerName as $RUNNER_JOB_USER."
+}
+
+write_runner_identity() {
+  local dir="/etc/systemd/system/$RUNNER_UNIT.d"
+  install -d -m 0755 "$dir"
+  printf '[Service]\nEnvironment="FORKMESH_COMMIT_NAME=%s"\nEnvironment=FORKMESH_COMMIT_EMAIL=noreply@%s\n' \
+    "$CFG_projectName" "$DOMAIN" > "$dir/identity.conf.new"
+  chmod 0644 "$dir/identity.conf.new"
+  mv "$dir/identity.conf.new" "$dir/identity.conf"
+  systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
 write_first_login_cleanup() {
@@ -1731,6 +1833,8 @@ if [ -n "$RUNNER_OWNER" ]; then
   systemctl disable --now "forkmesh-runner@$RUNNER_OWNER.service" >/dev/null 2>&1 || true
   fm_safe_rm_tree /etc/forkmesh-runner/accounts "/etc/forkmesh-runner/accounts/$RUNNER_OWNER"
   fm_safe_rm_tree /var/lib/forkmesh-runner/accounts "/var/lib/forkmesh-runner/accounts/$RUNNER_OWNER"
+  rm -f "/etc/systemd/system/forkmesh-runner@$RUNNER_OWNER.service.d/identity.conf"
+  rmdir "/etc/systemd/system/forkmesh-runner@$RUNNER_OWNER.service.d" 2>/dev/null || true
 fi
 if [ -e "$CLEANUP_DIR/created-runner-root" ]; then
   systemctl disable --now forkmesh-runner-firewall.service >/dev/null 2>&1 || true
@@ -1821,6 +1925,7 @@ finish() {
   say ""
   say "$CFG_projectName is running at $ORIGIN"
   say "Sign in as @$CFG_adminUsername. Your repository: $REPO_URL"
+  say_admin_path
   say "Update later with: bash install-instance.sh --update"
   printf 'FMI {"done":true,"url":"%s"}\n' "$REPO_URL"
 }

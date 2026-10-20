@@ -472,7 +472,7 @@
                   <section id="settings-account" data-settings-section="account" class="hidden pb-8">
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">Account</h2>
                     <p class="mt-1 text-sm leading-6 text-muted-foreground">Your node name is your public account and repository namespace. Change your username from the <button data-settings-section-link="public-profile" type="button" class="inline align-baseline font-semibold text-accent hover:underline focus:outline-none focus:ring-1 focus:ring-primary">Public profile</button> settings — renaming it moves owned repository URLs to the new namespace.</p>
-                    <div class="mt-6 grid max-w-3xl gap-3 rounded-md border border-border bg-card p-4" data-patreon-connection>
+                    <div class="mt-6 grid max-w-3xl gap-3 rounded-md border border-border bg-card p-4" data-patreon-connection data-instance-plugin="patreon">
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div class="min-w-0">
                           <h3 class="text-base font-semibold text-foreground">Patreon membership</h3>
@@ -498,7 +498,7 @@
                       </p>
                     </div>
                     <div class="mt-6 grid max-w-3xl gap-3">
-                      <div class="rounded-md border border-border bg-card p-4">
+                      <div class="rounded-md border border-border bg-card p-4" data-instance-plugin="patreon">
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <h3 class="text-base font-semibold text-foreground">ForkMesh membership</h3>
@@ -761,7 +761,7 @@
                           <h3 class="text-lg font-semibold text-foreground">Desktops</h3>
                           <button data-agent-profiles-refresh type="button" class="fm-btn fm-btn-sm ml-auto"><i data-lucide="refresh-cw"></i>Refresh</button>
                         </div>
-                        <p class="text-sm text-muted-foreground">Read live from each ForkMesh desktop app on your account over an encrypted channel. A desktop answers only while the app is running and signed in.</p>
+                        <p class="text-sm text-muted-foreground">Read live from each <span data-desktop-brand>ForkMesh </span>desktop app on your account over an encrypted channel. A desktop answers only while the app is running and signed in.</p>
                         <p data-agent-profiles-notice hidden class="text-sm" role="status" aria-live="polite"></p>
                         <div data-agent-profiles-desktops class="grid gap-3">
                           <p class="text-sm text-muted-foreground">Loading desktops…</p>
@@ -865,7 +865,7 @@
                           <button data-genie-visible type="button" role="switch" aria-checked="true" aria-label="Show the Genie spider" class="ping-switch mt-1"></button>
                         </div>
                       </div>
-                      <div data-home-redirect-setting class="overflow-hidden rounded-md border border-border bg-card">
+                      <div data-home-redirect-setting data-instance-plugin="website" class="overflow-hidden rounded-md border border-border bg-card">
                         <div class="flex items-start justify-between gap-4 p-4">
                           <div class="flex min-w-0 items-start gap-3">
                             <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="layout-dashboard" class="h-4 w-4"></i></span>

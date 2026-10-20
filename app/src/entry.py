@@ -6368,6 +6368,7 @@ _api_metrics = _LazyModule("api_metrics")
 # (docs/attribution.md). Loaded on the first served HTML navigation.
 _attribution = _LazyModule("attribution")
 _not_found_log = _LazyModule("not_found_log")
+_admin_path_rules = _LazyModule("admin_path")
 _probe_ban = _LazyModule("probe_ban")
 _probe_ban_local = {}
 _instance_directory_admin = _LazyModule("instance_directory_admin")
@@ -20273,6 +20274,20 @@ def _apply_browser_security_headers(response, pathname):
     return response
 
 
+def _private_console_headers(response):
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return response
+    for name, value in (("cache-control", "no-store"),
+                        ("x-robots-tag", "noindex, nofollow"),
+                        ("referrer-policy", "no-referrer")):
+        try:
+            headers.set(name, value)
+        except AttributeError:
+            headers[name] = value
+    return response
+
+
 def _normalized_http_origin(value):
     try:
         parsed = urlparse(str(value or "").strip())
@@ -31554,7 +31569,10 @@ def _instance_brand_email(env, text, html):
     logo = instance_logo_path(env) or "assets/logo-96.png"
     text = text.replace("Open ForkMesh: " + FORKMESH_SITE_URL,
                         "Open " + name + ": " + site)
-    text += "\n\nPowered by ForkMesh"
+    text = instance_features.rename(env, text)
+    credit = instance_features.powered_by(env)
+    if credit:
+        text += "\n\nPowered by ForkMesh"
     if html:
         escaped = _html_escape(name)
         html = (html
@@ -31567,13 +31585,15 @@ def _instance_brand_email(env, text, html):
                          _html_escape(site) + "dashboard/settings")
                 .replace("href=\"" + FORKMESH_SITE_URL + "\"",
                          "href=\"" + _html_escape(site) + "\""))
+        html = instance_features.rename(env, html, escaped)
         footer = ("<p data-instance-powered-by style=\"margin:18px 0 0;"
                   "color:#71717a;font-size:12px\">Powered by <a href=\""
                   "https://forkmesh.com/\" style=\"color:#71717a\">"
                   "ForkMesh</a></p>")
         closing = "</div></div></body></html>"
-        html = (html.replace(closing, footer + closing, 1)
-                if closing in html else html + footer)
+        if credit:
+            html = (html.replace(closing, footer + closing, 1)
+                    if closing in html else html + footer)
     return text, html
 MAILTRAP_EMAIL_CATEGORIES = {
     "account": "Account notification",
@@ -31898,6 +31918,7 @@ async def _send_email(env, to_email, subject, text, html=None,
             if closing in html else html + action_html
         )
     html = _light_email_fragment(html)
+    subject = instance_features.rename(env, subject)
     text, html = _instance_brand_email(env, text, html)
     if via_smtp:
         return await _send_email_smtp(env, sender, sender_name, to_email,
@@ -32187,7 +32208,8 @@ async def _repository_provider_fetch(env, provider, path, token=""):
         return {"status": 400, "data": {}, "headers": {}}
     headers = {
         "accept": "application/json",
-        "user-agent": "ForkMesh-repository-metadata/1.0",
+        "user-agent": instance_features.user_agent(
+            "ForkMesh-repository-metadata/1.0", "repository-metadata"),
     }
     if provider == "github":
         headers["accept"] = "application/vnd.github+json"
@@ -33299,6 +33321,8 @@ def _feedback_email_content(name):
 
 
 async def _send_feedback_emails(env):
+    if instance_branded(env):
+        return 0
     now = int(Date.now())
     # Users with no send row yet; the LEFT JOIN keeps re-scans cheap as the
     # sent set grows. Eligibility (user kind, active, verified email, 24h old)
@@ -35113,6 +35137,7 @@ async def repo_card_handler(env, request, owner, repo):
         "description": rec.get("description", ""),
         "branch": rec.get("branch", ""),
         "host": urlparse(_ap_origin(env, request)).netloc or "forkmesh.com",
+        "site": instance_name(env),
         "stars": (stars_row or {}).get("n", 0) or 0,
         "mirrors": max(1, mirrors),
         "issues": rec.get("issueCount", ""),
@@ -43338,7 +43363,8 @@ async def _notify_new_error_group(env, status, method, path, message):
             continue
         await enqueue_notification(
             env, name, "error_group", title, body=body,
-            href="/admin?table=error_log", source="error_log",
+            href=_admin_path_rules.notification_href(
+                env, "?table=error_log"), source="error_log",
             dedupe="error-group:%s:%s:%s:%s" % (
                 status, str(method or "")[:16], str(path or "")[:120],
                 str(message or "")[:160]),
@@ -44307,7 +44333,8 @@ async def ping_signup_failure(env, reason, status, claim=None, name="",
                 continue
             await enqueue_notification(
                 env, admin, "operational_alert", title, body=body,
-                href="/admin?table=users", source="signup",
+                href=_admin_path_rules.notification_href(
+                    env, "?table=users"), source="signup",
                 dedupe="signup-failure:" + key, ts=now,
                 meta={"key": "signup-failure", "reason": reason,
                       "status": int(status), "source": source,
@@ -44615,7 +44642,8 @@ async def _enqueue_world_feedback_pings(env, message, now, dedupe,
                 "New website feedback" if source == "web"
                 else "New World feedback",
                 body=clean_string(message, 500),
-                href="/admin", source="world-feedback",
+                href=_admin_path_rules.notification_href(env),
+                source="world-feedback",
                 dedupe="world-feedback:" + dedupe, ts=now,
                 meta={"feedbackSource": source},
             )
@@ -45726,6 +45754,8 @@ async def repository_security_scans_handler(
 
 def _admin_path(env):
     # Dynamic, secret admin URL segment. Set ADMIN_PATH in Cloudflare vars.
+    if instance_features.branded(env):
+        return _admin_path_rules.private_segment(env)
     return str(getattr(env, "ADMIN_PATH", "") or "").strip("/")
 
 
@@ -48289,7 +48319,7 @@ GIT_ERROR_KEPT_HEADERS = (
 )
 
 
-async def _git_error_as_text(response):
+async def _git_error_as_text(response, env=None):
     try:
         status = int(getattr(response, "status", 0) or 0)
         content_type = str(response.headers.get("content-type") or "")
@@ -48318,6 +48348,9 @@ async def _git_error_as_text(response):
             value = None
         if not js_nullish(value):
             headers[name] = str(value)
+    if env is not None and instance_features.branded(env):
+        return Response(instance_features.rename(env, message) + "\n",
+                        status=status, headers=headers)
     return Response(
         "%s\nHelp: %s\n" % (message, GIT_ERROR_HELP_URL),
         status=status, headers=headers)
