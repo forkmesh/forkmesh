@@ -179,8 +179,12 @@ async def issue_event_payload(env, owner, repo, number, event, item):
     if not mapped or int(number or 0) <= 0:
         return None
     name, action = mapped
+    verified = event.get("authorVerified") is True and bool(
+        clean_string(event.get("authorName") or "", MAX_NODE_NAME).strip())
     sender = clean_string(
-        event.get("authorName") or event.get("author") or "", MAX_NODE_NAME)
+        (event.get("authorName") if verified else "") or
+        event.get("author") or "", MAX_NODE_NAME)
+    user = {"login": sender, "verified": verified}
     meta = item.get("meta") if isinstance(item.get("meta"), dict) else {}
     if kind == "open":
         issue = {"number": int(number),
@@ -191,7 +195,7 @@ async def issue_event_payload(env, owner, repo, number, event, item):
         issue = await read_issue(env, owner, repo, number) or {
             "number": int(number), "title": item.get("titleIfNew") or "",
             "body": "", "state": "open", "labels": [], "author": ""}
-    payload = {"action": action, "sender": {"login": sender}}
+    payload = {"action": action, "sender": dict(user)}
     if kind == "labels":
         new = _labels(event.get("labels"))
         added = [x for x in new if x not in issue["labels"]]
@@ -211,7 +215,7 @@ async def issue_event_payload(env, owner, repo, number, event, item):
         payload["comment"] = {
             "id": str(event.get("id") or ""),
             "body": str(event.get("body") or ""),
-            "user": {"login": sender}}
+            "user": dict(user), "verified": verified}
     payload["issue"] = _issue_object(issue)
     return name, payload
 

@@ -790,6 +790,7 @@ async def _submit_issue_report(runtime, context, data):
             "titleIfNew": title,
             "event": event,
             "meta": data.get("meta"),
+            "account": context["account"],
         })
         filed = bool(filed_result)
         # Production returns the collision-safe number reserved for the inbox.
