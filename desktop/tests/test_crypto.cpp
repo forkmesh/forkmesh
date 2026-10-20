@@ -8771,6 +8771,22 @@ int main(int argc, char *argv[])
         const QList<PullRequest> withSecond{merged, open, first, second};
         check(!PullAuthorTrust::isEstablished(second, withSecond, trusted),
               "a second pull request from an unmerged author is still gated");
+        check(PullAuthorTrust::pullOrdinal(first, withSecond) == 1,
+              "the stranger's first pull request counts as their 1st");
+        check(PullAuthorTrust::pullOrdinal(second, withSecond) == 2,
+              "a later pull request counts the author's earlier ones");
+        check(PullAuthorTrust::pullOrdinal(open, withSecond) == 2,
+              "merged pull requests count toward the author's number too");
+        check(PullAuthorTrust::ordinal(1) == QStringLiteral("1st") &&
+                  PullAuthorTrust::ordinal(2) == QStringLiteral("2nd") &&
+                  PullAuthorTrust::ordinal(3) == QStringLiteral("3rd") &&
+                  PullAuthorTrust::ordinal(4) == QStringLiteral("4th") &&
+                  PullAuthorTrust::ordinal(11) == QStringLiteral("11th") &&
+                  PullAuthorTrust::ordinal(12) == QStringLiteral("12th") &&
+                  PullAuthorTrust::ordinal(13) == QStringLiteral("13th") &&
+                  PullAuthorTrust::ordinal(21) == QStringLiteral("21st") &&
+                  PullAuthorTrust::ordinal(112) == QStringLiteral("112th"),
+              "ordinals read as English");
 
         // authorName is chosen by whoever submitted the pull, so claiming the
         // owner's name while signing with your own key must not buy any trust.
