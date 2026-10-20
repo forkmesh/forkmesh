@@ -39,6 +39,9 @@ IOS_PHONE = ROOT / "native/ios/ForkMesh/Resources/Assets.xcassets/AppIcon.appico
 IOS_WATCH = ROOT / "native/ios/ForkMeshWatch/Assets.xcassets/AppIcon.appiconset"
 ANDROID_RES = ROOT / "native/android/app/src/main/res"
 ANDROID_LAUNCHER = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
+ANDROID_ADAPTIVE = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
+ADAPTIVE_VISIBLE = 72 / 108
+ADAPTIVE_FIT = 0.70
 
 CUTOUTS = [
     ("logo.png", "cutout", 975, 1116),
@@ -233,6 +236,44 @@ def render(root: ET.Element, kind: str, width: int, height: int) -> cairo.ImageS
     return surface
 
 
+def adaptive_layer(root: ET.Element, layer: str, size: int) -> bytes:
+    if layer == "background":
+        surface = cairo.ImageSurface(cairo.FORMAT_RGB24, size, size)
+        ctx = cairo.Context(surface)
+        ctx.set_antialias(cairo.ANTIALIAS_BEST)
+        draw_tile_background(ctx, size)
+        surface.flush()
+        return png_bytes(surface)
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
+    ctx = cairo.Context(surface)
+    ctx.set_antialias(cairo.ANTIALIAS_BEST)
+    inner = size * ADAPTIVE_VISIBLE * ADAPTIVE_FIT
+    draw_logo(ctx, root, (size - inner) / 2, (size - inner) / 2, inner, inner)
+    surface.flush()
+    data = png_bytes(surface)
+    if layer == "foreground":
+        return data
+    image = Image.open(io.BytesIO(data)).convert("RGBA")
+    pixels = image.load()
+    for y in range(image.height):
+        for x in range(image.width):
+            r, g, b, a = pixels[x, y]
+            light = max(0.0, min(1.0, ((r + g + b) / 765 - 0.08) / 0.92))
+            pixels[x, y] = (255, 255, 255, int(round(a * light)))
+    buf = io.BytesIO()
+    image.save(buf, format="PNG", optimize=True)
+    return buf.getvalue()
+
+
+def write_android_launcher(root: ET.Element) -> None:
+    for density, size in ANDROID_LAUNCHER.items():
+        (ANDROID_RES / f"mipmap-{density}" / "ic_launcher.png").write_bytes(
+            png_bytes(render(root, "tile", size, size)))
+    for density, size in ANDROID_ADAPTIVE.items():
+        for layer in ("background", "foreground", "monochrome"):
+            (ANDROID_RES / f"mipmap-{density}" / f"ic_launcher_{layer}.png").write_bytes(adaptive_layer(root, layer, size))
+
+
 def png_bytes(surface: cairo.ImageSurface) -> bytes:
     buf = io.BytesIO()
     surface.write_to_png(buf)
@@ -337,20 +378,22 @@ def bimi_svg(root: ET.Element) -> str:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="Render every ForkMesh logo file from logo.svg.")
     parser.add_argument("--preview", type=Path, help="write only a 1024 px app-icon preview to this path")
+    parser.add_argument("--android", action="store_true", help="write only the Android launcher icons")
     args = parser.parse_args(argv)
     master_text = MASTER.read_text(encoding="utf-8")
     root = ET.fromstring(master_text)
     if args.preview:
         args.preview.write_bytes(png_bytes(render(root, "tile", 1024, 1024)))
         return 0
+    if args.android:
+        write_android_launcher(root)
+        return 0
     for copy in SVG_COPIES:
         copy.write_text(master_text, encoding="utf-8")
     BIMI.write_text(bimi_svg(root), encoding="utf-8")
     for rel, kind, width, height in CUTOUTS:
         write_raster(root, rel, kind, width, height)
-    for density, size in ANDROID_LAUNCHER.items():
-        (ANDROID_RES / f"mipmap-{density}" / "ic_launcher.png").write_bytes(
-            png_bytes(render(root, "tile", size, size)))
+    write_android_launcher(root)
     for icon_set in (IOS_PHONE, IOS_WATCH):
         for filename, pixels in ios_icon_files(icon_set).items():
             (icon_set / filename).write_bytes(png_bytes(render(root, "tile", pixels, pixels)))
