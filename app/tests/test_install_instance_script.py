@@ -820,6 +820,25 @@ def test_the_installer_writes_and_keeps_the_turnstile_hostname():
     assert "grep -qE '^TURNSTILE_HOSTNAMES=.' \"$APP_ENV\"" in writer
     assert 'echo "TURNSTILE_HOSTNAMES=$DOMAIN"' in writer
 
+
+def test_platform_commits_carry_the_instance_name_and_a_noreply_address():
+    assert 'Environment="FORKMESH_COMMIT_NAME=$CFG_projectName"' in TEXT
+    assert "Environment=FORKMESH_COMMIT_EMAIL=noreply@$DOMAIN" in TEXT
+    identity = function("write_runner_identity")
+    assert '/etc/systemd/system/$RUNNER_UNIT.d' in identity
+    assert 'FORKMESH_COMMIT_EMAIL=noreply@%s' in identity
+    assert "  write_runner_identity\n" in function("setup_actions_runner")
+    assert 'rm -f "/etc/systemd/system/forkmesh-runner@$RUNNER_OWNER.service.d/identity.conf"' in TEXT
+    go = (REPO / "server" / "commit_identity.go").read_text(encoding="utf-8")
+    assert 'os.Getenv("FORKMESH_COMMIT_NAME")' in go
+    assert 'os.Getenv("FORKMESH_COMMIT_EMAIL")' in go
+    for name in ("merge.go", "intake.go", "runner.go", "agent_workspace.go",
+                 "issue_reconcile.go", "pull_metadata_refs.go"):
+        source = (REPO / "server" / name).read_text(encoding="utf-8")
+        assert '+ "@users.noreply.forkmesh.com"' not in source, name
+        assert '+"@users.noreply.forkmesh.com"' not in source, name
+
+
 def test_the_platform_mirror_source_is_an_optional_setting(tmp_path):
     found = values(parse(tmp_path, settings()).stdout)
     assert found["CFG_platformUrl"] == ""

@@ -455,8 +455,8 @@ func pullGitEnvironment(extra []string) []string {
 func (e *PullMutationExecutor) commitIdentityEnvironment() []string {
 	node := e.Gateway.Node.Name
 	return []string{
-		"GIT_AUTHOR_NAME=" + node, "GIT_AUTHOR_EMAIL=" + node + "@users.noreply.forkmesh.com",
-		"GIT_COMMITTER_NAME=" + node, "GIT_COMMITTER_EMAIL=" + node + "@users.noreply.forkmesh.com",
+		"GIT_AUTHOR_NAME=" + commitIdentityName(node), "GIT_AUTHOR_EMAIL=" + commitIdentityEmail(node),
+		"GIT_COMMITTER_NAME=" + commitIdentityName(node), "GIT_COMMITTER_EMAIL=" + commitIdentityEmail(node),
 	}
 }
 
@@ -1129,8 +1129,8 @@ func (e *PullMutationExecutor) executeMerge(ctx context.Context, dir, gitDir str
 		return nil, err
 	}
 	metadataAfter, metadataBefore, err := materializePullMetadataCommit(
-		ctx, gitDir, request.number, pullsAfter, e.Gateway.Node.Name,
-		e.Gateway.Node.Name+"@users.noreply.forkmesh.com")
+		ctx, gitDir, request.number, pullsAfter, commitIdentityName(e.Gateway.Node.Name),
+		commitIdentityEmail(e.Gateway.Node.Name))
 	if err != nil {
 		return nil, err
 	}

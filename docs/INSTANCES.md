@@ -858,6 +858,22 @@ section and the button stay hidden. Tests:
 hide, show or delete entries (CSRF-protected and audited); deleting does not
 touch the instance.
 
+## Commit identities
+
+Commits the git node and the instance runner make themselves (pull merges and
+their metadata commits, mirror intake, the issue reconciler, agent workspaces)
+are authored as the instance name with `noreply@<domain>`: the installer sets
+`FORKMESH_COMMIT_NAME` and `FORKMESH_COMMIT_EMAIL` on
+`forkmesh-mirror-node.service` and in a
+`forkmesh-runner@<owner>.service.d/identity.conf` drop-in, and
+`server/commit_identity.go` reads them (without them: the node name and
+`<node>@users.noreply.forkmesh.com`, as before). Pull-rule and sync-status
+hints name the platform the same way. The node and runner run the signed
+release binary, so this takes effect with the first release that contains it.
+Web edits and hosted pushes were already authored by the signed-in account
+with `<account>@users.noreply.<host>`, and Actions commit-back by
+`<owner>-actions`.
+
 ## Mail (`app/src/mail_providers.py`)
 
 `MAIL_PROVIDER` selects `mailtrap`, `sendgrid`, `mailgun` or `none`;

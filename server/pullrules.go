@@ -339,7 +339,8 @@ func (r *PullRule) suggestion() string {
 		return "Reword the commit subjects (git rebase -i, then reword) so each one follows the rule."
 	case "model":
 		return "Make the change with " + strings.Join(r.Models, " or ") +
-			" on a ForkMesh runner: only commits a ForkMesh runner signed under a router-issued model grant prove which model wrote them."
+			" on a " + platformDisplayName() + " runner: only commits a " + platformDisplayName() +
+			" runner signed under a router-issued model grant prove which model wrote them."
 	}
 	return ""
 }

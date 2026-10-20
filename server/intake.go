@@ -244,8 +244,8 @@ func materializeDirectCollaboration(ctx context.Context, repo Repository,
 		if tip != "" {
 			name := firstNonEmpty(node, "ForkMesh mirror")
 			isolated, old, err := materializePullMetadataCommit(
-				ctx, repo.GitDir, number, tip, name,
-				name+"@users.noreply.forkmesh.com")
+				ctx, repo.GitDir, number, tip, commitIdentityName(name),
+				commitIdentityEmail(name))
 			if err != nil {
 				return number, err
 			}
@@ -542,9 +542,9 @@ func collaborationWorktree(ctx context.Context, repo Repository, branch string,
 		cleanup()
 		return "", nil, err
 	}
-	_ = exec.CommandContext(ctx, "git", "-C", dir, "config", "user.name", node).Run()
+	_ = exec.CommandContext(ctx, "git", "-C", dir, "config", "user.name", commitIdentityName(node)).Run()
 	_ = exec.CommandContext(ctx, "git", "-C", dir, "config", "user.email",
-		node+"@users.noreply.forkmesh.com").Run()
+		commitIdentityEmail(node)).Run()
 	return dir, cleanup, nil
 }
 
@@ -1101,8 +1101,8 @@ func materializePullInbox(ctx context.Context, repo Repository,
 				name = "ForkMesh mirror"
 			}
 			isolated, old, materializeErr := materializePullMetadataCommit(
-				ctx, repo.GitDir, number, tip, name,
-				name+"@users.noreply.forkmesh.com")
+				ctx, repo.GitDir, number, tip, commitIdentityName(name),
+				commitIdentityEmail(name))
 			if materializeErr != nil {
 				return ids, materializeErr
 			}
