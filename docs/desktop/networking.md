@@ -124,7 +124,13 @@ compiled out under `FORKMESH_WINDOW_TESTS`).
   Errors are journald err or worse, Caddy error/panic/fatal, Go panics,
   `ERROR`/`CRITICAL` lines and IDS alerts. Python tracebacks fold into one entry;
   identical lines fold for 10 minutes. `corelogs::nodeLineHtml` colours the
-  prefix and body. Deploy output is followed by `src/DeployLogs.{h,cpp}`.
+  prefix and body and pads them into columns with non-breaking spaces (the log
+  views are monospace): node 3, role 6, unit 12, severity 5. Web lines also pad
+  the method to 7 and the host and path to 64, then right-align the duration
+  (6) and size (7), so the status and the client line up. Only the HTML is
+  padded; the stored line keeps single spaces for filters and parsers. A longer
+  field pushes the rest of its own line along. Deploy output is followed by
+  `src/DeployLogs.{h,cpp}`.
 - **Filters.** The **Nodes** button picks nodes, units and **Node errors only**.
 - **Web traffic.** Each core's Caddy writes a filtered JSON access line per
   request (no headers except User-Agent, credential query parameters
