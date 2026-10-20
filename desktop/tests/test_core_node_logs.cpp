@@ -170,6 +170,20 @@ static void testFleetDiscovery()
           "the fleet (root) key is never used for logs");
     checkEqual(command.arguments.last(), QStringLiteral("follow lines 200"),
                "the request is the reader's protocol, not a shell command");
+    check(!command.arguments.join(QLatin1Char(' ')).contains(QLatin1String("Port=")),
+          "without a fleet file the feed uses port 22");
+    writeFile(root.path() + QStringLiteral("/forkmesh/src/deploy/fleet.toml"),
+              "ssh_key_name = \"fmnext-fleet\"\nssh_port = 822\n");
+    check(fleetSshPort() == 822, "the SSH port comes from fleet.toml");
+    const FeedCommand moved = buildFeedCommand(nodes.at(3), QString());
+    check(moved.arguments.contains(QStringLiteral("Port=822")) &&
+              moved.arguments.contains(QStringLiteral("HostKeyAlias=203.0.113.21")),
+          "the feed connects on the fleet port, host key pinned by address");
+    checkEqual(moved.arguments.last(), QStringLiteral("follow lines 200"),
+               "the request stays last");
+    const FeedCommand legacy = buildFeedCommand(nodes.at(3), QString(), true);
+    check(!legacy.arguments.join(QLatin1Char(' ')).contains(QLatin1String("Port=")),
+          "a legacy retry uses port 22 for a node not moved yet");
     VultrInventory inventory;
     inventory.fetchedMs = QDateTime::currentMSecsSinceEpoch() - 1000;
     inventory.failures = 2;

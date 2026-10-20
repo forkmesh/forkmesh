@@ -26,6 +26,7 @@ namespace corelogs {
 namespace {
 
 constexpr int kMaximumMessageChars = 2000;
+constexpr int kLegacySshPort = 22;
 
 struct Palette {
     QString text;
@@ -499,6 +500,32 @@ QString fleetKnownHostsPath()
     return fleetConfigDirectory() + QStringLiteral("/known_hosts");
 }
 
+QString fleetTomlPath()
+{
+    const QString configured = qEnvironmentVariable("FMNEXT_FLEET_TOML").trimmed();
+    if (!configured.isEmpty())
+        return QDir::cleanPath(configured);
+    return projectsRoot() + QStringLiteral("/forkmesh/src/deploy/fleet.toml");
+}
+
+int fleetSshPort()
+{
+    bool ok = false;
+    const int configured = qEnvironmentVariable("FMNEXT_SSH_PORT").trimmed().toInt(&ok);
+    if (ok && configured > 0 && configured < 65536)
+        return configured;
+    QFile file(fleetTomlPath());
+    if (!file.open(QIODevice::ReadOnly))
+        return kLegacySshPort;
+    static const QRegularExpression line(
+        QStringLiteral("^ssh_port\\s*=\\s*([0-9]{1,5})\\s*(?:#.*)?$"),
+        QRegularExpression::MultilineOption);
+    const QRegularExpressionMatch match =
+        line.match(QString::fromUtf8(file.read(256 * 1024)));
+    const int port = match.hasMatch() ? match.captured(1).toInt() : 0;
+    return port > 0 && port < 65536 ? port : kLegacySshPort;
+}
+
 QString fleetInstancesPath()
 {
     return fleetConfigDirectory() + QStringLiteral("/fleet-instances.json");
@@ -638,7 +665,8 @@ QString readerRequest(const QString &afterCursor)
     return QStringLiteral("follow lines %1").arg(kFirstConnectReplayLines);
 }
 
-FeedCommand buildFeedCommand(const CoreNode &node, const QString &afterCursor)
+FeedCommand buildFeedCommand(const CoreNode &node, const QString &afterCursor,
+                             bool legacyPort)
 {
     FeedCommand command;
     const QString key = readerKeyPath();
@@ -673,9 +701,15 @@ FeedCommand buildFeedCommand(const CoreNode &node, const QString &afterCursor)
         QStringLiteral("-o"), QStringLiteral("ClearAllForwardings=yes"),
         QStringLiteral("-o"), QStringLiteral("LogLevel=ERROR"),
         QStringLiteral("-T"),
-        QStringLiteral("root@") + node.address,
-        readerRequest(afterCursor),
     };
+    const int port = legacyPort ? kLegacySshPort : fleetSshPort();
+    if (port != kLegacySshPort)
+        command.arguments << QStringLiteral("-o")
+                          << QStringLiteral("HostKeyAlias=") + node.address
+                          << QStringLiteral("-o")
+                          << QStringLiteral("Port=") + QString::number(port);
+    command.arguments << QStringLiteral("root@") + node.address
+                      << readerRequest(afterCursor);
     return command;
 }
 

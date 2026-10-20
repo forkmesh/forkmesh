@@ -631,6 +631,10 @@ def test_firewall_contents():
         locked.index("ct state established,related accept")
     open_ssh = ids.firewall_ruleset(lockdown=True)
     assert "tcp dport 22 accept" in open_ssh and "ssh_allow" not in open_ssh
+    moved = ids.firewall_ruleset(lockdown=True, ssh_allow=["192.0.2.1"],
+                                 ssh_port=822)
+    assert "tcp dport 822 ip saddr != @ssh_allow drop" in moved
+    assert "tcp dport 822 accept" in moved and "dport 22 " not in moved
 
 
 # --------------------------------------------------------------------------

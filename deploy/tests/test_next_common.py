@@ -91,3 +91,41 @@ def test_an_upload_that_never_resumes_still_fails(tmp_path):
     ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run)
     with pytest.raises(common.ToolError, match="lost connection"):
         ssh.put("198.51.100.10", local, "/opt/r/.incoming-x.tar.gz")
+
+
+def test_ssh_uses_the_fleet_port_and_pins_the_host_key_by_address(tmp_path):
+    seen = []
+
+    def run(command, **kwargs):
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0, b"", b"")
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run,
+                     port=822)
+    ssh.run("198.51.100.10", "true")
+    assert "Port=822" in seen[-1] and "HostKeyAlias=198.51.100.10" in seen[-1]
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh", run=run,
+                     port=22)
+    ssh.run("198.51.100.10", "true")
+    assert not any(part.startswith(("Port=", "HostKeyAlias=")) for part in seen[-1])
+
+
+def test_ssh_falls_back_to_22_for_a_node_not_moved_yet(tmp_path):
+    def probe(address, port):
+        return port == 22
+    ssh = common.Ssh(key=tmp_path / "key", known_hosts=tmp_path / "kh",
+                     route=True, port=822, probe=probe)
+    assert ssh.port("198.51.100.10") == 22
+    ssh.use_port("198.51.100.10", 822)
+    assert ssh.port("198.51.100.10") == 822
+    assert ssh.dest("198.51.100.10")[-1] == "Port=822"
+
+
+def test_the_fleet_port_comes_from_fleet_toml(tmp_path, monkeypatch):
+    monkeypatch.delenv("FMNEXT_SSH_PORT", raising=False)
+    path = tmp_path / "fleet.toml"
+    path.write_text('ssh_key_name = "fmnext-fleet"\nssh_port = 822\n')
+    assert common.fleet_ssh_port(path) == 822
+    path.write_text('ssh_key_name = "fmnext-fleet"\n')
+    assert common.fleet_ssh_port(path) == 22
+    monkeypatch.setenv("FMNEXT_SSH_PORT", "2200")
+    assert common.fleet_ssh_port(path) == 2200

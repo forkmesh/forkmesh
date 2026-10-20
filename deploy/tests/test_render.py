@@ -198,7 +198,7 @@ def test_firewall_mesh_ports_only_from_core_on_wg0(tmp_path):
     files, _ = rendered(tmp_path, "n2")
     nft = files["/etc/nftables.conf"]
     assert "policy drop;" in nft
-    assert "tcp dport { 22, 80, 443 } accept" in nft
+    assert "tcp dport { 822, 80, 443 } accept" in nft
     assert "udp dport { 443, 51820 } accept" in nft
     assert ('iifname "wg0" ip saddr { 10.77.0.1, 10.77.0.2, 10.77.0.3 } '
             "tcp dport { 80, 4001, 4002, 8792, 8793 } accept") in nft
@@ -272,7 +272,7 @@ def test_runner_holds_no_core_secret_and_no_mesh(tmp_path):
         "FMNEXT_IDS_KEY.cred"]
     assert "/etc/wireguard/wg0.conf" not in files
     nft = files["/etc/nftables.conf"][0]
-    assert "tcp dport { 22 } accept" in nft and "wg0" not in nft
+    assert "tcp dport { 822 } accept" in nft and "wg0" not in nft
     # Jobs reach only the public internet: no metadata, private, CGNAT,
     # loopback (except a local DNS stub) or WireGuard addresses.
     job_rules = [l.strip() for l in nft.splitlines() if 'skuid "forkmesh-job"' in l]

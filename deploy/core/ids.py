@@ -1188,7 +1188,7 @@ TABLE = "fmnext_ids"
 def firewall_ruleset(blocked=(), lockdown=False, ssh_allow=(),
                      keep_raft=False, core_wg_ips=(), core_public_ips=(),
                      wg_port=51820, raft_port=4002, dns_uid=None,
-                     rqlite_user="rqlite"):
+                     rqlite_user="rqlite", ssh_port=22):
     """The whole IDS table, replaced atomically. Always: drop a quarantined
     peer's traffic (``blocked``). In lockdown: inbound only established
     replies, loopback, SSH (from ``ssh_allow`` when set), WireGuard from the
@@ -1209,11 +1209,12 @@ def firewall_ruleset(blocked=(), lockdown=False, ssh_allow=(),
               "\t\tip saddr @blocked drop"]
     if lockdown:
         if ssh_allow:
-            lines += ["\t\ttcp dport 22 ip saddr != @ssh_allow drop",
-                      "\t\tmeta nfproto ipv6 tcp dport 22 drop"]
+            lines += ["\t\ttcp dport %d ip saddr != @ssh_allow drop"
+                      % int(ssh_port),
+                      "\t\tmeta nfproto ipv6 tcp dport %d drop" % int(ssh_port)]
         lines += ["\t\tct state established,related accept",
                   "\t\tiif \"lo\" accept",
-                  "\t\ttcp dport 22 accept",
+                  "\t\ttcp dport %d accept" % int(ssh_port),
                   "\t\tip protocol icmp accept",
                   "\t\tmeta l4proto ipv6-icmp accept"]
         if core_public_ips:
@@ -1595,6 +1596,7 @@ class Responder:
         return firewall_ruleset(
             blocked=blocked, lockdown=lock,
             ssh_allow=(self.cfg.get("ssh") or {}).get("allow") or (),
+            ssh_port=(self.cfg.get("ssh") or {}).get("port", 22),
             keep_raft=lock and self.role == "core"
             and not os.path.exists(self.rqlite_marker),
             core_wg_ips=cfg.get("core_wg_ips") or (),
