@@ -129,8 +129,14 @@ Payloads (`FORKMESH_EVENT_PATH`) follow GitHub's shapes for the fields used:
 - push: `{ref, before, after, repository:{full_name}, pusher:{name}}`
 - schedule: `{schedule: "<cron>"}`
 - workflow_dispatch: `{inputs:{...}, ref, sender:{login}}`
-- issues: `{action, issue:{number, title, body, state, labels:[{name}], user:{login}}, label:{name}, sender:{login}}`
-- issue_comment: `{action, issue:{...}, comment:{id, body, user:{login}}, sender:{login}}`
+- issues: `{action, issue:{number, title, body, state, labels:[{name}], user:{login}}, label:{name}, sender:{login, verified}}`
+- issue_comment: `{action, issue:{...}, comment:{id, body, user:{login, verified}, verified}, sender:{login, verified}}`
+
+`verified` is `true` only when the inbox bound the author to an account (the
+signed-in session or an account-bound key, `docs/app/notification-email.md`).
+Then `login` is that account. Otherwise `login` is the signing key, never a
+username the client chose. A workflow that acts for the commenter (assigning
+them, for example) must check `comment.user.verified`.
 
 ### Checkout and pushing back
 

@@ -303,12 +303,12 @@ def test_accepted_issue_events_queue_matching_workflows_with_github_payloads():
             "updated_at) VALUES ('forkmesh','site',?,?,1)",
             (path, json.dumps(events)))
     queue(world, {"type": "open", "title": "New", "body": "b",
-                  "authorName": "carol"}, {"meta": {"labels": ["x"]}},
-          number=9)
+                  "authorName": "carol", "authorVerified": True},
+          {"meta": {"labels": ["x"]}}, number=9)
     [(event, workflow, payload)] = jobs(world)
     assert (event, workflow) == ("issues", ".forkmesh/triage.yml")
     assert payload["event"] == {
-        "action": "opened", "sender": {"login": "carol"},
+        "action": "opened", "sender": {"login": "carol", "verified": True},
         "issue": {"number": 9, "title": "New", "body": "b", "state": "open",
                   "labels": [{"name": "x"}], "user": {"login": "carol"}}}
     world.db.execute("DELETE FROM repo_action_jobs")
@@ -316,7 +316,7 @@ def test_accepted_issue_events_queue_matching_workflows_with_github_payloads():
                   "authorName": "ada"})
     queue(world, {"type": "status", "status": "closed", "authorName": "ada"})
     queue(world, {"type": "comment", "id": "c1", "body": "hi",
-                  "authorName": "dan"})
+                  "authorName": "dan", "authorVerified": True})
     queue(world, {"type": "labels", "labels": ["bug"], "authorName": "ada"})
     queue(world, {"type": "comment", "body": "bot",
                   "authorName": "forkmesh-actions"})
@@ -332,5 +332,27 @@ def test_accepted_issue_events_queue_matching_workflows_with_github_payloads():
     assert labeled["issue"]["user"] == {"login": "bob"}
     assert found[1][2]["event"]["issue"]["state"] == "closed"
     assert found[2][2]["event"]["comment"] == {
-        "id": "c1", "body": "hi", "user": {"login": "dan"}}
+        "id": "c1", "body": "hi", "user": {"login": "dan", "verified": True},
+        "verified": True}
+    assert found[2][2]["event"]["sender"] == {"login": "dan", "verified": True}
     assert found[2][1] == ".forkmesh/reply.yml"
+
+
+def test_an_unverified_comment_author_reaches_actions_as_its_key_only():
+    world = World(issue={"number": 3, "title": "Bug", "status": "open",
+                         "labels": [], "events": []})
+    world.db.execute(
+        "INSERT INTO repo_action_workflows (owner,repo,path,events,"
+        "updated_at) VALUES ('forkmesh','site','.forkmesh/a.yml',?,1)",
+        (json.dumps(["issue_comment"]),))
+    queue(world, {"type": "comment", "id": "c2", "body": "/assign",
+                  "author": "webkey", "authorName": "alice"})
+    queue(world, {"type": "comment", "id": "c3", "body": "/assign",
+                  "author": "webkey2", "authorName": "",
+                  "authorVerified": True})
+    first, second = [p["event"] for _e, _w, p in jobs(world)]
+    assert first["comment"]["user"] == {"login": "webkey", "verified": False}
+    assert first["comment"]["verified"] is False
+    assert first["sender"] == {"login": "webkey", "verified": False}
+    assert second["comment"]["user"] == {"login": "webkey2",
+                                         "verified": False}

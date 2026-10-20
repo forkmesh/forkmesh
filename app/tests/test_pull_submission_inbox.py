@@ -30,7 +30,7 @@ def _load_pulls_handler(extra_globals):
     selected = [
         node for node in tree.body
         if isinstance(node, ast.AsyncFunctionDef)
-        and node.name in ("pulls_handler", "_fill_signer_author_name")
+        and node.name in ("pulls_handler", "_bind_session_author")
     ]
     assert len(selected) == 2
     module = ast.fix_missing_locations(ast.Module(body=selected, type_ignores=[]))
@@ -74,7 +74,7 @@ class _Request:
         return self._body
 
 
-def _runtime(inserted, notifications, verified, receipts=None):
+def _runtime(inserted, notifications, verified, receipts=None, session=""):
     if receipts is None:
         receipts = {}
     class _Date:
@@ -133,6 +133,10 @@ def _runtime(inserted, notifications, verified, receipts=None):
     async def account_for_pubkey(_env, pubkey):
         return "bob" if pubkey == SIGNER_KEY else ""
 
+    async def session_record(_env, _request, _data=None,
+                             allow_unverified=False):
+        return ("bi:" + session, {"name": session}) if session else ("", None)
+
     async def reserve_number(_env, repo_bi, owner, repo, kind="issue"):
         assert (repo_bi, owner, repo, kind) == (
             "bi:alice/project", "alice", "project", "pull")
@@ -163,6 +167,10 @@ def _runtime(inserted, notifications, verified, receipts=None):
         "verify_pull_comment_event": verify_pull_comment_event,
         "valid_node_pubkey": lambda value: value == SIGNER_KEY,
         "_git_push_account_for_pubkey": account_for_pubkey,
+        "_account_session_record": session_record,
+        "valid_node_name": lambda value: bool(value) and value.isalnum(),
+        "_repo_feature_off": noop,
+        "_record_pull_review": noop,
         "notify_subscribers": noop,
         "subscribe_thread": noop,
         "_event_signing_repo_keys": lambda _request, owner, repo: (
@@ -417,7 +425,7 @@ def test_pull_signed_without_a_name_is_queued_under_the_signer_username():
     assert inserted[0][1]["pull"]["authorName"] == "bob"
 
 
-def test_pull_keeps_the_name_its_author_signed_with():
+def test_pull_name_comes_from_the_key_not_the_client():
     inserted = []
     handler = _load_pulls_handler(_runtime(inserted, [], []))
 
@@ -425,18 +433,51 @@ def test_pull_keeps_the_name_its_author_signed_with():
         object(), _Request(_signed_pull(authorName="carol")),
         "alice", "project"))
 
-    assert inserted[0][1]["pull"]["authorName"] == "carol"
+    assert inserted[0][1]["pull"]["authorName"] == "bob"
+    assert inserted[0][1]["pull"]["authorVerified"] is True
 
 
-def test_pull_from_an_unknown_key_keeps_an_empty_name():
+def test_pull_from_an_unknown_key_is_unverified_and_unnamed():
     inserted = []
     handler = _load_pulls_handler(_runtime(inserted, [], []))
 
     asyncio.run(handler(
-        object(), _Request(_signed_pull(author="web-author")),
+        object(), _Request(_signed_pull(author="web-author", authorName="bob")),
         "alice", "project"))
 
-    assert "authorName" not in inserted[0][1]["pull"]
+    assert inserted[0][1]["pull"]["authorName"] == ""
+    assert inserted[0][1]["pull"]["authorVerified"] is False
+
+
+def test_pull_comment_takes_the_session_name_over_a_spoofed_one():
+    inserted = []
+    handler = _load_pulls_handler(
+        _runtime(inserted, [], [], session="carol"))
+    body = {"number": 281, "event": {
+        "type": "comment", "author": "web-author", "authorName": "bob",
+        "body": "lgtm", "ts": 123, "sig": "signature"}}
+
+    response = asyncio.run(
+        handler(object(), _Request(body=body), "alice", "project"))
+
+    assert response["status"] == 201
+    assert inserted[0][1]["event"]["authorName"] == "carol"
+    assert inserted[0][1]["event"]["authorVerified"] is True
+
+
+def test_pull_comment_with_another_accounts_key_is_refused():
+    inserted = []
+    handler = _load_pulls_handler(
+        _runtime(inserted, [], [], session="carol"))
+    body = {"number": 281, "event": {
+        "type": "comment", "author": SIGNER_KEY, "authorName": "carol",
+        "body": "lgtm", "ts": 123, "sig": "signature"}}
+
+    response = asyncio.run(
+        handler(object(), _Request(body=body), "alice", "project"))
+
+    assert response == {"status": 403, "data": {"error": "author_mismatch"}}
+    assert inserted == []
 
 
 def test_review_signed_without_a_name_is_queued_under_the_signer_username():

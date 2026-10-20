@@ -40195,7 +40195,12 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         return json_response({"error": "issue_too_large"}, status=413)
     if not await verify_issue_event(number, event, repo_keys):
         return json_response({"error": "bad_signature"}, status=401)
-    await _fill_signer_author_name(env, event)
+    if actions_job:
+        event["authorVerified"] = True
+    else:
+        refused = await _bind_session_author(env, request, data, event)
+        if refused is not None:
+            return refused
     submitter_bi = await blind_index(env, event.get("author", ""))
     # Clients replay the SAME signed event when an attempt dropped its
     # response (issue #698: an accepted issue whose side effects outlived
@@ -40514,17 +40519,31 @@ async def _record_pull_review(env, request, data, owner, repo, number, event):
         pass
 
 
-async def _fill_signer_author_name(env, record):
+async def _bind_session_author(env, request, data, record, session=None):
     if not isinstance(record, dict):
-        return
-    if clean_string(record.get("authorName", ""), MAX_NODE_NAME).strip():
-        return
+        return None
+    if session is None:
+        try:
+            _, rec = await _account_session_record(
+                env, request, data, allow_unverified=True)
+        except Exception:
+            rec = None
+        session = (rec or {}).get("name", "") if rec else ""
+    session = clean_string(session or "", MAX_NODE_NAME).strip().lower()
+    if not valid_node_name(session):
+        session = ""
     author = str(record.get("author", "") or "").strip()
-    if not valid_node_pubkey(author):
-        return
-    name = await _git_push_account_for_pubkey(env, author)
-    if name:
-        record["authorName"] = name
+    bound = ""
+    if valid_node_pubkey(author):
+        bound = clean_string(
+            await _git_push_account_for_pubkey(env, author) or "",
+            MAX_NODE_NAME).strip().lower()
+    if session and bound and bound != session:
+        return json_response({"error": "author_mismatch"}, status=403)
+    name = session or bound
+    record["authorName"] = name
+    record["authorVerified"] = bool(name)
+    return None
 
 
 PULL_LIFECYCLE_RECORD_REFS = (
@@ -40607,7 +40626,9 @@ async def pulls_handler(env, request, owner, repo):
                     branch, event,
                     _event_signing_repo_keys(request, owner, repo)):
                 return json_response({"error": "bad_signature"}, status=401)
-            await _fill_signer_author_name(env, event)
+            refused = await _bind_session_author(env, request, data, event)
+            if refused is not None:
+                return refused
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi
             )
@@ -40648,14 +40669,14 @@ async def pulls_handler(env, request, owner, repo):
                     _event_signing_repo_keys(request, owner, repo)):
                 return json_response({"error": "bad_signature"}, status=401)
             if event.get("type") in ("status", "delete"):
-                allowed, refusal, lifecycle_actor = (
+                allowed, refusal, _lifecycle_actor = (
                     await _authorize_pull_lifecycle(
                         env, owner, repo, number, data, request, event))
                 if not allowed:
                     return refusal
-                if lifecycle_actor:
-                    event["authorName"] = lifecycle_actor
-            await _fill_signer_author_name(env, event)
+            refused = await _bind_session_author(env, request, data, event)
+            if refused is not None:
+                return refused
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi
             )
@@ -40738,7 +40759,9 @@ async def pulls_handler(env, request, owner, repo):
         if not await verify_pull_event(
                 pull, _event_signing_repo_keys(request, owner, repo)):
             return json_response({"error": "bad_signature"}, status=401)
-        await _fill_signer_author_name(env, pull)
+        refused = await _bind_session_author(env, request, data, pull)
+        if refused is not None:
+            return refused
         submission_bi = await blind_index(
             env, "pull-submission:" + pull.get("author", "") + ":" +
             pull.get("sig", ""))
@@ -41010,7 +41033,9 @@ async def discussions_handler(env, request, owner, repo):
                 number, event,
                 _event_signing_repo_keys(request, owner, repo)):
             return json_response({"error": "bad_signature"}, status=401)
-        await _fill_signer_author_name(env, event)
+        refused = await _bind_session_author(env, request, data, event)
+        if refused is not None:
+            return refused
         count = await d1_first(
             env, "SELECT COUNT(*) AS c FROM discussion_inbox WHERE repo_bi=?", repo_bi
         )
