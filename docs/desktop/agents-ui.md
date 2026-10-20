@@ -730,7 +730,11 @@ Claude Code, by `--disallowedTools` (`deniedTeammatePermissions`; see
   `RailFaceTicker` (40 ms), so a tick is one repaint pass for the window; a
   face only redraws while its window is exposed and not minimized, and a calm
   face (still, floating, dozing or paused, without a spinner ring) redraws
-  every 100 ms. The mood badge paints from a cached pixmap. In report #4
+  every 100 ms. While the window is not the active one every face redraws at
+  most every 200 ms (`kRailFaceInactiveFrameMs`), and a face with no visible
+  region (rail scrolled or covered) skips its frame: each face frame also
+  repaints its item, name label and three HUD buttons, about 300 us a frame,
+  and report #5 counted 267 such frames a second across the rail. The mood badge paints from a cached pixmap. In report #4
   (2026-10-19) one timer per face repainted each rail item about 540 times a
   second and the app sat at 106% CPU.
 - **Channel status rail.** `src/MainWindowPackageRail.cpp` builds

@@ -305,6 +305,7 @@ void testPage()
             if (choice->text() == QStringLiteral("Revoke"))
                 choice->click();
     }
+    QApplication::processEvents();
     settle();
     check(fake.calls.value(0) == QStringLiteral("POST /api/runners/revoke"),
           "confirming Revoke posts it", fake.calls.join(QStringLiteral(", ")));
@@ -336,6 +337,7 @@ void testPage()
         for (QAbstractButton *choice : removeConfirm->buttons())
             if (choice->text() == QStringLiteral("Remove"))
                 choice->click();
+    QApplication::processEvents();
     settle();
     check(fake.calls.value(0) == QStringLiteral("POST /api/runners/box/accounts") &&
               fake.bodies.value(0).value(QStringLiteral("action")).toString() == QStringLiteral("remove") &&

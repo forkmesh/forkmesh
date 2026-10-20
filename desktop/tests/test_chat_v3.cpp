@@ -525,7 +525,7 @@ void testRoundTrips()
 
 void testCountersPersist()
 {
-    QSettings().remove(QStringLiteral("chat/e2ee"));
+    clearStoredState();
     auto local = ChatDevice::local();
     check(local->isValid() && local->newestPrekey() != nullptr,
           "the installation's identity and prekey are created on first use");
@@ -604,6 +604,49 @@ void testHeldBudget()
           "held frames saved before the byte budget are trimmed on load");
 }
 
+void testStoredStateLeavesSettingsFile()
+{
+    clearStoredState();
+    const QString trustKey =
+        QStringLiteral("chat/e2ee/trustV3/") + b64u(QByteArray("migrated-scope"));
+    const QString seenKey =
+        QStringLiteral("chat/e2ee/seenV3/") + b64u(QByteArray("migrated-room"));
+    const QByteArray trust = QJsonDocument(QJsonObject{
+        {QStringLiteral("policy"), QStringLiteral("strict")},
+        {QStringLiteral("records"), QJsonArray()},
+        {QStringLiteral("held"), QJsonObject{{QStringLiteral("migrated-room"),
+                                              QJsonArray{heldFrame(1, 4096)}}}}})
+                                 .toJson(QJsonDocument::Compact);
+    QSettings().setValue(trustKey, trust);
+    QSettings().setValue(seenKey, QByteArray("{}"));
+    QSettings().setValue(QStringLiteral("chat/e2ee/ctrV3/kept"), 7);
+    check(storedSetting(trustKey).toByteArray() == trust,
+          "state still in the settings file is read before it moves");
+    check(migrateStoredState(), "the stored state moves out of the settings file");
+    check(!QSettings().contains(trustKey) && !QSettings().contains(seenKey),
+          "the moved keys are gone from the settings file");
+    check(QSettings().value(QStringLiteral("chat/e2ee/ctrV3/kept")).toInt() == 7,
+          "counters stay in the settings file");
+    check(storedSetting(trustKey).toByteArray() == trust &&
+              QSettings(storedStateFile(), QSettings::IniFormat).value(trustKey).toByteArray() ==
+                  trust,
+          "the moved trust state is in its own file, byte for byte");
+    check(ChatDevice::local()->held(QStringLiteral("migrated-scope"),
+                                    QStringLiteral("migrated-room"))
+                  .size() == 1,
+          "a held frame survives the move");
+    ChatDevice::local()->setPolicy(QStringLiteral("migrated-scope"), Policy::Open);
+    ChatDevice::local()->setHeld(QStringLiteral("migrated-scope"),
+                                 QStringLiteral("migrated-room"), {});
+    check(migrateStoredState(), "moving twice is harmless");
+    check(!QSettings().contains(trustKey) &&
+              QJsonDocument::fromJson(storedSetting(trustKey).toByteArray())
+                      .object()
+                      .value(QStringLiteral("policy"))
+                      .toString() == QStringLiteral("open"),
+          "later writes land in the state file, never back in the settings file");
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -637,6 +680,7 @@ int main(int argc, char **argv)
     testRoundTrips();
     testCountersPersist();
     testHeldBudget();
+    testStoredStateLeavesSettingsFile();
 
     if (failures) {
         std::fprintf(stderr, "%d chat v3 check(s) failed.\n", failures);

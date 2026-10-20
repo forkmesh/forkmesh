@@ -4744,7 +4744,7 @@ int main(int argc, char **argv)
     QCoreApplication app(argc, argv);
     app.setOrganizationName(QStringLiteral("ForkMeshTests"));
     app.setApplicationName(QStringLiteral("chat-transport"));
-    QSettings().remove(QStringLiteral("chat/e2ee"));
+    forkmesh::chatv3::clearStoredState();
 
     const bool discordOnly =
         app.arguments().contains(QStringLiteral("--discord-only"));

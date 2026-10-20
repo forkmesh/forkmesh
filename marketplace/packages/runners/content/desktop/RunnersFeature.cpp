@@ -1,4 +1,5 @@
 #include "RunnersFeature.h"
+#include "MessageBoxClicks.h"
 
 #include <QAbstractButton>
 #include <QAction>
@@ -462,7 +463,7 @@ void RunnersFeature::confirmRevoke(const QString &runner)
     QPushButton *revoke = box->addButton(QStringLiteral("Revoke"), QMessageBox::DestructiveRole);
     revoke->setObjectName(QStringLiteral("dangerButton"));
     box->setDefaultButton(QMessageBox::Cancel);
-    connect(box, &QMessageBox::buttonClicked, this, [this, revoke, runner](QAbstractButton *clicked) {
+    forkmesh::ui::onMessageBoxClicked(box, this, [this, revoke, runner](QAbstractButton *clicked) {
         if (clicked == revoke)
             runAction(RunnerAction::Revoke, runner);
     });
@@ -507,8 +508,8 @@ void RunnersFeature::confirmRemoveAccount(const QString &runner, const QString &
     QPushButton *remove = box->addButton(QStringLiteral("Remove"), QMessageBox::DestructiveRole);
     remove->setObjectName(QStringLiteral("dangerButton"));
     box->setDefaultButton(QMessageBox::Cancel);
-    connect(box, &QMessageBox::buttonClicked, this,
-            [this, remove, runner, provider, account](QAbstractButton *clicked) {
+    forkmesh::ui::onMessageBoxClicked(
+        box, this, [this, remove, runner, provider, account](QAbstractButton *clicked) {
         if (clicked == remove)
             changeAccount(runner, provider, account, QStringLiteral("remove"));
     });

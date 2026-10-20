@@ -6941,9 +6941,11 @@ Q_NEVER_INLINE void checkWideDiffStreamsFromWorker()
     bool firstPainted = false;
     bool hooksHeld = true;
     for (int i = 0; i < chunks.size(); ++i) {
+        const QList<QStringList> pages =
+            forkmesh::ui::paginateDiffStreamChunk(chunks.at(i));
         QElapsedTimer clock;
         clock.start();
-        forkmesh::ui::appendDiffStreamChunk(&view, chunks.at(i));
+        forkmesh::ui::appendDiffStreamPages(&view, pages);
         QApplication::processEvents();
         const qint64 ms = clock.elapsed();
         slowestAppendMs = qMax(slowestAppendMs, ms);
@@ -18758,6 +18760,17 @@ else:
               .arg(previewDecodesFirstOpen)
               .arg(packageCards.size())
               .arg(window.testMarketPreviewDecodes()));
+    int explicitlyShownMarketCards = 0;
+    for (QWidget *card :
+         window.findChildren<QWidget *>(QStringLiteral("marketPackageCard"))) {
+        if (card->testAttribute(Qt::WA_WState_ExplicitShowHide) && !card->isHidden())
+            ++explicitlyShownMarketCards;
+    }
+    check(explicitlyShownMarketCards == 0,
+          QStringLiteral("unfiltered Market cards follow their tab instead of "
+                         "being shown one by one, so a rebuild lays out only "
+                         "the tab on screen (%1 shown one by one)")
+              .arg(explicitlyShownMarketCards));
     auto *marketSearch =
         window.findChild<QLineEdit *>(QStringLiteral("marketSearch"));
     auto *marketSearchEmpty =

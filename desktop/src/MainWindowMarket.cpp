@@ -195,6 +195,15 @@ bool marketPackageMatchesCategory(const PackageManifest &manifest,
            manifest.type == QLatin1String("theme");
 }
 
+void setMarketCardShown(QWidget *card, bool shown)
+{
+    const bool explicitlyHidden =
+        card->isHidden() &&
+        card->testAttribute(Qt::WA_WState_ExplicitShowHide);
+    if (shown == explicitlyHidden)
+        card->setVisible(shown);
+}
+
 const QString kStatusPagePackageId = QStringLiteral("status-page");
 const QString kStatusMonitorsRequestProof =
     QStringLiteral("forkmesh-status-monitors-request-v1");
@@ -1334,7 +1343,8 @@ void MainWindow::applyMarketSearch()
             QWidget *card = list->itemAt(i)->widget();
             if (card &&
                 card->objectName() == QLatin1String("marketPackageCard"))
-                card->setVisible(
+                setMarketCardShown(
+                    card,
                     matches.contains(card->property("packageId").toString()));
         }
     }
@@ -1353,7 +1363,7 @@ void MainWindow::applyMarketSearch()
             bool matched = true;
             for (const QString &term : terms)
                 matched = matched && text.contains(term);
-            card->setVisible(matched);
+            setMarketCardShown(card, matched);
             shown += matched ? 1 : 0;
         }
         return qMakePair(shown, all);

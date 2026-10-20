@@ -51,6 +51,7 @@ constexpr int kTeammateTileCaptionLines = 5;
 constexpr int kTeammateTileFrameMs = 66;
 constexpr int kRailFaceTickMs = 40;
 constexpr int kRailFaceCalmFrameMs = 100;
+constexpr int kRailFaceInactiveFrameMs = 200;
 
 bool railStatusInFlight(const QString &status)
 {
@@ -289,12 +290,17 @@ protected:
     }
     void advance(qint64 now)
     {
-        if (now - m_lastFrameMs < m_frameMs)
-            return;
         const QWidget *top = window();
+        const int frameMs = top->isActiveWindow()
+                                ? m_frameMs
+                                : qMax(m_frameMs, kRailFaceInactiveFrameMs);
+        if (now - m_lastFrameMs < frameMs)
+            return;
         if (top->isMinimized())
             return;
         if (const QWindow *handle = top->windowHandle(); handle && !handle->isExposed())
+            return;
+        if (visibleRegion().isEmpty())
             return;
         m_lastFrameMs = now;
         update();

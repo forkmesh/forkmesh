@@ -506,6 +506,8 @@ bool restyleDiffStreamed(QTextEdit *view, const QString &styleSheet);
 void beginDiffStreamIncremental(QTextEdit *view, const QString &styleSheet,
                                 const QString &placeholder, bool endCap = true);
 void appendDiffStreamChunk(QTextEdit *view, const QString &chunk);
+QList<QStringList> paginateDiffStreamChunk(const QString &chunk);
+void appendDiffStreamPages(QTextEdit *view, const QList<QStringList> &pages);
 void finishDiffStreamIncremental(QTextEdit *view);
 void scrollDiffToAnchor(QTextEdit *view, const QString &anchor);
 void flushDiffStream(QTextEdit *view);

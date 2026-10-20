@@ -8141,8 +8141,8 @@ private:
         const QString &patch, const QString &emptyMessage,
         const QString &viewedContext, std::function<void()> done, bool guiThread,
         std::optional<QHash<QString, QString>> fingerprints = std::nullopt);
-    void applyBranchDiffChunk(int gen, const QString &chunk, int filesDone,
-                              int filesTotal);
+    void applyBranchDiffChunk(int gen, const QList<QStringList> &pages,
+                              int filesDone, int filesTotal);
     void applyBranchDiffRender(const forkmesh::ui::BranchDiffRender &render,
                                const QString &patch, const QString &message,
                                const QString &viewedContext, bool comments,
