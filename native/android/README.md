@@ -9,6 +9,14 @@ The developer home page for both native apps (this one and `native/ios`) is
 Android-specific decisions are in
 [`docs/native/ANDROID.md`](../../docs/native/ANDROID.md).
 
+## Keeping level with iOS
+
+Features and UI changes land on iOS first. What Android still has to match is
+listed in [`docs/native/SYNC.md`](../../docs/native/SYNC.md)
+(`python3 tools/native_sync.py status`); close a row with
+`python3 tools/native_sync.py mark <ID> --synced <sha>` when its Android
+change is on `main`.
+
 ## Build, test, run
 
 ```sh
