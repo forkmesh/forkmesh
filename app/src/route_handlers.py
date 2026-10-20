@@ -5170,6 +5170,249 @@ async def repository_branch_ops_handler(env, request, owner, repo):
     }, cache_control="no-store")
 
 
+MAX_BRANCH_DELETES = 100
+BRANCH_DELETE_AUDIT_OUTCOMES = {
+    "deleted": "success", "queued": "requested", "pending": "requested",
+    "refused": "denied", "failed": "failed",
+}
+
+
+def _branch_delete_refusal(branch, error, message):
+    return {"branch": branch, "status": "refused", "error": error,
+            "message": message}
+
+
+def _branch_delete_wanted(items):
+    wanted, refused, seen = [], [], set()
+    for item in items:
+        if isinstance(item, dict):
+            raw = item.get("name", item.get("branch", ""))
+            expected = item.get("expectedOid", "")
+        else:
+            raw, expected = item, ""
+        label = clean_string(raw if isinstance(raw, str) else "", 200).strip()
+        name = branch_op_name(raw if isinstance(raw, str) else "")
+        if name and name in seen:
+            continue
+        seen.add(name or label)
+        expected = clean_string(
+            expected if isinstance(expected, str) else "", 64).strip().lower()
+        if not name:
+            refused.append(_branch_delete_refusal(
+                label, "invalid_branch", "That is not a branch name Git can "
+                "use."))
+        elif name.startswith("forkmesh/"):
+            refused.append(_branch_delete_refusal(
+                name, "reserved_branch", name + " belongs to ForkMesh and "
+                "cannot be deleted here."))
+        elif expected and not re.fullmatch(BRANCH_OP_OID_PATTERN, expected):
+            refused.append(_branch_delete_refusal(
+                name, "invalid_commit", "The tip sent for " + name
+                + " is not a commit id."))
+        else:
+            wanted.append((name, expected))
+    return wanted, refused
+
+
+def _branch_delete_screen(name, expected, default, protected, tips=None):
+    if name == default:
+        return _branch_delete_refusal(
+            name, "default_branch", "The default branch cannot be deleted.")
+    if protected and _branch_protection.branch_is_protected(name, protected):
+        return _branch_delete_refusal(
+            name, "branch_protected", name + " is protected: it changes only "
+            "by merging an approved pull request.")
+    if tips is not None and name not in tips:
+        return _branch_delete_refusal(
+            name, "branch_not_found", name + " is not on this repository.")
+    if tips is not None and expected and tips[name] != expected:
+        return _branch_delete_refusal(
+            name, "stale_head", name + " moved since the page read it, so it "
+            "was kept. Refresh and try again.")
+    if tips is None and not expected:
+        return _branch_delete_refusal(
+            name, "invalid_commit", "Deleting " + name + " needs the tip the "
+            "page showed.")
+    return None
+
+
+async def _branch_delete_hosted(env, owner, repo):
+    record = await _repo_catalog_record(env, owner, repo)
+    return isinstance(record, dict) and record.get("source") == "hosted-web"
+
+
+async def _branch_delete_queue(env, request, owner, repo, repo_bi, records):
+    pending = await _branch_ops_pending(env, repo_bi)
+    waiting = {(op["op"], op["branch"]) for op in pending}
+    room = MAX_PENDING_BRANCH_OPS - len(pending)
+    outcomes, queued = {}, 0
+    for record in records:
+        if ("delete", record["branch"]) in waiting:
+            outcomes[record["branch"]] = "queued"
+            continue
+        if room <= 0:
+            outcomes[record["branch"]] = "queue_full"
+            continue
+        try:
+            await d1_run(
+                env,
+                "INSERT INTO branch_op_inbox (repo_bi, data, queued_at) "
+                "VALUES (?,?,?)",
+                repo_bi, await encrypt_row(env, record), record["queuedAt"],
+            )
+        except Exception:
+            outcomes[record["branch"]] = "queue_full"
+            room = 0
+            continue
+        waiting.add(("delete", record["branch"]))
+        room -= 1
+        queued += 1
+        outcomes[record["branch"]] = "queued"
+    if queued:
+        await _branch_ops_wake(env, request, owner, repo)
+    return outcomes
+
+
+async def _branch_delete_via_node(env, request, owner, repo, repo_bi, wanted,
+                                  actor):
+    node = await _branch_protection.storage_owner(env, owner, repo)
+    if await _branch_delete_hosted(env, node, repo):
+        return None, "branch_delete_unavailable", ""
+    default = await _branch_protection.default_branch(env, node, repo)
+    if not default:
+        return None, "default_branch_unknown", ""
+    protected, problem = await _branch_protection.push_protection(
+        env, owner, repo)
+    if problem:
+        return None, problem, default
+    results, records = {}, []
+    now = int(Date.now())
+    for name, expected in wanted:
+        refusal = _branch_delete_screen(name, expected, default, protected)
+        if refusal is not None:
+            results[name] = refusal
+            continue
+        records.append({"op": "delete", "branch": name,
+                        "expectedOid": expected, "requestedBy": actor,
+                        "queuedAt": now, "source": "web"})
+    outcomes = await _branch_delete_queue(
+        env, request, owner, repo, repo_bi, records)
+    for name, outcome in outcomes.items():
+        results[name] = {
+            "branch": name, "status": "queued", "error": "",
+            "message": "Queued the deletion of " + name + " for this "
+                       "repository's node."} if outcome == "queued" else {
+            "branch": name, "status": "failed", "error": "queue_full",
+            "message": "The node's queue is full, so " + name
+                       + " was not queued."}
+    return results, "", default
+
+
+async def _branch_delete_on_cores(env, request, owner, repo, repo_bi, target,
+                                  wanted, actor):
+    import agent_branches
+    agent_branches._bind_runtime(globals())
+    results, executable = {}, []
+    for name, expected in wanted:
+        refusal = _branch_delete_screen(
+            name, expected, target["default"], target["protected"],
+            target["tips"])
+        if refusal is not None:
+            results[name] = refusal
+        else:
+            executable.append(name)
+    done = await agent_branches.core_delete_branches(
+        env, request, target, executable, actor)
+    for answer in done:
+        results[answer["branch"]] = answer
+    mirror = target["mirror"]
+    deleted = [answer for answer in done if answer["status"] == "deleted"]
+    if deleted and not await _branch_delete_hosted(
+            env, mirror["owner"], mirror["repo"]):
+        now = int(Date.now())
+        await _branch_delete_queue(env, request, owner, repo, repo_bi, [{
+            "op": "delete", "branch": answer["branch"],
+            "expectedOid": target["tips"][answer["branch"]],
+            "requestedBy": actor, "queuedAt": now, "source": "cores",
+        } for answer in deleted])
+    return results
+
+
+async def repository_branch_delete_handler(env, request, owner, repo):
+    """Delete up to MAX_BRANCH_DELETES branches for the owner, per branch."""
+    await ensure_schema(env)
+    if method_name(request) != "POST":
+        return json_response({"error": "method_not_allowed"}, status=405)
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        return json_response({"error": "invalid_json"}, status=400)
+    if not isinstance(data, dict):
+        return json_response({"error": "invalid_json"}, status=400)
+    authorized, denial = await _authorize_issue_manager(
+        env, owner, data, request)
+    if not authorized:
+        return denial
+    _, actor_record = await _account_session_record(env, request, data)
+    actor = clean_string(
+        (actor_record or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    items = data.get("branches")
+    if not isinstance(items, list) or not items:
+        return json_response({"error": "branches_required"}, status=400)
+    if len(items) > MAX_BRANCH_DELETES:
+        return json_response(
+            {"error": "too_many_branches", "limit": MAX_BRANCH_DELETES},
+            status=400)
+    wanted, refused = _branch_delete_wanted(items)
+    repo_bi = await blind_index(env, owner + "/" + repo)
+    target_name = owner + "/" + repo
+    results, default = {}, ""
+    if wanted:
+        import agent_branches
+        agent_branches._bind_runtime(globals())
+        target, reason = await agent_branches.branch_delete_target(
+            env, request, owner, repo)
+        if target is not None:
+            default = target["default"]
+            results = await _branch_delete_on_cores(
+                env, request, owner, repo, repo_bi, target, wanted, actor)
+        elif reason == "not_served":
+            results, reason, default = await _branch_delete_via_node(
+                env, request, owner, repo, repo_bi, wanted, actor)
+        else:
+            results = None
+        if results is None:
+            await _audit_sensitive_action(
+                env, actor, "repository.branch_delete", "repository",
+                target_name, "failed",
+                {"reason": reason, "count": len(wanted)})
+            return json_response({
+                "ok": False, "error": reason, "retryable": True,
+                "message": "Branches cannot be deleted right now: the "
+                           "repository's copies could not be checked. "
+                           "Nothing was deleted; try again shortly."},
+                status=503, cache_control="no-store",
+                extra_headers=EXPECTED_DEGRADED_HEADERS)
+    ordered = refused + [results[name] for name, _ in wanted
+                         if name in results]
+    for answer in ordered:
+        await _audit_sensitive_action(
+            env, actor, "repository.branch_delete", "repository", target_name,
+            BRANCH_DELETE_AUDIT_OUTCOMES.get(answer["status"], "failed"),
+            {"branch": answer["branch"], "op": "delete",
+             "status": answer["status"], "error": answer.get("error", ""),
+             "batch": len(items),
+             "cleanupPending": len(answer.get("cleanupPending") or [])})
+    counts = {status: 0 for status in BRANCH_DELETE_AUDIT_OUTCOMES}
+    for answer in ordered:
+        counts[answer["status"]] = counts.get(answer["status"], 0) + 1
+    return json_response({
+        "ok": True, "defaultBranch": default, "results": ordered,
+        "counts": counts, "limit": MAX_BRANCH_DELETES,
+        "ops": await _branch_ops_pending(env, repo_bi),
+    }, cache_control="no-store")
+
+
 PROFILE_CONTRIBUTION_VIEW_FRESH_MS = 60 * 1000
 PROFILE_CONTRIBUTION_VIEW_STALE_SECONDS = 10 * 60
 PROFILE_CONTRIBUTION_VIEW_BUILT_HEADER = "x-forkmesh-built"

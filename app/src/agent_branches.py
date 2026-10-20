@@ -1292,6 +1292,107 @@ async def core_branch_trash(env, request, owner, repo):
     }
 
 
+BRANCH_DELETE_ATTEMPTS = 3
+
+
+async def branch_delete_target(env, request, owner, repo):
+    served = await _served_owner(env, owner, repo)
+    mirror, reason = await _mirror_context(env, served, repo)
+    if mirror is None:
+        return None, reason or "not_served"
+    endpoint, _unavailable = await _core_endpoint(
+        env, request, mirror, DELETE_OPERATION)
+    if endpoint is None:
+        return None, "not_served"
+    tips, default = await _branch_tips(env, served, repo)
+    if tips is None or not default or not tips.get(default):
+        return None, "branches_unavailable"
+    protected, problem = await _branch_protection.push_protection(
+        env, served, repo)
+    if problem:
+        return None, problem
+    return {"served": served, "mirror": mirror, "endpoint": endpoint,
+            "tips": tips, "default": default,
+            "protected": protected or []}, ""
+
+
+async def _delete_branch_on_cores(env, request, target, branch, tip):
+    mirror, endpoint = target["mirror"], target["endpoint"]
+    request_id = _new_request_id()
+    node_request = {
+        "schemaVersion": 1, "type": "forkmesh.branch-delete-v1",
+        "requestId": request_id, "branch": branch,
+        "base": target["default"], "expectedHeadOid": tip, "discard": True,
+    }
+    status, result = 0, None
+    for _attempt in range(BRANCH_DELETE_ATTEMPTS):
+        status, result = await _https_mirror_merge_proxy(
+            env, endpoint, mirror, node_request, "branch-delete")
+        if result is None or (
+                status != 202 and result.get("status") != "processing"):
+            break
+    answer = {"branch": branch, "requestId": request_id,
+              "node": endpoint["node"]}
+    if result is None:
+        answer.update({
+            "status": "failed", "error": "merge_node_unavailable",
+            "message": "The core did not answer, so " + branch
+                       + " was kept. Try again."})
+        return answer
+    if status == 202 or result.get("status") == "processing":
+        answer.update({
+            "status": "pending", "error": "",
+            "message": "Deleting " + branch + " is still running on "
+                       + endpoint["node"] + ". Refresh in a moment."})
+        return answer
+    error = str(result.get("error") or "")
+    if result.get("status") == "deleted" or error == "branch_not_found":
+        pending, _done, refused, _processing = await _fan_out_cleanup(
+            env, request, mirror, branch, target["default"], tip,
+            request_id, {endpoint["node"]}, discard=True)
+        left = pending + refused
+        answer.update({
+            "status": "deleted", "error": "", "cleanupPending": left,
+            "message": "Deleted " + branch + "." if not left else (
+                "Deleted " + branch + "; " + ", ".join(left)
+                + " still has it.")})
+        return answer
+    messages = {
+        "stale_head": branch + " moved since the page read it, so it was "
+                      "kept. Refresh and try again.",
+        "stale_base": "The default branch moved while deleting " + branch
+                      + ", so it was kept. Try again.",
+        "unsupported_branch": "The default branch cannot be deleted.",
+    }
+    answer.update({
+        "status": "failed", "error": error or "failed",
+        "message": messages.get(
+            error, "The core refused to delete " + branch + " ("
+            + (error or "failed") + ").")})
+    return answer
+
+
+async def core_delete_branches(env, request, target, branches, actor=""):
+    results = []
+    for branch in branches:
+        results.append(await _delete_branch_on_cores(
+            env, request, target, branch, target["tips"][branch]))
+    if any(item["status"] == "deleted" for item in results):
+        mirror, endpoint = target["mirror"], target["endpoint"]
+        try:
+            await record_hosted_push_state(
+                env, mirror["owner"], mirror["repo"], endpoint,
+                pusher=actor)
+        except Exception:
+            pass
+        try:
+            await notify_repo_host(
+                env, mirror["owner"], mirror["repo"], "branches")
+        except Exception:
+            pass
+    return results
+
+
 async def core_branch_op(env, request, owner, repo, record, data,
                          default_branch="", actor=""):
     op = record.get("op")

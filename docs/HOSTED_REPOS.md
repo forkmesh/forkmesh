@@ -42,6 +42,16 @@ verified email.
 tags allowed but never moved, only `refs/heads/*` and `refs/tags/*`, objects
 fsck-checked, no hooks, every accepted push audited per ref.
 
+**Deleting branches.** The owner (or an organization owner or admin) deletes
+branches on the repository's Branches page, one at a time or several at once
+(`POST /api/repo/<owner>/<name>/branches/delete`, at most 100 per request).
+The default branch and protected branches are refused. Each delete is a
+router-signed request to every core's merge executor, which moves the tip to
+`refs/forkmesh/trash/branch/` and deletes the branch in one ref transaction,
+and is audited as `repository.branch_delete`. Afterwards the app notes the
+change like a push, so the cores wake and a push mirror with prune drops the
+branch on its next push. Details: [app/branch-ops.md](app/branch-ops.md#deleting-branches).
+
 ## Design
 
 ```
@@ -194,6 +204,8 @@ refs).
   redirects, HTTPS only.
   Errors are redacted (token and header value replaced) and folded to 300
   characters.
+- A branch deleted on the Branches page changes the refs digest, so it
+  triggers a push, and with prune the branch is removed from the target.
 
 ## Operations
 
@@ -258,7 +270,8 @@ maintains them (`server/hosted_maintenance.go`):
 
 ## Known gaps
 
-- Branch deletion and force pushes are refused.
+- `git push` cannot delete a branch or force-push; delete branches on the
+  Branches page instead.
 - A core offline longer than the removal window keeps an orphaned copy.
 - Concurrent divergent pushes on two cores during failover converge to the
   newer commit.

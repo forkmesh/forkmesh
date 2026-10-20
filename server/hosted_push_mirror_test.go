@@ -527,3 +527,51 @@ func TestHostedPushMirrorDefaultBranchOnly(t *testing.T) {
 		t.Fatalf("failed list: calls %d report %+v", runner.count()-before, failed)
 	}
 }
+
+func TestHostedPushMirrorPrunesADeletedBranch(t *testing.T) {
+	var app fakeHostedApp
+	appServer := httptest.NewServer(&app)
+	defer appServer.Close()
+	node := hostedTestDaemon(t, "fmnext-n1", appServer.URL)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	run(t, ".", "git", "init", "--quiet", "--bare", remote)
+	runner := &fakePushRunner{t: t, remote: "file://" + remote}
+	node.hosted.runPush = runner.run
+	now := time.Unix(1790000000, 0)
+	node.hosted.clock = func() time.Time { return now }
+
+	mirror := testPushMirror()
+	mirror.Prune = true
+	app.answer = func(string, map[string]hostedCopyState) hostedReplicaResponse {
+		copied := mirror
+		item := hostedDesired{ID: testHostedID, Owner: "alice", Name: "proj", Visibility: "public",
+			Primary: true, Init: testInit(), PushMirror: &copied}
+		return hostedReplicaResponse{Repositories: []hostedDesired{item}}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := node.hosted.gitDir(testHostedID)
+	head := run(t, ".", "git", "--git-dir="+gitDir, "rev-parse", "refs/heads/main")
+	run(t, ".", "git", "--git-dir="+gitDir, "update-ref", "refs/heads/feature", head)
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := remoteHeads(t, remote); got != "refs/heads/feature\nrefs/heads/main" {
+		t.Fatalf("remote refs before the delete = %q", got)
+	}
+	before := runner.count()
+
+	run(t, ".", "git", "--git-dir="+gitDir, "update-ref", "-d", "refs/heads/feature", head)
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if runner.count() != before+1 || runner.last().args[2] != "--prune" {
+		t.Fatalf("a deleted branch did not push with --prune: %d %v", runner.count()-before, runner.last().args)
+	}
+	if got := remoteHeads(t, remote); got != "refs/heads/main" {
+		t.Fatalf("remote refs after the delete = %q", got)
+	}
+}

@@ -1128,7 +1128,7 @@ _URL_EXPORT_NAMES = (
     "CHAT_DIRECT_MESSAGE_PENDING_RE", "CHAT_DIRECT_MESSAGE_DELIVERED_RE",
     "CHAT_DIRECT_MESSAGE_WS_RE", "CHAT_READS_RE", "REPO_ISSUES_RE", "REPO_PULLS_RE",
     "REPO_PULL_MERGE_RE", "REPO_PULL_UPDATE_RE", "REPO_PULL_RULES_RE",
-    "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE",
+    "REPO_BRANCH_OPS_RE", "REPO_BRANCH_OP_RESULTS_RE", "REPO_BRANCH_DELETE_RE",
     "REPO_ACTION_RUNS_RE", "REPO_ACTION_CONTROL_RE", "REPO_DISCUSSIONS_RE",
     "REPO_ACTION_RUN_LOG_RE", "REPO_ACTION_SECRETS_RE",
     "ORG_ACTION_SECRETS_RE",
@@ -51017,6 +51017,8 @@ org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")
 repository_branch_op_results_handler = _route_handlers.export(
     "repository_branch_op_results_handler")
+repository_branch_delete_handler = _route_handlers.export(
+    "repository_branch_delete_handler")
 
 
 async def _https_mirror_proxy(

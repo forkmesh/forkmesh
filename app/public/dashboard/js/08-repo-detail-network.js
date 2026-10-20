@@ -396,7 +396,7 @@
 	                </div>
 	              </div>
 		            </section>
-            <section data-dashboard-repo-tab-panel="branches" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-branch" class="h-3.5 w-3.5 text-muted-foreground"></i>Branches<span data-repo-branches-total class="font-mono text-[10px] font-normal text-muted-foreground"></span></span><label class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs text-muted-foreground focus-within:ring-1 focus-within:ring-foreground/20 sm:max-w-64"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><input data-repo-branches-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a branch..." aria-label="Find a branch" class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" /></label><div data-repo-branches-actions class="flex shrink-0 flex-wrap items-center gap-2"></div></div><div data-repo-branches-status role="status" aria-live="polite" hidden class="border-b border-border px-4 py-2 text-xs text-muted-foreground"></div><div data-repo-branch-results hidden></div><div data-repo-branches></div></div></section>
+            <section data-dashboard-repo-tab-panel="branches" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-branch" class="h-3.5 w-3.5 text-muted-foreground"></i>Branches<span data-repo-branches-total class="font-mono text-[10px] font-normal text-muted-foreground"></span></span><label class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs text-muted-foreground focus-within:ring-1 focus-within:ring-foreground/20 sm:max-w-64"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><input data-repo-branches-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a branch..." aria-label="Find a branch" class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" /></label><div data-repo-branches-actions class="flex max-w-full flex-wrap items-center gap-2"></div></div><div data-repo-branches-status role="status" aria-live="polite" hidden class="border-b border-border px-4 py-2 text-xs text-muted-foreground"></div><div data-repo-branches-selection hidden></div><div data-repo-branch-delete-results hidden></div><div data-repo-branch-results hidden></div><div data-repo-branches></div></div></section>
             <section data-dashboard-repo-tab-panel="commits" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits</span><span class="font-mono text-[10px] text-muted-foreground">live mirror history</span></div><div data-repo-commits></div></div></section>
             <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><span class="font-mono text-[10px] text-muted-foreground">signed release manifests</span></div><div data-repo-releases></div></div></section>
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
@@ -2746,13 +2746,52 @@
       // Branch management (adhoc #2098). Checked before the browse handler
       // below: these controls sit in the same row as the branch name, and a
       // delete must never be read as "browse this branch instead".
+      const branchSelect = event.target.closest("[data-repo-branch-select]");
+      if (branchSelect && state.selectedRepo) {
+        setRepoBranchSelected(state.selectedRepo, branchSelect.dataset.repoBranchSelect || "", branchSelect.checked);
+        return;
+      }
+
       const branchDelete = event.target.closest("[data-repo-branch-delete]");
       if (branchDelete && state.selectedRepo) {
-        await deleteRepoBranch(
-          state.selectedRepo,
-          branchDelete.dataset.repoBranchTarget || "",
-          branchDelete.dataset.repoBranchOid || "",
-        );
+        setRepoBranchConfirm(state.selectedRepo, { kind: "one", branch: branchDelete.dataset.repoBranchTarget || "" });
+        return;
+      }
+
+      const branchDeleteConfirm = event.target.closest("[data-repo-branch-delete-confirm]");
+      if (branchDeleteConfirm && state.selectedRepo) {
+        await confirmRepoBranchDelete(state.selectedRepo, branchDeleteConfirm.dataset.repoBranchTarget || "");
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branch-delete-cancel], [data-repo-branches-delete-selected-cancel]") && state.selectedRepo) {
+        setRepoBranchConfirm(state.selectedRepo, null);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branches-delete-selected]") && state.selectedRepo) {
+        setRepoBranchConfirm(state.selectedRepo, { kind: "batch" });
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branches-delete-selected-confirm]") && state.selectedRepo) {
+        await confirmRepoBranchesDeleteSelected(state.selectedRepo);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branches-select-clear]") && state.selectedRepo) {
+        repoBranchSelection(state.selectedRepo).clear();
+        setRepoBranchConfirm(state.selectedRepo, null);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branches-filter-merged]") && state.selectedRepo) {
+        toggleRepoBranchMergedFilter(state.selectedRepo);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-branch-delete-results-clear]") && state.selectedRepo) {
+        clearRepoBranchDeleteResults(state.selectedRepo);
         return;
       }
 
@@ -2808,11 +2847,6 @@
 
       if (event.target.closest("[data-repo-branch-update-all]") && state.selectedRepo) {
         await updateAllRepoBranchesFromDefault(state.selectedRepo);
-        return;
-      }
-
-      if (event.target.closest("[data-repo-branch-delete-merged]") && state.selectedRepo) {
-        await deleteMergedRepoBranches(state.selectedRepo);
         return;
       }
 
