@@ -61,6 +61,17 @@ def test_catalog_validator_accepts_canonical_and_legacy_device_shapes():
         "/api/repositories", catalog(device))
 
 
+def test_catalog_validator_accepts_mirror_and_fork_records():
+    mirror = public_repository(
+        mirrorOf="https://upstream.example/alice/demo",
+        upstreamCommit="520ba6a3a36f0850b586c9122c7607a3eb2cf7c1",
+        lastSyncedAt="1792359203233",
+    )
+    fork = public_repository(name="demo-fork", forkedFrom="alice/demo")
+    assert snapshots.validate_snapshot_payload(
+        "/api/repositories", catalog(mirror, fork))
+
+
 @pytest.mark.parametrize("poison", [
     {"privateRepositories": [{"name": "secret"}]},
     {"repositories": [public_repository(accessToken="secret")]},

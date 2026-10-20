@@ -66,7 +66,8 @@ CATALOG_REPOSITORY_KEYS = frozenset({
     "sourceAuthority", "isPrivate", "sharedWithMe", "termsFlagged",
     "termsCategory", "sshUrl", "reportedSource", "ownerKind", "logicalOwner",
     "logicalOwners", "cloneOnline",
-    "dashboardUrl",
+    "dashboardUrl", "mirrorOf", "upstreamCommit", "lastSyncedAt",
+    "forkedFrom",
 })
 CATALOG_LOGO_KEYS = frozenset({
     "description", "languages", "topics", "fileStructure", "frameworks",
