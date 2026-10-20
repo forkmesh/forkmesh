@@ -95,6 +95,8 @@ def compose_from_reader(read):
 LAZY_CHUNKS = {
     "achievements": "09-achievements.js",
     "agents": "09-agents.js",
+    # Settings > Agents only (04-account.js initSettingsAgents).
+    "agent-profiles": "09-agent-profiles.js",
     "apps": "09-apps.js",
     "bounties": "09-bounties.js",
     "calendar": "09-calendar.js",
