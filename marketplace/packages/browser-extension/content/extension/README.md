@@ -306,7 +306,7 @@ so the log stays current without pressing anything.
   `host_permissions`.
 
 **Your accounts' threads and Log thread** (2.27.0). Before 2.27.0 a thread
-posted by u/forkmesh or u/jett_at_forkmesh outside the watched subreddits was
+posted by one of the desk's accounts outside the watched subreddits was
 never read, and a thread could reach the log only through **Send to Reddit
 desk** (watched subreddits and searches) or **Monitor**. Now:
 
