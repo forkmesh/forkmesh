@@ -1584,7 +1584,7 @@ void MainWindow::handleLocalControlAgentOpsRequest(int connectionId, int request
             QJsonArray restored;
             QJsonArray failed;
             for (const int id : std::as_const(ids))
-                (m_agentStore->restoreRecycledSession(id) ? restored : failed).append(id);
+                (restoreRecycledAgentSession(id) ? restored : failed).append(id);
             if (!restored.isEmpty()) {
                 reloadAgents();
                 scheduleAgentSessionsPush();

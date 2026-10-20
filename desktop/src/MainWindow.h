@@ -6957,6 +6957,8 @@ private:
     void updateAgentRecycleBinBar();
     QList<AgentSession> agentRecycledInOpenRepo() const;
     void restoreAllRecycledAgentsInOpenRepo();
+    bool restoreRecycledAgentSession(int sessionId);
+    void restoreDeletedAgentBranch(const AgentSession &session);
     void deleteAllRecycledAgentsInOpenRepo();
     void deleteWorktreeBranchAndAgentInBackground(
         const QString &worktreePath, const QString &branch,

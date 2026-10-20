@@ -20,6 +20,7 @@
 #include "AgentRuntimeRegistry.h"
 #include "AgentResumeIdentity.h"
 #include "AgentWorktree.h"
+#include "UpstreamCheckoutSync.h"
 #include "FlowLayout.h"
 #include "KebabHeaderView.h"
 #include "CodexAppServerSession.h"
@@ -1901,6 +1902,87 @@ void MainWindow::updateAgentRecycleBinBar()
     m_agentRecycleBinBar->setVisible(count > 0);
 }
 
+bool MainWindow::restoreRecycledAgentSession(int sessionId)
+{
+    if (!m_agentStore)
+        return false;
+    AgentSession binned;
+    for (const AgentSession &session : m_agentStore->loadRecycledSessions()) {
+        if (session.id == sessionId) {
+            binned = session;
+            break;
+        }
+    }
+    if (!m_agentStore->restoreRecycledSession(sessionId))
+        return false;
+    if (binned.id == sessionId)
+        restoreDeletedAgentBranch(binned);
+    return true;
+}
+
+void MainWindow::restoreDeletedAgentBranch(const AgentSession &session)
+{
+    if (session.directCheckout || session.branchName.trimmed().isEmpty() ||
+        isExternalSession(session.id))
+        return;
+    const int repoIndex = repoIndexFor(session.owner, session.name);
+    if (repoIndex < 0)
+        return;
+    const QString repoPath = m_repositories.at(repoIndex).localPath;
+    if (repoPath.isEmpty() ||
+        !QFileInfo::exists(QDir(repoPath).filePath(QStringLiteral(".git"))))
+        return;
+    const int sid = session.id;
+    const QString branch = session.branchName.trimmed();
+    const QString worktreeName =
+        session.worktreeName.isEmpty()
+            ? forkmesh::agentwt::dirName(sid, session.issueTitle)
+            : session.worktreeName;
+    const QString wtRoot = forkmesh::vm::active()
+                               ? forkmesh::vm::worktreeRoot()
+                               : forkmesh::agentwt::root(repoPath);
+    runOffThread<QPair<QString, QString>>(
+        [repoPath, branch, worktreeName, wtRoot] {
+            const forkmesh::BackgroundScope activity(
+                QStringLiteral("agents"),
+                QStringLiteral("restore deleted agent branch"));
+            const QString tip =
+                forkmesh::upstream::restoreDeletedBranch(repoPath, branch);
+            if (tip.isEmpty())
+                return qMakePair(QString(), QString());
+            QString wtPath = readWorktreePathForBranch(repoPath, branch);
+            if (wtPath.isEmpty()) {
+                forkmesh::agentwt::ensureRoot(wtRoot);
+                const QString target = QDir(wtRoot).filePath(worktreeName);
+                if (!QFileInfo::exists(target) &&
+                    runGitCapture(repoPath,
+                                  {QStringLiteral("worktree"), QStringLiteral("add"),
+                                   target, branch},
+                                  nullptr, nullptr))
+                    wtPath = target;
+            }
+            return qMakePair(tip, wtPath);
+        },
+        [this, sid, branch](QPair<QString, QString> result) {
+            if (result.first.isEmpty())
+                return;
+            m_sessionWorkdirCache.remove(sid);
+            logSystem(
+                result.second.isEmpty()
+                    ? QStringLiteral("Agents: restored branch %1 at %2 for "
+                                     "agent #%3; its worktree could not be "
+                                     "added back.")
+                          .arg(branch, result.first.left(10))
+                          .arg(sid)
+                    : QStringLiteral("Agents: restored branch %1 at %2 and its "
+                                     "worktree %3 for agent #%4.")
+                          .arg(branch, result.first.left(10), result.second)
+                          .arg(sid));
+            loadWorktreesPanel();
+            reloadAgents();
+        });
+}
+
 void MainWindow::restoreAllRecycledAgentsInOpenRepo()
 {
     if (!m_agentStore)
@@ -1908,7 +1990,7 @@ void MainWindow::restoreAllRecycledAgentsInOpenRepo()
     const QList<AgentSession> binned = agentRecycledInOpenRepo();
     int restored = 0;
     for (const AgentSession &session : binned)
-        if (m_agentStore->restoreRecycledSession(session.id))
+        if (restoreRecycledAgentSession(session.id))
             restored += 1;
     reloadAgentRecycleBin();
     if (restored > 0) {

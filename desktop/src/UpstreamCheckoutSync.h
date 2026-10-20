@@ -71,6 +71,8 @@ ServedBranchSync syncServedAgentBranches(const QString &checkoutPath,
                                          const QStringList &branches);
 
 QString deletedBranchTombstoneRef(const QString &branch);
+QString restoreDeletedBranch(const QString &checkoutPath,
+                             const QString &branch);
 QByteArray branchTrashRequestCanonical(const QString &owner,
                                        const QString &repo,
                                        const QString &timestampMs);
