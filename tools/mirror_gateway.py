@@ -417,6 +417,7 @@ BRANCH_TRASH_PREFIXES = (
 )
 BRANCH_TRASH_TOKEN_RE = re.compile(r"^[0-9a-f]{16}$")
 BRANCH_TRASH_OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+FULL_COMMIT_ID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 MAX_BRANCH_TRASH_ENTRIES = 5000
 LOG_OPERATIONS = PUBLIC_OPERATIONS | {
     "private-replica", "dashboard", BRANCH_TRASH_OPERATION}
@@ -444,7 +445,7 @@ OPERATION_QUERY_FIELDS = {
     "raw": frozenset({"path", "ref"}),
     "history": frozenset({"ref", "all", "since", "until", "path"}),
     "commit": frozenset({"path"}),
-    "compare": frozenset({"base", "head"}),
+    "compare": frozenset({"base", "head", "cherry", "limit"}),
     "merge-preview": frozenset({"base", "head", "rules", "pull", "orgRules"}),
     "update-pull-branch": frozenset(),
     "branches": frozenset(),
@@ -2846,13 +2847,18 @@ def _run_git(
     timeout: int = PROCESS_TIMEOUT_SECONDS,
     allow_exit_one: bool = False,
     git_protocol: str = "",
+    alternate: Path | None = None,
 ) -> bytes:
+    environment = _git_environment(git_protocol)
+    if alternate is not None:
+        environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = str(
+            alternate / "objects")
     try:
         completed = subprocess.run(
             _git_prefix(git_dir) + list(arguments),
             input=input_bytes,
             capture_output=True,
-            env=_git_environment(git_protocol),
+            env=environment,
             timeout=timeout,
             check=False,
         )
@@ -4880,6 +4886,66 @@ class GitRepository:
             "commitCount": commit_count,
             "patch": patch.decode("utf-8", "replace"),
             "commits": commits.decode("utf-8", "replace"),
+        }
+
+    def cherry(
+        self, query: Mapping[str, str], upstream_dir: Path
+    ) -> dict[str, Any]:
+        values = {
+            key: str(query.get(key) or "").lower()
+            for key in ("base", "head", "limit")
+        }
+        if not all(
+            FULL_COMMIT_ID_RE.fullmatch(values[key])
+            for key in ("base", "head")
+        ) or (values["limit"] and not FULL_COMMIT_ID_RE.fullmatch(
+                values["limit"])):
+            raise GatewayError("upstream comparison needs commit ids")
+
+        def git(arguments: list[str], **options: Any) -> bytes:
+            return _run_git(
+                self.git_dir, arguments, alternate=upstream_dir, **options)
+
+        for key, value in values.items():
+            if value and not git(
+                ["rev-parse", "--verify", "--quiet", "--end-of-options",
+                 value + "^{commit}"],
+                max_output=128, allow_exit_one=True,
+            ).strip():
+                raise GatewayError("upstream comparison commit is missing")
+        since = values["limit"] or values["base"]
+        count_raw = git(
+            ["rev-list", "--count", f"--max-count={MAX_COMPARE_COMMITS + 1}",
+             "^" + since, "^" + values["base"], values["head"]],
+            max_output=32,
+        )
+        try:
+            own = int(count_raw)
+        except ValueError as exc:
+            raise GitError("repository commit count is invalid") from exc
+        if own > MAX_COMPARE_COMMITS:
+            raise GatewayError("repository comparison is too large")
+        arguments = ["cherry", values["base"], values["head"]]
+        if values["limit"]:
+            arguments.append(values["limit"])
+        lines = git(
+            arguments, max_output=(MAX_COMPARE_COMMITS + 1) * 72,
+            timeout=PROCESS_TIMEOUT_SECONDS,
+        ).decode("ascii", "replace").splitlines()
+        commits = []
+        for line in lines:
+            mark, _, oid = line.strip().partition(" ")
+            if mark in ("+", "-") and FULL_COMMIT_ID_RE.fullmatch(oid):
+                commits.append({"commit": oid, "upstream": mark == "-"})
+        pending = sum(1 for item in commits if not item["upstream"])
+        return {
+            "ok": True,
+            "baseOid": values["base"],
+            "headOid": values["head"],
+            "limitOid": values["limit"],
+            "commits": commits,
+            "pending": pending,
+            "merged": len(commits) - pending,
         }
 
     def merge_preview(self, query: Mapping[str, str]) -> dict[str, Any]:
@@ -9757,6 +9823,28 @@ class GatewayApplication:
             raise GatewayError("request query is invalid")
         return {key: values[0] for key, values in parsed.items()}
 
+    def _compare(
+        self, repository: GitRepository, query: Mapping[str, str]
+    ) -> dict[str, Any]:
+        if "cherry" not in query and "limit" not in query:
+            return repository.compare(query)
+        owner, _, name = str(query.get("cherry") or "").partition("/")
+        owner = owner.lower()
+        if (
+            not NODE_RE.fullmatch(owner)
+            or not REPO_RE.fullmatch(name)
+            or self._operator_quarantined(owner, name)
+        ):
+            raise GatewayError("upstream repository was not found")
+        upstream = self.repositories.get((owner, name.lower()))
+        if (
+            upstream is None
+            or not _repository_serves(upstream, "compare")
+            or not upstream.check_integrity()
+        ):
+            raise GatewayError("upstream repository was not found")
+        return repository.cherry(query, upstream.git_dir)
+
     def _merge_preview(
         self, repository: GitRepository, query: Mapping[str, str]
     ) -> dict[str, Any]:
@@ -10541,7 +10629,7 @@ class GatewayApplication:
                 "blob": repository.blob,
                 "history": repository.history,
                 "commit": repository.commit,
-                "compare": repository.compare,
+                "compare": lambda value: self._compare(repository, value),
                 "merge-preview": lambda value: self._merge_preview(
                     repository, value),
                 "branches": repository.branches,

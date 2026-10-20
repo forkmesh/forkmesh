@@ -36,16 +36,23 @@ the target instance; both copies must share history.
 request, shown only to the repository's owner or an owner of its
 organization when at least one fork on another instance is saved) sends
 several branches as separate pull requests in one action. Code:
-`app/public/dashboard/js/07-repo-pull-batch.js`; tests:
-`app/tests/test_pull_batch_frontend.py`.
+`app/public/dashboard/js/07-repo-pull-batch.js`, `app/src/pull_batch.py`
+(table `pull_batch_sent`, migration 0276) and the `compare?cherry=` read in
+`tools/mirror_gateway.py`; tests: `app/tests/test_pull_batch_frontend.py`,
+`app/tests/test_pull_batch_status.py`,
+`app/tests/test_gateway_upstream_cherry.py`.
 
-- **Rows.** Branches whose names start with the prefix box (`pr/` when any
-  branch does). Titles, descriptions, bases and dependencies come from an
-  optional `.forkmesh/pull-batch.json` on the default branch, a list of
-  `{branch, base, title, body, dependsOn}` (`dependsOn` is a branch name, a
-  list of them, or `#N` for a pull request already open on the target). Rows
-  from the file come first in file order; other matching branches follow with a
-  title made from the branch name. Every field is cleaned before use: control
+The page is one click: open it, and **Send all pending (N)** sends what is
+left. **Nothing to send** when N is 0.
+
+- **Rows.** The rows of `.forkmesh/pull-batch.json` on the default branch, a
+  list of `{branch, base, title, body, dependsOn, compareBase}` (`dependsOn` is
+  a branch name, a list of them, or `#N` for a pull request already open on
+  the target), or an object `{compareBase, pulls: [...]}`. Nothing else is
+  listed by default. **More** holds an optional prefix filter: with a prefix,
+  only file rows under it are kept and other branches under it follow, with a
+  title made from the branch name and the file's `compareBase`. Every field
+  is cleaned before use: control
   and bidirectional-override characters are removed, titles are one line of at
   most 240 characters, branch names must be plain git ref names, and a
   description over 60 KB holds its row back.
@@ -60,17 +67,42 @@ several branches as separate pull requests in one action. Code:
   or is not in the list waits and says why. A `#N` dependency is target-side
   review metadata, so it is not used as a source branch when computing the
   patch.
-- **Resuming.** Sent numbers are kept in `localStorage` per repository and
-  target (`forkmesh.pullBatch.v1:<host>/<owner>/<repo>><target url>`), written
-  after every successful send, so pressing **Send all** again, even after a
-  reload, sends only what is left. **Stop** ends the run after the pull
-  request in flight. An unreachable target, a full inbox, a quota, a rate
-  limit or a bad signature stops the run; other failures mark that row and
-  the run continues with rows that do not depend on it. The page cannot ask
-  the target which pull requests are already open: the target allows
-  cross-origin `POST` on its pulls route only, so its reads are not
-  available to this page. Sending from a second browser therefore does not
-  know what the first one sent.
+- **What is already done is set aside.** On load the page posts its rows to
+  `POST /api/repo/<owner>/<repo>/pull-batch` `{action: "status", target,
+  rows: [{branch, compareBase}]}` (owner or organization owner only, and the
+  target must be a saved fork). The server answers per row: `missing` (the
+  branch no longer exists: shown as a warning, never sent), `merged` (shown
+  collapsed under **Merged upstream**), `sent` (collapsed under **Already
+  sent**, with its number) or `pending`. Dependents of a merged row are sent
+  without a `Depends on` line; dependents of a missing row wait and say so.
+- **Merged upstream** is the `git cherry` test: every commit of the branch
+  beyond its compare base has a patch-id equal to a commit on the target's
+  default branch, so a pull request merged upstream with `git am` (new commit
+  ids) still counts. The server finds a local read-only mirror of the target
+  (a repository on this instance with that `mirrorOf`, or the instance's
+  platform repository when `INSTANCE_UPSTREAM` names the target), reads its
+  default branch tip, and asks the gateway for
+  `compare?base=<upstream tip>&head=<branch tip>&cherry=<mirror owner/name>&limit=<compare base>`.
+  The gateway runs `git cherry` in this repository with the mirror's object
+  directory as an alternate (read only; both must be public repositories on
+  the same gateway, otherwise the row stays pending). All three ids are
+  commit ids, so the gateway's response cache and the app's in-process cache
+  (`pull_batch._cherry_cache`, 2048 entries) are keyed by them: a reload
+  costs one branch listing per repository, and new git work only happens
+  when a branch or the upstream tip moves. With no mirror of the target,
+  nothing is hidden as merged.
+- **Sent records are on the server.** After each successful send the page
+  posts `{action: "record", target, sent: [{branch, head, number}]}`; rows
+  are keyed by repository, target, branch and head commit. A branch pushed
+  again after it was sent is listed unticked with "Sent as #N before its
+  latest push". Numbers the browser kept in `localStorage` (older pages,
+  `forkmesh.pullBatch.v1:<host>/<owner>/<repo>><target url>`) are posted once
+  as records for the branch's current head when the server has none, and are
+  still written as a fallback. **Stop** ends the run after the pull request
+  in flight. An unreachable target, a full inbox, a quota, a rate limit or a
+  bad signature stops the run; other failures mark that row and the run
+  continues with rows that do not depend on it. If the status request fails,
+  every listed row is shown and the page says so.
 - The page asks for a screen wake lock while it sends, so a phone does not
   sleep between pull requests.
 
@@ -100,10 +132,14 @@ instance's platform repository carrying local changes) can't compare its
 branches with its own `main`: the diff is the whole divergence and the mirror
 times out (`mirror_unavailable`). The batch file may then be an object
 `{"compareBase": "<branch>", "pulls": [...]}`, or a row may carry its own
-`compareBase`. Rows are compared with that branch (a copy of the other
-instance's `main`) while the signed pull request still targets `base`. A row's
-own `compareBase` wins over the shared one, and either wins over a single
-`dependsOn`.
+`compareBase` (a branch name or commit id). Rows are compared with it (a copy
+of the other instance's `main`) while the signed pull request still targets
+`base`. Precedence: the row's own `compareBase`, then a single `dependsOn`
+branch (so a stacked row is compared with its parent even when the file sets
+a shared `compareBase`), then the file's `compareBase`, then `base`. The same
+compare base is the `limit` of the merged-upstream check, so a stacked row is
+judged by its own commits only. Files from before this change read the same
+way, except that a single `dependsOn` now wins over the shared value.
 
 ### Each stacked pull request carries only its own commits
 
