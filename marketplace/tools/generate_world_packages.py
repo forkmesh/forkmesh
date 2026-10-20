@@ -19,7 +19,10 @@ from pathlib import Path
 import re
 import sys
 
-from marketplace_lib import MarketplaceError, load_catalog, manifest_entries, safe_relative_path
+from marketplace_lib import (
+    MarketplaceError, environment_plugin_selection, load_catalog, safe_relative_path,
+    selected_manifest_entries,
+)
 
 
 def _js_string(value: object) -> str:
@@ -30,7 +33,8 @@ def generate(catalog_path: Path, output: Path) -> str:
     catalog = load_catalog(catalog_path)
     imports = []
     entries = []
-    for _, manifest in manifest_entries(catalog):
+    selection = environment_plugin_selection(catalog)
+    for _, manifest in selected_manifest_entries(catalog, selection):
         entrypoint = str((manifest.get("entrypoints") or {}).get("world") or "")
         if not entrypoint:
             continue

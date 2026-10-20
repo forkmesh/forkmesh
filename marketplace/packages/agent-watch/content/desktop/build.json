@@ -5,8 +5,6 @@
     "AgentActivityModel.cpp",
     "AgentActivityView.h",
     "AgentActivityView.cpp",
-    "AgentNetworkSampler.h",
-    "AgentNetworkSampler.cpp",
     "AgentTrafficWindow.h",
     "AgentTrafficWindow.cpp",
     "AgentWatchFeature.h",
@@ -21,8 +19,6 @@
     "AgentActivityModel.cpp",
     "AgentActivityView.h",
     "AgentActivityView.cpp",
-    "AgentNetworkSampler.h",
-    "AgentNetworkSampler.cpp",
     "AgentTrafficWindow.h",
     "AgentTrafficWindow.cpp"
   ],
@@ -30,7 +26,9 @@
     "AgentSonifier.h",
     "AgentSonifier.cpp",
     "SystemStats.h",
-    "SystemStats.cpp"
+    "SystemStats.cpp",
+    "AgentNetworkSampler.h",
+    "AgentNetworkSampler.cpp"
   ],
   "testLibraries": [
     "Qt6::Widgets"

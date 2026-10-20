@@ -311,28 +311,32 @@ AUTO_EMAIL_RULES = (
     "The body is plain text: no markdown, no HTML, no emoji, no [placeholders]. "
     "Use only facts given in the request; leave out anything you cannot back up. "
     "When the request gives a tracked link, put it exactly as given on its own line, once. "
-    "Add no other link unless it appears in the request. Sign off with the sender's name.")
+    "Add no other link unless it appears in the request. "
+    "Never say or hint how we came to have their details: no import, list, spreadsheet, "
+    "database, CRM, record or ranking. Sign off with the sender's name.")
 AUTO_EMAIL_SYSTEM = AUTO_EMAIL_RULES + (
     " Reply with JSON only: {\"subject\": \"...\", \"body\": \"...\"}.")
 AUTO_EMAIL_AGENT_REPLY = (
     "Reply with only the email: a \"Subject:\" line, then the body. "
     "Do not send anything yourself.")
+AUTO_EMAIL_PRIVATE_FIELD_RE = re.compile(
+    r"import|source|sheet|rank|score|confidence|evidence|owner|added|batch", re.IGNORECASE)
 AUTO_EMAIL_ANGLES = (
-    (("grant",), "They are on our \"%s\" list as a grant funder: write to their "
+    (("grant",), "They are a grant funder: write to their "
                  "published priorities, never invent traction, numbers or names."),
     (("journalist", "press", "media", "reporter", "writer", "editor", "podcast",
       "newsletter", "blog"),
-     "They are on our \"%s\" list as a journalist: pitch a story, why it matters "
+     "They are a journalist: pitch a story, why it matters "
      "now and what is new, and offer an interview or a demo. No sales talk."),
     (("investor", "angel", "vc", "fund", "capital"),
-     "They are on our \"%s\" list as an investor: lead with the opportunity and "
+     "They are an investor: lead with the opportunity and "
      "ask for a short call; never invent traction, numbers or names."),
     (("partner", "integration", "alliance"),
-     "They are on our \"%s\" list as a potential partner: show how we fit what "
+     "They are a potential partner: show how we fit what "
      "they build and suggest exploring working together."),
     (("customer", "lead", "user", "developer", "maintainer", "community",
       "open source"),
-     "They are on our \"%s\" list as a potential user: give one concrete way we "
+     "They are a potential user: give one concrete way we "
      "help their projects and invite them to try it."),
 )
 AUTO_EMAIL_FORKMESH_BRIEF = (
@@ -5760,17 +5764,17 @@ def _auto_email_angle(names):
         lowered = name.lower()
         for words, text in AUTO_EMAIL_ANGLES:
             if any(word in lowered for word in words):
-                return text % name
+                return text
     if names:
-        return ("They are on our \"%s\" list, so pitch it the way that suits "
-                "that group." % names[0])
+        return ("We group them as \"%s\": pitch it the way that suits that group, "
+                "and never name the group to them." % names[0])
     return ""
 
 
 def _auto_email_facts(contact, flow_name):
     facts = []
     skipped = {"name", "email", "phone", "notes", "flow", "stage", "value",
-               "lastContactedAt"}
+               "lastContactedAt", "source", "owner"}
     stage = _clean(contact.get("stage"), 60)
     pipeline = ", stage ".join(part for part in (flow_name, stage) if part)
     if pipeline:
@@ -5783,7 +5787,8 @@ def _auto_email_facts(contact, flow_name):
             value = ", ".join(_clean(item, 60) for item in value if item)
         facts.append((label, _clean(value, 300)))
     custom = contact.get("fields") if isinstance(contact.get("fields"), dict) else {}
-    for key, value in list(custom.items())[:AUTO_EMAIL_FIELDS]:
+    for key, value in [item for item in custom.items()
+                       if not AUTO_EMAIL_PRIVATE_FIELD_RE.search(str(item[0]))][:AUTO_EMAIL_FIELDS]:
         facts.append((_clean(key, 64).replace("_", " ").capitalize(), _clean(value, 200)))
     return ["- %s: %s" % (label, value) for label, value in facts if value]
 
@@ -5844,17 +5849,8 @@ async def _auto_email_conversation(runtime, org_bi, contact_id):
     return lines
 
 
-async def _auto_email_activity(runtime, org_bi, contact_id, row, contact):
+async def _auto_email_activity(runtime, org_bi, contact_id, contact):
     lines = []
-    added = _integer(row.get("created_at"))
-    if added:
-        by = _clean(row.get("created_by_name"), 64)
-        lines.append("- Added to our CRM on %s%s." % (_day(added), " by " + by if by else ""))
-    changed = _integer(row.get("updated_at"))
-    if changed > added:
-        by = _clean(row.get("updated_by_name"), 64)
-        lines.append("- Their record was last updated on %s%s." % (
-            _day(changed), " by " + by if by else ""))
     contacted = _integer(contact.get("lastContactedAt"))
     lines.append("- Last contacted on %s." % _day(contacted) if contacted
                  else "- We have never contacted them.")
@@ -5992,7 +5988,8 @@ def _auto_email_prompt(org_name, sender, brief, contact, mode, link_kind, link,
     deck_note = ("Our whole investor deck, all fourteen slides from the problem to the round, "
                  "is laid out in this email right under your note. Do not summarize it and do "
                  "not add any link: keep the note to a few sentences, say the deck is just "
-                 "below, and ask them to reply with any questions.")
+                 "below (never that it is attached or linked), and ask them to reply with "
+                 "any questions.")
     notes = _text(contact.get("notes"), 20000).strip()
     if len(notes) > AUTO_EMAIL_NOTES_CHARS:
         notes = "…" + notes[-AUTO_EMAIL_NOTES_CHARS:]
@@ -6739,7 +6736,7 @@ async def _auto_email(runtime, org_bi, org_name, account_bi, actor, data):
         _auto_email_angle([_clean(data.get("list"), 80), flow_name]), flow_name,
         await _auto_email_conversation(runtime, org_bi, contact_id),
         _auto_email_lessons(sends), _clean(data.get("reason"), 400),
-        await _auto_email_activity(runtime, org_bi, contact_id, row, contact))
+        await _auto_email_activity(runtime, org_bi, contact_id, contact))
     learning = _auto_email_stats(sends)
     fallback = {"prompt": "\n\n".join((AUTO_EMAIL_RULES, prompt, AUTO_EMAIL_AGENT_REPLY)),
                 "link": link,

@@ -4,6 +4,5 @@
     "VSCodiumDesktopExtension.h",
     "VSCodiumDesktopExtension.cpp"
   ],
-  "mocHeaders": [],
-  "desktopFactory": "createVSCodiumDesktopExtension"
+  "mocHeaders": []
 }

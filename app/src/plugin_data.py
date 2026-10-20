@@ -56,15 +56,18 @@ _ACCOUNT_SCHEMA_READY = False
 
 
 def _module(plugin):
-    """Load a plugin's Worker module (marketplace/packages/*/content/worker).
+    """Load a plugin's Worker module.
 
-    The deploy stages every package's worker module next to this file, so the
-    flat import succeeds on Cloudflare; local checkouts fall back to loading
-    it straight from the package directory.
+    A deploy stages the selected plugins' modules under ``plugins/`` beside
+    this file; a checkout without that stage loads them from the package.
+    Only plugins in the generated registry are ever loaded.
     """
     name = str(REGISTRY.get(plugin, {}).get("module") or "")
     if not name:
         return None
+    staged = Path(__file__).resolve().parent / "plugins"
+    if staged.is_dir() and str(staged) not in sys.path:
+        sys.path.append(str(staged))
     try:
         return importlib.import_module(name)
     except ModuleNotFoundError:

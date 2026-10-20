@@ -28,10 +28,13 @@ image under `preview/` with alternative text. `SIGNATURE` signs the canonical
 manifest and the digest of every archived file, so mirrors can carry the bytes
 but cannot change the creator or content.
 
-The source tree keeps one creation under `packages/<id>/`. Native bundled
-extensions are compiled with the desktop client, but their install state and UI
+The source tree keeps one creation under `packages/<id>/`. A package with a
+`content/` folder is a plugin; a build adds only the plugins listed in
+[`plugins.json`](plugins.json) (see
+[docs/marketplace/plugins.md](../docs/marketplace/plugins.md)), and on Linux
+each desktop plugin is its own module beside the core. Install state and UI
 contributions go through the same lifecycle as downloaded packages, so
-built-ins are removable without leaving actions, settings or package-owned data
+plugins are removable without leaving actions, settings or package-owned data
 behind. Checked-in bundled sources inherit the signed release bundle's
 integrity and carry no `SIGNATURE`; exporting one as a downloadable `.fmpkg`
 must add a creator signature, and a marketplace must reject an external archive

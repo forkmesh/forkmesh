@@ -48,15 +48,23 @@ folder on iOS, Settings → Data on Android).
   Documents, for a copy that survives.
 - *Use the automatic folder* goes back to the default. Switching never moves
   or deletes the old folder: the next copy fills the new one.
+- Until a folder is chosen, the page suggests a name for it, *ForkMesh
+  projects* (`DataFolder.folderNameHint` / `FOLDER_NAME_HINT`): the system
+  pickers cannot be given a folder name, so the user makes the folder in the
+  picker and chooses it.
 
 ## Alert until it is safe
 
-At every launch the app shows *Keep your ForkMesh data safe* in three cases:
+At every launch the app shows *Keep your ForkMesh data safe* in two cases:
 
 - the projects folder is inside the app (it would be deleted with it);
-- the folder can't be opened;
-- the folder doesn't hold this project's identity key for its current public
-  key.
+- the folder can't be opened.
+
+Saving the identity key is optional: once a folder outside the app is chosen
+the alert stops, and the page offers *Identity key (optional)* for as long as
+the folder doesn't hold this project's key for its current public key
+(`DataFolder.identitySaved`). A user who keeps the key some other way, or who
+does not want it in a folder they share, is not asked for a passphrase.
 
 *Not now* hides it until the next launch. On iOS the alert sits on the root
 view; on Android it is drawn outside `AccountFeature.Gate`. Either way it shows
@@ -67,7 +75,9 @@ before sign-in, so a fresh install can restore first.
 - **Identity key.** Never written in clear. The folder holds the same
   encrypted container as a recovery kit (`RecoveryKit.export`, a passphrase of
   12 or more characters). `dataFolder/kitKey/<slug>` records which public key
-  was saved, so a rotated key asks again.
+  was saved, so a rotated key offers the optional save again. Without a saved
+  key the folder still gets every copy, but a reinstall cannot offer
+  *Restore* from it: restoring needs the key.
 - **Copying.** On launch, and whenever the app goes to the background (iOS
   `.background` inside a background task; Android `onPause`), the app copies
   the active project's settings, `project.json` and changed files.

@@ -73,7 +73,7 @@ def test_an_investor_gets_a_model_written_note_without_a_deck_link():
     assert "## The tracked link" not in runtime.prompts[0]
     assert "## The investor deck" in runtime.prompts[0]
     assert data["email"]["automated"] is True and data["email"]["linkKind"] == "deck"
-    assert "as an investor" in runtime.prompts[0]
+    assert "They are an investor:" in runtime.prompts[0]
     assert "No tracked emails yet" in runtime.prompts[0]
     token, payload = runtime.mailtrap_calls[-1]
     assert token == "" and payload["tracked"] is True
@@ -203,12 +203,30 @@ def test_the_prompt_carries_who_we_are_and_the_contacts_recent_activity():
     assert failed["status"] == 503
     prompt = failed["data"]["prompt"]
     activity = prompt.split("## Their recent activity with us")[1].split("## Our conversation")[0]
-    assert "- Added to our CRM on " in activity
+    assert "Added to our CRM" not in prompt and "last updated" not in prompt
     assert "- Last contacted on " in activity
     assert "never mention that we can see opens" in activity
     conversation = prompt.split("## Our conversation so far (oldest first)")[1]
     assert "We wrote · Subject: First note · they opened it once" in conversation
     assert "## About us: acme" in prompt
+
+
+def test_an_imported_investor_is_never_told_how_we_got_their_details():
+    runtime = AiRuntime([_draft("A note on the round")])
+    ivy = _contact(runtime, name="Ivy Investor", email="ivy@fund.example",
+                   flow="investment", stage="sourced", source="csv", company="Fund One",
+                   fields={"rank": "12", "imported_from": "investors_ranked_clean.csv",
+                           "focus": "developer tools"})
+    assert _send(runtime, ivy, list="Investor list (ranked, 2026-09)")["status"] == 201
+    prompt = runtime.prompts[0]
+    facts = prompt.split("## About Ivy Investor")[1].split("##")[0]
+    assert "- Company: Fund One" in facts and "- Focus: developer tools" in facts
+    for leak in ("csv", "Source", "Rank", "Imported", "Added to our CRM",
+                 "Investor list (ranked"):
+        assert leak not in prompt, leak
+    assert "They are an investor:" in prompt
+    assert "no import, list, spreadsheet" in crm.AUTO_EMAIL_SYSTEM
+    assert "never that it is attached or linked" in prompt
 
 
 def test_the_forkmesh_organization_is_described_without_a_saved_brief():

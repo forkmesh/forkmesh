@@ -87,4 +87,10 @@ DesktopPackageExtension *createVSCodiumDesktopExtension()
     return new VSCodiumDesktopExtension;
 }
 
+namespace {
+const DesktopPackageExtensionRegistration registration(
+    QStringLiteral("content/desktop/VSCodiumDesktopExtension.cpp"),
+    [] { return createVSCodiumDesktopExtension(); });
+}
+
 } // namespace forkmesh::market

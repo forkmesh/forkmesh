@@ -8,24 +8,20 @@ Optional marketplace packages that only talk to the window through
 being linked into `forkmesh` (`cmake/ForkMeshPackageModules.cmake`,
 `src/PackageModules.{h,cpp}`).
 
-- **Build.** `FORKMESH_PACKAGE_MODULES` (default on for Linux, off elsewhere)
-  and `FORKMESH_PACKAGE_MODULE_IDS` (default: app-store-status, aquarium,
-  backups, calories, cleanup, computer-security, crm, marketing, nexus, openwrt,
-  people, rss-reader, sleep, steps, stretch, sugar-break, voice-changer, water). Disk
-  Cleanup reaches the window only through its host socket and
-  `NativePackageRegistration`, and loads in under a millisecond when
-  installed. Each becomes
-  `build/packages/<id>.so` with a sidecar `<id>.json` (`api`, `abi`, `package`,
-  `file`, `entrypoints`); configure removes module files the configuration no
-  longer builds. Modules resolve the app's symbols through the `-rdynamic`
-  export the stall watchdog already needs, so the app binary does not grow.
-  Stay compiled in: packages installed by default (agent-watch, analytics,
-  docs: as modules they were loaded at every start and cost about 30 ms and
-  3 MB, see [Measurements](#measurements)), packages with a `desktopFactory`
-  (sentry, vscodium), and the ones the window references directly. Sources the
-  window calls from a modular package stay in the app through
-  `FORKMESH_PACKAGE_HOST_SHARED_SOURCES` (agent-watch's
-  `AgentNetworkSampler.cpp`, for builds that list agent-watch).
+- **Build.** Every plugin listed for the build ([plugins.md](../marketplace/plugins.md))
+  that has `content/desktop/build.json` and is not `coreLinked` becomes
+  `build/packages/<id>.so` with a sidecar `<id>.json` (`api`, `abi`,
+  `package`, `file`, `entrypoints`) when `FORKMESH_PACKAGE_MODULES` is on
+  (default on for Linux, off elsewhere, where listed plugins are linked into
+  the app). The list comes from the generator
+  (`FORKMESH_PLUGIN_MODULE_CANDIDATES`); there is no hand-kept list any more.
+  The module also carries the plugin's own files (`plugins/<id>.qrc`); the
+  core keeps only its listing files. Configure removes module files the
+  configuration no longer builds. Modules resolve the app's symbols through
+  the `-rdynamic` export the stall watchdog already needs, so the app binary
+  does not grow. Installed-by-default plugins (agent-watch, analytics, docs)
+  are modules too and load at start (about 30 ms and 3 MB together, see
+  [Measurements](#measurements)).
 - **Loading.** At start the app reads only the sidecars (from `packages/` beside
   the binary, `../lib/forkmesh/packages`, the install prefix's
   `lib/forkmesh/packages`, and `../PlugIns/forkmesh-packages` on macOS). A

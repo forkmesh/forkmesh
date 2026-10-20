@@ -16,11 +16,14 @@
     "SentryDesktopExtension.h",
     "SentryDesktopExtension.cpp"
   ],
+  "testHostSources": [
+    "DesktopPackageExtension.h",
+    "DesktopPackageExtension.cpp"
+  ],
   "testLibraries": [
     "Qt6::Core",
     "Qt6::Network",
     "Qt6::Widgets",
     "Qt6::Svg"
-  ],
-  "desktopFactory": "createSentryDesktopExtension"
+  ]
 }

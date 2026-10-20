@@ -75,7 +75,9 @@ def test_crm_worker_module_is_present_in_the_deploy_payload():
                 in build_app_plugins.worker_payloads()}
     expected = (REPO / "marketplace" / "packages" / "crm" / "content"
                 / "worker" / "crm.py").read_bytes()
-    assert payloads["crm.py"] == expected
+    assert payloads["plugins/crm.py"] == expected
+    assert "plugins/crm_grants.csv" in payloads
+    assert not any(name in payloads for name in ("crm.py", "crm_grants.csv"))
     registry = payloads["plugin_registry.py"].decode("utf-8")
     assert "'crm': {'module': 'crm', 'api': '/api/crm'" in registry
 

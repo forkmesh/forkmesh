@@ -19,9 +19,10 @@ developer home for how the pieces fit.
 | `marketplace/tools/marketplace_lib.py` | Loads and validates catalogs and manifests; shared by every generator. |
 | `marketplace/tools/marketctl.py` | CLI: `validate`, `pack`, `sync`, `install`, `uninstall`. |
 | `marketplace/tools/plugin_sockets.py` | Discovers `contributions` per socket. |
-| `marketplace/tools/generate_desktop_packages.py` | Desktop: turns `content/desktop/build.json` descriptors into `marketplace.qrc`, `packages.cmake` and `DesktopPackageFactories.cpp` under the build dir. Run by `desktop/CMakeLists.txt` at configure time. |
+| `marketplace/plugins.json` | The plugins a build adds to the core; see [plugins.md](plugins.md). |
+| `marketplace/tools/generate_desktop_packages.py` | Desktop: turns the listed plugins' `content/desktop/build.json` descriptors into `marketplace.qrc`, one `plugins/<id>.qrc` per module plugin, `packages.cmake` and the build's own `catalog.json`, `packs.json` and `guides.json` under the build dir. Run by `desktop/CMakeLists.txt` at configure time with `FORKMESH_PLUGINS`. |
 | `marketplace/tools/generate_world_packages.py` | World: writes `world/public/world/world-marketplace-packages.js`. |
-| `app/tools/build_app_plugins.py` | App: stages `dashboard.page` contributions into `app/dist` and package Worker modules into `app/src_build` (both ignored). Called from `app/tools/build_site_assets.py` and `app/tools/build_worker_python.py`. |
+| `app/tools/build_app_plugins.py` | App: stages the listed plugins' `dashboard.page` contributions into `app/dist` and their Worker modules into `app/src_build/plugins` (both ignored). Called from `app/tools/build_site_assets.py` and `app/tools/build_worker_python.py`. |
 | `app/tools/build_market_catalog.py` | Rewrites the tracked `www/public/market.html` landing page from the catalog. |
 | `app/src/plugin_data.py`, `app/src/plugin_registry.py` | Organization install/uninstall engine, account install state for `install.sync: "account"` packages (`/api/plugins/@account`, dependencies, declared settings), reminder and account-purge hooks. |
 | `app/src/entry.py` (`_PluginApiRuntime`) | The least-privilege runtime handed to a package's Worker module. |
@@ -370,10 +371,15 @@ All packages are currently free (`price.amount: 0`).
   package's app sources reach core headers through the app's include path.
   `repositoryResources` names repository folders (relative to the repository
   root, never outside it) whose files the build embeds as
-  `:/forkmesh-market/packages/<id>/repository/<folder>/...`; the generator
+  `:/forkmesh-market/packages/<id>/repository/<folder>/...` (inside the
+  plugin's module when it is one); the generator
   also emits `FORKMESH_MARKETPLACE_RESOURCE_GLOBS` so a new file in such a
   folder re-runs package discovery. The Docs package uses it for `www/docs`,
   because a copy of the library inside the package would drift from the web.
+  `coreLinked: true` marks a plugin the window still calls directly; it is
+  always built into the core ([plugins.md](plugins.md#plugins-the-core-still-links)).
+  A desktop extension registers itself with
+  `DesktopPackageExtensionRegistration(<desktop entrypoint>, factory)`.
 - Marketplace sources for `marketctl sync`: see
   `marketplace/sources.example.json`.
 

@@ -474,12 +474,23 @@ dialog names the recipient and the link first.
   for the list or pipeline (journalists, investors, grants, partners, users),
   their recent activity with us, the last six messages with them, the link,
   and the lessons below.
-- **Recent activity** (`_auto_email_activity`, 2026-10-19): when they were
-  added and last updated and by whom, when we last contacted them, when they
-  last wrote to us, and how often and how long they read the investor deck.
-  Each message we sent in the conversation shows whether they opened it, when
-  they clicked and how long they read (`_auto_email_engagement`). The model is
-  told to use it to judge interest and never to mention the tracking. It answers
+- **Recent activity** (`_auto_email_activity`, 2026-10-19): when we last
+  contacted them, when they last wrote to us, and how often and how long they
+  read the investor deck. Each message we sent in the conversation shows
+  whether they opened it, when they clicked and how long they read
+  (`_auto_email_engagement`). The model is told to use it to judge interest
+  and never to mention the tracking.
+- **Never how we got them** (2026-10-19). Most investors arrived by CSV import,
+  and drafts told them so. The prompt no longer carries when the record was
+  added or updated and by whom, the contact's `source` or `owner`, custom
+  fields named like import bookkeeping (`AUTO_EMAIL_PRIVATE_FIELD_RE`: import,
+  source, sheet, rank, score, confidence, evidence, owner, added, batch), or
+  the list or sheet name in the angle ("They are an investor: …"). The system
+  rules (`AUTO_EMAIL_RULES`, also in the agent fallback prompt) forbid saying
+  or hinting at an import, list, spreadsheet, database, CRM, record or
+  ranking, and the deck note forbids calling the deck attached or linked: it
+  is in the email body. The desktop and web confirm dialogs now say the whole
+  investor deck is in the email, not "their tracked deck link". It answers
   `{subject, body}`. Drafts with `[placeholders]`, under 60 or over 2400
   characters, or with any link not in the prompt are refused and asked for
   again once (`AUTO_EMAIL_ATTEMPTS`); a missing referral link is appended. An
