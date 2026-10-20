@@ -170,6 +170,7 @@ def _issue_handler_namespace(inserted, wakes, queued_rows=()):
         "notify_pending_inbox": failing_side_effect,
         "notify_mentions": failing_side_effect,
         "notify_issue_assignees": failing_side_effect,
+        "notify_account_event": failing_side_effect,
         "notify_subscribers": failing_side_effect,
         "subscribe_thread": failing_side_effect,
         "notify_repo_host": notify_source,
@@ -298,3 +299,51 @@ def test_discussion_handler_resolves_an_unnamed_signer_before_notifying():
     assert source is not None
     assert source.index("await _fill_signer_author_name(env, event)") < source.index(
         'actor = clean_string(event.get("authorName", "")')
+
+
+def _claim_namespace(inserted, notified, claims):
+    ns = _issue_handler_namespace(inserted, [])
+
+    async def record_assignees(_env, _owner, _repo, assignees, actor,
+                               _title, number=0):
+        notified.append((sorted(assignees), actor, number))
+
+    async def self_claim(_env, _data, _request, event):
+        claims.append(event.get("assignee"))
+        return True, None
+
+    ns["notify_issue_assignees"] = record_assignees
+    ns["_authorize_issue_self_claim"] = self_claim
+    return ns
+
+
+def _claim_body(assignee, author_name, sig):
+    return {"number": 7, "event": {
+        "type": "claim", "author": "bot-key", "authorName": author_name,
+        "assignee": assignee, "claimState": "assigned", "sig": sig}}
+
+
+def test_an_actions_job_claim_assigns_and_notifies_the_assignee():
+    inserted, notified, claims = [], [], []
+    ns = _claim_namespace(inserted, notified, claims)
+    body = _claim_body("Bob", "acme-actions", "sig-g")
+    response = asyncio.run(ns["_accept_issue_submission"](
+        object(), _Request(body), "source", "forkmesh", "bi:source/forkmesh",
+        body, ("source/forkmesh",), actions_job=True))
+
+    assert response == {"status": 201, "data": {"ok": True, "number": 7}}
+    assert claims == []
+    assert inserted[0][1]["event"]["assignee"] == "Bob"
+    assert notified == [(["bob"], "acme-actions", 7)]
+
+
+def test_a_self_claim_still_needs_the_session_and_notifies_nobody():
+    inserted, notified, claims = [], [], []
+    ns = _claim_namespace(inserted, notified, claims)
+    response = asyncio.run(ns["issues_handler"](
+        object(), _Request(_claim_body("alice", "alice", "sig-h")),
+        "source", "forkmesh"))
+
+    assert response["status"] == 201
+    assert claims == ["alice"]
+    assert notified == [([], "alice", 7)]

@@ -18,7 +18,10 @@ BODY_MAX_BYTES = 128 * 1024
 TITLE_MAX = 240
 LABEL_MAX = 60
 LABEL_LIMIT = 20
-ISSUE_ROUTE_RE = re.compile(r"^issues/([0-9]{1,9})(?:/(comments|labels|state))?$")
+ISSUE_ROUTE_RE = re.compile(
+    r"^issues/([0-9]{1,9})(?:/(comments|labels|state|assignees))?$")
+ASSIGNEE_LIMIT = 10
+ASSIGNEE_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 ISSUE_EVENTS = {
     "open": ("issues", "opened"),
     "edit": ("issues", "edited"),
@@ -126,6 +129,115 @@ def _labels(value):
     return labels[:LABEL_LIMIT]
 
 
+def _assignee_list(value):
+    if not isinstance(value, list):
+        return []
+    names = []
+    for item in value:
+        name = clean_string(item if isinstance(item, str) else "",
+                            MAX_NODE_NAME).strip()
+        if name and name.lower() not in [n.lower() for n in names]:
+            names.append(name)
+    return names
+
+
+def _assignee_names(value):
+    if value is None:
+        return [], ""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return None, "add and remove are lists of account names."
+    names = []
+    for item in value:
+        name = str(item if isinstance(item, str) else "").strip().lower()
+        if name.startswith("@"):
+            name = name[1:]
+        if not ASSIGNEE_RE.fullmatch(name):
+            return None, "%s is not an account name." % (
+                str(item)[:MAX_NODE_NAME])
+        if name not in names:
+            names.append(name)
+    return names, ""
+
+
+def _status(response):
+    if isinstance(response, dict):
+        return int(response.get("status") or 200)
+    return int(getattr(response, "status", 200) or 200)
+
+
+async def _audit_assignees(env, job, number, bot, outcome, details):
+    try:
+        await _audit_sensitive_action(
+            env, bot, "actions.issue_assignees", "issue",
+            "%s/%s#%d" % (job["owner"], job["repo"], int(number)), outcome,
+            dict(details, job=int(job.get("id") or 0),
+                 workflow=str(job.get("workflow") or "")))
+    except Exception:
+        pass
+
+
+async def change_assignees(env, request, job, number, data):
+    add, error = _assignee_names(data.get("add"))
+    if add is None:
+        return _error("invalid_request", 400, error)
+    remove, error = _assignee_names(data.get("remove"))
+    if remove is None:
+        return _error("invalid_request", 400, error)
+    if not add and not remove:
+        return _error("invalid_request", 400,
+                      "Name at least one account to add or remove.")
+    if set(add) & set(remove):
+        return _error("invalid_request", 400,
+                      "An account cannot be added and removed at once.")
+    if len(add) + len(remove) > ASSIGNEE_LIMIT:
+        return _error("invalid_request", 400,
+                      "At most %d accounts per call." % ASSIGNEE_LIMIT)
+    owner, repo = job["owner"], job["repo"]
+    disabled = await _repo_feature_off(env, owner, repo, "issues")
+    if disabled is not None:
+        return disabled
+    bot = await public_owner(env, owner, repo) + "-actions"
+    issue = await read_issue(env, owner, repo, number)
+    if issue is None:
+        return _error("issue_not_found", 404,
+                      "Issue #%d does not exist." % int(number))
+    unknown = []
+    for name in add:
+        _, record = await _account_row(env, name)
+        if not record:
+            unknown.append(name)
+    if unknown:
+        await _audit_assignees(env, job, number, bot, "denied", {
+            "reason": "unknown_account", "accounts": ",".join(unknown)})
+        return _error("unknown_account", 422,
+                      "No account named " + ", ".join(unknown) + ".")
+    current = [name.lower() for name in issue.get("assignees") or []]
+    assigned = [name for name in add if name not in current]
+    unassigned = [name for name in remove if name in current]
+    final = [name for name in issue.get("assignees") or []
+             if name.lower() not in unassigned] + assigned
+    for name, state in ([(n, "assigned") for n in assigned] +
+                        [(n, "released") for n in unassigned]):
+        answer = await _submit(env, request, job, number, {
+            "type": "claim", "assignee": name, "claimState": state})
+        if not 200 <= _status(answer) < 300:
+            await _audit_assignees(env, job, number, bot, "failed", {
+                "account": name, "state": state,
+                "status": _status(answer)})
+            return answer
+    if assigned or unassigned:
+        await _audit_assignees(env, job, number, bot, "success", {
+            "assigned": ",".join(assigned),
+            "unassigned": ",".join(unassigned)})
+    return json_response({
+        "ok": True, "number": int(number), "assignees": final,
+        "assigned": assigned, "unassigned": unassigned,
+        "changed": bool(assigned or unassigned)},
+        cache_control="no-store")
+
+
 async def read_issue(env, owner, repo, number):
     paths = _forkbot_issue_json_candidates(number)
     data = await _forkbot_repo_gateway_json(
@@ -156,6 +268,7 @@ async def read_issue(env, owner, repo, number):
             "body": str(opened.get("body") or record.get("body") or ""),
             "state": "closed" if state.lower() == "closed" else "open",
             "labels": _labels(record.get("labels")),
+            "assignees": _assignee_list(record.get("assignees")),
             "author": clean_string(
                 record.get("authorName") or opened.get("authorName")
                 or record.get("author") or opened.get("author") or "",
@@ -336,6 +449,8 @@ async def route(env, request, path):
         return await _submit(env, request, job, number,
                              {"type": "comment", "body": body,
                               "attachments": []})
+    if sub == "assignees":
+        return await change_assignees(env, request, job, number, data)
     if sub == "state":
         state = data.get("state")
         if state not in ("open", "closed"):

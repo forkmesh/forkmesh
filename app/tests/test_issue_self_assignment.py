@@ -181,7 +181,7 @@ def test_relay_accepts_a_claim_only_from_the_account_it_names():
     # repository-authority gate, because it carries no authority to abuse.
     owner_set = _slice(handler, "owner_event_types = {", "if event_type in owner_event_types")
     assert '"claim"' not in owner_set
-    assert 'if event_type == "claim":' in handler
+    assert 'if event_type == "claim" and not actions_job:' in handler
     assert "await _authorize_issue_self_claim(env, data, request, event)" in handler
 
     # Identity comes from the account session, never from the self-asserted

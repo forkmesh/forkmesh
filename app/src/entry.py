@@ -40237,7 +40237,7 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
     # contributor may make: a "claim" names exactly one account and moves
     # only that name on or off the list, so it needs no repository
     # authority — only proof that the caller IS the account being claimed.
-    if event_type == "claim":
+    if event_type == "claim" and not actions_job:
         ok, err = await _authorize_issue_self_claim(env, data, request, event)
         if not ok:
             return err
@@ -40337,6 +40337,11 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
     assignees = list(meta.get("assignees", [])) if isinstance(meta, dict) else []
     if isinstance(event.get("assignees"), list):
         assignees.extend(event.get("assignees"))
+    if event_type == "claim" and event.get("claimState") == "assigned":
+        claimed = clean_string(
+            event.get("assignee", "") or "", MAX_NODE_NAME).strip().lower()
+        if claimed and claimed != actor:
+            assignees.append(claimed)
     await _best_effort_inbox_side_effect(
         notify_issue_assignees(
             env, owner, repo, assignees, actor, item.get("titleIfNew", ""),
