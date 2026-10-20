@@ -397,8 +397,6 @@ async def plan_issue(reader, branch, number):
     found = next((path for path in paths if blobs.get(path)), "")
     issue = issue_summary(blob_text(blobs[found]), number) if found else None
     _root_done, open_issues = await asyncio.gather(root, index)
-    # The whole record and the open issues (mentions, sub-issues) for the
-    # first view in the dashboard's markup (repo_ssr_issue).
     return {"issue": issue, "issueJson": blob_text(blobs[found]) if found else "",
             "index": open_issues or {}}
 

@@ -16623,10 +16623,6 @@
       .split(`${MD_HARD_BREAK} `).join(MD_HARD_BREAK);
   }
 
-  // A record paragraph that is one picture of unknown size (no width/height
-  // on it) is drawn in a fixed frame, img[data-md-figure] in the shell's
-  // style, so the text under it does not move when the picture arrives.
-  // repo_ssr_issue.py lone_image marks the same images in the first view.
   const MD_LONE_IMAGE = /^(<a [^>]*>)?(<img (?![^>]*\swidth=)[^>]*?) (class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" \/>)(<\/a>)?$/;
   function mdLoneImage(html) {
     const match = MD_LONE_IMAGE.exec(html);
@@ -23348,7 +23344,7 @@
       <article data-repo-record-detail="issues" class="min-w-0 bg-background">
         <div data-repo-issue-sticky aria-hidden="true" class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start overflow-visible sm:-mx-5">
           <div data-repo-issue-sticky-bar class="flex w-full -translate-y-full items-center gap-2 border-b border-border bg-background/95 px-3 py-2 opacity-0 backdrop-blur transition duration-150 sm:px-5">
-            <span class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-2 text-[12px] font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-3.5 w-3.5"></i>${stateLabel}</span>
+            <span class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-2 text-[12px] font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-3.5 w-3.5"></i>${escapeHtml(stateLabel)}</span>
             <span class="min-w-0 truncate text-[14px] font-semibold text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></span>
           </div>
         </div>
@@ -23368,7 +23364,7 @@
           </div>
           ${renderRepoIssueParents(repo, parsed.issueDependencies)}
           <p class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[14px] text-muted-foreground">
-            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${stateLabel}</span>
+            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${escapeHtml(stateLabel)}</span>
             <span>${formatCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}</span>
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
@@ -23479,11 +23475,6 @@
       </article>`;
   }
 
-  // An issue page a node sent with the issue already drawn, in this file's
-  // own markup (app/host/forkmesh_host/repo_ssr_issue.py): renderRepoDetail
-  // keeps the article before it draws the repository frame over the first
-  // view, and loadRepoRecordDetail puts it in the issue's place instead of
-  // the skeleton, so the first paint is already the final layout.
   let repoFirstViewIssue = null;
   function keepRepoFirstViewIssue(detail) {
     const article = detail?.querySelector?.("article[data-repo-ssr-issue]");
@@ -24087,14 +24078,10 @@
     const recordFile = typeof config.file === "function" ? config.file(Number(number)) : config.file;
     const recordPath = `${config.dir}/${number}/${recordFile}`;
     if (!quietRefresh) {
-      // The issue the node drew into the page stays where it is until the
-      // render below replaces it with the same markup (no frame in between).
       const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number) : null;
       if (firstView) {
         container.replaceChildren(firstView);
       } else {
-        // An issue opens straight onto its page frame, drawn from the list row
-        // where one was clicked; pulls and discussions keep the loading line.
         container.innerHTML = kind === "issues"
           ? renderRepoIssueDetailSkeleton(repo, number)
           : `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml(`Loading ${escapeHtml(config.itemLabel)} #${escapeHtml(number)} from the live mirror...`)}</div>`;

@@ -203,20 +203,13 @@ class ViewTicket:
         self.task = task
         self.section = section
         self.target = target
-        # An issue page: the repository's first view (header, tab counts),
-        # for the issue drawn in the dashboard's markup (inject_issue).
         self.root = root
 
 
-# How long an issue page waits for its issue and the repository's first
-# view (both are usually remembered; a cold bundle is a handful of local
-# gateway reads).
 ISSUE_BUDGET_SECONDS = 0.3
 
 
 async def _within(task, seconds):
-    """The task's result if it is ready within ``seconds`` (it keeps
-    running otherwise), else None."""
     try:
         return await asyncio.wait_for(asyncio.shield(task), max(0.01, seconds))
     except asyncio.TimeoutError:
@@ -490,8 +483,6 @@ ISSUE_RENDER_SECONDS = 60.0
 
 
 def issue_article(bundle, data, short=False):
-    """The issue's article in the dashboard's markup (repo_ssr_issue), kept
-    on the bundle for a minute (its relative times move), or None."""
     from . import repo_ssr_issue
     model = bundle.model or {}
     if not model.get("issue") or not model.get("issueJson"):
@@ -518,8 +509,6 @@ def issue_article(bundle, data, short=False):
 
 
 def inject_issue(page, data, bundle, short=False):
-    """An issue page with its header, tab strip and the issue itself in the
-    dashboard's markup, plus the address of its read bundle; or None."""
     if 'data-page="repo"' not in page or PLACEHOLDER not in page \
             or CHARSET not in page or bundle is None or bundle.view != "issue":
         return None
@@ -771,8 +760,6 @@ def _tabs(base, about, counts, selected="code"):
     features = (about or {}).get("features") or {}
     shown = []
     for key, label, icon, count_key in TABS:
-        # Without a remembered /about a feature tab's page still draws the
-        # tabs a repository has by default, its own among them.
         if key != "code" and about is None and selected == "code":
             continue
         if key in ("issues", "pulls", "discussions") and features.get(key) is False:

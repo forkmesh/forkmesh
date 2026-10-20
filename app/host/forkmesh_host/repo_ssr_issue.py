@@ -1,22 +1,3 @@
-"""Server-rendered first view of an issue page, in the dashboard's markup.
-
-An issue page (``/<owner>/<repo>/issues/<n>``, or ``/<name>/issues/<n>`` on
-an instance with short addresses) used to arrive as the repository header
-and an empty band; dashboard.js drew a shimmering frame, read the issue and
-replaced the frame with the issue, and everything below the title moved.
-
-This module draws the issue the way 06-repo-content.js renderRepoIssueDetail
-does for a visitor without write access, from the issue's signed-event JSON
-(repo_views' issue bundle, read from the local gateway and remembered per
-content). dashboard.js keeps that article in place when it takes the page
-over (takeRepoFirstViewIssue) and replaces it with its own render of the same
-markup, so nothing moves. The parts that depend on who is looking (the
-comment box, the sub-issue box) are drawn for both a guest and a signed-in
-visitor and the page's head script picks one (``html[data-guest]``).
-
-Everything from the issue is escaped: the Markdown renderer is a port of the
-dashboard's renderMarkdown, which escapes before it formats.
-"""
 
 from __future__ import annotations
 
@@ -30,17 +11,11 @@ import urllib.parse
 MAX_BODY_CHARS = 60_000
 MAX_EVENTS = 400
 
-# Viewer-dependent fragments: both are drawn, the head script's
-# html[data-guest] picks one before the first paint.
 VIEWER_STYLE = ("<style>html[data-guest] [data-ssr-member],"
                 "html:not([data-guest]) [data-ssr-guest]{display:none!important}"
                 "</style>")
 
-# -- the dashboard's small helpers ------------------------------------------
-
-
 def esc(value):
-    """02-helpers.js escapeHtml."""
     text = "" if value is None else value
     if isinstance(text, bool):
         text = "true" if text else "false"
@@ -49,7 +24,6 @@ def esc(value):
 
 
 def _num(value):
-    """JavaScript Number(value) for the values an issue carries (NaN -> None)."""
     if value is None or value == "":
         return 0 if value == "" else None
     if isinstance(value, bool):
@@ -78,7 +52,6 @@ def format_count(value):
 
 
 def flex_seconds(value):
-    """02-helpers.js parseFlexibleDate, as epoch seconds (or None)."""
     if value is None or value == "":
         return None
     number = _num(value)
@@ -100,7 +73,6 @@ TIME_UNITS = (("year", 31536000), ("month", 2592000), ("week", 604800),
 
 
 def time_ago(value, now):
-    """02-helpers.js formatTimeAgo."""
     seconds = flex_seconds(value)
     if seconds is None:
         return "unknown"
@@ -115,8 +87,6 @@ def time_ago(value, now):
 
 
 def record_datetime(value):
-    """06-repo-content.js formatRecordDateTime (the label is the browser's
-    locale there; it only ever lands in a title attribute)."""
     seconds = flex_seconds(value)
     if seconds is None:
         return "", "Unknown date and time"
@@ -155,26 +125,76 @@ def profile_href(handle):
         if handle and USER_NAME_RE.match(handle) else ""
 
 
+ISSUE_PERSON_HANDLE_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
+BOT_NAME_RES = (
+    re.compile(r"\[bot\]$", re.I), re.compile(r"^github[\s_-]?actions?$", re.I),
+    re.compile(r"^(?:dependabot|renovate)$", re.I), re.compile(r"(?:^|[\s_-])bot$", re.I),
+    re.compile(r"^[a-z0-9][a-z0-9_-]*-actions$", re.I))
+
+
+def person_handle(name):
+    text = re.sub(r"^@", "", str(name or "").strip())
+    return text.lower() if ISSUE_PERSON_HANDLE_RE.match(text) and "--" not in text else ""
+
+
+def actor_is_bot(name):
+    text = str(name or "").strip()
+    if not text:
+        return False
+    return any(pattern.search(text) for pattern in BOT_NAME_RES) \
+        or text.lower() in ("forkmesh actions", "forkmesh deploy")
+
+
+def actor_pixels(size):
+    match = re.search(r"\bh-(\d+(?:\.5)?)\b", str(size or ""))
+    return int(float(match.group(1)) * 4 + 0.5) if match else 28
+
+
 def avatar_html(name, author="", size="h-7 w-7", agent=False, link=True):
-    """02-helpers.js issueActorAvatarHtml for a page without a session."""
     label = str(name or author or ("Agent" if agent else "unknown"))
-    handle = label if not agent and USER_NAME_RE.match(label) else ""
-    inner = icon("bot", "h-3.5 w-3.5", "text-muted-foreground") if agent else (
+    bot = agent or actor_is_bot(label)
+    handle = "" if bot else person_handle(label)
+    pixels = actor_pixels(size)
+    inner = icon("bot", "h-3.5 w-3.5" if pixels <= 24 else "h-4 w-4" if pixels <= 32
+                 else "h-5 w-5", "text-muted-foreground") if bot else (
         '<span class="text-[9px] font-bold text-muted-foreground">%s</span>' % esc(
             (label[:1] or "?").upper()))
     hydrate = ' data-issue-actor-avatar="%s"' % esc(handle) if handle else ""
-    classes = ("flex %s shrink-0 items-center justify-center overflow-hidden "
+    classes = ("relative flex %s shrink-0 items-center justify-center overflow-hidden "
                "rounded-full border border-border bg-secondary" % size)
+    title = "%s (bot)" % label if bot else label
     if handle and link:
-        return ('<a href="%s" title="%s" aria-label="%s"%s class="%s hover:ring-2 '
+        href = profile_href(handle)
+        return ('<a%s data-issue-person="%s" title="%s" aria-label="%s"%s class="%s hover:ring-2 '
                 'hover:ring-[var(--dashboard-link)]">%s</a>' % (
-                    esc(profile_href(handle)), esc(label), esc("%s's profile" % label),
-                    hydrate, classes, inner))
-    return '<span title="%s"%s class="%s">%s</span>' % (esc(label), hydrate, classes, inner)
+                    ' href="%s"' % esc(href) if href else "", esc(handle), esc(title),
+                    esc("%s's profile" % label), hydrate, classes, inner))
+    return '<span title="%s"%s%s class="%s">%s</span>' % (
+        esc(title), ' data-issue-actor-bot=""' if bot else "", hydrate, classes, inner)
 
 
 def name_html(name):
     return '<span class="font-semibold text-foreground">%s</span>' % esc(name)
+
+
+def person_name_html(name, classes="font-semibold text-foreground"):
+    label = str(name or "").strip() or "unknown"
+    if actor_is_bot(label):
+        return '<span class="%s">%s</span>' % (classes, esc(label))
+    handle = person_handle(label)
+    if not handle:
+        return '<span class="%s">%s</span>' % (classes, user_name_html(label))
+    href = profile_href(handle)
+    return ('<a%s data-issue-person="%s" class="%s hover:text-[var(--dashboard-link)] '
+            'hover:underline">%s</a>' % (' href="%s"' % esc(href) if href else "",
+                                         esc(handle), classes, user_name_html(label)))
+
+
+def card_author_html(name, author="", agent=False):
+    label = str(name or author or "unknown")
+    return '<span class="mr-1 inline-flex align-middle sm:hidden">%s</span>%s' % (
+        avatar_html(label, author, "h-6 w-6", agent),
+        name_html(label) if agent else person_name_html(label))
 
 
 def _imul(a, b):
@@ -182,7 +202,6 @@ def _imul(a, b):
 
 
 def label_hue(label):
-    """06-repo-content.js issueLabelHue (FNV-1a over UTF-16 code units)."""
     name = str(label or "").strip().lower()
     value = 2166136261
     data = name.encode("utf-16-le", "surrogatepass")
@@ -204,8 +223,6 @@ def front_matter_list(value):
         return []
     return [item.strip() for item in text[1:-1].split(",") if item.strip()]
 
-
-# -- icons (lucide 0.468, as createIcons draws them) ------------------------
 
 ICONS = {
     'activity': (
@@ -288,15 +305,12 @@ ICONS = {
 
 
 def icon(name, size="h-4 w-4", extra=""):
-    """The <svg> lucide.createIcons() puts in place of <i data-lucide>."""
     classes = " ".join(part for part in (size, extra) if part)
     return ('<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" '
             'fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" '
             'stroke-linejoin="round" class="lucide lucide-%s %s">%s</svg>' % (
                 name, classes, ICONS.get(name, ICONS["activity"])))
 
-
-# -- Markdown: a port of 06-repo-content.js renderMarkdown -------------------
 
 HARD_BREAK = "\x00"
 _A = re.A
@@ -313,6 +327,9 @@ MD_BLOCK_START = re.compile(
     r"^\s*(?:#{1,6}\s|```|~~~|>|(?:[-*+]|\d+[.)])\s|(?:-{3,}|\*{3,}|_{3,})\s*$"
     r"|</?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)?>)", _A)
 LINK_CLASS = "dashboard-accent-link underline underline-offset-2 hover:text-foreground"
+MD_MENTION = re.compile(
+    r"(^|[^A-Za-z0-9&@/.+-])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)"
+    r"(?![A-Za-z0-9-]|_[A-Za-z0-9]|[./][A-Za-z0-9]|@|\[bot\])")
 IMAGE_CLASS = "my-2 inline-block max-w-full rounded-md border border-border"
 LONE_IMAGE_RE = re.compile(
     r"^(<a [^>]*>)?(<img (?![^>]*\swidth=)[^>]*?) (class=\"%s\" loading=\"lazy\" "
@@ -320,7 +337,6 @@ LONE_IMAGE_RE = re.compile(
 
 
 class Context:
-    """What renderMarkdown's ``context`` carries for a record body."""
 
     def __init__(self, link_base, api_base, ref="main", issue_tasks=None,
                  figures=True):
@@ -345,7 +361,6 @@ class Context:
 
 
 def safe_url(url):
-    """06-repo-content.js mdSafeUrl."""
     trimmed = str(url or "").strip()
     if re.search(r"[\x00-\x1f\x7f]", trimmed):
         return "#"
@@ -434,8 +449,13 @@ def trim_autolink(url):
             return end
 
 
+def mention_html(login):
+    handle = str(login).lower()
+    return ('<a href="/@%s" data-issue-person="%s" data-issue-mention="" class="%s">@%s</a>'
+            % (esc(urllib.parse.quote(handle, safe="")), esc(handle), LINK_CLASS, esc(login)))
+
+
 def render_inline(escaped, ctx, link_refs=True, parked=None):
-    """06-repo-content.js renderMarkdownInline (on already escaped text)."""
     parked = [] if parked is None else parked
 
     def park(markup):
@@ -464,6 +484,8 @@ def render_inline(escaped, ctx, link_refs=True, parked=None):
         url = trim_autolink(candidate)
         return match.group(1) + park(link_html(url, url, ctx)) + candidate[len(url):]
     text = MD_BARE_URL.sub(bare, text)
+    text = MD_MENTION.sub(lambda m: m.group(1) + park(mention_html(m.group(2)))
+                          if link_refs else m.group(0), text)
     if ctx is not None:
         text = re.sub(r"(^|[^\w&])((?:pull[-\s]+request|pull|pr)[-\s]*#([1-9]\d*))\b",
                       lambda m: record(m.group(1), m.group(2), "pulls", m.group(3))
@@ -517,7 +539,6 @@ def decode_entities(text):
 
 
 def flatten_html(text):
-    """06-repo-content.js flattenMarkdownHtml."""
     def image(match):
         tag = match.group(0)
         source = re.sub(r"\s", "%20", _tag_attr(tag, "src").strip()).replace(")", "%29")
@@ -580,9 +601,6 @@ def _join_wrapped(parts):
 
 
 def lone_image(markup):
-    """A paragraph that is one image of unknown size: drawn in a fixed frame
-    (img[data-md-figure], shell.html) so the text below does not move when
-    the picture arrives."""
     match = LONE_IMAGE_RE.match(markup)
     if not match:
         return markup
@@ -591,7 +609,6 @@ def lone_image(markup):
 
 
 def render_markdown(raw, ctx, depth=0):
-    """06-repo-content.js renderMarkdown."""
     lines = re.sub(r"\r\n?", "\n", str(raw if raw is not None else "")).split("\n")
     out = []
 
@@ -783,17 +800,13 @@ MD_BODY_CLASS = "text-sm leading-6 text-foreground [&>*:first-child]:mt-0 [&>*:l
 
 
 def record_markdown(body, ctx):
-    """06-repo-content.js renderRecordMarkdown."""
     text = str(body or "")[:MAX_BODY_CHARS]
     if not text.strip():
         return ""
     return render_markdown(text, ctx)
 
 
-# -- the issue --------------------------------------------------------------
-
 def parse_issue(text, fallback_number):
-    """06-repo-content.js parseIssueJson + issueDetailParsed."""
     try:
         issue = json.loads(text) if isinstance(text, str) else (text or {})
     except ValueError:
@@ -852,7 +865,6 @@ def _event_ts(event):
 
 
 def reference_numbers(body):
-    """06-repo-content.js issueReferenceNumbers."""
     numbers, seen, fence = [], set(), ""
     for raw_line in str(body or "").split("\n"):
         trimmed = raw_line.strip()
@@ -889,7 +901,6 @@ def dependency_numbers(body):
 
 
 def mentions_of(index, number):
-    """06-repo-content.js issueMentionsOf over the open issues."""
     mentions = []
     for source in index or []:
         if not source or source.get("deleted") or source.get("number") == number:
@@ -1036,6 +1047,9 @@ def format_js_number(value):
 
 def event_description_html(event):
     kind = event.get("type")
+    if kind == "assignees" and isinstance(event.get("assignees"), list) and event["assignees"]:
+        return "set assignees: %s" % ", ".join(
+            person_name_html(name, "font-semibold text-foreground") for name in event["assignees"])
     if kind == "labels" and isinstance(event.get("labels"), list) and event["labels"]:
         return "added %s" % " ".join(label_chip(label) for label in event["labels"])
     if kind == "milestone" and event.get("milestone"):
@@ -1071,9 +1085,9 @@ class Renderer:
             '</span>%s%s\n            \n          </div>\n          %s\n          %s\n'
             '        </div>\n      </div>' % (
                 avatar_html(who, event.get("author"), "h-10 w-10"),
-                name_html(who), self.time(event.get("ts")),
+                card_author_html(who, event.get("author")), self.time(event.get("ts")),
                 "<span>· edited</span>" if edited else "",
-                '<div class="px-4 py-3 %s">%s</div>' % (
+                '<div data-repo-issue-comment-text class="px-4 py-3 %s">%s</div>' % (
                     MD_BODY_CLASS, record_markdown(body, self.comment_ctx())) if body else "",
                 reactions))
 
@@ -1092,7 +1106,7 @@ class Renderer:
             'class="inline-flex min-w-0 flex-wrap items-center gap-1">%s</span>\n          %s\n'
             '        </div>' % (
                 attrs, icon(icon_name), avatar_html(who, author, "h-5 w-5", agent),
-                name_html(who), description, self.time(ts)))
+                name_html(who) if agent else person_name_html(who), description, self.time(ts)))
 
     def timeline(self, events, mentions):
         rows = [dict(e, _mention=False) if e.get("_mention") else e for e in events]
@@ -1192,7 +1206,6 @@ def relation_pill(status):
 
 
 def _viewer(markup, who):
-    """Mark a fragment's root element as shown only to guests or members."""
     return re.sub(r"^(\s*<[a-zA-Z][a-zA-Z0-9-]*)", r"\1 data-ssr-%s" % who, markup, count=1)
 
 
@@ -1284,8 +1297,6 @@ def guest_comment_box(path):
 
 
 def member_comment_box(number):
-    """renderIssueCommentForm for a signed-in visitor who cannot manage the
-    issue (the avatar is drawn blank: the page does not know who it is)."""
     def tool(fmt, name, label):
         return ('<button type="button" data-repo-issue-comment-format="%s" aria-label="%s" '
                 'title="%s" class="inline-flex h-7 w-7 items-center justify-center rounded-md '
@@ -1315,7 +1326,7 @@ def member_comment_box(number):
         'class="flex flex-wrap items-center">\n                %s%s%s\n                %s\n'
         '                %s%s%s\n                %s\n                %s%s%s\n'
         '              </div>\n            </div>\n            <textarea '
-        'data-repo-issue-comment-body rows="5" aria-label="Comment '
+        'data-repo-issue-comment-body data-mention-input="record" rows="5" aria-label="Comment '
         'body" placeholder="Use Markdown to format your comment" class="block min-h-[6.5rem] '
         'w-full resize-y border-0 bg-background px-3 py-2 text-[14px] text-foreground '
         'outline-none placeholder:text-muted-foreground"></textarea>\n            <div '
@@ -1345,9 +1356,6 @@ def member_comment_box(number):
 
 
 def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
-    """The <article> renderRepoIssueDetail draws for ``issue`` (parse_issue)
-    for a visitor who cannot manage it. ``viewer`` is "guest", "member" or
-    "both" (both fragments, picked by html[data-guest])."""
     now = time.time() if now is None else now
     number = issue["number"]
     title = issue["title"] or "Issue #%d" % number
@@ -1363,8 +1371,8 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
     labels = front_matter_list("[%s]" % ", ".join(issue["labels"]))
     record_label = "#%s" % esc(number)
     is_owner = str(owner or "").lower() == str(author).lower()
-    state_label = "Closed" if closed else "Open" if status == "open" \
-        else status[:1].upper() + status[1:]
+    state_label = esc("Closed" if closed else "Open" if status == "open"
+                      else status[:1].upper() + status[1:])
     render = Renderer(ctx, now)
     index = [row for row in (index or []) if row]
     by_number = {row["number"]: row for row in index}
@@ -1417,7 +1425,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
         '</span>\n                      \n                    </div>\n                    %s\n'
         '                  </div>\n                </div>' % (
             avatar_html(author, issue["creator"], "h-10 w-10"),
-            '<span class="font-semibold text-foreground">%s</span>' % user_name_html(author),
+            card_author_html(author, issue["creator"]),
             render.time(opened_at),
             "Owner" if is_owner else "Contributor", description))
 
@@ -1571,7 +1579,6 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
 
 
 def index_rows(blobs):
-    """The open issues a bundle read (loadRepoIssueRelationIndex), parsed."""
     rows = []
     for path, blob in (blobs or {}).items():
         match = re.match(r"^\.forkmesh/issues/open/(\d+)/issue-\d+\.json$", str(path))
@@ -1582,9 +1589,6 @@ def index_rows(blobs):
     return rows
 
 
-# The dashboard's frame around the issue (08-repo-detail-network.js
-# renderRepoDetail with the Issues tab open on a record): the content grid,
-# the Issues panel with its list chrome stepped aside, the record host.
 FRAME = ('<div data-repo-content-grid class="mx-auto grid w-full max-w-7xl min-w-0 gap-5 px-3 '
          'pb-3 pt-4 sm:p-5 lg:grid-cols-1"><div class="min-w-0"><section><div class="mt-2 '
          'grid min-w-0 gap-6"><div class="min-w-0"><div><div>%s</div></div></div></div>'

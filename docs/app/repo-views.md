@@ -240,6 +240,52 @@ GitHub reference screenshots).
   `discussion.md`. New discussion explains that discussions are created from
   the desktop app, since they are signed by the author's node.
 
+## Issue page first view
+
+An issue page (`/<owner>/<repo>/issues/<n>`, or `/<name>/issues/<n>` on an
+instance with short addresses) used to arrive as the repository header and
+an empty band; `dashboard.js` drew a shimmering frame, read the issue and
+replaced the frame with it, and everything below the title moved. The node
+now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.py`):
+
+- **Same markup as the dashboard.** `render_issue` draws the article
+  `renderRepoIssueDetail` (`06-repo-content.js`) draws for a visitor without
+  write access, from the issue's signed-event JSON. Its helpers are ports of
+  the dashboard's (`escapeHtml`, `formatTimeAgo`, `parseIssueJson`,
+  `issueDetailParsed`, `issueLabelHue`, the timeline people helpers, and
+  `renderMarkdown` with its inline rules, @mention links included); icons are
+  the `<svg>` lucide 0.468's `createIcons` puts in place of
+  `<i data-lucide>`. The frame around it is `renderRepoDetail` with the
+  Issues tab open on a record. `dashboard.js` keeps that article in place
+  when it takes the page over (`takeRepoFirstViewIssue`, and
+  `loadRepoRecordDetail` puts it where the skeleton would go), then replaces
+  it with its own render of the same markup, so nothing moves. Any change to
+  the dashboard's issue markup must be made in both; the parity tests in
+  `app/tests/host/test_repo_ssr_issue.py` run the dashboard's own functions
+  under node and compare the two renders (add any new helper the issue view
+  calls to the test's `FUNCTIONS`/`CONSTANTS`).
+- **Viewer-dependent parts.** The comment box and the sub-issue Add button
+  depend on who is looking, so both the guest and the member variants are
+  drawn and the page's head script picks one before the first paint
+  (`html[data-guest]`, `VIEWER_STYLE`). A member's comment-box avatar is
+  drawn blank: the node does not know who is signed in.
+- **Escaping.** Everything from the issue is escaped, the state label
+  included: the issue file's `status` is author-controlled and not checked
+  against a signature here. The Markdown port escapes before it formats.
+- **Data.** `repo_views` builds an issue bundle (the whole record and the
+  open issues, for mentions and sub-issues) from the local gateway,
+  remembered per content; the rendered article is kept on the bundle for a
+  minute because its relative times move. The page waits at most
+  `ISSUE_BUDGET_SECONDS` (0.3 s) for the issue and the repository's first
+  view, which are usually remembered; otherwise it is served without them.
+  Without a remembered `/about`, a feature tab's page still draws the tabs a
+  repository has by default.
+- **Pictures.** A paragraph that is one picture of unknown size (no width or
+  height, `mdLoneImage` / `lone_image`) is drawn in a fixed 16:9 frame,
+  `img[data-md-figure]` in `shell.html`, at most 24rem high, with the picture
+  scaled down inside it, so the conversation below does not move when it
+  loads.
+
 ## Repository share card
 
 The repository page's `og:image` points at `repo_card_handler`

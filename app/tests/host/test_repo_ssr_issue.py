@@ -35,7 +35,9 @@ SOURCES = {name: (JS / name).read_text("utf-8") for name in (
 FUNCTIONS = {
     "02-helpers.js": (
         "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issueActorAvatarHtml",
-        "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml"),
+        "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml",
+        "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
+        "issuePersonNameHtml"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates"),
     "04-account.js": ("validNodeName",),
@@ -54,14 +56,14 @@ FUNCTIONS = {
         "renderRepoIssueDetail", "renderIssueCommentForm", "repoContributorIsBot",
         "issueMentionsOf", "issueReferenceNumbers", "issueDependencyNumbers",
         "issueSubIssueNumbers", "renderRecordRewardEstimate", "formatRewardSol",
-        "issueDateInputValue"),
+        "issueDateInputValue", "mdMentionHtml", "issueCardAuthorHtml"),
 }
 CONSTANTS = {
-    "02-helpers.js": ("USER_NAME_RE",),
+    "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE"),
     "06-repo-content.js": (
         "MD_DATA_IMAGE_URL", "MD_BARE_URL", "MD_ENTITIES", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
-        "rewardStateLabels"),
+        "rewardStateLabels", "MD_MENTION"),
 }
 
 
@@ -247,6 +249,7 @@ def test_untrusted_text_is_escaped():
     issue = issue27()
     issue["title"] = '"><script>alert(1)</script>'
     issue["labels"] = ['<img src=x onerror=y>']
+    issue["status"] = '<script>alert(2)</script><img src=x onerror=y>'
     issue["events"][0]["authorName"] = "<b>x</b>"
     issue["events"][3]["body"] = ('<script>alert(1)</script> <img src=x onerror="y"> '
                                   '[x](javascript:alert(1)) <a href="vbscript:z">z</a>')
