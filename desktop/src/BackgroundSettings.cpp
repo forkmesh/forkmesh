@@ -2,11 +2,13 @@
 
 #include "AppPaths.h"
 #include "BackgroundMode.h"
+#include "BackgroundRunnerBadge.h"
 
 #include <QCheckBox>
 #include <QFutureWatcher>
 #include <QLabel>
 #include <QProcess>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QVBoxLayout>
@@ -19,10 +21,18 @@ struct Outcome {
     QString error;
 };
 
+QSet<BackgroundSettings *> &boxes()
+{
+    static QSet<BackgroundSettings *> all;
+    return all;
+}
+
 }
 
 BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
 {
+    setObjectName(QStringLiteral("backgroundSettings"));
+    boxes().insert(this);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     m_keepRunning = new QCheckBox(QStringLiteral("Keep ForkMesh running without a window after I close it"));
@@ -70,6 +80,19 @@ BackgroundSettings::BackgroundSettings(QWidget *parent) : QWidget(parent)
     connect(m_startAtBoot, &QCheckBox::toggled, this, [this](bool on) { setStartAtBoot(on); });
     connect(m_noSleep, &QCheckBox::toggled, this, [this](bool on) { setSleepDisabled(on); });
     refresh();
+}
+
+BackgroundSettings::~BackgroundSettings()
+{
+    boxes().remove(this);
+}
+
+void BackgroundSettings::refreshAll()
+{
+    for (BackgroundSettings *box : std::as_const(boxes())) {
+        if (forkmesh::background::supported() && !box->m_busy)
+            box->refresh();
+    }
 }
 
 void BackgroundSettings::refresh()
@@ -235,4 +258,5 @@ void BackgroundSettings::applyStatus(const forkmesh::background::StartStatus &st
     if (!error.isEmpty())
         lines << QStringLiteral("Failed: %1").arg(error);
     m_status->setText(lines.join(QLatin1Char('\n')));
+    BackgroundRunnerBadge::refreshAll();
 }

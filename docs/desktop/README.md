@@ -45,7 +45,7 @@ Everything is in `desktop/`.
 | `src/MainWindowInternal.h`, `src/MainWindowInternal1-4.cpp` | Shared helper widgets and functions (namespace `forkmesh::ui`) |
 | `src/MainWindowNavigation.cpp`, `src/Rail*.h` | The left rail: sections, folders, groups, sorting, shortcuts |
 | `src/AppPaths.*`, `src/ProjectRegistry.*`, `src/SingleInstance.*` | Project layout, project list, per-project lock and socket |
-| `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/TrayMode.*`, `src/KeepAwake.*` | Running without a window (`--headless`), start at boot, the tray, keeping the computer awake ([lifecycle](lifecycle.md#running-without-a-window)) |
+| `src/BackgroundMode.*`, `src/BackgroundSettings.*`, `src/BackgroundRunnerBadge.*`, `src/TrayMode.*`, `src/KeepAwake.*` | Running without a window (`--headless`), start at boot, the top-bar badge, the tray, keeping the computer awake ([lifecycle](lifecycle.md#running-without-a-window)) |
 | `src/PackageModules.*`, `cmake/ForkMeshPackageModules.cmake` | Optional packages built as lazily loaded shared modules ([package-modules](package-modules.md)) |
 | `src/Theme.h`, `src/DesignTokens.*`, `src/UiKit.*`, `resources/theme/` | Classic style sheets, design tokens and components of the new interface ([ui-redesign](ui-redesign.md)) |
 | `src/Agent*`, `src/ClaudeStreamSession.*`, `src/CodexAppServerSession.*` | Local agent runtimes, guardrails, worktrees, access gates |
