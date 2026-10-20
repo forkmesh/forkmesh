@@ -334,3 +334,22 @@ def test_accepted_issue_events_queue_matching_workflows_with_github_payloads():
     assert found[2][2]["event"]["comment"] == {
         "id": "c1", "body": "hi", "user": {"login": "dan"}}
     assert found[2][1] == ".forkmesh/reply.yml"
+
+
+
+def test_bot_events_on_an_org_repository_are_signed_under_the_org_address():
+    # forkmesh/site is published as acme/site: the bot signs under the public
+    # address (the key browsers sign with) and the inbox accepts both keys.
+    world = World()
+    world.add_job()
+
+    async def public_owner(_env, _owner, _repo):
+        return "acme"
+
+    world.module.public_owner = public_owner
+    world.call("/api/actions/job/issues/3/comments",
+               Request("POST", {"body": "Thanks!"}))
+    owner, repo, repo_bi, data, keys, from_job = world.submitted[-1]
+    assert keys == ("acme/site", "forkmesh/site")
+    assert data["event"]["authorName"] == "acme-actions"
+    verify(data["event"], owner="acme", number=3)

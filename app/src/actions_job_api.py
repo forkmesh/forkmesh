@@ -107,7 +107,10 @@ async def sign_issue_event(env, owner, repo, number, event, bot_name):
     body = "\n".join((
         event["type"], str(int(number)), public_key, str(event["ts"]),
         await sha256_hex(issue_event_content(event))))
-    key = repo_key(owner, repo)
+    # Sign under the repository's public address (an organization alias such as
+    # acme/app), the key browsers and the desktop sign with, not the backing
+    # account the alias resolves to.
+    key = repo_key(await public_owner(env, owner, repo), repo)
     message = ("forkmesh-issue-event-v2\n" + key + "\n" + body).encode()
     event["sig"] = await ed25519_sign(public_key, private_key, message)
     return event if event["sig"] else None
@@ -257,7 +260,8 @@ async def _submit(env, request, job, number, event, extra=None):
     disabled = await _repo_feature_off(env, owner, repo, "issues")
     if disabled is not None:
         return disabled
-    bot = await public_owner(env, owner, repo) + "-actions"
+    public = await public_owner(env, owner, repo)
+    bot = public + "-actions"
     signed = await sign_issue_event(env, owner, repo, number, event, bot)
     if signed is None:
         return _error("bot_unavailable", 503,
@@ -266,7 +270,8 @@ async def _submit(env, request, job, number, event, extra=None):
     repo_bi = await blind_index(env, owner + "/" + repo)
     return await _accept_issue_submission(
         env, request, owner, repo, repo_bi, data,
-        (repo_key(owner, repo),), actions_job=True)
+        tuple(dict.fromkeys((repo_key(public, repo), repo_key(owner, repo)))),
+        actions_job=True)
 
 
 async def _event(env, job):
