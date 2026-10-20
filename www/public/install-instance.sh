@@ -342,6 +342,10 @@ if not isinstance(directory, dict) or not set(directory) <= {"listed", "world"} 
         not all(isinstance(value, bool) for value in directory.values()):
     sys.exit("Setting directory may only set listed and world, each true or false.")
 values["directory"] = json.dumps(directory, separators=(",", ":"), sort_keys=True) if directory else ""
+web_firewall = c.get("webFirewall") or ""
+if web_firewall not in ("", "open", "cloudflare"):
+    sys.exit("Setting webFirewall must be open or cloudflare.")
+values["webFirewall"] = "" if web_firewall == "open" else web_firewall
 for key, value in values.items():
     print("CFG_%s=%s" % (key, shlex.quote(value)))
 ' "$CONFIG_MODE"
@@ -574,6 +578,218 @@ ensure_swap() {
   fi
 }
 
+# Ports 80 and 443 in ufw. Without a webFirewall setting the installer opens
+# a web port only when no ufw rule mentions it at all: a port the operator
+# has narrowed (for example to a CDN's address ranges) is theirs, and an
+# update never re-opens it. With "webFirewall": "cloudflare" the installer
+# keeps 80 and 443 open to Cloudflare's published ranges only, refreshed
+# weekly. SSH (22) is never touched.
+WEB_FIREWALL="/usr/local/sbin/forkmesh-web-firewall"
+WEB_FIREWALL_UNIT="/etc/systemd/system/forkmesh-web-firewall.service"
+WEB_FIREWALL_TIMER="/etc/systemd/system/forkmesh-web-firewall.timer"
+
+write_web_firewall_tool() {
+  cat > "$WEB_FIREWALL.new" <<'WEBFIREWALL'
+#!/usr/bin/python3 -I
+"""The instance's ufw rules for its web ports (install-instance.sh).
+
+  forkmesh-web-firewall status PORT   open | narrow | none
+  forkmesh-web-firewall cloudflare    allow 80 and 443 from Cloudflare only
+"""
+import ipaddress
+import os
+import subprocess
+import sys
+import urllib.request
+
+RULE_FILES = ("/etc/ufw/user.rules", "/etc/ufw/user6.rules")
+STATE = "/var/lib/forkmesh-web-firewall/cloudflare"
+SOURCES = ("https://www.cloudflare.com/ips-v4",
+           "https://www.cloudflare.com/ips-v6")
+WEB_PORTS = "80,443"
+COMMENT = "forkmesh-cloudflare"
+OPEN_SPECS = ("80/tcp", "443/tcp", "80,443/tcp", "80", "443")
+MAX_RANGES = 200
+
+
+def _covers(dport, port):
+    if dport == "any":
+        return True
+    for part in dport.split(","):
+        low, _, high = part.partition(":")
+        try:
+            if int(low) <= port <= int(high or low):
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def port_state(port, paths=RULE_FILES):
+    """open, narrow or none: how ufw's own rules admit inbound TCP `port`.
+
+    Read from ufw's rule files ("### tuple ### action proto dport dst sport
+    src ... direction"), so ranges, port lists and application profiles are
+    all seen as ufw resolved them.
+    """
+    state = "none"
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                lines = handle.read().splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            if not line.startswith("### tuple ### "):
+                continue
+            fields = line.split()[3:]
+            if len(fields) < 6 or fields[0] not in ("allow", "limit"):
+                continue
+            if "out" in fields[6:]:
+                continue
+            if fields[1] not in ("tcp", "any") or not _covers(fields[2], port):
+                continue
+            if fields[5] in ("0.0.0.0/0", "::/0"):
+                return "open"
+            state = "narrow"
+    return state
+
+
+def _fetch(url):
+    with urllib.request.urlopen(url, timeout=20) as response:
+        return response.read(64 * 1024).decode("ascii")
+
+
+def cloudflare_ranges(fetch=_fetch):
+    ranges = set()
+    for url in SOURCES:
+        for item in fetch(url).split():
+            network = ipaddress.ip_network(item, strict=True)
+            if network.prefixlen < (8 if network.version == 4 else 20):
+                raise ValueError("implausible range " + item)
+            ranges.add(str(network))
+    if not 4 <= len(ranges) <= MAX_RANGES:
+        raise ValueError("implausible range list")
+    return sorted(ranges)
+
+
+def _ufw(*arguments):
+    subprocess.run(("ufw",) + arguments, check=True,
+                   stdout=subprocess.DEVNULL)
+
+
+def refresh_cloudflare(fetch=_fetch, ufw=_ufw, state=STATE):
+    """Allow the current ranges, drop retired ones, then close open rules.
+
+    The new ranges are allowed before anything is removed, and nothing is
+    changed when the list cannot be fetched or does not parse.
+    """
+    ranges = cloudflare_ranges(fetch)
+    try:
+        with open(state, encoding="ascii") as handle:
+            previous = [line.strip() for line in handle if line.strip()]
+    except OSError:
+        previous = []
+    for cidr in ranges:
+        ufw("allow", "proto", "tcp", "from", cidr, "to", "any", "port",
+            WEB_PORTS, "comment", COMMENT)
+    for cidr in previous:
+        if cidr not in ranges:
+            ufw("delete", "allow", "proto", "tcp", "from", cidr, "to", "any",
+                "port", WEB_PORTS)
+    for spec in OPEN_SPECS:
+        ufw("delete", "allow", spec)
+    os.makedirs(os.path.dirname(state), mode=0o700, exist_ok=True)
+    with open(state + ".new", "w", encoding="ascii") as handle:
+        handle.write("".join(cidr + "\n" for cidr in ranges))
+    os.replace(state + ".new", state)
+    return ranges
+
+
+def main(argv):
+    if len(argv) == 3 and argv[1] == "status" and argv[2] in ("80", "443"):
+        print(port_state(int(argv[2])))
+        return 0
+    if len(argv) == 2 and argv[1] == "cloudflare":
+        try:
+            ranges = refresh_cloudflare()
+        except (OSError, ValueError, subprocess.CalledProcessError) as error:
+            print("web firewall unchanged: %s" % error, file=sys.stderr)
+            return 1
+        print("ports 80 and 443 allowed from %d Cloudflare ranges" % len(ranges))
+        return 0
+    print(__doc__, file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
+WEBFIREWALL
+  chmod 0755 "$WEB_FIREWALL.new"
+  mv "$WEB_FIREWALL.new" "$WEB_FIREWALL"
+}
+
+configure_web_firewall() {
+  command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active' || return 0
+  write_web_firewall_tool
+  if [ "${CFG_webFirewall:-}" = "cloudflare" ]; then
+    cat > "$WEB_FIREWALL_UNIT" <<EOF
+[Unit]
+Description=Allow web traffic from Cloudflare's current address ranges only
+After=network-online.target ufw.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=$WEB_FIREWALL cloudflare
+EOF
+    cat > "$WEB_FIREWALL_TIMER" <<'EOF'
+[Unit]
+Description=Refresh the Cloudflare-only web firewall weekly
+
+[Timer]
+OnCalendar=weekly
+RandomizedDelaySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+    systemctl daemon-reload
+    systemctl enable forkmesh-web-firewall.timer >/dev/null 2>&1 || true
+    systemctl start forkmesh-web-firewall.timer >/dev/null 2>&1 || true
+    if "$WEB_FIREWALL" cloudflare >/dev/null; then
+      say "Ports 80 and 443 accept Cloudflare's address ranges only (refreshed weekly)."
+    else
+      warn "Could not read Cloudflare's address ranges; the web firewall was left as it was."
+    fi
+    return 0
+  fi
+  if [ -e "$WEB_FIREWALL_TIMER" ]; then
+    # Switching back to an open web firewall leaves the narrow rules in
+    # place: the operator removes them, the installer never widens them.
+    systemctl disable --now forkmesh-web-firewall.timer >/dev/null 2>&1 || true
+    rm -f "$WEB_FIREWALL_TIMER" "$WEB_FIREWALL_UNIT"
+    systemctl daemon-reload
+  fi
+  local port state opened=""
+  for port in 80 443; do
+    state="$("$WEB_FIREWALL" status "$port" 2>/dev/null)" || state=""
+    case "$state" in
+      open) ;;
+      narrow) say "Port $port is limited by this server's own ufw rules; they are left as they are." ;;
+      none)
+        if ufw allow "$port/tcp" >/dev/null; then
+          opened="$opened $port"
+          if [ "$NEW_INSTANCE" = "1" ]; then : > "$CLEANUP_DIR/ufw-$port"; fi
+        fi
+        ;;
+      *) warn "Could not read the ufw rules for port $port; they are left as they are." ;;
+    esac
+  done
+  [ -z "$opened" ] || say "Opened port(s)$opened in ufw."
+}
+
 install_packages() {
   begin packages "Installing system packages"
   capture_first_login_baseline
@@ -591,19 +807,7 @@ install_packages() {
     [ -z "$missing" ] || die "These packages did not install: ${missing% }."
   fi
   say "Installed git, Python $(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])'), Node $(node --version 2>/dev/null || echo '?') and Caddy $(caddy version 2>/dev/null | awk '{print $1}')."
-  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
-    if ! ufw status | grep -Eq '(^|[[:space:]])80/tcp([[:space:]]|$)'; then
-      if ufw allow 80/tcp >/dev/null && [ "$NEW_INSTANCE" = "1" ]; then
-        : > "$CLEANUP_DIR/ufw-80"
-      fi
-    fi
-    if ! ufw status | grep -Eq '(^|[[:space:]])443/tcp([[:space:]]|$)'; then
-      if ufw allow 443/tcp >/dev/null && [ "$NEW_INSTANCE" = "1" ]; then
-        : > "$CLEANUP_DIR/ufw-443"
-      fi
-    fi
-    say "Opened ports 80 and 443 in ufw."
-  fi
+  configure_web_firewall
   id -u "$APP_USER" >/dev/null 2>&1 ||
     useradd --system --home-dir "$VAR" --shell /usr/sbin/nologin "$APP_USER"
   id -u "$NODE_USER" >/dev/null 2>&1 ||
@@ -1094,10 +1298,13 @@ print(encode(seed), encode(public))
 import json, sys
 keys = ["projectName", "domain", "domainProvided", "publicAddress", "adminUsername", "adminEmail",
         "ownerType", "ownerName", "mailProvider", "mailFrom", "mailgunDomain", "mailgunRegion",
-        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl"]
+        "sourceUrl", "sourceRef", "plugins", "actions", "poweredBy", "platformUrl",
+        "webFirewall"]
 values = dict(zip(keys, sys.argv[1:]))
 if not values["platformUrl"]:
     del values["platformUrl"]
+if not values["webFirewall"]:
+    del values["webFirewall"]
 values["poweredBy"] = values["poweredBy"] == "1"
 values["domainProvided"] = values["domainProvided"] == "1"
 values["actions"] = values["actions"] == "1"
@@ -1107,7 +1314,8 @@ print(json.dumps(values, indent=2, sort_keys=True))
 ' "$CFG_projectName" "$CFG_domain" "$CFG_domainProvided" "$CFG_publicAddress" "$CFG_adminUsername" \
     "$CFG_adminEmail" "$CFG_ownerType" "$CFG_ownerName" "$CFG_mailProvider" "$CFG_mailFrom" \
     "$CFG_mailgunDomain" "$CFG_mailgunRegion" "$CFG_sourceUrl" "$CFG_sourceRef" "$CFG_plugins" \
-    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
+    "$CFG_actions" "$CFG_poweredBy" "${CFG_platformUrl:-}" "${CFG_webFirewall:-}" \
+    "$INSTANCE_INSTALLER_VERSION" > "$INSTANCE_JSON.new"
   chmod 0640 "$INSTANCE_JSON.new"
   mv "$INSTANCE_JSON.new" "$INSTANCE_JSON"
   say "Settings saved to $APP_ENV (only root and the app can read it)."
@@ -1861,6 +2069,9 @@ rm -f /usr/local/bin/forkmesh-mirror-node /usr/local/bin/forkmesh-actions \
   /etc/systemd/system/forkmesh-instance-update.path \
   /etc/systemd/system/forkmesh-instance-first-login-cleanup.service \
   /etc/systemd/system/forkmesh-instance-first-login-cleanup.timer
+systemctl disable --now forkmesh-web-firewall.timer >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/forkmesh-web-firewall.service \
+  /etc/systemd/system/forkmesh-web-firewall.timer
 if [ -e "$CLEANUP_DIR/ufw-80" ]; then ufw delete allow 80/tcp >/dev/null 2>&1 || true; fi
 if [ -e "$CLEANUP_DIR/ufw-443" ]; then ufw delete allow 443/tcp >/dev/null 2>&1 || true; fi
 if [ -e "$CLEANUP_DIR/created-swap" ]; then
