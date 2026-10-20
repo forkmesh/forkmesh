@@ -196,19 +196,27 @@ export const WORLD_MESH_FLOWER_HEXES = Object.freeze(
   ),
 );
 export const WORLD_MESH_FLOWER_REACH = WORLD_HEX_PITCH + CONTINUOUS_CITY_RADIUS * 1.2;
-// A neighbour drawn as one hexagon instead of a flower sits in the notch
-// between two of the town's desert hexagons, sharing an edge with each. Slot
-// k's hexagon is the flower-k hexagon nearest the town, so it never overlaps
-// another slot's flower.
+// A neighbour drawn as one hexagon instead of a flower is a petal of the
+// town: it takes the place of one desert hexagon and shares an edge with the
+// town itself. Slot n takes desert petal NEIGHBOUR_HEX_PETALS[n] (petal p
+// lies at 60°·p, as in DESERT_HEXES). Petal 0 holds the beach, so the five
+// slots run round from petal 1.
 export const WORLD_MESH_HEX_SHAPE = "hex";
-export const NEIGHBOUR_HEX_SLOT_COUNT = 6;
+export const NEIGHBOUR_HEX_PETALS = Object.freeze([1, 2, 3, 4, 5]);
+export const NEIGHBOUR_HEX_SLOT_COUNT = NEIGHBOUR_HEX_PETALS.length;
 const NEIGHBOUR_HEX_OFFSETS = Object.freeze(
-  [0, 1, 2, 3, 4, 5].map((side) => {
-    const angle = Math.PI / 6 + (side * Math.PI) / 3;
-    const reach = WORLD_HEX_PITCH * Math.sqrt(3);
-    return Object.freeze({ x: Math.cos(angle) * reach, z: Math.sin(angle) * reach });
+  NEIGHBOUR_HEX_PETALS.map((petal) => {
+    const angle = (petal * Math.PI) / 3;
+    return Object.freeze({
+      x: Math.cos(angle) * WORLD_HEX_PITCH,
+      z: Math.sin(angle) * WORLD_HEX_PITCH,
+    });
   }),
 );
+export function neighbourHexPetal(slot) {
+  const index = Number(slot);
+  return Number.isInteger(index) ? NEIGHBOUR_HEX_PETALS[index] ?? -1 : -1;
+}
 export function worldMeshShape(shape, slot) {
   const index = Number(slot);
   return shape === WORLD_MESH_HEX_SHAPE &&

@@ -11,9 +11,9 @@ HUB_NAME = "ForkMesh"
 DEFAULT_HUB_API = "https://app.forkmesh.com"
 DEFAULT_HUB_WORLD = "https://world.forkmesh.com"
 SLOTS = 12
-# Slots 0-5 may be drawn as one hexagon beside the hub's town instead of a
-# full flower; the hub lists them in WORLD_MESH_HEX_SLOTS (e.g. "0,3").
-HEX_SLOTS = 6
+# Slots 0-4 may be drawn as one hexagon, a petal of the hub's town, instead
+# of a full flower; the hub lists them in WORLD_MESH_HEX_SLOTS (e.g. "0,3").
+HEX_SLOTS = 5
 SHAPE_FLOWER = "flower"
 SHAPE_HEX = "hex"
 MAX_WORLDS = SLOTS + 1

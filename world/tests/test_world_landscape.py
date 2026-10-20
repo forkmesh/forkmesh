@@ -152,7 +152,8 @@ def test_desert_plots_ring_the_hexagonal_city_with_start_world_signs():
         "const DESERT_HEXES = Object.freeze(",
         "const WORLD_HEX_PITCH = CONTINUOUS_CITY_RADIUS * 2 + WORLD_ROAD_WIDTH;",
         "CONTINUOUS_CITY_RADIUS + WORLD_ROAD_WIDTH + DESERT_PLOT_APOTHEM;",
-        "centers: DESERT_HEXES.map((hex) => [hex.x, -hex.z]),",
+        "centers: DESERT_HEXES\n        .filter((_, side) => !petals.has(side))\n"
+        "        .map((hex) => [hex.x, -hex.z]),",
         "function createDesertPlots(THREE, interactive)",
         'sand.name = "forkmesh-desert-plot-sand";',
         "sand.userData.ground = true;",

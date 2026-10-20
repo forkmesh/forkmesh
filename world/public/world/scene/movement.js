@@ -177,6 +177,7 @@ export const WORLD_MESH_SPACE = "world-mesh";
 let worldMeshFlowers = [];
 let worldMeshHexes = [];
 let worldMeshJunctions = [];
+let worldMeshPetals = new Set();
 
 export function hexCorners(center) {
   const reach = (WORLD_BIKE_LANE_APOTHEM * 2) / Math.sqrt(3);
@@ -194,6 +195,19 @@ export function setWorldMeshFlowers(flowers = []) {
     worldMeshHexesFor(flower.shape).map((hex) => ({ x: flower.x + hex.x, z: flower.z + hex.z })),
   );
   worldMeshJunctions = worldMeshHexes.flatMap(hexCorners);
+  // A single hexagon standing on one of the town's desert petals owns that
+  // petal: the town no longer claims the ground underneath it.
+  worldMeshPetals = new Set(
+    worldMeshFlowers
+      .filter((flower) => flower.shape === "hex")
+      .map((flower) => WORLD_HEX_TILES.findIndex((tile, index) =>
+        index > 0 && Math.hypot(tile.x - flower.x, tile.z - flower.z) < 1))
+      .filter((index) => index > 0),
+  );
+}
+
+export function worldMeshReplacedPetals() {
+  return [...worldMeshPetals].map((index) => index - 1);
 }
 
 function grownHexContains(px, pz, tile, margin) {
@@ -246,6 +260,7 @@ export function worldMeshOwnerAt(x, z) {
   const pz = Number(z);
   if (!Number.isFinite(px) || !Number.isFinite(pz) || !worldMeshFlowers.length) return null;
   for (let index = 0; index < WORLD_HEX_TILES.length; index += 1) {
+    if (worldMeshPetals.has(index)) continue;
     const tile = WORLD_HEX_TILES[index];
     if (
       roundedHexagonContains(

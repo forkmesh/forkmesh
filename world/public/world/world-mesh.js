@@ -73,7 +73,7 @@ export function normalizeWorldMesh(payload) {
       slot,
       // A single-hexagon neighbour is drawn beside the town and entered by
       // walking onto it, which loads its own World page.
-      shape: item?.shape === "hex" && slot >= 0 && slot < 6 ? "hex" : "flower",
+      shape: item?.shape === "hex" && slot >= 0 && slot < 5 ? "hex" : "flower",
     });
     if (worlds.length > WORLD_MESH_SLOT_COUNT) break;
   }
