@@ -75,3 +75,17 @@ The Linux test suite covers target parsing, safety decisions, DNS packets, banne
 `NetworkTransport.swift` shares one `startConnection` for TCP and UDP. Its state handler clears itself after the first `ready`, `failed` or `cancelled`, so a later failure or `close()` cannot resume the continuation twice. Each wait sits in `withTaskCancellationHandler`, which cancels the `NWConnection` when `withTimeout` gives up; without it a connection stuck in `waiting` kept the timeout from returning. A cancelled connection reports `ConnectionFailure.cancelled`.
 
 `HTTPInspector` reads certificate validity dates with `SecCertificateCopyNotValidBeforeDate`/`AfterDate` on iOS 18 and macOS 15, and with `SecCertificateCopyValues` on older macOS. iOS 17 has no public API for them, so the summary there carries open-ended dates.
+
+## Android
+
+The Android app has the same package in Kotlin: logic in `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/nexus` (tests in `core/src/test/.../nexus/NexusTest.kt`, run with `./gradlew :core:coreTest -Pfilter=Nexus`) and screens in `native/android/app/src/main/kotlin/com/forkmesh/nativeapp/feature/nexus`. `Route.Nexus` is in the You hub's Workspace group and opens from `/dashboard/nexus`; like iOS it is never hidden by `PackageGate`.
+
+The safety policy, limits, port presets, service catalog, DNS wire format, banner rules and report formats are line-for-line ports, so a target refused on iPhone is refused on Android with the same message. Platform differences:
+
+- Service discovery uses `NsdManager` (mDNS/DNS-SD, the protocol Bonjour speaks) for the same eight service types. Android asks for no Local Network permission; the app already declares `INTERNET`, `ACCESS_NETWORK_STATE`, `ACCESS_WIFI_STATE` and `CHANGE_WIFI_MULTICAST_STATE`.
+- The suggested scan range reads `java.net.NetworkInterface`, prefers `wlan0`, and skips mobile data (`rmnet`, `ccmni`), VPN (`tun`, `ppp`, `ipsec`) and Wi-Fi Direct/Aware (`p2p`, `aware`) interfaces, with the same /24 floor.
+- The HTTP inspector uses `HttpURLConnection` with redirects followed by hand (so each hop is recorded) and an `SSLSocket` handshake for the certificate chain, protocol and cipher suite. Like App Transport Security on iOS, the app's network security config blocks plain `http://` to anything but localhost, and the inspector says so.
+- Scan targets that are hostnames resolve through the system resolver; the DNS explorer queries 1.1.1.1 like iOS.
+- History is kept on the phone (`filesDir/nexus/history.json`) unless turned off in NEXUS Settings, and scan reports share as JSON or CSV.
+
+The reasons behind these choices are in [ANDROID.md](ANDROID.md#28-nexus-network-inspection-sync-ledger-s046).

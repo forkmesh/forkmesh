@@ -39,7 +39,7 @@ returns to the repository in use, remembered across launches
 and says so inline. Android follows `CodeButton.plan`.
 
 The **new agent button** opens the composer (tap) or the voice prompt (touch
-and hold, listening until the finger lifts, §2.3; Android still opens the command palette). On iPhone it is a 44 pt circle left of the avatar in the top bar and the
+and hold, listening until the finger lifts, §2.3; Android does the same since S015). On iPhone it is a 44 pt circle left of the avatar in the top bar and the
 chat room header (`ShellNewAgentButton`); the DM and group conversation header
 leaves it and the avatar out to make room for the name, and opening the channel
 list brings the top bar back. It shows one
@@ -656,7 +656,7 @@ Android: [ANDROID.md](ANDROID.md), section 13).
 | Gesture | Result |
 |---|---|
 | Tap | The composer opens at once with the keyboard up, aimed at the current context |
-| Long press | The voice prompt (§2.3) on iOS; the command palette (§5.2) on Android |
+| Long press | The voice prompt (§2.3), on iOS and Android; the command palette (§5.2) is its **Commands** button |
 
 Context rules, most specific first: an open agent session steers it; an open
 PR or issue starts an agent on that repository with the item attached; an open
@@ -668,7 +668,7 @@ button; agent composers carry a **Fix** button (`Please fix: <text>`,
 chip; the shell composer shows **YOLO** and **No worktree** toggles when the run
 goes to the desktop ([DESKTOP_AGENTS.md](DESKTOP_AGENTS.md)).
 
-### 2.3 The voice prompt (iOS)
+### 2.3 The voice prompt (iOS and Android)
 
 Holding the new agent button starts an agent by voice, without the keyboard.
 `ShellVoiceLaunch` (`Shell/ShellVoiceLaunch.swift`) runs it and
@@ -728,6 +728,9 @@ Holding the new agent button starts an agent by voice, without the keyboard.
 - Reduce Motion fades instead of flying and stops the ripples and burst;
   Reduce Transparency uses a solid backdrop. Sounds follow the interface
   sounds setting (§6.5).
+- **Android** (S015) draws the same screen with `ShellVoiceLaunch` and
+  `ShellVoiceOverlay` (`feature/composer`) and differs where the platform
+  does; see [ANDROID.md](ANDROID.md), "The voice prompt (S015)".
 
 ## 3. Navigation inside a tab
 
@@ -877,7 +880,7 @@ command palette's Switch project (and the iPad sidebar).
 ### 5.2 The command palette
 
 The prompt button's **Commands** action (in the voice prompt, §2.3, and for
-VoiceOver; a long press on Android) opens a sheet with the field focused:
+VoiceOver; on Android only the voice screen) opens a sheet with the field focused:
 suggested actions for the context (each an App Intent, §6), recent
 destinations, then results (actions, destinations by title, content hits). ⌘K
 opens it with a keyboard.
@@ -997,7 +1000,7 @@ Each action ends in the same App Intent or route as its in-app button.
 | Run failed, merge blocked | `.error` |
 | Destructive confirmation shown | `.warning` |
 | Tab reselect, segment change, pickers | `.selection` |
-| Long press opens the palette | `.impact(weight: .medium)` |
+| Long press opens the voice prompt | `.impact(weight: .medium)` (Android: `LongPress`) |
 
 No haptics on scroll or refresh ticks.
 
