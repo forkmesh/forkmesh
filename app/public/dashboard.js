@@ -37773,7 +37773,7 @@
     const canonical = `${prepared.signingPrefix}\n${prepared.repoKey}\n${kind}\n${advisoryId}\n${pub}\n${ts}\n${prepared.contentHash}`;
     const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, new TextEncoder().encode(canonical)));
     return securityRequest(url, {
-      action: "sign", kind, fields, preparedAt: prepared.preparedAt,
+      action: "sign", kind, fields, preparedAt: prepared.preparedAt, revision: prepared.revision,
       event: { author: pub, ts, contentHash: prepared.contentHash, sig },
     });
   }
@@ -37885,7 +37885,7 @@
         <div class="grid gap-8 lg:grid-cols-[minmax(0,1fr)_18rem]">
           <div class="grid min-w-0 gap-4 self-start">
             <div class="grid min-w-0 gap-4 sm:grid-cols-[40px_minmax(0,1fr)]">
-              <span class="hidden sm:block">${issueActorAvatarHtml(opener || "advisory", opener, "h-10 w-10")}</span>
+              <span class="hidden sm:block">${opener && member ? issueActorAvatarHtml(opener, opener, "h-10 w-10") : `<span class="grid h-10 w-10 place-items-center rounded-full border border-border text-muted-foreground"><i data-lucide="shield" class="h-5 w-5"></i></span>`}</span>
               <div class="min-w-0 overflow-hidden rounded-md border border-border">
                 <div class="border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-1.5 text-[14px] text-muted-foreground">Description</div>
                 ${description}

@@ -245,7 +245,7 @@ def publish(world, advisory_id, key, actor="alice", tamper=False, kind="publish"
         event["sig"] = key.sign(message + b"x")
     return api(world, "POST", "/advisories/" + advisory_id, actor, {
         "action": "sign", "kind": kind, "preparedAt": ts, "event": event,
-        "fields": fields})
+        "fields": fields, "revision": data["revision"]})
 
 
 def test_report_is_private_triage_and_notifies_maintainers(world):
@@ -387,6 +387,8 @@ def test_publish_records_a_signed_ledger_entry_and_valid_osv(world):
         base64.urlsafe_b64decode(event["sig"] + "=="), message)
     anonymous = api(world, "GET", "/advisories/" + advisory_id)
     assert anonymous.status == 200 and anonymous.data["comments"] == []
+    assert anonymous.data["ledger"] == {
+        "state": "recorded", "path": path, "commit": "c" * 40}
     assert "history" not in anonymous.data["advisory"]
     osv = api(world, "GET", "/advisories/%s/osv.json" % advisory_id).data
     assert_valid_osv(osv)
@@ -418,7 +420,7 @@ def test_signed_kinds_refuse_stale_content_and_withdraw_is_recorded(world):
                                  prepared["contentHash"])
     stale = api(world, "POST", "/advisories/" + advisory_id, "alice", {
         "action": "sign", "kind": "publish",
-        "preparedAt": prepared["preparedAt"],
+        "preparedAt": prepared["preparedAt"], "revision": prepared["revision"],
         "event": {"author": key.pub, "ts": prepared["preparedAt"],
                   "contentHash": prepared["contentHash"],
                   "sig": key.sign(message)}})
@@ -623,3 +625,38 @@ def assert_valid_osv(osv):
     for credit in osv.get("credits", []):
         assert credit["type"] in OSV_CREDIT_TYPES and credit["name"]
     json.dumps(osv)
+
+
+def test_ledger_commit_writes_the_file_through_the_web_edit_path(tmp_path,
+                                                                  monkeypatch):
+    import repository_file_edits as edits
+    import test_repository_file_edits as fe
+
+    work = tmp_path / "work"
+    work.mkdir()
+    fe.git(work, "init", "-q", "-b", "main")
+    (work / "README.md").write_text("# Widget\n")
+    fe.git(work, "add", "-A")
+    fe.git(work, "commit", "-q", "-m", "seed")
+    bare = tmp_path / "repo.git"
+    fe.git(tmp_path, "clone", "-q", "--bare", str(work), str(bare))
+    calls = fe.harness(bare)
+    original = edits._read
+
+    async def read(env, owner, repo, action):
+        if action == "branches":
+            return {"defaultBranch": "main"}
+        return await original(env, owner, repo, action)
+
+    monkeypatch.setattr(edits, "_read", read)
+    ctx = {"owner": "alice", "repo": "project", "actor": "alice"}
+    path = sa.ledger_path("FMSA-2222-3333-4444")
+    for content in ('{"events": [1]}\n', '{"events": [1, 2]}\n'):
+        commit = asyncio.run(sa.ledger_commit(
+            SimpleNamespace(), fe.FakeRequest(), ctx, path, content,
+            "Security advisory FMSA-2222-3333-4444: publish"))
+        assert fe.git_out(bare, "rev-parse", "main").strip() == commit
+        assert fe.git_out(bare, "show", "main:" + path) == content
+    assert fe.git_out(bare, "show", "main:README.md") == "# Widget\n"
+    fe.git(bare, "fsck", "--strict", "--no-dangling")
+    assert calls["pushes"][0][2] == "alice"

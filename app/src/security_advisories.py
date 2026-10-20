@@ -297,6 +297,9 @@ def public_view(record, credits):
         "publishedAt": int(record.get("publishedAt") or 0),
         "updatedAt": int(record.get("updatedAt") or 0),
         "withdrawnAt": int(record.get("withdrawnAt") or 0),
+        "ledger": {key: value for key, value in (
+            record.get("ledger") or {}).items()
+            if key in ("state", "path", "commit")},
     }
 
 
@@ -545,6 +548,7 @@ async def _credits(env, advisory_id):
 
 
 async def _store(env, record, credits=None):
+    record["revision"] = int(record.get("revision") or 0) + 1
     public = ""
     if record["state"] in PUBLIC_STATES:
         if credits is None:
@@ -834,6 +838,7 @@ async def show(env, request, ctx, advisory_id):
         body["credits"] = [dict(item, state="accepted")
                            for item in found["public"].get("credits") or []]
         body["comments"] = []
+        body["ledger"] = found["public"].get("ledger") or {}
     return _json(body, cache="private, no-store")
 
 
@@ -990,7 +995,8 @@ async def _credit(env, ctx, found, data):
             "data=excluded.data, updated_at=excluded.updated_at",
             record["id"], ctx["repoBi"], user_bi, state, _now(),
             await encrypt_row(env, {"user": name, "type": kind}))
-        _history(record, ctx["actor"], "credited", name + " (" + kind + ")")
+        _history(record, ctx["actor"], "credited",
+                 name + " (" + kind.replace("_", " ") + ")")
         if state == "pending" and (
                 found["state"] in PUBLIC_STATES
                 or await _member_role(env, record["id"], name)):
@@ -1022,7 +1028,7 @@ def _candidate(record, kind, fields, prepared_at):
     return candidate
 
 
-async def _signed_candidate(env, ctx, found, data):
+async def _signed_candidate(env, ctx, found, data, signing=False):
     kind = _line(data.get("kind"), 20)
     if kind not in SIGNED_KINDS:
         return None, _error("invalid_kind")
@@ -1048,10 +1054,18 @@ async def _signed_candidate(env, ctx, found, data):
     if prepared_at <= int(found["record"].get("updatedAt") or 0) or \
             abs(now - prepared_at) > PREPARE_TTL_MS:
         return None, _error("stale_prepare", 409)
+    revision = int(found["record"].get("revision") or 0)
+    try:
+        echoed = int(data.get("revision"))
+    except (TypeError, ValueError):
+        echoed = -1
+    if signing and echoed != revision:
+        return None, _error("stale_prepare", 409)
     candidate = _candidate(found["record"], kind, fields, prepared_at)
     credits = await _credits(env, candidate["id"])
     osv = osv_record(public_view(candidate, credits), _origin(env))
     return {"kind": kind, "preparedAt": prepared_at, "candidate": candidate,
+            "revision": revision,
             "credits": credits, "osv": osv, "contentHash": content_hash(osv),
             "fields": fields}, None
 
@@ -1067,6 +1081,7 @@ async def _prepare(env, request, ctx, found, data):
         "ok": True,
         "kind": prepared["kind"],
         "preparedAt": prepared["preparedAt"],
+        "revision": prepared["revision"],
         "contentHash": prepared["contentHash"],
         "repoKey": keys[0] if keys else "",
         "signingPrefix": "forkmesh-" + SIGNING_KIND + "-v2",
@@ -1093,7 +1108,8 @@ async def _verify_event(env, request, ctx, prepared, event, advisory_id):
 
 
 async def _signed(env, request, ctx, found, data):
-    prepared, refusal = await _signed_candidate(env, ctx, found, data)
+    prepared, refusal = await _signed_candidate(
+        env, ctx, found, data, signing=True)
     if refusal:
         return refusal
     event = data.get("event") if isinstance(data.get("event"), dict) else {}
@@ -1164,7 +1180,7 @@ async def ledger_commit(env, request, ctx, path, content, message):
     if entry is not None and entry.get("type") != "blob":
         raise edits.FileEditError(
             "invalid_path", "The ledger path is not a file.", 409)
-    email = edits.noreply_email(actor, _public_base_url(env))
+    email = edits.noreply_email(actor, edits._public_base_url(env))
     commit_oid, _, pack = edits.build_commit(
         listings, parent, path, content, actor, email, int(time.time()),
         message, create=entry is None)
@@ -1195,6 +1211,8 @@ async def _record_ledger(env, request, ctx, record):
     await d1_run(
         env, "UPDATE security_advisories SET data=? WHERE id=?",
         await encrypt_row(env, record), record["id"])
+    if record.get("state") in PUBLIC_STATES:
+        await _refresh_public(env, record["id"])
     return record
 
 

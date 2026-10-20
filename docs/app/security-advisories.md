@@ -89,13 +89,16 @@ use), like issue events:
 1. `{"action":"prepare","kind":"publish|update|withdraw","fields":{...}}`
    returns the OSV record the advisory will have, its `contentHash`
    (SHA-256 of the canonical JSON: sorted keys, `,`/`:` separators, UTF-8)
-   and a `preparedAt` time that becomes `published`/`modified`/`withdrawn`.
+   a `preparedAt` time that becomes `published`/`modified`/`withdrawn`, and
+   the record's `revision` (bumped on every stored change).
 2. The browser signs
    `forkmesh-advisory-event-v2\n<owner>/<repo>\n<kind>\n<id>\n<author key>\n<ts>\n<contentHash>`
    (the v2 shape of `events.event_signing_messages`, bound to the repository
-   key) and sends `{"action":"sign", ...}` with the same `preparedAt`.
+   key) and sends `{"action":"sign", ...}` with the same `preparedAt` and
+   `revision`.
 3. The server rebuilds the record for that `preparedAt`, refuses it when the
-   advisory changed since (`stale_prepare`, `content_changed`), checks the
+   advisory changed since (a different `revision` or an older `preparedAt`
+   is `stale_prepare`, a different hash `content_changed`), checks the
    signature with `ed25519_verify` and `_bind_session_author`, stores it, and
    commits `.forkmesh/advisories/<ID>.json` to the default branch through the
    web file-edit path (`repository_file_edits`).
