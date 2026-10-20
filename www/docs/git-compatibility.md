@@ -73,7 +73,7 @@ Repository shape: A bare repository whose main branch has three commits: an SSH-
 - Applies to: relay, mirror-failover.
 - Expected result: Git receives HTTP 501 with error code direct_https_receive_pack_required before ForkMesh reads the push body.
 - Reproduce: `git push https://forkmesh.com/OWNER/REPOSITORY HEAD`
-- Action: Register an SSH public key, copy the repository's published ssh:// URL, and push that remote instead. A repository the website hosts takes stock HTTPS pushes with a push credential from Settings (see [hosted repositories](hosted-repositories.md)).
+- Action: Register an SSH public key, copy the repository's published ssh:// URL, and push that remote instead.
 - Recovery: No remote ref or object is changed. Correct the remote URL and retry the same push.
 - Last tested: 2026-08-20 · Git 2.47.3 · app/tests/test_git_http.py::test_receive_pack_fails_closed_without_consuming_request_body
 
