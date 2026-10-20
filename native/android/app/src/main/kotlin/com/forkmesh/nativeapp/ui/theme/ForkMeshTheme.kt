@@ -18,7 +18,10 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.LocalIndication
+import androidx.compose.material3.LocalRippleConfiguration
 import androidx.compose.runtime.Composable
+import com.forkmesh.nativeapp.ui.kit.FmPressIndication
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
@@ -36,6 +39,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import com.forkmesh.nativeapp.R
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -58,6 +65,17 @@ object FmSpace {
     val x8 = 64.dp
 }
 
+@OptIn(ExperimentalTextApi::class)
+private fun interFamily(opticalSize: Float): FontFamily = FontFamily(
+    listOf(100, 200, 300, 400, 500, 600, 700, 800, 900).map { weight ->
+        Font(
+            R.font.inter_variable,
+            weight = FontWeight(weight),
+            variationSettings = FontVariation.Settings(FontVariation.weight(weight), FontVariation.Setting("opsz", opticalSize)),
+        )
+    },
+)
+
 object FmType {
     val hero = 40.sp
     val display = 28.sp
@@ -76,7 +94,19 @@ object FmType {
 
     const val tabular = "tnum"
 
-    val mono = FontFamily.Monospace
+    val mono: FontFamily = FontFamily(
+        listOf(100, 200, 300, 400, 500, 600, 700, 800).map { weight ->
+            Font(R.font.jetbrains_mono_variable, weight = FontWeight(weight), variationSettings = FontVariation.Settings(FontVariation.weight(weight)))
+        },
+    )
+
+    const val DISPLAY_FROM = 20f
+
+    val ui: FontFamily = interFamily(14f)
+
+    val uiDisplay: FontFamily = interFamily(32f)
+
+    fun family(size: TextUnit): FontFamily = if (size.isSp && size.value >= DISPLAY_FROM) uiDisplay else ui
 }
 
 object FmRadius {
@@ -93,6 +123,12 @@ object FmMotion {
     val easeOutCubic = CubicBezierEasing(0.215f, 0.61f, 0.355f, 1f)
 
     val easeInCubic = CubicBezierEasing(0.55f, 0.055f, 0.675f, 0.19f)
+
+    const val PUSH = 350
+
+    val pushEasing = CubicBezierEasing(0.2f, 0.8f, 0.2f, 1f)
+
+    fun <T> push(): androidx.compose.animation.core.TweenSpec<T> = androidx.compose.animation.core.tween(PUSH, easing = pushEasing)
 
     @Composable
     @ReadOnlyComposable
@@ -206,14 +242,21 @@ data class FmPalette(
     val editorGutter: Color,
     val editorCurrentLine: Color,
     val onAccent: Color = Color.White,
+    val wallpaper: Boolean = false,
 ) {
     val activeUnderline: Color get() = if (dark) Color.White else textPrimary
 
-    val listSurface: Color get() = if (dark) bgBase else bgRaised
+    val canvas: Color get() = if (wallpaper) Color.Transparent else bgBase
+
+    val listSurface: Color get() = (if (dark) bgBase else bgRaised).let { if (wallpaper) it.copy(alpha = 0.6f) else it }
 
     val editorSurface: Color get() = if (dark) bgBase else bgRaised
 
+    val readingSurface: Color get() = if (wallpaper) Color.Transparent else editorSurface
+
     val editorActiveLine: Color get() = editorCurrentLine
+
+    val count: Color get() = if (dark) FmColors.accentOnDark else FmColors.accent
 }
 
 private val LightBasePalette = FmPalette(
@@ -245,7 +288,7 @@ private val DarkBasePalette = FmPalette(
     editorGutter = FmColors.editorGutter, editorCurrentLine = FmColors.editorCurrentLine,
 )
 
-fun fmPaletteFor(theme: AppTheme, dark: Boolean): FmPalette {
+fun fmPaletteFor(theme: AppTheme, dark: Boolean, wallpaper: Boolean = false): FmPalette {
     val resolved = theme.resolve(dark)
     fun color(token: ThemeToken) = Color(resolved[token])
     return (if (dark) DarkBasePalette else LightBasePalette).copy(
@@ -264,6 +307,7 @@ fun fmPaletteFor(theme: AppTheme, dark: Boolean): FmPalette {
         danger = color(ThemeToken.danger),
         warning = color(ThemeToken.warning),
         border = color(ThemeToken.border),
+        wallpaper = wallpaper,
     )
 }
 
@@ -329,6 +373,20 @@ class FmHaptics internal constructor(private val feedback: HapticFeedback, priva
 
     fun failure(cue: SoundCue = SoundCue.ERROR) = perform(HapticFeedbackType.ContextClick, cue)
 
+    fun send(cue: SoundCue = SoundCue.SEND) = perform(HapticFeedbackType.VirtualKey, cue)
+
+    fun palette(cue: SoundCue = SoundCue.OPEN) = perform(HapticFeedbackType.KeyboardTap, cue)
+
+    fun success(cue: SoundCue = SoundCue.SUCCESS) = perform(HapticFeedbackType.Confirm, cue)
+
+    fun warning(cue: SoundCue = SoundCue.WARN) = perform(HapticFeedbackType.ContextClick, cue)
+
+    fun error(cue: SoundCue = SoundCue.ERROR) = perform(HapticFeedbackType.Reject, cue)
+
+    fun feel(type: HapticFeedbackType) {
+        if (!reducedMotion && com.forkmesh.nativeapp.platform.AppearanceStore.hapticsEnabled) feedback.performHapticFeedback(type)
+    }
+
     fun ratchet(crisp: Boolean, caught: Boolean) {
         if (reducedMotion || !com.forkmesh.nativeapp.platform.AppearanceStore.hapticsEnabled) return
         feedback.performHapticFeedback(
@@ -365,16 +423,16 @@ private fun fmTypography(primary: Color, muted: Color, tertiary: Color): Typogra
         height: Float = FmType.leadingSnug,
         tracking: TextUnit = 0.sp,
         color: Color = primary,
-    ) = copy(fontSize = size, fontWeight = weight, lineHeight = size * height, letterSpacing = tracking, color = color)
+    ) = copy(fontFamily = FmType.family(size), fontSize = size, fontWeight = weight, lineHeight = size * height, letterSpacing = tracking, color = color)
 
     val m = MaterialDefaults
     return Typography(
         displayLarge = m.displayLarge.scaled(FmType.hero, FmType.emphasis, 1.02f, (-1).sp),
-        displayMedium = m.displayMedium.copy(color = primary),
+        displayMedium = m.displayMedium.copy(fontFamily = FmType.uiDisplay, color = primary),
         displaySmall = m.displaySmall.scaled(FmType.display, FmType.emphasis, FmType.leadingTight, (-0.5).sp),
-        headlineLarge = m.headlineLarge.copy(color = primary),
-        headlineMedium = m.headlineMedium.copy(color = primary),
-        headlineSmall = m.headlineSmall.copy(color = primary),
+        headlineLarge = m.headlineLarge.copy(fontFamily = FmType.uiDisplay, color = primary),
+        headlineMedium = m.headlineMedium.copy(fontFamily = FmType.uiDisplay, color = primary),
+        headlineSmall = m.headlineSmall.copy(fontFamily = FmType.uiDisplay, color = primary),
         titleLarge = m.titleLarge.scaled(FmType.title, FmType.emphasis, FmType.leadingTight, (-0.3).sp),
         titleMedium = m.titleMedium.scaled(FmType.heading, FmType.emphasis, FmType.leadingTight, (-0.2).sp),
         titleSmall = m.titleSmall.scaled(FmType.body, FmType.emphasis, FmType.leadingTight),
@@ -415,7 +473,7 @@ private fun fmColorScheme(p: FmPalette): ColorScheme {
         onTertiary = Color.Black,
         tertiaryContainer = p.accent,
         onTertiaryContainer = Color.Black,
-        background = p.bgBase,
+        background = p.canvas,
         onBackground = p.textPrimary,
         surface = p.bgRaised,
         onSurface = p.textPrimary,
@@ -469,12 +527,14 @@ fun ForkMeshTheme(
     dark: Boolean = isSystemInDarkTheme(),
     theme: AppTheme = LocalFmAppTheme.current,
     messenger: Boolean = true,
+    wallpaper: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val palette = remember(dark, theme) { fmPaletteFor(theme, dark) }
+    val palette = remember(dark, theme, wallpaper) { fmPaletteFor(theme, dark, wallpaper) }
     val reducedMotion = rememberReducedMotion()
     val textTheme = remember(palette) { fmTypography(palette.textPrimary, palette.textSecondary, palette.textTertiary) }
     val scheme = remember(palette) { fmColorScheme(palette) }
+    val press = remember(palette) { FmPressIndication(palette.textPrimary.copy(alpha = 0.08f)) }
     val selection = remember(palette) {
         TextSelectionColors(handleColor = palette.accent, backgroundColor = palette.accent.copy(alpha = .28f))
     }
@@ -489,6 +549,8 @@ fun ForkMeshTheme(
                 LocalContentColor provides palette.textPrimary,
                 LocalTextStyle provides FmMaterialTypography.bodyMedium,
                 LocalTextSelectionColors provides selection,
+                LocalIndication provides press,
+                LocalRippleConfiguration provides null,
             ) {
                 if (messenger) FmMessengerScope(content) else content()
             }

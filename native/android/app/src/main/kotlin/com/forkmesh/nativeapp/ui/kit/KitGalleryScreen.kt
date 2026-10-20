@@ -34,7 +34,6 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -155,7 +154,7 @@ private fun ColumnScope.Gallery(initialSection: Int, openOnStart: String?) {
         section("8 · Loading & motion") { LoadingDemo() }
         section("9 · Inline status, overlays & bars") {
             Wrap {
-                for (name in listOf("status", "error", "action", "confirm", "prompt", "alert", "sheet", "guest")) {
+                for (name in listOf("status", "error", "action", "confirm", "prompt", "alert", "sheet", "actions", "guest")) {
                     FmToneButton(name, onPressed = { scope.launch { openDemo(messenger, overlayStatus, name) } }, tone = FmTone.Accent)
                 }
             }
@@ -211,6 +210,9 @@ private suspend fun openDemo(messenger: FmMessenger, status: FmStatus, name: Str
                         "The linked repos themselves are not deleted. This cannot be undone.",
                 )
             }
+        }
+        "actions" -> {
+            messenger.showActionSheet("Delete message?", null, listOf(FmSheetAction("Delete for everyone", destructive = true), FmSheetAction("Delete for me", destructive = true)))
         }
         "sheet" -> {
             val picked = messenger.showModalBottomSheet<String>(showDragHandle = true) { close ->
@@ -470,8 +472,8 @@ private fun MaterialDemo() {
     var checked by remember { mutableStateOf(true) }
     var menu by remember { mutableStateOf(false) }
     Wrap {
-        Switch(checked = on, onCheckedChange = { on = it })
-        Switch(checked = !on, onCheckedChange = { on = !it })
+        FmSwitch(checked = on, onCheckedChange = { on = it })
+        FmSwitch(checked = !on, onCheckedChange = { on = !it })
         Checkbox(checked = checked, onCheckedChange = { checked = it })
         RadioButton(selected = checked, onClick = { checked = !checked })
         FmCircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)

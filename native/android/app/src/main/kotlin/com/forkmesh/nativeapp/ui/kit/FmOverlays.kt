@@ -243,7 +243,7 @@ fun FmConfirmDialog(
         title = title,
         titleMaxLines = 2,
         containerColor = Fm.colors.bgOverlay,
-        shape = RoundedCornerShape(FmRadius.lg),
+        shape = RoundedCornerShape(14.dp),
         actionsPadding = PaddingValues(start = FmSpace.x4, end = FmSpace.x4, bottom = FmSpace.x3),
         actions = {
             if (hideCancel) {
@@ -269,6 +269,7 @@ fun FmConfirmDialog(
                     SelectionContainer {
                         Text(body, style = style.copy(color = Fm.colors.textSecondary, lineHeight = style.fontSize * 1.4f))
                     }
+                    FmMessageTools("$title\n$body")
                 }
                 if (fields != null) fields()
             }
@@ -316,9 +317,9 @@ fun FmPromptDialog(
 fun FmModalBottomSheet(
     onDismissRequest: () -> Unit,
     modifier: Modifier = Modifier,
-    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
     showDragHandle: Boolean = false,
     isScrollControlled: Boolean = false,
+    sheetState: SheetState = rememberModalBottomSheetState(skipPartiallyExpanded = !isScrollControlled),
     containerColor: Color? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
@@ -334,7 +335,7 @@ fun FmModalBottomSheet(
         onDismissRequest = onDismissRequest,
         modifier = modifier,
         sheetState = sheetState,
-        shape = RoundedCornerShape(topStart = FmRadius.lg, topEnd = FmRadius.lg),
+        shape = RoundedCornerShape(topStart = FmSheet.corner, topEnd = FmSheet.corner),
         containerColor = containerColor ?: if (c.dark) c.bgOverlay else c.bgRaised,
         contentColor = c.textPrimary,
         tonalElevation = 0.dp,
@@ -344,3 +345,8 @@ fun FmModalBottomSheet(
         Column(if (isScrollControlled) Modifier.fmTapSounds() else Modifier.fmTapSounds().heightIn(max = maxHeight), content = content)
     }
 }
+
+object FmSheet {
+    val corner = 28.dp
+}
+
