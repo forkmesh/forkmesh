@@ -3608,6 +3608,28 @@ function normalizeInactiveWorldPlayers(value) {
     }));
 }
 
+const ARRIVAL_VISA_RE = /^[A-Za-z0-9_-]{1,1950}\.[0-9a-f]{64}$/;
+
+function arrivalVisaFrom(hash = "") {
+  const visa = String(
+    new URLSearchParams(String(hash || "").replace(/^#/, "")).get("visa") || "",
+  );
+  return ARRIVAL_VISA_RE.test(visa) ? visa : "";
+}
+
+function takeArrivalVisa() {
+  try {
+    if (!new URLSearchParams(location.hash.replace(/^#/, "")).has("visa")) return "";
+    const visa = arrivalVisaFrom(location.hash);
+    const url = new URL(location.href);
+    url.hash = "";
+    history.replaceState(history.state, "", url.href);
+    return visa;
+  } catch (_) {
+    return "";
+  }
+}
+
 function normalizeInstanceHexes(value) {
   const seen = new Set();
   return (Array.isArray(value?.instances) ? value.instances : [])
@@ -6443,6 +6465,10 @@ class ForkMeshWorld extends HTMLElement {
     this.worldMesh = { self: null, worlds: [] };
     this.meshLinks = null;
     this.meshVisitId = "";
+    // A walker who crossed in from a neighbouring World carries its visa in
+    // the fragment. It is taken out of the address at once and spent on the
+    // first presence socket, which the neighbour's server vouches for.
+    this.arrivalVisa = takeArrivalVisa();
     this.instanceHexes = [];
     this.homePortal = undefined;
     this.pendingPortalSlot = requestedPortalSlot(location.search);
@@ -31972,7 +31998,15 @@ class ForkMeshWorld extends HTMLElement {
     const socketURL = new URL(
       `${protocol}//${location.host}/api/world/ws`,
     );
-    if (this.worldTicket) socketURL.searchParams.set("ticket", this.worldTicket);
+    if (this.worldTicket) {
+      socketURL.searchParams.set("ticket", this.worldTicket);
+    } else if (this.arrivalVisa) {
+      socketURL.searchParams.set("visa", this.arrivalVisa);
+      this.hudNotice("Signing you in with your home World…");
+    }
+    // A visa is good for one minute and one try: a reconnect, or a visa the
+    // home World refuses, joins as a guest instead of retrying it.
+    this.arrivalVisa = "";
     let socket;
     this.socketConnectionAttempts = incrementDiagnosticCounter(
       this.socketConnectionAttempts,
