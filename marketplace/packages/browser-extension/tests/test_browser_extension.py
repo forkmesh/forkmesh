@@ -496,7 +496,7 @@ def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit()
         'only "Send to Reddit desk" and the end of a walk send the desk anything')
     assert "redditSync(state)" in BACKGROUND.split("const redditSyncNow =", 1)[1]
     assert "redditSync(state)" in BACKGROUND.split("async function redditWalkRun(", 1)[1]
-    assert BACKGROUND.count("await redditFetchWatch(state)") == 15
+    assert BACKGROUND.count("await redditFetchWatch(state)") == 17
     for key in ("fm-reddit-auto-update", "fm-reddit-accounts-change"):
         assert f'"{key}"' in POPUP and f'"{key}"' in BACKGROUND.split("const POPUP_ONLY = new Set(", 1)[1].split(");", 1)[0]
     auto = BACKGROUND.split("async function redditAutoUpdate(", 1)[1].split("\n}\n", 1)[0]
@@ -508,7 +508,7 @@ def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit()
     assert "await redditFetchWatch(current)" in BACKGROUND.split("async function redditWalkStart(", 1)[1]
     for caller in ("const redditStatsNow =", "const redditRefresh =",
                    "async function redditSync(state)", "const redditMonitorAdd =",
-                   "const redditMonitorRemove =", "async function redditCheck()",
+                   "const redditMonitorRemove =", "const redditLogAdd =", "async function redditCheck()",
                    "async function redditProfileUpdate(", "async function redditAccountsUpdate(",
                    "async function redditThreadsUpdate("):
         assert "await redditFetchWatch(state)" in BACKGROUND.split(caller, 1)[1].split("\n}", 1)[0]
@@ -520,9 +520,15 @@ def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit()
     assert "redditReadTab(entry)" in reads and "redditKeepReading(state, monitor, true)" in reads
     assert "redditSendReadings(state, await redditBase(), result)" in reads
     assert "redditSync(" not in threads and "redditSync(" not in reads
-    assert "if (read) redditSendSoon();" in observe
+    assert "if (read || own) redditSendSoon();" in observe
     send_soon = BACKGROUND.split("function redditSendSoon()", 1)[1].split("\n}\n", 1)[0]
     assert "redditSendReadings(" in send_soon and "redditSync(" not in send_soon
+    assert "redditSendOwn(state, base, result)" in send_soon
+    own = BACKGROUND.split("async function redditSendOwn(", 1)[1].split("\n}\n", 1)[0]
+    assert 'status: "to_review", source: "extension", author: entry.author' in own
+    assert "!redditTrackedPost(state, entry.id)" in BACKGROUND.split("const redditOwnUnsent =", 1)[1].split(";\n", 1)[0]
+    assert "redditAccount(state, post.author)" in BACKGROUND.split("function redditOwnKeep(", 1)[1].split("\n}\n", 1)[0]
+    assert "watch.accounts.has(item.author.toLowerCase())" in reader
     assert "monitored: redditTracked(state).map(" in watch
     assert '"fm-reddit-profile-update"' in BACKGROUND.split("const POPUP_ONLY = new Set(", 1)[1].split(");", 1)[0]
     accounts = BACKGROUND.split("async function redditAccountsUpdate(", 1)[1].split("\n}\n", 1)[0]
@@ -536,7 +542,7 @@ def test_the_reddit_desk_is_filled_from_pages_you_open_without_touching_reddit()
     assert "if (profile) return watch.accounts.has(profile.account.toLowerCase()) ? profile : null;" in reader
     mine = BACKGROUND.split("async function redditSendMine(", 1)[1].split("\n}\n", 1)[0]
     assert "`${base}/posts`" in mine and "api(" in mine
-    for key in ("fm-reddit-monitor-add", "fm-reddit-monitor-remove", "fm-reddit-check",
+    for key in ("fm-reddit-monitor-add", "fm-reddit-log-add", "fm-reddit-monitor-remove", "fm-reddit-check",
                 "fm-reddit-auto-check"):
         assert f'"{key}"' in POPUP and f'"{key}"' in BACKGROUND, key
         assert f'"{key}"' in BACKGROUND.split("const POPUP_ONLY = new Set(", 1)[1].split(");", 1)[0]
