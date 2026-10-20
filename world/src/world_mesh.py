@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import re
 from urllib.parse import urlparse
 
@@ -15,6 +16,14 @@ HEX_SLOTS = 5
 SHAPE_FLOWER = "flower"
 SHAPE_HEX = "hex"
 SCENE_PATH = "/api/world/neighbour-scene"
+SCENE_VERSION = 1
+SCENE_MAX_BYTES = 64 * 1024
+SCENE_MAX_OBJECTS = 48
+SCENE_MAX_AGE = 300
+SCENE_TEXT_MAX = 40
+SCENE_LAMP_RING = 30
+SCENE_TREE_RING = 280
+SCENE_TREES = 12
 MAX_WORLDS = SLOTS + 1
 DIRECTORY_MAX_AGE = 60
 DIRECTORY_CACHE_MS = 5 * 60 * 1000
@@ -105,6 +114,60 @@ def own_api_origin(env):
         if origin:
             return origin
     return DEFAULT_HUB_API if is_hub(env) else own_world_origin(env)
+
+
+def ring(count, radius, offset=0.0):
+    return [
+        (round(radius * math.cos(offset + 2 * math.pi * i / count), 1),
+         round(radius * math.sin(offset + 2 * math.pi * i / count), 1))
+        for i in range(count)]
+
+
+def default_scene(name, host):
+    objects = [
+        {"type": "plaza", "x": 0, "z": 0, "radius": 34, "color": "#d8d0bf"},
+        {"type": "sign", "x": 0, "z": 0, "title": name[:SCENE_TEXT_MAX],
+         "text": host[:60]},
+    ]
+    objects += [{"type": "lamp", "x": x, "z": z, "color": "#fff3c4"}
+                for x, z in ring(4, SCENE_LAMP_RING, math.pi / 4)]
+    objects += [{"type": "tree", "x": x, "z": z, "scale": 1.4}
+                for x, z in ring(SCENE_TREES, SCENE_TREE_RING, math.pi / 12)]
+    return {
+        "v": SCENE_VERSION,
+        "ground": {"color": "#9fc584", "accent": "#9ef7c6",
+                   "pattern": "plain"},
+        "objects": objects,
+    }
+
+
+def configured_scene(raw):
+    if not raw or len(raw.encode("utf-8")) > SCENE_MAX_BYTES:
+        return None
+    try:
+        scene = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(scene, dict) or scene.get("v") != SCENE_VERSION:
+        return None
+    objects = scene.get("objects")
+    if not isinstance(objects, list) or not objects \
+            or len(objects) > SCENE_MAX_OBJECTS:
+        return None
+    if not all(isinstance(item, dict) for item in objects):
+        return None
+    return scene
+
+
+def neighbour_scene(env):
+    if is_hub(env):
+        return None
+    world = own_world_origin(env)
+    if not world:
+        return None
+    host = origin_host(world)
+    return configured_scene(setting(env, "WORLD_NEIGHBOUR_SCENE")) \
+        or default_scene(clean_name(setting(env, "INSTANCE_NAME"), host), host)
 
 
 def hub_entry(env):
