@@ -85,8 +85,10 @@ int main(int argc, char **argv)
           "a handler may delete the box or pump deferred deletes safely");
 
 #ifdef FORKMESH_SOURCE_DIR
-    const QStringList direct = directButtonClickedConnections(
-        QStringLiteral(FORKMESH_SOURCE_DIR "/src"));
+    const QStringList direct =
+        directButtonClickedConnections(QStringLiteral(FORKMESH_SOURCE_DIR "/src")) +
+        directButtonClickedConnections(
+            QStringLiteral(FORKMESH_SOURCE_DIR "/../marketplace/packages"));
     for (const QString &path : direct)
         std::fprintf(stderr, "direct QMessageBox::buttonClicked: %s\n",
                      qPrintable(path));

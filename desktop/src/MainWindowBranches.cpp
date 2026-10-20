@@ -9847,12 +9847,13 @@ void MainWindow::renderBranchDiffPatchOn(
                     !m_acceptOffThreadResults.load(std::memory_order_acquire))
                     return false;
                 blocks += splitDiffFileBlocks(chunk);
+                QList<QStringList> pages = paginateDiffStreamChunk(chunk);
                 QMetaObject::invokeMethod(
                     this,
-                    [this, gen, chunk, filesDone, filesTotal] {
+                    [this, gen, pages = std::move(pages), filesDone, filesTotal] {
                         deliverOffThreadResult<int>(
-                            [this, gen, chunk, filesDone, filesTotal](int) {
-                                applyBranchDiffChunk(gen, chunk, filesDone,
+                            [this, gen, pages, filesDone, filesTotal](int) {
+                                applyBranchDiffChunk(gen, pages, filesDone,
                                                      filesTotal);
                             },
                             0);
@@ -9883,12 +9884,12 @@ void MainWindow::renderBranchDiffPatchOn(
         });
 }
 
-void MainWindow::applyBranchDiffChunk(int gen, const QString &chunk,
+void MainWindow::applyBranchDiffChunk(int gen, const QList<QStringList> &pages,
                                       int filesDone, int filesTotal)
 {
     if (gen != m_branchDiffRenderGen || !m_branchDiffView)
         return;
-    appendDiffStreamChunk(m_branchDiffView, chunk);
+    appendDiffStreamPages(m_branchDiffView, pages);
     appendBranchDiffLog(QStringLiteral("Streamed %1 of %2 files into the pane")
                             .arg(QLocale().toString(filesDone),
                                  QLocale().toString(filesTotal)),

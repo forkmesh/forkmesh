@@ -8,6 +8,7 @@
 #include <QSet>
 #include <QString>
 #include <QStringList>
+#include <QVariant>
 
 #include <functional>
 #include <memory>
@@ -52,6 +53,11 @@ QByteArray mlkemPublic(const QByteArray &seed);
 bool mlkemEncapsulate(const QByteArray &publicKey, QByteArray *ciphertext,
                       QByteArray *shared);
 QByteArray mlkemDecapsulate(const QByteArray &seed, const QByteArray &ciphertext);
+
+QString storedStateFile();
+bool migrateStoredState();
+QVariant storedSetting(const QString &key);
+void clearStoredState();
 
 struct Prekey {
     QString id;

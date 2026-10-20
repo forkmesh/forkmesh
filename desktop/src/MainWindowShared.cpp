@@ -1573,14 +1573,27 @@ void beginDiffStreamIncremental(QTextEdit *view, const QString &styleSheet,
         view->setHtml(placeholder);
 }
 
+QList<QStringList> paginateDiffStreamChunk(const QString &chunk)
+{
+    if (chunk.isEmpty())
+        return {};
+    return paginateDiffHtml(chunk, /*forcePaged=*/true);
+}
+
 void appendDiffStreamChunk(QTextEdit *view, const QString &chunk)
 {
     if (!view || chunk.isEmpty())
         return;
+    appendDiffStreamPages(view, paginateDiffStreamChunk(chunk));
+}
+
+void appendDiffStreamPages(QTextEdit *view, const QList<QStringList> &pages)
+{
+    if (!view || pages.isEmpty())
+        return;
     auto it = diffStreams().find(view);
     if (it == diffStreams().end() || !it->incremental || it->incrementalFinished)
         return;
-    const QList<QStringList> pages = paginateDiffHtml(chunk, /*forcePaged=*/true);
     const bool first = it->pages.isEmpty();
     it->pages += pages;
     if (first) {

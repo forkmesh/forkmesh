@@ -227,6 +227,17 @@ returned, so summed frame totals overstate a function's own cost.
 - **Batch large widget builds** under a row and time budget
   (`kScmRangeRowsPerBatch`, `kScmRangeBatchBudgetMs`); set the row count once;
   give `ResizeToContents` tables a small `setResizeContentsPrecision`.
+- **Do not show what is already shown.** `QWidget::setVisible(true)` on a
+  child that was never explicitly shown or hidden runs the full show path,
+  laying out its rich-text labels even inside a hidden tab. The Market filter
+  (`setMarketCardShown`, `MainWindowMarket.cpp`) changes a card only when its
+  explicit state differs: showing the Market after a rebuild stalled 3.7 s
+  laying out every card of all three package tabs (report #5).
+- **Paginate diff chunks on the worker.** The streamed branch diff
+  (`MainWindow::renderBranchDiffPatch`) paginates each chunk with
+  `paginateDiffStreamChunk` on the worker and hands the GUI thread pages
+  (`appendDiffStreamPages`); fragmenting a chunk on the GUI thread stalled
+  821 ms (report #5).
 - **Skip no-op repaints**: compare before `setStyleSheet` or `setToolTip`; run
   spinners only while visible; read-only `QTextEdit` logs have undo off and
   append in batched edit blocks.
@@ -256,6 +267,13 @@ a freeze.
   write when the stored value already matches or the key is absent
   (`sameStoredValue` handles ini round-trips of numbers, bools and string
   lists). `drop()` sees only leaf keys; remove a group with `remove()`.
+- Chat encryption state (trust records, held frames, ratchets, seen sets) has
+  its own ini file in the core data folder
+  ([chat.md](chat.md#keys-and-storage)); in report #5 it was two thirds of a
+  1 MB `ForkMesh.conf` and doubled the cost of every unrelated write, so the
+  stall origins named innocent readers such as `pingPauseUntilMs()`. The next
+  largest keys are `actions/approved\v2-*` (about 95 KB, one entry per
+  workflow file) and `shortcuts/runStats` (32 KB).
 - Keep large or frequently rewritten state in a JSON file beside
   `ForkMesh.conf` written with `diskwrite::writeLater`; batch hot values on a
   timer flushed at quit. A worker does not help: `QSettings` shares one
@@ -321,7 +339,8 @@ Crash-safety rules:
   `QDialogButtonBox::standardButton` (SIGSEGV 2026-10-13, report #4). A queued
   handler runs after the box has finished and may delete it.
   `forkmesh-message-box-clicks-tests` reproduces the crash and fails on any
-  direct connection under `desktop/src`.
+  direct connection under `desktop/src` or `marketplace/packages` (the Runners
+  package's two confirmations were the last, found in report #5).
 - `glib` `SIGTRAP` crashes have come from file-descriptor exhaustion.
 
 ## What is reported to the relay

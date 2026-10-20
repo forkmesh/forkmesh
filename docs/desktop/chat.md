@@ -32,10 +32,28 @@ chain, simultaneous first messages, reset recovery, `commit = false`,
 
 ## Keys and storage
 
-`ChatDevice::local()` is the installation's one device. Its secrets live in
-QSettings, where the v2 key lived: `chat/e2ee/ed25519IdentityV3`,
-`chat/e2ee/prekeysV3`, `chat/e2ee/trustV3/<b64u(scope)>` (records, held frames,
-last safety number), `chat/e2ee/ctrV3/<b64u(room)>`, `chat/e2ee/seenV3/<b64u(room)>`.
+`ChatDevice::local()` is the installation's one device. Its identity, prekeys
+and counters live in QSettings, where the v2 key lived:
+`chat/e2ee/ed25519IdentityV3`, `chat/e2ee/prekeysV3`,
+`chat/e2ee/ctrV3/<b64u(room)>`. The per-scope and per-room state that grows
+with use, `chat/e2ee/trustV3/<b64u(scope)>` (records, held frames, last safety
+number), `chat/e2ee/ratchetV4/<b64u(room)>` and `chat/e2ee/seenV3/<b64u(room)>`,
+lives under the same keys in its own ini file, `chat-seal/state.ini` in the
+core data folder (`storedStateFile()`, `data/core/chat-seal/state.ini` in the
+projects layout), so a chat write no longer rewrites `ForkMesh.conf` and no
+other settings write rewrites the chat state. In report #5 (2026-10-19) these
+keys were 684 KB of a 1029 KB `ForkMesh.conf`; every unrelated settings write
+cost 42 ms (fsync included) against that file and 21 ms without them, and a
+QSettings sync of it stalled the window 622 ms under IO load.
+`ChatDevice::local()` first moves any of these keys still in `ForkMesh.conf`
+(`migrateStoredState()`): it copies each key the state file lacks, syncs,
+checks every key reads back, and only then removes them from `ForkMesh.conf`.
+Until the move succeeds, reads fall back to `ForkMesh.conf` and a write that
+cannot reach the state file goes to `ForkMesh.conf` as before. The state file
+sits in the data folder, so the configuration backup, its restore and the
+complete-system bundle carry it with the rest of the data. Tests reset both
+stores with `clearStoredState()` and read through `storedSetting()`
+(`testStoredStateLeavesSettingsFile`).
 Held frames are capped per room at 64 frames and 128 KB (`kMaxHeldBytes`),
 newest first, and a scope saved before the byte cap is trimmed when it loads:
 on 2026-10-19 three direct rooms held 64 frames of about 8 KB each from

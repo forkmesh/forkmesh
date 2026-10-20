@@ -1,9 +1,12 @@
 #include "RoomSeal.h"
+#include "AppPaths.h"
 #include "SettingsWrite.h"
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDir>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QMessageAuthenticationCode>
 #include <QMap>
@@ -19,6 +22,7 @@
 #include <openssl/rand.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <memory>
 
@@ -93,6 +97,76 @@ PendingWrites &pendingWrites()
     return pending;
 }
 
+bool storedStateKey(const QString &key)
+{
+    return key.startsWith(QLatin1String("chat/e2ee/trustV3/")) ||
+           key.startsWith(QLatin1String("chat/e2ee/ratchetV4/")) ||
+           key.startsWith(QLatin1String("chat/e2ee/seenV3/"));
+}
+
+QString storedStatePath()
+{
+    if (forkmesh::paths::dataRoot().isEmpty())
+        return QString();
+    return forkmesh::paths::dataPath(QStringLiteral("chat-seal")) +
+           QStringLiteral("/state.ini");
+}
+
+std::unique_ptr<QSettings> openStoredState()
+{
+    const QString path = storedStatePath();
+    if (path.isEmpty() || !QDir().mkpath(QFileInfo(path).absolutePath()))
+        return nullptr;
+    return std::make_unique<QSettings>(path, QSettings::IniFormat);
+}
+
+std::atomic_bool &legacyStateCleared()
+{
+    static std::atomic_bool cleared{false};
+    return cleared;
+}
+
+void putValue(QSettings &settings, const QString &key, const QVariant &value)
+{
+    if (value.isValid())
+        forkmesh::settings::put(settings, key, value);
+    else
+        settings.remove(key);
+}
+
+void storeValues(const QHash<QString, QVariant> &values)
+{
+    QHash<QString, QVariant> mainValues;
+    QHash<QString, QVariant> stateValues;
+    for (auto it = values.cbegin(); it != values.cend(); ++it)
+        (storedStateKey(it.key()) ? stateValues : mainValues).insert(it.key(), it.value());
+    std::unique_ptr<QSettings> state =
+        stateValues.isEmpty() ? nullptr : openStoredState();
+    bool stateSaved = false;
+    if (state) {
+        for (auto it = stateValues.cbegin(); it != stateValues.cend(); ++it)
+            putValue(*state, it.key(), it.value());
+        state->sync();
+        stateSaved = state->status() == QSettings::NoError;
+    }
+    if (!stateSaved) {
+        mainValues.insert(stateValues);
+        stateValues.clear();
+    }
+    if (!stateSaved && !mainValues.isEmpty())
+        legacyStateCleared().store(false);
+    const bool dropLegacy = !stateValues.isEmpty() && !legacyStateCleared().load();
+    if (mainValues.isEmpty() && !dropLegacy)
+        return;
+    QSettings settings;
+    for (auto it = mainValues.cbegin(); it != mainValues.cend(); ++it)
+        putValue(settings, it.key(), it.value());
+    if (dropLegacy) {
+        for (auto it = stateValues.cbegin(); it != stateValues.cend(); ++it)
+            forkmesh::settings::drop(settings, it.key());
+    }
+}
+
 void flushPendingWrites()
 {
     QHash<QString, QVariant> values;
@@ -104,13 +178,7 @@ void flushPendingWrites()
     }
     if (values.isEmpty())
         return;
-    QSettings settings;
-    for (auto it = values.cbegin(); it != values.cend(); ++it) {
-        if (it.value().isValid())
-            forkmesh::settings::put(settings, it.key(), it.value());
-        else
-            settings.remove(it.key());
-    }
+    storeValues(values);
 }
 
 void writeNow(const QString &key, const QVariant &value)
@@ -120,11 +188,7 @@ void writeNow(const QString &key, const QVariant &value)
         const QMutexLocker lock(&pending.mutex);
         pending.values.remove(key);
     }
-    QSettings settings;
-    if (value.isValid())
-        forkmesh::settings::put(settings, key, value);
-    else
-        settings.remove(key);
+    storeValues({{key, value}});
 }
 
 void writeLater(const QString &key, const QVariant &value)
@@ -171,8 +235,16 @@ QVariant readSetting(const QString &key)
         if (it != pending.values.cend())
             return it.value();
     }
+    if (storedStateKey(key)) {
+        if (std::unique_ptr<QSettings> state = openStoredState();
+            state && state->contains(key))
+            return state->value(key);
+    }
     return QSettings().value(key);
 }
+
+const char *const kStoredStateFamilies[] = {
+    "chat/e2ee/trustV3", "chat/e2ee/ratchetV4", "chat/e2ee/seenV3"};
 
 QByteArray compactJson(const QJsonObject &object)
 {
@@ -952,10 +1024,70 @@ ChatDevice::~ChatDevice()
     }
 }
 
+QString storedStateFile()
+{
+    return storedStatePath();
+}
+
+bool migrateStoredState()
+{
+    flushPendingWrites();
+    std::unique_ptr<QSettings> state = openStoredState();
+    if (!state)
+        return false;
+    QSettings settings;
+    QStringList keys;
+    for (const char *family : kStoredStateFamilies) {
+        settings.beginGroup(QLatin1String(family));
+        for (const QString &child : settings.childKeys())
+            keys.append(QLatin1String(family) + QLatin1Char('/') + child);
+        settings.endGroup();
+    }
+    QSet<QString> copied;
+    for (const QString &key : std::as_const(keys)) {
+        if (state->contains(key))
+            continue;
+        state->setValue(key, settings.value(key));
+        copied.insert(key);
+    }
+    state->sync();
+    if (state->status() != QSettings::NoError)
+        return false;
+    const QSettings written(state->fileName(), QSettings::IniFormat);
+    for (const QString &key : std::as_const(keys)) {
+        if (!written.contains(key) ||
+            (copied.contains(key) && written.value(key) != settings.value(key)))
+            return false;
+    }
+    for (const QString &key : std::as_const(keys))
+        settings.remove(key);
+    settings.sync();
+    legacyStateCleared().store(settings.status() == QSettings::NoError);
+    return legacyStateCleared().load();
+}
+
+QVariant storedSetting(const QString &key)
+{
+    return readSetting(key);
+}
+
+void clearStoredState()
+{
+    {
+        PendingWrites &pending = pendingWrites();
+        const QMutexLocker lock(&pending.mutex);
+        pending.values.clear();
+    }
+    QSettings().remove(QStringLiteral("chat/e2ee"));
+    if (std::unique_ptr<QSettings> state = openStoredState())
+        state->remove(QStringLiteral("chat/e2ee"));
+}
+
 std::shared_ptr<ChatDevice> ChatDevice::local()
 {
     static std::shared_ptr<ChatDevice> device;
     if (!device) {
+        migrateStoredState();
         device.reset(new ChatDevice(true));
         if (device->loadIdentity()) {
             device->loadPrekeys();

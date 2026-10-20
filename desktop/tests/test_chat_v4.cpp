@@ -479,7 +479,7 @@ void testVersionsStayInTheirRooms()
 
 void testPersistence()
 {
-    QSettings().remove(QStringLiteral("chat/e2ee"));
+    clearStoredState();
     auto local = ChatDevice::local();
     auto peerDevice = ChatDevice::inMemory(randomBytes(32));
     const QString dmRoom = QStringLiteral("chat-direct:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee:v1");
@@ -496,9 +496,8 @@ void testPersistence()
         QJsonObject{{QStringLiteral("type"), QStringLiteral("chat")},
                     {QStringLiteral("senderId"), QStringLiteral("alice-desk")}});
     const QJsonObject stored =
-        QJsonDocument::fromJson(QSettings()
-                                    .value(QStringLiteral("chat/e2ee/ratchetV4/") +
-                                           b64u(dmRoom.toUtf8()))
+        QJsonDocument::fromJson(storedSetting(QStringLiteral("chat/e2ee/ratchetV4/") +
+                                              b64u(dmRoom.toUtf8()))
                                     .toByteArray())
             .object();
     check(stored.value(QStringLiteral("v")).toInt() == 4 &&
