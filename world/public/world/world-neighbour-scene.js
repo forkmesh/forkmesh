@@ -62,17 +62,22 @@ function placed(item) {
   };
 }
 
-function bug(item) {
+function ownIcon(value, origin) {
+  const icon = neighbourSceneLink(value);
+  return icon && origin && new URL(icon).origin === origin ? icon : "";
+}
+
+function bug(item, origin) {
   const label = text(item?.label, 40);
   if (!label) return null;
   return {
     label,
-    icon: neighbourSceneLink(item?.icon),
+    icon: ownIcon(item?.icon, origin),
     url: neighbourSceneLink(item?.url),
   };
 }
 
-function sceneObject(item) {
+function sceneObject(item, origin) {
   if (!item || typeof item !== "object") return null;
   if (!NEIGHBOUR_SCENE_TYPES.includes(item.type)) return null;
   const base = placed(item);
@@ -85,7 +90,7 @@ function sceneObject(item) {
   if (base.type === "terrarium") {
     const bugs = (Array.isArray(item.bugs) ? item.bugs : [])
       .slice(0, NEIGHBOUR_SCENE_MAX_BUGS * 2)
-      .map(bug)
+      .map((entry) => bug(entry, origin))
       .filter(Boolean)
       .slice(0, NEIGHBOUR_SCENE_MAX_BUGS);
     return { ...base, label: text(item.label, 40), bugs };
@@ -102,13 +107,13 @@ function sceneObject(item) {
   return { ...base, scale: number(item.scale, 0.5, 2, 1) };
 }
 
-export function normalizeNeighbourScene(payload) {
+export function normalizeNeighbourScene(payload, origin = "") {
   if (!payload || typeof payload !== "object") return null;
   if (Number(payload.v) !== NEIGHBOUR_SCENE_VERSION) return null;
   const ground = payload.ground && typeof payload.ground === "object" ? payload.ground : {};
   const objects = (Array.isArray(payload.objects) ? payload.objects : [])
     .slice(0, NEIGHBOUR_SCENE_MAX_OBJECTS)
-    .map(sceneObject)
+    .map((item) => sceneObject(item, origin))
     .filter(Boolean);
   return {
     v: NEIGHBOUR_SCENE_VERSION,
@@ -135,9 +140,10 @@ export async function loadNeighbourScene(url, { timeoutMs = 6000, fetchImpl = gl
       headers: { accept: "application/json" },
     });
     if (!response.ok) return null;
+    if (Number(response.headers?.get?.("content-length")) > NEIGHBOUR_SCENE_MAX_BYTES) return null;
     const body = await response.text();
-    if (body.length > NEIGHBOUR_SCENE_MAX_BYTES) return null;
-    return normalizeNeighbourScene(JSON.parse(body));
+    if (new TextEncoder().encode(body).length > NEIGHBOUR_SCENE_MAX_BYTES) return null;
+    return normalizeNeighbourScene(JSON.parse(body), new URL(target).origin);
   } catch (_) {
     return null;
   } finally {

@@ -608,9 +608,13 @@ them without changing page.
   1, at most 64 KB and 48 objects, types `plaza`, `sign`, `house`,
   `terrarium` (up to 32 bugs), `lamp` and `tree`, positions within 330 of
   the hexagon centre in World axes, `facing` in radians, `#rrggbb` colours,
-  plain text, and https links and icons only. `buildNeighbourScene()` draws it
-  with shared primitives; when it is missing or refused the logo hexagon
-  stays.
+  plain text, and https links only. Bug icons must sit on the neighbour's own
+  origin, so a scene cannot make every hub visitor's browser call third-party
+  hosts; any other icon is dropped and the bug shows its initial. The body is
+  refused when it is over 64 KB in bytes, by `content-length` or once read.
+  `buildNeighbourScene()` draws it with shared primitives on a shared ground
+  material; a scene that arrives after its hex layer was replaced is ignored,
+  and when it is missing or refused the logo hexagon stays.
 - **Directory.** `GET /api/world/mesh` (`world_mesh.py`) answers
   `{self, worlds:[{id, name, host, world, api, logo, slot}]}`. The hub builds
   it from `instance_directory` (`world=1`, visible, slot 0–11) plus its own

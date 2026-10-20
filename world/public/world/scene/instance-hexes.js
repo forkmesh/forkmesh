@@ -311,12 +311,8 @@ export function createInstanceHex(THREE, instance, interactive, home = { x: 0, z
 
   if (single && instance.scene) {
     void loadNeighbourScene(instance.scene).then((scene) => {
-      if (!scene || !group.parent) return;
-      ground.material = resources.uniqueMaterial(THREE, {
-        color: scene.ground.color,
-        roughness: 1,
-        metalness: 0,
-      }, "MeshStandardMaterial");
+      if (!scene || !group.parent?.parent) return;
+      ground.material = makeSharedMaterial(THREE, scene.ground.color, { roughness: 1, metalness: 0 });
       groundLogo.visible = false;
       groundLogo.userData.sceneHidden = true;
       group.add(buildNeighbourScene(THREE, scene));
