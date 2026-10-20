@@ -187,6 +187,51 @@ GitHub reference screenshots).
   avatar-left comment card; commits and bodiless reviews are lines on a
   timeline rail, and reviews with text are comment cards. The sidebar lists
   only sections with real data behind them.
+- **People in timelines** (issue and pull timelines, comment cards, the
+  opening card, "set assignees"): every name is drawn by
+  `issuePersonNameHtml` and every face by `issueActorAvatarHtml`
+  (`02-helpers.js`). The picture is, in order, the forge account's avatar
+  (`/api/accounts/<name>`, one cached lookup per name), the repository
+  roster's picture for a row whose `login`, `github` or `gitlab` matches the
+  name case-insensitively (`avatar` when it points into
+  `.forkmesh/contributors/`, else `<slug>.png`), then the initials. A name
+  links to `/@<name>` when the forge account exists, else to the roster
+  `profile` (plain `https:` only, new tab), else not at all. Bots (`…[bot]`
+  and the names `repoContributorIsBot` already treats as bots, such as
+  `<org>-actions`) get the lucide `bot` mark and no link. Faces have fixed
+  sizes and pictures are laid over the initials with explicit width and
+  height and `loading="lazy"`, so nothing moves when they arrive. Comment
+  cards keep the 40 px avatar column on wide screens and show a 24 px avatar
+  beside the name on phones, where the column is hidden. The roster is read
+  once per repository and branch (`repoContributorRosterCached`), shared with
+  the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **@mentions in markdown** (`MD_MENTION` in `renderMarkdownInline`): an
+  `@login` (letters, digits and single inner hyphens, at most 39) becomes a
+  link to its profile, resolved like a timeline name; with no forge account
+  and no roster profile it goes back to plain text. It is matched after code
+  spans, links, images and bare URLs are parked, so nothing is linked twice,
+  and never when the `@` follows a letter, digit, `.`, `/`, `+` or `-`
+  (emails, URL paths, `@scope/package`), or when the login runs on into
+  `.x`, `/x`, `_x`, `@` or `[bot]`. Task markdown opts out
+  (`mentions: false`): tasks highlight teammates themselves. Tests in
+  `app/tests/test_repo_readme_markdown.py`.
+- **Mention suggestions** in every record editor (the Add a comment box and
+  its @ button, pull reviews, discussion replies, the issue description
+  editor, inline pull comments, and the new issue and new pull forms; a
+  textarea opts in with `data-mention-input`). Typing `@` plus characters
+  opens a list of at most 8 people at the caret: those in this issue or pull
+  (author, commenters, assignees, reviewers, people already mentioned, most
+  recent first), then the roster by commits; logins and names match by
+  prefix first, then anywhere. There is no forge-wide search because
+  `/api/accounts/users` returns every account's picture and is too heavy to
+  read for this. Tap, Enter or Tab inserts `@login ` (replacing the rest of a
+  half-typed login); Escape closes; arrows move. The list is a `listbox`
+  driven by `aria-activedescendant`, rows are 44 px tall, and it is placed in
+  the visual viewport so it stays above a phone keyboard. Nothing is fetched
+  per keystroke: the candidates come from the loaded record and the cached
+  roster. Editing a comment opens an inline editor in its card
+  (`openIssueCommentEditor`, replacing the browser prompt, which could not
+  offer suggestions); a quiet refresh waits while it is open.
 - **Discussions** have a search box (`is:open category:…`), Sort by (latest
   activity, date created, oldest), Filter (open, closed, all) and New
   discussion, with Categories on the left and the list on the right. Each row

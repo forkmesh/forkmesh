@@ -7,6 +7,7 @@ run the real functions in node rather than asserting on their source text.
 """
 
 import json
+import re
 from pathlib import Path
 import subprocess
 
@@ -29,6 +30,9 @@ function repoLinkUrl(repo, kind, path) {
 }
 function repoRecordUrl(repo, kind, number) {
   return `/${repo.owner}/${repo.name}/${kind}/${number}`;
+}
+function publicProfileUrl(name) {
+  return `https://code.example.test/@${encodeURIComponent(String(name).toLowerCase())}`;
 }
 """
 
@@ -463,3 +467,41 @@ def test_autolinks_never_link_other_schemes_or_break_out_of_attributes():
     assert 'onmouseover="' not in html and "onclick='" not in html
     assert "&quot;onmouseover=&quot;alert(3)" in html
     assert "&lt;javascript:alert(2)&gt;" in html
+
+
+def _mentions(html):
+    return re.findall(r'<a href="https://code\.example\.test/@([^"]+)" data-issue-person="([^"]+)" data-issue-mention=""', html)
+
+
+def test_mentions_link_to_profiles_and_keep_trailing_punctuation_outside():
+    html = _render("@Vandana42 you're assigned. Thanks @a-b, (@cd) and @ef.\n")
+    assert _mentions(html) == [("vandana42", "vandana42"), ("a-b", "a-b"), ("cd", "cd"), ("ef", "ef")]
+    assert ">@Vandana42</a> you&#039;re assigned." in html
+    assert ">@a-b</a>, (" in html and ">@cd</a>) and" in html and ">@ef</a>.</p>" in html
+    assert html.count('class="dashboard-accent-link underline underline-offset-2 hover:text-foreground">@') == 4
+
+
+def test_mentions_skip_emails_code_links_urls_and_lookalikes():
+    html = _render(
+        "mail me@example.com or <a.b@example.org> `@incode` "
+        "[@label](https://example.com/x) https://example.com/@path "
+        "@scope/package @user.name @gl_handle @dependabot[bot] @-x @x- foo@bar @@double\n\n"
+        "```\n@fenced\n```\n"
+    )
+    assert _mentions(html) == []
+    assert "me@example.com" in html and ">@incode</code>" in html
+    assert ">@label</a>" in html and '<a href="https://example.com/@path"' in html
+    assert "@fenced" in html
+
+
+def test_mentions_in_emphasis_headings_and_lists():
+    html = _render("# Hi @alice\n\n- **@bob** and _@carol_\n")
+    assert [handle for handle, _ in _mentions(html)] == ["alice", "bob", "carol"]
+    assert "<strong><a href" in html and "<em><a href" in html
+
+
+def test_mentions_cannot_smuggle_markup():
+    html = _render('@x"onmouseover="alert(1) @<script>alert(2)</script> @y&lt;img src=x onerror=alert(3)&gt;\n')
+    assert [handle for handle, _ in _mentions(html)] == ["x", "alert", "y"]
+    assert "<script" not in html and 'onmouseover="' not in html and "<img src=x" not in html
+    assert ">@x</a>&quot;onmouseover=&quot;alert(1)" in html
