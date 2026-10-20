@@ -15,6 +15,8 @@ account.
 
 ## Contributing without write access
 
+Step by step, with the commands: [Contribute with git only](contributing-with-git.md).
+
 The usual way: open the repository, choose **Forks → Fork this repository**,
 create a push credential for your fork (Settings → SSH keys → Push code over
 HTTPS, `<you>/<name>`), push any branch to it, and choose **Contribute: Open
