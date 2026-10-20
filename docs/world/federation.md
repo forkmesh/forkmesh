@@ -83,8 +83,8 @@ visit socket is `?visitor=`; both sides see each other live.
   keeps one context per owner: its API origin and visitor token. Nothing is
   fetched until something on that owner's ground needs it; the token is
   shared by concurrent callers, renewed a minute before it expires, and
-  dropped to a plain visa only for an owner that answers 404 to the
-  exchange. Calls carry `Authorization: Bearer`, `credentials: "omit"` and
+  replaced by a plain visa whenever there is no token (an owner that answers
+  404, or one whose exchange failed; see Rollout). Calls carry `Authorization: Bearer`, `credentials: "omit"` and
   `mode: "cors"`, and only paths in `FEDERATED_PATHS` (the same list as the
   server's) are ever sent. Reads are cached per owner and path for `maxAge`.
 - **Routing.** `fetchJSONAt(x, z, path)` sends a call for something standing
@@ -94,14 +94,21 @@ visit socket is `?visitor=`; both sides see each other live.
   identity shown there (`name@home`).
 - **Visits.** The visit socket asks the federation for its credential:
   `?visitor=<token>`, or `?visa=` for an owner without the exchange.
-- **The Office.** When the Office drawn on a page belongs to a neighbour,
-  `setOfficeOwner(world)` hands its runtime (lobby, floors, attendance board,
+- **The Office** *(server side live, page side not wired yet)*. When the
+  Office drawn on a page belongs to a neighbour, `setOfficeOwner(world)`
+  hands its runtime (lobby, floors, attendance board,
   meetings, task wall) that owner's `fetchJSON`/`postJSON` and the visitor
   identity. At the owner a visitor token gives the two common floors (lobby
   and rooftop) as `name@home`; the attendance board is readable and a
   visitor's punch is accepted without being recorded; meetings answer
-  `members_only` and the page says so. Team floors stay with the owner's
-  members.
+  `members_only` and the page says so (meetings belong to that Office's own
+  World; visitors look around). Team floors stay with the owner's members.
+  Nothing calls `setOfficeOwner` yet. Before it is wired in, the task wall
+  must go read-only for visitors: its calls (`/api/tasks`,
+  `/api/world/office/marketing-tasks`, `/api/accounts/...`) are not in
+  `FEDERATED_PATHS`, so the federation client refuses them with
+  `not_federated`. The owner marker on the runtime is never sent: owner calls
+  carry the bearer token.
 - **Owner-only actions** (administration, an owner's private rooms) stay
   read-only for visitors, with a note, instead of failing.
 

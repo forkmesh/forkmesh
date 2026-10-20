@@ -506,7 +506,6 @@ export function createWorldOfficeController({
     if (meetingAuthorizationPromise) return meetingAuthorizationPromise;
     const activeSession = authenticatedSession();
     if (activeSession?.visitor) {
-      // Meetings belong to this Office's own World; visitors look around.
       root.notice?.(
         "Office meetings are for members of this World. As a visitor you can look around the lobby and the rooftop.",
       );

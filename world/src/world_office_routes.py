@@ -406,11 +406,8 @@ async def office_attendance_handler(env, request):
             extra_headers={"x-content-type-options": "nosniff"},
         )
 
-    # A walker from a neighbouring World holds a visitor token.
     if (world_bearer_visitor(env, request)
             if "world_bearer_visitor" in globals() else None):
-        # Attendance belongs to this World's own accounts. A visitor's punch
-        # is accepted and not recorded, so their Office keeps working.
         return json_response(
             {"ok": True, "recorded": False, "visitor": True},
             cache_control="no-store, max-age=0, must-revalidate",
@@ -599,11 +596,8 @@ async def office_general_entry_handler(env, request):
             cache_control="no-store, max-age=0, must-revalidate",
             extra_headers={"allow": "POST"},
         )
-    # A walker from a neighbouring World holds a visitor token.
     if (world_bearer_visitor(env, request)
             if "world_bearer_visitor" in globals() else None):
-        # Office meetings are for this World's members; a visitor looks
-        # around the lobby and the rooftop.
         return json_response(
             {"ok": False, "error": "members_only", "visitor": True},
             status=403,
@@ -686,8 +680,6 @@ async def office_floor_access_handler(env, request):
         world_bearer_visitor(env, request)
         if "world_bearer_visitor" in globals() else None)
     if visitor:
-        # A walker from a neighbouring World (visitor token) shares the two
-        # common floors; team floors stay with this World's members.
         return json_response(
             {
                 "authenticated": True,

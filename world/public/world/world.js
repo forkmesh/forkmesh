@@ -7693,9 +7693,6 @@ class ForkMeshWorld extends HTMLElement {
     dialog.showModal();
   }
 
-  // The Office drawn on this page can belong to a neighbouring World (a
-  // federated hexagon). Its runtime then reads and acts at that owner, with
-  // this page's visitor token, and shows the walker as name@home there.
   setOfficeOwner(owner = null) {
     const id = String(owner?.id || "");
     if (id === String(this.officeOwner?.id || "")) return;
@@ -7731,7 +7728,6 @@ class ForkMeshWorld extends HTMLElement {
     const owner = this.officeOwner;
     if (!owner) return readSession();
     const visitor = this.worldFederation().visitorSession(owner);
-    // The marker is never sent: owner calls carry the bearer token.
     return visitor ? { ...visitor, sessionToken: "visitor" } : null;
   }
 
