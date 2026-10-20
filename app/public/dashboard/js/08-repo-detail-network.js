@@ -290,6 +290,7 @@
           </div>
         </div>
       </section>` : "";
+    keepRepoFirstViewIssue(detail);
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">

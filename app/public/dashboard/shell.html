@@ -544,6 +544,22 @@
         color: hsl(var(--label-h) 75% 28%);
       }
 
+      /* A picture alone in an issue or pull request paragraph, with no size
+         on it (mdLoneImage): its box is fixed before it loads, so the
+         conversation under it does not move when it arrives. The picture is
+         drawn inside the box at its own size, or scaled down to fit. */
+      img[data-md-figure] {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
+        max-height: 24rem;
+        object-fit: scale-down;
+        object-position: left top;
+        border: 0;
+        border-radius: 0;
+      }
+
       /* Edit / delete controls on your own chat messages. Hidden until the row
          is hovered (or a control takes keyboard focus) so the transcript stays
          quiet, like the full chat page. Hand-written because the pre-built
