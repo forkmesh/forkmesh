@@ -2,7 +2,7 @@
         <div data-update-notice hidden class="fm-flash fm-flash-neutral fm-flash-full" role="status" aria-live="polite">
           <i data-lucide="sparkles" class="fm-flash-icon-accent" aria-hidden="true"></i>
           <div class="fm-flash-body">
-            <strong class="fm-flash-title">A new version of ForkMesh is available</strong>
+            <strong class="fm-flash-title">A new version of <span data-platform-name>ForkMesh</span> is available</strong>
             <p data-update-notice-detail>Update reloads this page on the new version.</p>
           </div>
           <div class="fm-flash-actions">
@@ -62,7 +62,7 @@
                     </li>
                     <li class="flex items-center gap-2">
                       <i data-lucide="link" class="h-4 w-4 text-muted-foreground"></i>
-                      <a data-profile-website href="https://forkmesh.com" class="min-w-0 truncate text-foreground hover:text-accent hover:underline">https://forkmesh.com</a>
+                      <a data-profile-website href="/" class="min-w-0 truncate text-foreground hover:text-accent hover:underline"></a>
                     </li>
                   </ul>
                   <section data-profile-badges hidden class="mt-4 overflow-hidden rounded-md border border-border bg-card">
@@ -74,7 +74,7 @@
                     </div>
                     <ul data-profile-badges-list class="grid gap-3 p-3 text-sm"></ul>
                   </section>
-                  <section data-profile-tips class="mt-4 overflow-hidden rounded-md border border-border bg-card">
+                  <section data-profile-tips data-instance-plugin="rewards" class="mt-4 overflow-hidden rounded-md border border-border bg-card">
                     <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                       <i data-lucide="coins" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
                       <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Tips</h2>

@@ -913,6 +913,7 @@ class Default:
         if maintenance is not None:
             return self._with_fast_cors(request, maintenance)
         if instance_features.branded(self.env):
+            instance_features.remember_instance(self.env)
             await self._instance_plugins_load()
             plugin_path = urlparse(str(request.url)).path
             switched_off = instance_features.blocked(self.env, plugin_path)
@@ -1704,9 +1705,11 @@ class Default:
             "available here</h1><p>The <code>" + _html_escape(feature) +
             "</code> plugin is turned off on " + name + ". An administrator "
             "can turn it on in the instance settings.</p><p><a href=\"/\">"
-            "Back to " + name + "</a></p><p style=\"color:#71717a;"
-            "font-size:.85rem\">Powered by <a href=\"https://forkmesh.com/\">"
-            "ForkMesh</a></p></body></html>",
+            "Back to " + name + "</a></p>" + (
+                "<p style=\"color:#71717a;font-size:.85rem\">Powered by "
+                "<a href=\"https://forkmesh.com/\">ForkMesh</a></p>"
+                if instance_features.powered_by(self.env) else "")
+            + "</body></html>",
             status=404,
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "no-store"},
@@ -1721,7 +1724,8 @@ class Default:
             getattr(self.env, "APP_ORIGIN", "") or "") or (
                 url.scheme + "://" + url.netloc)
         body = instance_pages.page_for(
-            url.path, instance_name(self.env), origin)
+            url.path, instance_name(self.env), origin,
+            instance_features.powered_by(self.env))
         if not body:
             return None
         return self._without_head_body(request, Response(
@@ -1895,6 +1899,8 @@ class Default:
                 "branded": instance_branded(self.env),
                 "logo": instance_logo_url(self.env),
                 "loginDeadline": login_deadline,
+                "gitNode": str(getattr(self.env, "INSTANCE_FLAGSHIP_NODE", "")
+                               or "").strip().lower()[:63],
                 "poweredBy": ({"name": "ForkMesh",
                                "url": "https://forkmesh.com/"}
                               if str(getattr(self.env, "INSTANCE_POWERED_BY", "")
@@ -2005,12 +2011,13 @@ class Default:
                     and not await _repo_is_private(self.env, owner, repo)
                 ):
                     return await _git_error_as_text(await _https_mirror_proxy(
-                        self.env, request, owner, repo, "git-info-refs"))
+                        self.env, request, owner, repo, "git-info-refs"),
+                        self.env)
                 return await _git_error_as_text(
-                    await self._git_host(request, owner, repo))
+                    await self._git_host(request, owner, repo), self.env)
             if service == "git-receive-pack":
                 return await _git_error_as_text(await self._git_push(
-                    request, git_info.group(1), git_info.group(2)))
+                    request, git_info.group(1), git_info.group(2)), self.env)
         git_pack = GIT_PACK_RE.match(url.path)
         if git_pack and method_name(request) == "POST":
             owner = safe_segment(git_pack.group(1))
@@ -4439,7 +4446,9 @@ class Default:
             body = body.replace("</head>", tags + "</head>", 1)
         shown = name if is_org else account_names.display_name(rec, name)
         body = re.sub(r"<title>[^<]*</title>",
-                      "<title>@%s · ForkMesh</title>" % _html_escape(shown),
+                      "<title>@%s · %s</title>" % (
+                          _html_escape(shown), _html_escape(
+                              instance_features.display_name(self.env))),
                       body, count=1)
         page = Response(body, status=200, headers={
             "content-type": "text/html; charset=utf-8",
@@ -4665,15 +4674,22 @@ class Default:
             if not og_description:
                 og_description = ("%s on ForkMesh — distributed Git "
                                   "hosting on a mesh of desktop nodes."
-                                  % shown)
-            title = _html_escape("%s - ForkMesh" % shown)
+                                  % shown
+                                  if not instance_features.branded(self.env)
+                                  else "%s on %s" % (
+                                      shown,
+                                      instance_features.display_name(
+                                          self.env)))
+            site_name = _html_escape(
+                instance_features.display_name(self.env))
+            title = _html_escape("%s - " % shown) + site_name
             tags = (
                 "<link rel=\"canonical\" href=\"%s\">"
                 "<link rel=\"me\" href=\"%s\">"
                 "<link rel=\"alternate\" type=\"application/activity+json\" "
                 "href=\"%s/ap/repos/%s/%s\">"
                 "<meta property=\"og:type\" content=\"website\">"
-                "<meta property=\"og:site_name\" content=\"ForkMesh\">"
+                "<meta property=\"og:site_name\" content=\"%s\">"
                 "<meta property=\"og:url\" content=\"%s\">"
                 "<meta property=\"og:title\" content=\"%s\">"
                 "<meta property=\"og:description\" content=\"%s\">"
@@ -4686,20 +4702,22 @@ class Default:
                 "<meta name=\"twitter:image\" content=\"%s\">"
                 % (canonical, fedi_profile,
                    fediverse_origin, quote(owner), quote(repo),
-                   canonical, title, _html_escape(og_description), og_image,
+                   site_name, canonical, title, _html_escape(og_description), og_image,
                    og_card.CARD_W, og_card.CARD_H,
                    title, _html_escape(og_description), og_image))
             body = body.replace("</head>", tags + "</head>", 1)
         if short_name and owner and "</head>" in body:
-            body = body.replace(
-                "</head>",
+            short_metas = (
                 '<meta name="forkmesh-repo-short" content="%s">'
                 '<meta name="forkmesh-repo-owner" content="%s">'
-                "%s</head>" % (
+                "%s" % (
                     _html_escape(short_name), _html_escape(owner),
                     '<meta name="forkmesh-repo-canonical" content="%s">'
-                    % _html_escape(owner) if canonical_short else ""),
-                1)
+                    % _html_escape(owner) if canonical_short else ""))
+            if "<head>" in body:
+                body = body.replace("<head>", "<head>" + short_metas, 1)
+            else:
+                body = body.replace("</head>", short_metas + "</head>", 1)
         status = 200
         if short_name and owner and repo and not explicit_public:
             try:
@@ -4819,13 +4837,18 @@ class Default:
         actor_json = _html_escape(
             "%s/ap/repos/%s/%s" % (origin, quote(owner), quote(repo)))
         bio = (_html_escape(description) if description else
-               "ForkMesh repository — follow for new issues, pull "
-               "requests, discussions and releases.")
+               instance_features.rename_html(
+                   self.env, "ForkMesh repository — follow for new issues, "
+                   "pull requests, discussions and releases."))
         body = _repo_fedi_profile_html(
             title=title, bio=bio, handle_full=handle_full, code_url=code_url,
             actor_json=actor_json, icon_url=_html_escape(icon_url),
             image_url=_html_escape(image_url), followers=followers,
             post_count=len(post_rows or []), posts_html="\n".join(posts))
+        body = body.replace(
+            " on the fediverse · ForkMesh</title>",
+            " on the fediverse · %s</title>" % _html_escape(
+                instance_features.display_name(self.env)), 1)
         page = Response(body, status=200, headers={
             "content-type": "text/html; charset=utf-8",
             "cache-control": "public, max-age=300",
@@ -4870,7 +4893,8 @@ class Default:
             }))
         except Exception:
             return Response(
-                "<!doctype html><title>ForkMesh unavailable</title>",
+                instance_features.rename_html(
+                    self.env, "<!doctype html><title>ForkMesh unavailable</title>"),
                 status=503,
                 headers={
                     "content-type": "text/html; charset=utf-8",
@@ -4924,7 +4948,9 @@ class Default:
             })
         except Exception:
             return Response(
-                "<!doctype html><title>ForkMesh signup unavailable</title>",
+                instance_features.rename_html(
+                    self.env,
+                    "<!doctype html><title>ForkMesh signup unavailable</title>"),
                 status=503,
                 headers={
                     "content-type": "text/html; charset=utf-8",

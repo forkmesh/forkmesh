@@ -2252,7 +2252,7 @@
 
   function applyAvatar(container, session) {
     if (!container) return;
-    const name = session?.nodeName || session?.email || "ForkMesh";
+    const name = session?.nodeName || session?.email || platformName();
     const initial = (name[0] || "F").toUpperCase();
     const avatarPng = session?.avatarPng || "";
     const image = container.querySelector("img");

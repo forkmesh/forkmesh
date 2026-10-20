@@ -412,7 +412,9 @@
     const slot = $('[data-forkmesh-ad-slot="web"]');
     if (!slot || ADS_SLOT_SKIPPED_PAGES.has(currentPage())) return;
     if (adSlotHiddenUntil() > Date.now()) return;
-    const run = () => { void loadAdSlot(slot); };
+    const run = () => {
+      void instancePluginEnabled("ads").then((enabled) => { if (enabled) void loadAdSlot(slot); });
+    };
     if (typeof window.requestIdleCallback === "function") {
       window.requestIdleCallback(run, { timeout: 5000 });
     } else {

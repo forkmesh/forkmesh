@@ -4,6 +4,8 @@ import json
 import re
 from urllib.parse import quote, urlparse
 
+import instance_features
+
 
 MARKER = "<!-- forkmesh-mirror -->"
 USER_AGENT = "ForkMesh-provider-mirror/1.0 (+https://forkmesh.com/docs)"
@@ -414,7 +416,8 @@ def backoff_ms(attempt):
 
 
 def api_headers(provider, token, graphql=False):
-    headers = {"accept": "application/json", "user-agent": USER_AGENT}
+    headers = {"accept": "application/json",
+               "user-agent": instance_features.user_agent(USER_AGENT, "provider-mirror")}
     if provider == "github":
         headers["accept"] = "application/vnd.github+json"
         headers["x-github-api-version"] = GITHUB_API_VERSION

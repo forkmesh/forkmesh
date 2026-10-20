@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "src" / "entry.py"
 sys.path.insert(0, str(ROOT / "src"))
 
+import instance_features  # noqa: E402
 import mail_providers  # noqa: E402
 
 
@@ -25,6 +26,7 @@ def _load(extra):
     namespace = {
         "mail_providers": mail_providers,
         "instance_name": lambda _env: "ForkMesh",
+        "instance_features": instance_features,
         "_instance_brand_email": lambda _env, text, html: (text, html),
     }
     namespace.update(extra)

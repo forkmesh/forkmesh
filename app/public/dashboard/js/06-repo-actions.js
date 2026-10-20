@@ -747,7 +747,7 @@
     const message = {
       "signed-out": ["lock", "Sign in to see runs", "Workflow runs, logs and controls are shown to the repository owner and organization writers."],
       forbidden: ["lock", "Runs are private to this repository's writers", "Workflow runs can print build output, so only the owner and organization writers can read them."],
-      unavailable: ["server-off", "No runs reported for this repository yet", "A push to the default branch runs the workflows below on the owner's desktop while it is connected, and on a ForkMesh runner while it is away. Desktop runs show in the desktop app and on paired phones; runner and mirror runs appear here. To run them here while the desktop is away, link a runner that allows this owner."],
+      unavailable: ["server-off", "No runs reported for this repository yet", `A push to the default branch runs the workflows below on the owner's desktop while it is connected, and on a ${platformName()} runner while it is away. Desktop runs show in the desktop app and on paired phones; runner and mirror runs appear here. To run them here while the desktop is away, link a runner that allows this owner.`],
       error: ["triangle-alert", "Actions are unreachable right now", view.error],
       loading: ["loader-circle", "Asking the mirror executor ...", ""],
     }[view.phase];

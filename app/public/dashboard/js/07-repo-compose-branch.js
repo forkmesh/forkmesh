@@ -289,7 +289,7 @@
     if (code === "bad_signature") return "The server could not verify this browser's signature on the issue. Reload the page and try again.";
     if (code === "alias_unresolved") return "This repository's address could not be resolved right now. Try again in a moment.";
     if (status === 429) return "Too many submissions in a short time. Wait a minute and try again.";
-    if (isWebSubmissionNetworkError(error)) return "Could not reach ForkMesh - check your connection and try again.";
+    if (isWebSubmissionNetworkError(error)) return `Could not reach ${platformName()} - check your connection and try again.`;
     if (isWebSubmissionSigningUnsupported(error)) {
       return "This browser cannot sign issues (no Ed25519 support). Update the browser, or file the issue from the desktop app.";
     }
@@ -319,7 +319,7 @@
         return "Nothing was sent: this comparison is larger than a mirror will serve in one read. Narrow the branches and try again.";
       }
       if (isWebSubmissionNetworkError(cause)) {
-        return "Could not reach ForkMesh - check your connection and try again.";
+        return `Could not reach ${platformName()} - check your connection and try again.`;
       }
       return `Nothing was sent: these branches could not be compared on a live mirror (${webSubmissionErrorDetail(cause || error)}). Try again in a moment.`;
     }
@@ -335,10 +335,10 @@
     // of - a private or unpublished address, or a fork parent this catalog
     // cannot resolve. "Try again" is the one thing that cannot help there.
     if (code === "not_found" || Number(error?.status) === 404) {
-      return `ForkMesh has no public record of ${target || "that repository"} to deliver this pull request to. It may be private, or not published yet.`;
+      return `${platformName()} has no public record of ${target || "that repository"} to deliver this pull request to. It may be private, or not published yet.`;
     }
     if (isWebSubmissionNetworkError(error)) {
-      return "Could not reach ForkMesh - check your connection and try again.";
+      return `Could not reach ${platformName()} - check your connection and try again.`;
     }
     if (isWebSubmissionSigningUnsupported(error)) {
       return "This browser cannot sign pull requests (no Ed25519 support). Update the browser, or open the pull request from the desktop app.";
@@ -467,7 +467,7 @@
       const reason =
         code === "signing_unavailable" ? "This browser cannot sign issues (Ed25519 is unsupported). Update your browser and try again."
           : code === "bad_signature" ? "The issue signature was rejected. Reload the page and try again."
-          : code === "network_error" ? "Could not reach ForkMesh after several attempts - check your connection."
+          : code === "network_error" ? `Could not reach ${platformName()} after several attempts - check your connection.`
           : code === "timeout" ? "The repository did not answer in time after several attempts. The issue may still arrive - check the issues list before sending it again."
           : code === "invalid_json" ? "The description is too large - please shorten it or attach smaller images."
           : status >= 500 && (!code || code === `HTTP ${status}`) ? `Could not send the issue (HTTP ${status}).`
@@ -1100,7 +1100,7 @@
         <div data-dashboard-commit-row class="grid w-full grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3 border-t border-border hover:bg-secondary/30 transition-colors">
           <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" class="min-w-0 px-4 py-3 text-left">
             <span class="block truncate text-sm font-medium text-foreground">${escapeHtml(commit.subject || "Commit")}</span>
-            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(commit.author || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
+            <span class="mt-1 block truncate text-xs text-muted-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")} committed ${escapeHtml(commit.date || "")}</span>
           </button>
           <div class="flex items-center justify-end gap-2 px-4 py-3">
             <button type="button" data-dashboard-commit-hash="${escapeHtml(hash)}" data-dashboard-commit-short-hash class="font-mono text-xs font-semibold text-foreground hover:underline">${escapeHtml(shortHash)}</button>
@@ -1152,7 +1152,7 @@
           <h3 class="text-base font-semibold text-foreground">${escapeHtml(commit.subject || "Commit")}</h3>
           ${commit.body ? `<p class="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(commit.body)}</p>` : ""}
           <dl class="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(commit.author || "unknown")}</dd></div>
+            <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(shownAccountName(commit.author) || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Date</dt><dd>${escapeHtml(commit.date || "unknown")}</dd></div>
             <div><dt class="font-semibold text-foreground">Parents</dt><dd class="font-mono">${parents.length ? parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ") : "root commit"}</dd></div>
             <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</dd></div>
@@ -1303,7 +1303,7 @@
     const account = String(mirror.owner || mirror.node || "").trim().toLowerCase();
     return `
         <td class="w-px whitespace-nowrap px-1 py-1 text-center text-[10px] leading-none">
-          <button type="button" data-repo-mirror-delete data-mirror-node="${escapeHtml(account)}" data-mirror-machine="${escapeHtml(String(mirror.machineName || mirror.node || ""))}" data-mirror-id="${escapeHtml(String(mirror.id || ""))}" title="Permanently delete ${escapeHtml(shown)} from ForkMesh" class="inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive">
+          <button type="button" data-repo-mirror-delete data-mirror-node="${escapeHtml(account)}" data-mirror-machine="${escapeHtml(String(mirror.machineName || mirror.node || ""))}" data-mirror-id="${escapeHtml(String(mirror.id || ""))}" title="Permanently delete ${escapeHtml(shown)} from ${escapeHtml(platformName())}" class="inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive">
             <i data-lucide="trash-2" class="h-3 w-3" aria-hidden="true"></i>
             <span class="sr-only">Delete ${escapeHtml(shown)}</span>
           </button>
@@ -1755,10 +1755,11 @@
     ];
     const risks = Array.isArray(proof.risks) ? proof.risks : [];
     const copies = Array.isArray(proof.copies) ? proof.copies : [];
+    const offsiteDocs = !dashboardOnInstance();
     const riskItems = risks.map((risk) => `<li data-repo-availability-risk="${escapeHtml(risk.code)}" class="py-1.5">
         <div class="flex flex-wrap items-baseline gap-x-2"><span class="font-medium text-foreground">${escapeHtml(risk.title)}</span><span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(risk.code)} · +${escapeHtml(String(Number(risk.weight) || 0))}</span></div>
         <p class="text-muted-foreground">${escapeHtml(risk.detail)}</p>
-        <a data-repo-availability-action="${escapeHtml(risk.action?.kind || "")}" href="${escapeHtml(availabilityDocsHref(risk.action?.href))}" target="_blank" rel="noopener" class="text-accent hover:underline">${escapeHtml(risk.action?.label || "What to do")}</a>
+        ${offsiteDocs ? `<a data-repo-availability-action="${escapeHtml(risk.action?.kind || "")}" href="${escapeHtml(availabilityDocsHref(risk.action?.href))}" target="_blank" rel="noopener" class="text-accent hover:underline">${escapeHtml(risk.action?.label || "What to do")}</a>` : ""}
       </li>`).join("");
     const copyRows = copies.map((copy) => `<tr data-repo-availability-copy="${escapeHtml(copy.class)}">
         <td class="px-1 py-0.5 font-mono">${escapeHtml(copy.node || "—")}</td>
@@ -1772,7 +1773,7 @@
     return `<section data-repo-availability-proof="${escapeHtml(proof.proof)}" aria-label="Availability proof" class="mx-1 mb-2 rounded-md border border-border px-3 py-2 text-xs">
         <div class="flex flex-wrap items-baseline justify-between gap-2">
           <p role="status"><span class="font-medium text-foreground">${escapeHtml(proof.label)}</span> · <span data-repo-availability-score class="${tone}">Risk ${escapeHtml(String(Number(proof.score) || 0))}/100 (${escapeHtml(proof.levelLabel || proof.level || "")})</span></p>
-          <a href="https://forkmesh.com/docs/availability-proof/" target="_blank" rel="noopener" class="text-[10px] text-muted-foreground hover:underline">How this is calculated</a>
+          ${offsiteDocs ? `<a href="https://forkmesh.com/docs/availability-proof/" target="_blank" rel="noopener" class="text-[10px] text-muted-foreground hover:underline">How this is calculated</a>` : ""}
         </div>
         <p class="mt-1 text-muted-foreground">${escapeHtml(proof.summary)}</p>
         <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">${metrics
@@ -2077,7 +2078,7 @@
       if (state.selectedRepo) {
         await loadRepoMirrors(state.selectedRepo, { background: true, force: true });
       }
-      setRepoMirrorStatus(`${nodeName} was removed from ForkMesh.`, "good");
+      setRepoMirrorStatus(`${nodeName} was removed from ${platformName()}.`, "good");
     } catch (error) {
       button.disabled = false;
       const code = String(error?.message || "");
@@ -2205,7 +2206,7 @@
   function repoInsightsContributorRows(commits) {
     const byAuthor = new Map();
     (Array.isArray(commits) ? commits : []).forEach((commit) => {
-      const author = String(commit.author || "unknown").trim() || "unknown";
+      const author = String(shownAccountName(commit.author) || "unknown").trim() || "unknown";
       const current = byAuthor.get(author) || { author, commits: 0, latest: "" };
       current.commits += 1;
       current.latest = current.latest || commit.date || "";
@@ -2334,7 +2335,7 @@
       const link = document.createElement("a");
       link.className = "dashboard-accent-link hover:underline";
       link.href = publicProfileUrl(handle);
-      link.title = `ForkMesh profile @${handle}`;
+      link.title = `${platformName()} profile @${handle}`;
       link.textContent = author;
       row.replaceChildren(link);
     }
@@ -2416,7 +2417,7 @@
         <div data-repo-insights-contributor-row class="grid min-w-[46rem] grid-cols-[minmax(14rem,1fr)_7rem_6rem_minmax(14rem,1fr)] items-center gap-4 border-t border-border px-4 py-2.5 text-sm hover:bg-secondary/20">
           <div class="flex min-w-0 items-center gap-3">
             ${repoContributorAvatar({ name: item.author, email: item.email, commits: item.commits })}
-            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${userNameHtml(item.author)}</div>
+            <div data-repo-insights-contributor="${escapeHtml(item.author)}" class="truncate font-medium text-foreground">${platformAccount(item.author) ? escapeHtml(platformName()) : userNameHtml(item.author)}</div>
           </div>
           <span class="text-right font-mono text-xs font-semibold text-foreground">${formatCount(item.commits)}</span>
           <span class="text-right font-mono text-xs text-muted-foreground">${share.toFixed(1)}%</span>
@@ -2443,7 +2444,7 @@
             </div>
           </section>
           <aside class="rounded-lg border border-border bg-secondary/20 p-4">
-            <div class="flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="network" class="h-4 w-4 text-muted-foreground"></i>ForkMesh traffic</div>
+            <div class="flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="network" class="h-4 w-4 text-muted-foreground"></i>${escapeHtml(platformName())} traffic</div>
             ${repoTrafficChart(traffic)}
             <p class="mt-3 text-[10px] leading-4 text-muted-foreground">Daily Git clone requests reported by managed mirror nodes.</p>
           </aside>

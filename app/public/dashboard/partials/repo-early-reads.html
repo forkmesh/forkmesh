@@ -16,6 +16,14 @@
       (() => {
         try {
           const parts = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+          const shortName = document.querySelector('meta[name="forkmesh-repo-short"]')?.content || "";
+          const shortOwner = document.querySelector('meta[name="forkmesh-repo-owner"]')?.content || "";
+          if (shortName && shortOwner && parts.length && parts[0].toLowerCase() === shortName.toLowerCase()) {
+            const routed = parts.length < 2 || ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "agents", "settings", "tree", "blob", "compare"].includes(parts[1]);
+            parts.splice(1, 0, ...(routed ? [] : ["tree"]));
+            parts.unshift(shortOwner);
+            parts[1] = shortName;
+          }
           if (parts.length < 2 || new URLSearchParams(location.search).has("sig")) return;
           const [owner, name, kind, ...rest] = parts;
           const get = (url) => fetch(url, { credentials: "omit", headers: { accept: "application/json" } });

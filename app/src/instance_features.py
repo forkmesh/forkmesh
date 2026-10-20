@@ -1,3 +1,4 @@
+import html
 import json
 import re
 
@@ -66,6 +67,9 @@ FEATURES = (
     ("ios-testers", "iOS test builds",
      "ForkMesh's iOS tester enrollment.",
      ("/api/ios-udid",), ()),
+    ("instance-launcher", "Instance launcher",
+     "The start page that sets up new instances on other servers.",
+     ("/start", "/api/start"), ()),
     ("website", "ForkMesh website pages",
      "forkmesh.com's own pages: about, careers, press, pricing, features, "
      "the ecosystem, leaderboards, the blog and the changelog.",
@@ -91,6 +95,7 @@ FORKMESH_ONLY = {
     "status": "Monitors forkmesh.com's own cores, mirrors and app releases.",
     "ios-testers": "Enrolls testers in ForkMesh's iOS builds.",
     "website": "forkmesh.com's own marketing pages.",
+    "instance-launcher": "forkmesh.com's page that installs new instances.",
 }
 INSTANCE_NOTES = {
     "world": "Your own 3D World at /world, with the Office and its chat. "
@@ -119,6 +124,47 @@ def _setting(env, name):
 
 def branded(env):
     return bool(" ".join(_setting(env, "INSTANCE_NAME").split()))
+
+
+PLATFORM = "ForkMesh"
+_RENAME_RE = re.compile(r"(?<![A-Za-z0-9_.-])ForkMesh(?![A-Za-z0-9_-])(?! [Dd]esktop)(?!, Inc)")
+_REMEMBERED = {"name": "", "origin": ""}
+
+
+def remember_instance(env):
+    if not branded(env):
+        return
+    origin = (_setting(env, "PUBLIC_BASE_URL") or _setting(env, "APP_ORIGIN")).rstrip("/")
+    _REMEMBERED["name"] = display_name(env)
+    _REMEMBERED["origin"] = origin if origin.startswith("https://") else ""
+
+
+def user_agent(default, product):
+    name = _REMEMBERED["name"]
+    if not name:
+        return default
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-") or "git"
+    origin = _REMEMBERED["origin"]
+    return "%s-%s/1.0%s" % (slug, product, " (+%s)" % origin if origin else "")
+
+
+def powered_by(env):
+    return _setting(env, "INSTANCE_POWERED_BY") != "0"
+
+
+def display_name(env):
+    return " ".join(_setting(env, "INSTANCE_NAME").split())[:60] or PLATFORM
+
+
+def rename(env, text, name=None):
+    if not text or not branded(env):
+        return text
+    replacement = display_name(env) if name is None else name
+    return _RENAME_RE.sub(lambda _: replacement, str(text))
+
+
+def rename_html(env, text):
+    return rename(env, text, html.escape(display_name(env), quote=True))
 
 
 def installed_ids(env):
@@ -218,3 +264,32 @@ def describe(env):
             feature[0], ""),
         "paths": list(feature[3]),
     } for feature in FEATURES]
+
+
+ERROR_TEXT_FIELDS = ("message", "hint", "detail", "title", "reason")
+
+
+def rename_error_body(env, body):
+    if not branded(env) or not isinstance(body, (bytes, str)):
+        return body
+    raw = body.decode("utf-8", "replace") if isinstance(body, bytes) else body
+    if "ForkMesh" not in raw:
+        return body
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return body
+    if not isinstance(payload, dict):
+        return body
+    changed = False
+    for key in ERROR_TEXT_FIELDS:
+        value = payload.get(key)
+        if isinstance(value, str):
+            renamed = rename(env, value)
+            if renamed != value:
+                payload[key] = renamed
+                changed = True
+    if not changed:
+        return body
+    text = json.dumps(payload, separators=(",", ":"))
+    return text.encode("utf-8") if isinstance(body, bytes) else text

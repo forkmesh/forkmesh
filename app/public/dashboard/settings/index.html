@@ -2695,7 +2695,7 @@
                     <i data-lucide="key" aria-hidden="true"></i>
                     <span data-agent-modal-login-label>Sign in to agent</span>
                   </button>
-                  <a data-agent-modal-login-desktop href="#" class="text-xs text-accent hover:underline">Or hand this off to the ForkMesh desktop app</a>
+                  <a data-agent-modal-login-desktop href="#" class="text-xs text-accent hover:underline">Or hand this off to the <span data-desktop-brand>ForkMesh </span>desktop app</a>
                 </div>
                 <label class="grid gap-1.5 font-medium text-foreground">Task
                   <textarea data-repo-agent-new-input name="prompt" required maxlength="8000" rows="5" class="w-full resize-y rounded-control border border-border bg-background px-3 py-2 text-control leading-5 text-foreground" placeholder="Describe the change you want the agent to make…"></textarea>
@@ -2904,7 +2904,7 @@
         <div data-update-notice hidden class="fm-flash fm-flash-neutral fm-flash-full" role="status" aria-live="polite">
           <i data-lucide="sparkles" class="fm-flash-icon-accent" aria-hidden="true"></i>
           <div class="fm-flash-body">
-            <strong class="fm-flash-title">A new version of ForkMesh is available</strong>
+            <strong class="fm-flash-title">A new version of <span data-platform-name>ForkMesh</span> is available</strong>
             <p data-update-notice-detail>Update reloads this page on the new version.</p>
           </div>
           <div class="fm-flash-actions">
@@ -3389,7 +3389,7 @@
                   <section id="settings-account" data-settings-section="account" class="hidden pb-8">
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">Account</h2>
                     <p class="mt-1 text-sm leading-6 text-muted-foreground">Your node name is your public account and repository namespace. Change your username from the <button data-settings-section-link="public-profile" type="button" class="inline align-baseline font-semibold text-accent hover:underline focus:outline-none focus:ring-1 focus:ring-primary">Public profile</button> settings — renaming it moves owned repository URLs to the new namespace.</p>
-                    <div class="mt-6 grid max-w-3xl gap-3 rounded-md border border-border bg-card p-4" data-patreon-connection>
+                    <div class="mt-6 grid max-w-3xl gap-3 rounded-md border border-border bg-card p-4" data-patreon-connection data-instance-plugin="patreon">
                       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div class="min-w-0">
                           <h3 class="text-base font-semibold text-foreground">Patreon membership</h3>
@@ -3415,7 +3415,7 @@
                       </p>
                     </div>
                     <div class="mt-6 grid max-w-3xl gap-3">
-                      <div class="rounded-md border border-border bg-card p-4">
+                      <div class="rounded-md border border-border bg-card p-4" data-instance-plugin="patreon">
                         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <h3 class="text-base font-semibold text-foreground">ForkMesh membership</h3>
@@ -3678,7 +3678,7 @@
                           <h3 class="text-lg font-semibold text-foreground">Desktops</h3>
                           <button data-agent-profiles-refresh type="button" class="fm-btn fm-btn-sm ml-auto"><i data-lucide="refresh-cw"></i>Refresh</button>
                         </div>
-                        <p class="text-sm text-muted-foreground">Read live from each ForkMesh desktop app on your account over an encrypted channel. A desktop answers only while the app is running and signed in.</p>
+                        <p class="text-sm text-muted-foreground">Read live from each <span data-desktop-brand>ForkMesh </span>desktop app on your account over an encrypted channel. A desktop answers only while the app is running and signed in.</p>
                         <p data-agent-profiles-notice hidden class="text-sm" role="status" aria-live="polite"></p>
                         <div data-agent-profiles-desktops class="grid gap-3">
                           <p class="text-sm text-muted-foreground">Loading desktops…</p>
@@ -3782,7 +3782,7 @@
                           <button data-genie-visible type="button" role="switch" aria-checked="true" aria-label="Show the Genie spider" class="ping-switch mt-1"></button>
                         </div>
                       </div>
-                      <div data-home-redirect-setting class="overflow-hidden rounded-md border border-border bg-card">
+                      <div data-home-redirect-setting data-instance-plugin="website" class="overflow-hidden rounded-md border border-border bg-card">
                         <div class="flex items-start justify-between gap-4 p-4">
                           <div class="flex min-w-0 items-start gap-3">
                             <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-secondary text-muted-foreground"><i data-lucide="layout-dashboard" class="h-4 w-4"></i></span>
@@ -3874,7 +3874,7 @@
                     </li>
                     <li class="flex items-center gap-2">
                       <i data-lucide="link" class="h-4 w-4 text-muted-foreground"></i>
-                      <a data-profile-website href="https://forkmesh.com" class="min-w-0 truncate text-foreground hover:text-accent hover:underline">https://forkmesh.com</a>
+                      <a data-profile-website href="/" class="min-w-0 truncate text-foreground hover:text-accent hover:underline"></a>
                     </li>
                   </ul>
                   <section data-profile-badges hidden class="mt-4 overflow-hidden rounded-md border border-border bg-card">
@@ -3886,7 +3886,7 @@
                     </div>
                     <ul data-profile-badges-list class="grid gap-3 p-3 text-sm"></ul>
                   </section>
-                  <section data-profile-tips class="mt-4 overflow-hidden rounded-md border border-border bg-card">
+                  <section data-profile-tips data-instance-plugin="rewards" class="mt-4 overflow-hidden rounded-md border border-border bg-card">
                     <div class="flex items-center gap-2 border-b border-border px-3 py-2">
                       <i data-lucide="coins" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
                       <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Tips</h2>
@@ -3990,7 +3990,7 @@
         <div class="fm-dialog-header">
           <div class="fm-dialog-heading">
             <h2 id="profileAboutModalTitle" class="fm-dialog-title">Edit about yourself</h2>
-            <p class="fm-dialog-desc">Markdown shown on your ForkMesh profile overview.</p>
+            <p class="fm-dialog-desc">Markdown shown on your <span data-platform-name>ForkMesh</span> profile overview.</p>
           </div>
           <button data-profile-about-modal-close type="button" aria-label="Close about editor" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
             <i data-lucide="x" aria-hidden="true"></i>
@@ -4084,7 +4084,7 @@
         <div class="fm-dialog-header">
           <div class="fm-dialog-heading">
             <h2 id="feedbackModalTitle" class="fm-dialog-title">Send feedback</h2>
-            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the ForkMesh team reads it; nothing is published.</p>
+            <p class="fm-dialog-desc">Tell us what worked, what was confusing, or the one thing you want us to improve next. Only the <span data-platform-name>ForkMesh</span> team reads it; nothing is published.</p>
           </div>
           <button data-feedback-close type="button" aria-label="Close feedback" class="fm-btn fm-btn-sm fm-btn-invisible fm-btn-icon shrink-0">
             <i data-lucide="x" aria-hidden="true"></i>

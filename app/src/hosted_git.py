@@ -45,6 +45,7 @@ import json
 import re
 
 import hosted_repos as _hosted_repos
+import instance_features
 
 
 HOSTED_SOURCE = "hosted-web"
@@ -1196,8 +1197,10 @@ async def _create_core_repository(env, request, data, actor):
     if used >= limit:
         return _error(
             "hosted_quota_exceeded", 429,
-            "This account already hosts %d repositories on ForkMesh, the "
-            "limit. Delete one, or host more from your own node." % limit,
+            instance_features.rename(
+                env, "This account already hosts %d repositories on ForkMesh, "
+                "the limit. Delete one, or host more from your own node."
+                % limit),
             limit=limit, used=used)
     limited = await catalog_rate_check(env, target["owner_bi"])
     if limited is not None:
@@ -1290,8 +1293,8 @@ async def hosted_push_limit(env, request, owner, repo, method):
     if size >= limit or announced > limit:
         return json_response({
             "error": "repository_quota_exceeded",
-            "message": (
-                "This repository has reached the %d MB ForkMesh hosting "
+            "message": instance_features.rename(
+                env, "This repository has reached the %d MB ForkMesh hosting "
                 "limit. Move it to your own node to grow further."
                 % (limit // (1024 * 1024))),
             "limitBytes": limit,

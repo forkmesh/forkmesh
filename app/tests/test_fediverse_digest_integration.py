@@ -6,6 +6,7 @@ import hashlib
 import importlib.util
 import json
 import re
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlparse
@@ -13,6 +14,8 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRY = ROOT / "src" / "entry.py"
+sys.path.insert(0, str(ROOT / "src"))
+import instance_features  # noqa: E402
 ENTRY_TEXT = (
     # entry.py + its lazily-split domain modules
     (ENTRY.parent / "forkbot.py").read_text(encoding="utf-8")
@@ -47,7 +50,8 @@ def _load(*names, extra_globals=None):
         and node.name in names
     ]
     assert {node.name for node in nodes} == set(names)
-    namespace = dict(extra_globals or {})
+    namespace = {"instance_features": instance_features}
+    namespace.update(extra_globals or {})
     exec(compile(ast.fix_missing_locations(
         ast.Module(body=nodes, type_ignores=[])), str(ENTRY), "exec"),
          namespace)
