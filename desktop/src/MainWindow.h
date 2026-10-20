@@ -10380,6 +10380,7 @@ private:
                                      nullptr);
     void renderConversationRows(); // rebuilds rows in place; caller handles scrolling
     void rebuildConversationView();
+    void showEarlierTranscriptRows();
     // Coalesced renderConversationRows: several rebuild requests in one burst
     // (a replayed backlog) become a single repaint on the next event loop turn.
     void scheduleConversationRebuild(bool keepAtBottom);
@@ -12500,6 +12501,9 @@ private:
     // transcript teardown. Collapse a burst of those into one rebuild.
     bool m_transcriptRebuildPending = false;
     bool m_transcriptRebuildStickToBottom = false;
+    int m_transcriptRenderBatches = 1;
+    qsizetype m_transcriptRenderedChars = 0;
+    int m_transcriptKeepFromBottom = -1;
     QLineEdit *m_worldSpeechOriginEdit = nullptr;
     QLineEdit *m_worldSpeechPairCodeEdit = nullptr;
     QLabel *m_worldSpeechStatusLabel = nullptr;

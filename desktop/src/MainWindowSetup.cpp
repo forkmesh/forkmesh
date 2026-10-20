@@ -2295,6 +2295,7 @@ void MainWindow::startSession()
     m_history.clear();
     m_historyIds.clear();
     m_visibleRows.clear();
+    m_transcriptRenderBatches = 1;
     m_reactions.clear();
     m_avatars.clear();
     m_dmNames.clear();

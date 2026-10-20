@@ -745,6 +745,7 @@ set(FORKMESH_APP_SOURCES
     src/ForkMeshIdentity.cpp
     src/ChatBackend.h
     src/ChatRecipients.h
+    src/ChatTranscriptWindow.h
     src/ChatListPreview.h
     src/ClientErrorReports.h
     src/ClientErrorReports.cpp
@@ -2079,6 +2080,18 @@ if(FORKMESH_BUILD_TESTS)
     target_link_libraries(forkmesh-agent-prompt-title-tests PRIVATE Qt6::Core)
     if(APPLE)
         set_target_properties(forkmesh-agent-prompt-title-tests PROPERTIES
+            MACOSX_BUNDLE FALSE)
+    endif()
+
+    qt_add_executable(forkmesh-chat-transcript-window-tests
+        tests/test_chat_transcript_window.cpp
+        src/ChatTranscriptWindow.h
+    )
+    target_include_directories(forkmesh-chat-transcript-window-tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(forkmesh-chat-transcript-window-tests PRIVATE Qt6::Core)
+    if(APPLE)
+        set_target_properties(forkmesh-chat-transcript-window-tests PROPERTIES
             MACOSX_BUNDLE FALSE)
     endif()
 

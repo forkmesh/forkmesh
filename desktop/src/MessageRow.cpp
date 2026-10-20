@@ -35,6 +35,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include <array>
+
 namespace {
 
 constexpr int kAvatarSize = 40;
@@ -51,6 +53,61 @@ QString humanSize(qint64 bytes)
         return QString::number(bytes / 1024.0, 'f', 1) + " KB";
     return QString::number(bytes / (1024.0 * 1024.0), 'f', 1) + " MB";
 }
+
+class MeasuredLabel : public QLabel
+{
+public:
+    using QLabel::QLabel;
+
+    int heightForWidth(int width) const override
+    {
+        const QString current = text();
+        if (current != m_measuredText || font() != m_measuredFont ||
+            wordWrap() != m_measuredWordWrap) {
+            m_measuredText = current;
+            m_measuredFont = font();
+            m_measuredWordWrap = wordWrap();
+            forget();
+        }
+        for (int slot = 0; slot < kSlots; ++slot) {
+            if (m_widths[slot] == width)
+                return m_heights[slot];
+        }
+        const int height = QLabel::heightForWidth(width);
+        m_widths[m_nextSlot] = width;
+        m_heights[m_nextSlot] = height;
+        m_nextSlot = (m_nextSlot + 1) % kSlots;
+        return height;
+    }
+
+protected:
+    bool event(QEvent *event) override
+    {
+        switch (event->type()) {
+        case QEvent::FontChange:
+        case QEvent::StyleChange:
+        case QEvent::ContentsRectChange:
+        case QEvent::Polish:
+            forget();
+            break;
+        default:
+            break;
+        }
+        return QLabel::event(event);
+    }
+
+private:
+    static constexpr int kSlots = 4;
+
+    void forget() const { m_widths.fill(-1); }
+
+    mutable std::array<int, kSlots> m_widths{-1, -1, -1, -1};
+    mutable std::array<int, kSlots> m_heights{};
+    mutable int m_nextSlot = 0;
+    mutable QString m_measuredText;
+    mutable QFont m_measuredFont;
+    mutable bool m_measuredWordWrap = false;
+};
 
 // Stand-in first frame for a video attachment: a dark plate with a play badge.
 // Decoding the real frame would need Qt Multimedia, which is optional here, so
@@ -385,7 +442,7 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
     column->setContentsMargins(0, 0, 0, 0);
     column->setSpacing(3);
 
-    auto *header = new QLabel;
+    auto *header = new MeasuredLabel;
     header->setTextFormat(Qt::RichText);
     header->setObjectName(QStringLiteral("messageSender"));
     header->setCursor(Qt::PointingHandCursor);
@@ -481,7 +538,7 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
         body->setTextFormat(Qt::RichText);
         column->addWidget(body);
     } else if (!message.text.isEmpty()) {
-        auto *body = new QLabel(
+        auto *body = new MeasuredLabel(
             message.blocks.isEmpty() ||
                     !forkmesh::chatblocks::senderMayFormat(message.senderId)
                 ? renderMentionedText(message.text, m_mentionProfiles)

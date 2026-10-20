@@ -233,6 +233,29 @@ returned, so summed frame totals overstate a function's own cost.
   (`setMarketCardShown`, `MainWindowMarket.cpp`) changes a card only when its
   explicit state differs: showing the Market after a rebuild stalled 3.7 s
   laying out every card of all three package tabs (report #5).
+- **Render only the newest chat rows.** `renderConversationRows` builds rows
+  from the newest message back until `forkmesh::chattranscript::Budget`
+  (`ChatTranscriptWindow.h`) runs out: 120 messages or 24,000 characters of
+  rendered body per batch, block messages weighed by their HTML. A
+  "Show earlier messages" button above the rows adds a batch and keeps the
+  reader's distance from the bottom (`m_transcriptKeepFromBottom`, dropped by
+  any scroll-bar action). Switching conversation resets to one batch, and a
+  live feed that grows past twice its batch while the reader is at the bottom
+  is re-windowed. `#office/email-log` (277 mail-log messages, 600,000
+  characters, about 9,600 colour emoji, mostly block sections) stalled 173 s
+  opening and 11-34 s on each later layout pass (report #7, `STALL-…-p2003-0004`
+  to `0008`). Qt shapes every colour emoji by decoding its PNG in
+  `FT_Load_Glyph`, so text volume, not row count, is the cost.
+- **Cache label heights per width.** The scroll area asks every row for
+  `heightForWidth` and `minimumHeightForWidth` at several widths on every
+  `LayoutRequest`, and `QLabel` relays its whole rich-text document each time.
+  `MessageRow`'s sender and body labels (`MeasuredLabel`, `MessageRow.cpp`)
+  keep the last four widths, keyed on text, font and word wrap and cleared
+  on font, style, polish and contents-rect changes. On the real mail-log
+  texts with block HTML (60 rows, offscreen benchmark) three layout passes
+  went from 1,047 ms to 4 ms, building from 5.0 s to 2.2 s and two resizes
+  from 1,454 ms to 427 ms. With both changes the whole mail-log channel went
+  from 52 s to build and 3.7 s per layout pass to 374 ms and about 1 ms.
 - **Paginate diff chunks on the worker.** The streamed branch diff
   (`MainWindow::renderBranchDiffPatch`) paginates each chunk with
   `paginateDiffStreamChunk` on the worker and hands the GUI thread pages
