@@ -66,6 +66,22 @@ class DirectCallStatesTest {
         assertEq(listOf("call-invite", "call-offer", "call-bye"), rig.sent)
     }
 
+    fun testHangingUpBeforeAnAnswerLeavesAMissedCall() {
+        val rig = Rig()
+        val missed = ArrayList<Pair<String, DirectCallKind>>()
+        rig.engine.onMissed = { conversation, media -> missed.add(conversation to media) }
+        expect(rig.engine.start("direct:abc", DirectCallKind.VIDEO))
+        rig.engine.hangUp()
+        assertEq(null, rig.engine.phase)
+        assertEq(listOf("call-invite", "call-bye"), rig.sent)
+        assertEq(listOf("direct:abc" to DirectCallKind.VIDEO), missed)
+        expect(rig.engine.start("direct:abc", DirectCallKind.AUDIO))
+        rig.frame("call-accept")
+        rig.engine.hangUp()
+        assertEq(null, rig.engine.phase)
+        assertEq(1, missed.size)
+    }
+
     fun testADeclineEndsTheRingingAtOnce() {
         val rig = Rig()
         expect(rig.engine.start("direct:abc", DirectCallKind.AUDIO))
