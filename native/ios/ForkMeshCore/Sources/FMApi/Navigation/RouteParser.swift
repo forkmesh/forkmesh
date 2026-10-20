@@ -265,6 +265,7 @@ public enum RouteParser {
         case "synapse": return tail.isEmpty ? [.synapse(query["repo"].flatMap(RepoRef.init(slug:)))] : nil
         case "openwrt": return tail.isEmpty ? [.openWrtRouter] : nil
         case "files": return tail.isEmpty ? [.fileExplorer] : nil
+        case "nexus": return tail.isEmpty ? [.nexus] : nil
         case "face-changer": return [.faceChanger]
         case "video-mix-dj-studio": return [.videoMixDjStudio]
         case "app-store-status": return tail.isEmpty ? [.appStoreStatus] : nil

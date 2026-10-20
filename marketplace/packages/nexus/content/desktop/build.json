@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    "NexusCore.h",
+    "NexusCore.cpp",
+    "NexusNetwork.h",
+    "NexusNetwork.cpp",
+    "NexusFeature.h",
+    "NexusFeature.cpp"
+  ],
+  "mocHeaders": [],
+  "testSources": [
+    "tests/test_nexus.cpp",
+    "NexusCore.h",
+    "NexusCore.cpp",
+    "NexusNetwork.h",
+    "NexusNetwork.cpp"
+  ],
+  "testLibraries": [
+    "Qt6::Core",
+    "Qt6::Network"
+  ]
+}

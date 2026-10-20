@@ -28,6 +28,7 @@ struct NexusOverviewView: View {
                 }
             }
             .navigationTitle("NEXUS")
+            .nexusCloseButton()
             .navigationDestination(for: Device.self) { DeviceDetailView(device: $0) }
         }
     }
@@ -44,6 +45,7 @@ struct NexusDiscoverView: View {
             List(filtered) { device in NavigationLink(value: device) { DeviceRow(device: device) } }
                 .overlay { if filtered.isEmpty { ContentUnavailableView("No devices", systemImage: "dot.radiowaves.left.and.right", description: Text("Browse your authorized local network with Bonjour.")) } }
                 .navigationTitle("Discover")
+                .nexusCloseButton()
                 .searchable(text: $query, prompt: "Search devices, services, or addresses")
                 .toolbar { ToolbarItem(placement: .primaryAction) { Button(action: model.discover) { Label("Discover", systemImage: "arrow.clockwise") } } }
                 .navigationDestination(for: Device.self) { DeviceDetailView(device: $0) }
@@ -71,6 +73,7 @@ struct NexusScanView: View {
                 Section("Recent scans") { ForEach(model.scans) { session in ScanRow(session: session) } }
             }
             .navigationTitle("Scan")
+            .nexusCloseButton()
             .alert("Scan setup", isPresented: Binding(get: { parseError != nil }, set: { if !$0 { parseError = nil } })) { Button("OK", role: .cancel) {} } message: { Text(parseError ?? "") }
         }
     }
@@ -102,6 +105,7 @@ struct NexusInspectView: View {
                 Section("iOS capability") { Label("TCP reachability and DNS are native. ICMP and raw-packet traceroute are unavailable to App Store iOS apps.", systemImage: "info.circle").font(.footnote) }
             }
             .navigationTitle("Inspect")
+            .nexusCloseButton()
             .alert("Inspection", isPresented: Binding(get: { error != nil }, set: { if !$0 { error = nil } })) { Button("OK", role: .cancel) {} } message: { Text(error ?? "") }
         }
     }
@@ -120,6 +124,7 @@ struct NexusHistoryView: View {
                 Section("Discoveries") { ForEach(model.discoveries) { session in LabeledContent(session.status.title, value: "\(session.devices.count) devices") } }
             }
             .navigationTitle("History")
+            .nexusCloseButton()
             .overlay { if model.scans.isEmpty && model.discoveries.isEmpty { ContentUnavailableView("No history", systemImage: "clock.arrow.circlepath", description: Text("Completed scans and discoveries appear here.")) } }
         }
     }
@@ -138,6 +143,7 @@ struct NexusSettingsView: View {
                 Section("Privacy and permissions") { Label("Bonjour discovery prompts for Local Network permission when it starts. NEXUS does not read ARP tables, MAC addresses, or device vendors unless a supported source provides them.", systemImage: "hand.raised").font(.footnote) }
             }
             .navigationTitle("Settings")
+            .nexusCloseButton()
         }
     }
 }
@@ -168,3 +174,30 @@ struct FindingRow: View {
 }
 
 #Preview { NexusRootView() }
+
+struct NexusCloseKey: EnvironmentKey {
+    static let defaultValue: (@MainActor @Sendable () -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var nexusClose: (@MainActor @Sendable () -> Void)? {
+        get { self[NexusCloseKey.self] }
+        set { self[NexusCloseKey.self] = newValue }
+    }
+}
+
+struct NexusCloseButton: ViewModifier {
+    @Environment(\.nexusClose) private var close
+
+    func body(content: Content) -> some View {
+        content.toolbar {
+            if let close {
+                ToolbarItem(placement: .cancellationAction) { Button("Done", action: close) }
+            }
+        }
+    }
+}
+
+extension View {
+    func nexusCloseButton() -> some View { modifier(NexusCloseButton()) }
+}

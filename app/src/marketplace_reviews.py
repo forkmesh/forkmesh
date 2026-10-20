@@ -78,6 +78,7 @@ FIRST_PARTY_PACKAGES = {
     "nemotron-3-ultra": "Nemotron 3 Ultra",
     "nemotron-3.5-lightning": "Nemotron 3.5 Lightning",
     "network": "Network & nodes",
+    "nexus": "NEXUS",
     "notes": "Notes",
     "on-device-ai": "On-device AI",
     "openwrt": "OpenWrt Router",

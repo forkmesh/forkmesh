@@ -816,7 +816,7 @@ sidebar sections (§7).
 | Group | Items |
 |---|---|
 | Header | Avatar, name, status and a small Set a status button on the same row; Pocket mode, Suggestion mode and the Diagnostics switch as compact rows |
-| Workspace | Notes, Tasks, Calendar, Timers |
+| Workspace | Notes, Tasks, Calendar, Timers, Files, NEXUS |
 | Operate | Desktops, Special agents (teammates), Shortcuts, Hosts & fleet, Network & nodes |
 | Business | Market, CRM, Marketing, Analytics, Competitors, Ad review (reviewers only), Ledger |
 | Personal | Vault, Coves, Calories, Steps, Water, Sleep, Sugar Break, Stretch Break, Glasses Alert, Food Guide, On-device AI, Activity |

@@ -180,6 +180,7 @@ public enum RouteCatalog {
         case .synapse: return "Synapse"
         case .openWrtRouter: return "Router"
         case .fileExplorer: return "Files"
+        case .nexus: return "NEXUS"
         case .faceChanger: return "Face Changer"
         case .videoMixDjStudio: return "Video Mix DJ Studio"
         case .appStoreStatus: return "App Store Status"
@@ -268,6 +269,7 @@ public enum RouteCatalog {
         case .synapse: return "brain"
         case .openWrtRouter: return "wifi.router"
         case .fileExplorer: return "folder"
+        case .nexus: return "network"
         case .faceChanger: return "theatermasks"
         case .videoMixDjStudio: return "music.note.list"
         case .appStoreStatus: return "app.badge"
@@ -371,6 +373,7 @@ public enum HubCatalog {
         .destination(.calendar(date: nil, mode: .month)),
         .destination(.timers),
         .destination(.fileExplorer),
+        .destination(.nexus),
     ]
 
     public static let operate: [HubItem] = [
