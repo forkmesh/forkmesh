@@ -195,8 +195,6 @@ export function setWorldMeshFlowers(flowers = []) {
     worldMeshHexesFor(flower.shape).map((hex) => ({ x: flower.x + hex.x, z: flower.z + hex.z })),
   );
   worldMeshJunctions = worldMeshHexes.flatMap(hexCorners);
-  // A single hexagon standing on one of the town's desert petals owns that
-  // petal: the town no longer claims the ground underneath it.
   worldMeshPetals = new Set(
     worldMeshFlowers
       .filter((flower) => flower.shape === "hex")

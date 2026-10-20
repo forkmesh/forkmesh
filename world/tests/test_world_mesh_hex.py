@@ -137,7 +137,6 @@ def test_a_single_hexagon_is_a_petal_sharing_an_edge_with_the_town(result):
     assert [item["petal"] for item in result["hexes"]] == [1, 2, 3, 4, 5]
     for slot, item in enumerate(result["hexes"]):
         assert item["onPetal"] and item["sharesTownEdge"], slot
-        # The town and the two neighbouring desert petals.
         assert item["touching"] == 3, slot
         assert item["overlaps"] is False, slot
     assert result["shapes"] == ["hex", "hex", "flower", "flower", "flower"]

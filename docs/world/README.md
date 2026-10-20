@@ -585,7 +585,8 @@ them without changing page.
   at `offset(world) - offset(self)`. An instance therefore sees the hub and
   its fellow instances where they really sit.
 - **Single hexagons.** A slot 0–4 listed in the hub's `WORLD_MESH_HEX_SLOTS`
-  (comma-separated, e.g. `0`) is published with `"shape": "hex"` and drawn as
+  (comma-separated, `0` in the production fleet) is published with
+  `"shape": "hex"` and drawn as
   one of the town's petals: it takes the place of desert petal
   `NEIGHBOUR_HEX_PETALS[n]` (`scene/layout.js`; petal p lies at 60°·p, as in
   `DESERT_HEXES`) and shares an edge with the town. Slot 0 is petal 1, slot 4

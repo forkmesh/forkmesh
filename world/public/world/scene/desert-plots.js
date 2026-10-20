@@ -192,8 +192,6 @@ export function createDesertPlots(THREE, interactive) {
     group.add(sign);
   });
 
-  // A single-hexagon neighbour can take the place of a desert petal. That
-  // petal's sand, cacti and sign step aside so the neighbour's land shows.
   let replaced = "";
   group.userData.replacePetals = (list = []) => {
     const petals = new Set(
