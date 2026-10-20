@@ -53,10 +53,10 @@ object FmIcons {
     fun has(context: Context, name: String): Boolean =
         name == NOTIFICATION_LINE || codepoints(context).containsKey(name)
 
-    fun glyph(context: Context, name: String): String {
+    fun glyph(context: Context, name: String, outlined: Boolean = false): String {
         if (name == NOTIFICATION_LINE) return String(Character.toChars(0xf127))
         val table = codepoints(context)
-        val code = table[name] ?: table["${name}_baseline"]
+        val code = (if (outlined) table["${name.removeSuffix("_baseline")}_outlined"] else null) ?: table[name] ?: table["${name}_baseline"]
             ?: table["help_outline"] ?: table["help_outline_baseline"] ?: return "?"
         return String(Character.toChars(code))
     }
@@ -71,9 +71,10 @@ fun FmIcon(
     size: Dp = 24.dp,
     tint: Color = LocalContentColor.current,
     contentDescription: String? = null,
+    outlined: Boolean = false,
 ) {
     val context = LocalContext.current
-    val glyph = remember(name) { FmIcons.glyph(context, name) }
+    val glyph = remember(name, outlined) { FmIcons.glyph(context, name, outlined) }
     val fontSize = with(LocalDensity.current) { size.toSp() }
     Box(
         modifier = modifier

@@ -94,6 +94,7 @@ fun FmInlineStatusLine(
             modifier = Modifier.weight(1f),
             style = Fm.text.bodySmall.copy(color = if (isError) c.danger else c.textSecondary),
         )
+        FmMessageTools(message)
         if (actionLabel != null && onAction != null) {
             FmTextButton(onClick = onAction) { Text(actionLabel) }
         }

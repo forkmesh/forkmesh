@@ -1,5 +1,14 @@
 package com.forkmesh.nativeapp.ui.kit
 
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -159,6 +168,7 @@ fun FmEmptyState(
                     style = Fm.text.bodyMedium.copy(color = Fm.colors.textSecondary),
                 )
             }
+            FmMessageTools(message?.let { "$title\n$it" } ?: title, Modifier.padding(top = FmSpace.x1))
         }
     }
 }
@@ -260,7 +270,7 @@ fun FmIconButton(
     modifier: Modifier = Modifier,
     color: Color? = null,
     colors: IconButtonColors? = null,
-    iconSize: Dp = 20.dp,
+    iconSize: Dp = 24.dp,
 ) {
     FmIconButton(label = label, onPressed = onPressed, modifier = modifier, color = color, colors = colors) {
         FmIcon(icon, size = iconSize)
@@ -277,22 +287,32 @@ fun FmIconButton(
     icon: @Composable () -> Unit,
 ) {
     val haptics = FmHaptics.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val enabled = onPressed != null
+    val tint = when {
+        colors != null -> if (enabled) colors.contentColor else colors.disabledContentColor
+        else -> color ?: Fm.colors.textPrimary
+    }
     FmTooltip(label) {
-        IconButton(
-            onClick = {
-                if (onPressed != null) {
+        Box(
+            modifier
+                .size(48.dp)
+                .alpha(if (enabled) 1f else 0.38f)
+                .clickable(
+                    interactionSource = interaction,
+                    indication = null,
+                    enabled = enabled,
+                    role = Role.Button,
+                ) {
                     haptics.tap(SoundCue.forLabel(label, SoundCue.CLICK))
-                    onPressed()
+                    onPressed?.invoke()
                 }
-            },
-            modifier = modifier,
-            enabled = onPressed != null,
-            colors = colors ?: IconButtonDefaults.iconButtonColors(
-                contentColor = color ?: Fm.colors.textSecondary,
-                disabledContentColor = Fm.colors.textPrimary.copy(alpha = .38f),
-            ),
+                .semantics { contentDescription = label },
+            contentAlignment = Alignment.Center,
         ) {
-            Box(Modifier.semantics { contentDescription = label }, contentAlignment = Alignment.Center) { icon() }
+            if (pressed) Box(Modifier.size(40.dp).background(Fm.colors.textPrimary.copy(alpha = 0.08f), CircleShape))
+            CompositionLocalProvider(LocalContentColor provides tint) { icon() }
         }
     }
 }
@@ -319,6 +339,7 @@ fun FmConnectionBanner(
             modifier = Modifier.weight(1f),
             style = Fm.text.bodyMedium.copy(fontWeight = FmType.medium),
         )
+        FmMessageTools("You are offline. Messages and live updates are paused.")
         if (onRetry != null) {
             FmTextButton(onClick = onRetry) { Text("Retry") }
         }

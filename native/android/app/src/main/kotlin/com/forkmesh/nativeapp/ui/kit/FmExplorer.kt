@@ -23,13 +23,12 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.ripple.RippleAlpha
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.LocalRippleConfiguration
-import androidx.compose.material3.RippleConfiguration
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -104,12 +103,10 @@ fun FmListRow(
     val colors = Fm.colors
     val haptics = FmHaptics.current
     val interactive = onTap != null || onLongPress != null
-    val outerRipple = LocalRippleConfiguration.current
+    val outerIndication = LocalIndication.current
     val wash = colors.accentSubtle
-    val rowRipple = remember(wash) {
-        RippleConfiguration(color = wash.copy(alpha = 1f), rippleAlpha = RippleAlpha(wash.alpha, wash.alpha, wash.alpha, wash.alpha))
-    }
-    CompositionLocalProvider(LocalRippleConfiguration provides if (interactive) rowRipple else outerRipple) {
+    val rowWash = remember(wash) { FmPressIndication(wash) }
+    CompositionLocalProvider(LocalIndication provides if (interactive) rowWash else outerIndication) {
         Row(
             modifier
                 .fillMaxWidth()
@@ -138,7 +135,7 @@ fun FmListRow(
                 .padding(padding),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CompositionLocalProvider(LocalRippleConfiguration provides outerRipple) {
+            CompositionLocalProvider(LocalIndication provides outerIndication) {
                 if (leading != null) {
                     leading()
                     Spacer(Modifier.width(FmSpace.x3))
@@ -396,7 +393,6 @@ fun FmToneButton(
     val foreground = when {
         !filled -> color
         tone == FmTone.Warning -> FmColors.darkBgBase
-        tone == FmTone.Accent -> colors.onAccent
         else -> Color.White
     }
     val shape = RoundedCornerShape(FmRadius.md)
@@ -437,19 +433,18 @@ fun FmBottomBar(
     height: Dp = 50.dp,
     actions: (@Composable RowScope.() -> Unit)? = null,
 ) {
-    val colors = Fm.colors
     Box(
         modifier
             .fillMaxWidth()
-            .background(colors.bgRaised)
-            .windowInsetsPadding(fmSafeAreaInsets(top = false)),
+            .windowInsetsPadding(fmSafeAreaInsets(top = false))
+            .padding(horizontal = FmSpace.x2, vertical = FmSpace.x1),
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
                 .height(height)
-                .drawBehind { drawRect(colors.border, size = Size(size.width, 1.dp.toPx())) }
-                .padding(start = FmSpace.x3, top = 1.dp, end = FmSpace.x3),
+                .fmGlass(CircleShape, interactive = true)
+                .padding(horizontal = FmSpace.x3),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(Modifier.weight(1f)) { leading() }
@@ -517,7 +512,7 @@ fun FmDialogActions(
     val colors = Fm.colors
     val haptics = FmHaptics.current
     val tone = if (destructive) colors.danger else colors.accent
-    val label = if (destructive) Color.White else colors.onAccent
+    val label = Color.White
     Row(
         modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.End,
