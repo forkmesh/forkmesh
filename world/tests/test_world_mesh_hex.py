@@ -206,9 +206,12 @@ def test_arrivals_are_sanitized_and_land_outside_the_crossed_edge(result):
 def test_the_world_draws_and_crosses_single_hexagons():
     assert "WORLD_MESH_HEX_SHAPE" in HEXES
     assert 'single ? "world-mesh-hex-road" : "world-mesh-flower-road"' in HEXES
-    assert 'placed.filter((world) => world.shape !== "hex")' in APP
-    assert "if (owner.onLand) void this.crossIntoWorldMeshHex(owner);" in APP
-    assert "worldMeshCrossingURL(owner.world, { from, slot: owner.slot, local, visa })" in APP
+    assert "this.worldMeshLinks()?.setNeighbors(placed);" in APP
+    assert ('const visit = owner?.shape === "hex" && !owner.onLand ? "" : '
+            'owner?.id || "";') in APP
+    assert "this.meshLinks.update(x, z, visit);" in APP
+    assert "crossIntoWorldMeshHex" not in APP
+    assert "worldMeshCrossingURL" not in APP
     assert "this.pendingMeshArrival = worldMeshArrival(location.search);" in APP
     assert "worldMeshHexEdgeArrival(hex, arrival.pos)" in APP
 
@@ -235,3 +238,74 @@ def test_an_arrival_turns_the_camera_to_face_into_the_world():
     assert "if (spawn.faceCamera === true) {" in camera
     assert "ctx.cameraYaw = Math.atan2(\n        Math.sin(ctx.player.rotation.y)," \
         in camera
+
+
+VISIT = r"""
+globalThis.window = globalThis;
+const { WorldMeshLinks } = await import("./world-mesh.js");
+const sockets = [];
+const visits = [];
+const visas = [];
+class FakeSocket {
+  constructor(url) {
+    this.url = url;
+    this.readyState = 0;
+    this.sent = [];
+    this.closed = false;
+    this.handlers = {};
+    sockets.push(this);
+  }
+  addEventListener(name, handler) { this.handlers[name] = handler; }
+  send(data) { this.sent.push(JSON.parse(data)); }
+  close() { this.closed = true; }
+  open() { this.readyState = 1; this.handlers.open?.(); }
+}
+const links = new WorldMeshLinks({
+  createSocket: (url) => new FakeSocket(url),
+  requestVisa: async (world) => { visas.push(world.id); return ""; },
+  onVisitChanged: (world, previous) => visits.push([world?.id || "", previous?.id || ""]),
+  presenceFrame: () => ({ name: "walker" }),
+  moveIntervalMs: 0,
+});
+const hex = {
+  id: "a".repeat(32), name: "Acme", host: "code.example.org", shape: "hex",
+  world: "https://code.example.org", api: "https://code.example.org",
+  x: 700, z: 0, dx: 690, dz: -10,
+};
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+const out = {};
+links.setNeighbors([hex]);
+links.update(300, 0, "");
+await tick();
+out.watch = sockets.map((socket) => socket.url);
+links.update(650, 0, hex.id);
+await tick();
+out.visit = sockets.map((socket) => [socket.url, socket.closed]);
+sockets.at(-1).open();
+links.queueMove({ x: 700, y: 0, z: 5, yaw: 1, moving: true });
+out.sent = sockets.at(-1).sent.map((frame) => [frame.type, frame.space ?? null, frame.x ?? null, frame.z ?? null]);
+links.update(300, 0, "");
+await tick();
+out.back = sockets.map((socket) => [socket.url, socket.closed]);
+out.visits = visits;
+out.visas = visas;
+console.log(JSON.stringify(out));
+"""
+
+
+def test_walking_onto_a_single_hexagon_is_a_visit_not_a_page_load():
+    if not NODE:
+        pytest.skip("node is not installed")
+    run = subprocess.run([NODE, "--input-type=module", "-e", VISIT],
+                         cwd=WORLD, capture_output=True, text=True, timeout=60)
+    assert run.returncode == 0, run.stderr
+    out = json.loads(run.stdout)
+    watch = "wss://code.example.org/api/world/ws?watch=1"
+    visit = "wss://code.example.org/api/world/ws"
+    assert out["watch"] == [watch]
+    assert out["visit"] == [[watch, True], [visit, False]]
+    assert out["visas"] == ["a" * 32]
+    assert out["sent"] == [["presence", "town-square", None, None],
+                           ["move", None, 10, 15]]
+    assert out["back"] == [[watch, True], [visit, True], [watch, False]]
+    assert out["visits"] == [["a" * 32, ""], ["", "a" * 32]]

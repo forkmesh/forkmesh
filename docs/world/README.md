@@ -594,14 +594,17 @@ them without changing page.
   `DESERT_HEXES`) and shares an edge with the town. Slot 0 is petal 1, slot 4
   petal 5; petal 0 keeps the beach. That petal's sand, cacti and sign step
   aside (`replacePetals` in `desert-plots.js`), the roads stay as they are,
-  and the town no longer claims the ground (`worldMeshOwnerAt`). Such an
-  instance runs its own one-hexagon World page: stepping off the road onto
-  its land loads `<world>/world/?from=forkmesh&slot=n&pos=x,z` (`pos`
-  relative to the hexagon centre, rounded to 0.1, within ±400), with
-  `#visa=<visa>` when signed in. Coming back, `?from=<host>&slot=n&pos=x,z`
-  from a listed hexagon places the walker just outside the edge they crossed,
-  facing away from the petal with the third-person camera behind them, and
-  the parameters are removed.
+  and the town no longer claims the ground (`worldMeshOwnerAt`). Stepping
+  off the road onto its land is a visit, like walking into a flower (see
+  Visits below): the page does not reload, the hexagon and its published
+  scene stay drawn where they are, and the home World stays loaded around
+  it. On the shared road strip the walker is still home. The page used to
+  load `<world>/world/?from=forkmesh&slot=n&pos=x,z` instead, which reloaded
+  the whole World on every crossing; `worldMeshCrossingURL()` still builds
+  that URL for a neighbour's own page. Arriving from such a page,
+  `?from=<host>&slot=n&pos=x,z` from a listed hexagon places the walker just
+  outside the edge they crossed, facing away from the petal with the
+  third-person camera behind them, and the parameters are removed.
 - **Neighbour scenes.** A single-hexagon neighbour may publish what stands
   on its hexagon at `GET <world>/api/world/neighbour-scene` (public, CORS,
   cacheable). The hub lists that URL as `scene` on hex entries in
@@ -652,7 +655,7 @@ them without changing page.
   Their peers are shifted by the neighbour's offset and drawn in the space
   `world-mesh`, which carries the district radius. They are named
   `name@host`, except visitors from this world, who keep their plain name.
-- **Visits.** Stepping onto a neighbour's flower swaps that world's watch
+- **Visits.** Stepping onto a neighbour's flower or single hexagon swaps that world's watch
   socket for a presence socket. The client sends its profile as
   `town-square`, and its moves after subtracting the offset, so the
   neighbour's own visitors see it walk in from their edge. Meanwhile the home
