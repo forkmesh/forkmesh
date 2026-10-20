@@ -37,7 +37,7 @@ SSH_GATEWAY_REPOSITORIES=owner/widget=read-write,owner/docs=read-only
 ```
 
 No SSH URL is published unless all four are valid, and only for listed
-repositories. The token authenticates the gateway's control-plane calls only.
+repositories (`*` lists every repository; see [Relay mode](#relay-mode-self-hosted-instances)). The token authenticates the gateway's control-plane calls only.
 `SSH_GATEWAY_REPOSITORIES` must equal the gateway's
 `ssh-gateway-entrypoint worker-allowlist` output; set it to `disabled` to stop
 publication.
@@ -75,6 +75,53 @@ signed health, and registers the new generation, retrying with capped backoff
 
 Validate before reloading: `ssh-gateway-entrypoint check`, `sshd -t`, then
 `systemctl reload sshd` with an administrative session kept open.
+
+## Relay mode (self-hosted instances)
+
+An instance that hosts its repositories on its own core node can accept SSH
+without giving the gateway any access to repository storage. With an
+`httpGit` block in place of `repositoryRoot`/`repositories`, the gateway
+authorizes each operation as usual, then relays the session byte for byte to
+the instance's own HTTPS Git routes:
+
+```json
+"httpGit": {"origin": "https://git.example.org", "connectAddress": "127.0.0.1:443"}
+```
+
+- **Every repository, no list.** Set `SSH_GATEWAY_REPOSITORIES=*`: hosted
+  repositories and new forks work over SSH the moment they exist. Each
+  `authorize` still checks the key's account against the repository, and the
+  relayed request is checked again by the HTTPS route.
+- **One push path.** `authorize` returns a credential for that key, account,
+  repository and operation, valid for 30 minutes and revoked with the key.
+  The relayed push is an ordinary HTTPS push: the full ref advertisement (only
+  new objects are sent), branch protection rule by rule, contributor pushes to
+  `refs/heads/pr/<account>/` (at most 32 branches) on repositories listed in
+  `HOSTED_GIT_CONTRIBUTOR_PUSH`, quotas, and the attestation and push
+  bookkeeping recorded after an accepted push.
+- **Protocol.** Fetch is relayed as protocol v2 (Git 2.26 or newer; older
+  clients add `-c protocol.version=2`). A push's pack is parsed to find its
+  end; packs over 1 MiB stream chunked. `connectAddress` keeps the traffic on
+  the host, so a CDN's request-size limit does not apply.
+- **Short addresses.** With short repository addresses on, `git@host:Repo.git`
+  names the short-address owner's repository, as `/Repo` does on the web.
+
+`tools/install_ssh_relay.sh --host ssh.example.org` installs the accounts,
+the broker (`apiConnectAddress` set to the same loopback front end), the
+configuration under `/etc/forkmesh-ssh`, the `SSH_GATEWAY_*` settings in
+`app.env` (instance updates keep them), and the
+[`60-forkmesh-git-relay.conf`](../../../server/packaging/ssh/60-forkmesh-git-relay.conf)
+`Match User git` block, validated with `sshd -t` before a reload.
+`--check` reports the state; `--uninstall` removes the drop-in, the broker
+and the settings.
+
+For users, once a key is registered in Settings:
+
+```sh
+ssh -T git@ssh.example.org                   # a greeting; there is no shell
+git clone git@ssh.example.org:owner/repository.git
+git push origin HEAD:pr/<account>/my-fix     # contributor branch, where allowed
+```
 
 ## Controller-free operation
 
