@@ -60,6 +60,9 @@ type jobSandbox struct {
 	sharedTmp []string
 	active    *jobActivity
 	accounts  *runnerAccounts
+	// homeGate opens the persistent home to the job user only while a
+	// sign-in or terminal session runs there (jobhome.go).
+	homeGate *persistentHomeGate
 
 	noLimits       bool
 	privateXDG     bool
@@ -174,6 +177,19 @@ func (b jobSandbox) argvUnit(unit, name string, args []string) (string, []string
 	limitKiB := b.addressLimit() >> 10
 	script := "ulimit -v " + strconv.FormatUint(limitKiB, 10) + ` && exec "$@"`
 	return "/bin/sh", append([]string{"-c", script, "forkmesh-job", name}, args...)
+}
+
+// sessionCommand restores a session HOME after the uid switch.
+// `systemd-run --scope --uid=` resets HOME (with USER, LOGNAME and SHELL)
+// from the job user's passwd entry, which is the persistent home holding
+// the provider sign-ins; without this a job ran there instead of in its
+// per-session home (jobhome.go), and that home is locked away from the job
+// user between sign-ins.
+func (b jobSandbox) sessionCommand(home, name string, args []string) (string, []string) {
+	if b.systemdRun == "" || b.user || b.uid == 0 || !b.isSessionHome(home) {
+		return name, args
+	}
+	return "/usr/bin/env", append([]string{"--", "HOME=" + home, name}, args...)
 }
 
 // loopbackResolvers returns the loopback nameservers of a resolv.conf.
@@ -301,13 +317,14 @@ func (b jobSandbox) runner() agentCommandRunner {
 		}
 		b.begin()
 		defer b.end()
-		program, argv := b.argvUnit(unit, name, args)
-		command := exec.CommandContext(ctx, program, argv...)
-		command.Dir = dir
 		home := b.homeFor(dir)
 		if home == "" {
 			home = b.home
 		}
+		name, args = b.sessionCommand(home, name, args)
+		program, argv := b.argvUnit(unit, name, args)
+		command := exec.CommandContext(ctx, program, argv...)
+		command.Dir = dir
 		tmp := ""
 		if !b.isSessionHome(home) {
 			var err error
