@@ -118,6 +118,12 @@ public final class AppRouter {
         paths[tab ?? selectedTab] = []
     }
 
+    public func remove(_ route: Route) {
+        for (tab, path) in paths where path.contains(route) {
+            paths[tab] = path.filter { $0 != route }
+        }
+    }
+
     @discardableResult
     public func back() -> Bool {
         var path = currentPath

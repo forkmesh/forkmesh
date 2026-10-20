@@ -65,7 +65,52 @@ final class DjAutoDjTests: XCTestCase {
             DjAutoDjCandidate(id: "CevxZvSJLk8", title: "Fresh Song", seconds: 240, rank: 9),
         ]
         let kept = DjAutoDj.eligible(found, seed: seed, avoid: ["hTWKbfoikeg"], heard: ["Someone - Heard Before"])
-        XCTAssertEqual(kept.map(\.id), ["kJQP7kiw5Fk", "CevxZvSJLk8"])
+        XCTAssertEqual(kept.map(\.id), ["RgKAFK5djSk", "CevxZvSJLk8"])
+    }
+
+    func testOnlySongsQualifyNotTalentShowsCoversOrLiveTakes() {
+        let song = { (title: String, author: String) in DjAutoDjCandidate(id: "9bZkp7q19f0", title: title, author: author, seconds: 200) }
+        XCTAssertFalse(DjAutoDj.isSong(song("Golden Buzzer: Teen Sings Hallelujah | America's Got Talent 2024", "America's Got Talent")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Nervous Singer STUNS The Judges | Auditions | BGT 2023", "Britain's Got Talent")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Hallelujah", "The X Factor UK")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Vocal Coach Reacts to Queen", "Music Room")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Bohemian Rhapsody (Live Aid 1985)", "Queen")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Queen - Bohemian Rhapsody - Live", "Fan")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Hallelujah | Acoustic Cover by Sam", "Sam")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Hallelujah piano cover", "Keys")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Sunrise (Sped Up)", "Edits")))
+        XCTAssertFalse(DjAutoDj.isSong(song("Night Owls - Sunrise (Karaoke Version)", "Sing King")))
+        XCTAssertTrue(DjAutoDj.isSong(song("Oasis - Live Forever (Remastered)", "Oasis")))
+        XCTAssertTrue(DjAutoDj.isSong(song("Queen - Bohemian Rhapsody (Official Video Remastered)", "Queen Official")))
+        XCTAssertTrue(DjAutoDj.isSong(song("Hallelujah", "Jeff Buckley - Topic")))
+        XCTAssertTrue(DjAutoDj.isSong(song("Billy Idol - White Wedding", "Billy Idol")))
+    }
+
+    func testOriginalUploadsAreTheArtistsOwn() {
+        let song = { (title: String, author: String) in DjAutoDjCandidate(id: "9bZkp7q19f0", title: title, author: author, seconds: 200) }
+        XCTAssertTrue(DjAutoDj.isOriginal(song("Hallelujah", "Jeff Buckley - Topic")))
+        XCTAssertTrue(DjAutoDj.isOriginal(song("Lights Out", "NightOwlsVEVO")))
+        XCTAssertTrue(DjAutoDj.isOriginal(song("Night Owls - Lights Out (Official Audio)", "Records Ltd")))
+        XCTAssertTrue(DjAutoDj.isOriginal(song("Oasis - Live Forever (Remastered)", "Big Brother")))
+        XCTAssertTrue(DjAutoDj.isOriginal(song("Night Owls – Lights Out", "Night Owls")))
+        XCTAssertFalse(DjAutoDj.isOriginal(song("Night Owls - Lights Out", "Lyrics Hub")))
+        XCTAssertFalse(DjAutoDj.isOriginal(song("Lights Out", "")))
+    }
+
+    func testEligibleLeavesOutNonSongsAndPutsOriginalsFirst() {
+        let found = [
+            DjAutoDjCandidate(id: "9bZkp7q19f0", title: "Teen Sings Sunrise | AGT 2024", author: "America's Got Talent", seconds: 300, rank: 0),
+            DjAutoDjCandidate(id: "kJQP7kiw5Fk", title: "Lights Out", author: "Lyrics Hub", seconds: 200, rank: 1),
+            DjAutoDjCandidate(id: "JGwWNGJdvx8", title: "Moonset (Live)", author: "Night Owls", seconds: 200, rank: 2),
+            DjAutoDjCandidate(id: "CevxZvSJLk8", title: "Fresh Song", author: "Night Owls - Topic", seconds: 240, rank: 3),
+        ]
+        let kept = DjAutoDj.eligible(found, seed: seed, avoid: [], heard: [])
+        XCTAssertEqual(kept.map(\.id), ["CevxZvSJLk8", "kJQP7kiw5Fk"])
+        let liked = [
+            DjAutoDjCandidate(id: "kJQP7kiw5Fk", title: "Lights Out", author: "Lyrics Hub", seconds: 200, views: 9_000_000, likes: 400_000, rank: 0),
+            DjAutoDjCandidate(id: "CevxZvSJLk8", title: "Fresh Song", author: "Night Owls - Topic", seconds: 240, views: 3000, likes: 20, rank: 1),
+        ]
+        XCTAssertEqual(DjAutoDj.ranked(liked).map(\.id), ["CevxZvSJLk8", "kJQP7kiw5Fk"])
     }
 
     func testRankingPrefersLikedSongsAmongRelatedOnes() {

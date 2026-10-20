@@ -157,3 +157,23 @@ def test_auto_dj_follows_each_song_with_a_related_song_people_liked():
     assert "} else if autoDjOn, let pick = takeAutoDj() {" in model
     assert "saved.autoDj = autoDjOn" in model
     assert "DjAutoDj.likesURL(instance, id: id)" in auto
+
+
+def test_auto_dj_plays_songs_and_prefers_original_uploads():
+    assert '"got talent", "agt", "bgt", "x factor"' in PAGE
+    assert "if (isSong(item)) found.push(item);" in PAGE
+    assert "right.original - left.original" in PAGE
+    core = (IOS / "ForkMeshCore" / "Sources" / "FMPackages" / "DjAutoDj.swift").read_text(encoding="utf-8")
+    assert '"got talent", "agt", "bgt", "x factor"' in core
+    assert "isSong(candidate)" in core
+
+
+def test_a_push_tap_closes_the_studio_before_routing():
+    shell = (IOS / "ForkMesh" / "Shell" / "HomeShell.swift").read_text(encoding="utf-8")
+    screen = (IOS / "ForkMesh" / "Features" / "Packages" / "VideoMixDjStudioScreen.swift").read_text(encoding="utf-8")
+    route = shell.split("private func routePushOpen()", 1)[1]
+    assert route.index("DjStudioHub.shared.stepAside()") < route.index("await model.routePush(")
+    assert "router.remove(.videoMixDjStudio)" in route
+    assert "if route != .videoMixDjStudio, DjStudioHub.shared.stepAside() {" in shell
+    assert "studio.onStepAside = { shown.wrappedValue = false }" in screen
+    assert "guard leaving else { return }" in screen

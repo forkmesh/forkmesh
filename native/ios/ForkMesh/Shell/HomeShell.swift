@@ -805,6 +805,11 @@ struct HomeShell: View {
                     Task { await routePushOpen() }
                 }
             }
+            .onChange(of: router.currentRoute) { (_: Route?, route: Route?) in
+                if route != .videoMixDjStudio, DjStudioHub.shared.stepAside() {
+                    router.remove(.videoMixDjStudio)
+                }
+            }
             .onChange(of: router.selectedTab) { (left: AppTab, tab: AppTab) in
                 mountedTabs.formUnion([left, tab])
                 if let back = pageReturn, back.tab != tab {
@@ -1757,6 +1762,8 @@ struct HomeShell: View {
         showAgentForm = false
         page = nil
         composer.close()
+        DjStudioHub.shared.stepAside()
+        router.remove(.videoMixDjStudio)
         if let attention = runnerAttention, attention.openHref(open.href) {
             router.focus(.agents)
             if push.pendingOpen != nil {
