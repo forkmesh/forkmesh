@@ -60,6 +60,10 @@ import {
   WORLD_MESH_VISITING_SPACE,
   WorldMeshLinks,
   normalizeWorldMesh,
+  withoutWorldMeshArrival,
+  worldMeshArrival,
+  worldMeshCrossingURL,
+  worldMeshHexEdgeArrival,
   worldMeshHost,
 } from "./world-mesh.js";
 import {
@@ -6442,6 +6446,8 @@ class ForkMeshWorld extends HTMLElement {
     this.instanceHexes = [];
     this.homePortal = undefined;
     this.pendingPortalSlot = requestedPortalSlot(location.search);
+    this.pendingMeshArrival = worldMeshArrival(location.search);
+    this.meshCrossing = false;
     this.communityPlacement = null;
     this.networkAd = null;
     this.networkAdLoad = null;
@@ -11252,12 +11258,13 @@ class ForkMeshWorld extends HTMLElement {
         },
       );
       this.worldMesh = normalizeWorldMesh(payload);
-      this.placeWorldMesh();
+      // The mesh owns the neighbour layer. Redrawing it from the legacy
+      // portal list (empty in a mesh payload) would erase every neighbour.
       this.instanceHexes = withHomePortal(
         normalizeInstanceHexes(payload),
         this.homePortal,
       );
-      this.world?.updateInstanceHexes?.(this.instanceHexes);
+      this.placeWorldMesh();
     } catch (_) {
       this.instanceHexes = withHomePortal([], this.homePortal);
       this.world?.updateInstanceHexes?.(this.instanceHexes);
@@ -11308,9 +11315,58 @@ class ForkMeshWorld extends HTMLElement {
       ? this.worldMesh.worlds.filter((world) => world.id !== self.id)
       : [];
     const placed =
-      this.world.updateInstanceHexes?.(neighbors, self ? self.slot : -1) || [];
-    this.worldMeshLinks()?.setNeighbors(placed);
+      this.world.updateInstanceHexes?.(
+        neighbors,
+        self ? self.slot : -1,
+        self ? self.shape : "flower",
+      ) || [];
+    this.meshHexNeighbors = placed.filter((world) => world.shape === "hex");
+    // Flowers are walked into in place over their socket; a single hexagon
+    // is its own World page, reached by walking onto its land.
+    this.worldMeshLinks()?.setNeighbors(
+      placed.filter((world) => world.shape !== "hex"),
+    );
+    this.applyWorldMeshArrival();
     this.syncWorldMeshPosition();
+  }
+
+  applyWorldMeshArrival() {
+    const arrival = this.pendingMeshArrival;
+    // Wait for the directory: only a listed single hexagon can send walkers.
+    if (!arrival || !this.world?.setSpawn || !this.worldMesh?.self) return;
+    this.pendingMeshArrival = null;
+    const hex = (this.meshHexNeighbors || []).find(
+      (world) => world.slot === arrival.slot && world.host === arrival.from,
+    );
+    const spawn = hex ? worldMeshHexEdgeArrival(hex, arrival.pos) : null;
+    if (spawn && this.world.setSpawn(spawn)) {
+      this.restoredPosition = null;
+      this.spawnSelected = true;
+      this.lastMovement = { ...this.lastMovement, ...spawn };
+      this.rememberWorldPosition(this.lastMovement, true);
+      this.hudNotice(`Welcome over from ${hex.name}`);
+    }
+    try {
+      const clean = withoutWorldMeshArrival(location.href);
+      if (clean) history.replaceState(history.state, "", clean);
+    } catch (_) {}
+  }
+
+  async crossIntoWorldMeshHex(owner) {
+    if (this.meshCrossing || !owner?.world) return;
+    const self = this.worldMesh?.self;
+    const from = self?.id === "forkmesh" ? "forkmesh" : location.hostname;
+    const local = owner.local;
+    if (!worldMeshCrossingURL(owner.world, { from, slot: owner.slot, local })) return;
+    this.meshCrossing = true;
+    this.hudNotice(`Crossing into ${owner.name || owner.world}…`);
+    const visa = await this.requestWorldVisa({ world: owner.world });
+    window.location.assign(
+      worldMeshCrossingURL(owner.world, { from, slot: owner.slot, local, visa }),
+    );
+    window.setTimeout(() => {
+      this.meshCrossing = false;
+    }, 8000);
   }
 
   worldMeshLinks() {
@@ -11348,7 +11404,13 @@ class ForkMeshWorld extends HTMLElement {
       this.meshLinks.update(NaN, NaN, "");
       return;
     }
-    this.meshLinks.update(x, z, this.world?.worldMeshOwner?.(x, z)?.id || "");
+    const owner = this.world?.worldMeshOwner?.(x, z) || null;
+    if (owner?.shape === "hex") {
+      this.meshLinks.update(x, z, "");
+      if (owner.onLand) void this.crossIntoWorldMeshHex(owner);
+      return;
+    }
+    this.meshLinks.update(x, z, owner?.id || "");
   }
 
   handleWorldMeshVisit(world, previous) {
