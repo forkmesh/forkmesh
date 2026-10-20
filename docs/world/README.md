@@ -598,6 +598,17 @@ them without changing page.
   `#visa=<visa>` when signed in. Coming back, `?from=<host>&slot=n&pos=x,z`
   from a listed hexagon places the walker just outside the edge they crossed,
   facing away from the petal, and the parameters are removed.
+- **Neighbour scenes.** A single-hexagon neighbour may publish what stands
+  on its hexagon at `GET <world>/api/world/neighbour-scene` (public, CORS,
+  cacheable). The hub lists that URL as `scene` on hex entries in
+  `/api/world/mesh`, and its World fetches it without credentials and reads
+  it with `normalizeNeighbourScene()` (`world-neighbour-scene.js`): version
+  1, at most 64 KB and 48 objects, types `plaza`, `sign`, `house`,
+  `terrarium` (up to 32 bugs), `lamp` and `tree`, positions within 330 of
+  the hexagon centre in World axes, `facing` in radians, `#rrggbb` colours,
+  plain text, and https links and icons only. `buildNeighbourScene()` draws it
+  with shared primitives; when it is missing or refused the logo hexagon
+  stays.
 - **Directory.** `GET /api/world/mesh` (`world_mesh.py`) answers
   `{self, worlds:[{id, name, host, world, api, logo, slot}]}`. The hub builds
   it from `instance_directory` (`world=1`, visible, slot 0–11) plus its own

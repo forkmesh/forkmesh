@@ -16,6 +16,9 @@ SLOTS = 12
 HEX_SLOTS = 5
 SHAPE_FLOWER = "flower"
 SHAPE_HEX = "hex"
+# A single-hexagon neighbour may publish what stands on it; the hub's World
+# reads it from this fixed path on the neighbour's own origin.
+SCENE_PATH = "/api/world/neighbour-scene"
 MAX_WORLDS = SLOTS + 1
 DIRECTORY_MAX_AGE = 60
 DIRECTORY_CACHE_MS = 5 * 60 * 1000
@@ -146,6 +149,7 @@ def instance_entry(row, api_base, hexes=frozenset()):
         "logo": api_base + logo if LOGO_PATH_RE.fullmatch(logo) else "",
         "slot": slot,
         "shape": SHAPE_HEX if slot in hexes else SHAPE_FLOWER,
+        **({"scene": world + SCENE_PATH} if slot in hexes else {}),
     }
 
 
@@ -201,6 +205,9 @@ def normalize_world(item):
         "logo": logo if logo_ok else "",
         "slot": slot,
         "shape": shape_for(item.get("shape"), slot),
+        **({"scene": world + SCENE_PATH}
+           if shape_for(item.get("shape"), slot) == SHAPE_HEX
+           and item.get("scene") == world + SCENE_PATH else {}),
     }
 
 
