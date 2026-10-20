@@ -105,6 +105,21 @@ Shortcuts (`.forkmesh/shortcuts/`):
   with no logo keeps the letter icon. Phones cannot draw SVG, which is why the
   brand tool keeps a PNG copy of an SVG logo (see
   [INSTANCES.md](../INSTANCES.md#white-label)).
+- **New project sheet (iOS, 2026-10-20).** Once "Check instance" passes, the
+  sheet fetches the instance's logo straight away and shows it as the project
+  image, so the user sees it before creating the project and can still change
+  or remove it. The candidates come from `AddProjectModel.logoCandidates`, in
+  order: the `logo` from `/api/instance`, the instance's logo in the ForkMesh
+  directory, then the two favicons (left out for a branded instance). A logo
+  the user picked is never replaced; one taken from the instance goes when the
+  host changes. Under the form, "Instances on ForkMesh" lists ForkMesh itself
+  plus every `listed` https entry of
+  `GET https://app.forkmesh.com/api/start/instances` (`FMChat/Relay/InstanceDirectory.swift`;
+  directory logos are only taken when they match the
+  `/api/start/instances/<id>/logo?v=<n>` shape). Its Add button fills the
+  instance in, checks it, loads its logo and creates the project in one tap; an
+  instance that is already a project shows "Added". If the directory cannot
+  be read, only ForkMesh is listed.
 - **Relay features.** `/api/version` declares a `features` list; the core
   (`accounts`, `repositories`, `repoRead`) is required, every other feature
   gates its own UI, and a missing one leaves the UI absent rather than broken.
