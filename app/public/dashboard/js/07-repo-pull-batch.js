@@ -52,10 +52,10 @@
     try {
       data = JSON.parse(String(text || ""));
     } catch (_) {
-      return { entries: [], error: `${PULL_BATCH_FILE} is not valid JSON.` };
+      return { entries: [], error: `${PULL_BATCH_FILE} is not valid JSON.`, compareBase: "" };
     }
     const list = Array.isArray(data) ? data : Array.isArray(data?.pulls) ? data.pulls : null;
-    if (!list) return { entries: [], error: `${PULL_BATCH_FILE} must be a list of pull requests.` };
+    if (!list) return { entries: [], error: `${PULL_BATCH_FILE} must be a list of pull requests.`, compareBase: "" };
     const sharedCompareBase = Array.isArray(data) ? "" : pullBatchBranchName(data?.compareBase);
     const entries = [];
     const seen = new Set();
@@ -70,10 +70,11 @@
         title: pullBatchCleanTitle(item.title),
         body: pullBatchCleanBody(item.body ?? item.description),
         dependsOn: pullBatchDependencyList(item.dependsOn ?? item.depends_on).filter((name) => name !== branch),
-        compareBase: pullBatchBranchName(item.compareBase) || sharedCompareBase,
+        compareBase: pullBatchBranchName(item.compareBase),
+        sharedCompareBase,
       });
     }
-    return { entries, error: "" };
+    return { entries, error: "", compareBase: sharedCompareBase };
   }
 
   function pullBatchTitleFromBranch(branch, prefix) {
@@ -82,7 +83,7 @@
     return words ? words[0].toUpperCase() + words.slice(1) : "";
   }
 
-  function buildPullBatchRows(entries, branchNames, defaultBranch, prefix) {
+  function buildPullBatchRows(entries, branchNames, defaultBranch, prefix, sharedCompareBase = "") {
     const names = new Set(branchNames);
     const rows = [];
     const listed = new Set();
@@ -91,8 +92,9 @@
       listed.add(entry.branch);
       rows.push({ ...entry, include: true, fromFile: true, missing: !names.has(entry.branch) });
     });
+    if (!prefix) return rows;
     branchNames
-      .filter((name) => name !== defaultBranch && !listed.has(name) && (!prefix || name.startsWith(prefix)))
+      .filter((name) => name !== defaultBranch && !listed.has(name) && name.startsWith(prefix))
       .sort((a, b) => a.localeCompare(b))
       .forEach((name) => {
         rows.push({
@@ -101,6 +103,8 @@
           title: pullBatchTitleFromBranch(name, prefix),
           body: "",
           dependsOn: [],
+          compareBase: "",
+          sharedCompareBase,
           include: true,
           fromFile: false,
           missing: false,
@@ -140,6 +144,10 @@
     const plan = new Map();
     const blocked = (row, reason, waitsFor = []) => ({ state: "blocked", reason, waitsFor, numbers: [] });
     ordered.forEach((row) => {
+      if (row.status === "merged") {
+        plan.set(row.branch, { state: "merged", waitsFor: [], numbers: [] });
+        return;
+      }
       const done = sent[row.branch];
       if (done?.number) {
         plan.set(row.branch, { state: "sent", number: done.number, waitsFor: [], numbers: [] });
@@ -158,7 +166,7 @@
         return;
       }
       if (row.missing) {
-        plan.set(row.branch, blocked(row, `${row.branch} is not a branch of this repository.`));
+        plan.set(row.branch, { state: "missing", reason: `${row.branch} is not a branch of this repository any more.`, waitsFor: [], numbers: [] });
         return;
       }
       if (looped.has(row.branch)) {
@@ -182,6 +190,7 @@
           numbers.push(Number(dependency.slice(1)));
           return;
         }
+        if (byBranch.get(dependency)?.status === "merged") return;
         if (sent[dependency]?.number) {
           numbers.push(Number(sent[dependency].number));
           return;
@@ -199,7 +208,9 @@
             ? `${dependency}, which could not be sent`
             : earlier?.state === "skipped"
               ? `${dependency}, which is not selected`
-              : `${dependency}, which cannot be sent yet`);
+              : earlier?.state === "missing"
+                ? `${dependency}, which no longer exists`
+                : `${dependency}, which cannot be sent yet`);
       });
       if (stuck.length) {
         plan.set(row.branch, blocked(row, `Waits for ${why.join("; ")}.`, stuck));
@@ -269,10 +280,93 @@
     const branches = Array.isArray(row?.dependsOn)
       ? row.dependsOn.filter((dependency) => !String(dependency).startsWith("#"))
       : [];
-    return branches.length === 1 ? branches[0] : "";
+    if (branches.length === 1) return branches[0];
+    return row?.sharedCompareBase || "";
   }
 
-  async function runPullBatch(batch, { send = submitRemotePullOpen, onChange = () => {} } = {}) {
+  async function pullBatchRequest(repo, payload) {
+    const response = await fetch(`${repoApiBase(repo)}/pull-batch`, repoRemoteForksRequestInit("POST", payload));
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(data.error || `HTTP ${response.status}`);
+    return data;
+  }
+
+  function pullBatchRecordSent(batch, row, number) {
+    if (!row.head) return null;
+    return pullBatchRequest(batch.repo, {
+      action: "record",
+      target: batch.remote.url,
+      sent: [{ branch: row.branch, head: row.head, number }],
+    });
+  }
+
+  function applyPullBatchStatus(batch, rows, local = {}) {
+    const sent = {};
+    const seed = [];
+    batch.rows.forEach((row) => {
+      const info = rows?.[row.branch];
+      row.head = info?.head || "";
+      row.sentBefore = info?.sentBefore?.number ? info.sentBefore : null;
+      if (!info) {
+        row.status = row.missing ? "missing" : "";
+        row.group = row.missing ? "missing" : "pending";
+        if (!row.missing && local[row.branch]?.number) sent[row.branch] = local[row.branch];
+        return;
+      }
+      row.missing = info.state === "missing";
+      if (row.missing || info.state === "merged") {
+        row.status = info.state;
+        row.group = info.state;
+        return;
+      }
+      let record = info.sent?.number ? info.sent : null;
+      if (!record && !row.sentBefore && local[row.branch]?.number && row.head) {
+        record = { number: local[row.branch].number, at: local[row.branch].at || 0 };
+        seed.push({ branch: row.branch, head: row.head, number: record.number });
+      }
+      if (record) {
+        sent[row.branch] = { number: Number(record.number), at: Number(record.at) || 0 };
+        row.status = "sent";
+        row.group = "sent";
+        return;
+      }
+      row.status = "pending";
+      row.group = "pending";
+      if (row.sentBefore) row.include = false;
+    });
+    batch.sent = sent;
+    return seed;
+  }
+
+  async function refreshPullBatchStatus(batch, { request = pullBatchRequest } = {}) {
+    const remote = batch.remote;
+    const local = loadPullBatchSent(batch.repo, remote);
+    const token = (batch.statusToken || 0) + 1;
+    batch.statusToken = token;
+    batch.checking = true;
+    let data = null;
+    try {
+      data = await request(batch.repo, {
+        action: "status",
+        target: remote.url,
+        rows: batch.rows.map((row) => ({ branch: row.branch, compareBase: pullBatchCompareBase(row) })),
+      });
+    } catch (_) {
+      data = null;
+    }
+    if (batch.remote !== remote || batch.statusToken !== token) return;
+    batch.checking = false;
+    batch.upstream = data?.upstream || null;
+    batch.statusError = data ? "" : "Could not check which branches are already merged upstream or sent, so every listed branch is shown.";
+    const seed = applyPullBatchStatus(batch, data?.rows || null, local);
+    if (seed.length) {
+      try {
+        await request(batch.repo, { action: "record", target: remote.url, sent: seed });
+      } catch (_) {}
+    }
+  }
+
+  async function runPullBatch(batch, { send = submitRemotePullOpen, record = pullBatchRecordSent, onChange = () => {} } = {}) {
     const { repo, remote } = batch;
     batch.running = true;
     batch.stopRequested = false;
@@ -284,7 +378,7 @@
     try {
       for (;;) {
         if (batch.stopRequested) {
-          batch.notice = "Stopped. Press Send all to continue with the rest.";
+          batch.notice = "Stopped. Press Send all pending to continue with the rest.";
           break;
         }
         const { order, plan } = pullBatchPlan(batch.rows, batch.sent, batch.outcome);
@@ -298,8 +392,11 @@
           const number = Number(result?.number || 0);
           if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
           batch.sent = { ...batch.sent, [row.branch]: { number, at: Date.now() } };
-          savePullBatchSent(repo, remote, batch.sent);
+          savePullBatchSent(repo, remote, { ...loadPullBatchSent(repo, remote), [row.branch]: batch.sent[row.branch] });
           sentNow += 1;
+          try {
+            await record(batch, row, number);
+          } catch (_) {}
         } catch (error) {
           const code = String(error?.code || error?.message || "");
           if (code === "no_changes") {
@@ -364,12 +461,18 @@
     switch (step.state) {
       case "sent":
         return `<span class="text-success">Sent as</span> ${link(step.number)}`;
+      case "merged":
+        return `<span class="text-muted-foreground">Merged upstream.</span>`;
+      case "missing":
+        return `<span class="text-attention">${escapeHtml(step.reason)}</span>`;
       case "empty":
         return `<span class="text-muted-foreground">Nothing to send: ${escapeHtml(row.branch)} has no changes that are not on ${escapeHtml(row.base)}.</span>`;
       case "failed":
         return `<span class="text-destructive">${escapeHtml(step.reason)}</span>`;
       case "skipped":
-        return `<span class="text-muted-foreground">Not selected.</span>`;
+        return row.sentBefore?.number
+          ? `<span class="text-attention">Sent as ${link(row.sentBefore.number)} before its latest push. Tick it to send it again.</span>`
+          : `<span class="text-muted-foreground">Not selected.</span>`;
       case "blocked":
         return `<span class="text-attention">${escapeHtml(step.reason)}</span>`;
       case "after":
@@ -411,6 +514,15 @@
       </li>`;
   }
 
+  function pullBatchGroups(batch, order) {
+    const groups = { pending: [], merged: [], sent: [], missing: [] };
+    order.forEach((row) => {
+      const group = groups[row.group] ? row.group : "pending";
+      groups[group].push(row);
+    });
+    return groups;
+  }
+
   function pullBatchSummary(batch, order, plan) {
     const counts = {};
     order.forEach((row) => {
@@ -420,16 +532,47 @@
     const ready = (counts.ready || 0) + (counts.after || 0);
     const parts = [`${ready} to send`];
     if (counts.sent) parts.push(`${counts.sent} sent`);
+    if (counts.merged) parts.push(`${counts.merged} merged upstream`);
     if (counts.blocked) parts.push(`${counts.blocked} waiting`);
     if (counts.failed) parts.push(`${counts.failed} failed`);
     if (counts.empty) parts.push(`${counts.empty} with nothing to send`);
+    if (counts.missing) parts.push(`${counts.missing} missing`);
     return { ready, text: parts.join(" · ") };
+  }
+
+  function pullBatchSendLabel(batch, ready) {
+    if (batch.checking) return "Checking…";
+    return ready ? `Send all pending (${ready})` : "Nothing to send";
+  }
+
+  function pullBatchDoneHtml(batch, groups) {
+    const remote = batch.remote;
+    const link = (number) => `<a href="${escapeHtml(`${remote.url}/pulls/${number}`)}" target="_blank" rel="noopener noreferrer" class="font-medium text-accent hover:underline">#${number}</a>`;
+    const item = (row, status) => `
+      <li data-pull-batch-done-row="${escapeHtml(row.branch)}" class="grid gap-0.5 border-t border-border px-4 py-2 first:border-t-0">
+        <span class="min-w-0 break-words text-[13px] text-foreground">${row.title ? escapeHtml(row.title) : escapeHtml(row.branch)}</span>
+        <span class="flex min-w-0 flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground"><span class="break-all font-mono">${escapeHtml(row.branch)}</span>${status}</span>
+      </li>`;
+    const section = (key, label, rows, status) => rows.length ? `
+      <details data-pull-batch-group="${key}" class="overflow-hidden rounded-md border border-border">
+        <summary class="cursor-pointer select-none bg-secondary/50 px-4 py-2 text-xs font-medium text-foreground">${label} (${rows.length})</summary>
+        <ul>${rows.map((row) => item(row, status(row))).join("")}</ul>
+      </details>` : "";
+    const missing = groups.missing.length ? `
+      <div data-pull-batch-group="missing" role="status" class="grid gap-1 rounded-md border border-border px-4 py-3 text-[12px] text-attention">
+        <span class="font-medium">${groups.missing.length === 1 ? "1 branch in the batch file no longer exists" : `${groups.missing.length} branches in the batch file no longer exist`}, so ${groups.missing.length === 1 ? "it is" : "they are"} skipped:</span>
+        <span class="break-all font-mono text-foreground">${groups.missing.map((row) => escapeHtml(row.branch)).join(", ")}</span>
+      </div>` : "";
+    return missing
+      + section("merged", "Merged upstream", groups.merged, () => `<span>merged upstream</span>`)
+      + section("sent", "Already sent", groups.sent, (row) => batch.sent[row.branch]?.number ? `<span>Sent as ${link(batch.sent[row.branch].number)}</span>` : "");
   }
 
   function renderPullBatchRows(batch, { full = true } = {}) {
     const view = document.querySelector("[data-pull-batch]");
     if (!view || view._batch !== batch) return;
     const { order, plan } = pullBatchPlan(batch.rows, batch.sent, batch.outcome);
+    const groups = pullBatchGroups(batch, order);
     const list = view.querySelector("[data-pull-batch-list]");
     const open = new Set(Array.from(view.querySelectorAll("[data-pull-batch-edit][open]"))
       .map((node) => node.closest("[data-pull-batch-row]")?.dataset.pullBatchRow));
@@ -443,20 +586,36 @@
         if (label) label.innerHTML = row.title ? escapeHtml(row.title) : '<span class="text-muted-foreground">Untitled</span>';
       });
     } else if (list) {
-      list.innerHTML = order.length
-        ? order.map((row, index) => pullBatchRowHtml(batch, row, plan.get(row.branch), index)).join("")
-        : `<li class="px-4 py-6 text-center text-sm text-muted-foreground">No branches match${batch.prefix ? ` <span class="font-mono text-foreground">${escapeHtml(batch.prefix)}</span>` : ""}.</li>`;
+      const empty = batch.checking
+        ? loadingHtml("Checking what is already merged upstream or sent…")
+        : order.length
+          ? "Every branch in the list is merged upstream or already sent."
+          : batch.prefix
+            ? `No branches match <span class="font-mono text-foreground">${escapeHtml(batch.prefix)}</span>.`
+            : `No branches are listed in <span class="font-mono text-foreground">${escapeHtml(PULL_BATCH_FILE)}</span>. Open More to pick branches by name instead.`;
+      list.innerHTML = groups.pending.length && !batch.checking
+        ? groups.pending.map((row) => pullBatchRowHtml(batch, row, plan.get(row.branch), order.indexOf(row))).join("")
+        : `<li class="px-4 py-6 text-center text-sm text-muted-foreground">${empty}</li>`;
       list.querySelectorAll("[data-pull-batch-row]").forEach((node) => {
         if (open.has(node.dataset.pullBatchRow)) node.querySelector("[data-pull-batch-edit]")?.setAttribute("open", "");
       });
+      const done = view.querySelector("[data-pull-batch-done]");
+      if (done) {
+        const openGroups = new Set(Array.from(done.querySelectorAll("[data-pull-batch-group][open]")).map((node) => node.dataset.pullBatchGroup));
+        done.innerHTML = batch.checking ? "" : pullBatchDoneHtml(batch, groups);
+        done.querySelectorAll("[data-pull-batch-group]").forEach((node) => {
+          if (openGroups.has(node.dataset.pullBatchGroup)) node.setAttribute("open", "");
+        });
+      }
     }
     const summary = pullBatchSummary(batch, order, plan);
     const line = view.querySelector("[data-pull-batch-summary]");
-    if (line) line.textContent = summary.text;
+    if (line) line.textContent = batch.checking ? "" : summary.text;
     const notice = view.querySelector("[data-pull-batch-notice]");
     if (notice) {
-      notice.textContent = batch.notice || "";
-      notice.classList.toggle("hidden", !batch.notice);
+      const text = batch.notice || batch.statusError || "";
+      notice.textContent = text;
+      notice.classList.toggle("hidden", !text);
     }
     const sendAll = view.querySelector("[data-pull-batch-send]");
     if (sendAll) {
@@ -464,7 +623,9 @@
         setSubmitBusy(sendAll, true, `Sending ${batch.sending || "…"}`);
       } else {
         setSubmitBusy(sendAll, false);
-        sendAll.disabled = !summary.ready;
+        sendAll.disabled = batch.checking || !summary.ready;
+        const label = sendAll.querySelector("[data-pull-batch-send-label]");
+        if (label) label.textContent = pullBatchSendLabel(batch, summary.ready);
       }
     }
     view.querySelector("[data-pull-batch-stop]")?.classList.toggle("hidden", !batch.running);
@@ -484,7 +645,7 @@
   function pullBatchRebuildRows(batch) {
     const names = batch.branches.map((branch) => branch.name);
     const before = new Map((batch.rows || []).map((row) => [row.branch, row]));
-    batch.rows = buildPullBatchRows(batch.entries, names, batch.defaultBranch, batch.prefix).map((row) => {
+    batch.rows = buildPullBatchRows(batch.entries, names, batch.defaultBranch, batch.prefix, batch.sharedCompareBase).map((row) => {
       const kept = before.get(row.branch);
       return kept ? { ...row, title: kept.title, body: kept.body, include: kept.include } : row;
     });
@@ -496,6 +657,14 @@
     batch.sent = loadPullBatchSent(batch.repo, remote);
     batch.outcome = {};
     batch.notice = "";
+  }
+
+  async function checkPullBatch(batch) {
+    batch.checking = true;
+    renderPullBatchRows(batch);
+    await refreshPullBatchStatus(batch);
+    if (state.repoPullBatch !== batch) return;
+    renderPullBatchRows(batch);
   }
 
   async function openPullBatch(repo, { navigate = true } = {}) {
@@ -548,20 +717,22 @@
     const defaultBranch = repoDefaultBranch(repo);
     const file = await loadPullBatchFile(repo, defaultBranch);
     if (state.repoPullBatchLoad !== token || !pullBatchRouteActive(repo)) return;
-    const prefix = branches.some((branch) => branch.name.startsWith("pr/")) ? "pr/" : "";
     const batch = {
       repo,
       forks,
       branches,
       defaultBranch,
       entries: file.entries,
+      sharedCompareBase: file.compareBase || "",
       fileError: file.error,
       fileFound: file.found,
-      prefix,
+      prefix: "",
       rows: [],
       sent: {},
       outcome: {},
       notice: "",
+      statusError: "",
+      checking: true,
       running: false,
       sending: "",
     };
@@ -569,6 +740,18 @@
     pullBatchRebuildRows(batch);
     state.repoPullBatch = batch;
     paintPullBatch(container, batch);
+    await checkPullBatch(batch);
+  }
+
+  function pullBatchTargetHtml(batch) {
+    const name = (fork) => `${fork.owner}/${fork.name} on ${fork.host}`;
+    if (batch.forks.length === 1) {
+      return `<p class="text-[13px] text-muted-foreground">Sending to <a href="${escapeHtml(batch.remote.url)}" target="_blank" rel="noopener noreferrer" class="font-medium text-accent hover:underline">${escapeHtml(name(batch.remote))}</a>.</p>`;
+    }
+    return `
+      <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground sm:max-w-md">Send to
+        <select data-pull-batch-target class="h-control w-full min-w-0 rounded-control border border-border bg-background px-2 text-[16px] text-foreground outline-none focus:border-accent sm:text-control">${batch.forks.map((fork) => `<option value="${escapeHtml(fork.url)}" ${fork.url === batch.remote.url ? "selected" : ""}>${escapeHtml(name(fork))}</option>`).join("")}</select>
+      </label>`;
   }
 
   function paintPullBatch(container, batch) {
@@ -576,8 +759,8 @@
     const fileLine = batch.fileError
       ? `<span class="text-destructive">${escapeHtml(batch.fileError)}</span>`
       : batch.fileFound
-        ? `Titles, descriptions and order come from <a href="${escapeHtml(repoLinkUrl(repo, "blob", PULL_BATCH_FILE))}" class="font-mono text-accent hover:underline">${escapeHtml(PULL_BATCH_FILE)}</a> on ${escapeHtml(batch.defaultBranch)}.`
-        : `Commit <span class="font-mono text-foreground">${escapeHtml(PULL_BATCH_FILE)}</span> to ${escapeHtml(batch.defaultBranch)} to fill in titles, descriptions and dependencies.`;
+        ? `The list, titles and descriptions come from <a href="${escapeHtml(repoLinkUrl(repo, "blob", PULL_BATCH_FILE))}" class="font-mono text-accent hover:underline">${escapeHtml(PULL_BATCH_FILE)}</a> on ${escapeHtml(batch.defaultBranch)}.`
+        : `Commit <span class="font-mono text-foreground">${escapeHtml(PULL_BATCH_FILE)}</span> to ${escapeHtml(batch.defaultBranch)} to list the branches to send, with titles, descriptions and dependencies.`;
     container.innerHTML = `
       <form data-pull-batch class="grid gap-4 border-t border-border bg-background p-4">
         <div class="flex flex-wrap items-center justify-between gap-3">
@@ -585,29 +768,29 @@
         </div>
         <header class="grid gap-1">
           <h2 class="text-[20px] font-semibold leading-8 text-foreground">Send pull requests</h2>
-          <p class="text-[13px] text-muted-foreground">Each branch becomes its own pull request on the fork you pick: compared with the branch it depends on (or its base), so it carries only its own commits, then signed in this browser and sent in order. Pull requests already sent to that fork are skipped, so you can press Send all again to finish.</p>
+          <p class="text-[13px] text-muted-foreground">Each branch still to send becomes its own pull request, signed in this browser and sent in order, dependencies first. Branches already merged upstream or already sent are set aside below.</p>
           <p class="text-[12px] text-muted-foreground">${fileLine}</p>
         </header>
-        <div class="grid gap-3 sm:grid-cols-2">
-          <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">Send to
-            <select data-pull-batch-target class="h-control w-full min-w-0 rounded-control border border-border bg-background px-2 text-[16px] text-foreground outline-none focus:border-accent sm:text-control">${batch.forks.map((fork) => `<option value="${escapeHtml(fork.url)}" ${fork.url === batch.remote.url ? "selected" : ""}>${escapeHtml(`${fork.owner}/${fork.name}`)} on ${escapeHtml(fork.host)}</option>`).join("")}</select>
-          </label>
-          <label class="grid min-w-0 gap-1 text-xs font-medium text-muted-foreground">Branches starting with
-            <input data-pull-batch-prefix type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="${escapeHtml(batch.prefix)}" placeholder="any branch" class="h-control w-full min-w-0 rounded-control border border-border bg-background px-3 font-mono text-[16px] text-foreground outline-none focus:border-accent sm:text-control" />
-          </label>
-        </div>
+        ${pullBatchTargetHtml(batch)}
         <div class="overflow-hidden rounded-md border border-border">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-2">
-            <span class="text-xs font-medium text-foreground">Branches</span>
+            <span class="text-xs font-medium text-foreground">To send</span>
             <span data-pull-batch-summary class="text-[11px] text-muted-foreground"></span>
           </div>
           <ol data-pull-batch-list></ol>
         </div>
+        <div data-pull-batch-done class="grid gap-3"></div>
+        <details data-pull-batch-more class="min-w-0">
+          <summary class="cursor-pointer select-none text-[12px] font-medium text-accent">More</summary>
+          <label class="mt-2 grid min-w-0 gap-1 text-xs font-medium text-muted-foreground sm:max-w-md">Also list branches starting with
+            <input data-pull-batch-prefix type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="${escapeHtml(batch.prefix)}" placeholder="for example fm/" class="h-control w-full min-w-0 rounded-control border border-border bg-background px-3 font-mono text-[16px] text-foreground outline-none focus:border-accent sm:text-control" />
+          </label>
+        </details>
         <p data-pull-batch-notice role="status" class="hidden text-[12px] text-attention"></p>
         <div class="sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2 border-t border-border bg-background py-3">
           ${composeIdentityHtml(state.session, "Signing")}
           <button type="button" data-pull-batch-stop class="hidden h-9 items-center rounded-md border border-border px-3 text-sm font-medium text-foreground hover:bg-secondary">Stop</button>
-          <button type="submit" data-pull-batch-send class="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-50 sm:flex-none"><i data-lucide="send" class="h-4 w-4"></i>Send all</button>
+          <button type="submit" data-pull-batch-send class="inline-flex h-9 flex-1 items-center justify-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-50 sm:flex-none"><i data-lucide="send" class="h-4 w-4"></i><span data-pull-batch-send-label>Checking…</span></button>
         </div>
       </form>`;
     const view = container.querySelector("[data-pull-batch]");
@@ -619,12 +802,13 @@
 
   function bindPullBatchView(view, batch) {
     const rowOf = (node) => batch.rows.find((row) => row.branch === node.closest("[data-pull-batch-row]")?.dataset.pullBatchRow);
+    let prefixTimer = 0;
     view.addEventListener("change", (event) => {
       const target = event.target;
       if (batch.running) return;
       if (target.matches("[data-pull-batch-target]")) {
         pullBatchSelectTarget(batch, target.value);
-        renderPullBatchRows(batch);
+        void checkPullBatch(batch);
       } else if (target.matches("[data-pull-batch-include]")) {
         const row = rowOf(target);
         if (row) row.include = target.checked;
@@ -640,8 +824,11 @@
       if (batch.running) return;
       if (event.target.matches("[data-pull-batch-prefix]")) {
         batch.prefix = String(event.target.value || "").trim();
-        pullBatchRebuildRows(batch);
-        renderPullBatchRows(batch);
+        clearTimeout(prefixTimer);
+        prefixTimer = setTimeout(() => {
+          pullBatchRebuildRows(batch);
+          void checkPullBatch(batch);
+        }, 400);
         return;
       }
       const row = rowOf(event.target);
@@ -654,7 +841,7 @@
     });
     view.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (batch.running) return;
+      if (batch.running || batch.checking) return;
       let wakeLock = null;
       try {
         wakeLock = await navigator.wakeLock?.request?.("screen");

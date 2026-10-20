@@ -158,6 +158,7 @@ val PING_KIND_FALLBACK_CATALOG: List<PingKindGroup> = listOf(
             PingKind("repo_activity", "Pushes and merges", false),
             PingKind("release_published", "Releases", true),
             PingKind("repo_shared", "Repositories shared with you", true),
+            PingKind("security_advisory", "Security advisories", true),
             PingKind("mirror_request", "Mirror requests", true),
             PingKind("repository_hosted", "Imports finished hosting", false),
         ),

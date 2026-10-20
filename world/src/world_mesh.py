@@ -420,3 +420,118 @@ def visa_for(name, home, destination, nonce, now):
         "issuedAt": int(now),
         "expiresAt": int(now) + VISA_TTL_MS,
     }
+
+
+VISITOR_PREFIX = "fmwv1."
+VISITOR_LABEL = b"forkmesh-world-visitor-v1\n"
+VISITOR_TTL_MS = 15 * 60 * 1000
+VISITOR_SCOPE = "world"
+
+
+def visitor_signature(secret, payload):
+    return hmac.new(
+        secret, VISITOR_LABEL + payload.encode(), hashlib.sha256).hexdigest()
+
+
+def visitor_for(name, home_host, audience, nonce, now):
+    return {
+        "v": 1,
+        "sub": str(name or "")[:64],
+        "home": str(home_host or "")[:253],
+        "aud": clean_origin(audience),
+        "scope": VISITOR_SCOPE,
+        "nonce": nonce,
+        "iat": int(now),
+        "exp": int(now) + VISITOR_TTL_MS,
+    }
+
+
+def visitor_encode(secret, claim):
+    payload = base64.urlsafe_b64encode(
+        json.dumps(claim, separators=(",", ":"), sort_keys=True).encode()
+    ).decode().rstrip("=")
+    return VISITOR_PREFIX + payload + "." + visitor_signature(secret, payload)
+
+
+def visitor_verify(secret, token, now, audience):
+    value = str(token or "").strip()
+    if not value.startswith(VISITOR_PREFIX):
+        return None
+    claim, payload, signature = visa_claim(value[len(VISITOR_PREFIX):])
+    if claim is None:
+        return None
+    if not hmac.compare_digest(signature, visitor_signature(secret, payload)):
+        return None
+    try:
+        issued = int(claim.get("iat", 0) or 0)
+        expires = int(claim.get("exp", 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    if issued <= 0 or expires <= now or expires - issued > VISITOR_TTL_MS:
+        return None
+    if issued > now + 5000:
+        return None
+    if claim.get("scope") != VISITOR_SCOPE:
+        return None
+    if clean_origin(claim.get("aud")) != clean_origin(audience) or not audience:
+        return None
+    name = str(claim.get("sub") or "").strip()
+    home = str(claim.get("home") or "").strip().lower()
+    nonce = str(claim.get("nonce") or "")
+    if not name or not HOST_RE.fullmatch(home) or not NONCE_RE.fullmatch(nonce):
+        return None
+    return {"name": name[:64], "home": home, "nonce": nonce,
+            "expiresAt": expires}
+
+
+def bearer_visitor_token(header):
+    value = str(header or "").strip()
+    if value[:7].lower() != "bearer ":
+        return ""
+    token = value[7:].strip()
+    return token if token.startswith(VISITOR_PREFIX) else ""
+
+
+FEDERATED_PATHS = frozenset({
+    "/api/world/visa/session",
+    "/api/world/mesh",
+    "/api/world/neighbour-scene",
+    "/api/world/organizations",
+    "/api/world/events",
+    "/api/world/office/floors",
+    "/api/world/office/attendance",
+    "/api/world/office/general/status",
+    "/api/world/office/general/entry",
+    "/api/repositories",
+    "/api/leaderboards",
+})
+
+
+def federated_path(path):
+    return str(path or "").rstrip("/") in FEDERATED_PATHS
+
+
+def neighbour_world_origin(env, worlds, origin):
+    origin = clean_origin(origin)
+    if not origin:
+        return None
+    own = self_id(env, worlds)
+    for entry in worlds:
+        if entry["id"] != own and origin == entry["world"]:
+            return entry
+    return None
+
+
+def federation_cors_headers(origin, preflight=False):
+    headers = {
+        "access-control-allow-origin": origin,
+        "vary": "Origin",
+    }
+    if preflight:
+        headers.update({
+            "access-control-allow-methods": "GET, POST, OPTIONS",
+            "access-control-allow-headers":
+                "authorization, content-type, accept",
+            "access-control-max-age": "600",
+        })
+    return headers

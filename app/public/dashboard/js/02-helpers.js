@@ -766,28 +766,65 @@
       </span>`;
   }
 
-  // Compact, circular identity used beside every issue event. Agent identities
-  // get a bot mark instead of pretending to be a person.
+  const ISSUE_PERSON_HANDLE_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+
+  function issuePersonHandle(name) {
+    const text = String(name || "").trim().replace(/^@/, "");
+    return ISSUE_PERSON_HANDLE_RE.test(text) && !text.includes("--") ? text.toLowerCase() : "";
+  }
+
+  function issueActorIsBot(name) {
+    const text = String(name || "").trim();
+    if (!text) return false;
+    if (/\[bot\]$/i.test(text)) return true;
+    return typeof repoContributorIsBot === "function" && repoContributorIsBot({ name: text });
+  }
+
+  function issueActorPixels(size) {
+    const match = /\bh-(\d+(?:\.5)?)\b/.exec(String(size || ""));
+    return match ? Math.round(Number(match[1]) * 4) : 28;
+  }
+
+  function issuePersonProfileHref(handle) {
+    return handle && validNodeName(handle) ? publicProfileUrl(handle) : "";
+  }
+
   function issueActorAvatarHtml(name, author = "", size = "h-7 w-7", agent = false, link = true) {
     const label = String(name || author || (agent ? "Agent" : "unknown"));
+    const bot = agent || issueActorIsBot(label);
     const sessionName = String(state.session?.nodeName || state.session?.email || "");
-    const ownAvatar = label === sessionName ? String(state.session?.avatarPng || "") : "";
-    const handle = !agent && validNodeName(label) ? label : "";
-    const inner = agent
-      ? '<i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>'
+    const ownAvatar = !bot && label.toLowerCase() === sessionName.toLowerCase()
+      ? String(state.session?.avatarPng || "") : "";
+    const handle = bot ? "" : issuePersonHandle(label);
+    const pixels = issueActorPixels(size);
+    const inner = bot
+      ? `<i data-lucide="bot" class="${pixels <= 24 ? "h-3.5 w-3.5" : pixels <= 32 ? "h-4 w-4" : "h-5 w-5"} text-muted-foreground"></i>`
       : ownAvatar
-        ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" />`
+        ? `<img class="h-full w-full object-cover" src="data:image/png;base64,${escapeHtml(ownAvatar)}" alt="" width="${pixels}" height="${pixels}" decoding="async" />`
         : `<span class="text-[9px] font-bold text-muted-foreground">${escapeHtml((label[0] || "?").toUpperCase())}</span>`;
     const hydrate = handle && !ownAvatar ? ` data-issue-actor-avatar="${escapeHtml(handle)}"` : "";
     if (hydrate) watchIssueActorAvatars();
-    const classes = `flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
+    const classes = `relative flex ${size} shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-secondary`;
+    const title = bot ? `${label} (bot)` : label;
     if (handle && link) {
-      return `<a href="${escapeHtml(publicProfileUrl(handle))}" title="${escapeHtml(label)}" aria-label="${escapeHtml(`${label}'s profile`)}"${hydrate} class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
+      const href = issuePersonProfileHref(handle);
+      return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}" title="${escapeHtml(title)}" aria-label="${escapeHtml(`${label}'s profile`)}"${hydrate} class="${classes} hover:ring-2 hover:ring-[var(--dashboard-link)]">${inner}</a>`;
     }
-    return `<span title="${escapeHtml(label)}"${hydrate} class="${classes}">${inner}</span>`;
+    return `<span title="${escapeHtml(title)}"${bot ? ' data-issue-actor-bot=""' : ""}${hydrate} class="${classes}">${inner}</span>`;
   }
 
-  const issueActorPortraits = new Map();
+  function issuePersonNameHtml(name, classes = "font-semibold text-foreground") {
+    const label = String(name || "").trim() || "unknown";
+    if (issueActorIsBot(label)) return `<span class="${classes}">${escapeHtml(label)}</span>`;
+    const handle = issuePersonHandle(label);
+    if (!handle) return `<span class="${classes}">${userNameHtml(label)}</span>`;
+    watchIssueActorAvatars();
+    const href = issuePersonProfileHref(handle);
+    return `<a${href ? ` href="${escapeHtml(href)}"` : ""} data-issue-person="${escapeHtml(handle)}" class="${classes} hover:text-[var(--dashboard-link)] hover:underline">${userNameHtml(label)}</a>`;
+  }
+
+  const issueActorAccounts = new Map();
+  const issueActorAccountsSettled = new Map();
   let issueActorAvatarObserver = null;
   let issueActorAvatarFrame = 0;
 
@@ -796,18 +833,73 @@
     return png.length <= 400_000 && /^[A-Za-z0-9+/]+={0,2}$/.test(png) ? png : "";
   }
 
-  function issueActorPortrait(name) {
+  function issueActorAccount(name) {
     const key = String(name || "").trim().toLowerCase();
-    if (!key) return Promise.resolve("");
-    if (!issueActorPortraits.has(key)) {
-      issueActorPortraits.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
+    if (!key || !validNodeName(key)) return Promise.resolve({ exists: false, png: "" });
+    if (!issueActorAccounts.has(key)) {
+      issueActorAccounts.set(key, fetch(`/api/accounts/${encodeURIComponent(key)}`, { headers: { accept: "application/json" } })
         .then((response) => (response.ok ? response.json() : null))
-        .then((profile) => (profile?.exists === true && profile?.profilePrivate !== true
-          ? issueActorPortraitPng(profile.avatarPng)
-          : ""))
-        .catch(() => ""));
+        .then((profile) => ({
+          exists: profile?.exists === true,
+          png: profile?.exists === true && profile?.profilePrivate !== true
+            ? issueActorPortraitPng(profile.avatarPng) : "",
+        }))
+        .catch(() => ({ exists: false, png: "" }))
+        .then((account) => {
+          issueActorAccountsSettled.set(key, account);
+          return account;
+        }));
     }
-    return issueActorPortraits.get(key);
+    return issueActorAccounts.get(key);
+  }
+
+  function issueActorPortrait(name) {
+    return issueActorAccount(name).then((account) => account.png);
+  }
+
+  function issuePersonRoster(handle) {
+    if (typeof repoPeopleRosterMatch !== "function") return Promise.resolve(null);
+    return repoPeopleRosterMatch(state.selectedRepo, handle).catch(() => null);
+  }
+
+  function issuePersonResolve(handle) {
+    return Promise.all([issueActorAccount(handle), issuePersonRoster(handle)])
+      .then(([account, roster]) => ({ account, roster }));
+  }
+
+  function issueActorAvatarImage(avatar, src) {
+    const pixels = Math.max(16, Math.round(avatar.getBoundingClientRect?.().width || 0) || 28);
+    const image = document.createElement("img");
+    image.src = src;
+    image.alt = "";
+    image.width = pixels;
+    image.height = pixels;
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.referrerPolicy = "no-referrer";
+    image.className = "absolute inset-0 h-full w-full object-cover";
+    image.addEventListener("error", () => image.remove(), { once: true });
+    avatar.appendChild(image);
+  }
+
+  function hydrateIssuePersonLink(link, found) {
+    if (found.account.exists) {
+      const href = issuePersonProfileHref(link.dataset.issuePerson);
+      if (href) link.setAttribute("href", href);
+      return;
+    }
+    const profile = found.roster?.profile || "";
+    if (profile) {
+      link.setAttribute("href", profile);
+      link.setAttribute("target", "_blank");
+      link.setAttribute("rel", "noopener noreferrer nofollow ugc");
+      return;
+    }
+    if (link.hasAttribute("data-issue-mention")) {
+      link.replaceWith(document.createTextNode(link.textContent || ""));
+      return;
+    }
+    link.removeAttribute("href");
   }
 
   function hydrateIssueActorAvatars(root = document) {
@@ -817,17 +909,23 @@
     for (const avatar of avatars) {
       if (avatar.dataset.issueActorState) continue;
       avatar.dataset.issueActorState = "loading";
-      void issueActorPortrait(avatar.dataset.issueActorAvatar).then((png) => {
-        avatar.dataset.issueActorState = png ? "image" : "initial";
-        if (!png || !avatar.isConnected) return;
-        const image = document.createElement("img");
-        image.src = `data:image/png;base64,${png}`;
-        image.alt = "";
-        image.className = "h-full w-full object-cover";
-        image.decoding = "async";
-        const initial = avatar.firstElementChild;
-        image.addEventListener("error", () => { if (initial) image.replaceWith(initial); }, { once: true });
-        avatar.replaceChildren(image);
+      void issuePersonResolve(avatar.dataset.issueActorAvatar).then((found) => {
+        const png = found.account.png;
+        const picture = png ? `data:image/png;base64,${png}` : found.roster?.avatarUrl || "";
+        avatar.dataset.issueActorState = png ? "image" : picture ? "roster" : "initial";
+        if (!picture || !avatar.isConnected) return;
+        issueActorAvatarImage(avatar, picture);
+      });
+    }
+    const links = [];
+    if (root.matches?.("[data-issue-person]")) links.push(root);
+    root.querySelectorAll?.("[data-issue-person]").forEach((link) => links.push(link));
+    for (const link of links) {
+      if (link.dataset.issuePersonState) continue;
+      link.dataset.issuePersonState = "loading";
+      void issuePersonResolve(link.dataset.issuePerson).then((found) => {
+        link.dataset.issuePersonState = "done";
+        if (link.isConnected) hydrateIssuePersonLink(link, found);
       });
     }
   }
@@ -1292,7 +1390,8 @@
     if (!mirrorOf && !parent) return "";
     const linkClass = "dashboard-accent-link min-w-0 truncate font-medium hover:underline";
     if (!mirrorOf) {
-      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>`;
+      const contribute = `<button type="button" data-repo-contribute title="Open a pull request from this fork to ${escapeHtml(repoDisplayName(parent.key))}" class="fm-btn fm-btn-sm shrink-0"><i data-lucide="git-pull-request"></i>Contribute: Open pull request</button>`;
+      return `<span data-repo-provenance-line="fork" class="inline-flex min-w-0 items-center gap-1.5"><i data-lucide="git-fork" aria-hidden="true" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="shrink-0">forked from</span><a data-repo-provenance-link href="${escapeHtml(repoLinkUrl({ owner: parent.owner, name: parent.name }))}" class="${linkClass}">${escapeHtml(repoDisplayName(parent.key))}</a></span>${contribute}`;
     }
     const syncedAt = repoMirrorSyncedAt(repo);
     const commit = String(repo?.upstreamCommit || "").trim();
@@ -1725,7 +1824,7 @@
 
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
-  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions"];
+  const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an
   // account that can actually see them. A non-owner deep link falls through

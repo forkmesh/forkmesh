@@ -209,7 +209,7 @@ def test_issue_detail_names_the_opening_author_once():
     assert "issueActorAvatarHtml(author" not in hero
     assert "escapeHtml(author)" not in hero
     assert opening.count("issueActorAvatarHtml(author") == 1
-    assert opening.count("userNameHtml(author)") == 1
+    assert opening.count("issueCardAuthorHtml(author") == 1
 
 
 def test_issue_detail_keeps_an_empty_description_compact():
@@ -403,7 +403,10 @@ def test_an_issue_opens_onto_its_page_frame_instead_of_a_loading_line():
         "async function loadRepoRecordDetail(repo, kind, number, preferMirror = false)",
         "function setRepoTabCount(tab, count)",
     )
-    assert 'kind === "issues"\n        ? renderRepoIssueDetailSkeleton(repo, number)' in loader
+    assert 'kind === "issues"\n          ? renderRepoIssueDetailSkeleton(repo, number)' in loader
+    # Unless the node sent the issue drawn already (repo_ssr_issue.py).
+    assert loader.index("takeRepoFirstViewIssue(repo, number)") < loader.index(
+        "renderRepoIssueDetailSkeleton(repo, number)")
     skeleton = _slice(
         REPO_UI,
         "function renderRepoIssueDetailSkeleton(repo, number)",

@@ -414,3 +414,4 @@ REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
 # after that mirror publishes its own signed catalog record.
 REPO_FORKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/forks$")
 REPO_REMOTE_FORKS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/remote-forks$")
+REPO_PULL_BATCH_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/pull-batch$")

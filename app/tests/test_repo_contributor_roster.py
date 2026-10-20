@@ -65,7 +65,8 @@ let countFormatter = null;
             _function(CONTENT, name) for name in (
                 "repoContributorAvatar", "repoContributorAvatarUrl", "dropBrokenContributorAvatars",
                 "renderRepoAboutContributors", "repoContributorIsBot", "repoContributorProfileUrl",
-                "parseRepoContributorRoster", "repoRosterContributorAvatar", "renderRepoAboutRoster",
+                "parseRepoContributorRoster", "repoRosterLogin", "repoRosterAvatarPath", "repoRosterAvatarUrl",
+                "repoRosterContributorAvatar", "renderRepoAboutRoster",
                 "renderRepoAboutAuthors")),
         body,
     )
@@ -201,7 +202,7 @@ def test_the_roster_is_read_once_through_the_optional_folder_machinery():
     assert load.count("rememberRepoOptionalTreeMiss(") == 2
     assert "fetchRepoBlobs(repo, [REPO_CONTRIBUTOR_ROSTER_PATH])" in load
     insights = _function(CONTENT, "loadRepoAboutInsights")
-    assert "const roster = loadRepoContributorRoster(repo);" in insights
+    assert "const roster = repoContributorRosterCached(repo);" in insights
     assert "loadRepoAboutStats(repo, roster)" in insights
     assert "loadRepoAboutContributors(repo, roster)" in insights
     assert "renderRepoAboutRoster(repo, committed)" in insights

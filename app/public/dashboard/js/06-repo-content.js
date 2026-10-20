@@ -132,6 +132,15 @@
   const MD_BARE_URL =
     /(^|[^A-Za-z0-9/])(https?:\/\/(?:(?!&(?:lt|gt|quot|#039);)[^\s\u0000\u0001<>"'])+)/gi;
 
+  const MD_MENTION =
+    /(^|[^A-Za-z0-9&@/.+-])@([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)(?![A-Za-z0-9-]|_[A-Za-z0-9]|[./][A-Za-z0-9]|@|\[bot\])/g;
+
+  function mdMentionHtml(login) {
+    if (typeof watchIssueActorAvatars === "function") watchIssueActorAvatars();
+    const handle = String(login).toLowerCase();
+    return `<a href="${escapeHtml(publicProfileUrl(handle))}" data-issue-person="${escapeHtml(handle)}" data-issue-mention="" class="dashboard-accent-link underline underline-offset-2 hover:text-foreground">@${escapeHtml(login)}</a>`;
+  }
+
   function mdTrimAutolink(url) {
     let end = url;
     for (;;) {
@@ -173,6 +182,8 @@
         const url = mdTrimAutolink(candidate);
         return `${prefix}${park(mdLinkHtml(url, url, context))}${candidate.slice(url.length)}`;
       })
+      .replace(MD_MENTION, (whole, prefix, login) =>
+        (linkRecordReferences && context?.mentions !== false ? `${prefix}${park(mdMentionHtml(login))}` : whole))
       .replace(/(^|[^\w&])((?:pull[-\s]+request|pull|pr)[-\s]*#([1-9]\d*))\b/gi,
         (whole, prefix, label, number) => recordReference(whole, prefix, label, "pulls", number))
       .replace(/(^|[^\w&])(issue[-\s]*#([1-9]\d*))\b/gi,
@@ -288,6 +299,12 @@
         (index < parts.length - 1 && /\s{2,}$/.test(part) ? `${part.trim()}${MD_HARD_BREAK}` : part.trim()))
       .join(" ")
       .split(`${MD_HARD_BREAK} `).join(MD_HARD_BREAK);
+  }
+
+  const MD_LONE_IMAGE = /^(<a [^>]*>)?(<img (?![^>]*\swidth=)[^>]*?) (class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" \/>)(<\/a>)?$/;
+  function mdLoneImage(html) {
+    const match = MD_LONE_IMAGE.exec(html);
+    return match ? `${match[1] || ""}${match[2]} data-md-figure ${match[3]}${match[4] || ""}` : html;
   }
 
   // Small, dependency-free markdown renderer: headings, fenced code blocks,
@@ -476,7 +493,8 @@
       }
       closeLists();
       const paragraph = takeWrappedLines(lines, i + 1);
-      out.push(`<p class="my-2 leading-6">${inline(joinWrappedLines([line, ...paragraph.taken]))}</p>`);
+      const paragraphHtml = inline(joinWrappedLines([line, ...paragraph.taken]));
+      out.push(`<p class="my-2 leading-6">${context?.figures ? mdLoneImage(paragraphHtml) : paragraphHtml}</p>`);
       i = paragraph.next;
     }
     closeLists();
@@ -500,6 +518,7 @@
     if (!text.trim()) return "";
     return renderMarkdown(text, {
       repo: repo || state.selectedRepo || null,
+      figures: true,
       issueTasks: options.issueTasks
         ? { enabled: true, editable: Boolean(options.interactiveTasks) }
         : null,
@@ -1370,6 +1389,13 @@
     }
   }
 
+  function issueCardAuthorHtml(name, author = "", agent = false) {
+    const label = String(name || author || "unknown");
+    return `<span class="mr-1 inline-flex align-middle sm:hidden">${issueActorAvatarHtml(label, author, "h-6 w-6", agent)}</span>${agent
+      ? `<span class="font-semibold text-foreground">${escapeHtml(label)}</span>`
+      : issuePersonNameHtml(label)}`;
+  }
+
   function renderIssueTimelineComment(ev) {
     const who = ev.authorName || ev.author || "unknown";
     const when = formatTimeAgo(ev.ts);
@@ -1380,14 +1406,14 @@
         <span class="hidden sm:block">${issueActorAvatarHtml(who, ev.author, "h-10 w-10")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-            <span class="font-semibold text-foreground">${escapeHtml(who)}</span>
+            ${issueCardAuthorHtml(who, ev.author)}
             <span>commented</span><time datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">${escapeHtml(when)}</time>${ev._edited ? "<span>· edited</span>" : ""}
             ${ev._canManage && ev.id ? `<span class="ml-auto inline-flex items-center gap-0.5">
               <button type="button" data-repo-issue-comment-edit="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Edit comment"><i data-lucide="pencil" class="h-4 w-4"></i></button>
               <button type="button" data-repo-issue-comment-delete="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete comment"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
             </span>` : ""}
           </div>
-          ${body ? `<div class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>` : ""}
+          ${body ? `<div data-repo-issue-comment-text class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>` : ""}
           ${ev._reactions || ""}
         </div>
       </div>`;
@@ -1401,7 +1427,7 @@
         <div ${attrs} data-repo-issue-event class="relative flex min-h-10 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 py-1.5 pl-12 text-[14px] text-muted-foreground sm:ml-14">
           <span aria-hidden="true" class="absolute left-0 top-1 flex h-8 w-8 items-center justify-center rounded-full border-2 border-[rgb(var(--dashboard-canvas-rgb))] bg-secondary text-muted-foreground"><i data-lucide="${icon}" class="h-4 w-4"></i></span>
           ${issueActorAvatarHtml(who, author, "h-5 w-5", agent)}
-          <span class="font-semibold text-foreground">${escapeHtml(who)}</span>
+          ${agent ? `<span class="font-semibold text-foreground">${escapeHtml(who)}</span>` : issuePersonNameHtml(who)}
           <span class="inline-flex min-w-0 flex-wrap items-center gap-1">${descriptionHtml}</span>
           <time datetime="${escapeHtml(fullWhen.iso)}" title="${escapeHtml(fullWhen.label)}">${escapeHtml(formatTimeAgo(ts))}</time>
         </div>`;
@@ -1410,6 +1436,9 @@
   // The same sentence as issueEventDescription, with the named things drawn
   // as what they are: label pills, the priority chip, the milestone in bold.
   function issueEventDescriptionHtml(ev) {
+    if (ev.type === "assignees" && Array.isArray(ev.assignees) && ev.assignees.length) {
+      return `set assignees: ${ev.assignees.map((name) => issuePersonNameHtml(name, "font-semibold text-foreground")).join(", ")}`;
+    }
     if (ev.type === "labels" && Array.isArray(ev.labels) && ev.labels.length) {
       return `added ${ev.labels.map((label) => renderIssueLabelChip(label)).join(" ")}`;
     }
@@ -3459,7 +3488,7 @@
           <span class="inline-flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="message-square-plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Comment on ${escapeHtml(selection.path)} · ${selection.side} ${range}</span>
           <button type="button" data-repo-pull-inline-cancel aria-label="Cancel inline comment" class="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>
         </div>
-        <textarea data-repo-pull-inline-body rows="4" autofocus placeholder="Leave feedback for the agent. Markdown is supported." class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent"></textarea>
+        <textarea data-repo-pull-inline-body data-mention-input="record" rows="4" autofocus placeholder="Leave feedback for the agent. Markdown is supported." class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-accent"></textarea>
         <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
           <span data-repo-pull-inline-hint class="text-[11px] text-muted-foreground">Send this comment now or add it to a review batch.</span>
           <span class="inline-flex flex-wrap items-center gap-2">
@@ -4222,7 +4251,7 @@
         <span class="hidden sm:block">${issueActorAvatarHtml(author, ev.author, "h-10 w-10", ev.type === "agent")}</span>
         <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
           <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-            <span class="font-semibold text-foreground">${userNameHtml(author)}</span>
+            ${issueCardAuthorHtml(author, ev.author, ev.type === "agent")}
             <span>${ev.type === "review" ? escapeHtml(meta.label) : "commented"}</span>
             <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>
             ${anchor ? `<span class="min-w-0 truncate font-mono text-[12px]">on ${escapeHtml(anchor)}</span>` : ""}
@@ -4804,7 +4833,7 @@
                 ${tool("list", "list", "Add a bulleted list")}${tool("tasks", "list-checks", "Add a task list")}${tool("mention", "at-sign", "Mention someone")}
               </div>
             </div>
-            <textarea data-repo-issue-comment-body rows="5" aria-label="Comment body" placeholder="Use Markdown to format your comment" class="block min-h-[6.5rem] w-full resize-y border-0 bg-background px-3 py-2 text-[14px] text-foreground outline-none placeholder:text-muted-foreground"></textarea>
+            <textarea data-repo-issue-comment-body data-mention-input="record" rows="5" aria-label="Comment body" placeholder="Use Markdown to format your comment" class="block min-h-[6.5rem] w-full resize-y border-0 bg-background px-3 py-2 text-[14px] text-foreground outline-none placeholder:text-muted-foreground"></textarea>
             <div data-repo-issue-comment-preview hidden class="min-h-[6.5rem] px-4 py-3 ${MD_BODY_CLASS}"></div>
             <div class="flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground">
               <span class="inline-flex items-center gap-1.5"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Signed with your node key · Markdown is supported</span>
@@ -4842,7 +4871,7 @@
       link: () => ({ text: `[${selected || "text"}](url)`, caret: [start + (selected || "text").length + 3, start + (selected || "text").length + 6] }),
       list: () => prefix("- "),
       tasks: () => prefix("- [ ] "),
-      mention: () => wrap("@", "", ""),
+      mention: () => wrap(start > 0 && /[A-Za-z0-9_]/.test(value[start - 1]) ? " @" : "@", "", ""),
     })[format]?.();
     if (!edit) return;
     textarea.setRangeText(edit.text, start, end, "end");
@@ -4879,13 +4908,367 @@
       <form data-repo-discussion-reply-form data-repo-discussion-reply-number="${escapeHtml(number)}" class="grid gap-2 border-t border-border bg-secondary/20 p-4">
         ${composeIdentityHtml(state.session, "Replying")}
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">Reply
-          <textarea data-repo-discussion-reply-body rows="3" placeholder="Write a reply. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
+          <textarea data-repo-discussion-reply-body data-mention-input="record" rows="3" placeholder="Write a reply. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
         </label>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <span data-repo-discussion-reply-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
           <button type="submit" data-repo-discussion-reply-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Reply</button>
         </div>
       </form>`;
+  }
+
+  const MENTION_SUGGESTION_LIMIT = 8;
+  const MENTION_LOGIN_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
+
+  function mentionQueryAt(value, caret) {
+    const before = String(value || "").slice(0, Math.max(0, Number(caret) || 0));
+    const match = /(^|[^A-Za-z0-9_@/.+`-])@([A-Za-z0-9-]{0,39})$/.exec(before);
+    return match ? { start: match.index + match[1].length, query: match[2] } : null;
+  }
+
+  function mentionInsertion(value, start, caret, login) {
+    const text = String(value || "");
+    const after = text.slice(caret);
+    const rest = after.slice((/^[A-Za-z0-9-]*/.exec(after) || [""])[0].length);
+    const end = text.length - rest.length + (rest.startsWith(" ") ? 1 : 0);
+    const inserted = `@${login} `;
+    return {
+      start,
+      end,
+      text: inserted,
+      value: text.slice(0, start) + inserted + text.slice(end),
+      caret: start + inserted.length,
+    };
+  }
+
+  function mentionRecordPeople(detail) {
+    const parsed = detail?.parsed || {};
+    const values = parsed.values || {};
+    const people = [];
+    const stamp = (value) => {
+      const number = Number(value) || 0;
+      return number && number < 1000000000000 ? number * 1000 : number;
+    };
+    const add = (name, ts) => {
+      const login = String(name || "").trim().replace(/^@/, "");
+      if (login) people.push({ login, ts: stamp(ts) });
+    };
+    add(values.authorName || values.author, values.createdAt);
+    (Array.isArray(values.assignees) ? values.assignees : []).forEach((name) => add(name, values.updatedAt));
+    const lists = [parsed.issueEvents, parsed.pullTimeline, parsed.pullConversation, parsed.discussionConversation];
+    for (const list of lists) {
+      for (const ev of Array.isArray(list) ? list : []) {
+        if (!ev || ev.type === "commit") continue;
+        add(ev.authorName, ev.ts);
+        (Array.isArray(ev.assignees) ? ev.assignees : []).forEach((name) => add(name, ev.ts));
+        const body = String(ev.body || "");
+        for (const match of body.matchAll(MD_MENTION)) add(match[2], ev.ts);
+      }
+    }
+    return people;
+  }
+
+  function buildMentionCandidates(involved, rosterRows, self = "") {
+    const seen = new Set([String(self || "").toLowerCase()].filter(Boolean));
+    const byLogin = new Map();
+    (Array.isArray(rosterRows) ? rosterRows : []).forEach((row) => {
+      [row?.login, row?.github, row?.gitlab].forEach((login) => {
+        const key = String(login || "").toLowerCase();
+        if (key && !byLogin.has(key)) byLogin.set(key, row);
+      });
+    });
+    const out = [];
+    const add = (login, row, tier) => {
+      const text = String(login || "").trim();
+      const key = text.toLowerCase();
+      if (!MENTION_LOGIN_RE.test(text) || seen.has(key) || issueActorIsBot(text)) return;
+      seen.add(key);
+      out.push({ login: text, name: String(row?.name || ""), avatarUrl: String(row?.avatarUrl || ""), tier });
+    };
+    [...(Array.isArray(involved) ? involved : [])]
+      .map((person, index) => ({ ...person, index }))
+      .sort((a, b) => (Number(b.ts) || 0) - (Number(a.ts) || 0) || a.index - b.index)
+      .forEach((person) => add(person.login, byLogin.get(String(person.login).toLowerCase()), 0));
+    [...(Array.isArray(rosterRows) ? rosterRows : [])]
+      .sort((a, b) => (Number(b?.commits) || 0) - (Number(a?.commits) || 0))
+      .forEach((row) => {
+        const login = [row?.login, row?.github].find((value) => MENTION_LOGIN_RE.test(String(value || "")));
+        add(login, row, 1);
+      });
+    return out;
+  }
+
+  function rankMentionCandidates(candidates, query, limit = MENTION_SUGGESTION_LIMIT) {
+    const needle = String(query || "").toLowerCase();
+    const logins = [];
+    const names = [];
+    const inside = [];
+    for (const candidate of Array.isArray(candidates) ? candidates : []) {
+      const login = candidate.login.toLowerCase();
+      const name = String(candidate.name || "").toLowerCase();
+      if (!needle || login.startsWith(needle)) logins.push(candidate);
+      else if (name.split(/\s+/).some((word) => word.startsWith(needle))) names.push(candidate);
+      else if (login.includes(needle) || name.includes(needle)) inside.push(candidate);
+    }
+    return logins.concat(names, inside).slice(0, limit);
+  }
+
+  function mentionKeyAction(key, index, count) {
+    if (!count) return null;
+    if (key === "ArrowDown") return { action: "move", index: (index + 1) % count };
+    if (key === "ArrowUp") return { action: "move", index: (index - 1 + count) % count };
+    if (key === "Enter" || key === "Tab") return { action: "pick", index };
+    if (key === "Escape") return { action: "close" };
+    return null;
+  }
+
+  const mentionUi = { input: null, start: 0, query: "", matches: [], index: 0, list: null, rosterRows: null };
+
+  function mentionRosterRows() {
+    const repo = state.selectedRepo;
+    if (!repo) return [];
+    if (mentionUi.rosterRepo !== repo) {
+      mentionUi.rosterRepo = repo;
+      mentionUi.rosterRows = null;
+      void repoContributorRosterCached(repo).then((roster) => {
+        if (mentionUi.rosterRepo !== repo) return;
+        mentionUi.rosterRows = (roster?.rows || []).map((row) => ({ ...row, avatarUrl: repoRosterAvatarUrl(repo, row) }));
+        if (mentionUi.input) refreshMentionList(mentionUi.input);
+      });
+    }
+    return mentionUi.rosterRows || [];
+  }
+
+  function mentionCandidatesFor(input) {
+    const detail = state.repoRecordDetail;
+    const onRecord = input.dataset.mentionInput === "record" && detail?.repo && state.selectedRepo
+      && repositoryViewKey(detail.repo) === repositoryViewKey(state.selectedRepo);
+    return buildMentionCandidates(onRecord ? mentionRecordPeople(detail) : [], mentionRosterRows(),
+      state.session?.nodeName || "");
+  }
+
+  function mentionAvatarHtml(candidate) {
+    const known = issueActorAccountsSettled.get(candidate.login.toLowerCase());
+    const picture = known?.png ? `data:image/png;base64,${known.png}` : candidate.avatarUrl;
+    const initial = escapeHtml((candidate.login[0] || "?").toUpperCase());
+    return `<span class="fm-mention-avatar" aria-hidden="true"><span>${initial}</span>${picture
+      ? `<img src="${escapeHtml(picture)}" alt="" width="24" height="24" loading="lazy" decoding="async" referrerpolicy="no-referrer" />`
+      : ""}</span>`;
+  }
+
+  function mentionListElement() {
+    if (mentionUi.list?.isConnected) return mentionUi.list;
+    const list = document.createElement("div");
+    list.id = "fm-mention-list";
+    list.setAttribute("role", "listbox");
+    list.setAttribute("aria-label", "Suggested people");
+    list.className = "fm-popover fm-mention-list";
+    list.hidden = true;
+    list.addEventListener("pointerdown", (event) => event.preventDefault());
+    list.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-mention-pick]");
+      if (option && mentionUi.input) pickMention(mentionUi.input, Number(option.dataset.mentionPick));
+    });
+    document.body.appendChild(list);
+    mentionUi.list = list;
+    return list;
+  }
+
+  function textareaCaretRect(input, position) {
+    const style = getComputedStyle(input);
+    const mirror = document.createElement("div");
+    ["boxSizing", "width", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
+      "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "borderStyle",
+      "fontFamily", "fontSize", "fontWeight", "fontStyle", "letterSpacing", "lineHeight",
+      "textTransform", "wordSpacing", "textIndent", "tabSize"].forEach((name) => { mirror.style[name] = style[name]; });
+    Object.assign(mirror.style, {
+      position: "absolute", visibility: "hidden", top: "0", left: "-9999px",
+      whiteSpace: "pre-wrap", overflowWrap: "break-word", overflow: "hidden", height: "auto",
+    });
+    mirror.textContent = input.value.slice(0, position);
+    const marker = document.createElement("span");
+    marker.textContent = input.value.slice(position, position + 1) || ".";
+    mirror.appendChild(marker);
+    document.body.appendChild(mirror);
+    const box = input.getBoundingClientRect();
+    const fontSize = parseFloat(style.fontSize) || 14;
+    const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.4;
+    const rect = {
+      top: box.top + (parseFloat(style.borderTopWidth) || 0) + marker.offsetTop - input.scrollTop,
+      left: box.left + (parseFloat(style.borderLeftWidth) || 0) + marker.offsetLeft - input.scrollLeft,
+      height: lineHeight,
+    };
+    mirror.remove();
+    rect.top = Math.min(Math.max(rect.top, box.top), box.bottom - lineHeight);
+    rect.left = Math.min(Math.max(rect.left, box.left), box.right);
+    return rect;
+  }
+
+  function positionMentionList(input) {
+    const list = mentionUi.list;
+    if (!list || list.hidden || !input?.isConnected) return;
+    const view = window.visualViewport;
+    const viewTop = view ? view.offsetTop : 0;
+    const viewLeft = view ? view.offsetLeft : 0;
+    const viewBottom = viewTop + (view ? view.height : window.innerHeight);
+    const viewRight = viewLeft + (view ? view.width : window.innerWidth);
+    const caret = textareaCaretRect(input, mentionUi.start);
+    const height = list.offsetHeight;
+    const width = list.offsetWidth;
+    let top = caret.top + caret.height + 4;
+    if (top + height > viewBottom - 8) {
+      const above = caret.top - height - 4;
+      top = above >= viewTop + 8 ? above : Math.max(viewTop + 8, viewBottom - 8 - height);
+    }
+    const left = Math.max(viewLeft + 16, Math.min(caret.left, viewRight - 16 - width));
+    list.style.top = `${Math.round(top)}px`;
+    list.style.left = `${Math.round(left)}px`;
+  }
+
+  function closeMentionList() {
+    const input = mentionUi.input;
+    if (input) {
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+    }
+    if (mentionUi.list) {
+      mentionUi.list.hidden = true;
+      mentionUi.list.replaceChildren();
+    }
+    mentionUi.input = null;
+    mentionUi.matches = [];
+  }
+
+  function renderMentionOptions(input) {
+    const list = mentionListElement();
+    list.innerHTML = mentionUi.matches.map((candidate, index) => `<div role="option" id="fm-mention-option-${index}" data-mention-pick="${index}" aria-selected="${index === mentionUi.index}" class="fm-mention-option">${mentionAvatarHtml(candidate)}<span class="fm-mention-login">${escapeHtml(candidate.login)}</span>${candidate.name && candidate.name.toLowerCase() !== candidate.login.toLowerCase() ? `<span class="fm-mention-name">${escapeHtml(candidate.name)}</span>` : ""}</div>`).join("");
+    list.querySelectorAll("img").forEach((image) => image.addEventListener("error", () => image.remove(), { once: true }));
+    input.setAttribute("aria-expanded", "true");
+    input.setAttribute("aria-activedescendant", `fm-mention-option-${mentionUi.index}`);
+    list.querySelector(`#fm-mention-option-${mentionUi.index}`)?.scrollIntoView?.({ block: "nearest" });
+  }
+
+  function refreshMentionList(input) {
+    const found = mentionQueryAt(input.value, input.selectionEnd);
+    if (!found) {
+      if (mentionUi.input === input) closeMentionList();
+      return;
+    }
+    const matches = rankMentionCandidates(mentionCandidatesFor(input), found.query);
+    if (!matches.length) {
+      if (mentionUi.input === input) closeMentionList();
+      return;
+    }
+    if (mentionUi.input !== input || mentionUi.query !== found.query || mentionUi.start !== found.start) mentionUi.index = 0;
+    mentionUi.input = input;
+    mentionUi.start = found.start;
+    mentionUi.query = found.query;
+    mentionUi.matches = matches;
+    mentionUi.index = Math.min(mentionUi.index, matches.length - 1);
+    input.setAttribute("aria-controls", "fm-mention-list");
+    input.setAttribute("aria-autocomplete", "list");
+    const list = mentionListElement();
+    renderMentionOptions(input);
+    list.hidden = false;
+    positionMentionList(input);
+  }
+
+  function pickMention(input, index) {
+    const candidate = mentionUi.matches[index];
+    if (!candidate) return;
+    const edit = mentionInsertion(input.value, mentionUi.start, input.selectionEnd, candidate.login);
+    closeMentionList();
+    input.focus();
+    input.setRangeText(edit.text, edit.start, edit.end, "end");
+    input.setSelectionRange(edit.caret, edit.caret);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function mentionInputFrom(target) {
+    return target?.matches?.("textarea[data-mention-input]") ? target : null;
+  }
+
+  function bindMentionAutocomplete() {
+    if (mentionUi.bound) return;
+    mentionUi.bound = true;
+    document.addEventListener("input", (event) => {
+      const input = mentionInputFrom(event.target);
+      if (input) refreshMentionList(input);
+    });
+    document.addEventListener("keydown", (event) => {
+      const input = mentionInputFrom(event.target);
+      if (!input || mentionUi.input !== input || event.isComposing) return;
+      const step = mentionKeyAction(event.key, mentionUi.index, mentionUi.matches.length);
+      if (!step || event.altKey || event.ctrlKey || event.metaKey || (event.shiftKey && event.key !== "Tab")) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (step.action === "close") closeMentionList();
+      else if (step.action === "pick") pickMention(input, step.index);
+      else {
+        mentionUi.index = step.index;
+        renderMentionOptions(input);
+      }
+    }, true);
+    document.addEventListener("click", (event) => {
+      const input = mentionInputFrom(event.target);
+      if (input) refreshMentionList(input);
+      else if (mentionUi.input && !event.target.closest?.("#fm-mention-list")) closeMentionList();
+    });
+    document.addEventListener("keyup", (event) => {
+      const input = mentionInputFrom(event.target);
+      if (input && (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.key === "Home" || event.key === "End")) {
+        refreshMentionList(input);
+      }
+    });
+    document.addEventListener("focusout", (event) => {
+      if (mentionUi.input && event.target === mentionUi.input) closeMentionList();
+    });
+    const reposition = () => { if (mentionUi.input) positionMentionList(mentionUi.input); };
+    window.visualViewport?.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("scroll", reposition);
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+  }
+
+  function openIssueCommentEditor(target, body) {
+    const button = [...document.querySelectorAll("[data-repo-issue-comment-edit]")]
+      .find((node) => node.dataset.repoIssueCommentEdit === String(target));
+    const card = button?.closest("[data-repo-issue-comment]");
+    const panel = card?.querySelector(".rounded-md.border");
+    if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
+    panel.querySelector("[data-repo-issue-comment-editor]")?.remove();
+    const text = panel.querySelector("[data-repo-issue-comment-text]");
+    const form = document.createElement("form");
+    form.dataset.repoIssueCommentEditor = "";
+    form.className = "grid gap-2 p-3";
+    form.innerHTML = `<textarea data-repo-issue-comment-edit-body data-mention-input="record" rows="5" aria-label="Edit comment" class="block min-h-[6.5rem] w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]"></textarea>
+      <div class="flex justify-end gap-2"><button type="button" data-repo-issue-comment-edit-cancel class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Cancel</button><button type="submit" class="h-8 rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">Update comment</button></div>`;
+    const input = form.querySelector("textarea");
+    input.value = String(body || "");
+    if (text) text.hidden = true;
+    panel.insertBefore(form, text || panel.children[1] || null);
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    return new Promise((resolve) => {
+      const finish = (value) => {
+        form.remove();
+        if (text) text.hidden = false;
+        resolve(value);
+      };
+      form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        finish(input.value);
+      });
+      form.querySelector("[data-repo-issue-comment-edit-cancel]").addEventListener("click", () => finish(null));
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !event.defaultPrevented) finish(null);
+        if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          finish(input.value);
+        }
+      });
+    });
   }
 
   function pullLifecycleAllowed(repo, parsed) {
@@ -4915,7 +5298,7 @@
         <div class="grid min-w-0 gap-2">
           <h3 class="text-[16px] font-semibold text-foreground">Add a comment</h3>
           ${composeIdentityHtml(state.session, "Reviewing")}
-          <textarea data-repo-pull-review-body rows="4" aria-label="Review" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]"></textarea>
+          <textarea data-repo-pull-review-body data-mention-input="record" rows="4" aria-label="Review" placeholder="Leave a comment. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]"></textarea>
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span data-repo-pull-review-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
             <div class="flex flex-wrap items-center gap-2">
@@ -6311,7 +6694,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="relative min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 flex-wrap items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
+                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} commented <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time></span>
                       <span class="ml-auto flex shrink-0 items-center gap-1">
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                         <span class="rounded-full border border-border px-2 text-[12px] font-medium leading-5">Author</span>
@@ -6538,7 +6921,7 @@
 
     const descriptionForm = `
                       <form data-repo-issue-description-form class="hidden grid gap-2 border-t border-border p-4">
-                        <textarea data-repo-issue-description-input rows="10" class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)]">${escapeHtml(body)}</textarea>
+                        <textarea data-repo-issue-description-input data-mention-input="record" rows="10" class="rounded-md border border-border bg-background px-3 py-2 text-[14px] text-foreground outline-none focus:border-[var(--dashboard-link)]">${escapeHtml(body)}</textarea>
                         <div class="flex justify-end gap-2"><button type="button" data-repo-issue-description-cancel class="h-8 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground">Cancel</button><button type="submit" class="h-8 rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground">Update comment</button></div>
                       </form>`;
     const description = hasBody
@@ -6555,7 +6938,7 @@
                   <span class="hidden sm:block">${issueActorAvatarHtml(author, values.author, "h-10 w-10")}</span>
                   <div class="min-w-0 overflow-hidden rounded-md border border-border bg-background">
                     <div class="flex min-w-0 items-center gap-1.5 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1.5 pl-4 pr-2 text-[14px] text-muted-foreground">
-                      <span class="min-w-0 truncate"><span class="font-semibold text-foreground">${userNameHtml(author)}</span> opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
+                      <span class="min-w-0 truncate">${issueCardAuthorHtml(author, values.author)} opened <time datetime="${escapeHtml(opened.iso)}" title="${escapeHtml(opened.label)}">${escapeHtml(formatTimeAgo(openedAt))}</time></span>
                       <span class="ml-auto shrink-0 rounded-full border border-border px-2 text-[12px] font-medium leading-5">${isOwner ? "Owner" : "Contributor"}</span>
                       ${canManage && hasBody ? `<button type="button" data-repo-issue-description-edit aria-label="Edit description" title="Edit description" class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="pencil" class="h-4 w-4"></i></button>` : ""}
                     </div>
@@ -6639,7 +7022,7 @@
       <article data-repo-record-detail="issues" class="min-w-0 bg-background">
         <div data-repo-issue-sticky aria-hidden="true" class="pointer-events-none sticky top-0 z-20 -mx-3 mb-0 flex h-0 items-start overflow-visible sm:-mx-5">
           <div data-repo-issue-sticky-bar class="flex w-full -translate-y-full items-center gap-2 border-b border-border bg-background/95 px-3 py-2 opacity-0 backdrop-blur transition duration-150 sm:px-5">
-            <span class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-2 text-[12px] font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-3.5 w-3.5"></i>${stateLabel}</span>
+            <span class="inline-flex h-6 shrink-0 items-center gap-1 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-2 text-[12px] font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-3.5 w-3.5"></i>${escapeHtml(stateLabel)}</span>
             <span class="min-w-0 truncate text-[14px] font-semibold text-foreground">${escapeHtml(title)} <span class="font-normal text-muted-foreground">${recordLabel}</span></span>
           </div>
         </div>
@@ -6659,7 +7042,7 @@
           </div>
           ${renderRepoIssueParents(repo, parsed.issueDependencies)}
           <p class="mt-2 flex min-w-0 flex-wrap items-center gap-2 text-[14px] text-muted-foreground">
-            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${stateLabel}</span>
+            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${escapeHtml(stateLabel)}</span>
             <span>${formatCount(commentCount)} ${commentCount === 1 ? "comment" : "comments"}</span>
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
@@ -6768,6 +7151,24 @@
           </aside>
         </div>
       </article>`;
+  }
+
+  let repoFirstViewIssue = null;
+  function keepRepoFirstViewIssue(detail) {
+    const article = detail?.querySelector?.("article[data-repo-ssr-issue]");
+    if (!article) return;
+    repoFirstViewIssue = {
+      number: String(article.dataset.repoSsrIssue || ""),
+      path: location.pathname,
+      node: article,
+    };
+  }
+
+  function takeRepoFirstViewIssue(repo, number) {
+    const kept = repoFirstViewIssue;
+    repoFirstViewIssue = null;
+    if (!kept || !repo || kept.number !== String(number) || kept.path !== location.pathname) return null;
+    return kept.node;
   }
 
   // The list chrome (views sidebar, heading, search) steps aside while one
@@ -7355,12 +7756,15 @@
     const recordFile = typeof config.file === "function" ? config.file(Number(number)) : config.file;
     const recordPath = `${config.dir}/${number}/${recordFile}`;
     if (!quietRefresh) {
-      // An issue opens straight onto its page frame, drawn from the list row
-      // where one was clicked; pulls and discussions keep the loading line.
-      container.innerHTML = kind === "issues"
-        ? renderRepoIssueDetailSkeleton(repo, number)
-        : `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml(`Loading ${escapeHtml(config.itemLabel)} #${escapeHtml(number)} from the live mirror...`)}</div>`;
-      if (kind === "issues") window.lucide?.createIcons();
+      const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number) : null;
+      if (firstView) {
+        container.replaceChildren(firstView);
+      } else {
+        container.innerHTML = kind === "issues"
+          ? renderRepoIssueDetailSkeleton(repo, number)
+          : `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml(`Loading ${escapeHtml(config.itemLabel)} #${escapeHtml(number)} from the live mirror...`)}</div>`;
+        if (kind === "issues") window.lucide?.createIcons();
+      }
     }
     try {
       await primeRepoViewReads(repo, { pulls: "pull", issues: "issue", discussions: "discussion" }[kind], number);
@@ -7459,6 +7863,7 @@
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
       if (quietRefresh && !repoRecordDetailOnScreen(repo, kind, number, container)) return;
+      if (quietRefresh && container.querySelector("[data-repo-issue-comment-editor]")) return;
       const commentDraft = quietRefresh
         ? String(container.querySelector("[data-repo-issue-comment-body]")?.value || "")
         : "";
@@ -7750,7 +8155,7 @@
     const original = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>Creating fork…';
-    if (status) status.textContent = "Recording the fork on your managed mirror…";
+    if (status) status.textContent = "Creating your fork…";
     try {
       const token = String(state.session.sessionToken || "");
       const response = await fetch(`${repoApiBase(repo)}/forks`, {
@@ -7791,7 +8196,9 @@
       if (status) {
         const message = data.queued
           ? `Queued on ${String(fork.owner || "your mirror")}. It will finish as soon as that mirror can reach any copy of the source.`
-          : "Your fork is ready.";
+          : data.existing
+            ? "You already have a fork of this repository."
+            : "Your fork is ready. Push branches to it, then open a pull request back here.";
         status.innerHTML = `${escapeHtml(message)}${forkUrl ? ` <a href="${escapeHtml(forkUrl)}" class="font-medium text-accent hover:underline">Open fork</a>` : ""}`;
       }
     } catch (error) {
@@ -7799,7 +8206,9 @@
       button.innerHTML = original;
       if (status) {
         const code = String(error?.code || "");
-        status.textContent = code === "headless_mirror_required"
+        status.textContent = code === "email_verification_required"
+          ? "Verify your email address under Settings, Account, then fork."
+          : code === "headless_mirror_required"
           ? "Link a managed headless mirror in Settings first. It may be offline when you create the fork."
           : String(error?.message || "The fork could not be queued. Try again.");
       }
@@ -11404,6 +11813,26 @@
     }
   }
 
+  function repoRosterLogin(value) {
+    const text = String(value ?? "").trim().replace(/^@/, "");
+    return /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/.test(text) ? text : "";
+  }
+
+  function repoRosterAvatarPath(value) {
+    const text = String(value ?? "").trim();
+    const prefix = `${REPO_CONTRIBUTOR_ROSTER_DIR}/`;
+    if (!text.startsWith(prefix)) return "";
+    const file = text.slice(prefix.length);
+    return /^[a-z0-9][a-z0-9._-]{0,99}\.(?:png|jpe?g|webp|gif)$/i.test(file) && !file.includes("..") ? text : "";
+  }
+
+  function repoRosterAvatarUrl(repo, contributor) {
+    if (!repo) return "";
+    const path = contributor?.avatar
+      || (contributor?.slug ? `${REPO_CONTRIBUTOR_ROSTER_DIR}/${contributor.slug}.png` : "");
+    return path ? repoRawUrl(repo, path) : "";
+  }
+
   function parseRepoContributorRoster(text) {
     if (typeof text !== "string" || !text || text.length > REPO_CONTRIBUTOR_ROSTER_MAX_CHARS) return null;
     let data;
@@ -11421,6 +11850,10 @@
       rows.push({
         slug: safeSlug,
         name,
+        login: repoRosterLogin(row.login),
+        github: repoRosterLogin(row.github),
+        gitlab: repoRosterLogin(row.gitlab),
+        avatar: repoRosterAvatarPath(row.avatar),
         commits: Number.isFinite(commits) && commits > 0 ? Math.floor(commits) : 0,
         profile: repoContributorProfileUrl(row.profile),
         index,
@@ -11455,6 +11888,44 @@
     }
   }
 
+  const repoRosterLoads = new Map();
+
+  function repoContributorRosterCached(repo) {
+    if (!repo) return Promise.resolve(null);
+    const key = `${repositoryViewKey(repo)}#${repoSelectedBranch(repo)}`;
+    if (!repoRosterLoads.has(key)) {
+      repoRosterLoads.set(key, loadRepoContributorRoster(repo).then((roster) => {
+        if (!roster) return null;
+        const byLogin = new Map();
+        roster.rows.forEach((row) => {
+          [row.login, row.github, row.gitlab].forEach((login) => {
+            const lower = String(login || "").toLowerCase();
+            if (lower && !byLogin.has(lower)) byLogin.set(lower, row);
+          });
+        });
+        return { ...roster, byLogin };
+      }));
+    }
+    return repoRosterLoads.get(key);
+  }
+
+  function repoRosterPerson(repo, roster, handle) {
+    const row = roster?.byLogin?.get(String(handle || "").trim().replace(/^@/, "").toLowerCase());
+    if (!row) return null;
+    return {
+      name: row.name,
+      login: row.login || row.github || row.gitlab,
+      profile: repoContributorProfileUrl(row.profile),
+      avatarUrl: repoRosterAvatarUrl(repo, row),
+      commits: row.commits,
+    };
+  }
+
+  async function repoPeopleRosterMatch(repo, handle) {
+    if (!repo || !handle) return null;
+    return repoRosterPerson(repo, await repoContributorRosterCached(repo), handle);
+  }
+
   function repoRosterContributorAvatar(repo, contributor) {
     const name = String(contributor?.name || "?");
     const commits = Number(contributor?.commits) || 0;
@@ -11462,7 +11933,7 @@
     const initials = ((words[0]?.[0] || "?") + (words[1]?.[0] || "")).toUpperCase();
     const title = name + (commits ? ` — ${formatCount(commits)} commit${commits === 1 ? "" : "s"}` : "");
     const classes = "relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-background bg-secondary font-mono text-[10px] font-semibold uppercase text-muted-foreground";
-    const picture = contributor?.slug ? repoRawUrl(repo, `${REPO_CONTRIBUTOR_ROSTER_DIR}/${contributor.slug}.png`) : "";
+    const picture = repoRosterAvatarUrl(repo, contributor);
     const inner = `<span>${escapeHtml(initials)}</span>` + (picture
       ? `<img src="${escapeHtml(picture)}" alt="" width="28" height="28" loading="lazy" decoding="async" referrerpolicy="no-referrer" class="absolute inset-0 h-full w-full object-cover" />`
       : "");
@@ -12048,7 +12519,7 @@
 
   async function loadRepoAboutInsights(repo) {
     loadRepoAboutSizeMapWhenNear(repo);
-    const roster = loadRepoContributorRoster(repo);
+    const roster = repoContributorRosterCached(repo);
     if (!await loadRepoAboutStats(repo, roster)) {
       await Promise.allSettled([loadRepoAboutFilesAndLanguages(repo), loadRepoAboutContributors(repo, roster)]);
     }

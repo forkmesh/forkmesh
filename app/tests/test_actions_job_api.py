@@ -38,6 +38,8 @@ def content(event):
         return event["status"]
     if kind == "labels":
         return ",".join(event["labels"])
+    if kind == "claim":
+        return "\x00".join([event["assignee"], event["claimState"]])
     return ""
 
 
@@ -62,6 +64,9 @@ class World:
                     "INSERT INTO schema_meta")[0].split(";")
                     if "runner_nodes" not in part and part.strip()))
         self.submitted = []
+        self.audits = []
+        self.accounts = {"alice", "bob", "carol"}
+        self.accept_status = 201
         self.issue = issue
         self.feature_off = None
         self.env = type("Env", (), {"ACTIONS_BOT_SEED": SEED,
@@ -83,7 +88,19 @@ class World:
                          actions_job=False):
             world.submitted.append((owner, repo, repo_bi, data, repo_keys,
                                     actions_job))
+            if world.accept_status != 201:
+                return {"status": world.accept_status,
+                        "data": {"error": "author_quota"}}
             return {"status": 201, "data": {"ok": True, "number": 7}}
+
+        async def account_row(_env, name):
+            return ("bi:" + name,
+                    {"name": name} if name in world.accounts else None)
+
+        async def audit(_env, actor, action, target_type="", target="",
+                        outcome="success", details=None):
+            world.audits.append((actor, action, target_type, target, outcome,
+                                 dict(details or {})))
 
         async def gateway(_env, owner, repo, action):
             world.gateway_calls = (owner, repo, action)
@@ -123,6 +140,8 @@ class World:
             "d1_first": d1_first, "d1_all": d1_all, "d1_run": d1_run,
             "ensure_schema": nothing,
             "_accept_issue_submission": accept,
+            "_account_row": account_row,
+            "_audit_sensitive_action": audit,
             "_forkbot_repo_gateway_json": gateway,
             "_forkbot_issue_json_candidates": lambda n: [
                 ".forkmesh/issues/%s/%d/issue-%d.json" % (d, n, n)
@@ -262,7 +281,7 @@ def test_reading_an_issue_and_changing_its_labels():
     answer = world.call("/api/actions/job/issues/3", Request())
     assert answer["data"] == {
         "number": 3, "title": "Bug", "body": "It broke", "state": "open",
-        "labels": ["bug", "hackathon"], "author": "bob"}
+        "labels": ["bug", "hackathon"], "assignees": [], "author": "bob"}
     assert world.gateway_calls[:2] == ("forkmesh", "site")
     world.call("/api/actions/job/issues/3/labels", Request(
         "POST", {"add": ["triaged", "bug"], "remove": ["hackathon"]}))
@@ -303,12 +322,12 @@ def test_accepted_issue_events_queue_matching_workflows_with_github_payloads():
             "updated_at) VALUES ('forkmesh','site',?,?,1)",
             (path, json.dumps(events)))
     queue(world, {"type": "open", "title": "New", "body": "b",
-                  "authorName": "carol"}, {"meta": {"labels": ["x"]}},
-          number=9)
+                  "authorName": "carol", "authorVerified": True},
+          {"meta": {"labels": ["x"]}}, number=9)
     [(event, workflow, payload)] = jobs(world)
     assert (event, workflow) == ("issues", ".forkmesh/triage.yml")
     assert payload["event"] == {
-        "action": "opened", "sender": {"login": "carol"},
+        "action": "opened", "sender": {"login": "carol", "verified": True},
         "issue": {"number": 9, "title": "New", "body": "b", "state": "open",
                   "labels": [{"name": "x"}], "user": {"login": "carol"}}}
     world.db.execute("DELETE FROM repo_action_jobs")
@@ -316,7 +335,7 @@ def test_accepted_issue_events_queue_matching_workflows_with_github_payloads():
                   "authorName": "ada"})
     queue(world, {"type": "status", "status": "closed", "authorName": "ada"})
     queue(world, {"type": "comment", "id": "c1", "body": "hi",
-                  "authorName": "dan"})
+                  "authorName": "dan", "authorVerified": True})
     queue(world, {"type": "labels", "labels": ["bug"], "authorName": "ada"})
     queue(world, {"type": "comment", "body": "bot",
                   "authorName": "forkmesh-actions"})
@@ -332,5 +351,148 @@ def test_accepted_issue_events_queue_matching_workflows_with_github_payloads():
     assert labeled["issue"]["user"] == {"login": "bob"}
     assert found[1][2]["event"]["issue"]["state"] == "closed"
     assert found[2][2]["event"]["comment"] == {
-        "id": "c1", "body": "hi", "user": {"login": "dan"}}
+        "id": "c1", "body": "hi", "user": {"login": "dan", "verified": True},
+        "verified": True}
+    assert found[2][2]["event"]["sender"] == {"login": "dan", "verified": True}
     assert found[2][1] == ".forkmesh/reply.yml"
+
+
+def test_an_unverified_comment_author_reaches_actions_as_its_key_only():
+    world = World(issue={"number": 3, "title": "Bug", "status": "open",
+                         "labels": [], "events": []})
+    world.db.execute(
+        "INSERT INTO repo_action_workflows (owner,repo,path,events,"
+        "updated_at) VALUES ('forkmesh','site','.forkmesh/a.yml',?,1)",
+        (json.dumps(["issue_comment"]),))
+    queue(world, {"type": "comment", "id": "c2", "body": "/assign",
+                  "author": "webkey", "authorName": "alice"})
+    queue(world, {"type": "comment", "id": "c3", "body": "/assign",
+                  "author": "webkey2", "authorName": "",
+                  "authorVerified": True})
+    first, second = [p["event"] for _e, _w, p in jobs(world)]
+    assert first["comment"]["user"] == {"login": "webkey", "verified": False}
+    assert first["comment"]["verified"] is False
+    assert first["sender"] == {"login": "webkey", "verified": False}
+    assert second["comment"]["user"] == {"login": "webkey2",
+                                         "verified": False}
+
+
+ASSIGN = "/api/actions/job/issues/3/assignees"
+
+
+def assign_world(assignees=()):
+    world = World(issue={"number": 3, "title": "Bug", "status": "open",
+                         "labels": [], "assignees": list(assignees),
+                         "events": [{"type": "open", "body": "b",
+                                     "authorName": "bob"}]})
+    world.add_job()
+    return world
+
+
+def test_assigning_signs_one_claim_per_account_as_the_bot():
+    world = assign_world(["Carol"])
+    bot_key = instance_bootstrap.bot_public_key(SEED)
+    answer = world.call(ASSIGN, Request(
+        "POST", {"add": ["@Alice", "bob"], "remove": ["carol"]}))
+    assert answer == {"status": 200, "data": {
+        "ok": True, "number": 3, "assignees": ["alice", "bob"],
+        "assigned": ["alice", "bob"], "unassigned": ["carol"],
+        "changed": True}}
+    events = []
+    for owner, repo, repo_bi, data, keys, from_job in world.submitted:
+        assert (owner, repo, repo_bi, keys, from_job) == (
+            "forkmesh", "site", "bi:forkmesh/site", ("forkmesh/site",), True)
+        assert data["number"] == 3
+        event = data["event"]
+        assert event["author"] == bot_key
+        assert event["authorName"] == "forkmesh-actions"
+        verify(event, number=3)
+        events.append((event["type"], event["assignee"],
+                       event["claimState"]))
+    assert events == [("claim", "alice", "assigned"),
+                      ("claim", "bob", "assigned"),
+                      ("claim", "carol", "released")]
+    [(actor, action, kind, target, outcome, details)] = world.audits
+    assert (actor, action, kind, target, outcome) == (
+        "forkmesh-actions", "actions.issue_assignees", "issue",
+        "forkmesh/site#3", "success")
+    assert details["assigned"] == "alice,bob"
+    assert details["unassigned"] == "carol"
+    assert details["job"] == 1
+
+
+def test_assigning_is_idempotent():
+    world = assign_world(["alice"])
+    answer = world.call(ASSIGN, Request(
+        "POST", {"add": ["alice"], "remove": ["bob"]}))
+    assert answer["status"] == 200
+    assert answer["data"]["changed"] is False
+    assert answer["data"]["assignees"] == ["alice"]
+    assert world.submitted == []
+    assert world.audits == []
+
+
+def test_only_existing_accounts_can_be_assigned():
+    world = assign_world()
+    answer = world.call(ASSIGN, Request("POST", {"add": ["alice", "mallory"]}))
+    assert answer["status"] == 422
+    assert answer["data"]["error"] == "unknown_account"
+    assert world.submitted == []
+    assert world.audits[0][4] == "denied"
+    assert world.audits[0][5]["accounts"] == "mallory"
+
+
+def test_assignee_requests_are_validated():
+    world = assign_world()
+    for body in ({}, {"add": []}, {"add": "not a name"},
+                 {"add": ["alice"], "remove": ["alice"]},
+                 {"add": ["a%d" % i for i in range(11)]},
+                 {"add": {"alice": 1}}):
+        assert world.call(ASSIGN, Request("POST", body))["status"] == 400
+    assert world.call(ASSIGN, Request("GET"))["status"] == 405
+    assert world.submitted == []
+
+
+def test_assigning_needs_a_live_job_token_and_an_existing_issue():
+    world = assign_world()
+    assert world.call(ASSIGN, Request("POST", {"add": ["alice"]},
+                                      token="cd" * 32))["status"] == 401
+    world = World()
+    world.add_job(status="completed")
+    assert world.call(ASSIGN, Request("POST", {"add": ["alice"]}))[
+        "status"] == 401
+    world = World(issue=None)
+    world.add_job()
+    answer = world.call(ASSIGN, Request("POST", {"add": ["alice"]}))
+    assert answer["status"] == 404
+    assert answer["data"]["error"] == "issue_not_found"
+    world = assign_world()
+    world.feature_off = {"status": 404, "data": {"error": "disabled"}}
+    assert world.call(ASSIGN, Request("POST", {"add": ["alice"]}))[
+        "status"] == 404
+    assert world.submitted == []
+
+
+def test_an_inbox_refusal_stops_the_change_and_is_audited():
+    world = assign_world()
+    world.accept_status = 429
+    answer = world.call(ASSIGN, Request("POST", {"add": ["alice", "bob"]}))
+    assert answer == {"status": 429, "data": {"error": "author_quota"}}
+    assert len(world.submitted) == 1
+    assert world.audits[0][4] == "failed"
+
+
+def test_bot_events_on_an_org_repository_are_signed_under_the_org_address():
+    world = World()
+    world.add_job()
+
+    async def public_owner(_env, _owner, _repo):
+        return "acme"
+
+    world.module.public_owner = public_owner
+    world.call("/api/actions/job/issues/3/comments",
+               Request("POST", {"body": "Thanks!"}))
+    owner, repo, repo_bi, data, keys, from_job = world.submitted[-1]
+    assert keys == ("acme/site", "forkmesh/site")
+    assert data["event"]["authorName"] == "acme-actions"
+    verify(data["event"], owner="acme", number=3)

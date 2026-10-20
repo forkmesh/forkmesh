@@ -160,7 +160,8 @@ def test_pulls_route_runs_the_lifecycle_gate_before_queueing():
     numbered = handler[handler.index("verify_pull_comment_event("):]
     gate = numbered.index("_authorize_pull_lifecycle(")
     assert gate < numbered.index("INSERT INTO pull_inbox")
-    assert 'event["authorName"] = lifecycle_actor' in numbered
+    bind = numbered.index("_bind_session_author(env, request, data, event)")
+    assert gate < bind < numbered.index("INSERT INTO pull_inbox")
 
 
 class _Repository:

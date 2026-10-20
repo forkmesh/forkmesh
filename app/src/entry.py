@@ -855,6 +855,7 @@ NOTIFICATION_KINDS = frozenset({
     "calendar_reminder",
     "calendar_rsvp",
     "chat_webhook",
+    "security_advisory",
     "channel_unread",
     "direct_unread",
     "account_email_sent",
@@ -983,6 +984,7 @@ NOTIFICATION_EMAIL_DEFAULTS = {
     "calendar_reminder": True,
     "calendar_rsvp": True,
     "package_review": True,
+    "security_advisory": True,
     "channel_unread": True,
     "direct_unread": True,
 }
@@ -1177,7 +1179,7 @@ _URL_EXPORT_NAMES = (
     "REPO_PROVIDER_MIRROR_RE",
     "REPO_CARD_RE",
     "REPO_MEDIA_RE", "REPO_STAR_RE", "REPO_VIEW_RE", "REPO_VIEWS_RE",
-    "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE",
+    "REPO_FORKS_RE", "REPO_REMOTE_FORKS_RE", "REPO_PULL_BATCH_RE",
 )
 for _url_export_name in _URL_EXPORT_NAMES:
     globals()[_url_export_name] = _urls.export(_url_export_name)
@@ -1525,6 +1527,11 @@ world_neighbour_icon_handler = _world_routes.export(
 world_visa_handler = _world_routes.export("world_visa_handler")
 world_visa_verify_handler = _world_routes.export("world_visa_verify_handler")
 world_mesh_visitor = _world_routes.export("world_mesh_visitor")
+world_visa_session_handler = _world_routes.export("world_visa_session_handler")
+world_federation_cors = _world_routes.export("world_federation_cors")
+world_federated_path = _world_routes.export("world_federated_path")
+world_bearer_visitor = _world_routes.export("world_bearer_visitor")
+world_visitor_claim = _world_routes.export("world_visitor_claim")
 world_visitors_handler = _world_routes.export("world_visitors_handler")
 world_wallet_badge_handler = _world_routes.export("world_wallet_badge_handler")
 
@@ -13498,7 +13505,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "5ffdfea001d97bb56881a9bbee7a9d9fe108b171f3fc0b48e889c5e07041914a"
+    "c42d16ef4a1708560657263b86ef151172e3f35dae0b14f9f8ae36fcc7562e21"
 )
 
 
@@ -16162,6 +16169,8 @@ hosted_repository_handler = _hosted_git.export("hosted_repository_handler")
 verify_hosted_push_credential = _hosted_git.export(
     "verify_hosted_push_credential")
 has_hosted_push_credential = _hosted_git.export("has_hosted_push_credential")
+verify_hosted_push_access = _hosted_git.export("verify_hosted_push_access")
+hosted_fork_create = _hosted_git.export("hosted_fork_create")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
 record_hosted_branch_count = _hosted_git.export(
     "record_hosted_branch_count")
@@ -18775,6 +18784,7 @@ _REPO_SCOPED_TABLES = (
     ("inbox_drain_log", "repo_bi"),
     ("issue_seq", "repo_bi"),
     ("private_mirror_routes", "repo_bi"),
+    ("pull_batch_sent", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
@@ -18796,6 +18806,11 @@ _REPO_SCOPED_TABLES = (
     ("repo_provider_mirror_links", "repo_bi"),
     ("repo_provider_mirror_outbox", "repo_bi"),
     ("world_fediverse_mentions", "repo_bi"),
+    ("security_advisories", "repo_bi"),
+    ("security_advisory_members", "repo_bi"),
+    ("security_advisory_comments", "repo_bi"),
+    ("security_advisory_credits", "repo_bi"),
+    ("security_advisory_settings", "repo_bi"),
     ("repository_fork_jobs", "source_repo_bi"),
     ("repository_fork_jobs", "target_repo_bi"),
 )
@@ -35065,10 +35080,86 @@ def _repository_social_version(record):
     return ""
 
 
+REPO_CARD_READ_ORIGIN = "https://forkmesh.internal"
+REPO_CARD_COUNTS_TTL_MS = 5 * 60 * 1000
+REPO_CARD_COUNTS_MAX = 256
+_repo_card_counts_memo = {}
+
+
+async def _repo_card_read(env, owner, repo, operation, query=None,
+                          context_cache=None):
+    url = "%s/api/repo/%s/%s/%s" % (
+        REPO_CARD_READ_ORIGIN, quote(owner, safe=""), quote(repo, safe=""),
+        operation)
+    if query:
+        url += "?" + urlencode(query)
+    try:
+        response = await _routed_repository_read(
+            env, url, operation, context_cache=context_cache)
+        if int(getattr(response, "status", 0) or 0) != 200:
+            return None
+        value = json.loads(str(await response.text()) or "null")
+    except Exception:
+        return None
+    if not isinstance(value, dict) or value.get("ok") is False:
+        return None
+    return value
+
+
+async def _repo_card_counts(env, owner, repo):
+    key = (str(owner).lower(), str(repo).lower())
+    now_ms = int(time.time() * 1000)
+    hit = _repo_card_counts_memo.get(key)
+    if hit and 0 <= now_ms - hit[0] < REPO_CARD_COUNTS_TTL_MS:
+        return dict(hit[1])
+    context_cache = {}
+    branches, issues, listing = await asyncio.gather(
+        _repo_card_read(env, owner, repo, "branches",
+                        context_cache=context_cache),
+        _repo_card_read(env, owner, repo, "tree",
+                        {"path": og_card.ISSUES_OPEN_PATH},
+                        context_cache=context_cache),
+        _repo_card_read(env, owner, repo, "tree", {"path": ".forkmesh"},
+                        context_cache=context_cache))
+    contributors = None
+    if og_card.has_roster(listing):
+        blobs = await _repo_card_read(
+            env, owner, repo, "blobs", {"path": og_card.ROSTER_PATH},
+            context_cache=context_cache)
+        blob = ((blobs or {}).get("blobs") or {}).get(og_card.ROSTER_PATH)
+        if isinstance(blob, dict) and not blob.get("truncated") \
+                and blob.get("encoding") != "base64":
+            contributors = og_card.roster_count(str(blob.get("content") or ""))
+    if contributors is None:
+        contributors = og_card.stats_contributor_count(
+            await _repo_card_read(env, owner, repo, "stats",
+                                  context_cache=context_cache),
+            instance_name(env))
+    counts = {
+        "issues": og_card.open_issue_count(issues),
+        "branches": og_card.branch_count(branches),
+        "contributors": contributors,
+    }
+    if len(_repo_card_counts_memo) >= REPO_CARD_COUNTS_MAX:
+        _repo_card_counts_memo.clear()
+    _repo_card_counts_memo[key] = (now_ms, dict(counts))
+    return counts
+
+
+async def _repo_card_accent(env):
+    if not instance_branded(env):
+        return ""
+    try:
+        row = await d1_first(
+            env, "SELECT doc FROM instance_settings WHERE k='theme'")
+        theme = instance_theme.parse((row or {}).get("doc") or "")
+    except Exception:
+        return ""
+    tokens = theme.get("dark") or theme.get("light") or {}
+    return str(tokens.get("accent") or tokens.get("primary") or "")
+
+
 async def repo_card_handler(env, request, owner, repo):
-    # Social-preview info card (adhoc #46): the repo page's og:image points
-    # here, so a Mastodon/Slack/Twitter unfurl shows the repo's name,
-    # description and stats grid (with the ForkMesh mark small in the corner)
     # instead of a full-bleed logo. Public — same visibility gate as the page
     # it previews — and edge-cached so link-preview fetch bursts after a share
     # cost one render per colo per TTL.
@@ -35103,9 +35194,13 @@ async def repo_card_handler(env, request, owner, repo):
     card_version = parse_qs(parts.query).get("v", [""])[0]
     if not re.fullmatch(r"[A-Za-z0-9._-]{1,80}", card_version):
         card_version = ""
+    counts = await _repo_card_counts(env, owner, repo)
     cache_key = _ap_origin(env, request) + parts.path
     if card_version:
-        cache_key += "?v=" + quote(card_version, safe="")
+        cache_key += "?v=" + quote(card_version, safe="") + "&"
+    else:
+        cache_key += "?"
+    cache_key += "n=" + og_card.counts_token(counts)
     cached = await edge_cache_match_media(cache_key, "image/png")
     if cached is not None:
         return cached
@@ -35146,13 +35241,17 @@ async def repo_card_handler(env, request, owner, repo):
         "site": instance_name(env),
         "stars": (stars_row or {}).get("n", 0) or 0,
         "mirrors": max(1, mirrors),
-        "issues": rec.get("issueCount", ""),
+        "issues": rec.get("issueCount", "")
+        if counts.get("issues") is None else counts["issues"],
         "pulls": rec.get("pullCount", ""),
         "commits": rec.get("commitCount", ""),
-        "branches": rec.get("branchCount", ""),
+        "branches": rec.get("branchCount", "")
+        if counts.get("branches") is None else counts["branches"],
+        "contributors": counts.get("contributors") or 0,
         "sizeBytes": rec.get("sizeBytes", 0),
         "updatedAt": rec.get("updatedAt", ""),
         "followers": followers,
+        "accent": await _repo_card_accent(env),
     }
     png = og_card.render_repo_card(info, time.time())
     # Stats drift, so keep the browser TTL modest; preview crawlers cache the
@@ -35639,6 +35738,10 @@ async def repo_forks_handler(env, request, owner, repo):
     public_owner = await _public_repo_owner(
         env, request, owner, repo, REPO_FORKS_RE)
     if method == "POST":
+        hosted = await hosted_fork_create(
+            env, request, owner, public_owner, repo)
+        if hosted is not None:
+            return hosted
         return await _web_fork_create(
             env, request, public_owner, repo)
     repo_bi = await blind_index(env, public_owner + "/" + repo)
@@ -40195,7 +40298,12 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
         return json_response({"error": "issue_too_large"}, status=413)
     if not await verify_issue_event(number, event, repo_keys):
         return json_response({"error": "bad_signature"}, status=401)
-    await _fill_signer_author_name(env, event)
+    if actions_job:
+        event["authorVerified"] = True
+    else:
+        refused = await _bind_session_author(env, request, data, event)
+        if refused is not None:
+            return refused
     submitter_bi = await blind_index(env, event.get("author", ""))
     # Clients replay the SAME signed event when an attempt dropped its
     # response (issue #698: an accepted issue whose side effects outlived
@@ -40237,7 +40345,7 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
     # contributor may make: a "claim" names exactly one account and moves
     # only that name on or off the list, so it needs no repository
     # authority — only proof that the caller IS the account being claimed.
-    if event_type == "claim":
+    if event_type == "claim" and not actions_job:
         ok, err = await _authorize_issue_self_claim(env, data, request, event)
         if not ok:
             return err
@@ -40337,6 +40445,11 @@ async def _accept_issue_submission(env, request, owner, repo, repo_bi, data,
     assignees = list(meta.get("assignees", [])) if isinstance(meta, dict) else []
     if isinstance(event.get("assignees"), list):
         assignees.extend(event.get("assignees"))
+    if event_type == "claim" and event.get("claimState") == "assigned":
+        claimed = clean_string(
+            event.get("assignee", "") or "", MAX_NODE_NAME).strip().lower()
+        if claimed and claimed != actor:
+            assignees.append(claimed)
     await _best_effort_inbox_side_effect(
         notify_issue_assignees(
             env, owner, repo, assignees, actor, item.get("titleIfNew", ""),
@@ -40514,17 +40627,31 @@ async def _record_pull_review(env, request, data, owner, repo, number, event):
         pass
 
 
-async def _fill_signer_author_name(env, record):
+async def _bind_session_author(env, request, data, record, session=None):
     if not isinstance(record, dict):
-        return
-    if clean_string(record.get("authorName", ""), MAX_NODE_NAME).strip():
-        return
+        return None
+    if session is None:
+        try:
+            _, rec = await _account_session_record(
+                env, request, data, allow_unverified=True)
+        except Exception:
+            rec = None
+        session = (rec or {}).get("name", "") if rec else ""
+    session = clean_string(session or "", MAX_NODE_NAME).strip().lower()
+    if not valid_node_name(session):
+        session = ""
     author = str(record.get("author", "") or "").strip()
-    if not valid_node_pubkey(author):
-        return
-    name = await _git_push_account_for_pubkey(env, author)
-    if name:
-        record["authorName"] = name
+    bound = ""
+    if valid_node_pubkey(author):
+        bound = clean_string(
+            await _git_push_account_for_pubkey(env, author) or "",
+            MAX_NODE_NAME).strip().lower()
+    if session and bound and bound != session:
+        return json_response({"error": "author_mismatch"}, status=403)
+    name = session or bound
+    record["authorName"] = name
+    record["authorVerified"] = bool(name)
+    return None
 
 
 PULL_LIFECYCLE_RECORD_REFS = (
@@ -40607,7 +40734,9 @@ async def pulls_handler(env, request, owner, repo):
                     branch, event,
                     _event_signing_repo_keys(request, owner, repo)):
                 return json_response({"error": "bad_signature"}, status=401)
-            await _fill_signer_author_name(env, event)
+            refused = await _bind_session_author(env, request, data, event)
+            if refused is not None:
+                return refused
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi
             )
@@ -40648,14 +40777,14 @@ async def pulls_handler(env, request, owner, repo):
                     _event_signing_repo_keys(request, owner, repo)):
                 return json_response({"error": "bad_signature"}, status=401)
             if event.get("type") in ("status", "delete"):
-                allowed, refusal, lifecycle_actor = (
+                allowed, refusal, _lifecycle_actor = (
                     await _authorize_pull_lifecycle(
                         env, owner, repo, number, data, request, event))
                 if not allowed:
                     return refusal
-                if lifecycle_actor:
-                    event["authorName"] = lifecycle_actor
-            await _fill_signer_author_name(env, event)
+            refused = await _bind_session_author(env, request, data, event)
+            if refused is not None:
+                return refused
             count = await d1_first(
                 env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi
             )
@@ -40738,7 +40867,9 @@ async def pulls_handler(env, request, owner, repo):
         if not await verify_pull_event(
                 pull, _event_signing_repo_keys(request, owner, repo)):
             return json_response({"error": "bad_signature"}, status=401)
-        await _fill_signer_author_name(env, pull)
+        refused = await _bind_session_author(env, request, data, pull)
+        if refused is not None:
+            return refused
         submission_bi = await blind_index(
             env, "pull-submission:" + pull.get("author", "") + ":" +
             pull.get("sig", ""))
@@ -41010,7 +41141,9 @@ async def discussions_handler(env, request, owner, repo):
                 number, event,
                 _event_signing_repo_keys(request, owner, repo)):
             return json_response({"error": "bad_signature"}, status=401)
-        await _fill_signer_author_name(env, event)
+        refused = await _bind_session_author(env, request, data, event)
+        if refused is not None:
+            return refused
         count = await d1_first(
             env, "SELECT COUNT(*) AS c FROM discussion_inbox WHERE repo_bi=?", repo_bi
         )
@@ -49419,6 +49552,8 @@ def _https_mirror_request_query(url, operation, release_sha=""):
             output["path"] = query
     elif operation in ("compare", "merge-preview"):
         keys = ("base", "head")
+        if operation == "compare":
+            keys += ("cherry", "limit")
         if operation == "merge-preview":
             keys += ("rules", "pull", "orgRules")
         for key in keys:
@@ -52111,18 +52246,19 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             if body_stream is not None:
                 body_digest = https_routing.STREAMED_REQUEST_BODY_SHA256
     alias_owner = await _git_push_alias_owner(env, request, owner, repo)
-    account = (
-        await _git_push_authorize(
+    push_prefix = ""
+    if signed_headers:
+        account = await _git_push_authorize(
             env, owner, repo, method, body_digest, pubkey, ts, sig,
             alias_owner=alias_owner)
-        if signed_headers
-        else await verify_hosted_push_credential(
-            env, owner, repo, authorization, method)
-    )
+    else:
+        account, push_prefix = await verify_hosted_push_access(
+            env, owner, repo, authorization, method, alias=alias_owner)
     if not account:
         return _git_push_basic_challenge()
     core_held = str(owner or "").strip().lower() in _core_push_nodes(env)
-    if core_held and not await _core_push_permitted(env, owner, repo, account):
+    if core_held and not push_prefix and not await _core_push_permitted(
+            env, owner, repo, account):
         await _audit_sensitive_action(
             env, account, "git.push_authorize", "repository",
             owner + "/" + repo, "denied",
@@ -52143,8 +52279,10 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
         env, request, owner, repo, account, method, body, body_stream,
         body_digest, is_info=is_info, alias_owner=alias_owner,
         core_held=core_held,
-        credential="key" if signed_headers else "session",
-        encoding=request.headers.get("content-encoding"))
+        credential="key" if signed_headers else (
+            "contributor" if push_prefix else "session"),
+        encoding=request.headers.get("content-encoding"),
+        push_prefix=push_prefix)
     if upstream is None:
         return json_response(
             {"error": "push_unavailable"}, status=503,
@@ -52172,7 +52310,7 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
 async def _https_mirror_push_send(
         env, request, owner, repo, account, method, body, body_stream,
         body_digest, is_info=False, alias_owner="", core_held=False,
-        credential="session", encoding=None):
+        credential="session", encoding=None, push_prefix=""):
     router_public_key = _https_mirror_router_public_key(env)
     router_seed = _https_mirror_router_seed(env)
     if not router_public_key or not router_seed:
@@ -52184,7 +52322,7 @@ async def _https_mirror_push_send(
         return None, None
     tag_moves = (
         await core_push_pending_tag_moves(env, owner, repo, account)
-        if core_held and method == "POST" else {})
+        if core_held and method == "POST" and not push_prefix else {})
     query = {"service": "git-receive-pack"} if is_info else None
     if tag_moves:
         query = {"tagMoves": " ".join(
@@ -52197,6 +52335,8 @@ async def _https_mirror_push_send(
             return None, None
         if protected:
             query = dict(query or {}, protect=" ".join(protected))
+        if push_prefix:
+            query = dict(query or {}, pushPrefix=push_prefix)
     for endpoint in candidates:
         if body_stream is not None and endpoint is not candidates[0]:
             # A streamed pack is consumed by its first upstream attempt; the
@@ -52286,7 +52426,7 @@ async def _https_mirror_push_send(
                     env, owner, repo, endpoint, account,
                     _ref_updates_from(upstream), core=core_push,
                     state=state, tag_moves=tag_moves,
-                    credential=credential)
+                    credential=credential, contributor=bool(push_prefix))
             except Exception:
                 pass
         return upstream, endpoint

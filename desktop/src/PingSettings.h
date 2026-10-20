@@ -78,6 +78,8 @@ inline const QList<KindInfo> &kinds()
         {"release_published", "repositories", "Releases", true, true},
         {"repo_shared", "repositories", "Repositories shared with you", true,
          true},
+        {"security_advisory", "repositories", "Security advisories", true,
+         true},
         {"mirror_request", "repositories", "Mirror requests", true, true},
         {"repository_hosted", "repositories", "Imports finished hosting",
          false, false},

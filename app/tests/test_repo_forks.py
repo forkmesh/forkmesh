@@ -438,7 +438,12 @@ def _web_fork_harness(runtime_mode="headless"):
     async def authorize(_env, _request, owner):
         return "PUBKEY" if owner == "mirror9" else ""
 
+    async def hosted_fork_create(_env, _request, _owner, _public, _repo):
+        # Not a hosted parent: the managed-mirror path runs.
+        return None
+
     ns = _load_functions({
+        "hosted_fork_create": hosted_fork_create,
         "re": re,
         "parse_qs": parse_qs,
         "quote": quote,

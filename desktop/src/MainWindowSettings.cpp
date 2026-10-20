@@ -10613,6 +10613,7 @@ QString pingKindLabel(const QString &kind)
         {QStringLiteral("repo_activity"), QStringLiteral("Repo activity")},
         {QStringLiteral("code_push"), QStringLiteral("Code push")},
         {QStringLiteral("repo_shared"), QStringLiteral("Repo shared")},
+        {QStringLiteral("security_advisory"), QStringLiteral("Security advisory")},
         {QStringLiteral("repository_hosted"), QStringLiteral("Repo hosted")},
         {QStringLiteral("release_published"), QStringLiteral("Release")},
         {QStringLiteral("host_online"), QStringLiteral("Host online")},

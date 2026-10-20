@@ -627,6 +627,20 @@
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">SSH keys</h2>
                     <p class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Register a public key to clone or push through a configured ForkMesh SSH gateway. Repository owner and organization-team write permissions are checked again for every push.</p>
                     <div class="mt-5 grid max-w-3xl gap-5">
+                      <div data-git-push-panel class="grid gap-3 rounded-md border border-border bg-card p-4">
+                        <h3 class="text-sm font-semibold text-foreground">Push code over HTTPS</h3>
+                        <p class="text-sm leading-6 text-muted-foreground">Works with any Git client. Create a push credential for one repository, then push. When Git asks, enter your account name as the username and the credential as the password &mdash; not your account password. A credential lasts 7 days and stops working when you sign out of this browser.</p>
+                        <p data-git-push-contributor class="hidden text-sm leading-6 text-muted-foreground"></p>
+                        <label class="grid gap-2 text-sm font-semibold text-foreground">
+                          Repository
+                          <input data-git-push-repo type="text" maxlength="160" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="owner/repository" class="h-10 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                        </label>
+                        <p data-git-push-status class="min-h-4 text-xs text-muted-foreground"></p>
+                        <button data-git-push-mint type="button" class="fm-btn fm-btn-cta w-fit">
+                          Create push credential
+                        </button>
+                        <div data-git-push-result class="hidden grid gap-3"></div>
+                      </div>
                       <div class="fm-flash fm-flash-warning">
                         <i data-lucide="triangle-alert" aria-hidden="true"></i>
                         <p class="fm-flash-body">ForkMesh stores encrypted public keys only. Your private key and passphrase stay on your device. Never paste a private key, recovery phrase, or password here. Adding a public key reserves it to this account; possession is proven later by OpenSSH when you connect, not by this form.</p>

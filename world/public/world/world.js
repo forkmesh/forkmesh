@@ -54,6 +54,8 @@ import {
 import { buildRepositoryGraphEntities } from "./world-repository-graph.js";
 import { officeFloorsForTeam } from "./world-office-tower.js";
 import { createWorldSocketRecoveryTimers } from "./world-socket-recovery.js";
+import { WorldFederation } from "./world-federation.js";
+import { neighbourSceneLink } from "./world-neighbour-scene.js";
 import {
   WORLD_MESH_OUTDOOR_SPACES,
   WORLD_MESH_SPACE,
@@ -6463,6 +6465,9 @@ class ForkMeshWorld extends HTMLElement {
     this.federatedInstances = [];
     this.worldMesh = { self: null, worlds: [] };
     this.meshLinks = null;
+    this.federation = null;
+    this.leavingWorld = false;
+    this.officeOwner = null;
     this.meshVisitId = "";
     this.arrivalVisa = takeArrivalVisa();
     this.instanceHexes = [];
@@ -7690,12 +7695,54 @@ class ForkMeshWorld extends HTMLElement {
     dialog.showModal();
   }
 
+  setOfficeOwner(owner = null) {
+    const id = String(owner?.id || "");
+    if (id === String(this.officeOwner?.id || "")) return;
+    this.officeOwner = id ? owner : null;
+    this.officeController?.destroy?.();
+    this.officeMeeting?.destroy?.();
+    this.officeTasks?.destroy?.();
+    this.officeController = null;
+    this.officeMeeting = null;
+    this.officeTasks = null;
+    this.officeRuntimePromise = null;
+  }
+
+  officeRoot() {
+    const owner = this.officeOwner;
+    if (!owner) return this;
+    const federation = this.worldFederation();
+    const routed = {
+      fetchJSON: (path, options) => federation.fetchJSON(owner, path, options),
+      postJSON: (path, body, options) =>
+        federation.postJSON(owner, path, body, options),
+    };
+    return new Proxy(this, {
+      get: (target, key) => {
+        if (Object.hasOwn(routed, key)) return routed[key];
+        const value = target[key];
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
+  officeSession() {
+    const owner = this.officeOwner;
+    if (!owner) return readSession();
+    const visitor = this.worldFederation().visitorSession(owner);
+    return visitor ? { ...visitor, sessionToken: "visitor" } : null;
+  }
+
   async ensureOfficeRuntime({ userInitiated = false } = {}) {
     if (this.destroyed || !this.world) return null;
     if (this.officeController) return this.officeController;
     if (this.officeRuntimePromise) return this.officeRuntimePromise;
 
     const world = this.world;
+    const owner = this.officeOwner;
+    if (owner) await this.worldFederation().token(owner);
+    const root = this.officeRoot();
+    const getSession = () => this.officeSession();
     this.officeRuntimePromise = Promise.all([
       import("./world-office.js"),
       import("./world-office-meeting.js"),
@@ -7704,9 +7751,9 @@ class ForkMeshWorld extends HTMLElement {
       .then(([officeModule, meetingModule, tasksModule]) => {
         if (this.destroyed || this.world !== world) return null;
         const meeting = meetingModule.createWorldOfficeMeeting({
-          root: this,
+          root,
           scene: world,
-          getSession: readSession,
+          getSession,
           onActivity: (category) => {
             if (!ACTIVITY_OPTIONS.some((option) => option.id === category)) {
               return;
@@ -7718,12 +7765,12 @@ class ForkMeshWorld extends HTMLElement {
           onStepTotal: (message) => this.applyWorldStepTotal(message),
         });
         const tasks = tasksModule.createWorldOfficeTasksController({
-          root: this,
+          root,
           world,
-          fetchJSON: (path, options) => this.fetchJSON(path, options),
+          fetchJSON: (path, options) => root.fetchJSON(path, options),
           postJSON: (path, body, options) =>
-            this.postJSON(path, body, options),
-          getSession: readSession,
+            root.postJSON(path, body, options),
+          getSession,
           notify: (message, options) => this.notice(message, options),
           onQaVerdict: ({ task, verdict }) =>
             this.recordTaskQaVerdict(task, verdict),
@@ -7731,11 +7778,11 @@ class ForkMeshWorld extends HTMLElement {
         let controller;
         try {
           controller = officeModule.createWorldOfficeController({
-            root: this,
+            root,
             world,
             meeting,
             tasks,
-            getSession: readSession,
+            getSession,
           });
         } catch (error) {
           meeting.destroy?.();
@@ -8009,6 +8056,8 @@ class ForkMeshWorld extends HTMLElement {
         onStartWorldSignSelect: (plot) => this.openStartInstance(plot),
         onDrinkWater: () =>
           this.hudNotice("Fresh garden water — hydration restored. 💧"),
+        onNeighbourDoor: (link) => this.openNeighbourDoor(link),
+        onNeighbourBugSelect: (bug) => this.showNeighbourBug(bug),
         onInstanceHexagonSelect: ({ url, label, worldUrl, arrivalSlot }) => {
           const portal = portalDestination(worldUrl, arrivalSlot);
           if (portal) {
@@ -11379,7 +11428,7 @@ class ForkMeshWorld extends HTMLElement {
         },
         onVisitChanged: (world, previous) =>
           this.handleWorldMeshVisit(world, previous),
-        requestVisa: (world) => this.requestWorldVisa(world),
+        requestVisa: (world) => this.worldFederation().credential(world),
         presenceFrame: () => this.presencePayload(),
         moveIntervalMs: MOVEMENT_SEND_INTERVAL_MS,
       });
@@ -11416,6 +11465,90 @@ class ForkMeshWorld extends HTMLElement {
     }
     this.sendPresenceNow({ type: "presence" });
     this.schedulePeerRender();
+  }
+
+  openNeighbourDoor({ url, label } = {}) {
+    const destination = neighbourSceneLink(url);
+    if (!destination || this.leavingWorld) return;
+    this.leavingWorld = true;
+    const host = new URL(destination).hostname;
+    const name = label ? `${String(label).slice(0, 40)} · ${host}` : host;
+    const veil = document.createElement("div");
+    veil.className = "world-leaving-veil";
+    veil.setAttribute("role", "status");
+    veil.setAttribute("aria-live", "assertive");
+    veil.textContent = `Entering ${name}…`;
+    document.body.append(veil);
+    window.requestAnimationFrame(() => veil.classList.add("is-active"));
+    const reset = () => {
+      veil.remove();
+      this.leavingWorld = false;
+      window.removeEventListener("pageshow", restored);
+    };
+    const restored = (event) => {
+      if (event.persisted) reset();
+    };
+    window.addEventListener("pageshow", restored);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.setTimeout(() => {
+      window.location.assign(destination);
+      window.setTimeout(() => {
+        if (!document.hidden) reset();
+      }, 8000);
+    }, reduced ? 0 : 450);
+  }
+
+  showNeighbourBug(bug = {}) {
+    const label = String(bug.label || "").slice(0, 40);
+    if (!label) return;
+    let card = this.$("[data-world-neighbour-bug]");
+    if (!card) {
+      card = document.createElement("div");
+      card.className = "world-neighbour-bug";
+      card.dataset.worldNeighbourBug = "";
+      card.setAttribute("role", "dialog");
+      card.setAttribute("aria-label", "Bug report");
+      const name = document.createElement("strong");
+      const link = document.createElement("a");
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "View bugs";
+      const close = document.createElement("button");
+      close.type = "button";
+      close.setAttribute("aria-label", "Close");
+      close.textContent = "×";
+      close.addEventListener("click", () => {
+        card.hidden = true;
+      });
+      card.append(name, link, close);
+      (this.$("[data-world-hud-notice]")?.parentElement || this.shadowRoot || this)
+        .append(card);
+    }
+    card.querySelector("strong").textContent = label;
+    const link = card.querySelector("a");
+    const href = neighbourSceneLink(bug.url);
+    link.hidden = !href;
+    if (href) link.href = href;
+    card.hidden = false;
+  }
+
+  worldFederation() {
+    if (!this.federation) {
+      this.federation = new WorldFederation({
+        requestVisa: (world) => this.requestWorldVisa(world),
+      });
+    }
+    return this.federation;
+  }
+
+  fetchJSONAt(x, z, path, options = {}) {
+    const owner = this.world?.worldMeshOwner?.(x, z);
+    const world = owner
+      ? this.worldMesh?.worlds?.find((entry) => entry.id === owner.id)
+      : null;
+    return world
+      ? this.worldFederation().fetchJSON(world, path, options)
+      : this.fetchJSON(path, options);
   }
 
   async requestWorldVisa(world) {

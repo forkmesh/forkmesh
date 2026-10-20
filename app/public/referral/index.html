@@ -396,6 +396,13 @@
       .fm-popover-title { margin: 0; font-size: var(--dashboard-control-font); font-weight: 600; }
       .fm-popover-footer { padding: 4px; border-top: 1px solid rgb(var(--dashboard-border-rgb)); }
       .fm-popover { border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 8px; background: rgb(var(--dashboard-popover-rgb)); color: rgb(var(--dashboard-popover-foreground-rgb)); box-shadow: 0 8px 24px rgb(1 4 9 / .4); }
+      .fm-mention-list { position: fixed; z-index: 80; width: 18rem; max-width: calc(100vw - 32px); max-height: min(22rem, 45vh); overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
+      .fm-mention-option { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 14px; line-height: 20px; -webkit-tap-highlight-color: transparent; }
+      .fm-mention-option[aria-selected="true"], .fm-mention-option:hover { background: rgb(var(--dashboard-accent-rgb) / .12); }
+      .fm-mention-avatar { position: relative; display: inline-flex; flex: none; align-items: center; justify-content: center; width: 24px; height: 24px; overflow: hidden; border-radius: 9999px; border: 1px solid rgb(var(--dashboard-border-rgb)); background: rgb(var(--dashboard-secondary-rgb)); font-size: 10px; font-weight: 700; color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-mention-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+      .fm-mention-login { flex: none; font-weight: 600; }
+      .fm-mention-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(var(--dashboard-muted-foreground-rgb)); }
       .fm-menu { padding: 4px; }
       :where(.fm-menu-item) { display: flex; }
       .fm-menu-item { align-items: center; gap: 8px; width: 100%; height: var(--dashboard-menu-row-height); padding: 0 8px; border-radius: var(--dashboard-control-radius); color: rgb(var(--dashboard-foreground-rgb)); font-size: var(--dashboard-control-font); text-align: left; text-decoration: none; cursor: pointer; }
@@ -596,6 +603,18 @@
         border-color: hsl(var(--label-h) 60% 40% / 0.4);
         background: hsl(var(--label-h) 75% 45% / 0.12);
         color: hsl(var(--label-h) 75% 28%);
+      }
+
+      img[data-md-figure] {
+        display: block;
+        width: 100%;
+        height: auto;
+        aspect-ratio: 16 / 9;
+        max-height: 24rem;
+        object-fit: scale-down;
+        object-position: left top;
+        border: 0;
+        border-radius: 0;
       }
 
       /* Edit / delete controls on your own chat messages. Hidden until the row
@@ -3050,6 +3069,15 @@
                       <a data-profile-badges-all href="/dashboard/achievements" class="shrink-0 text-xs text-primary hover:underline">View all</a>
                     </div>
                     <ul data-profile-badges-list class="grid gap-3 p-3 text-sm"></ul>
+                  </section>
+                  <section data-profile-security-credits hidden class="mt-4 overflow-hidden rounded-md border border-border bg-card">
+                    <div class="flex items-center gap-2 border-b border-border px-3 py-2">
+                      <i data-lucide="shield-check" class="h-4 w-4 shrink-0 text-muted-foreground"></i>
+                      <h2 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">Security credits</h2>
+                      <span data-profile-security-credits-count class="fm-counter">0</span>
+                      <a href="/security-researchers" class="shrink-0 text-xs text-primary hover:underline">Researchers</a>
+                    </div>
+                    <ul data-profile-security-credits-list class="grid gap-3 p-3 text-sm"></ul>
                   </section>
                   <section data-profile-tips data-instance-plugin="rewards" class="mt-4 overflow-hidden rounded-md border border-border bg-card">
                     <div class="flex items-center gap-2 border-b border-border px-3 py-2">

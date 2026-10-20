@@ -244,7 +244,7 @@ def test_stop_ends_the_run_after_the_pull_request_in_flight():
       return { calls: calls.map((c) => c.head), notice: batch.notice };
     """)
     assert out["calls"] == ["pr/a"]
-    assert "Press Send all to continue" in out["notice"]
+    assert "Press Send all pending to continue" in out["notice"]
 
 
 def test_rows_escape_titles_bodies_and_branches():
@@ -295,4 +295,141 @@ def test_a_compare_base_from_the_file_wins_over_a_single_dependency():
         ["fm/c", "main", "upstream/main"],
         ["fm/d", "main", "fm/c"],
         ["fm/e", "main", ""],
+    ]
+
+
+def test_the_default_view_lists_only_the_batch_file_rows():
+    out = _run("""
+      const parsed = parsePullBatchFile(JSON.stringify({compareBase: "upstream-main", pulls: [
+        {branch: "fm9/branch-delete", title: "Delete"}, {branch: "fm9/gone", title: "Gone"},
+      ]}), "main");
+      const names = ["main", "fm9/branch-delete", "fm5/old", "fm10/other"];
+      const plain = buildPullBatchRows(parsed.entries, names, "main", "", parsed.compareBase);
+      const filtered = buildPullBatchRows(parsed.entries, names, "main", "fm5/", parsed.compareBase);
+      return {
+        plain: plain.map((r) => [r.branch, r.missing]),
+        filtered: filtered.map((r) => [r.branch, pullBatchCompareBase(r)]),
+      };
+    """)
+    assert out["plain"] == [["fm9/branch-delete", False], ["fm9/gone", True]]
+    assert out["filtered"] == [["fm5/old", "upstream-main"]]
+
+
+SERVER_STATUS = r"""
+const HEAD = (c) => c.repeat(40);
+const serverRows = {
+  "fm/merged": { state: "merged", head: HEAD("a"), upstream: "merged", sent: null, sentBefore: null },
+  "fm/on-merged": { state: "pending", head: HEAD("b"), upstream: "pending", sent: null, sentBefore: null },
+  "fm/sent": { state: "sent", head: HEAD("c"), upstream: "pending", sent: { head: HEAD("c"), number: 77, at: 1 }, sentBefore: null },
+  "fm/on-sent": { state: "pending", head: HEAD("d"), upstream: "pending", sent: null, sentBefore: null },
+  "fm/gone": { state: "missing", head: "" },
+  "fm/on-gone": { state: "pending", head: HEAD("e"), upstream: "pending", sent: null, sentBefore: null },
+  "fm/pending": { state: "pending", head: HEAD("f"), upstream: "pending", sent: null, sentBefore: null },
+  "fm/pushed-again": { state: "pending", head: HEAD("1"), upstream: "pending", sent: null, sentBefore: { head: HEAD("2"), number: 5, at: 1 } },
+};
+function serverBatch() {
+  return { repo, remote, sent: {}, outcome: {}, rows: [
+    row("fm/merged"), row("fm/on-merged", { dependsOn: ["fm/merged"] }),
+    row("fm/sent"), row("fm/on-sent", { dependsOn: ["fm/sent"] }),
+    row("fm/gone"), row("fm/on-gone", { dependsOn: ["fm/gone"] }),
+    row("fm/pending"), row("fm/pushed-again"),
+  ] };
+}
+"""
+
+
+def test_merged_sent_and_missing_rows_are_set_aside_and_only_pending_rows_are_sent():
+    out = _run(SERVER_STATUS + """
+      const batch = serverBatch();
+      const requests = [];
+      await refreshPullBatchStatus(batch, { request: async (r, payload) => { requests.push(payload); return { ok: true, rows: serverRows, upstream: { repo: "forkmesh/forkmesh", commit: HEAD("9") } }; } });
+      const { order, plan } = pullBatchPlan(batch.rows, batch.sent, batch.outcome);
+      const groups = pullBatchGroups(batch, order);
+      const summary = pullBatchSummary(batch, order, plan);
+      const calls = [];
+      const recorded = [];
+      await runPullBatch(batch, { send: fakeSend(calls), record: async (b, r, n) => { recorded.push([r.branch, r.head, n]); } });
+      return {
+        request: requests[0],
+        groups: Object.fromEntries(Object.entries(groups).map(([k, v]) => [k, v.map((r) => r.branch)])),
+        states: Object.fromEntries([...plan].map(([k, v]) => [k, v.state])),
+        gone: plan.get("fm/on-gone").reason,
+        label: pullBatchSendLabel(batch, summary.ready),
+        calls: calls.map((c) => [c.head, c.body.split("\\n")[0]]),
+        recorded,
+        done: pullBatchDoneHtml(batch, groups),
+      };
+    """)
+    assert out["request"]["action"] == "status" and out["request"]["target"] == "https://example.net/acme-bolt/bolt"
+    assert out["groups"] == {
+        "pending": ["fm/on-merged", "fm/on-sent", "fm/on-gone", "fm/pending", "fm/pushed-again"],
+        "merged": ["fm/merged"], "sent": ["fm/sent"], "missing": ["fm/gone"],
+    }
+    assert out["states"]["fm/merged"] == "merged" and out["states"]["fm/sent"] == "sent"
+    assert out["states"]["fm/gone"] == "missing" and out["states"]["fm/pushed-again"] == "skipped"
+    assert "no longer exists" in out["gone"]
+    assert out["label"] == "Send all pending (3)"
+    assert out["calls"] == [["fm/on-merged", "Body fm/on-merged"], ["fm/on-sent", "Depends on: #77"], ["fm/pending", "Body fm/pending"]]
+    assert out["recorded"] == [["fm/on-merged", "b" * 40, 41], ["fm/on-sent", "d" * 40, 42], ["fm/pending", "f" * 40, 43]]
+    assert "Merged upstream (1)" in out["done"] and "Already sent (1)" in out["done"]
+    assert "text-attention" in out["done"] and "text-destructive" not in out["done"]
+    assert "fm/gone" in out["done"]
+
+
+def test_nothing_to_send_when_every_row_is_merged_or_sent():
+    out = _run(SERVER_STATUS + """
+      const batch = { repo, remote, sent: {}, outcome: {}, rows: [row("fm/merged"), row("fm/sent"), row("fm/gone")] };
+      applyPullBatchStatus(batch, serverRows, {});
+      const { order, plan } = pullBatchPlan(batch.rows, batch.sent, batch.outcome);
+      const summary = pullBatchSummary(batch, order, plan);
+      const calls = [];
+      await runPullBatch(batch, { send: fakeSend(calls), record: async () => {} });
+      return { ready: summary.ready, label: pullBatchSendLabel(batch, summary.ready), checking: pullBatchSendLabel({ checking: true }, 0), calls: calls.length };
+    """)
+    assert out == {"ready": 0, "label": "Nothing to send", "checking": "Checking…", "calls": 0}
+
+
+def test_browser_records_seed_the_server_once_and_count_as_sent():
+    out = _run(SERVER_STATUS + """
+      savePullBatchSent(repo, remote, { "fm/pending": { number: 31, at: 5 }, "fm/pushed-again": { number: 6, at: 5 } });
+      const batch = serverBatch();
+      const requests = [];
+      await refreshPullBatchStatus(batch, { request: async (r, payload) => { requests.push(payload); return { ok: true, rows: serverRows }; } });
+      return { requests, pending: batch.rows.find((r) => r.branch === "fm/pending").group, sent: batch.sent };
+    """)
+    assert [request["action"] for request in out["requests"]] == ["status", "record"]
+    assert out["requests"][1]["sent"] == [{"branch": "fm/pending", "head": "f" * 40, "number": 31}]
+    assert out["pending"] == "sent"
+    assert out["sent"]["fm/pending"]["number"] == 31 and out["sent"]["fm/sent"]["number"] == 77
+    assert "fm/pushed-again" not in out["sent"]
+
+
+def test_status_failure_falls_back_to_every_listed_row():
+    out = _run(SERVER_STATUS + """
+      const batch = serverBatch();
+      await refreshPullBatchStatus(batch, { request: async () => { throw new Error("HTTP 503"); } });
+      return { groups: batch.rows.map((r) => r.group), error: batch.statusError, checking: batch.checking };
+    """)
+    assert set(out["groups"]) == {"pending"}
+    assert "Could not check" in out["error"] and out["checking"] is False
+
+
+def test_a_row_compare_base_overrides_the_file_level_one_for_stacked_rows():
+    out = _run("""
+      const entries = parsePullBatchFile(JSON.stringify({compareBase: "a".repeat(40), pulls: [
+        {branch: "fm/parent", title: "Parent"},
+        {branch: "fm/child", title: "Child", dependsOn: ["fm/parent"]},
+        {branch: "fm/pinned", title: "Pinned", dependsOn: ["fm/parent"], compareBase: "fm/elsewhere"},
+        {branch: "fm/two", title: "Two", dependsOn: ["fm/parent", "fm/child"]},
+      ]}), "main").entries;
+      const requests = [];
+      const batch = { repo, remote, sent: {}, outcome: {}, rows: entries.map((e) => ({ ...e, include: true, missing: false })) };
+      await refreshPullBatchStatus(batch, { request: async (r, payload) => { requests.push(payload); return { ok: true, rows: {} }; } });
+      return requests[0].rows;
+    """)
+    assert out == [
+        {"branch": "fm/parent", "compareBase": "a" * 40},
+        {"branch": "fm/child", "compareBase": "fm/parent"},
+        {"branch": "fm/pinned", "compareBase": "fm/elsewhere"},
+        {"branch": "fm/two", "compareBase": "a" * 40},
     ]

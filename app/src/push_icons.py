@@ -41,6 +41,7 @@ PUSH_KIND_ICONS = {
     "repo_activity": "\U0001F4E6",
     "code_push": "\U0001F4E4",
     "security_alert": "\U0001F6A8",
+    "security_advisory": "\U0001F6E1\uFE0F",
     "package_review": "\u2B50",
     "badge": "\U0001F3C5",
 }

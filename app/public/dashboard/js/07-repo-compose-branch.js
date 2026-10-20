@@ -16,7 +16,7 @@
           <input data-repo-issue-title type="text" required maxlength="240" placeholder="Short, descriptive title" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent" />
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">Description
-          <textarea data-repo-issue-body rows="6" placeholder="Describe the issue. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent">${escapeHtml(initialBody)}</textarea>
+          <textarea data-repo-issue-body data-mention-input="repo" rows="6" placeholder="Describe the issue. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent">${escapeHtml(initialBody)}</textarea>
         </label>
         <div class="grid gap-2 sm:grid-cols-2">
           <label class="grid gap-1 text-xs font-medium text-muted-foreground">Milestone
@@ -745,7 +745,7 @@
           <input data-repo-pull-title type="text" required maxlength="240" placeholder="Short, descriptive title" class="h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent" />
         </label>
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">Description
-          <textarea data-repo-pull-body rows="6" placeholder="Describe the change. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
+          <textarea data-repo-pull-body data-mention-input="repo" rows="6" placeholder="Describe the change. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
         </label>
         <div class="rounded-md border border-dashed border-border bg-secondary/20 px-3 py-2 text-[11px] text-muted-foreground">${parent
           ? `The diff is resolved on <span class="font-mono text-foreground">${escapeHtml(sourceLabel)}</span>, signed in this browser, and submitted to <span class="font-mono text-foreground">${escapeHtml(targetLabel)}</span>. The portable patch remains deliverable while the parent node is offline.`

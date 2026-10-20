@@ -15,7 +15,7 @@ What this adds over runner Actions:
 | Step options | `run`, workflow `env` | plus job/step `env`, `working-directory`, `if`, `timeout-minutes` |
 | Secrets | none | repository and organization secrets, masked in logs |
 | Push back | never | fast-forward push to the triggering branch with an `actions-push` grant |
-| Job API | none | read the event, comment on, label, open and close issues |
+| Job API | none | read the event, comment on, label, assign, open and close issues |
 | Logs | 16 KiB tail | full log up to 1 MiB, reported every 5 seconds |
 | Web control | none | Run workflow (with inputs), cancel, re-run |
 
@@ -129,8 +129,14 @@ Payloads (`FORKMESH_EVENT_PATH`) follow GitHub's shapes for the fields used:
 - push: `{ref, before, after, repository:{full_name}, pusher:{name}}`
 - schedule: `{schedule: "<cron>"}`
 - workflow_dispatch: `{inputs:{...}, ref, sender:{login}}`
-- issues: `{action, issue:{number, title, body, state, labels:[{name}], user:{login}}, label:{name}, sender:{login}}`
-- issue_comment: `{action, issue:{...}, comment:{id, body, user:{login}}, sender:{login}}`
+- issues: `{action, issue:{number, title, body, state, labels:[{name}], user:{login}}, label:{name}, sender:{login, verified}}`
+- issue_comment: `{action, issue:{...}, comment:{id, body, user:{login, verified}, verified}, sender:{login, verified}}`
+
+`verified` is `true` only when the inbox bound the author to an account (the
+signed-in session or an account-bound key, `docs/app/notification-email.md`).
+Then `login` is that account. Otherwise `login` is the signing key, never a
+username the client chose. A workflow that acts for the commenter (assigning
+them, for example) must check `comment.user.verified`.
 
 ### Checkout and pushing back
 
@@ -262,11 +268,12 @@ reaches only that job's repository. Responses are JSON.
 | Method and path | Body | Does |
 | --- | --- | --- |
 | `GET /api/actions/job/event` | | the job's event payload |
-| `GET /api/actions/job/issues/<n>` | | `{number, title, body, state, labels, author}` |
+| `GET /api/actions/job/issues/<n>` | | `{number, title, body, state, labels, assignees, author}` |
 | `POST /api/actions/job/issues` | `{title, body, labels}` | opens an issue, returns `{number}` |
 | `POST /api/actions/job/issues/<n>/comments` | `{body}` | comments |
 | `POST /api/actions/job/issues/<n>/labels` | `{add: [], remove: []}` | changes labels |
 | `POST /api/actions/job/issues/<n>/state` | `{state: "open" \| "closed"}` | opens or closes |
+| `POST /api/actions/job/issues/<n>/assignees` | `{add: [], remove: []}` | assigns and unassigns accounts |
 
 Issue changes are signed by the instance's Actions bot account
 (`<owner>-actions`, an organization writer created at install). Issue events
@@ -281,7 +288,9 @@ dict on both Pyodide and the host, so `x` and `d` are read as keys, which
 keeps the `test_host_js_surface` inventory free of attribute chains on it).
 Each change is a v2
 issue event (`forkmesh-issue-event-v2\n<owner>/<repo>\n...`, owner being the
-repository's node owner) with `authorName: <org>-actions`, handed to
+repository's public address: an organization alias such as `acme/app`, the key
+browsers and the desktop sign with, not the backing account the alias resolves
+to) with `authorName: <org>-actions`, handed to
 `_accept_issue_submission` in `entry.py` — the same validation, inbox row and
 side effects as a web submission (it is the former POST body of
 `issues_handler`). The job token is the authority, so structural events
@@ -290,6 +299,43 @@ current labels from the repository and sends the full new list. Reading an
 issue goes through the repository's gateway (`blobs` of
 `.forkmesh/issues/{open,closed}/<n>/issue-<n>.json`). A repository whose
 `issues` feature is off refuses every write, like the web.
+
+### Assigning
+
+`POST issues/<n>/assignees` (`change_assignees`) lets a workflow assign
+without committing ledger events to git itself. A commit made that way never
+passes through the issue inbox, so it raised no "issue assigned" notification.
+
+- Each change is one signed `claim` event (`assignee`, `claimState`
+  `assigned` or `released`), the event the web's self-assignment writes. A
+  claim moves one name and leaves everyone else alone, so it never overwrites
+  an assignment made at the same time, and the Go intake, the desktop and the
+  reconciler already fold it. The job token is the authority, so
+  `_accept_issue_submission` skips the self-claim session check for a job,
+  as it skips the manager check for labels.
+- The inbox sends `issue_assigned` to an account a claim assigns when it is not
+  the claim's own author, so a job's assignment notifies the assignee and a
+  self-claim does not notify its author.
+- `add` and `remove` take account names (`@` and case are dropped), at most 10
+  in all per call. An account in both is a `400`. Every name in `add` must be
+  an existing account, otherwise `422 unknown_account` and nothing changes.
+- The current list is read from the repository first. A name already assigned
+  (or not assigned, for `remove`) is skipped, so repeating a call changes
+  nothing and answers `changed: false`. A claim still in the inbox is not in
+  that list yet; a repeat in that window queues a second claim with the same
+  effect, and the notification is deduplicated per issue and assignee.
+- Answer: `{ok, number, assignees, assigned, unassigned, changed}`, where
+  `assignees` is the list after the change. A missing issue is
+  `404 issue_not_found`; an unknown route is still `404 not_found`, which is
+  how a workflow can tell an instance without this endpoint.
+- Every accepted change, refusal for an unknown account and failed submission
+  is written to `sensitive_audit_log` as `actions.issue_assignees` (actor the
+  bot, target `<owner>/<repo>#<n>`, the job id and workflow path in details).
+- Limits are the comment endpoint's: each claim is one inbox submission, under
+  the same `inbox_full` and per-author `author_quota` limits. The first refusal
+  stops the call and is returned as is.
+- Scope is the job token's: a trusted job, its own repository only, while the
+  job is leased or running.
 
 The bot is a `node`-kind account holding the derived public key, with the
 organization role `maintainer` (repository permission `maintain`, which is at
@@ -300,7 +346,8 @@ but no membership, and its bot name is `forkmesh-actions`.
 (`forkmesh-actions comment 12 "Thanks!"`); `install-instance.sh` installs it
 as `/usr/local/bin/forkmesh-actions`. Subcommands: `event` (prints
 `$FORKMESH_EVENT_PATH`, else `GET event`), `issue <n>`, `comment <n>
-<body|->`, `label <n> --add a,b --remove c`, `close <n>`, `reopen <n>`,
+<body|->`, `label <n> --add a,b --remove c`, `assign <n> a,b`,
+`unassign <n> a,b`, `close <n>`, `reopen <n>`,
 `open-issue <title> <body|-> [labels]` (`-` reads standard input). It needs
 curl and builds JSON with jq, or python3 when jq is missing
 (`FORKMESH_ACTIONS_JSON=python` forces that path, for tests). The token is

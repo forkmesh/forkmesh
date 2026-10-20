@@ -187,6 +187,51 @@ GitHub reference screenshots).
   avatar-left comment card; commits and bodiless reviews are lines on a
   timeline rail, and reviews with text are comment cards. The sidebar lists
   only sections with real data behind them.
+- **People in timelines** (issue and pull timelines, comment cards, the
+  opening card, "set assignees"): every name is drawn by
+  `issuePersonNameHtml` and every face by `issueActorAvatarHtml`
+  (`02-helpers.js`). The picture is, in order, the forge account's avatar
+  (`/api/accounts/<name>`, one cached lookup per name), the repository
+  roster's picture for a row whose `login`, `github` or `gitlab` matches the
+  name case-insensitively (`avatar` when it points into
+  `.forkmesh/contributors/`, else `<slug>.png`), then the initials. A name
+  links to `/@<name>` when the forge account exists, else to the roster
+  `profile` (plain `https:` only, new tab), else not at all. Bots (`…[bot]`
+  and the names `repoContributorIsBot` already treats as bots, such as
+  `<org>-actions`) get the lucide `bot` mark and no link. Faces have fixed
+  sizes and pictures are laid over the initials with explicit width and
+  height and `loading="lazy"`, so nothing moves when they arrive. Comment
+  cards keep the 40 px avatar column on wide screens and show a 24 px avatar
+  beside the name on phones, where the column is hidden. The roster is read
+  once per repository and branch (`repoContributorRosterCached`), shared with
+  the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **@mentions in markdown** (`MD_MENTION` in `renderMarkdownInline`): an
+  `@login` (letters, digits and single inner hyphens, at most 39) becomes a
+  link to its profile, resolved like a timeline name; with no forge account
+  and no roster profile it goes back to plain text. It is matched after code
+  spans, links, images and bare URLs are parked, so nothing is linked twice,
+  and never when the `@` follows a letter, digit, `.`, `/`, `+` or `-`
+  (emails, URL paths, `@scope/package`), or when the login runs on into
+  `.x`, `/x`, `_x`, `@` or `[bot]`. Task markdown opts out
+  (`mentions: false`): tasks highlight teammates themselves. Tests in
+  `app/tests/test_repo_readme_markdown.py`.
+- **Mention suggestions** in every record editor (the Add a comment box and
+  its @ button, pull reviews, discussion replies, the issue description
+  editor, inline pull comments, and the new issue and new pull forms; a
+  textarea opts in with `data-mention-input`). Typing `@` plus characters
+  opens a list of at most 8 people at the caret: those in this issue or pull
+  (author, commenters, assignees, reviewers, people already mentioned, most
+  recent first), then the roster by commits; logins and names match by
+  prefix first, then anywhere. There is no forge-wide search because
+  `/api/accounts/users` returns every account's picture and is too heavy to
+  read for this. Tap, Enter or Tab inserts `@login ` (replacing the rest of a
+  half-typed login); Escape closes; arrows move. The list is a `listbox`
+  driven by `aria-activedescendant`, rows are 44 px tall, and it is placed in
+  the visual viewport so it stays above a phone keyboard. Nothing is fetched
+  per keystroke: the candidates come from the loaded record and the cached
+  roster. Editing a comment opens an inline editor in its card
+  (`openIssueCommentEditor`, replacing the browser prompt, which could not
+  offer suggestions); a quiet refresh waits while it is open.
 - **Discussions** have a search box (`is:open category:…`), Sort by (latest
   activity, date created, oldest), Filter (open, closed, all) and New
   discussion, with Categories on the left and the list on the right. Each row
@@ -194,6 +239,100 @@ GitHub reference screenshots).
   category. There are no vote or reply counts because the list reads only
   `discussion.md`. New discussion explains that discussions are created from
   the desktop app, since they are signed by the author's node.
+
+## Issue page first view
+
+An issue page (`/<owner>/<repo>/issues/<n>`, or `/<name>/issues/<n>` on an
+instance with short addresses) used to arrive as the repository header and
+an empty band; `dashboard.js` drew a shimmering frame, read the issue and
+replaced the frame with it, and everything below the title moved. The node
+now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.py`):
+
+- **Same markup as the dashboard.** `render_issue` draws the article
+  `renderRepoIssueDetail` (`06-repo-content.js`) draws for a visitor without
+  write access, from the issue's signed-event JSON. Its helpers are ports of
+  the dashboard's (`escapeHtml`, `formatTimeAgo`, `parseIssueJson`,
+  `issueDetailParsed`, `issueLabelHue`, the timeline people helpers, and
+  `renderMarkdown` with its inline rules, @mention links included); icons are
+  the `<svg>` lucide 0.468's `createIcons` puts in place of
+  `<i data-lucide>`. The frame around it is `renderRepoDetail` with the
+  Issues tab open on a record. `dashboard.js` keeps that article in place
+  when it takes the page over (`takeRepoFirstViewIssue`, and
+  `loadRepoRecordDetail` puts it where the skeleton would go), then replaces
+  it with its own render of the same markup, so nothing moves. Any change to
+  the dashboard's issue markup must be made in both; the parity tests in
+  `app/tests/host/test_repo_ssr_issue.py` run the dashboard's own functions
+  under node and compare the two renders (add any new helper the issue view
+  calls to the test's `FUNCTIONS`/`CONSTANTS`).
+- **Viewer-dependent parts.** The comment box and the sub-issue Add button
+  depend on who is looking, so both the guest and the member variants are
+  drawn and the page's head script picks one before the first paint
+  (`html[data-guest]`, `VIEWER_STYLE`). A member's comment-box avatar is
+  drawn blank: the node does not know who is signed in.
+- **Escaping.** Everything from the issue is escaped, the state label
+  included: the issue file's `status` is author-controlled and not checked
+  against a signature here. The Markdown port escapes before it formats.
+- **Data.** `repo_views` builds an issue bundle (the whole record and the
+  open issues, for mentions and sub-issues) from the local gateway,
+  remembered per content; the rendered article is kept on the bundle for a
+  minute because its relative times move. The page waits at most
+  `ISSUE_BUDGET_SECONDS` (0.3 s) for the issue and the repository's first
+  view, which are usually remembered; otherwise it is served without them.
+  Without a remembered `/about`, a feature tab's page still draws the tabs a
+  repository has by default.
+- **Pictures.** A paragraph that is one picture of unknown size (no width or
+  height, `mdLoneImage` / `lone_image`) is drawn in a fixed 16:9 frame,
+  `img[data-md-figure]` in `shell.html`, at most 24rem high, with the picture
+  scaled down inside it, so the conversation below does not move when it
+  loads.
+
+## Repository share card
+
+The repository page's `og:image` points at `repo_card_handler`
+(`app/src/entry.py`), so a Mastodon, Slack or Twitter unfurl shows the
+repository as a terminal session: a rounded window with a title bar (three
+traffic-light dots and `host - owner/repo`), and in it a short shell session
+(`forkmesh repo show <path>`), the description (at most three lines), the
+counts that are not zero (a single mirror, the repository itself, is left
+out too), and `git clone https://<host>/<path>.git` with a block cursor. The
+repository's mark sits neofetch-style in the body's top-right corner, over a
+dark wash of the instance accent (`_repo_card_accent`, lightened until it
+reads on the near-black terminal) and faint scanlines.
+
+- **Visibility before cache.** The signed catalog record is checked first, so
+  making a repository private revokes its cached card at once rather than
+  after the TTL. Organization aliases keep their public owner on the card
+  while every lookup uses the backing node.
+- **Live counts.** The card counts what the repository page counts, read
+  through the router like any public read (`_repo_card_counts`): open issues
+  are the numbered folders of `.forkmesh/issues/open`, branches the current
+  branch list, contributors the committed `contributors.json` roster (its
+  declared count, else its named rows), else the commit authors without bots.
+  The catalog's `issueCount`/`branchCount` are what a publisher last reported
+  and are only the fallback for a count that could not be read. The counts are
+  remembered per repository (owner and name lowercased) for five minutes, and
+  the reads of one card share a routing context, so a burst of link-preview
+  fetches costs one set of reads; the caller's `?v=` does not key this memo,
+  so varying it cannot force fresh reads.
+- **Edge cache.** The rendered PNG is cached under its version and a short
+  token of the live counts (`og_card.counts_token`), so a card drawn with
+  other numbers is never served for these.
+- **Text.** Every string goes through `og_card.terminal_text`: accents are
+  dropped, typographic quotes and dashes fold to ASCII, anything else becomes
+  `?`. Trailing blanks only advance the pen, so they never paint over what lies
+  past the text. `CARD_REVISION` is bumped when the card's look changes, so
+  link-preview caches that key on the `og:image` URL fetch the new card.
+- **Font.** Text is Geist Mono (SIL OFL 1.1, licence in
+  `desktop/resources/fonts/Geist-OFL.txt`). The Pyodide worker cannot
+  rasterise a TrueType font, so `app/tools/embed_og_mono_font.py` (needs
+  Pillow) rasterises every glyph of `og_card.MONO_GLYPHS` into 8-bit coverage
+  atlases at authoring time: one fixed cell after another, zlib-compressed and
+  base64-encoded, spliced between the generated-block markers in
+  `og_card.py`. Geist Mono advances 0.6 em, so the sizes (20 and 35 px) are
+  multiples of 5 and every cell is a whole number of pixels wide. A glyph row
+  is blended over the flat background with three `bytes.translate()` calls, so
+  a whole card is still a few thousand row-slice writes. Run the tool after
+  changing the sizes or the glyph set.
 
 ## Optional folder reads, repository logos and SVG images
 

@@ -134,6 +134,16 @@ git clone ─► app ─► public: a core whose signed refs proof matches the p
   `test_hosted_stats_update_only_the_record_whose_pin_they_describe` in
   `app/tests/test_hosted_repositories.py`,
   `TestHostedCopyStateReportsTheWholeHistoryCachedPerTip`.
+- **Attested state after intake and merges:** the router checks clones
+  against the routing digest (default branch plus tags,
+  `routingRefsSHA256`), and pushes already pinned that. The collaboration
+  intake acknowledgement (`server/intake.go`) and merge results
+  (`server/merge.go`) recorded the all-branches digest instead, so on a
+  repository with more than one branch they added a pin no node could match.
+  Both now attest the routing digest; the gateway's own generation pin still
+  uses the full digest. Test: the merge executor test in
+  `server/merge_test.go` compares the attested state with the live routing
+  digest.
 
 ### Private repositories
 
@@ -167,6 +177,94 @@ credentials, port or query), stops past the size limit or 10 minutes, and
 points HEAD at `main`, `master`, `trunk` or `develop`. Private sources are not
 supported. The separate metadata importer (`app/src/repository_imports.py`)
 imports issues, pulls and releases only.
+
+### Contributor pushes
+
+Without a node of their own, a signed-in contributor has no fork to push to,
+so a pull request against a hosted repository was out of reach. An operator
+can open named public repositories to contributor pushes
+(`HOSTED_GIT_CONTRIBUTOR_PUSH`, user guide in
+`www/docs/hosted-repositories.md`): any active, email-verified user account
+may then push branches under `refs/heads/pr/<account>/` of the repository
+itself (the namespace the SSH gateway's pull-request grant uses), with the
+same session-bound credential an owner uses.
+
+- **Allowlist** (`hosted_git`): `*`, `owner/*` or `owner/repo` items,
+  separated by whitespace or commas, case-insensitive; a route alias or its
+  backing node matches. Unparseable entries are ignored, so a typo narrows
+  access rather than widening it. The repository must be listed and public,
+  and the account an active, email-verified user; every check fails closed
+  and is repeated on each push.
+- **Credential.** `POST /api/hosted-repositories/push-credential` mints the
+  session-bound Basic credential. Owners and writers get full access; a
+  contributor gets one limited to its namespace, and the push answer names
+  that one ref namespace (an owner or writer gets no prefix). Signing out
+  revokes it.
+- **Enforcement.** The routing Worker signs `pushPrefix` into the
+  receive-pack capability, so a contributor cannot widen it, and the gateway
+  (`tools/mirror_gateway.py`) refuses any command outside it, with at most
+  `MAX_CONTRIBUTOR_BRANCHES` (32) branches there. A refusal is answered as a
+  receive-pack report (`ng <ref> <reason>`), so stock Git prints the reason
+  beside each ref instead of an opaque HTTP failure. Deletes and force pushes
+  are refused for everyone on this path, so only a maintainer removes a
+  contributor's merged branches. Only new objects cross the wire.
+- **No workflows.** A contributor's push runs nobody's workflows
+  (`core_push`): `on: push` would execute untrusted code with the
+  repository's runner access.
+- **No quota.** There is no per-account byte quota or rate limit on this
+  path beyond the gateway's `receive.maxInputSize` per push.
+
+## Forks
+
+**Forks → Fork this repository** on a public hosted repository creates
+`<you>/<name>`, a hosted repository you own, marked `forkedFrom` the parent
+and listed on its forks (`repo_forks`). Code: `hosted_git.hosted_fork_create`
+(reached from `POST /api/repo/<owner>/<repo>/forks` before the managed-mirror
+path), `hosted_repos.fork_of`, `server/hosted_forks.go`.
+
+- **Storage.** The hosted record carries `fork: {of, network}`; the replica
+  exchange passes `forkOf` and `network` (the root repository's id) to every
+  core. Each core builds the fork from its own copy of the parent: the
+  network pool `<root>/.pools/<network>.git` is a `git clone --local` of the
+  root (hard links, so no extra disk until the parent repacks), refreshed
+  from the parent into `refs/pools/<parent>/…` before each new fork, and the
+  fork's `objects/info/alternates` points at it. Refs are copied from the
+  parent with nothing transferred. A fork costs about 26 KB (measured in
+  `TestHostedForkBorrowsFromTheNetworkPool`); its own pushes stay in it.
+- **One core picks the refs.** Only the fork's primary core copies the
+  parent's heads, tags and HEAD into a new fork. Every other core sets up the
+  pool and the alternates and then fetches the fork's refs from its peers,
+  which transfers almost nothing, so all cores agree on the fork's refs (and
+  refs digest) even when their copies of the parent differ for a moment
+  (`TestHostedForkRefsComeFromThePrimaryOnly`).
+- **Parent still public.** The replica exchange names `forkOf` only while the
+  parent is a live public hosted repository, and the core also refuses to
+  pool a parent its own answer lists as private. A parent made private after
+  the fork never feeds a fork that a core builds later (a new core, or a
+  wiped directory), nor the shared pool
+  (`test_a_fork_of_a_parent_made_private_is_not_built_from_it`,
+  `TestHostedForkOfAPrivateParentIsNotPooled`).
+- **Built under the parent's lock.** Creating and refreshing the pool and
+  copying the fork's refs hold a shared lock on the parent's
+  `forkmesh-maintenance.lock`, so a geometric repack cannot delete objects
+  mid-clone; when maintenance holds it, the fork is built on the next cycle.
+  A new pool must pass `git fsck --connectivity-only` before it is renamed
+  into place.
+- **Never pruned.** The pool is not served and not maintained (maintenance
+  walks only `<root>/hr*.git`, and repacks forks with `-l`), so a
+  force-push, repack or deletion of the parent never removes an object a
+  fork needs. An operator may delete a pool only when no fork in its network
+  is left.
+- **Limits.** Public parents only (shared objects would leak across a
+  private network); active users with a verified email; one fork per
+  account per parent (a second click links to the first);
+  `HOSTED_MAX_FORKS_PER_ACCOUNT` (default 20), separate from the repository
+  quota. Forks of forks join the root's network.
+- **Pull requests.** The composer on a fork targets the parent
+  (`forkedFrom`) and sends a patch-backed pull request (patch and commits),
+  so merging into the parent needs no fetch from the fork.
+- Contributors who would rather not fork can push `pr/<account>/` branches
+  where `HOSTED_GIT_CONTRIBUTOR_PUSH` allows it.
 
 ## Moving to your own node
 

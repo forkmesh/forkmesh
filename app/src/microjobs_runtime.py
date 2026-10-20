@@ -272,6 +272,10 @@ class _MicrojobsRuntime:
                 0, event,
                 _event_signing_repo_keys(self.request, owner, repo)):
             return False
+        if await _bind_session_author(
+                self.env, self.request, None, event,
+                session=str(submission.get("account") or "")) is not None:
+            return False
         try:
             repo_bi = await _inbox_repo_key(self.env, self.request, owner, repo)
         except _OrgAliasUnresolved:

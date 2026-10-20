@@ -9,6 +9,8 @@ forkmesh-actions: talk to the ForkMesh job API from a workflow step.
   forkmesh-actions issue <n>                     print issue <n> (JSON)
   forkmesh-actions comment <n> <body|->          comment on issue <n> (- reads stdin)
   forkmesh-actions label <n> [--add a,b] [--remove c]
+  forkmesh-actions assign <n> <user,user>
+  forkmesh-actions unassign <n> <user,user>
   forkmesh-actions close <n>
   forkmesh-actions reopen <n>
   forkmesh-actions open-issue <title> <body|-> [label,label]
@@ -127,6 +129,13 @@ case "$command" in
     done
     [ -n "$add$remove" ] || die "label needs --add or --remove." 2
     api POST "/issues/$n/labels" "$(json_object list add "$add" list remove "$remove")"
+    ;;
+  assign|unassign)
+    n="$(number "${1:-}")"
+    [ -n "${2:-}" ] || die "$command needs one or more account names." 2
+    key="add"
+    [ "$command" = "unassign" ] && key="remove"
+    api POST "/issues/$n/assignees" "$(json_object list "$key" "$2")"
     ;;
   close|reopen)
     n="$(number "${1:-}")"

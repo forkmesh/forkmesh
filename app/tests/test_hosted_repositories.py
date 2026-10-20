@@ -761,7 +761,7 @@ def test_receive_pack_accepts_the_basic_credential_and_challenges_for_it():
     # only consulted when they are absent.
     assert "signed_headers = bool(pubkey and ts and sig)" in push_proxy
     assert "has_hosted_push_credential(authorization)" in push_proxy
-    assert "await verify_hosted_push_credential(" in push_proxy
+    assert "await verify_hosted_push_access(" in push_proxy
     assert "_git_push_basic_challenge()" in push_proxy
     # A successful push is where a hosted repository's refs pin comes from.
     assert ("await record_hosted_push_state(\n"

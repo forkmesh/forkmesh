@@ -276,6 +276,27 @@ class Default:
             "vary": "Origin",
         }
 
+    @staticmethod
+    def _with_headers(response, values):
+        values = dict(values)
+        if "vary" in values:
+            values["vary"] = _merge_vary(", ".join(
+                str(value) for name, value in response.headers.items()
+                if str(name).lower() == "vary"), values["vary"])
+        current = [
+            (str(name).lower(), value)
+            for name, value in response.headers.items()
+            if str(name).lower() not in values
+            and str(name).lower() != "access-control-allow-credentials"
+        ]
+        current.extend(values.items())
+        return Response(
+            response.body,
+            status=int(getattr(response, "status", 200) or 200),
+            status_text=str(getattr(response, "status_text", "") or ""),
+            headers=current,
+        )
+
     def _with_fast_cors(self, request, response):
         values = self._fast_cors_headers(request)
         if not values:
@@ -1037,8 +1058,18 @@ class Default:
                 if denied is not None:
                     return denied
 
-            response = _api_cors_preflight_response(
-                self.env, request, url.path)
+            cross_origin = _request_origin(request)
+            fed_cors = (
+                await world_federation_cors(self.env, request, url.path)
+                if cross_origin
+                and cross_origin != _request_target_origin(request)
+                and url.path.startswith("/api/")
+                and world_federated_path(url.path) else {})
+            response = (
+                Response("", status=204, headers=fed_cors)
+                if fed_cors and method_name(request) == "OPTIONS"
+                else _api_cors_preflight_response(
+                    self.env, request, url.path))
             if response is not None:
                 response = self._control_response(response)
 
@@ -1065,6 +1096,8 @@ class Default:
                     "/api/repositories", "/api/repositories/search"):
                 response = await self._repo_canonical_json(
                     request, url, response)
+            if fed_cors and method_name(request) != "OPTIONS":
+                response = self._with_headers(response, fed_cors)
         except RequestBodyTooLarge:
             response = json_response(
                 {"error": "request_too_large"},
@@ -1984,6 +2017,11 @@ class Default:
             if action == "viewer-permission" and len(pieces) == 5:
                 return await repo_viewer_permission_handler(
                     self.env, request, owner, repo)
+            if action == "security":
+                import security_advisories
+                security_advisories._bind_runtime(globals())
+                return await security_advisories.repo_route(
+                    self.env, request, owner, repo)
             if action == "file-edit":
                 import repository_file_edits
                 repository_file_edits._bind_runtime(globals())
@@ -2218,6 +2256,10 @@ class Default:
 
         if url.path in ("/api/world/visa", "/api/world/visa/"):
             return await world_visa_handler(self.env, request)
+
+        if url.path in ("/api/world/visa/session",
+                        "/api/world/visa/session/"):
+            return await world_visa_session_handler(self.env, request)
 
         if url.path in ("/api/world/visa/verify", "/api/world/visa/verify/"):
             return await world_visa_verify_handler(self.env, request)
@@ -2481,9 +2523,16 @@ class Default:
                         )
             else:
                 visa_values = query.get("visa") or []
+                visitor_values = query.get("visitor") or []
                 mesh_visitor = await world_mesh_visitor(
                     self.env, request,
-                    visa_values[0] if len(visa_values) == 1 else "")
+                    "" if visitor_values
+                    else visa_values[0] if len(visa_values) == 1 else "")
+                if mesh_visitor and len(visitor_values) == 1:
+                    claim = world_visitor_claim(
+                        self.env, visitor_values[0], mesh_visitor["home"])
+                    mesh_visitor = ({**mesh_visitor, "claim": claim}
+                                    if claim else {"error": "invalid_visitor"})
                 if not mesh_visitor:
                     return json_response(
                         {"error": "origin_not_allowed"}, status=403)
@@ -2774,6 +2823,15 @@ class Default:
         # node, so an error nobody was watching still pings the administrators.
         if url.path in ("/api/desktop-errors", "/api/desktop-errors/"):
             return await desktop_error_handler(self.env, request)
+
+        if url.path in ("/advisories", "/advisories/", "/advisories.json",
+                        "/security-researchers", "/security-researchers/") \
+                or url.path.startswith(("/advisories/",
+                                        "/api/security-advisories/")):
+            import security_advisories
+            security_advisories._bind_runtime(globals())
+            return await security_advisories.public_route(
+                self.env, request, url.path)
 
         # Private vulnerability reports — stored encrypted, emailed to security@.
         if url.path in ("/api/security/report", "/api/security/report/"):
@@ -3656,6 +3714,21 @@ class Default:
                 self.env, request, owner, repo,
                 await _public_repo_owner(
                     self.env, request, owner, repo, REPO_REMOTE_FORKS_RE))
+
+        pull_batch_match = REPO_PULL_BATCH_RE.match(url.path)
+        if pull_batch_match:
+            owner = safe_segment(pull_batch_match.group(1))
+            repo = safe_segment(pull_batch_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            import pull_batch
+            import remote_forks
+            remote_forks._bind_runtime(globals())
+            pull_batch._bind_runtime(globals())
+            return await pull_batch.handler(
+                self.env, request, owner, repo,
+                await _public_repo_owner(
+                    self.env, request, owner, repo, REPO_PULL_BATCH_RE))
 
         subscribe_match = REPO_SUBSCRIBE_RE.match(url.path)
         if subscribe_match:
@@ -4692,15 +4765,13 @@ class Default:
                 fediverse_origin, owner.lower(), repo.lower())
             # OpenGraph/Twitter card so social + fediverse shares of the repo
             # URL (the preview under a federated "new pull request" post, a
-            # Slack unfurl, etc.) render the repo's rendered info card — name,
-            # description and stats grid with the ForkMesh mark in the corner
             # (adhoc #46, see repo_card_handler / og_card.py) — instead of a
             # full-bleed logo. og:description carries the catalog description
             # so the unfurl text matches the repo, not the generic shell copy.
-            og_image = "%s/api/repo/%s/%s/card.png" % (
-                origin, quote(owner), quote(repo))
-            if social_version:
-                og_image += "?v=" + quote(social_version, safe="")
+            og_image = "%s/api/repo/%s/%s/card.png?v=%s" % (
+                origin, quote(owner), quote(repo), quote(
+                    "%s.%s" % (social_version, og_card.CARD_REVISION)
+                    if social_version else og_card.CARD_REVISION, safe=""))
             shown = short_name if canonical_short else "%s/%s" % (
                 owner, repo)
             og_description = str(

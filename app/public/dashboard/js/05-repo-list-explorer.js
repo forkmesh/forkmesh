@@ -2681,6 +2681,7 @@
     }
     // Runs are live executor state, never a load-once cache.
     if (tab === "actions") void loadRepoActions(state.selectedRepo);
+    if (tab === "security") void loadRepoSecurity(state.selectedRepo);
     if (tab === "settings") {
       loadRepoFediverse(state.selectedRepo);
       loadRepoDigestPreview(state.selectedRepo);
