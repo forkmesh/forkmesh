@@ -339,3 +339,197 @@ func TestHostedPushMirrorPushesAndReports(t *testing.T) {
 		t.Fatal("push state outlived the repository")
 	}
 }
+
+func TestHostedPushMirrorRefsValidation(t *testing.T) {
+	for refs, want := range map[string]bool{"": true, "all": true, "default": true,
+		"Default": false, "heads": false, "main": false} {
+		mirror := testPushMirror()
+		mirror.Refs = refs
+		if got := validHostedPushMirror(mirror, hostedDefaultPushHosts); got != want {
+			t.Errorf("refs %q: valid = %v, want %v", refs, got, want)
+		}
+	}
+}
+
+func TestHostedPushExtraBranchDeletes(t *testing.T) {
+	listing := "aaa\trefs/heads/main\n" +
+		"bbb\trefs/heads/feature/x\n" +
+		"ccc\trefs/heads/old\r\n" +
+		"ddd\trefs/heads/old\n" +
+		"eee\trefs/tags/v1\n" +
+		"fff\trefs/heads/a:b\n" +
+		"fff\trefs/heads/wild*\n" +
+		"fff\trefs/heads/x..y\n" +
+		"fff\trefs/heads/\n" +
+		"fff\trefs/heads/sp ace\n" +
+		"fff\trefs/heads/ctl\x01\n" +
+		"warning: something\n" +
+		"\n"
+	got := hostedPushExtraBranchDeletes(listing, "refs/heads/main")
+	want := []string{":refs/heads/feature/x", ":refs/heads/old"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("deletes = %v, want %v", got, want)
+	}
+	var many strings.Builder
+	for i := 0; i < hostedPushMaxDeletes+5; i++ {
+		many.WriteString("abc\trefs/heads/b" + strings.Repeat("x", i%7) + "-" + string(rune('a'+i%26)) +
+			"-" + strings.Repeat("y", i/26) + "\n")
+	}
+	if n := len(hostedPushExtraBranchDeletes(many.String(), "refs/heads/main")); n != hostedPushMaxDeletes {
+		t.Fatalf("deletes = %d, want the cap %d", n, hostedPushMaxDeletes)
+	}
+}
+
+func remoteHeads(t *testing.T, remote string) string {
+	t.Helper()
+	return run(t, ".", "git", "--git-dir="+remote, "for-each-ref", "--sort=refname",
+		"--format=%(refname)", "refs/heads", "refs/tags")
+}
+
+func TestHostedPushMirrorDefaultBranchOnly(t *testing.T) {
+	var app fakeHostedApp
+	appServer := httptest.NewServer(&app)
+	defer appServer.Close()
+	node := hostedTestDaemon(t, "fmnext-n1", appServer.URL)
+	remote := filepath.Join(t.TempDir(), "remote.git")
+	run(t, ".", "git", "init", "--quiet", "--bare", remote)
+	runner := &fakePushRunner{t: t, remote: "file://" + remote}
+	node.hosted.runPush = runner.run
+	now := time.Unix(1790000000, 0)
+	node.hosted.clock = func() time.Time { return now }
+
+	var mu sync.Mutex
+	mirror := testPushMirror()
+	mirror.Refs = "default"
+	app.answer = func(string, map[string]hostedCopyState) hostedReplicaResponse {
+		mu.Lock()
+		defer mu.Unlock()
+		copied := mirror
+		item := hostedDesired{ID: testHostedID, Owner: "alice", Name: "proj", Visibility: "public",
+			Primary: true, Init: testInit(), PushMirror: &copied}
+		return hostedReplicaResponse{Repositories: []hostedDesired{item}}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	// The first reconcile creates the hosted repository (and pushes main).
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	gitDir := node.hosted.gitDir(testHostedID)
+	work := filepath.Join(t.TempDir(), "work")
+	run(t, ".", "git", "clone", "--quiet", gitDir, work)
+	run(t, work, "git", "config", "user.email", "alice@example.test")
+	run(t, work, "git", "config", "user.name", "Alice")
+	run(t, work, "git", "push", "--quiet", "origin", "main:refs/heads/feature", "main:refs/heads/stale")
+	run(t, work, "git", "tag", "v1")
+	run(t, work, "git", "push", "--quiet", "origin", "v1")
+	// A branch that exists only on the target, as if pushed there by hand.
+	run(t, work, "git", "push", "--quiet", remote, "main:refs/heads/only-there")
+	run(t, work, "git", "push", "--quiet", "origin", ":refs/heads/stale")
+
+	mu.Lock()
+	mirror.Revision = "rev-2"
+	mu.Unlock()
+	before := runner.count()
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if runner.count() != before+1 {
+		t.Fatalf("calls = %d, want one push without prune", runner.count()-before)
+	}
+	want := []string{"push", "--porcelain", mirror.URL, "+refs/heads/main:refs/heads/main", "+refs/tags/*:refs/tags/*"}
+	if got := runner.last().args; strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("args = %v", got)
+	}
+	if got := remoteHeads(t, remote); got != "refs/heads/main\nrefs/heads/only-there\nrefs/tags/v1" {
+		t.Fatalf("remote refs = %q", got)
+	}
+	if report := node.hosted.pushMirrorReports()[testHostedID]; !report.OK {
+		t.Fatalf("report = %+v", report)
+	}
+
+	// Another branch moving does not push in default-branch mode.
+	run(t, work, "git", "commit", "--quiet", "--allow-empty", "-m", "feature work")
+	run(t, work, "git", "push", "--quiet", "origin", "HEAD:refs/heads/feature")
+	before = runner.count()
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if runner.count() != before {
+		t.Fatal("a non-default branch change pushed a default-branch mirror")
+	}
+
+	// Prune lists the target and deletes every other branch in the same push.
+	mu.Lock()
+	mirror.Revision = "rev-3"
+	mirror.Prune = true
+	mu.Unlock()
+	before = runner.count()
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if runner.count() != before+2 {
+		t.Fatalf("calls = %d, want ls-remote and push", runner.count()-before)
+	}
+	runner.mu.Lock()
+	listCall := runner.calls[len(runner.calls)-2]
+	runner.mu.Unlock()
+	if strings.Join(listCall.args, " ") != "ls-remote --heads "+mirror.URL {
+		t.Fatalf("list args = %v", listCall.args)
+	}
+	if !strings.Contains(strings.Join(listCall.env, "\n"), "GIT_CONFIG_KEY_0=http.extraHeader") {
+		t.Fatal("ls-remote ran without the token header")
+	}
+	want = []string{"push", "--porcelain", "--prune", mirror.URL, "+refs/heads/main:refs/heads/main",
+		"+refs/tags/*:refs/tags/*", ":refs/heads/only-there"}
+	if got := runner.last().args; strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("args = %v", got)
+	}
+	if got := remoteHeads(t, remote); got != "refs/heads/main\nrefs/tags/v1" {
+		t.Fatalf("remote refs after prune = %q", got)
+	}
+	if report := node.hosted.pushMirrorReports()[testHostedID]; !report.OK || report.Refs != 1 {
+		t.Fatalf("report = %+v", report)
+	}
+
+	// Switching the setting alone, with the same revision, pushes again.
+	mu.Lock()
+	mirror.Refs = "all"
+	mu.Unlock()
+	before = runner.count()
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if runner.count() != before+1 || runner.last().args[4] != "+refs/heads/*:refs/heads/*" {
+		t.Fatalf("changing refs did not push every branch: %v", runner.last().args)
+	}
+	if got := remoteHeads(t, remote); got != "refs/heads/feature\nrefs/heads/main\nrefs/tags/v1" {
+		t.Fatalf("remote refs with all = %q", got)
+	}
+	mu.Lock()
+	mirror.Refs = "default"
+	mu.Unlock()
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := remoteHeads(t, remote); got != "refs/heads/main\nrefs/tags/v1" {
+		t.Fatalf("remote refs back to default = %q", got)
+	}
+
+	// A failed ls-remote is reported, redacted, and nothing is pushed.
+	runner.mu.Lock()
+	runner.fail = errors.New("exit status 128")
+	runner.mu.Unlock()
+	mu.Lock()
+	mirror.Revision = "rev-4"
+	mu.Unlock()
+	before = runner.count()
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	failed := node.hosted.pushMirrorReports()[testHostedID]
+	if runner.count() != before+1 || runner.last().args[0] != "ls-remote" || failed.OK ||
+		strings.Contains(failed.Error, testPushToken) || !strings.Contains(failed.Error, "***") {
+		t.Fatalf("failed list: calls %d report %+v", runner.count()-before, failed)
+	}
+}
