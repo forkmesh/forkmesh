@@ -53,3 +53,7 @@ enum class ChatReceipt(val label: String) {
     DELIVERED("Delivered"),
     READ("Read"),
 }
+
+data class ChatReceiptTimes(val delivered: Long? = null, val read: Long? = null) {
+    val isEmpty: Boolean get() = delivered == null && read == null
+}

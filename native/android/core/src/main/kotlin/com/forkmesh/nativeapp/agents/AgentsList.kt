@@ -4,6 +4,7 @@ import com.forkmesh.nativeapp.localrepos.LocalRepoRecord
 import com.forkmesh.nativeapp.model.AgentSession
 import com.forkmesh.nativeapp.model.PublishedPull
 import com.forkmesh.nativeapp.model.Repository
+import com.forkmesh.nativeapp.navigation.RepoRef
 
 data class AgentRepoGroup(
     val repo: Repository,
@@ -232,6 +233,8 @@ data class AgentStartTarget(val repo: Repository? = null, val record: LocalRepoR
     val name: String get() = repo?.name ?: publishedParts.second
     val isOnMesh: Boolean get() = owner.isNotEmpty() && name.isNotEmpty()
     val isMirrored: Boolean get() = record != null
+
+    val ref: RepoRef? get() = if (isOnMesh) RepoRef(owner, name) else null
 
     val label: String get() = if (isOnMesh) repo?.fullName ?: "$owner/$name" else record?.name ?: ""
 

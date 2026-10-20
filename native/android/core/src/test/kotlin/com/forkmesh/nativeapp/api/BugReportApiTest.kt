@@ -160,6 +160,17 @@ class BugReportApiTest {
         assertEq("Bearer session-token", request.headers["Authorization"])
     }
 
+    fun testTheHomeCountAsksForOneReportOnly() {
+        val wired = Wired(
+            status = 200,
+            body = mapOf("ok" to true, "status" to "new", "counts" to mapOf("new" to 7, "triaged" to 2, "closed" to 4), "reports" to emptyList<Any>()),
+        )
+        wired.api.sessionTokenProvider = { "session-token" }
+        val inbox = wired.api.bugReportInbox(status = "new", limit = 1)
+        assertEq(7, inbox.counts["new"])
+        assertEq(mapOf("status" to "new", "limit" to "1"), wired.transport.requests.single().query())
+    }
+
     fun testTheInboxRefusalSaysItIsForAdministrators() {
         val wired = Wired(status = 403, body = mapOf("error" to "admin_required"))
         val inbox = wired.api.bugReportInbox()
@@ -200,5 +211,37 @@ class BugReportApiTest {
         val gone = Wired(status = 410, body = mapOf("error" to "attachment_unavailable")).api.bugReportAttachment("r1", "a1")
         expect(!gone.ok)
         expect(gone.message.contains("no longer available"), gone.message)
+    }
+
+    fun testACancelledInboxLoadIsNotReportedAsUnreachable() {
+        for (error in listOf(java.io.InterruptedIOException("interrupted"), java.nio.channels.ClosedByInterruptException())) {
+            val wired = Wired()
+            wired.offline = error
+            val inbox = wired.api.bugReportInbox(status = "new")
+            expect(inbox.cancelled)
+            expect(!inbox.ok)
+            assertEq("", inbox.message)
+        }
+        for (error in listOf(IOException("no route to host"), SocketTimeoutException("slow"))) {
+            val wired = Wired()
+            wired.offline = error
+            val offline = wired.api.bugReportInbox()
+            expect(!offline.cancelled)
+            expect(offline.message.contains("Could not reach ForkMesh"), offline.message)
+        }
+    }
+
+    fun testARelayWithoutTheInboxSaysToUpdateTheRelay() {
+        val notFound = mapOf("error" to "not_found")
+        val inbox = Wired(status = 404, body = notFound).api.bugReportInbox()
+        expect(inbox.message.contains("Update the relay"), inbox.message)
+        val change = Wired(status = 404, body = notFound).api.setBugReportStatus("r1", "closed")
+        expect(change.message.contains("Update the relay"), change.message)
+        val file = Wired(status = 404, body = notFound).api.bugReportAttachment("r1", "a1")
+        expect(file.message.contains("Update the relay"), file.message)
+        val method = Wired(status = 405, body = mapOf("error" to "method_not_allowed")).api.bugReportInbox()
+        expect(method.message.contains("Update the relay"), method.message)
+        val missing = Wired(status = 404, body = mapOf("error" to "attachment_missing")).api.bugReportAttachment("r1", "a1")
+        expect(missing.message.contains("no longer available"), missing.message)
     }
 }

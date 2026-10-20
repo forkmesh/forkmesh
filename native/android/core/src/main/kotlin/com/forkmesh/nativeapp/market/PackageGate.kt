@@ -41,7 +41,8 @@ object PackageGate {
         "hosts" to "hosts", "network" to "network",
         "crm" to CRM, "marketing" to "marketing", "analytics" to "analytics", "competitors" to "competitor",
         "ledger" to "ledger", "vault" to "vault", "coves" to "coves", "calories" to "calories",
-        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
+        "steps" to "steps", "water" to "water", "sleep" to "sleep", "sugarBreak" to "sugar-break", "stretch" to "stretch", "foodGuide" to "food-guide",
+        "glassesAlert" to "glasses-alert", "phoneSecurity" to "phone-security", "ember" to "ember", "strata" to "strata", "synapse" to "synapse", "openWrtRouter" to "openwrt", "faceChanger" to "face-changer", "appStoreStatus" to "app-store-status", "runners" to "runners", "usage" to "usage", "rssReader" to "rss-reader", "videoMixDjStudio" to "video-mix-dj-studio", "instanceFeed" to "instance-feed", "secureDrive" to "secure-drive", "files" to "files", "localAI" to "on-device-ai", "activity" to "activity",
         "stats" to "stats", "status" to "status-page", "orgs" to "organizations", "reportBug" to BUG_REPORTS,
         "tour" to "tour", "world" to "world", "people" to "people", "docs" to "docs", "designSystem" to "design-system",
         "signIn" to SIGN_IN, "signOut" to SIGN_IN, "workflows" to WORKFLOWS,
@@ -75,6 +76,12 @@ object PackageGate {
         put("vault", Route.Kind.Vault)
         put("coves", Route.Kind.Coves, Route.Kind.Cove)
         put("calories", Route.Kind.Calories)
+        put("steps", Route.Kind.Steps)
+        put("water", Route.Kind.Water)
+        put("sleep", Route.Kind.Sleep)
+        put("sugar-break", Route.Kind.SugarBreak)
+        put("stretch", Route.Kind.Stretch)
+        put("food-guide", Route.Kind.FoodGuide)
         put("glasses-alert", Route.Kind.GlassesAlert)
         put("phone-security", Route.Kind.PhoneSecurity)
         put("ember", Route.Kind.Ember)
@@ -86,6 +93,7 @@ object PackageGate {
         put("runners", Route.Kind.Runners)
         put("usage", Route.Kind.Usage)
         put("rss-reader", Route.Kind.RssReader)
+        put("video-mix-dj-studio", Route.Kind.VideoMixDjStudio)
         put("instance-feed", Route.Kind.InstanceFeed)
         put("secure-drive", Route.Kind.SecureDrive)
         put("files", Route.Kind.Files)

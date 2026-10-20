@@ -31,7 +31,7 @@ class NavigationTest {
         Route.Node("n"), Route.Market("installed"), Route.Package("vault"), Route.Crm(null), Route.Contact("c"),
         Route.CrmOrg("o"), Route.Marketing(null), Route.Analytics("funnels"), Route.Competitors, Route.Ads,
         Route.Ledger(null), Route.Vault(null), Route.Coves(repo), Route.Coves(null), Route.Cove("c"), Route.Calories,
-        Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
+        Route.Steps, Route.Water, Route.Sleep, Route.SugarBreak, Route.Stretch, Route.FoodGuide, Route.GlassesAlert, Route.PhoneSecurity, Route.Ember(null), Route.Strata(RepoRef("alice", "shop")), Route.Synapse(null), Route.OpenWrtRouter, Route.FaceChanger, Route.AppStoreStatus, Route.Runners, Route.Usage, Route.RssReader, Route.VideoMixDjStudio, Route.InstanceFeed(null), Route.InstanceFeed("0123456789abcdef0123456789abcdef"), Route.SecureDrive, Route.Files, Route.Nexus, Route.Workflows, Route.LocalAI, Route.Activity, Route.Stats, Route.Status, Route.Admin("users"), Route.Settings("pings"),
         Route.Orgs, Route.Org("acme"), Route.InstalledApps, Route.Projects, Route.ProjectAccess("p"), Route.Tour, Route.UpdateRequired,
     )
 
@@ -148,6 +148,9 @@ class NavigationTest {
         expect(HubCatalog.insights.any { it.route == Route.Usage && it.needsRegistration })
         assertEq(listOf(Route.RssReader), RouteParser.parse("https://app.forkmesh.com/dashboard/rss")!!.stack)
         assertEq(listOf(Route.RssReader), RouteParser.parse("forkmesh://rss-reader")!!.stack)
+        assertEq(listOf(Route.VideoMixDjStudio), RouteParser.parse("https://app.forkmesh.com/dashboard/video-mix-dj-studio")!!.stack)
+        assertEq(listOf(Route.VideoMixDjStudio), RouteParser.parse("forkmesh://video-mix-dj-studio")!!.stack)
+        expect(Route.VideoMixDjStudio in HubCatalog.personal.mapNotNull { it.route })
         assertEq(listOf(Route.RssReader), RouteParser.parse("forkmesh://dashboard/rss")!!.stack)
         assertEq(listOf(Route.Workflows), RouteParser.parse("https://app.forkmesh.com/dashboard/workflows")!!.stack)
         assertEq(listOf(Route.Workflows), RouteParser.parse("forkmesh://workflows")!!.stack)

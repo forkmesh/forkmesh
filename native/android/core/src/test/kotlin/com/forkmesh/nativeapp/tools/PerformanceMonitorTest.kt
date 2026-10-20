@@ -39,6 +39,25 @@ class PerformanceMonitorTest {
         }
     }
 
+    fun testStallsNameTheScreenThatWasShowingAndOperationsDoNot() {
+        val printed = mutableListOf<String>()
+        val monitor = PerformanceMonitorService(logSink = { printed.add(it) }, now = { 1000L })
+        var screen = "Code > forkmesh/forkmesh"
+        monitor.screenName = { screen }
+        monitor.recordSlowEvent(PerformanceEventKind.EventLoop, "ui-isolate blocked", 324_000)
+        screen = "Inbox > Shortcuts"
+        monitor.recordFrameDelay(buildMicros = 354_000, rasterMicros = 0)
+        monitor.recordSlowEvent(PerformanceEventKind.Operation, "api.GET /api/tasks", 1_000_000)
+        monitor.recordSlowEvent(PerformanceEventKind.Sync, "named", 250_000, mapOf("screen" to "kept"))
+        screen = ""
+        monitor.recordSlowEvent(PerformanceEventKind.EventLoop, "blank", 300_000)
+        monitor.screenName = { error("gone") }
+        monitor.recordSlowEvent(PerformanceEventKind.EventLoop, "thrown", 300_000)
+
+        assertEq(listOf(null, null, "kept", null, "Inbox > Shortcuts", "Code > forkmesh/forkmesh"), monitor.events.map { it.details["screen"] })
+        expect(printed.any { it.startsWith("[stall] frame frame 354ms") && it.contains("screen=\"Inbox > Shortcuts\"") }, printed.toString())
+    }
+
     fun testTrackLogsOnlyOperationsOverTheThreshold() {
         val printed = mutableListOf<String>()
         val monitor = PerformanceMonitorService(

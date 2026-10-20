@@ -202,8 +202,11 @@ data class BugReportInbox(
     val counts: Map<String, Int> = emptyMap(),
     val nextOffset: Int? = null,
     val message: String = "",
+    val cancelled: Boolean = false,
 ) {
     companion object {
+        val CANCELLED_LOAD = BugReportInbox(ok = false, cancelled = true)
+
         fun from(json: Map<String, Any?>): BugReportInbox {
             val counts = json.obj("counts")
             return BugReportInbox(

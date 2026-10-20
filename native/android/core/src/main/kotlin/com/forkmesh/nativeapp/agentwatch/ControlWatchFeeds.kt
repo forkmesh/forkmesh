@@ -42,6 +42,7 @@ class ControlWatchFeeds(
         var status = ""
         var streamed = false
         var ended = false
+        var revision = 0
         var stream: WatchTranscriptStream? = null
     }
 
@@ -80,6 +81,8 @@ class ControlWatchFeeds(
         ControlWatchText(feed.follower.text, if (feed.ended) "done" else feed.status)
     }
 
+    fun revision(id: String): Int = synchronized(lock) { feeds[id]?.revision ?: -1 }
+
     fun streaming(id: String): Boolean {
         val feed = synchronized(lock) { feeds[id] } ?: return false
         return feed.ended || feed.stream?.isStreaming == true
@@ -110,6 +113,7 @@ class ControlWatchFeeds(
             feed.follower.apply(delta)
             if (delta.status.isNotEmpty()) feed.status = delta.status
             feed.streamed = true
+            feed.revision++
         }
         onChange?.invoke()
     }
@@ -119,6 +123,7 @@ class ControlWatchFeeds(
             if (stopped) return
             val feed = feeds[id] ?: return
             if (reason == "unknown_session") feed.ended = true
+            feed.revision++
         }
         onChange?.invoke()
     }

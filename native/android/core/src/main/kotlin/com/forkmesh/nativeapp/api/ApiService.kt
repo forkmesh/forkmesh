@@ -71,6 +71,7 @@ open class ApiService(
     private val clock: () -> Long = { System.currentTimeMillis() },
 ) {
     companion object {
+        const val BUG_REPORT_INBOX_MISSING = "This relay cannot list reported bugs yet. Update the relay and try again."
         const val CACHE_TTL_MS = 60_000L
         const val ACCOUNT_STATUS_TTL_MS = 120_000L
         const val OFFLINE_REPO_TTL_MS = 60_000L
@@ -603,10 +604,15 @@ open class ApiService(
         return BugReportResult.failure("ForkMesh could not accept the report. Try again in a moment.")
     }
 
-    open fun bugReportInbox(status: String = "", offset: Int = 0): BugReportInbox {
+    private fun wasCancelled(error: Throwable): Boolean =
+        error is InterruptedException || error is java.io.InterruptedIOException && error !is java.net.SocketTimeoutException ||
+            error is java.nio.channels.ClosedByInterruptException || error is java.util.concurrent.CancellationException
+
+    open fun bugReportInbox(status: String = "", offset: Int = 0, limit: Int = 0): BugReportInbox {
         val query = LinkedHashMap<String, String>()
         if (status.isNotEmpty()) query["status"] = status
         if (offset > 0) query["offset"] = offset.toString()
+        if (limit > 0) query["limit"] = limit.toString()
         val response = try {
             exchange(
                 "GET",
@@ -614,11 +620,15 @@ open class ApiService(
                 withAuth(mapOf("Accept" to "application/json")),
                 timeoutMs = 20_000,
             )
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            if (wasCancelled(error)) return BugReportInbox.CANCELLED_LOAD
             return BugReportInbox.failure("Could not reach ForkMesh. Check your connection and try again.")
         }
         if (response.status == 401 || response.status == 403) {
             return BugReportInbox.failure("Only ForkMesh administrators can read reported bugs.")
+        }
+        if (response.status == 404 || response.status == 405) {
+            return BugReportInbox.failure(BUG_REPORT_INBOX_MISSING)
         }
         val decoded = if (response.status in 200..299) runCatching { Json.parse(response.text()) }.getOrNull() else null
         @Suppress("UNCHECKED_CAST")
@@ -641,7 +651,10 @@ open class ApiService(
         }
         when (response.status) {
             401, 403 -> return BugReportStatusChange.failure("Only ForkMesh administrators can triage reported bugs.")
-            404 -> return BugReportStatusChange.failure("That report no longer exists.")
+            404 -> return BugReportStatusChange.failure(
+                if (errorCode(response.text()) == "report_missing") "That report no longer exists." else BUG_REPORT_INBOX_MISSING,
+            )
+            405 -> return BugReportStatusChange.failure(BUG_REPORT_INBOX_MISSING)
         }
         val decoded = if (response.ok) runCatching { Json.parse(response.text()) }.getOrNull() else null
         @Suppress("UNCHECKED_CAST")
@@ -670,7 +683,11 @@ open class ApiService(
         return when (response.status) {
             in 200..299 -> BugReportFile(ok = true, data = response.body, contentType = response.header("content-type") ?: "")
             401, 403 -> BugReportFile.failure("Only ForkMesh administrators can open report attachments.")
-            404, 410 -> BugReportFile.failure("That attachment is no longer available.")
+            410 -> BugReportFile.failure("That attachment is no longer available.")
+            404 -> BugReportFile.failure(
+                if (errorCode(response.text()) == "attachment_missing") "That attachment is no longer available." else BUG_REPORT_INBOX_MISSING,
+            )
+            405 -> BugReportFile.failure(BUG_REPORT_INBOX_MISSING)
             else -> BugReportFile.failure("The attachment could not be downloaded. Try again in a moment.")
         }
     }

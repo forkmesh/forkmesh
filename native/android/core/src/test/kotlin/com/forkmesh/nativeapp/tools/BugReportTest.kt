@@ -237,4 +237,14 @@ class BugReportTest {
         expect(done.downloading.isEmpty())
         assertEq("No app on this phone can open that attachment.", done.problem)
     }
+
+    fun testACancelledLoadShowsNoErrorAndLoadsAgain() {
+        val cancelled = BugReportInboxState().requesting().received(BugReportInbox.CANCELLED_LOAD, offset = 0)
+        expect(!cancelled.loaded)
+        expect(!cancelled.loading)
+        assertEq("", cancelled.problem)
+        val loaded = cancelled.requesting().received(BugReportInbox(ok = true, reports = listOf(BugReportInboxItem.from(mapOf("id" to "a")))), offset = 0)
+        expect(loaded.loaded)
+        assertEq(listOf("a"), loaded.reports.map { it.id })
+    }
 }

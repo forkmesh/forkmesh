@@ -16,6 +16,7 @@ import com.forkmesh.nativeapp.json.jsonMaps
 import com.forkmesh.nativeapp.json.jsonText
 import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.ChatReceipt
+import com.forkmesh.nativeapp.model.ChatReceiptTimes
 import com.forkmesh.nativeapp.model.OrgApiException
 import com.forkmesh.nativeapp.security.SecretStore
 import java.net.URLEncoder
@@ -45,7 +46,15 @@ interface DirectMeshLinks {
     fun setFocus(channel: String, on: Boolean)
 }
 
-data class DirectDevice(val kid: String, val acct: String, val state: TrustState, val verified: Boolean, val firstSeen: Long)
+data class DirectDevice(
+    val kid: String,
+    val acct: String,
+    val state: TrustState,
+    val verified: Boolean,
+    val firstSeen: Long,
+    val ownAccount: Boolean = false,
+    val node: String = "",
+)
 
 object DirectMessageFrames {
     const val PREFIX = "direct:"
@@ -306,6 +315,7 @@ class DirectMessageService(
     private val sequence = AtomicInteger()
     private val listeners = CopyOnWriteArrayList<() -> Unit>()
     private val serverCopies = HashMap<String, Int>()
+    private val liveBudgets = HashMap<String, DirectLiveBudget>()
     private val media = ViewOnceClient(api)
     private val heldReceipts = LinkedHashMap<String, Pair<String, LinkedHashSet<String>>>()
 
@@ -314,6 +324,7 @@ class DirectMessageService(
     private class Receipt(val conversationId: String, var state: ChatReceipt)
 
     private val receipts = LinkedHashMap<String, Receipt>()
+    private val receiptTimes = HashMap<String, ChatReceiptTimes>()
     private val refIds = LinkedHashMap<String, String>()
     private val idRefs = LinkedHashMap<String, String>()
     private val pendingMutations = LinkedHashMap<String, MutableList<Map<String, Any?>>>()
@@ -354,6 +365,9 @@ class DirectMessageService(
     var onFrame: ((Map<String, Any?>, String) -> Unit)? = null
 
     @Volatile
+    var onLiveFrame: ((Map<String, Any?>, String) -> Unit)? = null
+
+    @Volatile
     var mesh: DirectMeshLinks? = null
 
     private class PendingDirect(val record: DirectConversation, val plain: Map<String, Any?>, val notify: Boolean, val kids: Set<String>) {
@@ -386,6 +400,66 @@ class DirectMessageService(
     fun messages(conversation: String): List<ChatMessage> = synchronized(lock) { history[conversation].orEmpty() }
 
     fun receipt(messageId: String): ChatReceipt? = synchronized(lock) { receipts[messageId]?.state }
+
+    fun receiptTime(messageId: String): ChatReceiptTimes = synchronized(lock) { receiptTimes[messageId] ?: ChatReceiptTimes() }
+
+    fun receiptTimeSnapshot(): Map<String, ChatReceiptTimes> = synchronized(lock) {
+        receiptTimes.filterKeys { receipts[it]?.state == ChatReceipt.DELIVERED || receipts[it]?.state == ChatReceipt.READ }
+    }
+
+    fun historySnapshot(): Map<String, List<ChatMessage>> = synchronized(lock) { HashMap(history) }
+
+    fun receiptSnapshot(): Map<String, ChatReceipt> = synchronized(lock) {
+        receipts.filterValues { it.state == ChatReceipt.DELIVERED || it.state == ChatReceipt.READ }.mapValues { it.value.state }
+    }
+
+    fun restore(messages: List<ChatMessage>, saved: Map<String, ChatReceipt>, times: Map<String, ChatReceiptTimes> = emptyMap()) {
+        val owners = HashMap<String, String>()
+        var changed = false
+        for (message in messages) {
+            if (!DirectMessageFrames.isDirect(message.conversation)) continue
+            if (synchronized(lock) { removed.containsKey(message.id) }) continue
+            val conversationId = DirectMessageFrames.conversationId(message.conversation)
+            owners[message.id] = conversationId
+            if (append(message, conversationId)) changed = true
+        }
+        for ((id, receipt) in saved) {
+            if (receipt != ChatReceipt.DELIVERED && receipt != ChatReceipt.READ) continue
+            val conversationId = owners[id] ?: continue
+            track(conversationId, id, "", receipt, stamped = times[id] ?: ChatReceiptTimes())
+            changed = true
+        }
+        if (changed) notifyListeners()
+    }
+
+    fun clear() {
+        closeAll()
+        synchronized(lock) {
+            for (pending in pendingDirect.values) pending.timer?.cancel()
+            pendingDirect.clear()
+            records = emptyList()
+            nextCursor = ""
+            history.clear()
+            seen.clear()
+            outboxes.clear()
+            receipts.clear()
+            receiptTimes.clear()
+            refIds.clear()
+            idRefs.clear()
+            pendingMutations.clear()
+            removed.clear()
+            heldReceipts.clear()
+            serverCopies.clear()
+            liveBudgets.clear()
+            resets.clear()
+            seals.clear()
+            roomNames.clear()
+            focused = ""
+            screenFocused = ""
+        }
+        viewOnce.clear()
+        notifyListeners()
+    }
 
     fun serverCopies(conversation: String): Int? =
         synchronized(lock) { serverCopies[DirectMessageFrames.conversationId(conversation)] }
@@ -682,6 +756,10 @@ class DirectMessageService(
             notifyListeners()
             return
         }
+        DirectLiveFrames.budget(envelope)?.let { budget ->
+            synchronized(lock) { liveBudgets[holder.conversationId] = budget }
+            return
+        }
         OfficeFrames.recipientsAck(envelope)?.let { (ref, _) ->
             if (advance(listOf(ref), ChatReceipt.SENT)) notifyListeners()
             return
@@ -866,6 +944,10 @@ class DirectMessageService(
             if (live) onCallFrame?.invoke(plain, record.conversation)
             return
         }
+        if (DirectLiveFrames.isLiveFrame(plain)) {
+            if (live) onLiveFrame?.invoke(plain, record.conversation)
+            return
+        }
         val type = jsonText(plain["type"])
         if (DirectMessageFrames.isMutation(type) && !mutationAllowed(plain, record)) return
         onFrame?.invoke(plain, record.conversation)
@@ -924,6 +1006,7 @@ class DirectMessageService(
             removed[target] = true
             trim(removed, DirectMessageFrames.RECEIPTS_MAX)
             receipts.remove(target)
+            receiptTimes.remove(target)
             sockets[record.id]?.outbox?.removeAll {
                 jsonText(it.plain["id"]) == target || (jsonText(it.plain["target"]) == target && jsonText(it.plain["type"]) != "delete")
             }
@@ -944,23 +1027,49 @@ class DirectMessageService(
         trim(idRefs, DirectMessageFrames.RECEIPTS_MAX)
     }
 
-    private fun track(conversationId: String, id: String, ref: String, state: ChatReceipt) = synchronized(lock) {
+    private fun track(conversationId: String, id: String, ref: String, state: ChatReceipt, stamped: ChatReceiptTimes? = null) = synchronized(lock) {
         val current = receipts[id]
-        if (current == null) {
+        val moved = if (current == null) {
             receipts[id] = Receipt(conversationId, state)
-            trim(receipts, DirectMessageFrames.RECEIPTS_MAX)
+            while (receipts.size > DirectMessageFrames.RECEIPTS_MAX) {
+                val evicted = receipts.keys.first()
+                receipts.remove(evicted)
+                receiptTimes.remove(evicted)
+            }
+            true
         } else if (state > current.state) {
             current.state = state
+            true
+        } else {
+            false
+        }
+        if (moved) {
+            if (stamped != null) {
+                if (!stamped.isEmpty) receiptTimes[id] = stamped
+            } else {
+                stamp(id, state)
+            }
         }
         linkRef(id, ref)
+    }
+
+    private fun stamp(id: String, state: ChatReceipt) {
+        val times = receiptTimes[id] ?: ChatReceiptTimes()
+        receiptTimes[id] = when (state) {
+            ChatReceipt.DELIVERED -> times.copy(delivered = times.delivered ?: now())
+            ChatReceipt.READ -> times.copy(read = times.read ?: now())
+            else -> return
+        }
     }
 
     private fun advance(refs: List<String>, state: ChatReceipt): Boolean = synchronized(lock) {
         var changed = false
         for (ref in refs) {
-            val receipt = refIds[ref]?.let { receipts[it] } ?: continue
+            val id = refIds[ref] ?: continue
+            val receipt = receipts[id] ?: continue
             if (state > receipt.state) {
                 receipt.state = state
+                stamp(id, state)
                 changed = true
             }
         }
@@ -969,10 +1078,11 @@ class DirectMessageService(
 
     private fun peerRead(conversationId: String): Boolean = synchronized(lock) {
         var changed = false
-        for (receipt in receipts.values) {
+        for ((id, receipt) in receipts) {
             if (receipt.conversationId != conversationId) continue
             if (receipt.state == ChatReceipt.SENT || receipt.state == ChatReceipt.DELIVERED) {
                 receipt.state = ChatReceipt.READ
+                stamp(id, ChatReceipt.READ)
                 changed = true
             }
         }
@@ -1084,7 +1194,10 @@ class DirectMessageService(
     fun devices(conversation: String): List<DirectDevice> {
         val record = record(conversation) ?: return emptyList()
         val own = ownKid()
-        return trustFor(record).records().filter { it.kid != own }.map { DirectDevice(it.kid, it.acct, it.state, it.verified, it.firstSeen) }
+        val acct = sealAccount()
+        return trustFor(record).records().filter { it.kid != own }.map {
+            DirectDevice(it.kid, it.acct, it.state, it.verified, it.firstSeen, ownAccount = acct.isNotEmpty() && it.acct == acct, node = it.node)
+        }
     }
 
     fun pendingDevices(conversation: String): List<DirectDevice> = devices(conversation).filter { it.state == TrustState.PENDING }
@@ -1134,6 +1247,16 @@ class DirectMessageService(
         val number = safetyNumber(conversation) ?: return false
         if (scanned.trim() != number.qr) return false
         return markVerified(conversation)
+    }
+
+    fun verifySafetyCode(conversation: String, scanned: String): DirectSafetyScan {
+        val number = safetyNumber(conversation) ?: return DirectSafetyScan.NOT_SAFETY_CODE
+        return DirectSafetyScan.result(scanned, number.qr, verifyScanned(conversation, scanned))
+    }
+
+    fun trustNotices(conversation: String): List<DirectTrustNotice> {
+        if (!DirectMessageFrames.isDirect(conversation)) return emptyList()
+        return DirectTrustNotices.pending(conversation, devices(conversation), record(conversation)?.otherUser.orEmpty())
     }
 
     fun screenFocus(conversation: String) {
@@ -1282,7 +1405,7 @@ class DirectMessageService(
         if (!result.replayed) handle(plain, record, meta["replay"] != true, jsonText(meta["ref"]))
         val id = jsonText(plain["id"])
         val links = mesh
-        if (ackVia != null && links != null && id.isNotEmpty()) {
+        if (ackVia != null && links != null && id.isNotEmpty() && !DirectLiveFrames.isLiveFrame(plain)) {
             runCatching { links.sendDirect(ackVia, DirectMessageFrames.directAck(record.conversation, id)) }
         }
     }
@@ -1352,7 +1475,12 @@ class DirectMessageService(
             val ref = OfficeFrames.sentRef(frameText)
             if (content) track(record.id, id, ref, ChatReceipt.SENDING)
             if (!socket.sendText(frameText)) {
-                synchronized(lock) { if (reached == 0) receipts.remove(id) }
+                synchronized(lock) {
+                    if (reached == 0) {
+                        receipts.remove(id)
+                        receiptTimes.remove(id)
+                    }
+                }
                 return keepMeshOnly(record, plain, reached)
             }
             remember(holder, OutboxEntry(ref, plain, RoomSeal.wrappedKeyIds(sealed), notify, now()))
@@ -1593,6 +1721,44 @@ class DirectMessageService(
         } catch (_: Exception) {
             false
         }
+    }
+
+    fun liveInterval(conversation: String): Long {
+        val budget = synchronized(lock) { liveBudgets[DirectMessageFrames.conversationId(conversation)] }
+            ?: return DirectLiveFrames.FALLBACK_INTERVAL_MS
+        return DirectLiveFrames.interval(budget.perWindow, budget.windowMs)
+    }
+
+    fun sendLive(conversation: String, fields: Map<String, Any?>): Boolean {
+        val record = record(conversation) ?: return false
+        val plain = frame(record, DirectLiveFrames.TYPE, fields)
+        val copies = sendDirectCopies(record, plain)
+        val reached = copies.kids.isNotEmpty()
+        if (copies.directOnly && reached) return true
+        val holder = synchronized(lock) { sockets[record.id] } ?: return reached
+        val socket = holder.socket ?: return reached
+        return try {
+            val sealed = holder.seal.seal(plain, now())
+            if (holder.seal.needsAdvertisement()) advertise(holder, persist = true)
+            val envelope = LinkedHashMap(holder.crypto.encrypt(sealed))
+            envelope["live"] = true
+            val text = Json.stringify(envelope)
+            if (text.toByteArray(Charsets.UTF_8).size > DirectLiveFrames.MAX_ENVELOPE_BYTES) return reached
+            socket.sendText(text) || reached
+        } catch (_: Exception) {
+            reached
+        }
+    }
+
+    fun makeLiveEngine(): DirectLiveEngine {
+        val engine = DirectLiveEngine(
+            selfId = selfId,
+            send = { conversation, fields -> sendLive(conversation, fields) },
+            interval = { conversation -> liveInterval(conversation) },
+            clock = now,
+        )
+        onLiveFrame = { plain, conversation -> engine.receive(plain, conversation) }
+        return engine
     }
 
     private fun advertise(holder: RoomSocket, persist: Boolean = false) {

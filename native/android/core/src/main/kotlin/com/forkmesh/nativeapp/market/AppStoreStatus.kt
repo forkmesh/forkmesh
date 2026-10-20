@@ -198,6 +198,12 @@ data class AppStoreSnapshot(
 ) {
     val orderedGroups: List<AppStoreGroup> get() = groups.sortedBy { if (it.internal) 0 else 1 }
 
+    val lacksScreenshots: Boolean
+        get() {
+            val reports = feedback.filter { it.kind == "screenshot" }
+            return reports.isNotEmpty() && reports.all { it.screenshots.isEmpty() }
+        }
+
     fun unavailable(section: String): String = unavailable[section].orEmpty()
 
     companion object {
@@ -227,14 +233,62 @@ data class AppStoreStatusReply(
     val published: Boolean = false,
     val publishedAt: Long = 0,
     val snapshot: AppStoreSnapshot? = null,
+    val fromDesktop: Boolean = false,
 ) {
     companion object {
         fun fromJson(json: JsonMap): AppStoreStatusReply {
             val snapshot = (json["snapshot"] as? Map<*, *>)?.let { AppStoreSnapshot.fromJson(it.asJsonMap()) }
-            return AppStoreStatusReply(json.str("actor"), snapshot != null, json.long("publishedAt"), snapshot)
+            return AppStoreStatusReply(json.str("actor"), snapshot != null, json.long("publishedAt"), snapshot, json.str("source") == "desktop")
         }
     }
 }
+
+data class AppStoreStatusLoad(val reply: AppStoreStatusReply?, val error: String)
+
+object AppStoreStatusLoader {
+    const val DESKTOP_METHOD = "stats.appStoreStatus"
+    const val DESKTOP_TIMEOUT_MS = 120_000L
+
+    private val MISSING_CODES = setOf(
+        "http_404", "not_found", "http_405", "method_not_allowed",
+        "plugin_not_installed", "package_not_installed", "not_installed",
+    )
+
+    fun isMissing(error: Throwable): Boolean = error is PackagesException && error.code in MISSING_CODES
+
+    fun desktopMessage(error: Throwable): String {
+        val reason = (error as? PackagesException)?.let { it.message?.ifEmpty { null } ?: it.code }
+            ?: (error as? AppStoreDesktopException)?.let { it.reason.ifEmpty { it.code } }.orEmpty()
+        return if (reason.isEmpty()) "Your desktop could not fetch it either." else "Your desktop could not fetch it either: $reason"
+    }
+
+    fun load(fetch: () -> JsonMap, desktop: (() -> JsonMap)?, describe: (Throwable) -> String): AppStoreStatusLoad {
+        var server: AppStoreStatusReply? = null
+        var serverError: Throwable? = null
+        try {
+            server = AppStoreStatusReply.fromJson(fetch())
+        } catch (error: Exception) {
+            serverError = error
+        }
+        val missing = server?.let { it.snapshot == null } ?: serverError?.let(::isMissing) ?: false
+        val stale = server?.snapshot?.lacksScreenshots ?: false
+        var desktopNote = ""
+        if ((missing || stale) && desktop != null) {
+            try {
+                val reply = AppStoreStatusReply.fromJson(desktop())
+                val snapshot = reply.snapshot
+                if (snapshot != null && (!stale || !snapshot.lacksScreenshots)) return AppStoreStatusLoad(reply, "")
+            } catch (error: Exception) {
+                if (missing) desktopNote = desktopMessage(error)
+            }
+        }
+        if (server != null) return AppStoreStatusLoad(server, desktopNote)
+        val message = serverError?.let(describe).orEmpty()
+        return AppStoreStatusLoad(null, if (desktopNote.isEmpty()) message else "$message $desktopNote")
+    }
+}
+
+class AppStoreDesktopException(val code: String, val reason: String) : RuntimeException(reason.ifEmpty { code })
 
 object AppStoreStatus {
     const val PACKAGE_ID = "app-store-status"
@@ -253,6 +307,7 @@ object AppStoreStatus {
     fun load(client: PackagesClient): AppStoreStatusReply = AppStoreStatusReply.fromJson(client.call("GET", API))
 
     const val SCREENSHOT_MISSING = "This screenshot has not been uploaded yet. Run the iOS App Store status shortcut on your desktop again."
+    const val SCREENSHOTS_NOT_PUBLISHED = "Tester screenshots appear once the iOS App Store status shortcut runs again on your desktop."
     private val MISSING_CODES = setOf("screenshot_not_found", "screenshot_not_in_snapshot", "not_found", "http_404")
     private val JPEG = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0xFF.toByte())
     private val PNG = byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)

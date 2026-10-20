@@ -9,13 +9,13 @@ import com.forkmesh.nativeapp.testing.expect
 class AgentLineChipsTest {
     private val now = 1_000_000_000_000L
 
-    fun testListViewCyclesCompactZenFullAndReadsWhatWasStored() {
+    fun testListViewCyclesCompactZenFullEagleAndReadsWhatWasStored() {
         assertEq(AgentListView.Zen, AgentListView.Compact.next)
         assertEq(AgentListView.Full, AgentListView.Zen.next)
-        assertEq(AgentListView.Compact, AgentListView.Full.next)
+        assertEq(AgentListView.Eagle, AgentListView.Full.next)
         assertEq(AgentListView.Full, AgentListView.fromKey("full"))
-        assertEq(AgentListView.Compact, AgentListView.fromKey(null))
-        assertEq(AgentListView.Compact, AgentListView.fromKey("grid"))
+        assertEq(AgentListView.Eagle, AgentListView.fromKey(null))
+        assertEq(AgentListView.Eagle, AgentListView.fromKey("grid"))
         assertEq("agents/listView", AgentListView.PREF_KEY)
     }
 
