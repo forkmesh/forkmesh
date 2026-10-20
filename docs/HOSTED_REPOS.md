@@ -168,6 +168,39 @@ points HEAD at `main`, `master`, `trunk` or `develop`. Private sources are not
 supported. The separate metadata importer (`app/src/repository_imports.py`)
 imports issues, pulls and releases only.
 
+## Forks
+
+**Forks → Fork this repository** on a public hosted repository creates
+`<you>/<name>`, a hosted repository you own, marked `forkedFrom` the parent
+and listed on its forks (`repo_forks`). Code: `hosted_git.hosted_fork_create`
+(reached from `POST /api/repo/<owner>/<repo>/forks` before the managed-mirror
+path), `hosted_repos.fork_of`, `server/hosted_forks.go`.
+
+- **Storage.** The hosted record carries `fork: {of, network}`; the replica
+  exchange passes `forkOf` and `network` (the root repository's id) to every
+  core. Each core builds the fork from its own copy of the parent: the
+  network pool `<root>/.pools/<network>.git` is a `git clone --local` of the
+  root (hard links, so no extra disk until the parent repacks), refreshed
+  from the parent into `refs/pools/<parent>/…` before each new fork, and the
+  fork's `objects/info/alternates` points at it. Refs are copied from the
+  parent with nothing transferred. A fork costs about 26 KB (measured in
+  `TestHostedForkBorrowsFromTheNetworkPool`); its own pushes stay in it.
+- **Never pruned.** The pool is not served and not maintained (maintenance
+  walks only `<root>/hr*.git`, and repacks forks with `-l`), so a
+  force-push, repack or deletion of the parent never removes an object a
+  fork needs. An operator may delete a pool only when no fork in its network
+  is left.
+- **Limits.** Public parents only (shared objects would leak across a
+  private network); active users with a verified email; one fork per
+  account per parent (a second click links to the first);
+  `HOSTED_MAX_FORKS_PER_ACCOUNT` (default 20), separate from the repository
+  quota. Forks of forks join the root's network.
+- **Pull requests.** The composer on a fork targets the parent
+  (`forkedFrom`) and sends a patch-backed pull request (patch and commits),
+  so merging into the parent needs no fetch from the fork.
+- Contributors who would rather not fork can push `pr/<account>/` branches
+  where `HOSTED_GIT_CONTRIBUTOR_PUSH` allows it.
+
 ## Moving to your own node
 
 When the owner's node publishes the repository through the signed catalog,

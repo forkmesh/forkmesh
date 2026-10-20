@@ -1296,9 +1296,11 @@ async def core_repository_target(env, runtime, actor, owner, name,
 
 
 def core_catalog_record(target, visibility, description, origin, maintainer,
-                        now):
+                        now, forked_from=""):
     public_owner = target["organization"] or target["owner"]
+    extra = {"forkedFrom": forked_from} if forked_from else {}
     return safe_catalog_record({
+        **extra,
         "owner": target["owner"],
         "name": target["name"],
         "visibility": visibility,
@@ -1314,7 +1316,7 @@ def core_catalog_record(target, visibility, description, origin, maintainer,
 
 async def store_core_repository(env, runtime, target, record, *, actor,
                                 repo_id, visibility, init, endpoint, now,
-                                imported=False):
+                                imported=False, fork=None):
     owner, name = target["owner"], target["name"]
     organization = target["organization"]
     encrypted = await encrypt_row(env, record)
@@ -1330,6 +1332,7 @@ async def store_core_repository(env, runtime, target, record, *, actor,
         "aliases": [organization] if organization else [],
         "init": init,
         "createdBy": actor,
+        **({"fork": fork} if fork else {}),
     })
     await _hosted_repos.insert(
         runtime, repo_id, target["key_bi"], target["owner_bi"],
@@ -1352,7 +1355,8 @@ async def store_core_repository(env, runtime, target, record, *, actor,
         owner + "/" + name, "success",
         {"source": HOSTED_SOURCE, "hostedNode": endpoint.get("node", ""),
          "visibility": visibility, "organization": organization,
-         "import": bool(imported), "initialized": bool(init)})
+         "import": bool(imported), "initialized": bool(init),
+         **({"forkOf": fork.get("of", "")} if fork else {})})
     await _notify_cores(env, owner, name)
 
 
@@ -1459,6 +1463,141 @@ async def _create_core_repository(env, request, data, actor):
         "quota": {"used": used + 1, "limit": limit,
                   "repositoryBytes": _hosted_repos.max_bytes(env)},
     }, status=201, cache_control="no-store")
+
+
+# ---------------------------------------------------------------------------
+# Website forks of hosted repositories (docs/HOSTED_REPOS.md, "Forks")
+# ---------------------------------------------------------------------------
+
+
+def _fork_response(owner, name, parent_owner, parent_name, now, status=201,
+                   existing=False):
+    return json_response({
+        "ok": True, "created": True, "queued": False, "hosted": True,
+        "existing": existing,
+        "fork": {
+            "requestId": "",
+            "sourceOwner": parent_owner.lower(),
+            "sourceName": parent_name.lower(),
+            "owner": owner,
+            "name": name,
+            "forkedFrom": (parent_owner + "/" + parent_name).lower(),
+            "status": "completed",
+            "url": "/" + owner + "/" + name,
+            "createdAt": int(now),
+        },
+    }, status=status, cache_control="no-store")
+
+
+async def hosted_fork_create(env, request, node, public_owner, repo):
+    """Fork a hosted repository into the caller's namespace, or None.
+
+    None means the parent is not a hosted repository, and the request body is
+    then still unread for the managed-mirror fork path. The fork is a hosted
+    repository the caller owns; every core builds it from its own copy of the
+    parent and the fork network's shared object pool (server/hosted_forks.go),
+    so it costs a few KB however large the parent is. One fork per account
+    per parent (a second request answers with the first), and
+    HOSTED_MAX_FORKS_PER_ACCOUNT in all.
+    """
+    parent_row = await _hosted_row(env, node, repo)
+    if not parent_row:
+        return None
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        return _error("invalid_json", 400)
+    if not isinstance(data, dict):
+        data = {}
+    actor_bi, account = await _account_session_record(env, request, data)
+    actor = clean_string(
+        (account or {}).get("name", ""), MAX_NODE_NAME).strip().lower()
+    if not actor_bi or not account or not valid_node_name(actor):
+        return _error("unauthorized", 401)
+    if (account.get("status") != "active"
+            or _account_kind(account) != "user"):
+        return _error("forbidden", 403)
+    if account.get("email_verified") is not True:
+        return _error(
+            "email_verification_required", 403,
+            "Verify your email address under Settings, Account, to fork.")
+    runtime = _ReplicaRuntime(env, request)
+    await _hosted_repos.ensure_tables(runtime)
+    parent = await decrypt_row(env, parent_row.get("data"))
+    parent_id = str(parent_row.get("id") or "")
+    if (not isinstance(parent, dict)
+            or not _hosted_repos.ID_RE.fullmatch(parent_id)
+            or parent_row.get("visibility") != "public"
+            or await _repo_is_private(env, node, repo)):
+        # A private repository's objects never join a shared pool.
+        return _error("fork_unavailable", 403,
+                      "Only public repositories can be forked here.")
+    parent_name = str(parent.get("name") or repo)
+    parent_fork = _hosted_repos.fork_of(dict(parent, id=parent_id))
+    network = parent_fork[1] if parent_fork else parent_id
+    now = int(Date.now())
+    creator_bi = await blind_index(env, actor)
+    for row in await _hosted_repos.rows_for_creator(runtime, creator_bi):
+        record = await decrypt_row(env, row.get("data"))
+        fork = _hosted_repos.fork_of(record)
+        if fork and fork[0] == parent_id:
+            return _fork_response(
+                str(record.get("owner") or actor),
+                str(record.get("name") or parent_name),
+                public_owner, parent_name, now, status=200, existing=True)
+    if actor == node or actor == str(public_owner or "").lower():
+        return _error("fork_of_own_repository", 409,
+                      "This repository is already yours; push to it "
+                      "directly.")
+    name = clean_string(
+        data.get("name", "") or parent_name, MAX_REPO_SEGMENT).strip()
+    if (not safe_segment(name) or not HOSTED_NAME_RE.match(name)
+            or not _hosted_repos.valid_name(name)):
+        return _error("invalid_name", 400)
+    limit = _hosted_repos.max_forks_per_account(env)
+    used = await _hosted_repos.count_for_creator(
+        runtime, creator_bi, forks=True)
+    if used >= limit:
+        return _error(
+            "fork_quota_exceeded", 429,
+            "This account already has %d forks here, the limit. Delete one "
+            "to fork another repository." % limit, limit=limit, used=used)
+    problem, target = await core_repository_target(
+        env, runtime, actor, actor, name, "")
+    if problem:
+        if problem[0] == "repository_exists":
+            return _error(
+                "fork_name_taken", 409,
+                "You already have a repository named %s. Fork under another "
+                "name." % name)
+        return _error(*problem)
+    limited = await catalog_rate_check(env, target["owner_bi"])
+    if limited is not None:
+        return limited
+    origin = _request_origin(request)
+    repo_id = "hr" + bytes(_random_bytes(12)).hex()
+    candidates = await _core_candidates(env, repo_id)
+    if not origin or not candidates:
+        return _unavailable_response()
+    endpoint = candidates[0]
+    maintainer = clean_string(endpoint.get("publicKey", ""), 120)
+    if not maintainer:
+        return _unavailable_response()
+    record = core_catalog_record(
+        target, "public", clean_string(parent.get("description", ""), 240),
+        origin, maintainer, now,
+        forked_from=str(public_owner or node) + "/" + parent_name)
+    if not record:
+        return _error("invalid_name", 400)
+    await store_core_repository(
+        env, runtime, target, record, actor=actor, repo_id=repo_id,
+        visibility="public", init=None, endpoint=endpoint, now=now,
+        fork={"of": parent_id, "network": network})
+    index_edge = globals().get("_index_repo_fork_edge")
+    if callable(index_edge):
+        await index_edge(env, record, None, target["owner_bi"],
+                         target["key_bi"])
+    return _fork_response(actor, name, public_owner or node, parent_name, now)
 
 
 async def hosted_push_candidates(env, owner, repo):

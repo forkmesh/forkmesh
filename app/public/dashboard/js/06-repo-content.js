@@ -7750,7 +7750,7 @@
     const original = button.innerHTML;
     button.disabled = true;
     button.innerHTML = '<span class="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-r-transparent"></span>Creating fork…';
-    if (status) status.textContent = "Recording the fork on your managed mirror…";
+    if (status) status.textContent = "Creating your fork…";
     try {
       const token = String(state.session.sessionToken || "");
       const response = await fetch(`${repoApiBase(repo)}/forks`, {
@@ -7791,7 +7791,9 @@
       if (status) {
         const message = data.queued
           ? `Queued on ${String(fork.owner || "your mirror")}. It will finish as soon as that mirror can reach any copy of the source.`
-          : "Your fork is ready.";
+          : data.existing
+            ? "You already have a fork of this repository."
+            : "Your fork is ready. Push branches to it, then open a pull request back here.";
         status.innerHTML = `${escapeHtml(message)}${forkUrl ? ` <a href="${escapeHtml(forkUrl)}" class="font-medium text-accent hover:underline">Open fork</a>` : ""}`;
       }
     } catch (error) {
@@ -7799,7 +7801,9 @@
       button.innerHTML = original;
       if (status) {
         const code = String(error?.code || "");
-        status.textContent = code === "headless_mirror_required"
+        status.textContent = code === "email_verification_required"
+          ? "Verify your email address under Settings, Account, then fork."
+          : code === "headless_mirror_required"
           ? "Link a managed headless mirror in Settings first. It may be offline when you create the fork."
           : String(error?.message || "The fork could not be queued. Try again.");
       }

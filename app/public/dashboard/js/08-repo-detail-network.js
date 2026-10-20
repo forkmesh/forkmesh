@@ -471,7 +471,7 @@
                 <div data-repo-fork-menu class="fm-popover absolute right-0 top-full z-30 mt-1 hidden w-72 max-w-[calc(100vw-2rem)] p-3 text-left">
                   <p class="text-xs font-semibold text-foreground">Forks of this repository</p>
                   <p class="mt-1 text-[11px] leading-5 text-muted-foreground">Each fork is its own repository on the mesh, sharing this one's history instead of copying it.</p>
-                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Create fork on my mirror</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">The website queues this durably, so neither your mirror nor the original node has to be online right now.</p>` : ""}
+                  ${websiteForkAvailable ? `<button type="button" data-repo-fork-create class="fm-btn fm-btn-sm fm-btn-cta mt-2 w-full disabled:cursor-wait"><i data-lucide="git-fork"></i>Fork this repository</button><p data-repo-fork-status class="mt-1 text-[10px] leading-4 text-muted-foreground">Your own copy under your account, linked to this one. Push any branch to it, then open a pull request back here.</p>` : ""}
                   <div data-repo-fork-list class="mt-2 max-h-52 space-y-1 overflow-auto rounded-md border border-border bg-secondary/40 p-2 text-[11px] text-muted-foreground">Loading…</div>
                   <div data-repo-remote-forks class="mt-3 border-t border-border pt-2">
                     <p class="text-xs font-semibold text-foreground">Forks on other instances</p>
@@ -2963,6 +2963,20 @@
       const issueTemplateButton = event.target.closest("[data-repo-issue-template]");
       if (issueTemplateButton) {
         downloadIssueCsvTemplate();
+        return;
+      }
+
+      // "Contribute" on a fork: the pull request composer, aimed at the
+      // repository it was forked from.
+      if (event.target.closest("[data-repo-contribute]") && state.selectedRepo) {
+        event.preventDefault();
+        if (!state.session?.nodeName) {
+          location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+          return;
+        }
+        const forkRepo = state.selectedRepo;
+        activateRepoTab("pulls");
+        requestAnimationFrame(() => openPullCompose(forkRepo));
         return;
       }
 
