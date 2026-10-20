@@ -68,6 +68,33 @@ public enum ReactionCatalog {
     }
 }
 
+public struct StickerEntry: Equatable, Sendable {
+    public let slug: String
+    public let text: String
+    public let rgb: UInt32
+    public let tilt: Double
+    public let fallback: String
+}
+
+public enum StickerCatalog {
+    public static let field = "sticker"
+
+    public static let entries: [StickerEntry] = [
+        StickerEntry(slug: "lgtm", text: "LGTM", rgb: 0x8250DF, tilt: -6, fallback: "\u{2705}"),
+        StickerEntry(slug: "ship-it", text: "Ship it", rgb: 0x0969DA, tilt: 5, fallback: "\u{1F680}"),
+        StickerEntry(slug: "nice", text: "Nice!", rgb: 0xBF3989, tilt: -4, fallback: "\u{1F44D}"),
+        StickerEntry(slug: "thanks", text: "Thanks!", rgb: 0xBC4C00, tilt: 6, fallback: "\u{1F64F}"),
+        StickerEntry(slug: "on-it", text: "On it", rgb: 0x57606A, tilt: -5, fallback: "\u{1F440}"),
+        StickerEntry(slug: "wow", text: "Wow!", rgb: 0xCF222E, tilt: 4, fallback: "\u{1F62E}"),
+        StickerEntry(slug: "love-it", text: "Love it", rgb: 0xD6336C, tilt: -3, fallback: "\u{2764}\u{FE0F}"),
+        StickerEntry(slug: "party", text: "Party!", rgb: 0x9A6700, tilt: 7, fallback: "\u{1F389}"),
+    ]
+
+    public static func entry(_ slug: String) -> StickerEntry? { entries.first { $0.slug == slug } }
+
+    public static func rank(_ slug: String) -> Int { entries.firstIndex { $0.slug == slug } ?? entries.count }
+}
+
 @MainActor
 public protocol ChatFrameSink: AnyObject {
     var selfId: String { get }

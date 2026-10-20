@@ -7,6 +7,7 @@
 #include "NodeDiagnostics.h"
 #include "OfficeChannelMirror.h"
 #include "ServerNode.h"
+#include "StickerCatalog.h"
 #include "SystemStats.h"
 
 #include <QCryptographicHash>
@@ -1955,7 +1956,7 @@ void ServerNode::sendRoomReaction(const QString &conversation,
         message.insert("id", frameId.trimmed().left(96));
     message.insert("conversation", conversation);
     message.insert("target", messageId.left(96));
-    message.insert("emoji", emoji);
+    stickers::writeWire(message, emoji);
     message.insert("reactorId", m_nodeId);
     message.insert("reactorName", m_userName);
     message.insert("added", added);
@@ -2292,7 +2293,7 @@ void ServerNode::sendReaction(const QString &conversation, const QString &messag
     QJsonObject message = makeMessage("reaction");
     message.insert("conversation", conversation);
     message.insert("target", messageId);
-    message.insert("emoji", emoji);
+    stickers::writeWire(message, emoji);
     message.insert("reactorId", m_nodeId);
     message.insert("reactorName", m_userName);
     message.insert("added", added);
@@ -2693,7 +2694,7 @@ void ServerNode::handlePlain(const QJsonObject &message, int envelopeRecipients,
     }
     if (type == "reaction") {
         const QString target = message.value("target").toString();
-        const QString emoji = message.value("emoji").toString();
+        const QString emoji = stickers::valueFromWire(message);
         const QString reactorId = message.value("reactorId").toString();
         if (!reactorId.isEmpty() && reactorId != senderId)
             return;

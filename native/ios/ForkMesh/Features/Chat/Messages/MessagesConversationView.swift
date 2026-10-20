@@ -403,10 +403,16 @@ struct MessagesConversationView<Drawer: View>: View {
                     FmHaptics.tap()
                     closeTapback()
                 }
-                if !row.reactions.isEmpty {
+                if !row.reactions.isEmpty || !row.stickers.isEmpty {
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(row.reactions) { (chip: ReactionChip) in
                             Text("\(chip.emoji)  \(chip.names.joined(separator: ", "))")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.white)
+                                .lineLimit(2)
+                        }
+                        ForEach(row.stickers) { (chip: StickerChip) in
+                            Text("\(chip.sticker.text)  \(chip.names.joined(separator: ", "))")
                                 .font(.system(size: 14))
                                 .foregroundStyle(Color.white)
                                 .lineLimit(2)

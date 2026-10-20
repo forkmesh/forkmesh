@@ -6,6 +6,7 @@
 #include "LocalMeshNode.h"
 #include "OfficeChannelMirror.h"
 #include "SettingsWrite.h"
+#include "StickerCatalog.h"
 
 #include "ChatBlocks.h"
 #include "ChatFormat.h"
@@ -1123,6 +1124,8 @@ void MainWindow::toggleChatReaction(const QString &conversation,
 {
     if (messageId.isEmpty() || reaction.isEmpty() ||
         !canReactInConversation(conversation))
+        return;
+    if (isDiscordConversation(conversation) && stickers::isSticker(reaction))
         return;
     if (isDiscordConversation(conversation))
         m_discordClient->toggleReaction(conversation, messageId, reaction);

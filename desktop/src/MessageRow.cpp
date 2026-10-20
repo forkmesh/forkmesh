@@ -7,6 +7,7 @@
 #include "ChatFormat.h"
 #include "ChatLinkText.h"
 #include "ReactionEmoji.h"
+#include "StickerCatalog.h"
 
 #include <QApplication>
 #include <QBuffer>
@@ -15,6 +16,7 @@
 #include <QDateTime>
 #include <QEnterEvent>
 #include <QEvent>
+#include <QFontMetricsF>
 #include <QGridLayout>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -30,12 +32,16 @@
 #include <QScreen>
 #include <QSettings>
 #include <QStyleHints>
+#include <QTextDocument>
 #include <QTimer>
 #include <QToolTip>
 #include <QToolButton>
+#include <QTransform>
 #include <QVBoxLayout>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 
 namespace {
 
@@ -44,6 +50,77 @@ constexpr int kGroupGapPx = 14;
 constexpr int kContinuationGapPx = 1;
 constexpr int kMaxMediaWidth = 360;
 constexpr int kPickerColumns = 6;
+constexpr int kStickerPickerColumns = 4;
+constexpr int kStickerOverlap = 6;
+constexpr int kStickerGap = 8;
+
+QPixmap stickerPixmap(const stickers::CatalogEntry &entry, int count, qreal dpr)
+{
+    QFont font = QApplication::font();
+    font.setPixelSize(11);
+    font.setBold(true);
+    const QString label =
+        count > 1 ? entry.text + QString::fromUtf8(" \xC3\x97") + QString::number(count)
+                  : entry.text;
+    const QFontMetricsF metrics(font);
+    const QRectF badge(-(std::ceil(metrics.horizontalAdvance(label)) + 16) / 2.0,
+                       -10, std::ceil(metrics.horizontalAdvance(label)) + 16, 20);
+    QTransform turn;
+    turn.rotate(entry.tilt);
+    const QRectF turned = turn.mapRect(badge);
+    const int margin = 3;
+    const QSize size(qCeil(turned.width()) + margin * 2,
+                     qCeil(turned.height()) + margin * 2);
+    QPixmap pixmap(qMax(1, qRound(size.width() * dpr)),
+                   qMax(1, qRound(size.height() * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setRenderHint(QPainter::TextAntialiasing);
+    painter.translate(size.width() / 2.0, size.height() / 2.0);
+    painter.rotate(entry.tilt);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0, 0, 0, 70));
+    painter.drawRoundedRect(badge.translated(0, 1.5), 6, 6);
+    painter.setBrush(QColor(QRgb(entry.rgb)));
+    painter.setPen(QPen(Qt::white, 2));
+    painter.drawRoundedRect(badge.adjusted(1, 1, -1, -1), 6, 6);
+    painter.setPen(Qt::white);
+    painter.setFont(font);
+    painter.drawText(badge, Qt::AlignCenter, label);
+    return pixmap;
+}
+
+QPixmap stickerGlyph(int size, qreal dpr, const QColor &color)
+{
+    QPixmap pixmap(qMax(1, qRound(size * dpr)), qMax(1, qRound(size * dpr)));
+    pixmap.setDevicePixelRatio(dpr);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color, 1.5);
+    pen.setJoinStyle(Qt::RoundJoin);
+    pen.setCapStyle(Qt::RoundCap);
+    painter.setPen(pen);
+    painter.setBrush(Qt::NoBrush);
+    const qreal edge = size * 0.18;
+    const qreal far = size - edge;
+    const qreal fold = size * 0.3;
+    QPainterPath outline;
+    outline.moveTo(edge, edge);
+    outline.lineTo(far, edge);
+    outline.lineTo(far, far - fold);
+    outline.lineTo(far - fold, far);
+    outline.lineTo(edge, far);
+    outline.closeSubpath();
+    painter.drawPath(outline);
+    QPainterPath peel;
+    peel.moveTo(far, far - fold);
+    peel.quadTo(far - fold, far - fold, far - fold, far);
+    painter.drawPath(peel);
+    return pixmap;
+}
 
 QString humanSize(qint64 bytes)
 {
@@ -429,6 +506,7 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
         outer->setContentsMargins(18, 7, 18, 7);
         outer->setSpacing(10);
     }
+    m_baseRightMargin = outer->contentsMargins().right();
 
     m_avatarLabel = new QLabel;
     m_avatarLabel->setFixedSize(kAvatarSize, kAvatarSize);
@@ -578,6 +656,7 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
             emit mentionClicked(member.id, mentionDisplayName(member));
         });
         column->addWidget(body);
+        m_bodyLabel = body;
     }
 
     if (!message.deleted && message.hasFile())
@@ -626,7 +705,21 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
         connect(addReaction, &QPushButton::clicked, this,
                 &MessageRow::showReactionPicker);
         m_reactionsBar->addWidget(addReaction);
+        QPushButton *addSticker = nullptr;
+        if (!message.conversation.startsWith(QStringLiteral("#discord/"))) {
+            addSticker = new QPushButton;
+            addSticker->setObjectName("reactionAdd");
+            addSticker->setIcon(QIcon(stickerGlyph(
+                16, devicePixelRatio(), QColor(0x8b, 0x94, 0x9e))));
+            addSticker->setIconSize(QSize(16, 16));
+            addSticker->setCursor(Qt::PointingHandCursor);
+            addSticker->setToolTip(QStringLiteral("Add sticker"));
+            connect(addSticker, &QPushButton::clicked, this,
+                    &MessageRow::showStickerPicker);
+            m_reactionsBar->addWidget(addSticker);
+        }
         m_reactionsBar->addStretch();
+        m_reactionsBarFixed = m_reactionsBar->count();
         column->addWidget(reactionsRow);
         m_reactionsRow = reactionsRow;
         if (Theme::isNext()) {
@@ -641,6 +734,18 @@ MessageRow::MessageRow(const ChatMessage &message, const QString &nameColor,
             m_hoverReactButton->hide();
             connect(m_hoverReactButton, &QPushButton::clicked, this,
                     &MessageRow::showReactionPicker);
+            if (addSticker) {
+                m_hoverStickerButton = new QPushButton(this);
+                m_hoverStickerButton->setObjectName(QStringLiteral("messageAction"));
+                m_hoverStickerButton->setIcon(addSticker->icon());
+                m_hoverStickerButton->setIconSize(QSize(16, 16));
+                m_hoverStickerButton->setCursor(Qt::PointingHandCursor);
+                m_hoverStickerButton->setToolTip(QStringLiteral("Add sticker"));
+                m_hoverStickerButton->setFixedSize(24, 22);
+                m_hoverStickerButton->hide();
+                connect(m_hoverStickerButton, &QPushButton::clicked, this,
+                        &MessageRow::showStickerPicker);
+            }
         }
     }
 
@@ -860,9 +965,7 @@ void MessageRow::setContinuation(bool continuation)
     if (!Theme::isNext() || m_continuation == continuation)
         return;
     m_continuation = continuation;
-    if (m_outer)
-        m_outer->setContentsMargins(16, continuation ? kContinuationGapPx : kGroupGapPx,
-                                    16, 2);
+    applyOuterMargins();
     m_avatarLabel->setFixedHeight(continuation ? 0 : kAvatarSize);
     if (m_senderLabel)
         m_senderLabel->setVisible(!continuation);
@@ -903,6 +1006,13 @@ void MessageRow::enterEvent(QEnterEvent *event)
         m_hoverReactButton->move(right - m_hoverReactButton->width(), qMax(0, top));
         m_hoverReactButton->raise();
         m_hoverReactButton->show();
+        if (m_hoverStickerButton) {
+            m_hoverStickerButton->move(m_hoverReactButton->x() -
+                                           m_hoverStickerButton->width() - 2,
+                                       qMax(0, top));
+            m_hoverStickerButton->raise();
+            m_hoverStickerButton->show();
+        }
     }
     QFrame::enterEvent(event);
 }
@@ -914,6 +1024,8 @@ void MessageRow::leaveEvent(QEvent *event)
         m_menuButton->hide();
     if (m_hoverReactButton)
         m_hoverReactButton->hide();
+    if (m_hoverStickerButton)
+        m_hoverStickerButton->hide();
     QFrame::leaveEvent(event);
 }
 
@@ -958,6 +1070,17 @@ void MessageRow::renderSenderHeader()
 
 bool MessageRow::eventFilter(QObject *watched, QEvent *event)
 {
+    if (m_stickerValues.contains(watched) &&
+        event->type() == QEvent::MouseButtonRelease) {
+        auto *me = static_cast<QMouseEvent *>(event);
+        if (me->button() == Qt::LeftButton) {
+            emit reactionToggled(m_message.id, m_stickerValues.value(watched));
+            return true;
+        }
+    }
+    if (!m_stickerLabels.isEmpty() && watched == stickerAnchor() &&
+        (event->type() == QEvent::Resize || event->type() == QEvent::Move))
+        placeStickers();
     if ((watched == m_avatarLabel || watched == m_senderLabel) &&
         event->type() == QEvent::MouseButtonRelease) {
         auto *me = static_cast<QMouseEvent *>(event);
@@ -1013,17 +1136,28 @@ void MessageRow::setReactions(const QMap<QString, QStringList> &reactionMap)
 {
     if (!m_reactionsBar)
         return;
+    QMap<QString, QStringList> chips;
+    QList<QPair<QString, QStringList>> placed;
+    for (auto it = reactionMap.constBegin(); it != reactionMap.constEnd(); ++it) {
+        if (!stickers::isSticker(it.key()))
+            chips.insert(it.key(), it.value());
+        else if (!it.value().isEmpty())
+            placed.append({it.key(), it.value()});
+    }
+    std::sort(placed.begin(), placed.end(), [](const auto &a, const auto &b) {
+        return stickers::catalogIndex(a.first) < stickers::catalogIndex(b.first);
+    });
+    setStickers(placed);
     if (m_reactionsRow && Theme::isNext())
-        m_reactionsRow->setVisible(!reactionMap.isEmpty());
-    while (m_reactionsBar->count() > 2) {
+        m_reactionsRow->setVisible(!chips.isEmpty());
+    while (m_reactionsBar->count() > m_reactionsBarFixed) {
         QLayoutItem *item = m_reactionsBar->takeAt(0);
         if (item->widget())
             item->widget()->deleteLater();
         delete item;
     }
     int insertAt = 0;
-    for (auto it = reactionMap.constBegin(); it != reactionMap.constEnd();
-         ++it) {
+    for (auto it = chips.constBegin(); it != chips.constEnd(); ++it) {
         const QString reaction = it.key();
         const int count = it.value().size();
         auto *chip = new QPushButton(QString::number(count));
@@ -1045,6 +1179,151 @@ void MessageRow::setReactions(const QMap<QString, QStringList> &reactionMap)
                 [this, reaction] { emit reactionToggled(m_message.id, reaction); });
         m_reactionsBar->insertWidget(insertAt++, chip);
     }
+}
+
+void MessageRow::setStickers(const QList<QPair<QString, QStringList>> &placed)
+{
+    for (QLabel *label : std::as_const(m_stickerLabels))
+        label->deleteLater();
+    m_stickerLabels.clear();
+    m_stickerValues.clear();
+    int stripWidth = 0;
+    for (const auto &[value, placers] : placed) {
+        const stickers::CatalogEntry *entry = stickers::entryForValue(value);
+        if (!entry)
+            continue;
+        auto *label = new QLabel(this);
+        label->setObjectName(QStringLiteral("messageSticker"));
+        label->setAttribute(Qt::WA_TranslucentBackground);
+        label->setPixmap(stickerPixmap(*entry, int(placers.size()),
+                                       devicePixelRatio()));
+        label->resize(label->pixmap().deviceIndependentSize().toSize());
+        label->setCursor(Qt::PointingHandCursor);
+        label->setToolTip(entry->text + QString::fromUtf8(" \xC2\xB7 ") +
+                          placers.join(", "));
+        label->installEventFilter(this);
+        m_stickerLabels.append(label);
+        m_stickerValues.insert(label, value);
+        stripWidth += stripWidth == 0 ? label->width()
+                                      : label->width() - kStickerOverlap;
+    }
+    m_stickerReserve = stripWidth > 0 ? stripWidth + kStickerGap : 0;
+    m_idealWidthFor = -1;
+    applyOuterMargins();
+    if (QWidget *anchor = stickerAnchor())
+        anchor->installEventFilter(this);
+    placeStickers();
+}
+
+void MessageRow::applyOuterMargins()
+{
+    if (!m_outer)
+        return;
+    QMargins margins = m_outer->contentsMargins();
+    if (Theme::isNext())
+        margins.setTop(m_continuation ? kContinuationGapPx : kGroupGapPx);
+    margins.setRight(m_baseRightMargin + m_stickerReserve);
+    m_outer->setContentsMargins(margins);
+}
+
+QWidget *MessageRow::stickerAnchor() const
+{
+    if (m_bodyLabel)
+        return m_bodyLabel;
+    if (m_imageLabel)
+        return m_imageLabel;
+    if (m_videoLabel)
+        return m_videoLabel;
+    return m_senderLabel;
+}
+
+int MessageRow::idealBodyWidth() const
+{
+    if (!m_bodyLabel)
+        return 0;
+    const int width = m_bodyLabel->width();
+    if (width == m_idealWidthFor)
+        return m_idealWidth;
+    QTextDocument document;
+    document.setDocumentMargin(0);
+    document.setDefaultFont(m_bodyLabel->font());
+    document.setHtml(m_bodyLabel->text());
+    document.setTextWidth(width);
+    m_idealWidthFor = width;
+    m_idealWidth = qCeil(document.idealWidth());
+    return m_idealWidth;
+}
+
+void MessageRow::placeStickers()
+{
+    QWidget *anchor = stickerAnchor();
+    if (m_stickerLabels.isEmpty() || !anchor)
+        return;
+    int stripWidth = 0;
+    int stripHeight = 0;
+    for (QLabel *label : std::as_const(m_stickerLabels)) {
+        stripWidth += stripWidth == 0 ? label->width()
+                                      : label->width() - kStickerOverlap;
+        stripHeight = qMax(stripHeight, label->height());
+    }
+    const int extent = anchor == m_bodyLabel
+                           ? qMin(anchor->width(), idealBodyWidth())
+                           : anchor->width();
+    const int line = anchor == m_bodyLabel || anchor == m_senderLabel
+                         ? anchor->fontMetrics().height()
+                         : stripHeight;
+    const QPoint origin = anchor->mapTo(this, QPoint(0, 0));
+    int x = qMin(origin.x() + extent + kStickerGap,
+                 width() - m_baseRightMargin - stripWidth);
+    const int y = qMax(0, origin.y() + (line - stripHeight) / 2);
+    for (QLabel *label : std::as_const(m_stickerLabels)) {
+        label->move(qMax(0, x), y);
+        label->show();
+        label->raise();
+        x += label->width() - kStickerOverlap;
+    }
+}
+
+void MessageRow::showStickerPicker()
+{
+    auto *popup = new QFrame(this, Qt::Popup);
+    popup->setObjectName("reactionPicker");
+    popup->setAttribute(Qt::WA_DeleteOnClose);
+    auto *grid = new QGridLayout(popup);
+    grid->setContentsMargins(8, 8, 8, 8);
+    grid->setSpacing(4);
+    int index = 0;
+    for (const stickers::CatalogEntry &choice : stickers::catalog()) {
+        auto *button = new QToolButton(popup);
+        button->setObjectName("reactionPickerButton");
+        button->setAutoRaise(true);
+        button->setCursor(Qt::PointingHandCursor);
+        button->setToolTip(choice.text);
+        const QPixmap art = stickerPixmap(choice, 1, devicePixelRatio());
+        button->setIcon(QIcon(art));
+        button->setIconSize(art.deviceIndependentSize().toSize());
+        button->setFixedSize(art.deviceIndependentSize().toSize() + QSize(10, 10));
+        const QString value = stickers::valueForSlug(choice.slug);
+        connect(button, &QToolButton::clicked, this, [this, popup, value] {
+            emit reactionToggled(m_message.id, value);
+            popup->close();
+        });
+        grid->addWidget(button, index / kStickerPickerColumns,
+                        index % kStickerPickerColumns);
+        ++index;
+    }
+    popup->adjustSize();
+    const QPoint cursor = QCursor::pos();
+    QPoint pos = cursor - QPoint(10, popup->height() + 6);
+    if (QScreen *screen = QGuiApplication::screenAt(cursor)) {
+        const QRect avail = screen->availableGeometry();
+        pos.setX(qBound(avail.left(), pos.x(),
+                        avail.right() - popup->width()));
+        if (pos.y() < avail.top())
+            pos.setY(cursor.y() + 6);
+    }
+    popup->move(pos);
+    popup->show();
 }
 
 void MessageRow::showReactionPicker()

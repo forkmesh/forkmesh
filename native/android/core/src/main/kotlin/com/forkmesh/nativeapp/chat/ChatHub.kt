@@ -153,6 +153,7 @@ data class ChatRow(
     val edited: Boolean = false,
     val editable: Boolean = false,
     val reactions: List<ReactionChip> = emptyList(),
+    val stickers: List<StickerChip> = emptyList(),
     val thread: ChatThreadSummary? = null,
     val attachment: ChatAttachment? = null,
     val visitor: Boolean = false,
@@ -341,7 +342,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
         val now = System.currentTimeMillis()
         extras.restoreChannels(snapshot.privateChannels, snapshot.hiddenChannels)
         relay.restoreHistory(snapshot.messages.filter { it.conversation !in snapshot.hiddenChannels && live(it, now) })
-        extras.restore(snapshot.replies.filter { live(it, now) }, snapshot.replyRoots, snapshot.reactions, snapshot.reactionOrder, snapshot.edits)
+        extras.restore(snapshot.replies.filter { live(it, now) }, snapshot.replyRoots, snapshot.reactions, snapshot.reactionOrder, snapshot.edits, snapshot.stickers)
         extras.restoreHiddenMessages(snapshot.hiddenMessages)
     }
 
@@ -365,6 +366,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             replyRoots = extras.snapshotReplyRoots().filterKeys { it in replyIds },
             reactions = extras.snapshotReactions().filterKeys { it in known },
             reactionOrder = extras.snapshotReactionOrder().filterKeys { it in known },
+            stickers = extras.snapshotStickers().filterKeys { it in known },
             edits = extras.snapshotEdits().filterKeys { it in known },
             privateChannels = extras.privateChannels.sorted(),
             hiddenChannels = extras.hiddenChannels.sorted(),
@@ -446,6 +448,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
                     edited = extras.isEdited(message.id),
                     editable = message.self && message.text.isNotEmpty(),
                     reactions = extras.reactions(message.id),
+                    stickers = extras.stickers(message.id),
                     thread = if (message.conversation.startsWith("#") || inDirect) extras.threadSummary(message.id) else null,
                     attachment = extras.attachment(message.id),
                 )
@@ -464,6 +467,7 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
                 edited = extras.isEdited(message.id),
                 editable = message.self && message.text.isNotEmpty(),
                 reactions = extras.reactions(message.id),
+                stickers = extras.stickers(message.id),
                 attachment = extras.attachment(message.id),
                 receipt = receipt(message),
             )
@@ -572,6 +576,19 @@ class ChatHub(val relay: ChatRelay, val extras: ChatExtras = ChatExtras()) {
             return
         }
         if (!extras.toggleReaction(message.conversation, message.id, value)) notice(OFFLINE_NOTICE)
+    }
+
+    fun canSticker(conversation: String): Boolean = StickerCatalog.canOffer(conversation)
+
+    fun toggleSticker(message: ChatMessage, slug: String) {
+        val entry = StickerCatalog.entry(slug) ?: return
+        if (!canSticker(message.conversation)) return
+        if (DirectMessageFrames.isDirect(message.conversation)) {
+            val added = !extras.hasStuck(message.id, slug)
+            if (direct?.react(message.conversation, message.id, entry.fallback, added, slug) != true) notice("The sticker could not be sent.")
+            return
+        }
+        if (!extras.toggleSticker(message.conversation, message.id, slug)) notice(OFFLINE_NOTICE)
     }
 
     fun edit(message: ChatMessage, text: String): Boolean {

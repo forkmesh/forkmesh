@@ -464,6 +464,9 @@ class ChatScreen : Screen() {
                                                 scope.launch(Dispatchers.IO) { ChatDepth.hub?.toggleReaction(message, value) }
                                             }),
                                             onOpenThread = { navigator.push(ChatThreadScreen(conversation, message.id)) },
+                                            onToggleSticker = if (inMesh || inOffice) null else ({ slug ->
+                                                scope.launch(Dispatchers.IO) { ChatDepth.hub?.toggleSticker(message, slug) }
+                                            }),
                                         )
                                     }
                                 }

@@ -8,6 +8,7 @@ public struct ChatHistorySnapshot: Equatable, Sendable {
     public var replyRoots: [String: String] = [:]
     public var reactions: [String: [String: [String: String]]] = [:]
     public var reactionOrder: [String: [String]] = [:]
+    public var stickers: [String: [String: [String: String]]] = [:]
     public var edits: [String: String] = [:]
     public var privateChannels: [String] = []
     public var hiddenChannels: [String] = []
@@ -74,17 +75,35 @@ public enum ChatHistoryCodec {
             replyTo: DirectMessageFrames.replyQuote(object["r"]))
     }
 
-    public static func encode(_ snapshot: ChatHistorySnapshot) -> Data {
-        var reactions: JSONObject = [:]
-        for (id, state) in snapshot.reactions {
+    static func encodeMarks(_ marks: [String: [String: [String: String]]]) -> JSONValue {
+        var out: JSONObject = [:]
+        for (id, state) in marks {
             var perValue: JSONObject = [:]
             for (value, reactors) in state {
                 var names: JSONObject = [:]
                 for (reactor, name) in reactors { names[reactor] = .string(name) }
                 perValue[value] = .object(names)
             }
-            reactions[id] = .object(perValue)
+            out[id] = .object(perValue)
         }
+        return .object(out)
+    }
+
+    static func decodeMarks(_ value: JSONValue?) -> [String: [String: [String: String]]] {
+        var out: [String: [String: [String: String]]] = [:]
+        for (id, value) in value?.objectOrEmpty ?? [:] {
+            var state: [String: [String: String]] = [:]
+            for (emoji, reactors) in value.objectOrEmpty {
+                var names: [String: String] = [:]
+                for (reactor, name) in reactors.objectOrEmpty { names[reactor] = name.text }
+                if !names.isEmpty { state[emoji] = names }
+            }
+            if !state.isEmpty { out[id] = state }
+        }
+        return out
+    }
+
+    public static func encode(_ snapshot: ChatHistorySnapshot) -> Data {
         var order: JSONObject = [:]
         for (id, values) in snapshot.reactionOrder { order[id] = JSONValue(values) }
         var edits: JSONObject = [:]
@@ -107,7 +126,8 @@ public enum ChatHistoryCodec {
             "messages": .array(snapshot.messages.map(encodeMessage)),
             "replies": .array(snapshot.replies.map(encodeMessage)),
             "roots": .object(roots),
-            "reactions": .object(reactions),
+            "reactions": encodeMarks(snapshot.reactions),
+            "stickers": encodeMarks(snapshot.stickers),
             "order": .object(order),
             "edits": .object(edits),
             "private": JSONValue(snapshot.privateChannels),
@@ -129,15 +149,8 @@ public enum ChatHistoryCodec {
         snapshot.messages = (root["messages"]?.objects ?? []).compactMap(decodeMessage)
         snapshot.replies = (root["replies"]?.objects ?? []).compactMap(decodeMessage)
         for (id, value) in root["roots"]?.objectOrEmpty ?? [:] { snapshot.replyRoots[id] = value.text }
-        for (id, value) in root["reactions"]?.objectOrEmpty ?? [:] {
-            var state: [String: [String: String]] = [:]
-            for (emoji, reactors) in value.objectOrEmpty {
-                var names: [String: String] = [:]
-                for (reactor, name) in reactors.objectOrEmpty { names[reactor] = name.text }
-                if !names.isEmpty { state[emoji] = names }
-            }
-            if !state.isEmpty { snapshot.reactions[id] = state }
-        }
+        snapshot.reactions = decodeMarks(root["reactions"])
+        snapshot.stickers = decodeMarks(root["stickers"])
         for (id, value) in root["order"]?.objectOrEmpty ?? [:] { snapshot.reactionOrder[id] = value.strings }
         for (id, value) in root["edits"]?.objectOrEmpty ?? [:] { snapshot.edits[id] = value.text }
         snapshot.privateChannels = root["private"]?.strings ?? []
@@ -225,6 +238,7 @@ public enum ChatHistoryCodec {
             out.replyRoots.merge(snapshot.replyRoots) { kept, _ in kept }
             out.reactions.merge(snapshot.reactions) { kept, _ in kept }
             out.reactionOrder.merge(snapshot.reactionOrder) { kept, _ in kept }
+            out.stickers.merge(snapshot.stickers) { kept, _ in kept }
             out.edits.merge(snapshot.edits) { kept, _ in kept }
             out.looks.merge(snapshot.looks) { kept, _ in kept }
             out.receipts.merge(snapshot.receipts) { kept, _ in kept }
@@ -249,6 +263,7 @@ public struct ChatHistoryParts: Sendable {
     public var replyRoots: [String: String] = [:]
     public var reactions: [String: [String: [String: String]]] = [:]
     public var reactionOrder: [String: [String]] = [:]
+    public var stickers: [String: [String: [String: String]]] = [:]
     public var edits: [String: String] = [:]
     public var privateChannels: Set<String> = []
     public var hiddenChannels: Set<String> = []
@@ -273,6 +288,7 @@ public struct ChatHistoryParts: Sendable {
         let known = kept.union(replyIds)
         snapshot.reactions = reactions.filter { known.contains($0.key) }
         snapshot.reactionOrder = reactionOrder.filter { known.contains($0.key) }
+        snapshot.stickers = stickers.filter { known.contains($0.key) }
         snapshot.edits = edits.filter { known.contains($0.key) }
         snapshot.privateChannels = privateChannels.sorted()
         snapshot.hiddenChannels = hiddenChannels.sorted()

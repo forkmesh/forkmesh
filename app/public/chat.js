@@ -152,6 +152,17 @@ const PEER_STALE_MS = 180000;
 const VISITOR_IDLE_FORGET_MS = 10 * 60 * 1000;
 const GROUP_WINDOW_MS = 5 * 60 * 1000; // same-sender messages collapse under one header
 const REACTION_EMOJI = ["👍", "❤️", "😂", "🎉", "👀", "🚀"];
+const STICKER_CATALOG = Object.freeze([
+  Object.freeze({ slug: "lgtm", text: "LGTM", color: "#8250df", tilt: -6, emoji: "\u2705" }),
+  Object.freeze({ slug: "ship-it", text: "Ship it", color: "#0969da", tilt: 5, emoji: "\u{1F680}" }),
+  Object.freeze({ slug: "nice", text: "Nice!", color: "#bf3989", tilt: -4, emoji: "\u{1F44D}" }),
+  Object.freeze({ slug: "thanks", text: "Thanks!", color: "#bc4c00", tilt: 6, emoji: "\u{1F64F}" }),
+  Object.freeze({ slug: "on-it", text: "On it", color: "#57606a", tilt: -5, emoji: "\u{1F440}" }),
+  Object.freeze({ slug: "wow", text: "Wow!", color: "#cf222e", tilt: 4, emoji: "\u{1F62E}" }),
+  Object.freeze({ slug: "love-it", text: "Love it", color: "#d6336c", tilt: -3, emoji: "\u2764\uFE0F" }),
+  Object.freeze({ slug: "party", text: "Party!", color: "#9a6700", tilt: 7, emoji: "\u{1F389}" }),
+]);
+const STICKERS_BY_SLUG = new Map(STICKER_CATALOG.map((sticker) => [sticker.slug, sticker]));
 const ACTIVE_CHANNEL_KEY = "forkmesh.chat.channel";
 const ACTIVE_DIRECT_KEY = "forkmesh.chat.direct";
 const ISSUE_REPOSITORY_KEY = "forkmesh.chat.issueRepository";
@@ -425,6 +436,7 @@ let roomPreviewTimer = 0;
 // messageId -> Map(emoji -> Map(reactorId -> reactorName)); same shape as the
 // desktop's m_reactions so toggles converge across clients.
 const reactions = new Map();
+const stickers = new Map();
 // senderId -> { id, name, kind: "user"|"guest"|"bot"|"node", lastSeenMs } built from
 // every decrypted frame; drives the right-hand people pane.
 const roster = new Map();
@@ -460,6 +472,8 @@ let activeMentionAnchor = null;
 let mentionHideTimer = null;
 let emojiPickerEl = null;
 let emojiPickerTarget = null;
+let stickerPickerEl = null;
+let stickerPickerTarget = null;
 let pendingDeleteRecord = null;
 let pendingInviteToken = "";
 let pendingDeleteTrigger = null;
@@ -936,6 +950,11 @@ const CHAT_ICON_PATHS = {
   hash: ["M4 9h16", "M4 15h16", "M10 3 8 21", "M16 3l-2 18"],
   lock: ["M5 11h14v10H5z", "M8 11V7a4 4 0 0 1 8 0v4"],
   thread: ["M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"],
+  sticker: [
+    "M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z",
+    "M14 3v4a2 2 0 0 0 2 2h4", "M8 13h.01", "M16 13h.01",
+    "M10 16s.8 1 2 1c1.3 0 2-1 2-1",
+  ],
   react: [
     "M22 11v1a10 10 0 1 1-9-10", "M8 14s1.5 2 4 2 4-2 4-2",
     "M9 9h.01", "M15 9h.01", "M16 5h6", "M19 2v6",
@@ -2068,6 +2087,7 @@ function pruneExpiredMessages() {
       revokeAttachmentUrl(record);
       rows.delete(record.id);
       reactions.delete(record.id);
+      stickers.delete(record.id);
       threads.deleteTarget(record.id);
       if (activeThreadRootId === record.id) closeThread({ restoreFocus: false });
     }
@@ -2154,6 +2174,7 @@ function releaseChannelMessages(channelKey) {
     revokeAttachmentUrl(record);
     rows.delete(record.id);
     reactions.delete(record.id);
+    stickers.delete(record.id);
   }
   channelMessages.delete(channelKey);
   channelSyncState.delete(channelKey);
@@ -3871,6 +3892,11 @@ function reactionKey(plain) {
 }
 
 function applyReaction(plain) {
+  const sticker = STICKERS_BY_SLUG.get(String(plain.sticker || ""));
+  if (sticker) {
+    applySticker(plain, sticker);
+    return;
+  }
   const target = String(plain.target || "");
   const emoji = String(plain.emoji || "").slice(0, 8);
   const reactor = reactionKey(plain);
@@ -3932,6 +3958,147 @@ function toggleReaction(messageId, emoji) {
   runWhenConnected(() => send(plain));
 }
 
+function applySticker(plain, sticker) {
+  const target = String(plain.target || "");
+  const reactor = reactionKey(plain);
+  if (!target || !reactor) return;
+  const perMessage = stickers.get(target) || new Map();
+  stickers.set(target, perMessage);
+  const placers = perMessage.get(sticker.slug) || new Map();
+  perMessage.set(sticker.slug, placers);
+  if (plain.added) {
+    placers.set(reactor, String(plain.reactorName || plain.sender || "peer"));
+  } else {
+    placers.delete(reactor);
+  }
+  if (!placers.size) perMessage.delete(sticker.slug);
+  if (!perMessage.size) stickers.delete(target);
+  renderStickers(target);
+}
+
+function stickerBadge(sticker, tag = "span") {
+  const badge = document.createElement(tag);
+  badge.className = "chat-sticker";
+  badge.dataset.sticker = sticker.slug;
+  badge.style.background = sticker.color;
+  badge.style.setProperty("--chat-sticker-tilt", `${sticker.tilt}deg`);
+  const label = document.createElement("span");
+  label.textContent = sticker.text;
+  badge.append(label);
+  return badge;
+}
+
+function renderStickers(messageId) {
+  const rec = rows.get(messageId) || threadRenderedRows.get(messageId);
+  if (!rec || !rec.stickersEl) return;
+  rec.stickersEl.textContent = "";
+  const perMessage = stickers.get(messageId);
+  rec.el?.classList.toggle("has-stickers", Boolean(perMessage?.size));
+  if (!perMessage) return;
+  for (const sticker of STICKER_CATALOG) {
+    const placers = perMessage.get(sticker.slug);
+    if (!placers?.size) continue;
+    const badge = stickerBadge(sticker, "button");
+    badge.type = "button";
+    const mine = placers.has(selfId);
+    badge.classList.toggle("is-mine", mine);
+    badge.setAttribute("aria-pressed", mine ? "true" : "false");
+    const names = [...placers.values()].join(", ");
+    badge.title = `${sticker.text} from ${names}`;
+    badge.setAttribute("aria-label", `${sticker.text} sticker from ${names}`);
+    if (placers.size > 1) {
+      const count = document.createElement("span");
+      count.className = "chat-sticker-count";
+      count.textContent = `\u00d7${placers.size}`;
+      badge.append(count);
+    }
+    badge.addEventListener("click", (event) => {
+      event.stopPropagation();
+      toggleSticker(messageId, sticker.slug);
+    });
+    rec.stickersEl.append(badge);
+  }
+}
+
+function toggleSticker(messageId, slug) {
+  const sticker = STICKERS_BY_SLUG.get(slug);
+  if (!sticker) return;
+  if (!canJoinChannel()) {
+    lockChatForNonUser();
+    return;
+  }
+  const rec = rows.get(messageId) || threadRenderedRows.get(messageId) ||
+    threads.target(messageId);
+  const mine = Boolean(stickers.get(messageId)?.get(slug)?.has(selfId));
+  const plain = makePlain("reaction", {
+    conversation: channelWireLabel((rec && rec.channel) || activeChannel),
+    target: messageId,
+    emoji: sticker.emoji,
+    sticker: sticker.slug,
+    reactorId: selfId,
+    reactorName: displayName(),
+    added: !mine,
+  });
+  seen.add(plain.id);
+  applyReaction(plain);
+  runWhenConnected(() => send(plain));
+}
+
+function ensureStickerPicker() {
+  if (stickerPickerEl) return stickerPickerEl;
+  stickerPickerEl = document.createElement("div");
+  stickerPickerEl.className = "chat-sticker-picker";
+  stickerPickerEl.setAttribute("role", "toolbar");
+  stickerPickerEl.setAttribute("aria-label", "Choose a sticker");
+  stickerPickerEl.hidden = true;
+  for (const sticker of STICKER_CATALOG) {
+    const btn = stickerBadge(sticker, "button");
+    btn.type = "button";
+    btn.setAttribute("aria-label", `Stick ${sticker.text}`);
+    btn.addEventListener("click", () => {
+      if (stickerPickerTarget) toggleSticker(stickerPickerTarget, sticker.slug);
+      hideStickerPicker();
+    });
+    stickerPickerEl.append(btn);
+  }
+  stickerPickerEl.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    hideStickerPicker();
+  });
+  document.body.append(stickerPickerEl);
+  document.addEventListener("click", (event) => {
+    if (!stickerPickerEl.hidden && !stickerPickerEl.contains(event.target)) hideStickerPicker();
+  }, true);
+  return stickerPickerEl;
+}
+
+function hideStickerPicker() {
+  if (stickerPickerEl) stickerPickerEl.hidden = true;
+  stickerPickerTarget = null;
+}
+
+function showStickerPicker(anchor, messageId) {
+  hideEmojiPicker();
+  const picker = ensureStickerPicker();
+  stickerPickerTarget = messageId;
+  const placed = stickers.get(messageId);
+  for (const btn of picker.querySelectorAll(".chat-sticker")) {
+    const mine = Boolean(placed?.get(btn.dataset.sticker)?.has(selfId));
+    btn.classList.toggle("is-mine", mine);
+    btn.setAttribute("aria-pressed", mine ? "true" : "false");
+  }
+  picker.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const margin = 8;
+  const width = picker.offsetWidth || 260;
+  const x = Math.max(margin, Math.min(rect.right - width, window.innerWidth - width - margin));
+  const y = Math.max(margin, rect.top - picker.offsetHeight - 6);
+  picker.style.left = `${x + window.scrollX}px`;
+  picker.style.top = `${y + window.scrollY}px`;
+  picker.querySelector("button")?.focus();
+}
+
 function ensureEmojiPicker() {
   if (emojiPickerEl) return emojiPickerEl;
   emojiPickerEl = document.createElement("div");
@@ -3960,6 +4127,7 @@ function hideEmojiPicker() {
 }
 
 function showEmojiPicker(anchor, messageId) {
+  hideStickerPicker();
   const picker = ensureEmojiPicker();
   emojiPickerTarget = messageId;
   picker.hidden = false;
@@ -4411,6 +4579,7 @@ function renderRecordBody(record) {
 const MESSAGE_ACTION_ICONS = {
   Reply: "thread",
   React: "react",
+  Sticker: "sticker",
   Issue: "issue",
   Copy: "copy",
   Edit: "edit",
@@ -4610,9 +4779,13 @@ function buildThreadReply(sourceRecord) {
   reactionsEl.className = "chat-reactions";
   main.append(reactionsEl);
   row.append(main);
+  const stickersEl = document.createElement("div");
+  stickersEl.className = "chat-stickers";
+  row.append(stickersEl);
   record.el = row;
   record.body = body;
   record.reactionsEl = reactionsEl;
+  record.stickersEl = stickersEl;
   renderRecordBody(record);
 
   const actions = document.createElement("div");
@@ -4621,6 +4794,11 @@ function buildThreadReply(sourceRecord) {
     "Add reaction",
     "React",
     (button) => showEmojiPicker(button, record.id),
+  ));
+  actions.append(messageAction(
+    "Add sticker",
+    "Sticker",
+    (button) => showStickerPicker(button, record.id),
   ));
   if (record.self) {
     if (record.text) {
@@ -4641,6 +4819,7 @@ function buildThreadReply(sourceRecord) {
   bindTouchMessageActions(row);
   threadRenderedRows.set(record.id, record);
   renderReactions(record.id);
+  renderStickers(record.id);
   return row;
 }
 
@@ -5096,6 +5275,9 @@ function buildRow(record, prev) {
   reactionsEl.className = "chat-reactions";
   main.append(reactionsEl);
   row.append(main);
+  const stickersEl = document.createElement("div");
+  stickersEl.className = "chat-stickers";
+  row.append(stickersEl);
   const receipt = receiptState(record);
   if (receipt && isDirectMessageKey(record.channel)) {
     record.recipientsEl = null;
@@ -5108,6 +5290,7 @@ function buildRow(record, prev) {
   record.el = row;
   record.body = body;
   record.reactionsEl = reactionsEl;
+  record.stickersEl = stickersEl;
   record.threadSummaryEl = threadSummary;
   renderRecordBody(record);
   renderThreadSummary(record.id);
@@ -5123,6 +5306,11 @@ function buildRow(record, prev) {
       "Add reaction",
       "React",
       (button) => showEmojiPicker(button, record.id),
+    ));
+    actions.append(messageAction(
+      "Add sticker",
+      "Sticker",
+      (button) => showStickerPicker(button, record.id),
     ));
   }
   // Filing someone else's report is the common case, so this is not
@@ -5208,6 +5396,7 @@ function renderActiveChannel() {
     }
     fragment.append(buildRow(record, prev));
     renderReactions(record.id);
+    renderStickers(record.id);
     prev = record;
   }
   for (const notice of notices) fragment.append(buildTrustNotice(notice));
@@ -5256,6 +5445,7 @@ function insertMessage(record) {
       if (!groupedPrevious) logEl.append(buildDateDivider(record.ts));
       logEl.append(buildRow(record, groupedPrevious));
       renderReactions(record.id);
+      renderStickers(record.id);
       if (pinned || record.self) scrollLogToBottom();
     } else {
       renderActiveChannel();
@@ -5316,6 +5506,7 @@ function removeMessage(id) {
     if (!reply?.rootId) return;
     threads.deleteTarget(id);
     reactions.delete(id);
+    stickers.delete(id);
     if (activeThreadRootId === reply.rootId) renderThread();
     renderThreadSummary(reply.rootId);
     return;
@@ -5327,6 +5518,7 @@ function removeMessage(id) {
     rec.attachment = null;
     rec.deleted = true;
     reactions.delete(id);
+    stickers.delete(id);
     threads.deleteTarget(id);
     repaintChannel(rec.channel);
     queueRoomPreview(rec.channel);
@@ -5335,6 +5527,7 @@ function removeMessage(id) {
   }
   rows.delete(id);
   reactions.delete(id);
+  stickers.delete(id);
   threads.deleteTarget(id);
   const list = channelMessages.get(rec.channel) || [];
   const index = list.indexOf(rec);

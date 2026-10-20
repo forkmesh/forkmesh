@@ -1054,6 +1054,7 @@ set(FORKMESH_APP_SOURCES
     src/QrCode.h
     src/QrCode.cpp
     src/ReactionCatalog.h
+    src/StickerCatalog.h
     src/ReactionEmoji.h
     src/ReactionEmoji.cpp
     src/MessageRow.h
@@ -1946,6 +1947,7 @@ if(FORKMESH_BUILD_TESTS)
         src/MeshFirewall.h
         src/MeshFirewall.cpp
         src/ReactionCatalog.h
+        src/StickerCatalog.h
         ${FORKMESH_PACKAGE_DISCORD_SOURCES}
     )
     target_include_directories(forkmesh-chat-transport-tests PRIVATE

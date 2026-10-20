@@ -1379,7 +1379,7 @@ class DirectMessageService(
         return sendSealed(record, frame(record, "thread-reply", linkedMapOf("rootId" to root, "text" to body)))
     }
 
-    fun react(conversation: String, target: String, emoji: String, added: Boolean): Boolean {
+    fun react(conversation: String, target: String, emoji: String, added: Boolean, sticker: String = ""): Boolean {
         val record = record(conversation) ?: return false
         if (target.isEmpty() || emoji.isEmpty()) return false
         val extra = linkedMapOf<String, Any?>(
@@ -1390,6 +1390,7 @@ class DirectMessageService(
             "reactorName" to displayName().take(ChatLimits.MAX_DISPLAY_NAME_CHARS),
             "added" to added,
         )
+        if (sticker.isNotEmpty()) extra["sticker"] = sticker
         return sendSealed(record, frame(record, "reaction", extra), notify = false)
     }
 

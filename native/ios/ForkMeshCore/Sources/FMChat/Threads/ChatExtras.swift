@@ -56,6 +56,16 @@ public struct ReactionChip: Equatable, Sendable, Identifiable {
     public var label: String { ReactionCatalog.label(for: value) }
 }
 
+public struct StickerChip: Equatable, Sendable, Identifiable {
+    public let sticker: StickerEntry
+    public let count: Int
+    public let names: [String]
+    public let mine: Bool
+
+    public var id: String { sticker.slug }
+    public var countLabel: String { count > 1 ? "\u{00D7}\(count)" : "" }
+}
+
 public struct ChatTypingPeer: Equatable, Sendable {
     public let name: String
     public let until: Date
@@ -91,6 +101,7 @@ public final class ChatExtras {
     private var rootChannel: [String: String] = [:]
     private var reactionState: [String: [String: [String: String]]] = [:]
     private var reactionOrder: [String: [String]] = [:]
+    private var stickerState: [String: [String: [String: String]]] = [:]
     private var editedText: [String: String] = [:]
     private var typingState: [String: [String: ChatTypingPeer]] = [:]
     private var files: [String: ChatAttachment] = [:]
@@ -205,6 +216,16 @@ public final class ChatExtras {
             guard let reactors = state[value], !reactors.isEmpty else { return nil }
             let names = reactors.keys.sorted().map { reactors[$0] ?? "" }.filter { !$0.isEmpty }
             return ReactionChip(value: value, count: reactors.count, names: names, mine: reactors[me] != nil)
+        }
+    }
+
+    public func stickers(for messageId: String, selfId roomSelfId: String? = nil) -> [StickerChip] {
+        guard let state = stickerState[messageId] else { return [] }
+        let me = roomSelfId ?? selfId
+        return StickerCatalog.entries.compactMap { sticker in
+            guard let placers = state[sticker.slug], !placers.isEmpty else { return nil }
+            let names = placers.keys.sorted().map { placers[$0] ?? "" }.filter { !$0.isEmpty }
+            return StickerChip(sticker: sticker, count: placers.count, names: names, mine: placers[me] != nil)
         }
     }
 
@@ -324,6 +345,16 @@ public final class ChatExtras {
         reactionState[messageId]?[value]?[selfId] == nil
     }
 
+    public nonisolated static func stickerFields(added: Bool, messageId: String, sticker: StickerEntry, selfId: String) -> JSONObject {
+        var fields = reactionFields(added: added, messageId: messageId, value: sticker.fallback, selfId: selfId)
+        fields[StickerCatalog.field] = .string(sticker.slug)
+        return fields
+    }
+
+    public func stickerAdds(messageId: String, slug: String, selfId: String) -> Bool {
+        stickerState[messageId]?[slug]?[selfId] == nil
+    }
+
     public func roomAuthor(of id: String, conversation: String) -> String? { author(of: id, conversation: conversation) }
 
     private func holdEdit(_ frame: JSONObject, target: String) {
@@ -426,8 +457,12 @@ public final class ChatExtras {
         let reactorId = frame["reactorId"]?.text ?? senderId
         if target.isEmpty || raw.isEmpty || raw.count > 16 || reactorId.isEmpty { return }
         if !senderId.isEmpty && reactorId != senderId { return }
-        let value = ReactionCatalog.value(forEmoji: raw)
         let name = String((frame["reactorName"]?.text ?? frame["sender"]?.text ?? "").prefix(ChatLimits.maxDisplayNameChars))
+        if let sticker = StickerCatalog.entry(frame[StickerCatalog.field]?.text ?? "") {
+            applySticker(sticker.slug, target: target, reactorId: reactorId, name: name, added: frame["added"]?.isTrue == true)
+            return
+        }
+        let value = ReactionCatalog.value(forEmoji: raw)
         var state = reactionState[target] ?? [:]
         var order = reactionOrder[target] ?? []
         var reactors = state[value] ?? [:]
@@ -444,6 +479,20 @@ public final class ChatExtras {
         order = order.filter { state[$0] != nil }
         reactionState[target] = state.isEmpty ? nil : state
         reactionOrder[target] = order.isEmpty ? nil : order
+        changed()
+    }
+
+    private func applySticker(_ slug: String, target: String, reactorId: String, name: String, added: Bool) {
+        var state = stickerState[target] ?? [:]
+        var placers = state[slug] ?? [:]
+        if added {
+            if placers[reactorId] != nil || placers.count >= ChatExtras.maxReactorsPerReaction { return }
+            placers[reactorId] = name
+        } else if placers.removeValue(forKey: reactorId) == nil {
+            return
+        }
+        state[slug] = placers.isEmpty ? nil : placers
+        stickerState[target] = state.isEmpty ? nil : state
         changed()
     }
 
@@ -483,6 +532,7 @@ public final class ChatExtras {
         editedText.removeValue(forKey: id)
         reactionState.removeValue(forKey: id)
         reactionOrder.removeValue(forKey: id)
+        stickerState.removeValue(forKey: id)
         if let file = files.removeValue(forKey: id) {
             fileBytes -= file.data.count
             fileOrder.removeAll { $0 == id }
@@ -717,6 +767,26 @@ public final class ChatExtras {
     }
 
     @discardableResult
+    public func toggleSticker(conversation: String, messageId: String, slug: String) -> Bool {
+        guard let sink, !messageId.isEmpty, let sticker = StickerCatalog.entry(slug) else { return false }
+        let me = sink.selfId
+        let added = stickerAdds(messageId: messageId, slug: slug, selfId: me)
+        var frame = sink.makeFrame("reaction")
+        for (key, value) in ChatExtras.stickerFields(added: added, messageId: messageId, sticker: sticker, selfId: me) {
+            frame[key] = value
+        }
+        frame["reactorName"] = .string(frame["sender"]?.text ?? "")
+        routed(&frame, conversation: conversation, persist: true)
+        sink.applyFrame(frame)
+        if sink.sendFrame(frame) { return true }
+        var undo = sink.makeFrame("reaction")
+        for (key, value) in frame where key != "id" && key != "ts" { undo[key] = value }
+        undo["added"] = .bool(!added)
+        sink.applyFrame(undo)
+        return false
+    }
+
+    @discardableResult
     public func edit(conversation: String, messageId: String, text: String) -> Bool {
         let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(ChatLimits.maxTextChars))
         guard let sink, !body.isEmpty, !messageId.isEmpty else { return false }
@@ -839,6 +909,8 @@ public final class ChatExtras {
 
     public func snapshotReactionOrder() -> [String: [String]] { reactionOrder }
 
+    public func snapshotStickers() -> [String: [String: [String: String]]] { stickerState }
+
     public func snapshotEdits() -> [String: String] { editedText }
 
     public func snapshotLooks() -> [String: ChatLook] { looks.filter { !$0.value.isEmpty } }
@@ -878,7 +950,7 @@ public final class ChatExtras {
 
     public func restore(
         replies restoredReplies: [ChatMessage], roots: [String: String], reactions: [String: [String: [String: String]]],
-        order: [String: [String]], edits: [String: String]
+        order: [String: [String]], edits: [String: String], stickers: [String: [String: [String: String]]] = [:]
     ) {
         for reply in restoredReplies {
             guard let root = roots[reply.id], replyRoot[reply.id] == nil, !hiddenChannels.contains(reply.conversation),
@@ -897,6 +969,10 @@ public final class ChatExtras {
         for (id, state) in reactions where reactionState[id] == nil {
             reactionState[id] = state
             reactionOrder[id] = (order[id] ?? Array(state.keys.sorted())).filter { state[$0] != nil }
+        }
+        for (id, state) in stickers where stickerState[id] == nil {
+            let known = state.filter { StickerCatalog.entry($0.key) != nil && !$0.value.isEmpty }
+            if !known.isEmpty { stickerState[id] = known }
         }
         for (id, text) in edits where editedText[id] == nil { editedText[id] = text }
         changed()

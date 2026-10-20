@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -75,6 +80,9 @@ import com.forkmesh.nativeapp.chat.ChatThreadSummary
 import com.forkmesh.nativeapp.chat.OfficeFrames
 import com.forkmesh.nativeapp.chat.ReactionCatalog
 import com.forkmesh.nativeapp.chat.ReactionChip
+import com.forkmesh.nativeapp.chat.StickerCatalog
+import com.forkmesh.nativeapp.chat.StickerChip
+import com.forkmesh.nativeapp.chat.StickerEntry
 import com.forkmesh.nativeapp.chat.dayDividerLabel
 import com.forkmesh.nativeapp.chat.messageBodySegments
 import com.forkmesh.nativeapp.chat.messageTime
@@ -83,6 +91,8 @@ import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.UserStatus
 import com.forkmesh.nativeapp.ui.kit.FmAvatar
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenu
+import com.forkmesh.nativeapp.ui.kit.FmDropdownMenuItem
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatus
 import com.forkmesh.nativeapp.ui.kit.FmSoundOnShow
@@ -108,6 +118,7 @@ fun ChatMessageRow(
     onLongPress: (() -> Unit)?,
     onToggleReaction: ((String) -> Unit)?,
     onOpenThread: (() -> Unit)?,
+    onToggleSticker: ((String) -> Unit)? = null,
 ) {
     val colors = Fm.colors
     val haptics = LocalHapticFeedback.current
@@ -167,20 +178,31 @@ fun ChatMessageRow(
                 }
                 Spacer(Modifier.height(2.dp))
             }
-            if (row.text.isNotEmpty()) ChatMessageBody(row.text)
-            if (message.blocks.isNotEmpty()) AppBlocksView(message)
-            if (row.edited) Text("(edited)", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
-            val attachment = row.attachment
-            val viewOnce = row.viewOnce
-            if (viewOnce != null) {
-                ViewOnceBubble(viewOnce)
-            } else if (attachment != null) {
-                ChatAttachmentView(attachment)
-            } else if (message.fileName.isNotEmpty()) {
-                Row(Modifier.padding(top = FmSpace.x1), verticalAlignment = Alignment.CenterVertically) {
-                    FmIcon("attach_file", size = 14.dp, tint = colors.textTertiary)
-                    Spacer(Modifier.width(FmSpace.x1))
-                    Text(message.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(color = colors.accent))
+            Box(Modifier.fillMaxWidth()) {
+                Column {
+                    if (row.text.isNotEmpty()) ChatMessageBody(row.text)
+                    if (message.blocks.isNotEmpty()) AppBlocksView(message)
+                    if (row.edited) Text("(edited)", style = Fm.text.bodySmall.copy(fontSize = FmType.micro, color = colors.textTertiary))
+                    val attachment = row.attachment
+                    val viewOnce = row.viewOnce
+                    if (viewOnce != null) {
+                        ViewOnceBubble(viewOnce)
+                    } else if (attachment != null) {
+                        ChatAttachmentView(attachment)
+                    } else if (message.fileName.isNotEmpty()) {
+                        Row(Modifier.padding(top = FmSpace.x1), verticalAlignment = Alignment.CenterVertically) {
+                            FmIcon("attach_file", size = 14.dp, tint = colors.textTertiary)
+                            Spacer(Modifier.width(FmSpace.x1))
+                            Text(message.fileName, maxLines = 1, overflow = TextOverflow.Ellipsis, style = Fm.text.bodyMedium.copy(color = colors.accent))
+                        }
+                    }
+                }
+                if (row.stickers.isNotEmpty()) {
+                    ChatStickers(
+                        row.stickers,
+                        onToggle = onToggleSticker,
+                        modifier = Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-10).dp).zIndex(1f),
+                    )
                 }
             }
             if (queued) {
@@ -225,6 +247,72 @@ fun ChatReactionChips(chips: List<ReactionChip>, onToggle: (String) -> Unit) {
                 Text(chip.emoji, style = Fm.text.bodyMedium)
                 Spacer(Modifier.width(4.dp))
                 Text("${chip.count}", style = Fm.text.labelSmall.copy(color = if (chip.mine) colors.accent else colors.textSecondary))
+            }
+        }
+    }
+}
+
+@Composable
+fun ChatStickers(chips: List<StickerChip>, onToggle: ((String) -> Unit)?, modifier: Modifier = Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy((-6).dp), verticalAlignment = Alignment.CenterVertically) {
+        for (chip in chips) {
+            val entry = chip.entry
+            if (entry != null) {
+                var showNames by remember(chip.slug) { mutableStateOf(false) }
+                Box {
+                    ChatStickerBadge(
+                        entry,
+                        chip.label,
+                        description = "${chip.text} sticker, ${chip.count}. ${chip.names.joinToString(", ")}",
+                        onTap = onToggle?.let { toggle -> { toggle(chip.slug) } },
+                        onLongPress = if (chip.names.isEmpty()) null else ({ showNames = true }),
+                    )
+                    FmDropdownMenu(expanded = showNames, onDismissRequest = { showNames = false }) {
+                        for (name in chip.names) FmDropdownMenuItem(name, onClick = { showNames = false })
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun ChatStickerBadge(
+    entry: StickerEntry,
+    label: String,
+    description: String,
+    onTap: (() -> Unit)?,
+    onLongPress: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(6.dp)
+    Text(
+        label,
+        modifier = modifier
+            .rotate(entry.tilt)
+            .shadow(3.dp, shape)
+            .background(Color(entry.color), shape)
+            .border(2.dp, Color.White, shape)
+            .combinedClickable(enabled = onTap != null || onLongPress != null, onClick = { onTap?.invoke() }, onLongClick = onLongPress)
+            .padding(horizontal = 8.dp, vertical = 3.dp)
+            .semantics { contentDescription = description },
+        maxLines = 1,
+        style = Fm.text.labelSmall.copy(color = Color.White, fontWeight = FontWeight.Bold),
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ChatStickerPicker(onPick: (String) -> Unit) {
+    FlowRow(
+        Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4, vertical = FmSpace.x3),
+        horizontalArrangement = Arrangement.spacedBy(FmSpace.x3),
+        verticalArrangement = Arrangement.spacedBy(FmSpace.x3),
+    ) {
+        for (entry in StickerCatalog.entries) {
+            Box(Modifier.heightIn(min = 44.dp), contentAlignment = Alignment.Center) {
+                ChatStickerBadge(entry, entry.text, description = "${entry.text} sticker", onTap = { onPick(entry.slug) })
             }
         }
     }

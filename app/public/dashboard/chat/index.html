@@ -4173,6 +4173,86 @@
               background: var(--dc-hover);
             }
 
+            .chat-message-row.has-stickers {
+              position: relative;
+            }
+
+            .chat-stickers {
+              position: absolute;
+              z-index: 3;
+              top: -8px;
+              right: 16px;
+              display: flex;
+              align-items: flex-start;
+              max-width: 60%;
+              pointer-events: none;
+            }
+
+            .chat-stickers:empty {
+              display: none;
+            }
+
+            .chat-sticker {
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              padding: 2px 8px;
+              border: 2px solid #fff;
+              border-radius: 6px;
+              box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+              color: #fff;
+              font-size: 11px;
+              font-weight: 800;
+              line-height: 1.3;
+              white-space: nowrap;
+              cursor: pointer;
+              pointer-events: auto;
+              transform: rotate(var(--chat-sticker-tilt, 0deg));
+              transition: transform 120ms ease, box-shadow 120ms ease;
+            }
+
+            .chat-stickers .chat-sticker + .chat-sticker {
+              margin-left: -6px;
+            }
+
+            .chat-sticker:hover,
+            .chat-sticker:focus-visible {
+              z-index: 1;
+              transform: rotate(var(--chat-sticker-tilt, 0deg)) scale(1.08);
+            }
+
+            .chat-sticker:focus-visible {
+              outline: 2px solid rgb(var(--dashboard-primary-rgb));
+              outline-offset: 1px;
+            }
+
+            .chat-sticker.is-mine {
+              box-shadow: 0 0 0 2px rgb(var(--dashboard-primary-rgb)), 0 1px 3px rgba(0, 0, 0, 0.35);
+            }
+
+            .chat-sticker-count {
+              font-size: 10px;
+              opacity: 0.9;
+            }
+
+            .chat-sticker-picker {
+              display: flex;
+              flex-wrap: wrap;
+              width: max-content;
+              max-width: min(100%, 280px);
+              gap: 8px;
+              margin-top: 5px;
+              padding: 10px;
+              border: 1px solid rgb(var(--dashboard-border-rgb));
+              border-radius: 8px;
+              background: rgb(var(--dashboard-popover-rgb));
+              box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+            }
+
+            html:not([data-world-embed="1"]) #fullChatMessages > .chat-message-row.has-stickers .chat-message-actions {
+              top: 16px;
+            }
+
             html:not([data-world-embed="1"]) #fullChatMessages .chat-mention {
               border-radius: 3px;
               background: var(--dc-mention-bg);

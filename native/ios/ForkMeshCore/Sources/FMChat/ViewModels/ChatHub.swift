@@ -28,6 +28,7 @@ public struct ChatRow: Equatable, Identifiable, Sendable {
     public var edited = false
     public var editable = false
     public var reactions: [ReactionChip] = []
+    public var stickers: [StickerChip] = []
     public var thread: ChatThreadSummary?
     public var attachment: ChatAttachment?
     public var visitor = false
@@ -288,7 +289,7 @@ public final class ChatHub: ShellChatBridge {
         restoreDirectHistory()
         extras.restore(
             replies: snapshot.replies, roots: snapshot.replyRoots, reactions: snapshot.reactions, order: snapshot.reactionOrder,
-            edits: snapshot.edits)
+            edits: snapshot.edits, stickers: snapshot.stickers)
         extras.restoreHiddenMessages(snapshot.hiddenMessages)
         extras.restoreRemovedMessages(snapshot.removedMessages)
         extras.restoreLooks(snapshot.looks, events: snapshot.lookEvents)
@@ -353,6 +354,7 @@ public final class ChatHub: ShellChatBridge {
         parts.replyRoots = extras.snapshotReplyRoots()
         parts.reactions = extras.snapshotReactions()
         parts.reactionOrder = extras.snapshotReactionOrder()
+        parts.stickers = extras.snapshotStickers()
         parts.edits = extras.snapshotEdits()
         parts.privateChannels = extras.privateChannels
         parts.hiddenChannels = extras.hiddenChannels
@@ -712,6 +714,7 @@ public final class ChatHub: ShellChatBridge {
             row.editable = mutable && message.isSelf && !message.text.isEmpty
             if mutable {
                 row.reactions = extras.reactions(for: message.id, selfId: roomSelfId(message.conversation))
+                row.stickers = extras.stickers(for: message.id, selfId: roomSelfId(message.conversation))
                 row.thread = ChatHub.hasThreads(message.conversation) ? extras.threadSummary(message.id) : nil
             }
             if !message.fileName.isEmpty { row.attachment = extras.attachment(for: message.id) }
@@ -783,6 +786,7 @@ public final class ChatHub: ShellChatBridge {
             row.edited = extras.isEdited(message.id)
             row.editable = message.isSelf && !message.text.isEmpty
             row.reactions = extras.reactions(for: message.id, selfId: roomSelfId(message.conversation))
+            row.stickers = extras.stickers(for: message.id, selfId: roomSelfId(message.conversation))
             row.attachment = extras.attachment(for: message.id)
             row.receipt = receipt(for: message)
             out.append(row)
@@ -834,6 +838,27 @@ public final class ChatHub: ShellChatBridge {
             return
         }
         if !extras.toggleReaction(conversation: message.conversation, messageId: message.id, value: value) {
+            notice = ChatNotice("Chat is offline. Reconnecting...")
+        }
+    }
+
+    public func toggleSticker(_ message: ChatMessage, slug: String) {
+        guard let sticker = StickerCatalog.entry(slug) else { return }
+        let conversation = message.conversation
+        if ChatHub.isRoomConversation(conversation) {
+            let me = roomSelfId(conversation)
+            guard !me.isEmpty, !message.id.isEmpty else { return }
+            let fields = ChatExtras.stickerFields(
+                added: extras.stickerAdds(messageId: message.id, slug: slug, selfId: me), messageId: message.id,
+                sticker: sticker, selfId: me)
+            Task {
+                if !(await self.postRoomFrame(conversation, type: "reaction", fields: fields)) {
+                    self.notice = ChatNotice("The sticker could not be sent.")
+                }
+            }
+            return
+        }
+        if !extras.toggleSticker(conversation: conversation, messageId: message.id, slug: slug) {
             notice = ChatNotice("Chat is offline. Reconnecting...")
         }
     }

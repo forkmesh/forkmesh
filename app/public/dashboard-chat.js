@@ -112,6 +112,19 @@ function mountForkMeshDashboardChat(options = {}) {
     },
   ]);
   const REACTION_EMOJI = Object.freeze(["👍", "❤️", "😂", "🎉", "👀", "🚀"]);
+  const STICKER_CATALOG = Object.freeze([
+    Object.freeze({ slug: "lgtm", text: "LGTM", color: "#8250df", tilt: -6, emoji: "\u2705" }),
+    Object.freeze({ slug: "ship-it", text: "Ship it", color: "#0969da", tilt: 5, emoji: "\u{1F680}" }),
+    Object.freeze({ slug: "nice", text: "Nice!", color: "#bf3989", tilt: -4, emoji: "\u{1F44D}" }),
+    Object.freeze({ slug: "thanks", text: "Thanks!", color: "#bc4c00", tilt: 6, emoji: "\u{1F64F}" }),
+    Object.freeze({ slug: "on-it", text: "On it", color: "#57606a", tilt: -5, emoji: "\u{1F440}" }),
+    Object.freeze({ slug: "wow", text: "Wow!", color: "#cf222e", tilt: 4, emoji: "\u{1F62E}" }),
+    Object.freeze({ slug: "love-it", text: "Love it", color: "#d6336c", tilt: -3, emoji: "\u2764\uFE0F" }),
+    Object.freeze({ slug: "party", text: "Party!", color: "#9a6700", tilt: 7, emoji: "\u{1F389}" }),
+  ]);
+  const STICKERS_BY_SLUG = new Map(
+    STICKER_CATALOG.map((sticker) => [sticker.slug, sticker]),
+  );
   const CHAT_MENTION_RE = /(^|[^A-Za-z0-9_-])@([a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)\b/gi;
 
   const fullLog = document.querySelector("#fullChatMessages");
@@ -503,6 +516,7 @@ function mountForkMeshDashboardChat(options = {}) {
   // messageId -> Map(emoji -> Map(reactorId -> reactorName)); identical to
   // the full web/Qt protocol shape so reactions converge across every client.
   const reactions = new Map();
+  const stickers = new Map();
   const sideEntries = [];
   const attachmentControls = [];
   const attachmentUrls = new Set();
@@ -2285,6 +2299,9 @@ function mountForkMeshDashboardChat(options = {}) {
     const reactionsEl = document.createElement("div");
     reactionsEl.className = "chat-reactions";
     content?.append(reactionsEl);
+    const stickersEl = document.createElement("div");
+    stickersEl.className = "chat-stickers";
+    row.append(stickersEl);
     const threadSummary = document.createElement("button");
     threadSummary.type = "button";
     threadSummary.className =
@@ -2296,6 +2313,7 @@ function mountForkMeshDashboardChat(options = {}) {
     record.textEl = textEl?.parentNode ? textEl : null;
     record.contentEl = content;
     record.reactionsEl = reactionsEl;
+    record.stickersEl = stickersEl;
     record.threadSummaryEl = threadSummary;
     if (record.history && !simpleWorldComposer) {
       insertHistoryRow(record);
@@ -2312,6 +2330,7 @@ function mountForkMeshDashboardChat(options = {}) {
     if (record.id && !record.external) {
       content?.append(buildMessageActions(record));
       renderReactions(record.id);
+      renderStickers(record.id);
       if (record.editedAt) markEdited(record, record.editedAt);
     }
     renderThreadSummary(record.id);
@@ -2714,6 +2733,12 @@ function mountForkMeshDashboardChat(options = {}) {
         ariaLabel: "Add reaction",
       }),
     );
+    actions.append(
+      messageActionButton("Sticker", (event) =>
+        showStickerPicker(record, event.currentTarget), {
+        ariaLabel: "Add sticker",
+      }),
+    );
     // Anyone can turn any message into a repository issue — the useful case is
     // filing someone else's bug report, so this is deliberately not author-only
     // (the issue itself is signed by, and attributed to, whoever files it).
@@ -2743,6 +2768,11 @@ function mountForkMeshDashboardChat(options = {}) {
   }
 
   function applyReaction(plain) {
+    const sticker = STICKERS_BY_SLUG.get(String(plain.sticker || ""));
+    if (sticker) {
+      applySticker(plain, sticker);
+      return;
+    }
     const target = String(plain.target || "");
     const emoji = String(plain.emoji || "").slice(0, 8);
     const reactor = reactionKey(plain);
@@ -2822,6 +2852,120 @@ function mountForkMeshDashboardChat(options = {}) {
     seen.add(plain.id);
     applyReaction(plain);
     runWhenConnected(() => send(plain));
+  }
+
+  function applySticker(plain, sticker) {
+    const target = String(plain.target || "");
+    const reactor = reactionKey(plain);
+    if (!target || !reactor) return;
+    const perMessage = stickers.get(target) || new Map();
+    stickers.set(target, perMessage);
+    const placers = perMessage.get(sticker.slug) || new Map();
+    perMessage.set(sticker.slug, placers);
+    if (plain.added) {
+      placers.set(
+        reactor,
+        String(plain.reactorName || plain.sender || "peer").slice(0, MAX_NAME),
+      );
+    } else {
+      placers.delete(reactor);
+    }
+    if (!placers.size) perMessage.delete(sticker.slug);
+    if (!perMessage.size) stickers.delete(target);
+    renderStickers(target);
+  }
+
+  function stickerBadge(sticker) {
+    const badge = document.createElement("button");
+    badge.type = "button";
+    badge.className = "chat-sticker";
+    badge.dataset.sticker = sticker.slug;
+    badge.style.background = sticker.color;
+    badge.style.setProperty("--chat-sticker-tilt", `${sticker.tilt}deg`);
+    const label = document.createElement("span");
+    label.textContent = sticker.text;
+    badge.append(label);
+    return badge;
+  }
+
+  function renderStickers(messageId) {
+    const record = rows.get(messageId);
+    if (!record?.stickersEl) return;
+    record.stickersEl.textContent = "";
+    const perMessage = record.external ? null : stickers.get(messageId);
+    record.el?.classList.toggle("has-stickers", Boolean(perMessage?.size));
+    if (!perMessage) return;
+    for (const sticker of STICKER_CATALOG) {
+      const placers = perMessage.get(sticker.slug);
+      if (!placers?.size) continue;
+      const badge = stickerBadge(sticker);
+      const mine = placers.has(selfId);
+      badge.classList.toggle("is-mine", mine);
+      badge.setAttribute("aria-pressed", mine ? "true" : "false");
+      const names = [...placers.values()].join(", ");
+      badge.title = `${sticker.text} from ${names}`;
+      badge.setAttribute("aria-label", `${sticker.text} sticker from ${names}`);
+      if (placers.size > 1) {
+        const count = document.createElement("span");
+        count.className = "chat-sticker-count";
+        count.textContent = `\u00d7${placers.size}`;
+        badge.append(count);
+      }
+      badge.addEventListener("click", () => toggleSticker(messageId, sticker.slug));
+      record.stickersEl.append(badge);
+    }
+  }
+
+  function toggleSticker(messageId, slug) {
+    const sticker = STICKERS_BY_SLUG.get(slug);
+    if (!sticker || rows.get(messageId)?.external) return;
+    if (!canJoinChat()) {
+      showUserOnlyState();
+      return;
+    }
+    const mine = Boolean(stickers.get(messageId)?.get(slug)?.has(selfId));
+    const plain = makePlain("reaction", {
+      conversation: CHANNEL_LABEL,
+      target: messageId,
+      emoji: sticker.emoji,
+      sticker: sticker.slug,
+      reactorId: selfId,
+      reactorName: displayName(),
+      added: !mine,
+    });
+    seen.add(plain.id);
+    applyReaction(plain);
+    runWhenConnected(() => send(plain));
+  }
+
+  function showStickerPicker(record, trigger) {
+    if (!record?.id || !record.contentEl || record.external) return;
+    closeReactionPicker();
+    const picker = document.createElement("div");
+    picker.className = "chat-sticker-picker";
+    picker.setAttribute("role", "toolbar");
+    picker.setAttribute("aria-label", "Choose a sticker");
+    const placed = stickers.get(record.id);
+    STICKER_CATALOG.forEach((sticker) => {
+      const button = stickerBadge(sticker);
+      const mine = Boolean(placed?.get(sticker.slug)?.has(selfId));
+      button.classList.toggle("is-mine", mine);
+      button.setAttribute("aria-pressed", mine ? "true" : "false");
+      button.setAttribute("aria-label", `Stick ${sticker.text}`);
+      button.addEventListener("click", () => {
+        toggleSticker(record.id, sticker.slug);
+        closeReactionPicker();
+      });
+      picker.append(button);
+    });
+    picker.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      closeReactionPicker({ restoreFocus: true });
+    });
+    record.contentEl.append(picker);
+    activeReactionPicker = { element: picker, trigger };
+    picker.querySelector("button")?.focus();
   }
 
   function closeReactionPicker({ restoreFocus = false } = {}) {
@@ -3306,6 +3450,7 @@ function mountForkMeshDashboardChat(options = {}) {
       if (ids && !ids.size) threadReplyIdsByRoot.delete(threadReply.rootId);
       if (threadReply.attachment) releaseAttachment(threadReply.attachment);
       reactions.delete(id);
+      stickers.delete(id);
       renderThreadSummary(threadReply.rootId);
       if (activeThreadRootId === threadReply.rootId) renderThreadDialog();
       return;
@@ -3328,6 +3473,7 @@ function mountForkMeshDashboardChat(options = {}) {
     const liveIndex = liveRowIds.indexOf(id);
     if (liveIndex >= 0) liveRowIds.splice(liveIndex, 1);
     reactions.delete(id);
+    stickers.delete(id);
     if (!deferRender) {
       renderSideMessages();
       if (historyIndex >= 0) {
@@ -4015,6 +4161,7 @@ function mountForkMeshDashboardChat(options = {}) {
     seen.clear();
     rows.clear();
     reactions.clear();
+    stickers.clear();
     threadRepliesById.clear();
     threadReplyIdsByRoot.clear();
     activeThreadRootId = "";
