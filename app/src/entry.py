@@ -22568,11 +22568,16 @@ async def _account_profile(env, request):
 
     verification_sent = False
     verification_queued = False
+    verification_refusal = None
     if data.get("resendVerification") and rec.get("email") and not rec.get("email_verified"):
-        verification_sent = await _send_verification_email(env, request, rec.get("name", ""), rec.get("email", ""), rec=rec)
-        if not verification_sent:
-            await _enqueue_verification(env, name_bi, rec.get("name", ""), rec.get("email", ""))
-            verification_queued = True
+        verification_refusal = await _verification_resend_refusal(
+            env, clean_string(rec.get("name", ""), MAX_NODE_NAME).strip().lower(),
+            rec, int(Date.now()))
+        if verification_refusal is None:
+            verification_sent = await _send_verification_email(env, request, rec.get("name", ""), rec.get("email", ""), rec=rec)
+            if not verification_sent:
+                await _enqueue_verification(env, name_bi, rec.get("name", ""), rec.get("email", ""))
+                verification_queued = True
 
     new_name = clean_string(data.get("newNodeName", ""), MAX_NODE_NAME).lower()
     renamed = False
@@ -22630,6 +22635,9 @@ async def _account_profile(env, request):
         env, rec, current_token if current_token else None)
     payload["verificationSent"] = bool(verification_sent)
     payload["verificationQueued"] = bool(verification_queued)
+    if verification_refusal:
+        payload["verificationError"] = verification_refusal["error"]
+        payload["verificationRetryAfterMs"] = verification_refusal["retryAfterMs"]
     payload["nodeNameChanged"] = bool(renamed)
     return await _account_session_response(env, request, payload)
 
@@ -32729,6 +32737,36 @@ VERIFICATION_RESEND_WINDOW_MS = 24 * 60 * 60 * 1000
 VERIFICATION_RESEND_WINDOW_LIMIT = 5
 
 
+async def _verification_resend_refusal(env, name, rec, now):
+    recent = _account_email_sends(
+        rec, kind="verification", since=now - VERIFICATION_RESEND_WINDOW_MS)
+    if recent and now - recent[-1]["ts"] < VERIFICATION_RESEND_COOLDOWN_MS:
+        return {"error": "resend_too_soon",
+                "retryAfterMs": (VERIFICATION_RESEND_COOLDOWN_MS
+                                 - (now - recent[-1]["ts"]))}
+    if len(recent) >= VERIFICATION_RESEND_WINDOW_LIMIT:
+        return {"error": "resend_limit_reached",
+                "retryAfterMs": max(
+                    0, VERIFICATION_RESEND_WINDOW_MS - (now - recent[0]["ts"]))}
+    slot = int(now) // VERIFICATION_RESEND_COOLDOWN_MS
+    try:
+        key = await blind_index(
+            env, "verification-resend:" + name + "\n" + str(slot))
+        result = await d1_run(
+            env,
+            "INSERT OR IGNORE INTO notification_email_sends "
+            "(send_bi, created_at) VALUES (?,?)",
+            key, int(now))
+        claimed = int(result.meta.changes) > 0
+    except Exception:
+        claimed = False
+    if not claimed:
+        return {"error": "resend_too_soon",
+                "retryAfterMs": (VERIFICATION_RESEND_COOLDOWN_MS
+                                 - int(now) % VERIFICATION_RESEND_COOLDOWN_MS)}
+    return None
+
+
 async def _account_resend_verification(env, request):
     try:
         data = await bounded_json_request(request)
@@ -32748,20 +32786,13 @@ async def _account_resend_verification(env, request):
         return json_response({"error": "already_verified"}, status=409)
 
     now = int(Date.now())
+    refusal = await _verification_resend_refusal(env, name, rec, now)
+    if refusal:
+        return json_response(
+            refusal, status=429,
+            cache_control="no-store, max-age=0, must-revalidate")
     recent = _account_email_sends(
         rec, kind="verification", since=now - VERIFICATION_RESEND_WINDOW_MS)
-    if recent and now - recent[-1]["ts"] < VERIFICATION_RESEND_COOLDOWN_MS:
-        return json_response(
-            {"error": "resend_too_soon",
-             "retryAfterMs": (VERIFICATION_RESEND_COOLDOWN_MS
-                              - (now - recent[-1]["ts"]))},
-            status=429, cache_control="no-store, max-age=0, must-revalidate")
-    if len(recent) >= VERIFICATION_RESEND_WINDOW_LIMIT:
-        return json_response(
-            {"error": "resend_limit_reached",
-             "retryAfterMs": max(
-                 0, VERIFICATION_RESEND_WINDOW_MS - (now - recent[0]["ts"]))},
-            status=429, cache_control="no-store, max-age=0, must-revalidate")
 
     sent = await _send_verification_email(env, request, name, email)
     if not sent:
