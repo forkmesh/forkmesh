@@ -1427,6 +1427,36 @@ bool isEstablished(const PullRequest &pr, const QList<PullRequest> &history,
     return false;
 }
 
+int pullOrdinal(const PullRequest &pr, const QList<PullRequest> &history)
+{
+    const QString identity = identityOf(pr);
+    if (identity.isEmpty())
+        return 1;
+    int earlier = 0;
+    for (const PullRequest &other : history) {
+        if (other.number > 0 && other.number < pr.number &&
+            identityOf(other) == identity)
+            ++earlier;
+    }
+    return earlier + 1;
+}
+
+QString ordinal(int n)
+{
+    const int lastTwo = n % 100;
+    const int last = n % 10;
+    const char *suffix = "th";
+    if (lastTwo < 11 || lastTwo > 13) {
+        if (last == 1)
+            suffix = "st";
+        else if (last == 2)
+            suffix = "nd";
+        else if (last == 3)
+            suffix = "rd";
+    }
+    return QString::number(n) + QLatin1String(suffix);
+}
+
 } // namespace PullAuthorTrust
 
 namespace PullReward {

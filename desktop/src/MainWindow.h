@@ -6454,6 +6454,7 @@ private:
         int number = 0;
         QString author;         // display name, or the signer key when unnamed
         bool firstTimeAuthor = false;
+        int authorPullOrdinal = 1;
         // Branch the pull request targets. Whether a workflow runs on pull
         // requests is read from there as well as from the proposed head, so a
         // pull request opened before the repository adopted `on: pull_request`
@@ -6491,6 +6492,7 @@ private:
         QString base;   // branch the pull request targets
         QString author; // display name for the approval prompt
         bool firstTimeAuthor = false;
+        int authorPullOrdinal = 1;
         // Only a branch-backed pull declares its named head authoritative. A
         // stored-patch pull keeps pr.head as provenance even after an edit
         // changed its content, so its head must come from refs/pr/<n>/head.
@@ -6507,6 +6509,7 @@ private:
         QString base;    // branch the pull request targets
         QString author;
         bool firstTimeAuthor = false;
+        int authorPullOrdinal = 1;
         bool published = false; // this pass pushed the head into the mirror
         QString error;   // why this head could not be published, if it could not
     };

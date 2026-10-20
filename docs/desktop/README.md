@@ -408,6 +408,17 @@ Tests: `desktop/tests/test_action_security.cpp` (parse rules, and a run that
 checks the uid, the real home, the local checkout and that `env:` cannot
 redirect it), `app/tests/test_workflow_files.py`.
 
+### Approval ping for a contributor's pull request
+
+A pull request's checks wait for approval while its author has no merged pull
+request in the repository (`PullAuthorTrust::isEstablished`). Not merged is
+not the same as new: the ping used to say "their first contribution" for an
+author's fifth unmerged pull request too. The ping now counts the author's pull
+requests in the repository up to this one, merged, closed and open alike
+(`PullAuthorTrust::pullOrdinal`), and says "their 3rd pull request here and
+none merged yet"; only a real first one reads "First pull request needs your
+approval". Test: `desktop/tests/test_crypto.cpp`.
+
 ## Change process
 
 - Source files hold code only; the reason for a change goes in the matching
