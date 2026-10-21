@@ -5186,6 +5186,9 @@
     if (ev.type === "force-push") return { label: "force-pushed", tone: neutral };
     if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
     if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
+    if (ev.type === "revision") {
+      return { label: ev.state ? `updated this pull request to revision ${ev.state}` : "updated this pull request", tone: neutral };
+    }
     return { label: "comment", tone: neutral };
   }
 
@@ -5299,7 +5302,8 @@
         : ev.type === "review" && ev.state === "approved" ? "check"
           : ev.type === "review" && ev.state === "changes_requested" ? "file-diff"
             : ev.type === "status" ? "git-pull-request-closed"
-              : ev.type === "delete" ? "trash-2" : "eye";
+              : ev.type === "delete" ? "trash-2"
+                : ev.type === "revision" ? "git-commit-horizontal" : "eye";
       return renderIssueTimelineEvent(icon, author, ev.author, `<span class="${meta.tone.split(" ").filter((name) => name.startsWith("text-")).join(" ")}">${escapeHtml(meta.label)}</span>${ev.type === "agent" && ev.branchName ? `<span class="font-mono text-[12px]">${escapeHtml(ev.branchName)}</span>` : ""}${anchor ? `<span class="truncate font-mono text-[12px]">${escapeHtml(anchor)}</span>` : ""}`, ev.ts, "", ev.type === "agent");
     }
     const fullDate = formatRecordDateTime(ev.ts);
@@ -6457,7 +6461,7 @@
     if (!state.session?.nodeName) {
       return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
-    return `
+    return `${renderPullRevisionPanel(number, parsed)}
       <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid min-w-0 gap-4 border-t-2 border-border pt-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(state.session.nodeName, state.session.nodeName, "h-10 w-10")}</span>
         <div class="grid min-w-0 gap-2">
