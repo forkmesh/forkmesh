@@ -498,8 +498,8 @@ func reconcileUpstreamRefsWithUpdater(ctx context.Context, gitDir string, update
 }
 
 const (
-	pushHistoryRoot = "refs/forkmesh/history/"
-	pushHistoryKeep = 20
+	pushHistoryRoot         = "refs/forkmesh/history/"
+	pushHistorySaveAttempts = 8
 )
 
 var pushHistorySequence = regexp.MustCompile(`^[0-9]{10}$`)
@@ -550,16 +550,14 @@ func keepSupersededTip(ctx context.Context, gitDir, ref, oid string) error {
 		last, _ := strconv.Atoi(strings.TrimPrefix(names[len(names)-1], prefix))
 		sequence = last + 1
 	}
-	name := fmt.Sprintf("%s%010d", prefix, sequence)
-	if output, err := updateRef(ctx, gitDir, name, oid, ""); err != nil {
-		return fmt.Errorf("keep %s: %s", ref, boundedText(output, 160))
+	var output []byte
+	for attempt := 0; attempt < pushHistorySaveAttempts; attempt++ {
+		name := fmt.Sprintf("%s%010d", prefix, sequence+attempt)
+		if output, err = updateRef(ctx, gitDir, name, oid, ""); err == nil {
+			return nil
+		}
 	}
-	names = append(names, name)
-	for len(names) > pushHistoryKeep {
-		_ = exec.CommandContext(ctx, "git", "--git-dir="+gitDir, "update-ref", "-d", names[0]).Run()
-		names = names[1:]
-	}
-	return nil
+	return fmt.Errorf("keep %s: %s", ref, boundedText(output, 160))
 }
 
 func adoptForcedBranches(ctx context.Context, gitDir string, forced map[string]string) {

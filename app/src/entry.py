@@ -52861,6 +52861,16 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
     )
 
 
+async def _push_target_on_cores(env, owner, repo):
+    hosted_candidates = globals().get("hosted_push_candidates")
+    if not callable(hosted_candidates):
+        return False
+    try:
+        return await hosted_candidates(env, owner, repo) is not None
+    except Exception:
+        return False
+
+
 async def _https_mirror_push_send(
         env, request, owner, repo, account, method, body, body_stream,
         body_digest, is_info=False, alias_owner="", core_held=False,
@@ -52891,7 +52901,8 @@ async def _https_mirror_push_send(
             query = dict(query or {}, protect=" ".join(protected))
         if push_prefix:
             query = dict(query or {}, pushPrefix=push_prefix)
-        if rewrite:
+        if rewrite and (core_held or await _push_target_on_cores(
+                env, owner, repo)):
             query = dict(query or {}, rewrite=push_prefix or "refs/heads/")
     for endpoint in candidates:
         if body_stream is not None and endpoint is not candidates[0]:

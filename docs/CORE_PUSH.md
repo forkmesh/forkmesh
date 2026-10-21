@@ -109,7 +109,12 @@ ledger branches, by an account that may write that branch.
 
 - `_https_mirror_push_send` adds `rewrite=<patterns>` to the router-signed
   receive-pack capability, only on the user push route
-  (`_https_mirror_push_proxy`, which the SSH relay also reaches). A writer
+  (`_https_mirror_push_proxy`, which the SSH relay also reaches), and only
+  for a repository the core nodes hold or host (`core_held`, or
+  `hosted_push_candidates` answers; `_push_target_on_cores`). A mirror of a
+  repository published from someone's own node never gets the grant: the
+  owner's node and the other mirrors would not take the rewrite, and the
+  copies would split against the node's signed refs pin. A writer
   (owner, organization writer, signed key) gets `rewrite=refs/heads/`; a
   contributor gets `rewrite=refs/heads/pr/<account>/`, the same prefix as
   `pushPrefix`. Web edits (`repository_file_edits.py`, `docs_book.py`) never
@@ -142,11 +147,20 @@ accepted-push notice recommend `git pull --rebase`, then
 `git push --force-with-lease`. An accepted forced update adds `remote:` lines
 (`_fork_push_notice`) naming the old and new tips and a compare link.
 
-**Nothing is lost.** Before the push lock is released the gateway checks each
-granted ref that moved (`merge-base --is-ancestor old new`); for a forced one it
-stores the old tip at `refs/forkmesh/history/<branch>/<10-digit sequence>`
-(fallback `refs/forkmesh/history-tips/<oid>`) and keeps the newest 20 per
-branch (`PUSH_HISTORY_KEEP`). `refs/forkmesh/` is hidden from upload-pack and
+**Nothing is lost.** Pushes with a grant to the same repository run one at a
+time (`rewrite_push_lock`). Before receive-pack runs, the gateway stores the
+current tip of every granted ref at
+`refs/forkmesh/history/<branch>/<10-digit sequence>` (create-only; on a name
+clash it tries the next sequence numbers). If a tip cannot be stored the push
+is refused before anything moves, so a forced update never lands without its
+backup. After the push, a backup whose branch did not move, or moved forward
+(`merge-base --is-ancestor old new`), is removed again (that commit is still
+reachable from the branch); a forced one is reported as `kept`. History refs
+are never pruned: until 2026-10-21 the first version kept only the newest 20
+per branch, which let anyone allowed to force-push evict older tips by
+pushing 21 times, and stored the backup only after the branch had already
+moved. Replicas keep their own copy the same way before adopting a forced
+tip (`keepSupersededTip`, also never pruned). `refs/forkmesh/` is hidden from upload-pack and
 receive-pack, so old commits stay resolvable for reviews and comments without
 being advertised. To restore, an operator runs
 `git update-ref refs/heads/<b> <oid>` on a core (or pushes the commit from a
@@ -158,7 +172,7 @@ that core whose `pull.md` names the branch as `head` (`open_pulls_for_head`,
 at most 10). `record_accepted_push` audits `git.force_push` and queues one
 `force-push` event per pull in `pull_inbox` (`type, id, author, authorName,
 ts, ref, before, after, body`, `sig: ""` like other relay-recorded events,
-e.g. ForkBot's); the node writes it into the pull ledger like any other
+e.g. ForkBot's), at most 10 per push (`FORCE_PUSH_EVENTS_MAX`); the node writes it into the pull ledger like any other
 event, and `pullEventMarkdown` keeps `ref`, `before` and `after`. The web
 timeline shows "force-pushed `<b>` from `<old7>` to `<new7>`" with a compare
 link, and reviews submitted before it show "on an older commit". There is no

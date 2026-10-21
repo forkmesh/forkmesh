@@ -64,10 +64,10 @@ KEYWORDS = re.compile(
 
 ALLOW: list[tuple[str, str, str]] = [
     ("app/public/dashboard.js",
-     'force-with-lease',
+     'may force-push (them|any branch).*\\(use (<span class="font-mono">)?git push --force-with-lease',
      'user-facing help recommending git push --force-with-lease to update a pull request branch; it runs nothing'),
     ("app/public/dashboard/js/04-account.js",
-     'force-with-lease',
+     'may force-push (them|any branch).*\\(use (<span class="font-mono">)?git push --force-with-lease',
      'user-facing help recommending git push --force-with-lease to update a pull request branch; it runs nothing'),
     ("app/src/entry.py",
      'git push --force-with-lease',

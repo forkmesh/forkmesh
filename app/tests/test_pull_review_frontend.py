@@ -202,7 +202,7 @@ def test_inline_threads_follow_their_code_across_patchsets_or_say_outdated():
     # ...and both join the signed content (same rule as PullEvent::hasAnchor).
     assert "(fields.patchset || fields.anchorLines)" in IO
     assert "cleanBody, fields.suggestionPatch || \"\", ...anchorFields," in IO
-    assert '"appliedCommit", "patchset", "anchorLines"]' in IO
+    assert '"appliedCommit", "patchset", "anchorLines", "target"]' in IO
     # Loaded threads are placed against the diff on screen: current, moved to
     # where their text now sits, or outdated when the text left the diff.
     assert "function placePullInlineComment(event, lines)" in CONTENT

@@ -18,6 +18,7 @@ OID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 TAG_REF_RE = re.compile(r"^refs/tags/[A-Za-z0-9._/-]{1,180}$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9._/-]{1,200}$")
 FORCE_PUSH_EVENT = "force-push"
+FORCE_PUSH_EVENTS_MAX = 10
 
 
 def _bind_runtime(runtime):
@@ -320,6 +321,8 @@ async def _record_forced_updates(env, owner, repo, account, node, updates):
         submitter_bi = await blind_index(env, account)
         now = int(Date.now())
         for number in pulls:
+            if queued >= FORCE_PUSH_EVENTS_MAX:
+                break
             item = {
                 "number": number,
                 "event": force_push_event(update, number, account, now),

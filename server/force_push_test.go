@@ -90,11 +90,11 @@ func TestAStalePeerCannotBringBackASupersededTip(t *testing.T) {
 	}
 }
 
-func TestSupersededTipsArePrunedToTheNewestKept(t *testing.T) {
+func TestEverySupersededTipIsKept(t *testing.T) {
 	source, bare := makeBareRepo(t)
 	ctx := context.Background()
 	tips := []string{}
-	for index := 0; index < pushHistoryKeep+2; index++ {
+	for index := 0; index < 25; index++ {
 		tips = append(tips, commitFile(t, source, fmt.Sprintf("f%02d.txt", index)))
 	}
 	run(t, source, "git", "push", bare, "main")
@@ -104,15 +104,14 @@ func TestSupersededTipsArePrunedToTheNewestKept(t *testing.T) {
 		}
 	}
 	kept, err := gitRefValues(ctx, bare, "refs/forkmesh/history/feature")
-	if err != nil || len(kept) != pushHistoryKeep {
-		t.Fatalf("kept %d tips (%v), want %d", len(kept), err, pushHistoryKeep)
+	if err != nil || len(kept) != len(tips) {
+		t.Fatalf("kept %d tips (%v), want %d", len(kept), err, len(tips))
 	}
-	if kept["refs/forkmesh/history/feature/0000000001"] != "" {
-		t.Fatal("the oldest tip was not pruned")
-	}
-	last := fmt.Sprintf("refs/forkmesh/history/feature/%010d", pushHistoryKeep+2)
-	if kept[last] != tips[len(tips)-1] {
-		t.Fatalf("newest kept tip is %q", kept[last])
+	for index, tip := range tips {
+		name := fmt.Sprintf("refs/forkmesh/history/feature/%010d", index+1)
+		if kept[name] != tip {
+			t.Fatalf("%s is %q, want %s", name, kept[name], tip)
+		}
 	}
 }
 
