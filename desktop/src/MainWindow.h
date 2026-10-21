@@ -1387,6 +1387,7 @@ public:
     void testSetOrganizations(const QJsonArray &organizations)
     {
         m_organizations = organizations;
+        m_organizationsKnown = true;
     }
     void testShowNewRepositoryDialog() { createNewRepository(); }
     void testShowHomeSection() { showSection(0); }
@@ -6578,6 +6579,7 @@ private:
     void submitPullReview(const QString &state);    // approve / request changes
     bool currentAccountOwnsPullRepository();
     bool accountOwnsPullRepositoryAt(int index);
+    void whenPullOwnershipKnown(int index, std::function<void()> next);
     void promptNewPull();
     void importPatchAsPull(); // read a .patch/.diff file and open it as a PR
     void promptNewPullFromDirectory();
@@ -6674,6 +6676,10 @@ private:
         const QStringList &skipped, bool switchToTab);
     void handleLocalControlPullsRequest(int connectionId, int requestId,
                                         const QString &method, const QJsonObject &params);
+    void answerLocalControlPullsRequest(int connectionId, int requestId,
+                                        const QString &method, const QString &owner,
+                                        const QString &name, const QString &action,
+                                        const QString &token);
     void runLocalControlPullsMergeAll(int connectionId, int requestId, int index);
     void finishPullMergeAllRun(int sessionId);
     void loadPullMergeAllRuns();
@@ -11199,6 +11205,8 @@ private:
     QString m_organizationPendingSelection;
     bool m_organizationsLoading = false;
     bool m_organizationsLoaded = false;
+    bool m_organizationsKnown = false;
+    QList<std::function<void()>> m_organizationsWaiters;
     int m_organizationsSettingsTabIndex = -1;
     QPushButton *m_agentsNavButton = nullptr;
     AgentDotMatrix *m_agentDotMatrix = nullptr;

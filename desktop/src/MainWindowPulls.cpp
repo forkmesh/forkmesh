@@ -2026,6 +2026,19 @@ bool MainWindow::accountOwnsPullRepositoryAt(int index)
         repository.owner, m_organizations);
 }
 
+void MainWindow::whenPullOwnershipKnown(int index, std::function<void()> next)
+{
+    if (m_organizationsKnown || accountOwnsPullRepositoryAt(index)) {
+        next();
+        return;
+    }
+    m_organizationsWaiters << std::move(next);
+    if (!m_organizationsLoading) {
+        m_organizationsLoaded = true;
+        refreshOrganizations();
+    }
+}
+
 QString MainWindow::pullPatchFingerprint(const QString &patch)
 {
     return QString::number(patch.size()) + QLatin1Char(':') +
