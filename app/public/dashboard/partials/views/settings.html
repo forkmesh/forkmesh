@@ -627,6 +627,11 @@
                     <h2 class="text-2xl font-semibold tracking-normal text-foreground">SSH keys</h2>
                     <p class="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">Register a public key to clone or push through a configured ForkMesh SSH gateway. Repository owner and organization-team write permissions are checked again for every push.</p>
                     <div class="mt-5 grid max-w-3xl gap-5">
+                      <div data-ssh-use-panel class="hidden grid gap-3 rounded-md border border-border bg-card p-4">
+                        <h3 class="text-sm font-semibold text-foreground">Clone and push over SSH</h3>
+                        <p class="text-sm leading-6 text-muted-foreground">Your registered keys work with every repository you can read or push to here, including your forks. Permissions are checked on every clone and push.</p>
+                        <ol data-ssh-use-steps class="grid gap-3 text-sm leading-6 text-muted-foreground"></ol>
+                      </div>
                       <div data-git-push-panel class="grid gap-3 rounded-md border border-border bg-card p-4">
                         <h3 class="text-sm font-semibold text-foreground">Push code over HTTPS</h3>
                         <p class="text-sm leading-6 text-muted-foreground">Works with any Git client. Create a push credential for one repository, then push. When Git asks, enter your account name as the username and the credential as the password &mdash; not your account password. A credential lasts 7 days and stops working when you sign out of this browser.</p>

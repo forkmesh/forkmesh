@@ -604,7 +604,7 @@ def permissions(role, state, ctx):
         "manage": maintainer,
         "publish": maintainer and state == "draft",
         "withdraw": maintainer and state == "published",
-        "admin": bool(ctx.get("admin")),
+        "admin": bool(ctx["admin"]),
     }
 
 

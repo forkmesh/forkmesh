@@ -36,6 +36,32 @@ def _ssh_gateway_settings(env):
         "repositories": repositories if configured else {},
         "nodeHosts": node_hosts if configured else {},
     }
+def _ssh_gateway_bridge(env):
+    """True when the gateway relays every repository to the HTTPS routes.
+
+    ``SSH_GATEWAY_REPOSITORIES=*``: no per-repository list to keep in step
+    with hosted repositories and forks. Each authorization then also mints the
+    short-lived credential the gateway relays the session with, so the push
+    takes the HTTPS path's branch protection, contributor namespace, quota and
+    bookkeeping instead of a second copy of them.
+    """
+    settings = _ssh_gateway_settings(env)
+    return bool(
+        settings["configured"]
+        and ssh_auth.gateway_bridges_all(settings["repositories"]))
+
+
+def _ssh_gateway_urls(env, owner, repo):
+    """The ``git@host:owner/repo.git`` and ``ssh://`` forms, or ("", "")."""
+    url = _ssh_repository_url(env, owner, repo)
+    if not url:
+        return "", ""
+    settings = _ssh_gateway_settings(env)
+    host = settings["nodeHosts"].get(str(owner or "").strip().lower())
+    return ssh_auth.scp_repository_url(
+        host or settings["host"], settings["port"], owner, repo), url
+
+
 def _ssh_gateway_repository_access(env, owner, repo):
     settings = _ssh_gateway_settings(env)
     if not settings["configured"]:
@@ -148,6 +174,17 @@ async def ssh_keys_handler(env, request, key_id=""):
                 continue
             keys.append(_ssh_key_public_projection(row, key_data))
         gateway = _ssh_gateway_settings(env)
+        bridge = bool(
+            gateway["configured"]
+            and ssh_auth.gateway_bridges_all(gateway["repositories"]))
+        # A placeholder address for the settings page's instructions; the
+        # repository page shows each repository's own.
+        example_scp, example_url = "", ""
+        if gateway["configured"]:
+            example_url = ssh_auth.ssh_repository_url(
+                gateway["host"], gateway["port"], "owner", "repository")
+            example_scp = ssh_auth.scp_repository_url(
+                gateway["host"], gateway["port"], "owner", "repository")
         return json_response({
             "ok": True,
             "keys": keys,
@@ -155,6 +192,10 @@ async def ssh_keys_handler(env, request, key_id=""):
             "gatewayConfigured": gateway["configured"],
             "gatewayHost": gateway["host"],
             "gatewayPort": gateway["port"],
+            "gatewayAllRepositories": bridge,
+            "gatewayExampleUrl": example_scp or example_url,
+            "gatewayExampleSshUrl": example_url,
+            "account": account,
             "privateKeysStored": False,
             "notice": (
                 "ForkMesh stores encrypted public keys only. Keep every SSH "
@@ -266,15 +307,65 @@ async def ssh_keys_handler(env, request, key_id=""):
             cache_control="no-store")
 
     return json_response({"error": "method_not_allowed"}, status=405)
+def _ssh_gateway_tokens(env):
+    """The gateway bearer tokens accepted now.
+
+    ``SSH_GATEWAY_TOKEN`` plus, during a rotation, ``SSH_GATEWAY_TOKEN_NEXT``:
+    set the new token as NEXT, move the gateway host to it, then promote it
+    to SSH_GATEWAY_TOKEN and drop NEXT. Neither step interrupts a gateway.
+    """
+    tokens = []
+    for name in ("SSH_GATEWAY_TOKEN", "SSH_GATEWAY_TOKEN_NEXT"):
+        token = ssh_auth.configured_gateway_token(getattr(env, name, ""))
+        if token:
+            tokens.append(token)
+    return tokens
+
+
+def _ssh_gateway_address_allowed(env, request):
+    """Optional pin of the gateway host's address(es).
+
+    ``SSH_GATEWAY_ALLOWED_ADDRESSES`` is a comma-separated list of IP
+    addresses or networks. When it is set, an authorize call must come from
+    one of them as seen by the edge (``cf-connecting-ip``, set by the CDN or
+    by the instance's own front end). Unset, the bearer token alone decides;
+    a malformed list admits nobody rather than everybody.
+    """
+    import ipaddress
+    raw = str(getattr(env, "SSH_GATEWAY_ALLOWED_ADDRESSES", "") or "").strip()
+    if not raw:
+        return True
+    networks = []
+    for item in raw.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError:
+            return False
+    try:
+        address = ipaddress.ip_address(str(
+            request.headers.get("cf-connecting-ip") or "").strip().strip("[]"))
+    except ValueError:
+        return False
+    return any(address in network for network in networks)
+
+
 def _ssh_gateway_token_ok(env, request):
-    expected = ssh_auth.configured_gateway_token(
-        getattr(env, "SSH_GATEWAY_TOKEN", ""))
+    expected = _ssh_gateway_tokens(env)
     if not expected:
         return False
     supplied = str(request.headers.get("authorization") or "")
     if not supplied.lower().startswith("bearer "):
         return False
-    return hmac.compare_digest(supplied[7:].strip(), expected)
+    supplied = supplied[7:].strip()
+    # Compare against every configured token so the time taken does not say
+    # which one matched.
+    matched = False
+    for token in expected:
+        matched = hmac.compare_digest(supplied, token) or matched
+    return matched and _ssh_gateway_address_allowed(env, request)
 async def _ssh_key_gateway_record(env, key_id="", public_key=""):
     row = None
     if key_id:
@@ -389,9 +480,19 @@ async def ssh_gateway_authorize_handler(env, request):
         return json_response({"error": "bad_action"}, status=400)
 
     key_id = clean_string(data.get("keyId", ""), 96)
-    owner = safe_segment(data.get("owner", ""))
+    owner = safe_segment(data.get("owner", "")) if data.get("owner") else ""
     repo = safe_segment(data.get("repository", ""))
     operation = clean_string(data.get("operation", ""), 40)
+    bridge = _ssh_gateway_bridge(env)
+    if not owner and bridge and repo:
+        # A short address (git@host:Repository.git) names a repository of the
+        # instance's short-address owner, as /Repository does on the web.
+        try:
+            setting = await _repo_short_setting_row(env)
+        except Exception:
+            setting = None
+        if isinstance(setting, dict) and setting.get("short"):
+            owner = safe_segment(setting.get("owner") or "")
     if (
         not re.fullmatch(r"sk_[A-Za-z0-9_-]{16,80}", key_id)
         or not owner
@@ -447,7 +548,20 @@ async def ssh_gateway_authorize_handler(env, request):
     else:
         owns_repo = await _account_owns_node(
             env, account, canonical_owner)
-        if operation == "git-receive-pack":
+        if operation == "git-receive-pack" and bridge:
+            # The relayed HTTPS push applies branch protection rule by rule
+            # and confines a contributor to refs/heads/pr/<account>/, so
+            # neither needs a blanket refusal here.
+            allowed = bool(
+                owns_repo
+                or await _org_write_allowed(
+                    env, canonical_owner, repo, account))
+            if not allowed:
+                contributor = await contributor_push_allowed(
+                    env, canonical_owner, repo, account,
+                    alias=owner if is_org_alias else "")
+                allowed = bool(contributor)
+        elif operation == "git-receive-pack":
             allowed = bool(
                 owns_repo
                 or await _org_write_allowed(
@@ -482,7 +596,7 @@ async def ssh_gateway_authorize_handler(env, request):
             env, account, "ssh.git_authorize", "repository",
             canonical_owner + "/" + repo, "success",
             {"operation": operation})
-    return json_response({
+    result = {
         "ok": True,
         "authorized": True,
         "keyId": key_id,
@@ -491,4 +605,16 @@ async def ssh_gateway_authorize_handler(env, request):
         "owner": route_owner,
         "repository": repo,
         "repositoryRelativePath": route_owner + "/" + repo + ".git",
-    }, cache_control="no-store")
+    }
+    if bridge:
+        # hosted_git.SSH_GIT_TTL_MS: longer than any gateway deadline.
+        expires_at = now + 30 * 60 * 1000
+        result["httpCredential"] = {
+            "username": account,
+            "password": ssh_git_password(
+                env, account, route_owner, repo, key_id,
+                "push" if operation == "git-receive-pack" else "read",
+                expires_at),
+            "expiresAt": expires_at,
+        }
+    return json_response(result, cache_control="no-store")

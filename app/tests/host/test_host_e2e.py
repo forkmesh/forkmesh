@@ -277,6 +277,52 @@ def test_server_log_has_no_tracebacks(client, server):
     print("serve RSS after e2e: %d KiB" % _vm_rss_kib(server["pid"]))
 
 
+def _stock_git_push(server, tmp_path, username, password, repo="demo"):
+    from urllib.parse import quote
+    env = dict(server["env"])
+    env.update({"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "/usr/bin/false",
+                "GIT_CONFIG_NOSYSTEM": "1"})
+    work = tmp_path / ("push-" + os.urandom(4).hex())
+    work.mkdir()
+
+    def git(*args):
+        return subprocess.run(
+            ["git", *args], cwd=str(work), env=env, capture_output=True,
+            text=True, timeout=60)
+
+    git("init", "-q", "-b", "main")
+    (work / "README.md").write_text("hello\n")
+    git("add", "README.md")
+    git("-c", "user.name=E2E", "-c", "user.email=e2e@example.com",
+        "commit", "-q", "-m", "first")
+    remote = "http://%s:%s@127.0.0.1:%d/%s/%s.git" % (
+        quote(username, safe=""), quote(password, safe=""), server["port"],
+        "gituser", repo)
+    return git("push", remote, "main")
+
+
+def test_stock_git_push_signs_in_with_email_and_password(
+        server, client, tmp_path):
+    page = client.get("/signup")
+    field = re.search(r"contact_[0-9a-f]{18}", page.text).group(0)
+    assert client.post("/api/accounts/signup", json={
+        "nodeName": "gituser", field: "git@example.com",
+        "password": "correct-horse-battery",
+        "turnstileToken": "XXXX.DUMMY.TOKEN.XXXX"}).status_code == 201
+
+    wrong = _stock_git_push(server, tmp_path, "git@example.com", "nope-nope")
+    assert wrong.returncode != 0
+    assert "Authentication failed" in wrong.stderr, wrong.stderr
+
+    for username in ("git@example.com", "gituser", "Git@Example.com"):
+        pushed = _stock_git_push(
+            server, tmp_path, username, "correct-horse-battery")
+        assert "Authentication failed" not in pushed.stderr, pushed.stderr
+        assert "push credential" not in pushed.stderr, pushed.stderr
+        assert "could not reach the node that accepts pushes" in (
+            pushed.stderr), pushed.stderr
+
+
 def test_ops_verify_email_unblocks_an_unverified_account(server, client):
     """Next has no outbound mail: `ops verify-email` is the operator's way to
     finish a signup, through the app's own record helpers."""
