@@ -389,6 +389,202 @@ image's pixels), used by the iOS TrueDepth camera.
 **Privacy rule:** when tracking fails the frame is blurred until a face is
 found again; raw video is never shown in place of a chosen face.
 
+#### Native face math
+
+Phone calls are moving from the WebView to native libwebrtc
+([../server/rtc.md](../server/rtc.md), "Phone media engine"). Backgrounds and
+the voice are already native. For faces, everything that is plain maths or data
+is now ported line for line, with no new behaviour, so a native renderer
+(Metal on iOS, OpenGL ES on Android, not written yet) only has to draw.
+
+| Platform | Code |
+|---|---|
+| iOS (Foundation only) | `native/ios/ForkMeshCore/Sources/FMChat/CallFace/` |
+| Android `:core` (pure JVM) | `native/android/core/src/main/kotlin/com/forkmesh/nativeapp/chat/face/` |
+
+Both ports have the same types and names. Kotlin writes constants in
+upper case (`CallFaceGeometry.LANDMARK_COUNT`), uses `ByteArray`/`FloatArray`
+for buffers, and makes `CallOutfitPaint` and `CallOutfitCommand` sealed
+classes.
+
+| JS | Native |
+|---|---|
+| `chat-call-face-geometry.js`, all of it | `CallFacePoint` (`x`, `y`, optional `z`), `CallFaceGeometry` (template, `canonicalShape`, `fitTemplate`, `headLayout`, `headModel`, `buildHeadMesh`, Delaunay, `solvePose` with and without depth, `liveHead`, `vertexDepths`, `landmarksFromRegions`, `resamplePolyline`...), `CallFaceOneEuroFilter`, `CallFacePointSmoother` |
+| `chat-call-faces.js` data and pure parts | `CallFaces` (`all` with points and head rings, `template`, `facePoints`, `head(face)` → layout, model and mesh, cached for the built-in faces, `choices`, `pupils`, `located` = `hostResult`, `outputSize`, hold and fade constants), `CallFaceAnchorSmoother` |
+| `chat-call-face-expression.js` | `CallFaceExpression` (`eyeBox`, `tongueWindow`, `sampleBox`, `skinReference`, `measureEye`, `measureTongue`, `eyeOpenness`, `pairClosure`, `closeLids`, `probeCrop`), `CallFaceBlinkTracker`, `CallFaceExpressionProbe` |
+| `chat-call-face-mesh.js` pure parts | `CallFaceMesh` (`regions`, `blazeAnchors`, `decodeDetections`, `roiFromDetection`, `roiFromMesh`, `meshPoints`, `sigmoid`, `meshRegions`, `meshToLandmarks`), `CallFaceLetterbox`, `CallFaceRoi` |
+| `chat-call-face-custom.js` pure parts | `CallFaceCustom` (`transform`, `apply`, `boxBlur`, `headRing`, `polygons`, `rasterize`, `skinModel`, `skinLikeness`, `personWeights`, `buildMatte`, `matteRGBA`, `validate`, `face`) |
+| `chat-call-outfits.js` | `CallOutfits` (catalogue, `frame` = `outfitFrame`, `uv`), `CallOutfitSmoother`, `CallOutfitDrawing` (`commands(id)`, `fabricTile`) |
+| `chat-call-face-render.js` pure helpers | `CallFaceWarp` (`warpVertices`, `vertexRegion`, `coverRect`, `hairRegion`, `photoEyes`, `lookUniform`, `axisFrame`, `zoneFrame`) |
+
+**Where the JS needed a cut.** Three places in the JS read or write a canvas
+in the middle of the maths, so the native API splits them:
+
+- The expression probe draws the camera into a small canvas and reads it
+  back. `CallFaceExpression.probeCrop(points)` returns the crop (`minX`,
+  `minY`, `scale`, `width`, `height`). The renderer draws the camera into a
+  `width` x `height` RGBA image with `x' = (x - minX) * scale`, and
+  `probe.measure(image:crop:points:time:pupils:lids:)` does the rest.
+- The custom face fills three polygons on a canvas. `CallFaceCustom.polygons`
+  returns them (face, inner face, neck). The renderer rasterises them as
+  0/255 bytes, or `rasterize` does it at pixel centres, and `buildMatte`
+  takes the bytes. The photo itself is drawn with `transform(points).matrix`
+  (a canvas `setTransform` matrix).
+- `drawCallOutfit` paints straight on a canvas. `CallOutfitDrawing.commands(id)`
+  returns the same drawing as a list of Canvas 2D commands (`save`,
+  `moveTo`, `quadTo`, `arc`, `fillStyle(.fabric/.color/.gradient)`,
+  `composite("destination-out")`...) in outfit pixels (1024 square, neck at
+  512,176, 96 px per unit). The renderer replays them on CoreGraphics or
+  `android.graphics.Canvas`. Fabrics are 256 px repeating tiles from
+  `fabricTile`.
+
+**Per frame (what the renderer calls).** Once per face:
+`head = CallFaces.head(face)` and `eyes = CallFaceWarp.photoEyes(head.layout, photoSize: 512)`.
+Keep one `CallFacePointSmoother(count: 68, minCutoff: 1.5, beta: 1.5)`, one
+`CallFaceExpressionProbe` and one `CallOutfitSmoother`, and reset them when no
+face has been seen for `CallFaces.holdMs`. Then, for each frame:
+
+1. `located = CallFaces.located(regions, scale:)`. The regions are Vision's
+   `[String: [[Double]]]` (the format `CallFaceLandmarks` already returns), in
+   the pixels of the analysed image, and `scale` is that image's size over the
+   output frame. This gives 68 points in frame pixels, plus pupils.
+2. `points = smoother.smooth(located.points, time: ms, scale: CallFaceGeometry.faceFrame(located.points).span)`.
+3. `reading = probe.measure(...)` as above. Keep the previous reading when it
+   returns nil.
+4. `drawn = CallFaceExpression.closeLids(points, reading?.close)`.
+5. `live = CallFaceGeometry.liveHead(head.model, drawn)`,
+   `depths = CallFaceGeometry.vertexDepths(head.model, live.pose)`, and
+   `CallFaceWarp.warpVertices(mesh: head.mesh, layout: head.layout, live: live.points, photoSize: 512, depths: depths)`.
+   The last call gives the triangle-list vertex buffer for the warp pass:
+   7 floats per vertex (frame x, frame y, photo u, photo v, hole, region,
+   depth).
+6. Uniforms come from `CallFaceWarp.zoneFrame(drawn, live.pose)`,
+   `hairRegion(live.pose, width:height:)` (the hair matte's crop),
+   `lookUniform(reading.look)`, `reading.close`, `reading.skinRed`, and
+   `axisFrame(CallFaceExpression.tongueWindow(drawn))` with `reading.tongue`.
+7. For the outfit, `outfitSmoother.smooth(CallOutfits.frame(points))` gives
+   the garment's centre, axes and unit. `CallOutfits.uv` maps a frame pixel
+   into the garment texture.
+
+Android has no Vision, so its landmarks come from the bundled detector and
+mesh networks once something runs them. The decode steps are
+`decodeDetections` → `roiFromDetection(_, CallFaceLetterbox(width:height:))`,
+then crop and run the mesh network, `meshPoints(raw:roi:)`, the face score
+`sigmoid(flag, limit: 60) >= CallFaceMesh.faceScore`, `roiFromMesh` for the
+next frame's crop, and `meshToLandmarks`.
+
+**Left for the renderer.** Everything in `chat-call-face-render.js` except the
+helpers above: the warp, composite, zone, blur, fill and backdrop shaders,
+tone and skin matching, and texture uploads. Also: the person and hair mattes
+(the networks in `chat-call-segment.js` and the guided filter), running the
+detector and mesh networks, `createFaceStage`'s frame loop (hold, fades,
+adaptive quality), drawing the outfit commands and their thumbnails, and
+loading photos and mattes.
+
+**Not ported:**
+
+- `chat-call-face-tracker.js`, the heuristic tracker for browsers without the
+  face mesh. Vision and the mesh networks replace it.
+- Everything that is only DOM, storage or network:
+  - `canvasGrabber` and `createHostLocator`;
+  - `hostReply`'s base64 mask decode (native code has the mask bytes already);
+  - `callFacesSupported`;
+  - the `FmCallFacePhotos` override (`photoPath` and `mattePath` give the
+    plain asset paths);
+  - `savedCall*` and `remember*` (localStorage);
+  - `customFaceFromFile` and `resizeMask`;
+  - `createFaceMesh`'s crop shader and texture read-back.
+
+**Keeping the JS numbers.** Both ports keep the order of every floating-point
+expression. Five other behaviours from the JS are kept too:
+
+- V8's `Math.hypot` normalises by the largest argument and sums with Kahan
+  compensation, so it differs from `sqrt(x*x + y*y)` in the last bit about
+  a third of the time. The ports reimplement it (`CallFaceJS.hypot`),
+  because span, frame and Delaunay inputs feed discrete decisions.
+- Sorts are stable, ties included.
+- `Math.min`/`max` propagate NaN.
+- `Math.round` rounds halves up.
+- `Uint8ClampedArray` stores round half to even.
+
+Float32 storage is kept wherever the JS uses `Float32Array`: the eye grid,
+the blurs and mattes, and the warp buffer. Float32 values are compared with
+double constants, as JS does. The weight maps keep insertion order, and so do
+the Delaunay edge map and `Object.entries` (integer keys ascending). Kotlin
+uses `StrictMath`.
+
+**Parity fixture.** `tools/call_face_parity.mjs` imports the JS modules from
+`app/public` in node and stubs only `document`.
+
+- The probe's canvas paints a synthetic face image (skin plus integer noise,
+  with ellipses for sclera, iris, closed lids, the mouth and a tongue) in
+  world coordinates.
+- The custom face's canvas fills polygons at pixel centres.
+- The outfit canvas records every call.
+
+It records the outputs below into
+`native/ios/ForkMeshCore/Tests/FMChatTests/Fixtures/call-face-parity.json`
+and a byte-identical
+`native/android/core/src/test/resources/chat/call-face-parity.json`
+(1.2 MB). Numbers are rounded to 1e-8, and large buffers are stored as
+length, sum, samples and an FNV-1a hash.
+
+- **Catalogue:** the faces, choices and outfits, and the template.
+- **Each built-in face:** canonical points, layout, model, mesh (triangles,
+  holes, mouth and cull flags) and photo eyes.
+- **A Delaunay set.**
+- **Twelve static cases:** neutral, turned left and right, tilted, nodding,
+  mouth open, eyes closed, wink and smile, two with depth, `medianLine`
+  instead of `noseCrest` with the jaw reversed, and a small face far away.
+  Each records points, frame, pose, live head, depths, warp buffer, eye boxes,
+  openness, tongue window, closed lids, outfit frame and UV, and template fit.
+  The landmarks are Vision-style regions resampled from a posed 3D template.
+- **Every face on a flat and a depth input.**
+- **A 60-frame sequence** through the stage's pipeline: host result, point
+  smoother, probe, lids, live head, warp, outfit smoother, anchor smoother
+  and fit. It moves and blinks (both eyes, then a wink), opens the mouth,
+  shows the tongue, drops one frame, repeats one timestamp and drops the
+  yaw on some frames.
+- **The One Euro and blink filters on their own.**
+- **Detection decoding** on xorshift inputs.
+- **A 468-point mesh** through `meshToLandmarks`.
+- **The custom face:** transform, skin model, likeness, and the matte with
+  and without a person mask, plus its head mesh.
+- **Every outfit's recorded canvas commands and all 16 fabric tiles.**
+
+The inputs are stored in the fixture, or rebuilt in the tests from integer
+generators.
+
+`CallFaceParityTests` (Swift) and `CallFaceParityTest` (Kotlin) check
+every number to within 1e-6 relative (`|a - b| <= 1e-6 * max(1, |b|)`).
+Mesh indices, flags, strings and command names must match exactly, and tile
+bytes within 1. Each test prints a summary line. Measured on 2026-10-21, both
+ports land on the fixture's rounding floor in every section: a worst relative
+error of 5e-9. Every buffer hash is bit-identical to the JS on both:
+
+- 82 warp buffers;
+- 8 custom matte buffers;
+- 16 fabric tiles.
+
+Swift was measured on Linux with glibc. Apple's libm has not been measured
+yet, and the tolerance leaves room for it.
+
+`app/tests/test_call_face_native_parity.py` regenerates the fixture in a
+temporary directory. It fails if any number differs from the committed copy
+by more than 1e-7, or if the two copies differ. A change to any of these JS
+modules therefore fails that test until the fixture is regenerated and both
+ports follow:
+
+```sh
+node tools/call_face_parity.mjs \
+  native/ios/ForkMeshCore/Tests/FMChatTests/Fixtures/call-face-parity.json \
+  native/android/core/src/test/resources/chat/call-face-parity.json
+```
+
+Then run `FM_ONLY=FMChat swift test --filter CallFace` from
+`native/ios/ForkMeshCore`, and `./gradlew --offline :core:coreTest -Pfilter=CallFace`
+from `native/android`.
+
 ### Backgrounds
 
 No background, Blur, Strong blur, built-in images
@@ -808,5 +1004,7 @@ repository.
 quality and route),
 `app/tests/test_chat_call_faces.py`, `app/tests/test_chat_call_voice.py`,
 `app/tests/test_chat_call_voice_realism.py`,
+`app/tests/test_call_face_native_parity.py` (with the iOS
+`CallFaceParityTests` and Android `CallFaceParityTest`),
 `app/browser_tests/tests/native-call-record.spec.js`, plus the iOS and
 Android `DirectCall*` tests.
