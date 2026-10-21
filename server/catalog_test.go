@@ -12,9 +12,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCatalogPublisherSignsTheWorkerNormalizedRecord(t *testing.T) {
@@ -30,6 +32,12 @@ func TestCatalogPublisherSignsTheWorkerNormalizedRecord(t *testing.T) {
 	}
 	tombstone := `{"events":[{"type":"open","author":"alice"},{"type":"delete","target":"self","author":"alice"}]}`
 	if err := os.WriteFile(filepath.Join(source, ".forkmesh/issues/open/8/issue-8.json"), []byte(tombstone), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// The catalog hashes with ASCII escaping and without HTML escaping, so
+	// the description carries both kinds of character (and one outside the BMP).
+	if err := os.WriteFile(filepath.Join(source, ".forkmesh/info.json"),
+		[]byte(`{"about":"Mirror <and> share — café & more 🚀"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	run(t, source, "git", "add", ".")
@@ -94,7 +102,8 @@ func TestCatalogPublisherSignsTheWorkerNormalizedRecord(t *testing.T) {
 		received["pullCount"] != "2" || received["mergeCount"] != "1" ||
 		received["runtimeMode"] != "headless" ||
 		received["mirrorUrl"] != "https://git.mirror9.example.test/forkmesh/forkmesh.git" ||
-		received["forkedFrom"] != "alice/forkmesh" {
+		received["forkedFrom"] != "alice/forkmesh" ||
+		received["description"] != "Mirror <and> share — café & more \U0001F680" {
 		t.Fatalf("unexpected record: %+v", received)
 	}
 	agentProviders, agentProvidersOK := received["agentProviders"].([]any)
@@ -119,7 +128,10 @@ func TestCatalogPublisherSignsTheWorkerNormalizedRecord(t *testing.T) {
 	delete(received, "catalogSig")
 	delete(received, "catalogSigVersion")
 	delete(received, "signature")
-	canonical, _ := json.Marshal(received)
+	canonical, err := catalogCanonicalJSON(received)
+	if err != nil {
+		t.Fatal(err)
+	}
 	digest := sha256.Sum256(canonical)
 	payload := []byte("forkmesh-catalog-v2\n" + hex.EncodeToString(digest[:]))
 	if !ed25519.Verify(identity.public, payload, catalogSig) {
@@ -406,5 +418,190 @@ func TestCatalogDescriptionComesFromTheRepositoryAbout(t *testing.T) {
 		if got := catalogDescription(ctx, bare); got != test.want {
 			t.Fatalf("case %d: description = %q, want %q", index, got, test.want)
 		}
+	}
+}
+
+func TestCatalogCanonicalJSONMatchesTheCatalogHashInput(t *testing.T) {
+	// Expected values are Python's json.dumps(value, sort_keys=True,
+	// separators=(",", ":")), which the catalog hashes for catalog-v2.
+	cases := []struct {
+		value any
+		want  string
+	}{
+		{map[string]any{"b": 1, "a": []string{"x"}, "c": map[string]int64{}}, `{"a":["x"],"b":1,"c":{}}`},
+		{"hosts\u2014without", `"hosts\u2014without"`},
+		{"caf\u00e9", `"caf\u00e9"`},
+		{"a <b> & c", `"a <b> & c"`},
+		{"rocket \U0001F680", `"rocket \ud83d\ude80"`},
+		{"del\x7f nul\x00 esc\x1b", `"del\u007f nul\u0000 esc\u001b"`},
+		{"\b\f\n\r\t\"\\/", `"\b\f\n\r\t\"\\/"`},
+		{"line\u2028para\u2029", `"line\u2028para\u2029"`},
+		{"bad\xffbyte", `"bad\ufffdbyte"`},
+		{[]int{0, -3, 1 << 50}, `[0,-3,1125899906842624]`},
+		{map[string]any{"t": true, "f": false, "n": nil}, `{"f":false,"n":null,"t":true}`},
+	}
+	for _, test := range cases {
+		got, err := catalogCanonicalJSON(test.value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != test.want {
+			t.Errorf("catalogCanonicalJSON(%q) = %s, want %s", test.value, got, test.want)
+		}
+	}
+}
+
+func TestCatalogCanonicalJSONMatchesTheProtocolVector(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "conformance", "protocol", "v1", "vectors", "signatures.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var vectors struct {
+		CatalogV2Record  map[string]any `json:"catalogV2Record"`
+		CanonicalStrings []struct {
+			Scheme string     `json:"scheme"`
+			Fields [][]string `json:"fields"`
+		} `json:"canonicalStrings"`
+	}
+	if err := json.Unmarshal(raw, &vectors); err != nil {
+		t.Fatal(err)
+	}
+	record := vectors.CatalogV2Record
+	if len(record) == 0 {
+		t.Fatal("no catalogV2Record vector")
+	}
+	delete(record, "signature")
+	canonical, err := catalogCanonicalJSON(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(canonical)
+	for _, vector := range vectors.CanonicalStrings {
+		if vector.Scheme != "forkmesh-catalog-v2" {
+			continue
+		}
+		for _, field := range vector.Fields {
+			if len(field) == 2 && field[0] == "recordSha256" {
+				if field[1] != hex.EncodeToString(digest[:]) {
+					t.Fatalf("record hash %x, vector %s, over %s", digest, field[1], canonical)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("no forkmesh-catalog-v2 vector")
+}
+
+// catalogFixturePath is a node-signed record that the app's test suite
+// (app/tests/test_catalog_node_signature.py) verifies the way the catalog does.
+// Regenerate it with FORKMESH_UPDATE_CATALOG_FIXTURE=1 go test -run CatalogRecordFixture.
+const catalogFixturePath = "testdata/catalog-v2-record.json"
+
+func TestCatalogRecordFixtureForTheApp(t *testing.T) {
+	// The fixture must carry every field a real publication does, so build
+	// one with every optional extension switched on and compare key sets.
+	source, bare := makeBareRepo(t)
+	if err := os.MkdirAll(filepath.Join(source, ".forkmesh"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, ".forkmesh", "info.json"), []byte(`{"about":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	run(t, source, "git", "add", ".forkmesh/info.json")
+	run(t, source, "git", "commit", "-q", "-m", "about")
+	run(t, source, "git", "push", "-q", bare, "HEAD:main")
+	identity, _ := testIdentity(t)
+	stateHash, err := refsSHA256(context.Background(), bare)
+	if err != nil {
+		t.Fatal(err)
+	}
+	publisher := &CatalogPublisher{
+		Owner: "mirror9", Node: "mirror9", Version: "test", Identity: identity,
+		MirrorURL: "https://git.mirror9.example.test", MirrorOf: "https://upstream.example.test/forkmesh/forkmesh",
+		LastSyncedAt: time.UnixMilli(1784840000000),
+		LookPath:     func(string) (string, error) { return "/usr/bin/true", nil },
+	}
+	live, err := publisher.record(context.Background(), Repository{
+		Owner: "forkmesh", Name: "forkmesh", ForkedFrom: "alice/forkmesh", GitDir: bare,
+	}, stateHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seed := sha256.Sum256([]byte("forkmesh catalog fixture key"))
+	private := ed25519.NewKeyFromSeed(seed[:])
+	fixed := &Identity{private: private, public: private.Public().(ed25519.PublicKey)}
+	updatedAt := "1784840000002"
+	commit := strings.Repeat("ab", 20)
+	state := strings.Repeat("cd", 32)
+	weeks := make([]int, 52)
+	weeks[51] = 3
+	merges := make([]int, 52)
+	merges[51] = 1
+	record := map[string]any{
+		"owner": "mirror9", "name": "forkmesh", "visibility": "public",
+		"mirrorEncryption": "", "opaqueRepoId": "", "keyEpoch": 0,
+		"encryptedManifestHash": "", "encryptedManifestSig": "",
+		"sizeBytes": 123456,
+		// Non-ASCII (BMP and astral), HTML-sensitive and DEL characters: the
+		// ones encoding/json writes differently from the catalog's hash input.
+		"description":  "Mirror <and> share — café & more \U0001F680 del\x7f",
+		"logoMetadata": map[string]any{"description": "", "languages": map[string]int64{}, "topics": []string{}, "fileStructure": []string{}, "frameworks": []string{}, "projectCategory": ""},
+		"cloneUrl":     "", "solana": "", "channel": "#mirror9-forkmesh",
+		"hostedSince": "", "lastSync": updatedAt, "updatedAt": updatedAt,
+		"rootCommit": commit, "source": "remote-clone", "commit": commit, "branch": "main",
+		"issueCount": "1", "issueMaxNumber": "8", "commitCount": "3", "mergeCount": "1",
+		"branchCount": "1", "pullCount": "2", "discussionCount": "0",
+		"activityWeeks": weeks, "mergeActivityWeeks": merges,
+		"worktreeCount": "0", "artifactCount": "0",
+		"platform": "linux", "version": "test", "nodeId": "",
+		"clonesServed": "0", "websiteServed": "0", "maintainer": fixed.PublicKey(),
+		"signature": "", "stateHash": state,
+		"cpuPercent": 7, "memUsedBytes": int64(300), "memTotalBytes": int64(1000),
+		"diskUsedBytes": int64(800), "diskTotalBytes": int64(2000),
+		"machineName": "mirror9", "runtimeMode": "headless",
+		"mirrorUrl":      "https://git.mirror9.example.test/forkmesh/forkmesh.git",
+		"agentProviders": []string{"claude-code", "codex", "local-llama"},
+		"mirrorOf":       "https://upstream.example.test/forkmesh/forkmesh",
+		"upstreamCommit": commit, "lastSyncedAt": "1784840000000",
+		"forkedFrom": "alice/forkmesh",
+	}
+	record["stateSig"] = fixed.Sign([]byte("forkmesh-repostate-v1\nmirror9\nforkmesh\n" + state + "\n" + updatedAt))
+	if err := signCatalogRecord(fixed, record); err != nil {
+		t.Fatal(err)
+	}
+	var liveKeys, fixtureKeys []string
+	for key := range live {
+		liveKeys = append(liveKeys, key)
+	}
+	for key := range record {
+		fixtureKeys = append(fixtureKeys, key)
+	}
+	slices.Sort(liveKeys)
+	slices.Sort(fixtureKeys)
+	if !slices.Equal(liveKeys, fixtureKeys) {
+		t.Fatalf("fixture keys %v\nlive record keys %v", fixtureKeys, liveKeys)
+	}
+
+	// Byte for byte the request body Publish sends.
+	encoded, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded = append(encoded, '\n')
+	if os.Getenv("FORKMESH_UPDATE_CATALOG_FIXTURE") == "1" {
+		if err := os.MkdirAll(filepath.Dir(catalogFixturePath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(catalogFixturePath, encoded, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	committed, err := os.ReadFile(catalogFixturePath)
+	if err != nil {
+		t.Fatalf("%v (regenerate with FORKMESH_UPDATE_CATALOG_FIXTURE=1)", err)
+	}
+	if string(committed) != string(encoded) {
+		t.Fatalf("%s is stale; regenerate with FORKMESH_UPDATE_CATALOG_FIXTURE=1", catalogFixturePath)
 	}
 }
