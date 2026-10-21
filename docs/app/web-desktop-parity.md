@@ -11,6 +11,7 @@ inventory; each row says why the dependency exists and how it could go.
 |---|---|
 | Discussions: start, reply, mark answer, close/reopen, archive, delete a reply | [web-discussions.md](web-discussions.md) |
 | Merging pull requests on personal repositories (same rules, protection, checks and mergeability as organization repositories) | [branch-protection.md](branch-protection.md) |
+| Rename, move and delete files (commit, or propose as a pull request) | [repository-file-edits.md](repository-file-edits.md#rename-and-delete) |
 | Add file (create a file, or propose one as a pull request) | [repository-file-edits.md](repository-file-edits.md#add-file) |
 | Issues and pull requests (browser-signed events), file edits and proposals, forks, repository deletion, branch operations on core-hosted repositories, webhooks, Actions secrets, security advisories, notes, tasks, calendar, docs, organizations, accounts and SSH keys | already had web paths |
 
@@ -31,7 +32,7 @@ existing route, L = a new route, event type or storage, XL = architectural.
 | Projects (create and edit boards) | Projects tab | Events are signed with the node identity and committed locally (ProjectStore) | Browser-signed project events through `fetchRepoMutation`, materialized by the mirror intake like issues | L |
 | Releases (create, publish, assets) | releases list | Owner-signed `release.json` and asset uploads | Browser-signed release manifest for core-hosted repositories, assets through the asset store | L / XL |
 | Tags (create, delete) | branch operations | No tag operation exists | Add tag operations to the branch-operation queue | L |
-| Deleting and renaming files, binary uploads | file editor | `/file-edit` creates and edits text only | Add `delete` and `rename` modes (one tree rewrite) and base64 content | M |
+| Uploading binary files (images, archives) | file editor | `/file-edit` takes UTF-8 text only | Accept base64 `content` with a size cap and build the blob from the bytes | M |
 | Repository settings only stored on the desktop (peer approval, secret-scanning push protection, Actions auto-approve, agent guardrails) | repository settings | Kept in the desktop's local record | Store them in `.forkmesh/settings.json` through `/file-edit` and read them from there on every client | L |
 | Branch operations and issue/pull state on repositories held only by a personal node | branch queue, inbox drains | The owner's node applies them when it next syncs | Already immediate on core-hosted and mirrored repositories; otherwise inherent to node-held repositories | XL |
 | Agent transcripts and prompts | Agents tab | Encrypted to a key in the owner's desktop vault | Use the live desktop link when it is online; offline reading needs a web-held key | S (online) / XL |

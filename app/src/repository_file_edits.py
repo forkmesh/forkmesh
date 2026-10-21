@@ -19,6 +19,8 @@ LINE_RE = re.compile(r"[^\n]*\n|[^\n]+\Z")
 QUOTE_RE = re.compile(r'[\x00-\x1f"\\\x7f]')
 QUOTE_ESCAPES = {"\t": "\\t", "\n": "\\n", '"': '\\"', "\\": "\\\\"}
 MODES = frozenset({"", "commit", "probe", "propose"})
+# edit (and create) one file's text, delete a file, or rename/move one.
+OPS = frozenset({"edit", "delete", "rename"})
 CONTEXT_LINES = 3
 
 
@@ -195,6 +197,80 @@ def build_commit(listings, parent, path, content, name, email, seconds,
     commit_oid = object_id("commit", commit)
     objects = [("blob", blob)] + trees + [("commit", commit)]
     return commit_oid, blob_oid, pack(objects)
+
+
+def _entry_rows(entries):
+    rows = {}
+    for entry in entries or []:
+        mode = str(entry.get("mode") or "")
+        oid = str(entry.get("oid") or "").lower()
+        name = str(entry.get("name") or "")
+        if not mode or not OID_RE.match(oid) or not name:
+            raise FileEditError(
+                "gateway_outdated",
+                "The repository host does not report object ids yet.", 503)
+        rows[name] = (mode, oid)
+    return rows
+
+
+def apply_tree_changes(listings, changes):
+    """Rebuild every tree above ``changes`` ({path: (mode, oid) or None}).
+
+    None removes the entry; a folder left empty is removed from its parent,
+    as Git stores no empty trees. ``listings`` must hold each touched folder
+    (a folder that does not exist yet is an empty list). Returns the new root
+    tree id and the tree objects to send.
+    """
+    directories = {""}
+    for path in changes:
+        parts = path.split("/")
+        for depth in range(1, len(parts)):
+            directories.add("/".join(parts[:depth]))
+    results = {}
+    objects = []
+    for directory in sorted(
+            directories, key=lambda d: -(d.count("/") + 1 if d else 0)):
+        rows = _entry_rows(listings.get(directory))
+        for path, value in changes.items():
+            parent, _, name = path.rpartition("/")
+            if parent != directory:
+                continue
+            if value is None:
+                rows.pop(name, None)
+            else:
+                rows[name] = value
+        for child, oid in results.items():
+            parent, _, name = child.rpartition("/")
+            if parent != directory:
+                continue
+            if oid is None:
+                rows.pop(name, None)
+            else:
+                rows[name] = ("40000", oid)
+        if not rows and directory:
+            results[directory] = None
+            continue
+        payload = tree_payload(sorted(
+            ((mode, name, oid) for name, (mode, oid) in rows.items()),
+            key=_tree_sort_key))
+        results[directory] = object_id("tree", payload)
+        objects.append(("tree", payload))
+    return results[""], objects
+
+
+def deleted_patch(path, old_text, old_oid, mode):
+    lines = _lines(old_text)
+    out = [
+        "diff --git %s %s\n" % (_side("a/", path), _side("b/", path)),
+        "deleted file mode %s\n" % mode,
+        "index %s..%s\n" % (old_oid, ZERO_OID),
+        "--- %s\n" % _side("a/", path),
+        "+++ /dev/null\n",
+    ]
+    if lines:
+        out.append("@@ -%s +0,0 @@\n" % _range(0, len(lines)))
+        out.extend(_patch_line("-", line) for line in lines)
+    return "".join(out)
 
 
 def _lines(text):
@@ -383,6 +459,12 @@ async def _save(env, request, owner, repo):
             "forbidden",
             "You need repository write permission to edit files.", 403,
             canPropose=True)
+    op = str(data.get("op") or "edit").strip().lower()
+    if op not in OPS:
+        return _error("invalid_op", "Unknown file operation.", 400)
+    if op != "edit":
+        return await _save_move(
+            env, request, owner, repo, data, actor, propose, op)
     path = str(data.get("path") or "")
     content = data.get("content")
     new_file = data.get("create") is True
@@ -497,6 +579,128 @@ async def _save(env, request, owner, repo):
         "commit": commit_oid,
         "oid": blob_oid,
         "author": actor,
+        "subject": message,
+    }, cache_control="no-store")
+
+
+async def _save_move(env, request, owner, repo, data, actor, propose, op):
+    """Delete or rename one file: a commit (writers) or a proposal (anyone).
+
+    A rename may also change the text (``content``); without it the blob is
+    kept as is. A proposal is a deletion patch, plus a creation patch for a
+    rename, so ``git am`` replays it without rename detection.
+    """
+    path = str(data.get("path") or "")
+    new_path = str(data.get("newPath") or "") if op == "rename" else ""
+    content = data.get("content")
+    base_oid = str(data.get("oid") or "").lower()
+    branch = str(data.get("branch") or "").strip()
+    base_ref = "" if propose else str(data.get("baseRef") or "").strip()
+    if not valid_path(path) or (op == "rename" and not valid_path(new_path)):
+        return _error("invalid_path", "That file path cannot be used.", 400)
+    if op == "rename" and new_path == path:
+        return _error("invalid_path", "Choose a different name.", 400)
+    if not valid_branch(branch):
+        return _error("invalid_branch", "Choose a valid branch name.", 400)
+    if base_ref and not valid_branch(base_ref) and not OID_RE.match(base_ref):
+        return _error("invalid_base", "Choose a valid base branch.", 400)
+    if content is not None and (op != "rename" or not isinstance(content, str)):
+        return _error("invalid_content", "Only a rename can carry new text.", 400)
+    if isinstance(content, str):
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
+        if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+            return _error("too_large", "The file is larger than 2 MB.", 413)
+    try:
+        parent, listings, create = await _listings(
+            env, owner, repo, branch, path, base_ref)
+        if op == "rename":
+            moved_parent, moved, _ = await _listings(
+                env, owner, repo, branch, new_path, base_ref,
+                allow_missing=True)
+            if moved_parent != parent:
+                raise FileEditError(
+                    "conflict", "The branch moved; reload and try again.", 409)
+            for directory, entries in moved.items():
+                listings.setdefault(directory, entries)
+        entry = _current(listings, path)
+        if entry is None or entry.get("type") != "blob":
+            raise FileEditError(
+                "not_found", "The file is no longer in the repository.", 404)
+        file_mode = str(entry.get("mode") or "")
+        if file_mode not in FILE_MODES:
+            raise FileEditError(
+                "invalid_path", "That path is not a regular file.", 400)
+        current = str(entry.get("oid") or "").lower()
+        if not OID_RE.match(current):
+            raise FileEditError(
+                "gateway_outdated",
+                "The repository host does not report object ids yet.", 503)
+        if base_oid and base_oid != current:
+            raise FileEditError(
+                "conflict",
+                "Someone changed this file since you opened it; reload to "
+                "see their version.", 409)
+        if op == "rename" and _current(listings, new_path) is not None:
+            raise FileEditError(
+                "conflict", "A file or folder already has that name.", 409)
+        objects = []
+        changes = {path: None}
+        new_blob = current
+        if op == "rename":
+            if isinstance(content, str):
+                blob = content.encode("utf-8")
+                new_blob = object_id("blob", blob)
+                objects.append(("blob", blob))
+            changes[new_path] = (file_mode, new_blob)
+        root, trees = apply_tree_changes(listings, changes)
+        message = clean_message(
+            data.get("message"), path,
+            "Delete %s on the web" if op == "delete"
+            else "Rename %s on the web")
+        email = noreply_email(actor, _public_base_url(env))
+        seconds = int(time.time())
+        commit = commit_payload(root, parent, actor, email, seconds, message)
+        commit_oid = object_id("commit", commit)
+        objects = objects + trees + [("commit", commit)]
+        if propose:
+            old_text = await _old_text(
+                env, owner, repo, path, parent, current, False)
+            patch = deleted_patch(path, old_text, current, file_mode)
+            if op == "rename":
+                patch += file_patch(
+                    new_path, "",
+                    content if isinstance(content, str) else old_text,
+                    ZERO_OID, new_blob, file_mode, created=True)
+            commits = patch_mbox(
+                commit_oid, actor, email, seconds, message, patch)
+            head = proposal_branch(actor, path, commit_oid)
+        else:
+            old = ZERO_OID if create else parent
+            body = receive_pack_body(
+                old, commit_oid, "refs/heads/" + branch, pack(objects))
+            await _push(env, request, owner, repo, actor, branch, body, "")
+    except FileEditError as exc:
+        return _error(exc.code, exc.message, exc.status)
+    action = "repository.file_" + op + ("_proposal" if propose else "")
+    try:
+        await _audit_sensitive_action(
+            env, actor, action, "repository", owner + "/" + repo, "success", {
+                "path": path, "newPath": new_path, "branch": branch,
+                "commit": commit_oid, "parent": parent,
+            })
+    except Exception:
+        pass
+    if propose:
+        return json_response({
+            "ok": True, "proposal": True, "op": op, "path": path,
+            "newPath": new_path, "base": branch, "baseOid": parent,
+            "head": head, "headOid": commit_oid, "author": actor,
+            "subject": message, "patch": patch, "commits": commits,
+        }, cache_control="no-store")
+    return json_response({
+        "ok": True, "op": op, "path": path, "newPath": new_path,
+        "branch": branch, "createdBranch": create, "commit": commit_oid,
+        "oid": new_blob if op == "rename" else "", "author": actor,
         "subject": message,
     }, cache_control="no-store")
 

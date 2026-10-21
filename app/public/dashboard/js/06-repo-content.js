@@ -793,6 +793,8 @@
             </div>
             <div class="flex items-center gap-1.5">
               <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="${repoReadOnlyMirror(repo) ? escapeHtml(REPO_READ_ONLY_MIRROR_HINT) : "Edit file"}"${repoReadOnlyMirror(repo) ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="rename" aria-label="Rename or move file" title="${repoReadOnlyMirror(repo) ? escapeHtml(REPO_READ_ONLY_MIRROR_HINT) : "Rename or move file"}"${repoReadOnlyMirror(repo) ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="file-pen" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="delete" aria-label="Delete file" title="${repoReadOnlyMirror(repo) ? escapeHtml(REPO_READ_ONLY_MIRROR_HINT) : "Delete file"}"${repoReadOnlyMirror(repo) ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>
               <button type="button" data-repo-file-action="raw" class="fm-btn fm-btn-sm">Raw</button>
               <button type="button" data-repo-file-action="copy" aria-label="Copy file contents" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="copy" class="h-3.5 w-3.5"></i></button>
               <button type="button" data-repo-file-action="download" aria-label="Download file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>

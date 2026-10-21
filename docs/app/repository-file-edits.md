@@ -14,6 +14,8 @@ existing text files. Saving posts to
 | `content` | New UTF-8 text, capped at 2 MB |
 | `message` | Optional; defaults to `Edit <path> on the web` |
 | `create` | `true` to add a new file; `409 conflict` if the path exists |
+| `op` | `edit` (default), `delete` or `rename` |
+| `newPath` | The new path for `rename` (may be in another folder); `409 conflict` if taken |
 
 `app/src/repository_file_edits.py` reads the live tree, builds a blob, trees
 and a commit authored by the signed-in account.
@@ -85,6 +87,18 @@ and can tick **Propose as a pull request instead of committing**. A `403` with
 `canPropose` on save (for example after a permission change) switches the open
 editor to proposing. A signed-out visitor who clicks **Edit file** is sent to
 `/login?next=<this page>`.
+
+## Rename and delete
+
+The file view's **Rename or move** and **Delete** buttons open a small form
+under the toolbar (`openRepoFileMoveForm`) with the branch, a commit message
+and the same propose toggle as the editor. `op: "delete"` removes the file
+(a folder it leaves empty goes too, as Git keeps no empty trees);
+`op: "rename"` moves it to `newPath`, keeping its text unless `content` is
+sent. Both check `oid` against the file the browser loaded. Writers commit;
+everyone else gets a proposal whose patch is a deletion (plus a creation for
+a rename), so `git am` replays it without rename detection. A delete lands
+on the folder, a rename on the file's new page.
 
 ## Add file
 

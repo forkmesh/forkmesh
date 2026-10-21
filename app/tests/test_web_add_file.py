@@ -54,3 +54,24 @@ def test_new_file_paths_are_normalized():
     out = subprocess.run(["node", "-e", script], check=True,
                          capture_output=True, text=True).stdout
     assert json.loads(out) == ["docs/a.md", "docs/b.md", "c.md"]
+
+
+def test_the_file_view_offers_rename_and_delete():
+    for action in ("rename", "delete"):
+        assert 'data-repo-file-action="%s"' % action in DASHBOARD_JS
+    toolbar = _function("bindRepoFileToolbar")
+    assert 'action === "rename" || action === "delete"' in toolbar
+    assert "openRepoFileMoveForm(viewer, repo, path, content, lines, meta, action)" in toolbar
+
+
+def test_rename_and_delete_commit_or_propose_through_file_edit():
+    form = _function("openRepoFileMoveForm")
+    assert "const request = { op, path, branch, oid: String(meta?.oid || \"\"), message };" in form
+    assert "if (!deleting) request.newPath = newPath;" in form
+    assert 'repoFileEditRequest(repo, { ...request, mode: "propose" })' in form
+    assert 'repoFileEditRequest(repo, { ...request, mode: "commit", baseRef: currentBranch })' in form
+    assert "await proposeRepoFileEdit(viewer, repo, proposal)" in form
+    assert "probeRepoFileEditAccess(viewer, editor, repo, controller.signal)" in form
+    # A delete lands on the folder, a rename on the file's new address.
+    assert 'navigateHistory(repoLinkUrl(repo, "tree", folder))' in form
+    assert 'navigateHistory(repoLinkUrl(repo, "blob", newPath))' in form
