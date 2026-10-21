@@ -355,6 +355,29 @@ def test_ledgers_are_reread_only_where_they_changed(pulse_app, monkeypatch):
     assert calls == []
 
 
+def test_pull_ledger_reads_are_capped(pulse_app, monkeypatch):
+    app, _clock, _bare = pulse_app
+    repository = app.repositories[("alice", "project")]
+    seen = {}
+    original = gateway._pulse_pull_record
+    monkeypatch.setattr(
+        gateway, "_pulse_pull_record",
+        lambda number, files: seen.setdefault(number, sorted(files))
+        and original(number, files))
+    monkeypatch.setattr(gateway, "PULSE_PULL_EVENT_FILES", 1)
+    repository._pulse_pull_index()
+    assert seen[42] == ["0005-comment.md", "pull.md"]
+    assert seen[43] == ["0002-review.md", "pull.md"]
+
+    seen.clear()
+    repository._pulse_pulls = (("\0", "\0"), [])
+    repository._pulse_pull_records = {}
+    monkeypatch.setattr(gateway, "PULSE_PULL_READ_BYTES", 0)
+    assert repository._pulse_pull_index()[1] == []
+    assert seen == {}
+    assert repository._pulse_pull_records == {}
+
+
 def test_pulse_rides_on_the_stats_operation(tmp_path):
     bare = make_pulse_repository(tmp_path)
     entry = {

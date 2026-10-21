@@ -3683,6 +3683,8 @@ PULSE_MAX_PULLS = 5_000
 PULSE_MAX_ISSUES = 10_000
 PULSE_RECORD_BYTES = 256 * 1024
 PULSE_READ_BATCH_BYTES = 16 * 1024 * 1024
+PULSE_PULL_EVENT_FILES = 100
+PULSE_PULL_READ_BYTES = 96 * 1024 * 1024
 PULSE_PERSON_RE = re.compile(r"^[^\x00-\x1f\x7f]{1,100}$")
 PULSE_BUG_LABEL_RE = re.compile(r"bug|defect|security|vulnerab", re.IGNORECASE)
 PULSE_EVENT_FILE_RE = re.compile(r"^[0-9]{4,}-([a-z][a-z-]{0,39})\.md$")
@@ -6105,6 +6107,7 @@ class GitRepository:
         })
         folder_files: dict[str, dict[str, str]] = {}
         blobs: dict[str, bytes] = {}
+        over_budget: set[str] = set()
         if missing:
             tree_sizes = self._pulse_sizes(missing)
             trees = self._pulse_read([
@@ -6112,26 +6115,45 @@ class GitRepository:
                 if oid in tree_sizes and tree_sizes[oid][1] == "tree"
             ])
             for oid in missing:
-                folder_files[oid] = {
-                    name: blob
-                    for name, blob in _pulse_tree_entries(
-                        trees.get(oid, b""), len(oid) // 2).items()
-                    if name == "pull.md" or PULSE_EVENT_FILE_RE.fullmatch(name)
-                }
-            wanted = sorted({
+                entries = _pulse_tree_entries(
+                    trees.get(oid, b""), len(oid) // 2)
+                events = sorted(
+                    (name for name in entries
+                     if PULSE_EVENT_FILE_RE.fullmatch(name)),
+                    key=lambda name: (int(name.split("-", 1)[0]), name))
+                kept = events[-PULSE_PULL_EVENT_FILES:]
+                if "pull.md" in entries:
+                    kept.append("pull.md")
+                folder_files[oid] = {name: entries[name] for name in kept}
+            blob_sizes = self._pulse_sizes(sorted({
                 blob for files in folder_files.values()
                 for blob in files.values()
-            })
-            blob_sizes = self._pulse_sizes(wanted)
-            blobs = self._pulse_read([
-                (blob, blob_sizes[blob][2]) for blob in wanted
-                if blob in blob_sizes
-                and blob_sizes[blob][2] <= PULSE_RECORD_BYTES
-            ])
+            }))
+            budget = PULSE_PULL_READ_BYTES
+            wanted: dict[str, int] = {}
+            for number in numbers:
+                oid = folders[number]
+                if oid not in folder_files:
+                    continue
+                need = {
+                    blob: blob_sizes[blob][2]
+                    for blob in folder_files[oid].values()
+                    if blob in blob_sizes and blob not in wanted
+                    and blob_sizes[blob][2] <= PULSE_RECORD_BYTES
+                }
+                cost = sum(need.values())
+                if cost > budget:
+                    over_budget.add(oid)
+                    continue
+                budget -= cost
+                wanted.update(need)
+            blobs = self._pulse_read(sorted(wanted.items()))
         records: list[dict[str, Any]] = []
         fresh: dict[str, dict[str, Any] | None] = {}
         for number in numbers:
             oid = folders[number]
+            if oid in over_budget:
+                continue
             if oid in cache:
                 record = cache[oid]
             else:
