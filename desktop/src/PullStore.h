@@ -85,6 +85,7 @@ struct PullRequest {
     // following the mutable base/head branch names.
     QString creationBaseOid;
     QString creationHeadOid;
+    int revision = 0;
     QString headBaseOid;
     QString headOid;
     QString mergeBase;
@@ -332,6 +333,8 @@ public:
 
     // Merge a signed PR received from the relay inbox into.forkmesh/pulls/.
     bool applyRemotePull(const PullRequest &pr, QString *error = nullptr);
+    bool applyRemoteRevision(int number, const PullRequest &revision,
+                             const QString &revisionSig, QString *error = nullptr);
 
     bool checkoutForReview(const PullRequest &pr, const QString &dir,
                            PullReviewCheckout *out, QString *error = nullptr) const;

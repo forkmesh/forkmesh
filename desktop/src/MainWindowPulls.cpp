@@ -5505,6 +5505,12 @@ void MainWindow::renderPullThread(const PullRequest &pr)
             }
         } else if (ev.type == QLatin1String("thread-reply")) {
             verb = QStringLiteral("replied in a review thread");
+        } else if (ev.type == QLatin1String("revision")) {
+            verb = ev.state.isEmpty()
+                       ? QStringLiteral("updated the pull request")
+                       : QStringLiteral("updated the pull request to revision %1")
+                             .arg(ev.state.toHtmlEscaped());
+            accent = QStringLiteral("#58a6ff");
         } else if (ev.type == QLatin1String("thread-state")) {
             if (ev.state == QLatin1String("resolved")) {
                 verb = QStringLiteral("<span style='color:#3fb950'>resolved a "
@@ -12824,6 +12830,22 @@ MainWindow::applyPullsInboxEntries(PullStore store, const QJsonArray &pending)
                       static_cast<qint64>(obj.value("id").toDouble()))
                 : QString();
         const QString reviewBranch = obj.value("branch").toString();
+        if (obj.value("revision").isObject()) {
+            const int number = obj.value("number").toInt();
+            const QJsonObject revisionJson = obj.value("revision").toObject();
+            const PullRequest revision = PullRequest::fromJson(revisionJson);
+            if (store.applyRemoteRevision(
+                    number, revision, revisionJson.value("revisionSig").toString())) {
+                if (!inboxId.isEmpty())
+                    outcome.drainedIds << inboxId;
+                ++outcome.merged;
+                outcome.lastAuthor = revision.authorName.isEmpty()
+                                         ? revision.author.left(8)
+                                         : revision.authorName;
+                outcome.lastTitle = QStringLiteral("update to #%1").arg(number);
+            }
+            continue;
+        }
         if (obj.contains("event") && !reviewBranch.isEmpty()) {
             const PullEvent ev =
                 PullEvent::fromJson(obj.value("event").toObject());
