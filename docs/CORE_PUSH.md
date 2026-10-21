@@ -29,7 +29,8 @@ Credentials:
 
 - Basic with the account name or email as the username and either the
   session-bound push credential (`fmp1.…`, from
-  `POST /api/hosted-repositories/push-credential`) or the account password.
+  `POST /api/hosted-repositories/push-credential`) or, for an account without
+  two-factor authentication, the account password.
 - Signed requests (`forkmesh-git-push-v1`, `X-ForkMesh-Pubkey/-Ts/-Sig`) with
   the account's primary or an enabled device key.
 
@@ -46,10 +47,9 @@ The password path checks exactly what the website login checks
 (`_account_password_record`: active user account, PBKDF2 password) and spends
 the same `login_attempts` budgets (`_login_attempt_keys`, `_login_record_fail`,
 `_login_clear`), so git cannot be used to guess passwords faster than the
-sign-in page. It does not ask for the two-factor code, because git cannot
-send one: the maintainer chose (2026-10-21) to let every account, admins and
-two-factor accounts included, push with its password, so two-factor sign-in
-does not protect git pushes. Push
+sign-in page. It refuses a password for an account with two-factor
+authentication because Git cannot supply the second factor; sign in through
+the website and use a session-bound push credential instead. Push
 permission is re-checked the same way for both credentials, and the audit row's
 `credential` says `password` or `session-mac`. An instance turns the password
 path off with `GIT_PASSWORD_AUTH=0`. Private hosted clones accept the same
