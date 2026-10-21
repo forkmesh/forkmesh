@@ -18,8 +18,8 @@ struct AgentScreen: View {
     @State private var showLocalAI: Bool = false
     @State private var preparation: AgentPreparedPull?
     @State private var notice: FmNotice?
-    @State private var atBottom: Bool = true
     @State private var confirmMove: Bool = false
+    @State private var sent: Int = 0
 
     init(repoName: String, workspace: GitWorkspace, record: LocalRepoRecord?, initialPrompt: String = "", autoStart: Bool = false) {
         _model = State(initialValue: AgentScreenModel(
@@ -167,7 +167,7 @@ struct AgentScreen: View {
         } else {
             AgentTranscriptList(events: model.events, attachments: { (index: Int) -> [AgentAttachmentRef] in
                 model.handle?.attachments(at: index) ?? []
-            })
+            }, pin: sent)
         }
     }
 
@@ -180,6 +180,7 @@ struct AgentScreen: View {
         if !(await AccountFeature.requireAccount(action: "run the coding agent")) {
             return
         }
+        sent += 1
         let outcome: AgentSendOutcome = await model.send()
         if outcome == .needsSetup {
             await openSetup()
@@ -283,29 +284,18 @@ struct AgentIdle: View {
 struct AgentTranscriptList: View {
     let events: [AgentEvent]
     var attachments: (Int) -> [AgentAttachmentRef] = { (_: Int) -> [AgentAttachmentRef] in [] }
+    var pin: Int = 0
     @State private var loader: AgentAttachmentLoader = AgentAttachmentsSupport.loader()
 
     var body: some View {
-        ScrollViewReader { (proxy: ScrollViewProxy) in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(events.indices), id: \.self) { (index: Int) in
-                        AgentEventTile(event: events[index], attachments: attachments(index), loader: loader)
-                            .id(index)
-                    }
-                }
-                .padding(EdgeInsets.fmLTRB(FmSpace.x4, FmSpace.x3, FmSpace.x4, FmSpace.x3))
-            }
-            .onChange(of: events.count) { (_: Int, count: Int) in
-                if count > 0 {
-                    proxy.scrollTo(count - 1, anchor: .bottom)
+        TranscriptFollowScroll(tail: events.count, pin: pin, accessibilityPrefix: "agent-transcript") {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(events.indices), id: \.self) { (index: Int) in
+                    AgentEventTile(event: events[index], attachments: attachments(index), loader: loader)
+                        .id(index)
                 }
             }
-            .onAppear {
-                if !events.isEmpty {
-                    proxy.scrollTo(events.count - 1, anchor: .bottom)
-                }
-            }
+            .padding(EdgeInsets.fmLTRB(FmSpace.x4, FmSpace.x3, FmSpace.x4, FmSpace.x3))
         }
     }
 }
