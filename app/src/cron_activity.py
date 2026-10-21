@@ -144,6 +144,9 @@ CRON_PHASE_CATALOG = (
     ("member-activity", 15, (6,), "platform",
      "Refresh the chat member list's activity figures from up to six hosted "
      "public repositories' Pulse ledgers."),
+    ("tip-verify", 5, (2,), "rewards",
+     "Look for the Solana transfers paying up to three pending comment "
+     "tips (read-only RPC; the forge never signs or holds funds)."),
     ("world-satellites", 180, (11,), "platform",
      "Refresh the world satellite snapshot."),
     ("attribution-clone-snapshot", 1440, (5,), "platform",

@@ -16,15 +16,73 @@ comment reactions reuse its vocabulary instead of adding a second one.
 
 ## Vocabulary
 
-The 18 reactions of the desktop's `ReactionCatalog.h` (`like`, `love`,
+The 24 reactions of the desktop's `ReactionCatalog.h` (`like`, `love`,
 `laugh`, `celebrate`, `hot`, `thanks`, `smile`, `wink`, `cool`, `thinking`,
-`surprised`, `sad`, `angry`, `dislike`, `eyes`, `star`, `rocket`, `check`),
+`surprised`, `sad`, `angry`, `dislike`, `eyes`, `star`, `rocket`, `check`,
+`hearthands`, `sparkleheart`, `handshake`, `glowstar`, `trophy`, `thankyou`),
 stored as slugs. The picker's quick row is the chat's six (`like`, `love`,
-`laugh`, `celebrate`, `eyes`, `rocket`); the rest are below it and searchable
-by name and keywords ("party" finds Celebrate). The server, the dashboard
-(`COMMENT_REACTIONS`, `ISSUE_REACTION_EMOJI`), the server-rendered first view
-(`REACTION_EMOJI`, `REACTION_LABELS`) and the desktop catalog are pinned to
-one list by `app/tests/test_comment_reactions.py`.
+`laugh`, `celebrate`, `eyes`, `rocket`); under it the **Gratitude** row
+(`thanks` 🙏, `hearthands` 🫶, `sparkleheart` 💖, `handshake` 🤝, `glowstar` 🌟,
+`trophy` 🏆, `thankyou`), then the instance's and organization's custom
+reactions ("This community"), then the rest. Everything is searchable by name
+and keywords ("party" finds Celebrate, "thanks" finds the whole gratitude
+group). The server, the dashboard (`COMMENT_REACTIONS`,
+`ISSUE_REACTION_EMOJI`, `COMMENT_REACTION_GRATITUDE`), the server-rendered
+first view (`REACTION_EMOJI`, `REACTION_LABELS`) and the desktop catalog are
+pinned to one list by `app/tests/test_comment_reactions.py`.
+
+`thankyou` is a sticker: an original comic "THANK YOU" speech balloon
+(`app/public/assets/reactions/thank-you.svg`, under 3 KB, drawing only) shown as an
+image in chips and the picker. Its unicode stand-in for text surfaces (ping
+summaries, chat services) is 💬; the desktop paints it by hand like the other
+reactions.
+
+Every bar carries a **Say thanks** button (the sticker and the words; the
+words hide under 420 px) until the viewer has added `thankyou`; one tap adds
+it. It is part of the first-view markup, so the server render and the
+dashboard render stay byte-identical.
+
+### Custom reactions
+
+An instance administrator (Settings → Reactions, GIFs & tips, scope "This
+instance") and an organization owner (scope = the organization) can add, edit,
+disable and delete custom reactions: a slug (`[a-z0-9-]`, up to 32), a label,
+an image and an optional animated variant (played on hover), an order and an
+enabled switch. Images are an SVG up to 32 KB, run through
+`custom_reactions.sanitize_svg` (parsed, drawing elements only: no script,
+style, foreignObject, image, links, event handlers, DOCTYPE/entities,
+external or `data:` references; `animate` may only move geometry and paint),
+or a PNG, GIF or WebP up to 64 KB and 256×256 (sniffed from the bytes). At
+most 50 per scope; 30 edits a minute per account.
+
+- Storage: `custom_reactions (scope, slug, label, kind, asset, digest,
+  anim_*, position, enabled, created_at, updated_at, data)`, scope
+  `instance` or `org:<organization blind index>`; `data` is the encrypted
+  editor name. Images are public by design.
+- `GET /api/reactions/custom?owner=<name>` lists the enabled reactions usable
+  on that owner's repositories (the instance's, then the owner
+  organization's, which win on a shared slug), cached for a minute.
+- `GET /api/reactions/custom/asset/<sha256[:40]>.<ext>` serves an image by
+  content address with `Cache-Control: public, max-age=31536000, immutable`,
+  `nosniff` and a sandboxing CSP.
+- `GET|POST /api/reactions/custom/manage` lists the scopes the account
+  manages, lists one scope, saves (`action: "save"`) or deletes.
+- A reaction made with one is stored as `custom:<slug>` (checked against the
+  catalog of the repository's owner when added). Reads attach
+  `custom: {label, src, animatedSrc}` to its tallies, or `custom: null` once
+  the reaction was deleted or disabled: counts stay, the chip shows `:slug:`,
+  and it can still be taken back but not added again.
+- The desktop and the phone apps show a custom reaction by name.
+
+### Motion
+
+Chips animate only under `prefers-reduced-motion: no-preference`: a subtle
+loop while hovered or focused (hearts beat, hands wave, stars twinkle, the
+rocket lifts, fire flickers, the sticker bounces, everything else bobs), a
+pop and wobble when added (on top of the existing burst), and a custom
+reaction's animated variant on hover. All of it is CSS keyframes on the glyph
+(no assets) and is switched off, with the burst and confetti, under
+`prefers-reduced-motion: reduce`.
 
 ## Storage
 
@@ -77,9 +135,11 @@ returns every comment's tallies for one record in one indexed read:
 ```json
 {"ok": true, "kind": "issue", "number": 7, "signedIn": true,
  "reactions": {"body": [{"emoji": "rocket", "count": 3, "mine": true,
-   "people": [{"name": "alice", "agent": false}]}]}}
+   "people": [{"name": "alice", "agent": false}]}]},
+ "tips": {"body": 2}}
 ```
 
+`tips` counts confirmed tips per comment (`docs/app/comment-tips.md`).
 Tallies are ordered by their first reaction; `people` holds the first ten
 reactors (only those rows are decrypted). Anonymous reads of a public
 repository are `public, max-age=5, stale-while-revalidate=30`; a signed-in
@@ -97,7 +157,9 @@ Checks, in order:
    token, or the session cookie with an allowed `Origin` (the CSRF guard every
    cookie mutation has). No session: 401.
 2. `kind`, `number` (1 to 10^9), `comment` (`[A-Za-z0-9][A-Za-z0-9._:@+-]{0,159}`),
-   `emoji` (a catalog slug, never free text) and a boolean `on`: else 400.
+   `emoji` (a catalog slug or `custom:<slug>`, never free text) and a boolean
+   `on`: else 400. A custom slug must be an enabled custom reaction of the
+   instance or of the repository's owner organization to be added.
 3. Read access to the repository (`_repository_access_context` with the
    account as viewer): a private repository the account cannot read answers
    404, the same as a missing one. Reads apply the same check, so a private
@@ -189,7 +251,9 @@ summary (at most 8 variants a bundle).
   to the page.
 - Selection uses the accent colour, never green (`docs/app/dashboard-colors.md`).
 
-Code: `app/src/comment_reactions.py` (API),
+Code: `app/src/comment_reactions.py` (API), `app/src/custom_reactions.py`
+(custom reactions), `app/public/dashboard/js/09-reaction-settings.js`
+(settings),
 `app/public/dashboard/js/06-repo-content.js` (bar rendering, shared with the
 first-view parity test), `app/public/dashboard/js/09-comment-reactions.js`
 (loading, picker, toggles, effects), `app/public/dashboard/shell.html`

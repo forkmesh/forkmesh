@@ -1,10 +1,12 @@
 #include "ReactionEmoji.h"
 
+#include <QFont>
 #include <QHash>
 #include <QLinearGradient>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRadialGradient>
+#include <QTransform>
 #include <QtMath>
 
 namespace reactions {
@@ -517,6 +519,185 @@ void paintCheck(QPainter &p)
     p.drawPath(check);
 }
 
+void heartPath(QPainterPath &heart, qreal cx, qreal top, qreal w, qreal h)
+{
+    // The love heart's curve, scaled into a (cx, top, w, h) box.
+    auto pt = [&](qreal x, qreal y) {
+        return QPointF(cx + (x - 0.5) * w / 0.87, top + (y - 0.09) * h / 0.79);
+    };
+    heart.moveTo(pt(0.5, 0.88));
+    heart.cubicTo(pt(0.13, 0.62), pt(0.03, 0.40), pt(0.10, 0.26));
+    heart.cubicTo(pt(0.17, 0.11), pt(0.39, 0.09), pt(0.5, 0.27));
+    heart.cubicTo(pt(0.61, 0.09), pt(0.83, 0.11), pt(0.90, 0.26));
+    heart.cubicTo(pt(0.97, 0.40), pt(0.87, 0.62), pt(0.5, 0.88));
+    heart.closeSubpath();
+}
+
+void paintSparkle(QPainter &p, qreal cx, qreal cy, qreal r, const QColor &color)
+{
+    QPainterPath star;
+    star.moveTo(cx, cy - r);
+    star.quadTo(cx, cy, cx + r, cy);
+    star.quadTo(cx, cy, cx, cy + r);
+    star.quadTo(cx, cy, cx - r, cy);
+    star.quadTo(cx, cy, cx, cy - r);
+    p.setPen(Qt::NoPen);
+    p.setBrush(color);
+    p.drawPath(star);
+}
+
+void paintSparkleHeart(QPainter &p)
+{
+    QPainterPath heart;
+    heartPath(heart, 0.5, 0.14, 0.80, 0.74);
+    QLinearGradient g(QPointF(0.3, 0.12), QPointF(0.65, 0.9));
+    g.setColorAt(0.0, QColor(0xff, 0x8a, 0xc8));
+    g.setColorAt(1.0, QColor(0xe0, 0x3a, 0x8c));
+    p.setPen(Qt::NoPen);
+    p.setBrush(QBrush(g));
+    p.drawPath(heart);
+    paintSparkle(p, 0.80, 0.16, 0.12, QColor(0xff, 0xd5, 0x4f));
+    paintSparkle(p, 0.14, 0.70, 0.08, QColor(0xff, 0xd5, 0x4f));
+    paintSparkle(p, 0.40, 0.42, 0.07, QColor(255, 255, 255, 200));
+}
+
+void paintHeartHands(QPainter &p)
+{
+    QPainterPath heart;
+    heartPath(heart, 0.5, 0.10, 0.52, 0.48);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0xef, 0x45, 0x6a));
+    p.drawPath(heart);
+    p.setBrush(handBrush());
+    p.setPen(strokePen(QColor(0xc9, 0x86, 0x1a), 0.025));
+    QPainterPath left;
+    left.moveTo(0.48, 0.62);
+    left.cubicTo(0.30, 0.66, 0.14, 0.52, 0.12, 0.30);
+    left.cubicTo(0.06, 0.40, 0.04, 0.62, 0.16, 0.80);
+    left.cubicTo(0.26, 0.94, 0.42, 0.96, 0.48, 0.88);
+    left.closeSubpath();
+    p.drawPath(left);
+    p.save();
+    p.translate(1.0, 0.0);
+    p.scale(-1.0, 1.0);
+    p.drawPath(left);
+    p.restore();
+}
+
+void paintHandshake(QPainter &p)
+{
+    p.setPen(strokePen(QColor(0xc9, 0x86, 0x1a), 0.03));
+    p.setBrush(handBrush());
+    QPainterPath left;
+    left.moveTo(0.04, 0.40);
+    left.lineTo(0.30, 0.34);
+    left.cubicTo(0.46, 0.30, 0.62, 0.40, 0.70, 0.52);
+    left.cubicTo(0.74, 0.60, 0.66, 0.66, 0.58, 0.62);
+    left.lineTo(0.44, 0.56);
+    left.lineTo(0.30, 0.70);
+    left.lineTo(0.04, 0.66);
+    left.closeSubpath();
+    p.drawPath(left);
+    p.setBrush(QColor(0xf5, 0xb9, 0x45));
+    QPainterPath right;
+    right.moveTo(0.96, 0.40);
+    right.lineTo(0.72, 0.36);
+    right.cubicTo(0.58, 0.34, 0.44, 0.44, 0.36, 0.56);
+    right.cubicTo(0.30, 0.66, 0.40, 0.76, 0.52, 0.74);
+    right.lineTo(0.70, 0.70);
+    right.lineTo(0.96, 0.66);
+    right.closeSubpath();
+    p.drawPath(right);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0x42, 0xa5, 0xf5));
+    p.drawRect(QRectF(0.0, 0.36, 0.08, 0.34));
+    p.setBrush(QColor(0x8e, 0x24, 0xaa));
+    p.drawRect(QRectF(0.92, 0.36, 0.08, 0.34));
+}
+
+void paintGlowStar(QPainter &p)
+{
+    QRadialGradient glow(QPointF(0.5, 0.52), 0.5);
+    glow.setColorAt(0.0, QColor(0xff, 0xf1, 0x76, 170));
+    glow.setColorAt(1.0, QColor(0xff, 0xf1, 0x76, 0));
+    p.setPen(Qt::NoPen);
+    p.setBrush(QBrush(glow));
+    p.drawEllipse(QRectF(0.0, 0.02, 1.0, 1.0));
+    p.save();
+    p.translate(0.12, 0.13);
+    p.scale(0.76, 0.76);
+    paintStar(p);
+    p.restore();
+    paintSparkle(p, 0.86, 0.14, 0.09, QColor(0xff, 0xca, 0x28));
+    paintSparkle(p, 0.12, 0.84, 0.07, QColor(0xff, 0xca, 0x28));
+}
+
+void paintTrophy(QPainter &p)
+{
+    QLinearGradient gold(QPointF(0.2, 0.1), QPointF(0.8, 0.8));
+    gold.setColorAt(0.0, QColor(0xff, 0xe0, 0x82));
+    gold.setColorAt(1.0, QColor(0xf5, 0xa6, 0x23));
+    p.setPen(strokePen(QColor(0xd4, 0x8a, 0x00), 0.05));
+    p.setBrush(Qt::NoBrush);
+    p.drawArc(QRectF(0.06, 0.16, 0.28, 0.30), 90 * 16, 180 * 16);
+    p.drawArc(QRectF(0.66, 0.16, 0.28, 0.30), -90 * 16, 180 * 16);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QBrush(gold));
+    QPainterPath cup;
+    cup.moveTo(0.20, 0.10);
+    cup.lineTo(0.80, 0.10);
+    cup.cubicTo(0.80, 0.46, 0.66, 0.60, 0.5, 0.62);
+    cup.cubicTo(0.34, 0.60, 0.20, 0.46, 0.20, 0.10);
+    cup.closeSubpath();
+    p.drawPath(cup);
+    p.drawRect(QRectF(0.44, 0.60, 0.12, 0.16));
+    p.setBrush(QColor(0x8d, 0x6e, 0x63));
+    p.drawRoundedRect(QRectF(0.26, 0.76, 0.48, 0.16), 0.04, 0.04);
+    p.setBrush(QColor(255, 255, 255, 110));
+    p.drawRoundedRect(QRectF(0.30, 0.16, 0.08, 0.26), 0.04, 0.04);
+}
+
+void paintThankYouSticker(QPainter &p)
+{
+    // The web's thank-you.svg, reduced to what reads at chip size: a tilted
+    // sky-blue balloon with an ink outline and a pink "TY".
+    p.save();
+    p.translate(0.5, 0.5);
+    p.rotate(-8);
+    p.translate(-0.5, -0.5);
+    QPainterPath balloon;
+    balloon.addRoundedRect(QRectF(0.08, 0.14, 0.84, 0.56), 0.12, 0.12);
+    QPainterPath tail;
+    tail.moveTo(0.26, 0.66);
+    tail.lineTo(0.16, 0.90);
+    tail.lineTo(0.42, 0.68);
+    tail.closeSubpath();
+    balloon = balloon.united(tail);
+    p.setPen(Qt::NoPen);
+    p.setBrush(QColor(0x1a, 0x1a, 0x1a));
+    p.drawPath(balloon.translated(0.03, 0.04));
+    p.setPen(strokePen(QColor(0x11, 0x11, 0x11), 0.045));
+    p.setBrush(QColor(0x79, 0xc3, 0xf2));
+    p.drawPath(balloon);
+    QFont font;
+    font.setBold(true);
+    font.setWeight(QFont::Black);
+    font.setPixelSize(32);
+    QPainterPath text;
+    text.addText(0, 0, font, QStringLiteral("TY"));
+    const QRectF box = text.boundingRect();
+    const qreal scale = qMin(0.30 / box.height(), 0.62 / box.width());
+    QTransform place;
+    place.translate(0.5 - box.center().x() * scale, 0.43 - box.center().y() * scale);
+    place.scale(scale, scale);
+    const QPainterPath letters = place.map(text);
+    p.setPen(strokePen(QColor(0x11, 0x11, 0x11), 0.05));
+    p.setBrush(QColor(0xe8, 0x43, 0x7b));
+    p.drawPath(letters);
+    p.restore();
+    paintSparkle(p, 0.88, 0.10, 0.08, QColor(0x11, 0x11, 0x11));
+}
+
 using PaintFn = void (*)(QPainter &);
 
 const QHash<QString, PaintFn> &painters()
@@ -540,6 +721,12 @@ const QHash<QString, PaintFn> &painters()
         {QStringLiteral("star"), paintStar},
         {QStringLiteral("rocket"), paintRocket},
         {QStringLiteral("check"), paintCheck},
+        {QStringLiteral("hearthands"), paintHeartHands},
+        {QStringLiteral("sparkleheart"), paintSparkleHeart},
+        {QStringLiteral("handshake"), paintHandshake},
+        {QStringLiteral("glowstar"), paintGlowStar},
+        {QStringLiteral("trophy"), paintTrophy},
+        {QStringLiteral("thankyou"), paintThankYouSticker},
     };
     return kPainters;
 }
@@ -553,6 +740,10 @@ QString displayName(const QString &value)
         if (canonical == entry.value)
             return entry.label;
     }
+    // A web custom reaction ("custom:party-parrot") has no drawing here; its
+    // chip falls back to the name.
+    if (value.startsWith(QLatin1String("custom:")))
+        return QLatin1Char(':') + value.mid(7) + QLatin1Char(':');
     return value;
 }
 

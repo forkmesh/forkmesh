@@ -5922,7 +5922,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents", "reactions"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -17889,6 +17889,16 @@
 
   // <img width="120"> has no markdown spelling, so flattenMarkdownHtml() parks
   // the declared width in a "#w=" fragment and it is read back here.
+  // A GIF from GIPHY's media hosts (what the composer's GIF picker inserts)
+  // gets a still frame for prefers-reduced-motion and a play/pause control;
+  // every other image keeps the plain rendering below.
+  const MD_GIPHY_GIF = /^https:\/\/media[0-4]?\.giphy\.com\/media\/(?:v1\.[A-Za-z0-9_=.-]{1,200}\/)?[A-Za-z0-9]{4,64}\/(?:giphy|200|200w|giphy-downsized)\.gif$/;
+
+  function mdGifHtml(alt, source) {
+    const still = source.replace(/\.gif$/, "_s.gif");
+    return `<span class="fm-gif" data-fm-gif role="button" tabindex="0" aria-label="GIF: ${alt || "animated image"}. Press to play or pause."><picture><source srcset="${still}" media="(prefers-reduced-motion: reduce)" data-fm-gif-still><img src="${source}" alt="${alt}" class="my-2 inline-block max-w-full rounded-md border border-border" loading="lazy" decoding="async" referrerpolicy="no-referrer" /></picture><span class="fm-gif-badge" aria-hidden="true">GIF</span></span>`;
+  }
+
   function mdImageHtml(alt, url, context) {
     if (MD_VIDEO_URL.test(String(url || "").trim())) {
       return `<video src="${String(url).trim()}" controls preload="metadata" playsinline aria-label="${alt}" class="${MD_VIDEO_CLASS}"></video>`;
@@ -17897,6 +17907,7 @@
     const target = hint ? url.slice(0, hint.index) : url;
     const source = mdImageSource(target, context);
     if (!source || source === "#") return alt;
+    if (!hint && MD_GIPHY_GIF.test(source)) return mdGifHtml(alt, source);
     const svg = Boolean(context?.repo) && /\.svg$/i.test(String(target || "").split(/[?#]/)[0])
       && !/^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i.test(String(target || ""));
     const size = hint ? ` width="${hint[1]}"${hint[2] ? ` height="${hint[2]}"` : ""}` : "";
@@ -19303,6 +19314,8 @@
     thinking: "\u{1F914}", surprised: "\u{1F62E}", sad: "\u{1F622}",
     angry: "\u{1F621}", dislike: "\u{1F44E}", eyes: "\u{1F440}",
     star: "\u2B50", rocket: "\u{1F680}", check: "\u2705",
+    hearthands: "\u{1FAF6}", sparkleheart: "\u{1F496}", handshake: "\u{1F91D}",
+    glowstar: "\u{1F31F}", trophy: "\u{1F3C6}", thankyou: "\u{1F4AC}",
   });
 
   // Live reactions per event id. A reaction is an ordinary signed event naming
@@ -19355,8 +19368,20 @@
     ["star", "Star", "favorite"],
     ["rocket", "Rocket", "ship launch"],
     ["check", "Done", "check tick yes"],
+    ["hearthands", "Heart hands", "thanks grateful love appreciate"],
+    ["sparkleheart", "Sparkling heart", "thanks love sparkle grateful"],
+    ["handshake", "Handshake", "thanks deal agree team"],
+    ["glowstar", "Glowing star", "thanks star great shine"],
+    ["trophy", "Trophy", "thanks winner award champion"],
+    ["thankyou", "Thank you", "thanks sticker thx ty grateful"],
   ]);
   const COMMENT_REACTION_QUICK = Object.freeze(["like", "love", "laugh", "celebrate", "eyes", "rocket"]);
+  // The gratitude group: the picker's second row, and "thankyou" is what the
+  // bar's "Say thanks" button adds. Stickers are drawn from their own image
+  // (same origin, /assets/reactions/) instead of an emoji glyph.
+  const COMMENT_REACTION_GRATITUDE = Object.freeze(["thanks", "hearthands", "sparkleheart", "handshake", "glowstar", "trophy", "thankyou"]);
+  const COMMENT_REACTION_STICKERS = Object.freeze({ thankyou: "/assets/reactions/thank-you.svg" });
+  const COMMENT_REACTION_CUSTOM_RE = /^custom:[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
   const COMMENT_REACTION_KINDS = Object.freeze({ issues: "issue", pulls: "pull", discussions: "discussion" });
 
   function commentReactionSubject(kind, number) {
@@ -19365,23 +19390,60 @@
     return name && Number.isInteger(value) && value > 0 ? `${name}:${value}` : "";
   }
 
-  function commentReactionLabel(emoji) {
+  function commentReactionLabel(emoji, custom) {
     const entry = COMMENT_REACTIONS.find((row) => row[0] === emoji);
-    return entry ? entry[1] : String(emoji || "");
+    if (entry) return entry[1];
+    const text = String(emoji || "");
+    if (!COMMENT_REACTION_CUSTOM_RE.test(text)) return text;
+    const known = custom || state.customReactions?.items?.[text];
+    return known?.label ? String(known.label) : text.slice(7);
+  }
+
+  function commentReactionKnown(emoji) {
+    return Boolean(ISSUE_REACTION_EMOJI[emoji]) || COMMENT_REACTION_CUSTOM_RE.test(String(emoji || ""));
+  }
+
+  // Same-origin image paths only: a custom reaction's src comes from this
+  // instance's /api/reactions/custom/asset/ and a sticker's from /assets/reactions/.
+  function commentReactionSafeSrc(src) {
+    const text = String(src || "");
+    return /^\/(?:api\/reactions\/custom\/asset\/[0-9a-f]{40}\.(?:svg|png|gif|webp)|assets\/reactions\/[a-z0-9-]+\.svg)$/.test(text) ? text : "";
+  }
+
+  // The glyph inside a chip or a picker cell: the emoji, a sticker or custom
+  // image, or for a custom reaction that was deleted, its name as text.
+  function commentReactionGlyph(emoji, custom, size = 18) {
+    const sticker = COMMENT_REACTION_STICKERS[emoji];
+    if (sticker) return `<img src="${sticker}" alt="" width="${size}" height="${size}" class="fm-reaction-img" decoding="async" draggable="false">`;
+    if (COMMENT_REACTION_CUSTOM_RE.test(String(emoji || ""))) {
+      const src = commentReactionSafeSrc(custom?.src);
+      if (!src) return `<span class="fm-reaction-fallback">:${escapeHtml(String(emoji).slice(7))}:</span>`;
+      const animated = commentReactionSafeSrc(custom?.animatedSrc);
+      return `<img src="${src}"${animated ? ` data-reaction-animated="${animated}"` : ""} alt="" width="${size}" height="${size}" class="fm-reaction-img" decoding="async" draggable="false">`;
+    }
+    return escapeHtml(ISSUE_REACTION_EMOJI[emoji] || emoji);
   }
 
   function commentReactionTallies(subject, comment, ledger) {
     const stored = state.commentReactions?.[subject]?.reactions?.[comment];
     const tallies = (Array.isArray(stored) ? stored : [])
-      .filter((tally) => tally && ISSUE_REACTION_EMOJI[tally.emoji])
-      .map((tally) => ({
-        emoji: String(tally.emoji),
-        count: Math.max(0, Math.floor(Number(tally.count) || 0)),
-        mine: tally.mine === true,
-        people: (Array.isArray(tally.people) ? tally.people : [])
-          .filter((person) => person && person.name)
-          .map((person) => ({ name: String(person.name), agent: person.agent === true })),
-      }));
+      .filter((tally) => tally && commentReactionKnown(tally.emoji))
+      .map((tally) => {
+        const out = {
+          emoji: String(tally.emoji),
+          count: Math.max(0, Math.floor(Number(tally.count) || 0)),
+          mine: tally.mine === true,
+          people: (Array.isArray(tally.people) ? tally.people : [])
+            .filter((person) => person && person.name)
+            .map((person) => ({ name: String(person.name), agent: person.agent === true })),
+        };
+        if (COMMENT_REACTION_CUSTOM_RE.test(out.emoji)) {
+          out.custom = tally.custom && typeof tally.custom === "object"
+            ? { label: String(tally.custom.label || ""), src: String(tally.custom.src || ""), animatedSrc: String(tally.custom.animatedSrc || "") }
+            : null;
+        }
+        return out;
+      });
     for (const entry of Array.isArray(ledger) ? ledger : []) {
       let tally = tallies.find((item) => item.emoji === String(entry.value));
       if (!tally) {
@@ -19405,12 +19467,25 @@
     const list = names.length > 1
       ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`
       : names.join("");
-    return `${list} reacted with ${commentReactionLabel(tally.emoji)}`;
+    return `${list} reacted with ${commentReactionLabel(tally.emoji, tally.custom)}`;
   }
 
   function renderCommentReactionChip(tally) {
     const agent = tally.people.some((person) => person.agent);
-    return `<button type="button" data-reaction="${escapeHtml(tally.emoji)}" aria-pressed="${tally.mine ? "true" : "false"}" aria-label="${escapeHtml(`${commentReactionLabel(tally.emoji)} ${tally.count}: ${commentReactionWho(tally)}`)}" class="fm-reaction${agent ? " fm-reaction-agent" : ""}"><span aria-hidden="true" class="fm-reaction-emoji">${escapeHtml(ISSUE_REACTION_EMOJI[tally.emoji] || tally.emoji)}</span><span class="fm-reaction-count">${escapeHtml(formatCount(tally.count))}</span></button>`;
+    return `<button type="button" data-reaction="${escapeHtml(tally.emoji)}" aria-pressed="${tally.mine ? "true" : "false"}" aria-label="${escapeHtml(`${commentReactionLabel(tally.emoji, tally.custom)} ${tally.count}: ${commentReactionWho(tally)}`)}" class="fm-reaction${agent ? " fm-reaction-agent" : ""}"><span aria-hidden="true" class="fm-reaction-emoji">${commentReactionGlyph(tally.emoji, tally.custom)}</span><span class="fm-reaction-count">${escapeHtml(formatCount(tally.count))}</span></button>`;
+  }
+
+  // The extras after the chips: "Say thanks" (adds the Thank you sticker;
+  // gone once the viewer has), and, once the page knows them, a tipped
+  // count and a Tip button for an author with a public Solana address.
+  function renderCommentReactionExtras(subject, comment, tallies) {
+    const thanked = tallies.some((tally) => tally.emoji === "thankyou" && tally.mine);
+    const thanks = thanked ? "" : `<button type="button" data-reaction-thanks aria-label="Say thanks" title="Say thanks" class="fm-reaction-thanks"><img src="${COMMENT_REACTION_STICKERS.thankyou}" alt="" width="18" height="18" class="fm-reaction-img" decoding="async" draggable="false"><span class="fm-reaction-thanks-label">Say thanks</span></button>`;
+    const tips = Number(state.commentTips?.[subject]?.[comment]) || 0;
+    const tipped = tips > 0 ? `<span data-comment-tipped class="fm-reaction-tipped" title="${escapeHtml(`Tipped ${tips} time${tips === 1 ? "" : "s"}`)}"><span aria-hidden="true">\u{1F4B8}</span> tipped${tips > 1 ? ` <span class="fm-reaction-count">${escapeHtml(formatCount(tips))}</span>` : ""}</span>` : "";
+    const author = typeof commentTipAuthor === "function" ? commentTipAuthor(subject, comment) : "";
+    const tip = author ? `<button type="button" data-comment-tip="${escapeHtml(author)}" aria-label="${escapeHtml(`Tip @${author} in Solana`)}" aria-haspopup="dialog" class="fm-reaction-tip"><span aria-hidden="true">\u25CE</span><span>Tip</span></button>` : "";
+    return `${thanks}${tipped}${tip}`;
   }
 
   function renderCommentReactionBar(subject, comment, ledger = null, extraClass = "") {
@@ -19419,8 +19494,9 @@
       if (!state.commentReactionLedger) state.commentReactionLedger = {};
       state.commentReactionLedger[`${subject}\u0000${comment}`] = ledger;
     }
-    const chips = commentReactionTallies(subject, comment, ledger).map(renderCommentReactionChip).join("");
-    return `<div data-comment-reactions="${escapeHtml(subject)}" data-comment-id="${escapeHtml(comment)}" role="group" aria-label="Reactions" class="fm-reactions${extraClass ? ` ${extraClass}` : ""}">${chips}<button type="button" data-reaction-add aria-label="Add reaction" aria-haspopup="dialog" aria-expanded="false" class="fm-reaction-add"><i data-lucide="smile-plus" class="h-4 w-4"></i></button></div>`;
+    const tallies = commentReactionTallies(subject, comment, ledger);
+    const chips = tallies.map(renderCommentReactionChip).join("");
+    return `<div data-comment-reactions="${escapeHtml(subject)}" data-comment-id="${escapeHtml(comment)}" role="group" aria-label="Reactions" class="fm-reactions${extraClass ? ` ${extraClass}` : ""}">${chips}${renderCommentReactionExtras(subject, comment, tallies)}<button type="button" data-reaction-add aria-label="Add reaction" aria-haspopup="dialog" aria-expanded="false" class="fm-reaction-add"><i data-lucide="smile-plus" class="h-4 w-4"></i></button></div>`;
   }
 
   function issueEventDescription(ev) {
@@ -27598,6 +27674,7 @@
     container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
+    if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
   }
 
   async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
@@ -27785,6 +27862,8 @@
       state.repoRecordDetail = { repo, kind, number, parsed };
       container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
       if (kind === "issues") mountIssueStickyHeader(container);
+      // The authors are known now: look up who can be tipped.
+      if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
         if (commentBody) commentBody.value = commentDraft;
@@ -49550,6 +49629,422 @@
     return loadDashboardChunk("challenges").then((chunk) => chunk.initChallengesPage(...args));
   }
 
+  // GIFs and stickers in comment composers (docs/app/comment-gifs.md).
+  //
+  // Every record composer (a textarea marked data-mention-input="record":
+  // issue, pull request and discussion comments, replies, reviews, edits)
+  // gets a Sticker button and, when the instance has a GIPHY key, a GIF
+  // button. Both open one picker that inserts Markdown at the caret. GIF
+  // searches go through /api/gifs/* so the key never reaches the browser,
+  // and the picker shows "Powered by GIPHY" as GIPHY's terms ask. A GIF
+  // reply (from the reaction picker) drops the GIF into the record's
+  // composer and sends it. Rendered GIFs (mdGifHtml) can be paused, and show
+  // a still frame under prefers-reduced-motion until hovered or pressed.
+  const COMMENT_GIF_SEARCH_DELAY_MS = 350;
+  const COMMENT_GIF_ATTRIBUTION = "Powered by GIPHY";
+  const commentGifUi = {
+    config: null,
+    configLoad: null,
+    picker: null,
+    searchTimer: 0,
+    observer: null,
+    queued: false,
+  };
+
+  function commentGifsEnabled() {
+    return commentGifUi.config?.enabled === true;
+  }
+
+  async function loadCommentGifConfig() {
+    if (commentGifUi.config) return commentGifUi.config;
+    if (commentGifUi.configLoad) return commentGifUi.configLoad;
+    commentGifUi.configLoad = (async () => {
+      try {
+        const data = await fetchJson("/api/gifs/config");
+        commentGifUi.config = { enabled: data?.enabled === true, rating: String(data?.rating || "pg") };
+      } catch (_) {
+        commentGifUi.config = { enabled: false, rating: "pg" };
+      }
+      document.querySelectorAll("[data-composer-gif]").forEach((button) => { button.hidden = !commentGifsEnabled(); });
+      return commentGifUi.config;
+    })();
+    return commentGifUi.configLoad;
+  }
+
+  function commentComposerToolHtml(kind) {
+    if (kind === "gif") {
+      return `<button type="button" data-composer-gif hidden aria-label="Add a GIF" title="Add a GIF" aria-haspopup="dialog" class="fm-composer-media"><span class="fm-gif-chip" aria-hidden="true">GIF</span></button>`;
+    }
+    return `<button type="button" data-composer-sticker aria-label="Add a sticker" title="Add a sticker" aria-haspopup="dialog" class="fm-composer-media"><i data-lucide="sticker" class="h-4 w-4"></i></button>`;
+  }
+
+  // Adds the Sticker and GIF buttons to every record composer on the page
+  // that does not have them yet: in the issue composer's toolbar, else in a
+  // small row under the text box.
+  function decorateCommentComposers() {
+    commentGifUi.queued = false;
+    if (!state.session?.sessionToken) return;
+    let added = false;
+    document.querySelectorAll('textarea[data-mention-input="record"]:not([data-composer-media])').forEach((textarea) => {
+      textarea.setAttribute("data-composer-media", "");
+      const tools = `${commentComposerToolHtml("sticker")}${commentComposerToolHtml("gif")}`;
+      const toolbar = textarea.closest("form")?.querySelector("[data-repo-issue-comment-toolbar]");
+      if (toolbar && !toolbar.querySelector("[data-composer-sticker]")) {
+        toolbar.insertAdjacentHTML("beforeend", `<span aria-hidden="true" class="mx-1 h-4 w-px bg-border"></span>${tools}`);
+      } else if (!toolbar) {
+        const row = document.createElement("div");
+        row.className = "fm-composer-media-row";
+        row.innerHTML = tools;
+        const after = textarea.parentElement?.tagName === "LABEL" ? textarea.parentElement : textarea;
+        after.insertAdjacentElement("afterend", row);
+      }
+      added = true;
+    });
+    if (!added) return;
+    document.querySelectorAll("[data-composer-gif]").forEach((button) => { button.hidden = !commentGifsEnabled(); });
+    window.lucide?.createIcons();
+    void loadCommentGifConfig();
+  }
+
+  function queueComposerDecoration() {
+    if (commentGifUi.queued) return;
+    commentGifUi.queued = true;
+    requestAnimationFrame(decorateCommentComposers);
+  }
+
+  function composerTextareaFor(button) {
+    const form = button.closest("form");
+    const scoped = form?.querySelector('textarea[data-mention-input="record"]');
+    if (scoped) return scoped;
+    const row = button.closest(".fm-composer-media-row");
+    const before = row?.previousElementSibling;
+    return before?.matches?.("textarea") ? before : before?.querySelector?.("textarea") || null;
+  }
+
+  function insertIntoComposer(textarea, markdown) {
+    if (!textarea) return;
+    const { selectionStart: start = textarea.value.length, selectionEnd: end = textarea.value.length, value } = textarea;
+    const before = value.slice(0, start);
+    const lead = before && !before.endsWith("\n") ? "\n" : "";
+    const text = `${lead}${markdown}\n`;
+    textarea.value = `${before}${text}${value.slice(end)}`;
+    const caret = start + text.length;
+    textarea.focus();
+    textarea.setSelectionRange(caret, caret);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function gifMarkdown(gif) {
+    const title = String(gif.title || "GIF").replace(/[[\]\n]/g, " ").trim() || "GIF";
+    return `![${title}](${gif.url})`;
+  }
+
+  function stickerMarkdown(sticker) {
+    const label = String(sticker.label || "Sticker").replace(/[[\]\n]/g, " ").trim() || "Sticker";
+    return `![${label}](${sticker.src}#w=96)`;
+  }
+
+  function commentStickers() {
+    const builtIn = Object.entries(COMMENT_REACTION_STICKERS).map(([slug, src]) => ({ id: slug, label: commentReactionLabel(slug), src }));
+    const custom = Object.values(state.customReactions?.items || {}).map((item) => ({ id: item.emoji, label: item.label, src: item.src }));
+    return builtIn.concat(custom);
+  }
+
+  function gifPreviewHtml(gif) {
+    const motion = commentReactionMotionOk();
+    const src = motion ? gif.preview : gif.still;
+    return `<button type="button" data-gif-pick="${escapeHtml(gif.id)}" class="fm-gif-pick" aria-label="${escapeHtml(gif.title)}" title="${escapeHtml(gif.title)}"><img src="${escapeHtml(src)}" data-gif-preview="${escapeHtml(gif.preview)}" data-gif-still="${escapeHtml(gif.still)}" alt="" width="${Number(gif.width) || 200}" height="${Number(gif.height) || 200}" loading="lazy" decoding="async" referrerpolicy="no-referrer"></button>`;
+  }
+
+  function stickerPickHtml(sticker) {
+    return `<button type="button" data-sticker-pick="${escapeHtml(sticker.id)}" class="fm-sticker-pick" aria-label="${escapeHtml(sticker.label)}" title="${escapeHtml(sticker.label)}"><img src="${escapeHtml(sticker.src)}" alt="" width="72" height="72" decoding="async"></button>`;
+  }
+
+  function renderGifPickerBody(picker) {
+    const body = picker.el.querySelector("[data-gif-body]");
+    if (!body) return;
+    if (picker.tab === "stickers") {
+      const stickers = commentStickers();
+      picker.stickers = stickers;
+      body.innerHTML = stickers.length
+        ? `<div class="fm-sticker-grid" role="list">${stickers.map(stickerPickHtml).join("")}</div>`
+        : '<p class="fm-gif-empty">No stickers here yet.</p>';
+      return;
+    }
+    if (picker.loading && !picker.gifs.length) {
+      body.innerHTML = '<p class="fm-gif-empty" role="status">Loading GIFs…</p>';
+      return;
+    }
+    if (picker.error) {
+      body.innerHTML = `<p class="fm-gif-empty" role="status">${escapeHtml(picker.error)}</p>`;
+      return;
+    }
+    if (!picker.gifs.length) {
+      body.innerHTML = `<p class="fm-gif-empty" role="status">${picker.query ? `No GIFs for "${escapeHtml(picker.query)}".` : "No GIFs right now."}</p>`;
+      return;
+    }
+    body.innerHTML = `<div class="fm-gif-grid">${picker.gifs.map(gifPreviewHtml).join("")}</div>${picker.next != null ? '<button type="button" data-gif-more class="fm-btn fm-btn-sm fm-gif-more">More GIFs</button>' : ""}`;
+  }
+
+  async function loadGifPage(picker, append = false) {
+    const query = picker.query;
+    const offset = append ? picker.next || 0 : 0;
+    const path = query
+      ? `/api/gifs/search?q=${encodeURIComponent(query)}&offset=${offset}`
+      : `/api/gifs/trending?offset=${offset}`;
+    picker.loading = true;
+    picker.error = "";
+    if (!append) {
+      picker.gifs = [];
+      renderGifPickerBody(picker);
+    }
+    const ticket = (picker.ticket = (picker.ticket || 0) + 1);
+    try {
+      const data = await fetchJson(path);
+      if (ticket !== picker.ticket || commentGifUi.picker !== picker) return;
+      const gifs = (Array.isArray(data?.gifs) ? data.gifs : []).filter((gif) => gif && MD_GIPHY_GIF.test(String(gif.url || "")));
+      picker.gifs = append ? picker.gifs.concat(gifs) : gifs;
+      picker.next = Number.isInteger(data?.next) ? data.next : null;
+    } catch (error) {
+      if (ticket !== picker.ticket) return;
+      picker.error = /429/.test(String(error?.message || "")) ? "Too many searches - wait a moment." : "GIFs are unavailable right now.";
+    } finally {
+      if (ticket === picker.ticket) picker.loading = false;
+    }
+    if (commentGifUi.picker === picker && picker.tab === "gifs") renderGifPickerBody(picker);
+  }
+
+  function closeGifPicker(restoreFocus = false) {
+    const picker = commentGifUi.picker;
+    if (!picker) return;
+    commentGifUi.picker = null;
+    clearTimeout(commentGifUi.searchTimer);
+    picker.el.remove();
+    picker.anchor?.setAttribute?.("aria-expanded", "false");
+    if (restoreFocus && picker.anchor?.isConnected) picker.anchor.focus();
+  }
+
+  // One picker for GIFs and stickers. onPick receives {kind, markdown, gif}.
+  function openGifPicker({ anchor, tab = "gifs", title = "Add to your comment", onPick }) {
+    closeGifPicker();
+    if (typeof closeCommentReactionPicker === "function") closeCommentReactionPicker();
+    const gifs = commentGifsEnabled();
+    const picker = { anchor, tab: gifs ? tab : "stickers", query: "", gifs: [], next: null, loading: false, error: "", onPick };
+    const el = document.createElement("div");
+    el.className = "fm-popover fm-gif-picker";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-label", title);
+    const tabs = gifs
+      ? `<div class="fm-segmented fm-gif-tabs" role="tablist" aria-label="Media"><button type="button" role="tab" data-gif-tab="gifs" aria-selected="${picker.tab === "gifs"}" aria-pressed="${picker.tab === "gifs"}">GIFs</button><button type="button" role="tab" data-gif-tab="stickers" aria-selected="${picker.tab === "stickers"}" aria-pressed="${picker.tab === "stickers"}">Stickers</button></div>`
+      : '<div class="fm-gif-heading">Stickers</div>';
+    el.innerHTML = `<div class="fm-gif-head">${tabs}<button type="button" data-gif-close class="fm-gif-close" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>${gifs ? `<input type="search" data-gif-search class="fm-reaction-search" placeholder="Search GIPHY" aria-label="Search GIFs" autocomplete="off" spellcheck="false"${picker.tab === "gifs" ? "" : " hidden"}>` : ""}<div data-gif-body class="fm-gif-body" aria-live="polite"></div>${gifs ? `<div class="fm-gif-attribution" data-gif-attribution${picker.tab === "gifs" ? "" : " hidden"}>${COMMENT_GIF_ATTRIBUTION}</div>` : ""}`;
+    document.body.append(el);
+    commentGifUi.picker = Object.assign(picker, { el });
+    anchor?.setAttribute?.("aria-expanded", "true");
+    window.lucide?.createIcons();
+    commentReactionPlace(el, anchor, "below");
+    if (picker.tab === "gifs") void loadGifPage(picker);
+    else renderGifPickerBody(picker);
+    void loadCustomReactions().then((changed) => {
+      if (changed && commentGifUi.picker === picker && picker.tab === "stickers") renderGifPickerBody(picker);
+    });
+    const search = el.querySelector("[data-gif-search]");
+    if (search && picker.tab === "gifs" && !window.matchMedia?.("(max-width: 640px)").matches) search.focus();
+    else el.querySelector("[data-gif-tab], [data-sticker-pick], [data-gif-close]")?.focus();
+    search?.addEventListener("input", () => {
+      clearTimeout(commentGifUi.searchTimer);
+      commentGifUi.searchTimer = setTimeout(() => {
+        picker.query = search.value.trim().slice(0, 50);
+        void loadGifPage(picker);
+      }, COMMENT_GIF_SEARCH_DELAY_MS);
+    });
+    el.addEventListener("click", (event) => {
+      const tabButton = event.target.closest?.("[data-gif-tab]");
+      if (tabButton) {
+        picker.tab = tabButton.getAttribute("data-gif-tab");
+        el.querySelectorAll("[data-gif-tab]").forEach((button) => {
+          const on = button === tabButton;
+          button.setAttribute("aria-selected", String(on));
+          button.setAttribute("aria-pressed", String(on));
+        });
+        if (search) search.hidden = picker.tab !== "gifs";
+        const credit = el.querySelector("[data-gif-attribution]");
+        if (credit) credit.hidden = picker.tab !== "gifs";
+        if (picker.tab === "gifs" && !picker.gifs.length) void loadGifPage(picker);
+        else renderGifPickerBody(picker);
+        return;
+      }
+      if (event.target.closest?.("[data-gif-close]")) {
+        closeGifPicker(true);
+        return;
+      }
+      if (event.target.closest?.("[data-gif-more]")) {
+        void loadGifPage(picker, true);
+        return;
+      }
+      const gifButton = event.target.closest?.("[data-gif-pick]");
+      if (gifButton) {
+        const gif = picker.gifs.find((item) => item.id === gifButton.getAttribute("data-gif-pick"));
+        if (!gif) return;
+        closeGifPicker(false);
+        picker.onPick?.({ kind: "gif", markdown: gifMarkdown(gif), gif });
+        return;
+      }
+      const stickerButton = event.target.closest?.("[data-sticker-pick]");
+      if (stickerButton) {
+        const sticker = (picker.stickers || []).find((item) => item.id === stickerButton.getAttribute("data-sticker-pick"));
+        if (!sticker) return;
+        closeGifPicker(false);
+        picker.onPick?.({ kind: "sticker", markdown: stickerMarkdown(sticker), sticker });
+      }
+    });
+    el.addEventListener("pointerover", (event) => gifPreviewMotion(event.target, true));
+    el.addEventListener("pointerout", (event) => gifPreviewMotion(event.target, false));
+    el.addEventListener("focusin", (event) => gifPreviewMotion(event.target, true));
+    el.addEventListener("focusout", (event) => gifPreviewMotion(event.target, false));
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeGifPicker(true);
+        return;
+      }
+      const cells = [...el.querySelectorAll("[data-gif-pick], [data-sticker-pick]")];
+      const index = cells.indexOf(document.activeElement);
+      if (index < 0 || !["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"].includes(event.key)) return;
+      event.preventDefault();
+      const columns = Math.max(1, Math.round(el.querySelector(".fm-gif-grid, .fm-sticker-grid")?.clientWidth / (cells[0]?.offsetWidth || 1)) || 1);
+      const step = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: columns, ArrowUp: -columns }[event.key];
+      cells[Math.max(0, Math.min(cells.length - 1, index + step))]?.focus();
+    });
+  }
+
+  // Previews are stills under reduced motion; hovering or focusing one plays
+  // just that one.
+  function gifPreviewMotion(target, on) {
+    const image = target?.closest?.("[data-gif-pick]")?.querySelector("img");
+    if (!image || commentReactionMotionOk()) return;
+    image.src = on ? image.dataset.gifPreview : image.dataset.gifStill;
+  }
+
+  // The record's own composer and its send button, for a one-click GIF reply.
+  function commentGifComposer() {
+    const forms = [
+      ["[data-repo-issue-comment-form]", "[data-repo-issue-comment-submit]"],
+      ["[data-repo-discussion-reply-form]", "[data-repo-discussion-reply-submit]"],
+      ["[data-repo-pull-review-form]", '[data-repo-pull-review-action="comment"]'],
+    ];
+    for (const [formSelector, submitSelector] of forms) {
+      const form = document.querySelector(formSelector);
+      const textarea = form?.querySelector('textarea[data-mention-input="record"]');
+      if (form && textarea) return { form, textarea, submit: form.querySelector(submitSelector) };
+    }
+    return null;
+  }
+
+  function openGifReply(bar, anchor) {
+    if (!state.session?.sessionToken) {
+      showCommentReactionNotice(bar, "signin");
+      return;
+    }
+    const subject = bar.getAttribute("data-comment-reactions") || "";
+    const comment = bar.getAttribute("data-comment-id") || "";
+    openGifPicker({
+      anchor: anchor?.isConnected ? anchor : bar.querySelector("[data-reaction-add]"),
+      title: "Reply with a GIF",
+      onPick: ({ markdown }) => {
+        const composer = commentGifComposer();
+        if (!composer) {
+          showCommentReactionNotice(bar, "Replies are closed here.");
+          return;
+        }
+        const author = commentReactionAuthor(subject, comment).toLowerCase();
+        const me = String(state.session?.nodeName || "").toLowerCase();
+        const mention = author && author !== me && /^[a-z0-9][a-z0-9-]{0,62}$/.test(author) ? `@${author} ` : "";
+        // A draft in progress is never replaced or sent: the GIF joins it.
+        if (composer.textarea.value.trim() || !composer.submit) {
+          insertIntoComposer(composer.textarea, `${mention}${markdown}`);
+          composer.textarea.scrollIntoView({ block: "center", behavior: commentReactionMotionOk() ? "smooth" : "auto" });
+          return;
+        }
+        composer.textarea.value = `${mention}${markdown}`;
+        composer.textarea.dispatchEvent(new Event("input", { bubbles: true }));
+        if (typeof composer.form.requestSubmit === "function") composer.form.requestSubmit(composer.submit);
+        else composer.submit.click();
+      },
+    });
+  }
+
+  // Play/pause for rendered GIFs: the <source> carries the still frame for
+  // reduced motion; "all" pins the still, "not all" pins the animation.
+  function commentGifPlaying(holder) {
+    const source = holder.querySelector("[data-fm-gif-still]");
+    const media = source?.getAttribute("media") || "";
+    if (media === "all") return false;
+    if (media === "not all") return true;
+    return commentReactionMotionOk();
+  }
+
+  function setCommentGifPlaying(holder, playing) {
+    const source = holder.querySelector("[data-fm-gif-still]");
+    if (!source) return;
+    source.setAttribute("media", playing ? "not all" : "all");
+    holder.setAttribute("aria-pressed", String(playing));
+    holder.classList.toggle("fm-gif-paused", !playing);
+  }
+
+  function initCommentGifs() {
+    document.addEventListener("click", (event) => {
+      const sticker = event.target.closest?.("[data-composer-sticker]");
+      const gif = event.target.closest?.("[data-composer-gif]");
+      const button = sticker || gif;
+      if (button) {
+        event.preventDefault();
+        const textarea = composerTextareaFor(button);
+        if (commentGifUi.picker?.anchor === button) {
+          closeGifPicker(true);
+          return;
+        }
+        openGifPicker({
+          anchor: button,
+          tab: gif ? "gifs" : "stickers",
+          onPick: ({ markdown }) => insertIntoComposer(textarea, markdown),
+        });
+        return;
+      }
+      const holder = event.target.closest?.("[data-fm-gif]");
+      if (holder) {
+        event.preventDefault();
+        setCommentGifPlaying(holder, !commentGifPlaying(holder));
+        return;
+      }
+      if (commentGifUi.picker && !commentGifUi.picker.el.contains(event.target)) closeGifPicker();
+    });
+    document.addEventListener("keydown", (event) => {
+      const holder = event.target.closest?.("[data-fm-gif]");
+      if (!holder || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      setCommentGifPlaying(holder, !commentGifPlaying(holder));
+    });
+    // Under reduced motion a GIF plays only while it is hovered.
+    document.addEventListener("pointerover", (event) => {
+      const holder = event.target.closest?.("[data-fm-gif]");
+      if (!holder || commentReactionMotionOk() || holder.contains(event.relatedTarget)) return;
+      if (holder.querySelector("[data-fm-gif-still]")?.getAttribute("media") === "all") return;
+      holder.querySelector("[data-fm-gif-still]")?.setAttribute("media", "not all");
+    });
+    document.addEventListener("pointerout", (event) => {
+      const holder = event.target.closest?.("[data-fm-gif]");
+      if (!holder || holder.contains(event.relatedTarget) || commentReactionMotionOk()) return;
+      if (holder.getAttribute("aria-pressed") === "true") return;
+      holder.querySelector("[data-fm-gif-still]")?.setAttribute("media", "(prefers-reduced-motion: reduce)");
+    });
+    window.addEventListener("resize", () => closeGifPicker());
+    if (!state.session?.sessionToken) return;
+    void loadCommentGifConfig();
+    commentGifUi.observer = new MutationObserver(queueComposerDecoration);
+    commentGifUi.observer.observe(document.body, { childList: true, subtree: true });
+    queueComposerDecoration();
+  }
   const COMMENT_REACTION_LONG_PRESS_MS = 450;
   const COMMENT_REACTION_HOVER_MS = 300;
   const COMMENT_REACTION_NOTICE_MS = 2600;
@@ -49571,6 +50066,8 @@
     press: null,
     suppressClick: null,
     loads: new Map(),
+    customLoads: new Map(),
+    walletLoads: new Map(),
   };
 
   function commentReactionMotionOk() {
@@ -49627,7 +50124,12 @@
         if (!data || data.ok === false || !data.reactions || typeof data.reactions !== "object") return null;
         if (!state.commentReactions) state.commentReactions = {};
         state.commentReactions[subject] = { base, reactions: data.reactions, signedIn: data.signedIn === true };
+        if (data.tips && typeof data.tips === "object") {
+          if (!state.commentTips) state.commentTips = {};
+          state.commentTips[subject] = data.tips;
+        }
         refreshCommentReactionBars(subject);
+        if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(subject);
         return data;
       } catch (_) {
         return null;
@@ -49697,6 +50199,8 @@
     if (on) {
       if (!tally) {
         tally = { emoji, count: 0, mine: false, people: [] };
+        const custom = state.customReactions?.items?.[emoji];
+        if (custom) tally.custom = { label: custom.label, src: custom.src, animatedSrc: custom.animatedSrc || "" };
         tallies.push(tally);
       }
       if (!tally.mine) tally.count += 1;
@@ -49727,7 +50231,7 @@
     const comment = bar.getAttribute("data-comment-id") || "";
     const parts = commentReactionParts(subject);
     const repo = state.repoRecordDetail?.repo || state.selectedRepo;
-    if (!parts || !comment || !repo || !ISSUE_REACTION_EMOJI[emoji]) return;
+    if (!parts || !comment || !repo || !commentReactionKnown(emoji)) return;
     if (!state.session?.sessionToken) {
       showCommentReactionNotice(bar, "signin");
       return;
@@ -49788,7 +50292,9 @@
     for (let index = 0; index < 6; index += 1) {
       const angle = (Math.PI * 2 * index) / 6 - Math.PI / 2;
       const particle = document.createElement("span");
-      particle.textContent = ISSUE_REACTION_EMOJI[emoji] || "";
+      const image = chip.querySelector(".fm-reaction-img");
+      if (image) particle.append(Object.assign(image.cloneNode(false), { width: 14, height: 14 }));
+      else particle.textContent = ISSUE_REACTION_EMOJI[emoji] || "";
       particle.style.setProperty("--fm-dx", `${Math.round(Math.cos(angle) * 26)}px`);
       particle.style.setProperty("--fm-dy", `${Math.round(Math.sin(angle) * 26)}px`);
       particle.style.animationDelay = `${index * 12}ms`;
@@ -49860,7 +50366,7 @@
     const more = tally.count - Math.min(tally.people.length, COMMENT_REACTION_WHO_SHOWN);
     const verb = window.matchMedia?.("(pointer: coarse)").matches ? "Tap" : "Click";
     const hint = signedIn ? (tally.mine ? `${verb} to take yours back` : `${verb} to add yours`) : "Sign in to react";
-    return `<div class="fm-reaction-who-head"><span class="fm-reaction-who-stack">${stack}</span><span aria-hidden="true">${escapeHtml(ISSUE_REACTION_EMOJI[tally.emoji] || tally.emoji)}</span><span>${escapeHtml(commentReactionLabel(tally.emoji))} · ${escapeHtml(formatCount(tally.count))}</span></div><ul>${rows}</ul>${more > 0 ? `<div class="fm-reaction-who-more">and ${escapeHtml(formatCount(more))} more</div>` : ""}<div class="fm-reaction-who-hint">${hint}</div>`;
+    return `<div class="fm-reaction-who-head"><span class="fm-reaction-who-stack">${stack}</span><span aria-hidden="true" class="fm-reaction-who-glyph">${commentReactionGlyph(tally.emoji, tally.custom, 16)}</span><span>${escapeHtml(commentReactionLabel(tally.emoji, tally.custom))} · ${escapeHtml(formatCount(tally.count))}</span></div><ul>${rows}</ul>${more > 0 ? `<div class="fm-reaction-who-more">and ${escapeHtml(formatCount(more))} more</div>` : ""}<div class="fm-reaction-who-hint">${hint}</div>`;
   }
 
   function showCommentReactionWho(chip) {
@@ -49912,8 +50418,15 @@
     }, message === "signin" ? COMMENT_REACTION_NOTICE_MS * 2 : COMMENT_REACTION_NOTICE_MS);
   }
 
-  function commentReactionOptionHtml(slug, mine) {
-    return `<button type="button" role="gridcell" data-reaction-option="${escapeHtml(slug)}" aria-pressed="${mine.has(slug) ? "true" : "false"}" aria-label="${escapeHtml(commentReactionLabel(slug))}" title="${escapeHtml(commentReactionLabel(slug))}" class="fm-reaction-option">${escapeHtml(ISSUE_REACTION_EMOJI[slug] || slug)}</button>`;
+  function commentReactionOptionHtml(slug, mine, custom = null) {
+    const label = commentReactionLabel(slug, custom);
+    return `<button type="button" role="gridcell" data-reaction-option="${escapeHtml(slug)}" aria-pressed="${mine.has(slug) ? "true" : "false"}" aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}" class="fm-reaction-option">${commentReactionGlyph(slug, custom, 26)}</button>`;
+  }
+
+  function commentReactionSectionHtml(title, slugs, mine, customs = null) {
+    if (!slugs.length) return "";
+    const cells = slugs.map((slug) => commentReactionOptionHtml(slug, mine, customs?.[slug] || null)).join("");
+    return `<div class="fm-reaction-section" role="presentation">${escapeHtml(title)}</div><div role="row" class="fm-reaction-grid">${cells}</div>`;
   }
 
   function renderCommentReactionPicker(bar, query = "") {
@@ -49924,12 +50437,18 @@
     const needle = String(query || "").trim().toLowerCase();
     const matches = COMMENT_REACTIONS.filter(([slug, label, words]) => !needle
       || `${slug} ${label} ${words}`.toLowerCase().includes(needle));
-    const quick = needle ? "" : `<div role="row" class="fm-reaction-grid" data-reaction-quick>${COMMENT_REACTION_QUICK.map((slug) => commentReactionOptionHtml(slug, mine)).join("")}</div>`;
-    const rest = needle ? matches : matches.filter(([slug]) => !COMMENT_REACTION_QUICK.includes(slug));
-    const all = rest.length
-      ? `<div role="row" class="fm-reaction-grid">${rest.map(([slug]) => commentReactionOptionHtml(slug, mine)).join("")}</div>`
-      : `<p class="fm-reaction-picker-empty">No reaction matches "${escapeHtml(query)}".</p>`;
-    return `${quick}${all}`;
+    const customs = state.customReactions?.items || {};
+    const customMatches = Object.values(customs).filter((item) => !needle
+      || `${item.slug} ${item.label}`.toLowerCase().includes(needle)).map((item) => item.emoji);
+    if (needle) {
+      if (!matches.length && !customMatches.length) return `<p class="fm-reaction-picker-empty">No reaction matches "${escapeHtml(query)}".</p>`;
+      const found = matches.map(([slug]) => slug).concat(customMatches);
+      return `<div role="row" class="fm-reaction-grid">${found.map((slug) => commentReactionOptionHtml(slug, mine, customs[slug] || null)).join("")}</div>`;
+    }
+    const quick = `<div role="row" class="fm-reaction-grid" data-reaction-quick>${COMMENT_REACTION_QUICK.map((slug) => commentReactionOptionHtml(slug, mine)).join("")}</div>`;
+    const grouped = new Set([...COMMENT_REACTION_QUICK, ...COMMENT_REACTION_GRATITUDE]);
+    const rest = matches.map(([slug]) => slug).filter((slug) => !grouped.has(slug));
+    return `${quick}${commentReactionSectionHtml("Gratitude", [...COMMENT_REACTION_GRATITUDE], mine)}${commentReactionSectionHtml("This community", customMatches, mine, customs)}${commentReactionSectionHtml("More", rest, mine)}`;
   }
 
   function closeCommentReactionPicker(restoreFocus = false) {
@@ -49954,11 +50473,17 @@
     el.className = "fm-popover fm-reaction-picker";
     el.setAttribute("role", "dialog");
     el.setAttribute("aria-label", "Choose a reaction");
-    el.innerHTML = `<input type="search" data-reaction-search class="fm-reaction-search" placeholder="Search reactions" aria-label="Search reactions" autocomplete="off" spellcheck="false"><div role="grid" aria-label="Reactions" data-reaction-options>${renderCommentReactionPicker(bar)}</div><div class="fm-reaction-picker-label" data-reaction-picker-label aria-live="polite"></div>`;
+    const gifs = typeof commentGifsEnabled === "function" && commentGifsEnabled();
+    el.innerHTML = `<input type="search" data-reaction-search class="fm-reaction-search" placeholder="Search reactions" aria-label="Search reactions" autocomplete="off" spellcheck="false"><div role="grid" aria-label="Reactions" data-reaction-options class="fm-reaction-options">${renderCommentReactionPicker(bar)}</div><div class="fm-reaction-picker-label" data-reaction-picker-label aria-live="polite"></div>${gifs ? `<button type="button" data-reaction-gif-reply class="fm-reaction-gif-reply"><span class="fm-gif-chip" aria-hidden="true">GIF</span>Reply with a GIF</button>` : ""}`;
     document.body.append(el);
     commentReactionUi.picker = { el, bar, button };
     button.setAttribute("aria-expanded", "true");
     commentReactionPlace(el, button, "below");
+    void loadCustomReactions().then((changed) => {
+      if (!changed || commentReactionUi.picker?.el !== el) return;
+      const field = el.querySelector("[data-reaction-search]");
+      el.querySelector("[data-reaction-options]").innerHTML = renderCommentReactionPicker(bar, field?.value || "");
+    });
     const search = el.querySelector("[data-reaction-search]");
     const narrow = window.matchMedia?.("(max-width: 640px)").matches;
     if (narrow) el.querySelector("[data-reaction-option]")?.focus();
@@ -49977,6 +50502,12 @@
       if (option && label) label.textContent = option.getAttribute("aria-label") || "";
     });
     el.addEventListener("click", (event) => {
+      if (event.target.closest?.("[data-reaction-gif-reply]")) {
+        const target = commentReactionUi.picker?.bar || bar;
+        closeCommentReactionPicker(false);
+        if (typeof openGifReply === "function") openGifReply(target, button);
+        return;
+      }
       const option = event.target.closest?.("[data-reaction-option]");
       if (!option) return;
       const target = commentReactionUi.picker?.bar || bar;
@@ -50017,6 +50548,62 @@
     options[Math.max(0, Math.min(options.length - 1, next))].focus();
   }
 
+  // The merged custom reactions for the repository on screen (its owner's
+  // organization's and the instance's), fetched once per owner. Resolves
+  // true when the list changed.
+  async function loadCustomReactions() {
+    const repo = state.repoRecordDetail?.repo || state.selectedRepo;
+    const owner = String(repo?.owner || "").toLowerCase();
+    if (state.customReactions?.owner === owner && state.customReactions.loaded) return false;
+    if (commentReactionUi.customLoads.has(owner)) return commentReactionUi.customLoads.get(owner);
+    const load = (async () => {
+      try {
+        const data = await fetchJson(`/api/reactions/custom${owner ? `?owner=${encodeURIComponent(owner)}` : ""}`);
+        const items = {};
+        for (const item of Array.isArray(data?.reactions) ? data.reactions : []) {
+          if (!item || !COMMENT_REACTION_CUSTOM_RE.test(String(item.emoji || ""))) continue;
+          const src = commentReactionSafeSrc(item.src);
+          if (!src) continue;
+          items[item.emoji] = { emoji: String(item.emoji), slug: String(item.slug || ""), label: String(item.label || item.slug || ""), src, animatedSrc: commentReactionSafeSrc(item.animatedSrc) };
+        }
+        state.customReactions = { owner, items, loaded: true };
+        return Object.keys(items).length > 0;
+      } catch (_) {
+        state.customReactions = { owner, items: {}, loaded: true };
+        return false;
+      } finally {
+        commentReactionUi.customLoads.delete(owner);
+      }
+    })();
+    commentReactionUi.customLoads.set(owner, load);
+    return load;
+  }
+
+  // "Say thanks": one tap adds the Thank you sticker (never takes it back;
+  // the chip does that).
+  function sayCommentThanks(bar) {
+    if (!bar) return;
+    const subject = bar.getAttribute("data-comment-reactions") || "";
+    const comment = bar.getAttribute("data-comment-id") || "";
+    const mine = commentReactionTallies(subject, comment, commentReactionLedgerFor(subject, comment))
+      .some((tally) => tally.emoji === "thankyou" && tally.mine);
+    if (!mine) void toggleCommentReaction(bar, "thankyou");
+  }
+
+  // A custom reaction with an animated variant plays it while hovered (and
+  // never under reduced motion); the still image comes back on leave.
+  function commentReactionAnimate(target, on) {
+    const host = target?.closest?.("[data-reaction], [data-reaction-option]");
+    const image = host?.querySelector?.("img[data-reaction-animated]");
+    if (!image) return;
+    if (on && commentReactionMotionOk()) {
+      if (!image.dataset.reactionStill) image.dataset.reactionStill = image.getAttribute("src") || "";
+      image.setAttribute("src", image.dataset.reactionAnimated);
+    } else if (image.dataset.reactionStill) {
+      image.setAttribute("src", image.dataset.reactionStill);
+    }
+  }
+
   function commentReactionChipFrom(target) {
     const chip = target?.closest?.("[data-reaction]");
     return chip && chip.closest("[data-comment-reactions]") ? chip : null;
@@ -50025,6 +50612,18 @@
   function initCommentReactions() {
     seedCommentReactions();
     document.addEventListener("click", (event) => {
+      const thanks = event.target.closest?.("[data-comment-reactions] [data-reaction-thanks]");
+      if (thanks) {
+        event.preventDefault();
+        sayCommentThanks(thanks.closest("[data-comment-reactions]"));
+        return;
+      }
+      const tip = event.target.closest?.("[data-comment-reactions] [data-comment-tip]");
+      if (tip) {
+        event.preventDefault();
+        if (typeof openCommentTipSheet === "function") openCommentTipSheet(tip.closest("[data-comment-reactions]"), tip);
+        return;
+      }
       const add = event.target.closest?.("[data-comment-reactions] [data-reaction-add]");
       if (add) {
         event.preventDefault();
@@ -50047,6 +50646,7 @@
       if (commentReactionUi.picker && !commentReactionUi.picker.el.contains(event.target)) closeCommentReactionPicker();
     });
     document.addEventListener("pointerover", (event) => {
+      commentReactionAnimate(event.target, true);
       if (event.pointerType !== "mouse") return;
       const chip = commentReactionChipFrom(event.target);
       if (!chip || chip === commentReactionUi.whoChip) return;
@@ -50054,6 +50654,7 @@
       commentReactionUi.whoTimer = setTimeout(() => showCommentReactionWho(chip), COMMENT_REACTION_HOVER_MS);
     });
     document.addEventListener("pointerout", (event) => {
+      if (!event.target.closest?.("[data-reaction], [data-reaction-option]")?.contains(event.relatedTarget)) commentReactionAnimate(event.target, false);
       if (event.pointerType !== "mouse") return;
       const chip = commentReactionChipFrom(event.target);
       if (!chip || chip.contains(event.relatedTarget)) return;
@@ -50111,6 +50712,337 @@
       if (commentReactionUi.picker) commentReactionPlace(commentReactionUi.picker.el, commentReactionUi.picker.button, "below");
       hideCommentReactionWho();
     }, { passive: true });
+  }
+  // Tips on comments, wallet to wallet over Solana Pay
+  // (docs/app/comment-tips.md).
+  //
+  // An author with a Solana address on their profile (the public "solana"
+  // payout field) gets a Tip button on their comments. The sheet asks
+  // POST /api/repo/<o>/<r>/tips for a Solana Pay transfer request (a fresh
+  // reference key per request), shows it as a QR code (ForkMeshQR, as on the
+  // profile's tips card) and an "Open in wallet" link, then asks
+  // /api/tips/verify every few seconds while it is open. The tipper's wallet
+  // signs and sends; the forge never sees a key or holds funds.
+  const COMMENT_TIP_POLL_MS = 6000;
+  const COMMENT_TIP_POLL_LIMIT_MS = 3 * 60 * 1000;
+  const COMMENT_TIP_PRESETS = Object.freeze({ sol: ["0.01", "0.05", "0.1"], usdc: ["1", "5", "10"], token: ["10", "50", "100"] });
+  const COMMENT_TIP_AMOUNT_RE = /^\d{1,12}(?:\.\d{1,18})?$/;
+  const commentTipUi = { config: null, configLoad: null, sheet: null, loads: new Map() };
+
+  async function loadCommentTipConfig() {
+    if (commentTipUi.config) return commentTipUi.config;
+    if (commentTipUi.configLoad) return commentTipUi.configLoad;
+    commentTipUi.configLoad = (async () => {
+      try {
+        const data = await fetchJson("/api/tips/config");
+        commentTipUi.config = {
+          enabled: data?.enabled === true,
+          tokens: (Array.isArray(data?.tokens) ? data.tokens : []).filter((token) => token && token.id && token.symbol),
+          disclaimer: String(data?.disclaimer || "Tips go directly wallet to wallet; the forge never holds funds."),
+        };
+      } catch (_) {
+        commentTipUi.config = { enabled: false, tokens: [], disclaimer: "" };
+      }
+      return commentTipUi.config;
+    })();
+    return commentTipUi.configLoad;
+  }
+
+  // The comment's author when they can be tipped by this viewer: tips on,
+  // signed in, someone else, with a public address on their profile.
+  function commentTipAuthor(subject, comment) {
+    if (!commentTipUi.config?.enabled || !state.session?.sessionToken) return "";
+    const author = String(commentReactionAuthor(subject, comment) || "").toLowerCase();
+    if (!author || author === String(state.session?.nodeName || "").toLowerCase()) return "";
+    return state.commentTipWallets?.[author] ? author : "";
+  }
+
+  async function loadCommentTipWallets(subject) {
+    if (!state.session?.sessionToken) return;
+    const config = await loadCommentTipConfig();
+    if (!config.enabled) return;
+    const names = new Set();
+    document.querySelectorAll("[data-comment-reactions]").forEach((bar) => {
+      if (bar.getAttribute("data-comment-reactions") !== subject) return;
+      const author = String(commentReactionAuthor(subject, bar.getAttribute("data-comment-id") || "") || "").toLowerCase();
+      if (/^[a-z0-9][a-z0-9-]{0,62}$/.test(author) && !(author in (state.commentTipWallets || {}))) names.add(author);
+    });
+    if (!names.size) {
+      refreshCommentReactionBars(subject);
+      return;
+    }
+    const list = [...names].sort().slice(0, 30);
+    const key = list.join(",");
+    if (commentTipUi.loads.has(key)) return commentTipUi.loads.get(key);
+    const load = (async () => {
+      try {
+        const data = await fetchJson(`/api/tips/recipients?names=${encodeURIComponent(key)}`);
+        if (!state.commentTipWallets) state.commentTipWallets = {};
+        for (const name of list) state.commentTipWallets[name] = String(data?.wallets?.[name] || "");
+        refreshCommentReactionBars(subject);
+      } catch (_) {
+        // No Tip buttons is the safe failure.
+      } finally {
+        commentTipUi.loads.delete(key);
+      }
+    })();
+    commentTipUi.loads.set(key, load);
+    return load;
+  }
+
+  // ForkMeshQR holds up to 230 bytes. A request with a token, a reference
+  // and a long label or message can pass that; the QR then drops the
+  // message, then the label (wallets show recipient and amount anyway). The
+  // "Open in wallet" link keeps everything.
+  const COMMENT_TIP_QR_MAX_BYTES = 230;
+
+  function commentTipQrText(uri) {
+    let text = String(uri || "");
+    const fits = (value) => new TextEncoder().encode(value).length <= COMMENT_TIP_QR_MAX_BYTES;
+    if (!fits(text)) text = text.replace(/&message=[^&]*/, "");
+    if (!fits(text)) text = text.replace(/&label=[^&]*/, "");
+    return text;
+  }
+
+  function commentTipSheetHtml(author, config) {
+    const tokens = config.tokens.map((token, index) => `<button type="button" data-tip-token="${escapeHtml(token.id)}" aria-pressed="${index === 0}">${escapeHtml(token.symbol)}</button>`).join("");
+    return `<div class="fm-tip-head"><h2 id="fm-tip-title" class="fm-tip-title"><span aria-hidden="true">◎</span> Tip @${escapeHtml(author)}</h2><button type="button" data-tip-close class="fm-gif-close" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
+      <form data-tip-form class="fm-tip-form">
+        <div class="fm-segmented fm-tip-tokens" role="group" aria-label="Token">${tokens}</div>
+        <div class="fm-tip-presets" data-tip-presets role="group" aria-label="Amount presets"></div>
+        <label class="fm-tip-amount">Amount<span class="fm-tip-amount-row"><input data-tip-amount type="text" inputmode="decimal" autocomplete="off" required aria-describedby="fm-tip-note"><span data-tip-symbol class="fm-tip-symbol"></span></span></label>
+        <button type="submit" data-tip-create class="fm-btn fm-btn-cta fm-tip-create">Create payment request</button>
+      </form>
+      <div data-tip-request class="fm-tip-request" hidden>
+        <div data-tip-qr class="fm-tip-qr" aria-label="Solana Pay QR code" role="img"></div>
+        <div class="fm-tip-request-side">
+          <p class="fm-tip-sum" data-tip-sum></p>
+          <a data-tip-open class="fm-btn fm-btn-cta fm-tip-open" href="#" rel="noopener">Open in wallet</a>
+          <button type="button" data-tip-copy class="fm-btn fm-btn-sm">Copy payment link</button>
+          <button type="button" data-tip-check class="fm-btn fm-btn-sm">I've sent it - check now</button>
+          <p class="fm-tip-address">To <code data-tip-address></code></p>
+        </div>
+      </div>
+      <p data-tip-status class="fm-tip-status" role="status" aria-live="polite"></p>
+      <p id="fm-tip-note" class="fm-tip-note">${escapeHtml(config.disclaimer)} Scan with a Solana Pay wallet (Phantom, Solflare, Backpack…) or open the link on this device.</p>`;
+  }
+
+  function commentTipToken(sheet) {
+    const id = sheet.el.querySelector("[data-tip-token][aria-pressed='true']")?.getAttribute("data-tip-token") || "sol";
+    return commentTipUi.config.tokens.find((token) => token.id === id) || commentTipUi.config.tokens[0];
+  }
+
+  function renderCommentTipPresets(sheet) {
+    const token = commentTipToken(sheet);
+    const presets = COMMENT_TIP_PRESETS[token.id] || COMMENT_TIP_PRESETS.token;
+    const amount = sheet.el.querySelector("[data-tip-amount]");
+    sheet.el.querySelector("[data-tip-presets]").innerHTML = presets.map((value) => `<button type="button" data-tip-preset="${value}" class="fm-tip-preset" aria-pressed="${amount.value === value}">${value} ${escapeHtml(token.symbol)}</button>`).join("");
+    sheet.el.querySelector("[data-tip-symbol]").textContent = token.symbol;
+  }
+
+  function closeCommentTipSheet(restoreFocus = true) {
+    const sheet = commentTipUi.sheet;
+    if (!sheet) return;
+    commentTipUi.sheet = null;
+    clearTimeout(sheet.poll);
+    sheet.backdrop.remove();
+    if (restoreFocus && sheet.anchor?.isConnected) sheet.anchor.focus();
+  }
+
+  async function openCommentTipSheet(bar, anchor) {
+    const subject = bar.getAttribute("data-comment-reactions") || "";
+    const comment = bar.getAttribute("data-comment-id") || "";
+    const author = commentTipAuthor(subject, comment);
+    const config = await loadCommentTipConfig();
+    if (!author || !config.enabled || !config.tokens.length) return;
+    closeCommentTipSheet(false);
+    if (typeof closeCommentReactionPicker === "function") closeCommentReactionPicker();
+    const backdrop = document.createElement("div");
+    backdrop.className = "fm-tip-backdrop";
+    const el = document.createElement("div");
+    el.className = "fm-popover fm-tip-sheet";
+    el.setAttribute("role", "dialog");
+    el.setAttribute("aria-modal", "true");
+    el.setAttribute("aria-labelledby", "fm-tip-title");
+    el.innerHTML = commentTipSheetHtml(author, config);
+    backdrop.append(el);
+    document.body.append(backdrop);
+    const sheet = { el, backdrop, anchor, subject, comment, author, reference: "", poll: 0, startedAt: 0 };
+    commentTipUi.sheet = sheet;
+    const amount = el.querySelector("[data-tip-amount]");
+    amount.value = (COMMENT_TIP_PRESETS[config.tokens[0].id] || COMMENT_TIP_PRESETS.token)[1];
+    renderCommentTipPresets(sheet);
+    window.lucide?.createIcons();
+    amount.focus();
+    amount.select();
+    backdrop.addEventListener("click", (event) => {
+      if (event.target === backdrop) closeCommentTipSheet();
+    });
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeCommentTipSheet();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...el.querySelectorAll("button:not([hidden]), a[href]:not([hidden]), input")].filter((node) => node.offsetParent !== null);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+    el.addEventListener("click", (event) => {
+      if (event.target.closest("[data-tip-close]")) {
+        closeCommentTipSheet();
+        return;
+      }
+      const token = event.target.closest("[data-tip-token]");
+      if (token) {
+        el.querySelectorAll("[data-tip-token]").forEach((button) => button.setAttribute("aria-pressed", String(button === token)));
+        const presets = COMMENT_TIP_PRESETS[token.getAttribute("data-tip-token")] || COMMENT_TIP_PRESETS.token;
+        amount.value = presets[1];
+        renderCommentTipPresets(sheet);
+        return;
+      }
+      const preset = event.target.closest("[data-tip-preset]");
+      if (preset) {
+        amount.value = preset.getAttribute("data-tip-preset");
+        renderCommentTipPresets(sheet);
+        return;
+      }
+      if (event.target.closest("[data-tip-copy]")) {
+        const link = el.querySelector("[data-tip-open]").getAttribute("href") || "";
+        void copyTextToClipboard(link).then((copied) => {
+          const button = el.querySelector("[data-tip-copy]");
+          button.textContent = copied ? "Copied" : "Copy failed";
+          setTimeout(() => { button.textContent = "Copy payment link"; }, 1500);
+        });
+        return;
+      }
+      if (event.target.closest("[data-tip-check]")) void checkCommentTip(sheet, true);
+    });
+    amount.addEventListener("input", () => renderCommentTipPresets(sheet));
+    el.querySelector("[data-tip-form]").addEventListener("submit", (event) => {
+      event.preventDefault();
+      void createCommentTip(sheet);
+    });
+  }
+
+  function setCommentTipStatus(sheet, text, tone = "") {
+    const status = sheet.el.querySelector("[data-tip-status]");
+    status.textContent = text;
+    status.dataset.tone = tone;
+  }
+
+  async function createCommentTip(sheet) {
+    const amount = sheet.el.querySelector("[data-tip-amount]").value.trim();
+    const token = commentTipToken(sheet);
+    if (!COMMENT_TIP_AMOUNT_RE.test(amount) || Number(amount) <= 0) {
+      setCommentTipStatus(sheet, "Enter an amount, like 0.05.", "bad");
+      return;
+    }
+    const parts = commentReactionParts(sheet.subject);
+    const repo = state.repoRecordDetail?.repo || state.selectedRepo;
+    if (!parts || !repo) return;
+    const button = sheet.el.querySelector("[data-tip-create]");
+    button.disabled = true;
+    setCommentTipStatus(sheet, "Preparing the payment request…");
+    try {
+      const response = await fetch(`${repoApiBase(repo)}/tips`, {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ kind: parts.kind, number: parts.number, comment: sheet.comment, recipient: sheet.author, token: token.id, amount, sessionToken: state.session?.sessionToken || "" }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false || !/^solana:[1-9A-HJ-NP-Za-km-z]{32,44}\?/.test(String(data.uri || ""))) {
+        throw new Error(String(data.error || `HTTP ${response.status}`));
+      }
+      if (commentTipUi.sheet !== sheet) return;
+      sheet.reference = String(data.reference || "");
+      sheet.startedAt = Date.now();
+      sheet.el.querySelector("[data-tip-form]").hidden = true;
+      const request = sheet.el.querySelector("[data-tip-request]");
+      request.hidden = false;
+      sheet.el.querySelector("[data-tip-open]").setAttribute("href", data.uri);
+      sheet.el.querySelector("[data-tip-address]").textContent = String(data.address || "");
+      sheet.el.querySelector("[data-tip-sum]").textContent = `${data.amount} ${data.symbol} to @${sheet.author}`;
+      setCommentTipStatus(sheet, "Waiting for the transfer… this updates by itself.");
+      const holder = sheet.el.querySelector("[data-tip-qr]");
+      holder.dataset.tipQrValue = data.uri;
+      void loadQrGenerator().then((loaded) => {
+        if (holder.dataset.tipQrValue !== data.uri) return;
+        try {
+          if (loaded) holder.replaceChildren(window.ForkMeshQR.toCanvas(commentTipQrText(data.uri), 200));
+          else holder.textContent = "QR unavailable";
+        } catch (_) {
+          holder.textContent = "QR unavailable";
+        }
+      });
+      sheet.el.querySelector("[data-tip-open]").focus();
+      sheet.poll = setTimeout(() => void checkCommentTip(sheet, false), COMMENT_TIP_POLL_MS);
+    } catch (error) {
+      const code = String(error?.message || "");
+      const text = {
+        no_wallet: `@${sheet.author} has no Solana address for tips any more.`,
+        invalid_amount: "That amount is not allowed.",
+        rate_limited: "Too many requests - try again in a moment.",
+        daily_limit: "You've reached today's tip request limit.",
+        self_tip: "You can't tip yourself.",
+        unauthorized: "Sign in again to tip.",
+      }[code] || "The payment request could not be created.";
+      setCommentTipStatus(sheet, text, "bad");
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  async function checkCommentTip(sheet, manual) {
+    clearTimeout(sheet.poll);
+    if (commentTipUi.sheet !== sheet || !sheet.reference) return;
+    if (manual) setCommentTipStatus(sheet, "Checking the Solana network…");
+    let status = "pending";
+    try {
+      const response = await fetch("/api/tips/verify", {
+        method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json" },
+        body: JSON.stringify({ reference: sheet.reference, sessionToken: state.session?.sessionToken || "" }),
+      });
+      const data = await response.json().catch(() => ({}));
+      status = response.ok ? String(data.status || "pending") : (response.status === 429 ? "busy" : "unavailable");
+    } catch (_) {
+      status = "unavailable";
+    }
+    if (commentTipUi.sheet !== sheet) return;
+    if (status === "confirmed") {
+      setCommentTipStatus(sheet, "Tip received - thank you! \u{1F4B8}", "ok");
+      if (!state.commentTips) state.commentTips = {};
+      const tips = state.commentTips[sheet.subject] || (state.commentTips[sheet.subject] = {});
+      tips[sheet.comment] = (Number(tips[sheet.comment]) || 0) + 1;
+      refreshCommentReactionBars(sheet.subject);
+      sheet.el.querySelector("[data-tip-check]").hidden = true;
+      return;
+    }
+    if (Date.now() - sheet.startedAt > COMMENT_TIP_POLL_LIMIT_MS) {
+      setCommentTipStatus(sheet, "Not seen yet. If you sent it, it will show up within a few minutes.");
+      return;
+    }
+    if (manual || status !== "pending") {
+      setCommentTipStatus(sheet, status === "unavailable" ? "The Solana network did not answer - still waiting." : "Not seen yet - still waiting.");
+    }
+    sheet.poll = setTimeout(() => void checkCommentTip(sheet, false), COMMENT_TIP_POLL_MS);
+  }
+
+  function initCommentTips() {
+    window.addEventListener("resize", () => {
+      if (commentTipUi.sheet) commentTipUi.sheet.el.scrollTop = 0;
+    });
+    if (state.session?.sessionToken) void loadCommentTipConfig();
   }
   // Shared daily-work interaction layer (issue #517). It is deliberately
   // page-agnostic: every dashboard document gets the same keyboard entry point,
@@ -50810,6 +51742,256 @@
       if (event.key !== "Escape" || $("[data-plugin-menu-dropdown]")?.classList.contains("hidden")) return;
       setPluginMenuOpen(false);
       toggle?.focus();
+    });
+  }
+  // Settings -> Reactions, GIFs & tips. Shown to administrators (custom
+  // reactions for the instance, the GIPHY key, tip tokens) and to
+  // organization owners (their organization's custom reactions).
+  const reactionSettingsUi = { scopes: [], scope: "", reactions: [], editing: "", loaded: false };
+
+  async function reactionSettingsPost(path, body) {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "application/json" },
+      body: JSON.stringify({ ...body, sessionToken: state.session?.sessionToken || "" }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.ok === false) throw new Error(String(data.error || `HTTP ${response.status}`));
+    return data;
+  }
+
+  function reactionSettingsErrorText(error) {
+    return ({
+      invalid_slug: "Use lowercase letters, digits and dashes (up to 32).",
+      invalid_label: "Give it a label.",
+      image_required: "Choose an image.",
+      image_too_large: "That image is too large.",
+      image_dimensions: "Images can be at most 256×256.",
+      unsupported_image: "Use SVG, PNG, GIF or WebP.",
+      invalid_svg: "That SVG could not be read.",
+      svg_doctype: "SVGs with a DOCTYPE or entities are not accepted.",
+      svg_size: "The SVG needs a viewBox or a width and height.",
+      animate_target: "That SVG animates something other than shapes or colours.",
+      scope_full: "This scope already has the most custom reactions it can.",
+      forbidden: "You can't manage this scope.",
+      rate_limited: "Too many changes - wait a moment.",
+      invalid_key: "That does not look like a GIPHY key.",
+      invalid_token: "Check the mint address, symbol and decimals.",
+    })[String(error?.message || "")] || "That didn't save. Try again.";
+  }
+
+  function readReactionImage(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) {
+        resolve(null);
+        return;
+      }
+      const reader = new FileReader();
+      const svg = file.type === "image/svg+xml" || /\.svg$/i.test(file.name);
+      reader.onload = () => resolve(svg ? { svg: String(reader.result || "") } : { data: String(reader.result || "") });
+      reader.onerror = () => reject(new Error("invalid_image"));
+      if (svg) reader.readAsText(file);
+      else reader.readAsDataURL(file);
+    });
+  }
+
+  function renderCustomReactionRows() {
+    const list = $("[data-custom-reactions-list]");
+    if (!list) return;
+    if (!reactionSettingsUi.reactions.length) {
+      list.innerHTML = '<li class="px-4 py-3 text-sm text-muted-foreground">No custom reactions yet.</li>';
+      return;
+    }
+    list.innerHTML = reactionSettingsUi.reactions.map((item) => `<li class="flex flex-wrap items-center gap-3 px-4 py-2.5">
+        <img src="${escapeHtml(commentReactionSafeSrc(item.src))}" alt="" width="28" height="28" class="h-7 w-7 object-contain">
+        <span class="min-w-0 flex-1"><span class="block truncate text-sm font-medium text-foreground">${escapeHtml(item.label)}</span><span class="block truncate font-mono text-xs text-muted-foreground">:${escapeHtml(item.slug)}:${item.animatedSrc ? " · animated" : ""} · order ${escapeHtml(String(item.position))}</span></span>
+        <label class="flex items-center gap-1.5 text-xs text-muted-foreground"><input type="checkbox" data-custom-reaction-toggle="${escapeHtml(item.slug)}" ${item.enabled ? "checked" : ""}> Enabled</label>
+        <button type="button" data-custom-reaction-edit="${escapeHtml(item.slug)}" class="fm-btn fm-btn-sm">Edit</button>
+        <button type="button" data-custom-reaction-delete="${escapeHtml(item.slug)}" class="fm-btn fm-btn-sm fm-btn-danger" aria-label="Delete ${escapeHtml(item.label)}">Delete</button>
+      </li>`).join("");
+  }
+
+  async function loadCustomReactionScope(scope) {
+    reactionSettingsUi.scope = scope;
+    const list = $("[data-custom-reactions-list]");
+    if (list) list.innerHTML = '<li class="px-4 py-3 text-sm text-muted-foreground">Loading…</li>';
+    try {
+      const data = await fetchJson(`/api/reactions/custom/manage?scope=${encodeURIComponent(scope)}`, { fresh: true });
+      reactionSettingsUi.reactions = Array.isArray(data?.reactions) ? data.reactions : [];
+    } catch (_) {
+      reactionSettingsUi.reactions = [];
+    }
+    renderCustomReactionRows();
+  }
+
+  function resetCustomReactionForm() {
+    const form = $("[data-custom-reaction-form]");
+    if (!form) return;
+    form.reset();
+    reactionSettingsUi.editing = "";
+    form.querySelector("[data-custom-reaction-slug]").readOnly = false;
+    form.querySelector("[data-custom-reaction-form-title]").textContent = "Add a reaction";
+    form.querySelector("[data-custom-reaction-preview]").replaceChildren();
+  }
+
+  async function initReactionSettings() {
+    const section = $("[data-reaction-settings]");
+    if (!section || reactionSettingsUi.loaded || !state.session?.sessionToken) return;
+    reactionSettingsUi.loaded = true;
+    let data = null;
+    try {
+      data = await fetchJson("/api/reactions/custom/manage", { fresh: true });
+    } catch (_) {
+      data = null;
+    }
+    reactionSettingsUi.scopes = Array.isArray(data?.scopes) ? data.scopes : [];
+    const admin = reactionSettingsUi.scopes.some((scope) => scope.scope === "instance");
+    $$("[data-reaction-settings-link]").forEach((link) => { link.hidden = !reactionSettingsUi.scopes.length; });
+    if (!reactionSettingsUi.scopes.length) return;
+    const select = section.querySelector("[data-custom-reactions-scope]");
+    select.innerHTML = reactionSettingsUi.scopes.map((scope) => `<option value="${escapeHtml(scope.scope)}">${escapeHtml(scope.label)}</option>`).join("");
+    void loadCustomReactionScope(reactionSettingsUi.scopes[0].scope);
+    select.addEventListener("change", () => {
+      resetCustomReactionForm();
+      void loadCustomReactionScope(select.value);
+    });
+    const form = section.querySelector("[data-custom-reaction-form]");
+    const status = form.querySelector("[data-custom-reaction-status]");
+    form.querySelector("[data-custom-reaction-image]").addEventListener("change", (event) => {
+      const file = event.target.files?.[0];
+      const preview = form.querySelector("[data-custom-reaction-preview]");
+      preview.replaceChildren();
+      if (!file) return;
+      const image = document.createElement("img");
+      image.width = 32;
+      image.height = 32;
+      image.alt = "";
+      image.src = URL.createObjectURL(file);
+      preview.append(image);
+    });
+    form.querySelector("[data-custom-reaction-reset]").addEventListener("click", resetCustomReactionForm);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      status.textContent = "Saving…";
+      try {
+        const image = await readReactionImage(form.querySelector("[data-custom-reaction-image]").files?.[0]);
+        const animated = await readReactionImage(form.querySelector("[data-custom-reaction-animated]").files?.[0]);
+        const body = {
+          scope: reactionSettingsUi.scope,
+          action: "save",
+          slug: form.querySelector("[data-custom-reaction-slug]").value.trim().toLowerCase(),
+          label: form.querySelector("[data-custom-reaction-label]").value.trim(),
+          position: Number(form.querySelector("[data-custom-reaction-position]").value) || 0,
+          enabled: form.querySelector("[data-custom-reaction-enabled]").checked,
+        };
+        if (image) body.image = image;
+        if (animated) body.animated = animated;
+        await reactionSettingsPost("/api/reactions/custom/manage", body);
+        status.textContent = "Saved.";
+        resetCustomReactionForm();
+        state.customReactions = null;
+        await loadCustomReactionScope(reactionSettingsUi.scope);
+      } catch (error) {
+        status.textContent = reactionSettingsErrorText(error);
+      }
+    });
+    section.querySelector("[data-custom-reactions-list]").addEventListener("click", async (event) => {
+      const edit = event.target.closest("[data-custom-reaction-edit]");
+      const remove = event.target.closest("[data-custom-reaction-delete]");
+      if (edit) {
+        const item = reactionSettingsUi.reactions.find((row) => row.slug === edit.getAttribute("data-custom-reaction-edit"));
+        if (!item) return;
+        reactionSettingsUi.editing = item.slug;
+        form.querySelector("[data-custom-reaction-form-title]").textContent = `Edit :${item.slug}:`;
+        form.querySelector("[data-custom-reaction-slug]").value = item.slug;
+        form.querySelector("[data-custom-reaction-slug]").readOnly = true;
+        form.querySelector("[data-custom-reaction-label]").value = item.label;
+        form.querySelector("[data-custom-reaction-position]").value = String(item.position || 0);
+        form.querySelector("[data-custom-reaction-enabled]").checked = item.enabled !== false;
+        form.querySelector("[data-custom-reaction-label]").focus();
+        return;
+      }
+      if (remove) {
+        const slug = remove.getAttribute("data-custom-reaction-delete");
+        if (!window.confirm(`Delete :${slug}:? Reactions already made with it stay, shown by name.`)) return;
+        try {
+          await reactionSettingsPost("/api/reactions/custom/manage", { scope: reactionSettingsUi.scope, action: "delete", slug });
+          await loadCustomReactionScope(reactionSettingsUi.scope);
+        } catch (error) {
+          status.textContent = reactionSettingsErrorText(error);
+        }
+      }
+    });
+    section.querySelector("[data-custom-reactions-list]").addEventListener("change", async (event) => {
+      const toggle = event.target.closest("[data-custom-reaction-toggle]");
+      if (!toggle) return;
+      try {
+        await reactionSettingsPost("/api/reactions/custom/manage", { scope: reactionSettingsUi.scope, action: "save", slug: toggle.getAttribute("data-custom-reaction-toggle"), enabled: toggle.checked });
+      } catch (error) {
+        toggle.checked = !toggle.checked;
+        status.textContent = reactionSettingsErrorText(error);
+      }
+    });
+    if (admin) initInstanceCommentSettings(section);
+  }
+
+  async function initInstanceCommentSettings(section) {
+    const gifCard = section.querySelector("[data-gif-settings-card]");
+    const tipCard = section.querySelector("[data-tip-settings-card]");
+    gifCard.hidden = false;
+    tipCard.hidden = false;
+    const gifForm = gifCard.querySelector("[data-gif-settings-form]");
+    const gifStatus = gifCard.querySelector("[data-gif-settings-status]");
+    try {
+      const gifs = await fetchJson("/api/gifs/settings", { fresh: true });
+      gifCard.querySelector("[data-gif-settings-rating]").value = gifs?.rating || "pg";
+      gifStatus.textContent = gifs?.configured ? "A key is set." : "No key: the GIF button is hidden.";
+    } catch (_) {
+      gifStatus.textContent = "";
+    }
+    const saveGifs = async (body) => {
+      gifStatus.textContent = "Saving…";
+      try {
+        const reply = await reactionSettingsPost("/api/gifs/settings", body);
+        gifCard.querySelector("[data-gif-settings-key]").value = "";
+        gifStatus.textContent = reply.configured ? "Saved. A key is set." : "Saved. No key: the GIF button is hidden.";
+      } catch (error) {
+        gifStatus.textContent = reactionSettingsErrorText(error);
+      }
+    };
+    gifForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      void saveGifs({ key: gifCard.querySelector("[data-gif-settings-key]").value.trim(), rating: gifCard.querySelector("[data-gif-settings-rating]").value });
+    });
+    gifCard.querySelector("[data-gif-settings-clear]").addEventListener("click", () => {
+      void saveGifs({ clear: true, rating: gifCard.querySelector("[data-gif-settings-rating]").value });
+    });
+    const tipForm = tipCard.querySelector("[data-tip-settings-form]");
+    const tipStatus = tipCard.querySelector("[data-tip-settings-status]");
+    try {
+      const tips = await fetchJson("/api/tips/settings", { fresh: true });
+      tipCard.querySelector("[data-tip-settings-enabled]").checked = tips?.enabled !== false;
+      tipCard.querySelector("[data-tip-settings-usdc]").checked = tips?.usdc !== false;
+      tipCard.querySelector("[data-tip-settings-mint]").value = tips?.token?.mint || "";
+      tipCard.querySelector("[data-tip-settings-symbol]").value = tips?.token?.symbol || "";
+      tipCard.querySelector("[data-tip-settings-decimals]").value = tips?.token ? String(tips.token.decimals) : "";
+    } catch (_) {
+      tipStatus.textContent = "";
+    }
+    tipForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      tipStatus.textContent = "Saving…";
+      const mint = tipCard.querySelector("[data-tip-settings-mint]").value.trim();
+      try {
+        await reactionSettingsPost("/api/tips/settings", {
+          enabled: tipCard.querySelector("[data-tip-settings-enabled]").checked,
+          usdc: tipCard.querySelector("[data-tip-settings-usdc]").checked,
+          token: mint ? { mint, symbol: tipCard.querySelector("[data-tip-settings-symbol]").value.trim(), decimals: Number(tipCard.querySelector("[data-tip-settings-decimals]").value) } : null,
+        });
+        tipStatus.textContent = "Saved.";
+      } catch (error) {
+        tipStatus.textContent = reactionSettingsErrorText(error);
+      }
     });
   }
   const RECENT_PUSHES_URL = "/api/me/recent-pushes";
@@ -52791,6 +53973,9 @@
       initDashboardUpdateNotice();
       initRecentPushes();
       initCommentReactions();
+      initCommentGifs();
+      initCommentTips();
+      void initReactionSettings();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

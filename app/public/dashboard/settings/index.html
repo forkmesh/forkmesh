@@ -520,15 +520,118 @@
       .fm-reaction-who li { display: flex; align-items: center; gap: 6px; padding: 2px 0; color: rgb(var(--dashboard-foreground-rgb)); }
       .fm-reaction-who-agent { padding: 0 6px; border: 1px solid rgb(var(--dashboard-accent-rgb) / .5); border-radius: 9999px; color: var(--dashboard-link); font-size: 10px; font-weight: 600; line-height: 16px; }
       .fm-reaction-who-more, .fm-reaction-who-hint { color: rgb(var(--dashboard-muted-foreground-rgb)); }
+      .fm-reaction-img { display: block; width: 18px; height: 18px; object-fit: contain; pointer-events: none; }
+      .fm-reaction-emoji { display: inline-flex; align-items: center; }
+      .fm-reaction-fallback { color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 11px; font-weight: 600; }
+      .fm-reaction-who-glyph { display: inline-flex; }
+      .fm-reaction-who-glyph .fm-reaction-img { width: 16px; height: 16px; }
+      .fm-reaction-thanks, .fm-reaction-tip, .fm-reaction-tipped { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px 0 5px; border: 1px dashed rgb(var(--dashboard-border-rgb)); border-radius: 9999px; background: transparent; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 12px; line-height: 1; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background-color .15s, border-color .15s, color .15s; }
+      .fm-reaction-thanks .fm-reaction-img { width: 22px; height: 22px; }
+      .fm-reaction-thanks:hover, .fm-reaction-tip:hover { border-style: solid; border-color: var(--dashboard-link); color: rgb(var(--dashboard-foreground-rgb)); background: rgb(var(--dashboard-accent-rgb) / .08); }
+      .fm-reaction-thanks:focus-visible, .fm-reaction-tip:focus-visible, .fm-gif-pick:focus-visible, .fm-sticker-pick:focus-visible, .fm-composer-media:focus-visible, [data-fm-gif]:focus-visible { outline: 2px solid rgb(var(--dashboard-ring-rgb)); outline-offset: 1px; }
+      .fm-reaction-tip { padding: 0 10px; }
+      .fm-reaction-tip > span:first-child { font-size: 14px; color: var(--dashboard-link); }
+      .fm-reaction-tipped { cursor: default; padding: 0 10px; border-style: solid; color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-reaction-section { margin: 8px 2px 4px; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase; }
+      .fm-reaction-section + .fm-reaction-grid { margin-top: 0; padding-top: 0; border-top: 0; }
+      .fm-reaction-options { max-height: min(340px, 52vh); overflow-y: auto; overscroll-behavior: contain; }
+      .fm-reaction-option .fm-reaction-img { width: 26px; height: 26px; }
+      .fm-reaction-option .fm-reaction-fallback { font-size: 10px; }
+      .fm-reaction-gif-reply { display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px; height: 34px; margin-top: 6px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: transparent; color: rgb(var(--dashboard-foreground-rgb)); font-size: 13px; cursor: pointer; }
+      .fm-reaction-gif-reply:hover { border-color: var(--dashboard-link); background: rgb(var(--dashboard-accent-rgb) / .08); }
+      .fm-gif-chip { display: inline-flex; align-items: center; height: 16px; padding: 0 4px; border: 1.5px solid currentColor; border-radius: 4px; font-size: 9px; font-weight: 800; letter-spacing: .04em; line-height: 1; }
+      .fm-composer-media { display: inline-flex; align-items: center; justify-content: center; min-width: 32px; height: 32px; padding: 0 6px; border-radius: 6px; background: transparent; color: rgb(var(--dashboard-muted-foreground-rgb)); cursor: pointer; }
+      .fm-composer-media:hover, .fm-composer-media[aria-expanded="true"] { background: rgb(var(--dashboard-foreground-rgb) / .08); color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-composer-media-row { display: flex; align-items: center; gap: 2px; margin-top: -2px; }
+      .fm-gif-picker { position: fixed; z-index: 85; display: flex; flex-direction: column; width: 360px; max-width: calc(100vw - 32px); max-height: min(520px, calc(100vh - 32px)); padding: 8px; }
+      .fm-gif-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+      .fm-gif-heading { font-size: 13px; font-weight: 600; }
+      .fm-gif-close { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 6px; background: transparent; color: rgb(var(--dashboard-muted-foreground-rgb)); cursor: pointer; }
+      .fm-gif-close:hover { background: rgb(var(--dashboard-foreground-rgb) / .08); color: rgb(var(--dashboard-foreground-rgb)); }
+      .fm-gif-body { min-height: 120px; overflow-y: auto; overscroll-behavior: contain; }
+      .fm-gif-grid { columns: 3 100px; column-gap: 4px; }
+      .fm-gif-pick { display: block; width: 100%; margin: 0 0 4px; padding: 0; overflow: hidden; border-radius: 6px; background: rgb(var(--dashboard-foreground-rgb) / .06); cursor: pointer; break-inside: avoid; }
+      .fm-gif-pick img { display: block; width: 100%; height: auto; }
+      .fm-sticker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 6px; }
+      .fm-sticker-pick { display: flex; align-items: center; justify-content: center; aspect-ratio: 1; border-radius: 10px; background: rgb(var(--dashboard-foreground-rgb) / .05); cursor: pointer; }
+      .fm-sticker-pick img { width: 72px; height: 72px; object-fit: contain; }
+      .fm-sticker-pick:hover { background: rgb(var(--dashboard-accent-rgb) / .14); }
+      .fm-gif-more { display: flex; margin: 6px auto 2px; }
+      .fm-gif-empty { padding: 24px 8px; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 13px; text-align: center; }
+      .fm-gif-attribution { margin-top: 6px; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 11px; font-weight: 600; letter-spacing: .02em; text-align: right; }
+      .fm-gif { position: relative; display: inline-block; max-width: 100%; vertical-align: top; cursor: pointer; }
+      .fm-gif img { display: block; }
+      .fm-gif-badge { position: absolute; left: 6px; bottom: 14px; padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .62); color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .04em; pointer-events: none; }
+      .fm-gif-paused .fm-gif-badge::before { content: "\25B6  "; }
+      .fm-tip-backdrop { position: fixed; inset: 0; z-index: 88; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgb(1 4 9 / .55); }
+      .fm-tip-sheet { width: 420px; max-width: 100%; max-height: calc(100vh - 32px); overflow-y: auto; padding: 16px; }
+      .fm-tip-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+      .fm-tip-title { margin: 0; font-size: 16px; font-weight: 600; }
+      .fm-tip-title span { color: var(--dashboard-link); }
+      .fm-tip-form { display: grid; gap: 12px; }
+      .fm-tip-tokens { display: inline-flex; width: fit-content; }
+      .fm-tip-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+      .fm-tip-preset { height: 30px; padding: 0 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: 9999px; background: transparent; color: rgb(var(--dashboard-foreground-rgb)); font-size: 12px; cursor: pointer; }
+      .fm-tip-preset[aria-pressed="true"] { border-color: var(--dashboard-link); background: rgb(var(--dashboard-accent-rgb) / .16); font-weight: 600; }
+      .fm-tip-amount { display: grid; gap: 4px; font-size: 12px; font-weight: 600; }
+      .fm-tip-amount-row { display: flex; align-items: center; gap: 8px; }
+      .fm-tip-amount input { flex: 1; min-width: 0; height: 38px; padding: 0 10px; border: 1px solid rgb(var(--dashboard-border-rgb)); border-radius: var(--dashboard-control-radius); background: rgb(var(--dashboard-background-rgb)); color: rgb(var(--dashboard-foreground-rgb)); font-size: 15px; font-variant-numeric: tabular-nums; }
+      .fm-tip-amount input:focus { border-color: var(--dashboard-link); outline: none; }
+      .fm-tip-symbol { min-width: 3.5em; color: rgb(var(--dashboard-muted-foreground-rgb)); font-weight: 600; }
+      .fm-tip-create { width: 100%; height: 38px; }
+      .fm-tip-request { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; }
+      .fm-tip-qr { display: flex; align-items: center; justify-content: center; width: 200px; height: 200px; padding: 8px; border-radius: 10px; background: #fff; color: #111; font-size: 12px; }
+      .fm-tip-qr canvas { width: 184px !important; height: 184px !important; image-rendering: pixelated; }
+      .fm-tip-request-side { display: grid; gap: 8px; min-width: 0; }
+      .fm-tip-sum { margin: 0; font-size: 15px; font-weight: 600; }
+      .fm-tip-open { width: 100%; }
+      .fm-tip-address { margin: 0; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 11px; overflow-wrap: anywhere; }
+      .fm-tip-status { min-height: 18px; margin: 12px 0 0; font-size: 13px; }
+      .fm-tip-status[data-tone="ok"] { color: rgb(var(--dashboard-success-rgb)); font-weight: 600; }
+      .fm-tip-status[data-tone="bad"] { color: rgb(var(--dashboard-destructive-rgb)); }
+      .fm-tip-note { margin: 8px 0 0; color: rgb(var(--dashboard-muted-foreground-rgb)); font-size: 12px; line-height: 1.45; }
+      .fm-custom-reaction-preview { display: inline-flex; width: 32px; height: 32px; }
+      @keyframes fm-reaction-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-2px); } }
+      @keyframes fm-reaction-beat { 0%, 100% { transform: scale(1); } 15% { transform: scale(1.18); } 30% { transform: scale(1); } 45% { transform: scale(1.12); } }
+      @keyframes fm-reaction-wave { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-14deg); } 75% { transform: rotate(10deg); } }
+      @keyframes fm-reaction-twinkle { 0%, 100% { transform: rotate(0) scale(1); filter: brightness(1); } 50% { transform: rotate(18deg) scale(1.12); filter: brightness(1.25); } }
+      @keyframes fm-reaction-lift { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(2px, -3px); } }
+      @keyframes fm-reaction-flicker { 0%, 100% { transform: scale(1) skewX(0); } 33% { transform: scale(1.06, .96) skewX(-4deg); } 66% { transform: scale(.97, 1.05) skewX(3deg); } }
+      @keyframes fm-reaction-shake { 0%, 100% { transform: rotate(0); } 25% { transform: rotate(-8deg); } 75% { transform: rotate(8deg); } }
+      @keyframes fm-reaction-bounce { 0%, 100% { transform: translateY(0) scale(1); } 40% { transform: translateY(-3px) scale(1.06, .96); } 60% { transform: translateY(0) scale(.96, 1.04); } }
+      @keyframes fm-reaction-wobble { 0% { transform: scale(.4) rotate(0); } 45% { transform: scale(1.3) rotate(-10deg); } 65% { transform: scale(.95) rotate(7deg); } 82% { transform: scale(1.05) rotate(-3deg); } 100% { transform: scale(1) rotate(0); } }
+      @media (prefers-reduced-motion: no-preference) {
+        .fm-reaction:hover .fm-reaction-emoji, .fm-reaction:focus-visible .fm-reaction-emoji, .fm-reaction-option:hover > *, .fm-reaction-option:focus-visible > * { animation: fm-reaction-bob .9s ease-in-out infinite; }
+        :is(.fm-reaction, .fm-reaction-option):is([data-reaction="love"], [data-reaction-option="love"], [data-reaction="sparkleheart"], [data-reaction-option="sparkleheart"], [data-reaction="hearthands"], [data-reaction-option="hearthands"]):is(:hover, :focus-visible) :is(.fm-reaction-emoji, .fm-reaction-img), .fm-reaction-option:is([data-reaction-option="love"], [data-reaction-option="sparkleheart"], [data-reaction-option="hearthands"]):is(:hover, :focus-visible) { animation: fm-reaction-beat 1.1s ease-in-out infinite; }
+        .fm-reaction:is([data-reaction="like"], [data-reaction="thanks"], [data-reaction="handshake"], [data-reaction="dislike"]):is(:hover, :focus-visible) .fm-reaction-emoji { animation: fm-reaction-wave .8s ease-in-out infinite; transform-origin: 60% 80%; }
+        .fm-reaction:is([data-reaction="star"], [data-reaction="glowstar"], [data-reaction="trophy"], [data-reaction="celebrate"]):is(:hover, :focus-visible) .fm-reaction-emoji { animation: fm-reaction-twinkle 1.2s ease-in-out infinite; }
+        .fm-reaction[data-reaction="rocket"]:is(:hover, :focus-visible) .fm-reaction-emoji { animation: fm-reaction-lift .6s ease-in-out infinite; }
+        .fm-reaction[data-reaction="hot"]:is(:hover, :focus-visible) .fm-reaction-emoji { animation: fm-reaction-flicker .5s ease-in-out infinite; transform-origin: 50% 100%; }
+        .fm-reaction:is([data-reaction="laugh"], [data-reaction="angry"]):is(:hover, :focus-visible) .fm-reaction-emoji { animation: fm-reaction-shake .35s ease-in-out infinite; }
+        .fm-reaction[data-reaction="thankyou"]:is(:hover, :focus-visible) .fm-reaction-emoji, .fm-reaction-thanks:is(:hover, :focus-visible) .fm-reaction-img, .fm-sticker-pick:hover img { animation: fm-reaction-bounce .9s ease-in-out infinite; transform-origin: 50% 100%; }
+        .fm-reaction-pop .fm-reaction-emoji { animation: fm-reaction-wobble .55s cubic-bezier(.3, 1.4, .5, 1); }
+        .fm-reaction-pop[data-reaction="thankyou"] .fm-reaction-emoji { animation-duration: .75s; }
+      }
       @media (max-width: 640px) {
         .fm-reaction-picker { left: 8px !important; right: 8px; bottom: 8px; top: auto !important; width: auto; max-width: none; padding: 12px; border-radius: 14px; }
         .fm-reaction-option { height: 48px; font-size: 26px; }
+        .fm-gif-picker { left: 8px !important; right: 8px; bottom: 8px; top: auto !important; width: auto; max-width: none; max-height: 72vh; padding: 12px; border-radius: 14px; }
+        .fm-gif-grid { columns: 2 100px; }
+        .fm-tip-backdrop { align-items: flex-end; padding: 0; }
+        .fm-tip-sheet { width: 100%; max-height: 92vh; border-radius: 16px 16px 0 0; }
+        .fm-tip-request { grid-template-columns: 1fr; justify-items: center; }
+        .fm-tip-request-side { width: 100%; }
+      }
+      @media (max-width: 420px) {
+        .fm-reaction-thanks { padding: 0 5px; }
+        .fm-reaction-thanks-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
       }
       @media (prefers-reduced-motion: reduce) {
         .fm-reaction, .fm-reaction-add, .fm-reaction-option { transition: none; }
         .fm-reaction-pop { animation: none; }
         .fm-reaction-burst, .fm-reaction-confetti { display: none; }
         .fm-reaction-option:hover, .fm-reaction-option:focus-visible { transform: none; }
+        .fm-reaction-thanks, .fm-reaction-tip, .fm-reaction-emoji, .fm-reaction-img { animation: none !important; transition: none; }
       }
 
       [data-runner-attention], [data-node-reconnect] { --fm-label-rgb: var(--dashboard-attention-rgb); --fm-label-fg: var(--dashboard-attention-rgb); align-self: center; }
@@ -3822,6 +3925,11 @@
                       <i data-lucide="building-2" class="h-5 w-5"></i>
                       Organizations
                     </button>
+                    <button data-settings-section-link="reactions" data-reaction-settings-link hidden type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
+                      <i data-lucide="smile-plus" class="h-5 w-5"></i>
+                      Reactions, GIFs &amp; tips
+                    </button>
                     <button data-settings-section-link="agents" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
                       <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="bot" class="h-5 w-5"></i>
@@ -4501,6 +4609,88 @@
                     <p class="mt-1 text-sm text-muted-foreground">Create organizations to serve your repos at <span class="font-mono">/&lt;org&gt;/&lt;repo&gt;</span>, invite members, group them into permission teams, and link the repos an org fronts.</p>
                     <div data-orgs-root class="mt-5 max-w-3xl">
                       <p class="text-sm text-muted-foreground">Loading organizations…</p>
+                    </div>
+                  </section>
+
+                  <section id="settings-reactions" data-settings-section="reactions" data-reaction-settings class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Reactions, GIFs &amp; tips</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">Custom reactions for this instance (administrators) or for an organization you own, the GIPHY key behind the comment GIF picker, and which tokens comment tips offer.</p>
+                    <div class="mt-5 grid max-w-3xl gap-5">
+                      <div data-custom-reactions-card class="rounded-md border border-border bg-card">
+                        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+                          <div class="min-w-0">
+                            <h3 class="text-sm font-semibold text-foreground">Custom reactions</h3>
+                            <p class="mt-0.5 text-xs text-muted-foreground">Shown in every reaction picker (an organization's only on its repositories). An SVG up to 32 KB, or a PNG, GIF or WebP up to 64 KB and 256×256. Deleting one keeps its counts; they show its name instead.</p>
+                          </div>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Scope
+                            <select data-custom-reactions-scope class="h-8 rounded-md border border-border bg-background px-2 text-sm font-normal text-foreground"></select>
+                          </label>
+                        </div>
+                        <ul data-custom-reactions-list class="divide-y divide-border" aria-live="polite"></ul>
+                        <form data-custom-reaction-form class="grid gap-3 border-t border-border px-4 py-4 sm:grid-cols-2">
+                          <h4 data-custom-reaction-form-title class="text-sm font-semibold text-foreground sm:col-span-2">Add a reaction</h4>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Name (slug)
+                            <input data-custom-reaction-slug name="slug" required pattern="[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?" maxlength="32" autocomplete="off" spellcheck="false" placeholder="party-parrot" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Label
+                            <input data-custom-reaction-label name="label" required maxlength="40" autocomplete="off" placeholder="Party parrot" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Image
+                            <input data-custom-reaction-image type="file" accept="image/svg+xml,image/png,image/gif,image/webp" class="text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Animated variant <span class="font-normal text-muted-foreground">(optional, played on hover)</span>
+                            <input data-custom-reaction-animated type="file" accept="image/svg+xml,image/png,image/gif,image/webp" class="text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Order
+                            <input data-custom-reaction-position type="number" min="0" max="10000" value="0" class="h-9 w-28 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                          </label>
+                          <label class="flex items-center gap-2 self-end text-sm text-foreground"><input data-custom-reaction-enabled type="checkbox" checked> Enabled</label>
+                          <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
+                            <span data-custom-reaction-preview class="fm-custom-reaction-preview" aria-hidden="true"></span>
+                            <button type="submit" class="fm-btn fm-btn-cta">Save reaction</button>
+                            <button type="button" data-custom-reaction-reset class="fm-btn">Clear</button>
+                            <p data-custom-reaction-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
+                          </div>
+                        </form>
+                      </div>
+                      <div data-gif-settings-card hidden class="rounded-md border border-border bg-card px-4 py-4">
+                        <h3 class="text-sm font-semibold text-foreground">GIFs (GIPHY)</h3>
+                        <p class="mt-0.5 text-xs text-muted-foreground">With a key, comment composers get a GIF button. Searches go through this server, so the key never reaches a browser. Create a key at developers.giphy.com.</p>
+                        <form data-gif-settings-form class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">API key
+                            <input data-gif-settings-key type="password" autocomplete="off" spellcheck="false" placeholder="Paste a key to set or replace it" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Content rating
+                            <select data-gif-settings-rating class="h-9 rounded-md border border-border bg-background px-2 text-sm font-normal text-foreground"><option value="g">G</option><option value="pg">PG</option><option value="pg-13">PG-13</option><option value="r">R</option></select>
+                          </label>
+                          <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
+                            <button type="submit" class="fm-btn fm-btn-cta">Save</button>
+                            <button type="button" data-gif-settings-clear class="fm-btn">Remove key</button>
+                            <p data-gif-settings-status role="status" class="text-xs text-muted-foreground"></p>
+                          </div>
+                        </form>
+                      </div>
+                      <div data-tip-settings-card hidden class="rounded-md border border-border bg-card px-4 py-4">
+                        <h3 class="text-sm font-semibold text-foreground">Comment tips (Solana Pay)</h3>
+                        <p class="mt-0.5 text-xs text-muted-foreground">Tips go directly wallet to wallet; this server never holds funds or keys. SOL is always offered. Verification reads the chain through the instance's Solana RPC endpoints (SOLANA_RPC_URL).</p>
+                        <form data-tip-settings-form class="mt-3 grid gap-3 sm:grid-cols-3">
+                          <label class="flex items-center gap-2 text-sm text-foreground sm:col-span-3"><input data-tip-settings-enabled type="checkbox" checked> Offer tips on comments</label>
+                          <label class="flex items-center gap-2 text-sm text-foreground sm:col-span-3"><input data-tip-settings-usdc type="checkbox" checked> Offer USDC</label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground sm:col-span-3">Instance token mint <span class="font-normal text-muted-foreground">(optional SPL token)</span>
+                            <input data-tip-settings-mint autocomplete="off" spellcheck="false" placeholder="Token mint address" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Symbol
+                            <input data-tip-settings-symbol maxlength="10" autocomplete="off" placeholder="TOKEN" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Decimals
+                            <input data-tip-settings-decimals type="number" min="0" max="18" placeholder="9" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                          </label>
+                          <div class="flex flex-wrap items-center gap-2 sm:col-span-3">
+                            <button type="submit" class="fm-btn fm-btn-cta">Save</button>
+                            <p data-tip-settings-status role="status" class="text-xs text-muted-foreground"></p>
+                          </div>
+                        </form>
+                      </div>
                     </div>
                   </section>
 

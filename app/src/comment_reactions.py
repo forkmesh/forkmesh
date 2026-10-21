@@ -8,6 +8,9 @@ CATALOG = (
     ("thinking", "Thinking"), ("surprised", "Surprised"), ("sad", "Sad"),
     ("angry", "Angry"), ("dislike", "Dislike"), ("eyes", "Eyes"),
     ("star", "Star"), ("rocket", "Rocket"), ("check", "Done"),
+    ("hearthands", "Heart hands"), ("sparkleheart", "Sparkling heart"),
+    ("handshake", "Handshake"), ("glowstar", "Glowing star"),
+    ("trophy", "Trophy"), ("thankyou", "Thank you"),
 )
 EMOJI = {
     "like": "\U0001F44D", "love": "❤️", "laugh": "\U0001F602",
@@ -16,10 +19,20 @@ EMOJI = {
     "thinking": "\U0001F914", "surprised": "\U0001F62E", "sad": "\U0001F622",
     "angry": "\U0001F621", "dislike": "\U0001F44E", "eyes": "\U0001F440",
     "star": "⭐", "rocket": "\U0001F680", "check": "✅",
+    "hearthands": "\U0001FAF6", "sparkleheart": "\U0001F496",
+    "handshake": "\U0001F91D", "glowstar": "\U0001F31F",
+    "trophy": "\U0001F3C6", "thankyou": "\U0001F4AC",
 }
+# The gratitude group: the picker's second row and the "Say thanks" family.
+# "thankyou" is a sticker (its own drawing, /assets/reactions/thank-you.svg); its
+# unicode stand-in is only for text surfaces such as the ping summary.
+GRATITUDE = ("thanks", "hearthands", "sparkleheart", "handshake", "glowstar",
+             "trophy", "thankyou")
+STICKERS = {"thankyou": "/assets/reactions/thank-you.svg"}
 SLUGS = frozenset(slug for slug, _label in CATALOG)
 KINDS = {"issue": ("issues", "issues"), "pull": ("pulls", "pull"),
          "discussion": ("discussions", "discussions")}
+CUSTOM_RE = re.compile(r"^custom:[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$")
 COMMENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+-]{0,159}$")
 MAX_NUMBER = 1_000_000_000
 MAX_PEOPLE = 10
@@ -63,7 +76,13 @@ def clean_comment(value):
 
 def clean_emoji(value):
     emoji = str(value or "") if isinstance(value, str) else ""
-    return emoji if emoji in SLUGS else ""
+    if emoji in SLUGS or CUSTOM_RE.fullmatch(emoji):
+        return emoji
+    return ""
+
+
+def known_emoji(emoji):
+    return emoji in SLUGS or bool(CUSTOM_RE.fullmatch(emoji or ""))
 
 
 def subject_key(kind, number):
@@ -87,12 +106,15 @@ async def _person(env, row):
     return {"name": name, "agent": bool(data.get("agent"))}
 
 
-async def summarize(env, rows, viewer_bi=""):
+async def summarize(env, rows, viewer_bi="", custom=None):
+    """Tallies per comment. A custom reaction's tally carries ``custom``: its
+    label and image from ``custom`` (slug -> item), or None once it was
+    deleted, so every surface can draw a fallback chip."""
     comments = {}
     for row in rows or []:
         comment = str(row.get("comment") or "")
         emoji = str(row.get("emoji") or "")
-        if not clean_comment(comment) or emoji not in SLUGS:
+        if not clean_comment(comment) or not known_emoji(emoji):
             continue
         tallies = comments.setdefault(comment, {})
         tally = tallies.get(emoji)
@@ -112,10 +134,45 @@ async def summarize(env, rows, viewer_bi=""):
     out = {}
     for comment, tallies in comments.items():
         ordered = sorted(tallies.values(), key=_tally_order)
-        out[comment] = [{key: tally[key] for key in
-                         ("emoji", "count", "mine", "people")}
-                        for tally in ordered]
+        out[comment] = [_public_tally(tally, custom) for tally in ordered]
     return out
+
+
+def _public_tally(tally, custom):
+    out = {key: tally[key] for key in ("emoji", "count", "mine", "people")}
+    if CUSTOM_RE.fullmatch(tally["emoji"]):
+        item = (custom or {}).get(tally["emoji"][len("custom:"):])
+        out["custom"] = {"label": item["label"], "src": item["src"],
+                         "animatedSrc": item.get("animatedSrc") or ""} \
+            if item else None
+    return out
+
+
+def _has_custom(rows):
+    return any(CUSTOM_RE.fullmatch(str(row.get("emoji") or ""))
+               for row in rows or [])
+
+
+async def _custom_catalog(env, owner, rows=None):
+    if rows is not None and not _has_custom(rows):
+        return {}
+    try:
+        return await custom_reactions_catalog(env, owner)
+    except Exception:
+        return {}
+
+
+async def tip_counts(env, repo_bi, subject):
+    """comment -> number of confirmed tips on it (comment_tips)."""
+    try:
+        rows = await d1_all(
+            env, "SELECT comment, COUNT(*) AS n FROM comment_tips WHERE "
+            "repo_bi=? AND subject=? AND status='confirmed' GROUP BY comment",
+            repo_bi, subject)
+    except Exception:
+        return {}
+    return {str(row.get("comment")): int(row.get("n") or 0)
+            for row in rows or [] if clean_comment(str(row.get("comment") or ""))}
 
 
 async def _rows(env, repo_bi, subject, comment=""):
@@ -223,7 +280,7 @@ async def notify_author(env, request, owner, repo, access, kind, number,
         if str(row.get("account_bi") or "") == recipient_bi:
             continue
         emoji = str(row.get("emoji") or "")
-        if emoji not in SLUGS:
+        if not known_emoji(emoji):
             continue
         counts[emoji] = counts.get(emoji, 0) + 1
         if len(names) < 2:
@@ -243,8 +300,18 @@ async def notify_author(env, request, owner, repo, access, kind, number,
         names_sentence(names, max(people, len(names))), what, owner, repo,
         number)
     order = [slug for slug, _label in CATALOG]
-    summary = " ".join("%s %d" % (EMOJI[slug], counts[slug]) for slug in sorted(
-        counts, key=lambda slug: (-counts[slug], order.index(slug))))
+    custom = await _custom_catalog(env, owner) if any(
+        slug not in EMOJI for slug in counts) else {}
+
+    def glyph(slug):
+        if slug in EMOJI:
+            return EMOJI[slug]
+        item = custom.get(slug[len("custom:"):])
+        return ":%s:" % (item["label"] if item else slug[len("custom:"):])
+
+    summary = " ".join("%s %d" % (glyph(slug), counts[slug]) for slug in sorted(
+        counts, key=lambda slug: (-counts[slug], order.index(slug)
+                                  if slug in order else len(order), slug)))
     href = repo_web_href(owner, repo) + "/%s/%d" % (KINDS[kind][1], number)
     return await enqueue_notification(
         env, recipient, "reaction", title, body=summary,
@@ -270,9 +337,12 @@ async def _read(env, request, owner, repo):
     viewer_bi = await blind_index(env, viewer) if viewer else ""
     rows = await _rows(env, access["repoBi"], subject_key(kind, number))
     shared = not viewer and access.get("visibility") == "public"
+    custom = await _custom_catalog(env, owner, rows)
     return json_response(
         {"ok": True, "kind": kind, "number": number, "signedIn": bool(viewer),
-         "reactions": await summarize(env, rows, viewer_bi)},
+         "reactions": await summarize(env, rows, viewer_bi, custom),
+         "tips": await tip_counts(env, access["repoBi"],
+                                  subject_key(kind, number))},
         cache_control=PUBLIC_CACHE if shared else PRIVATE_CACHE,
         extra_headers=VARY)
 
@@ -315,6 +385,13 @@ async def _write(env, request, owner, repo):
     disabled = await _repo_feature_off(env, owner, repo, KINDS[kind][0])
     if disabled is not None:
         return disabled
+    custom = {}
+    if CUSTOM_RE.fullmatch(emoji):
+        custom = await _custom_catalog(env, owner)
+        # A deleted or disabled custom reaction can still be taken back.
+        if on and emoji[len("custom:"):] not in custom:
+            return json_response({"error": "invalid_reaction"}, status=400,
+                                 cache_control=PRIVATE_CACHE)
     now = int(Date.now())
     limited = await _rate_limited(env, account_bi, now)
     if limited is not None:
@@ -350,7 +427,9 @@ async def _write(env, request, owner, repo):
             "AND comment=? AND emoji=? AND account_bi=?",
             repo_bi, subject, comment, emoji, account_bi)
     rows = await _rows(env, repo_bi, subject, comment)
-    tallies = (await summarize(env, rows, account_bi)).get(comment, [])
+    if not custom and _has_custom(rows):
+        custom = await _custom_catalog(env, owner)
+    tallies = (await summarize(env, rows, account_bi, custom)).get(comment, [])
     if added and data.get("author") and await _ping_budget_left(
             env, account_bi, now):
         try:

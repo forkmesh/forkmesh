@@ -87,6 +87,11 @@
                       <i data-lucide="building-2" class="h-5 w-5"></i>
                       Organizations
                     </button>
+                    <button data-settings-section-link="reactions" data-reaction-settings-link hidden type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
+                      <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
+                      <i data-lucide="smile-plus" class="h-5 w-5"></i>
+                      Reactions, GIFs &amp; tips
+                    </button>
                     <button data-settings-section-link="agents" type="button" aria-current="false" class="relative flex h-10 items-center gap-3 rounded-md px-4 text-left text-muted-foreground hover:bg-secondary hover:text-foreground">
                       <span data-settings-active-indicator class="absolute left-0 top-1/2 hidden h-6 w-1 -translate-y-1/2 rounded-full bg-primary"></span>
                       <i data-lucide="bot" class="h-5 w-5"></i>
@@ -766,6 +771,88 @@
                     <p class="mt-1 text-sm text-muted-foreground">Create organizations to serve your repos at <span class="font-mono">/&lt;org&gt;/&lt;repo&gt;</span>, invite members, group them into permission teams, and link the repos an org fronts.</p>
                     <div data-orgs-root class="mt-5 max-w-3xl">
                       <p class="text-sm text-muted-foreground">Loading organizations…</p>
+                    </div>
+                  </section>
+
+                  <section id="settings-reactions" data-settings-section="reactions" data-reaction-settings class="hidden pb-8">
+                    <h2 class="text-2xl font-semibold tracking-normal text-foreground">Reactions, GIFs &amp; tips</h2>
+                    <p class="mt-1 text-sm text-muted-foreground">Custom reactions for this instance (administrators) or for an organization you own, the GIPHY key behind the comment GIF picker, and which tokens comment tips offer.</p>
+                    <div class="mt-5 grid max-w-3xl gap-5">
+                      <div data-custom-reactions-card class="rounded-md border border-border bg-card">
+                        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
+                          <div class="min-w-0">
+                            <h3 class="text-sm font-semibold text-foreground">Custom reactions</h3>
+                            <p class="mt-0.5 text-xs text-muted-foreground">Shown in every reaction picker (an organization's only on its repositories). An SVG up to 32 KB, or a PNG, GIF or WebP up to 64 KB and 256×256. Deleting one keeps its counts; they show its name instead.</p>
+                          </div>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Scope
+                            <select data-custom-reactions-scope class="h-8 rounded-md border border-border bg-background px-2 text-sm font-normal text-foreground"></select>
+                          </label>
+                        </div>
+                        <ul data-custom-reactions-list class="divide-y divide-border" aria-live="polite"></ul>
+                        <form data-custom-reaction-form class="grid gap-3 border-t border-border px-4 py-4 sm:grid-cols-2">
+                          <h4 data-custom-reaction-form-title class="text-sm font-semibold text-foreground sm:col-span-2">Add a reaction</h4>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Name (slug)
+                            <input data-custom-reaction-slug name="slug" required pattern="[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?" maxlength="32" autocomplete="off" spellcheck="false" placeholder="party-parrot" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Label
+                            <input data-custom-reaction-label name="label" required maxlength="40" autocomplete="off" placeholder="Party parrot" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Image
+                            <input data-custom-reaction-image type="file" accept="image/svg+xml,image/png,image/gif,image/webp" class="text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Animated variant <span class="font-normal text-muted-foreground">(optional, played on hover)</span>
+                            <input data-custom-reaction-animated type="file" accept="image/svg+xml,image/png,image/gif,image/webp" class="text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Order
+                            <input data-custom-reaction-position type="number" min="0" max="10000" value="0" class="h-9 w-28 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                          </label>
+                          <label class="flex items-center gap-2 self-end text-sm text-foreground"><input data-custom-reaction-enabled type="checkbox" checked> Enabled</label>
+                          <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
+                            <span data-custom-reaction-preview class="fm-custom-reaction-preview" aria-hidden="true"></span>
+                            <button type="submit" class="fm-btn fm-btn-cta">Save reaction</button>
+                            <button type="button" data-custom-reaction-reset class="fm-btn">Clear</button>
+                            <p data-custom-reaction-status role="status" class="min-h-4 text-xs text-muted-foreground"></p>
+                          </div>
+                        </form>
+                      </div>
+                      <div data-gif-settings-card hidden class="rounded-md border border-border bg-card px-4 py-4">
+                        <h3 class="text-sm font-semibold text-foreground">GIFs (GIPHY)</h3>
+                        <p class="mt-0.5 text-xs text-muted-foreground">With a key, comment composers get a GIF button. Searches go through this server, so the key never reaches a browser. Create a key at developers.giphy.com.</p>
+                        <form data-gif-settings-form class="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">API key
+                            <input data-gif-settings-key type="password" autocomplete="off" spellcheck="false" placeholder="Paste a key to set or replace it" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Content rating
+                            <select data-gif-settings-rating class="h-9 rounded-md border border-border bg-background px-2 text-sm font-normal text-foreground"><option value="g">G</option><option value="pg">PG</option><option value="pg-13">PG-13</option><option value="r">R</option></select>
+                          </label>
+                          <div class="flex flex-wrap items-center gap-2 sm:col-span-2">
+                            <button type="submit" class="fm-btn fm-btn-cta">Save</button>
+                            <button type="button" data-gif-settings-clear class="fm-btn">Remove key</button>
+                            <p data-gif-settings-status role="status" class="text-xs text-muted-foreground"></p>
+                          </div>
+                        </form>
+                      </div>
+                      <div data-tip-settings-card hidden class="rounded-md border border-border bg-card px-4 py-4">
+                        <h3 class="text-sm font-semibold text-foreground">Comment tips (Solana Pay)</h3>
+                        <p class="mt-0.5 text-xs text-muted-foreground">Tips go directly wallet to wallet; this server never holds funds or keys. SOL is always offered. Verification reads the chain through the instance's Solana RPC endpoints (SOLANA_RPC_URL).</p>
+                        <form data-tip-settings-form class="mt-3 grid gap-3 sm:grid-cols-3">
+                          <label class="flex items-center gap-2 text-sm text-foreground sm:col-span-3"><input data-tip-settings-enabled type="checkbox" checked> Offer tips on comments</label>
+                          <label class="flex items-center gap-2 text-sm text-foreground sm:col-span-3"><input data-tip-settings-usdc type="checkbox" checked> Offer USDC</label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground sm:col-span-3">Instance token mint <span class="font-normal text-muted-foreground">(optional SPL token)</span>
+                            <input data-tip-settings-mint autocomplete="off" spellcheck="false" placeholder="Token mint address" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Symbol
+                            <input data-tip-settings-symbol maxlength="10" autocomplete="off" placeholder="TOKEN" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                          </label>
+                          <label class="grid gap-1 text-xs font-semibold text-foreground">Decimals
+                            <input data-tip-settings-decimals type="number" min="0" max="18" placeholder="9" class="h-9 rounded-md border border-border bg-background px-3 text-sm font-normal text-foreground">
+                          </label>
+                          <div class="flex flex-wrap items-center gap-2 sm:col-span-3">
+                            <button type="submit" class="fm-btn fm-btn-cta">Save</button>
+                            <p data-tip-settings-status role="status" class="text-xs text-muted-foreground"></p>
+                          </div>
+                        </form>
+                      </div>
                     </div>
                   </section>
 

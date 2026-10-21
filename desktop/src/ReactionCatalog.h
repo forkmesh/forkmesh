@@ -77,6 +77,21 @@ inline const QVector<CatalogEntry> &catalog()
          detail::emojiFrom(0x1F680)},
         {QStringLiteral("check"), QStringLiteral("Done"),
          detail::emojiFrom(0x2705)},
+        // The gratitude group (web "Say thanks"); "thankyou" is the comic
+        // "THANK YOU" sticker, spelled as a speech balloon for text-only
+        // services.
+        {QStringLiteral("hearthands"), QStringLiteral("Heart hands"),
+         detail::emojiFrom(0x1FAF6)},
+        {QStringLiteral("sparkleheart"), QStringLiteral("Sparkling heart"),
+         detail::emojiFrom(0x1F496)},
+        {QStringLiteral("handshake"), QStringLiteral("Handshake"),
+         detail::emojiFrom(0x1F91D)},
+        {QStringLiteral("glowstar"), QStringLiteral("Glowing star"),
+         detail::emojiFrom(0x1F31F)},
+        {QStringLiteral("trophy"), QStringLiteral("Trophy"),
+         detail::emojiFrom(0x1F3C6)},
+        {QStringLiteral("thankyou"), QStringLiteral("Thank you"),
+         detail::emojiFrom(0x1F4AC)},
     };
     return kCatalog;
 }
