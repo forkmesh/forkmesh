@@ -27,7 +27,7 @@ STATIC_ROUTES_TEXT = (ROOT / "src" / "static_routes.py").read_text(encoding="utf
 WRANGLER = tomllib.loads((ROOT / "wrangler.toml").read_text(encoding="utf-8"))
 REDIRECTS = (WWW_PUBLIC / "_redirects").read_text(encoding="utf-8")
 REPO_HOST_ROUTE_RE = (
-    'r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes|pulse)$"'
+    'r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes|pulse|issue-index)$"'
 )
 REPO_DIRECT_BROWSE_GATE = "and action in REPO_HOST_READ_ACTIONS"
 
