@@ -18,6 +18,9 @@ Signed release channels (a folder holding ``release.json.sig``, and the
 from here: editing them would break their signature.
 """
 
+import base64
+import binascii
+import hashlib
 import json
 import re
 import time
@@ -26,13 +29,16 @@ import repository_file_edits as edits
 from docs_book import (OID_RE, commit_payload, object_id, pack,
                        receive_pack_body)
 from hosted_repos import noreply_email
-from releases import valid_release_tag
+from releases import valid_asset_name, valid_release_tag
 
 MAX_TITLE = 200
 MAX_NOTES_BYTES = 128 * 1024
 RELEASES_DIR = ".forkmesh/releases"
 RESERVED_CHANNEL_RE = re.compile(r"^(latest|candidate(-.*)?)$", re.I)
-OPS = frozenset({"tag", "save", "delete"})
+OPS = frozenset({"tag", "save", "delete", "asset", "asset-delete"})
+MAX_ASSET_BYTES = edits.MAX_CONTENT_BYTES
+MAX_ASSETS = 20
+CONTENT_TYPE_RE = re.compile(r"^[a-z0-9][a-z0-9.+-]*/[a-z0-9][a-z0-9.+-]*$")
 
 
 def _bind_runtime(runtime):
@@ -129,6 +135,81 @@ async def _commit_release_file(env, request, owner, repo, actor, branch,
     return commit_oid
 
 
+async def _signed_or_missing(env, owner, repo, branch, tag):
+    """Refuse a publisher-signed release folder; return its listings."""
+    folder = "%s/%s" % (RELEASES_DIR, tag)
+    parent, listings, _create = await edits._listings(
+        env, owner, repo, branch, folder + "/release.json", "",
+        allow_missing=True)
+    entries = listings.get(folder) or []
+    if any(str(e.get("name") or "") == "release.json.sig" for e in entries):
+        raise edits.FileEditError(
+            "signed_release",
+            "This release is signed by its publisher; it cannot be changed "
+            "from the web.", 409)
+    return parent, listings
+
+
+async def _save_asset(env, request, owner, repo, actor, branch, tag, data,
+                      remove):
+    """Attach (or remove) a file to a web release.
+
+    The bytes are committed next to the notes, at
+    .forkmesh/releases/<tag>/assets/<name> (up to 2 MB each), and listed in
+    release.json with their size, type, SHA-256 and repository path, so any
+    mirror serving the repository serves the download too.
+    """
+    name = str(data.get("name") or "").strip()
+    if not valid_asset_name(name) or not edits.valid_path(name):
+        raise edits.FileEditError("invalid_asset", "Choose a valid file name.",
+                                  400)
+    record = await _previous_record(env, owner, repo, branch, tag)
+    if not record or record.get("source") != "web":
+        raise edits.FileEditError(
+            "not_found", "Publish the release on the web first.", 404)
+    asset_path = "%s/%s/assets/%s" % (RELEASES_DIR, tag, name)
+    assets = [a for a in record.get("assets") or []
+              if isinstance(a, dict) and a.get("name") != name]
+    files = {}
+    if remove:
+        if len(assets) == len(record.get("assets") or []):
+            raise edits.FileEditError("not_found", "No such asset.", 404)
+        files[asset_path] = None
+    else:
+        try:
+            raw = base64.b64decode(str(data.get("content") or ""),
+                                   validate=True)
+        except (binascii.Error, ValueError):
+            raise edits.FileEditError("invalid_content",
+                                      "The file is not valid base64.", 400)
+        if not raw or len(raw) > MAX_ASSET_BYTES:
+            raise edits.FileEditError(
+                "too_large", "Release files up to 2 MB can be added here.",
+                413)
+        if len(assets) >= MAX_ASSETS:
+            raise edits.FileEditError(
+                "too_many_assets", "A release can carry 20 files here.", 409)
+        content_type = str(data.get("contentType") or "").strip().lower()
+        if not CONTENT_TYPE_RE.match(content_type):
+            content_type = "application/octet-stream"
+        assets.append({
+            "name": name, "size": len(raw), "content_type": content_type,
+            "sha256": hashlib.sha256(raw).hexdigest(), "path": asset_path,
+            "source": "web",
+        })
+        files[asset_path] = raw
+    record["assets"] = sorted(assets, key=lambda a: a.get("name", ""))
+    record["updated_at"] = int(time.time() * 1000)
+    files["%s/%s/release.json" % (RELEASES_DIR, tag)] = (
+        json.dumps(record, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    await _signed_or_missing(env, owner, repo, branch, tag)
+    commit = await edits.commit_paths(
+        env, request, owner, repo, actor, branch, files,
+        ("Remove %s from the %s release" if remove
+         else "Add %s to the %s release") % (name, tag))
+    return commit, record
+
+
 async def _previous_record(env, owner, repo, branch, tag):
     data = await edits._blob(
         env, owner, repo, "%s/%s/release.json" % (RELEASES_DIR, tag), branch)
@@ -179,10 +260,28 @@ async def _save(env, request, owner, repo):
         return _error("invalid_target", "Choose a branch or commit.", 400)
     result = {"ok": True, "op": op, "tag": tag}
     try:
-        if op == "delete":
-            result["commit"] = await _commit_release_file(
-                env, request, owner, repo, actor, branch, tag, None,
-                "Delete the %s release notes" % tag)
+        if op in ("asset", "asset-delete"):
+            result["commit"], result["release"] = await _save_asset(
+                env, request, owner, repo, actor, branch, tag, data,
+                op == "asset-delete")
+        elif op == "delete":
+            previous = await _previous_record(env, owner, repo, branch, tag)
+            asset_paths = [
+                a.get("path") for a in (previous or {}).get("assets") or []
+                if isinstance(a, dict) and a.get("source") == "web"
+                and str(a.get("path") or "").startswith(
+                    "%s/%s/assets/" % (RELEASES_DIR, tag))]
+            if asset_paths:
+                await _signed_or_missing(env, owner, repo, branch, tag)
+                files = {"%s/%s/release.json" % (RELEASES_DIR, tag): None}
+                files.update({path: None for path in asset_paths})
+                result["commit"] = await edits.commit_paths(
+                    env, request, owner, repo, actor, branch, files,
+                    "Delete the %s release" % tag)
+            else:
+                result["commit"] = await _commit_release_file(
+                    env, request, owner, repo, actor, branch, tag, None,
+                    "Delete the %s release notes" % tag)
         else:
             existing = await _resolve(env, owner, repo, "refs/tags/" + tag)
             if existing:

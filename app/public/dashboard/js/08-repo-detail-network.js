@@ -2044,6 +2044,13 @@
       openReleaseForm(state.selectedRepo, releaseNewButton.dataset.repoReleaseEdit || "");
       return;
     }
+    const releaseAssetRemove = event.target.closest("[data-repo-release-asset-remove]");
+    if (releaseAssetRemove && state.selectedRepo) {
+      event.preventDefault();
+      void handleReleaseAssetRemove(state.selectedRepo, releaseAssetRemove.dataset.repoReleaseAssetTag || "",
+        releaseAssetRemove.dataset.repoReleaseAssetRemove || "");
+      return;
+    }
     const releaseDeleteButton = event.target.closest("[data-repo-release-delete]");
     if (releaseDeleteButton && state.selectedRepo) {
       event.preventDefault();
@@ -3784,6 +3791,11 @@
   });
 
   document.addEventListener("change", (event) => {
+    const releaseAssetInput = event.target.closest?.("[data-repo-release-asset-upload]");
+    if (releaseAssetInput && state.selectedRepo) {
+      void handleReleaseAssetUpload(state.selectedRepo, releaseAssetInput);
+      return;
+    }
     if (handleRepoForgeMirrorChange(event)) return;
     const discussionFilter = event.target.closest?.("[data-repo-discussion-filter]");
     if (discussionFilter) {

@@ -45,3 +45,13 @@ def test_the_page_wires_release_controls():
                      '"[data-repo-release-delete]"', '"[data-repo-release-cancel]"',
                      '"[data-repo-release-tab]"'):
         assert "event.target.closest(%s)" % selector in DASHBOARD_JS
+
+
+def test_files_can_be_attached_to_and_removed_from_web_releases():
+    card = _function("renderRepoRelease")
+    assert 'repoLiveUrl(repo, "raw", { path: String(asset.path) })' in card
+    assert "data-repo-release-asset-upload" in card and "data-repo-release-asset-remove" in card
+    upload = _function("handleReleaseAssetUpload")
+    assert 'op: "asset"' in upload and "file.size > 2 * 1024 * 1024" in upload
+    assert 'op: "asset-delete"' in _function("handleReleaseAssetRemove")
+    assert 'event.target.closest?.("[data-repo-release-asset-upload]")' in DASHBOARD_JS

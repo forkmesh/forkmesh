@@ -130,3 +130,44 @@ def test_only_writers_manage_releases(bare_repo):
                  {"op": "save", "tag": "v1", "branch": "main",
                   "notes": "x" * (128 * 1024 + 1)}):
         assert release(body)["status"] in (400, 413)
+
+
+def test_files_attach_to_a_web_release_and_leave_with_it(bare_repo):
+    import base64
+    import hashlib
+    releases_harness(bare_repo)
+    release({"op": "save", "tag": "v3", "branch": "main", "title": "Three"})
+    data = bytes(range(256)) * 4
+    added = release({"op": "asset", "tag": "v3", "branch": "main",
+                     "name": "tool-linux.tar.gz", "contentType": "application/gzip",
+                     "content": base64.b64encode(data).decode()})
+    assert added["status"] == 200, added
+    path = ".forkmesh/releases/v3/assets/tool-linux.tar.gz"
+    assert git(bare_repo, "show", "main:" + path).stdout == data
+    [asset] = manifest(bare_repo, "v3")["assets"]
+    assert asset == {"name": "tool-linux.tar.gz", "size": len(data),
+                     "content_type": "application/gzip",
+                     "sha256": hashlib.sha256(data).hexdigest(),
+                     "path": path, "source": "web"}
+    bad = release({"op": "asset", "tag": "v3", "branch": "main",
+                   "name": "../x", "content": "AA=="})
+    assert bad["status"] == 400
+    removed = release({"op": "asset-delete", "tag": "v3", "branch": "main",
+                       "name": "tool-linux.tar.gz"})
+    assert removed["status"] == 200 and manifest(bare_repo, "v3")["assets"] == []
+    assert git(bare_repo, "cat-file", "-e", "main:" + path,
+               check=False).returncode != 0
+    release({"op": "asset", "tag": "v3", "branch": "main", "name": "a.bin",
+             "content": base64.b64encode(b"abc").decode()})
+    assert release({"op": "delete", "tag": "v3", "branch": "main"})["status"] == 200
+    assert git(bare_repo, "cat-file", "-e", "main:.forkmesh/releases/v3",
+               check=False).returncode != 0
+    git(bare_repo, "fsck", "--strict", "--no-dangling")
+
+
+def test_assets_need_a_web_release(bare_repo):
+    import base64
+    releases_harness(bare_repo)
+    missing = release({"op": "asset", "tag": "v4", "branch": "main",
+                       "name": "a.bin", "content": base64.b64encode(b"x").decode()})
+    assert missing["status"] == 404

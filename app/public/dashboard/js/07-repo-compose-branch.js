@@ -2137,8 +2137,15 @@
           const sha = String(asset.blob_sha256 || "").toLowerCase();
           const count = Number(downloads[sha]);
           const platform = [asset.os, asset.arch].filter(Boolean).join("/");
-          const href = sha
-            ? `${repoApiBase(repo)}/releases/blob/sha256/${encodeURIComponent(sha)}?filename=${encodeURIComponent(name)}`
+          // A file attached on the web lives in the repository next to the
+          // notes; publisher assets come from the mirrors' content store.
+          const href = asset.path
+            ? repoLiveUrl(repo, "raw", { path: String(asset.path) })
+            : sha
+              ? `${repoApiBase(repo)}/releases/blob/sha256/${encodeURIComponent(sha)}?filename=${encodeURIComponent(name)}`
+              : "";
+          const removeAsset = editable && asset.source === "web"
+            ? `<button type="button" data-repo-release-asset-remove="${escapeHtml(name)}" data-repo-release-asset-tag="${escapeHtml(tag)}" aria-label="Remove ${escapeHtml(name)}" class="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-destructive"><i data-lucide="x" class="h-3.5 w-3.5"></i></button>`
             : "";
           return `
             <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border px-4 py-2.5 text-sm">
@@ -2151,7 +2158,7 @@
               </div>
               <div class="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
                 ${Number.isFinite(count) ? `<span class="inline-flex items-center gap-1"><i data-lucide="download" class="h-3 w-3"></i>${formatCount(count)}</span>` : ""}
-                <span class="font-mono">${escapeHtml(formatSize(asset.size))}</span>
+                <span class="font-mono">${escapeHtml(formatSize(asset.size))}</span>${removeAsset}
               </div>
             </div>`;
         }).join("")
@@ -2176,6 +2183,7 @@
         </div>
         ${notes ? `<div class="border-b border-border px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(notes, repo)}</div>` : ""}
         <div>${assetRows}</div>
+        ${editable ? `<div class="flex flex-wrap items-center gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground"><label class="inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-border px-2.5 font-medium text-foreground hover:bg-secondary"><i data-lucide="paperclip" class="h-3.5 w-3.5"></i>Attach files<input type="file" multiple data-repo-release-asset-upload="${escapeHtml(tag)}" class="sr-only" /></label><span data-repo-release-asset-status="${escapeHtml(tag)}">Up to 2 MB each, stored in the repository.</span></div>` : ""}
       </article>`;
   }
 
@@ -2466,6 +2474,45 @@
     } catch (error) {
       if (submit) submit.disabled = false;
       setHint(releaseErrorText(error), true);
+    }
+  }
+
+  async function handleReleaseAssetUpload(repo, input) {
+    const tag = String(input?.dataset.repoReleaseAssetUpload || "");
+    const status = $(`[data-repo-release-asset-status="${CSS.escape(tag)}"]`);
+    const files = [...(input?.files || [])];
+    if (!tag || !files.length) return;
+    try {
+      for (const file of files) {
+        if (file.size > 2 * 1024 * 1024) throw Object.assign(new Error("too_large"), { code: "too_large" });
+        if (status) status.textContent = `Uploading ${file.name}…`;
+        const dataUrl = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("read_failed"));
+          reader.readAsDataURL(file);
+        });
+        await releaseEditRequest(repo, {
+          op: "asset", tag, branch: repoDefaultBranch(repo) || "main",
+          name: file.name, contentType: file.type || "",
+          content: dataUrl.slice(dataUrl.indexOf(",") + 1),
+        });
+      }
+      await loadRepoReleases(repo);
+    } catch (error) {
+      if (status) status.textContent = error?.code === "too_large"
+        ? "Files up to 2 MB can be attached here."
+        : releaseErrorText(error);
+    }
+  }
+
+  async function handleReleaseAssetRemove(repo, tag, name) {
+    if (!tag || !name || !window.confirm(`Remove ${name} from the ${tag} release?`)) return;
+    try {
+      await releaseEditRequest(repo, { op: "asset-delete", tag, name, branch: repoDefaultBranch(repo) || "main" });
+      await loadRepoReleases(repo);
+    } catch (error) {
+      window.alert(releaseErrorText(error));
     }
   }
 
