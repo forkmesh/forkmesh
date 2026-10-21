@@ -20,9 +20,16 @@ sends a signed-out visitor to the login page, the reply box is replaced by a
 read-only notice on a closed or archived discussion, and the Owner tools row
 and each reply's Delete appear only for the owner (`loadRepoDiscussionModeration`).
 
-Private repositories take no discussion submissions from the web, the same as
-issues and pull requests: the relay answers 404 to every POST for a private or
-unpublished name, so a guess cannot tell the two apart.
+Private repositories take issues, pull requests and discussions from the
+web from accounts that can read them (the owner, or an account the
+repository is shared with: `_private_collaboration_allowed`); anyone else
+gets the same 404 as for a name that does not exist, and reading the inbox
+stays with the owner's node. A private repository's submissions skip every
+public side effect: federation (`_ap_publish_repo_event` already skips
+private repositories), provider mirrors, public contribution tallies, and
+mentions, follower and assignee pings to accounts that cannot read it
+(`_private_repo_reader_filter` in `notify_mentions`, `notify_subscribers`
+and `notify_issue_assignees`).
 
 ## Events
 

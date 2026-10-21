@@ -36897,13 +36897,71 @@ async def _promote_hosted_repository_import(env, catalog_record):
     return False
 
 
+async def _private_collaboration_allowed(env, request, owner, repo):
+    """May this request use a private repository's issue, pull-request or
+    discussion inbox?
+
+    Reads of the queue (GET) and acknowledgements (DELETE) stay with the
+    owner's node, as before. A submission (POST) is accepted from any account
+    that can read the repository (its owner, or an account it is shared
+    with); everyone else gets the same 404 as for a repository that does not
+    exist. Submissions to a private repository skip every public side
+    effect: federation, provider mirrors, public contribution tallies, and
+    mentions or follower pings to accounts that cannot read it.
+    """
+    method = method_name(request)
+    if method in ("GET", "DELETE"):
+        return bool(await _authorize_owner(env, request, owner))
+    if method != "POST":
+        return False
+    try:
+        return await _repository_access_context(
+            env, request, owner, repo) is not None
+    except Exception:
+        return False
+
+
+async def _private_repo_reader_filter(env, owner, repo):
+    """None for a public repository; for a private one, an async predicate
+    telling whether an account may read it (its owner, or an account it is
+    shared with). Mentions and thread followers of a private repository are
+    only told about it when they can open it."""
+    privacy_reader = globals().get("_repo_is_private")
+    try:
+        private = callable(privacy_reader) and await privacy_reader(
+            env, owner, repo)
+    except Exception:
+        private = True
+    if not private:
+        return None
+
+    async def can_read(name):
+        name = str(name or "").strip().lower()
+        if not name:
+            return False
+        try:
+            return bool(
+                await _account_owns_node(env, name, owner)
+                or await _repo_shared_with(env, owner, repo, name))
+        except Exception:
+            return False
+    return can_read
+
+
 async def notify_mentions(env, owner, repo, actor, title, body, href, source,
                           number=0):
     # number is optional (0 = not a numbered item, e.g. a brand-new PR before
     # the owner assigns it) so every existing call site keeps working
     # unchanged; callers that DO know the number pass it as a keyword so the
     # digest email can show "#N" instead of just a bare title.
+    # Resolved through globals() so harnesses that lift this function alone
+    # (with no privacy machinery) keep their public-repository behaviour.
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     for name in notification_mentions(title, body):
+        if readers is not None and not await readers(name):
+            continue
         await enqueue_notification(
             env, name, "mention", "You were mentioned in " + owner + "/" + repo,
             body=(title or body or "Open the repository item to read the mention."),
@@ -36984,6 +37042,11 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
     if not rows:
         return
     mentioned = set(notification_mentions(title, body))
+    # Resolved through globals() so harnesses that lift this function alone
+    # (with no privacy machinery) keep their public-repository behaviour.
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     snippet = clean_string(body or title, 80)
     # Say what was actually written. The ping (and the phone banner built from
     # it) used to read "New activity in owner/repo" over the issue title, so
@@ -37003,6 +37066,8 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
             continue
         name = clean_string(rec.get("node", ""), MAX_NODE_NAME).lower()
         if not valid_node_name(name) or name == actor or name in mentioned:
+            continue
+        if readers is not None and not await readers(name):
             continue
         await enqueue_notification(
             env, name, "subscribed", headline + " in " + owner + "/" + repo,
@@ -37214,8 +37279,15 @@ async def notify_catalog_issues_opened(env, owner, repo, repo_bi, prior,
 
 
 async def notify_issue_assignees(env, owner, repo, assignees, actor, title, number=0):
+    # Resolved through globals() so harnesses that lift this function alone
+    # (with no privacy machinery) keep their public-repository behaviour.
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     for assignee in sorted({clean_string(a, MAX_NODE_NAME).lower() for a in (assignees or [])}):
         if not valid_node_name(assignee):
+            continue
+        if readers is not None and not await readers(assignee):
             continue
         await enqueue_notification(
             env, assignee, "issue_assigned",
@@ -41319,7 +41391,14 @@ async def discussions_handler(env, request, owner, repo):
                 env, owner, repo, "discussion", number, actor))
         await notify_repo_host(env, owner, repo, "discussions")
         await notify_repo_mirrors(env, owner, repo, "discussions")
-        if event_type == "open":
+        # A private repository's discussions never leave it: no provider
+        # mirror copy, and no public contribution tally (federation already
+        # skips private repositories in _ap_publish_repo_event).
+        try:
+            private_repo = await _repo_is_private(env, owner, repo)
+        except Exception:
+            private_repo = True
+        if event_type == "open" and not private_repo:
             await _best_effort_inbox_side_effect(provider_mirror_note_event(
                 env, owner, repo, "discussion.opened",
                 {"number": 0, "title": item.get("titleIfNew", ""),
@@ -41329,9 +41408,10 @@ async def discussions_handler(env, request, owner, repo):
                 env, request, owner, repo, "discussion", event_type,
                 number, item.get("titleIfNew", ""), event.get("body", ""),
                 event.get("authorName", "")))
-            await _best_effort_inbox_side_effect(_record_contributor(
-                env, event.get("author", ""), "discussions",
-                event.get("authorName", "")))
+            if not private_repo:
+                await _best_effort_inbox_side_effect(_record_contributor(
+                    env, event.get("author", ""), "discussions",
+                    event.get("authorName", "")))
         return json_response({"ok": True, "number": number}, status=201)
 
     if method == "GET":

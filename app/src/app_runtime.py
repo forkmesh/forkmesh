@@ -3480,9 +3480,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await issues_handler(self.env, request, owner, repo)
 
@@ -3588,9 +3587,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await pulls_handler(self.env, request, owner, repo)
 
@@ -3601,9 +3599,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await discussions_handler(self.env, request, owner, repo)
 

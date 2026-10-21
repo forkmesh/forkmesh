@@ -2284,7 +2284,7 @@
     if (code === "feature_disabled") return "Discussions are turned off for this repository.";
     if (code === "not_authorized") return "Only the repository owner can do that.";
     if (code === "discussion_locked") return "This discussion was closed, so it no longer takes replies.";
-    if (code === "not_found" || status === 404) return "This repository can't take discussions from the web: it is private or not published.";
+    if (code === "not_found" || status === 404) return "This repository is not available to your account. It may be private, or not published yet.";
     if (code === "network_error") return `Could not reach ${platformName()} - check your connection.`;
     if (code === "timeout") return "The repository did not answer in time. The discussion may still arrive - check the list before sending it again.";
     return `Could not send the discussion (${code || `HTTP ${status || "error"}`}). Please try again.`;

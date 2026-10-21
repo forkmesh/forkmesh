@@ -130,7 +130,7 @@ class _Relay:
     """The handler with an in-memory inbox and recorded side effects."""
 
     def __init__(self, owner=False, session="bob", queued=(), pending=0,
-                 author_rows=0, fanout_fails=False):
+                 author_rows=0, fanout_fails=False, private=False):
         self.inserted = []
         self.calls = []
         self.queued = list(queued)
@@ -216,6 +216,7 @@ class _Relay:
             "_ap_publish_repo_event": recorder("fediverse"),
             "_record_contributor": recorder("contributor"),
             "quote": quote, "base64": base64,
+            "_repo_is_private": lambda *_a: _coro(private),
         })
 
     def post(self, body):
@@ -327,15 +328,73 @@ def test_a_failing_fan_out_never_fails_an_accepted_discussion():
     assert len(relay.inserted) == 1
 
 
-def test_private_repositories_refuse_every_discussion_post():
+def test_private_repository_routes_take_posts_from_readers_only():
     runtime = (SRC / "app_runtime.py").read_text(encoding="utf-8")
-    block = runtime[runtime.index("discussions_match = REPO_DISCUSSIONS_RE.match"):]
-    block = block[:block.index("return await discussions_handler")]
-    # POST is never in the allowed methods for a private repository: a
-    # guessed private name answers exactly like an unknown one.
-    assert "await _repo_is_private(self.env, owner, repo)" in block
-    assert 'method_name(request) in ("GET", "DELETE")' in block
-    assert '{"error": "not_found"}, status=404' in block
+    for route in ("issues_match = REPO_ISSUES_RE.match",
+                  "pulls_match = REPO_PULLS_RE.match",
+                  "discussions_match = REPO_DISCUSSIONS_RE.match"):
+        block = runtime[runtime.index(route):]
+        block = block[:block.index("return await ")]
+        assert "await _repo_is_private(self.env, owner, repo)" in block
+        assert "_private_collaboration_allowed(" in block
+        assert '{"error": "not_found"}, status=404' in block
+
+
+def _private_gate(access, owner_ok):
+    tree = ast.parse(ENTRY_TEXT)
+    names = {"_private_collaboration_allowed", "_private_repo_reader_filter",
+             "method_name"}
+    nodes = [n for n in tree.body
+             if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+             and n.name in names]
+    ns = {
+        "_authorize_owner": lambda *_a: _coro(owner_ok),
+        "_repository_access_context": lambda *_a: _coro(
+            {"visibility": "private"} if access else None),
+        "_repo_is_private": lambda *_a: _coro(True),
+        "_account_owns_node": lambda _e, name, owner: _coro(name == "alice"),
+        "_repo_shared_with": lambda _e, owner, repo, name: _coro(name == "carol"),
+    }
+    exec(compile(ast.fix_missing_locations(
+        ast.Module(body=nodes, type_ignores=[])), "entry.py", "exec"), ns)
+    return ns
+
+
+class _Method:
+    def __init__(self, method):
+        self.method = method
+
+
+def test_private_posts_need_read_access_and_queue_reads_stay_with_the_owner():
+    reader = _private_gate(access=True, owner_ok=False)
+    stranger = _private_gate(access=False, owner_ok=False)
+    owner = _private_gate(access=True, owner_ok=True)
+    allowed = "_private_collaboration_allowed"
+    assert _run(reader[allowed](None, _Method("POST"), "alice", "garden")) is True
+    assert _run(stranger[allowed](None, _Method("POST"), "alice", "garden")) is False
+    assert _run(reader[allowed](None, _Method("GET"), "alice", "garden")) is False
+    assert _run(owner[allowed](None, _Method("GET"), "alice", "garden")) is True
+    assert _run(owner[allowed](None, _Method("PUT"), "alice", "garden")) is False
+
+
+def test_private_mentions_reach_only_accounts_that_can_read():
+    ns = _private_gate(access=True, owner_ok=False)
+    readers = _run(ns["_private_repo_reader_filter"](None, "alice", "garden"))
+    assert [_run(readers(n)) for n in ("alice", "carol", "mallory", "")] == [
+        True, True, False, False]
+    for helper in ("async def notify_mentions", "async def notify_subscribers",
+                   "async def notify_issue_assignees"):
+        body = ENTRY_TEXT[ENTRY_TEXT.index(helper):]
+        body = body[:body.index("\nasync def ")]
+        assert 'globals().get("_private_repo_reader_filter")' in body
+        assert "if readers is not None and not await readers(" in body
+
+
+def test_a_private_discussion_skips_provider_mirrors_and_public_tallies():
+    relay = _Relay(private=True)
+    assert relay.post(_web_open(_Signer()))["status"] == 201
+    assert not relay.called("provider") and not relay.called("contributor")
+    assert relay.called("pending")      # the owner still hears about it
 
 
 # -- the browser --------------------------------------------------------------
