@@ -963,6 +963,29 @@ def test_private_reads_need_a_reader_and_use_a_capability():
         Env(), Request(method="GET"), "alice", "app", "git-info-refs")) is None
 
 
+def test_private_pulse_reads_answer_exactly_like_the_other_reads():
+    world = World()
+    module = install(world)
+    _created(world, module, {"visibility": "private"})
+
+    def read(operation):
+        return asyncio.run(module.hosted_private_read(
+            Env(), Request(method="GET", url=(
+                "https://app.next.test/api/repo/alice/app/%s?period=1w"
+                % operation)), "alice", "app", operation))
+    for account in ("", "mallory"):
+        world.account = account
+        pulse, stats = read("pulse"), read("stats")
+        assert pulse.status == stats.status == 404
+        assert pulse.data == stats.data == {"error": "not_found"}
+    world.account = "alice"
+    world.fetches.clear()
+    response = read("pulse")
+    assert response.status == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "/v1/repositories/alice/app/pulse" in world.fetches[0][0]
+
+
 def test_org_readers_can_read_a_private_org_repository():
     world = World(org_roles={"acme": "maintainer"})
     module = install(world)

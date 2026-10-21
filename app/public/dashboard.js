@@ -35309,7 +35309,7 @@
     const shown = value === null || value === undefined
       ? "—"
       : typeof value === "number" ? formatCount(value) : String(value);
-    return `<div data-repo-insights-metric="${escapeHtml(label.toLowerCase().replace(/\s+/g, "-"))}" class="min-w-0 rounded-md border border-border bg-secondary/30 p-3">
+    return `<div data-repo-insights-metric="${escapeHtml(label.toLowerCase().replace(/\s+/g, "-"))}" class="min-w-0 rounded-md bg-secondary/40 p-3">
       <div class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">${escapeHtml(label)}</div>
       <div class="mt-2 font-mono text-xl font-semibold text-foreground">${escapeHtml(shown)}</div>
       <div class="mt-1 truncate text-[10px] text-muted-foreground">${escapeHtml(detail)}</div>
@@ -35340,8 +35340,8 @@
         ${pct.toFixed(1)}% <span class="text-muted-foreground">(${escapeHtml(formatSize(bytes))})</span>
       </span>`;
     }).join("");
-    return `<section aria-labelledby="repo-insights-languages">
-      <h3 id="repo-insights-languages" class="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Languages</h3>
+    return `<section class="min-w-0 rounded-md border border-border p-4" aria-labelledby="repo-insights-languages">
+      <h3 id="repo-insights-languages" class="mb-2 text-[14px] font-semibold text-foreground">Languages</h3>
       <div class="flex h-2 overflow-hidden rounded-full bg-secondary">${segments}</div>
       <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">${legend}</div>
     </section>`;
@@ -35508,13 +35508,13 @@
       ? `${formatCount(contributors.length)} of ${formatCount(contributorTotal)}`
       : formatCount(contributorTotal);
     return `
-      <div class="grid gap-4 p-4">
+      <div class="grid min-w-0 gap-5">
         ${unavailable ? '<div role="status" class="fm-flash fm-flash-warning"><i data-lucide="cloud-off"></i><p class="fm-flash-body text-foreground">The live mirror is unavailable; showing the latest catalog activity.</p></div>' : ""}
         ${!stats && !unavailable ? '<div class="fm-flash fm-flash-neutral"><i data-lucide="info"></i><p class="fm-flash-body text-muted-foreground">This mirror provides only its latest 60 commits. Upgrade it to see complete contributor, language, and code-size insights.</p></div>' : ""}
         <div class="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(16rem,1fr)]">
-          <section class="rounded-lg border border-border p-3" aria-labelledby="repo-insights-summary">
-            <h3 id="repo-insights-summary" class="mb-3 text-xs font-semibold text-foreground">Repository summary</h3>
-            <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
+          <section class="min-w-0 overflow-hidden rounded-md border border-border" aria-labelledby="repo-insights-summary">
+            <h3 id="repo-insights-summary" class="border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground">Repository summary</h3>
+            <div class="grid gap-2 p-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
               ${repoInsightsMetric("Contributors", contributorTotal, "current branch")}
               ${repoInsightsMetric("Files", fileCount, "tracked blobs")}
               ${repoInsightsMetric("Code size", totalBytes === null ? null : formatSize(totalBytes), "tracked bytes")}
@@ -35522,16 +35522,16 @@
               ${repoInsightsMetric("Pull requests", pullsTotal, pullDetail)}
             </div>
           </section>
-          <aside class="rounded-lg border border-border bg-secondary/20 p-4">
+          <aside class="min-w-0 rounded-md border border-border p-4">
             <div class="flex items-center gap-2 text-xs font-semibold text-foreground"><i data-lucide="network" class="h-4 w-4 text-muted-foreground"></i>${escapeHtml(platformName())} traffic</div>
             ${repoTrafficChart(traffic)}
             <p class="mt-3 text-[10px] leading-4 text-muted-foreground">Daily Git clone requests reported by managed mirror nodes.</p>
           </aside>
         </div>
         ${repoInsightsLanguages(stats)}
-        <section class="overflow-hidden rounded-lg border border-border">
-          <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="text-xs font-medium text-foreground">Repository activity</span>
+        <section class="min-w-0 overflow-hidden rounded-md border border-border">
+          <div class="flex items-center justify-between gap-3 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2">
+            <span class="text-[14px] font-semibold text-foreground">Repository activity</span>
             <span class="font-mono text-[10px] text-muted-foreground">52 weeks · ${formatCount(displayedCommitTotal)} commits total</span>
           </div>
           <div class="p-4">${repoActivitySparkline(repo.activityWeeks, {
@@ -35542,9 +35542,9 @@
             anchor: repo.updatedAt || repo.lastSync,
           })}</div>
         </section>
-        <section class="overflow-hidden rounded-lg border border-border">
-          <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="text-xs font-medium text-foreground">Contributors &amp; activity</span>
+        <section class="min-w-0 overflow-hidden rounded-md border border-border">
+          <div class="flex items-center justify-between gap-3 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2">
+            <span class="text-[14px] font-semibold text-foreground">Contributors &amp; activity</span>
             <span class="font-mono text-[10px] text-muted-foreground">${shownLabel}</span>
           </div>
           <div class="overflow-x-auto">
@@ -35557,31 +35557,19 @@
       </div>`;
   }
 
-  async function loadRepoInsights(repo) {
-    const container = $("[data-repo-insights]");
-    if (!container || !repo) return;
-    container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading insights from the live mirror...")}</div>`;
-    try {
-      const [historyResult, statsResult, trafficResult] = await Promise.allSettled([
-        fetchRepoJson(repoLiveUrl(repo, "history")),
-        fetchRepoJson(repoLiveUrl(repo, "stats")),
-        fetchJson(`${repoApiBase(repo)}/traffic`),
-      ]);
-      if (historyResult.status === "rejected" && statsResult.status === "rejected") throw new Error("mirror unavailable");
-      const history = historyResult.status === "fulfilled" ? historyResult.value : {};
-      const stats = statsResult.status === "fulfilled" ? statsResult.value : null;
-      const traffic = trafficResult.status === "fulfilled" && trafficResult.value?.ok
-        ? trafficResult.value
-        : null;
-      const commits = Array.isArray(history?.commits) ? history.commits : [];
-      container.innerHTML = renderRepoInsights(repo, commits, stats, false, traffic);
-      void linkRepoInsightsContributors(container);
-    } catch (_) {
-      container.innerHTML = renderRepoInsights(repo, [], null, true);
-    } finally {
-      hydrateRepoActivityGraphs(container);
-      window.lucide?.createIcons();
-    }
+  function loadRepoInsights(repo) {
+    return loadRepoActivity(repo);
+  }
+
+  function repoInsightsRouteQuery() {
+    const current = new URLSearchParams(location.search || "");
+    const kept = new URLSearchParams();
+    ["view", "period", "scope"].forEach((name) => {
+      const value = current.get(name);
+      if (value && /^[a-z0-9]{1,16}$/.test(value)) kept.set(name, value);
+    });
+    const query = kept.toString();
+    return query ? `?${query}` : "";
   }
 
   function loadRepoFeaturePanels(repo, recordRoute = null, compareRoute = null, commitHash = "") {
@@ -39213,6 +39201,8 @@
             ? issueComposeUrl(repo)
           : routeKind === "security"
             ? `${repoLinkUrl(repo)}/security${routeParts.slice(3).map((part) => `/${part}`).join("")}`
+          : routeKind === "insights"
+            ? `${repoLinkUrl(repo)}/insights${repoInsightsRouteQuery()}`
             : repoTabRoutesFor(repo).includes(routeKind)
               ? `${repoLinkUrl(repo)}/${routeKind}`
               : repoLinkUrl(repo, routeKind === "blob" ? "blob" : "tree", routePath);
@@ -39513,7 +39503,7 @@
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
             <section data-dashboard-repo-tab-panel="actions" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="workflow" class="h-3.5 w-3.5 text-muted-foreground"></i>Actions</span><span class="font-mono text-[10px] text-muted-foreground">workflows in .forkmesh/ · runs from the mirror executor</span></div><div data-repo-actions></div></div></section>
-            <section data-dashboard-repo-tab-panel="insights" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex min-w-0 items-start gap-2"><i data-lucide="chart-no-axes-combined" class="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span><span class="block text-xs font-medium text-foreground">Insights</span><span class="mt-0.5 block text-[10px] text-muted-foreground">Repository-wide code, collaboration, and contributor activity.</span></span></span><button type="button" data-repo-insights-refresh class="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-insights></div></div></section>
+            <section data-dashboard-repo-tab-panel="insights" class="hidden"><div data-repo-insights class="min-w-0"></div></section>
             <section data-dashboard-repo-tab-panel="sizemap" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-pie" class="h-3.5 w-3.5 text-muted-foreground"></i>Size map</span><span class="font-mono text-[10px] text-muted-foreground">directory sizes · default branch</span></div><div data-repo-sizemap class="p-4"></div></div></section>
             <section data-dashboard-repo-tab-panel="mirrors" class="hidden"><div data-mirror-request hidden class="py-2"><label class="block text-[11px] font-medium text-foreground">Ask a node to mirror this repo</label><div class="flex items-center gap-2"><input data-mirror-request-target type="text" autocomplete="off" spellcheck="false" placeholder="node name" class="h-8 min-w-0 flex-1 rounded-md bg-secondary px-2 font-mono text-xs text-foreground outline-none placeholder:text-muted-foreground" /><button type="button" data-mirror-request-send class="h-8 shrink-0 rounded-md bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:bg-secondary/70">Ask to mirror</button></div><p data-mirror-request-hint class="text-[11px] text-muted-foreground">They get a ping; if they accept, their node starts mirroring your repo.</p></div><div data-repo-mirrors></div></section>
             ${canSeeAgentsTab ? `<section data-dashboard-repo-tab-panel="agents" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="bot" class="h-3.5 w-3.5 text-muted-foreground"></i>Agents</span><button type="button" data-repo-agents-refresh class="inline-flex h-7 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button></div><div data-repo-agents></div></div></section>` : ""}
@@ -45651,6 +45641,11 @@
     return loadDashboardChunk("referrals").then((chunk) => chunk.initReferralsPage(...args));
   }
 
+  // loadRepoActivity lives in 09-repo-activity.js (a per-page chunk).
+  function loadRepoActivity(...args) {
+    return loadDashboardChunk("repo-activity").then((chunk) => chunk.loadRepoActivity(...args));
+  }
+
   // ---------------------------------------------------------------------------
   // /dashboard/runners: list the agent runners this account may manage and
   // sign their provider CLIs in from the browser (app/src/runner_logins.py).
@@ -47063,6 +47058,7 @@
     "links": "/dashboard-page-links.js?v=d86c45ee2e66",
     "notes": "/dashboard-page-notes.js?v=9cd57af4c881",
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
+    "repo-activity": "/dashboard-page-repo-activity.js?v=566433d8d315",
     "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
     "workflows": "/dashboard-page-workflows.js?v=9cec7cd9e87f",
   };
@@ -47075,6 +47071,7 @@
     desktopBrand,
     desktopControlErrorText,
     desktopControlHub,
+    dropBrokenContributorAvatars,
     escapeHtml,
     fetchJson,
     fetchRepoJson,
@@ -47083,15 +47080,20 @@
     formatTimeAgo,
     groupDisplayOwner,
     groupRepositories,
+    hydrateRepoActivityGraphs,
     initSettingsRunners,
     issuePersonNameHtml,
+    linkRepoInsightsContributors,
     loadQrGenerator,
+    loadRepoRecordDetail,
     loadRunnerAccountsPicker,
     loadingHtml,
     logout,
     mergeGroupsByPublicAddress,
+    navigateHistory,
     orgAgentRequest,
     parseFlexibleDate,
+    platformAccount,
     platformName,
     profileBadgeMedal,
     profileBadgeTier,
@@ -47099,21 +47101,30 @@
     publicSiteOrigin,
     relativeTimeLabel,
     renderMarkdown,
+    renderRepoInsights,
+    repoApiBase,
+    repoContributorAvatar,
     repoDataVersion,
     repoIsLive,
+    repoKey,
     repoLinkUrl,
     repoLiveUrl,
     repoPathUrl,
     repoPublicKey,
+    repoRecordUrl,
+    repoSelectedBranch,
     runnerUsageRow,
     runnersEl,
     sendTextToPrompt,
     setAgentLoginStatus,
+    setRepoTab,
     showAgentLoginModal,
+    shownAccountName,
     sourceOfTruth,
     state,
     submitWebIssue,
     userDisplayName,
+    userNameHtml,
     userNameKey,
     validNodeName,
     watchIssueActorAvatars,
