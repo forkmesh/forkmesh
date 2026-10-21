@@ -246,7 +246,7 @@ console.log(JSON.stringify([
 
 def test_parents_list_sub_issues_with_full_status_and_an_add_action():
     finder = _function(REPO_UI, "issueSubIssueNumbers")
-    assert "issueDependencyNumbers(issue.body).includes(parent)" in finder
+    assert "issueDependencyNumbers(issue.body)" in finder and "dependsOn.includes(parent)" in finder
     assert r"\(sub-issue\s+#([1-9]\d*)\)" in finder
 
     renderer = _function(REPO_UI, "renderRepoIssueSubIssues")

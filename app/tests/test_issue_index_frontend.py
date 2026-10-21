@@ -121,3 +121,94 @@ def test_issue_list_falls_back_to_record_blobs_on_an_older_gateway():
 def test_truncated_index_is_not_used():
     out = _run({"ok": True, "truncated": True, "issues": []})
     assert "blobs:.forkmesh/issues/open/12/issue-12.json" in out["requests"]
+
+
+def _node(body):
+    script = """
+const state = { issuesView: { items: [], query: "" }, issueRelationIndex: null };
+const requests = [];
+let answers = {};
+function repoKey(repo) { return repo; }
+function repoLiveUrl(repo, action, params = {}) {
+  return `${action}?${new URLSearchParams(params).toString()}`;
+}
+async function fetchRepoJson(url) {
+  requests.push(url);
+  const key = Object.keys(answers).find((prefix) => url.startsWith(prefix));
+  if (!key || answers[key] === null) throw Object.assign(new Error("not_found"), { status: 404 });
+  return answers[key];
+}
+function formatRecordDate(value) { return value ? `date:${value}` : "unknown"; }
+function localFilterQueries(query) { return [String(query || "").trim().toLowerCase()].filter(Boolean); }
+let rendered = 0;
+function renderRepoIssues() { rendered += 1; }
+function $(selector) { return selector.includes("issue-list-header") ? {} : null; }
+%s
+(async () => { %s })();
+""" % ("\n".join(_function(CONTENT, name) for name in (
+        "issueFromIndex", "fetchRepoIssueIndex", "loadRepoIssueRelationIndex",
+        "issueMatchesQuery", "issueMatchesSearch", "issueSearchState", "runIssueSearch",
+        "issueJsonPath")) + "\nconst ISSUE_SEARCH_DELAY_MS = 0;", body)
+    result = subprocess.run(["node", "-e", script], capture_output=True, text=True,
+                            check=True)
+    return json.loads(result.stdout)
+
+
+def test_issue_page_reads_only_its_related_issues_then_the_full_index():
+    out = _node("""
+answers = { "issue-index?related=484": { ok: true, issues: [{ number: 3, title: "Parent", dependsOn: [] }], related: 484 } };
+const related = await loadRepoIssueRelationIndex("o/r", 484);
+answers = { "issue-index?related=": null, "issue-index?": { ok: true, issues: [{ number: 9, title: "All" }] } };
+state.issueRelationIndex = null;
+const fallback = await loadRepoIssueRelationIndex("o/r", 485);
+console.log(JSON.stringify({ requests, related: related.map((i) => i.number), fallback: fallback.map((i) => i.number) }));
+""")
+    assert out["requests"] == ["issue-index?related=484", "issue-index?related=485", "issue-index?"]
+    assert out["related"] == [3] and out["fallback"] == [9]
+
+
+def test_free_text_search_asks_the_gateway_for_bodies_and_comments():
+    out = _node("""
+state.issuesView = { repo: "o/r", ref: "c".repeat(40), query: "censor", items: [
+  issueFromIndex({ number: 2, title: "Censorship report", author: "a", meta: "open", events: [] }),
+  issueFromIndex({ number: 1, title: "Other", author: "b", meta: "open", events: [] }),
+] };
+answers = { "issue-search?": { ok: true, numbers: [1] } };
+const before = state.issuesView.items.filter((i) => issueMatchesSearch(i, "censor")).map((i) => i.number);
+await new Promise((resolve) => setTimeout(resolve, 20));
+const after = state.issuesView.items.filter((i) => issueMatchesSearch(i, "censor")).map((i) => i.number);
+console.log(JSON.stringify({ requests, before, after, rendered }));
+""")
+    assert out["before"] == [2]
+    assert out["after"] == [2, 1]
+    assert out["requests"] == ["issue-search?q=censor&ref=" + "c" * 40]
+    assert out["rendered"] == 1
+
+
+def test_issue_thread_renders_before_its_relations_arrive():
+    source = _function(CONTENT, "loadRepoRecordDetail")
+    assert "ISSUE_RELATIONS_WAIT_MS" in source
+    assert "showRepoIssueRelationsLater" in source
+    assert "await loadRepoIssueRelationIndex" not in source
+    script = """
+const document = { activeElement: null };
+const window = {};
+let issuePicker = null;
+const draft = { value: "half typed" };
+const container = { isConnected: true, innerHTML: "",
+  contains: () => true,
+  querySelector: (selector) => selector.includes("comment-body") ? draft : null };
+const parsed = { body: "" };
+const state = { repoRecordDetail: { parsed } };
+function renderRepoRecordDetail(repo, kind, number, value) { return `rendered:${value.issueMentions.length}`; }
+function mountIssueStickyHeader() {}
+%s
+%s
+(async () => {
+  await showRepoIssueRelationsLater("o/r", 5, parsed, container, Promise.resolve({ issueMentions: [1, 2], issueSubIssues: [], issueDependencies: [] }));
+  console.log(JSON.stringify({ html: container.innerHTML, draft: draft.value }));
+})();
+""" % (_function(CONTENT, "repoIssueDetailBusy"), _function(CONTENT, "showRepoIssueRelationsLater"))
+    out = json.loads(subprocess.run(["node", "-e", script], capture_output=True,
+                                    text=True, check=True).stdout)
+    assert out == {"html": "rendered:2", "draft": "half typed"}

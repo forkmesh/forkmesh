@@ -1027,12 +1027,15 @@
       date: formatRecordDate(summary.dateValue),
       openAttachments: [],
       events: Array.isArray(summary.events) ? summary.events : [],
+      indexed: true,
     };
   }
 
   async function fetchRepoIssueIndex(repo, options = {}) {
     try {
-      const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", options.ref ? { ref: options.ref } : {}));
+      const params = options.ref ? { ref: options.ref } : {};
+      if (options.related) params.related = Number(options.related);
+      const data = await fetchRepoJson(repoLiveUrl(repo, "issue-index", params));
       if (!data || data.truncated || !Array.isArray(data.issues)) return null;
       return data;
     } catch (_) {
@@ -1102,7 +1105,8 @@
     (Array.isArray(issues) ? issues : []).forEach((issue) => {
       const number = Number(issue?.number);
       if (!issue || issue.deleted || number === parent) return;
-      if (issueDependencyNumbers(issue.body).includes(parent)) numbers.add(number);
+      const dependsOn = Array.isArray(issue.dependsOn) ? issue.dependsOn : issueDependencyNumbers(issue.body);
+      if (dependsOn.includes(parent)) numbers.add(number);
     });
     for (const match of String(parentBody || "").matchAll(/\(sub-issue\s+#([1-9]\d*)\)/gi)) {
       const number = Number(match[1]);
@@ -1337,19 +1341,22 @@
   // per minute. The closed history is not paged in just for this - it is often
   // far larger - so a closed child is still found through its parent's
   // "(sub-issue #N)" checklist link.
-  async function loadRepoIssueRelationIndex(repo) {
+  async function loadRepoIssueRelationIndex(repo, number = 0) {
     const view = state.issuesView || {};
-    if (view.repo && repoKey(view.repo) === repoKey(repo) && Array.isArray(view.items)) {
+    if (view.repo && repoKey(view.repo) === repoKey(repo) && Array.isArray(view.items)
+        && !(number && view.items.some((issue) => issue.indexed))) {
       return view.items;
     }
+    const key = number ? `${repoKey(repo)}#${Number(number)}` : repoKey(repo);
     const cached = state.issueRelationIndex;
-    if (cached && cached.key === repoKey(repo) && Date.now() - cached.at < 60_000) {
+    if (cached && cached.key === key && Date.now() - cached.at < 60_000) {
       return cached.items;
     }
-    const indexed = await fetchRepoIssueIndex(repo);
+    const indexed = (number && await fetchRepoIssueIndex(repo, { related: number }))
+      || await fetchRepoIssueIndex(repo);
     if (indexed) {
       const items = indexed.issues.map(issueFromIndex);
-      state.issueRelationIndex = { key: repoKey(repo), at: Date.now(), items };
+      state.issueRelationIndex = { key, at: Date.now(), items };
       return items;
     }
     try {
@@ -1367,6 +1374,49 @@
       return items;
     } catch (_) {
       return [];
+    }
+  }
+
+  const ISSUE_RELATIONS_WAIT_MS = 150;
+
+  async function loadRepoIssueRelations(repo, number, parsed) {
+    const relationIndex = await loadRepoIssueRelationIndex(repo, number);
+    const [dependencies, subIssues] = await Promise.all([
+      loadRepoIssueDependencies(repo, parsed.body, number, relationIndex),
+      loadRepoIssueSubIssues(repo, number, parsed.body, relationIndex),
+    ]);
+    return {
+      issueDependencies: dependencies,
+      issueSubIssues: subIssues,
+      issueMentions: issueMentionsOf(relationIndex, number),
+    };
+  }
+
+  function repoIssueDetailBusy(container) {
+    const active = document.activeElement;
+    return Boolean(container.querySelector("[data-repo-issue-comment-editor]")
+      || (active && container.contains(active) && /^(TEXTAREA|INPUT|SELECT)$/.test(active.tagName))
+      || issuePicker);
+  }
+
+  async function showRepoIssueRelationsLater(repo, number, parsed, container, pending) {
+    const relations = await pending;
+    for (let attempt = 0; attempt < 120; attempt += 1) {
+      const detail = state.repoRecordDetail;
+      if (!detail || detail.parsed !== parsed || !container.isConnected) return;
+      if (!repoIssueDetailBusy(container)) {
+        Object.assign(parsed, relations);
+        const draft = String(container.querySelector("[data-repo-issue-comment-body]")?.value || "");
+        container.innerHTML = renderRepoRecordDetail(repo, "issues", number, parsed);
+        mountIssueStickyHeader(container);
+        if (draft) {
+          const body = container.querySelector("[data-repo-issue-comment-body]");
+          if (body) body.value = draft;
+        }
+        window.lucide?.createIcons();
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
   }
 
@@ -9859,15 +9909,17 @@
       const parsed = kind === "issues"
         ? withPendingIssueStatus(repo, number, issueDetailParsed(blobText(blob), number))
         : parseFrontMatter(blobText(blob));
+      let issueRelations = null;
       if (kind === "issues") {
-        const relationIndex = await loadRepoIssueRelationIndex(repo);
-        const [dependencies, subIssues] = await Promise.all([
-          loadRepoIssueDependencies(repo, parsed.body, number, relationIndex),
-          loadRepoIssueSubIssues(repo, number, parsed.body, relationIndex),
-        ]);
-        parsed.issueDependencies = dependencies;
-        parsed.issueSubIssues = subIssues;
-        parsed.issueMentions = issueMentionsOf(relationIndex, number);
+        issueRelations = loadRepoIssueRelations(repo, number, parsed);
+        const early = await Promise.race([
+          issueRelations, new Promise((resolve) => setTimeout(() => resolve(null), ISSUE_RELATIONS_WAIT_MS))]);
+        if (early) {
+          Object.assign(parsed, early);
+          issueRelations = null;
+        } else {
+          Object.assign(parsed, { issueDependencies: [], issueSubIssues: [], issueMentions: [] });
+        }
       }
       if (collabSettings) parsed.repoCollabSettings = await collabSettings;
       if (kind === "pulls") {
@@ -9925,6 +9977,7 @@
         if (commentBody) commentBody.value = commentDraft;
       }
       loadFederatedReplies(repo, kind, number, container);
+      if (issueRelations) void showRepoIssueRelationsLater(repo, number, parsed, container, issueRelations);
       void refreshRepoRecordDevelopment(repo, kind, number);
       // Members watch an open pull for agent activity; signed-out visitors
       // cannot read organization sessions at all, so they get no timer.
@@ -10398,6 +10451,45 @@
       issue.author, issue.meta,
     ].join(" ").toLowerCase();
     return haystack.includes(q);
+  }
+
+  function issueMatchesSearch(issue, query) {
+    const queries = localFilterQueries(query);
+    if (queries.every((text) => issueMatchesQuery(issue, text))) return true;
+    if (!issue.indexed) return false;
+    const search = issueSearchState(query);
+    return Boolean(search?.numbers?.has(Number(issue.number)));
+  }
+
+  function issueSearchState(query) {
+    const view = state.issuesView;
+    const text = localFilterQueries(query)[0] || "";
+    if (!text || !(view.items || []).some((issue) => issue.indexed)) return null;
+    const search = view.search;
+    if (search && search.text === text && search.repo === view.repo && search.ref === view.ref) return search;
+    const next = { text, repo: view.repo, ref: view.ref, loading: true, numbers: null, failed: false };
+    view.search = next;
+    clearTimeout(view.searchTimer);
+    view.searchTimer = setTimeout(() => runIssueSearch(next), ISSUE_SEARCH_DELAY_MS);
+    return next;
+  }
+
+  const ISSUE_SEARCH_DELAY_MS = 250;
+
+  async function runIssueSearch(search) {
+    try {
+      const params = { q: search.text };
+      if (search.ref) params.ref = search.ref;
+      const data = await fetchRepoJson(repoLiveUrl(search.repo, "issue-search", params));
+      if (!Array.isArray(data?.numbers)) throw new Error("issue_search_unavailable");
+      search.numbers = new Set(data.numbers.map(Number));
+    } catch (_) {
+      search.failed = true;
+    }
+    search.loading = false;
+    const listShown = $("[data-repo-issues] [data-repo-issue-list-header]")
+      && !$("[data-repo-issue-form]");
+    if (state.issuesView.search === search && listShown) renderRepoIssues();
   }
 
   // The collection toolbar's four issue metadata selects used to be visual
@@ -10900,8 +10992,8 @@
       if (issuesView.filter === "open") return issue.status !== "closed";
       return issue.status === "closed";
     }).filter((issue) => issueMatchesFilters(issue, issueFilterState()))
-      .filter((issue) => localFilterQueries(issuesView.query)
-      .every((query) => issueMatchesQuery(issue, query)));
+      .filter((issue) => issueMatchesSearch(issue, issuesView.query));
+    const search = issueSearchState(issuesView.query);
     // The list stays an activity feed by default (newest update first), while
     // the visible Sort control can deliberately switch to creation time,
     // priority, or comment activity. Every mode keeps the durable issue number
@@ -10951,6 +11043,7 @@
     if (missing.length) {
       warnParts.push(`${missing.length} issue${missing.length === 1 ? "" : "s"} (#${missing.slice(0, 12).join(", #")}${missing.length > 12 ? ", ..." : ""}) couldn't be read from the live mirror`);
     }
+    if (search?.failed) warnParts.push("Descriptions and comments could not be searched; only titles, authors and labels were");
     const warnBar = warnParts.length
       ? `<div role="status" class="fm-flash fm-flash-warning fm-flash-full flex-wrap items-center border-t-0 px-4 py-2 text-xs">
           <i data-lucide="triangle-alert" class="!mt-0"></i>
@@ -10970,8 +11063,11 @@
     const allHint = issuesView.filter === "closed"
       ? `<p class="border-t border-border px-4 py-2 text-[12px] text-muted-foreground">Deleted issues are listed with <button type="button" data-repo-issue-query-set="state:all" class="font-mono text-[var(--dashboard-link)] hover:underline">state:all</button>.</p>`
       : "";
+    const searchHint = search?.loading
+      ? `<p data-repo-issue-search-pending role="status" class="border-b border-border px-4 py-2 text-[12px] text-muted-foreground">${loadingHtml("Searching descriptions and comments...")}</p>`
+      : "";
     setRepoIssueRecordOpen(false);
-    container.innerHTML = filterBar + warnBar + (filtered.length
+    container.innerHTML = filterBar + warnBar + searchHint + (filtered.length
       ? renderRepoRecordList(filtered, config, "issues")
       : issuesView.closedLoading
         ? `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`
