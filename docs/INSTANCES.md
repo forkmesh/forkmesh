@@ -1024,7 +1024,21 @@ Three layers do it, so that nothing depends on the browser alone:
 - **Build.** `apply_instance_brand.py` renames `<title>`, the
   application-name and `og:site_name` metas, and now the platform word inside
   `description`, `og:title`, `og:description`, `twitter:title` and
-  `twitter:description`.
+  `twitter:description`. It also writes the instance name beside the header
+  logo (`<span data-instance-name-label>`, the same markup
+  `instance-brand.js` used to add after the page had painted, which pushed the
+  rest of the header right), so the name is there at the first paint;
+  re-branding replaces the label.
+- **Switched-off plugins at the first paint.** `/instance-theme.css` (a
+  stylesheet in the page head) ends with `instance_features.chrome_css`: one
+  rule per switched-off plugin hiding its `[data-instance-plugin~=id]`
+  elements and links to its pages in `header`, `nav`, `aside` and `footer`
+  (and `world.forkmesh.com` links when World is off), with the `li:has(...)`
+  wrappers in a rule of their own so a browser without `:has` keeps the rest.
+  It starts with `--instance-plugins: ready`; when `instance-brand.js` sees
+  that, it no longer hides every plugin element until `/api/instance` answers,
+  which made switched-on sections (the blog card, profile panels) appear late
+  and switched-off header icons disappear late.
 - **Dashboard.** `platformName()` in `02-helpers.js` reads the brand tag's
   `data-instance-name` (default `ForkMesh`). Every platform reference in a
   dashboard string goes through it, for example the repository Insights
