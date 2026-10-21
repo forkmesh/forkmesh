@@ -178,7 +178,8 @@ def test_readme_and_stacked_about_wait_for_the_file_table():
 def test_tab_counters_keep_one_width_from_placeholder_to_count():
     ssr = (ROOT / "host" / "forkmesh_host" / "repo_ssr.py").read_text(encoding="utf-8")
     assert 'data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full' in DETAIL
-    assert """COUNT = ('<span style="min-width:1.75rem" class="rounded-full""" in ssr
+    assert """COUNT = ('<span data-dashboard-repo-tab-count="%s" '
+         'style="min-width:1.75rem" class="rounded-full""" in ssr
 
 
 def test_first_view_reads_answer_the_rail_in_the_takeover_frame():
