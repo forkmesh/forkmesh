@@ -1385,7 +1385,7 @@ func pullMarkdown(number int, pull map[string]any) string {
 
 func pullEventMarkdown(event map[string]any) string {
 	lines := []string{"---"}
-	for _, key := range []string{"type", "id", "author", "authorName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "appliedCommit", "patchset", "sig"} {
+	for _, key := range []string{"type", "id", "author", "authorName", "ts", "state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "targetPath", "target", "appliedCommit", "patchset", "sig"} {
 		if value, ok := event[key]; ok && fmt.Sprint(value) != "" {
 			lines = append(lines, key+": "+safeHeader(fmt.Sprint(value)))
 		}
