@@ -1322,6 +1322,7 @@ verify_discussion_event = _events.export("verify_discussion_event")
 event_signing_repo_keys = _events.export("event_signing_repo_keys")
 verify_issue_event = _events.export("verify_issue_event")
 verify_pull_comment_event = _events.export("verify_pull_comment_event")
+verify_pull_revision = _events.export("verify_pull_revision")
 verify_branch_comment_event = _events.export("verify_branch_comment_event")
 verify_pull_event = _events.export("verify_pull_event")
 verify_release_manifest = _events.export("verify_release_manifest")
@@ -40984,6 +40985,105 @@ async def _authorize_pull_lifecycle(env, owner, repo, number, data, request,
     return False, json_response({"error": "not_authorized"}, status=403), ""
 
 
+PULL_REVISION_FIELDS = ("title", "base", "head", "patch", "commits",
+                        "author", "sig", "revisionSig",
+                        "creationBaseOid", "creationHeadOid")
+
+
+async def _accept_pull_revision(env, request, data, owner, repo, repo_bi,
+                                revision):
+    try:
+        number = int(data.get("number", 0))
+    except (TypeError, ValueError):
+        number = 0
+    if number <= 0:
+        return json_response({"error": "number_required"}, status=400)
+    if any(field in revision and not isinstance(revision.get(field), str)
+           for field in PULL_REVISION_FIELDS + ("description",)):
+        return json_response({"error": "revision_invalid"}, status=400)
+    if len((revision.get("description", "") or "").encode("utf-8")) > \
+            MAX_ISSUE_BYTES:
+        return json_response({"error": "description_too_large"}, status=413)
+    revision_bytes = len((revision.get("patch", "") or "").encode("utf-8")) + \
+        len((revision.get("commits", "") or "").encode("utf-8"))
+    if revision_bytes > MAX_PULL_BYTES:
+        return json_response({"error": "pull_too_large"}, status=413)
+    if not (revision.get("patch") or revision.get("commits")):
+        return json_response({"error": "revision_empty"}, status=400)
+    if not await verify_pull_revision(
+            number, revision, _event_signing_repo_keys(request, owner, repo)):
+        return json_response({"error": "bad_signature"}, status=401)
+    record = await _pull_lifecycle_record(env, owner, repo, number)
+    if not record:
+        return json_response({"error": "pull_unavailable"}, status=503)
+    status = str(record.get("status") or "open").strip().lower()
+    if status != "open":
+        return json_response({"error": "pull_not_open"}, status=409)
+    if str(record.get("derive") or "").strip() == "branch":
+        return json_response({"error": "pull_follows_branch"}, status=409)
+    if str(record.get("author") or "").strip() != str(
+            revision.get("author") or "").strip():
+        return json_response({"error": "not_authorized"}, status=403)
+    try:
+        stored_ts = int(record.get("ts") or 0)
+        revision_ts = int(revision.get("ts") or 0)
+    except (TypeError, ValueError):
+        return json_response({"error": "revision_invalid"}, status=400)
+    if revision_ts <= stored_ts:
+        return json_response({"error": "revision_stale"}, status=409)
+    refused = await _bind_session_author(env, request, data, revision)
+    if refused is not None:
+        return refused
+    count = await d1_first(
+        env, "SELECT COUNT(*) AS c FROM pull_inbox WHERE repo_bi=?", repo_bi)
+    if count and count.get("c", 0) >= MAX_PENDING_PULLS:
+        return json_response({"error": "inbox_full"}, status=429)
+    submitter_bi = await blind_index(env, revision.get("author", ""))
+    if await _inbox_author_over_quota(env, "pull_inbox", repo_bi, submitter_bi):
+        return json_response({"error": "author_quota"}, status=429)
+    submission_bi = await blind_index(
+        env, "pull-revision:" + revision.get("author", "") + ":" +
+        revision.get("sig", ""))
+    item = {
+        "number": number,
+        "revision": revision,
+        "event": {
+            "type": "revision",
+            "id": "revision-%s" % clean_string(revision.get("sig", ""), 16),
+            "author": revision.get("author", ""),
+            "authorName": revision.get("authorName", ""),
+            "ts": revision.get("ts", 0),
+            "sig": revision.get("revisionSig", ""),
+            "body": "",
+        },
+        "submitter": clean_string(revision.get("author", ""), 120),
+        "submittedAt": int(Date.now()),
+    }
+    await d1_run(
+        env,
+        "INSERT OR IGNORE INTO pull_inbox "
+        "(repo_bi, data, submitter_bi, submission_bi) VALUES (?,?,?,?)",
+        repo_bi, await encrypt_row(env, item), submitter_bi, submission_bi,
+    )
+    actor = clean_string(
+        revision.get("authorName", "") or revision.get("author", ""),
+        MAX_NODE_NAME).lower()
+    await notify_subscribers(
+        env, owner, repo, "pull", number, actor, "",
+        "Updated the pull request with new changes.",
+        repo_web_href(owner, repo))
+    await notify_repo_host(env, owner, repo, "pulls")
+    await notify_repo_mirrors(env, owner, repo, "pulls")
+    emit_app = globals().get("apps_emit_repo_event")
+    if emit_app is not None:
+        await emit_app(
+            env, owner, repo, "pull.revised",
+            {"number": number, "author": actor,
+             "head": clean_string(revision.get("head", ""), 260)},
+            source_actor=actor)
+    return json_response({"ok": True, "number": number}, status=201)
+
+
 async def pulls_handler(env, request, owner, repo):
     await ensure_schema(env)
     method = method_name(request)
@@ -41119,6 +41219,10 @@ async def pulls_handler(env, request, owner, repo):
                     number, "", event.get("body", ""),
                     event.get("authorName", "")))
             return json_response({"ok": True}, status=201)
+        revision = data.get("revision")
+        if isinstance(revision, dict):
+            return await _accept_pull_revision(
+                env, request, data, owner, repo, repo_bi, revision)
         pull = data.get("pull")
         if not isinstance(pull, dict):
             return json_response({"error": "pull_required"}, status=400)
