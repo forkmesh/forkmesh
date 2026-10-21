@@ -37,7 +37,7 @@ FUNCTIONS = {
         "escapeHtml", "userNameKey", "userDisplayName", "userNameHtml", "issueActorAvatarHtml",
         "parseFlexibleDate", "formatDate", "formatTimeAgo", "formatCount", "loadingHtml",
         "issuePersonHandle", "issueActorIsBot", "issueActorPixels", "issuePersonProfileHref",
-        "issuePersonNameHtml"),
+        "issuePersonNameHtml", "forgeIdentity", "forgeLinkAttrs"),
     "03-issues-profile-io.js": (
         "webIssueClaimApplied", "webIssueAssigneesWithClaims", "issueSubtaskCandidates",
         "markdownVideoButtonHtml",
@@ -66,9 +66,9 @@ FUNCTIONS = {
         "issueAiPromptText", "renderIssueAiPrompt"),
 }
 CONSTANTS = {
-    "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE"),
+    "02-helpers.js": ("USER_NAME_RE", "ISSUE_PERSON_HANDLE_RE", "FORGE_PROFILES", "FORGE_IDENTITY_RE"),
     "06-repo-content.js": (
-        "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS", "MD_BARE_URL", "MD_ENTITIES", "MD_HARD_BREAK",
+        "MD_DATA_IMAGE_URL", "MD_VIDEO_URL", "MD_VIDEO_CLASS", "MD_BARE_URL", "MD_ENTITIES", "MD_ESCAPED_ENTITY", "MD_HARD_BREAK",
         "MD_BLOCK_START", "MD_LONE_IMAGE", "MD_BODY_CLASS", "ISSUE_REACTION_EMOJI",
         "COMMENT_REACTIONS", "COMMENT_REACTION_KINDS",
         "rewardStateLabels", "MD_MENTION", "PULL_CLOSING_REFERENCE", "ISSUE_PULL_LINK",
@@ -253,6 +253,32 @@ def test_first_view_is_the_dashboards_issue_markup(viewer):
     expected = normalize(js_render(issue, 27, index_rows(), viewer))
     got = normalize(py_render(issue, 27, index_rows(), viewer))
     assert got == expected
+
+
+def mirrored_issue():
+    opener = {"type": "open", "id": "forge-github-issue-9", "author": "s1",
+              "authorName": "github:Gulp-Run", "ts": NOW_MS - 7200_000,
+              "title": "انجمن Net4People",
+              "body": "### &rlm;انجمن Net4People&zwnj;\n\n&rlm;سلام &amp; `&rlm;` &lt;b&gt;"}
+    return {"number": 9, "title": opener["title"], "status": "open", "authorName": "github:Gulp-Run",
+            "author": "s1", "createdAt": opener["ts"], "events": [
+                opener,
+                {"type": "comment", "id": "forge-github-comment-1", "author": "s1",
+                 "authorName": "github:wkrp", "body": "同意 &zwnj; 동의", "ts": NOW_MS - 3600_000},
+                {"type": "comment", "id": "forge-github-comment-2", "author": "s1",
+                 "authorName": "github:~sync", "body": "sync", "ts": NOW_MS - 1800_000},
+            ]}
+
+
+@needs_node
+@pytest.mark.parametrize("viewer", ["guest", "member"])
+def test_mirrored_forge_authors_and_entities_render_the_same_on_first_view(viewer):
+    issue = mirrored_issue()
+    expected = normalize(js_render(issue, 9, (), viewer))
+    got = normalize(py_render(issue, 9, (), viewer))
+    assert got == expected
+    assert 'href="https://github.com/wkrp" target="_blank"' in got and ">@Gulp-Run</a>" in got
+    assert "&rlm;انجمن" in got and "&amp;rlm;</code>" in got and "&amp;rlm;انجمن" not in got.split("<code")[0]
 
 
 def linked_issue():

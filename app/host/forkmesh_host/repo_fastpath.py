@@ -69,7 +69,7 @@ PASS_HEADERS = ("content-type", "content-disposition", "content-length")
 # gateway's per-push cache generation, and a page's reads are assembled
 # without a gateway round trip each (repo_views).
 IMMUTABLE_CACHE_BYTES = 48 * 1024 * 1024
-IMMUTABLE_CACHE_ENTRY_MAX = 4 * 1024 * 1024
+IMMUTABLE_CACHE_ENTRY_MAX = 16 * 1024 * 1024
 # The host-side view bundles (repo_views): the pull/issue/discussion reads a
 # page needs, in one response.
 VIEW_OPERATION = "page-reads"

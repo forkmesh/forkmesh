@@ -11,14 +11,14 @@ MARKER = "<!-- forkmesh-mirror -->"
 USER_AGENT = "ForkMesh-provider-mirror/1.0 (+https://forkmesh.com/docs)"
 GITHUB_API_VERSION = "2022-11-28"
 MAX_TOKEN_LENGTH = 512
-MAX_TITLE_LENGTH = 240
-MAX_BODY_LENGTH = 16000
-MAX_LABELS = 8
+MAX_TITLE_LENGTH = 256
+MAX_BODY_LENGTH = 262_144
+MAX_LABELS = 100
 MAX_HISTORY = 20
 MAX_CANDIDATES = 50
 MAX_IMPORT_PER_REQUEST = 25
-AUTO_IMPORT_PER_RUN = 10
-AUTO_COMMENTS_PER_RUN = 20
+AUTO_IMPORT_PER_RUN = 100
+AUTO_COMMENTS_PER_RUN = 500
 SYNC_INTERVAL_MS = 10 * 60 * 1000
 CRON_MIRRORS_PER_TICK = 3
 OUTBOX_DRAIN_IMMEDIATE = 2
@@ -781,7 +781,7 @@ async def _import_item(env, record, repo_bi, item):
         body = import_body(provider, item)
         replies = [c for c in item.get("comments") or []
                    if not is_mirrored_text(c.get("body"))]
-        for comment in replies[:20]:
+        for comment in replies:
             body += "\n\n> **@%s** replied:\n>\n%s" % (
                 comment["author"], "\n".join(
                     "> " + line for line in str(

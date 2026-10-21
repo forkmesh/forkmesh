@@ -8,8 +8,8 @@ import re
 import time
 import urllib.parse
 
-MAX_BODY_CHARS = 60_000
-MAX_EVENTS = 400
+MAX_BODY_CHARS = 262_144
+MAX_EVENTS = 5000
 
 VIEWER_STYLE = ("<style>html[data-guest] [data-ssr-member],"
                 "html:not([data-guest]) [data-ssr-guest]{display:none!important}"
@@ -137,6 +137,26 @@ def person_handle(name):
     return text.lower() if ISSUE_PERSON_HANDLE_RE.match(text) and "--" not in text else ""
 
 
+FORGE_PROFILES = {"github": ("https://github.com/", "GitHub")}
+FORGE_IDENTITY_RE = re.compile(r"^(github):([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)$")
+
+
+def forge_identity(name):
+    match = FORGE_IDENTITY_RE.match(str(name or "").strip())
+    if not match or "--" in match.group(2):
+        return None
+    origin, label = FORGE_PROFILES[match.group(1)]
+    login = match.group(2)
+    return {"provider": match.group(1), "login": login, "href": origin + login,
+            "title": "%s on %s" % (login, label)}
+
+
+def forge_link_attrs(forge):
+    return ('href="%s" target="_blank" rel="noopener noreferrer nofollow" '
+            'data-forge-person="%s" title="%s"' % (
+                esc(forge["href"]), esc(forge["provider"]), esc(forge["title"])))
+
+
 def actor_is_bot(name):
     text = str(name or "").strip()
     if not text:
@@ -153,16 +173,20 @@ def actor_pixels(size):
 def avatar_html(name, author="", size="h-7 w-7", agent=False, link=True):
     label = str(name or author or ("Agent" if agent else "unknown"))
     bot = agent or actor_is_bot(label)
-    handle = "" if bot else person_handle(label)
+    forge = None if bot else forge_identity(label)
+    handle = "" if bot or forge else person_handle(label)
     pixels = actor_pixels(size)
     inner = icon("bot", "h-3.5 w-3.5" if pixels <= 24 else "h-4 w-4" if pixels <= 32
                  else "h-5 w-5", "text-muted-foreground") if bot else (
         '<span class="text-[9px] font-bold text-muted-foreground">%s</span>' % esc(
-            (label[:1] or "?").upper()))
+            ((forge["login"] if forge else label)[:1] or "?").upper()))
     hydrate = ' data-issue-actor-avatar="%s"' % esc(handle) if handle else ""
     classes = ("relative flex %s shrink-0 items-center justify-center overflow-hidden "
                "rounded-full border border-border bg-secondary" % size)
     title = "%s (bot)" % label if bot else label
+    if forge and link:
+        return '<a %s aria-label="%s" class="%s hover:ring-2 hover:ring-[var(--dashboard-link)]">%s</a>' % (
+            forge_link_attrs(forge), esc(forge["title"]), classes, inner)
     if handle and link:
         href = profile_href(handle)
         return ('<a%s data-issue-person="%s" title="%s" aria-label="%s"%s class="%s hover:ring-2 '
@@ -181,6 +205,10 @@ def person_name_html(name, classes="font-semibold text-foreground"):
     label = str(name or "").strip() or "unknown"
     if actor_is_bot(label):
         return '<span class="%s">%s</span>' % (classes, esc(label))
+    forge = forge_identity(label)
+    if forge:
+        return ('<a %s class="%s hover:text-[var(--dashboard-link)] hover:underline">@%s</a>' % (
+            forge_link_attrs(forge), classes, esc(forge["login"])))
     handle = person_handle(label)
     if not handle:
         return '<span class="%s">%s</span>' % (classes, user_name_html(label))
@@ -324,6 +352,7 @@ MD_ENTITIES = {"nbsp": " ", "lt": "<", "gt": ">", "quot": '"', "apos": "'",
                "middot": "·", "bull": "•", "mdash": "—",
                "ndash": "–", "hellip": "…", "rarr": "→",
                "copy": "©", "amp": "&"}
+MD_ESCAPED_ENTITY = re.compile(r"&amp;(#[0-9]{1,7}|#[xX][0-9a-fA-F]{1,6}|[A-Za-z][A-Za-z0-9]{1,31});")
 MD_DATA_IMAGE_URL = re.compile(
     r"^data:image/(?:png|apng|jpeg|jpg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon);"
     r"base64,[a-z0-9+/]+={0,2}$", re.I)
@@ -491,6 +520,7 @@ def render_inline(escaped, ctx, link_refs=True, parked=None):
     text = re.sub(r"`([^`]+)`", lambda m: park(
         '<code class="rounded bg-secondary px-1.5 py-0.5 font-mono text-xs">%s</code>'
         % m.group(1)), text)
+    text = MD_ESCAPED_ENTITY.sub(r"&\1;", text)
     text = re.sub(r"&lt;(https?://(?:(?!&[lg]t;)[^\s\x00\x01<>\"'])+)&gt;",
                   lambda m: park(link_html(m.group(1), m.group(1), ctx))
                   if link_refs else m.group(0), text, flags=re.I)

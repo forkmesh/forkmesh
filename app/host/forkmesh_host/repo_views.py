@@ -60,7 +60,7 @@ MAX_BUNDLES = 64
 BUNDLE_FRESH_SECONDS = 5.0
 BUNDLE_STALE_SECONDS = 300.0
 PUBLIC_CHECK_SECONDS = 5.0
-MAX_BUNDLE_BYTES = 8 * 1024 * 1024
+MAX_BUNDLE_BYTES = 32 * 1024 * 1024
 SEED_ERROR = "__seedError"
 NUMBERED = re.compile(r"^\d+$")
 CLAIMED_NAME = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
@@ -327,7 +327,7 @@ def issue_summary(text, number):
         "author": issue.get("authorName") or opened.get("authorName")
         or issue.get("author") or opened.get("author") or "unknown",
         "ts": issue.get("createdAt") or opened.get("ts") or "",
-        "labels": [str(label) for label in labels][:6],
+        "labels": [str(label) for label in labels][:20],
         "body": str(effective.get("body") or issue.get("body") or ""),
         "comments": [{"author": c.get("authorName") or c.get("author")
                       or "unknown", "ts": c.get("ts") or "",
@@ -766,7 +766,7 @@ async def handle(fastpath, scope, send, owner, repo):
 LIST_PAGE_SIZE = 25  # REPO_COLLECTION_PAGE_SIZE
 MAX_DIFF_LINES = 1500
 MAX_DIFF_FILES = 60
-MAX_BODY_CHARS = 60_000
+MAX_BODY_CHARS = 262_144
 VIEW_PATH_RE = re.compile(
     r"^/([A-Za-z0-9][A-Za-z0-9_-]{0,63})/([A-Za-z0-9._-]{1,100})/"
     r"(pulls|pull|issues|discussions)(?:/(\d{1,9})"
