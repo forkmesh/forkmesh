@@ -128,6 +128,12 @@ func newRunnerAgentJobs(d *Daemon) (*agentJobRunner, error) {
 	}
 	box.accounts = newRunnerAccounts(filepath.Join(cfg.WorkRoot, runnerAccountsDir), box.persistentHome(),
 		box.uid, box.gidOrUID())
+	if box.uid != 0 {
+		box.homeGate = &persistentHomeGate{}
+		if err := box.lockPersistentHome(); err != nil {
+			log.Printf("runner: the job user's home could not be locked: %v", err)
+		}
+	}
 	box.sweepIdle()
 	r := newAgentJobRunner(d)
 	r.maxRuns = cfg.MaxConcurrentRuns
