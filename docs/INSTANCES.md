@@ -123,6 +123,13 @@ App settings: `INSTANCE_INSTALL_URL`, `INSTANCE_SOURCE_URL`,
   address. A Cloudflare-proxied name is detected; the SSL/TLS mode must be
   Full (strict). Caddy trusts `Cf-Connecting-Ip` only from Cloudflare's
   published ranges.
+- A new instance launched from the start page (its settings carry
+  `launchId`) removes itself unless the admin signs in within five minutes
+  (`arm_first_login_timeout`, `forkmesh-instance-first-login-cleanup.timer`),
+  so an abandoned launch does not leave a server running. A manual
+  `--config` install has no `launchId` and is never armed: the operator runs
+  it unattended, and net4people.forkmesh.com came within four minutes of
+  removing itself after a detached install finished with nobody watching.
 - `--update` pulls, rebuilds, migrates and restarts, keeping secrets, data
   and admin; local source changes are saved to a patch file first. See
   [Updates build beside the running version](#updates-build-beside-the-running-version).

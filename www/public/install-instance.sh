@@ -2172,6 +2172,7 @@ EOF
 
 arm_first_login_timeout() {
   [ "$NEW_INSTANCE" = "1" ] || return 0
+  [ -n "${CFG_launchId:-}" ] || return 0
   [ ! -e "$LOGIN_MARKER" ] || return 0
   [ -z "$(env_value INSTANCE_LOGIN_DEADLINE)" ] || return 0
   local deadline
