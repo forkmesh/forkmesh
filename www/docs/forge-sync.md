@@ -59,6 +59,20 @@ ledger stores `"mode": "mirror"`; a ledger without `mode` is two-way.
   forged marker cannot claim, and then overwrite, a ForkMesh-only issue or
   comment.
 
+## Where the ledger lives
+
+The ledger defaults to `.forkmesh/forge-sync.json` in the checkout. `--ledger
+PATH` (or `FORKMESH_FORGE_LEDGER`) keeps it anywhere else, for example on the
+sync server, so the repository carries only the records; it is about 3 KB per
+issue (field and comment digests), 1.7 MB for a 609-issue forum, and its
+timestamps change on every pass. Each pass also writes the small public
+`.forkmesh/forge-source.json` (`forkmesh-forge-source-v1`: `provider`,
+`repository`, `baseUrl`, `issueUrl` with a `{number}` placeholder, and
+`renumbered`, the issues whose ForkMesh number differs from the provider's),
+which is all a reader needs to link an issue to its original. A mirror of the
+repository that wants its own provider sync builds a fresh ledger on its first
+pass.
+
 ## Identities
 
 Imported records are signed by the sync key and credited as

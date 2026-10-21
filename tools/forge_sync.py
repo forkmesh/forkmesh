@@ -67,6 +67,11 @@ bridge = _load("forkmesh_forge_bridge", _TOOLS / "github_forkmesh_bridge.py")
 sync_status = _load("forkmesh_forge_sync_status", _TOOLS.parent / "app" / "src" / "sync_status.py")
 
 LEDGER_REL = ".forkmesh/forge-sync.json"
+LEDGER_ENV = "FORKMESH_FORGE_LEDGER"
+SOURCE_REL = ".forkmesh/forge-source.json"
+SOURCE_SCHEMA = "forkmesh-forge-source-v1"
+ISSUE_URL_TEMPLATES = {"github": "https://github.com/{repository}/issues/{number}",
+                       "gitea": "{base}/{repository}/issues/{number}"}
 SCHEMA = "forkmesh-forge-sync-v1"
 REPORT_SCHEMA = "forkmesh-forge-sync-report-v1"
 DEFAULT_SLO_MS = 15 * 60 * 1000
@@ -126,8 +131,13 @@ def label_key(labels: list[str]) -> list[str]:
 # ---- ledger -----------------------------------------------------------------
 
 
+def ledger_path(checkout: Path) -> Path:
+    override = os.environ.get(LEDGER_ENV, "").strip()
+    return Path(override) if override else Path(checkout) / LEDGER_REL
+
+
 def load_ledger(checkout: Path) -> dict[str, Any]:
-    path = Path(checkout) / LEDGER_REL
+    path = ledger_path(checkout)
     try:
         ledger = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -150,7 +160,7 @@ def load_ledger(checkout: Path) -> dict[str, Any]:
 
 def save_ledger(checkout: Path, ledger: dict[str, Any]) -> bool:
     return bridge.write_if_changed(
-        Path(checkout) / LEDGER_REL,
+        ledger_path(checkout),
         json.dumps(ledger, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
@@ -717,8 +727,38 @@ class Engine:
         retries = getattr(self.provider.transport, "retries", 0)
         recovered = getattr(self.provider.transport, "recovered", 0)
         save_ledger(self.checkout, self.ledger)
+        save_source(self.checkout, self.ledger)
         return build_report(self.ledger, now, report=self.report, retries=retries,
                             recovered=recovered)
+
+
+def source_record(ledger: dict[str, Any]) -> dict[str, Any] | None:
+    provider = str(ledger.get("provider") or "")
+    template = ISSUE_URL_TEMPLATES.get(provider)
+    repository = str(ledger.get("repository") or "")
+    if not template or not repository:
+        return None
+    base = str(ledger.get("baseUrl") or "").rstrip("/")
+    if "{base}" in template and not base:
+        return None
+    renumbered = {}
+    for number, entry in (ledger.get("issues") or {}).items():
+        remote = entry.get("remoteNumber")
+        if isinstance(remote, int) and str(remote) != str(number):
+            renumbered[str(number)] = remote
+    return {"schema": SOURCE_SCHEMA, "provider": provider, "repository": repository,
+            "baseUrl": base,
+            "issueUrl": template.replace("{repository}", repository).replace("{base}", base),
+            "renumbered": dict(sorted(renumbered.items(), key=lambda kv: int(kv[0])))}
+
+
+def save_source(checkout: Path, ledger: dict[str, Any]) -> bool:
+    record = source_record(ledger)
+    if record is None:
+        return False
+    return bridge.write_if_changed(
+        Path(checkout) / SOURCE_REL,
+        json.dumps(record, indent=2, sort_keys=True, ensure_ascii=False) + "\n")
 
 
 # ---- status & telemetry ---------------------------------------------------------
@@ -804,7 +844,7 @@ def connect(checkout: Path, *, provider: str, repository: str, base_url: str = "
     if provider not in providers.ADAPTERS:
         raise SyncError(f"provider must be one of {', '.join(providers.ADAPTERS)}")
     repository = providers.validate_repository(repository)
-    path = Path(checkout) / LEDGER_REL
+    path = ledger_path(checkout)
     ledger = load_ledger(checkout) if path.exists() else {"schema": SCHEMA, "issues": {},
                                                           "identities": {}, "history": [],
                                                           "sourceOfTruth": {}}
@@ -898,8 +938,22 @@ def build_provider(ledger: dict[str, Any], token: str, **transport: Any) -> Any:
 
 
 def main(argv: list[str] | None = None) -> int:
+    previous = os.environ.get(LEDGER_ENV)
+    try:
+        return _main(argv)
+    finally:
+        if previous is None:
+            os.environ.pop(LEDGER_ENV, None)
+        else:
+            os.environ[LEDGER_ENV] = previous
+
+
+def _main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--checkout", type=Path, default=Path("."))
+    parser.add_argument("--ledger", type=Path, default=None,
+                        help="keep the sync ledger at this path instead of the checkout's "
+                             ".forkmesh/forge-sync.json")
     sub = parser.add_subparsers(dest="command", required=True)
     c = sub.add_parser("connect", help="create or update the sync ledger")
     c.add_argument("--provider", required=True, choices=sorted(providers.ADAPTERS))
@@ -925,6 +979,8 @@ def main(argv: list[str] | None = None) -> int:
                                                    "issue, or comment:<event id>")
     r.add_argument("--take", required=True, choices=SIDES)
     args = parser.parse_args(argv)
+    if args.ledger is not None:
+        os.environ[LEDGER_ENV] = str(args.ledger)
     now = int(time.time() * 1000)
     try:
         if args.command == "connect":

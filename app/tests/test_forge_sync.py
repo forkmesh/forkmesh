@@ -739,6 +739,44 @@ def test_cli_connect_mirror_switches_the_ledger_mode(tmp_path):
     assert fs.load_ledger(tmp_path)["mode"] == "sync"
 
 
+def test_ledger_can_live_outside_the_checkout_and_the_repo_gets_only_the_source(
+        tmp_path, forge, sync_key, monkeypatch):
+    outside = tmp_path / "state" / "forge-sync.json"
+    monkeypatch.setenv(fs.LEDGER_ENV, str(outside))
+    checkout = connected(tmp_path, forge, mode="mirror")
+    forge.add_issue(7)
+    forge.add_issue(9)
+    run(checkout, forge, sync_key)
+
+    assert outside.is_file() and not (checkout / fs.LEDGER_REL).exists()
+    source = json.loads((checkout / fs.SOURCE_REL).read_text(encoding="utf-8"))
+    assert source["schema"] == fs.SOURCE_SCHEMA and source["provider"] == forge.kind
+    assert source["repository"] == REPO and source["renumbered"] == {}
+    assert source["issueUrl"].endswith(f"{REPO}/issues/{{number}}")
+    before = snapshot(checkout)
+    run(checkout, forge, sync_key)
+    assert snapshot(checkout) == before
+
+
+def test_source_lists_only_issues_whose_number_differs():
+    ledger = {"provider": "github", "repository": REPO, "issues": {
+        "5": {"remoteNumber": 5}, "12": {"remoteNumber": 3}, "40": {"origin": "forkmesh"}}}
+    record = fs.source_record(ledger)
+    assert record["renumbered"] == {"12": 3}
+    assert record["issueUrl"] == f"https://github.com/{REPO}/issues/{{number}}"
+    assert fs.source_record({"provider": "gitea", "repository": REPO, "issues": {}}) is None
+
+
+def test_cli_ledger_flag_keeps_the_ledger_out_of_the_checkout(tmp_path, monkeypatch):
+    monkeypatch.delenv(fs.LEDGER_ENV, raising=False)
+    outside = tmp_path / "srv" / "ledger.json"
+    checkout = tmp_path / "repo"
+    checkout.mkdir()
+    assert fs.main(["--checkout", str(checkout), "--ledger", str(outside), "connect",
+                    "--provider", "github", "--repository", REPO, "--mirror"]) == 0
+    assert outside.is_file() and not (checkout / fs.LEDGER_REL).exists()
+
+
 def test_cli_rejects_unknown_resolution_and_unconnected_checkout(tmp_path, capsys):
     assert fs.main(["--checkout", str(tmp_path), "status"]) == 2
     assert "connect" in capsys.readouterr().err
@@ -747,6 +785,6 @@ def test_cli_rejects_unknown_resolution_and_unconnected_checkout(tmp_path, capsy
 def test_documentation_covers_the_engine_and_is_indexed():
     doc = (ROOT / "www/docs/forge-sync.md").read_text(encoding="utf-8")
     for phrase in ("forge-sync.json", "sourceOfTruth", "resolve", "pause", "Gitea", "SLO",
-                   "rate limit", "identities", "--mirror"):
+                   "rate limit", "identities", "--mirror", "--ledger", "forge-source.json"):
         assert phrase in doc, phrase
     assert "(forge-sync.md)" in (ROOT / "www/docs/README.md").read_text(encoding="utf-8")
