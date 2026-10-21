@@ -82,6 +82,14 @@ Android work takes `pending` rows, builds them to look and behave like iOS
 (the same Liquid Glass theme), and closes them with
 `python3 tools/native_sync.py mark <ID> --synced <android-sha>`.
 
+## One changelog
+
+`changelog/changelog.json` is the only changelog: forkmesh.com/changelog and
+the phone apps' What's new both show it. A pull request that changes
+something a user can notice adds one plain sentence with
+`python3 tools/changelog.py add --area <Area> "<sentence>"`, then re-renders
+the site with `python3 app/tools/site_templates.py`. See `docs/changelog.md`.
+
 ## Web dashboard styling
 
 Before building or restyling any dashboard page, read

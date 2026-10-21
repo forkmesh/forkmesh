@@ -416,32 +416,26 @@ systemctl --user daemon-reload && systemctl --user enable --now forkmesh-mac-adh
 
 ## What's new changelog
 
-Every ad hoc build bundles a plain-language changelog that the app shows from
-the version row of the You hub ([NAVIGATION.md](NAVIGATION.md)).
+Every build bundles the ForkMesh changelog, `changelog/changelog.json`, the
+same file forkmesh.com/changelog shows ([../changelog.md](../changelog.md)).
+The app shows it from the version row of the You hub
+([NAVIGATION.md](NAVIGATION.md)).
 
-- **Generator.** `tools/mobile_changelog.py` (tests
-  `tools/test_mobile_changelog.py`) reads the previous builds from
-  `state/mac-adhoc/published.json`, then `git log --no-merges` from the previous
-  build's commit (or its start time when the commit is gone). It drops merges,
-  docs, tests, chores, code-name subjects and other-platform commits, groups by
-  area (Market, Calls, Projects, Chat, Agents, World, Settings, iPhone,
-  Android, Desktop, Server, Other improvements), uses past tense, caps lines at
-  140 characters, 8 per section and 24 per build, and dedupes. No network or
-  model calls.
-- **Hand-written notes.** `native/changelog/notes.json`, per platform and
-  build number; a note for build N applies to the first published build
-  numbered N or later. `"replace": true` replaces the generated lines.
-- **Wiring.** The shortcut (`mac_adhoc_deploy.write_changelog`) and the Actions
-  workflow write `steps/changelog.json` on the desktop (the Mac's checkout has
-  no history). `mac_adhoc_build.sh` exports `FORKMESH_CHANGELOG_DRAFT`; the
-  step "Bundle the changelog" runs `native/ios/tools/changelog_stamp.py` with
-  the picked build number and writes `ForkMesh/Resources/Changelog.json`.
-  Without a draft the build ships with no notes; a failed draft never stops a
-  build.
+- **iOS.** The step "Bundle the changelog" runs
+  `native/ios/tools/changelog_stamp.py`, which exports the file from the
+  build's own checkout (`tools/changelog.py export --platform ios`) into
+  `ForkMesh/Resources/Changelog.json`. A missing or broken file ships no
+  notes and never stops a build.
 - **Android.** `-Pforkmesh.changelog=<file>` bundles the file as the
   `changelog.json` asset (`bundleChangelog`); otherwise the empty placeholder
   `app/src/changelog/changelog.json` ships. The release host's APK build
-  generates it from the previous `v*` tag.
+  passes `tools/changelog.py export --platform android`.
+
+Until 2026-10-21 the shortcut (`mac_adhoc_deploy.write_changelog`) generated
+each ad hoc build's notes from `git log` since the previous build in
+`state/mac-adhoc/published.json` and sent them to the Mac as
+`steps/changelog.json`; that history now lives in the shared file, and the
+generator only drafts lines (`tools/changelog.py draft`).
 
 ## Swift rules the Mac archive enforces
 

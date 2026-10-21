@@ -31,7 +31,6 @@ export ASC_API_KEY_P8="$(cat "$asc/AuthKey.p8")"
 export GEM_HOME="$HOME/.gems-xcodeproj" GEM_PATH="$HOME/.gems-xcodeproj"
 export PATH="$GEM_HOME/bin:$PATH"
 export FORKMESH_ADHOC_BUILD_FILE="$HOME/ci/ios-adhoc-build"
-export FORKMESH_CHANGELOG_DRAFT="${FORKMESH_CHANGELOG_DRAFT:-$steps/changelog.json}"
 export FORKMESH_NATIVE_COMPILE_CACHE="${FORKMESH_NATIVE_COMPILE_CACHE:-1}"
 
 export CM_ENV="$steps/cm_env"

@@ -58,7 +58,7 @@ Siri user guide: [`www/docs/mobile/siri.md`](../../www/docs/mobile/siri.md).
 | `native/ios/docs/` | One API note per core module. |
 | `native/android/core/` | Pure Kotlin/JVM (no `android.*`), tested on the host JVM. |
 | `native/android/app/` | Android + Compose: platform, theme, navigation, kit, shell, one package per feature area. |
-| `native/changelog/notes.json` | Hand-written What's new notes per platform and build. |
+| `changelog/changelog.json` | The ForkMesh changelog the apps' What's new and forkmesh.com/changelog show ([../changelog.md](../changelog.md)). |
 
 Shortcuts (`.forkmesh/shortcuts/`):
 

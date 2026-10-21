@@ -298,7 +298,7 @@ fun WhatsNewPage(onBack: () -> Unit) {
                     Column(Modifier.padding(top = FmSpace.x4, bottom = FmSpace.x2).semantics(mergeDescendants = true) { heading() }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(entry.heading, style = Fm.text.titleSmall)
-                            if (index == 0) {
+                            if (index == 0 && entry.build.isNotEmpty()) {
                                 Spacer(Modifier.width(FmSpace.x2))
                                 Text(
                                     "Installed",
@@ -307,7 +307,8 @@ fun WhatsNewPage(onBack: () -> Unit) {
                                 )
                             }
                         }
-                        if (entry.date.isNotEmpty()) Text(entry.formattedDate(), style = Fm.text.bodySmall.copy(color = c.textSecondary))
+                        val detail = entry.detail()
+                        if (detail.isNotEmpty()) Text(detail, style = Fm.text.bodySmall.copy(color = c.textSecondary))
                     }
                 }
                 item(key = "body:${entry.build}:$index") {
@@ -315,6 +316,7 @@ fun WhatsNewPage(onBack: () -> Unit) {
                         Modifier.fillMaxWidth().clip(RoundedCornerShape(FmRadius.md)).background(c.bgOverlay).padding(FmSpace.x3),
                         verticalArrangement = Arrangement.spacedBy(FmSpace.x3),
                     ) {
+                        if (entry.pitch.isNotEmpty()) Text(entry.pitch, style = Fm.text.bodyMedium.copy(color = c.textSecondary))
                         if (entry.sections.isEmpty()) {
                             Text(
                                 if (index == 0) "No notes were written for this build." else "No notes for this build.",

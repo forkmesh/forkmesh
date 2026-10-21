@@ -45,6 +45,11 @@ A small subset of Jinja:
 - `{% if name %}…{% else %}…{% endif %}` tests whether a variable is set and
   non-empty.
 
+`site_templates.page_variables` gives every page `changelog_releases`, the
+entries of `changelog/changelog.json` as HTML
+([../changelog.md](../changelog.md)); edit that file, not
+`changelog.html`, to change a release.
+
 A line holding only one tag is dropped entirely. Names in `extends` and
 `include` are relative to `www/templates/` and cannot leave it.
 
