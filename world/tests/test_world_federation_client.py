@@ -125,5 +125,6 @@ def test_only_federated_world_paths_cross_and_only_to_https_owners(result):
 def test_the_world_uses_the_federation_for_visit_sockets():
     assert "requestVisa: (world) => this.worldFederation().credential(world)," \
         in APP
-    assert 'import { WorldFederation } from "./world-federation.js";' in APP
+    assert ('import { WorldFederation, meshRootRoute } from '
+            '"./world-federation.js";') in APP
     assert "? this.worldFederation().fetchJSON(world, path, options)" in APP

@@ -253,7 +253,7 @@ export function worldMeshFlowerAt(x, z, radius = 0) {
   return null;
 }
 
-export function worldMeshOwnerAt(x, z) {
+export function worldMeshOwnerAt(x, z, radius = 0) {
   const px = Number(x);
   const pz = Number(z);
   if (!Number.isFinite(px) || !Number.isFinite(pz) || !worldMeshFlowers.length) return null;
@@ -273,7 +273,7 @@ export function worldMeshOwnerAt(x, z) {
       return null;
     }
   }
-  return worldMeshFlowerAt(px, pz);
+  return worldMeshFlowerAt(px, pz, radius);
 }
 
 export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {

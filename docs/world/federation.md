@@ -64,11 +64,17 @@ The owner answers CORS only for a neighbour's World page origin (an entry's
 `world` in its own directory, never itself) and only on the federated World
 endpoints (`FEDERATED_PATHS` in `world/src/world_mesh.py`): the exchange,
 the directory and neighbour scene, public World reads (organizations, events,
-repositories, leaderboards) and the office's floors, attendance, status and
+repositories, leaderboards, and the town reads a page standing in that World
+needs: the member directory `/api/accounts/users`, `/api/world/inactive`,
+`/api/world/visitors`, `/api/world/fediverse`, `/api/world/fediverse-mentions`
+and `/api/network/overview`) and the office's floors, attendance, status and
 visitor entry. The answer echoes that exact origin, never `*` with
 credentials, never `access-control-allow-credentials`, and allows the
-`authorization`, `content-type` and `accept` headers. Everything else keeps
-the same-origin rules.
+`authorization`, `content-type` and `accept` headers. The town reads in
+`FEDERATED_READ_ONLY_PATHS` get CORS for `GET` (and a preflight for `GET`)
+only (`federated_method_allowed`), because `/api/accounts/users` and
+`/api/world/inactive` also take writes that must stay same-origin. Everything
+else keeps the same-origin rules.
 
 ## Presence and chat
 
@@ -88,14 +94,18 @@ visit socket is `?visitor=`; both sides see each other live.
   `mode: "cors"`, and only paths in `FEDERATED_PATHS` (the same list as the
   server's) are ever sent. Reads are cached per owner and path for `maxAge`.
 - **Routing.** `fetchJSONAt(x, z, path)` sends a call for something standing
-  at a point to that point's owner (`worldMeshOwnerAt`), or to this World
-  when the ground is its own. A building's runtime is given the `fetchJSON`
+  at a point to that point's owner (`worldMeshOwnerAt`), or to the World the
+  page stands in when the ground is its own; home's ground goes to home with
+  the page's own session. While the page stands in a neighbour's World
+  ([README](README.md#world-mesh), Standing in another World), the town's
+  public reads go to that World without the visitor token. A building's runtime is given the `fetchJSON`
   of the owner of the hexagon it stands on. `visitorSession(world)` is the
   identity shown there (`name@home`).
 - **Visits.** The visit socket asks the federation for its credential:
   `?visitor=<token>`, or `?visa=` for an owner without the exchange.
-- **The Office** *(server side live, page side not wired yet)*. When the
-  Office drawn on a page belongs to a neighbour, `setOfficeOwner(world)`
+- **The Office.** When the page stands in a neighbour's World,
+  `enterMeshWorld()` calls `setOfficeOwner(world)` (and `setOfficeOwner(null)`
+  on the way back). `setOfficeOwner(world)`
   hands its runtime (lobby, floors, attendance board,
   meetings, task wall) that owner's `fetchJSON`/`postJSON` and the visitor
   identity. At the owner a visitor token gives the two common floors (lobby
@@ -103,12 +113,13 @@ visit socket is `?visitor=`; both sides see each other live.
   visitor's punch is accepted without being recorded; meetings answer
   `members_only` and the page says so (meetings belong to that Office's own
   World; visitors look around). Team floors stay with the owner's members.
-  Nothing calls `setOfficeOwner` yet. Before it is wired in, the task wall
-  must go read-only for visitors: its calls (`/api/tasks`,
+  The task wall is read-only for visitors: its calls (`/api/tasks`,
   `/api/world/office/marketing-tasks`, `/api/accounts/...`) are not in
-  `FEDERATED_PATHS`, so the federation client refuses them with
-  `not_federated`. The owner marker on the runtime is never sent: owner calls
-  carry the bearer token.
+  `FEDERATED_PATHS`, so a visitor session (`visitor: true`) locks the wall
+  with "Members of this World only" without calling them, and leaving the
+  Office does not post `stop-active` there. A runtime that finishes loading
+  after the owner changed is dropped. The owner marker on the runtime is
+  never sent: owner calls carry the bearer token.
 - **Owner-only actions** (administration, an owner's private rooms) stay
   read-only for visitors, with a note, instead of failing.
 
