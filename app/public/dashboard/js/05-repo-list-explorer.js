@@ -838,7 +838,7 @@
           ${repositoryTermsBadge(repo)}
         </div>
         ${publishedFrom}
-        ${description ? `<p class="mb-2 break-words pr-6 text-sm text-muted-foreground">${escapeHtml(description)}</p>` : ""}
+        ${description ? `<p data-user-content class="mb-2 break-words pr-6 text-sm text-muted-foreground">${escapeHtml(description)}</p>` : ""}
         <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">${meta}</div>
       </div>
       <div class="flex shrink-0 flex-col items-end justify-between gap-3">
@@ -1056,7 +1056,7 @@
       ${logo}
       <span class="min-w-0 flex-1">
         <span class="block truncate font-medium text-foreground" title="${escapeHtml(entry.label || repoDisplayName(repo))}">${escapeHtml(entry.label || repoDisplayName(repo))}</span>
-        ${description ? `<span class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
+        ${description ? `<span data-user-content class="mt-0.5 block line-clamp-2 text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</span>` : ""}
         <span class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           ${statusHtml}
           ${entry.organization ? '<span class="shrink-0 text-[9px] uppercase text-muted-foreground">organization</span>' : ""}
@@ -1117,8 +1117,26 @@
       .slice(0, HOME_FEED_CARD_LIMIT);
   }
 
+  // Older pings point at the repository root although they are about one
+  // issue, pull request, release or push; send the card to that thing.
+  function homeFeedHref(item) {
+    const href = String(item?.href || "").trim();
+    const meta = item?.meta && typeof item.meta === "object" ? item.meta : {};
+    const number = Number(meta.number) || 0;
+    const root = /^\/[^/?#]+\/[^/?#]+\/?$/.test(href) ? href.replace(/\/$/, "") : "";
+    if (!root) return href;
+    const kind = String(item?.kind || "");
+    if (number > 0 && (kind === "issue_assigned" || kind.startsWith("bounty_"))) return `${root}/issues/${number}`;
+    if (kind === "repo_activity") {
+      if (meta.event === "pull.merged" && number > 0) return `${root}/pull/${number}`;
+      return `${root}/commits`;
+    }
+    if (kind === "release_published") return `${root}/releases`;
+    return href;
+  }
+
   function homeFeedCard(item) {
-    const href = repoPublicHref(String(item?.href || "").trim());
+    const href = repoPublicHref(homeFeedHref(item));
     const tag = href ? "a" : "div";
     const hrefAttr = href ? ` href="${escapeHtml(href)}"` : "";
     const meta = [
