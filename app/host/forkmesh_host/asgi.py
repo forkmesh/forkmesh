@@ -578,10 +578,17 @@ class HostASGI:
             assets = getattr(self.runtime.env, "ASSETS", None)
             if assets is not None and assets.exists(path):
                 if_none_match = None
+                accept_encoding = ""
                 for name, value in scope.get("headers") or []:
                     if name == b"if-none-match":
                         if_none_match = value.decode("latin-1")
-                response = assets.serve(path, method, if_none_match)
+                    elif name == b"accept-encoding":
+                        accept_encoding = value.decode("latin-1")
+                # A precompressed copy (tools/precompress_assets.py) when
+                # Accept-Encoding allows one; the proxy in front leaves an
+                # encoded response as it is.
+                response = assets.serve(path, method, if_none_match,
+                                        accept_encoding=accept_encoding)
                 if (int(response.status) in (200, 304)
                         and versioned_asset_query(scope)):
                     response.headers.set("cache-control",

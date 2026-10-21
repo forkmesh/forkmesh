@@ -24,11 +24,13 @@ from . import paths
 
 # The staged modules, the dashboard bundle and the site pages. The dashboard
 # and site builds are what fill app/dist (ASSETS); the Python staging alone is
-# enough to answer API routes.
+# enough to answer API routes. The last step writes the brotli and gzip
+# copies StaticAssets answers with (tools/precompress_assets.py).
 BUILD_STEPS = (
     ("tools/build_dashboard_assets.py",),
     ("tools/build_worker_python.py",),
     ("tools/build_site_assets.py", "app"),
+    ("tools/precompress_assets.py", "dist"),
 )
 
 
