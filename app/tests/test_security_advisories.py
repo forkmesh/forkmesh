@@ -683,3 +683,44 @@ def test_a_lone_surrogate_is_refused_not_a_server_error(world):
     response = api(world, "POST", "/advisories", "bob",
                    dict(REPORT, description="bad \ud800 text"))
     assert response.status == 400 and response.data["error"] == "invalid_json"
+
+
+def test_reports_are_capped_per_reporter_across_repositories(world, monkeypatch):
+    monkeypatch.setattr(sa, "MAX_REPORTS_PER_REPORTER_PER_DAY", 2)
+    report(world, "bob")
+    report(world, "bob", title="Second")
+    refused = api(world, "POST", "/advisories", "bob", REPORT)
+    assert refused.status == 429 and refused.data["error"] == "too_many_reports"
+    assert api(world, "POST", "/advisories", "carol", REPORT).status == 201
+    # Maintainers drafting their own advisories are not reports.
+    for _ in range(3):
+        assert api(world, "POST", "/advisories", "alice", REPORT).status == 201
+
+
+def test_reporters_cannot_set_the_fix_or_cve(world):
+    advisory_id = report(world, "bob", cve="CVE-2026-11111",
+                         fix={"pull": 7})
+    shown = api(world, "GET", "/advisories/" + advisory_id, "bob").data
+    assert not shown["advisory"].get("cve")
+    assert not shown["advisory"].get("fix")
+    edited = api(world, "POST", "/advisories/" + advisory_id, "bob", {
+        "action": "edit", "fields": {"cve": "CVE-2026-22222",
+                                     "title": "Reworded"}})
+    assert edited.status == 200, edited.data
+    shown = api(world, "GET", "/advisories/" + advisory_id, "alice").data
+    assert not shown["advisory"].get("cve")
+    api(world, "POST", "/advisories/" + advisory_id, "alice", {
+        "action": "edit", "fields": {"cve": "CVE-2026-33333"}})
+    shown = api(world, "GET", "/advisories/" + advisory_id, "alice").data
+    assert shown["advisory"]["cve"] == "CVE-2026-33333"
+
+
+def test_ledger_retry_refuses_once_recorded(world):
+    key = Key()
+    advisory_id = report(world, "alice")
+    assert publish(world, advisory_id, key).status == 200
+    commits = len(world.commits)
+    again = api(world, "POST", "/advisories/" + advisory_id, "alice",
+                {"action": "ledger-retry"})
+    assert again.status == 409 and again.data["error"] == "already_recorded"
+    assert len(world.commits) == commits
