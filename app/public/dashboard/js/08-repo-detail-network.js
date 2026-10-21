@@ -3559,6 +3559,18 @@
         return;
       }
 
+      const pullCommentEditButton = event.target.closest("[data-repo-pull-comment-edit]");
+      if (pullCommentEditButton) {
+        void handleWebPullCommentAction("edit", pullCommentEditButton.dataset.repoPullCommentEdit || "");
+        return;
+      }
+
+      const pullCommentDeleteButton = event.target.closest("[data-repo-pull-comment-delete]");
+      if (pullCommentDeleteButton) {
+        void handleWebPullCommentAction("delete", pullCommentDeleteButton.dataset.repoPullCommentDelete || "");
+        return;
+      }
+
       const inlineThreadButton = event.target.closest("[data-repo-pull-inline-thread-toggle]");
       if (inlineThreadButton) {
         const key = inlineThreadButton.dataset.repoPullInlineThreadToggle || "";
