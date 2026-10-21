@@ -3337,6 +3337,14 @@
     return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  function webSessionAuthored(ev) {
+    const me = String(state.session?.nodeName || "").trim().toLowerCase();
+    if (!me || !ev) return false;
+    if (String(ev.authorName || "").trim().toLowerCase() === me) return true;
+    const pub = webIssueKeyPublic();
+    return Boolean(pub) && String(ev.author || "") === pub;
+  }
+
   async function getWebIssueKey() {
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null"); } catch (_) {}
@@ -4019,6 +4027,12 @@
       content = [fields.state || "", cleanBody].join(NUL);
     } else if (type === "delete") {
       content = cleanBody;
+    } else if (type === "comment-edit") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = [fields.target, cleanBody].join(NUL);
+    } else if (type === "comment-delete") {
+      if (!fields.target) throw new Error("unsupported_pull_event_type");
+      content = String(fields.target);
     } else {
       throw new Error("unsupported_pull_event_type");
     }
@@ -4034,12 +4048,20 @@
       ts,
       sig,
     };
-    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines"]) {
+    for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines", "target"]) {
       if (fields[key] !== undefined && fields[key] !== "") event[key] = fields[key];
     }
     const payload = { owner: repo.owner, repo: repo.name, number, event };
     const data = await fetchRepoMutation(repo, "pulls", payload);
     return { ...data, event };
+  }
+
+  async function submitWebPullCommentEdit(repo, number, target, body) {
+    return submitWebPullEvent(repo, number, "comment-edit", { target, body });
+  }
+
+  async function submitWebPullCommentDelete(repo, number, target) {
+    return submitWebPullEvent(repo, number, "comment-delete", { target });
   }
 
   async function submitWebPullComment(repo, number, body) {
@@ -4435,6 +4457,9 @@
     if (code === "not_authorized" && (action === "claim" || action === "release")) {
       return "Your sign-in has expired. Sign in again to change your assignment.";
     }
+    if (code === "not_authorized" && (action === "edit-comment" || action === "delete-comment")) {
+      return "Only the comment's author, the repository owner or an organization admin can change this comment.";
+    }
     return ({
       not_authorized: "Only the repository owner or an organization admin can do that.",
       bad_signature: "The signed issue action could not be verified.",
@@ -4482,6 +4507,47 @@
     return [...new Set(String(value || "").split(",")
       .map((item) => item.trim())
       .filter(Boolean))].slice(0, 20);
+  }
+
+  async function handleWebPullCommentAction(action, target) {
+    const detail = state.repoRecordDetail;
+    const repo = detail?.repo;
+    const number = Number(detail?.number || 0);
+    if (!repo || detail?.kind !== "pulls" || !number || !target) return;
+    if (!state.session?.nodeName) {
+      location.href = "/login?next="
+        + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    const parsed = detail.parsed || {};
+    const original = foldPullCommentChanges(parsed.pullConversation)
+      .find((ev) => String(ev.id || "") === String(target));
+    if (!original) return;
+    let result;
+    try {
+      if (action === "delete") {
+        if (!await confirmAccountAction({
+          title: "Delete this comment?",
+          body: "Its Git history remains recoverable.",
+          confirmLabel: "Delete comment",
+        })) return;
+        result = await submitWebPullCommentDelete(repo, number, target);
+      } else {
+        const nextBody = await openIssueCommentEditor(
+          target, original.body || "",
+          "[data-repo-pull-comment-edit]", "repoPullCommentEdit");
+        if (nextBody === null) return;
+        const trimmed = String(nextBody).replace(/[\r\n]+$/, "");
+        if (!trimmed.trim() || trimmed === String(original.body || "").replace(/[\r\n]+$/, "")) return;
+        result = await submitWebPullCommentEdit(repo, number, target, trimmed);
+      }
+    } catch (error) {
+      showErrorNotice(webIssueActionError(error, action === "delete" ? "delete-comment" : "edit-comment"));
+      return;
+    }
+    if (state.repoRecordDetail !== detail) return;
+    parsed.pullConversation = [...(parsed.pullConversation || []), result.event];
+    refreshPullConversationProjection();
   }
 
   async function handleWebIssueAction(action, target = "") {
@@ -18908,7 +18974,7 @@
         ev = {
           ...ev,
           ...(edit ? { body: edit.body } : {}),
-          _canManage: Boolean(options.canManage),
+          _canManage: Boolean(options.canManage) || webSessionAuthored(rawEvent),
           _edited: Boolean(edit),
           _reactions: ev.id
             ? renderCommentReactionBar(commentReactionSubject("issues", options.number), String(ev.id),
@@ -20477,7 +20543,7 @@
 
   function pullInlineCommentsForPath(path) {
     const conversation = state.repoRecordDetail?.kind === "pulls"
-      ? state.repoRecordDetail.parsed?.pullConversation || []
+      ? foldPullCommentChanges(state.repoRecordDetail.parsed?.pullConversation)
       : [];
     const submitted = conversation.filter((event) =>
       (event?.type === "line-comment" || event?.type === "thread-comment")
@@ -21091,6 +21157,7 @@
     if (list) {
       list.dataset.empty = parsed.pullTimeline.length ? "false" : "true";
       list.innerHTML = renderRepoPullConversation(parsed.pullTimeline);
+      window.lucide?.createIcons();
     }
     const count = document.querySelector("[data-repo-pull-timeline-count]");
     if (count) count.textContent = formatCount(parsed.pullTimeline.length);
@@ -21941,9 +22008,14 @@
             <span>${ev.type === "review" ? escapeHtml(meta.label) : "commented"}</span>
             <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(formatTimeAgo(ev.ts))}</time>
             ${anchor ? `<span class="min-w-0 truncate font-mono text-[12px]">on ${escapeHtml(anchor)}</span>` : ""}
+            ${ev._edited ? "<span>· edited</span>" : ""}
             ${ev.type !== "review" && ev.type !== "comment" ? `<span class="ml-auto rounded-full border px-2 text-[12px] font-medium leading-5 ${meta.tone}">${escapeHtml(meta.label)}</span>` : ""}
+            ${ev._canManage ? `<span class="${ev.type !== "review" && ev.type !== "comment" ? "" : "ml-auto "}inline-flex items-center gap-0.5">
+              <button type="button" data-repo-pull-comment-edit="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="Edit comment"><i data-lucide="pencil" class="h-4 w-4"></i></button>
+              ${ev.type === "review" ? "" : `<button type="button" data-repo-pull-comment-delete="${escapeHtml(ev.id)}" class="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive" aria-label="Delete comment"><i data-lucide="trash-2" class="h-4 w-4"></i></button>`}
+            </span>` : ""}
           </div>
-          <div class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>
+          <div data-repo-issue-comment-text class="px-4 py-3 ${MD_BODY_CLASS}">${renderRecordMarkdown(body)}</div>
           ${commentReactionEventBar(ev, "px-4 pb-3")}
         </div>
       </div>`;
@@ -21959,7 +22031,11 @@
 
   function renderRepoPullConversation(events) {
     const rows = Array.isArray(events) ? events : [];
-    return rows.filter((ev) => ev?.type !== "open").map(renderPullConversationEvent).join("");
+    return rows.filter((ev) => ev?.type !== "open")
+      .map((ev) => (ev.id && !ev.pending && PULL_EDITABLE_COMMENT_TYPES.has(ev.type) && webSessionAuthored(ev)
+        ? { ...ev, _canManage: true }
+        : ev))
+      .map(renderPullConversationEvent).join("");
   }
 
   function pullTimestamp(value) {
@@ -22197,6 +22273,43 @@
     }
   }
 
+  const PULL_EDITABLE_COMMENT_TYPES = new Set([
+    "comment", "review", "line-comment", "thread-comment", "thread-reply",
+  ]);
+
+  function pullCommentChangeApplies(change, target) {
+    if (!change || !target || !PULL_EDITABLE_COMMENT_TYPES.has(target.type)) return false;
+    if (change.author && change.author === target.author) return true;
+    const name = String(change.authorName || "").trim().toLowerCase();
+    return Boolean(name) && name === String(target.authorName || "").trim().toLowerCase();
+  }
+
+  function foldPullCommentChanges(events) {
+    const rows = (Array.isArray(events) ? events : []).filter(Boolean);
+    const byId = new Map(rows.filter((ev) => ev.id).map((ev) => [String(ev.id), ev]));
+    const edits = new Map();
+    const deleted = new Set();
+    for (const ev of rows) {
+      if (ev.type !== "comment-edit" && ev.type !== "comment-delete") continue;
+      const id = String(ev.target || "");
+      const target = byId.get(id);
+      if (!pullCommentChangeApplies(ev, target)) continue;
+      if (ev.type === "comment-delete") {
+        if (target.type === "review") continue;
+        deleted.add(id);
+      } else if (!edits.has(id) || pullTimestamp(edits.get(id).ts) <= pullTimestamp(ev.ts)) {
+        edits.set(id, ev);
+      }
+    }
+    return rows
+      .filter((ev) => ev.type !== "comment-edit" && ev.type !== "comment-delete")
+      .filter((ev) => !deleted.has(String(ev.id || "")))
+      .map((ev) => {
+        const edit = edits.get(String(ev.id || ""));
+        return edit ? { ...ev, body: edit.body, _edited: true } : ev;
+      });
+  }
+
   function buildRepoPullTimeline(values, conversation, commits, agents) {
     const opener = {
       id: "open",
@@ -22206,7 +22319,7 @@
       ts: values?.ts || values?.createdAt || 0,
       body: "",
     };
-    return [opener, ...(commits || []), ...(conversation || []), ...(agents || [])]
+    return [opener, ...(commits || []), ...foldPullCommentChanges(conversation), ...(agents || [])]
       .filter(Boolean)
       .sort((left, right) => pullTimestamp(left.ts) - pullTimestamp(right.ts));
   }
@@ -22410,6 +22523,7 @@
         line: Number(values.line || 0),
         lineStart: Number(values.lineStart || 0),
         lineEnd: Number(values.lineEnd || 0),
+        target: values.target || "",
         body: parsed.body || "",
       };
     }).filter(Boolean);
@@ -22970,9 +23084,9 @@
     window.addEventListener("resize", reposition);
   }
 
-  function openIssueCommentEditor(target, body) {
-    const button = [...document.querySelectorAll("[data-repo-issue-comment-edit]")]
-      .find((node) => node.dataset.repoIssueCommentEdit === String(target));
+  function openIssueCommentEditor(target, body, selector = "[data-repo-issue-comment-edit]", key = "repoIssueCommentEdit") {
+    const button = [...document.querySelectorAll(selector)]
+      .find((node) => node.dataset[key] === String(target));
     const card = button?.closest("[data-repo-issue-comment]");
     const panel = card?.querySelector(".rounded-md.border");
     if (!panel) return Promise.resolve(window.prompt("Edit comment", body));
@@ -45068,6 +45182,18 @@
           "delete-comment",
           issueCommentDeleteButton.dataset.repoIssueCommentDelete || "",
         );
+        return;
+      }
+
+      const pullCommentEditButton = event.target.closest("[data-repo-pull-comment-edit]");
+      if (pullCommentEditButton) {
+        void handleWebPullCommentAction("edit", pullCommentEditButton.dataset.repoPullCommentEdit || "");
+        return;
+      }
+
+      const pullCommentDeleteButton = event.target.closest("[data-repo-pull-comment-delete]");
+      if (pullCommentDeleteButton) {
+        void handleWebPullCommentAction("delete", pullCommentDeleteButton.dataset.repoPullCommentDelete || "");
         return;
       }
 
