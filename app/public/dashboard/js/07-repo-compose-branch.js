@@ -1094,17 +1094,29 @@
     // The catalog already knows when the whole mirror group is offline. Paint
     // that terminal state immediately, while still trying the live route in
     // case a host recovered after the catalog snapshot was built.
-    container.innerHTML = repoIsLive(repo)
-      ? `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading commits from the live mirror...")}</div>`
-      : REPO_COMMITS_UNAVAILABLE_HTML;
+    const historyPath = String(state.repoHistoryPath || "");
+    state.repoHistoryPath = "";
+    const viewKey = repoViewKey(repo, `commits/${historyPath}`);
+    const staleMark = repoStaleReadMark();
+    const reconnect = {
+      key: viewKey,
+      container,
+      retry: () => {
+        state.repoHistoryPath = historyPath;
+        return loadRepoCommits(repo);
+      },
+    };
+    if (!repoReconnectActive(viewKey)) {
+      container.innerHTML = repoIsLive(repo)
+        ? `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading commits from the live mirror...")}</div>`
+        : REPO_COMMITS_UNAVAILABLE_HTML;
+    }
     const controller = new AbortController();
     const timer = window.setTimeout(
       () => controller.abort(),
       REPO_COMMITS_FETCH_TIMEOUT_MS,
     );
     try {
-      const historyPath = String(state.repoHistoryPath || "");
-      state.repoHistoryPath = "";
       const data = await fetchRepoJson(
         repoLiveUrl(repo, "history", historyPath ? { path: historyPath } : {}),
         { signal: controller.signal },
@@ -1114,6 +1126,7 @@
         container.innerHTML = historyPath
           ? `<div class="px-4 py-3 text-sm text-muted-foreground">No commits touch ${escapeHtml(historyPath)} on this branch.</div>`
           : '<div class="px-4 py-3 text-sm text-muted-foreground">No commits are available from this live mirror yet.</div>';
+        finishRepoRead(staleMark, reconnect);
         return;
       }
       const historyScope = historyPath
@@ -1137,8 +1150,9 @@
           </div>
         </div>`;
       }).join("");
-    } catch (_) {
-      container.innerHTML = REPO_COMMITS_UNAVAILABLE_HTML;
+      finishRepoRead(staleMark, reconnect);
+    } catch (error) {
+      if (!handleRepoReadFailure(error, reconnect)) container.innerHTML = REPO_COMMITS_UNAVAILABLE_HTML;
     } finally {
       window.clearTimeout(timer);
       window.lucide?.createIcons();
@@ -2175,7 +2189,12 @@
   async function loadRepoReleases(repo) {
     const container = $("[data-repo-releases]");
     if (!container) return;
-    container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading releases from the live mirror...")}</div>`;
+    const viewKey = repoViewKey(repo, "releases");
+    const staleMark = repoStaleReadMark();
+    const reconnect = { key: viewKey, container, retry: () => loadRepoReleases(repo) };
+    if (!repoReconnectActive(viewKey)) {
+      container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading releases from the live mirror...")}</div>`;
+    }
     const empty = '<div class="px-4 py-3 text-sm text-muted-foreground">No releases have been published to this mirror yet.</div>';
     try {
       // Release manifests live in the git tree at .forkmesh/releases/<channel>/release.json
@@ -2222,8 +2241,11 @@
       } catch (_) {}
       releases.sort(compareRepoReleases);
       container.innerHTML = releases.map((release) => renderRepoRelease(repo, release, downloads)).join("");
-    } catch (_) {
-      container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Releases are unavailable until a reachable mirror host serves the .forkmesh/releases/ folder.</div>';
+      finishRepoRead(staleMark, reconnect);
+    } catch (error) {
+      if (!handleRepoReadFailure(error, reconnect)) {
+        container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Releases could not be loaded from the repository host.</div>';
+      }
     } finally {
       window.lucide?.createIcons();
     }
@@ -4322,13 +4344,18 @@
     const cached = !refresh && state.repoBranches[key]?.loaded;
     if (!cached) {
       setRepoBranchesStatus("");
-      container.innerHTML = repoIsLive(repo)
-        ? `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading branches from the live mirror...")}</div>`
-        : REPO_BRANCHES_UNAVAILABLE_HTML;
+      const viewKey = repoViewKey(repo, "branches");
+      if (!repoReconnectActive(viewKey)) {
+        container.innerHTML = repoIsLive(repo)
+          ? `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading branches from the live mirror...")}</div>`
+          : REPO_BRANCHES_UNAVAILABLE_HTML;
+      }
       try {
         await fetchRepoBranches(repo, { refresh });
-      } catch (_) {
-        container.innerHTML = REPO_BRANCHES_UNAVAILABLE_HTML;
+        settleRepoReconnect(viewKey);
+      } catch (error) {
+        const reconnect = { key: viewKey, container, retry: () => loadRepoBranches(repo, { refresh }) };
+        if (!handleRepoReadFailure(error, reconnect)) container.innerHTML = REPO_BRANCHES_UNAVAILABLE_HTML;
         window.lucide?.createIcons();
         return;
       }

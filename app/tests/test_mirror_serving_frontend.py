@@ -444,6 +444,7 @@ function $(selector) {
   return container;
 }
 function repoIsLive(repo) { return Boolean(repo.cloneOnline); }
+function repoKey(repo) { return "acme/site"; }
 function repoLiveUrl() { return "/history"; }
 function loadingHtml(text) { return text; }
 function escapeHtml(value) { return String(value); }

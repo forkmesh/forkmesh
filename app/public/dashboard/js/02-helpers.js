@@ -2076,6 +2076,7 @@
   // entries that would otherwise make Back a no-op.
   function navigateHistory(url) {
     if (`${location.pathname}${location.search}` === url) return;
+    stopRepoReconnects();
     window.history.pushState(null, "", url);
   }
 

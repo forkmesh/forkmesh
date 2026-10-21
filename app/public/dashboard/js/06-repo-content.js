@@ -652,7 +652,10 @@
     renderRepoBreadcrumb(repo, path);
     if (!background) resetRepoDirAbout();
 
-    treeBody.innerHTML = repoTreeSkeletonHtml();
+    const viewKey = repoViewKey(repo, `tree/${path}`);
+    const staleMark = repoStaleReadMark();
+    const reconnect = { key: viewKey, container: treeBody, retry: () => loadRepositoryTree(repo, path, options) };
+    if (!repoReconnectActive(viewKey)) treeBody.innerHTML = repoTreeSkeletonHtml();
     renderRepoExplorer(repo, path, []);
     try {
       const requestedAt = performance.now();
@@ -680,11 +683,13 @@
       if (!entries.length) {
         treeBody.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">This directory is empty.</div>';
         if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
+        finishRepoRead(staleMark, reconnect);
         window.lucide?.createIcons();
         return;
       }
       renderRepoTreeRows();
       if (!background) navigateHistory(repoLinkUrl(repo, "tree", path));
+      finishRepoRead(staleMark, reconnect);
       window.lucide?.createIcons();
       if (!path) {
         const readmeEntry = entries.find((e) => e.type === "blob" && /^readme(\.md|\.txt|\.rst)?$/i.test(String(e.name || "")));
@@ -723,9 +728,10 @@
       // The tree fetch drives the commit summary; if no mirror answered, still
       // resolve the loading skeleton to the repo-derived fallback metadata.
       updateRepoCommitSummary(null, repo);
+      const reconnecting = !background && handleRepoReadFailure(error, reconnect);
       // Every mirror agreeing the path is absent is the repository's answer,
       // not an outage — say which one it is instead of blaming the fleet.
-      treeBody.innerHTML = isMissingMirrorFolder(error)
+      if (!reconnecting) treeBody.innerHTML = isMissingMirrorFolder(error)
         ? `<div class="fm-blankslate"><i data-lucide="${path ? "file-question" : "folder-open"}"></i><p class="fm-blankslate-title">${path ? "Path not found" : "No files yet"}</p><p class="fm-blankslate-desc">${escapeHtml(path ? `${path} is not in this repository at this revision.` : "This repository has no files at this revision.")}</p></div>`
         : '<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Repository unavailable</p><p class="fm-blankslate-desc">No reachable mirror host is serving this repository tree right now.</p></div>';
       if (!path) {
@@ -913,7 +919,8 @@
       unanswered.map((path) => fetchRepoJson(repoLiveUrl(repo, "blob", { path }))));
     const hit = settled.find((result) => result.status === "fulfilled");
     if (hit) return hit.value;
-    throw settled[0].reason || new Error("not_found");
+    throw settled.map((result) => result.reason).find(repoReadIsTransient)
+      || settled[0].reason || new Error("not_found");
   }
 
   function parseIssueJson(text, fallbackNumber) {
@@ -1595,13 +1602,19 @@
       // server (a node that reads the repository locally sends an ETag and
       // answers an unchanged tree or file with 304), but a revisit no longer
       // downloads the same bytes again.
-      response = await fetch(path, {
-        cache: options.canonical ? "no-store" : "no-cache",
-        headers: { accept: "application/json" },
-        signal: options.signal,
-      });
+      try {
+        response = await fetch(path, {
+          cache: options.canonical ? "no-store" : "no-cache",
+          headers: { accept: "application/json" },
+          signal: options.signal,
+        });
+      } catch (error) {
+        if (!options.signal?.aborted && error && typeof error === "object") error.network = true;
+        throw error;
+      }
     }
     if (response.headers.get("X-ForkMesh-Local-Reads") === "1") state.localRepoReads = true;
+    if (response.headers.get("X-ForkMesh-Stale") === "1") repoReconnect.staleReads += 1;
     const data = await response.json().catch(() => ({}));
     const servedBy = String(
       response.headers.get("X-ForkMesh-Served-By") || "",
@@ -1620,6 +1633,164 @@
       throw error;
     }
     return data;
+  }
+
+  const REPO_RECONNECT_DELAYS_MS = [2000, 4000, 8000, 16000, 30000];
+  const REPO_RECONNECT_GIVE_UP_MS = 120000;
+  const REPO_RECONNECT_TEXT = "Reconnecting to the repository host…";
+  const REPO_UPDATING_TEXT = "Updating…";
+  const REPO_UNANSWERED_TEXT = "The repository host is not answering right now.";
+  const REPO_VIEW_CACHE_PREFIX = "forkmesh.repoView.v1|";
+  const REPO_VIEW_CACHE_INDEX = "forkmesh.repoView.v1.index";
+  const REPO_VIEW_CACHE_MAX_ENTRIES = 24;
+  const REPO_VIEW_CACHE_MAX_CHARS = 400000;
+  const repoReconnect = { entries: new Map(), staleReads: 0 };
+
+  function repoReadIsTransient(error) {
+    if (!error || typeof error !== "object") return false;
+    if (error.network) return true;
+    const status = Number(error.status || 0);
+    if (status === 502 || status === 504) return true;
+    return status === 503 && (!error.code || error.code === "mirror_unavailable");
+  }
+
+  function repoViewKey(repo, view) {
+    return `${String(state.session?.nodeName || "").toLowerCase()}|${repoKey(repo).toLowerCase()}|${view}`;
+  }
+
+  function repoViewCacheIndex() {
+    try {
+      const value = JSON.parse(sessionStorage.getItem(REPO_VIEW_CACHE_INDEX) || "[]");
+      return Array.isArray(value) ? value.filter((item) => typeof item === "string") : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function saveRepoViewSnapshot(key, html) {
+    try {
+      const index = repoViewCacheIndex().filter((item) => item !== key);
+      if (!html || html.length > REPO_VIEW_CACHE_MAX_CHARS) {
+        sessionStorage.removeItem(REPO_VIEW_CACHE_PREFIX + key);
+        sessionStorage.setItem(REPO_VIEW_CACHE_INDEX, JSON.stringify(index));
+        return;
+      }
+      index.push(key);
+      while (index.length > REPO_VIEW_CACHE_MAX_ENTRIES) {
+        sessionStorage.removeItem(REPO_VIEW_CACHE_PREFIX + index.shift());
+      }
+      for (;;) {
+        try {
+          sessionStorage.setItem(REPO_VIEW_CACHE_PREFIX + key, html);
+          break;
+        } catch (error) {
+          if (index.length <= 1) throw error;
+          sessionStorage.removeItem(REPO_VIEW_CACHE_PREFIX + index.shift());
+        }
+      }
+      sessionStorage.setItem(REPO_VIEW_CACHE_INDEX, JSON.stringify(index));
+    } catch (_) {}
+  }
+
+  function loadRepoViewSnapshot(key) {
+    try {
+      return sessionStorage.getItem(REPO_VIEW_CACHE_PREFIX + key) || "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function repoReconnectActive(key) {
+    return repoReconnect.entries.has(key);
+  }
+
+  function settleRepoReconnect(key) {
+    const entry = repoReconnect.entries.get(key);
+    if (entry?.timer) window.clearTimeout(entry.timer);
+    repoReconnect.entries.delete(key);
+  }
+
+  function stopRepoReconnects() {
+    for (const key of Array.from(repoReconnect.entries.keys())) settleRepoReconnect(key);
+  }
+
+  function repoStaleReadMark() {
+    return repoReconnect.staleReads;
+  }
+
+  function showRepoReconnectNote(container, text, retry) {
+    container.querySelector(":scope > [data-repo-reconnect-note]")?.remove();
+    const button = retry
+      ? '<button type="button" data-repo-reconnect-retry class="ml-auto inline-flex h-control-sm items-center rounded-md border border-border px-3 text-control font-medium text-foreground hover:bg-secondary">Retry</button>'
+      : "";
+    const label = retry ? escapeHtml(text) : loadingHtml(escapeHtml(text));
+    container.insertAdjacentHTML("afterbegin", `<div data-repo-reconnect-note role="status" class="flex items-center gap-2 border-b border-border px-4 py-2 text-xs text-muted-foreground">${label}${button}</div>`);
+  }
+
+  function bindRepoReconnectRetry(container, key, retry) {
+    container.querySelectorAll("[data-repo-reconnect-retry]").forEach((button) => {
+      button.addEventListener("click", () => {
+        settleRepoReconnect(key);
+        void retry();
+      }, { once: true });
+    });
+  }
+
+  function armRepoReconnect(key, container, retry) {
+    const now = Date.now();
+    let entry = repoReconnect.entries.get(key);
+    if (!entry) {
+      entry = { since: now, attempt: 0, timer: 0, path: location.pathname };
+      repoReconnect.entries.set(key, entry);
+    }
+    if (entry.timer) window.clearTimeout(entry.timer);
+    entry.timer = 0;
+    if (now - entry.since >= REPO_RECONNECT_GIVE_UP_MS) {
+      repoReconnect.entries.delete(key);
+      return false;
+    }
+    const delay = REPO_RECONNECT_DELAYS_MS[Math.min(entry.attempt, REPO_RECONNECT_DELAYS_MS.length - 1)];
+    entry.attempt += 1;
+    entry.timer = window.setTimeout(() => {
+      entry.timer = 0;
+      if (repoReconnect.entries.get(key) !== entry) return;
+      if (location.pathname !== entry.path || !container.isConnected) {
+        repoReconnect.entries.delete(key);
+        return;
+      }
+      void retry();
+    }, delay);
+    return true;
+  }
+
+  function handleRepoReadFailure(error, { key, container, retry }) {
+    if (!repoReadIsTransient(error)) {
+      settleRepoReconnect(key);
+      return false;
+    }
+    const snapshot = loadRepoViewSnapshot(key);
+    const retrying = armRepoReconnect(key, container, retry);
+    if (snapshot) {
+      container.innerHTML = snapshot;
+      showRepoReconnectNote(container, retrying ? REPO_RECONNECT_TEXT : REPO_UNANSWERED_TEXT, !retrying);
+    } else if (retrying) {
+      container.innerHTML = `<div data-repo-reconnect-note role="status" class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml(escapeHtml(REPO_RECONNECT_TEXT))}</div>`;
+    } else {
+      container.innerHTML = `<div data-repo-reconnect-note role="status" class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">${escapeHtml(REPO_UNANSWERED_TEXT)}</p><p class="fm-blankslate-desc">It was retried for two minutes. The page keeps what it last loaded in this tab.</p><button type="button" data-repo-reconnect-retry class="mt-3 inline-flex h-control-sm items-center rounded-md border border-border px-3 text-control font-medium text-foreground hover:bg-secondary">Retry</button></div>`;
+    }
+    if (!retrying) bindRepoReconnectRetry(container, key, retry);
+    return true;
+  }
+
+  function finishRepoRead(staleMark, { key, container, retry }) {
+    saveRepoViewSnapshot(key, container.innerHTML);
+    if (repoReconnect.staleReads === staleMark) {
+      settleRepoReconnect(key);
+      return;
+    }
+    const retrying = armRepoReconnect(key, container, retry);
+    showRepoReconnectNote(container, retrying ? REPO_UPDATING_TEXT : REPO_UNANSWERED_TEXT, !retrying);
+    if (!retrying) bindRepoReconnectRetry(container, key, retry);
   }
 
   // Reads the node assembled for a pull request, issue or discussion view in
@@ -7823,12 +7994,16 @@
       scheduleRepoRecordConvergeRetry(repo, kind, number, container);
       return;
     }
+    const viewKey = repoViewKey(repo, `${kind}/${number}`);
+    const reconnecting = repoReconnectActive(viewKey);
     const quietRefresh = Boolean(optimistic)
       && repoRecordDetailOnScreen(repo, kind, number, container);
     setRepoRecordOpen(kind, true);
     const recordFile = typeof config.file === "function" ? config.file(Number(number)) : config.file;
     const recordPath = `${config.dir}/${number}/${recordFile}`;
-    if (!quietRefresh) {
+    const staleMark = repoStaleReadMark();
+    const reconnect = { key: viewKey, container, retry: () => loadRepoRecordDetail(repo, kind, number, preferMirror) };
+    if (!quietRefresh && !reconnecting) {
       const firstView = kind === "issues" ? takeRepoFirstViewIssue(repo, number) : null;
       if (firstView) {
         container.replaceChildren(firstView);
@@ -7875,7 +8050,7 @@
         } catch (error) {
           // The list also shows pulls that so far live only on their own
           // forkmesh/pull/<n> branch; open those from that branch.
-          if (kind !== "pulls") throw error;
+          if (kind !== "pulls" || repoReadIsTransient(error)) throw error;
           const branchCommit = await resolveRepoPullBranchCommit(repo, number);
           if (branchCommit === pullMetadataCommit) throw error;
           pullMetadataCommit = branchCommit;
@@ -7942,6 +8117,7 @@
         : "";
       state.repoRecordDetail = { repo, kind, number, parsed };
       container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
+      finishRepoRead(staleMark, reconnect);
       if (kind === "issues") mountIssueStickyHeader(container);
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
@@ -7954,7 +8130,7 @@
         scheduleRepoPullActivityRefresh(repo, number, (parsed.pullAgents || []).some(
           (event) => pullAgentStatusIsActive(event.status)));
       }
-    } catch (_) {
+    } catch (error) {
       // The relay already accepted this numbered record. Keep its complete
       // detail visible while the mirror commit converges, then retry quietly.
       if (optimistic) {
@@ -7962,8 +8138,12 @@
           showOptimisticRepoRecord(repo, kind, number, optimistic, container);
         }
         scheduleRepoRecordConvergeRetry(repo, kind, number, container);
+      } else if (handleRepoReadFailure(error, reconnect)) {
+        if (kind === "pulls") stopRepoPullActivityRefresh();
+      } else if (isMissingMirrorFolder(error) || Number(error?.status) === 404) {
+        container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${escapeHtml(config.itemLabel.charAt(0).toUpperCase() + config.itemLabel.slice(1))} #${escapeHtml(number)} was not found: this repository has no ${escapeHtml(recordPath)}.</div>`;
       } else {
-        container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">This ${escapeHtml(config.itemLabel)} is unavailable until a reachable mirror host serves ${escapeHtml(recordPath)}.</div>`;
+        container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">This ${escapeHtml(config.itemLabel)} could not be loaded from the repository host.</div>`;
       }
     } finally {
       window.lucide?.createIcons();
@@ -9037,7 +9217,12 @@
     // visible feedback and no caller can accidentally repaint cached rows.
     setRepoIssuesRefreshing(true);
     setRepoIssueRecordOpen(false);
-    container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading issues from the live mirror...")}</div>`;
+    const viewKey = repoViewKey(repo, "issues");
+    const staleMark = repoStaleReadMark();
+    const reconnect = { key: viewKey, container, retry: () => loadRepoIssues(repo) };
+    if (!repoReconnectActive(viewKey)) {
+      container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading issues from the live mirror...")}</div>`;
+    }
     try {
       await primeRepoViewReads(repo, "issues");
       let tree;
@@ -9198,8 +9383,11 @@
       } else {
         renderRepoIssues();
       }
-    } catch (_) {
-      container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Issues are unavailable until a reachable mirror host serves the .forkmesh/issues/ folder.</div>';
+      finishRepoRead(staleMark, reconnect);
+    } catch (error) {
+      if (!handleRepoReadFailure(error, reconnect)) {
+        container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Issues could not be loaded from the repository host.</div>';
+      }
     } finally {
       setRepoIssuesRefreshing(false);
     }
@@ -10123,8 +10311,14 @@
     // the page filter re-rendering rows that are no longer on screen.
     state.repoCollectionItems[kind] = null;
     setRepoRecordOpen(kind, false);
+    const viewKey = repoViewKey(repo, kind);
+    const reconnecting = repoReconnectActive(viewKey);
+    const staleMark = repoStaleReadMark();
+    const reconnect = { key: viewKey, container, retry: () => loadRepoCollection(repo, kind, containerSelector) };
     const discussionsOffline = kind === "discussions" && !repoIsLive(repo);
-    if (discussionsOffline) {
+    if (reconnecting) {
+      container.querySelector(":scope > [data-repo-reconnect-note]")?.setAttribute("aria-busy", "true");
+    } else if (discussionsOffline) {
       // The catalog count is only a last-published snapshot. When every mirror
       // is offline it does not prove those records are currently available, so
       // do not advertise it as a live badge while the read below retries in
@@ -10141,6 +10335,7 @@
       // the repo holds, not what the search box is currently showing.
       state.repoCollectionItems[kind] = items;
       renderRepoCollection(kind);
+      finishRepoRead(staleMark, reconnect);
       if (kind === "pulls") {
         noteRecentPushOpenPulls(repo, items);
         const openPulls = items.filter(pullIsOpen).length;
@@ -10152,12 +10347,13 @@
         // must clear a stale non-zero catalog badge.
         setRepoTabCount("discussions", items.length);
       }
-    } catch (_) {
+    } catch (error) {
+      if (handleRepoReadFailure(error, reconnect)) return;
       if (kind === "discussions") {
         setRepoTabCount("discussions", 0);
         container.innerHTML = discussionsUnavailableHtml(repo);
       } else {
-        container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${escapeHtml(config.label)} are unavailable until a reachable mirror host serves the ${escapeHtml(config.dir)}/ folder.</div>`;
+        container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${escapeHtml(config.label)} could not be loaded from the repository host.</div>`;
       }
     } finally {
       window.lucide?.createIcons();

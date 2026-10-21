@@ -95,6 +95,12 @@ const setRepoIssueRecordOpen = () => {};
 const setRepoRecordOpen = () => {};
 const mountIssueStickyHeader = () => {};
 const primeRepoViewReads = async () => {};
+const repoViewKey = (repo, view) => `${repoKey(repo)}|${view}`;
+const repoReconnectActive = () => false;
+const repoStaleReadMark = () => 0;
+const finishRepoRead = () => {};
+const repoReadIsTransient = () => false;
+const handleRepoReadFailure = () => false;
 
 __LOADER__
 
