@@ -27715,6 +27715,16 @@ async def _active_public_recipient_bundles(env, account_bis):
     return bundles
 
 
+async def _shares_session_owner(env, request, data, owner):
+    """True when the request's account session belongs to the repository's
+    owner, so the web can manage collaborators without a node signature."""
+    try:
+        actor = await _authed_account_name(env, request, data or {})
+    except Exception:
+        return False
+    return bool(actor) and bool(await _account_owns_node(env, actor, owner))
+
+
 async def shares_handler(env, request, owner, repo):
     # Private-repo collaborator ACL (issue #9). Every operation is authorized by
     # the OWNER account's key — only the owner may grant/revoke/list who a private
@@ -27740,7 +27750,11 @@ async def shares_handler(env, request, owner, repo):
         sig = clean_string(params.get("sig", [""])[0], 200)
         canonical = ("forkmesh-shares-list-v1\n" + owner + "\n" + repo + "\n" +
                      str(ts)).encode()
-        if not (_ts_ok(ts) and await ed25519_verify(owner_pub, sig, canonical)):
+        signed = bool(ts and sig) and _ts_ok(ts) and await ed25519_verify(
+            owner_pub, sig, canonical)
+        session_owner = globals().get("_shares_session_owner")
+        if not signed and not (callable(session_owner) and await session_owner(
+                env, request, {}, owner)):
             return json_response({"error": "unauthorized"}, status=401)
         rows = await d1_all(
             env,
@@ -27810,8 +27824,13 @@ async def shares_handler(env, request, owner, repo):
                      grantee + "\n" + action + "\n" + str(ts)).encode()
         try:
             authorized = (
-                _ts_ok(ts)
+                bool(ts and sig) and _ts_ok(ts)
                 and await ed25519_verify(owner_pub, sig, canonical))
+            # The web: the owner's own account session (the account that is,
+            # or owns, the repository's node) instead of a node signature.
+            session_owner = globals().get("_shares_session_owner")
+            if not authorized and callable(session_owner):
+                authorized = await session_owner(env, request, data, owner)
         except Exception:
             await _audit_sensitive_action(
                 env, owner, audit_action, "repository_collaborator",
@@ -27853,7 +27872,17 @@ async def shares_handler(env, request, owner, repo):
             recipient_bundles = await _active_public_recipient_bundles(
                 env, [grantee_bi])
             recipient = recipient_bundles.get(grantee_bi)
-            if not recipient:
+            # A repository the core nodes host is read through them, not
+            # sealed to each reader's key, so its collaborators need none.
+            core_hosted = False
+            try:
+                core_hosted = bool(await d1_first(
+                    env,
+                    "SELECT 1 AS one FROM hosted_repos "
+                    "WHERE key_bi=? AND deleted_at=0", repo_bi))
+            except Exception:
+                core_hosted = False
+            if not recipient and not core_hosted:
                 # Do not create an ACL that the owner cannot immediately turn
                 # into an exact encrypted recipient set.
                 await _audit_sensitive_action(

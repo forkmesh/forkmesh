@@ -1015,6 +1015,10 @@ async def hosted_repository_handler(env, request, path):
         if method_name(request) == "GET":
             return await _hosted_settings(env, request)
         return await _create_empty_repository(env, request)
+    if route == "/api/hosted-repositories/visibility":
+        if method_name(request) != "POST":
+            return json_response({"error": "method_not_allowed"}, status=405)
+        return await _change_visibility(env, request)
     if route == "/api/hosted-repositories/push-credential":
         return await _mint_push_credential(env, request)
     if route == _hosted_repos.REPLICAS_PATH:
@@ -1270,6 +1274,12 @@ async def _hosted_read_allowed(env, owner, repo, account):
     try:
         if await _account_owns_node(env, account, owner):
             return True
+        # A collaborator the owner shared the repository with reads it too,
+        # as on node-held private repositories (_repo_shared_with).
+        shared_with = globals().get("_repo_shared_with")
+        if callable(shared_with) and await shared_with(
+                env, owner, repo, account):
+            return True
         rows = await d1_all(
             env, "SELECT org_bi FROM org_repos WHERE node_owner=? AND repo=?",
             owner.lower(), repo.lower())
@@ -1337,6 +1347,88 @@ async def _hosted_settings(env, request):
             runtime, await blind_index(env, actor))
         body["organizations"] = await _creatable_organizations(env, actor)
     return json_response(body, cache_control="no-store")
+
+
+async def _change_visibility(env, request):
+    """POST /api/hosted-repositories/visibility {owner, name, visibility}.
+
+    Makes a repository the core nodes host public or private from the web.
+    Only its owner (the account that is or owns its node) or an admin of the
+    organization it belongs to may. The catalog record, its plaintext privacy
+    flag and the hosted row change together; the cores serve the new
+    visibility from their next replica sync, and the public catalog is
+    republished. Repositories held by a personal node change visibility from
+    that node, which signs its own catalog record.
+    """
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        return _error("invalid_json", 400)
+    if not isinstance(data, dict):
+        return _error("invalid_json", 400)
+    actor = await _authed_account_name(env, request, data)
+    if not actor:
+        return _session_required_response()
+    owner = clean_string(data.get("owner", ""), MAX_NODE_NAME).strip().lower()
+    name = clean_string(data.get("name", ""), 100).strip()
+    visibility = str(data.get("visibility") or "").strip().lower()
+    if visibility not in ("public", "private") or not owner or not name:
+        return _error("invalid_request", 400)
+    if not _hosted_repos.enabled(env):
+        return _error("core_hosting_required", 409,
+                      "Visibility changes on the web need core hosting.")
+    runtime = _ReplicaRuntime(env, request)
+    await ensure_schema(env)
+    await _hosted_repos.ensure_tables(runtime)
+    key_bi = await blind_index(env, owner + "/" + name)
+    row = await _hosted_repos.find_by_key(runtime, key_bi)
+    if not row:
+        return _error("node_held", 409,
+                      "This repository is held by its owner's node; change "
+                      "its visibility there.")
+    hosted = await decrypt_row(env, row.get("data")) or {}
+    allowed = await _account_owns_node(env, actor, owner)
+    organization = str(hosted.get("organization") or "")
+    if not allowed and organization:
+        org_bi, org_row = await _org_row(env, organization)
+        allowed = bool(org_row) and team_permission_rank(
+            await _org_permission(env, org_bi, actor)
+        ) >= team_permission_rank("admin")
+    if not allowed:
+        await _audit_sensitive_action(
+            env, actor, "repository.visibility", "repository",
+            owner + "/" + name, "denied", {"visibility": visibility})
+        return _error("forbidden", 403)
+    catalog = await d1_first(
+        env, "SELECT data FROM repositories WHERE key_bi=?", key_bi)
+    record = await decrypt_row(env, (catalog or {}).get("data"))
+    if not isinstance(record, dict):
+        return _error("not_found", 404)
+    previous = "private" if record.get("visibility") == "private" else "public"
+    if previous != visibility:
+        now = int(Date.now())
+        record = safe_catalog_record({
+            **record, "visibility": visibility, "updatedAt": str(now)})
+        owner_bi = await blind_index(env, owner)
+        _unused, owner_rec = await _account_row(env, owner)
+        await _contribution_write_catalog_state(
+            env, record, owner_bi, owner_rec or {}, key_bi,
+            await encrypt_row(env, record))
+        await _hosted_repos.set_visibility(runtime, row["id"], visibility)
+        forget_closed = globals().get("_forget_repo_closed")
+        if callable(forget_closed):
+            forget_closed(owner, name)
+        _https_mirror_public_context_cache_clear()
+        await edge_cache_delete(CATALOG_CACHE_KEY)
+        await _bump_catalog_rev(env)
+        await schedule_public_catalog_republish(env, owner, name)
+        await _notify_cores(env, owner, name)
+    await _audit_sensitive_action(
+        env, actor, "repository.visibility", "repository", owner + "/" + name,
+        "success", {"from": previous, "to": visibility})
+    return json_response(
+        {"ok": True, "owner": owner, "name": name, "visibility": visibility,
+         "changed": previous != visibility}, cache_control="no-store")
 
 
 def _error(code, status, message="", **extra):

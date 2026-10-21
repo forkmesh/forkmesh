@@ -236,6 +236,7 @@
             </div>
           </form>
         </div>
+        ${renderRepoAccessSettings(repo)}
         ${repo.isPrivate ? "" : `<div data-repo-settings-logo class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
           <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/50 px-4 py-3">
             <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="image" class="h-3.5 w-3.5 text-muted-foreground"></i>Repository logo</span>
@@ -581,7 +582,10 @@
     loadRepoFeaturePanels(repo, recordRoute, compareRoute, commitHash);
     if (initialTab === "security") void loadRepoSecurity(repo);
     hydrateNativeRepositoryLogos(detail.querySelector("[data-repo-title-row]"));
-    if (initialTab === "settings") void loadRepoSettingsLogo(repo);
+    if (initialTab === "settings") {
+      void loadRepoSettingsLogo(repo);
+      void loadRepoCollaborators(repo);
+    }
     loadRepoStarState(repo, $("[data-repo-action-star]"));
     loadRepoForks(repo);
   }
@@ -2063,6 +2067,18 @@
     if (discussionStatusButton && state.selectedRepo) {
       event.preventDefault();
       void handleDiscussionStatusClick(state.selectedRepo, discussionStatusButton);
+      return;
+    }
+    const collaboratorRemove = event.target.closest("[data-repo-collaborator-remove]");
+    if (collaboratorRemove && state.selectedRepo) {
+      event.preventDefault();
+      void handleRepoCollaboratorRemove(state.selectedRepo, collaboratorRemove.dataset.repoCollaboratorRemove || "");
+      return;
+    }
+    const visibilityButton = event.target.closest("[data-repo-visibility-change]");
+    if (visibilityButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleRepoVisibilityChange(state.selectedRepo, visibilityButton.dataset.repoVisibilityChange || "");
       return;
     }
     const discussionRemoveButton = event.target.closest("[data-repo-discussion-remove]");
@@ -3869,6 +3885,12 @@
       } finally {
         if (submit) submit.disabled = false;
       }
+      return;
+    }
+    const collaboratorForm = event.target.closest("[data-repo-collaborator-form]");
+    if (collaboratorForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleRepoCollaboratorAdd(state.selectedRepo, collaboratorForm);
       return;
     }
     const settingsForm = event.target.closest("[data-repo-settings-form]");

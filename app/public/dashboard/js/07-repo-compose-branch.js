@@ -2179,6 +2179,159 @@
       </article>`;
   }
 
+  // Settings > Access: who can read a private repository, and (for a
+  // repository the core nodes host) whether it is public. Both used to need
+  // the desktop: collaborators were granted with the node's signature, and
+  // visibility lived in the node's signed catalog record.
+  function repoIsCoreHosted(repo) {
+    return String(repo?.source || "") === "hosted-web";
+  }
+
+  function renderRepoAccessSettings(repo) {
+    if (!sessionOwnsRepo(repo)) return "";
+    const hosted = repoIsCoreHosted(repo);
+    const isPrivate = Boolean(repo.isPrivate);
+    const visibility = hosted ? `
+        <div class="grid gap-2">
+          <h3 class="text-xs font-semibold text-foreground">Visibility</h3>
+          <p class="text-[11px] leading-5 text-muted-foreground">This repository is <strong class="text-foreground">${isPrivate ? "private" : "public"}</strong>. ${isPrivate
+            ? "Making it public shows it to everyone and lets mirrors serve it."
+            : "Making it private hides it from everyone but you and its collaborators. Copies other people already cloned or mirrored stay with them."}</p>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" data-repo-visibility-change="${isPrivate ? "public" : "private"}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium ${isPrivate ? "text-foreground" : "text-destructive"} hover:bg-secondary"><i data-lucide="${isPrivate ? "globe-2" : "lock"}" class="h-3.5 w-3.5"></i>Make ${isPrivate ? "public" : "private"}</button>
+            <span data-repo-visibility-status role="status" class="text-[11px] text-muted-foreground"></span>
+          </div>
+        </div>` : "";
+    const collaborators = isPrivate ? `
+        <div class="grid gap-2">
+          <h3 class="text-xs font-semibold text-foreground">Collaborators</h3>
+          <p class="text-[11px] leading-5 text-muted-foreground">Accounts that can read this private repository and take part in its issues, pull requests and discussions.</p>
+          <ul data-repo-collaborators class="grid gap-1 text-xs"><li class="text-muted-foreground">Loading…</li></ul>
+          <form data-repo-collaborator-form class="flex flex-wrap items-center gap-2">
+            <input data-repo-collaborator-name required maxlength="63" autocomplete="off" spellcheck="false" placeholder="username" aria-label="Collaborator username" class="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 font-mono text-xs text-foreground outline-none focus:border-accent" />
+            <button type="submit" class="inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="user-plus" class="h-3.5 w-3.5"></i>Add</button>
+          </form>
+          <span data-repo-collaborator-status role="status" class="text-[11px] text-muted-foreground"></span>
+        </div>` : "";
+    if (!visibility && !collaborators) return "";
+    return `
+      <div data-repo-settings-access class="mt-5 overflow-hidden rounded-lg border border-border bg-background">
+        <div class="border-b border-border bg-secondary/50 px-4 py-3">
+          <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="shield" class="h-3.5 w-3.5 text-muted-foreground"></i>Access</span>
+        </div>
+        <div class="grid gap-5 p-4">${visibility}${collaborators}</div>
+      </div>`;
+  }
+
+  async function repoSessionJson(url, method, body) {
+    const headers = { accept: "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const init = { method, credentials: "same-origin", cache: "no-store", headers };
+    if (body) {
+      headers["content-type"] = "application/json";
+      init.body = JSON.stringify({ ...body, ...(token && token !== "cookie" ? { sessionToken: token } : {}) });
+    }
+    const response = await fetch(url, init);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      const error = new Error(data?.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = data?.error || "";
+      error.detail = data?.message || "";
+      throw error;
+    }
+    return data;
+  }
+
+  function renderRepoCollaboratorList(names) {
+    const list = $("[data-repo-collaborators]");
+    if (!list) return;
+    list.innerHTML = names.length
+      ? names.map((name) => `<li class="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5"><span class="inline-flex min-w-0 items-center gap-2">${issueActorAvatarHtml(name, name, "h-5 w-5")}<span class="truncate font-medium text-foreground">${escapeHtml(name)}</span></span><button type="button" data-repo-collaborator-remove="${escapeHtml(name)}" aria-label="Remove ${escapeHtml(name)}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] text-destructive hover:bg-secondary"><i data-lucide="x" class="h-3 w-3"></i>Remove</button></li>`).join("")
+      : '<li class="text-muted-foreground">Nobody else can read this repository yet.</li>';
+    window.lucide?.createIcons();
+  }
+
+  async function loadRepoCollaborators(repo) {
+    if (!repo?.isPrivate || !sessionOwnsRepo(repo) || !$("[data-repo-collaborators]")) return;
+    try {
+      const data = await repoSessionJson(`${repoApiBase(repo)}/shares`, "GET");
+      renderRepoCollaboratorList(Array.isArray(data.grantees) ? data.grantees : []);
+    } catch (_) {
+      const list = $("[data-repo-collaborators]");
+      if (list) list.innerHTML = '<li class="text-destructive">Could not load collaborators.</li>';
+    }
+  }
+
+  function repoAccessErrorText(error) {
+    return ({
+      unknown_account: "There is no account with that name.",
+      cannot_share_with_self: "You already own this repository.",
+      too_many_grantees: "This repository has the most collaborators it can have.",
+      grantee_encryption_key_required: "That account has not set up an encryption key yet, which a repository held by a personal node needs to share with them.",
+      unauthorized: "Only the repository's owner can do that.",
+      forbidden: "Only the repository's owner can do that.",
+      node_held: "This repository is held by its owner's node; change its visibility there.",
+      core_hosting_required: "Visibility changes on the web need core hosting.",
+    })[error?.code] || error?.detail || "Something went wrong. Please try again.";
+  }
+
+  async function handleRepoCollaboratorAdd(repo, form) {
+    const input = form.querySelector("[data-repo-collaborator-name]");
+    const status = $("[data-repo-collaborator-status]");
+    const grantee = String(input?.value || "").trim().replace(/^@/, "").toLowerCase();
+    if (!grantee) return;
+    if (status) status.textContent = "Adding…";
+    try {
+      await repoSessionJson(`${repoApiBase(repo)}/shares`, "POST", { action: "add", grantee });
+      if (input) input.value = "";
+      if (status) status.textContent = `${grantee} can now read this repository.`;
+      await loadRepoCollaborators(repo);
+    } catch (error) {
+      if (status) status.textContent = repoAccessErrorText(error);
+    }
+  }
+
+  async function handleRepoCollaboratorRemove(repo, grantee) {
+    const status = $("[data-repo-collaborator-status]");
+    if (!grantee || !window.confirm(`Remove ${grantee}? They will no longer be able to read this repository.`)) return;
+    try {
+      await repoSessionJson(`${repoApiBase(repo)}/shares`, "POST", { action: "remove", grantee });
+      if (status) status.textContent = `${grantee} was removed.`;
+      await loadRepoCollaborators(repo);
+    } catch (error) {
+      if (status) status.textContent = repoAccessErrorText(error);
+    }
+  }
+
+  async function handleRepoVisibilityChange(repo, visibility) {
+    const status = $("[data-repo-visibility-status]");
+    if (!["public", "private"].includes(visibility)) return;
+    const question = visibility === "public"
+      ? `Make ${repo.owner}/${repo.name} public? Everyone will be able to read it.`
+      : `Make ${repo.owner}/${repo.name} private? Only you and its collaborators will be able to read it.`;
+    if (!window.confirm(question)) return;
+    if (status) status.textContent = "Saving…";
+    try {
+      await repoSessionJson("/api/hosted-repositories/visibility", "POST", {
+        owner: repo.owner, name: repo.name, visibility,
+      });
+      repo.isPrivate = visibility === "private";
+      repo.visibility = visibility;
+      const panel = $("[data-repo-settings-access]");
+      if (panel) {
+        panel.outerHTML = renderRepoAccessSettings(repo);
+        window.lucide?.createIcons();
+        void loadRepoCollaborators(repo);
+      }
+      const done = $("[data-repo-visibility-status]");
+      if (done) done.textContent = `The repository is now ${visibility}.`;
+    } catch (error) {
+      if (status) status.textContent = repoAccessErrorText(error);
+    }
+  }
+
   // Writers (the repository's owner, or an organization member with write)
   // draft, edit and delete releases on the web; the relay checks the same.
   async function repoReleasesManageable(repo) {
