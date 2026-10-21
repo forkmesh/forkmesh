@@ -395,7 +395,8 @@ Phone calls are moving from the WebView to native libwebrtc
 ([../server/rtc.md](../server/rtc.md), "Phone media engine"). Backgrounds and
 the voice are already native. For faces, everything that is plain maths or data
 is now ported line for line, with no new behaviour, so a native renderer
-(Metal on iOS, OpenGL ES on Android, not written yet) only has to draw.
+only has to draw. The iOS renderer (Metal) is described in "Native face
+renderer (iOS)" below; the Android one (OpenGL ES) is not written yet.
 
 | Platform | Code |
 |---|---|
@@ -479,7 +480,8 @@ tone and skin matching, and texture uploads. Also: the person and hair mattes
 (the networks in `chat-call-segment.js` and the guided filter), running the
 detector and mesh networks, `createFaceStage`'s frame loop (hold, fades,
 adaptive quality), drawing the outfit commands and their thumbnails, and
-loading photos and mattes.
+loading photos and mattes. iOS now has all of this except the hair matte and
+the guided filter (see below); Android still has none of it.
 
 **Not ported:**
 
@@ -584,6 +586,117 @@ node tools/call_face_parity.mjs \
 Then run `FM_ONLY=FMChat swift test --filter CallFace` from
 `native/ios/ForkMeshCore`, and `./gradlew --offline :core:coreTest -Pfilter=CallFace`
 from `native/android`.
+
+#### Native face renderer (iOS)
+
+The native call engine draws the face changer itself, so a face picked in the
+call's look picker shows on the native engine as it does in the browser.
+
+| Piece | Code |
+|---|---|
+| Frame loop (hold, fades, smoothing, probe, outfit placement) and the CPU half of `draw()` | `CallFaceStage`, `CallFaceDrawPlan`, `CallFaceFrameMap` in `native/ios/ForkMeshCore/Sources/FMChat/CallFace/CallFaceStage.swift` (Linux tests in `CallFaceStageTests`) |
+| Shaders, ported from `chat-call-face-render.js` | `native/ios/ForkMesh/Features/Chat/Calls/Native/NativeFaceRenderer.metal` |
+| Landmarks, GPU passes, buffers | `NativeFaceRenderer.swift` (same folder) |
+| Stand-in photos, the custom face, outfit textures | `NativeFaceAssets.swift` (same folder) |
+| Stand-in photos and mattes | `native/ios/ForkMesh/Resources/CallFaces/` (copies of `app/public/assets/call-faces/`) |
+
+**Wiring.** `NativeCallMedia.follow(look)` passes the look's face and custom
+photo to `NativeLookFilter.apply(face:customImage:)`. For each camera frame
+`NativeLookFilter` runs the face first and the background second, as the
+browser does:
+
+1. If a face or an outfit is chosen, `NativeFaceRenderer.render` draws it and
+   returns the new frame plus a full-size "keep" mask (the person after the
+   head swap: the person matte minus the removed head zone, plus the drawn
+   stand-in).
+2. If a background is chosen, the existing Core Image step replaces or blurs
+   the background of that frame, using the keep mask instead of Vision's mask.
+   Without the keep mask the stand-in's hair outside the caller's own outline
+   would be cut away. The person segmentation runs at most once per frame and
+   is shared by both steps.
+
+With no face and no outfit, the filter does no extra work. Outfits are wired
+(`NativeLookFilter.apply(outfit:)`), but calls do not offer outfits yet, as in
+the browser, so nothing calls it.
+
+**Coordinates.** The camera buffer arrives in sensor orientation (NV12 or
+BGRA) with an `RTCVideoRotation`. Vision runs with the matching orientation
+(`.right` for 90 degrees), so landmarks and all the face maths are in upright
+pixels, as in the browser. The GPU works in buffer pixels: the warp vertex
+shader maps upright points into the buffer, and the composite maps each
+buffer pixel back to upright pixels for the zone, tongue, grain and outfit
+maths (`CallFaceFrameMap.toBufferMatrix` / `toUprightMatrix`). The output is
+a BGRA buffer the size of the input with the same rotation. The low-resolution
+targets are sized from the upright width (160 and 192 px), as in the browser.
+
+**Passes** (one command buffer per frame, one wait at the end):
+
+1. Camera: NV12 (601 or 709 matrix, full or video range, read from the
+   buffer) or BGRA into an RGBA8 texture, zero-copy through
+   `CVMetalTextureCache`.
+2. Warp: the head mesh into the warp and aux targets in one pass with two
+   colour attachments and a depth buffer (the browser draws twice), with the
+   gaze, eyelid and mip-bias maths unchanged.
+3. Tone: reduce plus Gaussian blur into the low camera, low face and wide
+   camera/face targets (RGBA16F).
+4. Fill: weigh, push and pull pyramid (6 levels) for the room behind the
+   caller.
+5. Halo (no background chosen): the blurred backdrop from pyramid level 1.
+6. Hide: the blurred plain frame, only while hiding.
+7. Composite: the browser's composite in mode "off" (the background comes
+   after), writing the frame and the keep mask.
+
+**Threading.** Faces, custom faces and outfits are built on a loader queue;
+frames pass through until the Metal device and pipelines exist (they are made
+on the first face or outfit choice). Landmarks run on the frame's thread while
+Vision takes under 16 ms on average (exponential average, the first two runs
+ignored as warm-up). Above that they move to their own queue: at most one
+detection in flight, frames in between reuse the last points without
+re-smoothing (`CallFaceStageInput.stale`), and the renderer returns to
+inline detection below 10 ms. The probe crop is read from the analysed buffer
+on the CPU (bilinear, at most about 120 x 150 px), so it always matches the
+points it measures.
+
+**Fallbacks.** A missing Metal device, library or pipeline, an unsupported
+pixel format, a failed encoder or a command buffer that does not complete
+returns the plain frame. A failed segmentation draws the stand-in without
+head removal. A face that is chosen but not found, or still loading, follows
+the browser's privacy rule: the frame fades to the blurred plain frame
+(`hide`), not to the raw camera.
+
+**Cost.** Per frame: one Vision landmark request, one person segmentation (it
+also feeds the background), about 40 small render passes, and one full-size
+composite. Textures, depth, vertex buffer, pixel-buffer pools and pipeline
+states are kept and only rebuilt when the frame size or rotation changes. The
+per-frame allocations left are the arrays the shared maths API returns
+(`warpVertices` and the landmark points), Vision's own objects, and Metal's
+encoders. Checked on 2026-10-21 on the office Mac (Intel Iris Plus 650,
+640x480, under a heavy build): the GPU passes take about 4 ms per frame,
+Vision landmarks about 75 ms and segmentation about 130 ms on its CPU. Not yet
+measured on an iPhone, where Vision runs on the Neural Engine. Building a
+custom face on that Mac takes about 0.9 s once Vision's models are loaded
+(0.74 s Vision accurate, 0.16 s `buildMatte`) and 8.5 s the first time in a
+process; it runs on the loader queue.
+
+**Differences from the browser:**
+
+- No hair matte: iOS has no hair model, so the head zone is the plain ellipse
+  (`uHasHair` 0), and an outfit does not keep hair in front of the collar.
+- The person matte is Vision's mask (`smoothstep(0.3, 0.7)`), without the
+  guided filter, so its edge is softer and does not follow fine hair.
+- No TrueDepth: the native capturer is `RTCCameraVideoCapturer`, so pose comes
+  from the 2D fit.
+- No adaptive quality levels: there is no network to skip, only the inline or
+  queued detection above.
+- The custom face uses Vision's full-resolution person mask instead of the
+  256 px one the WebView gets.
+- With a background, Core Image composites it over the frame with the keep
+  mask, instead of inside the composite pass; the blur backdrop is a blur of
+  the frame (the existing native behaviour), not of the inpainted room.
+
+Checked on the office Mac with a macOS harness that builds the same Swift and
+Metal files: stand-ins on 0, 90 and 270 degree buffers, NV12 and BGRA, a
+custom face, outfits on a drawn torso, and the hide path with no face.
 
 ### Backgrounds
 

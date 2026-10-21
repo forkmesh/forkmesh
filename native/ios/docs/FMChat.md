@@ -669,10 +669,10 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     does not own (outgoing, or the China region) activate it themselves (`beginAudio`/`endAudio`).
     That is what gives a call answered on the lock screen its audio at once.
   - `NativeCameraPipeline` wraps `RTCCameraVideoCapturer` (front camera, nearest format) and runs
-    every frame through a `NativeFrameFilter`; `NativeLookFilter` replaces or blurs the
-    background with `VNGeneratePersonSegmentationRequest` and Core Image (pictures in
-    `Resources/CallBackgrounds`, the custom photo from the look). Both follow `FaceChangerLook`
-    through `NativeCallMedia.follow`.
+    every frame through a `NativeFrameFilter`; `NativeLookFilter` draws the chosen face, then
+    replaces or blurs the background with `VNGeneratePersonSegmentationRequest` and Core Image
+    (pictures in `Resources/CallBackgrounds`, the custom photo from the look). Both follow
+    `FaceChangerLook` through `NativeCallMedia.follow`.
   - `NativeCallPeer` is the one-to-one `DirectCallPeer`: two `sendrecv` transceivers (audio,
     video) like `/chat`, the same `{type, sdp}` and candidate JSON, `CallMediaTuning.tune` on every
     local description (the web page's Opus parameters, checked against the JS output), sender caps,
@@ -690,8 +690,12 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     feeds it the channel's group-call frames; the roster and key rules are `GroupCallRoster`
     (`FMChat/Group/GroupCalls.swift`). The channel header shows `GroupCallHeaderButtons` (Join · N
     while a call runs) and `.groupCallsRoot()` presents `GroupCallPanel`.
-  - Faces are not drawn natively yet: the native math port is in progress, and until its
-    renderer lands a native call shows the camera picture with background and voice applied.
+  - Faces are drawn natively: `NativeLookFilter` runs `NativeFaceRenderer` (Metal, Vision
+    landmarks, the shared `FMChat/CallFace` maths, `CallFaceStage` for the frame loop) before the
+    background, and hands the background step a keep mask so the stand-in's hair is not cut
+    away. Stand-in photos are in `Resources/CallFaces`; the custom face is built from the look's
+    photo. Passes, threading, fallbacks, cost and the differences from the browser are in
+    `docs/app/chat-direct-calls.md`, "Native face renderer (iOS)".
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
   connects and when the selected candidate pair changes. `WebCallPeer` passes it to
   `WebCallPeerFactory.route` (a `DirectCallRoute`, reset for each new call and when the peer

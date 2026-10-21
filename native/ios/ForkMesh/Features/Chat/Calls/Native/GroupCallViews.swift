@@ -1,5 +1,8 @@
 import FMChat
 import SwiftUI
+#if canImport(WebRTC)
+import WebRTC
+#endif
 
 struct GroupCallHeaderButtons: View {
     let hub: ChatHub

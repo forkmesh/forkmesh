@@ -23,11 +23,21 @@ final class NativeLookFilter: NativeFrameFilter, @unchecked Sendable {
     private var portraitPicture: CIImage?
     private var pool: CVPixelBufferPool?
     private var poolSize: CGSize = .zero
+    private let face = NativeFaceRenderer()
 
     var active: Bool {
         lock.lock()
-        defer { lock.unlock() }
-        return !background.isEmpty
+        let backdrop = !background.isEmpty
+        lock.unlock()
+        return backdrop || face.wantsFrames
+    }
+
+    func apply(face id: String, customImage: String) {
+        face.setFace(id, customImage: customImage)
+    }
+
+    func apply(outfit id: String) {
+        face.setOutfit(id)
     }
 
     func apply(background id: String, customImage: String) {
@@ -62,12 +72,26 @@ final class NativeLookFilter: NativeFrameFilter, @unchecked Sendable {
         let landscape = picture
         let portrait = portraitPicture
         lock.unlock()
-        guard !id.isEmpty else { return buffer }
-        let handler = VNImageRequestHandler(cvPixelBuffer: buffer, orientation: .up)
-        guard (try? handler.perform([request])) != nil, let mask = request.results?.first?.pixelBuffer else {
-            return buffer
+        let faced = face.wantsFrames
+        guard !id.isEmpty || faced else { return buffer }
+        var segmented = false
+        var person: CVPixelBuffer?
+        func segment() -> CVPixelBuffer? {
+            if !segmented {
+                segmented = true
+                let handler = VNImageRequestHandler(cvPixelBuffer: buffer, orientation: .up)
+                person = (try? handler.perform([request])) != nil ? request.results?.first?.pixelBuffer : nil
+            }
+            return person
         }
-        let source = CIImage(cvPixelBuffer: buffer)
+        var plain = buffer
+        var keep: CVPixelBuffer?
+        if faced, let drawn = face.render(buffer, degrees: rotation.rawValue, timeNs: timeNs, backgroundFollows: !id.isEmpty, mask: segment) {
+            plain = drawn.frame
+            keep = drawn.keep
+        }
+        guard !id.isEmpty, let mask = keep ?? segment() else { return plain }
+        let source = CIImage(cvPixelBuffer: plain)
         let extent = source.extent
         var maskImage = CIImage(cvPixelBuffer: mask)
         maskImage = maskImage.transformed(by: CGAffineTransform(
@@ -78,13 +102,13 @@ final class NativeLookFilter: NativeFrameFilter, @unchecked Sendable {
         } else {
             let upright = rotation == ._90 || rotation == ._270
             let shownTall = upright ? extent.width > extent.height * Self.portraitRatio : extent.height > extent.width * Self.portraitRatio
-            guard let chosen = (shownTall ? portrait : landscape) ?? landscape else { return buffer }
+            guard let chosen = (shownTall ? portrait : landscape) ?? landscape else { return plain }
             backdrop = Self.fill(chosen, into: extent, rotation: rotation)
         }
         let composed = source.applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: backdrop, kCIInputMaskImageKey: maskImage,
         ])
-        guard let output = makeBuffer(width: Int(extent.width), height: Int(extent.height)) else { return buffer }
+        guard let output = makeBuffer(width: Int(extent.width), height: Int(extent.height)) else { return plain }
         context.render(composed, to: output)
         return output
     }

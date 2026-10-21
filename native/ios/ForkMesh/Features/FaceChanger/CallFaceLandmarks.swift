@@ -79,7 +79,10 @@ enum CallFaceLandmarks {
     }
 
     private static func regions(_ request: VNDetectFaceLandmarksRequest, size: CGSize) -> [String: [[Double]]]? {
-        let faces = request.results ?? []
+        regions(request.results ?? [], size: size)
+    }
+
+    static func regions(_ faces: [VNFaceObservation], size: CGSize) -> [String: [[Double]]]? {
         guard let face = faces.max(by: { area($0.boundingBox) < area($1.boundingBox) }),
             let landmarks = face.landmarks
         else { return nil }

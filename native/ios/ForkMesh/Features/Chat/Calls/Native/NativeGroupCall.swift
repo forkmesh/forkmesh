@@ -255,7 +255,7 @@ final class NativeGroupCall {
         peer = ""
         generation += 1
         if let socket {
-            socket.send(.string(JSON.encode(["type": "leave"]))) { _ in }
+            socket.send(.string(JSON.encode(.object(["type": .string("leave")])))) { _ in }
             socket.cancel(with: .normalClosure, reason: nil)
         }
         socket = nil

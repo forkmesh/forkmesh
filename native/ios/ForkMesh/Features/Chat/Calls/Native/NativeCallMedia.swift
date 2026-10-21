@@ -84,7 +84,7 @@ final class NativeCallMedia {
 
     private init() {
         RTCInitializeSSL()
-        factory = RTCFmFactory.factory(withCaptureProcessor: voice.capture)
+        factory = RTCFmFactory.factory(with: voice.capture)
         let session = RTCAudioSession.sharedInstance()
         session.useManualAudio = true
         session.isAudioEnabled = false
@@ -99,10 +99,12 @@ final class NativeCallMedia {
         if let lookToken { look.removeListener(lookToken) }
         voice.setVoice(look.effectiveVoice)
         lookFilter.apply(background: look.background, customImage: look.customBackgroundImage)
+        lookFilter.apply(face: look.face, customImage: look.customFaceImage)
         lookToken = look.addListener { [weak self, weak look] (_: FaceChangerPart) in
             guard let self, let look else { return }
             self.voice.setVoice(look.effectiveVoice)
             self.lookFilter.apply(background: look.background, customImage: look.customBackgroundImage)
+            self.lookFilter.apply(face: look.face, customImage: look.customFaceImage)
         }
     }
 
