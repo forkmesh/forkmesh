@@ -91,3 +91,12 @@ right corner; it puts the block's text on the clipboard and reads "Copied" for
 The document text is unchanged by the styling: window tests that read
 `toPlainText()` or the first heading block keep passing. Colours are applied
 when a document is rendered, so a live scheme switch shows on the next render.
+
+## Links
+
+Previews never navigate themselves (`setOpenLinks(false)`). A preview with
+its own `markdownLinkHandler` (repository files) decides; every other preview
+(Files tab, network files, the Markdown editor) scrolls to a `#anchor` and
+opens only `http`, `https` and `mailto` links in the browser. Markdown from
+an untrusted repository or a network share can therefore not open `file://`,
+`smb://` or a custom URL handler on this machine with one click.
