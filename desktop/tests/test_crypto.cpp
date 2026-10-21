@@ -6345,6 +6345,44 @@ int main(int argc, char *argv[])
               "discussion archive succeeds");
         check(discussions.setStatus(dn, "open", &err),
               "archived discussion can be reopened");
+        // Owner moderation from the website: the relay marks these
+        // ownerApproved; without it nothing changes.
+        DiscussionEvent webClose;
+        webClose.type = "status";
+        webClose.status = "closed";
+        webClose = discussions.makeSignedEvent(dn, webClose);
+        check(DiscussionEvent::fromJson(webClose.toJson()).status == "closed",
+              "a status event keeps its status through JSON");
+        check(!discussions.applyRemoteEvent(dn, webClose, QString(), &err),
+              "an unapproved remote status change is refused");
+        check(discussions.applyRemoteEvent(dn, webClose, QString(), &err, true),
+              "an owner-approved remote close applies");
+        check(discussions.loadAll().first().status == "closed",
+              "the remote close is written to discussion.md");
+        DiscussionEvent lateReply;
+        lateReply.type = "comment";
+        lateReply.body = "too late";
+        lateReply = discussions.makeSignedEvent(dn, lateReply);
+        const int repliesBeforeLate = discussions.loadAll().first().commentCount();
+        check(discussions.applyRemoteEvent(dn, lateReply, QString(), &err) &&
+                  discussions.loadAll().first().commentCount() == repliesBeforeLate,
+              "a remote reply to a closed discussion is consumed, not written");
+        DiscussionEvent webReopen = webClose;
+        webReopen.status = "open";
+        check(discussions.applyRemoteEvent(dn, webReopen, QString(), &err, true) &&
+                  discussions.loadAll().first().status == "open",
+              "an owner-approved remote reopen applies");
+        DiscussionEvent webDelete;
+        webDelete.type = "delete";
+        webDelete.target = remoteComment.id;
+        webDelete = discussions.makeSignedEvent(dn, webDelete);
+        check(!discussions.applyRemoteEvent(dn, webDelete, QString(), &err),
+              "an unapproved remote reply delete is refused");
+        check(discussions.applyRemoteEvent(dn, webDelete, QString(), &err, true) &&
+                  discussions.loadAll().first().commentCount() == repliesBeforeLate - 1,
+              "an owner-approved remote delete removes that reply");
+        check(discussions.applyRemoteEvent(dn, webDelete, QString(), &err, true),
+              "a redelivered delete is consumed");
         const int qn = discussions.createDiscussion(
             "How?", "question", "Q&A", &err);
         check(discussions.addComment(qn, "an answer", &err),

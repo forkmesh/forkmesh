@@ -82,4 +82,6 @@ above, and the owner may mark any reply anyway.
   (`ApiService.discussionFromMarkdown`).
 
 A browser's signing key is generated per browser, so a discussion opened on
-the web can only be answered by that browser or by the owner.
+the web can only be answered by that browser or by the owner. Starting,
+closing and moderating discussions from the web are described in
+[web-discussions.md](web-discussions.md).

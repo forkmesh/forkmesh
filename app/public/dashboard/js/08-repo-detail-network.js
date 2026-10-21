@@ -2000,6 +2000,46 @@
       void handleDiscussionAnswerClick(state.selectedRepo, discussionAnswerButton);
       return;
     }
+    const discussionNewButton = event.target.closest("[data-repo-discussion-new]");
+    if (discussionNewButton && state.selectedRepo) {
+      event.preventDefault();
+      if (!state.session?.nodeName) {
+        location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+        return;
+      }
+      openDiscussionCompose(state.selectedRepo);
+      return;
+    }
+    if (event.target.closest("[data-repo-discussion-compose-cancel]") && state.selectedRepo) {
+      event.preventDefault();
+      if (Array.isArray(state.repoCollectionItems.discussions)) {
+        renderRepoDiscussions();
+      } else {
+        const list = $("[data-repo-discussions]");
+        if (list) list.innerHTML = discussionsUnavailableHtml(state.selectedRepo);
+        window.lucide?.createIcons();
+      }
+      return;
+    }
+    const discussionComposeTab = event.target.closest("[data-repo-discussion-compose-tab]");
+    if (discussionComposeTab) {
+      event.preventDefault();
+      setDiscussionComposeTab(discussionComposeTab.closest("[data-repo-discussion-form]"),
+        discussionComposeTab.dataset.repoDiscussionComposeTab || "write");
+      return;
+    }
+    const discussionStatusButton = event.target.closest("[data-repo-discussion-status]");
+    if (discussionStatusButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionStatusClick(state.selectedRepo, discussionStatusButton);
+      return;
+    }
+    const discussionDeleteButton = event.target.closest("[data-repo-discussion-delete]");
+    if (discussionDeleteButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionDeleteClick(state.selectedRepo, discussionDeleteButton);
+      return;
+    }
     if (event.target.closest("[data-repositories-retry]")) {
       const startedAt = interfaceNow();
       const list = $("#repoList");
@@ -3868,6 +3908,12 @@
       } finally {
         if (submit) submit.disabled = false;
       }
+      return;
+    }
+    const discussionForm = event.target.closest("[data-repo-discussion-form]");
+    if (discussionForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionComposeSubmit(state.selectedRepo, discussionForm);
       return;
     }
     const issueForm = event.target.closest("[data-repo-issue-form]");

@@ -1078,9 +1078,47 @@ def test_direct_pull_and_discussion_signatures_match_browser_wire_format():
 def test_direct_discussion_answers_flag_only_the_owners_session():
     source = Path(gateway.__file__).read_text(encoding="utf-8")
     flag = source.index('item["meta"] = {"ownerApproved": True}')
-    guard = source[flag - 260:flag]
-    assert 'str(event.get("type") or "") == "answer"' in guard
-    assert "actor == owner" in guard and "trusted_browser_origin" in guard
+    guard = source[flag - 900:flag]
+    assert "actor and actor == owner and trusted_browser_origin" in guard
+    assert 'event_type == "answer"' in guard
+    # Moderation is refused outright without the owner's session.
+    assert ("if event_type in DISCUSSION_OWNER_EVENT_TYPES and not "
+            "owner_session:") in guard
+    assert '{"ok": False, "error": "not_authorized"}, 403' in guard
+
+
+def test_direct_discussion_moderation_signatures_match_browser_wire_format():
+    private_key = Ed25519PrivateKey.generate()
+    author = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+    ).decode().rstrip("=")
+
+    def signed(event, number, content):
+        message = (
+            "forkmesh-discussion-event-v1\n" + event["type"] + "\n"
+            + str(number) + "\n" + author + "\n" + str(NOW) + "\n"
+            + hashlib.sha256(content.encode()).hexdigest()
+        ).encode()
+        return dict(event, author=author, ts=NOW, sig=base64.urlsafe_b64encode(
+            private_key.sign(message)).decode().rstrip("="))
+
+    close = signed({"type": "status", "status": "closed"}, 3, "closed")
+    assert gateway._verify_dashboard_discussion(3, close) is True
+    assert gateway._verify_dashboard_discussion(0, close) is False
+    assert gateway._verify_dashboard_discussion(
+        3, dict(close, status="archived")) is False
+    frozen = signed({"type": "status", "status": "frozen"}, 3, "frozen")
+    assert gateway._verify_dashboard_discussion(3, frozen) is False
+    delete = signed({"type": "delete", "target": "reply-2"}, 3, "reply-2")
+    assert gateway._verify_dashboard_discussion(3, delete) is True
+    assert gateway._verify_dashboard_discussion(
+        3, dict(delete, target="reply-3")) is False
+    untitled = signed({"type": "open", "title": "", "body": "b",
+                       "category": "Ideas"}, 0, "\0b\0Ideas")
+    assert gateway._verify_dashboard_discussion(0, untitled) is False
 
 
 def test_gateway_event_signatures_bind_the_repository(monkeypatch):
@@ -1273,3 +1311,95 @@ def test_dashboard_replica_requires_canonical_origin_and_safe_path(tmp_path):
     config_path.write_text(json.dumps(config), encoding="utf-8")
     with pytest.raises(gateway.GatewayError, match="replicaPath"):
         gateway.load_config(config_path)
+
+
+def _post_direct_discussion(dashboard_app, monkeypatch, event, number=0,
+                            session=None):
+    config = replace(
+        dashboard_app.config,
+        dashboard_canonical_origin="https://app.forkmesh.example",
+        collaboration_control_url=(
+            "http://127.0.0.1:8791/v1/control/collaboration"
+        ),
+    )
+    dashboard_app.config = config
+    dashboard_app.dashboard.config = config
+    forwarded = {}
+
+    class LocalResponse:
+        status = 201
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self, _maximum):
+            return json.dumps({"ok": True, "number": 12}).encode()
+
+    def local_open(request, timeout):
+        forwarded.update(json.loads(request.data))
+        return LocalResponse()
+
+    monkeypatch.setattr(gateway, "_open_loopback_control", local_open)
+    monkeypatch.setattr(gateway.DashboardService, "_portable_session",
+                        lambda _self, _headers: session)
+    response = dashboard_app.dispatch(
+        "POST", "/api/repo/forkmesh/forkmesh/discussions",
+        {"Origin": "https://app.forkmesh.example",
+         "Content-Type": "application/json"},
+        json.dumps({"owner": "forkmesh", "repo": "forkmesh",
+                    "number": number, "event": event}).encode(),
+    )
+    return response, forwarded
+
+
+def _signed_direct_discussion_event(event_type, number, content, **fields):
+    private_key = Ed25519PrivateKey.generate()
+    author = base64.urlsafe_b64encode(
+        private_key.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        )
+    ).decode().rstrip("=")
+    message = (
+        "forkmesh-discussion-event-v2\nforkmesh/forkmesh\n" + event_type
+        + "\n" + str(number) + "\n" + author + "\n" + str(NOW) + "\n"
+        + hashlib.sha256(content.encode()).hexdigest()
+    ).encode()
+    return dict(fields, type=event_type, id=event_type + "-web-1",
+                author=author, ts=NOW, sig=base64.urlsafe_b64encode(
+                    private_key.sign(message)).decode().rstrip("="))
+
+
+def test_a_web_discussion_is_written_by_the_mirror_and_numbered(
+    dashboard_app, monkeypatch,
+):
+    event = _signed_direct_discussion_event(
+        "open", 0, "Roadmap\0What next?\0Ideas",
+        title="Roadmap", body="What next?", category="Ideas")
+    response, forwarded = _post_direct_discussion(
+        dashboard_app, monkeypatch, event, session={"name": "bob"})
+    assert response.status == 201
+    assert json.loads(response.body)["number"] == 12
+    assert forwarded["kind"] == "discussions"
+    assert forwarded["item"]["number"] == 0
+    assert forwarded["item"]["event"]["authorName"] == "bob"
+    assert "meta" not in forwarded["item"]
+
+
+def test_mirror_moderation_needs_the_owners_session(dashboard_app, monkeypatch):
+    close = _signed_direct_discussion_event("status", 4, "closed",
+                                            status="closed")
+    response, forwarded = _post_direct_discussion(
+        dashboard_app, monkeypatch, close, number=4, session={"name": "bob"})
+    assert response.status == 403 and forwarded == {}
+    response, forwarded = _post_direct_discussion(
+        dashboard_app, monkeypatch, close, number=4, session=None)
+    assert response.status == 403 and forwarded == {}
+    response, forwarded = _post_direct_discussion(
+        dashboard_app, monkeypatch, close, number=4,
+        session={"name": "forkmesh"})
+    assert response.status == 201
+    assert forwarded["item"]["meta"] == {"ownerApproved": True}

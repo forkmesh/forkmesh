@@ -8160,6 +8160,16 @@ def _verify_dashboard_pull(
     return False
 
 
+# The relay's DISCUSSION_CATEGORIES / DISCUSSION_STATUSES (app/src/events.py).
+DISCUSSION_CATEGORY_KEYS = frozenset({
+    "announcements", "ideas", "q&a", "show and tell", "maintainer notes",
+})
+DISCUSSION_STATUSES = ("open", "closed", "archived")
+# Owner-only discussion events: a status change or a reply removed by
+# moderation. Only the repository owner's own session may queue them here.
+DISCUSSION_OWNER_EVENT_TYPES = frozenset({"status", "delete"})
+
+
 def _verify_dashboard_discussion(
     number: int, event: Mapping[str, Any], owner: str = "", name: str = "",
 ) -> bool:
@@ -8173,7 +8183,24 @@ def _verify_dashboard_discussion(
         content = str(event.get("body") or "")
     elif event_type == "answer" and number > 0:
         content = str(event.get("target") or "")
+    elif (
+        event_type == "status" and number > 0
+        and event.get("status") in DISCUSSION_STATUSES
+    ):
+        content = str(event.get("status") or "")
+    elif (
+        event_type == "delete" and number > 0
+        and isinstance(event.get("target"), str)
+        and event.get("target", "").strip()
+    ):
+        content = str(event.get("target") or "")
     else:
+        return False
+    if event_type == "open" and (
+        not str(event.get("title") or "").strip()
+        or str(event.get("category") or "").strip().lower()
+        not in DISCUSSION_CATEGORY_KEYS
+    ):
         return False
     try:
         timestamp = int(event.get("ts") or 0)
@@ -9163,11 +9190,17 @@ class DashboardService:
                 "titleIfNew": str(data.get("titleIfNew") or "")[:240],
                 "event": event,
             }
-            if (
-                str(event.get("type") or "") == "answer"
-                and actor
-                and actor == owner
-                and trusted_browser_origin
+            owner_session = bool(
+                actor and actor == owner and trusted_browser_origin
+            )
+            event_type = str(event.get("type") or "")
+            if event_type in DISCUSSION_OWNER_EVENT_TYPES and not owner_session:
+                return json_response(
+                    {"ok": False, "error": "not_authorized"}, 403
+                )
+            if owner_session and (
+                event_type == "answer"
+                or event_type in DISCUSSION_OWNER_EVENT_TYPES
             ):
                 item["meta"] = {"ownerApproved": True}
         item["submittedAt"] = self.application.clock_ms()

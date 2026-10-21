@@ -148,6 +148,13 @@ func (d *Daemon) handleCollaboration(w http.ResponseWriter, request *http.Reques
 		}
 	}
 	d.collaborationWriteMu.Unlock()
+	if errors.Is(err, errDiscussionLocked) {
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"ok": false, "error": "discussion_locked", "number": number,
+			"servedBy": d.gateway.Node.Name,
+		})
+		return
+	}
 	if errors.Is(err, errIssueUnknown) {
 		w.Header().Set("Retry-After", "30")
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
@@ -1407,6 +1414,10 @@ func materializeDiscussionInbox(ctx context.Context, repo Repository,
 			continue
 		}
 		wrote, number, err := writeDiscussionItem(dir, item)
+		if errors.Is(err, errDiscussionLocked) {
+			ids = append(ids, item.ID)
+			continue
+		}
 		if err != nil {
 			return ids, err
 		}
@@ -1463,12 +1474,20 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 	if typeName == "answer" && number > 0 {
 		return writeDiscussionAnswer(filepath.Join(base, strconv.Itoa(number)), item)
 	}
+	if (typeName == "status" || typeName == "delete") && number > 0 {
+		return writeDiscussionModeration(filepath.Join(base, strconv.Itoa(number)), item)
+	}
 	if typeName != "comment" || number <= 0 {
 		return false, number, nil
 	}
 	dir := filepath.Join(base, strconv.Itoa(number))
 	if !fileExists(filepath.Join(dir, "discussion.md")) {
 		return false, number, nil
+	}
+	if discussionStatus(dir) != "open" {
+		// Closed and archived discussions are read-only, as on the desktop
+		// (DiscussionStore::addComment). The reply is consumed, not kept.
+		return false, number, errDiscussionLocked
 	}
 	entries, _ = os.ReadDir(dir)
 	index := 2
@@ -1486,6 +1505,101 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 		stringValue(item.Event["body"]), "",
 	}
 	path := filepath.Join(dir, fmt.Sprintf("%04d-comment.md", index))
+	return true, number, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
+}
+
+// errDiscussionLocked: a reply to a closed or archived discussion. The relay
+// row is acknowledged (it can never be written) and a direct submission is
+// answered 409 discussion_locked.
+var errDiscussionLocked = errors.New("discussion is closed to new replies")
+
+var discussionStatuses = map[string]bool{"open": true, "closed": true, "archived": true}
+
+// discussionStatus reads discussion.md's status the way the desktop does:
+// anything but closed or archived is open.
+func discussionStatus(dir string) string {
+	raw, err := os.ReadFile(filepath.Join(dir, "discussion.md"))
+	if err != nil {
+		return "open"
+	}
+	opened, ok := parseFrontMatter(raw)
+	if !ok {
+		return "open"
+	}
+	switch status := strings.TrimSpace(opened.values["status"]); status {
+	case "closed", "archived":
+		return status
+	}
+	return "open"
+}
+
+// writeDiscussionModeration applies the owner-only discussion events: a status
+// change (open, closed, archived) rewrites discussion.md's status line, and a
+// delete removes the reply whose id is the event's target. Both mirror the
+// desktop's DiscussionStore::setStatus/deleteComment and are refused unless the
+// relay or gateway recorded the repository owner's approval.
+func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, error) {
+	number := item.Number
+	approved, _ := item.Meta["ownerApproved"].(bool)
+	if !approved || !fileExists(filepath.Join(dir, "discussion.md")) {
+		return false, number, nil
+	}
+	if stringValue(item.Event["type"]) == "delete" {
+		target := safeHeader(stringValue(item.Event["target"]))
+		if target == "" {
+			return false, number, nil
+		}
+		entries, _ := os.ReadDir(dir)
+		for _, entry := range entries {
+			if !strings.HasSuffix(entry.Name(), "-comment.md") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			if comment, ok := parseFrontMatter(raw); ok && comment.values["id"] == target {
+				return true, number, os.Remove(path)
+			}
+		}
+		// Already gone: the removal is consumed rather than retried forever.
+		return true, number, nil
+	}
+	status := strings.TrimSpace(stringValue(item.Event["status"]))
+	if !discussionStatuses[status] {
+		return false, number, nil
+	}
+	path := filepath.Join(dir, "discussion.md")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false, number, nil
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) == 0 || lines[0] != "---" {
+		return false, number, nil
+	}
+	closing := -1
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "---" {
+			closing = i
+			break
+		}
+	}
+	if closing < 0 {
+		return false, number, nil
+	}
+	replaced := false
+	for i := 1; i < closing; i++ {
+		if strings.HasPrefix(lines[i], "status:") {
+			lines[i] = "status: " + status
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		lines = append(lines[:closing], append([]string{"status: " + status}, lines[closing:]...)...)
+	}
 	return true, number, os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0600)
 }
 

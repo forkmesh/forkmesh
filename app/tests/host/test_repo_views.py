@@ -54,6 +54,9 @@ FILES = {
             "---\ntitle: Hello\ncategory: Q&A\nauthorName: dan\nts: 1\n---\n\nHi",
         ".forkmesh/discussions/1/0001-comment.md":
             "---\nauthorName: erin\nts: 2\n---\n\nReply",
+        ".forkmesh/discussions/2/discussion.md":
+            "---\ntitle: Settled\ncategory: Ideas\nstatus: closed\n"
+            "authorName: alice\nts: 1789000000000\n---\n\nDone",
     },
     LEDGER: {
         ".forkmesh/pulls/3/pull.md": pull_md(3, "Merged thing", "merged"),
@@ -276,13 +279,15 @@ SEED = repo_views.SEED_ERROR
 
 def test_discussions():
     bundle, _fast = build("discussions")
-    assert "blobs?path=.forkmesh/discussions/1/discussion.md&ref=main" \
+    assert ("blobs?path=.forkmesh/discussions/1/discussion.md"
+            "&path=.forkmesh/discussions/2/discussion.md&ref=main") \
         in reads(bundle)
     detail, _fast = build("discussion", 1)
     html = repo_views.render(detail)
     assert "Hello" in html and "Reply" in html
     assert '<b><a href="/@dan">dan</a></b> started this discussion' in html
     assert '<b><a href="/@erin">erin</a></b> commented' in html
+    assert "fm-ssr-pill" not in html
 
 
 def test_person_links_accounts_and_leaves_bots_and_git_names_plain():
@@ -292,6 +297,12 @@ def test_person_links_accounts_and_leaves_bots_and_git_names_plain():
     assert repo_views._person("Jane Doe") == "Jane Doe"
     assert repo_views._person("<x>") == "&lt;x&gt;"
     assert repo_views._person(None) == ""
+
+
+def test_a_closed_discussion_first_view_says_so():
+    detail, _fast = build("discussion", 2)
+    html = repo_views.render(detail)
+    assert "Settled" in html and '<span class="fm-ssr-pill closed">Closed' in html
 
 
 def test_commit_pinned_reads_are_marked_immutable():
@@ -365,6 +376,7 @@ def test_ssr_injects_the_view_and_its_bundle_address():
     ("/forkmesh/forkmesh/issues/5", ("forkmesh", "forkmesh", "issue", 5, "")),
     ("/forkmesh/forkmesh/discussions", ("forkmesh", "forkmesh",
                                         "discussions", 0, "")),
+    ("/alice/garden/discussions/7", ("alice", "garden", "discussion", 7, "")),
     ("/forkmesh/forkmesh/tree/main", None),
     ("/api/forkmesh/pulls", None),
     ("/forkmesh/forkmesh/pulls/12/nope", None),

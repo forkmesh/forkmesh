@@ -17,6 +17,7 @@ struct DiscussionEvent {
     QString category;
     QString target;
     QString targetAuthor;
+    QString status; // "status" events: open | closed | archived
     QString body;
     QString sig;
 

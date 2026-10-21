@@ -624,6 +624,9 @@ MAX_PULL_BYTES = 100 * 1024 * 1024
 MAX_PENDING_PULLS = 200
 # Discussion inbox: signed open/comment events for read-only contributors.
 MAX_DISCUSSION_BYTES = 64 * 1024
+# Discussion events only the repository owner (or an owner of the organization
+# the repository is linked to) may queue: see discussions_handler.
+DISCUSSION_OWNER_EVENT_TYPES = frozenset({"status", "delete"})
 MAX_PENDING_DISCUSSIONS = 500
 # One inbox read hands back a bounded PAGE, never the whole backlog. The caps
 # above bound a single submission, not the queue: MAX_PENDING_PULLS rows of
@@ -40351,20 +40354,25 @@ async def _confirm_fediverse_issue_materializations(env, request):
     return confirmed
 
 
-async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event):
+async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event,
+                                    table="issue_inbox"):
     """The pending inbox item already holding this exact signed event, if any.
 
     Only the submitter's own rows can match, and _inbox_author_over_quota caps
     those at MAX_PENDING_PER_AUTHOR, so the scan stays small. A lookup failure
     answers None: the submission proceeds exactly as it did before the check.
+    ``table`` is one of the fixed inbox table names (issue_inbox,
+    discussion_inbox), never caller input.
     """
     sig = str(event.get("sig", "") or "")
     if not submitter_bi or not sig:
         return None
+    if table not in ("issue_inbox", "discussion_inbox"):
+        return None
     try:
         rows = await d1_all(
             env,
-            "SELECT data FROM issue_inbox WHERE repo_bi=? AND submitter_bi=? "
+            "SELECT data FROM " + table + " WHERE repo_bi=? AND submitter_bi=? "
             "ORDER BY id DESC LIMIT ?",
             repo_bi, submitter_bi, MAX_PENDING_PER_AUTHOR,
         )
@@ -41232,7 +41240,8 @@ async def discussions_handler(env, request, owner, repo):
             number = int(data.get("number", 0))
         except (TypeError, ValueError):
             number = 0
-        if event.get("type", "") == "open":
+        event_type = clean_string(event.get("type", ""), 32)
+        if event_type == "open":
             number = 0
         if len(discussion_event_content(event).encode("utf-8")) > MAX_DISCUSSION_BYTES:
             return json_response({"error": "discussion_too_large"}, status=413)
@@ -41243,24 +41252,43 @@ async def discussions_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, event)
         if refused is not None:
             return refused
+        # Status changes and reply removal move repository-owned state, the
+        # way the desktop's Close/Archive/Delete buttons do on the owner's
+        # working tree. A browser signature proves integrity, not authority,
+        # so they also need the owner's (or a linked organization owner's)
+        # account session; materializers refuse them without ownerApproved.
+        owner_approved = False
+        if event_type in DISCUSSION_OWNER_EVENT_TYPES or event_type == "answer":
+            owner_approved = await _discussion_answer_by_owner(
+                env, request, data, owner, repo)
+            if event_type in DISCUSSION_OWNER_EVENT_TYPES and not owner_approved:
+                return json_response({"error": "not_authorized"}, status=403)
+        submitter_bi = await blind_index(env, event.get("author", ""))
+        # A browser replays the SAME signed event when a response was lost;
+        # answer it as accepted instead of queuing (and notifying) twice.
+        queued = await _queued_issue_inbox_event(
+            env, repo_bi, submitter_bi, event, table="discussion_inbox")
+        if queued is not None:
+            return json_response(
+                {"ok": True, "number": queued.get("number", number)},
+                status=201)
         count = await d1_first(
             env, "SELECT COUNT(*) AS c FROM discussion_inbox WHERE repo_bi=?", repo_bi
         )
         if count and count.get("c", 0) >= MAX_PENDING_DISCUSSIONS:
             return json_response({"error": "inbox_full"}, status=429)
-        submitter_bi = await blind_index(env, event.get("author", ""))
         if await _inbox_author_over_quota(
                 env, "discussion_inbox", repo_bi, submitter_bi):
             return json_response({"error": "author_quota"}, status=429)
         item = {
             "number": number,
-            "titleIfNew": clean_string(data.get("titleIfNew", ""), 240),
+            "titleIfNew": clean_string(
+                data.get("titleIfNew", "") or event.get("title", ""), 240),
             "event": event,
             "submitter": clean_string(event.get("author", ""), 120),
             "submittedAt": int(Date.now()),
         }
-        if event.get("type") == "answer" and await _discussion_answer_by_owner(
-                env, request, data, owner, repo):
+        if owner_approved:
             item["meta"] = {"ownerApproved": True}
         await d1_run(
             env,
@@ -41270,26 +41298,41 @@ async def discussions_handler(env, request, owner, repo):
         )
         actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
         title = item.get("titleIfNew", "") or "Discussion update"
-        await notify_pending_inbox(env, owner, repo, "discussion", actor, title, number)
-        await notify_mentions(env, owner, repo, actor, title, event.get("body", ""),
-                              repo_web_href(owner, repo), "discussion", number=number)
+        content_event = event_type in ("open", "comment")
+        # The inbox row is the durable boundary: notification fan-out must not
+        # turn an accepted submission into a 500 the browser would retry.
+        await _best_effort_inbox_side_effect(notify_pending_inbox(
+            env, owner, repo, "discussion", actor, title, number,
+            opened=event_type == "open",
+            text=event.get("body", "") if content_event else ""))
+        if content_event:
+            await _best_effort_inbox_side_effect(notify_mentions(
+                env, owner, repo, actor, title, event.get("body", ""),
+                repo_web_href(owner, repo), "discussion", number=number))
+        if event_type == "comment":
+            # Followers of the thread hear about the reply, and the replier
+            # follows it from now on (the same thread keys issues use).
+            await _best_effort_inbox_side_effect(notify_subscribers(
+                env, owner, repo, "discussion", number, actor, title,
+                event.get("body", ""), repo_web_href(owner, repo)))
+            await _best_effort_inbox_side_effect(subscribe_thread(
+                env, owner, repo, "discussion", number, actor))
         await notify_repo_host(env, owner, repo, "discussions")
         await notify_repo_mirrors(env, owner, repo, "discussions")
-        if event.get("type") == "open":
-            await provider_mirror_note_event(
+        if event_type == "open":
+            await _best_effort_inbox_side_effect(provider_mirror_note_event(
                 env, owner, repo, "discussion.opened",
                 {"number": 0, "title": item.get("titleIfNew", ""),
-                 "author": actor, "body": str(event.get("body", ""))})
-        if event.get("type") in ("open", "comment"):
+                 "author": actor, "body": str(event.get("body", ""))}))
+        if content_event:
             await _best_effort_inbox_side_effect(_ap_publish_repo_event(
-                env, request, owner, repo, "discussion", event.get("type"),
+                env, request, owner, repo, "discussion", event_type,
                 number, item.get("titleIfNew", ""), event.get("body", ""),
                 event.get("authorName", "")))
-        if event.get("type") in ("open", "comment"):
-            await _record_contributor(
+            await _best_effort_inbox_side_effect(_record_contributor(
                 env, event.get("author", ""), "discussions",
-                event.get("authorName", ""))
-        return json_response({"ok": True}, status=201)
+                event.get("authorName", "")))
+        return json_response({"ok": True, "number": number}, status=201)
 
     if method == "GET":
         mirror_intake = (
