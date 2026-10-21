@@ -448,6 +448,7 @@ def _proxy_harness(
     fetch_timeouts = []
     pinned = []
     pushers = []
+    forced_updates = []
     admitted = []
     candidate_pubkeys = []
     authorized_digests = []
@@ -522,14 +523,15 @@ def _proxy_harness(
         return basic_account, basic_prefix
 
     async def record_hosted_push_state(_env, owner, repo, endpoint,
-                                       pusher=""):
+                                       pusher="", forced=None):
+        forced_updates.append(forced)
         pinned.append((owner, repo, endpoint["node"]))
         pushers.append(pusher)
         return "d" * 64
 
     namespace = _load(
         {"_https_mirror_push_proxy", "_https_mirror_push_send",
-         "_git_push_basic_challenge",
+         "_push_target_on_cores", "_git_push_basic_challenge",
          "_https_mirror_request_body_stream", "_ref_updates_from"}, {
         **BASE_GLOBALS,
         "json": __import__("json"),
@@ -1269,7 +1271,8 @@ def test_pending_tag_moves_ride_the_signed_capability_target():
     target = fetches[0][0]
     query = parse_qs(urlparse(target).query)
     assert query == {"tagMoves": [
-        "refs/tags/v1:%s refs/tags/v1.2.4:%s" % ("b" * 40, "a" * 40)]}
+        "refs/tags/v1:%s refs/tags/v1.2.4:%s" % ("b" * 40, "a" * 40)],
+        "rewrite": ["refs/heads/"]}
     signed_path = urlparse(target).path + "?" + urlparse(target).query
     assert signed_path in messages[0]
     assert namespace["_recorded_pushes"][0][5]["tag_moves"] == {
@@ -1470,6 +1473,7 @@ def test_a_contributor_push_signs_its_namespace_and_skips_owner_paths():
     assert response["init"]["status"] == 200
     target = fetches[0][0]
     assert "pushPrefix=refs%2Fheads%2Fpr%2Fbob%2F" in target
+    assert "rewrite=refs%2Fheads%2Fpr%2Fbob%2F" in target
     assert "tagMoves" not in target
     assert any("pushPrefix=" in message for message in messages)
     recorded = namespace["_recorded_pushes"][0]
@@ -1489,3 +1493,20 @@ def test_a_contributor_push_signs_its_namespace_and_skips_owner_paths():
         body=b"pack"), is_info=False)
     assert refused["status"] == 403
     assert not fetches
+
+
+def test_force_push_grant_goes_only_to_repositories_the_cores_hold():
+    body = b"receive-pack-request-bytes"
+    namespace, _messages, fetches = _proxy_harness(
+        candidates=[_endpoint("core-1")], upstreams=[_Upstream()])
+
+    async def hosted_push_candidates(_env, owner, repo):
+        return [_endpoint("core-1")] if (owner, repo) == ("alice", "app") else None
+    namespace["hosted_push_candidates"] = hosted_push_candidates
+    request = _Request(
+        "https://forkmesh.test/alice/app/git-receive-pack",
+        headers=_Headers({**_signed_headers(), "content-encoding": "gzip"}),
+        body=body)
+    _run_proxy(namespace, request, is_info=False)
+    assert fetches[0][0].endswith(
+        "/v1/repositories/alice/app/git-receive-pack?rewrite=refs%2Fheads%2F")

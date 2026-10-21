@@ -202,7 +202,7 @@ def test_inline_threads_follow_their_code_across_patchsets_or_say_outdated():
     # ...and both join the signed content (same rule as PullEvent::hasAnchor).
     assert "(fields.patchset || fields.anchorLines)" in IO
     assert "cleanBody, fields.suggestionPatch || \"\", ...anchorFields," in IO
-    assert '"appliedCommit", "patchset", "anchorLines"]' in IO
+    assert '"appliedCommit", "patchset", "anchorLines", "target"]' in IO
     # Loaded threads are placed against the diff on screen: current, moved to
     # where their text now sits, or outdated when the text left the diff.
     assert "function placePullInlineComment(event, lines)" in CONTENT
@@ -285,3 +285,49 @@ def test_web_merge_waits_out_transient_refusals_with_the_same_request():
 def test_the_merge_panel_says_no_mirror_has_taken_the_job_yet():
     assert "? \"Waiting for an online mirror to take this merge. No mirror has accepted it yet.\"" in CONTENT
     assert "parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };" in CONTENT
+
+
+def _function_source(name):
+    start = CONTENT.index("  function %s(" % name)
+    end = CONTENT.index("\n  }\n", start) + 4
+    return CONTENT[start:end]
+
+
+def test_reviews_before_a_force_push_are_marked_as_on_an_older_commit():
+    import json
+    import shutil
+    import subprocess
+
+    import pytest
+
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    script = _function_source("pullReviewSummary") + """
+const events = [
+  {type: "review", author: "k1", authorName: "alice", state: "approved"},
+  {type: "review", author: "k2", authorName: "carol", state: "commented"},
+  {type: "force-push", author: "bob", before: "a", after: "b"},
+  {type: "review", author: "k2", authorName: "carol", state: "approved"},
+];
+console.log(JSON.stringify(pullReviewSummary(events)));
+"""
+    output = subprocess.run([node, "-e", script], capture_output=True,
+                            text=True, check=True, timeout=30).stdout
+    rows = {row["authorName"]: row for row in json.loads(output)}
+    assert rows["alice"]["olderCommit"] is True
+    assert rows["carol"]["olderCommit"] is False
+    assert rows["carol"]["state"] == "approved"
+
+
+def test_force_push_events_render_with_both_commits_and_a_compare_link():
+    loader = CONTENT[
+        CONTENT.index("async function loadRepoPullConversation")
+        : CONTENT.index("// A discussion's replies are an append-only")
+    ]
+    assert 'values.type === "force-push"' in loader
+    assert "repoCompareUrl(repo, values.before, values.after)" in loader
+    renderer = _function_source("renderPullConversationEvent")
+    assert 'ev.type === "force-push"' in renderer
+    assert "data-repo-pull-force-push-compare" in renderer
+    assert "data-repo-pull-review-older" in CONTENT

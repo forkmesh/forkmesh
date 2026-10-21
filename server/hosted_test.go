@@ -329,7 +329,7 @@ func TestHostedRejectsBadGrantsAndSources(t *testing.T) {
 		{Node: "fmnext-n1", URL: "https://user:pw@example.test/v1/runner/alice/proj.git", Grant: testHostedGrant},
 		{Node: "fmnext-n1", URL: "https://example.test/v1/runner/alice/proj.git", Grant: "short"},
 	} {
-		if err := replica.hosted.fetchFromPeers(ctx, dir, []hostedSource{source}); err == nil ||
+		if err := replica.hosted.fetchFromPeers(ctx, dir, []hostedSource{source}, nil); err == nil ||
 			!strings.Contains(err.Error(), "invalid source") {
 			t.Fatalf("source %+v was not refused: %v", source, err)
 		}

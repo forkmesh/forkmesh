@@ -411,7 +411,13 @@ switcher in the top-right corner), `StartManager::diagnose`, `turnOff`,
   (`activating`, systemd's back-off), *Failed*, *Not enabled* (the unit file
   is there but systemd does not report `enabled`), *Broken* (the program in
   `ExecStart` is gone) and *Unknown* (`systemctl --user` did not answer).
-- **Menu**: *Diagnostics…* opens a report (systemd state, main pid, restart
+- **Menu**: *Close window and keep running* (asked for on 2026-10-21) is
+  offered whenever the windowless instance is not already running, the usual
+  *Ready* case. One click closes the window and hands over to `--headless`
+  exactly as a close with *Keep running* on would (`startHeadless`, then the
+  tray), without turning that setting on: `requestHandOverOnClose` sets a
+  one-shot flag that `handOverAfterWindowClose` honours. `canCloseToHeadless`
+  decides whether the item shows. *Diagnostics…* opens a report (systemd state, main pid, restart
   count, last exit status, start and stop times, lingering, log-out
   hand-over, sleep protection and the last 20 lines of
   `journalctl --user-unit=<unit>`), with Refresh and Copy. *Startup

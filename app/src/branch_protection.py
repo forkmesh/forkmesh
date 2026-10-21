@@ -171,6 +171,15 @@ async def ledger(env, owner, repo, number):
     return latest
 
 
+async def dismiss_approvals(env, owner, repo, number):
+    dismissed = []
+    for account, state in (await ledger(env, owner, repo, number)).items():
+        if state == "approved" and await record_review(
+                env, owner, repo, number, account, "dismissed"):
+            dismissed.append(account)
+    return dismissed
+
+
 async def linked_orgs(env, node, repo):
     rows = await d1_all(
         env,

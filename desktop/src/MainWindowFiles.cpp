@@ -5,6 +5,7 @@
 #include "FileTreeSupport.h"
 #include "GlobalSearchMatch.h"
 #include "MainWindowInternal.h"
+#include "MarkdownRender.h"
 #include "NetworkFilesPanel.h"
 
 #include <QCheckBox>
@@ -2298,6 +2299,23 @@ void MainWindow::wireFilesEditor(QPlainTextEdit *editor)
     if (!editor)
         return;
     new FilesEditorHook(editor);
+    if (auto *code = dynamic_cast<CodePreviewEditor *>(editor)) {
+        const QString path = code->property("previewPath").toString();
+        if (previewSyntaxForPath(path) == PreviewSyntax::Markdown) {
+            const QFileInfo file(path);
+            const QString searchDir =
+                file.isAbsolute() && file.exists() ? file.absolutePath() : QString();
+            code->markdownRenderer = [searchDir](QTextBrowser *view, const QString &markdown) {
+                view->setSearchPaths(searchDir.isEmpty() ? QStringList() : QStringList{searchDir});
+                view->setMarkdown(MarkdownRender::forPreview(markdown));
+                anchorReadmeHeadings(view->document());
+                QTimer::singleShot(0, view, [view] {
+                    fitReadmeImages(view, qMax(1, view->viewport()->width() - 8));
+                    styleReadmeDocument(view);
+                });
+            };
+        }
+    }
     editor->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(editor, &QWidget::customContextMenuRequested, this,
             [this, editor](const QPoint &pos) { showFilesEditorMenu(editor, pos); });

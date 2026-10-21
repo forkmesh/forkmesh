@@ -189,6 +189,7 @@ type hostedDesired struct {
 	ForkOf       string              `json:"forkOf,omitempty"`
 	ForkUpstream *hostedForkUpstream `json:"forkUpstream,omitempty"`
 	Network      string              `json:"network,omitempty"`
+	Forced       map[string]string   `json:"forced,omitempty"`
 }
 
 type hostedForkUpstream struct {
@@ -486,7 +487,7 @@ func (r *hostedReplicator) apply(ctx context.Context, response hostedReplicaResp
 			}
 		}
 		if len(item.Sources) > 0 {
-			if err := r.fetchFromPeers(ctx, gitDir, item.Sources); err != nil {
+			if err := r.fetchFromPeers(ctx, gitDir, item.Sources, item.Forced); err != nil {
 				failures = append(failures, "hosted "+key+" replicate: "+err.Error())
 			} else {
 				r.fetchedAt[item.ID] = item.PushedAt
@@ -687,7 +688,7 @@ func (r *hostedReplicator) importRepository(ctx context.Context, gitDir, source 
 
 // fetchFromPeers pulls every head and tag from the first peer that answers,
 // then fast-forwards local refs only (reconcileUpstreamRefs).
-func (r *hostedReplicator) fetchFromPeers(ctx context.Context, gitDir string, sources []hostedSource) error {
+func (r *hostedReplicator) fetchFromPeers(ctx context.Context, gitDir string, sources []hostedSource, forced map[string]string) error {
 	var failures []string
 	for _, source := range sources {
 		if !nodePattern.MatchString(source.Node) || !hostedGrantPattern.MatchString(source.Grant) ||
@@ -712,6 +713,7 @@ func (r *hostedReplicator) fetchFromPeers(ctx context.Context, gitDir string, so
 			clearRefNamespace(context.Background(), gitDir, "refs/forkmesh/upstream")
 			continue
 		}
+		adoptForcedBranches(ctx, gitDir, forced)
 		if err := reconcileUpstreamRefs(ctx, gitDir); err != nil {
 			failures = append(failures, source.Node+": "+err.Error())
 			continue

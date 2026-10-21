@@ -130,6 +130,7 @@ QString execStartBinary(const QString &unit);
 QString execStopBinary(const QString &unit);
 QString desktopExecBinary(const QString &entry);
 RunnerBadge runnerBadge(const RunnerDiagnostics &diagnostics);
+bool canCloseToHeadless(const RunnerDiagnostics &diagnostics);
 QString runnerReport(const RunnerDiagnostics &diagnostics);
 bool headlessProcessRunning(qint64 pid);
 
@@ -140,6 +141,7 @@ void setKeepRunning(bool on);
 void noteStopSignal();
 void noteSessionEnding();
 bool sessionEnding();
+void requestHandOverOnClose();
 bool handOverAfterWindowClose(bool restarting);
 bool startHeadless();
 bool launchTray();

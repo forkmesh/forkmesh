@@ -153,6 +153,14 @@ void BackgroundRunnerBadge::showMenu()
                                          : QStringLiteral("ForkMesh without a window"));
     header->setEnabled(false);
     menu.addSeparator();
+    if (bg::canCloseToHeadless(m_diagnostics)) {
+        QAction *close = menu.addAction(QStringLiteral("Close window and keep running"));
+        close->setToolTip(QStringLiteral(
+            "Closes this window and starts ForkMesh without a window right away, so phones and "
+            "agents stay connected. Open ForkMesh again to bring the window back."));
+        connect(close, &QAction::triggered, this, [this] { closeToHeadless(); });
+        menu.addSeparator();
+    }
     connect(menu.addAction(QStringLiteral("Diagnostics…")), &QAction::triggered, this,
             [this] { showDiagnostics(); });
     if (m_openSettings)
@@ -259,4 +267,10 @@ void BackgroundRunnerBadge::turnOff()
             error = QStringLiteral("unknown error");
         return error;
     }));
+}
+
+void BackgroundRunnerBadge::closeToHeadless()
+{
+    bg::requestHandOverOnClose();
+    QTimer::singleShot(0, window(), &QWidget::close);
 }
