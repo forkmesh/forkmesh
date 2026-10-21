@@ -605,10 +605,17 @@ them without changing page.
   petal 5; petal 0 keeps the beach. That petal's sand, cacti and sign step
   aside (`replacePetals` in `desert-plots.js`), the roads stay as they are,
   and the town no longer claims the ground (`worldMeshOwnerAt`). Stepping
-  off the road onto its land puts the page in that World, like walking into
-  a flower (see Standing in another World below): the page does not reload.
-  On the shared road strip the walker stays in the World they came from. The
-  page used to
+  off the road onto its land is a visit (see Visits below): the page stays
+  in the World it is in and draws the neighbour's own scene on its petal.
+  An instance World is one hexagon of its own (`docs/INSTANCES.md`), not a
+  copy of the town, so the page never switches into it; on 2026-10-21 it
+  briefly did, and a walker who had stepped onto OWASP BLT reloaded into
+  ForkMesh's town filled with BLT's members. On the shared road strip the
+  walker stays in the World they came from. A spot on a neighbour's
+  hexagon is not saved as the World position (`neighbourHexLandAt`), and a
+  position saved there before is replaced by the fresh arrival at the
+  campfire (`leaveRestoredNeighbourHex`), so opening the World lands in it,
+  at the last spot walked in it. The page used to
   load `<world>/world/?from=forkmesh&slot=n&pos=x,z` instead, which reloaded
   the whole World on every crossing; `worldMeshCrossingURL()` still builds
   that URL for a neighbour's own page. Arriving from such a page,
@@ -701,12 +708,13 @@ them without changing page.
   hide `visiting` peers and see the visitor through their own watch socket
   instead, so nobody is drawn twice. Walking back reverses the swap. A notice
   says which world you entered or returned to.
-- **Standing in another World.** Every World runs the same town, so a
-  neighbour's real town is this page's town with that World's data. Before,
+- **Standing in another World.** A flower neighbour runs the same town, so
+  its real town is this page's town with that World's data. Single-hexagon
+  neighbours are visits only (see Single hexagons above). Before,
   stepping onto a neighbour kept the page in the home World, and the
   neighbour stayed a placeholder: a meadow with a logo, or its published
   scene, with nobody but passers-by from the watch socket. Now
-  `enterMeshWorld()` (`world.js`) moves the page into the World whose ground
+  `enterMeshWorld()` (`world.js`) moves the page into the flower whose ground
   the walker steps onto:
   - The scene recentres on it. `shiftPlayer(dx, dz)` (`scene/runtime/camera.js`)
     moves the walker and camera by minus that World's offset, keeping their
