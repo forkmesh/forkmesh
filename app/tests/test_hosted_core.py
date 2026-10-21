@@ -258,6 +258,9 @@ def install(world):
             self.body = body
             self.headers = Headers({"content-type": "application/x-test"})
 
+        async def json(self):
+            return getattr(world, "upstream_json", None)
+
     async def js_fetch_until_response(target, init, _timeout):
         world.fetches.append((target, init))
         node = init["headers"]["X-ForkMesh-Node"]
@@ -1020,3 +1023,45 @@ def test_core_owners_add_retired_cores_only_while_hosting_is_on():
     assert hosted_git.hosted_core_owners(env) == hosted_repos.core_owners(env)
     env.HOSTED_GIT_CORE_NODES = ""
     assert hosted_repos.core_owners(env) == []
+
+
+def test_people_addresses_are_a_capability_read_of_a_public_repository():
+    world = World()
+    module = install(world)
+    _created(world, module)
+    world.upstream_json = {"ok": True, "view": "people", "people": []}
+    world.fetches.clear()
+    data = asyncio.run(module.hosted_people_with_emails(Env(), "alice", "app"))
+    assert data == world.upstream_json
+    target, init = world.fetches[0]
+    assert target.endswith(
+        "/v1/repositories/alice/app/pulse?view=people&emails=1")
+    message = edge_routing.request_message(
+        init["headers"]["X-ForkMesh-Node"], "GET",
+        "/v1/repositories/alice/app/pulse?view=people&emails=1",
+        hashlib.sha256(b"").hexdigest(),
+        init["headers"]["X-ForkMesh-Request-Id"], NOW)
+    Ed25519PrivateKey.from_private_bytes(ROUTER_SEED).public_key().verify(
+        b64d(init["headers"]["X-ForkMesh-Signature"]), message.encode())
+    world.upstream_json = {"ok": True, "view": "leaderboard"}
+    assert asyncio.run(
+        module.hosted_people_with_emails(Env(), "alice", "app")) is None
+    # A private repository never answers it, and visitors cannot ask for it:
+    # neither router forwards the parameter.
+    private = World()
+    module2 = install(private)
+    _created(private, module2, {"visibility": "private"})
+    private.fetches.clear()
+    assert asyncio.run(
+        module2.hosted_people_with_emails(Env(), "alice", "app")) is None
+    assert private.fetches == []
+    entry = (Path(__file__).resolve().parents[1] / "src" / "entry.py"
+             ).read_text(encoding="utf-8")
+    forwarded = entry[entry.index('    elif operation == "pulse":'):]
+    assert forwarded.startswith(
+        '    elif operation == "pulse":\n'
+        '        for key in ("period", "person", "view"):')
+    assert edge_routing.masked_target_url(
+        "https://n1.next.test", "alice", "app", "pulse",
+        {"view": "people", "emails": "1"},
+    ).endswith("/pulse?view=people")
