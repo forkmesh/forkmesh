@@ -433,6 +433,20 @@ MD_VIDEO_URL = re.compile(
     r"^(?:https://[a-z0-9.-]+(?::\d{1,5})?)?/api/repo/[^\s/?#\"'<>]+/[^\s/?#\"'<>]+"
     r"/media/[0-9a-f]{32}\.(?:mp4|m4v|webm|mov)$", re.I)
 VIDEO_CLASS = "my-2 block max-h-[34rem] w-full max-w-3xl rounded-md border border-border bg-black"
+GIPHY_GIF_RE = re.compile(
+    r"^https://media[0-4]?\.giphy\.com/media/(?:v1\.[A-Za-z0-9_=.-]{1,200}/)?"
+    r"[A-Za-z0-9]{4,64}/(?:giphy|200|200w|giphy-downsized)\.gif$")
+
+
+def gif_html(alt, source, image_class=IMAGE_CLASS):
+    still = source[:-len(".gif")] + "_s.gif"
+    return ('<span class="fm-gif" data-fm-gif role="button" tabindex="0" '
+            'aria-label="GIF: %s. Press to play or pause."><picture><source '
+            'srcset="%s" media="(prefers-reduced-motion: reduce)" '
+            'data-fm-gif-still><img src="%s" alt="%s" class="%s" loading="lazy" '
+            'decoding="async" referrerpolicy="no-referrer" /></picture><span '
+            'class="fm-gif-badge" aria-hidden="true">GIF</span></span>' % (
+                alt or "animated image", still, source, alt, image_class))
 
 
 def image_html(alt, url, ctx):
@@ -445,6 +459,8 @@ def image_html(alt, url, ctx):
     source = image_source(target, ctx)
     if not source or source == "#":
         return alt
+    if not hint and GIPHY_GIF_RE.match(source):
+        return gif_html(alt, source)
     bare = re.split(r"[?#]", target or "")[0]
     svg = ctx is not None and re.search(r"\.svg$", bare, re.I) and not re.match(
         r"^(?:[a-z][a-z0-9+.-]*:|//|/|#)", target or "", re.I)
@@ -1059,7 +1075,15 @@ REACTION_EMOJI = {
     "thinking": "\U0001F914", "surprised": "\U0001F62E", "sad": "\U0001F622",
     "angry": "\U0001F621", "dislike": "\U0001F44E", "eyes": "\U0001F440",
     "star": "⭐", "rocket": "\U0001F680", "check": "✅",
+    "hearthands": "\U0001FAF6", "sparkleheart": "\U0001F496",
+    "handshake": "\U0001F91D", "glowstar": "\U0001F31F",
+    "trophy": "\U0001F3C6", "thankyou": "\U0001F4AC",
 }
+REACTION_STICKERS = {"thankyou": "/assets/reactions/thank-you.svg"}
+REACTION_CUSTOM_RE = re.compile(r"^custom:[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$")
+REACTION_SRC_RE = re.compile(
+    r"^/(?:api/reactions/custom/asset/[0-9a-f]{40}\.(?:svg|png|gif|webp)"
+    r"|assets/reactions/[a-z0-9-]+\.svg)$")
 
 
 def fold_reactions(events):
@@ -1092,7 +1116,9 @@ REACTION_LABELS = {
     "hot": "Hot", "thanks": "Thanks", "smile": "Smile", "wink": "Wink",
     "cool": "Cool", "thinking": "Thinking", "surprised": "Surprised", "sad": "Sad",
     "angry": "Angry", "dislike": "Dislike", "eyes": "Eyes", "star": "Star",
-    "rocket": "Rocket", "check": "Done",
+    "rocket": "Rocket", "check": "Done", "hearthands": "Heart hands",
+    "sparkleheart": "Sparkling heart", "handshake": "Handshake",
+    "glowstar": "Glowing star", "trophy": "Trophy", "thankyou": "Thank you",
 }
 REACTION_KINDS = {"issues": "issue", "pulls": "pull", "discussions": "discussion"}
 
@@ -1106,10 +1132,43 @@ def reaction_subject(kind, number):
     return "%s:%d" % (name, value) if name and value > 0 else ""
 
 
+def reaction_known(emoji):
+    return emoji in REACTION_EMOJI or bool(REACTION_CUSTOM_RE.match(emoji))
+
+
+def reaction_label(emoji, custom=None):
+    if emoji in REACTION_LABELS:
+        return REACTION_LABELS[emoji]
+    if not REACTION_CUSTOM_RE.match(emoji):
+        return emoji
+    return str(custom["label"]) if custom and custom.get("label") else emoji[7:]
+
+
+def reaction_src(src):
+    text = str(src or "")
+    return text if REACTION_SRC_RE.match(text) else ""
+
+
+def reaction_glyph(emoji, custom=None, size=18):
+    if emoji in REACTION_STICKERS:
+        return ('<img src="%s" alt="" width="%d" height="%d" class="fm-reaction-img" '
+                'decoding="async" draggable="false">' % (REACTION_STICKERS[emoji], size, size))
+    if REACTION_CUSTOM_RE.match(emoji):
+        src = reaction_src((custom or {}).get("src"))
+        if not src:
+            return '<span class="fm-reaction-fallback">:%s:</span>' % esc(emoji[7:])
+        animated = reaction_src((custom or {}).get("animatedSrc"))
+        return ('<img src="%s"%s alt="" width="%d" height="%d" class="fm-reaction-img" '
+                'decoding="async" draggable="false">' % (
+                    src, ' data-reaction-animated="%s"' % animated if animated else "",
+                    size, size))
+    return esc(REACTION_EMOJI.get(emoji, emoji))
+
+
 def reaction_tallies(stored, ledger=None):
     tallies = []
     for tally in stored if isinstance(stored, list) else []:
-        if not isinstance(tally, dict) or str(tally.get("emoji")) not in REACTION_EMOJI:
+        if not isinstance(tally, dict) or not reaction_known(str(tally.get("emoji"))):
             continue
         try:
             count = max(0, int(tally.get("count") or 0))
@@ -1118,8 +1177,15 @@ def reaction_tallies(stored, ledger=None):
         people = [{"name": str(p["name"]), "agent": p.get("agent") is True}
                   for p in (tally.get("people") if isinstance(tally.get("people"), list) else [])
                   if isinstance(p, dict) and p.get("name")]
-        tallies.append({"emoji": str(tally["emoji"]), "count": count,
-                        "mine": tally.get("mine") is True, "people": people})
+        item = {"emoji": str(tally["emoji"]), "count": count,
+                "mine": tally.get("mine") is True, "people": people}
+        if REACTION_CUSTOM_RE.match(item["emoji"]):
+            custom = tally.get("custom")
+            item["custom"] = {"label": str(custom.get("label") or ""),
+                              "src": str(custom.get("src") or ""),
+                              "animatedSrc": str(custom.get("animatedSrc") or "")} \
+                if isinstance(custom, dict) else None
+        tallies.append(item)
     for entry in ledger or []:
         tally = next((t for t in tallies if t["emoji"] == str(entry["value"])), None)
         if tally is None:
@@ -1141,32 +1207,45 @@ def reaction_who(tally):
         names.append("%d other%s" % (others, "" if others == 1 else "s"))
     listed = "%s and %s" % (", ".join(names[:-1]), names[-1]) if len(names) > 1 \
         else "".join(names)
-    return "%s reacted with %s" % (listed, REACTION_LABELS.get(tally["emoji"], tally["emoji"]))
+    return "%s reacted with %s" % (listed, reaction_label(tally["emoji"], tally.get("custom")))
 
 
 def reaction_chip(tally):
     agent = any(p["agent"] for p in tally["people"])
-    label = "%s %s: %s" % (REACTION_LABELS.get(tally["emoji"], tally["emoji"]),
+    label = "%s %s: %s" % (reaction_label(tally["emoji"], tally.get("custom")),
                            tally["count"], reaction_who(tally))
     return ('<button type="button" data-reaction="%s" aria-pressed="%s" aria-label="%s" '
             'class="fm-reaction%s"><span aria-hidden="true" class="fm-reaction-emoji">%s'
             '</span><span class="fm-reaction-count">%s</span></button>' % (
                 esc(tally["emoji"]), "true" if tally["mine"] else "false", esc(label),
                 " fm-reaction-agent" if agent else "",
-                esc(REACTION_EMOJI.get(tally["emoji"], tally["emoji"])),
+                reaction_glyph(tally["emoji"], tally.get("custom")),
                 esc(format_count(tally["count"]))))
+
+
+def reaction_extras(tallies):
+    """"Say thanks" until the viewer has; the first view has no viewer, and
+    tips are drawn by the dashboard once it knows them."""
+    if any(t["emoji"] == "thankyou" and t["mine"] for t in tallies):
+        return ""
+    return ('<button type="button" data-reaction-thanks aria-label="Say thanks" '
+            'title="Say thanks" class="fm-reaction-thanks"><img src="%s" alt="" '
+            'width="18" height="18" class="fm-reaction-img" decoding="async" '
+            'draggable="false"><span class="fm-reaction-thanks-label">Say thanks'
+            '</span></button>' % REACTION_STICKERS["thankyou"])
 
 
 def reaction_bar(subject, comment, stored=None, ledger=None, extra=""):
     if not subject or not comment:
         return ""
-    chips = "".join(reaction_chip(t) for t in reaction_tallies(stored, ledger))
+    tallies = reaction_tallies(stored, ledger)
+    chips = "".join(reaction_chip(t) for t in tallies)
     return ('<div data-comment-reactions="%s" data-comment-id="%s" role="group" '
-            'aria-label="Reactions" class="fm-reactions%s">%s<button type="button" '
+            'aria-label="Reactions" class="fm-reactions%s">%s%s<button type="button" '
             'data-reaction-add aria-label="Add reaction" aria-haspopup="dialog" '
             'aria-expanded="false" class="fm-reaction-add">%s</button></div>' % (
                 esc(subject), esc(comment), " " + extra if extra else "", chips,
-                icon("smile-plus")))
+                reaction_extras(tallies), icon("smile-plus")))
 
 
 def event_description(event):
