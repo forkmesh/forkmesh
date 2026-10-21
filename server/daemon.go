@@ -232,7 +232,7 @@ const (
 // only covers a frame that was never delivered. Third-party upstreams retain
 // their configured interval because the relay cannot describe their
 // generation.
-var relaySafetySyncInterval = 30 * time.Minute
+var relaySafetySyncInterval = 5 * time.Minute
 
 // A refs change rewrites the gateway configuration and restarts the gateway.
 // The catalog publication can complete before that restart is serving the new
