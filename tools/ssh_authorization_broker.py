@@ -106,7 +106,9 @@ class BrokerConfig:
     dynamic_repositories_file: Path | None = None
     # Optional "127.0.0.1:443": reach apiOrigin's own TLS front end on this
     # host instead of through a CDN, still verifying its certificate for the
-    # apiOrigin host name.
+    # apiOrigin host name. Absent (a gateway on a separate front host), the
+    # broker resolves apiOrigin through DNS and verifies TLS as usual, so
+    # its configuration never names the origin's address.
     api_connect_address: tuple[str, int] | None = None
 
 
