@@ -85,8 +85,11 @@ check in the app:
     pull's signing key) nor its `authorName`;
   - a `changes_requested` from an owner or admin blocks until approved or
     dismissed.
-- The merging account must still be an organization owner, and the node's
-  own review gate, required checks and pull rules still apply.
+- The merging account must be an owner of the organization (for an
+  organization's repository) or the repository's owner (for a personal
+  repository, `_repository_owner_can_merge_repo`), and the node's own review
+  gate, required checks, pull rules and exact-commit mergeability check
+  still apply.
 
 An approval is not tied to the head commit: new commits pushed to the pull
 request's branch after an approval keep it. The owner who merges sees the

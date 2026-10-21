@@ -180,3 +180,15 @@ def test_relay_refuses_a_user_account_volunteering_itself():
     assert '_account_kind(node_rec) != "node"' in fn
     assert "await _account_owns_node(env, actor, node)" in fn
     assert 'account.get("status") != "active"' in fn
+
+
+def test_without_a_node_a_supported_forge_listing_is_imported_and_hosted_here():
+    import re as _re
+    from _dashboard_bundle import assembled_dashboard_js as _js
+    text = _js()
+    start = _re.search(r"\n  async function volunteerForExternalMirror\(", text).start()
+    body = text[start:text.index("\n  }\n", start)]
+    no_node = body[body.index("if (!node) {"):body.index("openExternalMirrorHandoff(repository)")]
+    assert "hostedImportAllowed(original)" in no_node
+    assert "await createHostedRepository({" in no_node
+    assert "importUrl: original," in no_node

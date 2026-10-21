@@ -890,7 +890,7 @@
     const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
     const event = {
       type: "comment",
-      id: "comment-web-" + ts,
+      id: webDiscussionEventId("comment", ts),
       body: cleanBody,
       author: pub,
       authorName: state.session?.nodeName || "",
@@ -898,8 +898,121 @@
       sig,
     };
     const payload = { owner: repo.owner, repo: repo.name, number, event };
+    const data = await fetchRepoMutation(repo, "discussions", payload, { retryTransient: true });
+    return { ...data, event };
+  }
+
+  // Desktop and mirror materializers skip an event id they already hold, so
+  // two replies sent from one browser in the same second need distinct ids.
+  function webDiscussionEventId(type, ts) {
+    const suffix = new Uint32Array(1);
+    crypto.getRandomValues(suffix);
+    return `${type}-web-${ts}-${suffix[0].toString(36)}`;
+  }
+
+  // The categories DiscussionStore::categories() offers (and the relay's
+  // DISCUSSION_CATEGORIES accepts), in the desktop's order.
+  const WEB_DISCUSSION_CATEGORIES = ["Announcements", "Ideas", "Q&A", "Show and tell", "Maintainer notes"];
+
+  // Mirrors DiscussionStore::contentForSigning's "open" case (title NUL body
+  // NUL category) and createDiscussion on the desktop. A new discussion is
+  // signed against number 0: whoever writes it (an online mirror right away,
+  // or the owner's node when it drains the relay inbox) gives it the next
+  // free number, exactly as for one a desktop without the working tree sends.
+  async function signWebDiscussionOpenEvent(repo, title, body, category) {
+    const { privateKey, pub } = await getWebIssueKey();
+    // DiscussionStore stamps events in epoch milliseconds; the opening post's
+    // ts is also the discussion's createdAt, so keep the desktop's unit.
+    const ts = Date.now();
+    const cleanTitle = String(title || "").trim().slice(0, 240);
+    const cleanBody = String(body || "").replace(/^[\r\n]+|[\r\n]+$/g, "");
+    const cleanCategory = WEB_DISCUSSION_CATEGORIES.find(
+      (name) => name.toLowerCase() === String(category || "").trim().toLowerCase()) || "Ideas";
+    const NUL = String.fromCharCode(0);
+    const contentHash = await sha256HexLower(cleanTitle + NUL + cleanBody + NUL + cleanCategory);
+    const canonical = `${webEventSigningPrefix("discussion-event", repo)}open\n0\n${pub}\n${ts}\n${contentHash}`;
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    return {
+      type: "open",
+      id: webDiscussionEventId("open", ts),
+      title: cleanTitle,
+      body: cleanBody,
+      category: cleanCategory,
+      author: pub,
+      authorName: state.session?.nodeName || "",
+      ts,
+      sig,
+    };
+  }
+
+  // Starts a discussion from the browser. An online mirror writes it at once
+  // and answers with its number; through the relay it waits in the owner's
+  // inbox and the answer carries number 0 (not yet numbered).
+  async function submitWebDiscussion(repo, { title, body, category } = {}, onProgress = null) {
+    onProgress?.({ phase: "signing" });
+    let event;
+    try {
+      event = await signWebDiscussionOpenEvent(repo, title, body, category);
+    } catch (cause) {
+      const error = new Error("signing_unavailable");
+      error.cause = cause;
+      throw error;
+    }
+    const payload = {
+      owner: repo.owner,
+      repo: repo.name,
+      number: 0,
+      titleIfNew: event.title,
+      event,
+    };
+    const data = await fetchRepoMutation(
+      repo, "discussions", payload, { onProgress, retryTransient: true });
+    onProgress?.({ phase: "accepted", number: Number(data?.number || 0) });
+    return { ...data, number: Number(data?.number || 0), event };
+  }
+
+  // The owner's moderation, as on the desktop's Close / Archive / Delete
+  // buttons: "status" moves the discussion to open, closed or archived, and
+  // "delete" removes one reply (value = its event id). The signature proves
+  // the event; the account session proves repository authority, and the relay
+  // and mirrors refuse these without it.
+  async function submitWebDiscussionModeration(repo, number, type, value) {
+    const discussionNumber = Number(number);
+    if (!Number.isInteger(discussionNumber) || discussionNumber <= 0) {
+      throw new Error("invalid_discussion_number");
+    }
+    if (type === "status" && !["open", "closed", "archived"].includes(value)) {
+      throw new Error("unsupported_discussion_action");
+    }
+    // "delete" takes a reply id, or "#discussion" for the whole discussion.
+    if (type !== "status" && (type !== "delete" || !String(value || ""))) {
+      throw new Error("unsupported_discussion_action");
+    }
+    const { privateKey, pub } = await getWebIssueKey();
+    const ts = Math.floor(Date.now() / 1000);
+    const content = String(value || "");
+    const contentHash = await sha256HexLower(content);
+    const canonical = `${webEventSigningPrefix("discussion-event", repo)}${type}\n${discussionNumber}\n${pub}\n${ts}\n${contentHash}`;
+    const sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+    const event = {
+      type,
+      id: webDiscussionEventId(type, ts),
+      ...(type === "status" ? { status: content } : { target: content }),
+      author: pub,
+      authorName: state.session?.nodeName || "",
+      ts,
+      sig,
+    };
+    const payload = {
+      owner: repo.owner,
+      repo: repo.name,
+      number: discussionNumber,
+      event,
+      ownerAccount: state.session?.nodeName || "",
+      sessionToken: state.session?.sessionToken || "",
+    };
     const data = await fetchRepoMutation(repo, "discussions", payload);
-    return data;
+    return { ...data, event };
   }
 
   async function submitWebDiscussionAnswer(repo, number, target) {
@@ -926,6 +1039,68 @@
       sessionToken: state.session?.sessionToken || "",
     };
     return fetchRepoMutation(repo, "discussions", payload);
+  }
+
+  // Mirrors ProjectStore::contentForSigning/canonicalString on the desktop
+  // (forkmesh-project-event-v1, no repository binding). Each spec is
+  // {type, ...fields}; the relay's project-edit route verifies, appends and
+  // commits them in one go.
+  function webProjectEventContent(ev) {
+    const NUL = String.fromCharCode(0);
+    if (ev.type === "open") return `${ev.title}${NUL}${ev.body}`;
+    if (ev.type === "title") return ev.title;
+    if (ev.type === "edit") return ev.body;
+    if (ev.type === "status") return ev.status;
+    if (ev.type === "dates") return `${Number(ev.startDate) || 0}${NUL}${Number(ev.endDate) || 0}`;
+    if (ev.type === "milestone") return ev.milestone;
+    if (ev.type === "issues") return [...new Set(ev.issues)].sort((a, b) => a - b).join(",");
+    if (ev.type === "delete") return ev.target;
+    throw new Error("unsupported_project_event");
+  }
+
+  async function signWebProjectEvents(number, specs) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const base = Date.now();
+    const events = [];
+    for (let index = 0; index < specs.length; index += 1) {
+      const ts = base + index;
+      const ev = {
+        ...specs[index],
+        id: webDiscussionEventId(specs[index].type, ts),
+        author: pub,
+        authorName: state.session?.nodeName || "",
+        ts,
+      };
+      if (ev.type === "issues") ev.issues = [...new Set(ev.issues.map(Number))].sort((a, b) => a - b);
+      const hash = await sha256HexLower(webProjectEventContent(ev));
+      const canonical = `forkmesh-project-event-v1\n${ev.type}\n${Number(number)}\n${pub}\n${ts}\n${hash}`;
+      ev.sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+      events.push(ev);
+    }
+    return events;
+  }
+
+  async function submitWebProjectEvents(repo, number, specs) {
+    const events = await signWebProjectEvents(number, specs);
+    const headers = { accept: "application/json", "content-type": "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const response = await fetch(`${repoApiBase(repo)}/project-edit`, {
+      method: "POST", credentials: "same-origin", cache: "no-store", headers,
+      body: JSON.stringify({
+        branch: repoDefaultBranch(repo) || "main", number: Number(number), events,
+        ...(token && token !== "cookie" ? { sessionToken: token } : {}),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      const error = new Error(data?.message || data?.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = data?.error || "";
+      error.next = Number(data?.next || 0);
+      throw error;
+    }
+    return data;
   }
 
   function webIssueKeyPublic() {
@@ -2154,11 +2329,203 @@
       const code = String(error?.message || "");
       setHint(
         code === "inbox_full" ? "Reply delivery is temporarily full. Try again later."
+          : code === "discussion_locked" ? "This discussion was closed, so it no longer takes replies."
           : code === "author_quota" ? "You've reached the submission limit for this repository."
           : code === "discussion_too_large" ? "The reply is too large - please shorten it."
           : code === "bad_signature" ? "Could not verify the reply's signature."
           : "Could not send the reply. Please try again.",
         "bad");
+    }
+  }
+
+  // One message per refusal the relay, a mirror or the browser can give a
+  // discussion submission; the typed draft always survives.
+  function webDiscussionSubmitErrorText(error) {
+    const code = String(error?.message || error?.code || "");
+    const status = Number(error?.status || 0);
+    if (code === "signing_unavailable") return "This browser cannot sign discussions (Ed25519 is unsupported). Update your browser and try again.";
+    if (code === "bad_signature") return "The discussion's signature was rejected. Reload the page and try again.";
+    if (code === "discussion_too_large") return "The discussion is too large (64 KB at most) - please shorten it.";
+    if (code === "inbox_full") return "This repository's discussion inbox is full right now. Try again later.";
+    if (code === "author_quota") return "You have too many discussion posts waiting for this repository. Try again once they are published.";
+    if (code === "feature_disabled") return "Discussions are turned off for this repository.";
+    if (code === "not_authorized") return "Only the repository owner can do that.";
+    if (code === "discussion_locked") return "This discussion was closed, so it no longer takes replies.";
+    if (code === "not_found" || status === 404) return "This repository is not available to your account. It may be private, or not published yet.";
+    if (code === "network_error") return `Could not reach ${platformName()} - check your connection.`;
+    if (code === "timeout") return "The repository did not answer in time. The discussion may still arrive - check the list before sending it again.";
+    return `Could not send the discussion (${code || `HTTP ${status || "error"}`}). Please try again.`;
+  }
+
+  async function handleDiscussionComposeSubmit(repo, form) {
+    if (!repo || !form) return;
+    const titleInput = form.querySelector("[data-repo-discussion-title]");
+    const bodyInput = form.querySelector("[data-repo-discussion-body]");
+    const submit = form.querySelector("[data-repo-discussion-submit]");
+    const spinner = form.querySelector("[data-repo-discussion-spinner]");
+    const hint = form.querySelector("[data-repo-discussion-hint]");
+    const setHint = (text, bad) => {
+      if (!hint) return;
+      hint.className = `text-[12px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    const title = String(titleInput?.value || "").trim();
+    const body = String(bodyInput?.value || "");
+    const category = String(form.querySelector("[data-repo-discussion-category-input]:checked")?.value || "Ideas");
+    if (!state.session?.nodeName) {
+      location.href = "/login?next=" + encodeURIComponent(`${location.pathname}${location.search}`);
+      return;
+    }
+    if (!title) {
+      setHint("Enter a title for the discussion.", true);
+      titleInput?.focus();
+      return;
+    }
+    if (submit) submit.disabled = true;
+    if (spinner) spinner.hidden = false;
+    const progress = ({ phase, route, retry } = {}) => {
+      if (phase === "signing") setHint("Signing your discussion in this browser…");
+      else if (phase === "delivering" && route === "mirror") setHint(retry ? "Trying another mirror…" : "Sending it to a mirror of this repository…");
+      else if (phase === "delivering") setHint(retry ? "Retrying the same signed discussion…" : "Sending it to the repository…");
+    };
+    try {
+      const result = await submitWebDiscussion(repo, { title, body, category }, progress);
+      const event = result.event;
+      if (spinner) spinner.hidden = true;
+      if (submit) submit.disabled = false;
+      const number = Number(result.number || 0);
+      if (Number.isInteger(number) && number > 0) {
+        // A mirror wrote it already. Keep the accepted post on screen while
+        // the next read converges, the same way a new issue is shown.
+        rememberOptimisticRepoRecord(repo, "discussions", number, {
+          values: {
+            title: event.title,
+            category: event.category,
+            status: "open",
+            author: event.author,
+            authorName: event.authorName,
+            ts: event.ts,
+            createdAt: event.ts,
+          },
+          body: event.body,
+          discussionConversation: [],
+          discussionAnswer: null,
+        });
+        const items = state.repoCollectionItems.discussions;
+        if (Array.isArray(items) && !items.some((item) => Number(item.number) === number)) {
+          items.unshift({
+            number, title: event.title, category: event.category, state: "open",
+            author: event.authorName || state.session?.nodeName || "", authorKey: event.author,
+            createdAtMs: event.ts, updatedAtMs: event.ts,
+          });
+        }
+        navigateHistory(repoRecordUrl(repo, "discussions", number, "conversation"));
+        await loadRepoRecordDetail(repo, "discussions", number);
+        return;
+      }
+      // Through the relay: the owner's node or a mirror numbers it when it
+      // drains the inbox. Say so instead of linking to a number nobody has.
+      if (titleInput) titleInput.value = "";
+      if (bodyInput) bodyInput.value = "";
+      renderRepoDiscussions();
+      const container = $("[data-repo-discussions]");
+      container?.insertAdjacentHTML("afterbegin", `<div data-repo-discussion-pending role="status" class="flex items-start gap-2 border-b border-border bg-[color-mix(in_srgb,var(--dashboard-link)_8%,transparent)] px-4 py-3 text-[14px] text-foreground"><i data-lucide="clock" class="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground"></i><span><span class="font-semibold">${escapeHtml(event.title)}</span> was accepted. It appears here, numbered, as soon as a mirror of this repository records it.</span></div>`);
+      window.lucide?.createIcons();
+    } catch (error) {
+      if (spinner) spinner.hidden = true;
+      if (submit) submit.disabled = false;
+      console.error("[forkmesh] discussion submission failed", error);
+      setHint(`${webDiscussionSubmitErrorText(error)} Your draft is still here.`, true);
+    }
+  }
+
+  // The owner's Close / Reopen / Archive / Unarchive. The status is shown at
+  // once and kept while the mirror catches up; a refusal puts it back.
+  async function handleDiscussionStatusClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionStatusNumber || 0);
+    const status = String(button.dataset.repoDiscussionStatus || "");
+    const bar = button.closest("[data-repo-discussion-moderation]");
+    const hint = bar?.querySelector("[data-repo-discussion-moderation-hint]");
+    if (!number || !status) return;
+    bar?.querySelectorAll("button").forEach((control) => { control.disabled = true; });
+    if (hint) {
+      hint.className = "mr-auto text-[12px] text-muted-foreground";
+      hint.textContent = "Signing and sending…";
+    }
+    try {
+      const result = await submitWebDiscussionModeration(repo, number, "status", status);
+      rememberPendingDiscussionState(repo, number, result.event);
+      const detail = state.repoRecordDetail;
+      if (detail?.kind === "discussions" && Number(detail.number) === number && detail.parsed) {
+        detail.parsed.values = { ...(detail.parsed.values || {}), status };
+        rememberOptimisticRepoRecord(repo, "discussions", number, detail.parsed);
+        const container = $("[data-repo-discussions]");
+        if (container) {
+          container.innerHTML = renderRepoRecordDetail(repo, "discussions", number, detail.parsed);
+          window.lucide?.createIcons();
+        }
+      }
+      const items = state.repoCollectionItems.discussions;
+      const row = Array.isArray(items) ? items.find((item) => Number(item.number) === number) : null;
+      if (row) row.state = status;
+    } catch (error) {
+      bar?.querySelectorAll("button").forEach((control) => { control.disabled = false; });
+      if (hint) {
+        hint.className = "mr-auto text-[12px] text-destructive";
+        hint.textContent = webDiscussionSubmitErrorText(error);
+      }
+    }
+  }
+
+  // The owner deletes the whole discussion, as on the desktop: its folder
+  // leaves the repository once a mirror (or the owner's node) applies it.
+  async function handleDiscussionRemoveClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionRemove || 0);
+    if (!number) return;
+    if (!window.confirm(`Delete discussion #${number} and all its replies? This cannot be undone.`)) return;
+    const bar = button.closest("[data-repo-discussion-moderation]");
+    const hint = bar?.querySelector("[data-repo-discussion-moderation-hint]");
+    bar?.querySelectorAll("button").forEach((control) => { control.disabled = true; });
+    try {
+      const result = await submitWebDiscussionModeration(repo, number, "delete", "#discussion");
+      rememberPendingDiscussionState(repo, number, result.event);
+      forgetOptimisticRepoRecord(repo, "discussions", number);
+      const items = state.repoCollectionItems.discussions;
+      if (Array.isArray(items)) {
+        state.repoCollectionItems.discussions = items.filter((item) => Number(item.number) !== number);
+      }
+      navigateHistory(`${repoLinkUrl(repo)}/discussions`);
+      renderRepoDiscussions();
+    } catch (error) {
+      bar?.querySelectorAll("button").forEach((control) => { control.disabled = false; });
+      if (hint) {
+        hint.className = "mr-auto text-[12px] text-destructive";
+        hint.textContent = webDiscussionSubmitErrorText(error);
+      }
+    }
+  }
+
+  async function handleDiscussionDeleteClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionDeleteNumber || 0);
+    const target = String(button.dataset.repoDiscussionDelete || "");
+    if (!number || !target) return;
+    if (!window.confirm("Delete this reply? It is removed from the repository for everyone.")) return;
+    button.disabled = true;
+    const reply = button.closest("[data-repo-discussion-reply]");
+    try {
+      await submitWebDiscussionModeration(repo, number, "delete", target);
+      const detail = state.repoRecordDetail;
+      if (detail?.kind === "discussions" && Number(detail.number) === number && detail.parsed) {
+        detail.parsed.discussionConversation = (detail.parsed.discussionConversation || [])
+          .filter((ev) => ev.id !== target);
+      }
+      reply?.remove();
+    } catch (error) {
+      button.disabled = false;
+      window.alert(webDiscussionSubmitErrorText(error));
     }
   }
 

@@ -543,29 +543,3 @@ def test_the_worker_router_forwards_the_people_view():
         {"view": "people"},
     ) == ("https://core.example.test/v1/repositories/alice/project/pulse"
           "?view=people")
-
-
-def test_people_addresses_go_only_to_a_router_capability(pulse_app):
-    app, _clock, _bare = pulse_app
-    public = payload(app, "view=people")
-    assert all("emails" not in row for row in public["people"])
-    for query in ("view=people&emails=1", "view=people&emails=0",
-                  "period=1w&emails=1"):
-        assert read(app, query).status == 404, query
-    target = "/v1/repositories/alice/project/pulse?view=people&emails=1"
-    allowed = app.dispatch("GET", target, capability_headers(target), b"")
-    assert allowed.status == 200
-    assert allowed.headers["Cache-Control"] == "private, no-store"
-    rows = {row["key"]: row for row in json.loads(allowed.body)["people"]}
-    assert rows["alice"]["emails"] == ["alice@example.test"]
-    assert rows["carol"]["emails"] == ["carol@example.test"]
-    # Ledger-only people have no commit address; bots never appear at all.
-    assert rows["frank"]["emails"] == []
-    assert all("noreply@anthropic.com" not in row["emails"]
-               for row in rows.values())
-    # A public read after the capability one is still refused, not served
-    # from the shared answer cache.
-    assert read(app, "view=people&emails=1").status == 404
-    signed = "/v1/repositories/alice/project/pulse?view=people&emails=2"
-    assert app.dispatch(
-        "GET", signed, capability_headers(signed), b"").status == 404

@@ -328,8 +328,8 @@ reduced motion).
   discussion, with Categories on the left and the list on the right. Each row
   shows the category's emoji, the title, who started it, when, and in which
   category. There are no vote or reply counts because the list reads only
-  `discussion.md`. New discussion explains that discussions are created from
-  the desktop app, since they are signed by the author's node.
+  `discussion.md`. New discussion (and the empty list's Start a discussion)
+  opens the web composer; see [web-discussions.md](web-discussions.md).
 
 ## Issue page first view
 

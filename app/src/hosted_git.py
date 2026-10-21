@@ -1015,6 +1015,10 @@ async def hosted_repository_handler(env, request, path):
         if method_name(request) == "GET":
             return await _hosted_settings(env, request)
         return await _create_empty_repository(env, request)
+    if route == "/api/hosted-repositories/visibility":
+        if method_name(request) != "POST":
+            return json_response({"error": "method_not_allowed"}, status=405)
+        return await _change_visibility(env, request)
     if route == "/api/hosted-repositories/push-credential":
         return await _mint_push_credential(env, request)
     if route == _hosted_repos.REPLICAS_PATH:
@@ -1270,6 +1274,12 @@ async def _hosted_read_allowed(env, owner, repo, account):
     try:
         if await _account_owns_node(env, account, owner):
             return True
+        # A collaborator the owner shared the repository with reads it too,
+        # as on node-held private repositories (_repo_shared_with).
+        shared_with = globals().get("_repo_shared_with")
+        if callable(shared_with) and await shared_with(
+                env, owner, repo, account):
+            return True
         rows = await d1_all(
             env, "SELECT org_bi FROM org_repos WHERE node_owner=? AND repo=?",
             owner.lower(), repo.lower())
@@ -1337,6 +1347,88 @@ async def _hosted_settings(env, request):
             runtime, await blind_index(env, actor))
         body["organizations"] = await _creatable_organizations(env, actor)
     return json_response(body, cache_control="no-store")
+
+
+async def _change_visibility(env, request):
+    """POST /api/hosted-repositories/visibility {owner, name, visibility}.
+
+    Makes a repository the core nodes host public or private from the web.
+    Only its owner (the account that is or owns its node) or an admin of the
+    organization it belongs to may. The catalog record, its plaintext privacy
+    flag and the hosted row change together; the cores serve the new
+    visibility from their next replica sync, and the public catalog is
+    republished. Repositories held by a personal node change visibility from
+    that node, which signs its own catalog record.
+    """
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        return _error("invalid_json", 400)
+    if not isinstance(data, dict):
+        return _error("invalid_json", 400)
+    actor = await _authed_account_name(env, request, data)
+    if not actor:
+        return _session_required_response()
+    owner = clean_string(data.get("owner", ""), MAX_NODE_NAME).strip().lower()
+    name = clean_string(data.get("name", ""), 100).strip()
+    visibility = str(data.get("visibility") or "").strip().lower()
+    if visibility not in ("public", "private") or not owner or not name:
+        return _error("invalid_request", 400)
+    if not _hosted_repos.enabled(env):
+        return _error("core_hosting_required", 409,
+                      "Visibility changes on the web need core hosting.")
+    runtime = _ReplicaRuntime(env, request)
+    await ensure_schema(env)
+    await _hosted_repos.ensure_tables(runtime)
+    key_bi = await blind_index(env, owner + "/" + name)
+    row = await _hosted_repos.find_by_key(runtime, key_bi)
+    if not row:
+        return _error("node_held", 409,
+                      "This repository is held by its owner's node; change "
+                      "its visibility there.")
+    hosted = await decrypt_row(env, row.get("data")) or {}
+    allowed = await _account_owns_node(env, actor, owner)
+    organization = str(hosted.get("organization") or "")
+    if not allowed and organization:
+        org_bi, org_row = await _org_row(env, organization)
+        allowed = bool(org_row) and team_permission_rank(
+            await _org_permission(env, org_bi, actor)
+        ) >= team_permission_rank("admin")
+    if not allowed:
+        await _audit_sensitive_action(
+            env, actor, "repository.visibility", "repository",
+            owner + "/" + name, "denied", {"visibility": visibility})
+        return _error("forbidden", 403)
+    catalog = await d1_first(
+        env, "SELECT data FROM repositories WHERE key_bi=?", key_bi)
+    record = await decrypt_row(env, (catalog or {}).get("data"))
+    if not isinstance(record, dict):
+        return _error("not_found", 404)
+    previous = "private" if record.get("visibility") == "private" else "public"
+    if previous != visibility:
+        now = int(Date.now())
+        record = safe_catalog_record({
+            **record, "visibility": visibility, "updatedAt": str(now)})
+        owner_bi = await blind_index(env, owner)
+        _unused, owner_rec = await _account_row(env, owner)
+        await _contribution_write_catalog_state(
+            env, record, owner_bi, owner_rec or {}, key_bi,
+            await encrypt_row(env, record))
+        await _hosted_repos.set_visibility(runtime, row["id"], visibility)
+        forget_closed = globals().get("_forget_repo_closed")
+        if callable(forget_closed):
+            forget_closed(owner, name)
+        _https_mirror_public_context_cache_clear()
+        await edge_cache_delete(CATALOG_CACHE_KEY)
+        await _bump_catalog_rev(env)
+        await schedule_public_catalog_republish(env, owner, name)
+        await _notify_cores(env, owner, name)
+    await _audit_sensitive_action(
+        env, actor, "repository.visibility", "repository", owner + "/" + name,
+        "success", {"from": previous, "to": visibility})
+    return json_response(
+        {"ok": True, "owner": owner, "name": name, "visibility": visibility,
+         "changed": previous != visibility}, cache_control="no-store")
 
 
 def _error(code, status, message="", **extra):
@@ -1778,77 +1870,6 @@ async def hosted_private_read(env, request, owner, repo, operation):
     return await _core_proxy(env, request, owner, repo, operation, candidates)
 
 
-async def _core_capability_headers(env, endpoint, method, target,
-                                   body_digest):
-    """Router-capability headers for one request to one core, or None."""
-    router_public_key = _https_mirror_router_public_key(env)
-    router_seed = _https_mirror_router_seed(env)
-    if not router_public_key or not router_seed:
-        return None
-    parsed = urlparse(target)
-    signed_path = parsed.path + (("?" + parsed.query) if parsed.query else "")
-    request_id = _b64url_encode(_random_bytes(18))
-    issued_at = int(Date.now())
-    message = https_routing.request_message(
-        endpoint["node"], method, signed_path, body_digest, request_id,
-        issued_at)
-    signature = await ed25519_sign(
-        router_public_key, router_seed, message.encode("utf-8"))
-    if not message or not signature:
-        return None
-    return {
-        "X-ForkMesh-Node": endpoint["node"],
-        "X-ForkMesh-Request-Id": request_id,
-        "X-ForkMesh-Issued-At": str(issued_at),
-        "X-ForkMesh-Body-Sha256": body_digest,
-        "X-ForkMesh-Signature": signature,
-    }
-
-
-HOSTED_PEOPLE_TIMEOUT_SECONDS = 15
-
-
-async def hosted_people_with_emails(env, owner, repo):
-    """``pulse?view=people&emails=1`` of one public core-hosted repository.
-
-    The commit addresses in this answer are for server-side matching against
-    verified account emails only: the read is capability-signed straight to
-    a core, never cached, and nothing here returns it to a visitor. None when
-    the repository is not core-hosted and public, or no core answers.
-    """
-    row = await _hosted_row(env, owner, repo)
-    if not row or row.get("visibility") != "public":
-        return None
-    candidates = await _core_candidates(
-        env, str(row.get("id") or ""), str(row.get("pushed_by") or ""))
-    body_digest = hashlib.sha256(b"").hexdigest()
-    for endpoint in candidates:
-        target = https_routing.masked_target_url(
-            endpoint["baseUrl"], owner, repo, "pulse", {"view": "people"})
-        if not target:
-            continue
-        target += "&emails=1"
-        headers = await _core_capability_headers(
-            env, endpoint, "GET", target, body_digest)
-        if not headers:
-            continue
-        try:
-            upstream = await js_fetch_until_response(
-                target, {"method": "GET", "headers": headers,
-                         "redirect": "manual"},
-                HOSTED_PEOPLE_TIMEOUT_SECONDS)
-            if int(getattr(upstream, "status", 0) or 0) != 200:
-                continue
-            data = await upstream.json()
-            if hasattr(data, "to_py"):
-                data = data.to_py()
-        except Exception:
-            continue
-        if isinstance(data, dict) and data.get("view") == "people":
-            return data
-    return None
-
-
 async def _core_proxy(env, request, owner, repo, operation, candidates):
     """One capability-signed read against the first core that answers."""
     method = method_name(request)
@@ -1888,10 +1909,24 @@ async def _core_proxy(env, request, owner, repo, operation, candidates):
             endpoint["baseUrl"], owner, repo, operation, query)
         if not target:
             continue
-        headers = await _core_capability_headers(
-            env, endpoint, method, target, body_digest)
-        if not headers:
+        parsed = urlparse(target)
+        signed_path = parsed.path + (("?" + parsed.query) if parsed.query else "")
+        request_id = _b64url_encode(_random_bytes(18))
+        issued_at = int(Date.now())
+        message = https_routing.request_message(
+            endpoint["node"], method, signed_path, body_digest, request_id,
+            issued_at)
+        signature = await ed25519_sign(
+            router_public_key, router_seed, message.encode("utf-8"))
+        if not message or not signature:
             continue
+        headers = {
+            "X-ForkMesh-Node": endpoint["node"],
+            "X-ForkMesh-Request-Id": request_id,
+            "X-ForkMesh-Issued-At": str(issued_at),
+            "X-ForkMesh-Body-Sha256": body_digest,
+            "X-ForkMesh-Signature": signature,
+        }
         if git_protocol:
             headers["Git-Protocol"] = git_protocol
         if operation == "git-upload-pack":

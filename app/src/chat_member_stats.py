@@ -27,9 +27,6 @@ AUTOMATED_MEMBER_RE = re.compile(
     r"|fmnext-[a-z0-9-]+|mirror\d+|[a-z0-9-]+-mirror"
     r")$")
 
-# Repository source: the instance's own public repositories, read through
-# their Pulse ledger (``pulse?view=people``) by a cron phase and kept in
-# member_repo_activity. The request path never reaches a repository.
 MEMBER_ACTIVITY_PULSE_QUERY = "pulse?view=people"
 MEMBER_ACTIVITY_REPOS_PER_RUN = 6
 MEMBER_ACTIVITY_DROPS_PER_RUN = 20
@@ -37,13 +34,8 @@ MEMBER_ACTIVITY_REFRESH_MS = 3 * 60 * 60 * 1000
 MEMBER_ACTIVITY_FETCH_SECONDS = 15
 MEMBER_ACTIVITY_PEOPLE_LIMIT = 1000
 MEMBER_ACTIVITY_MASK_RE = re.compile(r"^(?:[0-9a-f]{2}){1,64}$")
-# Only repositories hosted on this instance count, not catalog entries that
-# mirror a repository hosted elsewhere (hosted_git.HOSTED_SOURCE).
 MEMBER_ACTIVITY_HOSTED_SOURCE = "hosted-web"
 MEMBER_ACTIVITY_ROOT_RE = re.compile(r"^[0-9a-f]{40}(?:[0-9a-f]{24})?$")
-MEMBER_ACTIVITY_EMAILS_PER_PERSON = 5
-MEMBER_ACTIVITY_EMAILS_PER_REPO = 2000
-MEMBER_ACTIVITY_EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,190}$")
 DAY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 _MEMBER_STATS_MEMO = {}
@@ -117,7 +109,6 @@ def _ordinal(day):
 
 
 def _mask_days(day_start, day_mask):
-    """The day ordinals set in one stored activity mask (bit 0 = day_start)."""
     first = _ordinal(day_start)
     mask = str(day_mask or "")
     if not first or not MEMBER_ACTIVITY_MASK_RE.fullmatch(mask):
@@ -131,14 +122,6 @@ def _mask_days(day_start, day_mask):
 
 
 def combine_member_activity(profile, repos, since, through):
-    """One person's figures from both sources, never double counted.
-
-    The profile contribution rows and the instance's repositories can
-    describe the same work (a profile project is often one of the instance's
-    repositories), so each figure is the larger of the two sources, not their
-    sum. Repositories are summed among themselves: the sweep keeps one
-    repository per fork family, so two rows never hold the same commits.
-    """
     profile = profile or {}
     low, high = _ordinal(since), _ordinal(through)
     totals = {kind: 0 for kind in MEMBER_STATS_KINDS}
@@ -223,13 +206,6 @@ async def _public_members(env, wanted):
 
 
 async def _member_activity_rows(env, user_bis, since, through):
-    """Both sources for a batch in one statement.
-
-    The profile half binds the batch as a list; the repository half takes it
-    as one JSON parameter, so a batch of 50 stays under D1's 100 bound
-    parameters. A repository counts only while it is public right now: the
-    join drops rows of a repository made private or deleted since the sweep.
-    """
     if not user_bis:
         return []
     return await d1_all(
@@ -357,9 +333,6 @@ async def member_stats_route(env, request):
     return response
 
 
-# ---------------------------------------------------------------------------
-# Repository source sweep (cron phase "member-activity")
-# ---------------------------------------------------------------------------
 
 def _repo_aliases(record):
     name = str(record.get("name") or record.get("repo") or "").strip().lower()
@@ -372,15 +345,6 @@ def _repo_aliases(record):
 
 
 def member_activity_sources(catalog_rows):
-    """The public repositories whose activity counts, one per fork family.
-
-    Only repositories hosted on this instance count; a catalog entry that
-    mirrors a repository hosted elsewhere does not. Among them, a fork whose
-    parent is also a counted repository here is skipped (its
-    history is the parent's, as on GitHub, where commits in a fork do not
-    count), and of several repositories with the same root commit only one
-    is kept: not a fork first, then the longest history.
-    """
     candidates = []
     aliases = set()
     for row in catalog_rows or ():
@@ -422,25 +386,7 @@ def member_activity_sources(catalog_rows):
     return sources
 
 
-def _clean_emails(values):
-    found = []
-    for value in values if isinstance(values, list) else ():
-        email = str(value or "").strip().lower()
-        if (MEMBER_ACTIVITY_EMAIL_RE.fullmatch(email) and email not in found
-                and len(found) < MEMBER_ACTIVITY_EMAILS_PER_PERSON):
-            found.append(email)
-    return found
-
-
 def member_activity_people(data, rules=()):
-    """The people in one ``pulse?view=people`` answer, ready to map.
-
-    Each entry is ``(key, row)``: Pulse's case-folded identity, and the
-    figures plus ``name`` (the identity when it is shaped like an account
-    name, else "") and ``emails`` (commit addresses, present only in the
-    capability-signed answer). Identities that can match no account, and
-    automated account-shaped names, are left out.
-    """
     if not isinstance(data, dict) or data.get("view") != "people":
         return []
     day_start = str(data.get("dayStart") or "")
@@ -453,13 +399,8 @@ def member_activity_people(data, rules=()):
         if not isinstance(person, dict):
             continue
         key = " ".join(str(person.get("key") or "").split()).lower()
-        if not key or key in found:
-            continue
-        name = key if MEMBER_NAME_RE.fullmatch(key) else ""
-        if name and is_automated_member(name, rules):
-            continue
-        emails = _clean_emails(person.get("emails"))
-        if not name and not emails:
+        if (not MEMBER_NAME_RE.fullmatch(key) or key in found
+                or is_automated_member(key, rules)):
             continue
         mask = str(person.get("dayMask") or "").lower()
         last_at = _count(person.get("lastAt"))
@@ -474,8 +415,6 @@ def member_activity_people(data, rules=()):
         if not any(row.values()):
             continue
         row.update({
-            "name": name,
-            "emails": emails,
             "day_start": day_start,
             "day_mask": mask if MEMBER_ACTIVITY_MASK_RE.fullmatch(mask) else "",
             "last_day": last_day,
@@ -484,110 +423,7 @@ def member_activity_people(data, rules=()):
     return sorted(found.items())
 
 
-def _merge_masks(first, second):
-    if not first:
-        return second
-    if not second:
-        return first
-    left, right = bytes.fromhex(first), bytes.fromhex(second)
-    size = max(len(left), len(right))
-    left, right = left.ljust(size, b"\0"), right.ljust(size, b"\0")
-    return bytes(a | b for a, b in zip(left, right)).hex()
-
-
-def _verified_email_owner(rec, email):
-    """True when ``rec`` is an active person whose verified email is it."""
-    if not isinstance(rec, dict):
-        return False
-    kind = globals().get("_account_kind")
-    account_kind = kind(rec) if callable(kind) else str(
-        rec.get("kind") or "user")
-    return (rec.get("email_verified") is True
-            and str(rec.get("email") or "").strip().lower() == email
-            and account_kind == "user"
-            and rec.get("status") == "active")
-
-
-async def member_activity_accounts(env, people, rules=()):
-    """Map Pulse identities to accounts and total them per account.
-
-    An identity belongs to the account whose verified email is one of its
-    commit addresses (exactly one such account; several distinct ones are
-    ambiguous and ignored). Without that, it belongs to the account spelled
-    exactly like the identity, Pulse's own rule. Several identities of one
-    person (say a full-name commit identity and the account-name ledger
-    identity) are disjoint activity, so their figures add up and their days
-    merge. One users query covers both kinds of match.
-    """
-    name_bis = {}
-    email_bis = {}
-    for key, row in people:
-        if row["name"]:
-            name_bis[await _member_bi(env, row["name"])] = row["name"]
-        for email in row["emails"]:
-            if email not in email_bis and len(
-                    email_bis) < MEMBER_ACTIVITY_EMAILS_PER_REPO:
-                email_bis[email] = await blind_index(env, email)
-    if not name_bis and not email_bis:
-        return {}
-    by_email_bi = {value: email for email, value in email_bis.items()}
-    rows = await d1_all(
-        env,
-        "SELECT user_bi, email_bi, data FROM users "
-        "WHERE user_bi IN (SELECT CAST(value AS TEXT) FROM json_each(?)) "
-        "OR email_bi IN (SELECT CAST(value AS TEXT) FROM json_each(?))",
-        json.dumps(sorted(name_bis)), json.dumps(sorted(by_email_bi))) or []
-    names = {}
-    email_owner = {}
-    for row in rows:
-        user_bi = str(row.get("user_bi") or "")
-        if user_bi in name_bis:
-            names[name_bis[user_bi]] = user_bi
-        email = by_email_bi.get(str(row.get("email_bi") or ""))
-        if not email:
-            continue
-        rec = await decrypt_row(env, row.get("data", ""))
-        account = str((rec or {}).get("name") or "").strip().lower()
-        if (_verified_email_owner(rec, email) and account
-                and not is_automated_member(account, rules)):
-            email_owner[email] = user_bi
-    totals = {}
-    for key, row in people:
-        owners = {email_owner[email] for email in row["emails"]
-                  if email in email_owner}
-        user_bi = next(iter(owners)) if len(owners) == 1 else ""
-        if not user_bi and row["name"]:
-            user_bi = names.get(row["name"], "")
-        if not user_bi:
-            continue
-        total = totals.get(user_bi)
-        if total is None:
-            totals[user_bi] = {
-                **{kind: row[kind] for kind in MEMBER_STATS_KINDS},
-                "day_start": row["day_start"], "day_mask": row["day_mask"],
-                "last_day": row["last_day"]}
-            continue
-        for kind in MEMBER_STATS_KINDS:
-            total[kind] += row[kind]
-        total["day_mask"] = _merge_masks(total["day_mask"], row["day_mask"])
-        total["last_day"] = max(total["last_day"], row["last_day"])
-    return totals
-
-
 async def _fetch_repo_people(env, owner, name):
-    """The repository's people view, with commit addresses when possible.
-
-    A core-hosted repository is read through a capability-signed core read
-    that may carry addresses; otherwise the public read (names only).
-    """
-    signed = globals().get("hosted_people_with_emails")
-    if callable(signed):
-        try:
-            data = await signed(env, owner, name)
-        except Exception:
-            data = None
-        if isinstance(data, dict):
-            return data
     try:
         origin = str(_public_base_url(env) or "").rstrip("/")
         response = await js_fetch_with_timeout(
@@ -616,12 +452,22 @@ async def _refresh_repo(env, source, rules, now_ms):
             "refreshed_at=excluded.refreshed_at, ok=0",
             key_bi, now_ms)
         return False
-    totals = await member_activity_accounts(
-        env, member_activity_people(data, rules), rules)
+    people = member_activity_people(data, rules)
+    by_bi = {}
+    for key, row in people:
+        by_bi[await _member_bi(env, key)] = row
+    accounts = set()
+    if by_bi:
+        for row in await d1_all(
+                env,
+                "SELECT user_bi FROM users WHERE user_bi IN ("
+                "SELECT CAST(value AS TEXT) FROM json_each(?))",
+                json.dumps(sorted(by_bi))) or []:
+            accounts.add(str(row.get("user_bi") or ""))
     statements = [(
         "DELETE FROM member_repo_activity WHERE repo_bi=?", (key_bi,))]
-    for user_bi in sorted(totals):
-        row = totals[user_bi]
+    for user_bi in sorted(accounts & set(by_bi)):
+        row = by_bi[user_bi]
         statements.append((
             "INSERT INTO member_repo_activity (repo_bi, user_bi, commits, "
             "pulls, issues, reviews, day_start, day_mask, last_day, "
@@ -633,20 +479,12 @@ async def _refresh_repo(env, source, rules, now_ms):
         "INSERT INTO member_activity_repos (repo_bi, refreshed_at, people, ok) "
         "VALUES (?,?,?,1) ON CONFLICT(repo_bi) DO UPDATE SET "
         "refreshed_at=excluded.refreshed_at, people=excluded.people, ok=1",
-        (key_bi, now_ms, len(totals))))
+        (key_bi, now_ms, len(statements) - 1)))
     await d1_run_batch(env, statements)
     return True
 
 
 async def refresh_member_repo_activity(env, now_ms=None):
-    """Refresh the repository source a few repositories at a time.
-
-    Each run reads the decrypted public catalog the catalog pages already
-    memoise, drops rows of repositories that stopped counting (made private,
-    deleted, or now a fork of a counted one), then asks the oldest few due
-    repositories for their ``pulse?view=people`` answer: one gateway read
-    each, which the gateway itself caches for the hour.
-    """
     await ensure_schema(env)
     now_ms = int(Date.now()) if now_ms is None else int(now_ms)
     sources = member_activity_sources(
