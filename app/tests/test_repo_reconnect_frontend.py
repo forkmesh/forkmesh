@@ -223,7 +223,9 @@ def test_views_use_the_shared_helper_instead_of_permanent_outage_text():
         assert "is unavailable until a reachable mirror host serves ${" not in text
         assert "are unavailable until a reachable mirror host serves the ${" not in text
         assert "Releases are unavailable until" not in text
-    assert CONTENT.count("handleRepoReadFailure(error, reconnect)") >= 4
+        assert "Projects are unavailable until" not in text
+    assert CONTENT.count("handleRepoReadFailure(error, reconnect)") >= 5
+    assert "retry: () => loadRepoProjects(repo)" in CONTENT
     assert COMPOSE.count("handleRepoReadFailure(error, reconnect)") == 3
     assert "function handleRepoReadFailure" not in COMPOSE
     assert "stopRepoReconnects();" in HELPERS[HELPERS.index("function navigateHistory"):]

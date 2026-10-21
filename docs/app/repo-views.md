@@ -284,7 +284,7 @@ GitHub reference screenshots).
 
 ## Reconnecting after a mirror outage
 
-Pull request, issue and discussion lists and records, the code tree, commits,
+Pull request, issue and discussion lists and records, projects, the code tree, commits,
 branches and releases share one helper in `06-repo-content.js`
 (`handleRepoReadFailure`, `finishRepoRead`). A read that fails with 503
 `mirror_unavailable` (or 503 without a code), 502, 504 or a network error

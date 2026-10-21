@@ -115,7 +115,7 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   15-minute limit bounds how long a repository made private could still be
   answered from it during an outage. Commit-pinned reads stay in the existing
   `ImmutableCache`. This exists because every instance deploy restarted the
-  gateway and git.owaspblt.org showed pull request pages as unavailable for
+  gateway and a single-server instance showed pull request pages as unavailable for
   about 40 s (`docs/server/gateways.md`).
 - **Egress.** Every subrequest refuses private, loopback, metadata, CGNAT and
   mesh addresses at connect time, re-checks redirects, and fails over across

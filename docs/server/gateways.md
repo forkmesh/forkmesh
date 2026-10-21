@@ -34,9 +34,9 @@ two ref advertisements, plus the dashboard catalog and assets. Measured on a
 bare copy of the BLT repository (45k commits, 392 MB pack) pinned to one CPU
 with a warm page cache: one repository warmed in about 3 s and seven in
 16.5 s before the port answered; with the listener first the port answers in
-0.26 s (one repository) and 0.34 s (seven). git.owaspblt.org serves seven
-repositories on a small VPS with a cold cache after a restart, which is the
-~40 s outage seen after deploys. Requests during the warmup are served on
+0.26 s (one repository) and 0.34 s (seven). A single-server instance serving
+seven repositories on a small VPS has a cold cache after a restart, which made
+the ~40 s outage seen after deploys. Requests during the warmup are served on
 demand; `_single_flight` keeps a request and the warmup from computing the
 same answer twice.
 

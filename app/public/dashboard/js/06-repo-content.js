@@ -9516,7 +9516,12 @@
   async function loadRepoProjects(repo) {
     const container = $("[data-repo-projects]");
     if (!container) return;
-    container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading projects from the live mirror...")}</div>`;
+    const viewKey = repoViewKey(repo, "projects");
+    const staleMark = repoStaleReadMark();
+    const reconnect = { key: viewKey, container, retry: () => loadRepoProjects(repo) };
+    if (!repoReconnectActive(viewKey)) {
+      container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading projects from the live mirror...")}</div>`;
+    }
     try {
       let tree;
       try {
@@ -9576,8 +9581,11 @@
       state.projectsView.items = projects;
       state.projectsView.issues = issues;
       renderRepoProjects();
-    } catch (_) {
-      container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Projects are unavailable until a reachable mirror host serves the .forkmesh/projects/ folder.</div>';
+      finishRepoRead(staleMark, reconnect);
+    } catch (error) {
+      if (!handleRepoReadFailure(error, reconnect)) {
+        container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Projects could not be loaded from the repository host.</div>';
+      }
     }
   }
 
