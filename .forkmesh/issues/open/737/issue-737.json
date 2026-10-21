@@ -44,6 +44,17 @@
             "sig": "BK4iQUAlF47IprbIWZLRlOZKb7Irsn_GN_WEDKl9epBLgSqqLm7PANjSgy_S5TZ1aJrlEYrkQNlglU82hQ_CCw",
             "ts": 1792550905665,
             "type": "assignees"
+        },
+        {
+            "attachments": [
+            ],
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "body": "Closed by merged branch \"agent/issue-737-s2384-microjobs-submit-issue-link\".",
+            "id": "2dccbe86-0683-4ace-a65a-932f26f56a2c",
+            "sig": "tgpeFrUUqXHN5oN7xbbAnv2NzONUNIIadTZZwVc2db5JwaUDipMRsYBXkyouYZUDkkuHl-1GwkWNc1h0qltpCQ",
+            "ts": 1792551821986,
+            "type": "comment"
         }
     ],
     "labels": [
@@ -62,6 +73,6 @@
     "startDate": 0,
     "status": "open",
     "title": "/microjobs \"Submit an issue\" link (/issues/new) lands on the issue list instead of the new-issue form",
-    "updatedAt": 1792550905665,
+    "updatedAt": 1792551821986,
     "votes": 0
 }
