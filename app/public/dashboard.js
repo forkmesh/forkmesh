@@ -23063,7 +23063,12 @@
 
   function repoPullAiDisclosureMissing(parsed) {
     if (parsed?.repoCollabSettings?.requireAiDisclosure !== true) return false;
-    return !String(parsed?.values?.aiModel || "").trim();
+    // pullAiModel (main's AI disclosure) also reads an "AI model:" line in
+    // the description, the way the disclosure chip does.
+    const stated = typeof pullAiModel === "function"
+      ? pullAiModel(parsed?.values || {}, parsed?.body || "")
+      : parsed?.values?.aiModel;
+    return !String(stated || "").trim();
   }
 
   function repoPullQuickReplyConditions(parsed) {
