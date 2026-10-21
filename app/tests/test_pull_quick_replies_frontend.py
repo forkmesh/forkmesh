@@ -399,7 +399,7 @@ def test_the_page_wires_the_controls_and_the_bundle_is_current():
     for name in ("function renderRepoPullQuickReplies(", "function renderRepoPullConflictBanner(",
                  "function sendRepoPullQuickReply(", "function hydrateRepoPullAttention("):
         assert name in BUNDLE, name
-    assert " " not in CONTENT and " " not in CONTENT
+    assert "\u2028" not in CONTENT and "\u2029" not in CONTENT
 
 
 def test_the_doc_describes_the_file_the_defaults_and_the_conflict_pings():
