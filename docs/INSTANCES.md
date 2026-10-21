@@ -302,8 +302,8 @@ upload CSS.
   `cta-foreground`, `success` and `attention` to the custom-colour tokens)
   and `stylesheet`, a file beside it (`blt.css`). `palette` is read in a fixed
   order: primary, background, surface, second accent, text, then any extra
-  swatches, eight at most (the loader drops the rest). The cards on
-  Settings and the start page draw only the palette,
+  swatches, eight at most (the loader drops the rest). The cards on the
+  start page draw only the palette,
   as one colour block with primary three times as wide as the rest (a mock
   screen was tried first and read as clutter). Planned themes show as "Coming soon" cards
   and are refused by the API. Today all four are ready: `default` (the
@@ -314,23 +314,25 @@ upload CSS.
   catalogue reaches every instance that uses it on its next update.
   `"default"` stores `{}`. `instance_theme.clean` accepts the id as a string
   anywhere a preset name was accepted before (start settings file, launch
-  API, installer, bootstrap).
+  API, installer, bootstrap). An object with `preset` plus colour overrides
+  is accepted by the launch API and `PUT /api/instance/theme`, not by the
+  installer's settings file, which takes a theme name or a
+  `{dark, light}` colour object.
 - **Rendering:** `/instance-theme.css` writes the theme's colour tokens, then
   its stylesheet, then any overrides. `/instance-theme.css?preset=<id>`
   renders a ready theme without saving it, for the settings preview; an
   unknown or planned id answers 404. The catalogue is loaded once from disk
   when `instance_theme` is imported; a missing or broken file leaves only
   the colour presets. A stylesheet over 64 KB or containing `</` is ignored.
-- **Who can change it:** Settings → Instance theme shows only to an admin on
-  a branded instance (`session.isAdmin` and the instance brand script). The
-  cards come from `GET /api/instance` (`themes`, and `theme.preset` for the
-  current one). Clicking a ready card previews it on that page only by
-  pointing the page's `link[data-instance-theme]` at the preview URL;
-  "Apply to instance" sends `PUT /api/instance/theme` with `{theme, password}`.
-  The route checks the session is an admin, then the account password with
-  its own attempt budget (`instance-theme-v1` blind index, the login lockout
+- **Who can change it:** the start page picks a theme at launch. After that
+  an admin changes it with `PUT /api/instance/theme` and `{theme, password}`;
+  there is no Settings screen for it yet. `GET /api/instance` lists the
+  catalogue (`themes`) and the current `theme.preset` for one to use. The
+  route checks the session is an admin, then the account password with its
+  own attempt budget (`instance-theme-v1` blind index, the login lockout
   rules), and records `instance.theme` in the sensitive-action audit log
-  either way.
+  either way. Repository share cards take their accent from the stored
+  colours, else from the named theme's.
 - **BLT:** modelled on the OWASP BLT API explorer: charcoal surfaces
   (`#141414`/`#1c1c1e`) in dark and white in light, signal red (`#dc2626`)
   for primary, links, focus and the create button, green kept for success,
@@ -360,8 +362,8 @@ upload CSS.
   Google Sans when the visitor has it installed (Roboto or the system font
   otherwise; no font is downloaded).
 - **Adding a theme:** add its entry and stylesheet, set `status` to `ready`
-  when it is finished, and check it on Settings → Instance theme before
-  shipping. `app/tests/test_instance_theme.py` requires every ready theme to
+  when it is finished, and check it with `/instance-theme.css?preset=<id>`
+  before shipping. `app/tests/test_instance_theme.py` requires every ready theme to
   define every theme token in both modes.
 
 ## Private admin console path

@@ -35300,7 +35300,10 @@ async def _repo_card_accent(env):
         theme = instance_theme.parse((row or {}).get("doc") or "")
     except Exception:
         return ""
-    tokens = theme.get("dark") or theme.get("light") or {}
+    preset = instance_theme.THEMES.get(theme.get("preset") or "") or {}
+    colors = preset.get("colors") or {}
+    tokens = theme.get("dark") or theme.get("light") or colors.get("dark") \
+        or colors.get("light") or {}
     return str(tokens.get("accent") or tokens.get("primary") or "")
 
 

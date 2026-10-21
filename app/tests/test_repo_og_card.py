@@ -602,3 +602,24 @@ def test_card_handler_keys_the_cache_on_the_live_counts():
         "edge_cache_match_media")
     assert '"n=" + og_card.counts_token(counts)' in handler
     assert '"accent": await _repo_card_accent(env),' in handler
+
+
+def test_card_accent_falls_back_to_the_named_themes_colours():
+    import asyncio
+    import json as _json
+    import sys as _sys
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+    import instance_theme
+
+    def accent_for(doc):
+        async def d1_first(_env, _sql):
+            return {"doc": _json.dumps(doc)}
+        accent = _load_entry_function("_repo_card_accent", {
+            "instance_branded": lambda _env: True, "d1_first": d1_first,
+            "instance_theme": instance_theme})
+        return asyncio.run(accent(object()))
+    blt = instance_theme.THEMES["blt"]["colors"]["dark"]
+    assert accent_for({"preset": "blt"}) == (blt.get("accent") or blt.get("primary"))
+    assert accent_for({"preset": "blt"})
+    assert accent_for({"preset": "blt", "dark": {"primary": "#123456"}}) == "#123456"
+    assert accent_for({}) == ""
