@@ -47,12 +47,12 @@ API_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/([^/]+)$")
 READ_OPERATIONS = frozenset({
     "tree", "blob", "blobs", "raw", "history", "commit", "compare",
     "merge-preview", "branches", "search", "stats", "sizes", "pulse",
-    "issue-index",
+    "issue-index", "issue-search",
 })
 # entry.HTTPS_MIRROR_REF_OPERATIONS
 REF_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "search", "stats", "sizes",
-    "issue-index",
+    "issue-index", "issue-search",
 })
 MAX_BLOB_BATCH = 60  # entry.MAX_BLOB_BATCH
 PRIVATE_VIEW_FIELDS = ("viewer", "ts", "sig")
@@ -111,6 +111,10 @@ def gateway_query(operation, query_string):
             out.append(("path", repository_read_path(params["path"][0])))
     elif operation == "pulse":
         for key in ("period", "person", "view"):
+            if params.get(key):
+                out.append((key, params[key][0]))
+    elif operation in ("issue-index", "issue-search"):
+        for key in ("related", "q"):
             if params.get(key):
                 out.append((key, params[key][0]))
     if params.get("ref") and operation in REF_OPERATIONS:

@@ -163,6 +163,11 @@ def test_index_lists_every_record_once_with_its_folder(issue_app):
     assert all(event["type"] == "status" for event in rows[10]["events"])
 
 
+SEARCHES = ["#77", "ping", "help wanted", "v1", "alice", " PING ", "dave",
+            "again", "12", "Commented"]
+COMMENT_ONLY = {"dave", "12"}
+
+
 def _node_compare(summaries, raw):
     names = (
         "parseFrontMatterList", "parseIssueJson", "issueFromIndex",
@@ -187,7 +192,7 @@ const indexed = summaries.map(issueFromIndex);
 const byNumber = (a, b) => Number(b.number) - Number(a.number);
 full.sort(byNumber);
 indexed.sort(byNumber);
-const skip = new Set(["events", "openAttachments"]);
+const skip = new Set(["events", "openAttachments", "body"]);
 const out = { rows: {}, relations: {} };
 full.forEach((issue) => {
   const other = indexed.find((item) => item.number === issue.number);
@@ -215,15 +220,19 @@ for (const sort of ["recently_updated", "newest", "oldest", "priority", "comment
   out.sorts[sort] = [issueSortItems(full.slice(), sort).map((i) => i.number),
     issueSortItems(indexed.slice(), sort).map((i) => i.number)];
 }
-out.search = ["#77", "ping", "help wanted", "v1", "alice"].map((q) =>
-  [full.filter((i) => issueMatchesQuery(i, q)).map((i) => i.number),
-   indexed.filter((i) => issueMatchesQuery(i, q)).map((i) => i.number)]);
+out.search = Object.fromEntries(SEARCHES.map((q) =>
+  [q, full.filter((i) => issueMatchesQuery(i, q.trim().toLowerCase())).map((i) => i.number)]));
+out.dependsOn = full.map((issue) => [issueDependencyNumbers(issue.body),
+  indexed.find((item) => item.number === issue.number)?.dependsOn]);
+out.childRefs = full.map((issue) => [issueSubIssueNumbers([], issue.number, issue.body),
+  (indexed.find((item) => item.number === issue.number)?.childRefs || []).slice().sort((a, b) => a - b)]);
 console.log(JSON.stringify(out));
 """ % (
         _const(CONTENT, "ISSUE_PULL_LINK"),
         _const(CONTENT, "PULL_CLOSING_REFERENCE"),
         "\n".join(_function(CONTENT, name) for name in names),
         json.dumps(raw), json.dumps(summaries))
+    script = "const SEARCHES = %s;\n" % json.dumps(SEARCHES) + script
     result = subprocess.run(["node", "-e", script], capture_output=True,
                             text=True, check=True)
     return json.loads(result.stdout)
@@ -240,7 +249,9 @@ def test_folding_matches_parse_issue_json_in_the_dashboard(issue_app):
         record = RECORDS[path]
         raw[item["number"]] = record if isinstance(record, str) else json.dumps(
             record)
-    out = _node_compare(value["issues"], raw)
+    assert not any("mentionRefs" in item for item in value["issues"])
+    repository = app.repositories[("alice", "project")]
+    out = _node_compare(repository._issue_index_tree[1]["issues"], raw)
     assert out["rows"] == {str(number): [] for number in raw}
     for target, pairs in out["relations"].items():
         for full, indexed in pairs:
@@ -249,8 +260,14 @@ def test_folding_matches_parse_issue_json_in_the_dashboard(issue_app):
         assert full == indexed, name
     for sort, (full, indexed) in out["sorts"].items():
         assert full == indexed, sort
-    for full, indexed in out["search"]:
+    for full, indexed in out["dependsOn"] + out["childRefs"]:
         assert full == indexed
+    assert "body" not in value["issues"][0]
+    for query, full in out["search"].items():
+        found = repository.issue_search({"q": query})["numbers"]
+        assert set(full) <= set(found), query
+        if query not in COMMENT_ONLY:
+            assert sorted(found) == sorted(full), query
     assert json.loads(out["relations"]["10"][0][0])
     assert json.loads(out["relations"]["77"][2][0]) == []
     assert json.loads(out["relations"]["78"][2][0]) == [12]
@@ -350,5 +367,62 @@ def test_issue_index_rides_on_the_blobs_operation(tmp_path):
         assert refused.status == unknown.status == 404
         assert refused.body == unknown.body
         assert gateway.ISSUE_INDEX_OPERATION not in gateway.PUBLIC_OPERATIONS
+    finally:
+        app.close()
+
+
+def test_related_answer_holds_only_the_issues_that_concern_one_issue(issue_app):
+    app, _bare, _tmp = issue_app
+    full = _payload(app, "ref=main")
+    related = _payload(app, "ref=main&related=12")
+    assert related["related"] == 12 and related["commit"] == full["commit"]
+    rows = {item["number"]: item for item in related["issues"]}
+    assert sorted(rows) == [3, 4, 10]
+    assert rows[10]["dependsOn"] == [12]
+    assert all(ref[0] == 12 for item in rows.values()
+               for ref in item["mentionRefs"])
+    assert "participants" not in rows[10] and "mentionHandles" not in rows[10]
+    assert len(json.dumps(related)) < len(json.dumps(full)) / 2
+    for number in (3, 10, 12):
+        answer = _payload(app, "ref=main&related=%d" % number)
+        expected = [ref for item in app.repositories[
+            ("alice", "project")]._issue_index_tree[1]["issues"]
+            if item["number"] != number
+            for ref in item["mentionRefs"] if ref[0] == number]
+        assert [ref for item in answer["issues"]
+                for ref in item["mentionRefs"]] == expected
+    assert _read(app, "ref=main&related=0").status == 404
+    assert _read(app, "ref=main&related=x").status == 404
+
+
+def _search(app, query):
+    return app.dispatch(
+        "GET", "/v1/public/repositories/alice/project/issue-search?" + query,
+        {}, b"")
+
+
+def test_search_reads_titles_bodies_and_live_comments(issue_app):
+    app, _bare, _tmp = issue_app
+    found = lambda q: json.loads(_search(app, "ref=main&q=" + q).body)["numbers"]
+    assert found("dave") == [12]
+    assert found("again") == []
+    assert found("COMMENTED") == [10]
+    assert found("%23") == [12, 10, 9, 8, 4, 3]
+    assert _search(app, "ref=main&q=%20").status == 404
+    assert _search(app, "ref=main&q=" + "x" * 201).status == 404
+    assert _search(app, "ref=main&q=ping").headers.get(
+        "X-ForkMesh-Memory-Cache") in (None, "miss")
+    assert _search(app, "ref=main&q=ping").headers.get(
+        "X-ForkMesh-Memory-Cache") == "hit"
+
+
+def test_index_is_sent_as_utf8_not_escapes(tmp_path):
+    bare = _make_repository(tmp_path, {
+        ".forkmesh/issues/open/1/issue-1.json": {
+            "number": 1, "title": "Блокировка в Иране", "events": []}})
+    app = _application(tmp_path, bare)
+    try:
+        body = _read(app, "ref=main").body
+        assert "Блокировка".encode() in body and b"\\u" not in body
     finally:
         app.close()

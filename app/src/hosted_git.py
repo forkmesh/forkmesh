@@ -1049,7 +1049,7 @@ def hosted_core_owners(env):
 HOSTED_API_READ_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "commit", "compare",
     "merge-preview", "branches", "search", "stats", "sizes", "pulse",
-    "issue-index",
+    "issue-index", "issue-search",
 })
 
 

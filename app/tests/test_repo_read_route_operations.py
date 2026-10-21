@@ -71,6 +71,8 @@ CARRIED = {
     mirror_gateway.PULSE_OPERATION: mirror_gateway.PULSE_CARRIER_OPERATION,
     mirror_gateway.ISSUE_INDEX_OPERATION:
         mirror_gateway.ISSUE_INDEX_CARRIER_OPERATION,
+    mirror_gateway.ISSUE_SEARCH_OPERATION:
+        mirror_gateway.ISSUE_INDEX_CARRIER_OPERATION,
 }
 
 

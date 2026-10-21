@@ -242,6 +242,7 @@ WEBSITE_COUNTER_OPERATIONS = frozenset({
     "merge-preview",
     "pulse",
     "issue-index",
+    "issue-search",
 })
 SERVICE_COUNTER_ROW_FIELDS = ("clonesServed", "websiteServed", "updatedAt")
 # Optional per-row extension: when the last clone / website request was served
@@ -352,6 +353,7 @@ DIRECT_PUBLIC_READ_OPERATIONS = frozenset({
     "merge-preview",
     "pulse",
     "issue-index",
+    "issue-search",
 })
 # Mutating pull operations share one operator-owned executor command and one
 # job runner. Everything that differs between them is data: the wire type the
@@ -429,7 +431,7 @@ FULL_COMMIT_ID_RE = re.compile(r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
 MAX_BRANCH_TRASH_ENTRIES = 5000
 LOG_OPERATIONS = PUBLIC_OPERATIONS | {
     "private-replica", "dashboard", BRANCH_TRASH_OPERATION, "pulse",
-    "issue-index"}
+    "issue-index", "issue-search"}
 NODE_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{12,80}$")
@@ -462,7 +464,8 @@ OPERATION_QUERY_FIELDS = {
     "search": frozenset({"path", "ref"}),
     "stats": frozenset({"ref"}),
     "pulse": frozenset({"period", "person", "view"}),
-    "issue-index": frozenset({"ref"}),
+    "issue-index": frozenset({"ref", "related"}),
+    "issue-search": frozenset({"ref", "q"}),
     "sizes": frozenset({"ref"}),
     "release-blob": frozenset({"sha256", "path"}),
     "merge-pull": frozenset(),
@@ -2933,7 +2936,7 @@ TREE_BATCH_SUMMARY_MIN_ENTRIES = 65
 # to (and the other query fields), so their cache key can use the commit.
 COMMIT_KEYED_OPERATIONS = frozenset({
     "tree", "blob", "blobs", "history", "search", "stats", "sizes",
-    "issue-index",
+    "issue-index", "issue-search",
 })
 
 
@@ -4018,6 +4021,19 @@ ISSUE_INDEX_REFERENCE_RE = re.compile(
     r"(?<![\w&#/])#([1-9]\d{0,8})\b", re.ASCII)
 ISSUE_INDEX_INLINE_CODE_RE = re.compile(r"`+[^`]*`+")
 ISSUE_INDEX_MENTION_RE = re.compile(r"(?<![\w@])@([\w-]+)", re.ASCII)
+ISSUE_INDEX_DEPENDENCY_RE = re.compile((
+    r"^{S}*(?:[-*+]{S}+)?(?:\*\*)?(?:parent{S}+issues?|depends?{S}+on)"
+    r"(?:\*\*)?{S}*:(?:\*\*)?{S}*([^\n]+)$"
+).replace("{S}", _JS_WS), re.IGNORECASE | re.MULTILINE | re.ASCII)
+ISSUE_INDEX_DEPENDENCY_NUMBER_RE = re.compile(r"#([1-9]\d*)\b", re.ASCII)
+ISSUE_INDEX_CHILD_RE = re.compile(
+    r"\(sub-issue{S}+#([1-9]\d*)\)".replace("{S}", _JS_WS),
+    re.IGNORECASE | re.ASCII)
+ISSUE_INDEX_LINE_BREAKS = str.maketrans({"\r": "\n", "\u2028": "\n",
+                                         "\u2029": "\n"})
+ISSUE_SEARCH_OPERATION = "issue-search"
+ISSUE_SEARCH_MAX_QUERY = 200
+ISSUE_SEARCH_CACHE_CHARS = 96 * 1024 * 1024
 ISSUE_INDEX_PULL_LINK_RE = re.compile((
     r"\b(?:(un)?linked{S}+(?:pull{S}+request|PR){S}+|"
     r"(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?){S}+"
@@ -4261,6 +4277,29 @@ def _issue_index_relations(
     return references, [[pull, linked] for pull, linked in links.items()]
 
 
+def _issue_index_dependency_numbers(body: Any) -> list[int]:
+    numbers: list[int] = []
+    text = _js_string(_js_or(body, "")).translate(ISSUE_INDEX_LINE_BREAKS)
+    for match in ISSUE_INDEX_DEPENDENCY_RE.finditer(text):
+        for reference in ISSUE_INDEX_DEPENDENCY_NUMBER_RE.finditer(
+                match.group(1)):
+            number = int(reference.group(1))
+            if number not in numbers:
+                numbers.append(number)
+            if len(numbers) == 25:
+                return numbers
+    return numbers
+
+
+def _issue_index_child_numbers(body: Any, number: float) -> list[int]:
+    numbers: list[int] = []
+    for match in ISSUE_INDEX_CHILD_RE.finditer(_js_string(body)):
+        child = int(match.group(1))
+        if child != number and child not in numbers:
+            numbers.append(child)
+    return numbers
+
+
 def _issue_index_labels(value: Any) -> list[str]:
     if isinstance(value, list):
         return [_js_string(item) for item in value]
@@ -4363,7 +4402,8 @@ def _issue_index_fold(fallback: int, issue: dict[str, Any]) -> dict[str, Any]:
         "meta": " · ".join(
             _js_string(value) for value in (
                 status, ", ".join(labels), milestone) if _js_truthy(value)),
-        "body": body,
+        "dependsOn": _issue_index_dependency_numbers(body),
+        "childRefs": _issue_index_child_numbers(body, number),
         "commentCount": comments,
         "wantsAgent": _js_truthy(_js_get(issue, "wantsAgent")),
         "milestone": _js_string(_js_or(milestone, "")),
@@ -4391,11 +4431,38 @@ def _issue_index_fold(fallback: int, issue: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+ISSUE_INDEX_RELATION_ONLY_FIELDS = frozenset({"mentionRefs"})
+ISSUE_INDEX_RELATED_FIELDS = (
+    "number", "title", "status", "deleted", "author", "progress", "priority",
+    "assignees", "dependsOn", "location")
+
+
+def _issue_index_related(result: Mapping[str, Any], number: int
+                         ) -> dict[str, Any]:
+    issues = result.get("issues") or []
+    own = next((item for item in issues if item.get("number") == number), {})
+    wanted = set(own.get("dependsOn") or []) | set(own.get("childRefs") or [])
+    related: list[dict[str, Any]] = []
+    for item in issues:
+        if item.get("number") == number:
+            continue
+        references = [reference for reference in item.get("mentionRefs") or []
+                      if reference[0] == number]
+        if item.get("number") in wanted or references or number in (
+                item.get("dependsOn") or []):
+            entry = {key: item[key] for key in ISSUE_INDEX_RELATED_FIELDS
+                     if key in item}
+            entry["mentionRefs"] = references
+            related.append(entry)
+    return {"issues": related, "related": number,
+            "truncated": bool(result.get("truncated"))}
+
+
 def _issue_index_reject(_constant: str) -> Any:
     raise ValueError("non-standard JSON constant")
 
 
-def _issue_index_summary(number: int, raw: bytes) -> dict[str, Any]:
+def _issue_index_parse(raw: bytes) -> dict[str, Any]:
     try:
         text = raw.decode("utf-8") if len(raw) <= MAX_JSON_BLOB else ""
     except UnicodeDecodeError:
@@ -4404,11 +4471,57 @@ def _issue_index_summary(number: int, raw: bytes) -> dict[str, Any]:
         parsed = json.loads(text or "{}", parse_constant=_issue_index_reject)
     except (ValueError, RecursionError):
         parsed = {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _issue_index_summary(number: int, raw: bytes) -> dict[str, Any]:
     try:
-        return _issue_index_fold(
-            number, parsed if isinstance(parsed, dict) else {})
+        return _issue_index_fold(number, _issue_index_parse(raw))
     except RecursionError:
         return _issue_index_fold(number, {})
+
+
+def _issue_search_text(number: int, raw: bytes) -> str:
+    issue = _issue_index_parse(raw)
+    try:
+        summary = _issue_index_fold(number, issue)
+    except RecursionError:
+        issue = {}
+        summary = _issue_index_fold(number, issue)
+    events = _js_get(issue, "events")
+    events = events if isinstance(events, list) else []
+    opened = next((
+        event for event in events
+        if isinstance(event, dict) and _js_get(event, "type") == "open"), {})
+    edits: dict[str, Any] = {}
+    removed: set[str] = set()
+    for event in events:
+        kind = _js_get(event, "type")
+        target = _js_get(event, "target")
+        if kind == "edit" and _js_truthy(target):
+            edits[_js_string(target)] = event
+        elif kind == "delete" and _js_truthy(target):
+            removed.add(_js_string(target))
+    effective = edits.get(
+        _js_string(_js_or(_js_get(opened, "id"), "")), opened)
+    body = _js_or(_js_get(effective, "body"), _js_get(issue, "body"), "")
+    number_text = _js_number_text(_js_number(_js_or(
+        _js_get(issue, "number"), number)))
+    parts = [
+        "#" + number_text, number_text, summary["title"], body,
+        summary["author"], summary["meta"]]
+    head = " ".join("" if part is None or part is _JS_UNDEFINED
+                    else _js_string(part) for part in parts)
+    comments = []
+    for event in events:
+        if _js_get(event, "type") != "comment":
+            continue
+        identifier = _js_string(_js_or(_js_get(event, "id"), ""))
+        if identifier in removed:
+            continue
+        source = edits.get(identifier, event) if identifier else event
+        comments.append(_js_string(_js_or(_js_get(source, "body"), "")))
+    return "\n".join([head] + comments).lower()
 
 
 def _pulse_tree_entries(raw: bytes, oid_bytes: int) -> dict[str, str]:
@@ -4567,6 +4680,9 @@ class GitRepository:
         self._issue_index_tree: tuple[str, dict[str, Any]] = ("\0", {})
         self._issue_index_records: OrderedDict[
             tuple[str, int], dict[str, Any]] = OrderedDict()
+        self._issue_search_texts: OrderedDict[
+            tuple[str, int], str] = OrderedDict()
+        self._issue_search_chars = 0
         self._pulse_pulls: tuple[tuple[str, str], list[dict[str, Any]]] = (
             ("\0", "\0"), [])
         self._pulse_pull_records: dict[str, dict[str, Any] | None] = {}
@@ -6515,8 +6631,7 @@ class GitRepository:
         self._pulse_commits = state
         return state
 
-    def issue_index(self, query: Mapping[str, str]) -> dict[str, Any]:
-        commit = self.resolve_commit(query.get("ref", ""))
+    def _issues_tree(self, commit: str) -> str:
         code, output = _run_git_status(
             self.git_dir,
             ["rev-parse", "--verify", "--quiet",
@@ -6524,15 +6639,74 @@ class GitRepository:
             max_output=256,
             allowed_codes=(0, 1),
         )
-        tree = output.decode("ascii", "replace").strip().lower() \
+        return output.decode("ascii", "replace").strip().lower() \
             if code == 0 else ""
+
+    def issue_index(self, query: Mapping[str, str]) -> dict[str, Any]:
+        related = query.get("related", "")
+        if related and not re.fullmatch(r"[1-9][0-9]{0,8}", related):
+            raise GatewayError("issue number is invalid")
+        commit = self.resolve_commit(query.get("ref", ""))
+        tree = self._issues_tree(commit)
         with self._issue_index_lock:
             if self._issue_index_tree[0] != tree:
                 self._issue_index_tree = (tree, self._build_issue_index(tree))
             result = self._issue_index_tree[1]
-        return dict(result, ok=True, commit=commit)
+        if related:
+            return dict(_issue_index_related(result, int(related)),
+                        ok=True, commit=commit)
+        return dict(result, ok=True, commit=commit, issues=[
+            {key: value for key, value in item.items()
+             if key not in ISSUE_INDEX_RELATION_ONLY_FIELDS}
+            for item in result["issues"]])
 
-    def _build_issue_index(self, tree: str) -> dict[str, Any]:
+    def issue_search(self, query: Mapping[str, str]) -> dict[str, Any]:
+        text = _js_trim(str(query.get("q", ""))).lower()
+        if not text or len(text) > ISSUE_SEARCH_MAX_QUERY:
+            raise GatewayError("search query is invalid")
+        commit = self.resolve_commit(query.get("ref", ""))
+        tree = self._issues_tree(commit)
+        with self._issue_index_lock:
+            chosen, records, _opened, _closed = self._issue_folders(tree)
+            numbers = sorted(chosen, reverse=True)[:ISSUE_INDEX_MAX_ISSUES]
+            cache = self._issue_search_texts
+            wanted = []
+            for number in numbers:
+                record = records.get((chosen[number], number))
+                if record is not None and (record[0], number) not in cache \
+                        and record[1] <= MAX_JSON_BLOB:
+                    wanted.append(record)
+            blobs = self._pulse_read(wanted) if wanted else {}
+            matches: list[int] = []
+            for number in numbers:
+                record = records.get((chosen[number], number))
+                if record is None:
+                    continue
+                key = (record[0], number)
+                haystack = cache.get(key)
+                if haystack is None:
+                    if record[1] > MAX_JSON_BLOB:
+                        haystack = _issue_search_text(number, b"")
+                    elif record[0] in blobs:
+                        haystack = _issue_search_text(number, blobs[record[0]])
+                    else:
+                        continue
+                    cache[key] = haystack
+                    self._issue_search_chars += len(haystack)
+                    while self._issue_search_chars > ISSUE_SEARCH_CACHE_CHARS \
+                            and len(cache) > 1:
+                        _old, dropped = cache.popitem(last=False)
+                        self._issue_search_chars -= len(dropped)
+                else:
+                    cache.move_to_end(key)
+                if text in haystack:
+                    matches.append(number)
+        return {"ok": True, "commit": commit, "numbers": matches,
+                "truncated": len(chosen) > ISSUE_INDEX_MAX_ISSUES}
+
+    def _issue_folders(self, tree: str) -> tuple[
+            dict[int, str], dict[tuple[str, int], tuple[str, int]],
+            set[int], set[int]]:
         folders: set[tuple[str, int]] = set()
         records: dict[tuple[str, int], tuple[str, int]] = {}
         if tree:
@@ -6567,6 +6741,10 @@ class GitRepository:
             if place == "" and number not in opened and number not in closed}
         chosen.update({number: "closed" for number in closed - opened})
         chosen.update({number: "open" for number in opened})
+        return chosen, records, opened, closed
+
+    def _build_issue_index(self, tree: str) -> dict[str, Any]:
+        chosen, records, opened, closed = self._issue_folders(tree)
         numbers = sorted(chosen, reverse=True)
         truncated = len(numbers) > ISSUE_INDEX_MAX_ISSUES
         numbers = numbers[:ISSUE_INDEX_MAX_ISSUES]
@@ -6610,8 +6788,9 @@ class GitRepository:
             else:
                 cache.move_to_end(key)
             item = dict(summary, location=place)
-            used += len(json.dumps(item, separators=(",", ":")).encode(
-                "utf-8")) + 1
+            used += len(json.dumps(
+                item, separators=(",", ":"), ensure_ascii=False).encode(
+                    "utf-8")) + 1
             if used > MAX_JSON_OUTPUT:
                 truncated = True
                 break
@@ -7698,9 +7877,19 @@ def _repository_serves(repository: Any, operation: str) -> bool:
         return BRANCH_TRASH_CARRIER_OPERATION in operations
     if operation == PULSE_OPERATION:
         return PULSE_CARRIER_OPERATION in operations
-    if operation == ISSUE_INDEX_OPERATION:
+    if operation in (ISSUE_INDEX_OPERATION, ISSUE_SEARCH_OPERATION):
         return ISSUE_INDEX_CARRIER_OPERATION in operations
     return operation in operations
+
+
+def _unicode_json_response(value: Any) -> GatewayResponse:
+    try:
+        body = json.dumps(
+            value, sort_keys=True, separators=(",", ":"), ensure_ascii=False,
+        ).encode("utf-8") + b"\n"
+    except UnicodeEncodeError:
+        return json_response(value)
+    return GatewayResponse(200, "application/json; charset=utf-8", body)
 
 
 def json_response(value: Any, status: int = 200) -> GatewayResponse:
@@ -12612,6 +12801,13 @@ class GatewayApplication:
                         query, now_seconds,
                         pulse_exclusion_rules(self.config.node))),
                 )
+            if operation in (ISSUE_INDEX_OPERATION, ISSUE_SEARCH_OPERATION):
+                assert cache_key is not None
+                read = repository.issue_index \
+                    if operation == ISSUE_INDEX_OPERATION \
+                    else repository.issue_search
+                return self._single_flight(
+                    cache_key, lambda: _unicode_json_response(read(query)))
             function = {
                 "tree": repository.tree,
                 "blob": repository.blob,
@@ -12624,7 +12820,6 @@ class GatewayApplication:
                 "search": repository.search,
                 "stats": repository.stats,
                 "sizes": repository.sizes,
-                ISSUE_INDEX_OPERATION: repository.issue_index,
             }[operation]
             assert cache_key is not None
             return self._single_flight(

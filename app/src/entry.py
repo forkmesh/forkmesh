@@ -49953,7 +49953,7 @@ async def _https_mirror_route_advance(env, context, served_node, operation):
 # receives no `ref`, which is exactly what its gateway route accepts.
 HTTPS_MIRROR_REF_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "search", "stats", "sizes",
-    "issue-index",
+    "issue-index", "issue-search",
 })
 
 
@@ -50009,6 +50009,10 @@ def _https_mirror_request_query(url, operation, release_sha=""):
             output["path"] = _repository_read_path(params["path"][0])
     elif operation == "pulse":
         for key in ("period", "person", "view"):
+            if params.get(key):
+                output[key] = params[key][0]
+    elif operation in ("issue-index", "issue-search"):
+        for key in ("related", "q"):
             if params.get(key):
                 output[key] = params[key][0]
     # Only operations that resolve a ref accept one. compare/merge-preview
