@@ -1,29 +1,3 @@
-"""Tips on comments, issues and pull requests, wallet to wallet over Solana Pay.
-
-A comment whose author has a Solana address on their profile (the existing
-public ``solana`` payout field) gets a Tip button. Tipping asks this module for
-a transfer request: it checks the reader, the recipient and the amount, mints a
-fresh random ``reference`` public key and answers with a Solana Pay link
-(``_solana_pay_uri``) the dashboard turns into a QR code. The tipper's own
-wallet signs and sends the transfer straight to the author's address.
-
-The forge never holds a key, never holds funds and never signs or submits a
-transaction: verification is read-only. The tip sheet asks
-``POST /api/tips/verify`` while it is open, and the ``tip-verify`` cron phase
-looks again for a couple of hours, through ``_solana_rpc`` (keyless public
-endpoints with fail-over, plus the operator's SOLANA_RPC_URL). A transaction
-that carries the reference, succeeded, and moved at least the asked amount of
-the asked token to the recipient marks the tip confirmed (its signature can
-confirm one tip only), adds a "tipped" count to the comment and tells the
-author with the existing ``tip_sent`` ping. A SOL tip is also written to
-``tip_notice``, the receipt table desktop tips use.
-
-Stored per tip: the repository and comment, blind indexes of tipper and
-recipient, token, amount, reference, status and signature, and an encrypted
-``{tipper, recipient, address, owner, repo}``. Pending requests expire after a
-day; each account has a rate and a daily cap, and a record has a cap.
-"""
-
 import json
 import re
 import secrets
@@ -69,8 +43,6 @@ def _bind_runtime(runtime):
 
 
 def valid_address(value):
-    """A base58 Solana public key: 32 to 44 characters that decode to 32
-    bytes. The decode catches typos the alphabet check alone lets through."""
     text = str(value or "").strip() if isinstance(value, str) else ""
     if not REFERENCE_RE.fullmatch(text):
         return False
@@ -84,8 +56,6 @@ def valid_address(value):
 
 
 def new_reference():
-    """A fresh random 32-byte public key in base58: never a real account, so
-    the only transactions naming it are the ones paying this request."""
     data = secrets.token_bytes(32)
     alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
     number = int.from_bytes(data, "big")
@@ -98,7 +68,6 @@ def new_reference():
 
 
 def to_units(amount, decimals):
-    """Decimal text -> integer base units, or 0 when it does not fit."""
     text = str(amount or "").strip() if isinstance(amount, (str, int, float)) else ""
     if not AMOUNT_RE.fullmatch(text):
         return 0
@@ -162,10 +131,6 @@ def _account_keys(tx):
 
 
 def transfer_matches(tx, recipient, reference, mint, units):
-    """True when a jsonParsed transaction succeeded, names ``reference`` and
-    moved at least ``units`` of SOL (no mint) or of ``mint`` to
-    ``recipient``. Balances, not instructions, are compared, so a transfer
-    wrapped in any program still counts and a failed one never does."""
     if not isinstance(tx, dict):
         return False
     meta = tx.get("meta") if isinstance(tx.get("meta"), dict) else None
@@ -227,7 +192,6 @@ async def _count(env, sql, *args):
 
 
 async def wallet_of(env, name):
-    """The public tip address on ``name``'s profile, or ""."""
     name = clean_string(name, MAX_NODE_NAME).strip().lower()  # noqa: F821
     if not valid_node_name(name):  # noqa: F821
         return ""
@@ -276,7 +240,6 @@ async def _json(request):
 
 
 async def intent_handler(env, request, owner, repo):
-    """POST /api/repo/<owner>/<repo>/tips: a transfer request for one tip."""
     await ensure_schema(env)  # noqa: F821
     if method_name(request) != "POST":  # noqa: F821
         return _error("method_not_allowed", 405)
@@ -394,8 +357,6 @@ async def _find_signature(env, row, data):
 
 
 async def verify(env, row, now):
-    """Look for the transaction paying one pending tip. Returns "confirmed",
-    "pending" or "unavailable" (the RPC answered nothing usable)."""
     try:
         data = await decrypt_row(env, row.get("data"))  # noqa: F821
     except Exception:
@@ -497,10 +458,6 @@ async def _verify(env, request):
 
 
 async def verify_cron(env):
-    """The tip-verify phase: a few pending tips from the last two hours,
-    least recently checked first, and pending ones older than a day
-    dropped. At most CRON_BATCH x (1 + TRANSACTIONS_CHECKED) RPC calls, each
-    charged to the phase's subrequest budget by _solana_rpc."""
     await ensure_schema(env)  # noqa: F821
     now = int(Date.now())  # noqa: F821
     await d1_run(  # noqa: F821

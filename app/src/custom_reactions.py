@@ -1,22 +1,3 @@
-"""Custom comment reactions: the instance's and organizations' own images.
-
-The built-in vocabulary (comment_reactions.CATALOG) lives in code. On top of
-it an instance administrator can add reactions for the whole instance, and an
-organization owner can add reactions for the repositories the organization
-owns: a slug, a label, one small image (a sanitised SVG, or a PNG, GIF or
-WebP within the size and dimension caps), an optional animated variant, an
-order and an enabled switch. A comment reaction that uses one is stored as
-``custom:<slug>``.
-
-Images are served from this origin by content address
-(``/api/reactions/custom/asset/<digest>.<ext>``) with a year-long immutable
-cache: a new upload is a new address, so nothing is ever stale. The list the
-picker merges (``GET /api/reactions/custom?owner=``) is small and cached for a
-minute. Deleting a custom reaction keeps the reactions already made with it;
-they render as a text fallback chip (comment_reactions attaches
-``custom: null`` to their tallies).
-"""
-
 import base64
 import hashlib
 import json
@@ -50,8 +31,6 @@ _catalogs = {}
 
 SVG_NS = "http://www.w3.org/2000/svg"
 XLINK_NS = "http://www.w3.org/1999/xlink"
-# Drawing elements only. No script, style, foreignObject, image, a, set,
-# iframe, use of external documents or anything that can load or run code.
 SVG_ELEMENTS = frozenset({
     "svg", "g", "defs", "title", "desc", "symbol", "use", "path", "rect",
     "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan",
@@ -81,7 +60,6 @@ SVG_ATTRIBUTES = frozenset({
     "version", "xml:space", "vector-effect", "shape-rendering",
     "color-interpolation-filters",
 })
-# animate may only move geometry and paint, never a link or a handler.
 ANIMATABLE = frozenset({
     "opacity", "fill", "stroke", "transform", "x", "y", "cx", "cy", "r",
     "rx", "ry", "d", "width", "height", "fill-opacity", "stroke-opacity",
@@ -155,7 +133,6 @@ def _clean_attribute(element_name, name, value):
             or "vbscript:" in lowered:
         return None
     if name == "href":
-        # Only a fragment inside this same image: no other document, no data:
         return value if re.fullmatch(r"#[A-Za-z_][\w.-]{0,63}", value) else None
     if name == "style" and STYLE_BLOCKED.search(value):
         return None
@@ -170,12 +147,6 @@ def _clean_attribute(element_name, name, value):
 
 
 def sanitize_svg(text):
-    """A drawing-only copy of an SVG document, or ImageError.
-
-    Parsing (not pattern matching) decides what is an element. Anything that
-    can run code or load something else - scripts, event handlers,
-    foreignObject, images, external or data: references, style blocks,
-    entity declarations - is removed or refused."""
     if not isinstance(text, str):
         raise ImageError("invalid_image")
     raw = text.encode("utf-8")
@@ -256,7 +227,6 @@ def _webp_size(data):
 
 
 def sniff_raster(data):
-    """(kind, width, height) of a PNG, GIF or WebP, or ImageError."""
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         kind, size = "png", _png_size(data)
     elif data[:6] in (b"GIF87a", b"GIF89a"):
@@ -272,10 +242,6 @@ def sniff_raster(data):
 
 
 def clean_image(payload):
-    """(kind, bytes) of an uploaded image, or ImageError.
-
-    ``payload`` is ``{"svg": "<svg ...>"}`` or ``{"data": "<base64>"}``
-    (a data: URL prefix is accepted and dropped)."""
     if not isinstance(payload, dict):
         raise ImageError("invalid_image")
     if isinstance(payload.get("svg"), str):
@@ -343,9 +309,6 @@ def forget():
 
 
 async def catalog(env, owner=""):
-    """slug -> item for every enabled custom reaction usable on ``owner``'s
-    repositories: the instance's, then the owner organization's (which win
-    on a shared slug). Remembered for 30 seconds per owner."""
     key = str(owner or "").strip().lower()
     now = int(Date.now())  # noqa: F821
     kept = _catalogs.get(key)
@@ -440,8 +403,6 @@ async def _rate_limited(env, account_bi, now):
 
 
 async def manage_scope(env, account, value):
-    """The stored scope an account may manage for ``value`` ("instance" or
-    "org:<name>"), or "" when it may not."""
     value = str(value or "").strip().lower()
     if value == "instance":
         return "instance" if await _is_admin(env, account) else ""  # noqa: F821
@@ -458,7 +419,6 @@ async def manage_scope(env, account, value):
 
 
 async def _scopes_for(env, account):
-    """Every scope this account manages, for the settings page."""
     scopes = []
     if await _is_admin(env, account):  # noqa: F821
         scopes.append({"scope": "instance", "label": "This instance"})

@@ -1,6 +1,3 @@
-  // Settings -> Reactions, GIFs & tips. Shown to administrators (custom
-  // reactions for the instance, the GIPHY key, tip tokens) and to
-  // organization owners (their organization's custom reactions).
   const reactionSettingsUi = { scopes: [], scope: "", reactions: [], editing: "", loaded: false };
 
   async function reactionSettingsPost(path, body) {

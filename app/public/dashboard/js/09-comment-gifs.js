@@ -1,14 +1,3 @@
-  // GIFs and stickers in comment composers (docs/app/comment-gifs.md).
-  //
-  // Every record composer (a textarea marked data-mention-input="record":
-  // issue, pull request and discussion comments, replies, reviews, edits)
-  // gets a Sticker button and, when the instance has a GIPHY key, a GIF
-  // button. Both open one picker that inserts Markdown at the caret. GIF
-  // searches go through /api/gifs/* so the key never reaches the browser,
-  // and the picker shows "Powered by GIPHY" as GIPHY's terms ask. A GIF
-  // reply (from the reaction picker) drops the GIF into the record's
-  // composer and sends it. Rendered GIFs (mdGifHtml) can be paused, and show
-  // a still frame under prefers-reduced-motion until hovered or pressed.
   const COMMENT_GIF_SEARCH_DELAY_MS = 350;
   const COMMENT_GIF_ATTRIBUTION = "Powered by GIPHY";
   const commentGifUi = {
@@ -47,9 +36,6 @@
     return `<button type="button" data-composer-sticker aria-label="Add a sticker" title="Add a sticker" aria-haspopup="dialog" class="fm-composer-media"><i data-lucide="sticker" class="h-4 w-4"></i></button>`;
   }
 
-  // Adds the Sticker and GIF buttons to every record composer on the page
-  // that does not have them yet: in the issue composer's toolbar, else in a
-  // small row under the text box.
   function decorateCommentComposers() {
     commentGifUi.queued = false;
     if (!state.session?.sessionToken) return;
@@ -193,7 +179,6 @@
     if (restoreFocus && picker.anchor?.isConnected) picker.anchor.focus();
   }
 
-  // One picker for GIFs and stickers. onPick receives {kind, markdown, gif}.
   function openGifPicker({ anchor, tab = "gifs", title = "Add to your comment", onPick }) {
     closeGifPicker();
     if (typeof closeCommentReactionPicker === "function") closeCommentReactionPicker();
@@ -287,15 +272,12 @@
     });
   }
 
-  // Previews are stills under reduced motion; hovering or focusing one plays
-  // just that one.
   function gifPreviewMotion(target, on) {
     const image = target?.closest?.("[data-gif-pick]")?.querySelector("img");
     if (!image || commentReactionMotionOk()) return;
     image.src = on ? image.dataset.gifPreview : image.dataset.gifStill;
   }
 
-  // The record's own composer and its send button, for a one-click GIF reply.
   function commentGifComposer() {
     const forms = [
       ["[data-repo-issue-comment-form]", "[data-repo-issue-comment-submit]"],
@@ -329,7 +311,6 @@
         const author = commentReactionAuthor(subject, comment).toLowerCase();
         const me = String(state.session?.nodeName || "").toLowerCase();
         const mention = author && author !== me && /^[a-z0-9][a-z0-9-]{0,62}$/.test(author) ? `@${author} ` : "";
-        // A draft in progress is never replaced or sent: the GIF joins it.
         if (composer.textarea.value.trim() || !composer.submit) {
           insertIntoComposer(composer.textarea, `${mention}${markdown}`);
           composer.textarea.scrollIntoView({ block: "center", behavior: commentReactionMotionOk() ? "smooth" : "auto" });
@@ -343,8 +324,6 @@
     });
   }
 
-  // Play/pause for rendered GIFs: the <source> carries the still frame for
-  // reduced motion; "all" pins the still, "not all" pins the animation.
   function commentGifPlaying(holder) {
     const source = holder.querySelector("[data-fm-gif-still]");
     const media = source?.getAttribute("media") || "";
@@ -394,7 +373,6 @@
       event.preventDefault();
       setCommentGifPlaying(holder, !commentGifPlaying(holder));
     });
-    // Under reduced motion a GIF plays only while it is hovered.
     document.addEventListener("pointerover", (event) => {
       const holder = event.target.closest?.("[data-fm-gif]");
       if (!holder || commentReactionMotionOk() || holder.contains(event.relatedTarget)) return;

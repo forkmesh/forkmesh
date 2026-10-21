@@ -1,9 +1,5 @@
 // ForkMesh's own QR-code generator — no third-party library.
 //
-// Scope: byte mode, error-correction level L, QR versions 1–9: up to 230
-// bytes, enough for a Solana Pay transfer request with an SPL token and a
-// reference key. Versions 7–9 add the version-information blocks and the
-// grid of alignment patterns. Exposes:
 //   ForkMeshQR.toCanvas(text, pxSize) -> <canvas>
 //   ForkMeshQR.render(text, containerEl, pxSize)
 (function (global) {
@@ -68,8 +64,6 @@
     8: { data: 194, ec: 24, blocks: 2 },
     9: { data: 232, ec: 30, blocks: 2 },
   };
-  // Alignment-pattern center coordinates per version (ISO/IEC 18004 Annex E);
-  // a pattern sits at every pair of them except the three finder corners.
   const ALIGN = {
     2: [6, 18], 3: [6, 22], 4: [6, 26], 5: [6, 30], 6: [6, 34],
     7: [6, 22, 38], 8: [6, 24, 42], 9: [6, 26, 46],
@@ -84,8 +78,6 @@
     throw new Error("data too long for QR v1–9");
   }
 
-  // 18-bit version information (v >= 7): the version and its BCH(18,6)
-  // remainder under the generator 0x1F25.
   function versionBits(version) {
     let d = version << 12;
     const g = 0x1f25;
@@ -172,7 +164,6 @@
     // Dark module.
     set(4 * version + 9, 8, true);
 
-    // Alignment patterns (v >= 2).
     const centers = ALIGN[version] || [];
     const last = centers.length - 1;
     for (let i = 0; i <= last; i++)
@@ -188,7 +179,6 @@
           }
       }
 
-    // Version information (v >= 7): two 6x3 blocks by the far finders.
     if (version >= 7) {
       const info = versionBits(version);
       for (let i = 0; i < 18; i++) {
@@ -259,8 +249,6 @@
     m[8][8] = bit(7);
     m[8][7] = bit(8);
     for (let i = 9; i <= 14; i++) m[8][14 - i] = bit(i);
-    // The second copy: bits 0-7 along row 8 from the right edge, bits 8-14
-    // down column 8 to the bottom edge (ISO/IEC 18004 figure 25).
     for (let i = 0; i <= 7; i++) m[8][size - 1 - i] = bit(i);
     for (let i = 8; i <= 14; i++) m[size - 15 + i][8] = bit(i);
     m[size - 8][8] = true; // dark module stays set

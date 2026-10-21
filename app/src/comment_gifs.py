@@ -1,17 +1,3 @@
-"""GIFs in comments: a GIPHY search proxy that keeps the API key server-side.
-
-The instance's GIPHY API key is an administrator setting (instance_settings
-``giphy``, the key sealed with encrypt_row). Browsers never see it: the
-composer's picker asks this module, which asks GIPHY, keeps only each result's
-id and title, and answers with canonical media.giphy.com addresses rebuilt
-from the id, so a picked GIF can only ever point at GIPHY's media host.
-Results are remembered per isolate (trending for five minutes, a search for
-ten), searches need a session and are rate limited per account.
-
-With no key configured, ``GET /api/gifs/config`` says ``enabled: false`` and
-the dashboard hides its GIF buttons.
-"""
-
 import json
 import re
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -35,8 +21,6 @@ MEDIA = "https://media.giphy.com/media/%s/%s"
 ATTRIBUTION = "Powered by GIPHY"
 CONFIG_CACHE = "public, max-age=60, stale-while-revalidate=300"
 PRIVATE_CACHE = "private, no-store"
-# What rendered Markdown treats as a GIPHY GIF (and what the picker inserts):
-# GIPHY's media hosts only, a bare id path, one of the stable renditions.
 GIF_URL_RE = re.compile(
     r"^https://media[0-4]?\.giphy\.com/media/(?:v1\.[A-Za-z0-9_=.-]{1,200}/)?"
     r"([A-Za-z0-9]{4,64})/(giphy|200|200w|giphy-downsized)\.gif$")
@@ -52,7 +36,6 @@ def _bind_runtime(runtime):
 
 
 def gif_still(url):
-    """The still frame of a GIPHY GIF address, or "" for anything else."""
     match = GIF_URL_RE.fullmatch(str(url or ""))
     if not match:
         return ""
@@ -65,7 +48,6 @@ def clean_rating(value):
 
 
 def result(item):
-    """One GIPHY result reduced to what the picker needs, or None."""
     if not isinstance(item, dict):
         return None
     gif_id = str(item.get("id") or "")
@@ -88,7 +70,6 @@ def result(item):
 
 
 async def settings(env):
-    """{"key": str, "rating": str} from the instance setting ("" = none)."""
     now = int(Date.now())  # noqa: F821
     if _config and now - _config.get("at", 0) < 30 * 1000:
         return _config["value"]

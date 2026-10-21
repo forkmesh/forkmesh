@@ -1224,8 +1224,6 @@ def reaction_chip(tally):
 
 
 def reaction_extras(tallies):
-    """"Say thanks" until the viewer has; the first view has no viewer, and
-    tips are drawn by the dashboard once it knows them."""
     if any(t["emoji"] == "thankyou" and t["mine"] for t in tallies):
         return ""
     return ('<button type="button" data-reaction-thanks aria-label="Say thanks" '

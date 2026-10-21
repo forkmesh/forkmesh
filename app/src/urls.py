@@ -407,15 +407,11 @@ REPO_CARD_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/card\.png$")
 # account (session-token authenticated, same as ACCOUNT_FOLLOW_RE).
 REPO_STAR_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/star$")
 REPO_REACTIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/reactions$")
-# A Solana Pay tip request for one comment (comment_tips.intent_handler).
 REPO_TIPS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/tips$")
-# Custom reactions: the merged list, its management, and images by digest.
 CUSTOM_REACTIONS_RE = re.compile(r"^/api/reactions/custom(?:/(manage))?$")
 CUSTOM_REACTION_ASSET_RE = re.compile(
     r"^/api/reactions/custom/asset/([0-9a-f]{40})\.(svg|png|gif|webp)$")
-# GIPHY proxy for the comment composer (comment_gifs.py).
 COMMENT_GIFS_RE = re.compile(r"^/api/gifs/(config|search|trending|settings)$")
-# Comment tips: config, recipient wallets, verification, admin settings.
 COMMENT_TIPS_RE = re.compile(r"^/api/tips/(config|recipients|verify|settings)$")
 REPO_VIEW_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/view$")
 REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
