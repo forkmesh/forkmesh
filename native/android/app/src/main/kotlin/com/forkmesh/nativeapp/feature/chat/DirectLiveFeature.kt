@@ -163,7 +163,7 @@ class DirectLiveMotionFeed(private val context: Context) : SensorEventListener {
 
     @Synchronized
     fun stop() {
-        if (running) manager?.unregisterListener(this)
+        manager?.unregisterListener(this)
         running = false
         gravity = null
         push = FloatArray(3)

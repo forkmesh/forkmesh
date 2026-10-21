@@ -1835,7 +1835,15 @@ void MainWindow::shareNote()
             row->setProperty("shareName", shareName);
             auto *rowLayout = new QHBoxLayout(row);
             rowLayout->setContentsMargins(0, 0, 0, 0);
-            auto *who = new QLabel(QStringLiteral("@%1").arg(shareName));
+            auto *who = new QLabel(
+                shareType == QLatin1String("organization")
+                    ? QStringLiteral("@%1").arg(shareName).toHtmlEscaped()
+                    : userProfileLinkHtml(shareName, QStringLiteral("@") + shareName));
+            who->setTextFormat(Qt::RichText);
+            who->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+            who->setOpenExternalLinks(false);
+            connect(who, &QLabel::linkActivated, this,
+                    [this](const QString &href) { openBodyReference(href); });
             auto *kind = new QLabel(forkmesh::notes::principalTypeLabel(shareType));
             kind->setObjectName(QStringLiteral("mutedLabel"));
             auto *access = new QComboBox;

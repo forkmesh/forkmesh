@@ -42,10 +42,14 @@ struct ChatLinkText: View {
     private let text: String
     private let segments: [ChatTextSegment]
     private let onOpen: ((String) -> Void)?
+    private let profiles: Bool
 
-    init(text: String, repo: RepoRef? = ReferenceLinks.chatRepo, onOpen: ((String) -> Void)? = nil) {
+    init(
+        text: String, repo: RepoRef? = ReferenceLinks.chatRepo, profiles: Bool = true, onOpen: ((String) -> Void)? = nil
+    ) {
         self.text = text
         self.segments = referenceChatSegments(parseChatText(text), repo: repo)
+        self.profiles = profiles
         self.onOpen = onOpen
     }
 
@@ -56,7 +60,7 @@ struct ChatLinkText: View {
     }
 
     private var attributed: AttributedString {
-        chatRichAttributed(segments, own: mentionNames, mentions: ChatMentionColors.of(fm))
+        chatRichAttributed(segments, own: mentionNames, mentions: ChatMentionColors.of(fm), profiles: profiles)
     }
 
     private var formatted: Bool { ChatRichText.hasFormatting(text) || text.contains("@") }
@@ -64,7 +68,7 @@ struct ChatLinkText: View {
     private var opener: OpenURLAction {
         let handler: ((String) -> Void)? = onOpen
         return OpenURLAction { (url: URL) -> OpenURLAction.Result in
-            guard let handler = handler else {
+            guard let handler = handler, !url.absoluteString.hasPrefix(ProfileLinks.prefix) else {
                 return referenceOpenResult(url)
             }
             handler(url.absoluteString)
@@ -84,7 +88,7 @@ struct ChatLinkText: View {
 }
 
 func chatRichAttributed(
-    _ segments: [ChatTextSegment], own: [String] = [], mentions: ChatMentionColors? = nil
+    _ segments: [ChatTextSegment], own: [String] = [], mentions: ChatMentionColors? = nil, profiles: Bool = true
 ) -> AttributedString {
     var result: AttributedString = AttributedString()
     for segment in segments {
@@ -97,15 +101,18 @@ func chatRichAttributed(
         }
         for span in ChatRichText.spans(segment.text) {
             let pieces: [ChatMentionPiece] =
-                mentions == nil || span.code ? [ChatMentionPiece(span.text)] : ChatSmartMentions.split(span.text, own: own)
-            for piece in pieces {
+                span.code || (mentions == nil && !profiles) ? [ChatMentionPiece(span.text)] : ChatSmartMentions.split(span.text, own: own)
+            for (index, piece) in pieces.enumerated() {
                 var part: AttributedString = AttributedString(piece.text)
                 var intent: InlinePresentationIntent = []
-                if span.bold || piece.kind != .text { intent.insert(.stronglyEmphasized) }
+                if span.bold || (mentions != nil && piece.kind != .text) { intent.insert(.stronglyEmphasized) }
                 if span.italic { intent.insert(.emphasized) }
                 if span.code { intent.insert(.code) }
                 if !intent.isEmpty { part.inlinePresentationIntent = intent }
                 if span.strike { part.strikethroughStyle = Text.LineStyle.single }
+                if profiles, piece.kind == .person, let url = chatProfileURL(pieces, index) {
+                    part.link = url
+                }
                 if let mentions {
                     switch piece.kind {
                     case .text:
@@ -122,4 +129,11 @@ func chatRichAttributed(
         }
     }
     return result
+}
+
+func chatProfileURL(_ pieces: [ChatMentionPiece], _ index: Int) -> URL? {
+    if index + 1 < pieces.count, pieces[index + 1].text.lowercased().hasPrefix("[bot]") {
+        return nil
+    }
+    return ProfileLinks.url(pieces[index].text)
 }

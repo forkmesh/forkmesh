@@ -949,6 +949,7 @@ def _authorization_handler(
             "_ssh_key_gateway_record": gateway_record,
             "_org_repo_node": lambda *args: _async_value(""),
             "_ssh_gateway_repository_access": (lambda *args: gateway_access),
+            "_ssh_gateway_bridge": lambda _env: False,
             "blind_index": lambda *args: _async_value("repo-bi"),
             "d1_first": d1_first,
             "decrypt_row": lambda *args: _async_value(

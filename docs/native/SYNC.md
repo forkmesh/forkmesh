@@ -142,4 +142,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S067 | 2026-10-19 | NEXUS | feature | NEXUS has a link in the You hub's Workspace group and detects the scan range from the phone's IP address | f9db4247cf ded23e8d5a | pending |  |
 | S068 | 2026-10-20 | Projects | feature | New project loads the checked instance's logo and can quick-add from the ForkMesh directory | 73d80cbfb6 | pending |  |
 | S069 | 2026-10-19 | Router | fix | Router network sharing creates a missing share config so a new share shows up | 3330f9588b be89626f7f | synced | be89626f7f |
+| S070 | 2026-10-20 | Chat | feature | Usernames and @mentions in chat, issues, pull requests and discussions open that person's ForkMesh profile when tapped | 079280627a | synced | 079280627a |
 <!-- ledger:end -->

@@ -74,6 +74,7 @@ import com.forkmesh.nativeapp.api.ApiService
 import com.forkmesh.nativeapp.apps.AppsText
 import com.forkmesh.nativeapp.chat.ChatAttachment
 import com.forkmesh.nativeapp.chat.ChatAttachmentKind
+import com.forkmesh.nativeapp.chat.ChatProfileLink
 import com.forkmesh.nativeapp.chat.ChatRow
 import com.forkmesh.nativeapp.chat.ChatThreadSummary
 import com.forkmesh.nativeapp.chat.OfficeFrames
@@ -86,6 +87,8 @@ import com.forkmesh.nativeapp.chat.dayDividerLabel
 import com.forkmesh.nativeapp.chat.messageBodySegments
 import com.forkmesh.nativeapp.chat.messageTime
 import com.forkmesh.nativeapp.core.Services
+import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
+import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.feature.account.AuthService
 import com.forkmesh.nativeapp.model.ChatMessage
 import com.forkmesh.nativeapp.model.UserStatus
@@ -107,6 +110,11 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
+internal fun Modifier.openSenderProfile(row: ChatRow): Modifier {
+    val name = ChatProfileLink.senderProfile(row) ?: return this
+    return clickable(onClickLabel = "View $name") { NavigationFeature.open(Route.Profile(name)) }
+}
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -140,7 +148,7 @@ fun ChatMessageRow(
         if (grouped) {
             Spacer(Modifier.width(28.dp + FmSpace.x2))
         } else {
-            ChatSenderAvatar(message)
+            Box(Modifier.openSenderProfile(row)) { ChatSenderAvatar(message) }
             Spacer(Modifier.width(FmSpace.x2))
         }
         Column(Modifier.weight(1f)) {
@@ -148,7 +156,7 @@ fun ChatMessageRow(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         if (message.self) "${message.senderName} (you)" else message.senderName,
-                        modifier = Modifier.weight(1f, fill = false),
+                        modifier = Modifier.weight(1f, fill = false).openSenderProfile(row),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         style = Fm.text.titleSmall.copy(color = FmColors.senderColor(message.senderName)),

@@ -256,6 +256,18 @@ final class RouteParserTests: XCTestCase {
         XCTAssertEqual(stack("forkmesh://dashboard/notes"), [.notes])
     }
 
+    func testProfileLinksOpenTheProfile() {
+        XCTAssertEqual(ProfileLinks.link("@Alice"), "forkmesh://profile/@alice")
+        XCTAssertEqual(ProfileLinks.account(" bob-2 "), "bob-2")
+        for bad in ["", "@", "github-actions[bot]", "Hello App (app)", "github:alice", "9lives", "a_b", "forkbot", "@here", "x-"] {
+            XCTAssertNil(ProfileLinks.account(bad), bad)
+        }
+        XCTAssertEqual(stack(ProfileLinks.link("alice")!), [.profile(name: "alice")])
+        XCTAssertEqual(RouteParser.parse(ProfileLinks.url("alice")!)?.project, nil)
+        XCTAssertNil(stack("forkmesh://profile/@a_b"))
+        XCTAssertEqual(stack("forkmesh://profile/app"), [.repo(RepoRef(owner: "profile", name: "app"), section: nil)])
+    }
+
     func testAppOnlyRoutes() {
         XCTAssertEqual(stack("forkmesh://agents/42"), [.agents(.all), .agent(id: "42")])
         XCTAssertEqual(stack("forkmesh://agents"), [.agents(.all)])

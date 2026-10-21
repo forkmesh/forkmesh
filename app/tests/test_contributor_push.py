@@ -171,6 +171,18 @@ def test_a_contributor_credential_carries_only_its_namespace():
         env, "acme", "platform", header, "POST")) == ""
 
 
+def test_a_contributor_signing_in_with_a_password_gets_only_its_namespace():
+    module, recorder, env = _contributor_world(account="alice")
+    hosted._with_password_login(module)
+    header = hosted._basic("alice@example.test", hosted.ALICE_PASSWORD)
+    assert asyncio.run(module.verify_hosted_push_access(
+        env, "acme", "platform", header, "POST",
+        request=hosted._Request())) == ("alice", "refs/heads/pr/alice/")
+    assert recorder.audits[-1][-1] == {
+        "operation": "git-receive-pack", "method": "POST",
+        "credential": "password", "refPrefix": "refs/heads/pr/alice/"}
+
+
 def test_a_writer_keeps_full_access_with_no_prefix():
     module, _recorder, env = _contributor_world(
         session=_session_row(), org_write=True)

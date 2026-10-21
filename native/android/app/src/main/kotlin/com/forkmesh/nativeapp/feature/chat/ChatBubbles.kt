@@ -32,6 +32,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
@@ -256,6 +257,7 @@ internal class ChatBubbleActions(
     val onDoubleTap: (() -> Unit)? = null,
     val onTapback: (() -> Unit)? = null,
     val onThread: (() -> Unit)? = null,
+    val onSticker: ((String) -> Unit)? = null,
 )
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -299,7 +301,7 @@ internal fun ChatBubbleRow(
         if (bubble.showsSender) {
             Text(
                 message.senderName,
-                modifier = Modifier.padding(start = 46.dp, top = 6.dp),
+                modifier = Modifier.padding(start = 46.dp, top = 6.dp).openSenderProfile(row),
                 style = TextStyle(fontSize = 12.sp, color = colors.meta),
             )
         }
@@ -311,7 +313,7 @@ internal fun ChatBubbleRow(
             if (mine) {
                 Spacer(Modifier.widthIn(min = 56.dp))
             } else if (group) {
-                if (bubble.position.hasTail) ChatSenderAvatar(message) else Spacer(Modifier.size(28.dp, 1.dp))
+                if (bubble.position.hasTail) Box(Modifier.openSenderProfile(row)) { ChatSenderAvatar(message) } else Spacer(Modifier.size(28.dp, 1.dp))
                 Spacer(Modifier.size(6.dp, 1.dp))
             }
             Box(
@@ -327,6 +329,16 @@ internal fun ChatBubbleRow(
                     ),
                 ) {
                     BubbleContent(bubble, colors, life, place, photo, viewOnce)
+                }
+                if (row.stickers.isNotEmpty()) {
+                    ChatStickers(
+                        row.stickers,
+                        onToggle = actions.onSticker,
+                        modifier = Modifier
+                            .align(if (mine) Alignment.BottomStart else Alignment.BottomEnd)
+                            .offset(x = if (mine) (-10).dp else 10.dp, y = 10.dp)
+                            .zIndex(1f),
+                    )
                 }
                 if (row.reactions.isNotEmpty()) {
                     ChatTapbackBadge(

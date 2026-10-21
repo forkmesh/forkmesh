@@ -10414,6 +10414,7 @@ private:
     void showChatSenderProfile(const QString &senderId,
                                const QString &senderName);
     void showChatUserProfile(const MemberInfo &member, const QStringList &nodeLines);
+    bool openUserProfile(const QString &account, const QString &name = QString());
     void promptAddChannel();
     void promptAddPrivateChannel();
     void showNewPrivateRoomDialog();

@@ -38,7 +38,9 @@ unacknowledged results:
 
 - a red banner (`#securityAlarmBanner`, `buildSecurityAlarmBanner` in
   `MainWindowSecurityAlarm.cpp`) shows on every page with **Open results** and
-  **Acknowledge**;
+  **Acknowledge** (the octicon `check`, `resources/icons/octicons/check.svg`;
+  before it was vendored the button drew no icon and Qt logged
+  `Cannot open file ':/icons/codicons/check.svg'`);
 - the Error cue plays every 3 seconds through `UiSounds::preview` (even with
   interface sounds off, but never offscreen or in test mode);
 - when first raised by a run, the window requests attention and a warning Ping

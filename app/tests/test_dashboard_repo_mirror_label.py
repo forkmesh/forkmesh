@@ -78,6 +78,7 @@ const mirror = {
   upstreamCommit: "0123456789abcdef",
 };
 console.log(JSON.stringify({
+  titleMirror: repoProvenanceHtml(mirror, { forkButton: false }),
   plain: repoProvenanceHtml(plain),
   fork: repoProvenanceHtml(fork),
   mirror: repoProvenanceHtml(mirror),
@@ -118,17 +119,21 @@ console.log(JSON.stringify({ before, changed, unchanged, after: repoBranchManage
     assert "data-repo-mirror-fork" in mirror and 'data-lucide="git-fork"' in mirror
     assert "fm-btn fm-btn-sm" in mirror and "fm-btn-cta" not in mirror and "bg-cta" not in mirror
     assert "data-repo-mirror-fork" not in fork and "synced" not in fork
+    assert "data-repo-mirror-fork" not in first["titleMirror"]
+    assert "data-repo-mirror-notice" in first["titleMirror"]
     assert second == {"before": True, "changed": True, "unchanged": False, "after": False, "lazy": True}
 
 
-def test_provenance_sits_above_the_latest_commit_row_not_in_the_header():
+def test_provenance_sits_under_the_title_row_name_not_above_the_file_table():
     header = _slice(DETAIL, "<div data-repo-github-header", 'role="tablist"')
-    assert "repoProvenanceHtml(repo)" not in header
     assert "data-repo-provenance" not in header
+    title = _slice(DETAIL, "function renderRepoTitleRow(", "function startRepoForkFromTitle(")
+    assert "repoProvenanceHtml(repo, { forkButton: false })" in title
+    assert title.index("data-repo-title-name") < title.index("<div data-repo-provenance") < title.index("data-repo-title-actions")
     code = _slice(DETAIL, "<div data-repo-code-main", "<div data-repo-commit-summary")
-    assert "repoProvenanceHtml(repo)" in code
-    assert "<div data-repo-provenance" in code
-    assert code.index("data-repo-provenance") < code.index("data-repo-tree-panel")
+    assert "data-repo-provenance" not in code
+    render = _slice(DETAIL, "function renderRepoDetail(", "function renderRepoTitleRow(")
+    assert render.index("data-repo-github-header") < render.index("${renderRepoTitleRow(repo)}") < render.index("data-repo-content-grid")
 
 
 def test_about_response_marks_the_mirror_and_regates_rendered_controls():
@@ -136,7 +141,7 @@ def test_about_response_marks_the_mirror_and_regates_rendered_controls():
     assert "rememberRepoMirrorAbout(item, body)" in about
     assert "applyRepoReadOnlyMirror(state.selectedRepo)" in about
     apply = _slice(DETAIL, "function applyRepoReadOnlyMirror(", "function renderRepoDetail(")
-    assert "repoProvenanceHtml(repo)" in apply
+    assert "repoProvenanceHtml(repo, { forkButton: false })" in apply
     assert '[data-repo-file-action="edit"]' in apply
     assert "[data-repo-pull-new], [data-repo-compare-pull]" in apply
     assert "renderRepoBranchesList(repo)" in apply

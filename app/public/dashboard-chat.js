@@ -1298,6 +1298,32 @@ function mountForkMeshDashboardChat(options = {}) {
     return origin + "/@" + encodeURIComponent(key);
   }
 
+  function authorProfileName(record) {
+    if (!record || record.external || record.accountKind !== "user") return "";
+    const name = mentionName(record.who).replace(/^@/, "");
+    if (!/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) return "";
+    const bots = [FORKBOT_SENDER_ID, CLAUDE_SENDER_ID, CODEX_SENDER_ID, ORG_BOT_SENDER_ID];
+    const ids = [name, mentionName(record.senderId)];
+    return ids.some((id) => bots.includes(id)) ? "" : name;
+  }
+
+  function authorElementHtml(record, className, statusName = true) {
+    const name = authorProfileName(record);
+    const label = escapeHtml(record.who);
+    const status = statusName ? `data-user-status-name="${label}"` : "";
+    if (!name) return `<span class="${className}" ${status}>${label}</span>`;
+    return `<a class="${className} hover:underline" href="${escapeHtml(mentionProfilePath(name))}" data-chat-author-profile="${escapeHtml(name)}" ${status}>${label}</a>`;
+  }
+
+  function bindAuthorProfileCard(element) {
+    const name = element?.dataset?.chatAuthorProfile;
+    if (!name) return;
+    element.addEventListener("mouseenter", () => showMentionCard(element, name));
+    element.addEventListener("focus", () => showMentionCard(element, name));
+    element.addEventListener("mouseleave", hideMentionCardSoon);
+    element.addEventListener("blur", hideMentionCardSoon);
+  }
+
   async function fetchMentionProfile(name) {
     const key = mentionName(name);
     if (!key) return null;
@@ -2259,11 +2285,12 @@ function mountForkMeshDashboardChat(options = {}) {
       <span class="chat-message-avatar avatar flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-full border text-base ${record.self ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-secondary text-foreground"}"></span>
       <div class="chat-message-bubble min-w-0 flex-1">
         <div class="chat-message-head mb-0.5 flex items-baseline gap-2">
-          <span class="chat-message-author text-xs font-semibold ${record.self ? "text-primary" : "text-foreground"}" data-user-status-name="${escapeHtml(record.who)}">${escapeHtml(record.who)}</span>${record.external ? "" : userStatusBadgeHtml(record.who)}
+          ${authorElementHtml(record, `chat-message-author text-xs font-semibold ${record.self ? "text-primary" : "text-foreground"}`)}${record.external ? "" : userStatusBadgeHtml(record.who)}
           <span class="chat-message-time text-[10px] text-muted-foreground/50 font-mono" title="${escapeHtml(fmtChatFullDate(record.tsMs))}">${escapeHtml(discordLayout ? fmtChatStamp(record.tsMs) : fmtChatTime(record.tsMs))}</span>
         </div>
         <p class="chat-message-text text-sm text-muted-foreground leading-relaxed break-words"></p>
       </div>`;
+    bindAuthorProfileCard(row.querySelector(".chat-message-author"));
     const avatarEl = row.querySelector(".chat-message-avatar");
     if (record.external && record.avatarUrl) {
       const image = document.createElement("img");
@@ -2498,6 +2525,7 @@ function mountForkMeshDashboardChat(options = {}) {
       self,
       history: Boolean(deferHistory),
       external: Boolean(metadata?.external),
+      accountKind: String(metadata?.accountKind || (self ? chatAccountKind() : "")),
       sourceLabel: String(metadata?.sourceLabel || ""),
       avatarUrl: String(metadata?.avatarUrl || ""),
     };
@@ -2559,9 +2587,16 @@ function mountForkMeshDashboardChat(options = {}) {
       (root ? " ring-1 ring-primary/20" : "");
     const head = document.createElement("div");
     head.className = "mb-1 flex items-baseline gap-2";
-    const author = document.createElement("strong");
+    const profileName = authorProfileName(record);
+    const author = document.createElement(profileName ? "a" : "strong");
     author.className = "text-xs text-foreground";
     author.textContent = record.who;
+    if (profileName) {
+      author.className += " font-semibold hover:underline";
+      author.href = mentionProfilePath(profileName);
+      author.dataset.chatAuthorProfile = profileName;
+      bindAuthorProfileCard(author);
+    }
     const time = document.createElement("span");
     time.className = "text-[10px] text-muted-foreground";
     time.textContent = fmtChatTime(record.tsMs);
@@ -2686,6 +2721,7 @@ function mountForkMeshDashboardChat(options = {}) {
       text: String(entry.text || "").slice(0, MAX_TEXT),
       attachment: attachmentFromEntry(entry),
       self: entry.senderId === selfId || kind === "self",
+      accountKind: String(entry.accountKind || ""),
     };
     threadRepliesById.set(record.id, record);
     const ids = threadReplyIdsByRoot.get(rootId) || new Set();
@@ -3293,11 +3329,12 @@ function mountForkMeshDashboardChat(options = {}) {
         <span class="chat-message-avatar avatar flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded-full border text-sm ${self ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-secondary text-foreground"}"></span>
         <div class="min-w-0 flex-1">
           <div class="flex items-baseline gap-1.5">
-            <span class="text-[11px] font-semibold ${self ? "text-primary" : "text-foreground"}">${escapeHtml(message.who)}</span>${message.external ? "" : userStatusBadgeHtml(message.who)}
+            ${authorElementHtml(message, `chat-side-message-author text-[11px] font-semibold ${self ? "text-primary" : "text-foreground"}`, false)}${message.external ? "" : userStatusBadgeHtml(message.who)}
             <span class="text-[9px] text-muted-foreground/50 font-mono">${escapeHtml(fmtChatTime(message.tsMs))}</span>
           </div>
           <p class="text-xs text-muted-foreground leading-relaxed break-words"></p>
         </div>`;
+      bindAuthorProfileCard(row.querySelector(".chat-side-message-author"));
       const avatar = row.querySelector(".chat-message-avatar");
       if (message.external) {
         avatar.textContent = "D";
@@ -3346,6 +3383,7 @@ function mountForkMeshDashboardChat(options = {}) {
       tsMs: Number(tsMs) || Date.now(),
       attachment,
       external: Boolean(metadata?.external),
+      accountKind: String(metadata?.accountKind || (kind === "self" ? chatAccountKind() : "")),
       sourceLabel: String(metadata?.sourceLabel || ""),
     };
     let index = sideEntries.length;
@@ -3363,10 +3401,12 @@ function mountForkMeshDashboardChat(options = {}) {
     tsMs,
     attachment = null,
     deferHistory = false,
+    accountKind = "",
   ) {
     if (orgAgentIdentity(who, senderId) && !orgAgentConversationAccess) return;
     const channelMetadata = {
       sourceLabel: CHANNEL.startsWith("#") ? CHANNEL : `#${CHANNEL}`,
+      accountKind,
     };
     appendFullMessage(
       kind,
@@ -3711,6 +3751,7 @@ function mountForkMeshDashboardChat(options = {}) {
       Number(entry.ts) || Date.now(),
       attachment,
       !live,
+      String(entry.accountKind || ""),
     );
     if (live) {
       newestHistoryTs = Math.max(newestHistoryTs, Number(entry.ts) || 0);

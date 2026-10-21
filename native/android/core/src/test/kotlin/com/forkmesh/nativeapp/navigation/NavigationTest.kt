@@ -608,6 +608,12 @@ class NavigationTest {
         assertEq(listOf(Route.Notes, Route.Note("n1")), dest("forkmesh://notes/n1"))
         assertEq(listOf(Route.Chat), dest("forkmesh://chat"))
         assertEq(listOf(Route.Profile("me")), dest("forkmesh://profile"))
+        assertEq(listOf(Route.Profile("alice")), dest(ProfileLinks.link("@Alice")!!))
+        assertEq(listOf(AppTab.barOrder.first().root), dest("forkmesh://profile/@a_b"))
+        assertEq("forkmesh://profile/@bob-2", ProfileLinks.link(" bob-2 "))
+        for (bad in listOf("", "@", "github-actions[bot]", "Hello App (app)", "github:alice", "9lives", "a_b", "forkbot", "@here", "x-")) {
+            assertEq(null, ProfileLinks.account(bad), bad)
+        }
         assertEq(listOf(Route.Inbox(InboxFilter.All)), dest("forkmesh://pings"))
         assertEq(listOf(Route.Vault(null)), dest("forkmesh://vault"))
         assertEq(listOf(Route.Projects), dest("forkmesh://projects"))

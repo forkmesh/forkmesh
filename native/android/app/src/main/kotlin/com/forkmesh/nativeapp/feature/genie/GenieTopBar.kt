@@ -57,11 +57,14 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.forkmesh.nativeapp.feature.navigation.NavigationFeature
+import com.forkmesh.nativeapp.genie.GenieAutoSendPace
 import com.forkmesh.nativeapp.genie.GenieAutoSendReceipt
 import com.forkmesh.nativeapp.genie.GenieAutoSendStage
 import com.forkmesh.nativeapp.genie.GenieOutreachChannel
 import com.forkmesh.nativeapp.navigation.Route
 import com.forkmesh.nativeapp.ui.kit.FmInlineStatusLine
+import com.forkmesh.nativeapp.ui.kit.LocalFmMessenger
+import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.ui.kit.FmModalBottomSheet
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import com.forkmesh.nativeapp.ui.kit.FmTextButton
@@ -127,6 +130,25 @@ fun ShellMailChip() {
         else -> "${pick.caption} $state"
     }
     val toggleLabel = if (autoOn) "Turn auto-send off" else "Turn auto-send on"
+    val messenger = LocalFmMessenger.current
+    val toggleScope = rememberCoroutineScope()
+    val toggleAutoSend = {
+        if (autoOn) {
+            ShellAutoSend.toggle()
+        } else {
+            toggleScope.launch {
+                if (messenger.confirmAction(
+                        "Send emails for you?",
+                        "Start sending",
+                        "Genie sends the first email now, then up to ${GenieAutoSendPace.PER_DAY} a day through Zoho Mail to contacts you have not emailed yet, without showing you each one first. Touch and hold the picture again to stop.",
+                        destructive = false,
+                    )
+                ) {
+                    ShellAutoSend.toggle()
+                }
+            }
+        }
+    }
     Box(
         Modifier
             .size(MailChip.size)
@@ -137,7 +159,7 @@ fun ShellMailChip() {
                 },
                 onLongClick = {
                     haptics.commit()
-                    ShellAutoSend.toggle()
+                    toggleAutoSend()
                 },
             )
             .semantics {
@@ -145,7 +167,7 @@ fun ShellMailChip() {
                 contentDescription = described
                 testTag = "top-suggestion-contact"
                 customActions = listOf(
-                    CustomAccessibilityAction(toggleLabel) { ShellAutoSend.toggle(); true },
+                    CustomAccessibilityAction(toggleLabel) { toggleAutoSend(); true },
                     CustomAccessibilityAction("Not now") { ShellSuggestions.skipContact(); true },
                     CustomAccessibilityAction("Open the CRM") { NavigationFeature.open(Route.Crm(null)); true },
                 )

@@ -187,9 +187,16 @@ def test_chat_mentions_highlight_and_open_user_profiles():
     assert mention_profiles_body.index("member : directory") < (
         mention_profiles_body.index("member : roster")
     )
+    open_profile_body = _body(
+        messages,
+        "bool MainWindow::openUserProfile",
+        "void MainWindow::showChatSenderProfile",
+    )
     assert "connect(row, &MessageRow::mentionClicked" in create_row_body
-    assert "chatMentionProfileUrl" in create_row_body
-    assert "QDesktopServices::openUrl(url)" in create_row_body
+    assert "openUserProfile(account, name)" in create_row_body
+    assert "m_chatDirectoryUsers.contains(key)" in open_profile_body
+    assert "chatMentionProfileUrl" in open_profile_body
+    assert "QDesktopServices::openUrl(url)" in open_profile_body
     assert 'url.setPath(QStringLiteral("/@")' in messages
     assert 'QStringLiteral("app.forkmesh.com")' in messages
     assert 'QStringLiteral("forkmesh.com")' in messages

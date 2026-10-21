@@ -1849,7 +1849,7 @@ QString taskHistoryHtml(const QJsonArray &history, bool dark)
                          entry.value(QStringLiteral("createdAt")).toDouble())))
                 .arg(actor.isEmpty()
                          ? QStringLiteral("Someone")
-                         : QStringLiteral("@%1").arg(actor.toHtmlEscaped()))
+                         : userProfileLinkHtml(actor, QStringLiteral("@") + actor))
                 .arg(taskEventLabel(taskText(entry, QStringLiteral("kind")))
                          .toHtmlEscaped())
                 .arg(summary.isEmpty()
@@ -2474,6 +2474,8 @@ QWidget *MainWindow::buildOrganizationTasksSection()
         else if (href.startsWith(kAgentLinkScheme))
             switchToAgentsTab(
                 href.mid(kAgentLinkScheme.size()).toInt());
+        else if (href.startsWith(kUserLinkScheme))
+            openUserProfile(href.mid(kUserLinkScheme.size()));
         else if (href.startsWith(QStringLiteral("forkmesh-task-image:"))) {
             const QString key = QUrl::fromPercentEncoding(
                 href.mid(QStringLiteral("forkmesh-task-image:").size())

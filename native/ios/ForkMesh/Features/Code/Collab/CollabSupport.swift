@@ -429,14 +429,19 @@ struct CollabTimelineTile: View {
     let author: String
     let text: String
     let repo: RepoRef?
+    let profile: String?
 
-    init(icon: String, tone: CollabTone, title: String, author: String, text: String, repo: RepoRef? = nil) {
+    init(
+        icon: String, tone: CollabTone, title: String, author: String, text: String, repo: RepoRef? = nil,
+        profile: String? = nil
+    ) {
         self.icon = icon
         self.tone = tone
         self.title = title
         self.author = author
         self.text = text
         self.repo = repo
+        self.profile = profile.flatMap(ProfileLinks.account)
     }
 
     var body: some View {
@@ -445,7 +450,15 @@ struct CollabTimelineTile: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .fmText(.bodyMedium, color: fm.textPrimary, weight: FmType.emphasis)
-                if !author.isEmpty {
+                if let profile {
+                    NavigationLink(value: Route.profile(name: profile)) {
+                        Text(author)
+                            .fmText(.bodySmall, color: fm.accent)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens \(author)'s profile")
+                    .padding(.top, 2)
+                } else if !author.isEmpty {
                     Text(author)
                         .fmText(.bodySmall, color: fm.textSecondary)
                         .padding(.top, 2)

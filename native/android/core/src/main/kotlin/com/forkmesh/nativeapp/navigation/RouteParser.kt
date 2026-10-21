@@ -276,6 +276,9 @@ object RouteParser {
         val head = all.firstOrNull()?.lowercase() ?: return null
         val tail = all.drop(1)
         val rest = tail.joinToString("/")
+        if (head == "profile" && tail.size == 1 && tail[0].startsWith("@")) {
+            return ProfileLinks.account(tail[0])?.let { listOf(Route.Profile(it)) } ?: listOf(AppTab.barOrder.first().root)
+        }
         return when (head) {
             "agents" ->
                 if (rest.isNotEmpty()) listOf(Route.Agents(AgentFilter.All), Route.Agent(rest))

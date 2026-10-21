@@ -97,16 +97,58 @@ per-page colours:
   found as `.bg-cta, .fm-btn-cta` (`08-repo-detail-network.js`), so forms
   whose green button is now an `fm-btn-cta` keep the shortcut.
 
+## Repository title row
+
+In October 2026 the user asked for GitHub's repository header: Fork and Star
+belong next to the name, where people look for them. In the About rail they
+read as stats, and the Fork button was hidden behind the Forks count, so
+web-only visitors never found it. Under the tab bar and above the content grid,
+`renderRepoTitleRow` in `08-repo-detail-network.js` draws one row with a bottom
+border, on every tab:
+
+- **Left:** the repository logo (`nativeRepositoryLogoMarkup`) or the owner's
+  initial, the name in bold, and a Public/Private `fm-label`. Under the name is
+  the provenance line (`repoProvenanceHtml(repo, { forkButton: false })`):
+  "forked from owner/repo" as an accent link, or a mirror's "Mirror of" line
+  and read-only notice. The line used to sit above the file table. The mirror
+  notice no longer draws its own Fork button, because the row already has one.
+- **Fork N ▾:** a neutral `fm-btn-sm` split button.
+  - The main part (`data-repo-fork-primary`) opens your own fork when the
+    forks list or a create response names one. Otherwise it opens the menu and
+    creates the fork right away.
+  - ▾ (`data-repo-action-fork`) opens the forks menu: the list, forks on other
+    instances, and the page's one green button, "Create fork".
+  - Creating a fork calls `POST /api/repo/<o>/<r>/forks`
+    (`createRepoForkFromWebsite` in `06-repo-content.js`). On success it
+    refreshes the list and shows "Open fork". When the response carries `push`,
+    it shows the remote commands, username, password and expiry once
+    (`repoForkPushHtml`). `exists: true`, or a response that is neither
+    `created` nor `queued`, means you already had a fork.
+- **Star N:** "Star N" or "Starred N", with the yellow star. `fm-btn` colours
+  every icon grey, so `setRepoStarButtonState` also sets the colour inline.
+  Stars have no list (they are blind-indexed), so the button has no ▾.
+
+Watch stays in the About rail. The forks menu is anchored to the actions
+container, which `ml-auto` keeps at the right edge even when it wraps under
+the name on a phone, so the menu always opens on screen. The server-rendered
+first view (`_title_row` in `app/host/forkmesh_host/repo_ssr.py`) draws the
+same row with placeholder counts, so the page does not shift when the
+dashboard takes over. Tests: `app/browser_tests/tests/dashboard-repo-forks.spec.js`,
+`app/tests/test_dashboard_repo_mirror_label.py`,
+`app/tests/test_dashboard_landing_migration.py` and
+`app/tests/host/test_repo_ssr.py`.
+
 ## Code page About rail
 
 The About rail beside the Code tab is a details list, not a stack of cards
 (October 2026 restyle, the "details list" variant the user picked from three).
 Under the description and the Readme / Activity / clean-URL links, one row per
 fact shows a muted label on the left and the value on the right: Website,
-Release, Stars, Watchers, Forks, Mirrors, Files and Size. Stars toggles a star,
-Watchers and Forks open their popovers to the right, Mirrors opens the Mirrors
-tab, Release opens Releases, and Size opens the Size map tab beside a tiny
-sunburst. Rows stay hidden until their data loads.
+Release, Watchers, Mirrors, Files and Size. Stars and Forks moved to the
+title row above (see the section above). Watchers opens its popover to the
+right, Mirrors opens the Mirrors tab, Release opens Releases, and Size opens
+the Size map tab beside a tiny sunburst. Rows stay hidden until their data
+loads.
 
 The rail has no banner or logo header: the user asked for the fediverse banner,
 repository logo, handle and follower avatars to be removed from it. The

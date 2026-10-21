@@ -71,7 +71,6 @@ object Features {
         com.forkmesh.nativeapp.feature.runners.RunnersFeature.install()
         com.forkmesh.nativeapp.feature.usage.UsageFeature.install()
         com.forkmesh.nativeapp.feature.rssreader.RssReaderFeature.install(app)
-        com.forkmesh.nativeapp.feature.djstudio.DjStudioHub.install()
         com.forkmesh.nativeapp.feature.instancefeed.InstanceFeedFeature.install()
         com.forkmesh.nativeapp.feature.securedrive.SecureDriveFeature.install(app)
         com.forkmesh.nativeapp.feature.files.FilesFeature.install(app)

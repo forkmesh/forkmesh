@@ -98,26 +98,29 @@ internal fun Modifier.shellDragSource(
                 }
                 if (early != null) return@awaitEachGesture
                 var dragging = false
-                while (true) {
-                    val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id }
-                    if (change == null || !change.pressed) {
-                        if (dragging) {
-                            change?.consume()
-                            drop(ShellDrag.pointer)
-                            ShellDrag.end()
+                try {
+                    while (true) {
+                        val change = awaitPointerEvent(PointerEventPass.Initial).changes.firstOrNull { it.id == down.id }
+                        if (change == null || !change.pressed) {
+                            if (dragging) {
+                                change?.consume()
+                                drop(ShellDrag.pointer)
+                            }
+                            break
                         }
-                        break
+                        if (!dragging && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
+                            dragging = true
+                            ShellDrag.start(itemId, icon, fromBar, origin[0] + change.position)
+                            start()
+                        }
+                        if (dragging) {
+                            change.consume()
+                            ShellDrag.moveTo(origin[0] + change.position)
+                            move(ShellDrag.pointer)
+                        }
                     }
-                    if (!dragging && (change.position - down.position).getDistance() > viewConfiguration.touchSlop) {
-                        dragging = true
-                        ShellDrag.start(itemId, icon, fromBar, origin[0] + change.position)
-                        start()
-                    }
-                    if (dragging) {
-                        change.consume()
-                        ShellDrag.moveTo(origin[0] + change.position)
-                        move(ShellDrag.pointer)
-                    }
+                } finally {
+                    if (dragging) ShellDrag.end()
                 }
             }
         }

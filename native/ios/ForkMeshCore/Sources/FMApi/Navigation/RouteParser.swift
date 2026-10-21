@@ -298,6 +298,9 @@ public enum RouteParser {
         switch head {
         case "ios-udid", "surface":
             return nil
+        case "profile" where tail.count == 1 && tail[0].hasPrefix("@"):
+            guard let name = ProfileLinks.account(tail[0]) else { return nil }
+            return [.profile(name: name)]
         case "agents":
             if !rest.isEmpty { return [.agents(.all), .agent(id: rest)] }
             return [.agents(AgentFilter(rawValue: query["filter"] ?? "") ?? .all)]

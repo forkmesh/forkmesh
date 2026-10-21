@@ -229,7 +229,7 @@ def test_every_settings_surface_uses_the_admin_rule():
     ):
         assert gate in CONTENT, gate
     click = DETAIL[DETAIL.index('const aboutEditButton = event.target.closest("[data-repo-about-edit]");'):]
-    click = click[:click.index('const logoWorkflowSummary')]
+    click = click[:click.index('const logoRemove')]
     assert "sessionOwnsRepo" not in click
     assert click.count("sessionAdministersRepo(state.selectedRepo)") == 4
     init = DETAIL[DETAIL.index("async function initRepoPage"):]

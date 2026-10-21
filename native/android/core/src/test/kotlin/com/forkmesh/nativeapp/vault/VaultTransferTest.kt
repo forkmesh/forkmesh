@@ -89,6 +89,29 @@ class VaultTransferTest {
         assertEq("zip_unreadable", code { VaultTransfer.readCsv(damaged) })
     }
 
+    private fun storedZip(name: String, content: ByteArray): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            val entry = java.util.zip.ZipEntry(name)
+            entry.method = java.util.zip.ZipEntry.STORED
+            entry.size = content.size.toLong()
+            entry.compressedSize = content.size.toLong()
+            entry.crc = java.util.zip.CRC32().apply { update(content) }.value
+            zip.putNextEntry(entry)
+            zip.write(content)
+            zip.closeEntry()
+        }
+        return out.toByteArray()
+    }
+
+    fun testAnArchiveInsideTheArchiveIsRefusedNotFollowed() {
+        val csv = "title,url,username,password,notes\nA,https://a.example,u,pw-inner,\n".toByteArray()
+        val once = storedZip("p.csv", csv)
+        assertEq(listOf("pw-inner"), VaultTransfer.readCsv(once).logins.map { it.password })
+        val twice = storedZip("p.csv", once)
+        assertEq("zip_unreadable", code { VaultTransfer.readCsv(twice) })
+    }
+
     fun testTitleFallsBackToHostThenUsername() {
         assertEq("example.org", VaultTransferLogin(url = "example.org", password = "p").fields["title"])
         assertEq("me", VaultTransferLogin(username = "me", password = "p").fields["title"])

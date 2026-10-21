@@ -917,6 +917,16 @@ a, button, summary {
   white-space: nowrap;
 }
 
+.board-row .who a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.board-row .who a:hover,
+.board-row .who a:focus-visible {
+  text-decoration: underline;
+}
+
 .board-row .score {
   color: var(--home-muted);
   font-family: var(--landing-mono-font);

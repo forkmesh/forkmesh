@@ -203,6 +203,7 @@ def test_pull_list_reads_the_ledger_and_branch_only_pulls():
     html = repo_views.render(bundle)
     assert "2 Open" in html and "1 Closed" in html
     assert 'data-ssr-record="pulls"' in html and "Merged thing" not in html
+    assert 'opened by <a href="/@alice">alice</a>' in html
 
 
 def test_pull_list_leaves_out_a_pull_its_author_deleted(monkeypatch):
@@ -229,6 +230,9 @@ def test_pull_detail_reads_patch_and_conversation():
     page = repo_views.render(bundle)
     assert "Body of pull 4." in page and "frank" in page
     assert "<b>good</b>" not in page  # markup in a comment stays text
+    assert '<b><a href="/@alice">alice</a></b> wants to merge' in page
+    assert '<b><a href="/@frank">frank</a></b> commented' in page
+    assert '<h1 class="fm-ssr-title"><a href="/@forkmesh">forkmesh</a> / ' in page
 
 
 def test_branch_only_pull_detail_seeds_the_ledger_miss():
@@ -263,6 +267,8 @@ def test_issue_list_and_detail():
     assert not any(key.startswith("blob?") for key in data)
     html = repo_views.render(closed)
     assert "Issue 5 body" in html and "A comment" in html
+    assert '<b><a href="/@bob">bob</a></b> opened this issue' in html
+    assert '<b><a href="/@carol">carol</a></b> commented' in html
 
 
 SEED = repo_views.SEED_ERROR
@@ -275,6 +281,17 @@ def test_discussions():
     detail, _fast = build("discussion", 1)
     html = repo_views.render(detail)
     assert "Hello" in html and "Reply" in html
+    assert '<b><a href="/@dan">dan</a></b> started this discussion' in html
+    assert '<b><a href="/@erin">erin</a></b> commented' in html
+
+
+def test_person_links_accounts_and_leaves_bots_and_git_names_plain():
+    assert repo_views._person("@Alice") == '<a href="/@alice">@Alice</a>'
+    assert repo_views._person("tasks[bot]") == "tasks[bot]"
+    assert repo_views._person("dependabot") == "dependabot"
+    assert repo_views._person("Jane Doe") == "Jane Doe"
+    assert repo_views._person("<x>") == "&lt;x&gt;"
+    assert repo_views._person(None) == ""
 
 
 def test_commit_pinned_reads_are_marked_immutable():

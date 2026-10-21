@@ -2134,9 +2134,29 @@ const QRegularExpression &bodyReferenceRegex()
         "|(?<![\\w/#])(?<pull>(?:pull[-\\s]+request|pull|pr)[-\\s]*#(?<pullNumber>\\d+))\\b"
         "|(?<![\\w/#])(?<issue>issue[-\\s]*#(?<issueNumber>\\d+))\\b"
         "|(?<![\\w/#])#(?<bareNumber>\\d+)\\b"
+        "|(?<![\\w@/.+-])@(?<mention>[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?)(?![\\w-]|[./][a-z0-9]|@|\\[bot\\])"
         "|\\b(?=[0-9a-f]*[a-f])(?<commit>[0-9a-f]{7,40})\\b"),
         QRegularExpression::CaseInsensitiveOption);
     return re;
+}
+
+QString userProfileAccount(const QString &name)
+{
+    QString account = name.trimmed();
+    if (account.startsWith(QLatin1Char('@')))
+        account.remove(0, 1);
+    account = account.toLower();
+    return isValidNodeName(account) ? account : QString();
+}
+
+QString userProfileLinkHtml(const QString &account, const QString &shown)
+{
+    const QString text = shown.isEmpty() ? account.trimmed() : shown;
+    const QString key = userProfileAccount(account);
+    if (key.isEmpty())
+        return text.toHtmlEscaped();
+    return QStringLiteral("<a href=\"%1%2\" style=\"text-decoration:none\">%3</a>")
+        .arg(kUserLinkScheme, key, text.toHtmlEscaped());
 }
 
 QString linkifyReferenceText(const QString &text,
@@ -2170,6 +2190,10 @@ QString linkifyReferenceText(const QString &text,
             const QString num = m.captured(QStringLiteral("bareNumber"));
             out += glyph(QStringLiteral("ref"), num);
             out += QStringLiteral("[#%1](forkmesh-ref:%1)").arg(num);
+        } else if (!m.captured(QStringLiteral("mention")).isEmpty()) {
+            const QString login = m.captured(QStringLiteral("mention"));
+            out += QStringLiteral("[@%1](%2%3)")
+                       .arg(login, kUserLinkScheme, login.toLower());
         } else {
             const QString sha = m.captured(QStringLiteral("commit"));
             out += QStringLiteral("[%1](forkmesh-commit:%1)").arg(sha);

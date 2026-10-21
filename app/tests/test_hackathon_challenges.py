@@ -191,6 +191,7 @@ def test_the_challenge_page_is_escaped_noindexed_and_accepts_on_the_hq(harness):
     assert '<meta name="robots" content="noindex">' in html
     assert "/hackathon/me?accept=" + token in html
     assert 'href="/r/alex"' in html
+    assert '<h1><a href="/@alex">alex</a> challenged you.</h1>' in html
     assert "pays no points" in html
     assert "1,240" in html
     assert run(harness.module.challenge_page_handler(

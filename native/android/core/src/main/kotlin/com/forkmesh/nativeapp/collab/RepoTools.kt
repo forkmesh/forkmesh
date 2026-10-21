@@ -10,6 +10,7 @@ import com.forkmesh.nativeapp.json.optBool
 import com.forkmesh.nativeapp.json.str
 import com.forkmesh.nativeapp.model.RepoTree
 import com.forkmesh.nativeapp.navigation.RepoRef as NavRepoRef
+import com.forkmesh.nativeapp.navigation.ProfileLinks
 import com.forkmesh.nativeapp.navigation.RouteParser
 import java.io.ByteArrayOutputStream
 import java.net.URI
@@ -17,7 +18,7 @@ import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.util.zip.CRC32
 
-enum class ReferenceKind { Issue, Pull, Commit, Url }
+enum class ReferenceKind { Issue, Pull, Commit, Url, Mention }
 
 data class Reference(
     val kind: ReferenceKind,
@@ -33,7 +34,7 @@ data class Reference(
             ReferenceKind.Issue -> "forkmesh://${target.owner}/${target.name}/issues/$number"
             ReferenceKind.Pull -> "forkmesh://${target.owner}/${target.name}/pulls/$number"
             ReferenceKind.Commit -> "forkmesh://${target.owner}/${target.name}/commit/$sha"
-            ReferenceKind.Url -> url
+            ReferenceKind.Url, ReferenceKind.Mention -> url
         }
     }
 }
@@ -92,7 +93,33 @@ object ReferenceLinks {
         return RepoRef(owner, name) to start
     }
 
-    fun segments(text: String, local: Boolean = true, commits: Boolean = true): List<ReferenceSegment> {
+    private fun isMentionName(c: Char): Boolean = c in 'a'..'z' || c in 'A'..'Z' || c in '0'..'9' || c == '-'
+
+    private fun opensMention(text: String, at: Int): Boolean {
+        if (text[at] != '@') return false
+        if (at == 0) return true
+        val before = text[at - 1]
+        return !before.isLetterOrDigit() && "_@/.-+".indexOf(before) < 0
+    }
+
+    private fun mention(text: String, at: Int): Pair<Reference, Int>? {
+        if (!opensMention(text, at)) return null
+        var end = at + 1
+        while (end < text.length && isMentionName(text[end])) end++
+        while (end > at + 1 && text[end - 1] == '-') end--
+        if (end == at + 1) return null
+        if (end < text.length) {
+            val next = text[end]
+            if (next == '_' || next == '@' || next == '/') return null
+            if (next == '.' && end + 1 < text.length && text[end + 1].isLetterOrDigit()) return null
+            if (hasPrefix(text, end, "[bot]", true)) return null
+        }
+        val label = text.substring(at, end)
+        val link = ProfileLinks.link(label) ?: return null
+        return Reference(ReferenceKind.Mention, label, null, 0, "", link) to end
+    }
+
+    fun segments(text: String, local: Boolean = true, commits: Boolean = true, mentions: Boolean = true): List<ReferenceSegment> {
         val out = ArrayList<ReferenceSegment>()
         val plain = StringBuilder()
         var fenced = false
@@ -154,6 +181,14 @@ object ReferenceLinks {
                 i = end
                 continue
             }
+            if (mentions && c == '@') {
+                val found = mention(text, i)
+                if (found != null) {
+                    emit(found.first)
+                    i = found.second
+                    continue
+                }
+            }
             if (local && isBoundary(text, i - 1)) {
                 var matched = false
                 for ((prefix, kind) in listOf(
@@ -212,7 +247,7 @@ object ReferenceLinks {
 
     fun references(text: String): List<Reference> = segments(text).mapNotNull { (it as? ReferenceSegment.Ref)?.reference }
 
-    fun runs(text: String, repo: RepoRef?, commits: Boolean = true): List<ReferenceRun> {
+    fun runs(text: String, repo: RepoRef?, commits: Boolean = true, mentions: Boolean = true): List<ReferenceRun> {
         val out = ArrayList<ReferenceRun>()
         fun add(text: String, url: String?) {
             val last = out.lastOrNull()
@@ -222,14 +257,14 @@ object ReferenceLinks {
                 out.add(ReferenceRun(text, url))
             }
         }
-        for (segment in segments(text, local = repo != null, commits = commits)) {
+        for (segment in segments(text, local = repo != null, commits = commits, mentions = mentions)) {
             when (segment) {
                 is ReferenceSegment.Text -> add(segment.text, null)
                 is ReferenceSegment.Ref -> {
                     val ref = segment.reference
                     val target = ref.repo ?: repo
                     when {
-                        ref.kind == ReferenceKind.Url -> add(ref.label, ref.url)
+                        ref.kind == ReferenceKind.Url || ref.kind == ReferenceKind.Mention -> add(ref.label, ref.url)
                         target != null -> add(ref.label, ref.link(target))
                         else -> add(ref.label, null)
                     }

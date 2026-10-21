@@ -249,6 +249,27 @@ def test_readme_relative_and_centred_images_use_the_raw_endpoint():
     assert repo_ssr.markdown_html("![x](logo.png)", "/tools") == "<p>x</p>"
 
 
+def test_readme_mentions_link_to_profiles_outside_code_links_and_urls():
+    out = repo_ssr.markdown_html(
+        "Thanks @Alice and **@bob**, not `@carol`, [@dan](https://d.example), "
+        "https://m.example/@erin, x@frank.example, @gh[bot] or @-no\n\n"
+        "- <a href=\"https://g.example\">@gus</a> @hal",
+        "/tools")
+    mention = ('<a href="/@%s" data-issue-person="%s" data-issue-mention="" '
+               'class="dashboard-accent-link underline underline-offset-2 '
+               'hover:text-foreground">@%s</a>')
+    assert mention % ("alice", "alice", "Alice") in out
+    assert "<strong>%s</strong>" % (mention % ("bob", "bob", "bob")) in out
+    assert "<code>@carol</code>" in out
+    assert '<a href="https://d.example">@dan</a>' in out
+    assert "https://m.example/@erin," in out
+    assert "x@frank.example" in out
+    assert "@gh[bot]" in out and "/@gh" not in out
+    assert '<a href="https://g.example">@gus</a>' in out
+    assert mention % ("hal", "hal", "hal") in out
+    assert out.count("data-issue-mention") == 3
+
+
 def test_readme_raw_html_stays_sanitized():
     out = repo_ssr.markdown_html(
         '<a href="javascript:alert(1)" onclick="x"><img src="javascript:y" onerror="z" alt="j"></a> '
@@ -278,7 +299,7 @@ def test_first_view_uses_dashboard_classes_that_the_stylesheet_has():
     css = (DASHBOARD / "tailwind.css").read_text("utf-8")
     tokens = {token for match in re.finditer(r'class="([^"]*)"', view)
               for token in match.group(1).split()}
-    own = ("fm-ssr", "lucide", "dashboard-accent-link", "fm-btn", "group")
+    own = ("fm-ssr", "lucide", "dashboard-accent-link", "fm-btn", "fm-label", "fm-counter", "group")
     missing = sorted(token for token in tokens if not token.startswith(own)
                      and _tailwind_selector(token) not in css)
     assert missing == []
@@ -331,6 +352,19 @@ def test_first_view_about_rail_and_mirror_line():
                                 about={"ok": True, "mirrorOf": "javascript:alert(1)"})
     assert "javascript:" not in bare and "Mirror of" not in bare
     assert bare.count('class="h-7 w-7 rounded-full border-2 border-background bg-secondary"') == 8
+
+
+def test_first_view_draws_the_title_row_without_stars_or_forks_in_about():
+    detail = (DASHBOARD / "js" / "08-repo-detail-network.js").read_text("utf-8")
+    fragment = 'class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5"'
+    assert fragment in detail
+    view = repo_ssr.render_view(DATA, about={"ok": True, "forkedFrom": "alice/upstream"})
+    assert "data-repo-title-row " + fragment in view
+    assert view.index("data-repo-github-header") < view.index("data-repo-title-row") < view.index("data-repo-content-grid")
+    assert "<span>Fork</span>" in view and "<span>Star</span>" in view and ">Public</span>" in view
+    assert 'forked from</span><a href="/alice/upstream"' in view
+    assert ">Stars<" not in view and ">Forks<" not in view and ">Watchers<" in view
+    assert "forked from" not in repo_ssr.render_view(DATA, about={"ok": True, "forkedFrom": "x/../y\"<"})
 
 
 def test_time_ago_matches_the_dashboard_wording():

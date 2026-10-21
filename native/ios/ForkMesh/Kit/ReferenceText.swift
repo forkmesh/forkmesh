@@ -28,7 +28,11 @@ func referenceAttributed(_ runs: [ReferenceRun]) -> AttributedString {
         var part: AttributedString = AttributedString(run.text)
         if let address = run.url, let url = URL(string: address) {
             part.link = url
-            part.underlineStyle = Text.LineStyle.single
+            if address.hasPrefix(ProfileLinks.prefix) {
+                part.inlinePresentationIntent = .stronglyEmphasized
+            } else {
+                part.underlineStyle = Text.LineStyle.single
+            }
         }
         result.append(part)
     }
@@ -42,7 +46,7 @@ func referenceChatSegments(_ segments: [ChatTextSegment], repo: RepoRef?) -> [Ch
             out.append(segment)
             continue
         }
-        for run in ReferenceLinks.runs(segment.text, repo: repo, commits: false) {
+        for run in ReferenceLinks.runs(segment.text, repo: repo, commits: false, mentions: false) {
             out.append(ChatTextSegment(run.text, run.url))
         }
     }

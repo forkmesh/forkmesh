@@ -241,7 +241,7 @@ def test_viewer_resolves_three_relative_to_itself(result):
 
 
 def test_repository_toolbar_offers_the_code_map():
-    assert DASHBOARD_JS.count("data-repo-codemap-open") >= 3  # two buttons + handler
+    assert DASHBOARD_JS.count("data-repo-codemap-open") >= 3  # About + file view + handler
     assert 'const REPO_CODEMAP_SCRIPT = "/assets/codemap/codemap.js?v=' in DASHBOARD_JS
     assert 'fetchRepoJson(repoLiveUrl(repo, "sizes"))' in DASHBOARD_JS
     # The map's reads are pinned to the commit the size tree was built from.

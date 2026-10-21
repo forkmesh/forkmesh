@@ -172,7 +172,7 @@ class ChatDeviceKeys private constructor(private val store: SecretStore?, identi
         const val IDENTITY_STORE_KEY = "chat/e2ee/ed25519IdentityV3"
         const val PREKEYS_STORE_KEY = "chat/e2ee/prekeysV3"
 
-        private const val LEGACY_PRIVATE_KEY = "chat/e2ee/x25519PrivateV2"
+        private const val LEGACY_PRIVATE_KEY = "chat/e2ee/x25519PrivateV2"  // forkmesh-secret-scan:ignore-line
         private val cache = HashMap<StoreIdentity, ChatDeviceKeys>()
 
         fun forStore(store: SecretStore): ChatDeviceKeys = synchronized(cache) {

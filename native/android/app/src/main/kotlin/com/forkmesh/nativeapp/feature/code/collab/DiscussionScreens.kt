@@ -246,6 +246,7 @@ private fun DiscussionTimelineView(
                 author = event.displayAuthor,
                 body = event.body,
                 repo = repo,
+                profile = event.authorName,
             )
             if (canMark && event.type == "comment" && event.id.isNotEmpty()) {
                 FmTextButton(

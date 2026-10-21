@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["apps"] = (core) => {
-  const { $, state } = core;
+  const { $, publicProfileUrl, state, userDisplayName, userNameKey } = core;
   const APPS_ERRORS = Object.freeze({
     invalid_name: "Give the app a name of 2 to 40 characters.",
     invalid_redirect_uri: "Redirect URLs must be https, without a fragment or credentials.",
@@ -133,13 +133,26 @@
     return box;
   }
 
+  function appsPersonLink(name) {
+    const handle = String(name || "").trim();
+    if (!userNameKey(handle)) return `@${handle || "?"}`;
+    const link = appsEl("a", "dashboard-accent-link hover:underline", `@${userDisplayName(handle)}`);
+    link.href = publicProfileUrl(handle);
+    link.dataset.userName = userNameKey(handle);
+    return link;
+  }
+
   function appsHeader(app, subtitle) {
     const head = appsEl("div", "apps-row-main");
     const text = appsEl("div", "apps-row-text");
     const title = appsEl("div", "apps-row-title");
     title.append(appsEl("span", "", app?.name || "App"));
     text.append(title);
-    if (subtitle) text.append(appsEl("p", "apps-row-sub", subtitle));
+    if (subtitle) {
+      const sub = appsEl("p", "apps-row-sub");
+      sub.append(...[].concat(subtitle));
+      text.append(sub);
+    }
     head.append(appsIcon(app), text);
     return head;
   }
@@ -164,7 +177,7 @@
 
   function appsInstallCard(install, onRevoke) {
     const actions = install.canRevoke ? [appsButton("Revoke", () => onRevoke(install), true)] : [];
-    return appsRow(install.app, `Installed by @${install.installedBy || "?"} · last used ${appsWhen(install.lastUsedAt)}`, actions, install.scopes);
+    return appsRow(install.app, ["Installed by ", appsPersonLink(install.installedBy), ` · last used ${appsWhen(install.lastUsedAt)}`], actions, install.scopes);
   }
 
   async function revokeAppInstall(install) {
@@ -232,7 +245,7 @@
         }
         void loadInstalledApps();
       };
-      list.append(appsRow(request.app, `@${request.requester} asked to install this for ${org.name}`,
+      list.append(appsRow(request.app, [appsPersonLink(request.requester), ` asked to install this for ${org.name}`],
         [appsButton("Approve", () => decide("approve")), appsButton("Deny", () => decide("deny"), true)], request.scopes));
     }
     list.append(appsOrgPolicy(org));
@@ -322,7 +335,7 @@
       }
       if (app.listing === "suspended") actions.push(appsButton("Reinstate", () => act("reinstate")));
       else actions.push(appsButton("Suspend", () => act("suspend"), true));
-      const row = appsRow(app, `by @${app.developer} · ${app.listing}${app.description ? ` · ${app.description}` : ""}`, actions, app.scopes);
+      const row = appsRow(app, ["by ", appsPersonLink(app.developer), ` · ${app.listing}${app.description ? ` · ${app.description}` : ""}`], actions, app.scopes);
       const urls = appsEl("div", "apps-scopes");
       for (const url of [...(app.redirectUris || []), app.eventUrl, app.interactivityUrl].filter(Boolean)) {
         urls.append(appsEl("span", "apps-scope break-all", url));

@@ -662,6 +662,8 @@ ICONS = {
         '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path>'),
     'git-branch': (
         '<line x1="6" x2="6" y1="3" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path>'),
+    'git-fork': (
+        '<circle cx="12" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><circle cx="18" cy="6" r="3"></circle><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"></path><path d="M12 12v3"></path>'),
     'git-pull-request': (
         '<circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" x2="6" y1="9" y2="21"></line>'),
     'history': (
@@ -676,6 +678,8 @@ ICONS = {
         '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>'),
     'plus': (
         '<path d="M5 12h14"></path><path d="M12 5v14"></path>'),
+    'refresh-cw': (
+        '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path>'),
     'search': (
         '<circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path>'),
     'star': (
@@ -814,24 +818,54 @@ def _toolbar(ref):
 
 def _provenance(about):
     upstream = str((about or {}).get("mirrorOf") or "").strip()
-    if not upstream.lower().startswith(("https://", "http://")):
+    if upstream.lower().startswith(("https://", "http://")):
+        synced = _parse_time((about or {}).get("lastSyncedAt"))
+        label = re.sub(r"^https?://", "", upstream).rstrip("/")
+        return (
+            '<span class="inline-flex min-w-0 items-center gap-1.5">%s'
+            '<span class="shrink-0">Mirror of</span><a href="%s" class="dashboard-accent-link '
+            'min-w-0 truncate font-medium hover:underline">%s</a>%s</span><span '
+            'class="min-w-0 text-[11px] text-muted-foreground">Read-only. Send changes '
+            '<a href="%s" class="dashboard-accent-link hover:underline">upstream</a> or '
+            'into a fork.</span>' % (
+                _icon("refresh-cw", "h-3.5 w-3.5", "shrink-0 text-muted-foreground"),
+                html.escape(upstream), html.escape(label),
+                ('<span class="shrink-0 text-muted-foreground">· synced %s</span>'
+                 % html.escape(time_ago(synced))) if synced else "",
+                html.escape(upstream)))
+    parent = str((about or {}).get("forkedFrom") or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,79}/[a-z0-9._-]{1,80}", parent):
         return ""
-    synced = _parse_time((about or {}).get("lastSyncedAt"))
-    label = re.sub(r"^https?://", "", upstream).rstrip("/")
     return (
-        '<div class="mb-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs '
-        'text-muted-foreground"><span class="inline-flex min-w-0 items-center gap-1.5">'
-        '<span class="h-3.5 w-3.5 shrink-0"></span><span class="shrink-0">Mirror of</span>'
-        '<a href="%s" class="dashboard-accent-link min-w-0 truncate font-medium '
-        'hover:underline">%s</a>%s</span><span class="min-w-0 text-[11px] '
-        'text-muted-foreground">Read-only. Send changes <a href="%s" '
-        'class="dashboard-accent-link hover:underline">upstream</a> or into a fork.'
-        '</span><span class="fm-btn fm-btn-sm shrink-0"><span class="h-3.5 w-3.5">'
-        '</span>Fork</span></div>' % (
-            html.escape(upstream), html.escape(label),
-            ('<span class="shrink-0 text-muted-foreground">· synced %s</span>'
-             % html.escape(time_ago(synced))) if synced else "",
-            html.escape(upstream)))
+        '<span class="inline-flex min-w-0 items-center gap-1.5">%s<span class="shrink-0">'
+        'forked from</span><a href="/%s" class="dashboard-accent-link min-w-0 truncate '
+        'font-medium hover:underline">%s</a></span>' % (
+            _icon("git-fork", "h-3.5 w-3.5", "shrink-0 text-muted-foreground"),
+            html.escape(parent), html.escape(parent)))
+
+
+def _title_row(repo, base, about):
+    provenance = _provenance(about)
+    count = '<span class="fm-counter">–</span>'
+    return (
+        '<div data-repo-title-row class="mx-auto w-full max-w-7xl min-w-0 px-3 sm:px-5">'
+        '<div class="flex min-w-0 flex-wrap items-center justify-between gap-3 border-b '
+        'border-border py-4"><div class="flex min-w-0 items-start gap-2"><span '
+        'class="mt-0.5 shrink-0"><span class="flex h-6 w-6 shrink-0 items-center '
+        'justify-center overflow-hidden rounded-xl border border-border bg-secondary '
+        'text-muted-foreground">%s</span></span><div class="min-w-0"><div class="flex '
+        'min-w-0 flex-wrap items-center gap-2"><a href="%s" class="min-w-0 truncate '
+        'text-xl font-semibold leading-7 text-foreground hover:underline">%s</a><span '
+        'class="fm-label">Public</span></div>%s</div></div><div class="relative ml-auto '
+        'flex shrink-0 items-center gap-2"><div class="inline-flex"><span class="fm-btn '
+        'fm-btn-sm" style="border-top-right-radius:0;border-bottom-right-radius:0">%s'
+        '<span>Fork</span>%s</span><span class="fm-btn fm-btn-sm" style="margin-left:-1px;'
+        'padding:0 6px;border-top-left-radius:0;border-bottom-left-radius:0">%s</span></div>'
+        '<span class="fm-btn fm-btn-sm">%s<span>Star</span>%s</span></div></div></div>' % (
+            _icon("book-open", "h-4 w-4"), html.escape(base), html.escape(repo),
+            ('<div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 '
+             'text-xs text-muted-foreground">%s</div>' % provenance) if provenance else "",
+            _icon("git-fork"), count, _icon("chevron-down"), _icon("star"), count))
 
 
 def _about_rail(about, readme_href, info=None):
@@ -852,9 +886,7 @@ def _about_rail(about, readme_href, info=None):
                                                          flags=re.I).rstrip("/")))
             ) if website else ""
     rows = site + "".join(ABOUT_ROW % (label, value) for label, value in (
-        ("Stars", _icon("star", "h-3.5 w-3.5", "text-muted-foreground") + dash),
         ("Watchers", dash + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),
-        ("Forks", dash + _icon("chevron-down", "h-3 w-3", "text-muted-foreground")),
         ("Mirrors", dash), ("Files", dash), ("Size", dash)))
     legend = "".join('<span class="block %s">&nbsp;</span>' % SKELETON for _ in range(6))
     people = "".join('<span class="h-7 w-7 rounded-full border-2 border-background '
@@ -955,17 +987,17 @@ def render_view(data, short=False, about=None):
                 _icon("book-open", "h-3.5 w-3.5", "text-muted-foreground"),
                 html.escape(name), body))
     return (
-        '<div data-repo-ssr data-repo-layout="first-view" class="min-w-0">%s%s<div data-repo-content-grid class="mx-auto grid w-full max-w-7xl '
+        '<div data-repo-ssr data-repo-layout="first-view" class="min-w-0">%s%s%s<div data-repo-content-grid class="mx-auto grid w-full max-w-7xl '
         'min-w-0 gap-5 px-3 pb-3 pt-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_18rem]">'
         '<div class="min-w-0">%s<div class="my-3 flex min-w-0 flex-col gap-2 md:flex-row '
         'md:items-center md:justify-between"><div class="flex min-w-0 items-center gap-2">'
         '<div class="min-w-0 truncate text-xs text-muted-foreground"><a href="%s" '
         'class="inline-block font-semibold text-accent hover:underline" style="line-height:1.5">%s</a></div></div></div>'
-        '%s<div class="overflow-hidden rounded-lg border border-border bg-background">'
+        '<div class="overflow-hidden rounded-lg border border-border bg-background">'
         '%s<div data-repo-tree>%s</div></div>%s</div>%s</div></div>' % (
-            _icon_sprite(), _tabs(base, about, counts),
+            _icon_sprite(), _tabs(base, about, counts), _title_row(repo, base, about),
             _toolbar(str(data.get("ref") or "main")), html.escape(base), html.escape(repo),
-            _provenance(about), summary, "".join(rows), readme,
+            summary, "".join(rows), readme,
             _about_rail(about, readme_href, data.get("info"))))
 
 
@@ -1148,6 +1180,15 @@ def _inline(text, base, raw=""):
 
     text = _LINK.sub(keep_link, text)
     text = html.escape(text, quote=False)
+    from .repo_ssr_issue import MD_BARE_URL, MD_MENTION, mention_html
+
+    def keep_markup(markup):
+        links.append(markup)
+        return "\x03%d\x03" % (len(links) - 1)
+
+    text = MD_BARE_URL.sub(lambda m: m.group(1) + keep_markup(m.group(2)), text)
+    text = MD_MENTION.sub(lambda m: m.group(1) + keep_markup(mention_html(m.group(2))),
+                          text)
     text = _BOLD.sub(lambda m: "<strong>%s</strong>" % (m.group(1) or m.group(2)),
                      text)
     text = _ITALIC.sub(lambda m: "<em>%s</em>" % m.group(1), text)

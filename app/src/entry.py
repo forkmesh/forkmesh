@@ -909,6 +909,7 @@ PING_OPENED_KINDS = {"issue": "issue_opened", "pull": "pull_submitted"}
 # Organization owners/admins/maintainers pinged per new item, beyond the
 # hosting account. Bounds the request-time fan-out for a large organization.
 PING_OPENED_MAX_ORG_RECIPIENTS = 25
+PING_CATALOG_ISSUES_MAX = 5
 # repo_activity vocabulary (adhoc #295): event key -> (headline, fallback
 # body). The keys are deliberately the outbound-webhook event names
 # (repository_webhooks.EVENT_CATALOG), because the ping and the webhook are
@@ -1248,6 +1249,7 @@ advertised_refs_canonical = _git_http.export("advertised_refs_canonical")
 decode_git_request_body = _git_http.export("decode_git_request_body")
 git_advert_cache_key = _git_http.export("git_advert_cache_key")
 pkt_line = _git_http.export("pkt_line")
+with_sideband_message = _git_http.export("with_sideband_message")
 repo_blob_content_type = _git_http.export("repo_blob_content_type")
 repo_blob_filename = _git_http.export("repo_blob_filename")
 
@@ -13505,7 +13507,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "c42d16ef4a1708560657263b86ef151172e3f35dae0b14f9f8ae36fcc7562e21"
+    "285eaede8b90626859ed5c987c70ff0a689f5f9f61fd5ebe9634b9558ee14933"
 )
 
 
@@ -16174,6 +16176,10 @@ hosted_fork_create = _hosted_git.export("hosted_fork_create")
 record_hosted_push_state = _hosted_git.export("record_hosted_push_state")
 record_hosted_branch_count = _hosted_git.export(
     "record_hosted_branch_count")
+# The SSH gateway relays a key-authenticated session to the HTTPS Git routes
+# with a short-lived credential minted by /api/ssh/authorize.
+ssh_git_password = _hosted_git.export("ssh_git_password")
+contributor_push_allowed = _hosted_git.export("contributor_push_allowed")
 # Repositories the Next core nodes host (HOSTED_GIT_CORE_NODES,
 # docs/HOSTED_REPOS.md): push routing, the per-repository size limit, and the
 # private (capability-only) read path.
@@ -37155,6 +37161,48 @@ async def _org_repo_maintainers(env, host_owner, repo):
     return sorted(found)[:PING_OPENED_MAX_ORG_RECIPIENTS]
 
 
+def _catalog_issue_max(rec):
+    try:
+        return int(str((rec or {}).get("issueMaxNumber", "")).strip())
+    except (TypeError, ValueError):
+        return -1
+
+
+async def notify_catalog_issues_opened(env, owner, repo, repo_bi, prior,
+                                       record):
+    owner = clean_string(owner, MAX_NODE_NAME).lower()
+    repo = clean_string(repo, MAX_REPO_SEGMENT)
+    before = _catalog_issue_max(prior)
+    after = _catalog_issue_max(record)
+    if not valid_node_name(owner) or not repo or before < 0 or after <= before:
+        return 0
+    maintainers = [name for name in await _org_repo_maintainers(env, owner, repo)
+                   if name != owner]
+    if not maintainers:
+        return 0
+    try:
+        row = await d1_first(
+            env, "SELECT next_number FROM issue_seq WHERE repo_bi=?", repo_bi)
+        reserved = int((row or {}).get("next_number") or 0)
+    except Exception:
+        return 0
+    first = max(before + 1, reserved, after - PING_CATALOG_ISSUES_MAX + 1)
+    slug = owner + "/" + repo
+    filed = 0
+    for number in range(first, after + 1):
+        href = repo_web_href(owner, repo) + "/issues/" + str(number)
+        for maintainer in maintainers:
+            if await enqueue_notification(
+                    env, maintainer, "issue_opened", "New issue in " + slug,
+                    body="Issue #" + str(number), repo=slug, href=href,
+                    actor=owner, source="issue",
+                    dedupe="issue-opened:" + slug + ":" + str(number),
+                    meta={"number": number, "source": "issue",
+                          "hostOwner": owner, "via": "catalog"}):
+                filed += 1
+    return filed
+
+
 async def notify_issue_assignees(env, owner, repo, assignees, actor, title, number=0):
     for assignee in sorted({clean_string(a, MAX_NODE_NAME).lower() for a in (assignees or [])}):
         if not valid_node_name(assignee):
@@ -38995,7 +39043,7 @@ def _notification_stored_tail(it, stored_repo, number=0):
     return tail if NOTIFICATION_HREF_RE.match(tail) else ""
 
 
-def _notification_actor_html(actor, avatar_b64=""):
+def _notification_actor_html(actor, avatar_b64="", base_url=""):
     """Actor byline: portrait when one is available, name either way.
 
     The name is never replaced by the image — an email client that blocks or
@@ -39005,7 +39053,14 @@ def _notification_actor_html(actor, avatar_b64=""):
     actor = clean_string(actor or "", MAX_NODE_NAME)
     if not actor:
         return ""
-    name_html = "by <strong>" + _html_escape(actor) + "</strong>"
+    name_html = "<strong>" + _html_escape(actor) + "</strong>"
+    handle = actor.strip().lower()
+    if NODE_NAME_RE.match(handle):
+        name_html = (
+            "<a href=\"" + _html_escape(_notification_item_url(
+                base_url, "/@" + quote(handle, safe=""))) + "\" "
+            "style=\"color:#0969da;text-decoration:none\">" + name_html + "</a>")
+    name_html = "by " + name_html
     # Rejected, never truncated: half a base64 blob is a broken image, and
     # the byline reads correctly without one.
     avatar = clean_string(avatar_b64 or "", MAX_AVATAR_B64).strip()
@@ -39069,7 +39124,7 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
     record = _notification_record_label(repo, segment, number)
     meta_html = " &middot; ".join(filter(None, [
         _html_escape("#" + str(number)) if number > 0 else "",
-        _notification_actor_html(actor, avatars.get(actor.lower(), "")),
+        _notification_actor_html(actor, avatars.get(actor.lower(), ""), base_url),
         _html_escape(when) if when else "",
     ]))
     # The number rides the meta line below in HTML, so the heading keeps
@@ -39088,7 +39143,8 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
         ("<p class=\"fm-muted\" style=\"margin:4px 0 0;color:#8a8a93;font-size:12px\">" +
          meta_html + "</p>" if meta_html else "") +
         ("<div class=\"fm-item-body\" style=\"margin:6px 0 0;color:#a3a3a3;font-size:13px;"
-         "line-height:1.45\">" + _chat_format.to_html(body) + "</div>"
+         "line-height:1.45\">" + _chat_format.to_html(
+             body, _notification_item_url(base_url, "/")) + "</div>"
          if body else "") + "</div>")
     return {
         "headline": headline,
@@ -48477,10 +48533,12 @@ GIT_ERROR_MESSAGES = {
     "push_unavailable": "ForkMesh could not reach the node that accepts "
                         "pushes for this repository. Try again in a minute.",
     "push_unauthorized": "Pushing over HTTPS needs your ForkMesh account "
-                         "name and the repository's push credential.",
+                         "name or email and your password, or the "
+                         "repository's push credential.",
     "authentication_required": "This repository is private. Sign in with "
-                               "your ForkMesh account name and the "
-                               "repository's credential.",
+                               "your ForkMesh account name or email and "
+                               "your password, or the repository's "
+                               "credential.",
     "method_not_allowed": "This Git address does not accept that request.",
 }
 GIT_ERROR_KEPT_HEADERS = (
@@ -52176,6 +52234,41 @@ async def _https_mirror_push_candidates(
     return candidates
 
 
+async def _fork_push_notice(env, request, owner, repo, alias_owner,
+                            upstream):
+    updates = _ref_updates_from(upstream).get("updates") or []
+    branches = [
+        update["ref"][len("refs/heads/"):] for update in updates
+        if update["ref"].startswith("refs/heads/")
+        and update["new"].strip("0")
+    ]
+    if not branches:
+        return None
+    record = await _repo_catalog_record(env, owner, repo)
+    if not isinstance(record, dict):
+        return None
+    fork = bool(clean_string(record.get("forkedFrom", ""), 170))
+    default = clean_string(record.get("branch", ""), 200) or "main"
+    branches = [
+        branch for branch in branches
+        if branch != default and (fork or branch.startswith("pr/"))
+    ][:5]
+    parsed = urlparse(str(getattr(request, "url", "") or ""))
+    if not branches or parsed.scheme not in ("https", "http") or (
+            not parsed.netloc):
+        return None
+    base = parsed.scheme + "://" + parsed.netloc + await _repo_public_path(
+        env, alias_owner or owner, repo)
+    lines = [""]
+    for branch in branches:
+        lines.append("Open a pull request for '%s' by visiting:" % branch)
+        lines.append("     %s/compare/%s...%s" % (
+            base, quote(default, safe="/"), quote(branch, safe="/")))
+        lines.append("")
+    raw = bytes(Uint8Array.new(await upstream.arrayBuffer()).to_py())
+    return with_sideband_message(raw, "\n".join(lines) + "\n") or raw
+
+
 def _git_push_basic_challenge():
     """Refuse an unauthorized push, and tell git how to authenticate.
 
@@ -52284,7 +52377,8 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             alias_owner=alias_owner)
     else:
         account, push_prefix = await verify_hosted_push_access(
-            env, owner, repo, authorization, method, alias=alias_owner)
+            env, owner, repo, authorization, method, alias=alias_owner,
+            request=request)
     if not account:
         return _git_push_basic_challenge()
     core_held = str(owner or "").strip().lower() in _core_push_nodes(env)
@@ -52331,10 +52425,26 @@ async def _https_mirror_push_proxy(env, request, owner, repo, is_info):
             raw_headers[name] = str(value)
     response_headers = https_routing.response_headers(raw_headers)
     response_headers["X-ForkMesh-Served-By"] = endpoint["node"]
+    status = int(getattr(upstream, "status", 0) or 0)
+    notice = globals().get("_fork_push_notice")
+    if method == "POST" and not is_info and status == 200 and callable(
+            notice):
+        try:
+            body = await notice(env, request, owner, repo, alias_owner,
+                                upstream)
+        except Exception:
+            body = None
+        if body is not None:
+            for name in list(response_headers):
+                if str(name).lower() == "content-length":
+                    response_headers.pop(name)
+            return JsResponse.new(
+                Uint8Array.new(_to_js(bytes(body))),
+                to_js({"status": status, "headers": response_headers}),
+            )
     return JsResponse.new(
         upstream.body,
-        to_js({"status": int(getattr(upstream, "status", 0) or 0),
-               "headers": response_headers}),
+        to_js({"status": status, "headers": response_headers}),
     )
 
 

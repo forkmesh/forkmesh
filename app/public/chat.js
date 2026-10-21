@@ -4705,7 +4705,21 @@ function threadMessageHeader(record) {
   const meta = document.createElement("div");
   meta.className = "chat-thread-message-meta";
   const author = document.createElement("strong");
-  author.textContent = record.sender;
+  if (record.senderId === FORKBOT_SENDER_ID) {
+    author.textContent = record.sender;
+  } else {
+    const authorLink = document.createElement("a");
+    authorLink.className = "chat-author";
+    authorLink.style.fontSize = "inherit";
+    authorLink.style.fontWeight = "inherit";
+    authorLink.textContent = record.sender;
+    authorLink.href = mentionProfilePath(record.sender);
+    authorLink.addEventListener("mouseenter", () => showMentionCard(authorLink, record.sender));
+    authorLink.addEventListener("focus", () => showMentionCard(authorLink, record.sender));
+    authorLink.addEventListener("mouseleave", hideMentionCardSoon);
+    authorLink.addEventListener("blur", hideMentionCardSoon);
+    author.append(authorLink);
+  }
   const time = document.createElement("span");
   time.textContent = fmtTime(record.ts);
   time.title = new Date(Number(record.ts) || Date.now()).toLocaleString();

@@ -88,6 +88,10 @@ QWidget *MainWindow::buildDiscussionsTab()
     m_discussionMeta->setObjectName("statusLine");
     m_discussionMeta->setTextFormat(Qt::RichText);
     m_discussionMeta->setWordWrap(true);
+    m_discussionMeta->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    m_discussionMeta->setOpenExternalLinks(false);
+    connect(m_discussionMeta, &QLabel::linkActivated, this,
+            [this](const QString &href) { openBodyReference(href); });
     m_discussionInlineNotice = new QLabel;
     m_discussionInlineNotice->setObjectName("issueInlineNotice");
     m_discussionInlineNotice->setWordWrap(true);
@@ -459,7 +463,7 @@ void MainWindow::showDiscussion(int number)
                 .arg(found->commentCount() == 1 ? QString()
                                                 : QStringLiteral("s"))
                 .arg(formatIssueRelativeTime(found->updatedAt()).toHtmlEscaped())
-                .arg(who.toHtmlEscaped()));
+                .arg(userProfileLinkHtml(found->authorName, who)));
     }
     if (m_discussionComposer) {
         m_discussionComposer->setEnabled(found->status == QLatin1String("open"));
@@ -510,7 +514,7 @@ void MainWindow::renderDiscussionThread(const Discussion &discussion)
         const bool isAnswer = !isOpen && !answerId.isEmpty() && ev.id == answerId;
         QString header =
             QStringLiteral("<b>%1</b> %2 %3")
-                .arg(who.toHtmlEscaped(),
+                .arg(userProfileLinkHtml(ev.authorName, who),
                      isOpen ? QStringLiteral("opened")
                             : QStringLiteral("commented"),
                      formatIssueRelativeTime(ev.ts).toHtmlEscaped());

@@ -742,10 +742,11 @@ def test_native_repositories_share_one_logo_and_public_review_ui():
     # Nothing else is served as a logo (adhoc #23).
     assert "_committed_repository_logo_url" in ENTRY_TEXT
     assert "deterministic_logo" not in ENTRY_TEXT
-    assert "data-repo-logo-suggestion-form" in REPO_INIT_JS
-    assert "owner or a moderator must approve" in REPO_INIT_JS
+    # The owner changes the logo from the Settings tab and reviews suggested
+    # artwork there; the repository page no longer offers a suggestion form.
+    assert "data-repo-settings-logo-form" in REPO_INIT_JS
+    assert "data-repo-logo-suggestion-form" not in REPO_INIT_JS
     assert "/logo-suggestions" in REPO_CONTENT_JS
-    assert "rightsConfirmed: true" in REPO_CONTENT_JS
     assert "data-repo-logo-review" in REPO_CONTENT_JS
     assert "nativeRepositoryLogoMarkup" in REPO_LIST_JS
     assert "data-native-repo-logo" in REPO_LIST_JS
