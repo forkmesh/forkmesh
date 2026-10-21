@@ -90,12 +90,46 @@ a week ago for all time).
 | Comment on an issue or pull request (at most 3 per thread, slash commands excluded) | 1 |
 
 Ties share a rank (1, 1, 3). Rank movement compares with the previous window
-of the same length; for all time, with the ranking a week earlier. Accounts
-that look automated (`[bot]`, `-bot`, `github-actions`, dependabot, renovate,
-`*-actions`, the deploy and Actions identities) are left out of the
-leaderboard, streaks and newcomers but still appear in lists and counts.
-People are matched by their case-folded name, so a git author name and a
-ledger account only merge when they are spelled the same.
+of the same length; for all time, with the ranking a week earlier. People are
+matched by their case-folded name, so a git author name and a ledger account
+only merge when they are spelled the same.
+
+### Humans only
+
+The owner decided (2026-10-21) that only people are ranked. Bots, AI agents
+and mirror nodes are left out of the leaderboard, newcomers, top contributors,
+streaks and milestones, and their commits are left out of the commit counts,
+the "N authors" sentence, line counts and the committers chart; the "How the
+score works" note says so. Pull requests and issues they opened still appear
+in the lists and the overview counts, but not in the "by N people" counts. A
+human commit with a `Co-Authored-By:` agent trailer is credited to the human.
+
+One rule set in `tools/mirror_gateway.py` (`_pulse_is_automated`) decides:
+
+- names (`PULSE_AUTOMATED_NAMES`, whole name, case-insensitive): bot shapes
+  (`[bot]`, `-bot`, `github-actions`, `*-actions`, dependabot, renovate), the
+  platform's own service identities (`ForkMesh …`, `… Reconciler`), AI agents
+  (`Claude` and `Claude Code/Opus/Sonnet/Haiku …`, Codex, ChatGPT and `GPT-…`,
+  Gemini, Jules, Copilot, Llama, Devin, Cursor Agent, Aider, OpenHands, Sweep)
+  and mirror nodes (`fmnext-*`, `mirror<digits>`, `*-mirror`). Names are
+  matched whole, so "Claude Monet" or "Mirror Lake" are people;
+- author emails (`PULSE_AUTOMATED_EMAILS`, globs): `[bot]` addresses, the
+  platform's `@forkmesh.local`/`.invalid` and `*-reconciler@` identities, and
+  the fixed addresses agents commit with (`noreply@anthropic.com`,
+  `llama@cloudflare.com`, OpenAI, Devin, Cursor, Jules and Copilot noreply
+  addresses);
+- the gateway's own node name (`config.node`), the one account kind the
+  gateway knows without a lookup;
+- `ACTIVITY_EXCLUDE_AUTHORS`: a comma list of globs (case-insensitive,
+  `fnmatch`, so a literal `[` is written `[[]`) matched against the author
+  name and email, for instance-specific accounts. Set it in the environment of
+  the node service that runs the gateway (`/etc/forkmesh/node.env` or a
+  systemd drop-in for `forkmesh-mirror-node.service`); the gateway reads it
+  each time it computes an answer, so a change shows from the next refresh
+  window.
+
+Ledger records carry only an account name, so a pull request or comment
+author is judged by name and the configured globs.
 
 A streak is consecutive UTC days with any scored or ledger activity (commit,
 pull request opened or merged, review, comment, issue opened or closed). The

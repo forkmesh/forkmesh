@@ -108,6 +108,12 @@ def make_pulse_repository(tmp_path):
     _append(source, "alice", NOW_S - DAY, "alice")
     _append(source, "deps", NOW_S - DAY + 60, "dependabot[bot]",
             email="dependabot[bot]@users.noreply.github.com")
+    _append(source, "agent", NOW_S - DAY + 70, "Claude Opus 5.5",
+            email="noreply@anthropic.com")
+    _append(source, "agent", NOW_S - DAY + 80, "Release Helper",
+            email="llama@cloudflare.com")
+    _append(source, "node", NOW_S - DAY + 90, "mirror7",
+            email="mirror7@users.noreply.example.test")
     run(["git", "switch", "-q", "-c", "topic"], source)
     _append(source, "carol", NOW_S - 2 * DAY + 3600, "carol")
     run(["git", "switch", "-q", "main"], source)
@@ -244,20 +250,19 @@ def test_overview_lists_and_commit_summary(pulse_app):
         "number": 8, "title": "Issue 8", "author": "frank",
         "status": "open", "at": (NOW_S - 2 * DAY) * MS}
     summary = value["summary"]
-    assert summary["main"] == 12
-    assert summary["all"] == 13
-    assert summary["authors"] == 5
-    assert summary["additions"] == 12 and summary["deletions"] == 0
-    assert summary["filesChanged"] == 4
+    assert summary["main"] == 11
+    assert summary["all"] == 12
+    assert summary["authors"] == 4
+    assert summary["additions"] == 11 and summary["deletions"] == 0
+    assert summary["filesChanged"] == 3
     assert summary["partial"] is False and summary["truncated"] is False
     assert [(row["name"], row["commits"]) for row in value["committers"]] == [
-        ("alice", 9), ("bob", 1), ("carol", 1), ("dependabot[bot]", 1)]
-    assert "avatarUrl" not in value["committers"][3]
+        ("alice", 9), ("bob", 1), ("carol", 1)]
     series = value["series"]
     assert series["stepSeconds"] == DAY
     assert len(series["buckets"]) == 7
-    assert sum(bucket["commits"] for bucket in series["buckets"]) == 12
-    assert sum(bucket["additions"] for bucket in series["buckets"]) == 12
+    assert sum(bucket["commits"] for bucket in series["buckets"]) == 11
+    assert sum(bucket["additions"] for bucket in series["buckets"]) == 11
 
 
 def test_leaderboard_scores_breakdown_and_rank_movement(pulse_app):
@@ -403,8 +408,53 @@ def test_scoring_helpers_cap_and_rank():
     assert [(rank, key) for rank, key, _score, _parts in ranked] == [
         (1, "a"), (1, "b"), (3, "c")]
     for name in ("dependabot[bot]", "github-actions", "renovate", "ci-bot",
-                 "release-actions", ""):
-        assert gateway._pulse_is_bot(name)
-    assert not gateway._pulse_is_bot("Robot Hughes")
+                 "release-actions", "", "Claude", "Claude Opus 5.5",
+                 "claude code", "Codex", "OpenAI Codex", "ChatGPT", "GPT-5",
+                 "Gemini", "Gemini Code Assist", "GitHub Copilot",
+                 "copilot-swe-agent", "Llama", "Devin", "Devin AI",
+                 "Cursor Agent", "fmnext-n1", "fmnext-r1", "mirror35",
+                 "eu-mirror", "ForkMesh Deploy", "ForkMesh Issue Reconciler"):
+        assert gateway._pulse_is_automated(name), name
+    for name, email in (
+            ("Release Helper", "llama@cloudflare.com"),
+            ("Someone", "noreply@anthropic.com"),
+            ("Pat", "198982749+Copilot@users.noreply.github.com"),
+            ("Deploy", "deploy@forkmesh.local"),
+            ("Helper", "helper[bot]@users.noreply.github.com")):
+        assert gateway._pulse_is_automated(name, email), name
+    for name in ("Robot Hughes", "Claude Monet", "Claudia", "Gemma Lee",
+                 "Mirror Lake", "Devina", "alice"):
+        assert not gateway._pulse_is_automated(name, "x@example.test"), name
+    for email in ("bob@example.test", "pat@example.test", "bot@example.test"):
+        assert not gateway._pulse_is_automated("Pat", email), email
+    rules = gateway.pulse_exclusion_rules(
+        "Node-A", {gateway.PULSE_EXCLUDE_ENV: " build-*, *@ci.example.test,,"})
+    assert rules == ("*@ci.example.test", "build-*", "node-a")
+    assert gateway._pulse_is_automated("Build-Agent", "", rules)
+    assert gateway._pulse_is_automated("Pat", "pat@ci.example.test", rules)
+    assert gateway._pulse_is_automated("node-a", "", rules)
+    assert not gateway._pulse_is_automated("Pat", "pat@example.test", rules)
+    assert gateway.pulse_exclusion_rules("", {}) == ()
     assert gateway._pulse_ms("1700000000") == 1_700_000_000_000
     assert gateway._pulse_ms("bad") == 0
+
+
+def test_configured_exclusions_and_the_gateway_node_are_never_ranked(
+        tmp_path, monkeypatch):
+    monkeypatch.setenv(gateway.PULSE_EXCLUDE_ENV, "bob*")
+    bare = make_pulse_repository(tmp_path)
+    app = _application(tmp_path, bare, [NOW])
+    try:
+        value = json.loads(read(app, "period=1w").body)
+        names = {row["name"] for row in value["leaderboard"]}
+        assert names == {"alice", "carol"}
+        assert value["summary"]["main"] == 10
+        assert value["summary"]["authors"] == 3
+        assert value["scoring"]["excludesAutomated"] is True
+        assert all(row["name"] != "bob" for row in value["committers"])
+        assert value["issues"]["opened"]["authors"] == 2
+        mine = json.loads(read(app, "period=1w&person=bob").body)["person"]
+        assert mine["found"] is False and mine["rank"] is None
+    finally:
+        app.close()
+    assert "mirror-a" in gateway.pulse_exclusion_rules("mirror-a", {})

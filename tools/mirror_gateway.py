@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import base64
 import bisect
+import fnmatch
 from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -3741,22 +3742,55 @@ def _pulse_key(name: Any) -> str:
     return " ".join(str(name or "").split()).casefold()
 
 
-def _pulse_is_bot(name: Any, email: Any = "") -> bool:
+PULSE_EXCLUDE_ENV = "ACTIVITY_EXCLUDE_AUTHORS"
+PULSE_AUTOMATED_NAMES = re.compile(
+    r"^(?:"
+    r".*\[bot\]|.*(?:^|[\s_-])bot|github[\s_-]?actions?|[a-z0-9][a-z0-9_-]*-actions"
+    r"|dependabot|renovate|forkmesh(?: [a-z]+)?|.* reconciler"
+    r"|claude(?: (?:code|opus|sonnet|haiku|instant|agent)\b.*| \d.*)?"
+    r"|(?:openai )?codex(?: cli| agent)?|(?:chat)?gpt(?:[\s-].*)?|o\d(?:-mini)?"
+    r"|(?:google )?gemini(?: (?:code assist|cli|agent))?|jules"
+    r"|(?:github )?copilot(?: agent)?|copilot-swe-agent|llama(?: \d.*)?"
+    r"|devin(?: ai)?|cursor(?: agent)?|aider|openhands|sweep(?: ai)?"
+    r"|fmnext-[a-z0-9-]+|mirror\d+|[a-z0-9][a-z0-9-]*-mirror"
+    r")$",
+    re.IGNORECASE)
+PULSE_AUTOMATED_EMAILS = (
+    "*[[]bot[]]@*", "*@forkmesh.local", "*@forkmesh.invalid", "*-reconciler@*",
+    "noreply@anthropic.com", "llama@cloudflare.com", "noreply@openai.com",
+    "codex@openai.com", "*@devin.ai", "cursoragent@cursor.com",
+    "jules@google.com", "*copilot*@users.noreply.github.com",
+)
+
+
+def pulse_exclusion_rules(
+    node: str = "", environ: Mapping[str, str] | None = None
+) -> tuple[str, ...]:
+    raw = (os.environ if environ is None else environ).get(
+        PULSE_EXCLUDE_ENV, "")
+    rules = [item.strip().casefold() for item in str(raw).split(",")]
+    if node:
+        rules.append(str(node).strip().casefold())
+    return tuple(sorted({rule for rule in rules if rule}))[:200]
+
+
+def _pulse_is_automated(
+    name: Any, email: Any = "", rules: Iterable[str] = ()
+) -> bool:
     name = " ".join(str(name or "").split())
-    email = str(email or "").strip().lower()
+    email = str(email or "").strip().casefold()
     if not name and not email:
         return True
-    lowered = name.lower()
-    return bool(
-        re.search(r"\[bot\]$", name, re.IGNORECASE)
-        or "[bot]@" in email
-        or re.fullmatch(r"github[\s_-]?actions?", name, re.IGNORECASE)
-        or lowered in ("dependabot", "renovate")
-        or re.search(r"(?:^|[\s_-])bot$", name, re.IGNORECASE)
-        or re.fullmatch(r"[a-z0-9][a-z0-9_-]*-actions", name, re.IGNORECASE)
-        or lowered in ("forkmesh actions", "forkmesh deploy")
-        or email == "actions@forkmesh.local"
-    )
+    folded = name.casefold()
+    if name and PULSE_AUTOMATED_NAMES.fullmatch(name):
+        return True
+    if email and any(fnmatch.fnmatchcase(email, pattern)
+                     for pattern in PULSE_AUTOMATED_EMAILS):
+        return True
+    return any(
+        fnmatch.fnmatchcase(folded, rule)
+        or (email and fnmatch.fnmatchcase(email, rule))
+        for rule in rules)
 
 
 def _pulse_document(raw: bytes) -> tuple[dict[str, str], str]:
@@ -5916,14 +5950,16 @@ class GitRepository:
                 cursor += size + 1
         return found
 
-    def _pulse_commit_index(self, main: str) -> dict[str, Any]:
+    def _pulse_commit_index(
+        self, main: str, rules: tuple[str, ...]
+    ) -> dict[str, Any]:
         state = self._pulse_commits
-        if state.get("commit") == main:
+        if state.get("commit") == main and state.get("rules") == rules:
             return state
         people: dict[str, tuple[str, str]] = {}
         times: dict[str, list[int]] = {}
         revision = main
-        if state.get("commit"):
+        if state.get("commit") and state.get("rules") == rules:
             code, _output = _run_git_status(
                 self.git_dir,
                 ["merge-base", "--is-ancestor", state["commit"], main],
@@ -5947,7 +5983,7 @@ class GitRepository:
                 continue
             name = " ".join(fields[0].split())[:100]
             email = fields[1].strip()[:200]
-            if _pulse_is_bot(name, email):
+            if _pulse_is_automated(name, email, rules):
                 continue
             key = _pulse_key(name or email)
             if not key:
@@ -5956,7 +5992,8 @@ class GitRepository:
             people.setdefault(key, (name or email, email))
         for key, values in added.items():
             times[key] = sorted(times.get(key, []) + values)
-        state = {"commit": main, "people": people, "times": times}
+        state = {
+            "commit": main, "rules": rules, "people": people, "times": times}
         self._pulse_commits = state
         return state
 
@@ -6106,19 +6143,19 @@ class GitRepository:
         self._pulse_pulls = (key, records)
         return self._pulse_pulls
 
-    def _pulse_index(self) -> dict[str, Any]:
+    def _pulse_index(self, rules: tuple[str, ...] = ()) -> dict[str, Any]:
         main = self.resolve_commit("HEAD")
-        commits = self._pulse_commit_index(main)
+        commits = self._pulse_commit_index(main, rules)
         issues_key, issues = self._pulse_issue_index(main)
         pulls_key, pulls = self._pulse_pull_index()
-        key = (main, issues_key, pulls_key)
+        key = (main, issues_key, pulls_key, rules)
         if self._pulse_ledger.get("key") == key:
             return self._pulse_ledger
         names: dict[str, str] = {}
 
         def person(name: str) -> str:
             identity = _pulse_key(name)
-            if not identity or _pulse_is_bot(name):
+            if not identity or _pulse_is_automated(name, "", rules):
                 return ""
             names.setdefault(identity, " ".join(str(name).split()))
             return identity
@@ -6186,6 +6223,7 @@ class GitRepository:
                     avatars[identity] = avatar
         ledger = {
             "key": key,
+            "rules": rules,
             "main": main,
             "names": names,
             "avatars": avatars,
@@ -6263,9 +6301,11 @@ class GitRepository:
         ).decode("utf-8", "replace").splitlines()
         authors: set[str] = set()
         every: set[str] = set()
+        rules = ledger["rules"]
         for row in branch_rows:
             fields = row.split("\x1f")
-            if len(fields) == 3:
+            if len(fields) == 3 and not _pulse_is_automated(
+                    fields[1], fields[2], rules):
                 every.add(fields[0])
                 authors.add(_pulse_key(fields[1] or fields[2]))
         main_rows = []
@@ -6276,7 +6316,8 @@ class GitRepository:
             max_output=MAX_JSON_OUTPUT,
         ).decode("utf-8", "replace").splitlines():
             fields = row.split("\x1f")
-            if len(fields) == 4 and fields[3].isdigit():
+            if len(fields) == 4 and fields[3].isdigit() and not (
+                    _pulse_is_automated(fields[1], fields[2], rules)):
                 main_rows.append((
                     fields[0].lower(), " ".join(fields[1].split())[:100],
                     fields[2].strip(), int(fields[3])))
@@ -6352,7 +6393,10 @@ class GitRepository:
             },
         }
 
-    def pulse(self, query: Mapping[str, str], now_seconds: int) -> dict[str, Any]:
+    def pulse(
+        self, query: Mapping[str, str], now_seconds: int,
+        rules: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
         period = pulse_period(query)
         person = pulse_person(query)
         spec = PULSE_PERIODS[period]
@@ -6360,7 +6404,7 @@ class GitRepository:
         end = pulse_window_end(period, now_seconds)
         start = max(0, end - spec["seconds"]) if spec["seconds"] else 0
         with self._pulse_lock:
-            ledger = self._pulse_index()
+            ledger = self._pulse_index(tuple(rules))
         today = now_seconds // 86400
         response: dict[str, Any] = {
             "ok": True,
@@ -6375,6 +6419,7 @@ class GitRepository:
                 "weights": dict(PULSE_SCORE_WEIGHTS),
                 "commitsPerDay": PULSE_COMMITS_PER_DAY,
                 "commentsPerThread": PULSE_COMMENTS_PER_THREAD,
+                "excludesAutomated": True,
             },
         }
         if spec["seconds"]:
@@ -6457,7 +6502,8 @@ class GitRepository:
                 "count": len(chosen),
                 "authors": len({
                     _pulse_key(record["author"]) for record in chosen
-                    if record["author"]
+                    if not _pulse_is_automated(
+                        record["author"], "", ledger["rules"])
                 }),
                 "items": [
                     {
@@ -11764,8 +11810,9 @@ class GatewayApplication:
                 now_seconds = int(self.clock_ms()) // 1000
                 return self._single_flight(
                     cache_key,
-                    lambda: _pulse_response(
-                        repository.pulse(query, now_seconds)),
+                    lambda: _pulse_response(repository.pulse(
+                        query, now_seconds,
+                        pulse_exclusion_rules(self.config.node))),
                 )
             function = {
                 "tree": repository.tree,

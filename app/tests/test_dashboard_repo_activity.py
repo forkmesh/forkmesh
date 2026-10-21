@@ -54,6 +54,8 @@ def test_the_view_has_no_inline_handlers_and_keeps_the_colour_roles():
     assert "innerHTML = data" not in source
     assert "bg-cta" not in source and "text-cta" not in source
     assert "prefers-reduced-motion" in source
+    assert "Bots, AI agents and mirror nodes aren't ranked" in source
+    assert "Excluding merges and automated accounts" in source
     for token in ("--contribution-pulls", "--dashboard-open"):
         assert token in source
 

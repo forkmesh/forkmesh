@@ -309,7 +309,7 @@
   function activitySummaryHtml(data) {
     const summary = data.summary || {};
     const branch = escapeHtml(data.branch || "the default branch");
-    const sentence = `Excluding merges, <strong>${activityPlural(summary.authors || 0, "author")}</strong> ${Number(summary.authors) === 1 ? "has" : "have"} pushed <strong>${activityPlural(summary.main || 0, "commit")}</strong> to <span class="font-mono">${branch}</span> and <strong>${activityPlural(summary.all || 0, "commit")}</strong> to all branches. On <span class="font-mono">${branch}</span>, <strong>${activityPlural(summary.filesChanged || 0, "file")}</strong> ${Number(summary.filesChanged) === 1 ? "has" : "have"} changed and there have been <strong class="text-success">${activityPlural(summary.additions || 0, "addition")}</strong> and <strong class="text-destructive">${activityPlural(summary.deletions || 0, "deletion")}</strong>.`;
+    const sentence = `Excluding merges and automated accounts, <strong>${activityPlural(summary.authors || 0, "author")}</strong> ${Number(summary.authors) === 1 ? "has" : "have"} pushed <strong>${activityPlural(summary.main || 0, "commit")}</strong> to <span class="font-mono">${branch}</span> and <strong>${activityPlural(summary.all || 0, "commit")}</strong> to all branches. On <span class="font-mono">${branch}</span>, <strong>${activityPlural(summary.filesChanged || 0, "file")}</strong> ${Number(summary.filesChanged) === 1 ? "has" : "have"} changed and there have been <strong class="text-success">${activityPlural(summary.additions || 0, "addition")}</strong> and <strong class="text-destructive">${activityPlural(summary.deletions || 0, "deletion")}</strong>.`;
     const notes = [];
     if (summary.partial) notes.push(`Line counts cover the ${formatCount(summary.measuredCommits || 0)} most recent commits so far; refresh in a moment for the rest.`);
     else if (summary.truncated) notes.push(`Line counts cover the ${formatCount(summary.measuredCommits || 0)} most recent commits on ${branch}.`);
@@ -401,7 +401,7 @@
     if (!person.found) {
       return `<section data-activity-you class="rounded-md border border-border p-4">
         <p class="text-sm font-semibold text-foreground">Your activity</p>
-        <p class="mt-1 text-sm text-muted-foreground">You have no recorded activity in this repository yet. Merged pull requests, reviews, closed issues and comments here all count toward the leaderboard.</p>
+        <p class="mt-1 text-sm text-muted-foreground">You have no recorded activity in this repository yet. Merged pull requests, reviews, closed issues and comments here all count toward the leaderboard. Bots, AI agents and mirror nodes aren't ranked.</p>
       </section>`;
     }
     const milestones = ACTIVITY_MILESTONES.map((milestone) => {
@@ -522,7 +522,7 @@
     return `<details class="border-t border-border px-4 py-3 text-sm" data-activity-scoring>
       <summary class="cursor-pointer text-foreground">How the score works</summary>
       <ul class="mt-2 grid gap-1 text-muted-foreground">${ACTIVITY_SCORE_PARTS.map((part) => `<li class="flex items-center gap-2"><span class="fm-activity-swatch" style="background:${part.color}" aria-hidden="true"></span><strong class="text-foreground">${formatCount(weights[part.key] || 0)} ${Number(weights[part.key]) === 1 ? "point" : "points"}</strong> per ${escapeHtml(part.one)}</li>`).join("")}</ul>
-      <p class="mt-2 text-xs leading-5 text-muted-foreground">At most ${formatCount(scoring.commitsPerDay || 0)} commits a day and ${formatCount(scoring.commentsPerThread || 0)} comments per issue or pull request count, a review counts once per pull request and never on your own, and slash commands are not comments. Automation accounts are left out. Arrows compare with ${activityView.scope === "all" ? "the ranking a week ago" : "the previous period of the same length"}.</p>
+      <p class="mt-2 text-xs leading-5 text-muted-foreground">At most ${formatCount(scoring.commitsPerDay || 0)} commits a day and ${formatCount(scoring.commentsPerThread || 0)} comments per issue or pull request count, a review counts once per pull request and never on your own, and slash commands are not comments. Bots, AI agents and mirror nodes aren't ranked, and their commits are left out of the counts. Arrows compare with ${activityView.scope === "all" ? "the ranking a week ago" : "the previous period of the same length"}.</p>
     </details>`;
   }
 
