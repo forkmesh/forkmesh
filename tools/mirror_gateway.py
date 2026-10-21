@@ -12973,10 +12973,14 @@ def main(argv: list[str] | None = None) -> int:
         # default action terminates the process, so hold an early request
         # until the live handler is installed below instead of dying.
         original_hup_handler = signal.getsignal(signal.SIGHUP)
+        original_usr1_handler = signal.getsignal(signal.SIGUSR1)
         early_reload = threading.Event()
+        early_invalidation = threading.Event()
         if not args.check:
             signal.signal(
                 signal.SIGHUP, lambda *_arguments: early_reload.set())
+            signal.signal(
+                signal.SIGUSR1, lambda *_arguments: early_invalidation.set())
         application = GatewayApplication(config)
         if args.check:
             summary = {
@@ -12997,7 +13001,6 @@ def main(argv: list[str] | None = None) -> int:
             }
             print(_canonical_json(summary))
             return 0 if summary["ok"] else 1
-        application.prewarm_memory_caches()
         server = MirrorGatewayServer(
             (config.listen_host, config.listen_port), application
         )
@@ -13007,7 +13010,7 @@ def main(argv: list[str] | None = None) -> int:
         # validated application in place, leaving the listener continuously
         # available to visitors.
         previous_hup_handler = original_hup_handler
-        previous_usr1_handler = signal.getsignal(signal.SIGUSR1)
+        previous_usr1_handler = original_usr1_handler
         signal.signal(signal.SIGHUP, lambda *_arguments: server.request_reload())
         if early_reload.is_set():
             server.request_reload()
@@ -13015,6 +13018,8 @@ def main(argv: list[str] | None = None) -> int:
             signal.SIGUSR1,
             lambda *_arguments: server.request_cache_invalidation(),
         )
+        if early_invalidation.is_set():
+            server.request_cache_invalidation()
         try:
             record_gateway_generation(
                 config.config_path, config.generation_sha256)
@@ -13030,6 +13035,7 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 flush=True,
             )
+            server.start_prewarm()
             try:
                 server.serve_forever(poll_interval=0.5)
             except KeyboardInterrupt:
