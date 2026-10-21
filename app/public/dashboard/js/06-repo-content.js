@@ -8664,12 +8664,24 @@
         <a${state.selectedRepo ? ` href="${escapeHtml(`${repoLinkUrl(state.selectedRepo)}/projects`)}"` : ""} data-dashboard-repo-tab="projects" class="flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-[14px] text-foreground transition-colors hover:bg-secondary"><i data-lucide="table-2" class="h-4 w-4 text-muted-foreground"></i>Projects</a>
         ${section("Labels", labels.map(([label, count]) => row(`data-repo-issue-label-view="${escapeHtml(label)}"`,
           String(filters.label || "").toLowerCase() === label.toLowerCase(),
-          `<span aria-hidden="true" class="h-3 w-3 shrink-0 rounded-full" style="background:hsl(${issueLabelHue(label)} 70% 55%)"></span>`, label, count)))}
+          issueLabelSwatch(label), label, count)))}
         ${section("Milestones", milestones.map(([milestone, count]) => row(`data-repo-issue-milestone-view="${escapeHtml(milestone)}"`,
           String(filters.milestone || "").toLowerCase() === milestone.toLowerCase(),
           `<i data-lucide="milestone" class="h-4 w-4 shrink-0 text-muted-foreground"></i>`, milestone, count)))}
       </div>
       ${renderCollectionViewsFooter()}</div>`;
+  }
+
+  // A label's swatch: its colour dot, or for Hacktoberfest a small pumpkin
+  // that wiggles a few times when the list first paints (still for viewers
+  // who ask for reduced motion).
+  function issueLabelSwatch(label) {
+    if (!/^hacktoberfest\b/i.test(String(label || ""))) {
+      return `<span aria-hidden="true" class="h-3 w-3 shrink-0 rounded-full" style="background:hsl(${issueLabelHue(label)} 70% 55%)"></span>`;
+    }
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    const wiggle = still ? "" : '<animateTransform attributeName="transform" type="rotate" values="0 16 28;-14 16 28;12 16 28;-8 16 28;5 16 28;0 16 28" dur="0.9s" begin="0.3s" repeatCount="3"/>';
+    return `<svg aria-hidden="true" viewBox="0 0 32 32" class="h-4 w-4 shrink-0 overflow-visible"><g>${wiggle}<path d="M16 7.5V4.2c0-.9.6-1.6 1.5-1.8l1.3-.3" stroke="#4d7c0f" stroke-width="2" fill="none" stroke-linecap="round"/><path d="M16 8c-2-1.8-6.5-1.6-9.5.8C3.2 11.4 2 15.2 2.6 19c.8 5 4.6 9 9.4 9 1.5 0 2.9-.4 4-1.1 1.1.7 2.5 1.1 4 1.1 4.8 0 8.6-4 9.4-9 .6-3.8-.6-7.6-3.9-10.2C22.5 6.4 18 6.2 16 8Z" fill="#f97316"/><path d="M16 8.5c-1.2 2.5-1.6 6.5-1 10.5.4 3 1 5.8 1 7.9M10.5 8.6c-2.4 2.6-3.3 6.8-2.8 11 .3 2.8 1.3 5.4 2.6 7M21.5 8.6c2.4 2.6 3.3 6.8 2.8 11-.3 2.8-1.3 5.4-2.6 7" stroke="#c2410c" stroke-width="1" fill="none" opacity=".55"/><path d="M7.5 14.5l3.4-2.6 1.8 3.9zM24.5 14.5l-3.4-2.6-1.8 3.9z" fill="#422006"/><path d="M8.5 20.5l2 1.6 1.8-1.4 1.9 1.6 1.8-1.4 1.9 1.6 1.8-1.4 1.9 1.6 1.9-1.6c-.6 2.6-3.6 4.3-7.4 4.3s-6.9-1.9-7.6-4.9z" fill="#422006"/></g></svg>`;
   }
 
   function renderCollectionViewsFooter() {
@@ -8809,9 +8821,24 @@
     }
   }
 
+  // The issue list's label filter lives in the address bar (?label=…), so a
+  // filtered list can be linked and survives a refresh. Only the list route
+  // is touched; an open issue keeps its own address.
+  function syncIssueLabelAddress() {
+    if (!/\/issues\/?$/.test(location.pathname)) return;
+    const label = String(issueFilterState().label || "");
+    const params = new URLSearchParams(location.search);
+    if ((params.get("label") || "") === label) return;
+    if (label) params.set("label", label);
+    else params.delete("label");
+    const search = params.toString();
+    history.replaceState(history.state, "", `${location.pathname}${search ? `?${search}` : ""}${location.hash}`);
+  }
+
   function renderRepoIssues() {
     const container = $("[data-repo-issues]");
     if (!container) return;
+    syncIssueLabelAddress();
     const issuesView = state.issuesView;
     const filtered = issuesView.items.filter((issue) => {
       // A deleted issue (its creator tombstoned it) is shown only under "All",
