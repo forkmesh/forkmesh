@@ -194,6 +194,7 @@ _account_users = _LazyModule("account_users")
 # Away flag + custom status (emoji, text, auto-clear): see account_status.py.
 _account_status = _LazyModule("account_status")
 _account_activity = _LazyModule("account_activity")
+_chat_member_stats = _LazyModule("chat_member_stats")
 _public_user_status = _account_status.export("public_user_status")
 _account_chat_retention = _account_status.export("account_chat_retention")
 

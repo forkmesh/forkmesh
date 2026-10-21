@@ -4422,9 +4422,9 @@
               align-items: center;
               gap: 12px;
               box-sizing: border-box;
-              height: 40px;
+              min-height: 40px;
               margin: 1px 0;
-              padding: 0 8px;
+              padding: 4px 8px;
               border-radius: 6px;
               color: var(--dc-text);
               font-size: 14px;
@@ -4450,6 +4450,58 @@
               min-width: 0;
               overflow: hidden;
               text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            html:not([data-world-embed="1"]) [data-dashboard-chat-member-text] {
+              display: flex;
+              flex: 0 1 auto;
+              flex-direction: column;
+              min-width: 0;
+              line-height: 18px;
+            }
+
+            html:not([data-world-embed="1"]) [data-dashboard-chat-member-stats] {
+              display: block;
+              min-width: 0;
+              color: var(--dc-muted);
+              font-size: 11px;
+              font-weight: 400;
+              line-height: 14px;
+              font-variant-numeric: tabular-nums;
+            }
+
+            html:not([data-world-embed="1"]) [data-dashboard-chat-member-stats][hidden] {
+              display: none;
+            }
+
+            html:not([data-world-embed="1"]) [data-member-stats-visible] {
+              display: flex;
+              flex-wrap: wrap;
+              column-gap: 8px;
+              height: 14px;
+              overflow: hidden;
+              white-space: nowrap;
+            }
+
+            html:not([data-world-embed="1"]) [data-member-stat] {
+              display: inline-flex;
+              flex: none;
+              align-items: center;
+              gap: 3px;
+              height: 14px;
+            }
+
+            html:not([data-world-embed="1"]) [data-member-stat] svg {
+              flex: none;
+            }
+
+            html:not([data-world-embed="1"]) [data-member-stats-label] {
+              position: absolute;
+              width: 1px;
+              height: 1px;
+              overflow: hidden;
+              clip: rect(0 0 0 0);
               white-space: nowrap;
             }
 
@@ -4481,6 +4533,27 @@
 
               body[data-page="chat"]:has([data-dashboard-chat-view]:not([data-members-hidden])) .fmc-pill {
                 right: 256px;
+              }
+            }
+
+            @media (max-width: 1199px) {
+              html:not([data-world-embed="1"]) [data-dashboard-chat-view] {
+                position: relative;
+              }
+
+              html:not([data-world-embed="1"]) [data-dashboard-chat-members-toggle] {
+                display: grid;
+              }
+
+              html:not([data-world-embed="1"]) [data-dashboard-chat-view][data-members-open] [data-dashboard-chat-members] {
+                display: block;
+                position: absolute;
+                top: 0;
+                right: 0;
+                bottom: 0;
+                z-index: 40;
+                width: min(280px, calc(100% - 48px));
+                box-shadow: var(--dc-shadow);
               }
             }
 
