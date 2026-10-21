@@ -112,9 +112,20 @@ rules.
   source branch. Pushes, the "update branch" mutation (it moves the pull
   request's own branch), agent merges, branch operations and operator imports
   never trigger it; on a protected branch the merge is the only way in.
+- **Only a protected branch.** The installer runs as root from whatever the
+  source branch holds, so whoever can merge into it can deploy code to this
+  server. The source branch must be protected
+  ([branch-protection.md](branch-protection.md): merged only after an owner
+  or admin who is not the author approves, never pushed to directly):
+  turning the card on is refused otherwise (`auto_unprotected`), and a merge
+  arriving after protection was switched off, or while the setting cannot be
+  read, files nothing (outcome `unprotected`, audited as refused). Protection
+  is also what keeps a direct push from riding along with the next merge,
+  since the update fetches the branch tip, not the merged commit.
 - **What it does.** The same request the button files, with action `auto`.
-  The request is one file: if one is already waiting, the merge joins it
-  (`queued`); if an update is running, the new file makes the path unit run
+  The request is one file: if an `update` or `auto` is already waiting, the
+  merge joins it (`queued`); a waiting `check` is replaced by `auto`, so a
+  check never swallows a merge's update; if an update is running, the new file makes the path unit run
   exactly one more update when it finishes, and that run fetches the latest
   commit, so any number of merges during a run cost one extra update. The
   oneshot service never runs twice at once.

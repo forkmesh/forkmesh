@@ -507,6 +507,7 @@ class SelfUpdateWorld:
         self.settings = {}
         self.audits = []
         self.base = "main"
+        self.protected = True
         monkeypatch.setattr(server_update, "INSTANCE_REQUEST_ROOT",
                             str(tmp_path) + "/")
         monkeypatch.setattr(server_update, "INSTANCE_STATUS_ROOT",
@@ -536,13 +537,20 @@ class SelfUpdateWorld:
         async def pull(env, owner, repo, number):
             return {"base": self.base, "number": str(number)}
 
+        async def protected_refs(env, owner, repo):
+            if self.protected is None:
+                raise RuntimeError("settings unavailable")
+            return ["refs/heads/main"] if self.protected else []
+
         async def audit(env, actor, action, kind, target, outcome, details):
             self.audits.append((actor, action, target, outcome, details))
 
         for name, value in {
                 "d1_first": d1_first, "d1_run": d1_run,
                 "_branch_protection": SimpleNamespace(
-                    storage_owner=storage_owner),
+                    storage_owner=storage_owner, protected_refs=protected_refs,
+                    branch_is_protected=lambda branch, refs: (
+                        "refs/heads/" + branch) in refs),
                 "_pull_lifecycle_record": pull,
                 "_audit_sensitive_action": audit,
                 "Date": SimpleNamespace(now=lambda: NOW)}.items():
@@ -579,6 +587,22 @@ def test_a_merge_into_the_source_branch_files_one_update(tmp_path, monkeypatch):
                                              "bob", {})) == ""
 
 
+def test_a_merge_never_deploys_from_an_unprotected_source_branch(tmp_path, monkeypatch):
+    world = SelfUpdateWorld(tmp_path, monkeypatch)
+    asyncio.run(world.module.save(world.env, True))
+    for protected in (False, None):
+        world.protected = protected
+        assert world.merge() == "unprotected" and not world.request.exists()
+    assert world.audits[-1][3] == "refused"
+    world.protected = True
+    world.request.write_text("check\n")
+    assert world.merge() == "requested"
+    assert world.request.read_text() == "auto\n"
+    world.request.write_text("update\n")
+    assert world.merge() == "queued"
+    assert world.request.read_text() == "update\n"
+
+
 def test_the_console_turns_automatic_updates_on_and_shows_the_last_merge(
         tmp_path, monkeypatch):
     world = SelfUpdateWorld(tmp_path, monkeypatch)
@@ -613,10 +637,15 @@ def test_the_console_turns_automatic_updates_on_and_shows_the_last_merge(
     assert "The git node program was built from older server code" in page
     assert "bbbbbbbbbbbb" in page
     assert "notice=auto_off" in post(auto="0").headers["location"]
+    world.protected = False
+    assert "notice=auto_unprotected" in post(auto="1").headers["location"]
+    assert world.settings["self_update"] == '{"auto":false}'
+    world.protected = True
     world.env.BUILD_INFO_FILE = str(tmp_path / "missing.json")
     env.BUILD_INFO_FILE = world.env.BUILD_INFO_FILE
     assert "notice=auto_no_target" in post(auto="1").headers["location"]
-    assert [a[2] for a in audits] == ["auto_on", "auto_off", "auto_no_target"]
+    assert [a[2] for a in audits] == ["auto_on", "auto_off", "auto_unprotected",
+                                      "auto_no_target"]
 
 
 def test_the_merge_handler_hands_merges_to_the_self_update():

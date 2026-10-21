@@ -274,8 +274,10 @@ admin who is not the author approves it, an owner merges it, and the instance
 updates itself; `build-info.json` and the Update page show the merged commit.
 The protected branch ([app/branch-protection.md](app/branch-protection.md))
 is what keeps unreviewed code from deploying: nobody can push, edit or merge
-into it any other way. The operator's `instance-repo` stays a root-only
-bypass and never triggers an update.
+into it any other way. The console refuses to turn automatic updates on, and
+a merge files no update, while the source branch is not protected.
+The operator's `instance-repo` stays a root-only bypass and never triggers
+an update.
 
 ## Private admin console path
 

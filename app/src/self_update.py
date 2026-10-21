@@ -17,7 +17,7 @@ LAST_KEY = "self_update_last"
 OWNER_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,79}$")
 REPO_RE = re.compile(r"^[A-Za-z0-9._-]{1,80}$")
 BRANCH_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,120}$")
-OUTCOMES = ("requested", "queued", "write_failed")
+OUTCOMES = ("requested", "queued", "write_failed", "unprotected")
 
 
 def parse(doc):
@@ -125,6 +125,15 @@ async def same_repository(env, owner, repo, wanted_owner, wanted_repo):
         await protection.storage_owner(env, wanted_owner, wanted_repo))
 
 
+async def source_protected(env, owner, repo, branch):
+    protection = _branch_protection  # noqa: F821
+    try:
+        refs = await protection.protected_refs(env, owner, repo)
+    except Exception:
+        return False
+    return protection.branch_is_protected(branch, refs)
+
+
 async def on_merge(env, owner, repo, pull_number, actor, result):
     if server_update.mode(env) != "instance":
         return ""
@@ -142,7 +151,9 @@ async def on_merge(env, owner, repo, pull_number, actor, result):
     if str((record or {}).get("base") or "").strip() != branch:
         return ""
     status = server_update.instance_status(env)
-    if status["requested"]:
+    if not await source_protected(env, wanted_owner, wanted_repo, branch):
+        outcome = "unprotected"
+    elif status["requested"] in ("update", "auto"):
         outcome = "queued"
     elif server_update.request_instance(env, "auto"):
         outcome = "requested"
@@ -158,7 +169,7 @@ async def on_merge(env, owner, repo, pull_number, actor, result):
     await _audit_sensitive_action(  # noqa: F821
         env, actor, "admin.auto_update", "server",
         wanted_owner + "/" + wanted_repo,
-        "refused" if outcome == "write_failed" else "success",
+        "refused" if outcome in ("write_failed", "unprotected") else "success",
         {"pullNumber": int(pull_number), "branch": branch,
          "commit": merged, "outcome": outcome})
     return outcome

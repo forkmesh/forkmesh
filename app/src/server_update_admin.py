@@ -49,6 +49,9 @@ NOTICES = {
     "auto_off": ("Merges no longer update this server automatically.", "ok"),
     "auto_no_target": ("This server's source is not a repository on this "
                        "instance, so merges cannot update it.", "bad"),
+    "auto_unprotected": ("Protect the source repository's default branch "
+                         "first: anyone who can merge into it could "
+                         "otherwise deploy code to this server.", "bad"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
@@ -57,7 +60,8 @@ ACTIONS = ("check_update", "start_update", "save_repo_paths",
 TRIGGER_LABELS = {"admin": "Update button", "merge": "Merged pull request"}
 OUTCOME_LABELS = {"requested": "Update requested",
                   "queued": "Joined the update already waiting",
-                  "write_failed": "The request could not be saved"}
+                  "write_failed": "The request could not be saved",
+                  "unprotected": "Skipped: the source branch is not protected"}
 LEGAL_MODES = (
     ("off", "Off: no link, the page is not found"),
     ("markdown", "A page on this site, written in Markdown"),
@@ -297,8 +301,10 @@ async def _auto_update_card(env, csrf_field, admin_query, now):
         description="When a pull request is merged into the branch this "
         "server is built from, ask for the same update the button above "
         "starts. Only that repository and branch count; pushes, pull "
-        "request branches and forks never do. Merges that land while an "
-        "update runs are picked up by one more update afterwards.",
+        "request branches and forks never do. The branch must be protected "
+        "(merged only after an owner or admin approves), because whoever "
+        "can merge into it deploys code to this server. Merges that land "
+        "while an update runs are picked up by one more update afterwards.",
         actions=shell.pill("On" if on else "Off", "ok" if on else ""),
         body=body)
 
@@ -681,6 +687,8 @@ async def _save_auto_update(env, form):
     wanted = await _self_update.current_target(env)
     if auto and not wanted:
         return "auto_no_target", {}
+    if auto and not await _self_update.source_protected(env, *wanted):
+        return "auto_unprotected", {}
     await _self_update.save(env, auto)
     return ("auto_on" if auto else "auto_off"), {
         "auto": auto, "repo": "/".join(wanted[:2]) if wanted else "",
