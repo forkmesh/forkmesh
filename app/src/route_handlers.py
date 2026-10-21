@@ -900,9 +900,13 @@ async def record_core_mail_event(env, event, now=None):
         event["message_id"] = row.get("message_id") or ""
         if str(event.get("event") or "") in mail_tracking.DELIVERY_EVENTS:
             await d1_run(
-                env, "UPDATE mail_sends SET status=?,status_at=?,dsn=? "
-                "WHERE send_id=?", str(event.get("event")), now,
-                mail_tracking.dsn(event.get("dsn")), row.get("send_id") or "")
+                env, "UPDATE mail_sends SET status=?,status_at=?,dsn=?,"
+                "cause=? WHERE send_id=?", str(event.get("event")), now,
+                mail_tracking.dsn(event.get("dsn")),
+                mail_tracking.bounce_cause(
+                    event.get("event"), event.get("dsn"),
+                    event.get("reason")),
+                row.get("send_id") or "")
         reason = mail_tracking.SUPPRESS_EVENTS.get(
             str(event.get("event") or ""))
         if reason == "unsubscribe" and mail_budget.is_marketing_kind(

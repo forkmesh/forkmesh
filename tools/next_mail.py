@@ -177,6 +177,7 @@ milter_protocol = 6
 milter_default_action = tempfail
 smtpd_milters = unix:opendkim/opendkim.sock
 non_smtpd_milters = $smtpd_milters
+internal_mail_filter_classes = bounce
 maximal_queue_lifetime = 2d
 bounce_queue_lifetime = 1d
 """.format(host=mail_host(node), domain=MAIL_DOMAIN)
@@ -187,6 +188,7 @@ UMask 007
 Mode s
 Canonicalization relaxed/relaxed
 Domain {domain}
+SubDomains yes
 Selector {selector}
 KeyFile /etc/opendkim/keys/{selector}.private
 Socket local:/var/spool/postfix/opendkim/opendkim.sock
