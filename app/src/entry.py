@@ -11191,6 +11191,54 @@ async def _chat_channel_deliver(env, channel_id, key_version, plain):
 
 
 CHAT_CALL_TICKET_TTL_MS = 60 * 1000
+CHAT_CALL_HEALTH_TTL_MS = 10 * 1000
+CHAT_CALL_HEALTH_TIMEOUT_SECONDS = 1.5
+CHAT_CALL_NODES_MAX = 16
+_CHAT_CALL_HEALTH = {}
+
+
+def chat_call_nodes(value):
+    nodes = []
+    for item in str(value or "").split(","):
+        url = item.strip()
+        if (url.startswith("wss://") and url.endswith("/calls/ws")
+                and len(url) <= 200 and url not in nodes
+                and not any(c in url for c in " \t\r\n?#@")):
+            nodes.append(url)
+    return nodes[:CHAT_CALL_NODES_MAX]
+
+
+def chat_call_health_url(node):
+    return "https://" + node[len("wss://"):-len("/ws")] + "/health"
+
+
+def chat_call_pick(room, nodes, healthy):
+    candidates = [node for node in nodes if node in healthy] or list(nodes)
+    if not candidates:
+        return ""
+    return max(candidates, key=lambda node: hashlib.sha256(
+        (str(room) + "\n" + node).encode()).hexdigest())
+
+
+async def _chat_call_healthy(nodes):
+    now = int(Date.now())
+    healthy = set()
+    for node in nodes:
+        checked = _CHAT_CALL_HEALTH.get(node)
+        if checked and now - checked[0] < CHAT_CALL_HEALTH_TTL_MS:
+            ok = checked[1]
+        else:
+            try:
+                response = await js_fetch_with_timeout(
+                    chat_call_health_url(node), {"method": "GET"},
+                    CHAT_CALL_HEALTH_TIMEOUT_SECONDS)
+                ok = int(getattr(response, "status", 0) or 0) == 200
+            except Exception:
+                ok = False
+            _CHAT_CALL_HEALTH[node] = (now, ok)
+        if ok:
+            healthy.add(node)
+    return healthy
 
 
 def chat_call_room(secret, channel_id):
@@ -11246,15 +11294,17 @@ class _ChatChannelsRuntime(_WorldCommunityRuntime):
         return bytes(
             js_crypto.getRandomValues(Uint8Array.new(32)).to_py()).hex()
 
-    def call_ticket(self, channel_id):
+    async def call_ticket(self, channel_id):
         secret = str(getattr(self.env, "FORKMESH_CALLS_SECRET", "") or "")
-        url = str(getattr(self.env, "FORKMESH_CALLS_URL", "") or "").strip()
-        if len(secret) < 32 or not url.startswith("wss://"):
+        nodes = chat_call_nodes(
+            getattr(self.env, "FORKMESH_CALLS_NODES", "") or "")
+        if len(secret) < 32 or not nodes:
             return None
         peer = bytes(
             js_crypto.getRandomValues(Uint8Array.new(16)).to_py()).hex()
         ticket = chat_call_ticket(secret, channel_id, peer, int(Date.now()))
-        ticket["url"] = url
+        ticket["url"] = chat_call_pick(
+            ticket["room"], nodes, await _chat_call_healthy(nodes))
         return ticket
 
     def webhook_url(self, token):

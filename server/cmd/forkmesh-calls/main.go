@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -52,8 +53,23 @@ func origins(list string) func(string) bool {
 	return func(origin string) bool { return allowed[origin] }
 }
 
+func readSecret() string {
+	if value := strings.TrimSpace(os.Getenv("FORKMESH_CALLS_SECRET")); value != "" {
+		return value
+	}
+	directory := os.Getenv("CREDENTIALS_DIRECTORY")
+	if directory == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(filepath.Join(directory, "FORKMESH_CALLS_SECRET"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(raw))
+}
+
 func main() {
-	secret := os.Getenv("FORKMESH_CALLS_SECRET")
+	secret := readSecret()
 	if len(secret) < 32 {
 		log.Fatal("forkmesh-calls: FORKMESH_CALLS_SECRET must be at least 32 characters")
 	}

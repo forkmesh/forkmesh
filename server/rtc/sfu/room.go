@@ -692,6 +692,26 @@ func (s *Server) Tick(now time.Time) {
 	}
 }
 
+func (s *Server) Close() {
+	s.mu.Lock()
+	rooms := make([]*Room, 0, len(s.rooms))
+	for _, room := range s.rooms {
+		rooms = append(rooms, room)
+	}
+	s.mu.Unlock()
+	for _, room := range rooms {
+		room.mu.Lock()
+		participants := make([]*Participant, 0, len(room.participants))
+		for _, participant := range room.participants {
+			participants = append(participants, participant)
+		}
+		room.mu.Unlock()
+		for _, participant := range participants {
+			room.leave(participant)
+		}
+	}
+}
+
 func (s *Server) Fingerprint() string {
 	return s.certificate.Fingerprint
 }

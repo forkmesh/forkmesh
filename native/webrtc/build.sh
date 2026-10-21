@@ -36,6 +36,15 @@ if [ "$(git rev-parse HEAD)" != "$WEBRTC_COMMIT" ]; then
   echo "libwebrtc checkout is not at the pinned commit $WEBRTC_COMMIT" >&2
   exit 1
 fi
+if [ "${WEBRTC_SYNC_ONLY:-0}" = 1 ]; then
+  echo "libwebrtc $WEBRTC_BRANCH ($WEBRTC_COMMIT) synced into $work/src"
+  exit 0
+fi
+git checkout -- .
+mkdir -p fm
+cp "$here"/fm/BUILD.gn "$here"/fm/fm_frame_crypto.h "$here"/fm/fm_frame_crypto.cc \
+  "$here"/fm/fm_frame_cryptor.h "$here"/fm/fm_frame_cryptor.cc fm/
+cp "$here"/fm/objc/RTCFmFrameCryptor.h "$here"/fm/objc/RTCFmFrameCryptor.mm sdk/objc/api/peerconnection/
 for patch in "$here"/patches/*.patch; do
   [ -e "$patch" ] || continue
   git apply --check "$patch"

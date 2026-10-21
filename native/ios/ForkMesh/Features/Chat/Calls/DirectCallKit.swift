@@ -1,3 +1,4 @@
+import AVFoundation
 import CallKit
 import FMApi
 import FMBase
@@ -280,6 +281,18 @@ extension DirectCallKit: CXProviderDelegate {
             CallRinger.shared.recheck()
         }
         action.fulfill()
+    }
+
+    nonisolated func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
+        #if canImport(WebRTC)
+        MainActor.assumeIsolated { NativeCallMedia.shared.callKitActivated(audioSession) }
+        #endif
+    }
+
+    nonisolated func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
+        #if canImport(WebRTC)
+        MainActor.assumeIsolated { NativeCallMedia.shared.callKitDeactivated(audioSession) }
+        #endif
     }
 
     nonisolated func provider(_ provider: CXProvider, perform action: CXSetMutedCallAction) {

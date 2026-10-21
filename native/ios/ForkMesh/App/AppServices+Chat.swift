@@ -177,7 +177,11 @@ struct ChatInstaller: AppServicesInstaller {
                 await direct.sendCallFrame(conversation, type: type, extra: extra)
             },
             look: studio.look)
+        #if canImport(WebRTC)
+        calls.peerFactory = NativeCallPeerFactory.shared
+        #else
         calls.peerFactory = studio.factory
+        #endif
         calls.onMissed = { (conversation: String, media: DirectCallKind) in
             Task { _ = await direct.send(conversation, text: "📞 Missed \(media.rawValue) call") }
         }

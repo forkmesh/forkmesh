@@ -1,5 +1,6 @@
 import ast
 import base64
+import hashlib
 import hmac
 import json
 from pathlib import Path
@@ -17,13 +18,14 @@ GO_TICKET = (
 
 
 def _ticket_functions():
-    namespace = {"base64": base64, "hmac": hmac, "json": json}
+    namespace = {"base64": base64, "hmac": hmac, "json": json, "hashlib": hashlib}
     for node in ast.parse(ENTRY).body:
         named = (
             isinstance(node, ast.FunctionDef)
-            and node.name in ("chat_call_room", "chat_call_ticket"))
+            and node.name in ("chat_call_room", "chat_call_ticket", "chat_call_nodes",
+                              "chat_call_health_url", "chat_call_pick"))
         constant = isinstance(node, ast.Assign) and any(
-            getattr(target, "id", "") == "CHAT_CALL_TICKET_TTL_MS"
+            getattr(target, "id", "") in ("CHAT_CALL_TICKET_TTL_MS", "CHAT_CALL_NODES_MAX")
             for target in node.targets)
         if named or constant:
             exec(compile(ast.Module([node], []), "entry.py", "exec"), namespace)
@@ -52,8 +54,44 @@ def test_only_members_of_a_private_channel_get_a_ticket():
     route = CHANNELS[CHANNELS.index("    if call_ticket:"):]
     route = route[:route.index("\n\n")]
     assert 'method != "POST"' in route
-    runtime = ENTRY[ENTRY.index("    def call_ticket(self, channel_id):"):]
+    runtime = ENTRY[ENTRY.index("    async def call_ticket(self, channel_id):"):]
     runtime = runtime[:runtime.index("\n\n")]
     assert "FORKMESH_CALLS_SECRET" in runtime
-    assert 'url.startswith("wss://")' in runtime
-    assert "len(secret) < 32" in runtime
+    assert "FORKMESH_CALLS_NODES" in runtime
+    assert "len(secret) < 32 or not nodes" in runtime
+    assert "await _chat_call_healthy(nodes)" in runtime
+    assert "await runtime.call_ticket(channel_id)" in CHANNELS
+
+
+NODES = ",".join(
+    "wss://n%d.next.forkmesh.com/calls/ws" % n for n in (2, 3, 4))
+
+
+def test_the_node_list_keeps_only_call_endpoints():
+    functions = _ticket_functions()
+    nodes = functions["chat_call_nodes"](
+        NODES + ",ws://n9.next.forkmesh.com/calls/ws, wss://evil@x/calls/ws,"
+        "wss://n2.next.forkmesh.com/calls/ws,wss://n5.next.forkmesh.com/other")
+    assert nodes == NODES.split(",")
+    assert functions["chat_call_health_url"](nodes[1]) == (
+        "https://n3.next.forkmesh.com/calls/health")
+
+
+def test_every_participant_of_a_room_lands_on_the_same_live_node():
+    functions = _ticket_functions()
+    pick = functions["chat_call_pick"]
+    nodes = NODES.split(",")
+    rooms = [functions["chat_call_room"](SECRET, "%032x" % n) for n in range(60)]
+    chosen = [pick(room, nodes, set(nodes)) for room in rooms]
+    assert chosen == [pick(room, nodes, set(nodes)) for room in rooms]
+    assert set(chosen) == set(nodes)
+    for room, first in zip(rooms, chosen):
+        survivors = set(nodes) - {first}
+        moved = pick(room, nodes, survivors)
+        assert moved in survivors
+        assert moved == pick(room, nodes, survivors)
+        for other in nodes:
+            if other != first and pick(room, nodes, set(nodes) - {other}) != first:
+                raise AssertionError("losing an unrelated node moved a call")
+    assert pick(rooms[0], nodes, set()) == chosen[0]
+    assert pick(rooms[0], [], set()) == ""

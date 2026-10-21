@@ -19,15 +19,42 @@ are known to the relay, so a call there could not be end-to-end encrypted
    private channel). The answer is
    `{"ticket", "room", "peer", "url"}`: a 60-second ticket for the call
    server (`chat_call_ticket` in `entry.py`), the opaque room id (HMAC of the
-   channel id), a random peer id for this join and the call server's
-   `wss://` URL. The app needs `FORKMESH_CALLS_SECRET` (32 characters or
-   more, shared with the call server) and `FORKMESH_CALLS_URL`; without them
-   the route answers 503 `calls_unavailable`.
+   channel id), a random peer id for this join and the `wss://` URL of the
+   call server that hosts this room. The app needs `FORKMESH_CALLS_SECRET`
+   (32 characters or more, shared with every call server) and
+   `FORKMESH_CALLS_NODES`, the comma-separated `wss://<node>/calls/ws` URLs of
+   all call servers; without them the route answers 503
+   `calls_unavailable`.
 2. The client opens the WebSocket, sends `join` with the ticket, offers its
    microphone (and camera) as `sendonly` tracks, and answers every offer the
    server sends as people join and leave (protocol in `docs/server/rtc.md`,
    "signal"). The server names each forwarded stream after its sender's peer
    id (`msid`).
+
+## Every core runs a call server
+
+The fleet's three cores each run `forkmesh-calls` (`docs/deploy/calls.md`), so
+losing one or two of them keeps calls working. A room lives in one process at
+a time, so everybody in a call has to reach the same server: `chat_call_pick`
+in `entry.py` uses rendezvous hashing, the highest SHA-256 of
+`room + "\n" + url` among the servers that answered their
+`https://<node>/calls/health` in the last 10 s (`_chat_call_healthy`, a 1.5 s
+probe cached per process). Every app process therefore sends every member of
+a room to the same server, a dead server only moves the calls it held, and
+losing a server never moves a call that was elsewhere. When no probe
+succeeds, the hash runs over all listed servers so a broken probe cannot turn
+calls off.
+
+When the client's call server goes away (the WebSocket closes, the peer
+connection fails, or the server reports an error other than `room_full`),
+`chat-group-calls.js` keeps the camera, microphone, key and encryption worker,
+says `group-call-presence` `out` for the old peer id, asks for a new ticket
+(which now names a surviving server) and joins again, after 1, 2, 4, 8 and
+16 s, then gives up. Everybody in that call does the same and meets on the new
+server; keys are re-shared on joining as usual. The panel says
+"Reconnecting…" meanwhile. `TestAGroupCallMovesToASurvivingNodeWhenItsNodeDies`
+(`server/rtc/sfu`) kills the server under a three-browser encrypted call and
+checks that all three decode each other again on the other one.
 
 ## Who is in the call
 

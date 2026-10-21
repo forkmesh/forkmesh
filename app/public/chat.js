@@ -6205,7 +6205,7 @@ function renderGroupCall() {
   const count = active.tiles.size + 1;
   groupCallState.textContent = active.state === "live"
     ? `Connected · end-to-end encrypted · ${count} in call`
-    : "Connecting…";
+    : active.state === "reconnecting" ? "Reconnecting…" : "Connecting…";
   groupCallMute.textContent = active.muted ? "Unmute" : "Mute";
   groupCallCamera.hidden = active.media !== "video";
   groupCallCamera.textContent = active.cameraOff ? "Camera on" : "Camera off";

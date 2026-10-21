@@ -4,6 +4,8 @@ const HEARTBEAT_MS = 20000;
 const PRESENCE_TTL_MS = 60000;
 const ROTATE_DELAY_MS = 1000;
 const PING_MS = 20000;
+const RECONNECT_TRIES = 5;
+const RECONNECT_BASE_MS = 1000;
 const PEER_RE = /^[0-9a-f]{32}$/;
 
 function bytesToBase64(bytes) {
@@ -193,6 +195,7 @@ export function createGroupCalls({
   async function handleSignal(current, message) {
     if (call !== current) return;
     const pc = current.pc;
+    if (!pc) return;
     if (message.type === "joined") {
       current.peer = message.peer;
       announce("in");
@@ -218,8 +221,12 @@ export function createGroupCalls({
       current.worker.postMessage({ op: "forget", peer: message.peer });
       rotateKey();
     } else if (message.type === "error") {
-      current.error = message.error === "room_full" ? "This call is full." : "The call could not connect.";
-      leave();
+      if (message.error === "room_full") {
+        current.error = "This call is full.";
+        leave();
+      } else {
+        connectionLost(current, "The call could not connect.");
+      }
     }
     onChange();
   }
@@ -237,25 +244,15 @@ export function createGroupCalls({
     } catch (_) {
       return { error: "Allow the microphone" + (media === "video" ? " and camera" : "") + " to join the call." };
     }
-    let access;
-    try {
-      access = await fetchTicket(channelId);
-    } catch (_) {
-      local.getTracks().forEach((track) => track.stop());
-      return { error: "Group calls are not available right now." };
-    }
-    const worker = new scope.Worker(workerUrl, { name: "forkmesh-group-call-crypto" });
-    const config = { bundlePolicy: "max-bundle", rtcpMuxPolicy: "require" };
-    if (mode === "streams") config.encodedInsertableStreams = true;
-    const pc = new scope.RTCPeerConnection(config);
     const current = {
       channelKey,
       channelId,
       media,
       mode,
       peer: "",
-      pc,
-      worker,
+      pc: null,
+      ws: null,
+      worker: new scope.Worker(workerUrl, { name: "forkmesh-group-call-crypto" }),
       local,
       tiles: new Map(),
       decorated: new WeakSet(),
@@ -266,24 +263,95 @@ export function createGroupCalls({
       state: "joining",
       error: "",
       timers: [],
-      ws: null,
+      retries: 0,
+      reconnecting: null,
     };
     call = current;
+    current.timers.push(setInterval(() => announce("in"), HEARTBEAT_MS));
+    current.timers.push(setInterval(() => {
+      if (current.ws?.readyState === 1) current.ws.send(JSON.stringify({ type: "ping" }));
+    }, PING_MS));
+    const connected = await connect(current);
+    if (!connected && call === current) {
+      current.error = "Group calls are not available right now.";
+      leave();
+      return { error: current.error };
+    }
+    onChange();
+    return { ok: true };
+  }
+
+  function dropConnection(current) {
+    if (current.peer) {
+      void sendFrame(current.channelKey, "group-call-presence", { peer: current.peer, call: "out" });
+    }
+    current.peer = "";
+    const { ws, pc } = current;
+    current.ws = null;
+    current.pc = null;
+    if (ws) {
+      ws.onclose = null;
+      ws.onmessage = null;
+      try {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: "leave" }));
+        ws.close();
+      } catch (_) {}
+    }
+    if (pc) {
+      pc.ontrack = null;
+      pc.onconnectionstatechange = null;
+      pc.close();
+    }
+    current.tiles.clear();
+    current.decorated = new WeakSet();
+  }
+
+  function connectionLost(current, reason) {
+    if (call !== current || current.reconnecting) return;
+    dropConnection(current);
+    if (current.retries >= RECONNECT_TRIES) {
+      current.error = reason;
+      leave();
+      return;
+    }
+    const wait = RECONNECT_BASE_MS * 2 ** current.retries;
+    current.retries += 1;
+    current.state = "reconnecting";
+    onChange();
+    current.reconnecting = setTimeout(async () => {
+      current.reconnecting = null;
+      if (call !== current) return;
+      if (!(await connect(current)) && call === current) connectionLost(current, reason);
+    }, wait);
+  }
+
+  async function connect(current) {
+    let access;
+    try {
+      access = await fetchTicket(current.channelId);
+    } catch (_) {
+      return false;
+    }
+    if (call !== current || !access?.url || !access?.ticket) return false;
+    const config = { bundlePolicy: "max-bundle", rtcpMuxPolicy: "require" };
+    if (current.mode === "streams") config.encodedInsertableStreams = true;
+    const pc = new scope.RTCPeerConnection(config);
+    current.pc = pc;
     for (const kind of ["audio", "video"]) {
-      const track = local.getTracks().find((item) => item.kind === kind) || null;
+      const track = current.local.getTracks().find((item) => item.kind === kind) || null;
       const transceiver = track
-        ? pc.addTransceiver(track, { direction: "sendonly", streams: [local] })
+        ? pc.addTransceiver(track, { direction: "sendonly", streams: [current.local] })
         : pc.addTransceiver(kind, { direction: "sendonly" });
       attachSender(transceiver.sender, kind);
     }
     pc.ontrack = handleTrack;
     pc.onconnectionstatechange = () => {
-      if (call !== current) return;
-      if (pc.connectionState === "connected") current.state = "live";
-      if (pc.connectionState === "failed") {
-        current.error = "The call connection failed.";
-        leave();
+      if (call !== current || current.pc !== pc) return;
+      if (pc.connectionState === "connected") {
+        current.state = "live";
+        current.retries = 0;
       }
+      if (pc.connectionState === "failed") connectionLost(current, "The call connection failed.");
       onChange();
     };
     const ws = new scope.WebSocket(access.url);
@@ -299,32 +367,18 @@ export function createGroupCalls({
       void handleSignal(current, message).catch(() => {});
     };
     ws.onclose = () => {
-      if (call === current) {
-        current.error = current.error || "The call ended.";
-        leave();
-      }
+      if (current.ws === ws) connectionLost(current, "The call ended.");
     };
-    current.timers.push(setInterval(() => announce("in"), HEARTBEAT_MS));
-    current.timers.push(setInterval(() => {
-      if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ping" }));
-    }, PING_MS));
-    onChange();
-    return { ok: true };
+    return true;
   }
 
   function leave() {
     const current = call;
     if (!current) return;
     call = null;
-    if (current.peer) {
-      void sendFrame(current.channelKey, "group-call-presence", { peer: current.peer, call: "out" });
-    }
+    if (current.reconnecting) clearTimeout(current.reconnecting);
     for (const timer of current.timers) clearInterval(timer);
-    try {
-      if (current.ws?.readyState === 1) current.ws.send(JSON.stringify({ type: "leave" }));
-      current.ws?.close();
-    } catch (_) {}
-    current.pc.close();
+    dropConnection(current);
     current.local.getTracks().forEach((track) => track.stop());
     current.worker.terminate();
     lastError = current.error;

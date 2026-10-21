@@ -36,7 +36,7 @@ try {
       await fetch("/relay", {method: "POST", body: JSON.stringify({type, sender: name, ...extra})});
       return true;
     },
-    fetchTicket: async () => ({ticket: await (await fetch("/ticket")).text(), url: "ws://" + location.host + "/calls/ws"}),
+    fetchTicket: async () => (await fetch("/ticket")).json(),
     accountName: () => name,
     workerUrl: "/public/chat-group-call-crypto.js",
   });
@@ -113,9 +113,12 @@ func TestThreeBrowsersHoldAnEncryptedGroupCall(t *testing.T) {
 		io.WriteString(w, groupCallPage)
 	})
 	routes.HandleFunc("/ticket", func(w http.ResponseWriter, r *http.Request) {
-		io.WriteString(w, signal.MintTicket(secret, signal.Ticket{
-			Room: room, Peer: signal.NewPeerID(), Exp: time.Now().Add(signal.TicketLifetime).Unix(),
-		}))
+		json.NewEncoder(w).Encode(map[string]string{
+			"ticket": signal.MintTicket(secret, signal.Ticket{
+				Room: room, Peer: signal.NewPeerID(), Exp: time.Now().Add(signal.TicketLifetime).Unix(),
+			}),
+			"url": "ws://" + r.Host + "/calls/ws",
+		})
 	})
 	routes.HandleFunc("/relay", func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
