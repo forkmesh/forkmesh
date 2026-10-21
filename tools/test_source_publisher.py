@@ -1068,6 +1068,46 @@ def test_a_real_ledger_divergence_still_fails(box, monkeypatch):
     assert any("DIVERGED" in line and "forkmesh/pulls" in line for line in logs)
 
 
+def test_a_ledger_read_from_a_lagging_core_is_read_again(box, monkeypatch):
+    reads, waits = iter([False, True]), []
+    monkeypatch.setattr(sp, "run_fanout", lambda script, run=None: {"ok": True, "code": 0})
+    monkeypatch.setattr(sp, "read_gateways", lambda path, key: [{"name": "cores"}])
+    monkeypatch.setattr(sp, "push_gateway", lambda bare, gateway, run=None:
+                        _diverged_gateway("refs/heads/forkmesh/pulls"))
+    monkeypatch.setattr(sp, "cores_ref_contained", lambda source, url, name, pushed: next(reads))
+    logs = []
+    code = sp.publish(box, run=systemctl_fake(), sleep=waits.append, log=logs.append)
+    assert code == 0
+    assert sp.GATEWAY_RETRY_SECONDS in waits
+    assert not any("FAILED" in line or "DIVERGED" in line for line in logs)
+
+
+def test_a_main_read_from_a_lagging_core_is_read_again(box, monkeypatch):
+    behind = sh("rev-parse", "main", cwd=box.source)
+    commit(box.source, "merge one core has not replicated yet")
+    caught_up = sh("rev-parse", "main", cwd=box.source)
+    reads = iter([{"absorbed": False, "reason": "already contained", "cores": behind},
+                  {"absorbed": False, "reason": "already contained", "cores": caught_up}])
+    monkeypatch.setattr(sp, "run_fanout", lambda script, run=None: {"ok": True, "code": 0})
+    monkeypatch.setattr(sp, "read_gateways", lambda path, key: [{"name": "cores"}])
+    monkeypatch.setattr(sp, "push_gateway", lambda bare, gateway, run=None: _diverged_gateway())
+    monkeypatch.setattr(sp, "absorb_cores", lambda source, url: next(reads))
+    logs = []
+    code = sp.publish(box, run=systemctl_fake(), sleep=lambda s: None, log=logs.append)
+    assert code == 0
+    assert any("already past this pass" in line for line in logs)
+
+
+def test_a_failure_ping_names_the_refused_ref_not_the_git_output():
+    gateway = _diverged_gateway("refs/heads/forkmesh/pulls")
+    gateway["stale"] = ["refs/heads/old"]
+    gateway["rejected"].append({"ref": "refs/heads/old", "reason": "non-fast-forward"})
+    gateway["error"] = "t you pushed in some\nremote: other way."
+    cause = sp.gateway_failure_cause(gateway)
+    assert cause == "the cores refused refs/heads/forkmesh/pulls (non-fast-forward)"
+    assert sp.gateway_failure_cause({"error": "loopback blocked"}) == "loopback blocked"
+
+
 def test_cores_ref_contained_reads_the_cores_value(box, tmp_path):
     served = tmp_path / "cores.git"
     sh("clone", "-q", "--bare", str(box.source), str(served))
