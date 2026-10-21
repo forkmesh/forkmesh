@@ -3822,7 +3822,7 @@
         </label>
         <div class="flex items-end gap-2">
           <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
-          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors ${deleting ? "border-destructive/50 bg-destructive text-white hover:bg-destructive/90" : "border-primary/50 bg-cta text-cta-foreground hover:bg-cta/90"}"><i data-lucide="${deleting ? "trash-2" : "file-pen"}" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>${deleting ? "Delete file" : "Rename"}</span></button>
+          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors ${deleting ? "border-destructive/50 bg-destructive text-white" : "border-primary/50 bg-cta text-cta-foreground hover:bg-cta/90"}"><i data-lucide="${deleting ? "trash-2" : "file-pen"}" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>${deleting ? "Delete file" : "Rename"}</span></button>
         </div>
       </div>
       <label data-repo-file-editor-propose-wrap class="inline-flex items-center gap-2 text-xs text-muted-foreground">

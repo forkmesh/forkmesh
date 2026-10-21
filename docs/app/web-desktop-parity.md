@@ -12,6 +12,7 @@ inventory; each row says why the dependency exists and how it could go.
 | Discussions: start, reply, mark answer, close/reopen, archive, delete a reply | [web-discussions.md](web-discussions.md) |
 | Merging pull requests on personal repositories (same rules, protection, checks and mergeability as organization repositories) | [branch-protection.md](branch-protection.md) |
 | Rename, move and delete files (commit, or propose as a pull request) | [repository-file-edits.md](repository-file-edits.md#rename-and-delete) |
+| Releases (draft, edit, delete; notes; creating their tags) | [web-releases.md](web-releases.md) |
 | Add file (create a file, or propose one as a pull request) | [repository-file-edits.md](repository-file-edits.md#add-file) |
 | Issues and pull requests (browser-signed events), file edits and proposals, forks, repository deletion, branch operations on core-hosted repositories, webhooks, Actions secrets, security advisories, notes, tasks, calendar, docs, organizations, accounts and SSH keys | already had web paths |
 
@@ -30,8 +31,8 @@ existing route, L = a new route, event type or storage, XL = architectural.
 | Visibility change, rename and transfer | repository settings | The desktop republishes a signed catalog record | Session-authorized catalog update route for core-hosted repositories, mirrored by the owner node on next sync | L |
 | Collaborators on private repositories | `shares_handler` (owner signature) | Shares are sealed to the recipient's key by the owner's desktop | Session path for core-hosted repositories (no sealing needed there) | L / XL |
 | Projects (create and edit boards) | Projects tab | Events are signed with the node identity and committed locally (ProjectStore) | Browser-signed project events through `fetchRepoMutation`, materialized by the mirror intake like issues | L |
-| Releases (create, publish, assets) | releases list | Owner-signed `release.json` and asset uploads | Browser-signed release manifest for core-hosted repositories, assets through the asset store | L / XL |
-| Tags (create, delete) | branch operations | No tag operation exists | Add tag operations to the branch-operation queue | L |
+| Release assets (binaries) | Releases tab | Bytes live in the mirrors' content-addressed store, seeded by a release publisher | An upload route into the store for core-held repositories, recorded in `release.json` | L |
+| Deleting or moving tags | mirror push policy | Mirrors keep tags immutable without an owner's tag-move grant | Offer the existing tag-move grant from the web for core-held repositories; keep tags immutable elsewhere | M |
 | Uploading binary files (images, archives) | file editor | `/file-edit` takes UTF-8 text only | Accept base64 `content` with a size cap and build the blob from the bytes | M |
 | Repository settings only stored on the desktop (peer approval, secret-scanning push protection, Actions auto-approve, agent guardrails) | repository settings | Kept in the desktop's local record | Store them in `.forkmesh/settings.json` through `/file-edit` and read them from there on every client | L |
 | Branch operations and issue/pull state on repositories held only by a personal node | branch queue, inbox drains | The owner's node applies them when it next syncs | Already immediate on core-hosted and mirrored repositories; otherwise inherent to node-held repositories | XL |

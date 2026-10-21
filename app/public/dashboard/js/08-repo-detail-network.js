@@ -445,7 +445,7 @@
 		            </section>
             <section data-dashboard-repo-tab-panel="branches" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-branch" class="h-3.5 w-3.5 text-muted-foreground"></i>Branches<span data-repo-branches-total class="font-mono text-[10px] font-normal text-muted-foreground"></span></span><label class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md border border-border bg-background px-3 text-xs text-muted-foreground focus-within:ring-1 focus-within:ring-foreground/20 sm:max-w-64"><i data-lucide="search" class="h-3.5 w-3.5 shrink-0"></i><input data-repo-branches-search type="search" autocomplete="off" spellcheck="false" placeholder="Find a branch..." aria-label="Find a branch" class="min-w-0 flex-1 bg-transparent text-foreground outline-none placeholder:text-muted-foreground" /></label><div data-repo-branches-actions class="flex max-w-full flex-wrap items-center gap-2"></div></div><div data-repo-branches-status role="status" aria-live="polite" hidden class="border-b border-border px-4 py-2 text-xs text-muted-foreground"></div><div data-repo-branches-selection hidden></div><div data-repo-branch-delete-results hidden></div><div data-repo-branch-results hidden></div><div data-repo-branches></div></div></section>
             <section data-dashboard-repo-tab-panel="commits" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits</span><span class="font-mono text-[10px] text-muted-foreground">live mirror history</span></div><div data-repo-commits></div></div></section>
-            <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><span class="font-mono text-[10px] text-muted-foreground">signed release manifests</span></div><div data-repo-releases></div></div></section>
+            <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><button type="button" data-repo-release-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>Draft a new release</button></div><div data-repo-releases></div></div></section>
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
             <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><span class="font-mono text-[10px] text-muted-foreground">linked issues · milestones · gantt</span></div><div data-repo-projects></div></div></section>
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
@@ -2006,6 +2006,29 @@
     if (discussionAnswerButton && state.selectedRepo) {
       event.preventDefault();
       void handleDiscussionAnswerClick(state.selectedRepo, discussionAnswerButton);
+      return;
+    }
+    const releaseNewButton = event.target.closest("[data-repo-release-new], [data-repo-release-edit]");
+    if (releaseNewButton && state.selectedRepo) {
+      event.preventDefault();
+      openReleaseForm(state.selectedRepo, releaseNewButton.dataset.repoReleaseEdit || "");
+      return;
+    }
+    const releaseDeleteButton = event.target.closest("[data-repo-release-delete]");
+    if (releaseDeleteButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleReleaseDelete(state.selectedRepo, releaseDeleteButton.dataset.repoReleaseDelete || "");
+      return;
+    }
+    if (event.target.closest("[data-repo-release-cancel]") && state.selectedRepo) {
+      event.preventDefault();
+      void loadRepoReleases(state.selectedRepo);
+      return;
+    }
+    const releaseTab = event.target.closest("[data-repo-release-tab]");
+    if (releaseTab) {
+      event.preventDefault();
+      setReleaseFormTab(releaseTab.closest("[data-repo-release-form]"), releaseTab.dataset.repoReleaseTab || "write");
       return;
     }
     const discussionNewButton = event.target.closest("[data-repo-discussion-new]");
@@ -3926,6 +3949,12 @@
       } finally {
         if (submit) submit.disabled = false;
       }
+      return;
+    }
+    const releaseForm = event.target.closest("[data-repo-release-form]");
+    if (releaseForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleReleaseFormSubmit(state.selectedRepo, releaseForm);
       return;
     }
     const discussionForm = event.target.closest("[data-repo-discussion-form]");

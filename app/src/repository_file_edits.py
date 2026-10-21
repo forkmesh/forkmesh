@@ -369,7 +369,8 @@ def proposal_branch(actor, path, commit_oid):
     return branch if valid_branch(branch) else "web-edit/" + commit_oid[:12]
 
 
-async def _push(env, request, owner, repo, actor, branch, body, alias_owner):
+async def _push(env, request, owner, repo, actor, branch, body, alias_owner,
+                ref=None):
     core_held = owner.lower() in _core_push_nodes(env)
     upstream, _endpoint = await _https_mirror_push_send(
         env, request, owner, repo, actor, "POST", body, None,
@@ -387,7 +388,7 @@ async def _push(env, request, owner, repo, actor, branch, body, alias_owner):
         raise FileEditError(
             "push_refused", "The repository host refused the commit (HTTP %d)."
             % status, 502)
-    ref = "refs/heads/" + branch
+    ref = ref or "refs/heads/" + branch
     ok, reason = report_status(text, ref)
     if not ok:
         stale = any(word in reason for word in (
