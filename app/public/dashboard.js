@@ -24391,6 +24391,7 @@
     container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
+    if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
   }
 
   async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
@@ -24568,6 +24569,8 @@
       state.repoRecordDetail = { repo, kind, number, parsed };
       container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
       if (kind === "issues") mountIssueStickyHeader(container);
+      // The authors are known now: look up who can be tipped.
+      if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
         if (commentBody) commentBody.value = commentDraft;
@@ -46291,6 +46294,20 @@
     return load;
   }
 
+  // ForkMeshQR holds up to 230 bytes. A request with a token, a reference
+  // and a long label or message can pass that; the QR then drops the
+  // message, then the label (wallets show recipient and amount anyway). The
+  // "Open in wallet" link keeps everything.
+  const COMMENT_TIP_QR_MAX_BYTES = 230;
+
+  function commentTipQrText(uri) {
+    let text = String(uri || "");
+    const fits = (value) => new TextEncoder().encode(value).length <= COMMENT_TIP_QR_MAX_BYTES;
+    if (!fits(text)) text = text.replace(/&message=[^&]*/, "");
+    if (!fits(text)) text = text.replace(/&label=[^&]*/, "");
+    return text;
+  }
+
   function commentTipSheetHtml(author, config) {
     const tokens = config.tokens.map((token, index) => `<button type="button" data-tip-token="${escapeHtml(token.id)}" aria-pressed="${index === 0}">${escapeHtml(token.symbol)}</button>`).join("");
     return `<div class="fm-tip-head"><h2 id="fm-tip-title" class="fm-tip-title"><span aria-hidden="true">◎</span> Tip @${escapeHtml(author)}</h2><button type="button" data-tip-close class="fm-gif-close" aria-label="Close"><i data-lucide="x" class="h-4 w-4"></i></button></div>
@@ -46465,7 +46482,7 @@
       void loadQrGenerator().then((loaded) => {
         if (holder.dataset.tipQrValue !== data.uri) return;
         try {
-          if (loaded) holder.replaceChildren(window.ForkMeshQR.toCanvas(data.uri, 200));
+          if (loaded) holder.replaceChildren(window.ForkMeshQR.toCanvas(commentTipQrText(data.uri), 200));
           else holder.textContent = "QR unavailable";
         } catch (_) {
           holder.textContent = "QR unavailable";

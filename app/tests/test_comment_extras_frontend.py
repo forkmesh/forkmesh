@@ -263,3 +263,54 @@ def test_settings_page_has_the_section_for_admins_and_owners():
     assert '"reactions"]' in (JS_DIR / "04-account.js").read_text("utf-8")
     assert "/api/reactions/custom/manage" in SETTINGS
     assert 'type="password"' in view and "data-gif-settings-key" in view
+
+
+QR = ROOT.parent / "world" / "public" / "qr.js"
+# sha256 of the module rows ("0"/"1", one line per row, no quiet zone) that an
+# independent encoder (python-qrcode, byte mode, level L, fixed mask) draws.
+QR_REFERENCE = [
+    ("solana:6sbzC1eH4FTujJXWj51eQe25cYvr4xfXbJ1vAj7j2k5J?amount=12.5&spl-token="
+     "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v&reference="
+     "7aXo4rY3rZ8PcUyM5GzXK3Jp1qyWN2hS8vDqJe1v1Fmn", 8, 3,
+     "bff05981558d6c8012daf596f6ecbf8743b1d33440aa1110a30f9d2102609595"),
+    ("hello", 1, 0, "d9425dfc02fbbe47f123cf0ca192905819d46b3bfcfe88341ea76c41267db2f3"),
+    ("u" * 150, 7, 5, "f6331fc9fd644d17ee4a40cb94868f93c8636a74b1e0e62349f1f49961bef340"),
+]
+
+
+@needs_node
+def test_the_shared_qr_generator_fits_a_token_tip_request_and_matches_a_reference():
+    import hashlib
+    script = """
+require(%s);
+const Q = globalThis.ForkMeshQR._test;
+const cases = %s;
+const out = cases.map(([text, version, mask]) => {
+  const base = Q.makeMatrix(version, Q.buildCodewords(Array.from(new TextEncoder().encode(text)), version));
+  const m = base.m.map((row) => row.slice());
+  for (let r = 0; r < base.size; r++) for (let c = 0; c < base.size; c++)
+    if (!base.reserved[r][c] && Q.MASKS[mask](r, c)) m[r][c] = !m[r][c];
+  Q.applyFormat(m, base.size, mask);
+  return m.map((row) => row.map((v) => (v ? "1" : "0")).join("")).join("\\n");
+});
+out.push(Q.chooseVersion(189), Q.versionBits(7), globalThis.ForkMeshQR.generate("x".repeat(230)).size);
+let tooLong = "";
+try { globalThis.ForkMeshQR.generate("x".repeat(231)); } catch (error) { tooLong = error.message; }
+out.push(tooLong);
+process.stdout.write(JSON.stringify(out));
+""" % (json.dumps(str(QR)), json.dumps([case[:3] for case in QR_REFERENCE]))
+    result = subprocess.run(["node", "-"], input=script, capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr[-2000:]
+    out = json.loads(result.stdout)
+    for case, rows in zip(QR_REFERENCE, out):
+        assert hashlib.sha256(rows.encode()).hexdigest() == case[3], case[1:3]
+    assert out[3] == 8 and out[4] == 0x07C94 and out[5] == 17 + 4 * 9
+    assert "too long" in out[6]
+    assert "commentTipQrText(data.uri)" in TIPS
+
+
+def test_tip_buttons_wait_for_the_record_authors():
+    detail = _function(CONTENT, "loadRepoRecordDetail")
+    assert "loadCommentTipWallets(commentReactionSubject(kind, number))" in detail
+    assert "loadCommentTipWallets(commentReactionSubject(kind, number))" in _function(
+        CONTENT, "showOptimisticRepoRecord")

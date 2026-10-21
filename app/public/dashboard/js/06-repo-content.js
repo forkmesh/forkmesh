@@ -7868,6 +7868,7 @@
     container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
     if (kind === "issues") mountIssueStickyHeader(container);
     window.lucide?.createIcons();
+    if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
   }
 
   async function loadRepoIssueDependencies(repo, body, currentNumber, known = []) {
@@ -8045,6 +8046,8 @@
       state.repoRecordDetail = { repo, kind, number, parsed };
       container.innerHTML = renderRepoRecordDetail(repo, kind, number, parsed);
       if (kind === "issues") mountIssueStickyHeader(container);
+      // The authors are known now: look up who can be tipped.
+      if (typeof loadCommentTipWallets === "function") void loadCommentTipWallets(commentReactionSubject(kind, number));
       if (commentDraft) {
         const commentBody = container.querySelector("[data-repo-issue-comment-body]");
         if (commentBody) commentBody.value = commentDraft;
