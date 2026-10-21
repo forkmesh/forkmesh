@@ -702,6 +702,19 @@ def _base64url_decode(value: str, expected_bytes: int | None = None) -> bytes:
     return decoded
 
 
+def _utf8_prefix(data: bytes) -> bytes:
+    for cut in range(0, min(4, len(data) + 1)):
+        candidate = data[:len(data) - cut]
+        try:
+            candidate.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            if exc.end < len(candidate):
+                return data
+            continue
+        return candidate
+    return data
+
+
 def _base64url_encode(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).decode("ascii").rstrip("=")
 
@@ -5644,6 +5657,8 @@ class GitRepository:
         )
         truncated = len(output) > MAX_JSON_BLOB
         output = output[:MAX_JSON_BLOB]
+        if truncated:
+            output = _utf8_prefix(output)
         try:
             content = output.decode("utf-8")
             encoding = "utf8"

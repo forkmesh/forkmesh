@@ -4199,3 +4199,13 @@ def test_github_noreply_emails_give_contributor_avatars():
     for email in ("github-actions[bot]@users.noreply.github.com", "alice@example.com",
                   "a/b@users.noreply.github.com", "", "x@users.noreply.github.com.evil.test"):
         assert avatar(email) == "", email
+
+
+def test_a_cut_text_blob_stays_text_at_a_character_boundary():
+    data = ("\u0627\u06cc" * 10).encode("utf-8")
+    for cut in range(1, len(data)):
+        prefix = gateway._utf8_prefix(data[:cut])
+        assert data.startswith(prefix) and len(prefix) >= cut - 3
+        prefix.decode("utf-8")
+    broken = b"ok\xff\xfeok"
+    assert gateway._utf8_prefix(broken) == broken

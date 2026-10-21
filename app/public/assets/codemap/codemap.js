@@ -800,6 +800,7 @@
   // ---------------------------------------------------------------------
   const BATCH_PATHS = 40;
   const BATCH_BYTES = 1.5 * 1024 * 1024;
+  const MAX_TEXT_RETRIES = 3;
   const TEXT_BUDGET_CHARS = 96 * 1024 * 1024;
   // Batches start at most about seven times a second, which keeps even a fast
   // mirror near half of the edge's per-visitor request rate limit.
@@ -853,11 +854,20 @@
       pump();
     }
 
+    function retryLater(node) {
+      counts.pending -= 1;
+      node.retries = (node.retries || 0) + 1;
+      if (node.retries > MAX_TEXT_RETRIES) { node.cs = 4; counts.done += 1; return; }
+      node.cs = 0;
+      queue.push(node);
+    }
+
     function settle(node, record) {
+      if (!record || record.missing) { retryLater(node); return; }
       counts.pending -= 1;
       counts.done += 1;
-      const text = record && typeof record.text === "string" ? record.text : null;
-      if (text === null || text.indexOf(String.fromCharCode(0)) >= 0) { node.cs = 3; return; }
+      const text = typeof record.text === "string" ? record.text : null;
+      if (record.binary || text === null || text.indexOf(String.fromCharCode(0)) >= 0) { node.cs = 3; return; }
       node.code = prepareCode(text, node.lang);
       if (record.truncated) node.code.totalLines = Math.max(node.code.totalLines, node.code.lines.length + 1);
       node.cs = 2;
@@ -906,10 +916,12 @@
         for (let i = 0; i < queue.length && batch.length < BATCH_PATHS; i += 1) {
           const node = queue[i];
           if (pictured(node)) continue;
+          if (node.retries && batch.length) continue;
           if (batch.length && bytes + node.size > BATCH_BYTES) break;
           node.cs = 1;
           batch.push(node);
           bytes += node.size;
+          if (node.retries) break;
         }
         queue = queue.filter((node) => node.cs === 0);
         counts.pending += batch.length;
@@ -917,7 +929,7 @@
         Promise.resolve()
           .then(() => fetchBlobs(batch.map((node) => node.path)))
           .then((records) => { batch.forEach((node) => settle(node, records && records[node.path])); },
-            () => { batch.forEach((node) => { counts.pending -= 1; node.cs = 3; }); })
+            () => { batch.forEach((node) => retryLater(node)); })
           .then(finish);
       }
     }
@@ -2372,7 +2384,7 @@
     // The open viewer's handle (close, setMode, goToPath, state), or null.
     get current() { return current; },
     buildTree, measureTree, squarify, layoutTree, elevateTree, prepareCode, tokenizeLine, fitCode,
-    languageOf, previewKindOf, fileCategoryOf, previewArea, pickLod, THREE_URL, open,
+    languageOf, previewKindOf, fileCategoryOf, previewArea, pickLod, createLoader, THREE_URL, open,
   };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window === "undefined") return;

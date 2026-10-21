@@ -270,3 +270,49 @@ def test_previews_keep_their_aspect_inside_the_cell_content_box(result):
 
 def test_code_map_reads_images_raw_at_the_pinned_commit():
     assert 'repoLiveUrl(repo, "raw", { path, ...refParams })' in DASHBOARD_JS
+
+
+LOADER_HARNESS = r'''
+const map = require(process.argv[process.argv.length - 1]);
+const node = (path, size) => ({ path, name: path.split("/").pop(), size, cs: 0, pk: "", lang: "JSON" });
+const files = [node("a.json", 10), node("b.json", 10), node("c.json", 10), node("bin.dat", 10),
+               node("gone.json", 10), node("flaky.json", 10)];
+const calls = [];
+let flaky = 0;
+const fetchBlobs = async (paths) => {
+  calls.push(paths.slice());
+  if (paths.length > 1 && calls.length === 1) throw new Error("timeout");
+  const out = {};
+  paths.forEach((path) => {
+    if (path === "bin.dat") out[path] = { binary: true };
+    else if (path === "gone.json") out[path] = { missing: true };
+    else if (path === "flaky.json") out[path] = (flaky += 1) < 2 ? { missing: true } : { text: "{\"ok\":1}" };
+    else out[path] = { text: "{\"k\":\"ایران\"}" };
+  });
+  return out;
+};
+const loader = map.createLoader(fetchBlobs, null, null, () => {}, () => {}, null);
+loader.want(files);
+const until = Date.now() + 8000;
+(function wait() {
+  if (files.every((f) => f.cs >= 2) || Date.now() > until) {
+    console.log(JSON.stringify({ states: Object.fromEntries(files.map((f) => [f.path, f.cs])), calls: calls.length }));
+    loader.close();
+    return;
+  }
+  setTimeout(wait, 20);
+})();
+'''
+
+
+def test_a_failed_or_partial_batch_is_retried_never_shown_as_binary(tmp_path):
+    harness = tmp_path / "loader.js"
+    harness.write_text(LOADER_HARNESS, encoding="utf-8")
+    completed = subprocess.run(["node", str(harness), str(CODEMAP)], check=True,
+                               capture_output=True, text=True, timeout=60)
+    out = json.loads(completed.stdout)
+    states = out["states"]
+    assert states["a.json"] == states["b.json"] == states["c.json"] == states["flaky.json"] == 2
+    assert states["bin.dat"] == 3
+    assert states["gone.json"] == 4
+    assert out["calls"] > 1
