@@ -56,6 +56,32 @@ until it has one.
 A third-party package can add dots the same way: depend on `status-page`,
 set `install.sync: "account"`, and declare a `status.monitor` contribution.
 
+### Empty collections are not outages
+
+The `flagship_repository` probe reads what the repository page renders. A
+collection with no records is a valid state the page shows as an empty tab, so
+the probe must pass on it. On 2026-10-21 the last two discussions on
+forkmesh/forkmesh were deleted, git dropped the empty `.forkmesh/discussions`
+folder, and the probe's tree read of that folder answered 404, turning the row
+red with "Discussions collection failed (HTTP 404)". The probe now reads the
+`.forkmesh` tree at the pinned commit first, as it already did for the pull
+ledger, and only reads a discussion when the folder lists one. Requesting the
+absent folder itself cannot tell "not in this revision" from "no mirror served
+it": the router only downgrades to 404 when every endpoint it reached agreed.
+
+### Redacted private-repository errors keep their route family
+
+The error log renames a failing private or unpublished repository route to
+`/private-or-unpublished-repository/<kind>` (or `/repository-route-redacted/`),
+where `<kind>` is `[api:<route>]`, `[git-info-refs]`, `[git-upload-pack]`,
+`[release-blob]` or `[page]`. The sampler used to bucket by path prefix, so a
+redacted `/api/repo/<o>/<r>/pulls` 503 no longer started with `/api/` and
+painted the Website row red (2026-10-21, 17:56 to 18:16 UTC).
+`_status_error_route_path` maps each kind back to a stand-in path of the same
+route family before bucketing, so a redacted API error lands on API, a git
+error on Realtime, a page error on Website, and a 502/503/504 on a mirror-served
+content route is skipped exactly as its public form is.
+
 ## Market nesting
 
 Every Market nests a package under its first `dependencies` entry, so the

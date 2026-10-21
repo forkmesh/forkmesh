@@ -227,6 +227,29 @@ STATUS_SYSTEM_PROBE_PHASES = {
 }
 STATUS_SAMPLE_PHASE = "status-sample"
 STATUS_NEXT_CHECK_SCAN_MINUTES = 6 * 60 + 1
+STATUS_REDACTED_ROUTE_PREFIXES = (
+    "/private-or-unpublished-repository/",
+    "/repository-route-redacted/",
+)
+STATUS_REDACTED_ROUTE_PATHS = {
+    "[git-info-refs]": "/redacted/redacted/info/refs",
+    "[git-upload-pack]": "/redacted/redacted/git-upload-pack",
+    "[git-receive-pack]": "/redacted/redacted/git-receive-pack",
+    "[release-blob]": (
+        "/api/repo/redacted/redacted/releases/blob/sha256/" + "0" * 64),
+    "[api]": "/api/repo/redacted/redacted",
+    "[page]": "/redacted/redacted",
+}
+
+
+def _status_error_route_path(path):
+    for prefix in STATUS_REDACTED_ROUTE_PREFIXES:
+        if path.startswith(prefix):
+            kind = path[len(prefix):]
+            if kind.startswith("[api:") and kind.endswith("]"):
+                return "/api/repo/redacted/redacted/" + kind[5:-1]
+            return STATUS_REDACTED_ROUTE_PATHS.get(kind, path)
+    return path
 
 
 def _status_phase_slots(current_minute_ms):
@@ -2467,6 +2490,7 @@ async def record_status_sample(
         hit_count = {bucket: 0 for bucket in buckets}
         for row in rows:
             path = str(row.get("path") or "")
+            route = _status_error_route_path(path)
             method = str(row.get("method") or "").strip().upper()
             message = str(row.get("message") or "")
             # error_log is shared by three sources, classified the same way the
@@ -2509,19 +2533,19 @@ async def record_status_sample(
             # re-requested every few minutes used to paint the whole "api"
             # system red on /status. A 500 on the same path still counts.
             if row_status in (502, 503, 504) and (
-                    RELEASE_BLOB_RE.match(path) or REPO_HOST_RE.match(path) or
-                    GIT_INFO_RE.match(path) or GIT_PACK_RE.match(path)):
+                    RELEASE_BLOB_RE.match(route) or REPO_HOST_RE.match(route) or
+                    GIT_INFO_RE.match(route) or GIT_PACK_RE.match(route)):
                 continue
             failed["errors"] = True
             hit_count["errors"] += 1
             if first_hit["errors"] is None:
                 first_hit["errors"] = (
                     row.get("status"), path, message.strip())
-            if (path.rstrip("/") == "/api/world/ws" or
-                    ROOM_RE.match(path) or REPO_ROOM_RE.match(path) or
-                    GIT_INFO_RE.match(path) or GIT_PACK_RE.match(path)):
+            if (route.rstrip("/") == "/api/world/ws" or
+                    ROOM_RE.match(route) or REPO_ROOM_RE.match(route) or
+                    GIT_INFO_RE.match(route) or GIT_PACK_RE.match(route)):
                 bucket = "realtime"
-            elif path.startswith("/api/"):
+            elif route.startswith("/api/"):
                 bucket = "api"
             else:
                 bucket = "website"

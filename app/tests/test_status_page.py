@@ -64,6 +64,7 @@ def _load(*names, extra_globals=None):
         "STATUS_SYSTEM_CHECK_STEPS", "STATUS_MIRROR_CHECK_STEPS",
         "STATUS_SYSTEM_PROBE_PHASES", "STATUS_SAMPLE_PHASE",
         "STATUS_NEXT_CHECK_SCAN_MINUTES",
+        "STATUS_REDACTED_ROUTE_PREFIXES", "STATUS_REDACTED_ROUTE_PATHS",
         "STATUS_HISTORY_DAYS",
         "STATUS_HISTORY_RETAIN_MS", "STATUS_SAMPLE_WINDOW_MS",
         "STATUS_HOUR_MS", "STATUS_DAY_MS",
@@ -117,6 +118,7 @@ def _load(*names, extra_globals=None):
     }
     helper_names = {
         "_cron_due_phases", "_status_phase_slots", "_status_next_check",
+        "_status_error_route_path",
         "_status_expected_checks_for_hour", "_status_effective_hour",
         "_status_minute", "_is_tunnel_content_path",
         "_status_deploy_semaphore_active",
@@ -2178,6 +2180,60 @@ def test_worker_errors_still_fail_worker_health_after_client_filtering():
     assert "/desktop-error/" not in reasons["errors"]
 
 
+def test_redacted_private_repository_errors_keep_their_route_family():
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[api:pulls]",
+            "status": 503, "message": "response status 503",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    assert results["api"] == 1
+    assert results["errors"] == 1
+    assert results["website"] == 0
+    assert "[api:pulls]" in reasons["api"]
+
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[api:tree]",
+            "status": 503, "message": "response status 503",
+        },
+        {
+            "method": "GET",
+            "path": "/repository-route-redacted/[git-upload-pack]",
+            "status": 502, "message": "response status 502",
+        },
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[release-blob]",
+            "status": 504, "message": "response status 504",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    for system in ("website", "api", "errors", "realtime"):
+        assert results[system] == 0, system
+
+    error_rows = [
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[git-info-refs]",
+            "status": 500, "message": "response status 500",
+        },
+        {
+            "method": "GET",
+            "path": "/private-or-unpublished-repository/[page]",
+            "status": 500, "message": "response status 500",
+        },
+    ]
+    results, reasons, _minutes = _run_sample(error_rows=error_rows)
+    assert results["realtime"] == 1
+    assert results["website"] == 1
+    assert results["api"] == 0
+    assert "[page]" in reasons["website"]
+
+
 def test_one_sampler_records_each_minute_via_the_claim_row():
     # Replayed alarm delivery can call record_status_sample more than once for
     # a minute. A completed batch is the receipt that suppresses later work.
@@ -3820,6 +3876,13 @@ def test_flagship_repository_probe_loads_records_from_eligible_mirrors():
                 },
             },
         },
+        ("tree", "tree?path=.forkmesh&ref=" + default_ref): {
+            "ok": True,
+            "entries": [
+                {"name": "issues", "type": "tree"},
+                {"name": "discussions", "type": "tree"},
+            ],
+        },
         ("tree", "tree?path=.forkmesh/discussions&ref=" + default_ref): {
             "ok": True,
             "entries": [{"name": "3", "type": "tree"}],
@@ -3979,6 +4042,37 @@ def test_flagship_repository_probe_loads_records_from_eligible_mirrors():
     assert ok is False
     assert reason == "Discussions collection was not served by an eligible mirror"
     assert subrequest_charges == [1]
+
+    missing_provenance.clear()
+    calls.clear()
+    payloads[("tree", "tree?path=.forkmesh&ref=" + default_ref)] = {
+        "ok": True, "entries": [{"name": "issues", "type": "tree"}],
+    }
+    assert asyncio.run(probe(Env())) == (True, "")
+    assert ("tree", "tree?path=.forkmesh/discussions&ref=" + default_ref) \
+        not in calls
+    assert ("blobs", "blobs?path=.forkmesh/discussions/3/discussion.md&ref="
+            + default_ref) not in calls
+    assert ("blobs", "blobs?path=.forkmesh/pulls/7/pull.md&ref="
+            + pulls_ref) in calls
+
+    calls.clear()
+    payloads[("tree", "tree?path=.forkmesh&ref=" + default_ref)] = {
+        "ok": True,
+        "entries": [{"name": "discussions", "type": "tree"}],
+    }
+    payloads[("tree", "tree?path=.forkmesh/discussions&ref=" + default_ref)] = {
+        "ok": True, "entries": [],
+    }
+    assert asyncio.run(probe(Env())) == (True, "")
+    assert ("blobs", "blobs?path=.forkmesh/discussions/3/discussion.md&ref="
+            + default_ref) not in calls
+
+    calls.clear()
+    missing_provenance.add(("tree", "tree?path=.forkmesh&ref=" + default_ref))
+    ok, reason = asyncio.run(probe(Env()))
+    assert ok is False
+    assert reason == "Repository metadata tree was not served by an eligible mirror"
 
     # The repository page renders both an absent metadata branch and an absent
     # ledger folder on that branch as an empty pull-request tab. Neither state
