@@ -3820,6 +3820,13 @@ def test_flagship_repository_probe_loads_records_from_eligible_mirrors():
                 },
             },
         },
+        ("tree", "tree?path=.forkmesh&ref=" + default_ref): {
+            "ok": True,
+            "entries": [
+                {"name": "issues", "type": "tree"},
+                {"name": "discussions", "type": "tree"},
+            ],
+        },
         ("tree", "tree?path=.forkmesh/discussions&ref=" + default_ref): {
             "ok": True,
             "entries": [{"name": "3", "type": "tree"}],
@@ -3979,6 +3986,34 @@ def test_flagship_repository_probe_loads_records_from_eligible_mirrors():
     assert ok is False
     assert reason == "Discussions collection was not served by an eligible mirror"
     assert subrequest_charges == [1]
+
+    # Deleting the last discussion leaves no discussions folder, and the
+    # Discussions tab renders that, or an emptied folder, as zero rows.
+    missing_provenance.clear()
+    calls.clear()
+    metadata_key = ("tree", "tree?path=.forkmesh&ref=" + default_ref)
+    discussions_key = (
+        "tree", "tree?path=.forkmesh/discussions&ref=" + default_ref)
+    payloads[metadata_key] = {
+        "ok": True, "entries": [{"name": "issues", "type": "tree"}],
+    }
+    assert asyncio.run(probe(Env())) == (True, "")
+    assert discussions_key not in calls
+
+    calls.clear()
+    payloads[metadata_key] = {
+        "ok": True, "entries": [{"name": "discussions", "type": "tree"}],
+    }
+    payloads[discussions_key] = {"ok": True, "entries": []}
+    assert asyncio.run(probe(Env())) == (True, "")
+    assert discussions_key in calls
+
+    calls.clear()
+    missing_provenance.add(metadata_key)
+    ok, reason = asyncio.run(probe(Env()))
+    assert ok is False
+    assert reason == (
+        "Repository metadata tree was not served by an eligible mirror")
 
     # The repository page renders both an absent metadata branch and an absent
     # ledger folder on that branch as an empty pull-request tab. Neither state
