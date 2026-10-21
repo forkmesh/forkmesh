@@ -93,6 +93,7 @@ public final class CallFaceStage {
     public var hasFace = false
     public var faceReady = false
     public var hasOutfit = false
+    public var blend: CallFaceBlendShapes?
     public private(set) var presence = 0.0
     public private(set) var hide = 1.0
     public private(set) var dressed = 0.0
@@ -161,6 +162,9 @@ public final class CallFaceStage {
             if hasFace, let sample {
                 expression = probe.measure(image: sample.image, crop: sample.crop, points: smoothed, time: seen, pupils: pupils, lids: true) ?? expression
             }
+            if hasFace, let blend {
+                expression = CallFaceBlendMapping.reading(blend, probe: expression)
+            }
         case .missing:
             fresh = true
         case .stale:
@@ -223,10 +227,13 @@ public struct CallFaceDrawPlan: Sendable {
     public let skinRed: Double
     public let outfit: CallOutfitFrame?
     public let outfitFace: CallFacePoint?
+    public let hairRegion: CallFaceHairRegion?
+    public let seed: [Double]
 
     public var drawsAnything: Bool { showFace || wearing || hide > 0.001 }
 
-    public static func make(head: CallFaceHead?, frame: CallFaceStageFrame, hasOutfit: Bool, photoSize: Double = CallFaces.photoSize) -> CallFaceDrawPlan {
+    public static func make(head: CallFaceHead?, frame: CallFaceStageFrame, hasOutfit: Bool, photoSize: Double = CallFaces.photoSize,
+                            width: Double = 0, height: Double = 0) -> CallFaceDrawPlan {
         let drawn = frame.drawn
         let showFace = head != nil && drawn != nil && frame.presence > 0.001
         let wearing = hasOutfit && frame.outfit != nil && frame.live != nil && frame.dressed > 0.001
@@ -234,8 +241,10 @@ public struct CallFaceDrawPlan: Sendable {
         var zone: CallFaceAxisFrame?
         var center = CallFacePoint(0, 0)
         var span = 1.0
+        var hairRegion: CallFaceHairRegion?
         if showFace, let head, let drawn {
             let live = CallFaceGeometry.liveHead(head.model, drawn)
+            if width > 0, height > 0 { hairRegion = CallFaceWarp.hairRegion(live.pose, width: width, height: height) }
             zone = CallFaceWarp.zoneFrame(drawn, live.pose)
             let face = CallFaceGeometry.faceFrame(drawn)
             center = face.mid
@@ -267,7 +276,9 @@ public struct CallFaceDrawPlan: Sendable {
             tongueFrame: tongueFrame,
             skinRed: expression?.skinRed ?? defaultSkinRed,
             outfit: wearing ? frame.outfit : nil,
-            outfitFace: outfitFace
+            outfitFace: outfitFace,
+            hairRegion: hairRegion,
+            seed: CallFaceMatte.faceSeed(drawn ?? (hasOutfit ? frame.live : nil), width: width, height: height)
         )
     }
 

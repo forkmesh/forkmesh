@@ -6,10 +6,36 @@ import Metal
 import QuartzCore
 import Vision
 
+enum NativeFaceBackdrop: Equatable {
+    case none
+    case follow
+    case blur(Double)
+
+    var mode: Int {
+        switch self {
+        case .none: return 0
+        case .blur: return 1
+        case .follow: return 2
+        }
+    }
+}
+
+struct NativeFaceTrackingFrame {
+    let session: Int
+    let vertices: [CallFacePoint]
+    let triangles: [Int]
+    let shapes: CallFaceBlendShapes?
+    let focal: Double
+    let faceMetres: Double
+    let depth: CVPixelBuffer?
+    let depthAgeMs: Double
+}
+
 final class NativeFaceRenderer: @unchecked Sendable {
     struct Output {
         let frame: CVPixelBuffer
         let keep: CVPixelBuffer
+        let backgroundDone: Bool
     }
 
     static let syncBudgetMs = 16.0
@@ -20,6 +46,7 @@ final class NativeFaceRenderer: @unchecked Sendable {
     private let lock = NSLock()
     private let loader = DispatchQueue(label: "com.forkmesh.native-face-load", qos: .userInitiated)
     private let detector = DispatchQueue(label: "com.forkmesh.native-face-detect", qos: .userInteractive)
+    private let learner = DispatchQueue(label: "com.forkmesh.native-face-learn", qos: .userInitiated)
     private var faceId = ""
     private var faceImage = ""
     private var faceAsset: NativeFaceAsset?
@@ -34,6 +61,12 @@ final class NativeFaceRenderer: @unchecked Sendable {
     private var detectAsync = false
     private var detectBusy = false
     private var pending: CallFaceStageInput?
+    private var governor = CallFaceQualityGovernor()
+    private var governed = false
+    private var binding: CallFaceMeshBinding?
+    private var bindingSession = -1
+    private var learnBusy = false
+    private var learned: (points: [CallFacePoint], vertices: [CallFacePoint], time: Double, session: Int)?
 
     private let stage = CallFaceStage()
     private var stageFaceToken = -1
@@ -41,13 +74,33 @@ final class NativeFaceRenderer: @unchecked Sendable {
     private var stageIdle = true
     private var lastMap: CallFaceFrameMap?
     private var frameCount = 0
+    private var cadence = 0
     private let syncRequest = NativeFaceRenderer.landmarkRequest()
     private let asyncRequest = NativeFaceRenderer.landmarkRequest()
+    private let learnRequest = NativeFaceRenderer.landmarkRequest()
 
     var wantsFrames: Bool {
         lock.lock()
         defer { lock.unlock() }
         return !faceId.isEmpty || outfitTexture != nil
+    }
+
+    var wantsFaceTracking: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return !faceId.isEmpty
+    }
+
+    var fastSegmentation: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return governor.level.fastSegmentation
+    }
+
+    var qualityIndex: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return governor.index
     }
 
     func setFace(_ id: String, customImage: String) {
@@ -68,6 +121,7 @@ final class NativeFaceRenderer: @unchecked Sendable {
         guard !next.isEmpty else { return }
         loader.async { [weak self] in
             guard let self, let gpu = self.readyGPU() else { return }
+            gpu.prepareHair()
             let asset = next == CallFaceCustom.id
                 ? NativeFaceAssets.custom(dataURL: image, device: gpu.device, queue: gpu.queue)
                 : NativeFaceAssets.builtIn(next, device: gpu.device, queue: gpu.queue)
@@ -115,13 +169,23 @@ final class NativeFaceRenderer: @unchecked Sendable {
         if !gpuTried {
             gpuTried = true
             gpu = made
+            if let made, !governed {
+                governor = CallFaceQualityGovernor(start: CallFaceQuality.startLevel(appleFamily: made.appleFamily))
+                governed = true
+            }
         }
         let current = gpu
         lock.unlock()
         return current
     }
 
-    func render(_ buffer: CVPixelBuffer, degrees: Int, timeNs: Int64, backgroundFollows: Bool, mask: () -> CVPixelBuffer?) -> Output? {
+    static func thermal() -> CallFaceThermal {
+        CallFaceThermal(rawValue: ProcessInfo.processInfo.thermalState.rawValue) ?? .nominal
+    }
+
+    func render(_ buffer: CVPixelBuffer, degrees: Int, timeNs: Int64, background: NativeFaceBackdrop, tracking: NativeFaceTrackingFrame? = nil,
+                mask: () -> CVPixelBuffer?) -> Output? {
+        let began = CACurrentMediaTime()
         lock.lock()
         let gpu = self.gpu
         let hasFace = !faceId.isEmpty
@@ -129,11 +193,13 @@ final class NativeFaceRenderer: @unchecked Sendable {
         let token = faceToken
         let outfit = outfitTexture
         let outfitStamp = outfitToken
+        let level = governor.level
         lock.unlock()
         guard let gpu, hasFace || outfit != nil else {
             if !stageIdle {
                 stage.reset()
                 stageIdle = true
+                gpu?.resetMattes()
             }
             return nil
         }
@@ -155,16 +221,83 @@ final class NativeFaceRenderer: @unchecked Sendable {
             lastMap = map
         }
         let time = Double(timeNs) / 1_000_000
-        let frame = stage.step(locate(buffer, map: map, time: time, probe: hasFace), time: time)
-        let plan = CallFaceDrawPlan.make(head: asset?.head, frame: frame, hasOutfit: outfit != nil)
+        let frame = stage.step(locate(buffer, map: map, time: time, probe: hasFace, tracking: hasFace ? tracking : nil), time: time)
+        let plan = CallFaceDrawPlan.make(head: asset?.head, frame: frame, hasOutfit: outfit != nil, width: Double(map.uprightWidth), height: Double(map.uprightHeight))
         guard plan.drawsAnything else { return nil }
-        let matte = plan.showFace || plan.wearing || backgroundFollows ? mask() : nil
+        cadence = (cadence + 1) % 3600
+        let wantsMatte = plan.showFace || plan.wearing || background != .none
+        let fresh = wantsMatte && (level.runsSegment(frame: cadence) || !gpu.matteReady) ? mask() : nil
         frameCount = (frameCount + 1) % 4096
         let seed = (Double(frameCount) * 7.31).truncatingRemainder(dividingBy: 97)
-        return gpu.draw(buffer, map: map, plan: plan, asset: asset, outfit: outfit, matte: matte, follow: backgroundFollows, seed: seed)
+        let depth = tracking.flatMap { frame -> NativeFaceGPU.DepthInput? in
+            guard let map = frame.depth, frame.depthAgeMs <= CallFaceMatte.depthStaleMs, CallFaceDepth.usable(frame.faceMetres) else { return nil }
+            return NativeFaceGPU.DepthInput(buffer: map, faceMetres: frame.faceMetres)
+        }
+        let output = gpu.draw(
+            buffer, map: map, plan: plan, asset: asset, outfit: outfit, matte: fresh, wantsMatte: wantsMatte, background: background,
+            runHair: level.runsHair(frame: cadence), guide: level.guide, depth: depth, seed: seed)
+        let cost = (CACurrentMediaTime() - began) * 1000
+        lock.lock()
+        governor.note(costMs: cost, thermal: Self.thermal())
+        lock.unlock()
+        return output
     }
 
-    private func locate(_ buffer: CVPixelBuffer, map: CallFaceFrameMap, time: Double, probe: Bool) -> CallFaceStageInput {
+    private func bindingFor(_ tracking: NativeFaceTrackingFrame) -> CallFaceMeshBinding {
+        if let binding, bindingSession == tracking.session, binding.triangles.count == tracking.triangles.count { return binding }
+        let made = CallFaceMeshBinding(triangles: tracking.triangles)
+        binding = made
+        bindingSession = tracking.session
+        lock.lock()
+        learned = nil
+        lock.unlock()
+        return made
+    }
+
+    private func locate(_ buffer: CVPixelBuffer, map: CallFaceFrameMap, time: Double, probe: Bool, tracking: NativeFaceTrackingFrame?) -> CallFaceStageInput {
+        guard let tracking, let shapes = tracking.shapes, !tracking.vertices.isEmpty, !tracking.triangles.isEmpty else {
+            stage.blend = nil
+            return locate(buffer, map: map, time: time, probe: probe, learnFrom: nil)
+        }
+        let binding = bindingFor(tracking)
+        lock.lock()
+        let fresh = learned
+        learned = nil
+        lock.unlock()
+        if let fresh, fresh.session == tracking.session {
+            binding.learn(landmarks: fresh.points, vertices: fresh.vertices, time: fresh.time)
+        }
+        stage.blend = shapes
+        let upright = tracking.vertices.map { vertex -> CallFacePoint in
+            let p = map.toUpright(vertex)
+            return CallFacePoint(p.x, p.y, vertex.z)
+        }
+        guard binding.ready, let points = binding.place(upright, focal: tracking.focal) else {
+            return locate(buffer, map: map, time: time, probe: probe, learnFrom: binding.unreliable ? nil : (upright, tracking.session))
+        }
+        if binding.due(time: time) { learn(buffer, map: map, vertices: upright, time: time, session: tracking.session) }
+        let sample = probe ? Self.probeSample(buffer, map: map, points: points) : nil
+        return .found(points: points, pupils: nil, probe: sample, time: time)
+    }
+
+    private func learn(_ buffer: CVPixelBuffer, map: CallFaceFrameMap, vertices: [CallFacePoint], time: Double, session: Int) {
+        lock.lock()
+        let start = !learnBusy
+        if start { learnBusy = true }
+        lock.unlock()
+        guard start else { return }
+        learner.async { [weak self] in
+            guard let self else { return }
+            let result = Self.detect(buffer, map: map, time: time, probe: false, request: self.learnRequest)
+            self.lock.lock()
+            if case let .found(points, _, _, _) = result { self.learned = (points, vertices, time, session) }
+            self.learnBusy = false
+            self.lock.unlock()
+        }
+    }
+
+    private func locate(_ buffer: CVPixelBuffer, map: CallFaceFrameMap, time: Double, probe: Bool,
+                        learnFrom: (vertices: [CallFacePoint], session: Int)?) -> CallFaceStageInput {
         lock.lock()
         let async = detectAsync
         let ready = pending
@@ -176,6 +309,7 @@ final class NativeFaceRenderer: @unchecked Sendable {
             let began = CACurrentMediaTime()
             let result = Self.detect(buffer, map: map, time: time, probe: probe, request: syncRequest)
             note(cost: (CACurrentMediaTime() - began) * 1000)
+            keep(result, learnFrom: learnFrom, time: time)
             return result
         }
         if start {
@@ -184,6 +318,7 @@ final class NativeFaceRenderer: @unchecked Sendable {
                 let began = CACurrentMediaTime()
                 let result = Self.detect(buffer, map: map, time: time, probe: probe, request: self.asyncRequest)
                 let cost = (CACurrentMediaTime() - began) * 1000
+                self.keep(result, learnFrom: learnFrom, time: time)
                 self.lock.lock()
                 self.pending = result
                 self.detectBusy = false
@@ -192,6 +327,13 @@ final class NativeFaceRenderer: @unchecked Sendable {
             }
         }
         return ready ?? .stale
+    }
+
+    private func keep(_ result: CallFaceStageInput, learnFrom: (vertices: [CallFacePoint], session: Int)?, time: Double) {
+        guard let learnFrom, case let .found(points, _, _, _) = result else { return }
+        lock.lock()
+        learned = (points, learnFrom.vertices, time, learnFrom.session)
+        lock.unlock()
     }
 
     private func note(cost: Double) {
@@ -361,8 +503,19 @@ final class NativeFaceGPU {
         let backdrop: MTLTexture
     }
 
+    struct DepthInput {
+        let buffer: CVPixelBuffer
+        let faceMetres: Double
+    }
+
     let device: MTLDevice
     let queue: MTLCommandQueue
+    let appleFamily: Int
+    private let library: MTLLibrary
+    private let person: NativePersonMatte?
+    private let hairLock = NSLock()
+    private var hair: NativeHairMatte?
+    private var hairTried = false
     private let cache: CVMetalTextureCache
     private let cameraYuv: MTLRenderPipelineState
     private let cameraRgb: MTLRenderPipelineState
@@ -379,6 +532,7 @@ final class NativeFaceGPU {
     private var vertexBuffer: MTLBuffer?
     private var targets: Targets?
     private var maskTexture: MTLTexture?
+    private var depthCopy: MTLTexture?
     private var outputPool: CVPixelBufferPool?
     private var keepPool: CVPixelBufferPool?
     private var poolWidth = 0
@@ -428,6 +582,10 @@ final class NativeFaceGPU {
         }
         self.device = device
         self.queue = queue
+        self.library = library
+        person = NativePersonMatte(device: device, library: library)
+        let families: [(MTLGPUFamily, Int)] = [(.apple9, 9), (.apple8, 8), (.apple7, 7), (.apple6, 6), (.apple5, 5), (.apple4, 4)]
+        appleFamily = families.first { device.supportsFamily($0.0) }?.1 ?? 0
         self.cache = cache
         self.cameraYuv = cameraYuv
         self.cameraRgb = cameraRgb
@@ -443,9 +601,34 @@ final class NativeFaceGPU {
         self.blank = blank
     }
 
+    var matteReady: Bool { person?.ready ?? false }
+
+    func prepareHair() {
+        hairLock.lock()
+        let tried = hairTried
+        hairTried = true
+        hairLock.unlock()
+        guard !tried, let model = NativeSegmentModels.hair() else { return }
+        let made = NativeHairMatte(device: device, library: library, model: model)
+        hairLock.lock()
+        hair = made
+        hairLock.unlock()
+    }
+
+    private func currentHair() -> NativeHairMatte? {
+        hairLock.lock()
+        defer { hairLock.unlock() }
+        return hair
+    }
+
+    func resetMattes() {
+        person?.reset()
+        currentHair()?.reset()
+    }
+
     func draw(
         _ buffer: CVPixelBuffer, map: CallFaceFrameMap, plan: CallFaceDrawPlan, asset: NativeFaceAsset?, outfit: MTLTexture?,
-        matte: CVPixelBuffer?, follow: Bool, seed: Double
+        matte: CVPixelBuffer?, wantsMatte: Bool, background: NativeFaceBackdrop, runHair: Bool, guide: Int, depth: DepthInput?, seed: Double
     ) -> NativeFaceRenderer.Output? {
         guard let yuv = NativeCameraTone.yuv(buffer),
             let targets = targets(for: map),
@@ -468,9 +651,22 @@ final class NativeFaceGPU {
             held.append(source.0)
             pass(commands, into: targets.camera, cameraRgb, [source.1], [])
         }
-        let maskTexture = matte.flatMap(upload)
-        let hasMatte = maskTexture != nil
-        let mask = maskTexture ?? blank
+        var depthInfo: NativeFaceDepth?
+        if let depth, let made = depthTexture(depth.buffer, held: &held) {
+            depthInfo = NativeFaceDepth(
+                texture: made, faceMetres: depth.faceMetres,
+                toDepthUv: CallFaceMatte.depthUv(
+                    imageWidth: map.bufferWidth, imageHeight: map.bufferHeight,
+                    depthWidth: CVPixelBufferGetWidth(depth.buffer), depthHeight: CVPixelBufferGetHeight(depth.buffer)))
+        }
+        var hasMatte = false
+        if wantsMatte, let person {
+            person.guideWidth = guide
+            let raw = matte.flatMap(upload)
+            hasMatte = person.update(commands, camera: targets.camera, map: map, raw: raw, depth: raw == nil ? nil : depthInfo, face: plan.seed) && person.ready
+        }
+        let coef = hasMatte ? person?.coefficientTexture ?? blank : blank
+        let clean = hasMatte ? person?.mask ?? blank : blank
         let showFace = plan.showFace && asset != nil && !plan.vertices.isEmpty
         if showFace, let asset {
             drawWarp(commands, targets: targets, plan: plan, asset: asset)
@@ -487,18 +683,30 @@ final class NativeFaceGPU {
                 blurInto(commands, targets.wideFace, sigma: wide, spare: targets.spare)
             }
         }
+        var hairTexture: MTLTexture?
+        if showFace && hasMatte, let region = plan.hairRegion, let hair = currentHair() {
+            hairTexture = hair.update(commands, camera: targets.camera, map: map, region: region, run: runHair, depth: depthInfo)
+        }
         let wearing = plan.wearing && hasMatte && outfit != nil
+        var blurStrength: Double?
+        if case let .blur(strength) = background, hasMatte { blurStrength = strength }
         var fill = targets.camera
         var behind = targets.camera
-        if hasMatte && (showFace || wearing) { fill = buildFill(commands, targets: targets, mask: mask) }
-        if hasMatte && showFace && !follow { behind = buildHalo(commands, targets: targets) }
+        if hasMatte && (showFace || wearing || blurStrength != nil) { fill = buildFill(commands, targets: targets, coef: coef, clean: clean) }
+        if let blurStrength {
+            behind = buildBackdrop(commands, targets: targets, strength: blurStrength)
+        } else if hasMatte && showFace && background == .none {
+            behind = buildBackdrop(commands, targets: targets, strength: CallFaceDrawPlan.haloStrength)
+        }
         if plan.hide > 0.001 {
             reduceInto(commands, targets.plain, mode: 2, targets: targets)
             for _ in 0..<CallFaceDrawPlan.hidePasses {
                 blurInto(commands, targets.plain, sigma: CallFaceDrawPlan.hideSigma, spare: targets.spare)
             }
         }
-        let uniforms = compositeUniforms(map: map, plan: plan, showFace: showFace, wearing: wearing, hasMatte: hasMatte, follow: follow, seed: seed)
+        let uniforms = compositeUniforms(
+            map: map, plan: plan, showFace: showFace, wearing: wearing, hasMatte: hasMatte, follow: background == .follow, seed: seed,
+            hair: hairTexture != nil, blur: blurStrength != nil)
         let descriptor = MTLRenderPassDescriptor()
         descriptor.colorAttachments[0].texture = outputTexture.1
         descriptor.colorAttachments[0].loadAction = .dontCare
@@ -509,8 +717,8 @@ final class NativeFaceGPU {
         if let encoder = commands.makeRenderCommandEncoder(descriptor: descriptor) {
             encoder.setRenderPipelineState(composite)
             let textures: [MTLTexture] = [
-                targets.camera, mask, targets.warp, targets.aux, targets.lowCam, targets.lowFace, targets.wideCam, targets.wideFace,
-                fill, behind, targets.plain, outfit ?? blank,
+                targets.camera, coef, clean, targets.warp, targets.aux, targets.lowCam, targets.lowFace, targets.wideCam, targets.wideFace,
+                fill, behind, targets.plain, outfit ?? blank, hairTexture ?? blank,
             ]
             for (index, texture) in textures.enumerated() { encoder.setFragmentTexture(texture, index: index) }
             bytes(encoder, uniforms)
@@ -524,10 +732,12 @@ final class NativeFaceGPU {
         commands.waitUntilCompleted()
         withExtendedLifetime(held) {}
         guard commands.status == .completed else { return nil }
-        return NativeFaceRenderer.Output(frame: output, keep: keep)
+        return NativeFaceRenderer.Output(frame: output, keep: keep, backgroundDone: blurStrength != nil)
     }
 
-    private func compositeUniforms(map: CallFaceFrameMap, plan: CallFaceDrawPlan, showFace: Bool, wearing: Bool, hasMatte: Bool, follow: Bool, seed: Double) -> [SIMD4<Float>] {
+    private func compositeUniforms(
+        map: CallFaceFrameMap, plan: CallFaceDrawPlan, showFace: Bool, wearing: Bool, hasMatte: Bool, follow: Bool, seed: Double, hair: Bool, blur: Bool
+    ) -> [SIMD4<Float>] {
         let up = map.toUprightMatrix
         let width = Float(map.bufferWidth)
         let height = Float(map.bufferHeight)
@@ -550,6 +760,7 @@ final class NativeFaceGPU {
             SIMD4(f(tongue?.y.x ?? 0), f(tongue?.y.y ?? 0), f(reach) / width, f(reach) / height),
             SIMD4(f(outfit?.center.x ?? -1e5), f(outfit?.center.y ?? -1e5), f(outfit?.x.x ?? 0), f(outfit?.x.y ?? 0)),
             SIMD4(f(outfit?.y.x ?? 0), f(outfit?.y.y ?? 0), 0, 0),
+            SIMD4(hair ? 1 : 0, blur ? 1 : 0, Float(map.uprightWidth), Float(map.uprightHeight)),
         ]
     }
 
@@ -619,10 +830,10 @@ final class NativeFaceGPU {
         pass(commands, into: out, blur, [spare], [SIMD4(0, step / Float(out.height), 0, 0)])
     }
 
-    private func buildFill(_ commands: MTLCommandBuffer, targets: Targets, mask: MTLTexture) -> MTLTexture {
+    private func buildFill(_ commands: MTLCommandBuffer, targets: Targets, coef: MTLTexture, clean: MTLTexture) -> MTLTexture {
         let levels = targets.pyramid
         let first = levels[0]
-        pass(commands, into: first, weigh, [targets.camera, mask], [SIMD4(0.25 / Float(first.width), 0.25 / Float(first.height), 1, 0)])
+        pass(commands, into: first, weigh, [targets.camera, coef, clean], [SIMD4(0.25 / Float(first.width), 0.25 / Float(first.height), 1, 0)])
         for level in 1..<levels.count {
             let from = levels[level - 1]
             pass(commands, into: levels[level], push, [from], [SIMD4(0.5 / Float(from.width), 0.5 / Float(from.height), 0, 0)])
@@ -635,9 +846,9 @@ final class NativeFaceGPU {
         return targets.pulled[0]
     }
 
-    private func buildHalo(_ commands: MTLCommandBuffer, targets: Targets) -> MTLTexture {
+    private func buildBackdrop(_ commands: MTLCommandBuffer, targets: Targets, strength: Double) -> MTLTexture {
         pass(commands, into: targets.blurA, push, [targets.pyramid[1]], [SIMD4(0, 0, 0, 0)])
-        let halo = CallFaceDrawPlan.haloSigma(CallFaceDrawPlan.haloStrength)
+        let halo = CallFaceDrawPlan.haloSigma(strength)
         for _ in 0..<halo.passes { blurInto(commands, targets.blurA, sigma: halo.sigma, spare: targets.blurB) }
         pass(commands, into: targets.backdrop, backdrop, [targets.blurA, targets.pulled[1]], [])
         return targets.backdrop
@@ -681,6 +892,28 @@ final class NativeFaceGPU {
         guard let base = CVPixelBufferGetBaseAddress(matte) else { return nil }
         maskTexture.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0, withBytes: base, bytesPerRow: CVPixelBufferGetBytesPerRow(matte))
         return maskTexture
+    }
+
+    private func depthTexture(_ buffer: CVPixelBuffer, held: inout [CVMetalTexture]) -> MTLTexture? {
+        guard CVPixelBufferGetPixelFormatType(buffer) == kCVPixelFormatType_DepthFloat32 else { return nil }
+        if CVPixelBufferGetIOSurface(buffer) != nil, let made = texture(buffer, plane: -1, format: .r32Float) {
+            held.append(made.0)
+            return made.1
+        }
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        if depthCopy?.width != width || depthCopy?.height != height {
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .r32Float, width: width, height: height, mipmapped: false)
+            descriptor.usage = .shaderRead
+            descriptor.storageMode = .shared
+            depthCopy = device.makeTexture(descriptor: descriptor)
+        }
+        guard let depthCopy else { return nil }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let base = CVPixelBufferGetBaseAddress(buffer) else { return nil }
+        depthCopy.replace(region: MTLRegionMake2D(0, 0, width, height), mipmapLevel: 0, withBytes: base, bytesPerRow: CVPixelBufferGetBytesPerRow(buffer))
+        return depthCopy
     }
 
     private func texture(_ buffer: CVPixelBuffer, plane: Int, format: MTLPixelFormat) -> (CVMetalTexture, MTLTexture)? {

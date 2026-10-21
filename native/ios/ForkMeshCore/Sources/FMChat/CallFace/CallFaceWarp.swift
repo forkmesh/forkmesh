@@ -9,6 +9,11 @@ public struct CallFaceAxisFrame: Equatable, Sendable {
 public struct CallFaceHairRegion: Equatable, Sendable {
     public let center: CallFacePoint
     public let size: CallFacePoint
+
+    public init(center: CallFacePoint, size: CallFacePoint) {
+        self.center = center
+        self.size = size
+    }
 }
 
 public enum CallFaceWarp {

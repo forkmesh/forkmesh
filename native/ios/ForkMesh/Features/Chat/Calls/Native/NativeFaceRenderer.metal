@@ -140,17 +140,22 @@ fragment float4 fmFaceBlur(FmFaceQuad in [[stage_in]],
     return sum;
 }
 
-static float fmFaceMatte(texture2d<float> mask, float2 uv) {
-    return smoothstep(0.3, 0.7, mask.sample(fmFaceLinear, uv).r);
+static float fmFaceCallMatte(texture2d<float> coef, texture2d<float> clean, float3 color, float2 uv) {
+    float3 abc = coef.sample(fmFaceLinear, uv).rgb;
+    float i = dot(color, fmFaceLuma);
+    float guided = clamp(abc.x * i + abc.y, 0.0, 1.0);
+    float hard = smoothstep(0.3, 0.7, clean.sample(fmFaceLinear, uv).r);
+    return mix(hard, guided, smoothstep(0.15, 0.6, abc.z));
 }
 
-static float fmFaceAlphaAt(texture2d<float> mask, float hasMatte, float2 uv) {
-    return hasMatte > 0.5 ? fmFaceMatte(mask, uv) : 0.0;
+static float fmFaceAlphaAt(texture2d<float> cam, texture2d<float> coef, texture2d<float> clean, float hasMatte, float2 uv) {
+    return hasMatte > 0.5 ? fmFaceCallMatte(coef, clean, cam.sample(fmFaceLinear, uv).rgb, uv) : 0.0;
 }
 
 fragment float4 fmFaceWeigh(FmFaceQuad in [[stage_in]],
                             texture2d<float> cam [[texture(0)]],
-                            texture2d<float> mask [[texture(1)]],
+                            texture2d<float> coef [[texture(1)]],
+                            texture2d<float> clean [[texture(2)]],
                             constant FmFaceStepUniforms& u [[buffer(0)]]) {
     float2 s = u.step.xy;
     float has = u.step.z;
@@ -159,9 +164,10 @@ fragment float4 fmFaceWeigh(FmFaceQuad in [[stage_in]],
     float2 c = in.uv + float2(-s.x, s.y);
     float2 d = in.uv + float2(s.x, s.y);
     float3 color = 0.25 * (cam.sample(fmFaceLinear, a).rgb + cam.sample(fmFaceLinear, b).rgb + cam.sample(fmFaceLinear, c).rgb + cam.sample(fmFaceLinear, d).rgb);
-    float reach = max(max(fmFaceAlphaAt(mask, has, a), fmFaceAlphaAt(mask, has, b)), max(fmFaceAlphaAt(mask, has, c), fmFaceAlphaAt(mask, has, d)));
-    reach = max(reach, max(fmFaceAlphaAt(mask, has, in.uv + float2(4.0 * s.x, 0.0)), fmFaceAlphaAt(mask, has, in.uv - float2(4.0 * s.x, 0.0))));
-    reach = max(reach, max(fmFaceAlphaAt(mask, has, in.uv + float2(0.0, 4.0 * s.y)), fmFaceAlphaAt(mask, has, in.uv - float2(0.0, 4.0 * s.y))));
+    float reach = max(max(fmFaceAlphaAt(cam, coef, clean, has, a), fmFaceAlphaAt(cam, coef, clean, has, b)),
+                      max(fmFaceAlphaAt(cam, coef, clean, has, c), fmFaceAlphaAt(cam, coef, clean, has, d)));
+    reach = max(reach, max(fmFaceAlphaAt(cam, coef, clean, has, in.uv + float2(4.0 * s.x, 0.0)), fmFaceAlphaAt(cam, coef, clean, has, in.uv - float2(4.0 * s.x, 0.0))));
+    reach = max(reach, max(fmFaceAlphaAt(cam, coef, clean, has, in.uv + float2(0.0, 4.0 * s.y)), fmFaceAlphaAt(cam, coef, clean, has, in.uv - float2(0.0, 4.0 * s.y))));
     float w = pow(1.0 - reach, 3.0);
     return float4(color * w, w);
 }
@@ -209,6 +215,7 @@ struct FmFaceCompositeUniforms {
     float4 tongueYReach;
     float4 outfitCenterX;
     float4 outfitY;
+    float4 hairState;
 };
 
 struct FmFaceCompositeTargets {
@@ -225,9 +232,26 @@ static float fmFaceZoneRadius(float2 q) {
     return length((q - float2(0.0, -0.35)) / float2(2.55, 2.9));
 }
 
-static float fmFaceHeadZone(float2 q) {
+static float fmFaceHairAt(texture2d<float> hair, float2 px, float4 state) {
+    return hair.sample(fmFaceLinear, px / state.zw).r;
+}
+
+static float fmFaceHeadZone(float2 q, float2 px, texture2d<float> hair, float4 state) {
     float side = abs(q.x);
     float neck = smoothstep(0.8, 1.4, q.y) * (1.0 - smoothstep(0.55, 0.85, side));
+    if (state.x > 0.5) {
+        float face = 1.0 - smoothstep(0.9, 1.0, length((q - float2(0.0, -0.3)) / float2(2.1, 2.6)));
+        face *= 1.0 - smoothstep(1.0, 1.5, q.y) * smoothstep(0.8, 1.05, side);
+        float h = fmFaceHairAt(hair, px, state);
+        for (int k = 0; k < 8; k++) {
+            float a = float(k) * 0.785398;
+            float2 dir = float2(cos(a), sin(a));
+            h = max(h, fmFaceHairAt(hair, px + dir * 4.0, state));
+            h = max(h, fmFaceHairAt(hair, px + dir * 9.0, state) * 0.9);
+        }
+        float strands = smoothstep(0.05, 0.25, h) * (1.0 - neck);
+        return max(face * (1.0 - neck), strands);
+    }
     float head = 1.0 - smoothstep(0.82, 1.0, fmFaceZoneRadius(q));
     return head * (1.0 - neck);
 }
@@ -241,7 +265,7 @@ static float3 fmFaceChroma(float3 c) {
 }
 
 static float3 fmFaceDress(float3 front, float3 cam, float alpha, float zone, float2 uv, float2 px,
-                          constant FmFaceCompositeUniforms& u, texture2d<float> camera, texture2d<float> outfit) {
+                          constant FmFaceCompositeUniforms& u, texture2d<float> camera, texture2d<float> outfit, texture2d<float> hair) {
     float2 q = fmFaceAxis(px, u.outfitCenterX.xy, u.outfitCenterX.zw, u.outfitY.xy);
     float4 cloth = outfit.sample(fmFaceMip, (float2(512.0, 176.0) + q * 96.0) / 1024.0);
     if (cloth.a < 0.002) return front;
@@ -262,7 +286,8 @@ static float3 fmFaceDress(float3 front, float3 cam, float alpha, float zone, flo
     float near = 1.0 - smoothstep(0.035, 0.07, distance(fmFaceChroma(cam), fmFaceChroma(skin)));
     float bright = dot(cam, fmFaceLuma) / max(dot(skin, fmFaceLuma), 0.02);
     float hands = near * smoothstep(0.45, 0.65, bright) * (1.0 - smoothstep(1.6, 2.0, bright)) * smoothstep(1.2, 1.9, q.y);
-    float g = cloth.a * u.zoneYOutfit.z * (1.0 - hands) * (1.0 - zone);
+    float strands = u.hairState.x > 0.5 ? smoothstep(0.4, 0.8, fmFaceHairAt(hair, px, u.hairState)) : 0.0;
+    float g = cloth.a * u.zoneYOutfit.z * (1.0 - hands) * (1.0 - strands) * (1.0 - zone);
     float3 tint = cloth.rgb / cloth.a;
     return mix(front, tint * detail * alpha, g);
 }
@@ -287,17 +312,19 @@ static float fmFaceTongueAt(float2 px, float3 cam, constant FmFaceCompositeUnifo
 
 fragment FmFaceCompositeTargets fmFaceComposite(FmFaceQuad in [[stage_in]],
                                                 texture2d<float> camera [[texture(0)]],
-                                                texture2d<float> mask [[texture(1)]],
-                                                texture2d<float> warpT [[texture(2)]],
-                                                texture2d<float> auxT [[texture(3)]],
-                                                texture2d<float> lowCamT [[texture(4)]],
-                                                texture2d<float> lowFaceT [[texture(5)]],
-                                                texture2d<float> wideCamT [[texture(6)]],
-                                                texture2d<float> wideFaceT [[texture(7)]],
-                                                texture2d<float> fillT [[texture(8)]],
-                                                texture2d<float> backdropT [[texture(9)]],
-                                                texture2d<float> plainT [[texture(10)]],
-                                                texture2d<float> outfit [[texture(11)]],
+                                                texture2d<float> coef [[texture(1)]],
+                                                texture2d<float> clean [[texture(2)]],
+                                                texture2d<float> warpT [[texture(3)]],
+                                                texture2d<float> auxT [[texture(4)]],
+                                                texture2d<float> lowCamT [[texture(5)]],
+                                                texture2d<float> lowFaceT [[texture(6)]],
+                                                texture2d<float> wideCamT [[texture(7)]],
+                                                texture2d<float> wideFaceT [[texture(8)]],
+                                                texture2d<float> fillT [[texture(9)]],
+                                                texture2d<float> backdropT [[texture(10)]],
+                                                texture2d<float> plainT [[texture(11)]],
+                                                texture2d<float> outfit [[texture(12)]],
+                                                texture2d<float> hair [[texture(13)]],
                                                 constant FmFaceCompositeUniforms& u [[buffer(0)]]) {
     float2 uv = in.uv;
     float3 buffer = float3(uv * float2(u.toUprightX.w, u.toUprightY.w), 1.0);
@@ -309,7 +336,8 @@ fragment FmFaceCompositeTargets fmFaceComposite(FmFaceQuad in [[stage_in]],
     bool follow = u.extra.x > 0.5;
     float tongue = u.extra.y;
     float3 cam = camera.sample(fmFaceLinear, uv).rgb;
-    float alpha = hasMatte > 0.5 ? fmFaceMatte(mask, uv) : 1.0;
+    float alpha = hasMatte > 0.5 ? fmFaceCallMatte(coef, clean, cam, uv) : 1.0;
+    float mode = u.hairState.y;
     float3 fill = fillT.sample(fmFaceLinear, uv).rgb;
     float4 warp = float4(0.0);
     float4 aux = float4(0.0);
@@ -321,13 +349,15 @@ fragment FmFaceCompositeTargets fmFaceComposite(FmFaceQuad in [[stage_in]],
         aux = auxT.sample(fmFaceLinear, uv);
         hole = min(aux.b * 2.0, 1.0);
         cavity = max(aux.b * 2.0 - 1.0, 0.0);
-        zone = fmFaceHeadZone(fmFaceAxis(px, u.zoneCenterX.xy, u.zoneCenterX.zw, u.zoneYOutfit.xy)) * presence * (1.0 - hole) * hasMatte;
+        zone = fmFaceHeadZone(fmFaceAxis(px, u.zoneCenterX.xy, u.zoneCenterX.zw, u.zoneYOutfit.xy), px, hair, u.hairState) * presence * (1.0 - hole) * hasMatte;
     }
     float3 front = clamp(cam - (1.0 - alpha) * fill, float3(0.0), float3(alpha));
     float3 behind = alpha < 0.98 ? (cam - front) / (1.0 - alpha) : fill;
-    if (u.zoneYOutfit.z > 0.001 && hasMatte > 0.5) front = fmFaceDress(front, cam, alpha, zone, uv, px, u, camera, outfit);
+    if (u.zoneYOutfit.z > 0.001 && hasMatte > 0.5) front = fmFaceDress(front, cam, alpha, zone, uv, px, u, camera, outfit, hair);
     float3 backdrop = behind;
-    if (face && !follow) {
+    if (mode > 0.5) {
+        backdrop = backdropT.sample(fmFaceLinear, uv).rgb;
+    } else if (face && !follow) {
         float4 soft = backdropT.sample(fmFaceLinear, uv);
         float2 q = fmFaceAxis(px, u.zoneCenterX.xy, u.zoneCenterX.zw, u.zoneYOutfit.xy);
         float halo = fmFaceHeadHalo(q) * presence * hasMatte * (1.0 - smoothstep(0.45, 0.92, soft.a));
@@ -370,7 +400,8 @@ fragment FmFaceCompositeTargets fmFaceComposite(FmFaceQuad in [[stage_in]],
     float shown = 1.0 - (1.0 - keep) * (1.0 - cover);
     if (hide > 0.001) {
         float3 plain = plainT.sample(fmFaceLinear, uv).rgb;
-        color = mix(color, plain, hide);
+        float3 hidden = mode > 0.5 ? mix(backdrop, plain, smoothstep(0.1, 0.6, alpha)) : plain;
+        color = mix(color, hidden, hide);
         shown = mix(shown, smoothstep(0.1, 0.6, alpha), hide);
     }
     FmFaceCompositeTargets out;

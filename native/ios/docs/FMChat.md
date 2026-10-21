@@ -669,7 +669,12 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     does not own (outgoing, or the China region) activate it themselves (`beginAudio`/`endAudio`).
     That is what gives a call answered on the lock screen its audio at once.
   - `NativeCameraPipeline` wraps `RTCCameraVideoCapturer` (front camera, nearest format) and runs
-    every frame through a `NativeFrameFilter`; `NativeLookFilter` draws the chosen face, then
+    every frame through a `NativeFrameFilter`. While a face is chosen on a phone with a TrueDepth
+    front camera it switches the camera to `NativeFaceTrackingSource` (`ARFaceTrackingConfiguration`,
+    `ARFrame.capturedImage` fed to the same `RTCVideoSource`, with the face mesh, blend shapes and
+    depth passed to the filter) and back when the face is cleared, the session fails or no frame
+    arrives within 1.5 s; while a look is active it also caps the frame rate and encode size by
+    thermal state (`CallFaceQuality.capture`, `CallFaceFrameGate`); `NativeLookFilter` draws the chosen face, then
     replaces or blurs the background with `VNGeneratePersonSegmentationRequest` and Core Image
     (pictures in `Resources/CallBackgrounds`, the custom photo from the look). Both follow
     `FaceChangerLook` through `NativeCallMedia.follow`.
@@ -691,10 +696,14 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
     (`FMChat/Group/GroupCalls.swift`). The channel header shows `GroupCallHeaderButtons` (Join · N
     while a call runs) and `.groupCallsRoot()` presents `GroupCallPanel`.
   - Faces are drawn natively: `NativeLookFilter` runs `NativeFaceRenderer` (Metal, Vision
-    landmarks, the shared `FMChat/CallFace` maths, `CallFaceStage` for the frame loop) before the
-    background, and hands the background step a keep mask so the stand-in's hair is not cut
-    away. Stand-in photos are in `Resources/CallFaces`; the custom face is built from the look's
-    photo. Passes, threading, fallbacks, cost and the differences from the browser are in
+    landmarks or the ARKit face mesh, the shared `FMChat/CallFace` maths, `CallFaceStage` for the
+    frame loop) before the background, and hands the background step a keep mask so the
+    stand-in's hair is not cut away; a blur background is drawn inside the face pass from the
+    reconstructed room. `NativeFaceSegment` runs the browser's hair network
+    (`Resources/CallSegmentation/hair-192.fmnn`, `CallSegmentModel`/`CallSegmentPlan` in
+    `FMChat/CallFace`) as Metal compute kernels and the browser's guided-filter person matte on
+    Vision's mask. Stand-in photos are in `Resources/CallFaces`; the custom face is built from the
+    look's photo. Passes, threading, fallbacks, cost and the differences from the browser are in
     `docs/app/chat-direct-calls.md`, "Native face renderer (iOS)".
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
   connects and when the selected candidate pair changes. `WebCallPeer` passes it to
@@ -783,7 +792,11 @@ history store, direct messages, receipts, view-once media and captions, push dec
 parsing, v4 delivery (`DirectMessagesTests`: own frames ignored, one reset and advertisement per
 lost session, a received reset reseals the outbox to that device only, no superseded), the v3 UI logic (`DirectTrustUITests`: trust lines and banners, transcript order, safety
 rows and scan results, the privacy switches and lock, focus reporting, office channel ids), calls (including the state lines, route notes and the ringback and ring tones in
-`DirectCallsTests`) and call face depth (`CallFaceDepthTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
+`DirectCallsTests`), call face depth (`CallFaceDepthTests`), the call face maths
+(`CallFaceParityTests`, `CallFaceStageTests`), the segmentation network against the browser's
+WebGL output (`CallSegmentTests`, fixture from `tools/call_segment_parity.mjs`) and the ARKit-side
+logic: blend-shape mapping, mesh binding, capture format, frame gate and quality levels
+(`CallFaceTrackingTests`). The SwiftUI views and the AVFoundation, Speech, Vision and WebKit paths are
 syntax-checked on Linux and compiled only on macOS CI; the Local Network prompt, multicast and
 device capture paths need on-device verification.
 

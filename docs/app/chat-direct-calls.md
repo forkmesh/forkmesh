@@ -480,8 +480,8 @@ tone and skin matching, and texture uploads. Also: the person and hair mattes
 (the networks in `chat-call-segment.js` and the guided filter), running the
 detector and mesh networks, `createFaceStage`'s frame loop (hold, fades,
 adaptive quality), drawing the outfit commands and their thumbnails, and
-loading photos and mattes. iOS now has all of this except the hair matte and
-the guided filter (see below); Android still has none of it.
+loading photos and mattes. iOS now has all of this, including the hair
+network and the guided filter (see below); Android still has none of it.
 
 **Not ported:**
 
@@ -599,6 +599,10 @@ call's look picker shows on the native engine as it does in the browser.
 | Landmarks, GPU passes, buffers | `NativeFaceRenderer.swift` (same folder) |
 | Stand-in photos, the custom face, outfit textures | `NativeFaceAssets.swift` (same folder) |
 | Stand-in photos and mattes | `native/ios/ForkMesh/Resources/CallFaces/` (copies of `app/public/assets/call-faces/`) |
+| Segmentation network runner, hair matte, guided person matte (Metal) | `NativeFaceSegment.swift`, `NativeFaceSegment.metal` (same folder); model parsing and plan in `FMChat/CallFace/CallSegmentModel.swift` (Linux tests in `CallSegmentTests`) |
+| Matte sizes, quality levels, blend shapes, mesh binding, capture policy | `CallFaceMatte.swift`, `CallFaceQuality.swift`, `CallFaceTracking.swift` in `FMChat/CallFace` (Linux tests in `CallFaceTrackingTests`) |
+| ARKit face-tracking camera | `NativeFaceTracking.swift`; switching in `NativeCameraPipeline` (`NativeCallMedia.swift`) |
+| Hair network weights | `native/ios/ForkMesh/Resources/CallSegmentation/hair-192.fmnn` (copy of `app/public/assets/call-segmentation/hair-192.fmnn`) |
 
 **Wiring.** `NativeCallMedia.follow(look)` passes the look's face and custom
 photo to `NativeLookFilter.apply(face:customImage:)`. For each camera frame
@@ -609,11 +613,15 @@ browser does:
    returns the new frame plus a full-size "keep" mask (the person after the
    head swap: the person matte minus the removed head zone, plus the drawn
    stand-in).
-2. If a background is chosen, the existing Core Image step replaces or blurs
+2. If a picture background is chosen, the existing Core Image step replaces
    the background of that frame, using the keep mask instead of Vision's mask.
+   A blur background is drawn by the face pass itself (see "Blur backgrounds"
+   below) and Core Image is skipped; with no face or outfit drawn, Core Image
+   blurs as before.
    Without the keep mask the stand-in's hair outside the caller's own outline
-   would be cut away. The person segmentation runs at most once per frame and
-   is shared by both steps.
+   would be cut away. The person segmentation runs at most once per frame (or
+   every 2nd or 3rd frame at the lower quality levels) and is shared by both
+   steps.
 
 With no face and no outfit, the filter does no extra work. Outfits are wired
 (`NativeLookFilter.apply(outfit:)`), but calls do not offer outfits yet, as in
@@ -639,12 +647,18 @@ targets are sized from the upright width (160 and 192 px), as in the browser.
    gaze, eyelid and mip-bias maths unchanged.
 3. Tone: reduce plus Gaussian blur into the low camera, low face and wide
    camera/face targets (RGBA16F).
-4. Fill: weigh, push and pull pyramid (6 levels) for the room behind the
-   caller.
-5. Halo (no background chosen): the blurred backdrop from pyramid level 1.
-6. Hide: the blurred plain frame, only while hiding.
-7. Composite: the browser's composite in mode "off" (the background comes
-   after), writing the frame and the keep mask.
+4. Person matte: temporal, seed, 8 grow rounds, clean and the guided filter
+   (below), when a face, outfit or background needs it.
+5. Hair matte: crop, the hair network (162 compute dispatches) and the frame
+   pass, when a face is shown (below).
+6. Fill: weigh, push and pull pyramid (6 levels) for the room behind the
+   caller, weighed by the guided matte.
+7. Halo (no background chosen) or blur backdrop (blur chosen): the blurred
+   room from pyramid level 1.
+8. Hide: the blurred plain frame, only while hiding.
+9. Composite: the browser's composite in mode "off" or "blur" (a picture
+   background comes after), with the guided matte, the hair zone and the
+   hair-aware collar, writing the frame and the keep mask.
 
 **Threading.** Faces, custom faces and outfits are built on a loader queue;
 frames pass through until the Metal device and pipelines exist (they are made
@@ -664,7 +678,8 @@ head removal. A face that is chosen but not found, or still loading, follows
 the browser's privacy rule: the frame fades to the blurred plain frame
 (`hide`), not to the raw camera.
 
-**Cost.** Per frame: one Vision landmark request, one person segmentation (it
+**Cost** (before the hair network and guided matte; see "Parity" below for
+those). Per frame: one Vision landmark request, one person segmentation (it
 also feeds the background), about 40 small render passes, and one full-size
 composite. Textures, depth, vertex buffer, pixel-buffer pools and pipeline
 states are kept and only rebuilt when the frame size or rotation changes. The
@@ -678,25 +693,182 @@ custom face on that Mac takes about 0.9 s once Vision's models are loaded
 (0.74 s Vision accurate, 0.16 s `buildMatte`) and 8.5 s the first time in a
 process; it runs on the loader queue.
 
-**Differences from the browser:**
+**Beyond the browser (2026-10-21).** The iPhone now does everything the
+browser does to the matte and the head zone, and more on phones with a
+TrueDepth front camera:
 
-- No hair matte: iOS has no hair model, so the head zone is the plain ellipse
-  (`uHasHair` 0), and an outfit does not keep hair in front of the collar.
-- The person matte is Vision's mask (`smoothstep(0.3, 0.7)`), without the
-  guided filter, so its edge is softer and does not follow fine hair.
-- No TrueDepth: the native capturer is `RTCCameraVideoCapturer`, so pose comes
-  from the 2D fit.
-- No adaptive quality levels: there is no network to skip, only the inline or
-  queued detection above.
+| | Browser | iPhone |
+|---|---|---|
+| Hair matte | `hair-192` network in WebGL | the same network and weights as Metal compute kernels |
+| Person matte | selfie network or host mask, guided filter | Vision's person mask (a larger model than the selfie network), the same temporal, region and guided-filter passes |
+| Head pose | 2D landmarks (3D with the WebView's depth path) | TrueDepth: ARKit's face mesh gives every landmark a measured depth, so `solvePose` runs its 3D path every frame |
+| Eyes, blinks, tongue | pixel probe | ARKit blend shapes (`eyeBlink*`, `eyeLook*`, `tongueOut`) |
+| Matte edge | colour guided filter | colour guided filter plus the depth map (TrueDepth) |
+| Blur background | blur of the reconstructed room | the same, inside the face pass |
+| Quality levels | by frame cost | by frame cost, device class and thermal state; capture rate and encode size step down when hot |
+
+**Segmentation networks** (`CallSegmentModel.swift`, `CallSegmentReference.swift`
+in `FMChat/CallFace`, `NativeFaceSegment.swift` and `.metal` in the app):
+
+- `CallSegmentModel.parse` reads the browser's `.fmnn` files (magic, JSON
+  header, half-float weights) and expands `mean` into the row and column
+  passes as `expandLayers` does. `CallSegmentPlan` lays every tensor out in one
+  NHWC half-float arena (offsets aligned to 64 values) and packs each layer's
+  parameters into 32 integers.
+- `fmSegLayer` is one compute kernel for every layer op the networks use (conv,
+  dilated conv, transposed conv, depthwise, mean, add/mul with broadcast,
+  resize, argmax, unpool, concat, pad, max pool) and every activation, one
+  thread per output value. It keeps the WebGL shader's arithmetic: half-float
+  storage between layers, float accumulation, the input channels summed four
+  at a time, `exp` clamped at ±30. Each layer is one dispatch in one serial
+  compute encoder.
+- `CallSegmentReference` is the same maths on the CPU, used only by the tests.
+- `hair-192.fmnn` is bundled in `Resources/CallSegmentation/` (byte-identical
+  to `app/public/assets/call-segmentation/`, checked by `CallSegmentTests`) with
+  its licence. It loads on the face loader queue the first time a face is
+  chosen.
+
+**Hair matte** (`NativeHairMatte`): `fmHairCrop` fills the network input from
+the camera (3x3 box per input pixel, the previous matte as the fourth channel)
+inside `CallFaceWarp.hairRegion`, now part of `CallFaceDrawPlan`; the network
+runs; `fmHairFrame` turns the logits into a hair probability and blends it with
+the previous frame, as `createHairMatte` does (3 warm rounds on a fresh matte,
+rate 0.5). The matte is kept upright (`CallFaceMatte.hairSize`: at most 256
+pixels wide), so the composite reads it in upright pixels whatever the buffer
+rotation. The composite uses it as the browser does: the head zone becomes the
+face oval plus the dilated hair (`uHasHair` 1), and an outfit stays behind the
+hair at the collar. With TrueDepth, hair more than 0.25-0.55 m behind the face
+is dropped.
+
+**Person matte** (`NativePersonMatte`): `createMatte`'s host-mask path, pass for
+pass: temporal hold (0.55), seeds from the bottom band and the face circle,
+8 grow rounds on a 64-pixel-wide grid, clean, then the guided filter (moments,
+radius 4 box, `eps` 0.0012, coefficients, box) at the quality level's guide
+width. The composite and the room fill use `MATTE_SAMPLE`'s blend of the hard
+mask and the guided value, so the edge follows hair and colour edges instead
+of Vision's soft mask, and the keep mask handed to Core Image for picture
+backgrounds has the same edge. The passes run in buffer orientation; the seed
+maps each texel to upright coordinates (`CallFaceFrameMap.toUprightUvMatrix`)
+so the bottom band is always below the caller.
+
+**Depth fusion (TrueDepth).** When an ARKit depth map is less than 150 ms old,
+`fmMatteFuse` moves Vision's mask 60% of the way towards "nearer than 0.35-0.7 m
+behind the face" wherever the depth is valid (0.1-5 m); holes (dark hair, edges)
+keep Vision's value. The guided filter then snaps the fused edge to colour
+edges. The depth map is assumed to cover the same field of view as the image,
+or its middle when the aspect differs (`CallFaceMatte.depthUv`).
+
+**TrueDepth tracking** (`NativeFaceTracking.swift`, `CallFaceTracking.swift`):
+
+- Only while a face is chosen, on a device where
+  `ARFaceTrackingConfiguration.isSupported`, with camera access and Eye Control
+  off, `NativeCameraPipeline` stops `RTCCameraVideoCapturer` and runs an
+  `ARSession` instead. `ARFrame.capturedImage` (sensor orientation, not
+  mirrored, like the WebRTC capturer's buffers) goes to the same
+  `RTCVideoSource` with the rotation `RTCCameraVideoCapturer` would use for the
+  device orientation (`CallFaceCapture.rotation`). The video format is the one
+  whose rate is closest above the call's and whose size covers it
+  (`CallFaceCapture.pick`); a 60 fps format is halved by `CallFaceFrameGate`.
+- Each frame carries the 1220 mesh vertices projected into the image
+  (`ARCamera.projectPoint`, `.landscapeRight`, image size) with their camera
+  distance, the triangle list, the blend shapes, `fx`, the face distance and
+  the latest depth map.
+- Landmarks: the mesh has no 68-point labels, so `CallFaceMeshBinding` learns
+  them. The first three Vision results are bound to the mesh (each landmark to
+  the triangle most frames chose, with averaged barycentric weights, kept only
+  if the mean error is under 0.1 eye spans), after which landmarks come from
+  the mesh every frame with no Vision, each with `z` from the vertex depths
+  (`CallFaceDepth.z`). Vision runs again every 2 s on its own queue to check
+  and refine the binding; a binding that keeps failing (for example a mirrored
+  projection) is dropped after 3 misses and the renderer stays on Vision
+  landmarks while still using the blend shapes.
+- Expression: `CallFaceBlendMapping` maps `eyeBlink*` to the eyelid closure
+  (0.2-0.75), `eyeLook*` to the gaze (±`lookLimit`) and `tongueOut` to the
+  tongue (0.15-0.5). Image-left eye (points 36-41) is the caller's right eye.
+  The probe still supplies the skin colour. Mouth shapes (`jawOpen`,
+  `mouthSmile*`, `cheekPuff`) arrive through the mesh landmarks.
+- Fallbacks: no frame within 1.5 s of starting, an `ARSession` error, or a
+  device without TrueDepth (and the simulator) keep or return to the WebRTC
+  camera and the Vision path for the rest of that call. An interruption re-runs
+  the session when it ends. A frame where ARKit has no face falls back to
+  Vision, and a face that is found by neither still fades to the blurred plain
+  frame.
+- Info.plist and entitlements: nothing new. ARKit face tracking needs only
+  `NSCameraUsageDescription`, which exists (its text does not mention calls).
+  Do not add `arkit` to `UIRequiredDeviceCapabilities`: phones without it must
+  still install the app. App Review asks apps that use face tracking to say in
+  their privacy policy that face data stays on the device.
+
+**Quality levels** (`CallFaceQuality`, `CallFaceQualityGovernor`). Levels as in
+the browser: segmentation every 1, 1, 2, 3 frames, hair network every 1, 2,
+3, 4 frames, guide width 320, 320, 256, 192, and Vision's `.fast`
+segmentation from level 2. The start level comes from the GPU family (Apple 7
+and later 0, Apple 6 1, Apple 5 2, anything else 3). The level steps up when
+the frame's cost (render plus segmentation) averages over 28 ms and down under
+16 ms, after 24 steady frames. `.serious` thermal state holds it at 2 or
+above and `.critical` at 3; while a look is active the pipeline also caps the
+capture rate at 24 fps and the encode size at 75% (`.serious`), or 15 fps and
+50% (`.critical`), through `RTCVideoSource.adaptOutputFormat`.
+
+**Blur backgrounds** are now drawn in the composite whenever the face pass
+draws (mode 1): the blur comes from the room fill with the caller removed
+(`buildBlurBackdrop`, strength 0.4 or 1), so the caller never smears into it,
+and Core Image is skipped. Picture backgrounds still go through Core Image with
+the keep mask.
+
+**Still different from the browser:**
+
+- The person matte's source is Vision's mask rather than the selfie network
+  (the network runs natively too; it is not used because Vision's mask is
+  better and runs on the Neural Engine).
+- Picture backgrounds are composited by Core Image after the face pass.
 - The custom face uses Vision's full-resolution person mask instead of the
   256 px one the WebView gets.
-- With a background, Core Image composites it over the frame with the keep
-  mask, instead of inside the composite pass; the blur backdrop is a blur of
-  the frame (the existing native behaviour), not of the inpainted room.
 
-Checked on the office Mac with a macOS harness that builds the same Swift and
-Metal files: stand-ins on 0, 90 and 270 degree buffers, NV12 and BGRA, a
-custom face, outfits on a drawn torso, and the hide path with no face.
+**Parity.** `tools/call_segment_parity.mjs` runs the browser's own
+`createNetwork`, `createHairMatte` and `createMatte` in headless Chromium
+(WebGL 1 on SwiftShader, half-float targets, through `playwright-core` from
+`app/browser_tests/node_modules`) and writes
+`native/ios/ForkMeshCore/Tests/FMChatTests/Fixtures/call-segment-parity.json`:
+the inputs (stand-in photos over the office background, the hair input with a
+previous matte from a first run), the hair and square networks' outputs as
+half floats with a sum per layer, three hair-matte steps and two person-matte
+steps. The page must enable `OES_texture_half_float_linear`, as the renderer
+does, or every linearly sampled matte target reads black. Regenerating gives
+byte-identical output:
+
+```sh
+node tools/call_segment_parity.mjs native/ios/ForkMeshCore/Tests/FMChatTests/Fixtures/call-segment-parity.json
+```
+
+Measured on 2026-10-21:
+
+- `CallSegmentTests` (Linux): the CPU reference matches the browser's hair
+  network bit for bit (every logit), the selfie network to 0.012 at worst
+  (mean 3e-5).
+- macOS harness on the office Mac (Intel Iris Plus 650, built from the same
+  Swift and Metal files): `fmSegLayer` matches the browser's hair network bit
+  for bit and the selfie network to 0.027 at worst (mean 3e-5); the hair matte
+  to 0.06-0.08/255 on average (worst 19-24/255 in a few edge pixels, from
+  8-bit bilinear sampling) at 0, 90 and 270 degrees; the person matte's clean
+  mask to 0.0007 at worst and the guided alpha to 0.0004 on average (worst
+  0.028), at 0 and 90 degrees.
+- Costs on that Mac (loaded by other builds): hair network 10-12 ms GPU per
+  run (36.5 M multiply-adds, 162 dispatches), selfie network 13 ms, person
+  matte 0.3-0.45 ms GPU, a fresh hair matte (3 rounds) 30 ms and a normal
+  update 10 ms; a whole 640x480 frame 7-15 ms median at level 3 with a cached
+  mask. Vision on its CPU: segmentation 200 ms `.balanced` and 52 ms `.fast`,
+  landmarks 82 ms. With a synthetic mesh in place of ARKit the renderer binds
+  after the first Vision results and then draws at 9-10 ms a frame with no
+  per-frame Vision.
+- Not measured: anything on an iPhone. ARKit face tracking, the projection of
+  the mesh into the front camera image, blend-shape sides, the depth map's
+  field of view, and the costs on the Neural Engine and Apple GPUs need a
+  TrueDepth iPhone.
+
+Checked on the office Mac with the earlier harness too: stand-ins on 0, 90 and
+270 degree buffers, NV12 and BGRA, a custom face, outfits on a drawn torso, and
+the hide path with no face.
 
 ### Backgrounds
 

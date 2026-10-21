@@ -25,6 +25,8 @@ final class NativeLookFilter: NativeFrameFilter, @unchecked Sendable {
     private var poolSize: CGSize = .zero
     private let face = NativeFaceRenderer()
 
+    var wantsFaceTracking: Bool { face.wantsFaceTracking }
+
     var active: Bool {
         lock.lock()
         let backdrop = !background.isEmpty
@@ -66,7 +68,7 @@ final class NativeLookFilter: NativeFrameFilter, @unchecked Sendable {
         return CIImage(contentsOf: url)
     }
 
-    func filter(_ buffer: CVPixelBuffer, rotation: RTCVideoRotation, timeNs: Int64) -> CVPixelBuffer {
+    func filter(_ buffer: CVPixelBuffer, rotation: RTCVideoRotation, timeNs: Int64, tracking: NativeFaceTrackingFrame?) -> CVPixelBuffer {
         lock.lock()
         let id = background
         let landscape = picture
@@ -79,6 +81,8 @@ final class NativeLookFilter: NativeFrameFilter, @unchecked Sendable {
         func segment() -> CVPixelBuffer? {
             if !segmented {
                 segmented = true
+                let quality: VNGeneratePersonSegmentationRequest.QualityLevel = face.fastSegmentation ? .fast : .balanced
+                if request.qualityLevel != quality { request.qualityLevel = quality }
                 let handler = VNImageRequestHandler(cvPixelBuffer: buffer, orientation: .up)
                 person = (try? handler.perform([request])) != nil ? request.results?.first?.pixelBuffer : nil
             }
@@ -86,7 +90,9 @@ final class NativeLookFilter: NativeFrameFilter, @unchecked Sendable {
         }
         var plain = buffer
         var keep: CVPixelBuffer?
-        if faced, let drawn = face.render(buffer, degrees: rotation.rawValue, timeNs: timeNs, backgroundFollows: !id.isEmpty, mask: segment) {
+        let scene: NativeFaceBackdrop = id.isEmpty ? .none : CallFaceMatte.blurStrength(id).map { .blur($0) } ?? .follow
+        if faced, let drawn = face.render(buffer, degrees: rotation.rawValue, timeNs: timeNs, background: scene, tracking: tracking, mask: segment) {
+            if drawn.backgroundDone { return drawn.frame }
             plain = drawn.frame
             keep = drawn.keep
         }
