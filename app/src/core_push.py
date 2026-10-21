@@ -317,6 +317,11 @@ async def record_accepted_push(env, owner, repo, endpoint, account, report,
                 env, owner, repo, account, updates, alias=alias)
         except Exception:
             pass
+    if updates:
+        try:
+            await pull_attention_pushed(env, owner, repo, updates)
+        except Exception:
+            pass
     if core and updates:
         try:
             await _fire_push_hooks(env, owner, repo, account, updates, state)

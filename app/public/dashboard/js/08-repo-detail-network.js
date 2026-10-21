@@ -1207,6 +1207,7 @@
       hackathon_reward: "gift",
       badge: "award",
       package_review: "star",
+      pull_attention: "git-pull-request-arrow",
     };
     return icons[String(kind || "").trim().toLowerCase()] || "bell";
   }
@@ -3544,6 +3545,27 @@
         return;
       }
 
+      const quickReplyEdit = event.target.closest("[data-repo-pull-quick-reply-edit]");
+      if (quickReplyEdit && state.selectedRepo) {
+        openRepoPullQuickReplyEditor(state.selectedRepo, quickReplyEdit.dataset.repoPullQuickReplyEdit || "");
+        return;
+      }
+
+      const quickReplyCancel = event.target.closest("[data-repo-pull-quick-reply-cancel]");
+      if (quickReplyCancel && state.selectedRepo) {
+        closeRepoPullQuickReplyEditor(state.selectedRepo);
+        return;
+      }
+
+      const quickReplyButton = event.target.closest("[data-repo-pull-quick-reply]");
+      if (quickReplyButton && state.selectedRepo) {
+        const replyId = quickReplyButton.dataset.repoPullQuickReply || "";
+        if (!consumeRepoPullQuickReplyLongPress(replyId)) {
+          void sendRepoPullQuickReply(state.selectedRepo, replyId);
+        }
+        return;
+      }
+
       const pullUpdateButton = event.target.closest("[data-repo-pull-update]");
       if (pullUpdateButton && state.selectedRepo) {
         handleRepoPullUpdate(state.selectedRepo);
@@ -3753,6 +3775,16 @@
 
   document.addEventListener("submit", async (event) => {
     if (handleRepoActionsSubmit(event)) return;
+    const quickReplyForm = event.target.closest("[data-repo-pull-quick-reply-form]");
+    if (quickReplyForm && state.selectedRepo) {
+      event.preventDefault();
+      void sendRepoPullQuickReply(
+        state.selectedRepo,
+        quickReplyForm.dataset.repoPullQuickReplyForm || "",
+        quickReplyForm.querySelector("[data-repo-pull-quick-reply-draft]")?.value || "",
+      );
+      return;
+    }
     if (await handleRepoForgeMirrorSubmit(event)) return;
     const settingsLogoForm = event.target.closest("[data-repo-settings-logo-form]");
     if (settingsLogoForm && state.selectedRepo) {
@@ -3983,6 +4015,37 @@
   // the changed-file list already in memory - no mirror read behind it.
   document.addEventListener("input", (event) => {
     if (event.target.closest("[data-repo-pull-file-filter]")) refreshRepoPullExplorer();
+    const quickReplyDraft = event.target.closest("[data-repo-pull-quick-reply-draft]");
+    if (quickReplyDraft && state.repoRecordDetail?.kind === "pulls") {
+      const parsed = state.repoRecordDetail.parsed;
+      parsed.pullQuickReplyUi = { ...(parsed.pullQuickReplyUi || {}), draft: quickReplyDraft.value };
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    const quickReplyDraft = event.target.closest?.("[data-repo-pull-quick-reply-draft]");
+    if (!quickReplyDraft || !state.selectedRepo) return;
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeRepoPullQuickReplyEditor(state.selectedRepo);
+    } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      quickReplyDraft.form?.requestSubmit();
+    }
+  });
+
+  document.addEventListener("pointerdown", (event) => {
+    const quickReplyButton = event.target.closest?.("[data-repo-pull-quick-reply]");
+    if (!quickReplyButton || quickReplyButton.disabled || !state.selectedRepo) return;
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    startRepoPullQuickReplyPress(state.selectedRepo, quickReplyButton, event);
+  });
+  document.addEventListener("pointermove", moveRepoPullQuickReplyPress, { passive: true });
+  for (const type of ["pointerup", "pointercancel", "scroll"]) {
+    document.addEventListener(type, cancelRepoPullQuickReplyPress, { capture: true, passive: true });
+  }
+  document.addEventListener("contextmenu", (event) => {
+    if (event.target.closest?.("[data-repo-pull-quick-reply]")) event.preventDefault();
   });
 
   // GitHub-style range selection starts on a line-number gutter and extends

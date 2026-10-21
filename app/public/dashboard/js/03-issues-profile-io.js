@@ -942,7 +942,7 @@
   // (verify_pull_comment_event/pull_comment_content in the worker). Covers
   // every conversation-shaped pull event; opening a brand new pull request is
   // a distinct signed shape (submitWebPullOpen, below).
-  async function submitWebPullEvent(repo, number, type, fields = {}) {
+  async function submitWebPullEvent(repo, number, type, fields = {}, delivery = {}) {
     const { privateKey, pub } = await getWebIssueKey();
     const ts = Math.floor(Date.now() / 1000);
     const randomId = typeof crypto.randomUUID === "function"
@@ -1002,8 +1002,8 @@
     for (const key of ["state", "path", "side", "line", "threadId", "parentId", "lineStart", "lineEnd", "suggestionPatch", "appliedCommit", "patchset", "anchorLines"]) {
       if (fields[key] !== undefined && fields[key] !== "") event[key] = fields[key];
     }
-    const payload = { owner: repo.owner, repo: repo.name, number, event };
-    const data = await fetchRepoMutation(repo, "pulls", payload);
+    const payload = { owner: repo.owner, repo: repo.name, number, event, ...(delivery.extra || {}) };
+    const data = await fetchRepoMutation(repo, "pulls", payload, delivery.relayOnly ? { relayOnly: true } : {});
     return { ...data, event };
   }
 

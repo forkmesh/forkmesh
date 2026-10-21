@@ -70,6 +70,8 @@ inline const QList<KindInfo> &kinds()
         {"calendar_rsvp", "conversations", "Calendar replies", true, true},
         {"issue_opened", "repositories", "New issues", true, true},
         {"pull_submitted", "repositories", "New pull requests", true, true},
+        {"pull_attention", "repositories",
+         "Reviews and conflicts on your pull requests", true, true},
         {"issue_assigned", "repositories", "Issue assignments", true, true},
         {"pending_inbox", "repositories", "Inbox updates", true, true},
         {"code_push", "repositories", "Code pushes", false, false},

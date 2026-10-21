@@ -72,6 +72,9 @@ CRON_PHASE_CATALOG = (
      "Deliver queued repository webhooks to their owners' endpoints."),
     ("app-events", 5, (4,), "integrations",
      "Deliver queued ForkMesh Apps events to the apps' endpoints."),
+    ("pull-attention", 2, (0,), "notifications",
+     "Re-run the merge trial of up to two open pull requests whose base or "
+     "head moved, and ping each author once when theirs starts to conflict."),
     ("provider-mirror", 5, (4,), "integrations",
      "Sync repositories mirrored to GitHub or GitLab: send queued issues, "
      "comments and releases, and import new ones."),

@@ -60,6 +60,7 @@ final class NotificationsViewModelTests: XCTestCase {
             "hackathon_reward": "card_giftcard_outlined",
             "badge": "emoji_events_outlined",
             "package_review": "rate_review_outlined",
+            "pull_attention": "rate_review_outlined",
         ]
         for (kind, icon) in expected {
             XCTAssertEqual(notificationIconForKind(kind), icon, kind)

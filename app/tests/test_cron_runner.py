@@ -467,6 +467,8 @@ def test_due_schedule_matches_every_phase_contract_for_full_cycle():
             phases.append("attribution-clone-snapshot")
         if minute % 5 == 0:
             phases.append("probe-bans")
+        if minute % 2 == 0:
+            phases.append("pull-attention")
         return tuple(phases)
 
     for minute in range(360):

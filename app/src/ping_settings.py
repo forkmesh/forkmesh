@@ -50,6 +50,8 @@ PING_KIND_CATALOG = (
     ("calendar_rsvp", "conversations", "Calendar replies"),
     ("issue_opened", "repositories", "New issues"),
     ("pull_submitted", "repositories", "New pull requests"),
+    ("pull_attention", "repositories",
+     "Reviews and conflicts on your pull requests"),
     ("issue_assigned", "repositories", "Issue assignments"),
     ("pending_inbox", "repositories", "Inbox updates"),
     ("code_push", "repositories", "Code pushes"),

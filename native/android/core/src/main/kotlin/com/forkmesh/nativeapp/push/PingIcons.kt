@@ -46,6 +46,7 @@ val PING_KIND_ICONS: Map<String, String> = mapOf(
     "code_push" to "📤",
     "security_alert" to "🚨",
     "package_review" to "⭐",
+    "pull_attention" to "📝",
 )
 
 val PING_DESKTOP_ALARM_ICONS: Map<String, String> = mapOf(

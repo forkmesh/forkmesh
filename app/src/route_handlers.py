@@ -4634,6 +4634,16 @@ async def repository_pull_merge_handler(
         # its mesh converge fast-forwards its checkout onto the merge.
         await notify_repo_host(
             env, context["owner"], context["repo"], "mirror_merge")
+        try:
+            if mutation == "merge":
+                await pull_attention_merged(
+                    env, context["owner"], context["repo"], int(pull_number))
+            else:
+                await pull_attention_watch(
+                    env, context["owner"], context["repo"], int(pull_number),
+                    due=True)
+        except Exception:
+            pass
         # Outbound webhooks (adhoc #207): only the merge mutation announces a
         # merged pull request, and only once the node reported the result
         # published — a queued build must never point at refs no mirror serves.

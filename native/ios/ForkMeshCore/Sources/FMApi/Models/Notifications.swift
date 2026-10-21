@@ -119,6 +119,7 @@ public struct ForkNotification: Equatable, Hashable, Sendable, Identifiable {
         case "device_added": return "New device"
         case "plugin_activity": return "Package"
         case "package_review": return "Package review"
+        case "pull_attention": return "Your pull request"
         case "hackathon_squad", "hackathon_reward": return "Hackathon"
         case "badge": return "Badge"
         case "timer_finished": return "Timer"
