@@ -63,7 +63,7 @@ def native_tool(tmp_path_factory):
         pytest.skip("OpenSSL headers are not installed")
     binary = tmp_path_factory.mktemp("fmcrypto") / "fmcrypto"
     subprocess.run(
-        ["g++", "-std=c++17", "-Wall", "-Wextra", "-Werror", "-O1", "-o", str(binary),
+        ["g++", "-std=c++20", "-Wall", "-Wextra", "-Werror", "-O1", "-o", str(binary),
          "-I", str(NATIVE.parent), str(NATIVE / "fm_frame_crypto.cc"), str(NATIVE / "fm_frame_crypto_tool.cc"),
          "-lcrypto"],
         check=True, capture_output=True, text=True)

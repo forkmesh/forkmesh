@@ -8,3 +8,6 @@ xcuserdata/
 *.xcuserstate
 *.xcarchive
 *.ipa
+# Built from source by native/webrtc/build.sh ios; never committed.
+WebRTCPackage/WebRTC.xcframework/
+WebRTCPackage/WebRTC.xcframework.zip

@@ -362,6 +362,18 @@ push_build_file = project.new(Obj::PBXBuildFile)
 push_build_file.product_ref = push_product
 extension.frameworks_build_phase.files << push_build_file
 
+if File.directory?(File.join(__dir__, '..', 'WebRTCPackage', 'WebRTC.xcframework'))
+  webrtc_package = project.new(Obj::XCLocalSwiftPackageReference)
+  webrtc_package.relative_path = 'WebRTCPackage'
+  project.root_object.package_references << webrtc_package
+  webrtc_product = project.new(Obj::XCSwiftPackageProductDependency)
+  webrtc_product.product_name = 'WebRTC'
+  app.package_product_dependencies << webrtc_product
+  webrtc_build_file = project.new(Obj::PBXBuildFile)
+  webrtc_build_file.product_ref = webrtc_product
+  app.frameworks_build_phase.files << webrtc_build_file
+end
+
 nexus_package = project.new(Obj::XCLocalSwiftPackageReference)
 nexus_package.relative_path = 'Nexus'
 project.root_object.package_references << nexus_package

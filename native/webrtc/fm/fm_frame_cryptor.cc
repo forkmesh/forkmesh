@@ -14,8 +14,7 @@ int FrameEncryptor::Encrypt(webrtc::MediaType media_type,
                             size_t* bytes_written) {
   bool audio = media_type == webrtc::MediaType::AUDIO;
   size_t written = 0;
-  if (!key_.Encrypt(audio, frame.data(), frame.size(), encrypted_frame.data(), encrypted_frame.size(),
-                    &written)) {
+  if (!key_.Encrypt(audio, frame, encrypted_frame, &written)) {
     return 1;
   }
   *bytes_written = written;
@@ -41,8 +40,7 @@ webrtc::FrameDecryptorInterface::Result FrameDecryptor::Decrypt(webrtc::MediaTyp
                                                                 std::span<uint8_t> frame) {
   bool audio = media_type == webrtc::MediaType::AUDIO;
   size_t written = 0;
-  if (!keys_.Decrypt(audio, encrypted_frame.data(), encrypted_frame.size(), frame.data(), frame.size(),
-                     &written)) {
+  if (!keys_.Decrypt(audio, encrypted_frame, frame, &written)) {
     return Result(Status::kFailedToDecrypt, 0);
   }
   return Result(Status::kOk, written);

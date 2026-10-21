@@ -49,8 +49,7 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> out(frame.size() + fm::kFrameOverhead);
     size_t written = 0;
     if (!fm::EncryptFrame(audio, key, static_cast<uint8_t>(std::atoi(argv[4])),
-                          std::strtoull(argv[5], nullptr, 10), frame.data(), frame.size(),
-                          out.data(), out.size(), &written)) {
+                          std::strtoull(argv[5], nullptr, 10), frame, out, &written)) {
       std::puts("fail");
       return 1;
     }
@@ -61,14 +60,14 @@ int main(int argc, char** argv) {
     std::vector<uint8_t> encrypted = FromHex(argv[4]);
     fm::FrameKeyring ring;
     uint8_t key_id = 0;
-    if (!fm::FrameKeyId(encrypted.data(), encrypted.size(), &key_id)) {
+    if (!fm::FrameKeyId(encrypted, &key_id)) {
       std::puts("fail");
       return 1;
     }
     ring.Set(key_id, key);
     std::vector<uint8_t> out(encrypted.size());
     size_t written = 0;
-    if (!ring.Decrypt(audio, encrypted.data(), encrypted.size(), out.data(), out.size(), &written)) {
+    if (!ring.Decrypt(audio, encrypted, out, &written)) {
       std::puts("fail");
       return 1;
     }

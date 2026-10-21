@@ -55,9 +55,12 @@ gn_args='is_debug=false rtc_include_tests=false rtc_build_examples=false rtc_ena
 if [ "$target" = ios ]; then
   python3 tools_webrtc/ios/build_ios_libs.py \
     --build_config release \
-    --arch device:arm64 simulator:arm64 simulator:x64 \
-    --output-dir "$out/ios" \
+    --arch ${WEBRTC_IOS_ARCHS:-device:arm64 simulator:arm64 simulator:x64} \
+    --output-dir "$work/src/out_fm/ios" \
     --extra-gn-args "$gn_args enable_dsyms=false enable_stripping=true"
+  mkdir -p "$out/ios"
+  rm -rf "$out/ios/WebRTC.xcframework"
+  cp -R "$work/src/out_fm/ios/WebRTC.xcframework" "$out/ios/"
   (cd "$out/ios" && rm -f WebRTC.xcframework.zip && zip -qry WebRTC.xcframework.zip WebRTC.xcframework)
   shasum -a 256 "$out/ios/WebRTC.xcframework.zip" | tee "$out/ios/WebRTC.xcframework.zip.sha256"
 else

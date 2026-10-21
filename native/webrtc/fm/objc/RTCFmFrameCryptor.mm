@@ -3,8 +3,6 @@
 #import "RTCRtpReceiver+Private.h"
 #import "RTCRtpSender+Private.h"
 
-#include <cstring>
-
 #include "api/make_ref_counted.h"
 #include "fm/fm_frame_cryptor.h"
 
@@ -14,7 +12,7 @@ bool CopyKey(NSData *data, fm::FrameKey *key) {
   if (data.length != fm::kFrameKeyBytes) {
     return false;
   }
-  std::memcpy(key->data(), data.bytes, fm::kFrameKeyBytes);
+  [data getBytes:key->data() length:fm::kFrameKeyBytes];
   return true;
 }
 
