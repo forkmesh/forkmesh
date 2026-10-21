@@ -1380,6 +1380,22 @@ ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=$VAR
 UMask=0027
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=true
+ProtectProc=invisible
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
@@ -1450,14 +1466,23 @@ write_caddyfile() {
   if [ -f /etc/caddy/Caddyfile ] && ! grep -q 'managed by install-instance.sh' /etc/caddy/Caddyfile; then
     cp /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.before-forkmesh.$(date +%s)"
   fi
+  # Local additions live in files the installer never rewrites: conf.d for
+  # whole blocks and snippets, site.d for directives inside this site (for
+  # example extra headers or a remote_ip guard).
+  install -d -m 0755 /etc/caddy/conf.d /etc/caddy/site.d
   cat > /etc/caddy/Caddyfile <<EOF
 # managed by install-instance.sh for $DOMAIN
+# Rewritten on every update; put local changes in /etc/caddy/conf.d/*.caddy
+# (top level) or /etc/caddy/site.d/*.caddy (inside the $DOMAIN site).
 {
 	email $CFG_adminEmail
 }
 
+import /etc/caddy/conf.d/*.caddy
+
 $DOMAIN {
 $( [ "${FORKMESH_INSTANCE_TLS:-}" = "internal" ] && printf '\ttls internal\n' )
+	import /etc/caddy/site.d/*.caddy
 	encode zstd gzip
 	header {
 		defer
@@ -1762,6 +1787,20 @@ ProtectSystem=strict
 ReadWritePaths=/var/lib/forkmesh /etc/forkmesh
 IPAddressDeny=169.254.0.0/16
 LimitNOFILE=8192
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectProc=invisible
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

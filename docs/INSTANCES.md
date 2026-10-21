@@ -470,6 +470,14 @@ fetched. SSH is never touched. The instance must then be reached through
 Cloudflare's proxy. Switching back to `"open"` removes the timer but leaves
 the narrow rules for the operator to remove.
 
+**Local Caddy and runner firewall changes.** `--update` rewrites
+`/etc/caddy/Caddyfile` and the runner's `/etc/forkmesh-runner/jobs.nft`.
+Keep local changes in the files they include, which the installers never
+touch: `/etc/caddy/conf.d/*.caddy` (top level), `/etc/caddy/site.d/*.caddy`
+(directives inside the instance's site block) and
+`/etc/forkmesh-runner/jobs.d/*.nft` (for example `add rule inet
+forkmesh_runner output ...`).
+
 ## Importing a repository on the server (`instance_repo.py`)
 
 `python -m forkmesh_host instance-repo` creates a hosted repository on the
