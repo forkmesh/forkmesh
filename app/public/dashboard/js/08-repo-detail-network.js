@@ -3465,6 +3465,12 @@
         return;
       }
 
+      const reviewPromptToggle = event.target.closest("[data-repo-pull-review-prompt-toggle]");
+      if (reviewPromptToggle) {
+        togglePullReviewPrompt(reviewPromptToggle);
+        return;
+      }
+
       // PR detail section tabs are isolated panels, matching the GitHub review
       // surface: only the selected section is visible at a time.
       const recordTabButton = event.target.closest("[data-repo-record-tab]");
