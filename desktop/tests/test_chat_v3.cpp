@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -627,10 +628,12 @@ void testStoredStateLeavesSettingsFile()
           "the moved keys are gone from the settings file");
     check(QSettings().value(QStringLiteral("chat/e2ee/ctrV3/kept")).toInt() == 7,
           "counters stay in the settings file");
+    QFile trustFile(storedStateKeyFile(trustKey));
     check(storedSetting(trustKey).toByteArray() == trust &&
-              QSettings(storedStateFile(), QSettings::IniFormat).value(trustKey).toByteArray() ==
-                  trust,
+              trustFile.open(QIODevice::ReadOnly) && trustFile.readAll() == trust &&
+              !QSettings(storedStateFile(), QSettings::IniFormat).contains(trustKey),
           "the moved trust state is in its own file, byte for byte");
+    trustFile.close();
     check(ChatDevice::local()->held(QStringLiteral("migrated-scope"),
                                     QStringLiteral("migrated-room"))
                   .size() == 1,
@@ -645,6 +648,55 @@ void testStoredStateLeavesSettingsFile()
                       .value(QStringLiteral("policy"))
                       .toString() == QStringLiteral("open"),
           "later writes land in the state file, never back in the settings file");
+}
+
+void testStoredStateKeysHaveTheirOwnFiles()
+{
+    clearStoredState();
+    const QString ratchetKey =
+        QStringLiteral("chat/e2ee/ratchetV4/") + b64u(QByteArray("own-file-room"));
+    const QString trustKey =
+        QStringLiteral("chat/e2ee/trustV3/") + b64u(QByteArray("own-file-scope"));
+    const QString ratchetPath = storedStateKeyFile(ratchetKey);
+    check(!ratchetPath.isEmpty() && ratchetPath != storedStateFile() &&
+              QFileInfo(ratchetPath).absolutePath().startsWith(
+                  QFileInfo(storedStateFile()).absolutePath()),
+          "each stored-state key has its own file beside state.ini");
+    QSettings ini(storedStateFile(), QSettings::IniFormat);
+    ini.setValue(trustKey, QByteArray("{\"policy\":\"open\"}"));
+    ini.setValue(ratchetKey, QByteArray("older"));
+    ini.sync();
+    check(migrateStoredState(), "state.ini keys move into their own files");
+    QSettings reread(storedStateFile(), QSettings::IniFormat);
+    check(!reread.contains(trustKey) && !reread.contains(ratchetKey) &&
+              storedSetting(ratchetKey).toByteArray() == QByteArray("older"),
+          "moved keys leave state.ini and read back from their files");
+    check((QFileInfo(ratchetPath).permissions() &
+           (QFileDevice::ReadGroup | QFileDevice::ReadOther)) == 0,
+          "a ratchet file is readable by its owner only");
+    const qint64 iniSize = QFileInfo(storedStateFile()).size();
+    ChatDevice::local()->setPolicy(QStringLiteral("own-file-scope"), Policy::Strict);
+    migrateStoredState();
+    QFile policyFile(storedStateKeyFile(trustKey));
+    check(QFileInfo(storedStateFile()).size() == iniSize &&
+              policyFile.open(QIODevice::ReadOnly) &&
+              policyFile.readAll().contains("\"strict\"") &&
+              QJsonDocument::fromJson(storedSetting(trustKey).toByteArray())
+                      .object()
+                      .value(QStringLiteral("policy"))
+                      .toString() == QStringLiteral("strict"),
+          "a trust write rewrites its own file, not state.ini");
+    QSettings older(storedStateFile(), QSettings::IniFormat);
+    older.setValue(ratchetKey, QByteArray("written-by-an-older-build"));
+    older.sync();
+    check(migrateStoredState() &&
+              storedSetting(ratchetKey).toByteArray() ==
+                  QByteArray("written-by-an-older-build"),
+          "a key an older build wrote to state.ini replaces the file on the next start");
+    clearStoredState();
+    check(!QFileInfo::exists(ratchetPath) &&
+              !QFileInfo::exists(storedStateKeyFile(trustKey)),
+          "clearing the stored state removes the per-key files");
 }
 
 } // namespace
@@ -681,6 +733,7 @@ int main(int argc, char **argv)
     testCountersPersist();
     testHeldBudget();
     testStoredStateLeavesSettingsFile();
+    testStoredStateKeysHaveTheirOwnFiles();
 
     if (failures) {
         std::fprintf(stderr, "%d chat v3 check(s) failed.\n", failures);

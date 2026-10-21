@@ -6,12 +6,14 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QMessageAuthenticationCode>
 #include <QMap>
 #include <QMutex>
 #include <QRegularExpression>
+#include <QSaveFile>
 #include <QSettings>
 #include <QTimer>
 
@@ -120,6 +122,48 @@ std::unique_ptr<QSettings> openStoredState()
     return std::make_unique<QSettings>(path, QSettings::IniFormat);
 }
 
+QString storedStateKeyPath(const QString &key)
+{
+    if (!storedStateKey(key))
+        return QString();
+    const QString state = storedStatePath();
+    if (state.isEmpty())
+        return QString();
+    const QStringList parts = key.split(QLatin1Char('/'));
+    if (parts.size() != 4 || parts.at(3).isEmpty() || parts.at(3).size() > 200 ||
+        !b64uPattern().match(parts.at(3)).hasMatch())
+        return QString();
+    return QFileInfo(state).absolutePath() + QLatin1Char('/') + parts.at(2) +
+           QLatin1Char('/') + parts.at(3);
+}
+
+bool writeStateFile(const QString &path, const QVariant &value)
+{
+    if (!value.isValid())
+        return !QFileInfo::exists(path) || QFile::remove(path);
+    if (!QDir().mkpath(QFileInfo(path).absolutePath()))
+        return false;
+    const QByteArray data = value.toByteArray();
+    QSaveFile file(path);
+    if (!file.open(QIODevice::WriteOnly))
+        return false;
+    file.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+    if (file.write(data) != data.size()) {
+        file.cancelWriting();
+        return false;
+    }
+    return file.commit();
+}
+
+bool readStateFile(const QString &path, QByteArray *out)
+{
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+    *out = file.readAll();
+    return file.error() == QFileDevice::NoError;
+}
+
 std::atomic_bool &legacyStateCleared()
 {
     static std::atomic_bool cleared{false};
@@ -137,33 +181,55 @@ void putValue(QSettings &settings, const QString &key, const QVariant &value)
 void storeValues(const QHash<QString, QVariant> &values)
 {
     QHash<QString, QVariant> mainValues;
-    QHash<QString, QVariant> stateValues;
-    for (auto it = values.cbegin(); it != values.cend(); ++it)
-        (storedStateKey(it.key()) ? stateValues : mainValues).insert(it.key(), it.value());
+    QHash<QString, QVariant> iniValues;
+    QStringList fileKeys;
+    for (auto it = values.cbegin(); it != values.cend(); ++it) {
+        if (!storedStateKey(it.key())) {
+            mainValues.insert(it.key(), it.value());
+            continue;
+        }
+        const QString path = storedStateKeyPath(it.key());
+        if (!path.isEmpty() && writeStateFile(path, it.value())) {
+            fileKeys.append(it.key());
+            continue;
+        }
+        if (!path.isEmpty())
+            QFile::remove(path);
+        iniValues.insert(it.key(), it.value());
+    }
     std::unique_ptr<QSettings> state =
-        stateValues.isEmpty() ? nullptr : openStoredState();
-    bool stateSaved = false;
+        iniValues.isEmpty() && fileKeys.isEmpty() ? nullptr : openStoredState();
+    bool iniSaved = false;
     if (state) {
-        for (auto it = stateValues.cbegin(); it != stateValues.cend(); ++it)
+        bool changed = !iniValues.isEmpty();
+        for (const QString &key : std::as_const(fileKeys)) {
+            if (state->contains(key)) {
+                state->remove(key);
+                changed = true;
+            }
+        }
+        for (auto it = iniValues.cbegin(); it != iniValues.cend(); ++it)
             putValue(*state, it.key(), it.value());
-        state->sync();
-        stateSaved = state->status() == QSettings::NoError;
+        if (changed)
+            state->sync();
+        iniSaved = state->status() == QSettings::NoError;
     }
-    if (!stateSaved) {
-        mainValues.insert(stateValues);
-        stateValues.clear();
-    }
-    if (!stateSaved && !mainValues.isEmpty())
+    QStringList movedKeys = fileKeys;
+    if (iniSaved) {
+        movedKeys += iniValues.keys();
+    } else if (!iniValues.isEmpty()) {
+        mainValues.insert(iniValues);
         legacyStateCleared().store(false);
-    const bool dropLegacy = !stateValues.isEmpty() && !legacyStateCleared().load();
+    }
+    const bool dropLegacy = !movedKeys.isEmpty() && !legacyStateCleared().load();
     if (mainValues.isEmpty() && !dropLegacy)
         return;
     QSettings settings;
     for (auto it = mainValues.cbegin(); it != mainValues.cend(); ++it)
         putValue(settings, it.key(), it.value());
     if (dropLegacy) {
-        for (auto it = stateValues.cbegin(); it != stateValues.cend(); ++it)
-            forkmesh::settings::drop(settings, it.key());
+        for (const QString &key : std::as_const(movedKeys))
+            forkmesh::settings::drop(settings, key);
     }
 }
 
@@ -236,6 +302,11 @@ QVariant readSetting(const QString &key)
             return it.value();
     }
     if (storedStateKey(key)) {
+        if (const QString path = storedStateKeyPath(key); !path.isEmpty()) {
+            QByteArray data;
+            if (readStateFile(path, &data))
+                return data;
+        }
         if (std::unique_ptr<QSettings> state = openStoredState();
             state && state->contains(key))
             return state->value(key);
@@ -1029,6 +1100,44 @@ QString storedStateFile()
     return storedStatePath();
 }
 
+QString storedStateKeyFile(const QString &key)
+{
+    return storedStateKeyPath(key);
+}
+
+static bool moveStoredStateToFiles(QSettings &state)
+{
+    QStringList keys;
+    for (const char *family : kStoredStateFamilies) {
+        state.beginGroup(QLatin1String(family));
+        for (const QString &child : state.childKeys())
+            keys.append(QLatin1String(family) + QLatin1Char('/') + child);
+        state.endGroup();
+    }
+    if (keys.isEmpty())
+        return true;
+    bool moved = true;
+    QStringList done;
+    for (const QString &key : std::as_const(keys)) {
+        const QString path = storedStateKeyPath(key);
+        if (path.isEmpty())
+            continue;
+        const QByteArray value = state.value(key).toByteArray();
+        QByteArray written;
+        if (!writeStateFile(path, value) || !readStateFile(path, &written) ||
+            written != value) {
+            QFile::remove(path);
+            moved = false;
+            continue;
+        }
+        done.append(key);
+    }
+    for (const QString &key : std::as_const(done))
+        state.remove(key);
+    state.sync();
+    return moved && state.status() == QSettings::NoError;
+}
+
 bool migrateStoredState()
 {
     flushPendingWrites();
@@ -1063,7 +1172,8 @@ bool migrateStoredState()
         settings.remove(key);
     settings.sync();
     legacyStateCleared().store(settings.status() == QSettings::NoError);
-    return legacyStateCleared().load();
+    const bool filesMoved = moveStoredStateToFiles(*state);
+    return legacyStateCleared().load() && filesMoved;
 }
 
 QVariant storedSetting(const QString &key)
@@ -1081,6 +1191,15 @@ void clearStoredState()
     QSettings().remove(QStringLiteral("chat/e2ee"));
     if (std::unique_ptr<QSettings> state = openStoredState())
         state->remove(QStringLiteral("chat/e2ee"));
+    const QString state = storedStatePath();
+    if (state.isEmpty())
+        return;
+    for (const char *family : kStoredStateFamilies) {
+        const QDir dir(QFileInfo(state).absolutePath() + QLatin1Char('/') +
+                       QString::fromLatin1(family).section(QLatin1Char('/'), -1));
+        for (const QString &name : dir.entryList(QDir::Files | QDir::Hidden))
+            QFile::remove(dir.filePath(name));
+    }
 }
 
 std::shared_ptr<ChatDevice> ChatDevice::local()

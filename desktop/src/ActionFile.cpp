@@ -192,17 +192,21 @@ QStringList scalarOrList(const Node *node)
     return out;
 }
 
-static bool wildcardPathMatches(const QString &pattern, const QString &path)
+static QList<QRegularExpression> compiledPathPatterns(const QStringList &patterns)
 {
-    const QString normalized = pattern.trimmed();
-    if (normalized.isEmpty())
-        return false;
-
-    const QRegularExpression re(
-        QRegularExpression::wildcardToRegularExpression(normalized));
-    if (!re.isValid())
-        return false;
-    return re.match(path).hasMatch();
+    QList<QRegularExpression> compiled;
+    for (const QString &pattern : patterns) {
+        const QString normalized = pattern.trimmed();
+        if (normalized.isEmpty())
+            continue;
+        QRegularExpression re(
+            QRegularExpression::wildcardToRegularExpression(normalized));
+        if (!re.isValid())
+            continue;
+        re.optimize();
+        compiled.append(re);
+    }
+    return compiled;
 }
 
 // `on:` accepts three shapes. The scalar and sequence forms are just event
@@ -257,9 +261,11 @@ bool ActionWorkflow::matchesPushChangedPaths(const QStringList &changedPaths) co
     if (changedPaths.isEmpty())
         return false;
 
+    const QList<QRegularExpression> patterns =
+        compiledPathPatterns(pushChangedPaths);
     for (const QString &changedPath : changedPaths)
-        for (const QString &pattern : pushChangedPaths)
-            if (wildcardPathMatches(pattern, changedPath))
+        for (const QRegularExpression &pattern : patterns)
+            if (pattern.match(changedPath).hasMatch())
                 return true;
 
     return false;

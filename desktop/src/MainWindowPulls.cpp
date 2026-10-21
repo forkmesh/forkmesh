@@ -12344,10 +12344,8 @@ int MainWindow::testPullThreadUnmanagedVisibleRows() const
 
 void MainWindow::reconcilePullLedgerFor(RepositoryRecord repo, bool force)
 {
-    // Serialized and GUI-thread only: every git call below pumps the event
-    // loop, so a second sweep entering mid-cherry-pick would corrupt the
-    // ledger checkout. Everything is taken by value past this point.
-    if (m_pullLedgerSweepInProgress)
+    if (m_pullLedgerSweepInProgress ||
+        m_pullsInboxApplyInFlight.contains(pullsInboxKey(repo)))
         return;
     const RepositoryRecord writable = writableRecordFor(repo);
     PullStore store(writable.localPath, writable.mirrorPath, &m_profileIdentity,
@@ -12420,14 +12418,14 @@ void MainWindow::reconcilePullLedgerFor(RepositoryRecord repo, bool force)
                         "/" +
                         repoSegment(repo.name, QStringLiteral("repository")));
     const QString relayRemoteUrl = relayRemote.toString();
-    // Remote discovery is a Git subprocess too. Keeping it on the GUI thread
-    // accumulated 96.8 seconds of ui-blocking waits across 13 sweeps (43.5
-    // seconds worst case), even though the network fetch below was already on
-    // a worker. Discover and fetch in one worker phase; the local adopt/flip
-    // mutations stay on the GUI thread where every other PullStore write lives.
     struct PullLedgerFetch {
         bool fetched = false;
         QString remoteUrl;
+        QList<int> adopted;
+        QString adoptError;
+        QList<int> flipped;
+        QList<int> rewarded;
+        QString flipError;
     };
     runOffThread<PullLedgerFetch>(
         [store, remoteConfigPath, activeHosts, relayRemoteUrl] {
@@ -12469,31 +12467,36 @@ void MainWindow::reconcilePullLedgerFor(RepositoryRecord repo, bool force)
             }
             if (!remoteUrls.contains(relayRemoteUrl))
                 remoteUrls.append(relayRemoteUrl);
+            PullLedgerFetch fetch;
             for (const QString &remoteUrl : remoteUrls) {
                 PullStore fetcher = store;
-                if (fetcher.prefetchForeignLedger(remoteUrl))
-                    return PullLedgerFetch{true, remoteUrl};
+                if (fetcher.prefetchForeignLedger(remoteUrl)) {
+                    fetch.fetched = true;
+                    fetch.remoteUrl = remoteUrl;
+                    break;
+                }
             }
-            return PullLedgerFetch{};
-        },
-        [this, store, repo, key](PullLedgerFetch fetch) mutable {
-            const int repoIndexAtStart = m_repoDetailIndex;
-            QString adoptError;
-            QList<int> adopted;
+            PullStore writer = store;
             if (fetch.fetched)
-                adopted = store.adoptForeignPulls(fetch.remoteUrl, &adoptError,
-                                                  /*fetchFirst=*/false);
-            if (!adoptError.isEmpty())
+                fetch.adopted = writer.adoptForeignPulls(
+                    fetch.remoteUrl, &fetch.adoptError, /*fetchFirst=*/false);
+            fetch.flipped =
+                writer.reconcileMergedPulls(&fetch.flipError, &fetch.rewarded);
+            return fetch;
+        },
+        [this, repo, key](PullLedgerFetch fetch) {
+            const int repoIndexAtStart = m_repoDetailIndex;
+            const QList<int> &adopted = fetch.adopted;
+            const QList<int> &flipped = fetch.flipped;
+            const QList<int> &rewarded = fetch.rewarded;
+            if (!fetch.adoptError.isEmpty())
                 logSystem(QStringLiteral("Pull ledger sync for %1: %2")
-                              .arg(key, adoptError));
-            QString flipError;
-            QList<int> rewarded;
-            const QList<int> flipped =
-                store.reconcileMergedPulls(&flipError, &rewarded);
-            if (!flipError.isEmpty())
+                              .arg(key, fetch.adoptError));
+            if (!fetch.flipError.isEmpty())
                 logSystem(QStringLiteral("Pull merge reconcile for %1: %2")
-                              .arg(key, flipError));
+                              .arg(key, fetch.flipError));
             m_pullLedgerSweepInProgress = false;
+            startQueuedPullsInboxApplies();
 
             if (!fetch.fetched && adopted.isEmpty() && flipped.isEmpty() &&
                 rewarded.isEmpty())
@@ -12525,8 +12528,6 @@ void MainWindow::reconcilePullLedgerFor(RepositoryRecord repo, bool force)
                               "estimate%4 queued for payout.")
                               .arg(plural, joined(rewarded), key, plural));
             }
-            // The pumped git waits above may have navigated the UI; only
-            // refresh the pulls view when the same repo detail is still open.
             if (repoIndexAtStart == m_repoDetailIndex && m_repoDetailIndex >= 0 &&
                 m_repoDetailIndex < m_repositories.size()) {
                 const RepositoryRecord &current =
@@ -12636,28 +12637,25 @@ void MainWindow::drainPullsInboxFor(RepositoryRecord repo, bool interactive,
     });
 }
 
-void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
-                                        const QJsonArray &pending,
-										bool interactive)
+QString MainWindow::pullsInboxKey(const RepositoryRecord &repo)
 {
-    if (!hasOwnerSigningCapability())
-        return;
-    if (pending.isEmpty()) {
-        if (interactive)
-            QMessageBox::information(this, "Sync inbox",
-                                     "No pending pull requests.");
-        return;
+    return repo.owner.trimmed().toLower() + QLatin1Char('/') +
+           repo.name.trimmed().toLower();
+}
+
+void MainWindow::mergePullsInboxPending(QJsonArray &into,
+                                        const QJsonArray &more)
+{
+    for (const QJsonValue &value : more) {
+        if (!into.contains(value))
+            into.append(value);
     }
-    const RepositoryRecord writable = writableRecordFor(repo);
-    PullStore store(writable.localPath, writable.mirrorPath, &m_profileIdentity,
-                    m_userName);
-    if (!store.canWrite())
-        return;
-    int merged = 0;
-    bool branchReviewsChanged = false;
-    QStringList drainedIds;
-    QString lastAuthor;
-    QString lastTitle;
+}
+
+MainWindow::PullsInboxOutcome
+MainWindow::applyPullsInboxEntries(PullStore store, const QJsonArray &pending)
+{
+    PullsInboxOutcome outcome;
     for (const QJsonValue &value : pending) {
         const QJsonObject obj = value.toObject();
         const QString inboxId =
@@ -12671,12 +12669,12 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
                 PullEvent::fromJson(obj.value("event").toObject());
             if (store.applyRemoteBranchEvent(reviewBranch, ev)) {
                 if (!inboxId.isEmpty())
-                    drainedIds << inboxId;
-                ++merged;
-                lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
-                                                     : ev.authorName;
-                lastTitle = QStringLiteral("review on %1").arg(reviewBranch);
-                branchReviewsChanged = true;
+                    outcome.drainedIds << inboxId;
+                ++outcome.merged;
+                outcome.lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
+                                                             : ev.authorName;
+                outcome.lastTitle =
+                    QStringLiteral("review on %1").arg(reviewBranch);
             }
             continue;
         }
@@ -12689,11 +12687,11 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
                                      : store.applyRemoteEvent(number, ev);
             if (applied) {
                 if (!inboxId.isEmpty())
-                    drainedIds << inboxId;
-                ++merged;
-                lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
-                                                     : ev.authorName;
-                lastTitle = QStringLiteral("review on #%1").arg(number);
+                    outcome.drainedIds << inboxId;
+                ++outcome.merged;
+                outcome.lastAuthor = ev.authorName.isEmpty() ? ev.author.left(8)
+                                                             : ev.authorName;
+                outcome.lastTitle = QStringLiteral("review on #%1").arg(number);
             }
             continue;
         }
@@ -12701,20 +12699,94 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
             PullRequest::fromJson(obj.value("pull").toObject());
         if (store.applyRemotePull(pr)) {
             if (!inboxId.isEmpty())
-                drainedIds << inboxId;
-            ++merged;
-            lastAuthor = pr.authorName.isEmpty() ? pr.author.left(8)
-                                                 : pr.authorName;
-            lastTitle = pr.title;
+                outcome.drainedIds << inboxId;
+            ++outcome.merged;
+            outcome.lastAuthor = pr.authorName.isEmpty() ? pr.author.left(8)
+                                                         : pr.authorName;
+            outcome.lastTitle = pr.title;
         }
     }
-    if (!drainedIds.isEmpty()) {
+    return outcome;
+}
+
+void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
+                                        const QJsonArray &pending,
+										bool interactive)
+{
+    if (!hasOwnerSigningCapability())
+        return;
+    if (pending.isEmpty()) {
+        if (interactive)
+            QMessageBox::information(this, "Sync inbox",
+                                     "No pending pull requests.");
+        return;
+    }
+    queuePullsInboxApply(PullsInboxApplyRequest{repo, pending, interactive});
+}
+
+void MainWindow::queuePullsInboxApply(PullsInboxApplyRequest request)
+{
+    const QString key = pullsInboxKey(request.repo);
+    if (m_pullsInboxApplyInFlight.contains(key) || m_pullLedgerSweepInProgress) {
+        auto it = m_pullsInboxApplyQueued.find(key);
+        if (it == m_pullsInboxApplyQueued.end()) {
+            m_pullsInboxApplyQueued.insert(key, std::move(request));
+        } else {
+            it->repo = request.repo;
+            mergePullsInboxPending(it->pending, request.pending);
+            it->interactive = it->interactive || request.interactive;
+        }
+        return;
+    }
+    const RepositoryRecord writable = writableRecordFor(request.repo);
+    PullStore store(writable.localPath, writable.mirrorPath, &m_profileIdentity,
+                    m_userName);
+    if (!store.canWrite())
+        return;
+    m_pullsInboxApplyInFlight.insert(key);
+    const RepositoryRecord repo = request.repo;
+    const bool interactive = request.interactive;
+    runOffThread<PullsInboxOutcome>(
+        [store, pending = std::move(request.pending)] {
+            const forkmesh::BackgroundScope activity(
+                QStringLiteral("pulls"),
+                QStringLiteral("apply pull inbox"),
+                forkmesh::ActionTelemetry::Execution::Worker);
+            return applyPullsInboxEntries(store, pending);
+        },
+        [this, repo, key, interactive](PullsInboxOutcome outcome) {
+            m_pullsInboxApplyInFlight.remove(key);
+            finishPullsInboxApply(repo, outcome, interactive);
+            startQueuedPullsInboxApplies();
+        });
+}
+
+void MainWindow::startQueuedPullsInboxApplies()
+{
+    if (m_pullLedgerSweepInProgress)
+        return;
+    const QStringList keys = m_pullsInboxApplyQueued.keys();
+    for (const QString &key : keys) {
+        if (m_pullsInboxApplyInFlight.contains(key))
+            continue;
+        PullsInboxApplyRequest next = m_pullsInboxApplyQueued.take(key);
+        queuePullsInboxApply(std::move(next));
+    }
+}
+
+void MainWindow::finishPullsInboxApply(const RepositoryRecord &repo,
+                                       const PullsInboxOutcome &outcome,
+                                       bool interactive)
+{
+    const RepositoryRecord writable = writableRecordFor(repo);
+    const int merged = outcome.merged;
+    if (!outcome.drainedIds.isEmpty() && hasOwnerSigningCapability()) {
         QUrl ackUrl = pullsApiUrl(repo);
 		const QString ackSigner =
 			repoSegment(repo.owner, QStringLiteral("owner"));
         QUrlQuery query = signedInboxQuery(ackSigner);
         query.addQueryItem(QStringLiteral("ids"),
-                           drainedIds.join(QStringLiteral(",")));
+                           outcome.drainedIds.join(QStringLiteral(",")));
         ackUrl.setQuery(query);
         m_networkAccess->deleteResource(QNetworkRequest(ackUrl));
     }
@@ -12723,7 +12795,7 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
         m_repositories.at(m_repoDetailIndex).owner == repo.owner &&
         m_repositories.at(m_repoDetailIndex).name == repo.name;
     if (onThisRepo)
-        reloadPulls();
+        reloadPullsInBackground();
 	if (merged > 0) {
         propagateRepoUpdate(repoIndexFor(repo.owner, repo.name));
         scanRepoMentionsFor(writable);
@@ -12746,7 +12818,7 @@ void MainWindow::applyPullsInboxPayload(const RepositoryRecord &repo,
         const QString body =
             merged == 1
                 ? QStringLiteral("%1 opened a pull request: %2")
-                      .arg(lastAuthor, lastTitle)
+                      .arg(outcome.lastAuthor, outcome.lastTitle)
                 : QStringLiteral("%1 new pull requests on %2/%3")
                       .arg(merged)
                       .arg(repo.owner, repo.name);
