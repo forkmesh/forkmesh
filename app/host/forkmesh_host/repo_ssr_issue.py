@@ -1007,6 +1007,19 @@ def mentions_of(index, number):
         if not source or source.get("deleted") or source.get("number") == number:
             continue
         edits, removed, credited = {}, set(), set()
+        for reference in source.get("mentionRefs") or []:
+            if not isinstance(reference, list) or len(reference) < 4:
+                continue
+            target, ts, author, who = reference[:4]
+            key = who if isinstance(who, str) else json.dumps(who, sort_keys=True)
+            if target != number or key in credited:
+                continue
+            credited.add(key)
+            mentions.append({"_mention": True, "ts": _event_ts({"ts": ts}),
+                             "author": author or "", "authorName": who,
+                             "sourceNumber": source["number"],
+                             "sourceTitle": str(source.get("title") or ""),
+                             "sourceStatus": str(source.get("status") or "open")})
         for event in source["events"]:
             if event.get("type") == "edit" and event.get("target"):
                 edits[str(event["target"])] = event.get("body")
@@ -1851,7 +1864,18 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
             section("%s %s" % (format_count(len(people)), plural), people_value)))
 
 
+def index_row(summary):
+    row = dict(summary)
+    row["number"] = _int(summary.get("number"))
+    row["status"] = str(summary.get("status") or "open")
+    row["createdAt"] = summary.get("createdAtMs") or 0
+    row["events"] = []
+    return row
+
+
 def index_rows(blobs):
+    if isinstance(blobs, dict) and isinstance(blobs.get("issues"), list):
+        return [index_row(item) for item in blobs["issues"] if isinstance(item, dict)]
     rows = []
     for path, blob in (blobs or {}).items():
         match = re.match(r"^\.forkmesh/issues/open/(\d+)/issue-\d+\.json$", str(path))
