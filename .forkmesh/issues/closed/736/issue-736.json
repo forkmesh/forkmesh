@@ -75,6 +75,18 @@
             "status": "closed",
             "ts": 1792551013135,
             "type": "status"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "",
+            "agentSessionId": 0,
+            "agentStatus": "cleared",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "4f160839-70d7-490d-b749-0f57347db743",
+            "sig": "Mt79uYjibSoZhD2lV9N0P9FsJXEiXoPZjVUOWtMcZjbCmgyjFWE51a6ZoPqngYDQB67VQs63zB97FlxcggXxDw",
+            "ts": 1792551013359,
+            "type": "agent"
         }
     ],
     "labels": [
@@ -93,6 +105,6 @@
     "startDate": 0,
     "status": "closed",
     "title": "Paid microjobs docs describe fixed claims and batching while live UI uses discretionary issue rewards",
-    "updatedAt": 1792551013135,
+    "updatedAt": 1792551013359,
     "votes": 0
 }
