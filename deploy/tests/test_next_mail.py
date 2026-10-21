@@ -16,6 +16,16 @@ def test_dkim_signs_one_click_unsubscribe_and_relaxed_bodies():
     assert set(oversigned) <= set(signed)
 
 
+def test_postfix_bounce_notices_are_dkim_signed():
+    conf = dict(line.split(" ", 1) for line in
+                next_mail.OPENDKIM_CONF.strip().splitlines())
+    assert conf["Domain"] == "forkmesh.com"
+    assert conf["SubDomains"] == "yes"
+    cf = next_mail.main_cf({"name": "n4"})
+    assert "non_smtpd_milters = $smtpd_milters\n" in cf
+    assert "internal_mail_filter_classes = bounce\n" in cf
+
+
 def test_postfix_prefers_ipv4_and_keeps_tls():
     cf = next_mail.main_cf({"name": "n1"})
     assert "smtp_address_preference = ipv4\n" in cf

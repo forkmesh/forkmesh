@@ -183,6 +183,46 @@ def test_a_postfix_event_records_its_dsn_on_the_send(db, dsn, stored):
         "soft bounce", stored)
 
 
+@pytest.mark.parametrize("dsn,reason,cause", [
+    ("5.7.1", "host mail.tutanota.de[185.205.69.214] said: 550 5.7.1 "
+     "<someone@tutamail.com>: Recipient address rejected: Recipient not "
+     "available (in reply to RCPT TO command)", "recipient"),
+    ("5.7.1", "host mx.example.net[192.0.2.1] said: 550 5.7.1 Service "
+     "unavailable; client host blocked using Spamhaus", ""),
+    ("5.7.1", "550 5.7.1 Recipient address rejected: user unknown, "
+     "SPF check failed", ""),
+])
+def test_a_postfix_bounce_records_whether_the_recipient_is_missing(
+        db, dsn, reason, cause):
+    _seed(db, "current", NOW - 60_000)
+    routes = _routes(db)
+    event = {"event_id": "smtp:bounced", "event": "bounce",
+             "message_id": "msg-current", "dsn": dsn, "reason": reason}
+
+    asyncio.run(routes["record_core_mail_event"](None, event, NOW))
+
+    assert tuple(db.execute("SELECT status,dsn,cause FROM mail_sends "
+                            "WHERE send_id='current'").fetchone()) == (
+        "bounce", dsn, cause)
+    assert db.execute("SELECT reason FROM mail_suppressions "
+                      "WHERE recipient_bi='rcpt'").fetchone()[0] == "bounce"
+
+
+@pytest.mark.parametrize("event,dsn,reason,cause", [
+    ("bounce", "5.1.1", "550 5.1.1 No such user here", "recipient"),
+    ("bounce", "5.2.1", "550 The email account that you tried to reach "
+     "does not exist", "recipient"),
+    ("soft bounce", "4.7.1", "450 4.7.1 Recipient not available", ""),
+    ("bounce", "5.7.1", "550 5.7.1 Message rejected by policy", ""),
+    ("bounce", "5.7.1", "550 5.7.1 <blockchain@example.com>: Recipient "
+     "address rejected: User unknown", "recipient"),
+    ("bounce", "", "550 user unknown", ""),
+])
+def test_bounce_cause_only_names_a_missing_recipient(event, dsn, reason,
+                                                     cause):
+    assert mail_tracking.bounce_cause(event, dsn, reason) == cause
+
+
 def test_an_smtp_send_deletes_tracking_rows_older_than_90_days(db):
     _seed(db, "old", NOW - 91 * DAY)
     _seed(db, "kept", NOW - 89 * DAY)
