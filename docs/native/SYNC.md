@@ -147,4 +147,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S072 | 2026-10-21 | Projects | fix | Switching projects no longer shows another project's chat channels, private rooms or direct messages | 2b6c130a28 | n/a | Android rebuilds its chat services per project (ProjectLifecycle.close, Features.install), so it never had this leak |
 | S073 | 2026-10-21 | Projects | fix | Adding an instance that another project already uses opens that project instead of creating a second one | 4beeb217c2 | synced | 68c7fcc9e7 |
 | S074 | 2026-10-21 | Agents | fix | The first action on an agent's page is no longer cut off at the left of the top bar. | d070b14226 | pending |  |
+| S075 | 2026-10-21 | Agents | feature | Scrolling up in an agent's transcript keeps your place while it works, and an arrow above the composer takes you back to the latest output. | 74c29b740e | synced | 74c29b740e |
 <!-- ledger:end -->
