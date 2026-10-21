@@ -4100,6 +4100,14 @@ int main(int argc, char *argv[])
         check(ok && findings.size() == 1,
               "findings parse out of surrounding chatter and fences");
         findings = parseAiReviewFindings(
+            QStringLiteral("user\n+int a[3] = {0};\n[ ] checklist\ncodex\n"
+                           "[{\"path\": \"x\", \"line_start\": 4,"
+                           " \"comment\": \"c\", \"original\": [\"a\"],"
+                           " \"fix\": [\"b\"]}]\ntokens used: 12"),
+            &ok);
+        check(ok && findings.size() == 1 && findings.at(0).lineStart == 4,
+              "findings parse after an echoed prompt that carries brackets");
+        findings = parseAiReviewFindings(
             QStringLiteral("{\"findings\": [{\"path\": \"x\", \"line_start\": 2,"
                            " \"comment\": \"c\"}]}"),
             &ok);

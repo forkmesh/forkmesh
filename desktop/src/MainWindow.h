@@ -13970,7 +13970,7 @@ private:
         int number = 0;       // PR number (PR mode)
         int repoIndex = -1;
         int sessionId = 0;    // backing agent session
-        QString provider;     // "claude" | "openai" | "claude-code"
+        QString provider;     // the composer's agent, or "claude" | "openai" | "claude-code"
         QString model;
         QString apiKey;
         QString workTree;
@@ -14011,18 +14011,18 @@ private:
         int number = 0;       // PR under review
         int repoIndex = -1;
         int sessionId = 0;    // backing agent session (Agents-tab visibility)
-        QString provider;     // "claude" | "openai" | "claude-code"
+        QString provider;     // the composer's agent, or "claude" | "openai" | "claude-code"
         QString model;
         double costUsd = 0.0;
         qint64 inTokens = 0;
         qint64 outTokens = 0;
-        QProcess *process = nullptr; // running CLI (claude-code mode), else null
-        QString output;              // accumulated CLI stdout (claude-code mode)
+        QProcess *process = nullptr; // running agent CLI, else null
+        QString output;              // accumulated agent CLI stdout
         QString promptFile;          // prompt handed to the CLI; removed on finish
     };
     AiPullReview *m_aiReview = nullptr;
     void reviewCurrentPullWithAi();        // "Review with AI" on the PR header
-    void aiReviewRunClaudeCode(const QString &prompt); // CLI fallback (no API key)
+    void aiReviewRunAgentCli(const QString &prompt); // composer agent's CLI
     void aiReviewHandleReply(const QString &text); // parse findings + post threads
     void aiReviewFail(const QString &message);
     void aiReviewLog(const QString &text);
