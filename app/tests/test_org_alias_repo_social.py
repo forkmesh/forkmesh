@@ -729,8 +729,6 @@ def test_a_canonical_short_page_titles_the_repository_without_its_owner():
     assert '<meta name="twitter:title" content="Bolt - ForkMesh">' in body
     assert 'content="Bolt on ForkMesh' in body
     assert '<link rel="canonical" href="https://git.example.org/Bolt">' in body
-    # The share preview: the address bar's short address, an absolute card
-    # URL whose version changes with the card's look, and alt text.
     assert '<meta property="og:url" content="https://git.example.org/Bolt">' in body
     assert ('<meta property="og:image" content="https://git.example.org/api/'
             'repo/acme-bolt/Bolt/card.png?v=' + "a" * 64 + '.3">') in body

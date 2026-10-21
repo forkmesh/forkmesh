@@ -335,10 +335,11 @@
         </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">
-          <div class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
+          <div data-repo-tabs class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
             ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
               const meta = tabMeta[tab];
               const isDiscussions = tab === "discussions";
@@ -349,8 +350,9 @@
               // offline; loadRepoCollection will restore the badge if its
               // recovery attempt reaches one.
               const hideDiscussionsBadge = isDiscussions && (
-                !repoIsLive(repo) || !Number.isFinite(discussionCount) || discussionCount <= 0
+                !Number.isFinite(discussionCount) || discussionCount <= 0
               );
+              const reserveDiscussionsBadge = isDiscussions && !hideDiscussionsBadge && !repoIsLive(repo);
               const iconAttr = tab === "issues"
                 ? 'data-lucide="circle-dot"'
                 : tab === "pulls"
@@ -365,7 +367,7 @@
               // routed in-app by the document click handler.
               const tabHref = tab === "code" ? repoLinkUrl(repo) : `${repoLinkUrl(repo)}/${tab}`;
               const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", actions: "actions", agents: "agents" }[tab];
-              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span>${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground${hideDiscussionsBadge ? " hidden" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
+              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span data-repo-tab-label="${escapeHtml(meta.label)}">${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground tabular-nums${hideDiscussionsBadge ? " hidden" : reserveDiscussionsBadge ? " invisible" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
             }).join("")}
           </div>
         </div>
@@ -555,6 +557,9 @@
       ? "pulls"
       : repoTabRoutesFor(repo).includes(routeKind) ? routeKind : "code";
     setRepoTab(initialTab);
+    const tabStrip = detail.querySelector("[data-repo-tabs]");
+    if (tabStrip && tabStripScroll > 0) tabStrip.scrollLeft = tabStripScroll;
+    else keepRepoActiveTabVisible(tabStrip);
     window.lucide?.createIcons();
     // Only fetch code when Code is visible. Warming the tree/README behind an
     // Issues or Pulls deep link multiplied cold-cache mirror traffic and made
@@ -3609,10 +3614,7 @@
 
       const pullViewedButton = event.target.closest("[data-repo-pull-viewed]");
       if (pullViewedButton && state.selectedRepo) {
-        keepPullDiffHeaderInPlace(pullViewedButton, () => toggleRepoPullViewed(
-          state.selectedRepo,
-          pullViewedButton.dataset.repoPullViewed || "",
-        ));
+        toggleRepoPullViewed(state.selectedRepo, pullViewedButton.dataset.repoPullViewed || "");
         return;
       }
 
@@ -3630,9 +3632,18 @@
         return;
       }
 
-      const diffExplorerToggle = event.target.closest("[data-repo-diff-explorer-toggle]");
-      if (diffExplorerToggle) {
-        setRepoDiffExplorerOpen(diffExplorerToggle.getAttribute("aria-pressed") !== "true");
+      if (event.target.closest("[data-repo-diff-explorer-toggle]")) {
+        toggleRepoDiffExplorer();
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-explorer-scrim]")) {
+        setRepoDiffExplorerOpen(false);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-maximize]")) {
+        toggleRepoDiffMaximize();
         return;
       }
 
@@ -3642,36 +3653,14 @@
         return;
       }
 
-      const diffStepButton = event.target.closest("[data-repo-diff-step]");
-      if (diffStepButton) {
-        stepRepoDiffFile(Number(diffStepButton.dataset.repoDiffStep) || 1);
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-jump]")) {
-        jumpToRepoDiffFile(repoPullFilesSection()?.dataset.activeFile || "");
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-collapse]")) {
-        toggleRepoDiffCurrentCollapse();
-        return;
-      }
-
       if (event.target.closest("[data-repo-diff-collapse-all]")) {
         toggleRepoDiffCollapseAll();
         return;
       }
 
-      const diffCurrentViewed = event.target.closest("[data-repo-diff-current-viewed]");
-      if (diffCurrentViewed && state.selectedRepo) {
-        setRepoDiffCurrentViewed(state.selectedRepo, diffCurrentViewed.dataset.repoDiffCurrentViewed || "");
-        return;
-      }
-
-      const diffFlagButton = event.target.closest("[data-repo-diff-flag]");
-      if (diffFlagButton) {
-        jumpToRepoDiffFile(diffFlagButton.dataset.repoDiffFlag || "");
+      const diffMarkButton = event.target.closest("[data-repo-diff-mark-next]");
+      if (diffMarkButton) {
+        jumpToRepoDiffMark(diffMarkButton.dataset.repoDiffMarkNext || "", diffMarkButton.dataset.repoDiffMarkFile || "");
         return;
       }
 
@@ -3699,13 +3688,25 @@
         // Scroll-spy would otherwise fight the jump it just triggered.
         if (section) section.dataset.activeFile = path;
         setRepoPullActiveFile(path, { revealDiff: true });
-        if (window.matchMedia?.("(max-width: 1023px)")?.matches) setRepoDiffExplorerOpen(false);
+        if (pullExplorerIsDrawer()) setRepoDiffExplorerOpen(false);
         return;
       }
 
       const pullMergeButton = event.target.closest("[data-repo-pull-merge]");
       if (pullMergeButton && state.selectedRepo) {
         handleRepoPullMerge(state.selectedRepo);
+        return;
+      }
+
+      const pullMergeOverrideButton = event.target.closest("[data-repo-pull-merge-override]");
+      if (pullMergeOverrideButton && state.selectedRepo) {
+        handleRepoPullMergeOverride(state.selectedRepo);
+        return;
+      }
+
+      const pullCheckRerunButton = event.target.closest("[data-repo-pull-check-rerun]");
+      if (pullCheckRerunButton && state.selectedRepo) {
+        handleRepoPullCheckRerun(state.selectedRepo, pullCheckRerunButton.dataset.repoPullCheckRerun);
         return;
       }
 
@@ -4245,6 +4246,10 @@
 
   // Rotating a phone (or resizing a window) across the split breakpoint
   // re-lays the diff in the layout that fits.
+  window.matchMedia?.(PULL_EXPLORER_DRAWER_QUERY)?.addEventListener?.("change", syncRepoDiffExplorerLayout);
+  document.addEventListener("fullscreenchange", syncRepoDiffMaximize);
+  window.addEventListener("resize", () => fitRepoDiffViewport(repoPullFilesSection()), { passive: true });
+
   window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.addEventListener?.("change", () => {
     const section = repoPullFilesSection();
     const list = section?.querySelector("[data-repo-pull-diff-list]");
@@ -4256,7 +4261,7 @@
   });
 
   document.addEventListener("click", (event) => {
-    document.querySelectorAll("[data-repo-diff-settings][open]").forEach((menu) => {
+    document.querySelectorAll("[data-repo-diff-settings][open], [data-repo-diff-health-pill][open]").forEach((menu) => {
       if (!menu.contains(event.target) || event.target.closest(".fm-menu-item")) menu.open = false;
     });
   });
@@ -4570,6 +4575,15 @@
         && stepRepoDiffFile(event.key === "j" ? 1 : -1)) {
       event.preventDefault();
       return;
+    }
+    if (!typingTarget && !event.metaKey && !event.ctrlKey && !event.altKey
+        && event.key === "v" && toggleRepoDiffCurrentViewed(state.selectedRepo)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape" && pullExplorerIsDrawer()
+        && repoPullFilesSection()?.dataset.explorerOpen === "true") {
+      setRepoDiffExplorerOpen(false);
     }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();

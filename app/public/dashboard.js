@@ -1150,6 +1150,13 @@
 
   const ISSUE_PERSON_HANDLE_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 
+  function recordAuthorName(values) {
+    const name = String(values?.authorName || "").trim();
+    if (name) return name;
+    const claimed = String(values?.authorClaimedName || "").trim().toLowerCase();
+    return validNodeName(claimed) ? `${claimed} (unverified)` : "";
+  }
+
   function issuePersonHandle(name) {
     const text = String(name || "").trim().replace(/^@/, "");
     return ISSUE_PERSON_HANDLE_RE.test(text) && !text.includes("--") ? text.toLowerCase() : "";
@@ -8602,10 +8609,10 @@
         .filter(Boolean).join(" · ");
     }
     if (statusItem) {
-      statusItem.textContent = label ? "Edit status: " + label : "Set a status…";
+      (statusItem.querySelector("[data-account-menu-label]") || statusItem).textContent = label ? "Edit status: " + label : "Set a status…";
     }
     if (awayItem) {
-      awayItem.textContent = own.away ? "Set yourself active" : "Set yourself away";
+      (awayItem.querySelector("[data-account-menu-label]") || awayItem).textContent = own.away ? "Set yourself active" : "Set yourself away";
     }
   }
 
@@ -14574,9 +14581,24 @@
     window.setTimeout(() => $("[data-new-repo-cancel]")?.focus(), 0);
   }
 
+  function keepRepoActiveTabVisible(strip) {
+    if (!strip || strip.scrollWidth <= strip.clientWidth + 1) return;
+    const active = strip.querySelector('[role="tab"][aria-selected="true"]');
+    if (!active || active.classList.contains("hidden")) return;
+    const frame = strip.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    const inset = 12;
+    if (box.left < frame.left + inset) {
+      strip.scrollLeft -= Math.ceil(frame.left + inset - box.left);
+    } else if (box.right > frame.right - inset) {
+      strip.scrollLeft += Math.ceil(box.right - (frame.right - inset));
+    }
+  }
+
   function setRepoTab(tab) {
     const detail = $(`[data-dashboard-repo-tab-panel="${tab}"]`)?.closest("[data-repo-detail]") || $("[data-repo-detail]");
     if (!detail) return;
+    const tabChanged = state.activeRepoTab !== tab;
     state.activeRepoTab = tab;
     // The selected tab's weight and underline are styled from aria-selected
     // (shell.html), so this only has to move the attribute.
@@ -14584,6 +14606,7 @@
       const active = button.dataset.dashboardRepoTab === tab;
       button.setAttribute("aria-selected", active ? "true" : "false");
     });
+    if (tabChanged) keepRepoActiveTabVisible(detail.querySelector("[data-repo-tabs]"));
     detail.querySelectorAll("[data-dashboard-repo-tab-panel]").forEach((panel) => {
       panel.classList.toggle("hidden", panel.dataset.dashboardRepoTabPanel !== tab);
     });
@@ -18982,9 +19005,10 @@
   }
 
   async function fetchRepoJson(path, options = {}) {
-    const seeded = options.canonical ? null : await seededRepoRead(path);
+    const remembered = options.canonical || options.fresh;
+    const seeded = remembered ? null : await seededRepoRead(path);
     if (seeded) return seeded;
-    const early = options.canonical ? null : await earlyRepoRead(path);
+    const early = remembered ? null : await earlyRepoRead(path);
     if (early) return early;
     const direct = options.canonical ? [] : directRepoRequestCandidates(path);
     let response = null;
@@ -18992,6 +19016,7 @@
       try {
         const attempted = await fetch(candidate, {
           credentials: "omit",
+          ...(options.fresh ? { cache: "no-cache" } : {}),
           headers: { accept: "application/json" },
           signal: options.signal,
         });
@@ -19319,7 +19344,7 @@
     ].join("@");
   }
 
-  async function resolveRepoPullMetadataCommit(repo) {
+  async function resolveRepoPullMetadataCommit(repo, options = {}) {
     // Named private repository routes intentionally remain inert. Private
     // bytes use the opaque encrypted-replica transport and must never become
     // discoverable through this public branch lookup.
@@ -19327,6 +19352,16 @@
       throw new Error("pull_metadata_unavailable");
     }
     const key = repoPullMetadataCacheKey(repo);
+    if (options.fresh) {
+      const data = await fetchRepoJson(repoLiveUrl(repo, "tree", {
+        path: ".forkmesh/pulls",
+        ref: PULL_METADATA_BRANCH,
+      }), { fresh: true });
+      const commit = immutableGitCommit(data?.commit || data?.analysis?.commit);
+      if (!commit) throw new Error("pull_metadata_absent");
+      state.repoPullMetadataCommits[key] = commit;
+      return commit;
+    }
     const cached = immutableGitCommit(state.repoPullMetadataCommits[key]);
     if (cached) return cached;
     if (state.repoPullMetadataInflight[key]) {
@@ -19716,7 +19751,7 @@
         number,
         title: values.title || `${config.itemLabel} #${number}`,
         state: values.status || values.state || values.category || "open",
-        author: values.authorName || values.author || "unknown",
+        author: recordAuthorName(values) || values.author || "unknown",
         date: formatRecordDate(values.updatedAt || values.createdAt || values.ts),
         updatedAtMs: Number(values.updatedAt || values.createdAt || values.ts || 0) || 0,
         createdAtMs: Number(values.createdAt || values.ts || values.updatedAt || 0) || 0,
@@ -20062,12 +20097,22 @@
       return {
         explorer: stored?.explorer === "list" ? "list" : "tree",
         diff: stored?.diff === "split" ? "split" : "unified",
-        explorerOpen: stored?.explorerOpen === true,
+        explorerOpen: stored?.explorerOpen !== false,
         wrap: ["on", "off"].includes(stored?.wrap) ? stored.wrap : "auto",
       };
     } catch (_) {
-      return { explorer: "tree", diff: "unified", explorerOpen: false, wrap: "auto" };
+      return { explorer: "tree", diff: "unified", explorerOpen: true, wrap: "auto" };
     }
+  }
+
+  const PULL_EXPLORER_DRAWER_QUERY = "(max-width: 1023px)";
+
+  function pullExplorerIsDrawer() {
+    return Boolean(window.matchMedia?.(PULL_EXPLORER_DRAWER_QUERY)?.matches);
+  }
+
+  function pullExplorerShownOpen() {
+    return !pullExplorerIsDrawer() && pullLayoutPrefs().explorerOpen;
   }
 
   function setPullLayoutPref(key, value) {
@@ -20079,8 +20124,6 @@
   }
 
   function toggleRepoPullViewed(repo, path) {
-    // The open pull's Files changed pane or a branch comparison: whichever
-    // review surface is on the page owns the mark.
     const context = repoPullFilesContext();
     if (!repo || !context || !path) return;
     const viewed = context.viewed;
@@ -20090,21 +20133,113 @@
 
     const section = context.section;
     const selected = viewed.has(path);
+    const motion = repoDiffMotion();
+    const seen = context.files.filter((file) => viewed.has(file.path)).length;
+    const done = selected && seen >= context.files.length;
     section.querySelectorAll("[data-repo-pull-file]").forEach((row) => {
       if (row.dataset.repoPullFile !== path) return;
       setRepoPullFileRowViewed(row, selected);
+      if (motion && selected) playRepoDiffAnimation(row.querySelector("[data-repo-pull-file-icon]"), "pop");
     });
-    section.querySelectorAll("[data-repo-pull-diff-file]").forEach((block) => {
-      if (block.dataset.repoPullDiffFile !== path) return;
-      setRepoPullDiffBlockViewed(block, selected);
-    });
-    const summary = section.querySelector("[data-repo-pull-viewed-summary]");
-    if (summary) {
-      summary.textContent = `${formatCount(viewed.size)}/${formatCount(context.files.length)}`;
-    }
-    const checkbox = section.querySelector("[data-repo-diff-current-viewed]");
-    if (checkbox?.dataset.repoDiffCurrentViewed === path) checkbox.checked = selected;
+    updateRepoDiffProgress(section, seen, context.files.length);
+    const block = repoDiffBlocks(section).find((item) => item.dataset.repoPullDiffFile === path);
+    if (block) setRepoPullDiffBlockViewed(block, selected);
     window.lucide?.createIcons();
+    if (!block) return;
+    const body = block.querySelector("[data-repo-pull-diff-body]");
+    const token = {};
+    repoDiffFoldTokens.set(block, token);
+    if (!selected) {
+      foldRepoDiffBlock(block, false);
+      if (motion) playRepoDiffAnimation(body, "enter");
+      return;
+    }
+    const finish = () => {
+      if (repoDiffFoldTokens.get(block) !== token || !block.isConnected) return;
+      foldRepoDiffBlock(block, true);
+      advanceRepoDiffReview(section, block);
+    };
+    if (!motion) {
+      finish();
+      return;
+    }
+    const button = block.querySelector("[data-repo-pull-viewed]");
+    playRepoDiffAnimation(button, "pop");
+    burstRepoDiffSparks(button, done ? 18 : 10);
+    playRepoDiffAnimation(block.firstElementChild, "sweep");
+    playRepoDiffAnimation(body, "leave");
+    if (done) celebrateRepoDiffReview(section);
+    window.setTimeout(finish, 280);
+  }
+
+  const repoDiffFoldTokens = new WeakMap();
+  const repoDiffAnimationTimers = new WeakMap();
+
+  function repoDiffMotion() {
+    return !window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+  }
+
+  function playRepoDiffAnimation(node, name) {
+    if (!node) return;
+    node.removeAttribute("data-anim");
+    void node.offsetWidth;
+    node.dataset.anim = name;
+    window.clearTimeout(repoDiffAnimationTimers.get(node));
+    repoDiffAnimationTimers.set(node, window.setTimeout(() => {
+      if (node.dataset.anim === name) node.removeAttribute("data-anim");
+    }, 1400));
+  }
+
+  function burstRepoDiffSparks(anchor, count) {
+    if (!anchor) return;
+    const burst = document.createElement("span");
+    burst.className = "fm-diff-sparks";
+    burst.setAttribute("aria-hidden", "true");
+    for (let index = 0; index < count; index += 1) {
+      const angle = (index / count) * Math.PI * 2 + Math.random() * 0.6;
+      const distance = 16 + Math.random() * (count > 12 ? 30 : 16);
+      const spark = document.createElement("i");
+      spark.dataset.tone = String(index % 3);
+      spark.style.setProperty("--dx", `${(Math.cos(angle) * distance).toFixed(1)}px`);
+      spark.style.setProperty("--dy", `${(Math.sin(angle) * distance).toFixed(1)}px`);
+      spark.style.setProperty("--delay", `${Math.round(Math.random() * 70)}ms`);
+      burst.append(spark);
+    }
+    anchor.append(burst);
+    window.setTimeout(() => burst.remove(), 1000);
+  }
+
+  function celebrateRepoDiffReview(section) {
+    const bar = section.querySelector("[data-repo-diff-progress]");
+    playRepoDiffAnimation(bar, "done");
+    if (bar?.offsetParent) burstRepoDiffSparks(bar, 24);
+  }
+
+  function repoDiffProgressLabel(seen, total) {
+    if (total && seen >= total) return `All ${formatCount(total)} viewed`;
+    return `${formatCount(seen)} of ${formatCount(total)} viewed`;
+  }
+
+  function updateRepoDiffProgress(section, seen, total) {
+    const share = total ? Math.min(100, Math.round((seen / total) * 100)) : 0;
+    section.style.setProperty("--fm-diff-progress", `${share}%`);
+    section.dataset.reviewDone = total && seen >= total ? "true" : "false";
+    const summary = section.querySelector("[data-repo-pull-viewed-summary]");
+    if (summary) summary.textContent = repoDiffProgressLabel(seen, total);
+  }
+
+  function foldRepoDiffBlock(block, collapsed) {
+    keepPullDiffHeaderInPlace(block.firstElementChild, () => setRepoPullDiffBlockCollapsed(block, collapsed));
+    window.lucide?.createIcons();
+  }
+
+  function advanceRepoDiffReview(section, block) {
+    const blocks = repoDiffBlocks(section);
+    const next = blocks.slice(blocks.indexOf(block) + 1).find((item) => item.dataset.viewed !== "true");
+    if (!next) return;
+    const path = next.dataset.repoPullDiffFile || "";
+    section.dataset.activeFile = path;
+    setRepoPullActiveFile(path, { revealDiff: true, revealRow: true });
   }
 
   // Lucide swaps every `<i data-lucide>` placeholder for an `<svg>` and drops the
@@ -20120,36 +20255,23 @@
     const meta = pullFileStatusMeta(row.dataset.repoPullFileStatus || "modified");
     swapLucideIcon(
       row.querySelector("[data-repo-pull-file-icon]"),
-      selected ? "check-circle-2" : meta.icon,
-      `h-3.5 w-3.5 ${selected ? "text-foreground" : meta.tone}`,
+      selected ? "circle-check-big" : meta.icon,
+      `h-3.5 w-3.5 ${selected ? "text-success" : meta.tone}`,
     );
     const name = row.querySelector("[data-repo-pull-file-name]");
     if (name) {
       name.classList.toggle("text-muted-foreground", selected);
-      name.classList.toggle("line-through", selected);
       name.classList.toggle("text-foreground", !selected);
     }
   }
 
-  // Marking a file viewed folds its diff away, the way the desktop review pane
-  // does, so a long pull collapses down to the files still needing attention.
   function setRepoPullDiffBlockViewed(block, selected) {
     block.dataset.viewed = selected ? "true" : "false";
-    block.classList.toggle("border-border", selected);
-    block.classList.toggle("border-border", !selected);
     const button = block.querySelector("[data-repo-pull-viewed]");
-    if (button) {
-      button.setAttribute("aria-pressed", selected ? "true" : "false");
-      button.classList.toggle("border-border", selected);
-      button.classList.toggle("text-foreground", selected);
-      button.classList.toggle("text-muted-foreground", !selected);
-      swapLucideIcon(
-        button.querySelector("[data-repo-pull-viewed-icon]"),
-        selected ? "check-circle-2" : "circle",
-        "h-3.5 w-3.5",
-      );
-    }
-    setRepoPullDiffBlockCollapsed(block, selected);
+    if (!button) return;
+    button.dataset.viewed = selected ? "true" : "false";
+    button.setAttribute("aria-pressed", selected ? "true" : "false");
+    swapLucideIcon(button.querySelector("[data-repo-pull-viewed-icon]"), selected ? "square-check-big" : "square", "h-3.5 w-3.5");
   }
 
   function scrollContainerOf(node) {
@@ -20182,6 +20304,7 @@
   function setRepoPullDiffBlockCollapsed(block, collapsed) {
     block.dataset.collapsed = collapsed ? "true" : "false";
     block.querySelector("[data-repo-pull-diff-body]")?.classList.toggle("hidden", collapsed);
+    block.querySelector("[data-repo-pull-diff-collapse]")?.setAttribute("aria-expanded", collapsed ? "false" : "true");
     swapLucideIcon(
       block.querySelector("[data-repo-pull-diff-collapse-icon]"),
       collapsed ? "chevron-right" : "chevron-down",
@@ -20219,6 +20342,7 @@
   // row keeps the whole path, so it still targets the matching diff block.
   function renderRepoPullFiles(files, viewed = new Set(), options = {}) {
     const mode = options.mode === "list" ? "list" : "tree";
+    const marks = options.marks instanceof Map ? options.marks : new Map();
     const query = String(options.filter || "").trim();
     const needle = query.toLowerCase();
     const all = (Array.isArray(files) ? files : []).map((file) => {
@@ -20242,9 +20366,9 @@
       const dirTail = showDir && segments.length ? `${segments.at(-1)}/` : "";
       return `
         <button type="button" data-repo-pull-file="${escapeHtml(file.path)}" data-repo-pull-file-status="${escapeHtml(file.status || "modified")}" data-viewed="${isViewed ? "true" : "false"}" title="${escapeHtml(file.path)} · ${meta.label}" style="${pullExplorerRowIndent(depth)}" class="grid w-full grid-cols-[1rem_minmax(0,1fr)_auto] items-center gap-2 rounded-md py-1.5 pr-2 text-left text-xs transition-colors hover:bg-secondary">
-          <span data-repo-pull-file-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : meta.icon}" class="h-3.5 w-3.5 ${isViewed ? "text-foreground" : meta.tone}"></i></span>
-          <span data-repo-pull-file-name class="flex min-w-0 overflow-hidden font-mono ${isViewed ? "text-muted-foreground line-through" : "text-foreground"}">${dirHead ? `<span class="truncate text-muted-foreground">${escapeHtml(dirHead)}</span>` : ""}${dirTail ? `<span class="shrink-0 text-muted-foreground">${escapeHtml(dirTail)}</span>` : ""}<span class="shrink-0">${escapeHtml(file.name)}</span></span>
-          <span class="shrink-0 font-mono text-[10px] tabular-nums"><span class="text-success">+${formatCount(file.adds || 0)}</span> <span class="text-destructive">-${formatCount(file.dels || 0)}</span></span>
+          <span data-repo-pull-file-icon class="inline-flex"><i data-lucide="${isViewed ? "circle-check-big" : meta.icon}" class="h-3.5 w-3.5 ${isViewed ? "text-success" : meta.tone}"></i></span>
+          <span data-repo-pull-file-name class="flex min-w-0 overflow-hidden font-mono ${isViewed ? "text-muted-foreground" : "text-foreground"}">${dirHead ? `<span class="truncate text-muted-foreground">${escapeHtml(dirHead)}</span>` : ""}${dirTail ? `<span class="shrink-0 text-muted-foreground">${escapeHtml(dirTail)}</span>` : ""}<span class="shrink-0">${escapeHtml(file.name)}</span></span>
+          <span class="shrink-0 font-mono text-[10px] tabular-nums">${renderRepoDiffFileDot(marks.get(file.path))}<span class="text-success">+${formatCount(file.adds || 0)}</span> <span class="text-destructive">-${formatCount(file.dels || 0)}</span></span>
         </button>`;
     };
 
@@ -20462,8 +20586,8 @@
     return '<span class="select-none"></span>';
   }
 
-  function diffCodeCell(text, extra = "") {
-    return `<span class="whitespace-pre-wrap break-words py-px pr-3 font-mono ${extra}">${escapeHtml(text || " ")}</span>`;
+  function diffCodeCell(text, extra = "", flags = null) {
+    return `<span class="whitespace-pre-wrap break-words py-px pr-3 font-mono ${extra}">${escapeHtml(text || " ")}${renderDiffLineFlagTag(flags)}</span>`;
   }
 
   function pullInlineThreadKey(path, side, line) {
@@ -20704,12 +20828,12 @@
       const newGutter = reviewable
         ? renderDiffLineGutter(path, "new", row.newLine, row.type, newComments, "border-r border-border/60")
         : `<span data-repo-pull-diff-gutter class="select-none border-r border-border/60 px-2 text-right font-mono ${diffGutterClass(row.type)}">${row.newLine ?? ""}</span>`;
-      return `<div data-repo-pull-diff-row class="${diffRowClass(row.type)}">
+      return `<div data-repo-pull-diff-row${diffLineFlagAttributes(row.flags)} class="${diffRowClass(row.type)}">
         <div data-repo-pull-diff-grid="unified" class="grid grid-cols-[3.5rem_3.5rem_1.25rem_minmax(0,1fr)]">
           ${oldGutter}
           ${newGutter}
           ${diffRowSign(row.type)}
-          ${diffCodeCell(row.text)}
+          ${diffCodeCell(row.text, "", row.flags)}
         </div>
         <div data-repo-pull-inline-slot></div>
         ${renderPullInlineThread(path, "old", row.oldLine, oldComments)}
@@ -20764,13 +20888,13 @@
         const gutter = reviewable
           ? renderDiffLineGutter(path, sideName, line, type, comments, rule)
           : `<span data-repo-pull-diff-gutter class="select-none px-2 text-right font-mono ${rule} ${diffGutterClass(type)}">${line ?? ""}</span>`;
-        return `${gutter}${diffCodeCell(entry.text, diffRowClass(type))}`;
+        return `${gutter}${diffCodeCell(entry.text, diffRowClass(type), kind === "add" ? entry.flags : null)}`;
       };
       const oldLine = row.old?.oldLine;
       const newLine = row.new?.newLine;
       const oldComments = commentGroups.get(pullInlineThreadKey(path, "old", oldLine)) || [];
       const newComments = commentGroups.get(pullInlineThreadKey(path, "new", newLine)) || [];
-      return `<div data-repo-pull-diff-row>
+      return `<div data-repo-pull-diff-row${diffLineFlagAttributes(row.new?.type === "add" ? row.new.flags : null)}>
         <div data-repo-pull-diff-grid="split" class="grid grid-cols-[3.5rem_minmax(0,1fr)_3.5rem_minmax(0,1fr)]">
           ${side(row.old, "del")}
           ${side(row.new, "add")}
@@ -20794,6 +20918,14 @@
       return `${escapeHtml(file.oldPath)} &rarr; ${escapeHtml(file.newPath)}`;
     }
     return escapeHtml(file.newPath || file.oldPath || "file");
+  }
+
+  function diffFileHeaderPathParts(file) {
+    if (file.status === "renamed" && file.oldPath && file.newPath && file.oldPath !== file.newPath) {
+      return `<span class="fm-diff-name">${diffFileHeaderPath(file)}</span>`;
+    }
+    const parts = diffPathParts(file.newPath || file.oldPath || "file");
+    return `${parts.dir ? `<span class="fm-diff-dir"><span dir="ltr">${escapeHtml(parts.dir)}</span></span>` : ""}<span class="fm-diff-name">${escapeHtml(parts.name)}</span>`;
   }
 
   function diffFileStatusBadge(file) {
@@ -20860,7 +20992,7 @@
   function diffWrapColumns(mode) {
     if (!pullDiffWraps(mode)) return 0;
     const viewport = Math.max(320, Number(window.innerWidth) || 1280);
-    const explorer = viewport >= 1024 && pullLayoutPrefs().explorerOpen ? 288 : 0;
+    const explorer = viewport >= 1024 && pullLayoutPrefs().explorerOpen ? 304 : 0;
     let code = viewport - 130 - explorer;
     if (mode === "split") code = code / 2 - 60;
     return Math.max(24, Math.floor(code / 7.2));
@@ -20882,12 +21014,14 @@
     return `
       <div data-repo-pull-diff-file="${escapeHtml(path)}" data-viewed="${isViewed ? "true" : "false"}" data-collapsed="${isViewed ? "true" : "false"}" class="fm-diff-file" style="content-visibility:auto;contain-intrinsic-height:auto ${diffFileBlockIntrinsicSize(file, wrapColumns)}">
         <div data-repo-pull-diff-head class="fm-diff-file-head">
+          <button type="button" data-repo-diff-explorer-toggle aria-label="Show changed files" title="Changed files" class="fm-diff-icon fm-diff-explorer-show"><i data-lucide="panel-left-open"></i></button>
           <button type="button" data-repo-pull-diff-collapse="${escapeHtml(path)}" aria-expanded="${isViewed ? "false" : "true"}" title="Collapse or expand this file" class="fm-diff-icon"><span data-repo-pull-diff-collapse-icon class="inline-flex"><i data-lucide="${isViewed ? "chevron-right" : "chevron-down"}" class="h-3.5 w-3.5"></i></span></button>
-          <span class="fm-diff-file-path" title="${escapeHtml(path)}">${diffFileHeaderPath(file)}</span>
+          <span class="fm-diff-path" title="${escapeHtml(path)}">${diffFileHeaderPathParts(file)}</span>
           ${diffFileStatusBadge(file)}
+          ${renderRepoDiffFileMarks(path, file.flagged)}
           <span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(file.adds)}</span> <span class="fm-diff-stat-del">-${formatCount(file.dels)}</span></span>
           ${renderDiffStatBar(file.adds, file.dels)}
-          <button type="button" data-repo-pull-viewed="${escapeHtml(path)}" aria-pressed="${isViewed ? "true" : "false"}" class="fm-diff-viewed ${isViewed ? "text-foreground" : "text-muted-foreground"}"><span data-repo-pull-viewed-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : "circle"}" class="h-3.5 w-3.5"></i></span><span class="fm-diff-viewed-label">Viewed</span></button>
+          <button type="button" data-repo-pull-viewed="${escapeHtml(path)}" data-viewed="${isViewed ? "true" : "false"}" aria-pressed="${isViewed ? "true" : "false"}" title="Mark viewed (v)" class="fm-diff-viewed"><span data-repo-pull-viewed-icon class="inline-flex"><i data-lucide="${isViewed ? "square-check-big" : "square"}" class="h-3.5 w-3.5"></i></span><span class="fm-diff-viewed-label">Viewed</span></button>
         </div>
         <div data-repo-pull-diff-body class="${isViewed ? "hidden " : ""}overflow-x-auto">
           ${image ? renderDiffImagePreview(image) : ""}
@@ -21238,86 +21372,73 @@
     const adds = files.reduce((sum, file) => sum + (file.adds || 0), 0);
     const dels = files.reduce((sum, file) => sum + (file.dels || 0), 0);
     const first = files[0]?.path || "";
+    const parsed = parseDiffFiles(pullPatch.patch);
+    const marks = annotateDiffLineFlags(parsed.files);
+    repoDiffMarks = { patch: pullPatch.patch, marks };
+    const seen = files.filter((file) => viewed.has(file.path)).length;
+    const share = files.length ? Math.min(100, Math.round((seen / files.length) * 100)) : 0;
+    const done = files.length > 0 && seen >= files.length;
     const html = `
-        <section data-repo-pull-files data-repo-diff-fullscreen data-active-file="${escapeHtml(first)}" data-explorer-open="${layout.explorerOpen ? "true" : "false"}" data-diff-wrap="${pullDiffWraps(mode) ? "true" : "false"}" class="fm-diff">
-          <div data-repo-diff-head class="fm-diff-head">
-            <div data-repo-diff-bar="checks" class="fm-diff-row fm-diff-checks">
-              <button type="button" data-repo-diff-explorer-toggle aria-pressed="${layout.explorerOpen ? "true" : "false"}" aria-label="Show changed files" title="Changed files" class="fm-diff-icon"><i data-lucide="panel-left"></i></button>
-              <span class="fm-diff-total" title="${escapeHtml(`${formatCount(files.length)} files changed`)}"><i data-lucide="file-diff"></i>${formatCount(files.length)}<span class="fm-diff-total-label">${files.length === 1 ? "file" : "files"}</span><span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(adds)}</span> <span class="fm-diff-stat-del">-${formatCount(dels)}</span></span></span>
-              <span class="fm-diff-pills">
-                <span data-repo-diff-ci class="fm-diff-pill-group">${renderRepoDiffCiPills(options.checks, reviewable)}</span>
-                <span data-repo-diff-quality class="fm-diff-pill-group">${renderRepoDiffQualityPills(diffQualityFlags(pullPatch.patch))}</span>
-              </span>
-              <span class="fm-diff-tools">
-                <span data-repo-pull-diff-mode-group class="fm-diff-seg" role="group" aria-label="Diff layout">
-                  <button type="button" data-repo-pull-diff-mode="unified" aria-pressed="${layout.diff === "unified" ? "true" : "false"}" aria-label="Unified" title="Unified" class="fm-diff-icon"><i data-lucide="align-justify"></i></button>
-                  <button type="button" data-repo-pull-diff-mode="split" aria-pressed="${layout.diff === "split" ? "true" : "false"}" aria-label="Split" title="Split" class="fm-diff-icon"><i data-lucide="columns-2"></i></button>
-                </span>
-                <span data-repo-pull-viewed-summary class="fm-diff-viewed-count" title="Files marked viewed">${formatCount(viewed.size)}/${formatCount(files.length)}</span>
-                <button type="button" data-repo-diff-collapse-all aria-label="Collapse or expand every file" title="Collapse or expand every file" class="fm-diff-icon"><i data-lucide="chevrons-down-up"></i></button>
-                <details data-repo-diff-settings class="fm-diff-menu">
-                  <summary aria-label="Diff settings" title="Diff settings" class="fm-diff-icon"><i data-lucide="settings-2"></i></summary>
-                  <div class="fm-popover fm-menu fm-diff-menu-panel">
-                    <div class="fm-menu-heading">Changed files</div>
-                    <button type="button" data-repo-pull-explorer-mode="tree" aria-pressed="${layout.explorer === "tree" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="folder-tree"></i>Tree</button>
-                    <button type="button" data-repo-pull-explorer-mode="list" aria-pressed="${layout.explorer === "list" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="list"></i>List</button>
-                    <div class="fm-menu-divider"></div>
-                    <button type="button" data-repo-diff-wrap aria-pressed="${pullDiffWraps(mode) ? "true" : "false"}" class="fm-menu-item"><i data-lucide="wrap-text"></i>Wrap long lines</button>
-                    <div class="fm-menu-divider"></div>
-                    <div class="fm-menu-heading">Keys: j / k next or previous file</div>
-                  </div>
-                </details>
-              </span>
-            </div>
-            <div data-repo-diff-current class="fm-diff-row fm-diff-current">${renderRepoDiffCurrent(files, first, viewed)}</div>
-          </div>
+        <section data-repo-pull-files data-repo-diff-fullscreen data-active-file="${escapeHtml(first)}" data-explorer-open="${pullExplorerShownOpen() ? "true" : "false"}" data-diff-wrap="${pullDiffWraps(mode) ? "true" : "false"}" data-review-done="${done ? "true" : "false"}" style="--fm-diff-progress:${share}%" class="fm-diff">
           <div data-repo-pull-review-batch>${renderPullReviewBatchBar()}</div>
           <div class="fm-diff-body">
+            <button type="button" data-repo-diff-explorer-scrim aria-label="Close changed files" class="fm-diff-scrim"></button>
             <aside data-repo-diff-explorer class="fm-diff-explorer" aria-label="Changed files">
-              <div class="fm-diff-filter">
-                <i data-lucide="search"></i>
-                <input data-repo-pull-file-filter type="search" autocomplete="off" placeholder="Filter changed files" aria-label="Filter changed files" />
+              <div data-repo-diff-head class="fm-diff-side-head">
+                <div class="fm-diff-row">
+                  <span class="fm-diff-total" title="${escapeHtml(`${formatCount(files.length)} files changed`)}">${formatCount(files.length)}<span class="fm-diff-total-label">${files.length === 1 ? "file" : "files"}</span><span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(adds)}</span> <span class="fm-diff-stat-del">-${formatCount(dels)}</span></span></span>
+                  <span class="fm-diff-tools">
+                    ${document.fullscreenEnabled ? '<button type="button" data-repo-diff-maximize aria-label="Full screen" title="Full screen" class="fm-diff-icon"><span data-repo-diff-maximize-icon class="inline-flex"><i data-lucide="maximize-2"></i></span></button>' : ""}
+                    <details data-repo-diff-settings class="fm-diff-menu">
+                      <summary aria-label="Diff settings" title="Diff settings" class="fm-diff-icon"><i data-lucide="settings-2"></i></summary>
+                      <div class="fm-popover fm-menu fm-diff-menu-panel">
+                        <div data-repo-pull-diff-mode-group role="group" aria-label="Diff layout">
+                          <div class="fm-menu-heading">Diff</div>
+                          <button type="button" data-repo-pull-diff-mode="unified" aria-pressed="${layout.diff === "unified" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="align-justify"></i>Unified</button>
+                          <button type="button" data-repo-pull-diff-mode="split" aria-pressed="${layout.diff === "split" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="columns-2"></i>Split</button>
+                          <div class="fm-menu-divider"></div>
+                        </div>
+                        <div class="fm-menu-heading">Changed files</div>
+                        <button type="button" data-repo-pull-explorer-mode="tree" aria-pressed="${layout.explorer === "tree" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="folder-tree"></i>Tree</button>
+                        <button type="button" data-repo-pull-explorer-mode="list" aria-pressed="${layout.explorer === "list" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="list"></i>List</button>
+                        <div class="fm-menu-divider"></div>
+                        <button type="button" data-repo-diff-wrap aria-pressed="${pullDiffWraps(mode) ? "true" : "false"}" class="fm-menu-item"><i data-lucide="wrap-text"></i>Wrap long lines</button>
+                        <button type="button" data-repo-diff-collapse-all class="fm-menu-item"><i data-lucide="chevrons-down-up"></i>Collapse or expand all</button>
+                        <div class="fm-menu-divider"></div>
+                        <div class="fm-menu-heading">Keys: j / k next or previous file, v viewed</div>
+                      </div>
+                    </details>
+                    <button type="button" data-repo-diff-explorer-toggle aria-label="Hide changed files" title="Hide changed files" class="fm-diff-icon"><i data-lucide="panel-left-close"></i></button>
+                  </span>
+                </div>
+                <div class="fm-diff-progress-row">
+                  <span data-repo-diff-progress class="fm-diff-progress" aria-hidden="true"><span></span></span>
+                  <span data-repo-pull-viewed-summary class="fm-diff-viewed-count">${repoDiffProgressLabel(seen, files.length)}</span>
+                </div>
+                <div data-repo-diff-health class="fm-diff-pills">${renderRepoDiffHealthPills(diffHealthReport(parsed.files), marks)}</div>
+                <div data-repo-diff-ci class="fm-diff-pill-group">${renderRepoDiffCiPills(options.checks, reviewable)}</div>
+                <div class="fm-diff-filter">
+                  <i data-lucide="search"></i>
+                  <input data-repo-pull-file-filter type="search" autocomplete="off" placeholder="Filter changed files" aria-label="Filter changed files" />
+                </div>
               </div>
-              <nav data-repo-pull-file-list aria-label="Changed files">${renderRepoPullFiles(files, viewed, { mode: layout.explorer })}</nav>
+              <nav data-repo-pull-file-list aria-label="Changed files">${renderRepoPullFiles(files, viewed, { mode: layout.explorer, marks })}</nav>
             </aside>
             <div data-repo-pull-diff-list data-diff-mode="${mode}" class="min-w-0">${reviewable
-              ? renderRepoPullPatch(pullPatch.patch, viewed, mode)
-              : renderRepoComparePatch(pullPatch.patch, viewed, mode, pullPatch.imageDiffs)}</div>
+              ? renderRepoPullPatch(pullPatch.patch, viewed, mode, parsed)
+              : renderRepoComparePatch(pullPatch.patch, viewed, mode, pullPatch.imageDiffs, parsed)}</div>
           </div>
         </section>`;
     recordInterfaceMetric("diff", startedAt);
     return html;
   }
 
+  let repoDiffMarks = { patch: null, marks: new Map() };
+
   function diffPathParts(path) {
     const text = String(path || "");
     const slash = text.lastIndexOf("/");
     return slash < 0 ? { dir: "", name: text } : { dir: text.slice(0, slash + 1), name: text.slice(slash + 1) };
-  }
-
-  function renderRepoDiffCurrent(files, path, viewed) {
-    const list = Array.isArray(files) ? files : [];
-    const index = list.findIndex((file) => file.path === path);
-    const file = index >= 0 ? list[index] : null;
-    if (!file) return '<span class="fm-diff-path text-muted-foreground">No changed files</span>';
-    const parts = diffPathParts(file.path);
-    const isViewed = viewed?.has?.(file.path) || false;
-    return `
-      <button type="button" data-repo-diff-current-collapse aria-label="Collapse or expand this file" title="Collapse or expand this file" class="fm-diff-icon"><i data-lucide="fold-vertical"></i></button>
-      <button type="button" data-repo-diff-current-jump class="fm-diff-path" title="${escapeHtml(file.path)}">${parts.dir ? `<span class="fm-diff-dir"><span dir="ltr">${escapeHtml(parts.dir)}</span></span>` : ""}<span class="fm-diff-name">${escapeHtml(parts.name)}</span></button>
-      <span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(file.adds)}</span> <span class="fm-diff-stat-del">-${formatCount(file.dels)}</span></span>
-      <label class="fm-diff-check" title="Mark this file viewed"><input type="checkbox" data-repo-diff-current-viewed="${escapeHtml(file.path)}"${isViewed ? " checked" : ""} /><span class="fm-diff-check-label">Viewed</span></label>
-      <button type="button" data-repo-diff-step="-1" aria-label="Previous file (k)" title="Previous file (k)" class="fm-diff-icon"${index <= 0 ? " disabled" : ""}><i data-lucide="chevron-up"></i></button>
-      <span data-repo-diff-position class="fm-diff-position">${formatCount(index + 1)}/${formatCount(list.length)}</span>
-      <button type="button" data-repo-diff-step="1" aria-label="Next file (j)" title="Next file (j)" class="fm-diff-icon"${index >= list.length - 1 ? " disabled" : ""}><i data-lucide="chevron-down"></i></button>`;
-  }
-
-  function updateRepoDiffCurrent(section, path) {
-    const row = section?.querySelector("[data-repo-diff-current]");
-    const context = repoPullFilesContext();
-    if (!row || !context || context.section !== section) return;
-    row.innerHTML = renderRepoDiffCurrent(context.files, path, context.viewed);
-    window.lucide?.createIcons();
   }
 
   function pullCheckPill(tone, icon, count, title) {
@@ -21347,66 +21468,491 @@
       : pills;
   }
 
-  const DIFF_QUALITY_RULES = [
-    ["security", /\b(?:eval|Function)\s*\(|\bexec\s*\(|\bsystem\s*\(|child_process\s*\.\s*exec|shell\s*=\s*True|dangerouslySetInnerHTML|verify\s*=\s*(?:[Ff]alse|0)\b|rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0|Access-Control-Allow-Origin[^\n]*['"]\*['"]|\bchmod\s+(?:-R\s+)?777\b|\bgh[pousr]_[A-Za-z0-9_]{36,}|\bgithub_pat_[A-Za-z0-9_]{22,}|\bAKIA[0-9A-Z]{16,}|\bxox[baprs]-[A-Za-z0-9-]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}|\bsk_live_[A-Za-z0-9]{24,}|\bAIza[A-Za-z0-9_-]{35,}|-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |)PRIVATE KEY/],
-    ["conflict", /^(?:<{7}|={7}|>{7})(?:\s|$)/],
-    ["debug", /\bconsole\.(?:log|debug|trace)\s*\(|\bdebugger\s*;|System\.out\.print|\bvar_dump\s*\(/],
-    ["todo", /\b(?:TODO|FIXME|HACK|XXX)\b/],
+  const DIFF_LINE_FLAGS = {
+    secret: { label: "secret", severe: true, metric: "security" },
+    tlsBypass: { label: "TLS bypass", severe: true, metric: "security" },
+    unsafeApi: { label: "unsafe call", severe: true, metric: "security" },
+    permissive: { label: "permissive", severe: true, metric: "security" },
+    insecureUrl: { label: "plain HTTP", severe: true, metric: "network" },
+    conflictMarker: { label: "conflict marker", severe: true, metric: "practices" },
+    todo: { label: "TODO", severe: false, metric: "quality" },
+    debug: { label: "debug", severe: false, metric: "quality" },
+    broadCatch: { label: "broad catch", severe: false, metric: "quality" },
+    longLine: { label: "long line", severe: false, metric: "quality" },
+    trailingWhitespace: { label: "trailing space", severe: false, metric: "practices" },
+    deepNesting: { label: "deep nesting", severe: false, metric: "complexity" },
+    request: { label: "network call", severe: false, metric: "network" },
+  };
+
+  const DIFF_HEALTH_METRICS = [
+    ["merge", "Merge", "git-merge"],
+    ["complexity", "Complexity", "waypoints"],
+    ["quality", "Quality", "badge-check"],
+    ["security", "Security", "shield"],
+    ["network", "Network", "globe"],
+    ["practices", "Practices", "clipboard-list"],
   ];
 
-  const DIFF_QUALITY_MAX_LINES = 200000;
+  const DIFF_HEALTH = {
+    codeExtensions: new Set(["c", "cc", "cpp", "cxx", "h", "hpp", "cs", "java", "kt", "go", "rs", "py", "rb", "js", "jsx", "ts", "tsx", "mjs", "cjs", "php", "swift", "scala", "sh", "bash", "sql", "dart", "ex", "exs", "vue", "svelte"]),
+    manifests: new Set(["package.json", "pyproject.toml", "requirements.txt", "cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts", "gemfile", "composer.json", "pubspec.yaml", "mix.exs"]),
+    lockfiles: new Set(["package-lock.json", "pnpm-lock.yaml", "yarn.lock", "cargo.lock", "go.sum", "gemfile.lock", "composer.lock", "pubspec.lock", "pipfile.lock", "poetry.lock"]),
+    oddExtensions: new Set(["exe", "dll", "dylib", "so", "a", "o", "db", "sqlite", "zip", "tar", "gz", "7z"]),
+    controlFlow: /\b(?:if|elif|else\s+if|for|foreach|while|switch|case|catch|except|match|when)\b|&&|\|\|/i,
+    todoMarker: /\b(?:TODO|FIXME|HACK|XXX)\b/,
+    debugCall: /\b(?:console\.(?:log|debug|trace)|debugger\s*;|qDebug\s*\(|System\.out\.print|var_dump\s*\(|dd\s*\()/i,
+    broadCatch: /(?:except\s*(?::|Exception\b)|catch\s*\([^)]*(?:Exception|Throwable|\.\.\.)[^)]*\))/i,
+    unsafeApi: /\b(?:eval|Function)\s*\(|\bexec\s*\(|\bsystem\s*\(|child_process\s*\.\s*exec|shell\s*=\s*True|dangerouslySetInnerHTML|\.innerHTML\s*=/i,
+    transportBypass: /verify\s*=\s*(?:false|0)|rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0|CURLOPT_SSL_VERIFYPEER\s*,\s*(?:0|false)|danger_accept_invalid_certs\s*\(\s*true/i,
+    permissiveSecurity: /Access-Control-Allow-Origin[^\n]*['"]\*['"]|\bcors\s*\(\s*\)|\bchmod\s+(?:-R\s+)?777\b/i,
+    requestSite: /\bfetch\s*\(|\baxios\s*(?:\.|\[)|\brequests\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\b(?:http|https)\s*\.\s*(?:get|request)\s*\(|\bQNetwork(?:Request|AccessManager)\b|\bURLSession\b|\bWebSocket\s*\(|\bcurl_easy_perform\b|\bHttpClient\b/i,
+    resilience: /\b(?:timeout|AbortController|CancellationToken|retry|retries|backoff|cancell?ation)\b/i,
+    url: /https?:\/\/[^\s'"<>]+/gi,
+    secretPatterns: [
+      ["GitHub token", /\bgh[pousr]_[A-Za-z0-9_]{36,}\b/g],
+      ["GitHub fine-grained PAT", /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g],
+      ["AWS access key", /\bAKIA[0-9A-Z]{16,}\b/g],
+      ["AWS temporary access key", /\bASIA[0-9A-Z]{16,}\b/g],
+      ["Slack token", /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g],
+      ["OpenAI API key", /\bsk-proj-[A-Za-z0-9_-]{20,}\b|\bsk-[A-Za-z0-9]{48,}\b/g],
+      ["Anthropic API key", /\bsk-ant-[A-Za-z0-9_-]{20,}\b/g],
+      ["Stripe secret key", /\bsk_(live|test)_[A-Za-z0-9]{24,}\b/g],
+      ["Stripe restricted key", /\brk_(live|test)_[A-Za-z0-9]{24,}\b/g],
+      ["Google API key", /\bAIza[A-Za-z0-9_-]{35,}\b/g],
+      ["Google OAuth token", /\bya29\.[A-Za-z0-9_-]{20,}\b/g],
+      ["Google OAuth client secret", /\bGOCSPX-[A-Za-z0-9_-]{28,}\b/g],
+      ["SendGrid API key", /\bSG\.[A-Za-z0-9_-]{22,}\.[A-Za-z0-9_-]{43,}\b/g],
+      ["Twilio auth token", /\bSK[a-f0-9]{32,}\b/g],
+      ["npm access token", /\bnpm_[A-Za-z0-9]{36,}\b/g],
+      ["HashiCorp Vault token", /\bhv[sbr]\.[A-Za-z0-9]{24,}\b/g],
+      ["Cloudflare API token", /(?:CLOUDFLARE_API_TOKEN|CF_API_TOKEN)\s*=\s*['"]?([A-Za-z0-9_-]{40,})['"]?/g],
+      ["PEM private key", /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |)PRIVATE KEY(?:-----| BLOCK-----)/g],
+      ["Secret/token assignment", /(?:password|passwd|api[_-]?(?:key|secret|token)|auth[_-]?token|secret[_-]?key|access[_-]?token|private[_-]?key)\s*[:=]\s*['"]([^'"\s]{20,})['"]/gi],
+    ],
+    secretFragments: ["ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_", "akia", "asia", "xoxb-", "xoxa-", "xoxp-", "xoxr-", "xoxs-", "sk-proj-", "sk-", "sk_live_", "sk_test_", "rk_live_", "rk_test_", "aiza", "ya29.", "gocspx-", "sg.", "npm_", "hvs.", "hvb.", "hvr.", "cloudflare_api_token", "cf_api_token", "-----begin ", "password", "passwd", "api_key", "api-key", "apikey", "api_secret", "api-secret", "apisecret", "api_token", "api-token", "apitoken", "auth_token", "auth-token", "authtoken", "secret_key", "secret-key", "secretkey", "access_token", "access-token", "accesstoken", "private_key", "private-key", "privatekey"],
+    placeholderMarkers: ["correct-horse-battery-staple", "changeme", "change-me", "change_me", "placeholder", "example", "sample", "dummy", "redacted", "notreal", "not-a-real", "not_a_real", "fake", "your-", "your_", "test-password", "test_password", "testpassword", "${", "{{", "<"],
+    indirection: /^(?:\$\w+|\$\{[^}]*\}|\$\([^)]*\)|%\w+%)$/,
+    ignoreMarker: "forkmesh-secret-scan:ignore-line",
+  };
 
-  function diffQualityFlags(patch) {
-    const flags = Object.fromEntries(DIFF_QUALITY_RULES.map(([key]) => [key, { count: 0, path: "" }]));
-    const text = String(patch || "");
-    if (!text) return flags;
-    let path = "";
-    let seen = 0;
-    for (const line of text.split("\n")) {
-      if (seen > DIFF_QUALITY_MAX_LINES) break;
-      seen += 1;
-      if (line.startsWith("+++ ")) {
-        const target = line.slice(4).trim();
-        if (target !== "/dev/null") path = target.replace(/^b\//, "");
-        continue;
-      }
-      if (line.startsWith("diff --git ")) {
-        const match = line.match(/ b\/(.+)$/);
-        if (match) path = match[1];
-        continue;
-      }
-      if (line[0] !== "+") continue;
-      const added = line.slice(1);
-      for (const [key, rule] of DIFF_QUALITY_RULES) {
-        if (!rule.test(added)) continue;
-        flags[key].count += 1;
-        if (!flags[key].path) flags[key].path = path;
-      }
-    }
-    return flags;
+  const DIFF_HEALTH_MAX_LINES = 200000;
+
+  function diffHealthName(path) {
+    const text = String(path || "");
+    return text.slice(text.lastIndexOf("/") + 1);
   }
 
-  function renderRepoDiffQualityPills(flags) {
-    const meta = {
-      security: ["shield-alert", "Security", "danger", "risky calls, TLS bypasses, open CORS or secrets in added lines"],
-      conflict: ["git-merge", "Conflict", "danger", "merge-conflict markers in added lines"],
-      debug: ["bug", "Debug", "attention", "leftover debug output in added lines"],
-      todo: ["list-todo", "TODO", "attention", "TODO, FIXME or HACK markers in added lines"],
+  function diffHealthSuffix(path) {
+    const name = diffHealthName(path);
+    const dot = name.lastIndexOf(".");
+    return dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
+  }
+
+  function diffHealthIsCode(path) {
+    return DIFF_HEALTH.codeExtensions.has(diffHealthSuffix(path));
+  }
+
+  function diffHealthIsTest(path) {
+    const lower = String(path || "").toLowerCase();
+    if (lower.startsWith("test/") || lower.startsWith("tests/") || lower.includes("/test/") || lower.includes("/tests/")
+        || lower.includes("/__tests__/") || lower.includes("/spec/")) {
+      return true;
+    }
+    const base = diffHealthName(lower);
+    return base.startsWith("test_") || base.includes("_test.") || base.includes(".test.") || base.includes(".spec.")
+      || base.includes("_spec.");
+  }
+
+  function diffHealthIsGenerated(path) {
+    const lower = `/${String(path || "").toLowerCase()}`;
+    return lower.includes("/node_modules/") || lower.includes("/vendor/") || lower.includes("/dist/")
+      || lower.includes("/generated/") || lower.includes("/build/") || lower.endsWith(".min.js")
+      || lower.endsWith(".min.css") || lower.includes(".generated.");
+  }
+
+  function diffHealthSecretMatches(text) {
+    if (text.includes(DIFF_HEALTH.ignoreMarker)) return 0;
+    const lower = text.toLowerCase();
+    if (!text.includes("SK") && !DIFF_HEALTH.secretFragments.some((fragment) => lower.includes(fragment))) return 0;
+    let found = 0;
+    DIFF_HEALTH.secretPatterns.forEach(([name, pattern]) => {
+      for (const match of text.matchAll(pattern)) {
+        if (name === "Secret/token assignment" && diffHealthPlaceholder(match[1] || "")) continue;
+        found += 1;
+      }
+    });
+    return found;
+  }
+
+  function diffHealthPlaceholder(value) {
+    const lower = value.toLowerCase();
+    if (DIFF_HEALTH.placeholderMarkers.some((marker) => lower.includes(marker))) return true;
+    if (DIFF_HEALTH.indirection.test(value)) return true;
+    return Boolean(lower) && [...lower].every((ch) => ch === lower[0]);
+  }
+
+  function diffHealthUrls(text) {
+    let all = 0;
+    let insecure = 0;
+    for (const match of text.matchAll(DIFF_HEALTH.url)) {
+      const found = match[0].toLowerCase();
+      all += 1;
+      if (!found.startsWith("http://")) continue;
+      if (found.startsWith("http://localhost") || found.startsWith("http://127.0.0.1") || found.startsWith("http://0.0.0.0")
+          || found.startsWith("http://[::1]") || found.includes("example.") || found.includes(".invalid")) {
+        continue;
+      }
+      insecure += 1;
+    }
+    return { all, insecure };
+  }
+
+  function diffHealthConflictMarker(text) {
+    const trimmed = text.trim();
+    return trimmed.startsWith("<<<<<<<") || trimmed.startsWith(">>>>>>>") || trimmed === "=======";
+  }
+
+  function diffHealthIndent(text) {
+    return text.length - text.trimStart().length;
+  }
+
+  function diffLineFlags(path, text) {
+    const added = String(text || "");
+    const out = [];
+    if (diffHealthSecretMatches(added)) out.push("secret");
+    if (DIFF_HEALTH.transportBypass.test(added)) out.push("tlsBypass");
+    if (DIFF_HEALTH.unsafeApi.test(added)) out.push("unsafeApi");
+    if (DIFF_HEALTH.permissiveSecurity.test(added)) out.push("permissive");
+    if (diffHealthUrls(added).insecure) out.push("insecureUrl");
+    if (diffHealthConflictMarker(added)) out.push("conflictMarker");
+    if (DIFF_HEALTH.todoMarker.test(added)) out.push("todo");
+    if (DIFF_HEALTH.debugCall.test(added)) out.push("debug");
+    if (DIFF_HEALTH.broadCatch.test(added)) out.push("broadCatch");
+    if (diffHealthIsCode(path)) {
+      if (added.length > 140) out.push("longLine");
+      if (added.endsWith(" ") || added.endsWith("\t")) out.push("trailingWhitespace");
+      if (DIFF_HEALTH.controlFlow.test(added) && diffHealthIndent(added) >= 12) out.push("deepNesting");
+    }
+    if (DIFF_HEALTH.requestSite.test(added)) out.push("request");
+    return out;
+  }
+
+  function diffHealthFilePath(file) {
+    return file.newPath || file.oldPath || "file";
+  }
+
+  function annotateDiffLineFlags(files) {
+    let seen = 0;
+    const marks = new Map();
+    (files || []).forEach((file) => {
+      if (file.flagged) {
+        if (file.flagged.count) marks.set(diffHealthFilePath(file), file.flagged);
+        return;
+      }
+      const path = file.status === "deleted" ? "" : diffHealthFilePath(file);
+      const summary = { count: 0, severe: false, metrics: new Map(), severeMetrics: new Set() };
+      (file.rows || []).forEach((row) => {
+        if (row.type !== "add" || seen > DIFF_HEALTH_MAX_LINES) return;
+        seen += 1;
+        const flags = diffLineFlags(path, row.text);
+        if (!flags.length) return;
+        row.flags = flags;
+        summary.count += 1;
+        flags.forEach((flag) => {
+          const meta = DIFF_LINE_FLAGS[flag];
+          summary.severe = summary.severe || meta.severe;
+          if (meta.severe) summary.severeMetrics.add(meta.metric);
+          summary.metrics.set(meta.metric, (summary.metrics.get(meta.metric) || 0) + 1);
+        });
+      });
+      file.flagged = summary;
+      if (summary.count) marks.set(diffHealthFilePath(file), summary);
+    });
+    return marks;
+  }
+
+  function diffLineFlagMetrics(flags) {
+    return DIFF_HEALTH_METRICS.map(([key]) => key).filter((key) => flags.some((flag) => DIFF_LINE_FLAGS[flag]?.metric === key));
+  }
+
+  function diffHealthEvidence(parts, fallback, caveat) {
+    let result = parts.length ? parts.join("; ") : fallback;
+    if (!result.endsWith(".")) result += ".";
+    return `${result} ${caveat}`;
+  }
+
+  function diffHealthBounded(score) {
+    return Math.min(Math.max(Math.round(score), 0), 100);
+  }
+
+  function diffHealthTone(score) {
+    return score >= 85 ? "green" : score >= 60 ? "orange" : "red";
+  }
+
+  function diffHealthReport(files) {
+    const list = Array.isArray(files) ? files : [];
+    let totalAdds = 0, totalDels = 0, maxFileChurn = 0, sourceFiles = 0, testFiles = 0, testAdds = 0, testDels = 0;
+    let binaryFiles = 0, generatedFiles = 0, sensitiveFiles = 0, oddArtifacts = 0;
+    let maxChurnPath = "";
+    let lockfileChanged = false, manifestChanged = false;
+    const s = {
+      controlFlowLines: 0, nestedControlFlowLines: 0, longLines: 0, todoLines: 0, debugLines: 0, broadCatchLines: 0,
+      unsafeApiLines: 0, transportBypassLines: 0, permissiveSecurityLines: 0, requestLines: 0, hardcodedUrls: 0,
+      insecureUrls: 0, conflictMarkerLines: 0, trailingWhitespaceLines: 0, secretMatches: 0, resilienceEvidence: false,
     };
-    return DIFF_QUALITY_RULES.map(([key]) => {
-      const flag = flags?.[key] || { count: 0, path: "" };
-      if (key === "conflict" && !flag.count) return "";
-      const [icon, label, tone, what] = meta[key];
-      const title = flag.count
-        ? `${label}: ${formatCount(flag.count)} ${flag.count === 1 ? "line" : "lines"} with ${what}. Jump to the first.`
-        : key === "security"
-          ? `${label}: no flagged patterns (${what}). This is a pattern scan, not a security review.`
-          : `${label}: no ${what}.`;
-      const body = `<i data-lucide="${icon}"></i><span class="fm-diff-pill-label">${label}</span>${formatCount(flag.count)}`;
-      return flag.count
-        ? `<button type="button" data-repo-diff-flag="${escapeHtml(flag.path)}" title="${escapeHtml(title)}" class="fm-diff-pill fm-diff-pill-${tone}">${body}</button>`
-        : `<span title="${escapeHtml(title)}" class="fm-diff-pill ${key === "security" ? "fm-diff-pill-muted" : "fm-diff-pill-success"}">${body}</span>`;
+    let seen = 0;
+    list.forEach((file) => {
+      const path = diffHealthFilePath(file);
+      const adds = Number(file.adds) || 0;
+      const dels = Number(file.dels) || 0;
+      totalAdds += adds;
+      totalDels += dels;
+      if (adds + dels > maxFileChurn) {
+        maxFileChurn = adds + dels;
+        maxChurnPath = path;
+      }
+      const test = diffHealthIsTest(path);
+      if (diffHealthIsCode(path) && !test) sourceFiles += 1;
+      if (test) {
+        testFiles += 1;
+        testAdds += adds;
+        testDels += dels;
+      }
+      if (file.binary) binaryFiles += 1;
+      if (diffHealthIsGenerated(path)) generatedFiles += 1;
+      const base = diffHealthName(path).toLowerCase();
+      const suffix = diffHealthSuffix(path);
+      if (file.status === "added" && (base === ".env" || base === "id_rsa" || base === "id_ed25519" || ["pem", "p12", "pfx", "key"].includes(suffix))) sensitiveFiles += 1;
+      if (file.status === "added" && DIFF_HEALTH.oddExtensions.has(suffix)) oddArtifacts += 1;
+      lockfileChanged = lockfileChanged || DIFF_HEALTH.lockfiles.has(base);
+      manifestChanged = manifestChanged || DIFF_HEALTH.manifests.has(base);
+      const code = file.status !== "deleted" && diffHealthIsCode(path);
+      (file.rows || []).forEach((row) => {
+        if (row.type !== "add" || seen > DIFF_HEALTH_MAX_LINES) return;
+        seen += 1;
+        const added = String(row.text || "");
+        if (code) {
+          if (DIFF_HEALTH.controlFlow.test(added)) {
+            s.controlFlowLines += 1;
+            if (diffHealthIndent(added) >= 12) s.nestedControlFlowLines += 1;
+          }
+          if (added.length > 140) s.longLines += 1;
+          if (added.endsWith(" ") || added.endsWith("\t")) s.trailingWhitespaceLines += 1;
+        }
+        if (DIFF_HEALTH.todoMarker.test(added)) s.todoLines += 1;
+        if (DIFF_HEALTH.debugCall.test(added)) s.debugLines += 1;
+        if (DIFF_HEALTH.broadCatch.test(added)) s.broadCatchLines += 1;
+        if (DIFF_HEALTH.unsafeApi.test(added)) s.unsafeApiLines += 1;
+        if (DIFF_HEALTH.transportBypass.test(added)) s.transportBypassLines += 1;
+        if (DIFF_HEALTH.permissiveSecurity.test(added)) s.permissiveSecurityLines += 1;
+        if (DIFF_HEALTH.requestSite.test(added)) s.requestLines += 1;
+        if (!s.resilienceEvidence && DIFF_HEALTH.resilience.test(added)) s.resilienceEvidence = true;
+        if (diffHealthConflictMarker(added)) s.conflictMarkerLines += 1;
+        const found = diffHealthUrls(added);
+        s.hardcodedUrls += found.all;
+        s.insecureUrls += found.insecure;
+        s.secretMatches += diffHealthSecretMatches(added);
+      });
+    });
+    const churn = totalAdds + totalDels;
+    const fileCount = list.length;
+
+    let complexity = 100;
+    if (churn > 80) complexity -= 4;
+    if (churn > 250) complexity -= 8;
+    if (churn > 600) complexity -= 14;
+    if (churn > 1500) complexity -= 20;
+    if (maxFileChurn > 250) complexity -= 8;
+    if (maxFileChurn > 750) complexity -= 10;
+    if (s.controlFlowLines > 20) complexity -= 6;
+    if (s.controlFlowLines > 50) complexity -= 10;
+    if (s.controlFlowLines > 120) complexity -= 15;
+    if (s.nestedControlFlowLines > 8) complexity -= 8;
+    if (s.nestedControlFlowLines > 30) complexity -= 12;
+    complexity = diffHealthBounded(complexity);
+    const complexityBits = [`${churn} changed lines across ${fileCount} files`];
+    if (s.controlFlowLines) complexityBits.push(`${s.controlFlowLines} added control-flow lines`);
+    if (s.nestedControlFlowLines) complexityBits.push(`${s.nestedControlFlowLines} deeply indented branches`);
+    if (maxFileChurn && maxChurnPath) complexityBits.push(`largest file is ${maxFileChurn} lines in ${maxChurnPath}`);
+
+    let quality = 100;
+    const qualityBits = [];
+    if (sourceFiles && !testFiles) {
+      quality -= 18;
+      qualityBits.push(`${sourceFiles} source files changed with no test file in the diff`);
+      if (totalAdds > 250) quality -= 10;
+    } else if (testFiles) {
+      qualityBits.push(`${testFiles} test files changed`);
+    } else {
+      qualityBits.push("no source-code files changed");
+    }
+    if (testFiles && !testAdds && testDels) {
+      quality -= 20;
+      qualityBits.push("tests were only removed");
+    }
+    quality -= Math.min(25, s.todoLines * 5);
+    quality -= Math.min(15, s.debugLines * 5);
+    quality -= Math.min(15, s.broadCatchLines * 5);
+    quality -= Math.min(15, s.longLines * 2);
+    if (s.todoLines) qualityBits.push(`${s.todoLines} new TODO/FIXME markers`);
+    if (s.debugLines) qualityBits.push(`${s.debugLines} debug statements`);
+    if (s.broadCatchLines) qualityBits.push(`${s.broadCatchLines} broad exception handlers`);
+    if (s.longLines) qualityBits.push(`${s.longLines} code lines over 140 characters`);
+    quality = diffHealthBounded(quality);
+
+    let security = 100;
+    const securityBits = [];
+    if (s.secretMatches) {
+      security -= 70 + Math.min(20, (s.secretMatches - 1) * 10);
+      securityBits.push(`${s.secretMatches} high-confidence secret matches`);
+    }
+    security -= Math.min(70, s.transportBypassLines * 35);
+    security -= Math.min(50, s.unsafeApiLines * 20);
+    security -= Math.min(30, s.permissiveSecurityLines * 15);
+    security -= Math.min(70, sensitiveFiles * 55);
+    if (s.transportBypassLines) securityBits.push(`${s.transportBypassLines} TLS/certificate bypasses`);
+    if (s.unsafeApiLines) securityBits.push(`${s.unsafeApiLines} dynamic execution or unsafe DOM calls`);
+    if (s.permissiveSecurityLines) securityBits.push(`${s.permissiveSecurityLines} permissive security settings`);
+    if (sensitiveFiles) securityBits.push(`${sensitiveFiles} newly tracked key or environment files`);
+    security = diffHealthBounded(security);
+
+    let network = 100;
+    const networkBits = [];
+    if (s.requestLines) {
+      network -= Math.min(20, s.requestLines * 4);
+      networkBits.push(`${s.requestLines} added network request sites`);
+      if (!s.resilienceEvidence) {
+        network -= 18;
+        networkBits.push("no added timeout, cancellation, retry, or backoff evidence");
+      } else {
+        networkBits.push("timeout/retry/cancellation evidence present");
+      }
+    }
+    if (s.hardcodedUrls) {
+      network -= Math.min(10, s.hardcodedUrls * 2);
+      networkBits.push(`${s.hardcodedUrls} hard-coded URLs`);
+    }
+    if (s.insecureUrls) {
+      network -= Math.min(80, s.insecureUrls * 40);
+      networkBits.push(`${s.insecureUrls} non-local plain-HTTP endpoints`);
+    }
+    network = diffHealthBounded(network);
+
+    const lockfileWithoutManifest = lockfileChanged && !manifestChanged;
+    let practices = 100;
+    const practicesBits = [];
+    if (s.conflictMarkerLines) {
+      practices = 10;
+      practicesBits.push(`${s.conflictMarkerLines} unresolved conflict-marker lines`);
+    }
+    practices -= Math.min(30, generatedFiles * 12);
+    practices -= Math.min(20, binaryFiles * 8);
+    practices -= Math.min(50, oddArtifacts * 25);
+    practices -= Math.min(15, s.trailingWhitespaceLines * 2);
+    practices -= Math.min(15, (s.todoLines + s.debugLines) * 3);
+    if (lockfileWithoutManifest) practices -= 8;
+    if (churn > 1000) practices -= 10;
+    if (generatedFiles) practicesBits.push(`${generatedFiles} generated/vendor paths changed`);
+    if (binaryFiles) practicesBits.push(`${binaryFiles} binary files changed`);
+    if (oddArtifacts) practicesBits.push(`${oddArtifacts} unusual compiled/archive artifacts added`);
+    if (s.trailingWhitespaceLines) practicesBits.push(`${s.trailingWhitespaceLines} added code lines have trailing whitespace`);
+    if (lockfileWithoutManifest) practicesBits.push("a lockfile changed without its manifest");
+    practices = diffHealthBounded(practices);
+
+    const weighted = Math.floor((complexity * 25 + quality * 20 + security * 25 + network * 10 + practices * 20 + 50) / 100);
+    let merge = Math.min(weighted, 84);
+    const mergeBits = ["no Git base or conflict check was read for this diff"];
+    if (fileCount > 25) merge -= 5;
+    if (fileCount > 75) merge -= 10;
+    if (security < 60 || network < 40 || practices < 30) merge = Math.min(merge, 55);
+    merge = diffHealthBounded(merge);
+    mergeBits.push(`weighted static diff health ${weighted}/100`);
+
+    const details = {
+      merge: diffHealthEvidence(mergeBits, "No merge signals available", "Combines Git divergence/conflict state with the five static diff scores."),
+      complexity: diffHealthEvidence(complexityBits, "No changed lines", "Estimated from churn, control flow, and concentration; no code was executed."),
+      quality: diffHealthEvidence(qualityBits, "No quality findings", "Tests are inferred from paths and were not executed."),
+      security: diffHealthEvidence(securityBits, "No high-confidence secrets or risky added-line patterns found", "Static heuristic only; it does not replace dependency or SAST scanning."),
+      network: diffHealthEvidence(networkBits, "No added request sites or hard-coded URLs detected", "This is syntax analysis; ForkMesh sent no traffic for this check."),
+      practices: diffHealthEvidence(practicesBits, "No unusual artifacts, conflict markers, or diff-hygiene issues found", "Checks only the files and added lines in this diff."),
+    };
+    const scores = { merge, complexity, quality, security, network, practices };
+    return DIFF_HEALTH_METRICS.map(([key, label, icon]) => ({
+      key, label, icon, score: scores[key], tone: diffHealthTone(scores[key]), detail: details[key],
+    }));
+  }
+
+  function diffHealthToneClass(tone) {
+    if (tone === "green") return "success";
+    return tone === "orange" ? "attention" : "danger";
+  }
+
+  function renderRepoDiffHealthPills(report, marks) {
+    const flagged = new Map();
+    (marks instanceof Map ? [...marks.values()] : []).forEach((summary) => {
+      summary.metrics.forEach((count, metric) => flagged.set(metric, (flagged.get(metric) || 0) + count));
+    });
+    return (report || []).map((metric) => {
+      const lines = flagged.get(metric.key) || 0;
+      const tone = metric.key === "security" && metric.tone === "green" ? "muted" : diffHealthToneClass(metric.tone);
+      return `<details data-repo-diff-health-pill="${metric.key}" class="fm-diff-menu">
+        <summary class="fm-diff-pill fm-diff-pill-${tone}" title="${escapeHtml(`${metric.label} ${metric.score}/100`)}" aria-label="${escapeHtml(`${metric.label} health score: ${metric.score} out of 100, ${metric.tone}`)}"><i data-lucide="${metric.icon}"></i>${metric.score}</summary>
+        <div class="fm-popover fm-diff-menu-panel fm-diff-health-panel">
+          <div class="fm-diff-health-title"><span class="fm-diff-pill fm-diff-pill-${tone}"><i data-lucide="${metric.icon}"></i>${metric.score}</span>${escapeHtml(metric.label)} <span class="fm-diff-health-out">${metric.score}/100 · ${metric.tone}</span></div>
+          <p>${escapeHtml(metric.detail)}</p>
+          ${metric.key === "security" ? "<p>This is a pattern scan, not a security review: a clean score is not a security pass.</p>" : ""}
+          <p class="fm-diff-health-legend">Green 85–100 · orange 60–84 · red 0–59</p>
+          ${lines ? `<button type="button" data-repo-diff-mark-next="${metric.key}" class="fm-menu-item"><i data-lucide="corner-down-right"></i>Show flagged lines (${formatCount(lines)})</button>` : ""}
+        </div>
+      </details>`;
     }).join("");
+  }
+
+  function renderRepoDiffFileDot(summary) {
+    if (!summary?.count) return "";
+    const metrics = DIFF_HEALTH_METRICS.filter(([key]) => summary.metrics.has(key)).map(([, label]) => label).join(", ");
+    const title = `${formatCount(summary.count)} flagged ${summary.count === 1 ? "line" : "lines"}: ${metrics}`;
+    return `<span class="fm-diff-dot" data-tone="${summary.severe ? "danger" : "attention"}" title="${escapeHtml(title)}"></span>`;
+  }
+
+  function renderRepoDiffFileMarks(path, summary) {
+    if (!summary?.count) return "";
+    return `<span class="fm-diff-file-marks">${DIFF_HEALTH_METRICS.filter(([key]) => summary.metrics.has(key)).map(([key, label, icon]) => {
+      const count = summary.metrics.get(key);
+      return `<button type="button" data-repo-diff-mark-next="${key}" data-repo-diff-mark-file="${escapeHtml(path)}" title="${escapeHtml(`${label}: ${formatCount(count)} flagged ${count === 1 ? "line" : "lines"} in this file`)}" class="fm-diff-mark" data-tone="${summary.severeMetrics.has(key) ? "danger" : "attention"}"><i data-lucide="${icon}"></i>${formatCount(count)}</button>`;
+    }).join("")}</span>`;
+  }
+
+  function renderDiffLineFlagTag(flags) {
+    if (!flags?.length) return "";
+    const severe = flags.some((flag) => DIFF_LINE_FLAGS[flag]?.severe);
+    return `<span class="fm-diff-flag" data-tone="${severe ? "danger" : "attention"}">⚑ ${escapeHtml(flags.map((flag) => DIFF_LINE_FLAGS[flag]?.label || flag).join(" · "))}</span>`;
+  }
+
+  function diffLineFlagAttributes(flags) {
+    if (!flags?.length) return "";
+    const severe = flags.some((flag) => DIFF_LINE_FLAGS[flag]?.severe);
+    return ` data-flag="${severe ? "danger" : "attention"}" data-flag-metrics="${diffLineFlagMetrics(flags).join(" ")}"`;
+  }
+
+  function jumpToRepoDiffMark(metric, path = "") {
+    const section = repoPullFilesSection();
+    if (!section || !metric) return false;
+    const rows = Array.from(section.querySelectorAll("[data-repo-pull-diff-row][data-flag-metrics]"))
+      .filter((row) => row.dataset.flagMetrics.split(" ").includes(metric)
+        && (!path || row.closest("[data-repo-pull-diff-file]")?.dataset.repoPullDiffFile === path));
+    if (!rows.length) return false;
+    const key = `${metric}:${path}`;
+    const cursor = state.repoDiffMarkCursor?.key === key ? state.repoDiffMarkCursor.index + 1 : 0;
+    const index = cursor % rows.length;
+    state.repoDiffMarkCursor = { key, index };
+    const row = rows[index];
+    const block = row.closest("[data-repo-pull-diff-file]");
+    if (block?.dataset.collapsed === "true") foldRepoDiffBlock(block, false);
+    if (block) block.style.contentVisibility = "visible";
+    row.scrollIntoView({ block: "center" });
+    playRepoDiffAnimation(row, "flash");
+    return true;
   }
 
   // The review surface on the page and the data behind it. An open pull's
@@ -21415,6 +21961,7 @@
   // its viewed marks and layout toggles work, its line gutters do not open a
   // comment composer.
   function repoPullFilesSection() {
+    if (document.fullscreenElement?.matches?.("[data-repo-pull-files]")) return document.fullscreenElement;
     const sections = document.querySelectorAll("[data-repo-pull-files]");
     for (const section of sections) {
       if (section.offsetParent) return section;
@@ -21476,6 +22023,7 @@
     nav.innerHTML = renderRepoPullFiles(context.files, context.viewed, {
       mode: pullLayoutPrefs().explorer,
       filter,
+      marks: repoDiffMarks.patch === context.patch ? repoDiffMarks.marks : new Map(),
     });
     window.lucide?.createIcons();
   }
@@ -21526,12 +22074,56 @@
 
   function setRepoDiffExplorerOpen(open) {
     const next = Boolean(open);
-    setPullLayoutPref("explorerOpen", next);
+    if (!pullExplorerIsDrawer()) setPullLayoutPref("explorerOpen", next);
     const section = repoPullFilesSection();
     if (!section) return;
     section.dataset.explorerOpen = next ? "true" : "false";
-    section.querySelector("[data-repo-diff-explorer-toggle]")?.setAttribute("aria-pressed", next ? "true" : "false");
     if (next) setRepoPullActiveFile(section.dataset.activeFile || "", { revealRow: true });
+  }
+
+  function toggleRepoDiffExplorer() {
+    setRepoDiffExplorerOpen(repoPullFilesSection()?.dataset.explorerOpen !== "true");
+  }
+
+  function syncRepoDiffExplorerLayout() {
+    const section = repoPullFilesSection();
+    if (section) section.dataset.explorerOpen = pullExplorerShownOpen() ? "true" : "false";
+  }
+
+  function repoDiffShown(section) {
+    return Boolean(section && (section.offsetParent || document.fullscreenElement === section));
+  }
+
+  function repoDiffScroller(section) {
+    return document.fullscreenElement === section ? section : scrollContainerOf(section);
+  }
+
+  function fitRepoDiffViewport(section) {
+    if (!section) return 0;
+    const scroller = repoDiffScroller(section);
+    const root = scroller === document.scrollingElement || scroller === document.documentElement;
+    const height = `${Math.round(root ? window.innerHeight : scroller.clientHeight)}px`;
+    if (section.style.getPropertyValue("--fm-diff-viewport") !== height) section.style.setProperty("--fm-diff-viewport", height);
+    return root ? 0 : scroller.getBoundingClientRect().top;
+  }
+
+  function toggleRepoDiffMaximize() {
+    const section = repoPullFilesSection();
+    if (!section) return;
+    if (document.fullscreenElement) void document.exitFullscreen?.();
+    else section.requestFullscreen?.()?.catch?.(() => {});
+  }
+
+  function syncRepoDiffMaximize() {
+    document.querySelectorAll("[data-repo-diff-maximize]").forEach((button) => {
+      const on = document.fullscreenElement === button.closest("[data-repo-pull-files]");
+      const label = on ? "Exit full screen" : "Full screen";
+      button.setAttribute("aria-label", label);
+      button.title = label;
+      swapLucideIcon(button.querySelector("[data-repo-diff-maximize-icon]"), on ? "minimize-2" : "maximize-2", "");
+    });
+    window.lucide?.createIcons();
+    fitRepoDiffViewport(repoPullFilesSection());
   }
 
   function setRepoDiffWrap(wrap) {
@@ -21553,7 +22145,7 @@
 
   function stepRepoDiffFile(step) {
     const section = repoPullFilesSection();
-    if (!section?.offsetParent) return false;
+    if (!repoDiffShown(section)) return false;
     const blocks = repoDiffBlocks(section);
     if (!blocks.length) return false;
     const index = blocks.findIndex((block) => block.dataset.repoPullDiffFile === section.dataset.activeFile);
@@ -21561,37 +22153,22 @@
     return jumpToRepoDiffFile(next?.dataset.repoPullDiffFile || "");
   }
 
-  function setRepoDiffBlockCollapsedFromHeader(block, collapsed) {
-    setRepoPullDiffBlockCollapsed(block, collapsed);
-    block.querySelector("[data-repo-pull-diff-collapse]")?.setAttribute("aria-expanded", collapsed ? "false" : "true");
-  }
-
   function toggleRepoDiffCollapseAll() {
     const section = repoPullFilesSection();
     const blocks = repoDiffBlocks(section);
     if (!blocks.length) return;
     const collapse = blocks.some((block) => block.dataset.collapsed !== "true");
-    blocks.forEach((block) => setRepoDiffBlockCollapsedFromHeader(block, collapse));
+    blocks.forEach((block) => setRepoPullDiffBlockCollapsed(block, collapse));
     window.lucide?.createIcons();
     const current = blocks.find((block) => block.dataset.repoPullDiffFile === section.dataset.activeFile);
     if (current) current.scrollIntoView({ block: "start" });
   }
 
-  function toggleRepoDiffCurrentCollapse() {
+  function toggleRepoDiffCurrentViewed(repo) {
     const section = repoPullFilesSection();
-    const block = repoDiffBlocks(section).find((item) => item.dataset.repoPullDiffFile === section?.dataset.activeFile);
-    if (!block) return;
-    setRepoDiffBlockCollapsedFromHeader(block, block.dataset.collapsed !== "true");
-    window.lucide?.createIcons();
-    block.scrollIntoView({ block: "start" });
-  }
-
-  function setRepoDiffCurrentViewed(repo, path) {
-    const section = repoPullFilesSection();
-    if (!section || !path) return;
-    toggleRepoPullViewed(repo, path);
-    const block = repoDiffBlocks(section).find((item) => item.dataset.repoPullDiffFile === path);
-    if (block) block.scrollIntoView({ block: "start" });
+    if (!repo || !repoDiffShown(section) || !section.dataset.activeFile) return false;
+    toggleRepoPullViewed(repo, section.dataset.activeFile);
+    return true;
   }
 
   // Clicking a file in the explorer jumps the diff pane to it; scrolling the diff
@@ -21600,8 +22177,6 @@
   function setRepoPullActiveFile(path, options = {}) {
     const section = repoPullFilesSection();
     if (!section) return;
-    const current = section.querySelector("[data-repo-diff-current-viewed]");
-    if (current?.dataset.repoDiffCurrentViewed !== path) updateRepoDiffCurrent(section, path);
     let active = null;
     section.querySelectorAll("[data-repo-pull-file]").forEach((button) => {
       const current = button.dataset.repoPullFile === path;
@@ -21690,15 +22265,12 @@
   // file, and the blocks come from their container's children rather than a
   // selector walk over every diff row.
   function syncRepoPullActiveFileFromScroll() {
-    if (state.repoPullDiffJump) return;
     const section = repoPullFilesSection();
-    if (!section || !section.offsetParent) return;
+    if (!repoDiffShown(section)) return;
+    const edge = fitRepoDiffViewport(section) + 6;
+    if (state.repoPullDiffJump) return;
     const blocks = section.querySelector("[data-repo-pull-diff-blocks]")?.children;
     if (!blocks?.length) return;
-    const head = section.querySelector("[data-repo-diff-head]");
-    const edge = head
-      ? head.getBoundingClientRect().bottom + 8
-      : (section.closest("[data-view]")?.getBoundingClientRect().top || 0) + 24;
     let low = 0;
     let high = blocks.length - 1;
     let index = 0;
@@ -21729,19 +22301,20 @@
     // line's min-content width, so an implicit auto track would let one file's
     // longest line push every block past the edge of the review pane.
     const wrapColumns = diffWrapColumns(mode);
+    annotateDiffLineFlags(files);
     return `<div data-repo-pull-diff-blocks class="grid grid-cols-[minmax(0,1fr)]">${files.map((file) => renderDiffFileBlock(file, images.get(file.newPath) || images.get(file.oldPath), viewed, mode, reviewable, wrapColumns)).join("")}</div>`;
   }
 
-  function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified") {
+  function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified", parsed = null) {
     if (!String(patch || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">The diff is unavailable from the current mirror.</div>';
-    return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), [], viewed, mode, true)}</div>`;
+    return `<div data-repo-pull-patch>${renderDiffFiles(parsed || parseDiffFiles(patch), [], viewed, mode, true)}</div>`;
   }
 
   // The branch comparison's diff: the pull review's file blocks (viewed
   // folds, unified or split rows, stat bars) without the review gutters.
-  function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified", imageDiffs = []) {
+  function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified", imageDiffs = [], parsed = null) {
     if (!String(patch || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this comparison.</div>';
-    return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), imageDiffs, viewed, mode, false)}</div>`;
+    return `<div data-repo-pull-patch>${renderDiffFiles(parsed || parseDiffFiles(patch), imageDiffs, viewed, mode, false)}</div>`;
   }
 
   const repoPullFolderReads = new Map();
@@ -22209,7 +22782,7 @@
       id: "open",
       type: "open",
       author: values?.author || "",
-      authorName: values?.authorName || values?.author || "unknown",
+      authorName: recordAuthorName(values) || values?.author || "unknown",
       ts: values?.ts || values?.createdAt || 0,
       body: "",
     };
@@ -22349,6 +22922,8 @@
     if (!pullDetailIsCurrent(repo, number)) return;
     parsed.pullRules = await loadRepoPullRules(repo, number, readiness);
     if (!pullDetailIsCurrent(repo, number)) return;
+    parsed.pullRequiredChecks = await loadRepoPullRequiredChecks(repo, values, readiness);
+    if (!pullDetailIsCurrent(repo, number)) return;
     const rulesSlot = $("[data-repo-pull-rules-slot]");
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
@@ -22359,7 +22934,6 @@
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
     }
-    updateRepoPullReadinessPanel(repo, number, parsed);
     updateRepoPullMergePanel(repo, number, parsed);
     window.lucide?.createIcons();
     scheduleRepoPullActivityRefresh(repo, number,
@@ -22409,7 +22983,7 @@
         type: values.type || "comment",
         id: values.id || "",
         author: values.author || "",
-        authorName: values.authorName || "",
+        authorName: recordAuthorName(values),
         ts: values.ts || "",
         state: values.state || "",
         path: values.path || "",
@@ -23303,19 +23877,19 @@
   // The current tips an owner merge would pin when the mirror's readiness
   // trial is unavailable (a read-only mirror without merge-preview) or when
   // the pull is patch-backed and has no head branch to trial at all.
-  async function loadRepoPullMergeBase(repo, values) {
+  async function loadRepoPullMergeBase(repo, values, options = {}) {
     const unavailable = { available: false, baseOid: "", headOid: "" };
     if (!repo || String(values?.status || "open").toLowerCase() !== "open") {
       return unavailable;
     }
-    const baseOid = await repoPullBaseTip(repo, values);
+    const baseOid = await repoPullBaseTip(repo, values, options);
     if (!baseOid) return unavailable;
     let headOid = "";
     if (values?.derive === "branch") {
       const branchName = pullHeadBranchRef(values);
       if (branchName) {
         try {
-          const data = await fetchRepoJson(`${repoApiBase(repo)}/branches`);
+          const data = await readRepoPullBranches(repo, options);
           const branch = (Array.isArray(data?.branches) ? data.branches : [])
             .map(normalizeRepoBranch)
             .filter(Boolean)
@@ -23346,21 +23920,21 @@
   // not name a base at all.
   const repoPullBranchReads = new Map();
 
-  function readRepoPullBranches(repo) {
-    const key = repoKey(repo);
+  function readRepoPullBranches(repo, options = {}) {
+    const key = `${repoKey(repo)}${options.fresh ? "#fresh" : ""}`;
     if (!repoPullBranchReads.has(key)) {
-      const read = fetchRepoJson(`${repoApiBase(repo)}/branches`);
+      const read = fetchRepoJson(`${repoApiBase(repo)}/branches`, { fresh: Boolean(options.fresh) });
       repoPullBranchReads.set(key, read);
       read.catch(() => {}).finally(() => repoPullBranchReads.delete(key));
     }
     return repoPullBranchReads.get(key);
   }
 
-  async function repoPullBaseTip(repo, values) {
+  async function repoPullBaseTip(repo, values, options = {}) {
     const branchName = String(values?.base || "").trim();
     if (branchName) {
       try {
-        const data = await readRepoPullBranches(repo);
+        const data = await readRepoPullBranches(repo, options);
         const branch = (Array.isArray(data?.branches) ? data.branches : [])
           .map(normalizeRepoBranch)
           .filter(Boolean)
@@ -23383,7 +23957,7 @@
   // base, and reports the paths a three-way merge would leave conflicted. A
   // mirror that does not advertise the operation yields `available: false`, and
   // every control below then says nothing rather than something untrue.
-  async function loadRepoPullReadiness(repo, number, values) {
+  async function loadRepoPullReadiness(repo, number, values, options = {}) {
     const unavailable = { available: false };
     const branchBacked = values?.derive === "branch";
     if (
@@ -23393,7 +23967,7 @@
     ) {
       return unavailable;
     }
-    const base = await repoPullBaseTip(repo, values);
+    const base = await repoPullBaseTip(repo, values, options);
     const head = branchBacked
       ? pullHeadBranchRef(values) || immutableGitCommit(values?.creationHeadOid)
       : immutableGitCommit(values?.headOid);
@@ -23401,7 +23975,7 @@
     try {
       const preview = await fetchRepoJson(repoLiveUrl(repo, "merge-preview", {
         base, head, ref: "",
-      }));
+      }), { fresh: Boolean(options.fresh) });
       const baseOid = immutableGitCommit(preview?.baseOid);
       const headOid = immutableGitCommit(preview?.headOid);
       if (!baseOid || !headOid || baseOid !== base) return unavailable;
@@ -23505,6 +24079,8 @@
       return unavailable;
     }
     if (payload?.ok !== true) return unavailable;
+    const controlAvailable = payload.controlAvailable !== false;
+    const node = String(payload.node || "").trim().slice(0, 80);
     const runs = (Array.isArray(payload.runs) ? payload.runs : [])
       .filter((run) => immutableGitCommit(run?.commit) === headOid)
       .map((run) => ({
@@ -23519,7 +24095,7 @@
       }))
       .sort((left, right) =>
         (right.finishedAt || right.startedAt) - (left.finishedAt || left.startedAt));
-    return { available: true, headOid, runs };
+    return { available: true, headOid, runs, controlAvailable, node };
   }
 
   // The executor's own status vocabulary, verbatim — the worker rejects any run
@@ -23735,241 +24311,527 @@
     }
   }
 
-  function renderRepoPullReadiness(repo, number, parsed) {
-    const readiness = parsed.pullReadiness;
-    // Unknown readiness renders nothing at all: an absent panel is honest,
-    // a panel claiming "up to date" from no data is not.
-    if (!readiness?.available) return "";
-    const values = parsed.values || {};
-    const baseBranch = values.base || "the base branch";
-    const update = parsed.pullUpdate || {};
-    const context = repoPullUpdateContext(
-      repo, number, values, parsed.pullMetadataCommit || "", readiness,
-    );
-    const state_ = String(update.state || "");
-    const processing = state_ === "processing";
-    const updated = state_ === "updated";
-    const behind = readiness.behind;
-    const rows = [];
-    if (!readiness.clean) {
-      const shown = readiness.conflicts.slice(0, 10);
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-destructive">Conflicts with ${escapeHtml(baseBranch)}.</strong> ${readiness.conflicts.length ? `${formatCount(readiness.conflicts.length)} file${readiness.conflicts.length === 1 ? "" : "s"} must be resolved locally: ` : ""}${shown.map((path) => `<span class="mr-1 inline-block rounded bg-secondary px-1.5 py-0.5 font-mono text-[10px] text-foreground">${escapeHtml(path)}</span>`).join("")}${readiness.conflicts.length > shown.length ? `and ${formatCount(readiness.conflicts.length - shown.length)} more.` : ""}</p>`);
-    } else if (behind) {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-attention">Out of date.</strong> This branch is ${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
-    } else {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground"><strong class="text-success">Up to date.</strong> This branch already contains ${escapeHtml(baseBranch)} and merges cleanly.</p>`);
-    }
-    if (updated) {
-      rows.push(`<p class="text-xs leading-5 text-muted-foreground">The mirror published the branch update. Normal repository sync carries it back to the source of truth.</p>`);
-    } else if (update.message) {
-      rows.push(`<p class="text-xs leading-5 text-destructive">${escapeHtml(update.message)}</p>`);
-    }
-    // The control exists only when a real, signed, exact-OID update can be
-    // dispatched right now by an actor the worker will actually authorize.
-    // Otherwise the panel reports state and offers nothing to press: a button
-    // that can only ever answer 403 is a worse answer than no button.
-    const action = context && !updated && parsed.pullMergeAuthorized === true
-      ? `<button type="button" data-repo-pull-update ${processing ? "disabled" : ""} class="fm-btn fm-btn-sm shrink-0"><i data-lucide="${processing ? "loader-circle" : "git-merge"}"${processing ? ' class="animate-spin"' : ""}></i>${processing ? "Updating branch…" : `Update branch from ${escapeHtml(baseBranch)}`}</button>`
-      : "";
-    const summary = pullChecksSummary(parsed.pullChecks);
-    const checksRow = summary.text
-      ? `<p class="text-xs leading-5 text-muted-foreground"><strong class="${summary.tone === "bad" ? "text-destructive" : summary.tone === "pending" ? "text-attention" : summary.tone === "good" ? "text-success" : "text-foreground"}">Checks.</strong> ${escapeHtml(summary.text)}</p>`
-      : "";
-    return `
-      <div data-repo-pull-readiness role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${!readiness.clean ? "fm-flash-danger" : behind ? "fm-flash-warning" : "fm-flash-neutral"} flex-wrap items-center">
-        <i data-lucide="${!readiness.clean ? "git-pull-request-closed" : behind ? "git-compare-arrows" : "git-pull-request"}" class="self-start"></i>
-        <div class="grid min-w-0 flex-1 gap-1">
-          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(readiness.headOid.slice(0, 12))} · ${formatCount(readiness.ahead)} ahead · ${formatCount(behind)} behind</span>
-          ${rows.join("")}
-          ${checksRow}
-        </div>
-        ${action}
-      </div>`;
-  }
+  const PULL_MERGE_REPIN_ERRORS = new Set(["stale_pull_metadata", "stale_base"]);
+  const PULL_MERGE_RESUMABLE_ERRORS = new Set(["merge_status_pending", "merge_state_unavailable"]);
 
-  // The slot is mounted (possibly empty) by the detail render, so readiness
-  // that only becomes available on a later tick still has somewhere to land —
-  // and readiness that becomes unavailable empties the slot rather than leaving
-  // a stale panel describing refs that have since moved.
-  function updateRepoPullReadinessPanel(repo, number, parsed) {
-    const slot = document.querySelector("[data-repo-pull-readiness-slot]");
-    if (!slot) return;
-    slot.innerHTML = renderRepoPullReadiness(repo, number, parsed);
-    window.lucide?.createIcons();
-  }
-
-  async function handleRepoPullUpdate(repo) {
-    const detail = state.repoRecordDetail;
-    if (!repo || detail?.kind !== "pulls") return;
-    const parsed = detail.parsed || {};
-    if (!parsed.pullMergeAuthorized) return;
-    const context = repoPullUpdateContext(
-      repo,
-      detail.number,
-      parsed.values || {},
-      parsed.pullMetadataCommit || "",
-      parsed.pullReadiness,
-    );
-    if (!context) return;
-    const existing = parsed.pullUpdate || {};
-    const requestId = existing.requestId || createRepoPullMergeRequestId();
-    const request = {
-      schemaVersion: 1,
-      type: "forkmesh.pull-update-v1",
-      pullNumber: context.number,
-      requestId,
-      expectedBaseOid: context.expectedBaseOid,
-      expectedHeadOid: context.expectedHeadOid,
-      expectedPullsOid: context.expectedPullsOid,
+  function pullMergeFailureMessage(payload) {
+    const error = String(payload?.error || "");
+    const messages = {
+      forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can merge this pull request.",
+      merge_conflict: "The exact reviewed commits do not apply cleanly to the base branch.",
+      stale_base: "The base branch kept moving while the merge was being prepared. Merge again to land it on the newest base.",
+      stale_head: "New commits were pushed to this pull request while you were merging. Review them, then merge again.",
+      stale_pull_metadata: "The pull request kept changing while the merge was being prepared (new comments or reviews landed twice in a row). Merge again to use the newest state.",
+      merge_node_unavailable: payload?.reason === "no_merge_executor"
+        ? "No online mirror runs the merge executor. Mirrors on an older node build advertise no merge capability; merge from the desktop, or retry once an updated mirror is online."
+        : "No online mirror could take this merge in the last few minutes. Try again shortly.",
+      merge_status_pending: "A mirror took this merge but has not confirmed it yet. Retry to check the same merge.",
+      merge_state_unavailable: "The relay could not read this merge's result back. Retry to check the same merge.",
+      merge_queue_full: "The merge queue is full; try again in a moment.",
+      review_required: "The mirror read no independent approval on the published pull request. Ask for a review, or merge without it as the owner.",
+      rules_required: payload?.message || "This pull request does not meet the repository's or organization's pull request rules. Fix what the rules list and push again.",
+      checks_required: "This repository requires signed status checks, and the head being merged has no fresh passing result from a runner the base branch trusts. Run the checks, or change .forkmesh/required-checks.json on the base branch.",
+      unsupported_pull: "This pull request cannot be merged on the web; merge it from the desktop client.",
+      pull_not_found: "The mirror could not read this pull request's record.",
+      pull_not_open: "This pull request is no longer open.",
+      request_id_reused: "That merge request was already used. Merge again to send a new one.",
+      read_only_mirror: payload?.message || REPO_READ_ONLY_MIRROR_HINT,
     };
-    parsed.pullUpdate = { state: "processing", requestId, message: "" };
-    updateRepoPullReadinessPanel(repo, detail.number, parsed);
-    const endpoint = `${repoApiBase(repo)}/pulls/${context.number}/update`;
-    let result;
-    try {
-      result = await postRepoPullMutation(endpoint, request);
-    } catch (_) {
-      parsed.pullUpdate = {
-        state: "failed",
-        requestId,
-        message: "The branch update request could not reach the relay.",
-      };
-      updateRepoPullReadinessPanel(repo, detail.number, parsed);
-      return;
-    }
-    const { response, payload, waiting } = result;
-    if (waiting && payload?.status === "processing") {
-      parsed.pullUpdate = {
-        state: "failed",
-        requestId,
-        message: "The mirror is still processing. Retry to check the same update request.",
-      };
-      updateRepoPullReadinessPanel(repo, detail.number, parsed);
-      return;
-    }
-    if (
-      response.ok
-      && payload?.status === "updated"
-      && payload?.published === true
-      && payload?.requestId === requestId
-      && immutableGitCommit(payload.baseBefore) === context.expectedBaseOid
-      && immutableGitCommit(payload.head) === context.expectedHeadOid
-      && immutableGitCommit(payload.pullsBefore) === context.expectedPullsOid
-      && immutableGitCommit(payload.headAfter)
-    ) {
-      parsed.pullUpdate = { state: "updated", requestId, message: "" };
-    } else {
-      parsed.pullUpdate = {
-        state: "failed",
-        requestId,
-        message: PULL_UPDATE_MESSAGES[payload?.error]
-          || "The mirror branch update could not be confirmed.",
-      };
-    }
-    updateRepoPullReadinessPanel(repo, detail.number, parsed);
-    // Either outcome changes what the refs say, so re-read readiness and
-    // the commit series rather than leaving the panel to describe the past.
-    refreshRepoPullActivity(repo, detail.number);
+    return messages[error] || "The mirror merge could not be confirmed.";
   }
 
-  function renderRepoPullMergeControl(repo, number, parsed) {
-    if (!parsed.pullMergeAuthorized) return "";
-    const merge = parsed.pullMerge || {};
-    const context = repoPullMergeContext(repo, number, parsed);
-    const reviewPolicy = pullReviewPolicy(
-      parsed.pullConversation || [],
-      parsed.values?.author || "",
-    );
-    if (!context) {
-      const readiness = parsed.pullReadiness;
-      const conflicted = readiness?.available && readiness.clean !== true;
-      const reason = conflicted
-        ? "This pull request conflicts with its base branch; it can be merged once the conflicts are resolved and pushed."
-        : parsed.values?.derive !== "branch" && !repoPullHasPatchPayload(parsed)
-          ? "This pull request carries no committed patch or commit series, so a mirror cannot replay it."
-          : "Merging needs the current base branch tip and the pull-request ledger commit from an online mirror; reload once a mirror answers.";
-      return `
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="fm-flash fm-flash-neutral">
-          <i data-lucide="info"></i>
-          <p class="fm-flash-body text-xs text-muted-foreground">${escapeHtml(reason)}</p>
-        </div>`;
+  function pullTextDigest(text) {
+    let hash = 0x811c9dc5;
+    const value = String(text || "");
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193) >>> 0;
     }
-    const stateName = String(merge.state || "ready");
-    const processing = stateName === "processing";
-    const merged = stateName === "merged";
-    const failed = stateName === "failed";
-    const baseBranch = String(parsed.values?.base || "main").trim() || "main";
-    const rules = parsed.pullRules;
-    const rulesLocked = !merged && !processing && rules?.headOid === context.expectedHeadOid
+    return `${value.length}:${hash.toString(16)}`;
+  }
+
+  function pullMergeFingerprint(parsed) {
+    const values = parsed?.values || {};
+    const readiness = parsed?.pullReadiness || {};
+    const branchBacked = values.derive === "branch";
+    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
+    const commits = Array.isArray(parsed?.pullCommits) ? parsed.pullCommits : [];
+    const patch = String(parsed?.pullPatch?.patch || "");
+    const series = commits.map((commit) => String(commit?.hash || "")).join(",");
+    return {
+      status: String(values.status || "open").toLowerCase(),
+      head: branchBacked
+        ? immutableGitCommit(readiness.available ? readiness.headOid : parsed?.pullMergeBase?.headOid)
+          || immutableGitCommit(values.creationHeadOid)
+        : immutableGitCommit(values.headOid),
+      payload: branchBacked || (!patch.trim() && !series) ? "" : pullTextDigest(`${patch}\n${series}`),
+      clean: readiness.available ? readiness.clean === true : null,
+      blockers: policy.blockers,
+    };
+  }
+
+  function pullMergeChanges(before, after) {
+    const changes = [];
+    if (after.status !== before.status) {
+      changes.push(after.status === "merged"
+        ? "It was merged in the meantime."
+        : after.status === "closed"
+          ? "It was closed in the meantime."
+          : `Its status changed to ${after.status}.`);
+    }
+    if (before.head && after.head && before.head !== after.head) {
+      changes.push(`New commits were pushed: the head moved from ${before.head.slice(0, 7)} to ${after.head.slice(0, 7)}.`);
+    }
+    if (before.payload && after.payload && before.payload !== after.payload) {
+      changes.push("The submitted patch series changed.");
+    }
+    if (before.clean !== false && after.clean === false) {
+      changes.push("It now conflicts with the base branch.");
+    }
+    if (after.blockers > before.blockers) {
+      changes.push("A reviewer requested changes.");
+    }
+    return changes;
+  }
+
+  async function refreshRepoPullMergePins(repo, number, parsed) {
+    const before = pullMergeFingerprint(parsed);
+    let tip = "";
+    try {
+      tip = await resolveRepoPullMetadataCommit(repo, { fresh: true });
+    } catch (_) {
+      tip = "";
+    }
+    if (tip && tip !== immutableGitCommit(parsed.pullMetadataCommit)) {
+      let record = null;
+      try {
+        record = await fetchRepoJson(repoLiveUrl(repo, "blob", {
+          path: `.forkmesh/pulls/${number}/pull.md`, ref: tip,
+        }));
+      } catch (_) {
+        record = null;
+      }
+      if (record) {
+        const fresh = parseFrontMatter(blobText(record));
+        const values = fresh.values || {};
+        const [patch, conversation, commits] = await Promise.all([
+          loadRepoPullPatch(repo, number, tip, values),
+          loadRepoPullConversation(repo, number, tip),
+          loadRepoPullCommits(repo, number, tip, values),
+        ]);
+        parsed.values = values;
+        if (fresh.body) parsed.body = fresh.body;
+        parsed.pullMetadataCommit = tip;
+        if (patch) parsed.pullPatch = patch;
+        parsed.pullConversation = conversation;
+        parsed.pullCommits = commits;
+        parsed.pullTimeline = buildRepoPullTimeline(values, conversation, commits, parsed.pullAgents || []);
+      }
+    }
+    const values = parsed.values || {};
+    const [readiness, mergeBase] = await Promise.all([
+      loadRepoPullReadiness(repo, number, values, { fresh: true }),
+      loadRepoPullMergeBase(repo, values, { fresh: true }),
+    ]);
+    parsed.pullReadiness = readiness;
+    parsed.pullMergeBase = mergeBase;
+    return pullMergeChanges(before, pullMergeFingerprint(parsed));
+  }
+
+  function repoPullRequiredCheckNames(policy, baseBranch) {
+    if (!policy || policy.schema !== "forkmesh-required-checks-v1" || !Array.isArray(policy.checks)) return [];
+    const branches = Array.isArray(policy.branches) ? policy.branches.map(String) : [];
+    if (branches.length && !branches.includes(String(baseBranch || ""))) return [];
+    return policy.checks
+      .map((check) => String(check?.name || "").trim())
+      .filter(Boolean)
+      .slice(0, 32);
+  }
+
+  async function loadRepoPullRequiredChecks(repo, values, readiness) {
+    const base = immutableGitCommit(readiness?.baseOid);
+    if (!repo || !base) return { known: false, names: [] };
+    try {
+      const blob = await fetchRepoJson(repoLiveUrl(repo, "blob", {
+        path: ".forkmesh/required-checks.json", ref: base,
+      }));
+      let policy = null;
+      try {
+        policy = JSON.parse(blobText(blob));
+      } catch (_) {
+        policy = null;
+      }
+      return { known: true, names: repoPullRequiredCheckNames(policy, values?.base || "") };
+    } catch (error) {
+      return { known: error?.status === 404 || error?.code === "not_found", names: [] };
+    }
+  }
+
+  function repoPullMergeModel(repo, number, parsed) {
+    const values = parsed?.values || {};
+    const status = String(values.status || "open").toLowerCase();
+    const baseBranch = String(values.base || "").trim() || "main";
+    const headBranch = pullHeadBranchRef(values) || "the head branch";
+    const branchBacked = values.derive === "branch";
+    const readiness = parsed?.pullReadiness || { available: false };
+    const authorized = parsed?.pullMergeAuthorized === true;
+    const merge = parsed?.pullMerge || {};
+    const update = parsed?.pullUpdate || {};
+    const policy = pullReviewPolicy(parsed?.pullConversation || [], values.author || "");
+    const rows = [];
+
+    const reviewRow = { id: "review", actions: [] };
+    if (policy.blockers) {
+      reviewRow.tone = "bad";
+      reviewRow.title = `Changes requested by ${formatCount(policy.blockers)} reviewer${policy.blockers === 1 ? "" : "s"}`;
+      reviewRow.detail = "An independent reviewer asked for changes. The author pushes a fix and the reviewer approves it again.";
+    } else if (policy.ready) {
+      reviewRow.tone = "good";
+      reviewRow.title = `Approved by ${formatCount(policy.approvals)} independent reviewer${policy.approvals === 1 ? "" : "s"}`;
+      reviewRow.detail = "The independent review requirement is met.";
+    } else {
+      reviewRow.tone = "warn";
+      reviewRow.title = "Independent review required";
+      reviewRow.detail = "This repository requires one approval from someone other than the author, with no outstanding request for changes. Anyone signed in except the author can approve it on the Files changed tab.";
+    }
+    if (!policy.ready) {
+      reviewRow.actions.push({ kind: "copy-review", label: "Copy review link" });
+    }
+    rows.push(reviewRow);
+
+    const checks = parsed?.pullChecks || { available: false, runs: [] };
+    const required = parsed?.pullRequiredChecks || { known: false, names: [] };
+    const runs = checks.runs || [];
+    const summary = pullChecksSummary(checks);
+    const failedRun = runs.find((run) => pullCheckStateMeta(run.status).outcome === "failed");
+    const checksRow = { id: "checks", actions: [] };
+    const requiredNames = required.names || [];
+    const passedNames = new Set(runs
+      .filter((run) => pullCheckStateMeta(run.status).outcome === "passed")
+      .map((run) => run.workflow));
+    const missingRequired = requiredNames.filter((name) => !passedNames.has(name));
+    if (summary.tone === "bad") {
+      checksRow.tone = "bad";
+      checksRow.title = "Some checks failed";
+    } else if (summary.tone === "pending") {
+      checksRow.tone = "pending";
+      checksRow.title = "Checks are running";
+    } else if (summary.tone === "good") {
+      checksRow.tone = "good";
+      checksRow.title = "All checks passed";
+    } else {
+      checksRow.tone = requiredNames.length ? "warn" : "muted";
+      checksRow.title = runs.length ? "Some checks did not finish" : "No checks have run on this head";
+    }
+    checksRow.detail = [
+      summary.text || "Live checks appear once a mirror publishes an attested Actions executor for this repository.",
+      requiredNames.length
+        ? `Required before merging: ${requiredNames.join(", ")}.${missingRequired.length ? ` Not yet passed: ${missingRequired.join(", ")}.` : ""} The mirror verifies the signed results at merge time.`
+        : required.known ? "No checks are required to merge." : "",
+    ].filter(Boolean).join(" ");
+    if (failedRun && authorized && checks.node && checks.controlAvailable !== false && state.session?.sessionToken) {
+      checksRow.actions.push({ kind: "rerun", label: "Re-run failed", runId: failedRun.id, node: checks.node });
+    }
+    checksRow.actions.push({ kind: "actions", label: runs.length ? "Open Actions" : "Run checks" });
+    rows.push(checksRow);
+
+    const branchRow = { id: "branch", actions: [] };
+    if (!readiness.available) {
+      branchRow.tone = "muted";
+      branchRow.title = "Mergeability unknown";
+      branchRow.detail = "No mirror answered a merge trial for this pull request just now. It is re-tried while the page is open.";
+    } else if (!readiness.clean) {
+      const count = readiness.conflicts?.length || 0;
+      branchRow.tone = "bad";
+      branchRow.title = `Conflicts with ${baseBranch}`;
+      branchRow.conflicts = (readiness.conflicts || []).slice(0, 10);
+      branchRow.moreConflicts = Math.max(0, count - branchRow.conflicts.length);
+      branchRow.detail = branchBacked
+        ? `Resolve the conflicts locally and push to ${headBranch}: git fetch origin && git switch ${shellWord(headBranch)} && git merge ${shellWord(`origin/${baseBranch}`)}, fix the files, commit, and git push.`
+        : `This pull request was submitted as a patch series, so only its author can resolve the conflicts: rebase the change onto the newest ${baseBranch}, fix the files, and submit it again.`;
+    } else if (readiness.behind > 0) {
+      const behind = readiness.behind;
+      branchRow.tone = "warn";
+      branchRow.title = `${formatCount(behind)} commit${behind === 1 ? "" : "s"} behind ${baseBranch}`;
+      if (branchBacked) {
+        branchRow.detail = authorized
+          ? `It merges cleanly, so being behind does not block the merge. Update the branch to bring ${baseBranch} into ${headBranch} and re-run the checks on the combined code.`
+          : `It merges cleanly, so being behind does not block the merge. The author can bring ${baseBranch} in with git fetch origin && git merge ${shellWord(`origin/${baseBranch}`)} && git push; an organization owner can also update the branch here.`;
+        if (authorized && repoPullUpdateContext(repo, number, values, parsed?.pullMetadataCommit || "", readiness)) {
+          branchRow.actions.push({ kind: "update", label: update.state === "processing" ? "Updating branch…" : "Update branch", busy: update.state === "processing" });
+        }
+      } else {
+        branchRow.detail = `It merges cleanly, so being behind does not block the merge: the mirror replays the submitted commits onto the newest ${baseBranch}. It was submitted as a patch series from the author's own copy, so there is no branch here to update; only the author can refresh it, by rebasing onto ${baseBranch} and submitting it again.`;
+      }
+    } else {
+      branchRow.tone = "good";
+      branchRow.title = `Up to date with ${baseBranch}`;
+      branchRow.detail = `This branch already contains ${baseBranch} and merges cleanly.`;
+    }
+    if (update.state === "updated") {
+      branchRow.note = { tone: "good", text: "The branch was updated. Checks re-run on the new head." };
+    } else if (update.state === "current") {
+      branchRow.note = { tone: "good", text: `This branch already contains the newest ${baseBranch}.` };
+    } else if (update.state === "failed" && update.message) {
+      branchRow.note = { tone: "bad", text: update.message };
+    }
+    branchRow.ahead = readiness.available ? readiness.ahead : null;
+    branchRow.behind = readiness.available ? readiness.behind : null;
+    branchRow.headOid = readiness.available ? readiness.headOid : "";
+    rows.push(branchRow);
+
+    const rules = parsed?.pullRules;
+    const context = repoPullMergeContext(repo, number, parsed);
+    const rulesLocked = Boolean(context) && rules?.headOid === context.expectedHeadOid
       && (rules.blocked === true || (rules.available !== true && (rules.organizations || []).length > 0));
     if (rulesLocked) {
       const unmet = (rules.rules || []).filter((rule) => rule.status !== "passed" && rule.enforcement === "block").length;
-      const reason = rules.available === true
-        ? `This pull request does not meet ${unmet} required rule${unmet === 1 ? "" : "s"}. Fix what the rules list above, push, and the merge unlocks; the repository host enforces the same rules, so it cannot be waived here.`
-        : "The organization's pull request rules have not been checked on a repository host yet, so the merge stays locked. Reload in a moment.";
-      return `
-        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="false" class="fm-flash fm-flash-danger flex-wrap items-center">
-          <i data-lucide="shield-x" class="self-start"></i>
-          <span class="fm-flash-body text-xs text-muted-foreground">${escapeHtml(reason)}</span>
-          <div class="fm-flash-actions"><button type="button" data-repo-pull-merge disabled class="fm-btn fm-btn-sm fm-btn-cta">Rules not met</button></div>
-        </div>`;
+      rows.push({
+        id: "rules",
+        tone: "bad",
+        title: rules.available === true
+          ? `${formatCount(unmet)} required rule${unmet === 1 ? "" : "s"} not met`
+          : "Pull request rules not checked yet",
+        detail: rules.available === true
+          ? "The rules listed above block the merge until they pass; the repository host enforces them, so they cannot be waived."
+          : "The organization's rules have not been evaluated on a repository host yet, so the merge stays locked. It is re-tried while the page is open.",
+        actions: [],
+      });
     }
-    // The peer gate is advice to the owner, not a lock on them: this panel
-    // renders only for an organization owner, and that same owner can already
-    // merge the pull unreviewed from the desktop client. An unmet gate keeps
-    // its amber warning and its own button wording, but leaves the merge
-    // reachable as an explicit waiver the relay records.
-    const waiveReview = !reviewPolicy.ready && !merged;
-    const reviewReason = reviewPolicy.blockers
-      ? `${reviewPolicy.blockers} independent reviewer${reviewPolicy.blockers === 1 ? " has" : "s have"} requested changes.`
-      : "No peer other than the pull-request author has approved it.";
-    const label = merged
-      ? "Merged"
-      : processing
-        ? "Merging…"
-        : failed
-          ? "Retry merge"
-          : waiveReview
-            ? "Merge without review"
-            : "Merge pull request";
-    const status = merged
-      ? `Merged into ${escapeHtml(baseBranch)}. The merged state is pinned as current and every mirror is syncing it; the source of truth picks it up the next time it connects.`
-      : processing
-        ? merge.queued
-          ? "Waiting for an online mirror to take this merge. No mirror has accepted it yet."
-          : "An online mirror is merging the exact reviewed commits."
-        : failed
-          ? escapeHtml(merge.message || "The mirror could not confirm the merge. Retrying reuses the same idempotent request.")
-          : waiveReview
-            ? `<strong class="text-foreground">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As the owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
-            : `As the owner you can merge this pull request into ${escapeHtml(baseBranch)} now. An online mirror lands the exact reviewed commits, the relay pins that state, and the rest of the mirrors — and the source of truth when it reconnects — sync to it.`;
-    const frame = failed
-      ? "fm-flash-danger"
-      : merged
-        ? "fm-flash-success"
-        : waiveReview
-          ? "fm-flash-warning"
-          : "fm-flash-neutral";
-    const flashIcon = failed ? "circle-x" : merged ? "git-merge" : waiveReview ? "shield-alert" : processing ? "loader-circle" : "git-merge";
+
+    const hardBlocked = rows.some((row) => row.id === "rules")
+      || (readiness.available && readiness.clean !== true);
+    const reviewMissing = !policy.ready;
+    const merged = merge.state === "merged" || status === "merged";
+    const busy = merge.state === "processing";
+    const footer = { tone: "muted", text: "", method: "merge" };
+    if (status !== "open" && !merged) {
+      footer.tone = "muted";
+      footer.text = "This pull request is closed.";
+    } else if (merged) {
+      footer.tone = "good";
+      footer.text = `Merged into ${baseBranch}. The merged state is pinned as current and every mirror is syncing it.`;
+    } else if (!authorized) {
+      footer.tone = "muted";
+      footer.text = "Only an owner of the organization that owns this repository can merge pull requests here.";
+    } else if (busy) {
+      footer.tone = "pending";
+      footer.text = merge.phase === "checking"
+        ? "Reading the newest state of this pull request…"
+        : merge.phase === "repinning"
+          ? "The pull request changed while merging; re-reading it and trying once more…"
+          : merge.queued
+            ? "Waiting for an online mirror to take this merge. No mirror has accepted it yet."
+            : "An online mirror is merging the exact reviewed commits.";
+    } else if (merge.state === "changed") {
+      footer.tone = "warn";
+      footer.text = "This pull request changed since you opened it, so nothing was merged:";
+      footer.changes = merge.changes || [];
+    } else if (merge.state === "failed") {
+      footer.tone = "bad";
+      footer.text = merge.message || "The mirror merge could not be confirmed.";
+    } else if (!context) {
+      footer.tone = "muted";
+      footer.text = hardBlocked
+        ? "Resolve what is listed above, then merge."
+        : values.derive !== "branch" && !repoPullHasPatchPayload(parsed)
+          ? "This pull request carries no committed patch or commit series, so a mirror cannot replay it."
+          : "Merging needs the current base branch tip from an online mirror; it is re-tried while the page is open.";
+    } else if (hardBlocked) {
+      footer.tone = "bad";
+      footer.text = "Merging is blocked until the items above are resolved.";
+    } else if (reviewMissing) {
+      footer.tone = "warn";
+      footer.text = `Merging is blocked until an independent reviewer approves. As the owner you can override the rule and merge into ${baseBranch} without that approval; the override is recorded in the audit log and in the pull-request ledger.`;
+    } else {
+      footer.tone = "good";
+      footer.text = `Ready to merge into ${baseBranch}. An online mirror lands the exact reviewed commits with a merge commit.`;
+    }
+    const canAct = authorized && status === "open" && !merged && Boolean(context) && !hardBlocked;
+    return {
+      open: status === "open",
+      authorized,
+      merged,
+      busy,
+      branchBacked,
+      baseBranch,
+      rows,
+      footer,
+      canMerge: canAct && !reviewMissing && !busy,
+      canOverride: canAct && reviewMissing && !busy,
+      retry: merge.state === "failed" || merge.state === "changed",
+    };
+  }
+
+  const PULL_MERGE_ROW_ICONS = {
+    good: "check-circle-2",
+    warn: "alert-circle",
+    bad: "x-circle",
+    pending: "loader-circle",
+    muted: "circle-dashed",
+  };
+
+  function shellWord(value) {
+    const text = String(value || "");
+    return /^[A-Za-z0-9._\/@+=:,-]+$/.test(text) ? text : `'${text.replace(/'/g, "'\\''")}'`;
+  }
+
+  function renderRepoPullMergeAction(repo, number, action) {
+    if (action.kind === "update") {
+      return `<button type="button" data-repo-pull-update ${action.busy ? "disabled" : ""} class="fm-btn fm-btn-sm"><i data-lucide="${action.busy ? "loader-circle" : "git-merge"}"${action.busy ? ' class="animate-spin"' : ""}></i>${escapeHtml(action.label)}</button>`;
+    }
+    if (action.kind === "rerun") {
+      return `<button type="button" data-repo-pull-check-rerun="${escapeHtml(String(action.runId || ""))}" data-repo-pull-check-node="${escapeHtml(action.node || "")}" class="fm-btn fm-btn-sm"><i data-lucide="rotate-ccw"></i>${escapeHtml(action.label)}</button>`;
+    }
+    if (action.kind === "actions") {
+      return `<a href="${escapeHtml(`${repoLinkUrl(repo)}/actions`)}" data-repo-pull-open-actions data-dashboard-repo-tab="actions" class="fm-btn fm-btn-sm"><i data-lucide="play"></i>${escapeHtml(action.label)}</a>`;
+    }
+    if (action.kind === "copy-review") {
+      return `<button type="button" data-dashboard-copy="${escapeHtml(new URL(repoRecordUrl(repo, "pulls", number, "files"), location.origin).href)}" title="Copy a link to this pull request's changes to send to a reviewer" class="copy-button fm-btn fm-btn-sm"><i data-lucide="user-plus" class="copy-icon"></i><i data-lucide="check" class="copy-check"></i>${escapeHtml(action.label)}</button>`;
+    }
+    return "";
+  }
+
+  function renderRepoPullMergeBox(repo, number, parsed) {
+    const model = repoPullMergeModel(repo, number, parsed);
+    if (!model.open && !model.merged) return "";
+    const rows = model.rows.map((row) => {
+      const icon = PULL_MERGE_ROW_ICONS[row.tone] || PULL_MERGE_ROW_ICONS.muted;
+      const conflicts = row.conflicts?.length
+        ? `<p class="fm-merge-row-files">${row.conflicts.map((path) => `<code>${escapeHtml(path)}</code>`).join("")}${row.moreConflicts ? `<span>and ${formatCount(row.moreConflicts)} more</span>` : ""}</p>`
+        : "";
+      const meta = row.id === "branch" && row.headOid
+        ? `<span class="fm-merge-row-meta" data-repo-pull-readiness>${escapeHtml(row.headOid.slice(0, 12))} · ${formatCount(row.ahead)} ahead · ${formatCount(row.behind)} behind</span>`
+        : "";
+      const note = row.note
+        ? `<p class="fm-merge-row-note" data-tone="${escapeHtml(row.note.tone)}">${escapeHtml(row.note.text)}</p>`
+        : "";
+      const actions = (row.actions || []).map((action) => renderRepoPullMergeAction(repo, number, action)).join("");
+      return `
+        <div class="fm-merge-row" data-repo-pull-merge-row="${escapeHtml(row.id)}" data-tone="${escapeHtml(row.tone)}">
+          <span class="fm-merge-row-icon"><i data-lucide="${icon}"${row.tone === "pending" ? ' class="animate-spin"' : ""}></i></span>
+          <div class="fm-merge-row-body">
+            <p class="fm-merge-row-title">${escapeHtml(row.title)}</p>
+            ${meta}
+            <p class="fm-merge-row-detail">${escapeHtml(row.detail)}</p>
+            ${conflicts}${note}
+          </div>
+          ${actions ? `<div class="fm-merge-row-actions">${actions}</div>` : ""}
+        </div>`;
+    }).join("");
+    const footer = model.footer;
+    const changes = footer.changes?.length
+      ? `<ul class="fm-merge-changes">${footer.changes.map((change) => `<li>${escapeHtml(change)}</li>`).join("")}</ul>`
+      : "";
+    const showControls = model.authorized && model.open && !model.merged;
+    const method = showControls
+      ? `<label class="fm-merge-method"><span>Merge method</span><select data-repo-pull-merge-method aria-label="Merge method"><option value="merge" selected>Create a merge commit</option><option value="squash" disabled>Squash and merge (not on mirrors yet)</option><option value="rebase" disabled>Rebase and merge (not on mirrors yet)</option></select></label>`
+      : "";
+    const mergeLabel = model.busy
+      ? "Merging…"
+      : model.retry
+        ? "Merge again"
+        : "Merge pull request";
+    const mergeButton = showControls
+      ? `<button type="button" data-repo-pull-merge ${model.canMerge ? "" : "disabled"} class="fm-btn fm-btn-cta"><i data-lucide="${model.busy ? "loader-circle" : "git-merge"}"${model.busy ? ' class="animate-spin"' : ""}></i>${mergeLabel}</button>`
+      : model.merged
+        ? `<button type="button" disabled class="fm-btn fm-btn-cta"><i data-lucide="check-circle-2"></i>Merged</button>`
+        : "";
+    const override = model.canOverride
+      ? `<button type="button" data-repo-pull-merge-override class="fm-btn fm-btn-danger"><i data-lucide="shield-alert"></i>Merge without review</button>`
+      : "";
     return `
-      <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${processing ? "true" : "false"}" class="fm-flash ${frame} flex-wrap items-center">
-        <i data-lucide="${flashIcon}" class="self-start${processing ? " animate-spin" : ""}"></i>
-        <span class="fm-flash-body text-xs text-muted-foreground">${status}</span>
-        <div class="fm-flash-actions"><button type="button" data-repo-pull-merge ${processing || merged ? "disabled" : ""} class="fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="${merged ? "check-circle-2" : waiveReview ? "shield-alert" : "git-merge"}"></i>${label}</button></div>
-      </div>`;
+      <section data-repo-pull-merge-box class="fm-merge-box" aria-label="Merge readiness">
+        ${rows}
+        <div data-repo-pull-merge-panel role="status" aria-live="polite" aria-atomic="true" aria-busy="${model.busy ? "true" : "false"}" class="fm-merge-footer" data-tone="${escapeHtml(footer.tone)}">
+          <p class="fm-merge-footer-text">${escapeHtml(footer.text)}</p>
+          ${changes}
+          ${showControls || model.merged ? `<div class="fm-merge-footer-actions">${method}<div class="fm-merge-buttons">${override}${mergeButton}</div></div>` : ""}
+        </div>
+      </section>`;
   }
 
   function updateRepoPullMergePanel(repo, number, parsed) {
-    const current = document.querySelector("[data-repo-pull-merge-panel]");
-    if (!current) return;
-    const wrapper = document.createElement("div");
-    wrapper.innerHTML = renderRepoPullMergeControl(repo, number, parsed);
-    const replacement = wrapper.firstElementChild;
-    if (replacement) current.replaceWith(replacement);
+    const slot = document.querySelector("[data-repo-pull-merge-slot]");
+    if (!slot) return;
+    slot.innerHTML = renderRepoPullMergeBox(repo, number, parsed);
     window.lucide?.createIcons();
   }
 
-  async function handleRepoPullMerge(repo) {
+  function repoPullMutationRequestId(previous) {
+    return previous?.resumable === true && previous.request?.requestId
+      ? previous.request.requestId
+      : createRepoPullMergeRequestId();
+  }
+
+  function buildRepoPullMergeRequest(repo, number, parsed, overrideReview) {
+    const context = repoPullMergeContext(repo, number, parsed);
+    if (!context) return null;
+    const waive = overrideReview === true && !pullReviewPolicy(
+      parsed.pullConversation || [],
+      parsed.values?.author || "",
+    ).ready;
+    return {
+      schemaVersion: 1,
+      type: "forkmesh.pull-merge-v1",
+      pullNumber: context.number,
+      requestId: createRepoPullMergeRequestId(),
+      expectedBaseOid: context.expectedBaseOid,
+      expectedHeadOid: context.expectedHeadOid,
+      expectedPullsOid: context.expectedPullsOid,
+      ...(waive ? { overrideReview: true } : {}),
+    };
+  }
+
+  async function sendRepoPullMerge(repo, number, parsed, request) {
+    const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/merge`;
+    let result;
+    try {
+      result = await postRepoPullMutation(endpoint, request, (accepted) => {
+        if (parsed.pullMerge?.request?.requestId !== request.requestId) return;
+        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
+        parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };
+        updateRepoPullMergePanel(repo, number, parsed);
+      });
+    } catch (_) {
+      return {
+        state: "failed",
+        resumable: true,
+        request,
+        message: "The merge request could not reach the relay. Retrying resends the same request, so nothing can merge twice.",
+      };
+    }
+    const { response, payload, waiting } = result;
+    if (waiting && payload?.status === "processing") {
+      return {
+        state: "failed",
+        resumable: true,
+        request,
+        message: "The mirror is still processing. Retry to check the same merge.",
+      };
+    }
+    if (
+      response.ok
+      && payload?.status === "merged"
+      && payload?.published === true
+      && payload?.requestId === request.requestId
+      && immutableGitCommit(payload.baseBefore) === request.expectedBaseOid
+      && immutableGitCommit(payload.head) === request.expectedHeadOid
+      && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
+    ) {
+      return { state: "merged", request };
+    }
+    const error = String(payload?.error || "");
+    return {
+      state: "failed",
+      error,
+      resumable: PULL_MERGE_RESUMABLE_ERRORS.has(error),
+      request,
+      message: pullMergeFailureMessage(payload),
+    };
+  }
+
+  async function handleRepoPullMerge(repo, options = {}) {
     const detail = state.repoRecordDetail;
     if (
       !repo
@@ -23979,101 +24841,205 @@
       return;
     }
     const parsed = detail.parsed;
-    const context = repoPullMergeContext(repo, detail.number, parsed);
-    if (!context) return;
-    // Derived here, not read back off the button, so a retry of an in-flight
-    // request keeps asking for exactly what the first attempt asked for.
-    const waiveReview = !pullReviewPolicy(
-      parsed.pullConversation || [],
-      parsed.values?.author || "",
-    ).ready;
-    const existing = parsed.pullMerge || {};
-    if (
-      waiveReview
-      && !existing.requestId
-      && !window.confirm(
-        `Merge pull request #${context.number} without an independent peer approval? The waiver is recorded in the audit log and in the pull-request ledger.`,
-      )
-    ) {
+    const number = detail.number;
+    const previous = parsed.pullMerge || {};
+    if (previous.state === "processing") return;
+    let request = previous.resumable === true ? previous.request : null;
+    parsed.pullMerge = { state: "processing", phase: request ? "" : "checking", request };
+    updateRepoPullMergePanel(repo, number, parsed);
+    if (!request) {
+      const changes = await refreshRepoPullMergePins(repo, number, parsed);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      if (changes.length) {
+        parsed.pullMerge = { state: "changed", changes };
+        updateRepoPullMergePanel(repo, number, parsed);
+        return;
+      }
+      request = buildRepoPullMergeRequest(repo, number, parsed, options.overrideReview === true);
+      if (!request) {
+        parsed.pullMerge = {};
+        updateRepoPullMergePanel(repo, number, parsed);
+        return;
+      }
+    }
+    let outcome = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      parsed.pullMerge = { state: "processing", phase: "", request };
+      updateRepoPullMergePanel(repo, number, parsed);
+      outcome = await sendRepoPullMerge(repo, number, parsed, request);
+      if (
+        attempt > 0
+        || outcome.state !== "failed"
+        || outcome.resumable
+        || !PULL_MERGE_REPIN_ERRORS.has(outcome.error)
+      ) {
+        break;
+      }
+      parsed.pullMerge = { state: "processing", phase: "repinning" };
+      updateRepoPullMergePanel(repo, number, parsed);
+      const changes = await refreshRepoPullMergePins(repo, number, parsed);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      if (changes.length) {
+        outcome = { state: "changed", changes };
+        break;
+      }
+      const next = buildRepoPullMergeRequest(repo, number, parsed, request.overrideReview === true);
+      if (!next) break;
+      request = next;
+    }
+    parsed.pullMerge = outcome;
+    updateRepoPullMergePanel(repo, number, parsed);
+    if (outcome?.state === "merged") refreshRepoPullActivity(repo, number);
+  }
+
+  async function handleRepoPullMergeOverride(repo) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls" || !detail.parsed?.pullMergeAuthorized) return;
+    if (!window.confirm(
+      `Merge pull request #${detail.number} without an independent approval?\n\nThis repository requires one approval from someone other than the author. As the owner you can override that rule; the override is recorded in the audit log and in the pull-request ledger.`,
+    )) {
       return;
     }
-    const requestId = existing.requestId || createRepoPullMergeRequestId();
-    const request = {
+    await handleRepoPullMerge(repo, { overrideReview: true });
+  }
+
+  function buildRepoPullUpdateRequest(repo, number, parsed) {
+    const context = repoPullUpdateContext(
+      repo,
+      number,
+      parsed.values || {},
+      parsed.pullMetadataCommit || "",
+      parsed.pullReadiness,
+    );
+    if (!context) return null;
+    return {
       schemaVersion: 1,
-      type: "forkmesh.pull-merge-v1",
+      type: "forkmesh.pull-update-v1",
       pullNumber: context.number,
-      requestId,
+      requestId: createRepoPullMergeRequestId(),
       expectedBaseOid: context.expectedBaseOid,
       expectedHeadOid: context.expectedHeadOid,
       expectedPullsOid: context.expectedPullsOid,
-      // Absent unless waived: the same request id must never mean a reviewed
-      // merge on one attempt and an unreviewed one on the next.
-      ...(waiveReview ? { overrideReview: true } : {}),
     };
-    parsed.pullMerge = { state: "processing", requestId };
-    updateRepoPullMergePanel(repo, detail.number, parsed);
-    const endpoint =
-      `${repoApiBase(repo)}/pulls/${context.number}/merge`;
+  }
+
+  async function sendRepoPullUpdate(repo, request) {
+    const endpoint = `${repoApiBase(repo)}/pulls/${request.pullNumber}/update`;
     let result;
     try {
-      result = await postRepoPullMutation(endpoint, request, (accepted) => {
-        if (parsed.pullMerge?.requestId !== requestId) return;
-        if (Boolean(parsed.pullMerge.queued) === !accepted) return;
-        parsed.pullMerge = { state: "processing", requestId, queued: !accepted };
-        updateRepoPullMergePanel(repo, detail.number, parsed);
-      });
+      result = await postRepoPullMutation(endpoint, request);
     } catch (_) {
-      parsed.pullMerge = {
+      return {
         state: "failed",
-        requestId,
-        message: "The mirror merge could not reach the relay.",
+        resumable: true,
+        request,
+        message: "The branch update request could not reach the relay. Retrying resends the same request.",
       };
-      updateRepoPullMergePanel(repo, detail.number, parsed);
-      return;
     }
     const { response, payload, waiting } = result;
     if (waiting && payload?.status === "processing") {
-      parsed.pullMerge = {
+      return {
         state: "failed",
-        requestId,
-        message: "The mirror is still processing. Retry to check the same merge.",
-      };
-    } else if (
-      response.ok
-      && payload?.status === "merged"
-      && payload?.published === true
-      && payload?.requestId === requestId
-      && immutableGitCommit(payload.baseBefore) === context.expectedBaseOid
-      && immutableGitCommit(payload.head) === context.expectedHeadOid
-      && immutableGitCommit(payload.pullsBefore) === context.expectedPullsOid
-    ) {
-      parsed.pullMerge = { state: "merged", requestId };
-    } else {
-      const messages = {
-        forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can merge this pull request.",
-        merge_conflict: "The exact reviewed commits do not apply cleanly to the base branch.",
-        stale_base: "The base branch changed; reload and review the new state.",
-        stale_head: "The pull-request head changed; reload and review it again.",
-        stale_pull_metadata: "The pull-request metadata changed; reload before merging.",
-        merge_node_unavailable: payload?.reason === "no_merge_executor"
-          ? "No online mirror runs the merge executor. Mirrors on an older node build advertise no merge capability; merge from the desktop, or retry once an updated mirror is online."
-          : "No online mirror could take this merge in the last few minutes. Try again shortly.",
-        merge_status_pending: "A mirror took this merge but has not confirmed it yet. Retry to check the same merge.",
-        merge_queue_full: "The merge queue is full; try again in a moment.",
-        review_required: "The mirror read no independent review on the published pull-request ledger. Reload to re-read the review history, then merge again to waive the gate as the owner.",
-        rules_required: payload?.message || "This pull request does not meet the repository's or organization's pull request rules. Fix what the rules list above and push again.",
-        checks_required: "This repository requires signed status checks, and the head being merged has no fresh passing result from a runner the base branch trusts. Run the checks, or change .forkmesh/required-checks.json on the base branch.",
-        unsupported_pull: "This pull request cannot be merged on the web; merge it from the desktop client.",
-        pull_not_found: "The mirror could not read this pull request's record.",
-        read_only_mirror: payload?.message || REPO_READ_ONLY_MIRROR_HINT,
-      };
-      parsed.pullMerge = {
-        state: "failed",
-        requestId,
-        message: messages[payload?.error] || "The mirror merge could not be confirmed.",
+        resumable: true,
+        request,
+        message: "The mirror is still processing. Retry to check the same update request.",
       };
     }
-    updateRepoPullMergePanel(repo, detail.number, parsed);
+    if (
+      response.ok
+      && payload?.status === "updated"
+      && payload?.published === true
+      && payload?.requestId === request.requestId
+      && immutableGitCommit(payload.baseBefore) === request.expectedBaseOid
+      && immutableGitCommit(payload.head) === request.expectedHeadOid
+      && immutableGitCommit(payload.pullsBefore) === request.expectedPullsOid
+      && immutableGitCommit(payload.headAfter)
+    ) {
+      return { state: "updated", request };
+    }
+    const error = String(payload?.error || "");
+    return {
+      state: "failed",
+      error,
+      resumable: PULL_MERGE_RESUMABLE_ERRORS.has(error),
+      request,
+      message: PULL_UPDATE_MESSAGES[error] || "The mirror branch update could not be confirmed.",
+    };
+  }
+
+  async function handleRepoPullUpdate(repo) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls") return;
+    const parsed = detail.parsed || {};
+    if (!parsed.pullMergeAuthorized) return;
+    const number = detail.number;
+    const previous = parsed.pullUpdate || {};
+    if (previous.state === "processing") return;
+    let request = previous.resumable === true ? previous.request : null;
+    parsed.pullUpdate = { state: "processing", request };
+    updateRepoPullMergePanel(repo, number, parsed);
+    if (!request) {
+      const changes = await refreshRepoPullMergePins(repo, number, parsed);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      request = changes.length ? null : buildRepoPullUpdateRequest(repo, number, parsed);
+      if (!request) {
+        parsed.pullUpdate = changes.length
+          ? { state: "failed", message: `Nothing was updated: ${changes.join(" ")}` }
+          : parsed.pullReadiness?.available && parsed.pullReadiness.behind <= 0
+            ? { state: "current" }
+            : { state: "failed", message: "The branch cannot be updated right now; the merge trial on the mirror did not answer." };
+        updateRepoPullMergePanel(repo, number, parsed);
+        return;
+      }
+    }
+    let outcome = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      parsed.pullUpdate = { state: "processing", request };
+      updateRepoPullMergePanel(repo, number, parsed);
+      outcome = await sendRepoPullUpdate(repo, request);
+      if (
+        attempt > 0
+        || outcome.state !== "failed"
+        || outcome.resumable
+        || !PULL_MERGE_REPIN_ERRORS.has(outcome.error)
+      ) {
+        break;
+      }
+      const changes = await refreshRepoPullMergePins(repo, number, parsed);
+      if (!pullDetailIsCurrent(repo, number)) return;
+      const next = changes.length ? null : buildRepoPullUpdateRequest(repo, number, parsed);
+      if (!next) {
+        if (changes.length) outcome = { state: "failed", message: `Nothing was updated: ${changes.join(" ")}` };
+        break;
+      }
+      request = next;
+    }
+    parsed.pullUpdate = outcome;
+    updateRepoPullMergePanel(repo, number, parsed);
+    refreshRepoPullActivity(repo, number);
+  }
+
+  async function handleRepoPullCheckRerun(repo, runId) {
+    const detail = state.repoRecordDetail;
+    if (!repo || detail?.kind !== "pulls" || !runId) return;
+    const button = document.querySelector(`[data-repo-pull-check-rerun="${CSS.escape(String(runId))}"]`);
+    const node = button?.getAttribute("data-repo-pull-check-node") || "";
+    if (!node) return;
+    if (button) button.disabled = true;
+    try {
+      await orgAgentRequest("POST", `${repoApiBase(repo)}/actions/control`, {
+        requestId: repoActionsRequestId(),
+        action: "rerun",
+        node,
+        runId: Number(runId),
+      });
+      refreshRepoPullActivity(repo, detail.number);
+    } catch (error) {
+      if (button) {
+        button.disabled = false;
+        button.title = String(error?.message || "The run could not be restarted.");
+      }
+    }
   }
 
   // Owner-authored contributor reward estimate. Both pull.md and issue-<n>.json
@@ -24394,7 +25360,7 @@
     const values = parsed.values || {};
     const title = values.title || `${config.itemLabel} #${number}`;
     const recordState = values.status || values.state || values.category || "open";
-    const author = values.authorName || values.author || "unknown";
+    const author = recordAuthorName(values) || values.author || "unknown";
     const timestamp = values.updatedAt || values.createdAt || values.ts;
     const date = isFinite(Number(timestamp)) || timestamp
       ? formatTimeAgo(timestamp)
@@ -24567,9 +25533,8 @@
                 ${openingBlock}
                 ${isDiscussions ? discussionConversationSection : pullConversationSection}
               </section>
-              ${isPulls ? `<div data-repo-pull-readiness-slot class="sm:ml-14">${renderRepoPullReadiness(repo, number, parsed)}</div>` : ""}
               ${isPulls ? `<div data-repo-pull-rules-slot class="sm:ml-14">${renderRepoPullRules(parsed.pullRules)}</div>` : ""}
-              ${isPulls ? `<div class="sm:ml-14">${renderRepoPullMergeControl(repo, number, parsed)}</div>` : ""}
+              ${isPulls ? `<div data-repo-pull-merge-slot class="min-w-0 sm:ml-14">${renderRepoPullMergeBox(repo, number, parsed)}</div>` : ""}
               ${repo.isPrivate ? "" : `<details data-repo-federated-thread class="group rounded-md border border-border sm:ml-14">
                 <summary class="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-[14px] text-muted-foreground">
                   <i data-lucide="radio" class="h-4 w-4"></i><span class="font-semibold text-foreground">Fediverse thread</span><span class="text-[12px]">· remote provenance, separate from signed history</span><i data-lucide="chevron-down" class="ml-auto h-4 w-4 transition-transform group-open:rotate-180"></i>
@@ -26039,7 +27004,7 @@
         parsed.pullMetadataCommit = pullMetadataCommit;
         const values = parsed.values || {};
         const readiness = loadRepoPullReadiness(repo, number, values);
-        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules] = await Promise.all([
+        const [pullPatch, conversation, commits, agents, mergeAuthorized, mergeBase, checks, rules, requiredChecks] = await Promise.all([
           loadRepoPullPatch(repo, number, pullMetadataCommit, values),
           loadRepoPullConversation(repo, number, pullMetadataCommit),
           loadRepoPullCommits(repo, number, pullMetadataCommit, values),
@@ -26048,6 +27013,7 @@
           loadRepoPullMergeBase(repo, values),
           readiness.then((result) => loadRepoPullChecks(repo, values, result)),
           readiness.then((result) => loadRepoPullRules(repo, number, result)),
+          readiness.then((result) => loadRepoPullRequiredChecks(repo, values, result)),
         ]);
         if (pullPatch) parsed.pullPatch = pullPatch;
         parsed.pullConversation = conversation;
@@ -26059,6 +27025,7 @@
         parsed.pullMergeBase = mergeBase;
         parsed.pullChecks = checks;
         parsed.pullRules = rules;
+        parsed.pullRequiredChecks = requiredChecks;
       }
       if (kind === "issues") {
         [parsed.issueMutationAuthorized, parsed.issueSubscribed] = await issueAccess;
@@ -26119,8 +27086,9 @@
       badge.classList.add("hidden");
       return;
     }
-    badge.classList.remove("hidden");
-    badge.textContent = formatCount(Number.isFinite(number) ? number : 0);
+    const label = formatCount(Number.isFinite(number) ? number : 0);
+    if (badge.textContent !== label) badge.textContent = label;
+    badge.classList.remove("hidden", "invisible");
   }
 
   // Star/unstar a repo (GET/POST/DELETE /api/repo/o/r/star). A star is a
@@ -41890,10 +42858,11 @@
         </div>
       </section>` : "";
     keepRepoFirstViewIssue(detail);
+    const tabStripScroll = detail.querySelector("[data-repo-github-header] [role=\"tablist\"]")?.scrollLeft || 0;
     detail.innerHTML = `
       <div data-repo-layout="github-like" class="min-w-0">
         <div data-repo-github-header class="border-b border-border">
-          <div class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
+          <div data-repo-tabs class="flex w-full min-w-0 gap-1 overflow-x-auto px-3 sm:px-6" role="tablist" aria-label="Repository sections">
             ${["code", "issues", "pulls", "discussions", "insights", "projects", "actions", "security", ...(canSeeAgentsTab ? ["agents"] : []), ...(canSeeSettingsTab ? ["settings"] : [])].map((tab) => {
               const meta = tabMeta[tab];
               const isDiscussions = tab === "discussions";
@@ -41904,8 +42873,9 @@
               // offline; loadRepoCollection will restore the badge if its
               // recovery attempt reaches one.
               const hideDiscussionsBadge = isDiscussions && (
-                !repoIsLive(repo) || !Number.isFinite(discussionCount) || discussionCount <= 0
+                !Number.isFinite(discussionCount) || discussionCount <= 0
               );
+              const reserveDiscussionsBadge = isDiscussions && !hideDiscussionsBadge && !repoIsLive(repo);
               const iconAttr = tab === "issues"
                 ? 'data-lucide="circle-dot"'
                 : tab === "pulls"
@@ -41920,7 +42890,7 @@
               // routed in-app by the document click handler.
               const tabHref = tab === "code" ? repoLinkUrl(repo) : `${repoLinkUrl(repo)}/${tab}`;
               const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", actions: "actions", agents: "agents" }[tab];
-              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span>${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground${hideDiscussionsBadge ? " hidden" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
+              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span data-repo-tab-label="${escapeHtml(meta.label)}">${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground tabular-nums${hideDiscussionsBadge ? " hidden" : reserveDiscussionsBadge ? " invisible" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
             }).join("")}
           </div>
         </div>
@@ -42110,6 +43080,9 @@
       ? "pulls"
       : repoTabRoutesFor(repo).includes(routeKind) ? routeKind : "code";
     setRepoTab(initialTab);
+    const tabStrip = detail.querySelector("[data-repo-tabs]");
+    if (tabStrip && tabStripScroll > 0) tabStrip.scrollLeft = tabStripScroll;
+    else keepRepoActiveTabVisible(tabStrip);
     window.lucide?.createIcons();
     // Only fetch code when Code is visible. Warming the tree/README behind an
     // Issues or Pulls deep link multiplied cold-cache mirror traffic and made
@@ -45164,10 +46137,7 @@
 
       const pullViewedButton = event.target.closest("[data-repo-pull-viewed]");
       if (pullViewedButton && state.selectedRepo) {
-        keepPullDiffHeaderInPlace(pullViewedButton, () => toggleRepoPullViewed(
-          state.selectedRepo,
-          pullViewedButton.dataset.repoPullViewed || "",
-        ));
+        toggleRepoPullViewed(state.selectedRepo, pullViewedButton.dataset.repoPullViewed || "");
         return;
       }
 
@@ -45185,9 +46155,18 @@
         return;
       }
 
-      const diffExplorerToggle = event.target.closest("[data-repo-diff-explorer-toggle]");
-      if (diffExplorerToggle) {
-        setRepoDiffExplorerOpen(diffExplorerToggle.getAttribute("aria-pressed") !== "true");
+      if (event.target.closest("[data-repo-diff-explorer-toggle]")) {
+        toggleRepoDiffExplorer();
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-explorer-scrim]")) {
+        setRepoDiffExplorerOpen(false);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-maximize]")) {
+        toggleRepoDiffMaximize();
         return;
       }
 
@@ -45197,36 +46176,14 @@
         return;
       }
 
-      const diffStepButton = event.target.closest("[data-repo-diff-step]");
-      if (diffStepButton) {
-        stepRepoDiffFile(Number(diffStepButton.dataset.repoDiffStep) || 1);
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-jump]")) {
-        jumpToRepoDiffFile(repoPullFilesSection()?.dataset.activeFile || "");
-        return;
-      }
-
-      if (event.target.closest("[data-repo-diff-current-collapse]")) {
-        toggleRepoDiffCurrentCollapse();
-        return;
-      }
-
       if (event.target.closest("[data-repo-diff-collapse-all]")) {
         toggleRepoDiffCollapseAll();
         return;
       }
 
-      const diffCurrentViewed = event.target.closest("[data-repo-diff-current-viewed]");
-      if (diffCurrentViewed && state.selectedRepo) {
-        setRepoDiffCurrentViewed(state.selectedRepo, diffCurrentViewed.dataset.repoDiffCurrentViewed || "");
-        return;
-      }
-
-      const diffFlagButton = event.target.closest("[data-repo-diff-flag]");
-      if (diffFlagButton) {
-        jumpToRepoDiffFile(diffFlagButton.dataset.repoDiffFlag || "");
+      const diffMarkButton = event.target.closest("[data-repo-diff-mark-next]");
+      if (diffMarkButton) {
+        jumpToRepoDiffMark(diffMarkButton.dataset.repoDiffMarkNext || "", diffMarkButton.dataset.repoDiffMarkFile || "");
         return;
       }
 
@@ -45254,13 +46211,25 @@
         // Scroll-spy would otherwise fight the jump it just triggered.
         if (section) section.dataset.activeFile = path;
         setRepoPullActiveFile(path, { revealDiff: true });
-        if (window.matchMedia?.("(max-width: 1023px)")?.matches) setRepoDiffExplorerOpen(false);
+        if (pullExplorerIsDrawer()) setRepoDiffExplorerOpen(false);
         return;
       }
 
       const pullMergeButton = event.target.closest("[data-repo-pull-merge]");
       if (pullMergeButton && state.selectedRepo) {
         handleRepoPullMerge(state.selectedRepo);
+        return;
+      }
+
+      const pullMergeOverrideButton = event.target.closest("[data-repo-pull-merge-override]");
+      if (pullMergeOverrideButton && state.selectedRepo) {
+        handleRepoPullMergeOverride(state.selectedRepo);
+        return;
+      }
+
+      const pullCheckRerunButton = event.target.closest("[data-repo-pull-check-rerun]");
+      if (pullCheckRerunButton && state.selectedRepo) {
+        handleRepoPullCheckRerun(state.selectedRepo, pullCheckRerunButton.dataset.repoPullCheckRerun);
         return;
       }
 
@@ -45800,6 +46769,10 @@
 
   // Rotating a phone (or resizing a window) across the split breakpoint
   // re-lays the diff in the layout that fits.
+  window.matchMedia?.(PULL_EXPLORER_DRAWER_QUERY)?.addEventListener?.("change", syncRepoDiffExplorerLayout);
+  document.addEventListener("fullscreenchange", syncRepoDiffMaximize);
+  window.addEventListener("resize", () => fitRepoDiffViewport(repoPullFilesSection()), { passive: true });
+
   window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.addEventListener?.("change", () => {
     const section = repoPullFilesSection();
     const list = section?.querySelector("[data-repo-pull-diff-list]");
@@ -45811,7 +46784,7 @@
   });
 
   document.addEventListener("click", (event) => {
-    document.querySelectorAll("[data-repo-diff-settings][open]").forEach((menu) => {
+    document.querySelectorAll("[data-repo-diff-settings][open], [data-repo-diff-health-pill][open]").forEach((menu) => {
       if (!menu.contains(event.target) || event.target.closest(".fm-menu-item")) menu.open = false;
     });
   });
@@ -46125,6 +47098,15 @@
         && stepRepoDiffFile(event.key === "j" ? 1 : -1)) {
       event.preventDefault();
       return;
+    }
+    if (!typingTarget && !event.metaKey && !event.ctrlKey && !event.altKey
+        && event.key === "v" && toggleRepoDiffCurrentViewed(state.selectedRepo)) {
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Escape" && pullExplorerIsDrawer()
+        && repoPullFilesSection()?.dataset.explorerOpen === "true") {
+      setRepoDiffExplorerOpen(false);
     }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();

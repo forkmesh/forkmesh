@@ -2070,18 +2070,18 @@ def test_dashboard_pull_detail_reads_committed_patch_for_files_changed():
 
     for marker in (
         'const PULL_METADATA_BRANCH = "forkmesh/pulls";',
-        "async function resolveRepoPullMetadataCommit(repo)",
+        "async function resolveRepoPullMetadataCommit(repo, options = {})",
         'async function loadRepoPullPatch(repo, number, metadataCommit = "", values = {})',
         "function parsePatchStats(patch)",
         "function renderRepoPullFiles(files, viewed = new Set(), options = {})",
-        'function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified")',
+        'function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified", parsed = null)',
         "data-repo-pull-file-list",
         "data-repo-pull-patch",
         ".forkmesh/pulls/${number}/changes.patch",
         "ref: commit,",
         "loadRepoPullPatch(repo, number, pullMetadataCommit, values),",
-        "renderRepoPullFiles(files, viewed, { mode: layout.explorer })",
-        "renderRepoPullPatch(pullPatch.patch, viewed, mode)",
+        "renderRepoPullFiles(files, viewed, { mode: layout.explorer, marks })",
+        "renderRepoPullPatch(pullPatch.patch, viewed, mode, parsed)",
     ):
         assert marker in dashboard_js
 
@@ -2463,7 +2463,7 @@ def test_dashboard_repository_branch_button_lists_live_remote_branches():
         "function renderRepoBranchToolbar(repo, branch)",
         "function renderRepoBranchMenu(repo, branches, open)",
         "async function toggleRepoBranchMenu(repo, button)",
-        "fetchRepoJson(`${repoApiBase(repo)}/branches`)",
+        "fetchRepoJson(`${repoApiBase(repo)}/branches`",
         "filterRepoBranches(repo, branches)",
         "branches.map((branch) =>",
         "data-repo-branch-button",

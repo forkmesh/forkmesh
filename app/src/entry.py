@@ -35188,18 +35188,10 @@ def _repository_social_version(record):
     return ""
 
 
-# Raster copy of an instance's logo written by tools/apply_instance_brand.py
-# (social crawlers do not draw SVG, and neither can the card renderer).
 INSTANCE_RASTER_LOGO = "/instance-logo.png"
 
 
 async def _repo_card_logo(env, request, repo_bi):
-    """The social card's logo: the owner-uploaded repository logo, else the
-    instance's PNG logo; None draws the ForkMesh mark (forkmesh.com itself).
-
-    A committed logo.svg cannot be rasterised in the Worker, so a repository
-    whose only artwork is an SVG shows its instance's logo instead.
-    """
     try:
         row = await d1_first(
             env, "SELECT data FROM repo_media WHERE repo_bi=? AND kind='logo'",
@@ -35308,7 +35300,10 @@ async def _repo_card_accent(env):
         theme = instance_theme.parse((row or {}).get("doc") or "")
     except Exception:
         return ""
-    tokens = theme.get("dark") or theme.get("light") or {}
+    preset = instance_theme.THEMES.get(theme.get("preset") or "") or {}
+    colors = preset.get("colors") or {}
+    tokens = theme.get("dark") or theme.get("light") or colors.get("dark") \
+        or colors.get("light") or {}
     return str(tokens.get("accent") or tokens.get("primary") or "")
 
 
@@ -35406,9 +35401,6 @@ async def repo_card_handler(env, request, owner, repo):
         "followers": followers,
         "accent": await _repo_card_accent(env),
     }
-    # The card names the repository by the address its page has (/name on an
-    # instance with short addresses, not /owner/name) and carries the
-    # repository's or the instance's logo rather than the ForkMesh mark.
     try:
         info["path"] = unquote(await _repo_public_path(
             env, display_owner, display_repo))
@@ -35607,11 +35599,13 @@ async def _web_fork_eligible_nodes(env, actor, account):
     return [node for node in active if node in headless]
 
 
-async def _web_fork_create(env, request, source_owner, source_name):
-    try:
-        data = await bounded_json_request(request)
-    except Exception:
-        return json_response({"error": "invalid_json"}, status=400)
+async def _web_fork_create(env, request, source_owner, source_name,
+                           data=None):
+    if data is None:
+        try:
+            data = await bounded_json_request(request)
+        except Exception:
+            return json_response({"error": "invalid_json"}, status=400)
     actor_bi, account = await _account_session_record(env, request, data)
     actor = safe_segment(clean_string(
         (account or {}).get("name", ""), MAX_NODE_NAME).lower())
@@ -40926,6 +40920,11 @@ async def _bind_session_author(env, request, data, record, session=None):
     if session and bound and bound != session:
         return json_response({"error": "author_mismatch"}, status=403)
     name = session or bound
+    claimed = clean_string(
+        record.get("authorName", "") or "", MAX_NODE_NAME).strip().lower()
+    record.pop("authorClaimedName", None)
+    if not name and valid_node_name(claimed):
+        record["authorClaimedName"] = claimed
     record["authorName"] = name
     record["authorVerified"] = bool(name)
     return None

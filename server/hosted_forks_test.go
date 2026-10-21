@@ -3,6 +3,7 @@ package mirrornode
 import (
 	"context"
 	"crypto/rand"
+	"net/http/cgi"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -280,5 +281,193 @@ func TestHostedForkEntriesAreValidated(t *testing.T) {
 	item.ForkOf, item.Network = testHostedID, testHostedID
 	if !validHostedDesired(item) {
 		t.Fatal("refused a valid fork")
+	}
+}
+
+const testUpstreamNetwork = "hr0123456789abcdef0123f0b1"
+
+func upstreamForkNode(t *testing.T) (*Daemon, *[]hostedDesired) {
+	t.Helper()
+	app := &fakeHostedApp{}
+	appServer := httptest.NewServer(app)
+	t.Cleanup(appServer.Close)
+	node := hostedTestDaemon(t, "fmnext-n1", appServer.URL)
+	node.hosted.cfg.MaxRepositoryBytes = 1 << 30
+	desired := &[]hostedDesired{}
+	app.answer = func(string, map[string]hostedCopyState) hostedReplicaResponse {
+		return hostedReplicaResponse{Repositories: append([]hostedDesired(nil), (*desired)...)}
+	}
+	return node, desired
+}
+
+func upstreamFork(id, owner, name, cloneURL string, primary bool) hostedDesired {
+	return hostedDesired{
+		ID: id, Owner: "bob", Name: name, Visibility: "public", Primary: primary,
+		ForkUpstream: &hostedForkUpstream{Owner: owner, Name: name, CloneURL: cloneURL},
+		Network:      testUpstreamNetwork}
+}
+
+func gitHTTPServer(t *testing.T, root string) *httptest.Server {
+	t.Helper()
+	gitPath, err := exec.LookPath("git")
+	if err != nil {
+		t.Skip("git is not installed")
+	}
+	server := httptest.NewServer(&cgi.Handler{
+		Path: gitPath, Args: []string{"http-backend"},
+		Env: []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1"}})
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestHostedForkOfANodePublishedRepositoryBorrowsTheGatewayCopy(t *testing.T) {
+	node, desired := upstreamForkNode(t)
+	ctx := context.Background()
+	seed := node.gateway.Repositories[0].GitDir
+	seedMain := gitRefValue(ctx, seed, "refs/heads/main")
+	*desired = []hostedDesired{upstreamFork(testForkID, "forkmesh", "forkmesh",
+		"https://unreachable.invalid/forkmesh/forkmesh", true)}
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fork := node.hosted.gitDir(testForkID)
+	pool := filepath.Join(node.hosted.cfg.Root, hostedPoolDirectory, testUpstreamNetwork+".git")
+	alternates, err := os.ReadFile(filepath.Join(fork, "objects", "info", "alternates"))
+	if err != nil || strings.TrimSpace(string(alternates)) != filepath.Join(pool, "objects") {
+		t.Fatalf("alternates = %q, %v", alternates, err)
+	}
+	if got := gitRefValue(ctx, fork, "refs/heads/main"); got == "" || got != seedMain {
+		t.Fatalf("fork main = %q, want %q", got, seedMain)
+	}
+	if head := gitValue(ctx, fork, "symbolic-ref", "HEAD"); head != "refs/heads/main" {
+		t.Fatalf("fork HEAD = %q", head)
+	}
+	if objectBytes(t, fork) > 16<<10 {
+		t.Fatalf("the fork copied objects: %d", objectBytes(t, fork))
+	}
+	if _, ok := hostedEntry(node, testForkID); !ok {
+		t.Fatal("the fork is not served")
+	}
+	if _, err := os.Stat(filepath.Join(seed, hostedMaintenanceLock)); !os.IsNotExist(err) {
+		t.Fatal("the gateway copy was given a maintenance lock")
+	}
+	if got := gitRefValue(ctx, pool, "refs/pools/"+testUpstreamNetwork+"/heads/main"); got != seedMain {
+		t.Fatalf("pool ref = %q", got)
+	}
+
+	*desired = append(*desired, upstreamFork(testForkForkID, "forkmesh", "forkmesh",
+		"https://unreachable.invalid/forkmesh/forkmesh", false))
+	(*desired)[1].Owner = "carol"
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	replica := node.hosted.gitDir(testForkForkID)
+	if _, err := os.Stat(filepath.Join(replica, "objects", "info", "alternates")); err != nil {
+		t.Fatal("a replica did not borrow from the network pool")
+	}
+	if refs := gitLines(ctx, replica, "for-each-ref", "--format=%(refname)"); len(refs) != 0 {
+		t.Fatalf("a non-primary core chose the fork's refs: %v", refs)
+	}
+}
+
+func TestHostedForkOfANodePublishedRepositoryFetchesItsCloneURL(t *testing.T) {
+	node, desired := upstreamForkNode(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	source, bare := makeBareRepo(t)
+	if err := os.Rename(bare, filepath.Join(root, "tool.git")); err != nil {
+		t.Fatal(err)
+	}
+	sourceMain := runGit(t, source, "rev-parse", "HEAD")
+	server := gitHTTPServer(t, root)
+
+	*desired = []hostedDesired{upstreamFork(testForkForkID, "dana", "tool", server.URL+"/tool.git", false)}
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	pool := filepath.Join(node.hosted.cfg.Root, hostedPoolDirectory, testUpstreamNetwork+".git")
+	if _, err := os.Stat(pool); !os.IsNotExist(err) {
+		t.Fatal("a replica fetched the parent itself")
+	}
+
+	*desired = []hostedDesired{upstreamFork(testForkID, "dana", "tool", server.URL+"/tool.git", true)}
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	fork := node.hosted.gitDir(testForkID)
+	if got := gitRefValue(ctx, fork, "refs/heads/main"); got != sourceMain {
+		t.Fatalf("fork main = %q, want %q", got, sourceMain)
+	}
+	if objectBytes(t, fork) > 16<<10 {
+		t.Fatalf("the fork holds the parent's objects instead of the pool: %d", objectBytes(t, fork))
+	}
+	if got := gitValue(ctx, pool, "config", "--get", "gc.pruneExpire"); got != "never" {
+		t.Fatalf("pool gc.pruneExpire = %q", got)
+	}
+	runGit(t, fork, "fsck", "--connectivity-only", "--no-dangling")
+
+	*desired = append(*desired, upstreamFork(testForkForkID, "dana", "tool", server.URL+"/tool.git", false))
+	(*desired)[1].Owner = "carol"
+	if err := node.hosted.reconcile(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(node.hosted.gitDir(testForkForkID), "objects", "info", "alternates")); err != nil {
+		t.Fatal("a replica did not borrow from an existing pool")
+	}
+}
+
+func TestHostedForkOfANodePublishedRepositoryStaysWithinTheSizeLimit(t *testing.T) {
+	node, desired := upstreamForkNode(t)
+	node.hosted.cfg.MaxRepositoryBytes = 64 << 10
+	root := t.TempDir()
+	source, bare := makeBareRepo(t)
+	commitAndPush(t, source, bare, "refs/heads/main", 1<<20)
+	if err := os.Rename(bare, filepath.Join(root, "big.git")); err != nil {
+		t.Fatal(err)
+	}
+	server := gitHTTPServer(t, root)
+	*desired = []hostedDesired{upstreamFork(testForkID, "dana", "big", server.URL+"/big.git", true)}
+	if err := node.hosted.reconcile(context.Background()); err == nil ||
+		!strings.Contains(err.Error(), "larger than the hosted limit") {
+		t.Fatalf("a parent over the size limit was fetched: %v", err)
+	}
+	if refs := gitLines(context.Background(), node.hosted.gitDir(testForkID), "for-each-ref",
+		"--format=%(refname)"); len(refs) != 0 {
+		t.Fatalf("fork refs = %v", refs)
+	}
+}
+
+func TestHostedForkUpstreamEntriesAreValidated(t *testing.T) {
+	valid := upstreamFork(testForkID, "forkmesh", "forkmesh", "https://app.forkmesh.com/forkmesh/forkmesh", true)
+	if !validHostedDesired(valid) {
+		t.Fatal("refused a valid upstream fork")
+	}
+	for _, mutate := range []func(*hostedDesired){
+		func(item *hostedDesired) { item.ForkOf = testHostedID },
+		func(item *hostedDesired) { item.Network = "" },
+		func(item *hostedDesired) { item.Visibility = "private" },
+		func(item *hostedDesired) { item.ForkUpstream.Owner = "Bad Owner" },
+		func(item *hostedDesired) { item.ForkUpstream.Name = ".hidden" },
+		func(item *hostedDesired) { item.ForkUpstream.CloneURL = "http://app.forkmesh.com/forkmesh/forkmesh" },
+		func(item *hostedDesired) {
+			item.ForkUpstream.CloneURL = "https://u:p@app.forkmesh.com/forkmesh/forkmesh"
+		},
+		func(item *hostedDesired) {
+			item.ForkUpstream.CloneURL = "https://app.forkmesh.com/forkmesh/forkmesh?x=1"
+		},
+		func(item *hostedDesired) { item.ForkUpstream.CloneURL = "https://app.forkmesh.com/forkmesh/forkmesh#x" },
+		func(item *hostedDesired) { item.ForkUpstream.CloneURL = "https://app.forkmesh.com/../forkmesh" },
+		func(item *hostedDesired) { item.ForkUpstream.CloneURL = "https://10.0.0.1/forkmesh/forkmesh" },
+		func(item *hostedDesired) { item.ForkUpstream.CloneURL = "https://localhost/forkmesh/forkmesh" },
+		func(item *hostedDesired) { item.ForkUpstream.CloneURL = "ssh://app.forkmesh.com/forkmesh/forkmesh" },
+		func(item *hostedDesired) { item.ForkUpstream.CloneURL = "https://app.forkmesh.com/" },
+	} {
+		item := valid
+		upstream := *valid.ForkUpstream
+		item.ForkUpstream = &upstream
+		mutate(&item)
+		if validHostedDesired(item) {
+			t.Fatalf("accepted %+v %+v", item, *item.ForkUpstream)
+		}
 	}
 }

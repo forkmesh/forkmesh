@@ -768,6 +768,13 @@
 
   const ISSUE_PERSON_HANDLE_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 
+  function recordAuthorName(values) {
+    const name = String(values?.authorName || "").trim();
+    if (name) return name;
+    const claimed = String(values?.authorClaimedName || "").trim().toLowerCase();
+    return validNodeName(claimed) ? `${claimed} (unverified)` : "";
+  }
+
   function issuePersonHandle(name) {
     const text = String(name || "").trim().replace(/^@/, "");
     return ISSUE_PERSON_HANDLE_RE.test(text) && !text.includes("--") ? text.toLowerCase() : "";

@@ -184,10 +184,17 @@ type hostedDesired struct {
 	Init       *hostedInit    `json:"init,omitempty"`
 	Sources    []hostedSource `json:"sources,omitempty"`
 	// Organization names the repository is also served under (org_repos).
-	Aliases    []string          `json:"aliases,omitempty"`
-	PushMirror *hostedPushMirror `json:"pushMirror,omitempty"`
-	ForkOf     string            `json:"forkOf,omitempty"`
-	Network    string            `json:"network,omitempty"`
+	Aliases      []string            `json:"aliases,omitempty"`
+	PushMirror   *hostedPushMirror   `json:"pushMirror,omitempty"`
+	ForkOf       string              `json:"forkOf,omitempty"`
+	ForkUpstream *hostedForkUpstream `json:"forkUpstream,omitempty"`
+	Network      string              `json:"network,omitempty"`
+}
+
+type hostedForkUpstream struct {
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	CloneURL string `json:"cloneUrl"`
 }
 
 type hostedRemoved struct {
@@ -386,7 +393,10 @@ func validHostedDesired(item hostedDesired) bool {
 		(item.Visibility == "public" || item.Visibility == "private") && item.PushedAt >= 0 &&
 		(item.ForkOf == "" || (hostedIDPattern.MatchString(item.ForkOf) && item.ForkOf != item.ID &&
 			item.Visibility == "public")) &&
-		(item.Network == "" || (item.ForkOf != "" && hostedIDPattern.MatchString(item.Network)))
+		(item.ForkUpstream == nil || (item.ForkOf == "" && item.Visibility == "public" &&
+			item.Network != "" && validHostedForkUpstream(*item.ForkUpstream))) &&
+		(item.Network == "" || ((item.ForkOf != "" || item.ForkUpstream != nil) &&
+			hostedIDPattern.MatchString(item.Network)))
 }
 
 // apply makes local state match one response. It reports whether anything a
@@ -456,8 +466,12 @@ func (r *hostedReplicator) apply(ctx context.Context, response hostedReplicaResp
 		changed = changed || created
 		empty := len(gitLines(ctx, gitDir, "for-each-ref", "--count=1",
 			"--format=%(refname)", "refs/heads", "refs/tags")) == 0
-		if empty && item.ForkOf != "" {
-			if filled, err := r.forkFromLocal(ctx, item, gitDir, publicIDs[item.ForkOf]); err != nil {
+		if empty && (item.ForkOf != "" || item.ForkUpstream != nil) {
+			fill := func() (bool, error) { return r.forkFromLocal(ctx, item, gitDir, publicIDs[item.ForkOf]) }
+			if item.ForkUpstream != nil {
+				fill = func() (bool, error) { return r.forkFromUpstream(ctx, item, gitDir) }
+			}
+			if filled, err := fill(); err != nil {
 				failures = append(failures, "hosted "+key+" fork: "+err.Error())
 			} else if filled {
 				empty = false
