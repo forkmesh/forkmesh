@@ -581,12 +581,36 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   (a preview or call is capturing) and otherwise uses `.playback` with `.mixWithOthers`, like
   `GenieSounds`. While the app is not in the foreground, a pending invite also posts a local
   notification (`direct-call-<call id>`, title "Incoming video call" or "Incoming voice call",
-  body "@name is calling you", default sound, `interruptionLevel = .timeSensitive`) with
+  body "@name is calling you", the ring sound below, `interruptionLevel = .timeSensitive`) with
   `topic: direct-messages` and the conversation, so a tap opens that DM where the full-screen
   incoming view waits. It is removed when the invite ends or the app returns to the foreground.
   There are no Accept and Decline notification actions: the categories come from the shared
   `NotificationCategoryId` list in FMApi, and a call category there needs matching server and
   Android work.
+- **Call pushes** (since 2026-10-21; protocol in `docs/app/chat-direct-calls.md`).
+  `sendCallFrame` opens the DM's socket when it is not open and marks every `call-invite`
+  envelope `ring: true`; the relay then sends the callee a `calls` account event and an APNs
+  alert. The callee's app reacts in four places, each calling
+  `DirectMessageService.openRinging(conversation)` (it reloads the conversation list when the
+  conversation is not known yet, then `open`s it), so the next resent invite (every 3 s)
+  arrives and `DirectCallIncomingScreen` shows:
+  - `AccountEventChannel.onEvent` (new: topic and whole frame, before `onTopic`) with topic
+    `DirectCallEngine.ringTopic` (`calls`), wired in `AppServices+Chat.swift`;
+  - `ApplePushBridge` `willPresent` for a `calls` push in the foreground, which shows the banner
+    with sound unless the engine is already in a call or showing that invite;
+  - a tap on the push (`receivedTap`); `PushOpen.isCall` counts as a direct message, so the tap
+    also opens that DM like a DM push;
+  - `CallRinger.sweepPushes`: whenever the ringer refreshes it removes delivered `calls` pushes
+    for the ringing conversation, for one whose invite just ended, and all of them while the app
+    is in front; a push under 45 s old found in the foreground with no invite yet also opens its
+    DM, so opening the app from its icon during a ring still shows the call.
+
+  `CallRinger.attach` writes `DirectCallEngine.ringSound` (`forkmesh-call-ring.wav`, nine
+  three-second ring cycles from `DirectCallTones.ringLoop`, 27 s, under Apple's 30 s cap) to
+  `Library/Sounds` with `completeUntilFirstUserAuthentication` protection, so a push on a locked
+  phone can read it, and the local call notification uses it too. The notification extension
+  delivers a `calls` push as it came (the relay also leaves `mutable-content` off), so it is never
+  rewritten into an inbox row.
 - **Route note.** The page posts `{event: "route", route, local, remote, protocol}` when the call
   connects and when the selected candidate pair changes. `WebCallPeer` passes it to
   `WebCallPeerFactory.route` (a `DirectCallRoute`, reset for each new call and when the peer
@@ -594,12 +618,13 @@ out or when the caller hangs up before an answer (`hangUp` while `.ringing`). An
   no server in between" or "Relayed · through a TURN relay server (third party)". The live state
   line is "Connected · end-to-end encrypted", since the route is unknown until then. The pre-call
   screen shows the hint "Calls go directly between your devices when possible."
-- **Limits.** Ringing reaches the phone only while the app is running and the DM's socket is open
-  (foreground, or background while the `audio` mode keeps it alive). A killed or suspended app
-  does not ring: that needs VoIP push (PushKit) and CallKit, which need server work to send VoIP
-  pushes and are not part of this app. The time-sensitive level only breaks through Focus when the
-  app has the Time Sensitive Notifications capability; without it the notification arrives as a
-  normal alert. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
+- **Limits.** A suspended or killed app gets the call push (a ringing alert), not the full-screen
+  call: the full-screen incoming view needs the app opened from the push, because there is no
+  VoIP push (PushKit) or CallKit. The time-sensitive level only breaks through Focus once the
+  app has the Time Sensitive Notifications capability
+  (`com.apple.developer.usernotifications.time-sensitive` in both app entitlements files, and the
+  capability on `com.forkmesh.forkmesh` in the developer portal or `asc_bundle_ids.py`); it is
+  not switched on yet, so under Focus the call push arrives as a normal alert. The root `fullScreenCover` cannot present while another screen of `HomeShell` is
   showing a sheet or cover; the call then appears when that sheet closes. The ringback plays on
   whatever route WebKit's `.playAndRecord` session uses (often the earpiece).
 

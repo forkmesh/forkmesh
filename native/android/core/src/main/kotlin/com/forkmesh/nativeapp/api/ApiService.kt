@@ -698,6 +698,11 @@ open class ApiService(
         return com.forkmesh.nativeapp.push.unreadDirectMessage(data["conversations"])
     }
 
+    open fun directMessagePartner(conversation: String): String {
+        val data = asMap(getJson(base("/api/chat/direct-messages", linkedMapOf("limit" to "50")))) ?: return ""
+        return com.forkmesh.nativeapp.push.CallRings.partner(data["conversations"], conversation)
+    }
+
     open fun accountAvatarPng(name: String): String {
         val key = name.trim().lowercase()
         if (key.isEmpty()) return ""

@@ -12,10 +12,12 @@ import com.forkmesh.nativeapp.feature.facechanger.WebCallPeers
 import com.forkmesh.nativeapp.platform.ProjectLifecycle
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 data class PreCall(val conversation: String, val partner: String, val media: DirectCallKind)
 
@@ -46,6 +48,9 @@ object DirectCallFeature {
 
     @Volatile
     private var partnerOf: (String) -> String = { "" }
+
+    @Volatile
+    private var direct: DirectMessageService? = null
 
     private fun bump() {
         revisionState.update { it + 1 }
@@ -83,6 +88,7 @@ object DirectCallFeature {
         val app = context.applicationContext
         appContext = app
         partnerOf = partner
+        this.direct = direct
         engine = made
         peers = factory
         precallState.value = null
@@ -99,6 +105,7 @@ object DirectCallFeature {
         engine = null
         peers = null
         partnerOf = { "" }
+        this.direct = null
         precallState.value = null
         ringer?.release()
         ringer = null
@@ -112,6 +119,19 @@ object DirectCallFeature {
                 runCatching { FaceChangerFeature.peers?.endPreview(PRECALL_OWNER) }
             }.get(UNINSTALL_WAIT_MS, TimeUnit.MILLISECONDS)
         }
+    }
+
+    fun wake(conversation: String): Boolean {
+        val current = engine ?: return false
+        val service = direct ?: return false
+        if (current.active) return true
+        ProjectLifecycle.scope.launch(Dispatchers.IO) { runCatching { service.openRinging(conversation) } }
+        return true
+    }
+
+    fun ringing(conversation: String): Boolean {
+        val current = engine ?: return false
+        return current.active || current.invite?.conversation == conversation
     }
 
     fun run(block: (DirectCallEngine) -> Unit) {

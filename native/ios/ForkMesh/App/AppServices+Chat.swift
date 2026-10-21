@@ -136,6 +136,13 @@ struct ChatInstaller: AppServicesInstaller {
                         Task { await hub.applyReadMarks() }
                     }
                 }
+                let previousEvent: (@MainActor (String, JSONObject) -> Void)? = events.onEvent
+                events.onEvent = { (topic: String, frame: JSONObject) in
+                    previousEvent?(topic, frame)
+                    guard topic == DirectCallEngine.ringTopic else { return }
+                    let conversation: String = frame.str("conversation")
+                    Task { await direct.openRinging(conversation) }
+                }
                 let previousConnected: (@MainActor () -> Void)? = events.onConnected
                 events.onConnected = {
                     previousConnected?()

@@ -501,7 +501,8 @@ public struct PushOpen: Equatable, Hashable, Sendable, CustomStringConvertible {
 
     public var isChat: Bool { topic == "chat" }
     public var isAlarm: Bool { !alarm.isEmpty }
-    public var isDirectMessage: Bool { topic == "direct-messages" }
+    public var isDirectMessage: Bool { topic == "direct-messages" || isCall }
+    public var isCall: Bool { topic == "calls" }
     /// A push about code pushed to a repository (topic `code-push`). Its href names the
     /// repository's commits on the pushed branch (`/owner/repo/commits/<branch>`).
     public var isCodePush: Bool { topic == "code-push" }

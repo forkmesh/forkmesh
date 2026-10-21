@@ -317,7 +317,7 @@ def test_push_topics_exclude_the_refresh_hints(apns):
     # worth a buzz raise a ping, which pushes with the actual text.
     # "code-push" is a ping under its own name (kind code_push), not a hint.
     assert set(apns.APNS_PUSH_TOPICS) == {
-        "pings", "direct-messages", "chat", "code-push"}
+        "pings", "direct-messages", "chat", "code-push", "calls"}
 
 
 def test_only_the_sealed_topics_are_marked(apns):
@@ -498,6 +498,66 @@ def test_an_alert_outlives_a_night_in_flight_mode(apns):
     _send(apns, fetch_impl)
     expiration = int(fetch_impl.calls[0][1]["headers"]["apns-expiration"])
     assert expiration == 1_700_000_000 + apns.APNS_EXPIRATION_SECONDS
+
+
+def test_a_call_push_rings_names_the_caller_and_the_conversation(apns):
+    alert = apns.direct_call_alert(conversation_id="A" * 32, caller=" Bob ")
+    assert alert["conversation"] == "direct:" + "a" * 32
+    assert alert["body"] == "@bob is calling you"
+    assert "Incoming call" in alert["title"]
+    payload = json.loads(apns.alert_payload(alert, "calls"))
+    assert payload["topic"] == "calls"
+    assert payload["conversation"] == "direct:" + "a" * 32
+    assert payload["aps"]["sound"] == apns.APNS_CALL_SOUND
+    assert payload["aps"]["interruption-level"] == "time-sensitive"
+    assert "mutable-content" not in payload["aps"]
+    assert apns.collapse_id_for("calls", alert["conversation"]) == (
+        "call-direct:" + "a" * 32)
+    unnamed = apns.direct_call_alert(conversation_id="nothex")
+    assert "conversation" not in unnamed
+    assert unnamed["body"] == "Someone is calling you in ForkMesh"
+
+
+def test_a_call_push_expires_with_the_ring(apns):
+    fetch_impl = _fetch(_Response(200))
+    asyncio.run(apns.send_one(
+        types.SimpleNamespace(), fetch_impl, "jwt", "ab" * 32, "development",
+        apns.direct_call_alert(conversation_id="a" * 32, caller="bob"),
+        topic="calls"))
+    expiration = int(fetch_impl.calls[0][1]["headers"]["apns-expiration"])
+    assert expiration == 1_700_000_000 + apns.APNS_CALL_EXPIRATION_SECONDS
+    assert apns.APNS_CALL_EXPIRATION_SECONDS <= 120
+
+
+def test_a_call_event_reaches_the_socket_with_its_conversation():
+    runtime = _account_event_runtime()
+    runtime.notify("alice", "calls", {
+        "title": "t", "conversation": "direct:" + "a" * 32})
+    assert runtime.frames == ["calls&conversation=direct:" + "a" * 32]
+    assert runtime.pushes == [("alice", "calls")]
+
+
+def test_every_client_rings_with_the_same_topic_and_sound(apns):
+    repo = ROOT.parent
+    swift_calls = (repo / "native/ios/ForkMeshCore/Sources/FMChat/Direct"
+                   / "DirectCalls.swift").read_text()
+    assert 'ringTopic = "' + apns.APNS_CALL_TOPIC + '"' in swift_calls
+    assert 'ringSound = "' + apns.APNS_CALL_SOUND + '"' in swift_calls
+    kotlin_calls = (repo / "native/android/core/src/main/kotlin/com/forkmesh"
+                    / "nativeapp/chat/DirectCalls.kt").read_text()
+    assert 'RING_TOPIC = "' + apns.APNS_CALL_TOPIC + '"' in kotlin_calls
+    swift_direct = (repo / "native/ios/ForkMeshCore/Sources/FMChat/Direct"
+                    / "DirectMessages.swift").read_text()
+    assert 'if type == "call-invite" { envelope["ring"] = true }' in (
+        swift_direct)
+    kotlin_direct = (repo / "native/android/core/src/main/kotlin/com/forkmesh"
+                     / "nativeapp/chat/DirectMessages.kt").read_text()
+    assert ('if (type == DirectCallEngine.CALL_INVITE_TYPE) '
+            'envelope["ring"] = true') in kotlin_direct
+    transport = (ROOT / "public" / "chat-room-transport.js").read_text()
+    assert ('if (!persist && plain?.type === "call-invite" '
+            '&& isDirectRoom(room)) {\n        envelope.ring = true;'
+            ) in transport
 
 
 def test_host_follows_the_tokens_build_environment(apns):
@@ -1072,7 +1132,8 @@ def _account_event_runtime(now=9_000_000):
     for name in ("ACCOUNT_EVENT_PUSH_COALESCE_MS",
                  "ACCOUNT_EVENT_PUSH_MEMO_MAX",
                  "ACCOUNT_EVENT_PUSH_EVERY_TOPICS",
-                 "ACCOUNT_EVENT_SOCKET_EVERY_TOPICS"):
+                 "ACCOUNT_EVENT_SOCKET_EVERY_TOPICS",
+                 "ACCOUNT_EVENT_CONVERSATION_TOPICS"):
         namespace[name] = _entry_constant(name)
     exec(_entry_function("_account_event_query"), namespace)
     exec(_entry_function("notify_account_event"), namespace)
@@ -1162,7 +1223,9 @@ def test_the_event_socket_relays_the_direct_message_handles():
     text = (SRC / "entry.py").read_text()
     notify = text[text.index('            if path.endswith("/notify"):'):]
     notify = notify[:notify.index("frame = json.dumps(frame_data)")]
-    assert 'if frame_data["topic"] == "direct-messages":' in notify
+    assert (
+        'if frame_data["topic"] in ACCOUNT_EVENT_CONVERSATION_TOPICS:'
+        in notify)
     assert "_account_event_direct_fields(query)" in notify
 
 

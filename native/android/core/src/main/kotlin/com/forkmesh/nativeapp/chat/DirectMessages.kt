@@ -667,6 +667,12 @@ class DirectMessageService(
 
     private fun ownKid(): String = ChatDeviceKeys.forStore(secureStore).kid
 
+    fun openRinging(conversation: String): Boolean {
+        if (!conversation.startsWith(DirectMessageFrames.PREFIX)) return false
+        if (record(conversation) == null) refresh()
+        return open(conversation)
+    }
+
     fun open(conversation: String): Boolean {
         val record = record(conversation) ?: return false
         val lockForRoom = synchronized(lock) { openLocks.getOrPut(record.id) { Any() } }
@@ -1718,7 +1724,9 @@ class DirectMessageService(
         val socket = holder.socket ?: return false
         val plain = frame(record, type, extra)
         return try {
-            socket.sendText(Json.stringify(holder.crypto.encrypt(holder.seal.seal(plain))))
+            val envelope = LinkedHashMap(holder.crypto.encrypt(holder.seal.seal(plain)))
+            if (type == DirectCallEngine.CALL_INVITE_TYPE) envelope["ring"] = true
+            socket.sendText(Json.stringify(envelope))
         } catch (_: Exception) {
             false
         }

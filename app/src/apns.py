@@ -40,6 +40,7 @@ from js import Uint8Array
 from js import crypto as js_crypto
 from pyodide.ffi import to_js as _to_js
 
+from push_icons import PUSH_CALL_ICON
 from push_icons import PUSH_CHAT_ICON
 from push_icons import PUSH_DEFAULT_ICON
 from push_icons import PUSH_DIRECT_MESSAGE_ICON
@@ -90,10 +91,16 @@ APNS_CHAT_TOPIC = "chat"
 # no collapse id, every one its own banner (the Worker's storm guard, not
 # Apple, keeps a busy repository from flooding the phone).
 APNS_CODE_PUSH_TOPIC = "code-push"
+APNS_CALL_TOPIC = "calls"
+APNS_CALL_TITLE = "Incoming call"
+APNS_CALL_SOUND = "forkmesh-call-ring.wav"
+APNS_CALL_COLLAPSE_PREFIX = "call-"
+APNS_CALL_EXPIRATION_SECONDS = 60
 APNS_PUSH_TOPICS = ("pings", "direct-messages", APNS_CHAT_TOPIC,
-                    APNS_CODE_PUSH_TOPIC)
+                    APNS_CODE_PUSH_TOPIC, APNS_CALL_TOPIC)
 
-APNS_CONVERSATION_TOPICS = ("direct-messages", APNS_CHAT_TOPIC)
+APNS_CONVERSATION_TOPICS = ("direct-messages", APNS_CHAT_TOPIC,
+                            APNS_CALL_TOPIC)
 APNS_COLLAPSE_TOPICS = (APNS_CHAT_TOPIC,)
 APNS_MARKED_TOPICS = APNS_CONVERSATION_TOPICS + (APNS_CODE_PUSH_TOPIC,)
 
@@ -330,6 +337,19 @@ def direct_message_alert(started=False, conversation_id="", ref="",
     return alert
 
 
+def direct_call_alert(conversation_id="", caller=""):
+    caller = str(caller or "").strip().lower()
+    alert = {
+        "title": with_icon(APNS_CALL_TITLE, PUSH_CALL_ICON),
+        "body": ("@" + caller + " is calling you" if caller
+                 else "Someone is calling you in ForkMesh"),
+    }
+    conversation_id = str(conversation_id or "").strip().lower()
+    if APNS_DIRECT_ID_RE.fullmatch(conversation_id):
+        alert["conversation"] = APNS_DIRECT_CONVERSATION_PREFIX + conversation_id
+    return alert
+
+
 def _sealed_frame(frame):
     if isinstance(frame, dict):
         envelope = frame
@@ -455,6 +475,11 @@ def alert_payload(alert, topic="", origin=""):
     topic = str(topic or "")
     if topic in APNS_MARKED_TOPICS:
         payload["topic"] = topic
+    if topic == APNS_CALL_TOPIC:
+        payload["aps"]["sound"] = APNS_CALL_SOUND
+        payload["aps"]["interruption-level"] = "time-sensitive"
+        payload["aps"]["relevance-score"] = 1
+        payload["aps"].pop("mutable-content", None)
     origin = str(origin or "").strip()
     if origin:
         payload["origin"] = origin[:200]
@@ -491,6 +516,8 @@ def collapse_id_for(topic, conversation=""):
     """The apns-collapse-id for a topic, or "" when its alerts must stack."""
     if topic == APNS_CHAT_TOPIC and conversation == APNS_MESH_CONVERSATION:
         return APNS_MESH_COLLAPSE_ID
+    if topic == APNS_CALL_TOPIC and conversation:
+        return (APNS_CALL_COLLAPSE_PREFIX + str(conversation))[:64]
     return str(topic) if topic in APNS_COLLAPSE_TOPICS else ""
 
 
@@ -555,6 +582,8 @@ async def send_one(env, fetch_impl, jwt, token, environment, alert,
     if not body:
         return False, False, 0, "no_alert_text"
     url = apns_host(environment) + "/3/device/" + str(token)
+    expiration = (APNS_CALL_EXPIRATION_SECONDS if topic == APNS_CALL_TOPIC
+                  else APNS_EXPIRATION_SECONDS)
     headers = {
         "authorization": "bearer " + jwt,
         "apns-topic": apns_topic_for(bundle_id),
@@ -564,7 +593,7 @@ async def send_one(env, fetch_impl, jwt, token, environment, alert,
         "apns-priority": "10",
         # See APNS_EXPIRATION_SECONDS: held for a phone that is offline now.
         "apns-expiration": str(
-            int(int(Date.now()) / 1000) + APNS_EXPIRATION_SECONDS),
+            int(int(Date.now()) / 1000) + expiration),
     }
     if collapse_id:
         headers["apns-collapse-id"] = collapse_id[:64]

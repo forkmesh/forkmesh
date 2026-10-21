@@ -44,8 +44,33 @@ not copied: it is end-to-end encrypted to the original two participants.
   after accept, trickle ICE with a pre-answer queue, `replaceTrack` instead of
   renegotiation. Frames carry `to` so multi-device accounts converge on one
   answering device.
-- A ring reaches the callee only while the DM's room socket is open. A call
-  that is never answered posts a persisted "📞 Missed audio/video call" chat
+- **Call rings reach the callee wherever they are** (added 2026-10-21; before
+  that a ring reached only a device that already had that DM open, so a call
+  to a phone sitting on another screen, or in the background, showed nothing).
+  Every client marks the `call-invite` envelope with a plaintext
+  `ring: true` (never persisted; the invite itself stays sealed). The relay
+  (`ForkMeshRoom._ring_direct` in `entry.py`) answers a live `ring` frame in
+  a direct room with `notify_account_event(<other participant>, "calls", …)`,
+  at most once every 20 s per conversation and caller
+  (`CHAT_DIRECT_RING_EVERY_MS`), so the invite resent every 3 s rings twice
+  over a 45 s ring. The event goes two ways:
+  - the account event socket gets `{"type":"event","topic":"calls",
+    "conversation":"direct:<id>"}`; a client that sees it opens that DM's
+    room socket, the next resent invite arrives, and the normal incoming-call
+    screen shows;
+  - APNs gets an alert (`direct_call_alert` in `apns.py`): "📞 Incoming call",
+    "@caller is calling you", `topic: calls` and the conversation, the
+    `forkmesh-call-ring.wav` sound (a 27 s ring the iOS app writes to
+    `Library/Sounds`; iOS falls back to the default sound before the app has
+    run once), `interruption-level: time-sensitive`, no `mutable-content`
+    (the notification extension never touches it), collapse id
+    `call-direct:<id>` so the second push replaces the first, and an
+    `apns-expiration` of 60 s so a phone that was offline never rings for a
+    call that is long over.
+
+  The relay learns that a call is ringing in that conversation and when,
+  which it could already infer from the traffic; it does not learn whether
+  it is a voice or video call. A call that is never answered posts a persisted "📞 Missed audio/video call" chat
   line from the caller, which takes the normal notification path, so the
   person who missed it sees it in the conversation later. That happens both
   when the 45-second ring runs out and when the caller hangs up while it is
@@ -95,12 +120,13 @@ through their `DirectMessageService` and interoperate with `/chat`. Media runs
 in a WebView loading `direct-call.html` from an `https://` app-local origin (a
 secure context for `getUserMedia`); the native side drives it through
 `window.fmCall(id, op, args)` and receives replies through
-`webkit.messageHandlers.fmCall` or `FmCallBridge.post`. There is no CallKit,
-VoIP push or foreground service, so a call can drop in the background, and a
-ring reaches a phone only while the app runs with the conversation's room
-socket open. Ringing a phone whose app was killed or suspended needs VoIP
-push and CallKit on iOS and a push-started call notification on Android,
-which need server work.
+`webkit.messageHandlers.fmCall` or `FmCallBridge.post`. There is no CallKit
+or VoIP push, so a call can drop in the background. A ring reaches the phone
+through the `calls` account event and push above: iOS shows the call push
+(ringing, time-sensitive) even when the app is suspended or killed and opens
+the DM when it is tapped; Android's background connection wakes the call
+engine or posts a ringing full-screen call notification
+(`native/ios/docs/FMChat.md` and `docs/native/ANDROID.md` have the details).
 
 The page applies the same quality settings as `/chat` (constraints, sender
 caps, Opus FEC on the SDP it returns from `offer`/`answer`) and posts a

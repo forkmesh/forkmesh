@@ -578,6 +578,13 @@ public final class DirectMessageService {
         return await connect(record.id)
     }
 
+    @discardableResult
+    public func openRinging(_ conversation: String) async -> Bool {
+        guard conversation.hasPrefix(DirectMessageFrames.prefix) else { return false }
+        if record(for: conversation) == nil { await refresh() }
+        return await open(conversation)
+    }
+
     public func appLifecycleChanged(_ state: AppLifecycleState) {
         if state == .inactive { return }
         foreground = state == .resumed
@@ -1376,11 +1383,13 @@ public final class DirectMessageService {
 
     @discardableResult
     public func sendCallFrame(_ conversation: String, type: String, extra: JSONObject) async -> Bool {
-        guard type.hasPrefix("call-"), let record = record(for: conversation), let socket = sockets[record.id]
-        else { return false }
+        guard type.hasPrefix("call-"), let record = record(for: conversation) else { return false }
+        if sockets[record.id] == nil { _ = await open(conversation) }
+        guard let socket = sockets[record.id] else { return false }
         let plain = frame(record, type: type, extra: extra)
         do {
-            let envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
+            var envelope = try socket.crypto.encrypt(try socket.seal.seal(plain, now: clock.nowMillis))
+            if type == "call-invite" { envelope["ring"] = true }
             try await socket.connection.send(text: JSON.encode(envelope))
             return true
         } catch {

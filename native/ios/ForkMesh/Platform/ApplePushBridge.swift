@@ -186,6 +186,10 @@ final class ApplePushBridge: NSObject, PushPlatform {
     /// The routing fields of a notification's userInfo.
     fileprivate func receivedTap(_ userInfo: [AnyHashable: Any]) {
         let open: PushOpen = PushOpen(arguments: userInfo)
+        if open.isCall, let direct = Services.get(DirectMessageService.self) {
+            let conversation: String = open.conversation
+            Task { await direct.openRinging(conversation) }
+        }
         if let service = service {
             service.didOpen(open)
         } else {
@@ -237,6 +241,18 @@ extension ApplePushBridge: UNUserNotificationCenterDelegate {
         }
         let fields: [String: String] = ApplePushBridge.openFields(notification)
         let open: PushOpen = PushOpen(arguments: fields)
+        if open.isCall {
+            Task { @MainActor in
+                if let direct = Services.get(DirectMessageService.self) {
+                    let conversation: String = open.conversation
+                    Task { await direct.openRinging(conversation) }
+                }
+                let calls: DirectCallEngine? = Services.get(DirectCallEngine.self)
+                let shown: Bool = calls?.active == true || calls?.invite?.conversation == open.conversation
+                completionHandler(shown ? [] : [.banner, .sound, .list])
+            }
+            return
+        }
         Task { @MainActor in
             if let ping = open.ping {
                 Services.get(NotificationService.self)?.insertFromPush(ping)

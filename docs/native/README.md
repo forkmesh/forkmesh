@@ -198,8 +198,9 @@ Shortcuts (`.forkmesh/shortcuts/`):
   [`www/docs/mobile/mobile-node-contract.md`](../../www/docs/mobile/mobile-node-contract.md);
   agents from the phone:
   [`www/docs/mobile/mobile-agent-access.md`](../../www/docs/mobile/mobile-agent-access.md).
-- Push: `app/src/apns.py` pushes the `pings`, `direct-messages`, chat and
-  `code-push` topics to iOS; every payload carries `origin` so a tap routes to
+- Push: `app/src/apns.py` pushes the `pings`, `direct-messages`, chat,
+  `code-push` and `calls` (an incoming call, see
+  [chat-direct-calls.md](../app/chat-direct-calls.md)) topics to iOS; every payload carries `origin` so a tap routes to
   the right project. Android has no push transport (no FCM, by design): a
   foreground service keeps the account event socket open
   ([ANDROID.md](ANDROID.md), section 6). A desktop's pings reach its linked

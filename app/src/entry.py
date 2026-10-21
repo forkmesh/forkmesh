@@ -3221,10 +3221,12 @@ ACCOUNT_EVENT_PUSH_MEMO_MAX = 512
 # no banner is a ping the phone never heard about.
 ACCOUNT_EVENT_PUSH_EVERY_TOPICS = ("pings", "direct-messages")
 ACCOUNT_EVENT_SOCKET_EVERY_TOPICS = ("chat-read", "direct-messages")
+ACCOUNT_EVENT_CONVERSATION_TOPICS = ("direct-messages", "calls")
 
 
 def _account_event_query(topic, push_alert):
-    if topic != "direct-messages" or not isinstance(push_alert, dict):
+    if (topic not in ACCOUNT_EVENT_CONVERSATION_TOPICS
+            or not isinstance(push_alert, dict)):
         return ""
     conversation = str(push_alert.get("conversation") or "")
     if not re.fullmatch(r"direct:[0-9a-f]{32}", conversation):
@@ -10196,6 +10198,21 @@ async def _chat_direct_message_retained(
             _apns_module().direct_message_alert(
                 conversation_id=conversation_id, ref=ref,
                 key_version=key_version, frame=frame))
+
+
+async def _chat_direct_call_ring(env, conversation_id, caller_bi):
+    recipient, caller = await _chat_direct_message_parties(
+        env, conversation_id, caller_bi)
+    if recipient:
+        await notify_account_event(
+            env, recipient, "calls",
+            _apns_module().direct_call_alert(
+                conversation_id=conversation_id, caller=caller))
+
+
+_CHAT_DIRECT_RING_MEMO = {}
+CHAT_DIRECT_RING_EVERY_MS = 20 * 1000
+CHAT_DIRECT_RING_MEMO_MAX = 256
 
 
 # conversation_id -> {sender account_bi: (peer name, sender name)}. A direct
@@ -55799,12 +55816,33 @@ class ForkMeshRoom(DurableObject):
                 durable_object_traffic_note(
                     self, bytes_out=len(ack.encode("utf-8")))
         await durable_object_traffic_flush(self)
+        if (envelope.get("ring") is True
+                and envelope.get("persist") is not True):
+            await self._ring_direct(ws)
 
         # Retain durable conversation messages (still encrypted) for late joiners.
         if direct_stored:
             await self._maybe_retain(ws, message, direct_stored, stored=True)
         elif not direct_account:
             await self._maybe_retain(ws, message, ref)
+
+    async def _ring_direct(self, ws):
+        account_bi = self._direct_account(ws)
+        if not account_bi:
+            return
+        direct_id = str(_ws_attr(ws, "direct_id", "") or "")
+        now = int(Date.now())
+        memo_key = direct_id + "\n" + account_bi
+        last = _CHAT_DIRECT_RING_MEMO.get(memo_key, 0)
+        if last and now - last < CHAT_DIRECT_RING_EVERY_MS:
+            return
+        if len(_CHAT_DIRECT_RING_MEMO) >= CHAT_DIRECT_RING_MEMO_MAX:
+            _CHAT_DIRECT_RING_MEMO.clear()
+        _CHAT_DIRECT_RING_MEMO[memo_key] = now
+        try:
+            await _chat_direct_call_ring(self.env, direct_id, account_bi)
+        except Exception:
+            pass
 
     def _direct_account(self, ws):
         direct_id = str(_ws_attr(ws, "direct_id", "") or "")
@@ -56217,7 +56255,7 @@ class ForkMeshNodes(DurableObject):
                     "topic": clean_string(query.get("topic", [""])[0], 40),
                     "repo": clean_string(query.get("repo", [""])[0], 200),
                 }
-                if frame_data["topic"] == "direct-messages":
+                if frame_data["topic"] in ACCOUNT_EVENT_CONVERSATION_TOPICS:
                     frame_data.update(_account_event_direct_fields(query))
                 # A source-signed refs digest lets a headless mirror tell
                 # "fetch succeeded" from "the selected peer was stale". It

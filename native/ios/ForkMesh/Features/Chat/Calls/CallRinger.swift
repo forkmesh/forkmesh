@@ -2,6 +2,7 @@ import AVFoundation
 import AudioToolbox
 import FMAccount
 import FMAgentWatch
+import FMBase
 import FMChat
 import Foundation
 import Observation
@@ -25,6 +26,8 @@ final class CallRinger {
     private var buzz: Task<Void, Never>?
     private var hushed = ""
     private var noticed = ""
+    private var swept = ""
+    private var ringSound: UNNotificationSound = .default
     private var lifecycle: UUID?
 
     func attach(_ engine: DirectCallEngine) {
@@ -32,6 +35,7 @@ final class CallRinger {
         clearNotice()
         hushed = ""
         self.engine = engine
+        installRingSound()
         if lifecycle == nil {
             lifecycle = AppLifecycle.shared.observe { [weak self] (_: AppLifecycleState) in
                 self?.refresh()
@@ -79,6 +83,7 @@ final class CallRinger {
             if let wanted { start(wanted) }
         }
         notify(pending)
+        sweepPushes(pending)
     }
 
     private func start(_ kind: CallRingKind) {
@@ -141,12 +146,56 @@ final class CallRinger {
         let content: UNMutableNotificationContent = UNMutableNotificationContent()
         content.title = invite.media == .video ? "Incoming video call" : "Incoming voice call"
         content.body = "@\(invite.partner) is calling you"
-        content.sound = .default
+        content.sound = ringSound
         content.interruptionLevel = .timeSensitive
         content.threadIdentifier = "direct-call"
         content.userInfo = ["topic": "direct-messages", "conversation": invite.conversation]
         let request: UNNotificationRequest = UNNotificationRequest(identifier: id, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request) { _ in }
+    }
+
+    private func installRingSound() {
+        let files: FileManager = FileManager.default
+        guard let library: URL = files.urls(for: .libraryDirectory, in: .userDomainMask).first else { return }
+        let folder: URL = library.appendingPathComponent("Sounds", isDirectory: true)
+        let file: URL = folder.appendingPathComponent(DirectCallEngine.ringSound)
+        if !files.fileExists(atPath: file.path) {
+            let pcm: [Int16] = DirectCallTones.ringLoop(seconds: DirectCallEngine.ringSoundSeconds)
+            do {
+                try files.createDirectory(at: folder, withIntermediateDirectories: true)
+                try wavData(pcm, rate: DirectCallTones.rate, channels: 1)
+                    .write(to: file, options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+            } catch {
+                return
+            }
+        }
+        ringSound = UNNotificationSound(named: UNNotificationSoundName(DirectCallEngine.ringSound))
+    }
+
+    private func sweepPushes(_ invite: DirectCallInvite?) {
+        let foreground: Bool = AppLifecycle.shared.state == .resumed
+        let ringing: String = invite?.conversation ?? ""
+        let ended: String = swept == ringing ? "" : swept
+        swept = ringing
+        guard foreground || !ringing.isEmpty || !ended.isEmpty else { return }
+        Task { @MainActor in
+            let center: UNUserNotificationCenter = UNUserNotificationCenter.current()
+            var gone: [String] = []
+            var waiting: Set<String> = []
+            for delivered in await center.deliveredNotifications() {
+                let info: [AnyHashable: Any] = delivered.request.content.userInfo
+                guard (info["topic"] as? String) == DirectCallEngine.ringTopic else { continue }
+                let conversation: String = (info["conversation"] as? String) ?? ""
+                guard foreground || conversation == ringing || conversation == ended else { continue }
+                gone.append(delivered.request.identifier)
+                if foreground, ringing.isEmpty, -delivered.date.timeIntervalSinceNow < DirectCallEngine.ringTimeout {
+                    waiting.insert(conversation)
+                }
+            }
+            if !gone.isEmpty { center.removeDeliveredNotifications(withIdentifiers: gone) }
+            guard let direct: DirectMessageService = Services.get(DirectMessageService.self) else { return }
+            for conversation in waiting { await direct.openRinging(conversation) }
+        }
     }
 
     private func clearNotice() {
