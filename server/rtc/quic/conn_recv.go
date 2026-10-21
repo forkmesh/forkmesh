@@ -11,8 +11,11 @@ type packetInfo struct {
 	pn         int64
 	eliciting  bool
 	nonProbing bool
+	datagram   bool
+	delayable  bool
 	ok         bool
 	localSeq   uint64
+	pc         *pathCtx
 }
 
 func (c *Conn) handleDatagram(d *inDatagram) {
@@ -39,7 +42,10 @@ func (c *Conn) handleDatagram(d *inDatagram) {
 	if hasTail {
 		copy(tail[:], b[len(b)-16:])
 	}
-	p := c.pathFor(d.addr)
+	var p *path
+	if pc0 := c.peekPath(b); pc0 != nil {
+		p = c.pathFor(pc0, d.addr)
+	}
 	if p == nil {
 		if c.isClient || !c.confirmed {
 			c.stats.PacketsDropped++
@@ -79,19 +85,27 @@ func (c *Conn) handleDatagram(d *inDatagram) {
 	c.lastRecv = now
 	c.idleStart = now
 	c.elicitingSince = false
+	if appInfo.ok && appInfo.pc != nil {
+		appInfo.pc.lastHeard = now
+	}
 	if c.state >= stateClosing || c.isClient || !appInfo.ok {
 		return
 	}
+	pc := appInfo.pc
+	if pc == nil || pc.removed || pc.abandoned {
+		return
+	}
+	p = c.pathFor(pc, d.addr)
 	if p == nil {
-		p = c.newPath(d.addr, appInfo.localSeq, now)
+		p = c.newPath(pc, d.addr, appInfo.localSeq, now)
 		if p == nil {
 			return
 		}
 		p.recvBytes += uint64(len(d.data))
 		c.drainPendingResponses(p, d.addr)
 	}
-	largest := appInfo.pn == c.spaces[spaceApp].largestRecv
-	c.onPeerAddress(d.addr, p, appInfo.nonProbing, largest, now)
+	largest := appInfo.pn == pc.sp.largestRecv
+	c.onPeerAddress(pc, d.addr, p, appInfo.nonProbing, largest, now)
 }
 
 func (c *Conn) drainPendingResponses(p *path, addr netip.AddrPort) {
@@ -167,15 +181,15 @@ func (c *Conn) handlePacket(b []byte, from netip.AddrPort, now time.Time) (int, 
 		return len(b), info
 	}
 	dcid := b[1 : 1+localCIDLen]
-	l := c.localCIDFor(dcid)
-	if l == nil {
+	pc, l, fresh := c.pathForCID(dcid, now)
+	if pc == nil {
 		return len(b), info
 	}
 	sp := c.spaces[spaceApp]
 	if sp.open == nil || sp.discarded || c.keys.readCur == nil {
 		return len(b), info
 	}
-	pn, payload, ok := c.openShort(b, 1+localCIDLen, now)
+	pn, payload, ok := c.openShort(b, 1+localCIDLen, pc, now)
 	if !ok {
 		return len(b), info
 	}
@@ -183,8 +197,17 @@ func (c *Conn) handlePacket(b []byte, from netip.AddrPort, now time.Time) (int, 
 		c.closeTransport(transportErr(ProtocolViolation, "reserved bits set"))
 		return len(b), info
 	}
+	if fresh {
+		c.attachPathCtx(pc, now)
+	}
+	c.rxPath = pc
 	info = c.processPayload(spaceApp, packet1RTT, pn, payload, from, dcid, now)
+	c.rxPath = nil
 	info.localSeq = l.seq
+	info.pc = pc
+	if info.ok {
+		pc.recv++
+	}
 	if info.ok && c.isClient && !c.confirmed {
 		c.onConfirmed()
 	}
@@ -211,8 +234,8 @@ func (c *Conn) openLong(pkt []byte, pnOffset int, sp *pnSpace) (int64, []byte, b
 	return pn, payload, true
 }
 
-func (c *Conn) openShort(pkt []byte, pnOffset int, now time.Time) (int64, []byte, bool) {
-	sp := c.spaces[spaceApp]
+func (c *Conn) openShort(pkt []byte, pnOffset int, pc *pathCtx, now time.Time) (int64, []byte, bool) {
+	sp := pc.sp
 	k := &c.keys
 	pnLen, ok := k.readCur.hp.unprotect(pkt, pnOffset)
 	if !ok {
@@ -230,13 +253,25 @@ func (c *Conn) openShort(pkt []byte, pnOffset int, now time.Time) (int64, []byte
 	switch {
 	case phase == curPhase:
 		keys = k.readCur
-	case k.readPrev != nil && k.firstRecvInPhase >= 0 && pn < k.firstRecvInPhase:
+	case c.mp != nil && k.readPrev != nil:
+		keys = k.readPrev
+	case c.mp == nil && k.readPrev != nil && k.firstRecvInPhase >= 0 && pn < k.firstRecvInPhase:
 		keys = k.readPrev
 	default:
 		keys = k.readNext
 		update = true
 	}
-	payload, err := keys.key.open(pkt, hdrLen, pn)
+	var saved []byte
+	if keys == k.readPrev && c.mp != nil {
+		saved = append(saved, pkt[hdrLen:]...)
+	}
+	payload, err := keys.key.openPath(pc.id, pkt, hdrLen, pn)
+	if err != nil && saved != nil {
+		copy(pkt[hdrLen:], saved)
+		keys = k.readNext
+		update = true
+		payload, err = keys.key.openPath(pc.id, pkt, hdrLen, pn)
+	}
 	if err != nil {
 		k.authFailures++
 		limit := uint64(aeadIntegrityLimit)
@@ -261,12 +296,12 @@ func (c *Conn) openShort(pkt []byte, pnOffset int, now time.Time) (int64, []byte
 		k.readNext = k.readCur.nextGeneration()
 		k.readPhase++
 		k.firstRecvInPhase = pn
-		k.prevUntil = now.Add(3 * c.pto())
+		k.prevUntil = now.Add(3 * c.maxPTO())
 		if k.writePhase < k.readPhase {
 			c.rotateWriteKeys()
 		}
 		c.stats.KeyUpdates++
-	} else if keys == k.readCur && (k.firstRecvInPhase < 0 || pn < k.firstRecvInPhase) {
+	} else if c.mp == nil && keys == k.readCur && (k.firstRecvInPhase < 0 || pn < k.firstRecvInPhase) {
 		k.firstRecvInPhase = pn
 	}
 	return pn, payload, true
@@ -276,7 +311,6 @@ func (c *Conn) rotateWriteKeys() {
 	k := &c.keys
 	k.write = k.write.nextGeneration()
 	k.writePhase++
-	k.firstSentInPhase = -1
 	k.ackedInPhase = false
 	k.sentInPhase = 0
 	c.spaces[spaceApp].seal = k.write
@@ -317,6 +351,15 @@ func (c *Conn) processPayload(space int, t packetType, pn int64, payload []byte,
 		if !f.probing() {
 			info.nonProbing = true
 		}
+		switch f.typ {
+		case frameDatagram, frameDatagramLen:
+			info.datagram = true
+		case framePing, framePathChallenge, framePathResponse:
+		default:
+			if f.ackEliciting() {
+				info.delayable = true
+			}
+		}
 		if err := c.handleFrame(space, f, from, dcid, now); err != nil {
 			c.closeTransport(err)
 			return info
@@ -328,8 +371,12 @@ func (c *Conn) processPayload(space int, t packetType, pn int64, payload []byte,
 	}
 	c.stats.PacketsReceived++
 	sp := c.spaces[space]
+	if space == spaceApp {
+		sp = c.recvPath().sp
+	}
 	if !sp.discarded {
-		sp.onReceived(pn, info.eliciting, space == spaceApp, now, 20*time.Millisecond)
+		delayable := space == spaceApp && (c.mp == nil || (info.delayable && !info.datagram))
+		sp.onReceived(pn, info.eliciting, delayable, now, 20*time.Millisecond)
 	}
 	info.ok = true
 	return info
@@ -341,6 +388,8 @@ func (c *Conn) handleFrame(space int, f *frame, from netip.AddrPort, dcid []byte
 		return nil
 	case f.typ == frameAck || f.typ == frameAckECN:
 		return c.onAck(space, f, now)
+	case isMultipathFrame(f.typ):
+		return c.onMultipathFrame(f, dcid, now)
 	case f.typ == frameCrypto:
 		return c.feedCrypto(space, f)
 	case f.typ == frameConnectionClose || f.typ == frameApplicationClose:
@@ -391,7 +440,7 @@ func (c *Conn) handleFrame(space int, f *frame, from netip.AddrPort, dcid []byte
 	case f.typ == frameRetireConnectionID:
 		return c.onRetireConnectionID(f.seq, dcid)
 	case f.typ == framePathChallenge:
-		p := c.pathFor(from)
+		p := c.pathFor(c.recvPath(), from)
 		if p == nil {
 			c.queueResponseForNewPath(from, f.pathData)
 			return nil
@@ -430,18 +479,33 @@ func (c *Conn) onDatagram(f *frame) *TransportError {
 		return frameErr(ProtocolViolation, f.typ, "datagram exceeds max_datagram_frame_size")
 	}
 	c.stats.DatagramsReceived++
+	if key := c.config.DatagramDedupKey; key != nil {
+		if k, ok := key(f.data); ok && !c.dedup.add(k) {
+			c.stats.DatagramsDuplicate++
+			return nil
+		}
+	}
 	if len(c.dgramIn) >= c.config.MaxPendingDatagrams {
 		c.stats.DatagramsDropped++
 		return nil
 	}
-	c.dgramIn = append(c.dgramIn, append([]byte(nil), f.data...))
+	c.dgramIn = append(c.dgramIn, inDatagramRec{data: append([]byte(nil), f.data...), path: c.recvPath().id})
 	c.dgramNotify.broadcast()
 	return nil
 }
 
 func (c *Conn) onAck(space int, f *frame, now time.Time) *TransportError {
-	sp := c.spaces[space]
-	if sp.discarded {
+	pc := c.p0
+	if f.typ == framePathAck || f.typ == framePathAckECN {
+		pc = c.pathByID(f.pathID)
+	} else if pc.removed {
+		pc = nil
+	}
+	if pc == nil {
+		return nil
+	}
+	sp := c.pathSpace(pc, space)
+	if sp == nil || sp.discarded {
 		return nil
 	}
 	largest := f.ranges[0].largest
@@ -475,6 +539,7 @@ func (c *Conn) onAck(space int, f *frame, now time.Time) *TransportError {
 			eliciting = true
 		}
 	}
+	rec := pc.rec
 	if uint64(newly[0].pn) == largest && eliciting {
 		var delay time.Duration
 		if space == spaceApp {
@@ -486,20 +551,38 @@ func (c *Conn) onAck(space int, f *frame, now time.Time) *TransportError {
 				delay = c.peerParams.maxAckDelay
 			}
 		}
-		c.rtt.update(now.Sub(newly[0].sentAt), delay, now)
+		sample := true
+		if c.mp != nil && space == spaceApp {
+			cross := c.recvPath() != pc
+			switch {
+			case cross && rec.rtt.hasSample:
+				sample = false
+			case !cross && pc.crossRTT:
+				rec.rtt = newRTT(c.config.InitialRTT)
+			}
+			if sample {
+				pc.crossRTT = cross
+			}
+		}
+		if sample {
+			rec.rtt.update(now.Sub(newly[0].sentAt), delay, now)
+		}
 	}
 	if space == spaceHandshake && c.isClient {
 		c.peerValidatedUs = true
 	}
 	for _, p := range newly {
-		c.onPacketAcked(space, p, now)
+		c.onPacketAcked(pc, space, p, now)
 	}
 	c.removeSent(sp)
-	c.detectLost(space, now)
+	c.detectLost(pc, space, now)
 	if c.peerCompletedAddressValidation() {
-		c.ptoCount = 0
+		rec.ptoCount = 0
 	}
-	c.setLossTimer(now)
+	if space == spaceApp {
+		pc.lastAcked = now
+	}
+	c.setPathLossTimer(pc, now)
 	return nil
 }
 
@@ -516,30 +599,45 @@ func (c *Conn) removeSent(sp *pnSpace) {
 	sp.sent = kept
 }
 
-func (c *Conn) onPacketAcked(space int, p *sentPacket, now time.Time) {
-	sp := c.spaces[space]
+func (c *Conn) onPacketAcked(pc *pathCtx, space int, p *sentPacket, now time.Time) {
+	sp := c.pathSpace(pc, space)
+	cc := &pc.rec.cc
 	if p.inFlight {
-		inFlightBefore := c.cc.inFlight
-		c.cc.cwndLimited = inFlightBefore*2 >= c.cc.cwnd
-		c.cc.onAcked(p)
+		inFlightBefore := cc.inFlight
+		cc.cwndLimited = inFlightBefore*2 >= cc.cwnd
+		cc.onAcked(p)
 	}
 	if p.ackEliciting && p.inFlight {
 		sp.elicitingInFlight--
 	}
-	if space == spaceApp && c.keys.firstSentInPhase >= 0 && p.pn >= c.keys.firstSentInPhase {
-		c.keys.ackedInPhase = true
+	if space == spaceApp {
+		if p.phase == c.keys.writePhase {
+			c.keys.ackedInPhase = true
+		}
+		if p.ackEliciting {
+			pc.loss -= pc.loss * lossAlpha
+		}
 	}
 	for _, f := range p.frames {
 		c.onFrameAcked(space, f)
 	}
+	p.dgrams = nil
 	p.size = -1
 }
 
 func (c *Conn) onFrameAcked(space int, f sentFrame) {
 	switch f.kind {
 	case sfAck:
-		if int64(f.id) > c.spaces[space].ackedUpTo {
-			c.spaces[space].ackedUpTo = int64(f.id)
+		sp := c.spaces[space]
+		if space == spaceApp {
+			q := c.pathByID(f.offset)
+			if q == nil {
+				return
+			}
+			sp = q.sp
+		}
+		if int64(f.id) > sp.ackedUpTo {
+			sp.ackedUpTo = int64(f.id)
 		}
 	case sfCrypto:
 		c.spaces[space].crypto.onAck(f.offset, f.offset+f.length, false)
@@ -554,17 +652,20 @@ func (c *Conn) onFrameAcked(space int, f sentFrame) {
 			s.resetAcked = true
 			c.maybeRemoveStream(s)
 		}
+	case sfPathAbandon:
+		c.onAbandonAcked(f.id)
 	case sfRetireCID:
 	}
 }
 
-func (c *Conn) detectLost(space int, now time.Time) {
-	sp := c.spaces[space]
+func (c *Conn) detectLost(pc *pathCtx, space int, now time.Time) {
+	sp := c.pathSpace(pc, space)
+	rec := pc.rec
 	sp.lossTime = time.Time{}
 	if sp.largestAcked < 0 {
 		return
 	}
-	delay := c.rtt.lossDelay()
+	delay := rec.rtt.lossDelay()
 	lostBefore := now.Add(-delay)
 	var lost []*sentPacket
 	for _, p := range sp.sent {
@@ -593,30 +694,37 @@ func (c *Conn) detectLost(space int, now time.Time) {
 			}
 			last = p.sentAt
 		}
-		c.onPacketLost(space, p)
+		c.onPacketLost(pc, space, p)
 	}
 	c.removeSent(sp)
 	if anyInFlight {
-		c.cc.onCongestionEvent(last, now)
-		pc := persistentThreshold * c.pto()
-		if c.rtt.hasSample && first.After(c.rtt.firstAt) && last.Sub(first) > pc {
-			c.cc.onPersistentCongestion()
+		rec.cc.onCongestionEvent(last, now)
+		limit := persistentThreshold * c.pathPTO(pc)
+		if rec.rtt.hasSample && first.After(rec.rtt.firstAt) && last.Sub(first) > limit {
+			rec.cc.onPersistentCongestion()
 		}
 	}
 }
 
-func (c *Conn) onPacketLost(space int, p *sentPacket) {
-	sp := c.spaces[space]
+func (c *Conn) onPacketLost(pc *pathCtx, space int, p *sentPacket) {
+	sp := c.pathSpace(pc, space)
 	if p.inFlight {
-		c.cc.remove(p.size)
+		pc.rec.cc.remove(p.size)
 		if p.ackEliciting {
 			sp.elicitingInFlight--
 		}
 	}
 	c.stats.PacketsLost++
+	if space == spaceApp {
+		pc.lost++
+		if p.ackEliciting {
+			pc.loss += (1 - pc.loss) * lossAlpha
+		}
+	}
 	for _, f := range p.frames {
 		c.requeueFrame(space, f)
 	}
+	p.dgrams = nil
 	p.size = -1
 }
 
@@ -675,6 +783,8 @@ func (c *Conn) requeueFrame(space int, f sentFrame) {
 		c.blockedDue[1] = true
 	case sfDatagram:
 		c.stats.DatagramsLost++
+	case sfPathAbandon, sfPathStatus, sfPathNewCID, sfPathRetireCID, sfMaxPathID:
+		c.requeuePathFrame(f)
 	}
 }
 
@@ -685,11 +795,12 @@ func (c *Conn) peerCompletedAddressValidation() bool {
 	return c.confirmed || c.peerValidatedUs
 }
 
-func (c *Conn) earliestLossTime() (time.Time, int) {
+func (c *Conn) earliestLossTime(pc *pathCtx) (time.Time, int) {
 	var t time.Time
 	s := -1
-	for i, sp := range c.spaces {
-		if sp.discarded || sp.lossTime.IsZero() {
+	for i := 0; i < numSpaces; i++ {
+		sp := c.pathSpace(pc, i)
+		if sp == nil || sp.discarded || sp.lossTime.IsZero() {
 			continue
 		}
 		if t.IsZero() || sp.lossTime.Before(t) {
@@ -699,22 +810,27 @@ func (c *Conn) earliestLossTime() (time.Time, int) {
 	return t, s
 }
 
-func (c *Conn) elicitingInFlight() bool {
-	for _, sp := range c.spaces {
-		if !sp.discarded && sp.elicitingInFlight > 0 {
+func (c *Conn) elicitingInFlight(pc *pathCtx) bool {
+	for i := 0; i < numSpaces; i++ {
+		sp := c.pathSpace(pc, i)
+		if sp != nil && !sp.discarded && sp.elicitingInFlight > 0 {
 			return true
 		}
 	}
 	return false
 }
 
-func (c *Conn) ptoTimeAndSpace(now time.Time) (time.Time, int) {
-	backoff := c.ptoCount
+func (c *Conn) ptoTimeAndSpace(pc *pathCtx, now time.Time) (time.Time, int) {
+	rec := pc.rec
+	backoff := rec.ptoCount
 	if backoff > maxPTOBackoff {
 		backoff = maxPTOBackoff
 	}
-	dur := c.rtt.pto(0) << uint(backoff)
-	if !c.elicitingInFlight() {
+	dur := rec.rtt.pto(0) << uint(backoff)
+	if !c.elicitingInFlight(pc) {
+		if pc != c.p0 {
+			return time.Time{}, -1
+		}
 		if hs := c.spaces[spaceHandshake]; hs.seal != nil && !hs.discarded {
 			return now.Add(dur), spaceHandshake
 		}
@@ -722,8 +838,9 @@ func (c *Conn) ptoTimeAndSpace(now time.Time) (time.Time, int) {
 	}
 	var best time.Time
 	space := -1
-	for i, sp := range c.spaces {
-		if sp.discarded || sp.elicitingInFlight == 0 {
+	for i := 0; i < numSpaces; i++ {
+		sp := c.pathSpace(pc, i)
+		if sp == nil || sp.discarded || sp.elicitingInFlight == 0 {
 			continue
 		}
 		d := dur
@@ -742,32 +859,38 @@ func (c *Conn) ptoTimeAndSpace(now time.Time) (time.Time, int) {
 }
 
 func (c *Conn) setLossTimer(now time.Time) {
-	if t, _ := c.earliestLossTime(); !t.IsZero() {
-		c.lossTimer = t
-		return
-	}
-	if !c.isClient && c.active != nil && !c.active.validated && c.active.amplificationBudget() == 0 {
-		c.lossTimer = time.Time{}
-		return
-	}
-	if !c.elicitingInFlight() && c.peerCompletedAddressValidation() {
-		c.lossTimer = time.Time{}
-		return
-	}
-	t, _ := c.ptoTimeAndSpace(now)
-	c.lossTimer = t
+	c.setPathLossTimer(c.p0, now)
 }
 
-func (c *Conn) onLossTimer(now time.Time) {
-	if t, s := c.earliestLossTime(); !t.IsZero() {
-		c.detectLost(s, now)
-		c.setLossTimer(now)
+func (c *Conn) setPathLossTimer(pc *pathCtx, now time.Time) {
+	rec := pc.rec
+	if t, _ := c.earliestLossTime(pc); !t.IsZero() {
+		rec.lossTimer = t
 		return
 	}
-	_, s := c.ptoTimeAndSpace(now)
-	c.ptoCount++
+	if p := c.activeOf(pc); !c.isClient && p != nil && !p.validated && p.amplificationBudget() == 0 {
+		rec.lossTimer = time.Time{}
+		return
+	}
+	if !c.elicitingInFlight(pc) && c.peerCompletedAddressValidation() {
+		rec.lossTimer = time.Time{}
+		return
+	}
+	t, _ := c.ptoTimeAndSpace(pc, now)
+	rec.lossTimer = t
+}
+
+func (c *Conn) onLossTimer(pc *pathCtx, now time.Time) {
+	rec := pc.rec
+	if t, s := c.earliestLossTime(pc); !t.IsZero() {
+		c.detectLost(pc, s, now)
+		c.setPathLossTimer(pc, now)
+		return
+	}
+	_, s := c.ptoTimeAndSpace(pc, now)
+	rec.ptoCount++
 	if s < 0 {
-		c.setLossTimer(now)
+		c.setPathLossTimer(pc, now)
 		return
 	}
 	if s != spaceApp {
@@ -776,23 +899,23 @@ func (c *Conn) onLossTimer(now time.Time) {
 			if sp.discarded || sp.seal == nil {
 				continue
 			}
-			c.requeueUnacked(i, -1)
+			c.requeueUnacked(pc, i, -1)
 			if i == s || len(sp.sent) > 0 {
 				sp.probes = 1
 			}
 		}
 		c.spaces[s].probes = 2
 	} else {
-		c.requeueUnacked(spaceApp, 2)
-		c.spaces[spaceApp].probes = 2
+		c.requeueUnacked(pc, spaceApp, 2)
+		pc.sp.probes = 2
 	}
-	c.lossTimer = time.Time{}
-	t, _ := c.ptoTimeAndSpace(now)
-	c.lossTimer = t
+	rec.lossTimer = time.Time{}
+	t, _ := c.ptoTimeAndSpace(pc, now)
+	rec.lossTimer = t
 }
 
-func (c *Conn) requeueUnacked(space int, limit int) {
-	sp := c.spaces[space]
+func (c *Conn) requeueUnacked(pc *pathCtx, space int, limit int) {
+	sp := c.pathSpace(pc, space)
 	n := 0
 	for _, p := range sp.sent {
 		if !p.ackEliciting {
@@ -800,7 +923,7 @@ func (c *Conn) requeueUnacked(space int, limit int) {
 		}
 		for _, f := range p.frames {
 			switch f.kind {
-			case sfCrypto, sfStream, sfHandshakeDone, sfResetStream, sfNewCID:
+			case sfCrypto, sfStream, sfHandshakeDone, sfResetStream, sfNewCID, sfPathNewCID, sfPathAbandon, sfPathStatus:
 				c.requeueFrame(space, f)
 			}
 		}

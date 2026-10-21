@@ -28,6 +28,25 @@ const (
 	frameHandshakeDone      = 0x1e
 	frameDatagram           = 0x30
 	frameDatagramLen        = 0x31
+
+	framePathAck                = 0x3e
+	framePathAckECN             = 0x3f
+	framePathAbandon            = 0x3e75
+	framePathStatusBackup       = 0x3e76
+	framePathStatusAvailable    = 0x3e77
+	framePathNewConnectionID    = 0x3e78
+	framePathRetireConnectionID = 0x3e79
+	frameMaxPathID              = 0x3e7a
+	framePathsBlocked           = 0x3e7b
+	framePathCIDsBlocked        = 0x3e7c
+)
+
+const (
+	pathAbandonNoError        = 0x0
+	pathAbandonApplication    = 0x3e
+	pathAbandonResourceLimit  = 0x3e75
+	pathAbandonUnstableOrPoor = 0x3e76
+	pathAbandonNoCIDAvailable = 0x3e77
 )
 
 const (
@@ -51,6 +70,7 @@ type frame struct {
 	retirePrior   uint64
 	closeFrame    uint64
 	ackDelay      uint64
+	pathID        uint64
 	data          []byte
 	fin           bool
 	ranges        []ackRange
@@ -64,7 +84,7 @@ func (f *frame) isStream() bool { return f.typ >= frameStream && f.typ <= frameS
 
 func (f *frame) ackEliciting() bool {
 	switch f.typ {
-	case framePadding, frameAck, frameAckECN, frameConnectionClose, frameApplicationClose:
+	case framePadding, frameAck, frameAckECN, frameConnectionClose, frameApplicationClose, framePathAck, framePathAckECN:
 		return false
 	}
 	return true
@@ -72,10 +92,22 @@ func (f *frame) ackEliciting() bool {
 
 func (f *frame) probing() bool {
 	switch f.typ {
-	case framePadding, framePathChallenge, framePathResponse, frameNewConnectionID:
+	case framePadding, framePathChallenge, framePathResponse, frameNewConnectionID, framePathNewConnectionID:
 		return true
 	}
 	return false
+}
+
+func (f *frame) isAck() bool {
+	switch f.typ {
+	case frameAck, frameAckECN, framePathAck, framePathAckECN:
+		return true
+	}
+	return false
+}
+
+func isMultipathFrame(typ uint64) bool {
+	return typ == framePathAck || typ == framePathAckECN || (typ >= framePathAbandon && typ <= framePathCIDsBlocked)
 }
 
 func parseFrame(b []byte, f *frame) (int, *TransportError) {
@@ -114,7 +146,14 @@ func parseFrame(b []byte, f *frame) (int, *TransportError) {
 		return p, nil
 	case typ == framePing, typ == frameHandshakeDone:
 		return p, nil
-	case typ == frameAck || typ == frameAckECN:
+	case typ == frameAck || typ == frameAckECN || typ == framePathAck || typ == framePathAckECN:
+		if typ == framePathAck || typ == framePathAckECN {
+			id, ok := readV()
+			if !ok {
+				return fail("short path_ack")
+			}
+			f.pathID = id
+		}
 		largest, ok := readV()
 		if !ok {
 			return fail("short ack")
@@ -160,7 +199,7 @@ func parseFrame(b []byte, f *frame) (int, *TransportError) {
 				f.rangesDropped = true
 			}
 		}
-		if typ == frameAckECN {
+		if typ == frameAckECN || typ == framePathAckECN {
 			for i := 0; i < 3; i++ {
 				v, ok := readV()
 				if !ok {
@@ -272,7 +311,14 @@ func parseFrame(b []byte, f *frame) (int, *TransportError) {
 		}
 		f.max = v
 		return p, nil
-	case typ == frameNewConnectionID:
+	case typ == frameNewConnectionID || typ == framePathNewConnectionID:
+		if typ == framePathNewConnectionID {
+			id, ok := readV()
+			if !ok {
+				return fail("short path_new_connection_id")
+			}
+			f.pathID = id
+		}
 		var ok1, ok2 bool
 		f.seq, ok1 = readV()
 		f.retirePrior, ok2 = readV()
@@ -337,6 +383,26 @@ func parseFrame(b []byte, f *frame) (int, *TransportError) {
 	case typ == frameDatagram:
 		f.data = b[p:]
 		return len(b), nil
+	case typ == framePathAbandon, typ == framePathStatusBackup, typ == framePathStatusAvailable, typ == framePathRetireConnectionID, typ == framePathCIDsBlocked:
+		id, ok1 := readV()
+		v, ok2 := readV()
+		if !ok1 || !ok2 {
+			return fail("short path frame")
+		}
+		f.pathID = id
+		if typ == framePathAbandon {
+			f.code = v
+		} else {
+			f.seq = v
+		}
+		return p, nil
+	case typ == frameMaxPathID, typ == framePathsBlocked:
+		v, ok := readV()
+		if !ok {
+			return fail("short path limit frame")
+		}
+		f.max = v
+		return p, nil
 	case typ == frameDatagramLen:
 		l, ok := readV()
 		if !ok {
@@ -354,6 +420,20 @@ func parseFrame(b []byte, f *frame) (int, *TransportError) {
 
 func appendAckFrame(b []byte, ranges []ackRange, delay uint64) []byte {
 	b = append(b, frameAck)
+	return appendAckBody(b, ranges, delay)
+}
+
+func appendPathAckFrame(b []byte, pathID uint64, ranges []ackRange, delay uint64) []byte {
+	b = AppendVarint(b, framePathAck)
+	b = AppendVarint(b, pathID)
+	return appendAckBody(b, ranges, delay)
+}
+
+func pathAckFrameLen(pathID uint64, ranges []ackRange, delay uint64) int {
+	return ackFrameLen(ranges, delay) + VarintLen(pathID)
+}
+
+func appendAckBody(b []byte, ranges []ackRange, delay uint64) []byte {
 	b = AppendVarint(b, ranges[0].largest)
 	b = AppendVarint(b, delay)
 	b = AppendVarint(b, uint64(len(ranges)-1))
@@ -445,6 +525,24 @@ func appendNewConnectionID(b []byte, seq, retirePrior uint64, cid []byte, token 
 	b = append(b, byte(len(cid)))
 	b = append(b, cid...)
 	return append(b, token[:]...)
+}
+
+func appendPathNewConnectionID(b []byte, pathID, seq, retirePrior uint64, cid []byte, token [16]byte) []byte {
+	b = AppendVarint(b, framePathNewConnectionID)
+	b = AppendVarint(b, pathID)
+	b = AppendVarint(b, seq)
+	b = AppendVarint(b, retirePrior)
+	b = append(b, byte(len(cid)))
+	b = append(b, cid...)
+	return append(b, token[:]...)
+}
+
+func pathNewConnectionIDLen(pathID, seq uint64, cidLen int) int {
+	return VarintLen(framePathNewConnectionID) + VarintLen(pathID) + VarintLen(seq) + 1 + 1 + cidLen + 16
+}
+
+func twoVarintFrameLen(typ, a, b uint64) int {
+	return VarintLen(typ) + VarintLen(a) + VarintLen(b)
 }
 
 func appendConnectionClose(b []byte, app bool, code, frameType uint64, reason string) []byte {

@@ -16,7 +16,6 @@ type appKeys struct {
 	write            *directionKeys
 	firstRecvInPhase int64
 	prevUntil        time.Time
-	firstSentInPhase int64
 	ackedInPhase     bool
 	sentInPhase      uint64
 	authFailures     uint64
@@ -85,7 +84,6 @@ func (c *Conn) processTLSEvents() error {
 				sp.seal = keys
 				if s == spaceApp {
 					c.keys.write = keys
-					c.keys.firstSentInPhase = -1
 				}
 			}
 		case tls.QUICWriteData:
@@ -133,8 +131,14 @@ func (c *Conn) onPeerParams(b []byte) *TransportError {
 			return transportErr(TransportParameterError, "initial_source_connection_id mismatch")
 		}
 	}
+	if p.hasMaxPathID && len(c.peerInitialSCID) == 0 {
+		return transportErr(ProtocolViolation, "initial_max_path_id with a zero-length connection id")
+	}
 	c.peerParams = p
 	c.havePeerParams = true
+	if p.hasMaxPathID && c.config.Multipath {
+		c.enableMultipath(p.maxPathID)
+	}
 	if p.maxIdleTimeout > 0 && p.maxIdleTimeout < c.idleTimeout {
 		c.idleTimeout = p.maxIdleTimeout
 	}
@@ -178,6 +182,7 @@ func (c *Conn) onHandshakeComplete() {
 		c.ep.handshakeFinished(c)
 	}
 	c.issueConnectionIDs()
+	c.issuePathCIDs()
 	c.completeHandshake()
 	if !c.isClient && !c.ep.enqueueAccept(c) {
 		c.closeTransport(transportErr(ConnectionRefused, "accept queue full"))
@@ -192,6 +197,7 @@ func (c *Conn) onConfirmed() {
 	c.maxSendSize = c.peerMaxPacket
 	c.peerValidatedUs = true
 	c.discardSpace(spaceHandshake)
+	c.mpNotify.broadcast()
 }
 
 func (c *Conn) discardSpace(s int) {

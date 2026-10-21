@@ -30,6 +30,10 @@ type Config struct {
 	TokenKey                    []byte
 	DisableStatelessReset       bool
 	MaxStatelessResetsPerSecond int
+	Multipath                   bool
+	MaxPaths                    int
+	PathKeepAlivePeriod         time.Duration
+	DatagramDedupKey            func(datagram []byte) (uint64, bool)
 }
 
 const (
@@ -53,6 +57,9 @@ const (
 	maxStreamWindow          = 16 << 20
 	maxConnWindow            = 64 << 20
 	maxDatagramFrameLimit    = 65535
+	defaultMaxPaths          = 4
+	maxPathsLimit            = 8
+	defaultPathKeepAlive     = time.Second
 )
 
 func (c *Config) clone() *Config {
@@ -145,6 +152,15 @@ func (c *Config) withDefaults() *Config {
 	}
 	if n.AcceptQueue <= 0 {
 		n.AcceptQueue = defaultAcceptQueue
+	}
+	if n.MaxPaths <= 0 {
+		n.MaxPaths = defaultMaxPaths
+	}
+	if n.MaxPaths > maxPathsLimit {
+		n.MaxPaths = maxPathsLimit
+	}
+	if n.PathKeepAlivePeriod == 0 {
+		n.PathKeepAlivePeriod = defaultPathKeepAlive
 	}
 	if n.MaxStatelessResetsPerSecond <= 0 {
 		n.MaxStatelessResetsPerSecond = defaultResetsPerSecond

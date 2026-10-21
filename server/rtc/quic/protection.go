@@ -106,22 +106,39 @@ func newPacketKey(suite *cipherSuite, secret []byte) *packetKey {
 }
 
 func (k *packetKey) nonce(pn int64) [12]byte {
+	return k.pathNonce(0, pn)
+}
+
+func (k *packetKey) pathNonce(pathID uint64, pn int64) [12]byte {
 	n := k.iv
 	var p [8]byte
-	binary.BigEndian.PutUint64(p[:], uint64(pn))
+	binary.BigEndian.PutUint64(p[:], uint64(pn)&maxPacketNumber)
 	for i := 0; i < 8; i++ {
 		n[4+i] ^= p[i]
+	}
+	var id [4]byte
+	binary.BigEndian.PutUint32(id[:], uint32(pathID))
+	for i := 0; i < 4; i++ {
+		n[i] ^= id[i]
 	}
 	return n
 }
 
 func (k *packetKey) seal(packet []byte, headerLen int, pn int64) []byte {
-	n := k.nonce(pn)
+	return k.sealPath(0, packet, headerLen, pn)
+}
+
+func (k *packetKey) sealPath(pathID uint64, packet []byte, headerLen int, pn int64) []byte {
+	n := k.pathNonce(pathID, pn)
 	return k.aead.Seal(packet[:headerLen], n[:], packet[headerLen:], packet[:headerLen])
 }
 
 func (k *packetKey) open(packet []byte, headerLen int, pn int64) ([]byte, error) {
-	n := k.nonce(pn)
+	return k.openPath(0, packet, headerLen, pn)
+}
+
+func (k *packetKey) openPath(pathID uint64, packet []byte, headerLen int, pn int64) ([]byte, error) {
+	n := k.pathNonce(pathID, pn)
 	out, err := k.aead.Open(packet[headerLen:headerLen], n[:], packet[headerLen:], packet[:headerLen])
 	if err != nil {
 		return nil, errDecrypt

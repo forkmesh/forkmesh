@@ -27,6 +27,7 @@ type path struct {
 	dcidSeq       uint64
 	localSeq      uint64
 	lastSeen      time.Time
+	pc            *pathCtx
 }
 
 func (p *path) amplificationBudget() int {
@@ -59,39 +60,49 @@ func (p *path) nextTimer() time.Time {
 	return t
 }
 
-func (c *Conn) pathFor(addr netip.AddrPort) *path {
+func (c *Conn) pathFor(pc *pathCtx, addr netip.AddrPort) *path {
 	for _, p := range c.paths {
-		if p.addr == addr {
+		if p.pc == pc && p.addr == addr {
 			return p
 		}
 	}
 	return nil
 }
 
-func (c *Conn) newPath(addr netip.AddrPort, localSeq uint64, now time.Time) *path {
-	if len(c.paths) >= maxPaths {
-		victim := -1
-		for i, p := range c.paths {
-			if p == c.active {
-				continue
-			}
-			if victim < 0 || p.lastSeen.Before(c.paths[victim].lastSeen) {
-				victim = i
-			}
+func (c *Conn) newPath(pc *pathCtx, addr netip.AddrPort, localSeq uint64, now time.Time) *path {
+	count := 0
+	victim := -1
+	active := c.activeOf(pc)
+	for i, p := range c.paths {
+		if p.pc != pc {
+			continue
 		}
+		count++
+		if p == active {
+			continue
+		}
+		if victim < 0 || p.lastSeen.Before(c.paths[victim].lastSeen) {
+			victim = i
+		}
+	}
+	if count >= maxPaths {
 		if victim < 0 {
 			return nil
 		}
 		c.removePath(c.paths[victim])
 	}
-	p := &path{addr: addr, localSeq: localSeq, lastSeen: now, dcidSeq: c.dcidSeq}
-	if c.active != nil && localSeq != c.active.localSeq {
+	p := &path{addr: addr, localSeq: localSeq, lastSeen: now, dcidSeq: c.dcidSeq, pc: pc}
+	if pc == c.p0 && c.active != nil && localSeq != c.active.localSeq {
 		if q := c.unusedPeerCID(); q != nil {
 			q.inUse = true
 			p.dcidSeq = q.seq
 		}
 	}
 	c.paths = append(c.paths, p)
+	if pc != c.p0 && pc.addr == nil {
+		pc.addr = p
+		c.startValidation(p, now)
+	}
 	return p
 }
 
@@ -103,7 +114,7 @@ func (c *Conn) removePath(p *path) {
 		}
 	}
 	c.paths = kept
-	if p.dcidSeq != c.dcidSeq {
+	if p.pc == c.p0 && p.dcidSeq != c.dcidSeq {
 		c.retirePeerCID(p.dcidSeq)
 	}
 }
@@ -119,6 +130,9 @@ func (c *Conn) startValidation(p *path, now time.Time) {
 	}
 	p.challengeDue = true
 	t := c.pto()
+	if p.pc != nil {
+		t = c.pathPTO(p.pc)
+	}
 	if ip := c.initialPTO(); ip > t {
 		t = ip
 	}
@@ -128,12 +142,17 @@ func (c *Conn) startValidation(p *path, now time.Time) {
 
 func (c *Conn) onPathTimers(now time.Time) {
 	for _, p := range append([]*path(nil), c.paths...) {
+		active := c.activeOf(p.pc)
 		if len(p.challenges) > 0 && !p.deadline.IsZero() && !now.Before(p.deadline) {
 			p.challenges = nil
 			p.challengeDue = false
 			p.migrate = false
 			p.deadline = time.Time{}
-			if p != c.active && !p.validated {
+			if p == active && !p.validated && p.pc != c.p0 {
+				c.onPathValidationFailed(p.pc, now)
+				continue
+			}
+			if p != active && !p.validated {
 				c.removePath(p)
 				continue
 			}
@@ -144,7 +163,7 @@ func (c *Conn) onPathTimers(now time.Time) {
 		}
 		if !p.abandonAt.IsZero() && !now.Before(p.abandonAt) {
 			p.abandonAt = time.Time{}
-			if p != c.active {
+			if p != active {
 				c.removePath(p)
 			}
 		}
@@ -160,6 +179,9 @@ func (c *Conn) newChallenge(p *path, now time.Time) [8]byte {
 	p.challenges = append(p.challenges, d)
 	p.challengeDue = false
 	iv := c.pto()
+	if p.pc != nil {
+		iv = c.pathPTO(p.pc)
+	}
 	if iv < minChallengeInterval {
 		iv = minChallengeInterval
 	}
@@ -188,50 +210,55 @@ func (c *Conn) onPathResponse(data [8]byte, now time.Time) {
 			p.challengeDue = false
 			p.deadline = time.Time{}
 			p.nextChallenge = time.Time{}
-			if p.migrate && p != c.active {
+			if p.migrate && p != c.activeOf(p.pc) {
 				p.migrate = false
-				c.switchPath(p, now)
+				c.switchPath(p.pc, p, now)
+			}
+			if p.pc != c.p0 && p == c.activeOf(p.pc) {
+				c.onPathValidated(p.pc, now)
 			}
 			return
 		}
 	}
 }
 
-func (c *Conn) switchPath(p *path, now time.Time) {
-	old := c.active
-	c.active = p
+func (c *Conn) switchPath(pc *pathCtx, p *path, now time.Time) {
+	old := c.activeOf(pc)
+	c.setActive(pc, p)
 	p.abandonAt = time.Time{}
 	c.stats.Migrations++
 	if old != nil {
 		old.migrate = false
-		old.abandonAt = now.Add(3 * c.pto())
+		old.abandonAt = now.Add(3 * c.pathPTO(pc))
 		if old.addr.Addr() != p.addr.Addr() {
-			c.cc.reset()
-			c.rtt = newRTT(c.config.InitialRTT)
-			c.pacer = pacer{}
+			pc.rec.cc.reset()
+			pc.rec.rtt = newRTT(c.config.InitialRTT)
+			pc.rec.pacer = pacer{}
 		}
 	}
-	if q := c.peerCIDBySeq(p.dcidSeq); q != nil && p.dcidSeq != c.dcidSeq {
-		c.useDCID(q)
+	if pc == c.p0 {
+		if q := c.peerCIDBySeq(p.dcidSeq); q != nil && p.dcidSeq != c.dcidSeq {
+			c.useDCID(q)
+		}
 	}
-	c.setLossTimer(now)
+	c.setPathLossTimer(pc, now)
 }
 
-func (c *Conn) onPeerAddress(from netip.AddrPort, p *path, nonProbing, largest bool, now time.Time) {
+func (c *Conn) onPeerAddress(pc *pathCtx, from netip.AddrPort, p *path, nonProbing, largest bool, now time.Time) {
 	p.lastSeen = now
 	if !nonProbing || !largest {
 		return
 	}
-	if p == c.active {
+	if p == c.activeOf(pc) {
 		for _, q := range c.paths {
-			if q != p {
+			if q != p && q.pc == pc {
 				q.migrate = false
 			}
 		}
 		return
 	}
 	if p.validated {
-		c.switchPath(p, now)
+		c.switchPath(pc, p, now)
 		return
 	}
 	p.migrate = true

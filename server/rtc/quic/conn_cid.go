@@ -216,17 +216,29 @@ func (c *Conn) retirePeerCID(seq uint64) {
 	c.peerCIDs = kept
 }
 
-func (c *Conn) dcidForPath(p *path) []byte {
-	if q := c.peerCIDBySeq(p.dcidSeq); q != nil {
-		return q.cid
+func (c *Conn) dcidForPath(p *path) ([]byte, bool) {
+	if p.pc != nil && p.pc != c.p0 {
+		return c.dcidOf(p.pc)
 	}
-	return c.dcid
+	if q := c.peerCIDBySeq(p.dcidSeq); q != nil {
+		return q.cid, true
+	}
+	return c.dcid, true
 }
 
 func (c *Conn) matchesResetToken(tail []byte) bool {
 	for _, p := range c.peerCIDs {
 		if p.hasToken && subtle.ConstantTimeCompare(p.token[:], tail) == 1 {
 			return true
+		}
+	}
+	if c.mp != nil {
+		for _, set := range c.mp.cids {
+			for _, p := range set.peer {
+				if p.hasToken && subtle.ConstantTimeCompare(p.token[:], tail) == 1 {
+					return true
+				}
+			}
 		}
 	}
 	return false

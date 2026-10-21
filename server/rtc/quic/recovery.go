@@ -94,6 +94,13 @@ const (
 	sfAck
 	sfDatagram
 	sfPing
+	sfPathAbandon
+	sfPathStatus
+	sfPathNewCID
+	sfPathRetireCID
+	sfMaxPathID
+	sfPathsBlocked
+	sfPathCIDsBlocked
 )
 
 type sentFrame struct {
@@ -110,7 +117,17 @@ type sentPacket struct {
 	size         int
 	ackEliciting bool
 	inFlight     bool
+	phase        uint64
 	frames       []sentFrame
+	dgrams       [][]byte
+}
+
+type recovery struct {
+	rtt       rttState
+	cc        congestion
+	pacer     pacer
+	ptoCount  int
+	lossTimer time.Time
 }
 
 type congestion struct {

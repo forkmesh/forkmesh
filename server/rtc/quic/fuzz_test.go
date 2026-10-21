@@ -21,6 +21,7 @@ func frameSeeds() [][]byte {
 	seeds = append(seeds, appendOneVarintFrame(nil, frameMaxStreamsBidi, 10), appendOneVarintFrame(nil, frameRetireConnectionID, 0))
 	seeds = append(seeds, []byte{0x07, 3, 'a', 'b', 'c'}, []byte{0x1e}, []byte{0x01, 0x00, 0x00})
 	seeds = append(seeds, []byte{0x03, 5, 0, 1, 0, 1, 2, 3}, []byte{0x02, 0x40, 0x10, 0, 0x3f, 0x10})
+	seeds = append(seeds, multipathFrameSeeds()...)
 	return seeds
 }
 
@@ -42,7 +43,7 @@ func FuzzParseFrames(f *testing.F) {
 			if len(fr.data) > len(rest) {
 				t.Fatal("frame data beyond input")
 			}
-			if fr.typ == frameAck || fr.typ == frameAckECN {
+			if fr.isAck() {
 				prev := uint64(1<<63 - 1)
 				for i, r := range fr.ranges {
 					if r.smallest > r.largest || (i > 0 && r.largest+1 >= prev) {
@@ -136,6 +137,63 @@ func livePair(t *testing.T) *pair {
 		fuzzPair = newPair(fuzzTB{t}, testServerConfig(t), testClientConfig(t), nil)
 	}
 	return fuzzPair
+}
+
+var (
+	fuzzMPMu   sync.Mutex
+	fuzzMPPair *pair
+)
+
+func liveMultipathPair(t *testing.T) *pair {
+	fuzzMPMu.Lock()
+	defer fuzzMPMu.Unlock()
+	if fuzzMPPair != nil {
+		select {
+		case <-fuzzMPPair.srvConn.Done():
+			fuzzMPPair.server.Close()
+			fuzzMPPair.client.Close()
+			fuzzMPPair = nil
+		default:
+		}
+	}
+	if fuzzMPPair == nil {
+		fuzzMPPair = newPair(fuzzTB{t}, mpServerConfig(t), mpClientConfig(t), nil)
+	}
+	return fuzzMPPair
+}
+
+func FuzzMultipathConnFrames(f *testing.F) {
+	for _, s := range multipathFrameSeeds() {
+		f.Add(s, uint8(0))
+		f.Add(s, uint8(1))
+	}
+	f.Add(appendTwoVarintFrame(nil, framePathAbandon, 0, 0), uint8(0))
+	f.Add(appendOneVarintFrame(nil, frameMaxPathID, 1<<33), uint8(0))
+	f.Add(appendPathAckFrame(nil, 0, []ackRange{{0, 0}}, 0), uint8(1))
+	f.Fuzz(func(t *testing.T, payload []byte, side uint8) {
+		if len(payload) == 0 {
+			return
+		}
+		p := liveMultipathPair(t)
+		c := p.srvConn
+		if side&1 == 1 {
+			c = p.cliConn
+		}
+		c.mu.Lock()
+		if c.state < stateClosing && c.mp != nil {
+			sp := c.spaces[spaceApp]
+			pn := sp.largestRecv + 1
+			var dcid []byte
+			if len(c.localCIDs) > 0 {
+				dcid = c.localCIDs[0].cid
+			}
+			c.processPayload(spaceApp, packet1RTT, pn, append([]byte(nil), payload...), c.active.addr, dcid, time.Now())
+			c.onTimers(time.Now())
+			c.flush(time.Now())
+		}
+		c.mu.Unlock()
+		c.wake()
+	})
 }
 
 func FuzzConnFrames(f *testing.F) {

@@ -23,7 +23,10 @@ const (
 	tpInitialSCID             = 0x0f
 	tpRetrySCID               = 0x10
 	tpMaxDatagramFrameSize    = 0x20
+	tpInitialMaxPathID        = 0x3e
 )
+
+const maxPathIDValue = 1<<32 - 1
 
 const maxTransportParams = 256
 
@@ -49,6 +52,8 @@ type transportParams struct {
 	retrySCID               []byte
 	hasRetrySCID            bool
 	maxDatagramFrameSize    uint64
+	maxPathID               uint64
+	hasMaxPathID            bool
 }
 
 func defaultTransportParams() transportParams {
@@ -110,6 +115,9 @@ func (p *transportParams) marshal(isServer bool) []byte {
 	}
 	if p.maxDatagramFrameSize > 0 {
 		b = appendParamVarint(b, tpMaxDatagramFrameSize, p.maxDatagramFrameSize)
+	}
+	if p.hasMaxPathID {
+		b = appendParamVarint(b, tpInitialMaxPathID, p.maxPathID)
 	}
 	return b
 }
@@ -253,6 +261,12 @@ func parseTransportParams(b []byte, fromServer bool) (transportParams, *Transpor
 				return bad("max_datagram_frame_size")
 			}
 			p.maxDatagramFrameSize = v
+		case tpInitialMaxPathID:
+			v, ok := varint()
+			if !ok || v > maxPathIDValue {
+				return bad("initial_max_path_id")
+			}
+			p.maxPathID, p.hasMaxPathID = v, true
 		}
 	}
 	if !p.hasInitialSCID {

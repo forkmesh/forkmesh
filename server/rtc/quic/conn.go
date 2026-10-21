@@ -64,6 +64,12 @@ type Stats struct {
 	KeyUpdates        int
 	Migrations        int
 	PathChallenges    int
+
+	DatagramsDuplicate  uint64
+	DatagramsReinjected uint64
+	PathsOpened         int
+	PathsAbandoned      int
+	PrimarySwitches     int
 }
 
 type Conn struct {
@@ -113,11 +119,15 @@ type Conn struct {
 	paths  []*path
 	active *path
 
-	rtt           rttState
-	cc            congestion
-	pacer         pacer
-	ptoCount      int
-	lossTimer     time.Time
+	recovery
+	p0          *pathCtx
+	p0list      []*pathCtx
+	mp          *multipath
+	rxPath      *pathCtx
+	mpNotify    notifier
+	builtDgrams [][]byte
+	dedup       dedupSet
+
 	maxSendSize   int
 	peerMaxPacket int
 
@@ -149,8 +159,8 @@ type Conn struct {
 	dataBlockedDue  bool
 	peerMaxDatagram uint64
 
-	dgramOut    [][]byte
-	dgramIn     [][]byte
+	dgramOut    []*outDatagram
+	dgramIn     []inDatagramRec
 	dgramNotify notifier
 
 	idleTimeout         time.Duration
@@ -210,6 +220,8 @@ func newConn(ep *Endpoint, config *Config, isClient bool, now time.Time) *Conn {
 	c.datagramScratch = make([]byte, 0, 2048)
 	c.rtt = newRTT(config.InitialRTT)
 	c.cc = newCongestion(minInitialSize)
+	c.p0 = &pathCtx{id: 0, sp: c.spaces[spaceApp], rec: &c.recovery, createdAt: now}
+	c.p0list = []*pathCtx{c.p0}
 	c.keys.firstRecvInPhase = -1
 	c.recvMaxData = config.ConnectionReceiveWindow
 	c.maxPeerBidi = uint64(config.MaxIncomingStreams)
@@ -242,6 +254,10 @@ func (c *Conn) buildLocalParams(scid []byte, resetToken []byte) {
 	p.initialSCID = scid
 	p.hasInitialSCID = true
 	p.maxDatagramFrameSize = uint64(c.config.MaxDatagramFrameSize)
+	if c.config.Multipath {
+		p.maxPathID = uint64(c.config.MaxPaths - 1)
+		p.hasMaxPathID = true
+	}
 	if !c.isClient {
 		p.originalDCID = c.odcid
 		p.hasOriginalDCID = true
@@ -355,8 +371,29 @@ func (c *Conn) teardown() {
 			tokens = append(tokens, p.token)
 		}
 	}
+	var socks []*socket
+	if c.mp != nil {
+		for _, set := range c.mp.cids {
+			for _, l := range set.local {
+				cids = append(cids, l.cid)
+			}
+			for _, p := range set.peer {
+				if p.hasToken {
+					tokens = append(tokens, p.token)
+				}
+			}
+		}
+		for _, pc := range c.mp.paths {
+			if pc.ownsSock && pc.sock != nil {
+				socks = append(socks, pc.sock)
+			}
+		}
+	}
 	tc := c.tls
 	c.mu.Unlock()
+	for _, s := range socks {
+		c.ep.closePathSocket(s)
+	}
 	if tc != nil {
 		tc.Close()
 	}
@@ -378,11 +415,31 @@ func (c *Conn) teardown() {
 }
 
 func (c *Conn) pto() time.Duration {
+	return c.pathPTO(c.p0)
+}
+
+func (c *Conn) pathPTO(pc *pathCtx) time.Duration {
 	ack := time.Duration(0)
 	if c.confirmed {
 		ack = c.peerParams.maxAckDelay
 	}
-	return c.rtt.pto(ack)
+	return pc.rec.rtt.pto(ack)
+}
+
+func (c *Conn) maxPTO() time.Duration {
+	if c.mp == nil {
+		return c.pto()
+	}
+	var m time.Duration
+	for _, pc := range c.mp.order {
+		if d := c.pathPTO(pc); d > m {
+			m = d
+		}
+	}
+	if m == 0 {
+		m = c.pto()
+	}
+	return m
 }
 
 func (c *Conn) nextDeadline(now time.Time) time.Time {
@@ -412,6 +469,9 @@ func (c *Conn) nextDeadline(now time.Time) time.Time {
 	for _, p := range c.paths {
 		consider(p.nextTimer())
 	}
+	if c.mp != nil {
+		c.multipathDeadlines(now, consider)
+	}
 	if !c.keys.prevUntil.IsZero() {
 		consider(c.keys.prevUntil)
 	}
@@ -423,7 +483,7 @@ func (c *Conn) nextDeadline(now time.Time) time.Time {
 
 func (c *Conn) idleDeadline() time.Time {
 	d := c.idleTimeout
-	if min := 3 * c.pto(); d < min {
+	if min := 3 * c.maxPTO(); d < min {
 		d = min
 	}
 	return c.idleStart.Add(d)
@@ -448,7 +508,10 @@ func (c *Conn) onTimers(now time.Time) {
 		return
 	}
 	if !c.lossTimer.IsZero() && !now.Before(c.lossTimer) {
-		c.onLossTimer(now)
+		c.onLossTimer(c.p0, now)
+	}
+	if c.mp != nil {
+		c.onMultipathTimers(now)
 	}
 	if c.config.KeepAlivePeriod > 0 && c.handshakeDone && !now.Before(c.lastSent.Add(c.config.KeepAlivePeriod)) {
 		c.keepAliveDue = true
@@ -486,6 +549,7 @@ func (c *Conn) notifyAll() {
 	c.acceptNotify.broadcast()
 	c.openNotify.broadcast()
 	c.dgramNotify.broadcast()
+	c.mpNotify.broadcast()
 	for _, s := range c.streams {
 		s.readNotify.broadcast()
 		s.writeNotify.broadcast()
@@ -509,7 +573,7 @@ func (c *Conn) closeWith(err error, app bool, code, frameType uint64, reason str
 	c.closeCode = code
 	c.closeFrameType = frameType
 	c.closeReason = reason
-	c.closeUntil = time.Now().Add(3 * c.pto())
+	c.closeUntil = time.Now().Add(3 * c.maxPTO())
 	c.sendClose(time.Now())
 }
 
@@ -523,7 +587,7 @@ func (c *Conn) enterDraining(err error) {
 	}
 	c.setCloseErr(err)
 	c.state = stateDraining
-	c.closeUntil = time.Now().Add(3 * c.pto())
+	c.closeUntil = time.Now().Add(3 * c.maxPTO())
 }
 
 func (c *Conn) CloseWithError(code uint64, reason string) error {
@@ -564,6 +628,11 @@ func (c *Conn) ConnectionState() tls.ConnectionState {
 func (c *Conn) RemoteAddr() net.Addr {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.mp != nil {
+		if pc := c.primaryPath(); pc != nil && c.activeOf(pc) != nil {
+			return net.UDPAddrFromAddrPort(c.activeOf(pc).addr)
+		}
+	}
 	return net.UDPAddrFromAddrPort(c.active.addr)
 }
 
@@ -573,10 +642,21 @@ func (c *Conn) Stats() Stats {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s := c.stats
-	s.SmoothedRTT = c.rtt.smoothed
-	s.MinRTT = c.rtt.min
-	s.CongestionWindow = c.cc.cwnd
-	s.BytesInFlight = c.cc.inFlight
+	rec := &c.recovery
+	if c.mp != nil {
+		if pc := c.primaryPath(); pc != nil {
+			rec = pc.rec
+		}
+		s.BytesInFlight = 0
+		for _, pc := range c.mp.order {
+			s.BytesInFlight += pc.rec.cc.inFlight
+		}
+	} else {
+		s.BytesInFlight = rec.cc.inFlight
+	}
+	s.SmoothedRTT = rec.rtt.smoothed
+	s.MinRTT = rec.rtt.min
+	s.CongestionWindow = rec.cc.cwnd
 	return s
 }
 

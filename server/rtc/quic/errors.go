@@ -89,6 +89,14 @@ var (
 	ErrNoCompatibleVersion = errors.New("quic: server supports no compatible version")
 	ErrUnsupportedCipher   = errors.New("quic: negotiated cipher suite is not supported")
 	ErrDeadlineExceeded    = os.ErrDeadlineExceeded
+	ErrMultipathDisabled   = errors.New("quic: multipath not negotiated")
+	ErrNoPathAvailable     = errors.New("quic: no path id with connection ids on both sides")
+	ErrPathLimit           = errors.New("quic: path limit reached")
+	ErrPathValidation      = errors.New("quic: path validation failed")
+	ErrPathAbandoned       = errors.New("quic: path abandoned")
+	ErrUnknownPath         = errors.New("quic: unknown path")
+	ErrLastPath            = errors.New("quic: cannot abandon the last usable path")
+	ErrClientOnly          = errors.New("quic: only a client opens paths")
 )
 
 func transportErr(code TransportErrorCode, reason string) *TransportError {

@@ -643,6 +643,10 @@ func (c *Conn) accept(ctx context.Context, uni bool) (*Stream, error) {
 }
 
 func (c *Conn) SendDatagram(b []byte) error {
+	return c.SendDatagramWith(b, Fastest)
+}
+
+func (c *Conn) SendDatagramWith(b []byte, policy SendPolicy) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closeErr != nil {
@@ -658,7 +662,7 @@ func (c *Conn) SendDatagram(b []byte) error {
 		c.stats.DatagramsDropped++
 		return ErrDatagramQueueFull
 	}
-	c.dgramOut = append(c.dgramOut, append([]byte(nil), b...))
+	c.dgramOut = append(c.dgramOut, &outDatagram{data: append([]byte(nil), b...), policy: policy})
 	c.wake()
 	return nil
 }
@@ -684,17 +688,22 @@ func (c *Conn) maxDatagramPayloadLocked() int {
 }
 
 func (c *Conn) ReceiveDatagram(ctx context.Context) ([]byte, error) {
+	b, _, err := c.ReceiveDatagramPath(ctx)
+	return b, err
+}
+
+func (c *Conn) ReceiveDatagramPath(ctx context.Context) ([]byte, uint64, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for {
 		if len(c.dgramIn) > 0 {
 			d := c.dgramIn[0]
-			c.dgramIn[0] = nil
+			c.dgramIn[0] = inDatagramRec{}
 			c.dgramIn = c.dgramIn[1:]
-			return d, nil
+			return d.data, d.path, nil
 		}
 		if c.closeErr != nil {
-			return nil, c.closeErr
+			return nil, 0, c.closeErr
 		}
 		ch := c.dgramNotify.wait()
 		c.mu.Unlock()
@@ -702,7 +711,7 @@ func (c *Conn) ReceiveDatagram(ctx context.Context) ([]byte, error) {
 		case <-ch:
 		case <-ctx.Done():
 			c.mu.Lock()
-			return nil, ctx.Err()
+			return nil, 0, ctx.Err()
 		}
 		c.mu.Lock()
 	}

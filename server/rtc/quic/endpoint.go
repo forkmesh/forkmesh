@@ -31,6 +31,7 @@ type Endpoint struct {
 	halfOpen    int
 	closed      bool
 
+	extra    map[*socket]struct{}
 	acceptQ  chan *Conn
 	closeCh  chan struct{}
 	resetKey []byte
@@ -335,7 +336,7 @@ func (e *Endpoint) newServerConn(from netip.AddrPort, h longHeader, odcid, scid 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	l := c.addLocalCID(scid, false)
-	c.active = &path{addr: from, validated: retried, lastSeen: now}
+	c.active = &path{addr: from, validated: retried, lastSeen: now, pc: c.p0}
 	c.paths = []*path{c.active}
 	seal, open := initialKeys(h.dcid, false)
 	c.spaces[spaceInitial].seal = seal
@@ -439,7 +440,13 @@ func (e *Endpoint) removeConn(c *Conn, cids [][]byte, tokens [][16]byte) {
 }
 
 func (e *Endpoint) writeTo(b []byte, to netip.AddrPort) {
-	s := e.sock.Load()
+	e.writeVia(nil, b, to)
+}
+
+func (e *Endpoint) writeVia(s *socket, b []byte, to netip.AddrPort) {
+	if s == nil {
+		s = e.sock.Load()
+	}
 	if s.udp != nil {
 		s.udp.WriteToUDPAddrPort(b, to)
 		return
@@ -480,7 +487,7 @@ func (e *Endpoint) Dial(ctx context.Context, addr netip.AddrPort, config *Config
 	e.mu.Unlock()
 	c.mu.Lock()
 	c.addLocalCID(scid, false)
-	c.active = &path{addr: addr, validated: true, lastSeen: now}
+	c.active = &path{addr: addr, validated: true, lastSeen: now, pc: c.p0}
 	c.paths = []*path{c.active}
 	seal, open := initialKeys(c.odcid, true)
 	c.spaces[spaceInitial].seal = seal
@@ -556,6 +563,33 @@ func (e *Endpoint) Rebind(pc net.PacketConn) error {
 	return nil
 }
 
+func (e *Endpoint) addPathSocket(pc net.PacketConn) (*socket, error) {
+	s := newSocket(pc)
+	e.mu.Lock()
+	if e.closed {
+		e.mu.Unlock()
+		return nil, ErrEndpointClosed
+	}
+	if e.extra == nil {
+		e.extra = make(map[*socket]struct{})
+	}
+	e.extra[s] = struct{}{}
+	e.wg.Add(1)
+	e.mu.Unlock()
+	go e.readLoop(s)
+	return s, nil
+}
+
+func (e *Endpoint) closePathSocket(s *socket) {
+	e.mu.Lock()
+	_, ok := e.extra[s]
+	delete(e.extra, s)
+	e.mu.Unlock()
+	if ok {
+		s.pc.Close()
+	}
+}
+
 func (e *Endpoint) Close() error {
 	e.mu.Lock()
 	if e.closed {
@@ -578,6 +612,13 @@ func (e *Endpoint) Close() error {
 	}
 	close(e.closeCh)
 	err := e.sock.Load().pc.Close()
+	e.mu.Lock()
+	extra := e.extra
+	e.extra = nil
+	e.mu.Unlock()
+	for s := range extra {
+		s.pc.Close()
+	}
 	deadline := time.Now().Add(2 * time.Second)
 	for _, c := range conns {
 		wait := time.Until(deadline)
