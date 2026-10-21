@@ -240,7 +240,13 @@ cd /opt/forkmesh-instance/src/app/host && /opt/forkmesh-instance/venv/bin/python
 
 It reads the hosted repository as `forkmesh-node`, lists every open pull with
 an action (`sync` or `skip` and why) and, without `--dry-run`, queues the same
-`synchronize` events as a push (author `--actor`, default `--owner`). A pull is
+`synchronize` events as a push (author `--actor`, default `--owner`), then
+asks the local node to drain its inboxes now (`POST /v1/control/sync` on the
+loopback `listen` address from `--node-config`). That wake is needed because
+`notify_repo_host` reaches the node through the Durable Object host of the
+process that calls it: on a self-hosted instance that host lives inside the
+serving app, so a doorbell rung from a CLI process reaches no socket and the
+row would wait for the node's next catch-up (a reconnect or a push). A pull is
 moved only when its head branch exists, contains the pull's base, and holds a
 commit whose subject matches one in the signed `commits.mbox`; `--number`
 names a pull explicitly and skips the subject match. The node applies the

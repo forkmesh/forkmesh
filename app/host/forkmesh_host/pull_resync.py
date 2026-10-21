@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import re
+import urllib.request
 from pathlib import Path
 
 from .instance_repo import (
@@ -15,6 +16,9 @@ BRANCH_RE = re.compile(r"^(?!forkmesh/)(?!-)[A-Za-z0-9._/-]{1,200}$")
 SUBJECT_RE = re.compile(
     r"(?m)^Subject:[ \t]*(?:\[PATCH[^\]]*\][ \t]*)?(.+(?:\n[ \t].*)*)$")
 MAX_PULLS = 200
+NODE_CONFIG = "/etc/forkmesh/mirror-node.json"
+NODE_LISTEN = "127.0.0.1:8791"
+LISTEN_RE = re.compile(r"^(?:127\.0\.0\.1|localhost|\[::1\]):[0-9]{1,5}$")
 
 
 def front_matter(text):
@@ -164,6 +168,27 @@ async def queue(runtime, spec, items):
         env, spec["owner"], spec["name"], spec["actor"], work)
 
 
+def node_listen(path):
+    try:
+        with open(path, encoding="utf-8") as handle:
+            listen = str(json.load(handle).get("listen") or "").strip()
+    except (OSError, ValueError, AttributeError):
+        listen = ""
+    return listen if LISTEN_RE.fullmatch(listen) else NODE_LISTEN
+
+
+def wake_node(listen, timeout=10):
+    if not LISTEN_RE.fullmatch(str(listen or "")):
+        return False
+    request = urllib.request.Request(
+        "http://%s/v1/control/sync" % listen, data=b"", method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return 200 <= response.status < 300
+    except OSError:
+        return False
+
+
 def read_spec(args):
     owner = str(args.owner or "").strip().lower()
     name = str(args.name or "").strip()
@@ -178,7 +203,8 @@ def read_spec(args):
     numbers = sorted({int(number) for number in args.number or []
                       if 0 < int(number) < 10 ** 9})
     return {"owner": owner, "name": name, "actor": actor, "root": str(root),
-            "numbers": numbers, "dryRun": bool(args.dry_run)}
+            "numbers": numbers, "dryRun": bool(args.dry_run),
+            "nodeConfig": str(getattr(args, "node_config", "") or NODE_CONFIG)}
 
 
 def run(args, spec):
@@ -200,10 +226,13 @@ def run(args, spec):
     pulls = plan(Git(git_user), git_dir, spec["numbers"])
     chosen = [item for item in pulls if item.get("action") == "sync"]
     queued = 0
+    woke = False
     if chosen and not spec["dryRun"]:
         queued = in_app(queue, chosen)
+        woke = bool(queued) and wake_node(node_listen(spec["nodeConfig"]))
     return {"ok": True, "owner": spec["owner"], "name": spec["name"],
-            "dryRun": spec["dryRun"], "pulls": pulls, "queued": queued}
+            "dryRun": spec["dryRun"], "pulls": pulls, "queued": queued,
+            "nodeWoken": woke}
 
 
 def cmd_pull_resync(args):
@@ -237,6 +266,9 @@ def add_parser(sub, common):
     command.add_argument("--dry-run", action="store_true",
                          help="print what would change and queue nothing")
     command.add_argument("--hosted-root", default=HOSTED_ROOT)
+    command.add_argument("--node-config", default=NODE_CONFIG,
+                         help="mirror-node config whose loopback listen "
+                              "address is asked to drain the inbox now")
     command.add_argument("--app-user", default=None)
     command.add_argument("--git-user", default=None)
     command.set_defaults(func=cmd_pull_resync)

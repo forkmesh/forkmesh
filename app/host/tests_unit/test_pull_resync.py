@@ -117,7 +117,7 @@ def test_spec_validation():
     spec = pull_resync.read_spec(args)
     assert spec == {"owner": "donnieblt", "name": "BLT", "actor": "donnieblt",
                     "root": "/var/lib/forkmesh/hosted", "numbers": [3],
-                    "dryRun": True}
+                    "dryRun": True, "nodeConfig": "/etc/forkmesh/mirror-node.json"}
     with pytest.raises(RepoError):
         pull_resync.read_spec(SimpleNamespace(**dict(
             vars(args), hosted_root="relative")))
@@ -132,3 +132,40 @@ def test_folded_mbox_subjects_match_one_line_commit_subjects():
     assert pull_resync._subjects(mbox) == {
         "blt-next: serve leaderboard from BLT-API instead of hardcoded data",
         "short"}
+
+
+def test_the_node_is_woken_on_its_loopback_sync_endpoint(tmp_path):
+    import json
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            seen.append(self.path)
+            self.send_response(200)
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            self.wfile.write(b"{}")
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        config = tmp_path / "mirror-node.json"
+        config.write_text(json.dumps(
+            {"listen": "127.0.0.1:%d" % server.server_address[1]}))
+        listen = pull_resync.node_listen(str(config))
+        assert pull_resync.wake_node(listen)
+        assert seen == ["/v1/control/sync"]
+    finally:
+        server.shutdown()
+        server.server_close()
+    config.write_text(json.dumps({"listen": "0.0.0.0:8791"}))
+    assert pull_resync.node_listen(str(config)) == "127.0.0.1:8791"
+    assert pull_resync.node_listen(str(tmp_path / "missing")) == "127.0.0.1:8791"
+    assert not pull_resync.wake_node("example.com:80")
