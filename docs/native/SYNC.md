@@ -146,4 +146,5 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S071 | 2026-10-21 | Kit | fix | Every text field strips hidden Unicode (zero-width, bidi override, tag and smuggling characters) as you type or paste; passwords stay exact | 1c703806a7 | synced | 1c703806a7 |
 | S072 | 2026-10-21 | Projects | fix | Switching projects no longer shows another project's chat channels, private rooms or direct messages | 2b6c130a28 | n/a | Android rebuilds its chat services per project (ProjectLifecycle.close, Features.install), so it never had this leak |
 | S073 | 2026-10-21 | Projects | fix | Adding an instance that another project already uses opens that project instead of creating a second one | 4beeb217c2 | synced | 68c7fcc9e7 |
+| S074 | 2026-10-21 | Inbox | feature | Review and merge-conflict pings on your own pull requests have their own icon, label, settings switch and open the pull request | ff273c2c19 | synced | ff273c2c19 |
 <!-- ledger:end -->
