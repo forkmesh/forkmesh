@@ -4108,12 +4108,32 @@ QStringList MainWindow::pickChatPeople(const QString &title,
 
 void MainWindow::showNewPrivateRoomDialog()
 {
+    if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
+        startOfficeChannelMirror();
     if (!m_officeChannelMirror || !m_officeChannelMirror->isActive()) {
-        QMessageBox::information(
-            this, QStringLiteral("New private room"),
-            QStringLiteral("Private rooms are kept by the ForkMesh relay so "
-                           "only invited people can join them. Sign in with "
-                           "your account key to create one."));
+        const bool signedIn = hasActiveAccountSession();
+        const QString heading =
+            signedIn ? QStringLiteral("Messages are not connected")
+                     : QStringLiteral("Sign in to create a private room");
+        QMessageBox box(QMessageBox::NoIcon, heading, heading,
+                        signedIn ? QMessageBox::Ok : QMessageBox::Cancel, this);
+        box.setInformativeText(
+            signedIn ? QStringLiteral("ForkMesh could not reach the relay that "
+                                      "keeps private rooms. Check your "
+                                      "connection and try again in a moment.")
+                     : QStringLiteral("Private rooms are kept by the ForkMesh "
+                                      "relay so only invited people can join "
+                                      "them, so you need to be signed in to "
+                                      "create one."));
+        QPushButton *signIn =
+            signedIn ? nullptr
+                     : box.addButton(QStringLiteral("Sign in"),
+                                     QMessageBox::AcceptRole);
+        if (signIn)
+            box.setDefaultButton(signIn);
+        box.exec();
+        if (signIn && box.clickedButton() == signIn)
+            showSignInMenu();
         return;
     }
     QDialog dialog(this);
@@ -4232,6 +4252,8 @@ void MainWindow::startDirectMessageWith(const QString &account,
                                         const QString &peerName)
 {
     const QString name = account.trimmed().toLower();
+    if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
+        startOfficeChannelMirror();
     if (!name.isEmpty() && m_officeChannelMirror &&
         m_officeChannelMirror->isActive() &&
         m_officeChannelMirror->startDirectMessage(name))
@@ -4240,11 +4262,31 @@ void MainWindow::startDirectMessageWith(const QString &account,
         openDirectChat(peerId, peerName.isEmpty() ? name : peerName);
         return;
     }
-    QMessageBox::information(
-        this, QStringLiteral("New message"),
-        QStringLiteral("Direct messages are kept by the ForkMesh relay. Sign "
-                       "in with your account key to message @%1.")
-            .arg(name));
+    const bool signedIn = hasActiveAccountSession();
+    const QString heading =
+        signedIn ? QStringLiteral("Messages are not connected")
+                 : QStringLiteral("Sign in to message @%1").arg(name);
+    QMessageBox box(QMessageBox::NoIcon, heading, heading,
+                    signedIn ? QMessageBox::Ok : QMessageBox::Cancel, this);
+    box.setTextFormat(Qt::PlainText);
+    box.setInformativeText(
+        signedIn ? QStringLiteral("ForkMesh could not reach the relay that "
+                                  "keeps direct messages, so the conversation "
+                                  "with @%1 could not be opened. Check your "
+                                  "connection and try again in a moment.")
+                       .arg(name)
+                 : QStringLiteral("Direct messages are kept by the ForkMesh "
+                                  "relay, so you need to be signed in to send "
+                                  "them."));
+    QPushButton *signIn =
+        signedIn ? nullptr
+                 : box.addButton(QStringLiteral("Sign in"),
+                                 QMessageBox::AcceptRole);
+    if (signIn)
+        box.setDefaultButton(signIn);
+    box.exec();
+    if (signIn && box.clickedButton() == signIn)
+        showSignInMenu();
 }
 
 void MainWindow::promptInviteToPrivateChannel()

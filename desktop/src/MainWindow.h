@@ -609,6 +609,7 @@ public:
     static void applyTheme(
         forkmesh::market::PackageRegistry *registry = nullptr);
     void refreshThemedIcons();
+    void refreshComposerIcons();
 
     static QString autolinkReferences(
         const QString &markdown,

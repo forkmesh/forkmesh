@@ -3908,7 +3908,7 @@ QDialog *buildDiffMarkdownPreviewDialog(QWidget *guard, const QString &path,
     layout->addWidget(browser, 1);
 
     const auto render = [browser, note](const DiffMarkdownPreviewSide &side) {
-        browser->setMarkdown(MarkdownRender::withHtmlFlattened(side.text));
+        browser->setMarkdown(MarkdownRender::forPreview(side.text));
         fitReadmeImages(browser, qMax(1, browser->viewport()->width() - 32));
         styleReadmeDocument(browser);
         note->setText(side.note);

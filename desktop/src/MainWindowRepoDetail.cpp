@@ -16,6 +16,7 @@
 #include "SearchHitDelegate.h"
 #include "HeaderWrapLayout.h"
 #include "KebabHeaderView.h"
+#include "MarkdownPreviewStyle.h"
 #include "MarkdownRender.h"
 #include "RestartTiming.h"
 #include "UpstreamCheckoutSync.h"
@@ -4352,87 +4353,24 @@ void forkmesh::ui::fitReadmeImages(QTextBrowser *view, int maxWidth)
 void forkmesh::ui::styleReadmeDocument(QTextBrowser *view)
 {
     const bool dark = view->palette().color(QPalette::Text).lightness() > 128;
-    const QColor codeBackground =
-        dark ? QColor(QStringLiteral("#161b22")) : QColor(QStringLiteral("#f6f8fa"));
-    // Qt bakes the application palette's link colour into every anchor as it
-    // imports, which is the default pure blue - unreadable on the dark theme.
-    const QColor linkColor =
-        dark ? QColor(QStringLiteral("#58a6ff")) : QColor(QStringLiteral("#0969da"));
-    QList<QPair<int, int>> anchors;
-    QTextCursor cursor(view->document());
-    cursor.beginEditBlock();
-    for (QTextBlock block = view->document()->begin(); block.isValid();
-         block = block.next()) {
-        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
-            const QTextFragment fragment = it.fragment();
-            if (fragment.isValid() && fragment.charFormat().isAnchor() &&
-                !fragment.charFormat().anchorHref().isEmpty())
-                anchors.append({fragment.position(), fragment.length()});
-        }
-        QTextBlockFormat format = block.blockFormat();
-        const bool code = format.hasProperty(QTextFormat::BlockCodeFence) ||
-                          format.nonBreakableLines();
-        if (code) {
-            const QTextBlockFormat previous = block.previous().blockFormat();
-            const QTextBlockFormat next = block.next().blockFormat();
-            const bool first = !block.previous().isValid() ||
-                               !(previous.hasProperty(QTextFormat::BlockCodeFence) ||
-                                 previous.nonBreakableLines());
-            const bool last = !block.next().isValid() ||
-                              !(next.hasProperty(QTextFormat::BlockCodeFence) ||
-                                next.nonBreakableLines());
-            format.setBackground(codeBackground);
-            format.setLeftMargin(8);
-            format.setRightMargin(8);
-            format.setTopMargin(first ? 10 : 0);
-            format.setBottomMargin(last ? 10 : 0);
-        } else if (format.headingLevel() > 0) {
-            format.setTopMargin(block.previous().isValid() ? 18 : 0);
-            format.setBottomMargin(6);
-            format.setLineHeight(120, QTextBlockFormat::ProportionalHeight);
-        } else {
-            // Items of one list sit close together; the list as a whole gets
-            // the same air as a paragraph. Table cells carry their own
-            // padding, so they get none of this.
-            const bool listContinues = block.textList() && block.next().isValid() &&
-                                       block.next().textList();
-            const bool inTable = QTextCursor(block).currentTable() != nullptr;
-            format.setTopMargin(0);
-            format.setBottomMargin(inTable ? 0 : (listContinues ? 3 : 10));
-            format.setLineHeight(130, QTextBlockFormat::ProportionalHeight);
-        }
-        cursor.setPosition(block.position());
-        cursor.setBlockFormat(format);
-    }
-    // Markdown tables import with no border and no cell padding, which reads
-    // as four columns of drifting text.
-    const QList<QTextFrame *> frames = view->document()->rootFrame()->childFrames();
-    for (QTextFrame *frame : frames) {
-        QTextTable *table = qobject_cast<QTextTable *>(frame);
-        if (!table)
-            continue;
-        QTextTableFormat tableFormat = table->format();
-        tableFormat.setCellPadding(5);
-        tableFormat.setCellSpacing(0);
-        tableFormat.setBorder(1);
-        // Collapsed borders draw nothing here: Qt then takes the grid lines
-        // from per-cell formats, which the markdown import leaves at zero.
-        tableFormat.setBorderCollapse(false);
-        tableFormat.setBorderStyle(QTextFrameFormat::BorderStyle_Solid);
-        tableFormat.setBorderBrush(dark ? QColor(QStringLiteral("#30363d"))
-                                        : QColor(QStringLiteral("#d0d7de")));
-        tableFormat.setTopMargin(6);
-        tableFormat.setBottomMargin(10);
-        table->setFormat(tableFormat);
-    }
-    QTextCharFormat anchorFormat;
-    anchorFormat.setForeground(linkColor);
-    for (const QPair<int, int> &anchor : std::as_const(anchors)) {
-        cursor.setPosition(anchor.first);
-        cursor.setPosition(anchor.first + anchor.second, QTextCursor::KeepAnchor);
-        cursor.mergeCharFormat(anchorFormat);
-    }
-    cursor.endEditBlock();
+    const auto classic = [dark](const char *darkHex, const char *lightHex) {
+        return QColor(QLatin1String(dark ? darkHex : lightHex));
+    };
+    markdownstyle::Colors colors;
+    colors.text = Theme::nextOr(Theme::Role::Fg, view->palette().color(QPalette::Text));
+    colors.muted = Theme::nextOr(Theme::Role::FgMuted, classic("#9198a1", "#59636e"));
+    colors.border = Theme::nextOr(Theme::Role::Border, classic("#3d444d", "#d1d9e0"));
+    colors.quoteBar = Theme::nextOr(Theme::Role::BorderStrong, classic("#3d444d", "#d1d9e0"));
+    colors.codeBackground =
+        Theme::nextOr(Theme::Role::SurfaceRaised, classic("#161b22", "#f6f8fa"));
+    colors.inlineCodeBackground = Theme::nextOr(
+        Theme::Role::SurfaceActive, dark ? QColor(110, 118, 129, 102) : QColor(129, 139, 152, 31));
+    colors.rowBackground =
+        Theme::nextOr(Theme::Role::SurfaceRaised, classic("#161b22", "#f6f8fa"));
+    colors.link = Theme::nextOr(Theme::Role::AccentFg, classic("#58a6ff", "#0969da"));
+    colors.monoFamilies =
+        Theme::monospaceFont(QFontDatabase::systemFont(QFontDatabase::FixedFont)).families();
+    markdownstyle::apply(view, colors);
 }
 
 // Heading blocks carry GitHub-style anchor names, so a "#section" link can
@@ -4466,7 +4404,7 @@ static void renderReadmeMarkdown(QTextBrowser *view, const QString &markdown,
                                  const QString &searchDir)
 {
     view->setSearchPaths(searchDir.isEmpty() ? QStringList() : QStringList{searchDir});
-    view->setMarkdown(MarkdownRender::withHtmlFlattened(markdown));
+    view->setMarkdown(MarkdownRender::forPreview(markdown));
     anchorReadmeHeadings(view->document());
 }
 

@@ -1628,10 +1628,14 @@ void applyStoredOcticon(QPushButton *button)
         return;
     const int size = button->property("forkmeshOcticonSize").toInt();
     const qreal rotation = button->property("forkmeshOcticonRotation").toReal();
-    const QColor color = Theme::iconColorOverride(
+    QColor color = Theme::iconColorOverride(
         button->objectName(),
         QColor(Theme::iconColorForButton(button->objectName(),
                                          currentThemeIsDark())));
+    bool hasRole = false;
+    const int role = button->property("nextIconRole").toInt(&hasRole);
+    if (hasRole && Theme::isNext())
+        color = Theme::color(static_cast<Theme::Role>(role));
     const int px = size > 0 ? size : 16;
     if (rotation != 0.0) {
         QIcon icon;

@@ -61,17 +61,19 @@ IMPORT_ID_RE = re.compile(r"^ext_[0-9a-f]{24}$")
 # Every provider ForkMesh imports from is materialized here, so an imported
 # repository stops depending on the provider it came from (issue #679). Only
 # the canonical public host of each provider is clonable, and only the path
-# shape that provider's canonical repository URL uses: GitHub and Codeberg
-# name one owner and one repository, GitLab allows nested groups.
+# shape that provider's canonical repository URL uses: GitHub, Codeberg and
+# Gitea name one owner and one repository, GitLab allows nested groups.
 PROVIDER_HOSTS = {
     "github": ("github.com", 2, 2),
     "gitlab": ("gitlab.com", 2, 20),
     "codeberg": ("codeberg.org", 2, 2),
+    "gitea": ("gitea.com", 2, 2),
 }
 PROVIDER_LABELS = {
     "github": "GitHub",
     "gitlab": "GitLab",
     "codeberg": "Codeberg",
+    "gitea": "Gitea",
 }
 
 

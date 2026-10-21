@@ -98,5 +98,8 @@ the head the same way:
 - Required checks still lock a patch-backed pull on a policy branch: the
   attestation names a head commit, and nothing runs checks on `refs/pr/<n>/head`
   yet.
-- "Update branch" on the web is still branch-backed only.
+- "Update branch" on the web is still branch-backed only. The author replaces a
+  patch-backed pull's patch with a revision instead
+  ([../app/pull-revisions.md](../app/pull-revisions.md)); the head is rebuilt the
+  same way.
 

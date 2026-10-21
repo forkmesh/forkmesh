@@ -107,6 +107,33 @@ The old `chat/e2ee/x25519PrivateV2` value is left in place and unused.
 (`chat-direct:<id>:vN` → `direct:<id>`); the mirror passes the account
 (`setChatAccount`) and the DM's two members (`setDirectParticipants`).
 
+## Who can open a direct message
+
+Server DMs and private rooms go through `OfficeChannelMirror`. It used to start
+only from a successful signed heartbeat (or offline mode) and only when this
+desktop holds the account's own key, so two signed-in users still saw "Sign in
+with your account key": anyone right after sign-in, before the next heartbeat,
+and anyone who signed in with email and password on a desktop whose key is not
+the account's (`ownsDesktopKey` false in `activateAccountSession`).
+
+- `startOfficeChannelMirror()` now also accepts an active account session that
+  has a token for the relay (`accountSessionTokenForUrl(catalogApiUrl())`).
+  The mirror sends that token as `Authorization: Bearer` on every relay request
+  (`OfficeChannelMirror::apiRequest`, through `setSessionProvider`, which only
+  hands the token to the session's own instance). The relay's
+  `_ChatDirectMessagesRuntime.session` tries the session first and falls back
+  to the node signature, so key-holding desktops behave as before.
+- The mirror starts right after a sign-in (`activateAccountSession`) and on
+  demand when a DM, a private room or a project invitation is started, instead
+  of waiting for the heartbeat.
+- When it still cannot start, the alert says why: signed out offers a "Sign in"
+  button (`showSignInMenu()`); signed in but unreachable says the relay could
+  not be reached.
+- Signing out (`logout`) and switching to another server
+  (`isolateAccountForServerSwitch`) stop the mirror, so a password session on
+  a shared machine does not leave room WebSockets open and decrypted DMs
+  arriving after the account has gone.
+
 ## Direct messages: v4
 
 A `RoomSeal` with the strict policy (server DMs and their `direct-sealed`

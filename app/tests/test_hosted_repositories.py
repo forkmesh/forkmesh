@@ -981,7 +981,7 @@ def test_modal_offers_an_empty_repository_source_by_default():
 
 def test_empty_rail_mirror_link_opens_the_remote_clone_source():
     assert ('<a href="/dashboard/repos/new?source=remote" class="text-accent '
-            'hover:underline">Mirror one from GitHub, GitLab or Codeberg, '
+            'hover:underline">Mirror one from GitHub, GitLab, Codeberg or Gitea, '
             'or create one</a>') in REPO_LIST_JS
     assert "function requestedNewRepoSource()" in REPO_LIST_JS
     assert 'new URLSearchParams(location.search).get("source")' in REPO_LIST_JS

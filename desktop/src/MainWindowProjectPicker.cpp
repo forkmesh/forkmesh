@@ -752,6 +752,8 @@ void MainWindow::promptInviteToProject()
         }
         const QString text = invite::directMessageText(invitation);
         const QString conversation = forkmesh::office::conversationForDirect(who);
+        if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
+            startOfficeChannelMirror();
         if (!m_officeChannelMirror || !m_officeChannelMirror->isActive() ||
             conversation.isEmpty()) {
             QApplication::clipboard()->setText(text);

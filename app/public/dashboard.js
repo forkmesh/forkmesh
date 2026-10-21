@@ -5771,6 +5771,115 @@
     });
     input.click();
   });
+
+  function pullRevisionSource(values) {
+    const head = String(values?.head || "").trim();
+    if (!head) return null;
+    const colon = head.lastIndexOf(":");
+    if (colon < 0) return { owner: "", branch: head };
+    const prefix = head.slice(0, colon);
+    if (!prefix || prefix.includes("/")) return null;
+    return { owner: prefix, branch: head.slice(colon + 1) };
+  }
+
+  function pullRevisionAllowed(parsed) {
+    const values = parsed?.values || {};
+    return String(values.status || "open").trim().toLowerCase() === "open"
+      && values.derive !== "branch"
+      && webSessionAuthored({ author: values.author, authorName: values.authorName })
+      && Boolean(pullRevisionSource(values));
+  }
+
+  async function submitWebPullRevision(repo, number, values, branch) {
+    const source = pullRevisionSource(values);
+    if (!source || !branch) throw new Error("revision_unsupported");
+    const sourceRepo = source.owner ? { owner: source.owner, name: repo.name } : repo;
+    const base = String(values.base || "");
+    let comparison;
+    try {
+      comparison = await fetchRepoJson(repoLiveUrl(sourceRepo, "compare", { base, head: branch, ref: "" }));
+    } catch (_) {
+      throw new Error("comparison_unavailable");
+    }
+    const patch = String(comparison.patch || "");
+    const commits = String(comparison.commits || "");
+    const baseOid = String(comparison.baseOid || "").toLowerCase();
+    const headOid = String(comparison.headOid || "").toLowerCase();
+    const validOid = (value) => /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(value);
+    if (!validOid(baseOid) || !validOid(headOid)) throw new Error("invalid_comparison");
+    if (!patch.trim()) throw new Error("no_changes");
+    if (headOid === String(values.creationHeadOid || "").toLowerCase()) throw new Error("no_new_commits");
+    const signedHead = source.owner ? `${source.owner}:${branch}` : branch;
+    const revision = await signWebPullContent(
+      repo, String(values.title || ""), "", base, signedHead, patch, commits);
+    delete revision.description;
+    revision.creationBaseOid = baseOid;
+    revision.creationHeadOid = headOid;
+    const { privateKey } = await getWebIssueKey();
+    const binding = `${Number(number)}\n${revision.author}\n${revision.ts}\n${revision.sig}`;
+    revision.revisionSig = bytesToB64url(await crypto.subtle.sign(
+      { name: "Ed25519" }, privateKey,
+      ISSUE_TEXT_ENCODER.encode(`${webEventSigningPrefix("pull-revision", repo)}${binding}`)));
+    const data = await fetchRepoMutation(repo, "pulls", {
+      owner: repo.owner, repo: repo.name, number: Number(number), revision,
+    });
+    return { ...data, revision };
+  }
+
+  function pullRevisionError(code) {
+    return ({
+      comparison_unavailable: "That branch is not on the serving mirror yet. A branch you just pushed can take a moment to arrive.",
+      invalid_comparison: "That branch could not be compared with the base branch.",
+      no_changes: "That branch has no changes against the base branch.",
+      no_new_commits: "This pull request already shows that branch's latest commit.",
+      revision_stale: "A newer version of this pull request is already waiting.",
+      pull_not_open: "Only an open pull request can be updated.",
+      pull_follows_branch: "This pull request already follows its branch.",
+      not_authorized: "Only the pull request's author can update it.",
+      pull_too_large: "That change is too large to send.",
+      revision_unsupported: "This pull request came from another instance; update it there.",
+      author_mismatch: "Sign in with the account that opened this pull request.",
+    })[code] || "The pull request could not be updated. Please try again.";
+  }
+
+  function renderPullRevisionPanel(number, parsed) {
+    if (!pullRevisionAllowed(parsed)) return "";
+    const branch = pullRevisionSource(parsed.values)?.branch || "";
+    return `
+      <form data-repo-pull-revision-form data-repo-pull-revision-number="${escapeHtml(number)}" class="flex flex-wrap items-center gap-2 rounded-md border border-border px-4 py-3 text-[14px] sm:ml-14">
+        <span class="min-w-0 flex-1 text-muted-foreground">Pushed more commits, or rewrote the branch? Update this pull request from a branch. No force push is needed.</span>
+        <input data-repo-pull-revision-branch value="${escapeHtml(branch)}" aria-label="Source branch" spellcheck="false" class="h-control-sm w-48 rounded-md border border-border bg-background px-2 font-mono text-control text-foreground outline-none focus:border-[var(--dashboard-link)]" />
+        <button type="submit" data-repo-pull-revision-submit class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border bg-secondary px-2 text-control font-medium text-foreground hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Update pull request</button>
+        <span data-repo-pull-revision-hint class="w-full text-[11px] text-muted-foreground"></span>
+      </form>`;
+  }
+
+  document.addEventListener("submit", async (event) => {
+    const form = event.target?.closest?.("[data-repo-pull-revision-form]");
+    if (!form) return;
+    event.preventDefault();
+    const detail = state.repoRecordDetail;
+    const number = Number(form.dataset.repoPullRevisionNumber || 0);
+    if (!detail?.repo || detail.kind !== "pulls" || Number(detail.number) !== number) return;
+    const hint = form.querySelector("[data-repo-pull-revision-hint]");
+    const submit = form.querySelector("[data-repo-pull-revision-submit]");
+    const branch = String(form.querySelector("[data-repo-pull-revision-branch]")?.value || "").trim();
+    const setHint = (text, bad = false) => {
+      if (!hint) return;
+      hint.className = `w-full text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (submit) submit.disabled = true;
+    setHint("Comparing, signing and sending…");
+    try {
+      await submitWebPullRevision(detail.repo, number, detail.parsed?.values || {}, branch);
+      setHint("Sent. The pull request shows the new version once the repository's node takes it in.");
+    } catch (error) {
+      setHint(pullRevisionError(error?.code || error?.message), true);
+    } finally {
+      if (submit) submit.disabled = false;
+    }
+  });
   // Every top-level page is its own document now (/dashboard, /dashboard/repos,
   // /dashboard/network, ...) — navigation between them is a real page load via
   // plain <a href> links, so there is no client-side section router anymore.
@@ -13273,7 +13382,7 @@
       ? entries.map(homeRepositoryRow).join("")
       : `<div class="px-2 py-3 text-sm text-muted-foreground">${query
         ? emptyListHtml("No repositories match this filter.", query)
-        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab or Codeberg, or create one</a>.'}</div>`;
+        : 'No repositories yet. <a href="/dashboard/repos/new?source=remote" class="text-accent hover:underline">Mirror one from GitHub, GitLab, Codeberg or Gitea, or create one</a>.'}</div>`;
     window.lucide?.createIcons();
     hydrateNativeRepositoryLogos(container);
   }
@@ -14307,7 +14416,7 @@
       if (hint) hint.textContent = "The desktop node reads this local repo directly — the path never leaves your machine.";
     } else if (provider) {
       if (value) value.placeholder = "https://gitlab.com/group/repo, https://gitlab.com/group, or https://github.com/owner/repo";
-      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
+      if (hint) hint.textContent = `Choose a repository URL, or a GitLab group / Codeberg or Gitea profile to choose all repositories below it. This imports provider metadata and collaboration history, not the Git contents: the result is an external listing, not a ${platformName()} mirror. Setup ends as soon as each durable job is accepted; transfer continues separately and can resume from its checkpoint.`;
     } else {
       if (value) value.placeholder = "https://github.com/owner/repo.git";
       if (hint) hint.textContent = `${platformName()} clones this URL into a bare mirror you then keep in sync.`;
@@ -14370,7 +14479,7 @@
     window.lucide?.createIcons();
   }
 
-  // A bare organization link — a GitLab group or a Codeberg profile — imports
+  // A bare organization link — a GitLab group or a Codeberg or Gitea profile — imports
   // every repository underneath it. GitHub is absent because the relay has no
   // organization walk for it, and a GitLab subgroup path is not matched because
   // group/thing is indistinguishable from a repository URL; the group walk
@@ -14382,7 +14491,7 @@
     } catch (_) {
       return "";
     }
-    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org"];
+    const namespaceHosts = ["gitlab.com", "www.gitlab.com", "codeberg.org", "www.codeberg.org", "gitea.com", "www.gitea.com"];
     if (parsed.protocol !== "https:" || !namespaceHosts.includes(parsed.hostname.toLowerCase())) return "";
     return parsed.pathname.split("/").filter(Boolean).length === 1 ? parsed.toString() : "";
   }
@@ -14611,7 +14720,7 @@
       return `This account hosts as many repositories on ${platformName()} as it may. Delete one, or host more from your own node.`;
     }
     if (code === "invalid_import_url") {
-      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org"]).join(", ")}.`;
+      return `Use a public https URL on ${(hostedSettings?.importHosts || ["github.com", "gitlab.com", "codeberg.org", "gitea.com"]).join(", ")}.`;
     }
     if (code === "organization_not_found") return "That organization does not exist.";
     return "Could not create the repository.";
@@ -14661,11 +14770,11 @@
     const sourceValue = String($("[data-new-repo-source-value]")?.value || "").trim();
     if (source === "provider") {
       if (!state.session?.sessionToken) {
-        setNewRepoHint("Sign in to import a GitHub, GitLab, or Codeberg repository.", "bad");
+        setNewRepoHint("Sign in to import a GitHub, GitLab, Codeberg, or Gitea repository.", "bad");
         return;
       }
       if (!sourceValue) {
-        setNewRepoHint("Enter a GitHub, GitLab, or Codeberg repository URL.", "bad");
+        setNewRepoHint("Enter a GitHub, GitLab, Codeberg, or Gitea repository URL.", "bad");
         $("[data-new-repo-source-value]")?.focus();
         return;
       }
@@ -14758,7 +14867,7 @@
         setNewRepoHint(
           code === "provider_rate_limited" ? "The provider rate limit was reached. Try again after its reset time."
             : code.includes("authorization") ? "The provider rejected access. Private repositories require a valid scoped token."
-            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, or codeberg.org repository URL."
+            : code === "unsupported_provider" ? "Use a github.com, gitlab.com, codeberg.org, or gitea.com repository URL."
             : code === "empty_namespace" ? "That organization listed no importable repositories. A private group needs a token with read access."
             : code === "namespace_import_failed" ? "None of that organization's repositories could be read."
             : code === "provider_request_failed" ? "The provider did not recognise that organization. Check the group path, or add a token if it is private."
@@ -22645,6 +22754,9 @@
     if (ev.type === "force-push") return { label: "force-pushed", tone: neutral };
     if (ev.type === "status") return { label: "closed this pull request", tone: neutral };
     if (ev.type === "delete") return { label: "deleted this pull request", tone: neutral };
+    if (ev.type === "revision") {
+      return { label: ev.state ? `updated this pull request to revision ${ev.state}` : "updated this pull request", tone: neutral };
+    }
     return { label: "comment", tone: neutral };
   }
 
@@ -22758,7 +22870,8 @@
         : ev.type === "review" && ev.state === "approved" ? "check"
           : ev.type === "review" && ev.state === "changes_requested" ? "file-diff"
             : ev.type === "status" ? "git-pull-request-closed"
-              : ev.type === "delete" ? "trash-2" : "eye";
+              : ev.type === "delete" ? "trash-2"
+                : ev.type === "revision" ? "git-commit-horizontal" : "eye";
       return renderIssueTimelineEvent(icon, author, ev.author, `<span class="${meta.tone.split(" ").filter((name) => name.startsWith("text-")).join(" ")}">${escapeHtml(meta.label)}</span>${ev.type === "agent" && ev.branchName ? `<span class="font-mono text-[12px]">${escapeHtml(ev.branchName)}</span>` : ""}${anchor ? `<span class="truncate font-mono text-[12px]">${escapeHtml(anchor)}</span>` : ""}`, ev.ts, "", ev.type === "agent");
     }
     const fullDate = formatRecordDateTime(ev.ts);
@@ -23916,7 +24029,7 @@
     if (!state.session?.nodeName) {
       return `<div class="rounded-md border border-border px-4 py-3 text-[14px] text-muted-foreground sm:ml-14"><a href="/login?next=${encodeURIComponent(location.pathname + location.search)}" class="font-medium text-[var(--dashboard-link)] hover:underline">Sign in</a> to comment on or review this pull request.</div>`;
     }
-    return `
+    return `${renderPullRevisionPanel(number, parsed)}
       <form data-repo-pull-review-form data-repo-pull-review-number="${escapeHtml(number)}" class="grid min-w-0 gap-4 border-t-2 border-border pt-4 sm:grid-cols-[40px_minmax(0,1fr)]">
         <span class="hidden sm:block">${issueActorAvatarHtml(state.session.nodeName, state.session.nodeName, "h-10 w-10")}</span>
         <div class="grid min-w-0 gap-2">
