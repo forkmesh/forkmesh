@@ -710,7 +710,7 @@ def test_actions_install_job_tools_and_configure_the_app():
     assert 'echo "ACTIONS_BOT_SEED=$bot_seed"' in writer
     assert 'echo "RUNNER_POOL_TARGET_NODES=$NODE_NAME"' in writer
     assert 'echo "ACTIONS_INSTANCE_RUNNER=$RUNNER_NAME"' in writer
-    assert '"plugins", "actions", "poweredBy", "platformUrl"]' in writer
+    assert '"plugins", "actions", "poweredBy", "platformUrl",' in writer
     assert 'RUNNER_NAME=""' in TEXT
     assert "  resolve_runner_name\n" in writer
     assert '[ -n "$RUNNER_NAME" ] || resolve_runner_name' in function("setup_actions_runner")
