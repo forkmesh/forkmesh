@@ -157,10 +157,11 @@ and is masked in errors.
   mirror's result under `github`.
 - Contributions land on the forge, not GitHub. Pull requests opened on GitHub
   are reviewed and reapplied by hand.
-- GitHub `main` (`eb1db58be1`, 2026-07-29) predates the 2026-10-08 history
-  rewrite and shares no history with ours, so the first sync replaces it with
-  a one-time `--force-with-lease=refs/heads/main:eb1db58be1…` push; after that
-  the publisher's fast-forward pushes keep it current. The old commits stay
+- GitHub `main` (`eb1db58be1`, 2026-07-29) predated the 2026-10-08 history
+  rewrite and shared no history with ours. On 2026-10-21 it was replaced by
+  ours (`324ab97a03`) with a one-time
+  `--force-with-lease=refs/heads/main:eb1db58be1…` push; since then the
+  publisher's fast-forward pushes keep it current. The old commits stay
   reachable through GitHub's `refs/pull/1-3` until the repository is deleted
   or GitHub support purges them. A bundle of the old `main` and PR heads is in
   `data/core/state/github-mirror/github-forkmesh-before-2026-10-21.bundle`.
