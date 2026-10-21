@@ -725,6 +725,47 @@ def test_an_instance_queues_every_pushed_branch_with_before_and_skips_actions_pu
             sys.modules.pop(name, None)
 
 
+def test_a_contributor_push_queues_no_workflows(module):
+    """A pr/<account>/ push by a contributor runs nobody's workflows: on:
+    push would execute the contributor's own workflow files with the
+    repository's runner access."""
+    loaded, ctx = module
+    db = ctx["db"]
+    db.execute("CREATE TABLE repositories (key_bi TEXT, data TEXT)")
+    for name in ("0193_runner_nodes.sql", "0248_repo_action_jobs.sql",
+                 "0272_actions_instance.sql"):
+        db.executescript(
+            (ROOT / "migrations" / name).read_text()
+            .split("-- The runtime schema text changed")[0]
+            .split("INSERT INTO schema_meta")[0])
+
+    async def holds(_env, _name):
+        return True
+
+    for name in ("runner_leases", "runner_actions"):
+        sys.modules.pop(name, None)
+    loaded._bind_runtime({"_node_events_object_holds_node": holds,
+                          "_branch_protection": UNPROTECTED})
+    env = type("Env", (), {"RUNNER_POOL_TARGET_NODES": "forkmesh",
+                           "ACTIONS_INSTANCE_RUNNER": "box-runner"})()
+
+    def push(new, contributor):
+        asyncio.run(loaded.record_accepted_push(
+            env, "forkmesh", "site", {"node": "forkmesh"}, "bob",
+            _report(("refs/heads/pr/bob/change", "0" * 40, new, 1)),
+            core=True, state="e" * 64, credential="contributor",
+            contributor=contributor))
+        return db.execute("SELECT COUNT(*) FROM repo_action_jobs").fetchone()[0]
+
+    try:
+        assert push("4" * 40, contributor=True) == 0
+        # The same update by a writer would have queued a run.
+        assert push("5" * 40, contributor=False) == 1
+    finally:
+        for name in ("runner_leases", "runner_actions"):
+            sys.modules.pop(name, None)
+
+
 def test_an_instance_queues_only_the_default_branch_for_an_import_and_caps_bulk_pushes(
         module):
     loaded, _ctx = module
@@ -752,3 +793,62 @@ def test_an_instance_queues_only_the_default_branch_for_an_import_and_caps_bulk_
             "main", "m0", "m1", "m2", "m3", "m4"]
     assert heads([("refs/heads/topic", "", "3" * 40, 1),
                   ("refs/heads/gone", "1" * 40, zero, 0)]) == ["topic"]
+
+
+def test_a_forced_update_is_audited_and_queues_one_timeline_event_per_pull(
+        module):
+    loaded, ctx = module
+    ctx["db"].execute(
+        "CREATE TABLE pull_inbox (repo_bi TEXT, data TEXT, submitter_bi TEXT)")
+    notified = []
+
+    async def encrypt_row(_env, record):
+        return json.dumps(record, sort_keys=True)
+
+    async def notify(_env, owner, repo, kind):
+        notified.append((owner, repo, kind))
+
+    loaded._bind_runtime({"encrypt_row": encrypt_row,
+                          "notify_repo_host": notify,
+                          "notify_repo_mirrors": notify})
+    old, new = "a" * 40, "b" * 40
+    report = {"total": 2, "updates": [
+        {"ref": "refs/heads/feature", "old": old, "new": new, "commits": 1,
+         "forced": True, "pulls": [3, 7],
+         "kept": "refs/forkmesh/history/feature/0000000001"},
+        {"ref": "refs/heads/other", "old": "c" * 40, "new": "d" * 40,
+         "commits": 1}]}
+    asyncio.run(loaded.record_accepted_push(
+        object(), "alice", "app", {"node": "fmnext-n1"}, "bob", report))
+    forced = [a for a in ctx["audits"] if a["action"] == "git.force_push"]
+    assert forced == [{
+        "actor": "bob", "action": "git.force_push", "target": "alice/app",
+        "outcome": "success",
+        "details": {"ref": "refs/heads/feature", "old": old, "new": new,
+                    "node": "fmnext-n1", "pulls": [3, 7],
+                    "kept": "refs/forkmesh/history/feature/0000000001"}}]
+    rows = ctx["db"].execute(
+        "SELECT repo_bi, data, submitter_bi FROM pull_inbox").fetchall()
+    assert [(row[0], row[2]) for row in rows] == [
+        ("bi:alice/app", "bi:bob"), ("bi:alice/app", "bi:bob")]
+    items = [json.loads(row[1]) for row in rows]
+    assert [item["number"] for item in items] == [3, 7]
+    event = items[0]["event"]
+    assert event == {
+        "type": "force-push", "id": "force-push-%s-%s-3" % (old[:12], new[:12]),
+        "author": "bob", "authorName": "bob", "ts": NOW // 1000,
+        "ref": "refs/heads/feature", "before": old, "after": new,
+        "body": "force-pushed `feature` from `aaaaaaa` to `bbbbbbb`",
+        "sig": ""}
+    assert notified == [("alice", "app", "pulls")] * 2
+
+
+def test_a_forced_update_without_open_pulls_only_audits(module):
+    loaded, ctx = module
+    report = {"total": 1, "updates": [
+        {"ref": "refs/heads/feature", "old": "a" * 40, "new": "b" * 40,
+         "commits": 1, "forced": True, "pulls": []}]}
+    asyncio.run(loaded.record_accepted_push(
+        object(), "alice", "app", {"node": "fmnext-n1"}, "bob", report))
+    assert [a["action"] for a in ctx["audits"]] == [
+        "git.push", "git.force_push"]

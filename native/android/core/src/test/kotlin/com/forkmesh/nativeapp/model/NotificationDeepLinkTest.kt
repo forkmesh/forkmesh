@@ -12,6 +12,14 @@ class NotificationDeepLinkTest {
         assertEq(692, link.number)
     }
 
+    fun testPullLinksOpenThePullTabInEitherSpelling() {
+        for (href in listOf("/a/b/pull/7", "/a/b/pull/7/files", "/a/b/pulls/7")) {
+            val link = NotificationDeepLink.parse(href)!!
+            assertEq(RepoDetailTab.Pulls, link.initialTab)
+            assertEq(7, link.number)
+        }
+    }
+
     fun testCommitLinkKeepsTheReference() {
         val link = NotificationDeepLink.parse("/a/b/commit/abc123?x=1#frag")!!
         assertEq(RepoDetailTab.Commits, link.initialTab)

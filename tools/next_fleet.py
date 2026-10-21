@@ -953,7 +953,7 @@ def files_script(manifest, archive):
 
 
 CADDY_INSTALL_WAIT = 180
-CADDY_INSTALL_MAX_TIME = 15
+CADDY_INSTALL_MAX_TIME = 35
 
 RESTART_FAIL2BAN = "systemctl try-restart fail2ban.service || true"
 
@@ -1518,6 +1518,7 @@ def install_daemon(fleet, name, ip, ssh, runner, idle_guard=False):
 ROLL_STEPS = ("daemon", "turn", "calls", "files", "start")
 ROLL_HEALTH_SECONDS = 90
 ROLL_READD_SECONDS = 600
+ROLL_DRAIN_MARGIN_SECONDS = 30
 
 
 ROLL_LOCK_WAIT_SECONDS = 30 * 60
@@ -1561,8 +1562,14 @@ def roll(fleet, names, ssh, runner, steps=ROLL_STEPS, mail=False, vultr=None,
             if next_dns.main(extra + ["drain", name, "--execute"]) != 0:
                 raise ToolError("%s: drain refused; rolled %s" % (
                     name, ", ".join(done) or "nothing"))
+            drained = next_dns.TTL + ROLL_DRAIN_MARGIN_SECONDS
+            runner.say("%s: out of DNS; waiting %d s (TTL %d s + %d s) for "
+                       "resolvers to forget it before it restarts" % (
+                           name, drained, next_dns.TTL,
+                           ROLL_DRAIN_MARGIN_SECONDS))
+            sleep(drained)
         else:
-            runner.say("[dry-run] %s: drain from DNS" % name)
+            runner.say("[dry-run] %s: drain from DNS, wait out its TTL" % name)
         install(fleet, name, ssh, runner, steps, vultr=vultr)
         if mail:
             import next_mail

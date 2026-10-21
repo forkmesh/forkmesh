@@ -95,7 +95,7 @@ PAGES = {
         "route": "/dashboard/repos",
         "asset": "dashboard/repos/index.html",
         "title": "Repositories - ForkMesh",
-        "description": "Browse repositories mirrored by ForkMesh desktop nodes and open them live from their hosts.",
+        "description": "Browse repositories hosted and mirrored on ForkMesh and open them live from their hosts.",
     },
     "new-repo": {
         "view": "new-repo",
@@ -293,7 +293,7 @@ PAGES = {
         "route": None,
         "asset": "dashboard/repo.html",
         "title": "Repository - ForkMesh",
-        "description": "Inspect a repository mirrored by ForkMesh desktop nodes: files, issues, pulls, and mirrors.",
+        "description": "Inspect a ForkMesh repository: files, issues, pulls, discussions, and mirrors.",
     },
 }
 
@@ -435,6 +435,7 @@ CACHE_BUSTED_ASSETS = (
     "dashboard-page-achievements.js",
     "dashboard-page-notes.js",
     "dashboard-page-referrals.js",
+    "dashboard-page-repo-activity.js",
     "dashboard-page-tasks.js",
 )
 

@@ -52,7 +52,7 @@ desktop-only; on-device models run through MLX on iOS).
 | 28 | Code editor with key bar, and the highlighter |
 | 29 | Local repositories: create, import zip, browse, edit, commit, publish, PR |
 | 30 | Clone to device from the mesh |
-| 31 | Mirror import (GitHub, GitLab, Codeberg) and import tokens |
+| 31 | Mirror import (GitHub, GitLab, Codeberg, Gitea) and import tokens |
 | 32 | Signed inbox writes (issues, PRs, comments) |
 | 33 | Bounties, funding and the donation wallet panels (read-only; no wallet keys) |
 | 34 | Serve as a node (node-sync drain and applier) |
@@ -193,6 +193,34 @@ releases (section 5). Each project has its own node key. Only a few per-project
 preference keys go to the active project's namespace; everything else is
 shared. Relay switching lives in `NIC/FMChat/Relay/`; the switcher is
 `NI/ForkMesh/Kit/ProjectSwitcher.swift`.
+
+Chat is per project (fixed 2026-10-21). The chat services outlive a switch,
+so before this an instance added to a project showed every other project's
+channels: `RelayService.resetForRelaySwitch` kept the channel list (and sent
+it to the new instance in its hello), private rooms and direct messages kept
+their sockets and lists, and a pending history save could write one project's
+chat into another's file. Now a switch (or attaching an instance) runs, in
+order:
+
+1. `ChatHub.leaveProject()` from the controller's `onSuspend`
+   (`AppServices+Chat.swift`): saves the project being left to its own
+   history file, stops further saves, and clears threads, private and hidden
+   channels (`ChatExtras.resetForProjectSwitch`), private rooms
+   (`OfficeChannelService.clear`), direct messages
+   (`DirectMessageService.clear`) and read marks; the workspace (drafts,
+   saved items, mutes) is unbound until step 3. A generation
+   counter drops any answer from the old instance that arrives later.
+2. `RelayService.resetForRelaySwitch()`: also clears the channel list, the
+   open conversation, unread counts, seen ids and the member's own status.
+3. `ProjectRuntime.forgetPreviousProject` calls `ChatHub.enterProject` with
+   the new project's `ChatWorkspace` and `ChannelGroupsStore`, before the
+   view tree is rebuilt, and loads only that project's history. Attaching an
+   instance (no `activate`) enters from `onResume` instead.
+
+The LAN mesh room (`#mesh`) is not an instance's: every nearby ForkMesh
+device shares it, in every project. `ProjectChatIsolationTests` covers the
+switch. Android rebuilds its whole chat graph per project
+(`ProjectLifecycle.close`, `Features.install`), so it never had this leak.
 
 ### WS2: Push, pings and code-push
 

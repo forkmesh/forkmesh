@@ -57,6 +57,12 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   listens on loopback. `request_guard.py` rejects unknown hosts and oversized
   bodies and verifies the homepage Worker's signed visitor header
   (`deploy/core/edge_client.md`), once per request.
+- **JSON body limits.** Behind the front door, `app/src/request_bodies.py`
+  reads JSON bodies up to 2 MiB, or 8 MiB for security reports, repository
+  imports and `POST /api/repo/<owner>/<repo>/pulls`. A pull submission
+  carries its whole signed patch series inline, and a real one passes 2 MiB
+  long before the git gateway's 8 MiB request cap. Only that exact path gets
+  the allowance (no trailing slash, no sub-path such as `/pulls/<n>/events`).
 - **Static headers without a fleet Caddy.** A single-server instance
   (`install-instance.sh`) proxies everything to the app, so the app's
   `StaticAssets` serves the static pages itself. It applies the dist's
@@ -66,6 +72,14 @@ as `forkmesh-app.service`, next to rqlite, Caddy and the Go daemon. Design:
   Before this, `/forgot-password` and `/login` on an instance carried no CSP
   or frame policy and `/_headers` was downloadable. `env.ASSETS.fetch` from
   the Worker gets the plain file; the Worker sets its own headers.
+- **Versioned static files cached for a year.** A static file asked for as
+  `?v=<token>` alone gets `public, max-age=31536000, immutable`, but only
+  when the token equals the file's own `content_version` (the first 12 hex
+  digits of its SHA-256, the value the build stamps) and no `_headers` rule
+  made it `no-store` or `private`. Checking the hash keeps a core still on the
+  previous build, during a rolling deploy, from answering a new page's
+  `?v=NEW` with the old file and having browsers and the edge keep that for a
+  year. Any other token keeps the normal revalidating header.
 - **Block rules and rate limit.** The app and world names point straight at
   the cores, so the cores enforce what a CDN WAF would:
   - enabled `request_block_rules` (`user_agent_keyword`, `ip`, `cidr`,

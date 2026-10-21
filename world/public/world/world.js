@@ -54,7 +54,7 @@ import {
 import { buildRepositoryGraphEntities } from "./world-repository-graph.js";
 import { officeFloorsForTeam } from "./world-office-tower.js";
 import { createWorldSocketRecoveryTimers } from "./world-socket-recovery.js";
-import { WorldFederation } from "./world-federation.js";
+import { WorldFederation, meshRootRoute } from "./world-federation.js";
 import { neighbourSceneLink } from "./world-neighbour-scene.js";
 import {
   WORLD_MESH_OUTDOOR_SPACES,
@@ -85,6 +85,22 @@ import {
   withHomePortal,
   worldPortalURL,
 } from "./world-instance-portals.js";
+import {
+  TERRITORY_FRESH_SPAWN,
+  territoryArrival,
+  territoryBugs,
+  territoryCrossingURL,
+  territoryDisabledElements,
+  territoryFromInstance,
+  territoryLinkURL,
+  territoryRawURL,
+  territoryVisitorLabel,
+  withTerritoryVisa,
+  withoutTerritoryArrival,
+} from "./world-territory.js";
+
+const TERRITORY_TRANSITION_MS = 450;
+const TERRITORY_VISA_TIMEOUT_MS = 2500;
 import {
   WORLD_MEMBER_DIRECTORY_PATH,
   installWorldBoot,
@@ -901,6 +917,7 @@ const SOCKET_ACCOUNT_TAKEOVER_CODE = 4009;
 const SOCKET_BUFFER_HIGH_WATER_BYTES = 64 * 1024;
 const PRESENCE_PROFILE_DEBOUNCE_MS = 300;
 const MOVEMENT_SEND_INTERVAL_MS = 1000;
+const WORLD_MESH_SWITCH_MARGIN = 8;
 // Camera look shares the existing movement relay. About two-to-three samples
 // per second keeps remote head motion responsive while preserving room-wide
 // frame headroom for actual movement and profile updates.
@@ -4194,7 +4211,9 @@ function cleanExternalRepositories(payload) {
               ? "GitLab"
               : provider === "codeberg"
                 ? "Codeberg"
-                : "External",
+                : provider === "gitea"
+                  ? "Gitea"
+                  : "External",
         importId: String(record.id || "").slice(0, 64),
         externalUrl: String(record.originalUrl || "").slice(0, 500),
         isPrivate: record.isPrivate === true,
@@ -5544,6 +5563,14 @@ function worldTemplate(identity, settings, mode, landmarkCapabilities) {
             <span data-world-hud-notice-text></span>
             <button type="button" data-world-hud-notice-dismiss aria-label="Dismiss notice">${worldIconSvg("close")}</button>
           </p>
+          <div class="world-territory-bug" data-world-territory-bug role="dialog" aria-label="Bug report" hidden>
+            <div class="world-territory-bug-text">
+              <strong data-world-territory-bug-domain></strong>
+              <span data-world-territory-bug-name></span>
+            </div>
+            <a data-world-territory-bug-link target="_blank" rel="noopener noreferrer" hidden>View bugs</a>
+            <button type="button" data-world-territory-bug-dismiss aria-label="Close">${worldIconSvg("close")}</button>
+          </div>
           <div class="world-hud-island-feed world-native-chat" data-world-island-feed>
             <div id="fullChatMessages" role="log" aria-live="polite" aria-label="World chat"></div>
           </div>
@@ -6469,11 +6496,19 @@ class ForkMeshWorld extends HTMLElement {
     this.leavingWorld = false;
     this.officeOwner = null;
     this.meshVisitId = "";
+    this.meshRoot = null;
+    this.meshRootGeneration = 0;
+    this.meshPlaced = [];
+    this.meshSwitching = false;
     this.arrivalVisa = takeArrivalVisa();
+    this.arrivedWithVisa = Boolean(this.arrivalVisa);
     this.instanceHexes = [];
     this.homePortal = undefined;
     this.pendingPortalSlot = requestedPortalSlot(location.search);
     this.pendingMeshArrival = worldMeshArrival(location.search);
+    this.territory = null;
+    this.territoryLeaving = false;
+    this.pendingTerritoryArrival = territoryArrival(location.search);
     this.communityPlacement = null;
     this.networkAd = null;
     this.networkAdLoad = null;
@@ -7413,19 +7448,21 @@ class ForkMeshWorld extends HTMLElement {
         })
         .filter((owner) => owner.name && owner.name !== account),
     ];
-    const initialProvider = ["github", "gitlab", "codeberg"].includes(
+    const initialProvider = ["github", "gitlab", "codeberg", "gitea"].includes(
       String(options.provider || "").toLowerCase(),
     )
       ? String(options.provider).toLowerCase()
       : "codeberg";
-    // GitLab and Codeberg also accept a bare organization link, which the
-    // submit handler expands into every repository underneath it.
+    // GitLab, Codeberg and Gitea also accept a bare organization link, which
+    // the submit handler expands into every repository underneath it.
     const importPlaceholder = (provider) =>
       provider === "github"
         ? "https://github.com/owner/repository"
         : provider === "gitlab"
           ? "https://gitlab.com/group/repository  ·  https://gitlab.com/group"
-          : "https://codeberg.org/owner/repository  ·  https://codeberg.org/owner";
+          : provider === "gitea"
+            ? "https://gitea.com/owner/repository  ·  https://gitea.com/owner"
+            : "https://codeberg.org/owner/repository  ·  https://codeberg.org/owner";
     const dialog = document.createElement("dialog");
     dialog.dataset.worldCreateRepository = "true";
     dialog.style.cssText = "width:min(620px,calc(100vw - 28px));border:1px solid #e7e9ed;border-radius:20px;background:#fff;color:#111827;padding:0;box-shadow:0 20px 48px -16px rgb(15 23 42 / .24),0 4px 12px rgb(15 23 42 / .06);font-family:'ForkMesh Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif";
@@ -7433,13 +7470,14 @@ class ForkMeshWorld extends HTMLElement {
       <form style="padding:22px;display:grid;gap:16px">
         <header>
           <strong style="font-size:20px;font-weight:600;letter-spacing:-.01em">Import repositories into the World</strong>
-          <p style="margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5">Paste one repository link per line, or a whole organization — a GitLab group such as gitlab.com/gitlab-org (subgroups included) or a Codeberg profile such as codeberg.org/m33. ForkMesh reads provider metadata without storing your token, then portals arrive around the perimeter one at a time.</p>
+          <p style="margin:6px 0 0;color:#6b7280;font-size:13px;line-height:1.5">Paste one repository link per line, or a whole organization — a GitLab group such as gitlab.com/gitlab-org (subgroups included) or a Codeberg or Gitea profile such as codeberg.org/m33. ForkMesh reads provider metadata without storing your token, then portals arrive around the perimeter one at a time.</p>
         </header>
-        <div role="group" aria-label="Import provider" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div role="group" aria-label="Import provider" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
           ${[
             ["github", "GitHub", "#1f2328"],
             ["gitlab", "GitLab", "#c2410c"],
             ["codeberg", "Codeberg", "#1e6fbf"],
+            ["gitea", "Gitea", "#4d7c0f"],
           ]
             .map(
               ([id, label, color]) =>
@@ -7536,8 +7574,8 @@ class ForkMeshWorld extends HTMLElement {
           );
         } catch (_) {}
         // A single path segment on a namespace-capable host is an
-        // organization (a GitLab group or a Codeberg profile) rather than a
-        // repository. GitLab subgroups are deliberately not matched here:
+        // organization (a GitLab group or a Codeberg or Gitea profile) rather
+        // than a repository. GitLab subgroups are deliberately not matched here:
         // gitlab.com/group/thing is ambiguous from the URL alone, and the
         // group walk already includes every subgroup beneath it.
         const isNamespace =
@@ -7545,6 +7583,8 @@ class ForkMeshWorld extends HTMLElement {
           [
             "codeberg.org",
             "www.codeberg.org",
+            "gitea.com",
+            "www.gitea.com",
             "gitlab.com",
             "www.gitlab.com",
           ].includes(parsed.hostname.toLowerCase()) &&
@@ -7749,7 +7789,9 @@ class ForkMeshWorld extends HTMLElement {
       import("./world-office-tasks.js"),
     ])
       .then(([officeModule, meetingModule, tasksModule]) => {
-        if (this.destroyed || this.world !== world) return null;
+        if (this.destroyed || this.world !== world || this.officeOwner !== owner) {
+          return null;
+        }
         const meeting = meetingModule.createWorldOfficeMeeting({
           root,
           scene: world,
@@ -7880,6 +7922,11 @@ class ForkMeshWorld extends HTMLElement {
         "three.js r184 · streaming since page load",
       );
       if (this.destroyed) return;
+      this.territory = territoryFromInstance(
+        await this.instanceInfo(),
+        await this.worldMeshDirectory(),
+      );
+      if (this.destroyed) return;
       this.setLoadingProgress(46, "Placing the town square…");
       this.startBootStep("scene", "geometry, lighting, labels");
       // The scene build owns the main thread for its whole run, so hand the
@@ -7903,11 +7950,21 @@ class ForkMeshWorld extends HTMLElement {
         initialSpawn:
           this.restoredPosition ||
           (this.currentSpace === "town-square"
-            ? FRESH_ARRIVAL_CAMPFIRE_PREVIEW
+            ? this.territory
+              ? TERRITORY_FRESH_SPAWN
+              : FRESH_ARRIVAL_CAMPFIRE_PREVIEW
             : null),
+        territory: this.territory,
+        onTerritoryCross: (target) => this.crossTerritoryBorder(target),
+        onTerritoryLinkSelect: (link) => this.openTerritoryLink(link),
+        onTerritoryBugSelect: (bug) => this.showTerritoryBug(bug),
+        onTerritoryNotice: (message) => this.hudNotice(message),
         // Applied before the account ticket resolves, and kept local to this
         // browser so one visitor's performance experiment stays personal.
-        initialDisabledElements: this.disabledWorldElements,
+        initialDisabledElements: territoryDisabledElements(
+          this.disabledWorldElements,
+          this.territory,
+        ),
         initialRemovedWorldPackages: this.removedWorldPackages,
         initialInstalledWorldPackages: this.installedWorldPackages,
         // Pieces deleted by right-clicking them come out again as each owning
@@ -8251,6 +8308,9 @@ class ForkMeshWorld extends HTMLElement {
       this.socialCircleNear = false;
       this.syncMemberLounge();
       this.seatFreshArrivalAtCampfire();
+      this.applyTerritoryArrival();
+      this.applyPortalArrival();
+      void this.loadTerritoryBugs();
       [
         () => this.pushLiveMirrorNodes(),
         () => {
@@ -10411,6 +10471,8 @@ class ForkMeshWorld extends HTMLElement {
   }
 
   async fetchJSON(path, options = {}) {
+    const meshRoute = options.meshHome ? "" : meshRootRoute(path);
+    if (meshRoute) return this.fetchMeshRootJSON(path, options, meshRoute);
     const {
       maxAge = 0,
       dedupe = true,
@@ -10418,6 +10480,7 @@ class ForkMeshWorld extends HTMLElement {
       // when a refused attempt would be worse than a repeated one.
       backoff = true,
       staleIfError = false,
+      meshHome: _meshHome,
       ...fetchOptions
     } = options;
     const method = String(fetchOptions.method || "GET").toUpperCase();
@@ -10527,6 +10590,27 @@ class ForkMeshWorld extends HTMLElement {
         this.inflightRequests.delete(requestKey);
       }
     }
+  }
+
+  async fetchMeshRootJSON(path, options, route) {
+    const generation = this.meshRootGeneration;
+    const root = this.meshRoot;
+    const method = String(options.method || "GET").toUpperCase();
+    let value;
+    if (!root || method !== "GET") {
+      value = await this.fetchJSON(path, { ...options, meshHome: true });
+    } else if (route !== "read") {
+      const error = new Error("not_in_this_world");
+      error.status = 404;
+      throw error;
+    } else {
+      value = await this.worldFederation().fetchJSON(root, path, {
+        maxAge: Math.max(0, Number(options.maxAge) || 0),
+        auth: false,
+      });
+    }
+    if (generation !== this.meshRootGeneration) throw new Error("world_changed");
+    return value;
   }
 
   async postJSON(path, body, options = {}) {
@@ -11313,7 +11397,14 @@ class ForkMeshWorld extends HTMLElement {
     } catch (_) {}
     const instance = await this.instanceInfo();
     if (this.homePortal === undefined) {
-      this.homePortal = homePortalHex(instance);
+      this.homePortal = territoryFromInstance(instance)
+        ? null
+        : homePortalHex(instance);
+    }
+    if (this.territory) {
+      await this.placeTerritoryMesh();
+      this.applyPortalArrival();
+      return;
     }
     try {
       if (!instanceKeepsDirectory(instance)) {
@@ -11335,7 +11426,7 @@ class ForkMeshWorld extends HTMLElement {
       this.placeWorldMesh();
     } catch (_) {
       this.instanceHexes = withHomePortal([], this.homePortal);
-      this.world?.updateInstanceHexes?.(this.instanceHexes);
+      if (!this.meshRoot) this.world?.updateInstanceHexes?.(this.instanceHexes);
     }
     this.applyPortalArrival();
     try {
@@ -11353,9 +11444,145 @@ class ForkMeshWorld extends HTMLElement {
     } catch (_) {}
   }
 
+  async crossTerritoryBorder({ kind, url, label, slot, local } = {}) {
+    const destination =
+      territoryCrossingURL(url, {
+        from: kind === "forkmesh" ? location.hostname : "forkmesh",
+        slot: kind === "forkmesh" ? slot : -1,
+        local,
+      });
+    if (!destination || this.territoryLeaving) return;
+    this.territoryLeaving = true;
+    const name = kind === "forkmesh"
+      ? label || "the ForkMesh World"
+      : label || "a ForkMesh instance";
+    this.hudNotice(`Entering ${name}…`);
+    const visa = await this.requestTerritoryVisa(new URL(destination).origin);
+    this.leaveTerritory(withTerritoryVisa(destination, visa), `Entering ${name}…`);
+  }
+
+  async requestTerritoryVisa(destination) {
+    if (!this.sessionAuthenticated || !destination) return "";
+    try {
+      const payload = await this.postJSON(
+        "/api/world/visa",
+        { destination },
+        { timeout: TERRITORY_VISA_TIMEOUT_MS },
+      );
+      return typeof payload?.visa === "string" ? payload.visa : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  leaveTerritory(destination, message) {
+    this.territoryLeaving = true;
+    const veil = document.createElement("div");
+    veil.className = "world-territory-transition";
+    veil.setAttribute("role", "status");
+    veil.setAttribute("aria-live", "assertive");
+    veil.textContent = message;
+    document.body.append(veil);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    window.requestAnimationFrame(() => veil.classList.add("is-active"));
+    const reset = () => {
+      veil.remove();
+      this.territoryLeaving = false;
+      window.removeEventListener("pageshow", restored);
+    };
+    const restored = (event) => {
+      if (event.persisted) reset();
+    };
+    window.addEventListener("pageshow", restored);
+    window.setTimeout(() => {
+      window.location.assign(destination);
+      window.setTimeout(() => {
+        if (!document.hidden) reset();
+      }, 8000);
+    }, reduced ? 0 : TERRITORY_TRANSITION_MS);
+  }
+
+  openTerritoryLink({ url, label } = {}) {
+    const destination = territoryLinkURL(url);
+    if (!destination || this.territoryLeaving) return;
+    const name = label || new URL(destination).hostname;
+    this.hudNotice(`Entering ${name}…`);
+    this.leaveTerritory(destination, `Entering ${name}…`);
+  }
+
+  applyTerritoryArrival() {
+    const arrival = this.pendingTerritoryArrival;
+    if (!arrival || !this.world?.setSpawn) return;
+    this.pendingTerritoryArrival = null;
+    const spawn = this.world.territoryArrival?.(arrival);
+    if (spawn && this.world.setSpawn(spawn)) {
+      this.restoredPosition = null;
+      this.spawnSelected = true;
+    }
+    const from = territoryVisitorLabel(arrival);
+    this.hudNotice(
+      this.sessionAuthenticated
+        ? `Welcome, visitor from ${from}.`
+        : this.arrivedWithVisa
+          ? `Welcome over from ${from}: your home World is signing you in.`
+          : `Visiting from ${from} as a guest. Sign in there first to arrive as yourself.`,
+    );
+    try {
+      const clean = withoutTerritoryArrival(location.href);
+      if (clean) history.replaceState(history.state, "", clean);
+    } catch (_) {}
+  }
+
+  async loadTerritoryBugs() {
+    if (!this.territory?.bugs || !this.world?.updateTerritoryBugs) return;
+    try {
+      const { source, limit } = this.territory.bugs;
+      const payload = await this.fetchJSON(territoryRawURL(source, source.path), {
+        auth: false,
+        timeout: 8000,
+        credentials: "omit",
+      });
+      if (this.destroyed || !this.world) return;
+      this.world.updateTerritoryBugs(territoryBugs(payload, limit, source));
+    } catch (_) {
+      this.world?.updateTerritoryBugs?.([]);
+    }
+  }
+
+  showTerritoryBug(bug = {}) {
+    const card = this.$("[data-world-territory-bug]");
+    if (!card || !bug.domain) return;
+    card.querySelector("[data-world-territory-bug-domain]").textContent = bug.domain;
+    card.querySelector("[data-world-territory-bug-name]").textContent =
+      bug.count > 0
+        ? `${bug.name} · ${bug.count} bug${bug.count === 1 ? "" : "s"} reported`
+        : bug.name;
+    const link = card.querySelector("[data-world-territory-bug-link]");
+    const href = territoryLinkURL(bug.url);
+    link.hidden = !href;
+    if (href) link.href = href;
+    card.hidden = false;
+  }
+
   applyPortalArrival() {
     const slot = this.pendingPortalSlot;
     if (slot < 0 || !this.world?.setSpawn) return;
+    if (this.territory) {
+      const spawn = this.world.territoryArrival?.({ portal: true });
+      if (!spawn) return;
+      this.pendingPortalSlot = -1;
+      if (this.world.setSpawn(spawn)) {
+        this.restoredPosition = null;
+        this.spawnSelected = true;
+      }
+      this.hudNotice("Arrived through the portal from the ForkMesh World");
+      try {
+        const url = new URL(location.href);
+        url.searchParams.delete(PORTAL_PARAM);
+        history.replaceState(history.state, "", url.href);
+      } catch (_) {}
+      return;
+    }
     const hex = this.instanceHexes.find((item) => item.slot === slot);
     const spawn = hex ? this.world.instanceHexArrival?.(slot) : null;
     if (!spawn) return;
@@ -11376,9 +11603,40 @@ class ForkMeshWorld extends HTMLElement {
     }, intervalMs);
   }
 
+  worldMeshDirectory() {
+    if (!this.worldMeshRequest) {
+      this.worldMeshRequest = this.fetchJSON(
+        `/api/world/mesh?refresh=${Math.floor(Date.now() / 300_000)}`,
+        { auth: false, timeout: 2500, credentials: "omit" },
+      ).catch(() => null);
+    }
+    return this.worldMeshRequest;
+  }
+
+  async placeTerritoryMesh() {
+    const payload = await this.worldMeshDirectory();
+    this.worldMeshRequest = null;
+    if (!payload || !this.world || this.destroyed) return;
+    this.worldMesh = normalizeWorldMesh(payload);
+    const hub = this.worldMesh.worlds.find((world) => world.id === "forkmesh");
+    const shift = this.world.territoryForkmeshShift?.();
+    if (!hub || !shift) return;
+    this.worldMeshLinks()?.setNeighbors([
+      { ...hub, dx: shift.x, dz: shift.z, x: shift.townX, z: shift.townZ },
+    ]);
+    this.setOfficeOwner(hub);
+    this.syncWorldMeshPosition();
+  }
+
   placeWorldMesh() {
-    if (!this.world || this.destroyed) return;
-    const self = this.worldMesh?.self || null;
+    if (!this.world || this.destroyed || this.territory) return;
+    const home = this.worldMesh?.self || null;
+    if (this.meshRoot) {
+      this.meshRoot =
+        this.worldMesh.worlds.find((world) => world.id === this.meshRoot.id) ||
+        this.meshRoot;
+    }
+    const self = home && this.meshRoot ? this.meshRoot : home;
     const neighbors = self
       ? this.worldMesh.worlds.filter((world) => world.id !== self.id)
       : [];
@@ -11388,10 +11646,100 @@ class ForkMeshWorld extends HTMLElement {
         self ? self.slot : -1,
         self ? self.shape : "flower",
       ) || [];
+    this.meshPlaced = placed;
     this.meshHexNeighbors = placed.filter((world) => world.shape === "hex");
-    this.worldMeshLinks()?.setNeighbors(placed);
+    this.worldMeshLinks()?.setNeighbors(this.meshLinkWorlds(placed));
     this.applyWorldMeshArrival();
     this.syncWorldMeshPosition();
+  }
+
+  meshLinkWorlds(placed) {
+    const home = this.worldMesh?.self || null;
+    const root = this.meshRoot;
+    if (!root || !home) return placed;
+    const homeEntry = placed.find((world) => world.id === home.id);
+    const x = homeEntry ? homeEntry.x - homeEntry.dx : 0;
+    const z = homeEntry ? homeEntry.z - homeEntry.dz : 0;
+    return placed
+      .filter((world) => world.id !== home.id)
+      .concat({ ...root, dx: 0, dz: 0, x, z });
+  }
+
+  meshHomeShift() {
+    const id = this.worldMesh?.self?.id;
+    if (!this.meshRoot || !id) return null;
+    const home = (this.meshPlaced || []).find((world) => world.id === id);
+    return home ? { dx: home.dx, dz: home.dz } : null;
+  }
+
+  homeFramePlayer(player) {
+    const shift = this.meshHomeShift();
+    if (!shift || !player) return player;
+    return {
+      ...player,
+      x: (Number(player.x) || 0) + shift.dx,
+      z: (Number(player.z) || 0) + shift.dz,
+    };
+  }
+
+  enterMeshWorld(id) {
+    const home = this.worldMesh?.self || null;
+    const target = (this.meshPlaced || []).find((world) => world.id === id);
+    if (!home || !target || this.meshSwitching) return false;
+    if (!this.world?.shiftPlayer?.(-target.dx, -target.dz)) return false;
+    this.meshSwitching = true;
+    try {
+      this.meshRoot =
+        id === home.id
+          ? null
+          : this.worldMesh.worlds.find((world) => world.id === id) || null;
+      this.meshRootGeneration += 1;
+      const x = Number(this.lastMovement?.x);
+      const z = Number(this.lastMovement?.z);
+      if (Number.isFinite(x) && Number.isFinite(z)) {
+        this.lastMovement = {
+          ...this.lastMovement,
+          x: x - target.dx,
+          z: z - target.dz,
+        };
+      }
+      this.placeWorldMesh();
+    } finally {
+      this.meshSwitching = false;
+    }
+    const root = this.meshRoot;
+    this.hudNotice(
+      root
+        ? `Entering ${root.name} · ${root.host}`
+        : `Back in ${home.name || "your world"}`,
+    );
+    this.setOfficeOwner(root);
+    this.reloadMeshRootData();
+    this.sendPresenceNow({ type: "presence" });
+    this.schedulePeerRender();
+    return true;
+  }
+
+  reloadMeshRootData() {
+    if (this.destroyed) return;
+    this.inactivePlayers = [];
+    this.nearbyMemberDataLoad = null;
+    this.officeDataLoad = null;
+    this.socialWorldDataLoad = null;
+    this.fountainDataLoad = null;
+    void this.loadNearbyMemberData();
+    void this.loadOfficeData();
+    if (this.socialCircleNear) this.startSocialCircleWatch();
+    void this.refreshCommunityEvents(true);
+    void this.refreshFediverseMentions();
+    void this.fetchLeaderboardSnapshot();
+    if (this.fountainWatchActive) void this.loadFountainData({ force: true });
+    if (this.repositoryDistrictVisited && !this.repositoryCatalogRequest) {
+      this.repositoryDistrictVisited = false;
+      void this.loadRepositoryCatalog({ reason: "world" });
+    } else {
+      this.repositoryDistrictVisited = false;
+    }
   }
 
   applyWorldMeshArrival() {
@@ -11441,27 +11789,41 @@ class ForkMeshWorld extends HTMLElement {
     const x = Number(movement?.x);
     const z = Number(movement?.z);
     const space = String(movement?.space || this.currentSpace || "town-square");
+    const rootId = this.meshRoot?.id || "";
     if (
       document.hidden ||
       !WORLD_MESH_OUTDOOR_SPACES.has(space) ||
       !Number.isFinite(x) ||
       !Number.isFinite(z)
     ) {
-      this.meshLinks.update(NaN, NaN, "");
+      this.meshLinks.update(NaN, NaN, document.hidden ? "" : rootId);
       return;
     }
-    const owner = this.world?.worldMeshOwner?.(x, z) || null;
-    const visit = owner?.shape === "hex" && !owner.onLand ? "" : owner?.id || "";
+    if (this.territory) {
+      this.meshLinks.update(x, z, this.world?.territoryOwnerAt?.(x, z) || "");
+      return;
+    }
+    const owner =
+      this.world?.worldMeshOwner?.(x, z, WORLD_MESH_SWITCH_MARGIN) || null;
+    const ownerId = owner?.shape === "hex" && !owner.onLand ? "" : owner?.id || "";
+    const standing = rootId || this.worldMesh?.self?.id || "";
+    let visit = rootId;
+    if (ownerId && ownerId !== standing) {
+      if (this.enterMeshWorld(ownerId)) return;
+      if (!rootId) visit = ownerId;
+    }
     this.meshLinks.update(x, z, visit);
   }
 
   handleWorldMeshVisit(world, previous) {
     this.meshVisitId = world?.id || "";
     if (this.destroyed) return;
-    if (world) {
-      this.hudNotice(`Entering ${world.name} · ${world.host}`);
-    } else if (previous) {
-      this.hudNotice(`Back in ${this.worldMesh?.self?.name || "your world"}`);
+    if (!this.meshRoot && !this.meshSwitching) {
+      if (world) {
+        this.hudNotice(`Entering ${world.name} · ${world.host}`);
+      } else if (previous) {
+        this.hudNotice(`Back in ${this.worldMesh?.self?.name || "your world"}`);
+      }
     }
     this.sendPresenceNow({ type: "presence" });
     this.schedulePeerRender();
@@ -11545,10 +11907,10 @@ class ForkMeshWorld extends HTMLElement {
     const owner = this.world?.worldMeshOwner?.(x, z);
     const world = owner
       ? this.worldMesh?.worlds?.find((entry) => entry.id === owner.id)
-      : null;
-    return world
+      : this.meshRoot;
+    return world && world.id !== this.worldMesh?.self?.id
       ? this.worldFederation().fetchJSON(world, path, options)
-      : this.fetchJSON(path, options);
+      : this.fetchJSON(path, { ...options, meshHome: true });
   }
 
   async requestWorldVisa(world) {
@@ -11578,6 +11940,7 @@ class ForkMeshWorld extends HTMLElement {
     }
     const base = remotePlayer({ ...peer, home: "", x: 0, y: 0, z: 0 });
     if (!base) return null;
+    const resident = entry.worldId === this.meshRoot?.id;
     const home = worldMeshHost(peer.home) || entry.host;
     const x = Number(peer.x);
     const y = Number(peer.y);
@@ -11591,8 +11954,8 @@ class ForkMeshWorld extends HTMLElement {
       x: (Number.isFinite(x) ? x : 0) + entry.dx,
       y: Number.isFinite(y) ? y : 0,
       z: (Number.isFinite(z) ? z : 0) + entry.dz,
-      activity: "exploring",
-      category: "hidden",
+      activity: resident ? base.activity : "exploring",
+      category: resident ? base.category : "hidden",
       publicDoor: "closed",
       faceImage: false,
       moderationHandles: {},
@@ -14154,6 +14517,10 @@ class ForkMeshWorld extends HTMLElement {
     this.$("[data-world-hud-notice-dismiss]")?.addEventListener("click", () =>
       this.dismissHudNotice(),
     );
+    this.$("[data-world-territory-bug-dismiss]")?.addEventListener("click", () => {
+      const card = this.$("[data-world-territory-bug]");
+      if (card) card.hidden = true;
+    });
     this.$("[data-world-agent-run-dismiss]")?.addEventListener("click", () => {
       this.stopAgentRunWatch();
       const run = this.$("[data-world-agent-run]");
@@ -20867,6 +21234,8 @@ class ForkMeshWorld extends HTMLElement {
     // A saved pose, shared view, or explicit regional destination always wins.
     // Only a truly unplaced Town Square arrival starts at the social circle.
     if (
+      this.territory ||
+      this.pendingTerritoryArrival ||
       this.restoredPosition ||
       this.sharedView ||
       this.spawnSelected ||
@@ -22928,7 +23297,7 @@ class ForkMeshWorld extends HTMLElement {
     }
     const path = `/${encodeURIComponent(owner)}/${encodeURIComponent(
       name,
-    )}/${recordKind === "pull" ? "pulls" : "issues"}${
+    )}/${recordKind === "pull" ? (number ? "pull" : "pulls") : "issues"}${
       number ? `/${number}` : ""
     }`;
     const detail = this.$("[data-world-detail]");
@@ -31494,11 +31863,16 @@ class ForkMeshWorld extends HTMLElement {
 
   rememberWorldPosition(position, flush = false) {
     if (!this.positionKey) return;
+    const shift = this.meshHomeShift();
+    if (this.meshRoot) {
+      const space = String(position?.space || this.currentSpace || "");
+      if (!shift || !WORLD_MESH_OUTDOOR_SPACES.has(space)) return;
+    }
     const record = normalizedWorldPosition(
       {
-        x: position?.x,
+        x: shift ? Number(position?.x) - shift.dx : position?.x,
         y: position?.y,
-        z: position?.z,
+        z: shift ? Number(position?.z) - shift.dz : position?.z,
         heading: position?.heading ?? position?.yaw,
         space: knownWorldSpace(String(position?.space || ""))
           ? String(position.space)
@@ -32492,7 +32866,7 @@ class ForkMeshWorld extends HTMLElement {
         // avatar from a late frame that followed its authoritative leave.
         const current = this.remotePlayers.get(id);
         if (!current) return;
-        const next = {
+        const moved = {
           ...current,
           x: boundedPresenceNumber(message.x),
           z: boundedPresenceNumber(message.z),
@@ -32501,7 +32875,8 @@ class ForkMeshWorld extends HTMLElement {
           lookPitch: boundedLookPitch(message.lookPitch),
           race: droneRaceFrame(message.race),
         };
-        this.remotePlayers.set(id, next);
+        this.remotePlayers.set(id, moved);
+        const next = this.homeFramePlayer(moved);
         // A move carries no badge, roster, lounge, or capacity data. Update
         // the existing interpolation target in O(1), falling back to the full
         // pass only when a just-joined avatar has not been constructed yet.
@@ -32907,8 +33282,11 @@ class ForkMeshWorld extends HTMLElement {
     const combined = new Map(
       this.inactivePlayers.map((player) => [player.id, player]),
     );
+    const rooted = Boolean(this.meshHomeShift());
     this.remotePlayers.forEach((player, id) => {
-      if (player.space !== WORLD_MESH_VISITING_SPACE) combined.set(id, player);
+      if (player.space === WORLD_MESH_VISITING_SPACE) return;
+      if (rooted && !WORLD_MESH_OUTDOOR_SPACES.has(String(player.space || ""))) return;
+      combined.set(id, this.homeFramePlayer(player));
     });
     this.meshPeerPlayers().forEach((player) => combined.set(player.id, player));
     const socketOnline =
@@ -32921,7 +33299,7 @@ class ForkMeshWorld extends HTMLElement {
     if (!socketOnline && !reconnectGrace) {
       this.localPeers.forEach((peer, id) => {
         combined.set(`local:${id}`, {
-          ...peer,
+          ...this.homeFramePlayer(peer),
           id: `local:${id}`,
           activity: peer.status === "hidden" ? "online" : peer.status,
         });

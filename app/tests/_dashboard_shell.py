@@ -18,6 +18,7 @@ _SRC = _ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
+import dashboard_bundle  # noqa: E402
 import dashboard_shell  # noqa: E402
 
 PUBLIC = _ROOT / "public"
@@ -70,4 +71,13 @@ def assembled_dashboard() -> str:
     return "".join(
         assembled_dashboard_page(page)
         for page in (*dashboard_shell.PAGES, *PACKAGED_PAGES)
+    )
+
+
+def deferred_dialogs() -> str:
+    """The dialog markup the page documents leave out and dashboard.js adds
+    on first open (dashboard_bundle.DEFERRED_MARKUP), concatenated."""
+    return "".join(
+        _read(dashboard_bundle.deferred_markup_path(name))
+        for name in dashboard_bundle.DEFERRED_MARKUP
     )

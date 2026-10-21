@@ -28,7 +28,7 @@ const PUBLIC_VIEWS = [
   "/acme/widgets",
   "/acme/widgets/issues",
   "/acme/widgets/pulls",
-  "/acme/widgets/pulls/93",
+  "/acme/widgets/pull/93",
   "/acme/widgets/releases",
   "/acme/widgets/mirrors",
   "/acme/widgets/branches",

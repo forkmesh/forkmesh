@@ -93,6 +93,8 @@ def repository_event(
     ):
         return None
     event_type, route = aliases[kind]
+    if reference and route == "pulls":
+        route = "pull"
     parsed = urlparse(str(origin or ""))
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         return None

@@ -52,8 +52,12 @@ Open that link, write a title and a description, and click **Create pull
 request**. The pull request goes to the original repository. Your browser signs
 it, so the maintainer can check it came from your account.
 
-A pull request records your branch as it was when you opened it. If you push
-more commits after review, open a new pull request from the same link.
+A pull request records your branch as it was when you opened it. After you
+push more commits, open the pull request and click **Update pull request**: it
+sends your branch's current state as a new revision, and the comments and
+reviews stay. If you rewrote your branch (amend or rebase), push it under a new
+name, for example `git push fork my-change-2`, and update the pull request
+from that branch. You never need to force-push.
 
 ## Without a fork
 
@@ -64,10 +68,22 @@ request from the link git prints. See
 
 ## Good to know
 
-- You can fork public repositories hosted on ForkMesh's servers. A repository
-  published from someone's own node cannot be forked from the website yet.
-- Pushes are fast-forward only: you cannot force-push or delete a branch over
-  git. Delete branches on the fork's **Branches** page.
+- You can fork any public repository, whether it is hosted on ForkMesh's
+  servers or published from someone's own node (like `forkmesh/forkmesh`). If
+  you have a linked managed mirror, a fork of a node-published repository is
+  made on your mirror instead.
+- You can force-push your own branches after a rebase, amend or squash, which
+  updates an open pull request. Use `git push --force-with-lease`: it refuses
+  when the branch has commits you have not fetched (say, after **Update
+  branch** on the pull request). If that happens, run `git pull --rebase` and
+  push again. The default branch and protected branches only move forward,
+  and the previous tip of a force-pushed branch is kept, so reviews of older
+  commits still resolve.
+- A pull request sent from your own copy as a patch series has no branch
+  here to force-push: send the new commits with **Update pull request** on
+  its page, which signs a revision of the same pull request.
+- A push never deletes a branch. Delete branches on the fork's **Branches**
+  page.
 - Forks have their own per-account limit, separate from the repositories you
   create.
 - If git says `Authentication failed`, check the account name or email and the

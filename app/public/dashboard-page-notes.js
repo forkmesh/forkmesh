@@ -38,18 +38,36 @@
     owner_required: "Only the note's owner can do that.",
     editor_required: "You need edit access to do that.",
     note_not_found: "This note no longer exists, or you no longer have access to it.",
+    upstream_unavailable: "ForkMesh is restarting. Try again in a few seconds.",
+    sealed: "ForkMesh is restarting. Try again in a few seconds.",
   };
+  const NOTE_READ_RETRY_DELAYS_MS = [500, 1500, 4000];
 
   async function noteRequest(path, method = "GET", body = null) {
     const headers = { accept: "application/json" };
     const token = state.session?.sessionToken || "";
     if (token) headers.authorization = `Bearer ${token}`;
     if (body !== null) headers["content-type"] = "application/json";
-    const response = await fetch(path, {
-      method, headers, cache: "no-store",
-      body: body === null ? undefined : JSON.stringify(body),
-    });
-    const payload = await response.json().catch(() => ({}));
+    const retries = method === "GET" ? NOTE_READ_RETRY_DELAYS_MS : [];
+    let response;
+    let payload;
+    for (let attempt = 0; ; attempt += 1) {
+      const last = attempt >= retries.length;
+      try {
+        response = await fetch(path, {
+          method, headers, cache: "no-store",
+          body: body === null ? undefined : JSON.stringify(body),
+        });
+      } catch (cause) {
+        if (last) throw cause;
+        response = null;
+      }
+      if (response) {
+        payload = await response.json().catch(() => ({}));
+        if (response.ok || last || (response.status < 500 && response.status !== 408)) break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, retries[attempt]));
+    }
     if (!response.ok) {
       const error = new Error(NOTE_ERRORS[payload.error] || payload.error || `HTTP ${response.status}`);
       error.status = response.status; error.payload = payload; throw error;
@@ -339,8 +357,8 @@
     const canEdit = noteCanEdit(note);
     const kindIcon = { issue: "circle-dot", pull: "git-pull-request", discussion: "message-square" };
     const chips = (note.links || []).map((link) => {
-      const section = link.kind === "pull" ? "pulls" : `${link.kind}s`;
-      const href = `${repoPathUrl({ owner: link.owner, name: link.repo })}?tab=${section}#${link.number}`;
+      const section = { pull: "pull", discussion: "discussions" }[link.kind] || "issues";
+      const href = `${repoPathUrl({ owner: link.owner, name: link.repo })}/${section}/${encodeURIComponent(link.number)}`;
       return `<span class="notes-chip"><span data-kind="${escapeHtml(link.kind)}">${noteIcon(kindIcon[link.kind] || "link")}</span><a href="${href}" title="${escapeHtml(link.owner)}/${escapeHtml(link.repo)} ${escapeHtml(link.kind)} #${link.number}">${escapeHtml(link.repo)}#${link.number}</a>${canEdit ? `<button type="button" class="notes-chip-x" data-note-unlink='${escapeHtml(JSON.stringify(link))}' aria-label="Unlink ${escapeHtml(link.repo)}#${link.number}">${noteIcon("x")}</button>` : ""}</span>`;
     }).join("");
     const adder = !canEdit ? ""

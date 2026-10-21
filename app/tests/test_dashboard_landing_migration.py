@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 import tomllib
 
-from _dashboard_shell import assembled_dashboard, assembled_dashboard_page
+from _dashboard_shell import assembled_dashboard, assembled_dashboard_page, deferred_dialogs
 from _dashboard_bundle import assembled_dashboard_js
 import dashboard_shell
 from dashboard_shell import PAGES
@@ -27,7 +27,7 @@ STATIC_ROUTES_TEXT = (ROOT / "src" / "static_routes.py").read_text(encoding="utf
 WRANGLER = tomllib.loads((ROOT / "wrangler.toml").read_text(encoding="utf-8"))
 REDIRECTS = (WWW_PUBLIC / "_redirects").read_text(encoding="utf-8")
 REPO_HOST_ROUTE_RE = (
-    'r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes)$"'
+    'r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes|pulse)$"'
 )
 REPO_DIRECT_BROWSE_GATE = "and action in REPO_HOST_READ_ACTIONS"
 
@@ -49,9 +49,13 @@ def test_dashboard_shell_is_split_into_composable_partials():
     # The authored shell stays split - it references partials rather than
     # inlining the chrome.
     assert "<!--#include" in source_shell
-    for name in ("header", "sidebar", "main", "modals"):
+    for name in ("header", "sidebar", "main"):
         assert (PUBLIC / "dashboard" / "partials" / (name + ".html")).is_file()
         assert ('<!--#include partial="%s"-->' % name) in source_shell
+    # The dialogs are not in the documents: dashboard.js adds them on first
+    # open (dashboard_bundle.DEFERRED_MARKUP).
+    assert (PUBLIC / "dashboard" / "partials" / "modals.html").is_file()
+    assert '<!--#include partial="modals"-->' not in source_shell
     assert '<!--#include partial="network-rail"-->' not in source_shell
 
     # One prebuilt static document per PAGES entry, each carrying its page id
@@ -347,9 +351,10 @@ def test_dashboard_home_left_rail_uses_theme_aware_panel_background():
 
 
 def test_dashboard_profile_about_is_editable_for_logged_in_user():
-    # The about modal lives in the shared modals partial; the panel is in the
+    # The about modal lives in the shared modals partial (added on first
+    # open, dashboard_bundle.DEFERRED_MARKUP); the panel is in the
     # profile-overview view, which is the profile page's only view.
-    dashboard = assembled_dashboard_page("profile")
+    dashboard = assembled_dashboard_page("profile") + deferred_dialogs()
     dashboard_js = _read(PUBLIC / "dashboard.js")
     profile = _read(VIEWS / "profile-overview.html")
 
@@ -620,9 +625,9 @@ def test_dashboard_profile_tabs_link_to_network_without_placeholder_tabs():
         assert ">40<" not in tabs
 
     # The active tab underline is baked into each page's own view.
-    assert 'href="/dashboard/profile" class="inline-flex items-center gap-2 border-b-2 border-[#f78166]' in overview
-    assert 'href="/dashboard/profile/repositories" class="inline-flex items-center gap-2 border-b-2 border-[#f78166]' in repositories
-    assert 'href="/dashboard/network" class="inline-flex items-center gap-2 border-b-2 border-[#f78166]' in network
+    assert 'href="/dashboard/profile" class="inline-flex items-center gap-2 border-b-2 border-[var(--dashboard-tab-underline)]' in overview
+    assert 'href="/dashboard/profile/repositories" class="inline-flex items-center gap-2 border-b-2 border-[var(--dashboard-tab-underline)]' in repositories
+    assert 'href="/dashboard/network" class="inline-flex items-center gap-2 border-b-2 border-[var(--dashboard-tab-underline)]' in network
     assert 'data-network-page-inner class="w-full px-4 py-6 sm:px-6 lg:px-8"' in network
     assert "mx-auto max-w-[1432px]" in network
     for icon in ("shield", "zap", "lock", "refresh-cw"):
@@ -1384,8 +1389,9 @@ def test_repository_code_toolbar_carries_fork_and_about_carries_code_map():
     # Fork | count sits directly left of "Add file", in both toolbars.
     for bar, compact in ((toolbar, "false"), (focus_actions, "true")):
         fork = bar.index("${forkSplitButton(%s)}" % compact)
-        assert fork < bar.index("Add file")
-        assert "data-repo-codemap-open" not in bar[fork:bar.index("Add file")]
+        add_file = bar.index("${addFileButton(")
+        assert fork < add_file
+        assert "data-repo-codemap-open" not in bar[fork:add_file]
     assert "md:grid-cols-[auto_minmax(0,1fr)_auto_auto_auto]" in toolbar
     # The main toolbar lost Code map to the About box; the file view keeps it,
     # since About is hidden there.
@@ -1708,7 +1714,7 @@ def test_dashboard_repository_tabs_read_public_mirror_data_not_owner_inbox():
         "Object.assign(blobs, await fetchRepoBlobs(",
         "paths.slice(offset, offset + 50), refParams",
         "fetchMissingRepoBlobs(",
-        "so new ones are created from the ${desktopBrand()}desktop app.",
+        "function openDiscussionCompose(repo)",
     ):
         assert marker in dashboard_js
 
@@ -2064,18 +2070,18 @@ def test_dashboard_pull_detail_reads_committed_patch_for_files_changed():
 
     for marker in (
         'const PULL_METADATA_BRANCH = "forkmesh/pulls";',
-        "async function resolveRepoPullMetadataCommit(repo)",
+        "async function resolveRepoPullMetadataCommit(repo, options = {})",
         'async function loadRepoPullPatch(repo, number, metadataCommit = "", values = {})',
         "function parsePatchStats(patch)",
         "function renderRepoPullFiles(files, viewed = new Set(), options = {})",
-        'function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified")',
+        'function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified", parsed = null)',
         "data-repo-pull-file-list",
         "data-repo-pull-patch",
         ".forkmesh/pulls/${number}/changes.patch",
         "ref: commit,",
         "loadRepoPullPatch(repo, number, pullMetadataCommit, values),",
-        "renderRepoPullFiles(files, viewed, { mode: layout.explorer })",
-        "renderRepoPullPatch(pullPatch.patch, viewed, effectivePullDiffMode(layout.diff))",
+        "renderRepoPullFiles(files, viewed, { mode: layout.explorer, marks })",
+        "renderRepoPullPatch(pullPatch.patch, viewed, mode, parsed)",
     ):
         assert marker in dashboard_js
 
@@ -2457,7 +2463,7 @@ def test_dashboard_repository_branch_button_lists_live_remote_branches():
         "function renderRepoBranchToolbar(repo, branch)",
         "function renderRepoBranchMenu(repo, branches, open)",
         "async function toggleRepoBranchMenu(repo, button)",
-        "fetchRepoJson(`${repoApiBase(repo)}/branches`)",
+        "fetchRepoJson(`${repoApiBase(repo)}/branches`",
         "filterRepoBranches(repo, branches)",
         "branches.map((branch) =>",
         "data-repo-branch-button",
@@ -2592,7 +2598,8 @@ def test_dashboard_repository_code_explorer_switches_between_tree_and_file_revie
     assert 'data-repo-code-explorer class="hidden' in render
     assert 'treePanel?.classList.remove("hidden");' in tree_loader
     assert 'viewer?.classList.add("hidden");' in tree_loader
-    assert 'readmePanel?.classList.toggle("hidden", Boolean(path));' in tree_loader
+    assert 'readmePanel?.classList.add("hidden");' in tree_loader
+    assert 'readmePanel?.classList.remove("hidden");' in tree_loader
     assert "setRepoExplorerFocusMode(Boolean(path));" in tree_loader
     assert 'treePanel?.classList.add("hidden");' in blob_loader
     assert 'readmePanel?.classList.add("hidden");' in blob_loader
@@ -2802,7 +2809,7 @@ def test_dashboard_network_chat_uses_real_room_integration_without_mock_messages
     assert "const fullMessages" not in dashboard
     assert "const sideMessages" not in dashboard
     assert "notificationToggle" in visible
-    assert "notificationModal" in visible
+    assert "notificationModal" in deferred_dialogs()
     assert "data-notification-count" in visible
     for mock in (
         "alice-node",
@@ -2939,7 +2946,7 @@ def test_dashboard_hard_refresh_preserves_tab_through_404_bounce():
     render_body = dashboard_js[render_start:dashboard_js.index("\n  function findRepository(key)")]
 
     assert "routeMatchesRepo" in render_body
-    assert 'repoTabRoutesFor(repo).includes(routeKind)\n          ? `${repoLinkUrl(repo)}/${routeKind}`' in render_body
+    assert 'repoTabRoutesFor(repo).includes(routeKind)\n              ? `${repoLinkUrl(repo)}/${routeKind}`' in render_body
     assert "navigateHistory(detailPath);" in render_body
     # The old bare-collapse call must be gone.
     assert "const detailPath = repoLinkUrl(repo);" not in render_body

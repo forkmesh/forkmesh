@@ -177,6 +177,8 @@ export const WORLD_MESH_SPACE = "world-mesh";
 let worldMeshFlowers = [];
 let worldMeshHexes = [];
 let worldMeshJunctions = [];
+let territoryTiles = null;
+let territoryJunctions = [];
 let worldMeshPetals = new Set();
 
 export function hexCorners(center) {
@@ -206,6 +208,27 @@ export function setWorldMeshFlowers(flowers = []) {
 
 export function worldMeshReplacedPetals() {
   return [...worldMeshPetals].map((index) => index - 1);
+}
+
+export function setTerritoryTiles(tiles = null) {
+  if (!Array.isArray(tiles) || !tiles.length) {
+    territoryTiles = null;
+    territoryJunctions = [];
+    return;
+  }
+  territoryTiles = tiles.filter(Boolean);
+  territoryJunctions = hexCorners(territoryTiles[0]);
+}
+
+export function territoryWalkActive() {
+  return territoryTiles !== null;
+}
+
+function territoryWalkSurfaceContains(px, pz, margin) {
+  for (let index = 0; index < territoryTiles.length; index += 1) {
+    if (grownHexContains(px, pz, territoryTiles[index], margin)) return true;
+  }
+  return junctionContains(px, pz, territoryJunctions, margin);
 }
 
 function grownHexContains(px, pz, tile, margin) {
@@ -253,7 +276,7 @@ export function worldMeshFlowerAt(x, z, radius = 0) {
   return null;
 }
 
-export function worldMeshOwnerAt(x, z) {
+export function worldMeshOwnerAt(x, z, radius = 0) {
   const px = Number(x);
   const pz = Number(z);
   if (!Number.isFinite(px) || !Number.isFinite(pz) || !worldMeshFlowers.length) return null;
@@ -273,7 +296,7 @@ export function worldMeshOwnerAt(x, z) {
       return null;
     }
   }
-  return worldMeshFlowerAt(px, pz);
+  return worldMeshFlowerAt(px, pz, radius);
 }
 
 export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
@@ -281,6 +304,7 @@ export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
   const pz = Number(z);
   const margin = Math.max(0, Number(radius) || 0);
   if (!Number.isFinite(px) || !Number.isFinite(pz)) return false;
+  if (territoryTiles) return territoryWalkSurfaceContains(px, pz, margin);
   const bound = WORLD_RADIUS - margin;
   if (Math.abs(px) <= bound && Math.abs(pz) <= bound) {
     for (let index = 0; index < WORLD_HEX_TILES.length; index += 1) {
@@ -295,6 +319,7 @@ export function desertWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
 }
 
 export function beachWalkSurfaceContains(x, z, radius = OFFICE_AVATAR_RADIUS) {
+  if (territoryTiles) return false;
   const px = Number(x);
   const pz = Number(z);
   const margin = Math.max(0, Number(radius) || 0);

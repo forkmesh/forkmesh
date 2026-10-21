@@ -1,6 +1,7 @@
 """tools/next_deploy.py: dry-run default, rollout order, gate, rollback."""
 
 import gzip
+import io
 import json
 import os
 import subprocess
@@ -74,9 +75,7 @@ def _no_settle(monkeypatch):
     monkeypatch.setattr(next_deploy, "SETTLE_SECONDS", 0)
 
 
-@pytest.mark.parametrize("parallel", [False, True])
-def test_restart_lets_the_cluster_see_a_node_before_the_next_drains(
-        tmp_path, monkeypatch, parallel):
+def test_restart_takes_one_node_down_at_a_time(tmp_path, monkeypatch):
     monkeypatch.setattr(next_deploy, "SETTLE_SECONDS", 3)
     events = []
 
@@ -89,14 +88,12 @@ def test_restart_lets_the_cluster_see_a_node_before_the_next_drains(
                    state_answer(states)])
     data = fleet(tmp_path)
     first, second, third = ips_in_order(data)
-    next_deploy.restart(data, REV, ssh, Runner(execute=True),
-                        parallel=parallel,
+    out = io.StringIO()
+    next_deploy.restart(data, REV, ssh, Runner(execute=True, out=out),
                         settle=lambda seconds: events.append(seconds))
-    assert events[:2] == [first, 3]
-    if parallel:
-        assert sorted(events[2:]) == sorted([second, third])
-    else:
-        assert events[2:] == [second, 3, third]
+    assert events == [first, 3, second, 3, third]
+    assert "(one node at a time)" in out.getvalue()
+    assert "together" not in out.getvalue()
 
 
 def test_restart_executes_in_order_and_stops_at_first_failed_gate(tmp_path):

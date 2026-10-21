@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.LocalShellClearance
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.selectable
@@ -78,7 +79,6 @@ import com.forkmesh.nativeapp.ui.kit.FmSkeletonList
 import com.forkmesh.nativeapp.ui.kit.FmSliverFadeIn
 import com.forkmesh.nativeapp.ui.kit.FmStatusBadge
 import com.forkmesh.nativeapp.ui.kit.FmTooltip
-import com.forkmesh.nativeapp.ui.kit.FmUserActivity
 import com.forkmesh.nativeapp.ui.navigation.Navigator
 import com.forkmesh.nativeapp.ui.navigation.Screen
 import com.forkmesh.nativeapp.ui.theme.Fm
@@ -192,7 +192,7 @@ internal class ReposScreen : Screen() {
         val shape = RoundedCornerShape(FmRadius.lg)
         BasicTextField(
             value = searchText,
-            onValueChange = FmUserActivity.typing {
+            onValueChange = FmSafeInput.typing {
                 searchText = it
                 query = RepoCatalog.normalizeQuery(it)
             },

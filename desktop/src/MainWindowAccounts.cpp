@@ -81,6 +81,8 @@ void MainWindow::logout()
     // account-scoped worker APIs see, so leaving it alive would keep this
     // machine "signed in" on the site after a desktop logout.
     revokeAccountSession();
+    if (m_officeChannelMirror)
+        m_officeChannelMirror->stop();
     m_accountSessionCache.clear();
     setDesktopCapability(m_accountName, false);
     m_accountAuthenticated = false;
@@ -623,6 +625,8 @@ void MainWindow::isolateAccountForServerSwitch(const QString &accountName)
     // Keep other instances' sessions in the in-memory exact-origin cache, but
     // drop every active capability before selecting/restoring the destination.
     // Nothing account-scoped may remain logically active during the handoff.
+    if (m_officeChannelMirror)
+        m_officeChannelMirror->stop();
     m_accountSessionToken.fill(QChar(u'\0'));
     m_accountSessionToken.clear();
     m_accountSessionInstanceUrl.clear();
@@ -767,6 +771,12 @@ bool MainWindow::switchToUserAccount(const QString &accountName,
             QStringLiteral("Choose a valid ws:// or wss:// ForkMesh instance."));
         return false;
     }
+    if (std::none_of(m_servers.cbegin(), m_servers.cend(),
+                     [&targetServer](const ServerConfig &server) {
+                         return accountInstanceUrl(server.url) == targetServer;
+                     }) &&
+        refuseInstanceOfAnotherProject(targetServer))
+        return false;
 
     if (hasActiveAccountSession() &&
         AccountCapability::normalizedAccount(m_accountName) == account &&

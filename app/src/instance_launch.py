@@ -138,7 +138,9 @@ def parse_theme(value):
         return "", None
     if isinstance(value, str):
         name = value.strip().lower()[:41]
-        if not name or name in instance_theme.PRESETS:
+        if not name or name in instance_theme.PRESETS \
+                or name == instance_theme.DEFAULT_THEME \
+                or instance_theme.theme_ready(name):
             return name, None
         return None, ("invalid_theme", "Choose one of the colour themes "
                       "listed, or the default.", "theme")

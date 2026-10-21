@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.navigation
 
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.confirmAction
 import com.forkmesh.nativeapp.ui.kit.fmScrollEdge
 import com.forkmesh.nativeapp.ui.kit.FmSheet
@@ -167,7 +168,6 @@ import com.forkmesh.nativeapp.ui.kit.FmSectionHeader
 import com.forkmesh.nativeapp.ui.kit.FmSoundOnShow
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import com.forkmesh.nativeapp.ui.kit.FmTextButton
-import com.forkmesh.nativeapp.ui.kit.FmUserActivity
 import com.forkmesh.nativeapp.ui.kit.LocalFmMessenger
 import com.forkmesh.nativeapp.ui.kit.fmSafeAreaInsets
 import com.forkmesh.nativeapp.ui.kit.rememberFmStatus
@@ -509,7 +509,7 @@ class GlobalSearchScreen(initialQuery: String = "", initialScope: SearchScope = 
                         if (query.isEmpty()) Text("Repositories, issues, people, destinations…", style = Fm.text.bodyLarge.copy(color = c.textTertiary))
                         BasicTextField(
                             value = query,
-                            onValueChange = FmUserActivity.typing { query = it; expanded = null },
+                            onValueChange = FmSafeInput.typing { query = it; expanded = null },
                             singleLine = true,
                             textStyle = Fm.text.bodyLarge.copy(color = c.textPrimary),
                             cursorBrush = SolidColor(c.accent),
@@ -658,7 +658,7 @@ fun CommandPaletteSheet(
                     if (query.isEmpty()) Text("Type a command, owner/repo#12 or @name", style = Fm.text.bodyLarge.copy(color = c.textTertiary))
                     BasicTextField(
                         value = query,
-                        onValueChange = FmUserActivity.typing { query = it },
+                        onValueChange = FmSafeInput.typing { query = it },
                         singleLine = true,
                         textStyle = Fm.text.bodyLarge.copy(color = c.textPrimary),
                         cursorBrush = SolidColor(c.accent),

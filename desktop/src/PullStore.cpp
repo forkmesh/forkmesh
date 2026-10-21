@@ -713,6 +713,7 @@ PullEvent eventFromFrontMatter(const FrontMatter &fm)
     ev.lineEnd = int(fm.num("lineEnd"));
     ev.suggestionPatch = decodeFrontMatterBlob(fm.get("suggestionPatchB64"));
     ev.targetPath = fm.get("targetPath");
+    ev.target = fm.get("target");
     ev.appliedCommit = fm.get("appliedCommit");
     ev.patchset = fm.get("patchset");
     ev.anchorLines = decodeFrontMatterBlob(fm.get("anchorLinesB64"));
@@ -1159,7 +1160,8 @@ QJsonObject PullEvent::toJson() const
             {"line", line},   {"threadId", threadId},
             {"parentId", parentId}, {"lineStart", lineStart},
             {"lineEnd", lineEnd}, {"suggestionPatch", suggestionPatch},
-            {"targetPath", targetPath}, {"appliedCommit", appliedCommit},
+            {"targetPath", targetPath}, {"target", target},
+            {"appliedCommit", appliedCommit},
             {"patchset", patchset}, {"anchorLines", anchorLines},
             {"sig", sig}};
 }
@@ -1183,6 +1185,7 @@ PullEvent PullEvent::fromJson(const QJsonObject &obj)
     ev.lineEnd = obj.value("lineEnd").toInt();
     ev.suggestionPatch = obj.value("suggestionPatch").toString();
     ev.targetPath = obj.value("targetPath").toString();
+    ev.target = obj.value("target").toString();
     ev.appliedCommit = obj.value("appliedCommit").toString();
     ev.patchset = obj.value("patchset").toString();
     ev.anchorLines = obj.value("anchorLines").toString();
@@ -1201,6 +1204,7 @@ QJsonObject PullRequest::toJson() const
             {"creationBaseOid", creationBaseOid},
             {"creationHeadOid", creationHeadOid},
             {"client", client}, {"clientSig", clientSig},
+            {"aiModel", aiModel},
             {"rewardEstimateLamports", double(rewardEstimateLamports)},
             {"rewardRecipient", rewardRecipient}, {"rewardId", rewardId},
             {"rewardCondition", rewardCondition},
@@ -1229,6 +1233,7 @@ PullRequest PullRequest::fromJson(const QJsonObject &obj)
     pr.creationHeadOid = obj.value("creationHeadOid").toString();
     pr.client = obj.value("client").toString();
     pr.clientSig = obj.value("clientSig").toString();
+    pr.aiModel = obj.value("aiModel").toString().simplified().left(80);
     pr.rewardEstimateLamports =
         qint64(obj.value("rewardEstimateLamports").toDouble());
     pr.rewardRecipient = obj.value("rewardRecipient").toString();
@@ -2112,6 +2117,10 @@ QString PullStore::contentForSigning(const PullEvent &ev)
         return ev.state + nul + ev.body;
     if (ev.type == "delete")
         return ev.body;
+    if (ev.type == "comment-edit")
+        return ev.target + nul + ev.body;
+    if (ev.type == "comment-delete")
+        return ev.target;
     return QString();
 }
 
@@ -2237,6 +2246,8 @@ bool writeEventFileIn(const QString &dir, int index, const PullEvent &ev,
         lines << "suggestionPatchB64: " + encodeFrontMatterBlob(ev.suggestionPatch);
     if (!ev.targetPath.isEmpty())
         lines << "targetPath: " + ev.targetPath;
+    if (!ev.target.isEmpty())
+        lines << "target: " + ev.target;
     if (!ev.appliedCommit.isEmpty())
         lines << "appliedCommit: " + ev.appliedCommit;
     if (!ev.patchset.isEmpty())
@@ -2244,7 +2255,7 @@ bool writeEventFileIn(const QString &dir, int index, const PullEvent &ev,
     if (!ev.anchorLines.isEmpty())
         lines << "anchorLinesB64: " + encodeFrontMatterBlob(ev.anchorLines);
     if ((ev.type == "thread-state" || ev.type == "suggestion-state" ||
-         ev.type == "status") &&
+         ev.type == "status" || ev.type == "revision") &&
         !ev.state.isEmpty())
         lines << "state: " + ev.state;
     lines << "sig: " + ev.sig;
@@ -2463,6 +2474,113 @@ bool PullStore::applyRemoteEvent(int number, const PullEvent &ev, QString *error
             .arg(ev.type == "review" ? QStringLiteral("review") : QStringLiteral("comment"),
                  ev.authorName.isEmpty() ? ev.author.left(8) : ev.authorName),
         error);
+}
+
+PullEvent PullStore::makeCommentChange(int number, const QString &target,
+                                       const QString &body, bool remove) const
+{
+    PullEvent ev;
+    ev.type = remove ? QStringLiteral("comment-delete")
+                     : QStringLiteral("comment-edit");
+    ev.target = target;
+    if (!remove)
+        ev.body = stripEdgeNewlines(body);
+    return makeSignedEvent(number, ev);
+}
+
+bool PullStore::editComment(int number, const QString &target,
+                            const QString &body, QString *error)
+{
+    if (!canWrite()) {
+        if (error)
+            *error = QStringLiteral("This repository is read-only on this node.");
+        return false;
+    }
+    return appendEvent(number, makeCommentChange(number, target, body, false),
+                       QStringLiteral("pull #%1: edit comment").arg(number), error);
+}
+
+bool PullStore::deleteComment(int number, const QString &target, QString *error)
+{
+    if (!canWrite()) {
+        if (error)
+            *error = QStringLiteral("This repository is read-only on this node.");
+        return false;
+    }
+    return appendEvent(number, makeCommentChange(number, target, QString(), true),
+                       QStringLiteral("pull #%1: delete comment").arg(number), error);
+}
+
+bool PullStore::isCommentChangeEvent(const PullEvent &ev)
+{
+    return ev.type == QLatin1String("comment-edit") ||
+           ev.type == QLatin1String("comment-delete");
+}
+
+bool PullStore::isEditableComment(const PullEvent &ev)
+{
+    static const QSet<QString> editable = {
+        QStringLiteral("comment"), QStringLiteral("review"),
+        QStringLiteral("line-comment"), QStringLiteral("thread-comment"),
+        QStringLiteral("thread-reply")};
+    return editable.contains(ev.type);
+}
+
+bool PullStore::commentChangeApplies(const PullEvent &change, const PullEvent &target)
+{
+    if (!isCommentChangeEvent(change) || !isEditableComment(target))
+        return false;
+    if (change.type == QLatin1String("comment-delete") &&
+        target.type == QLatin1String("review"))
+        return false;
+    if (!change.author.isEmpty() && change.author == target.author)
+        return true;
+    const QString name = change.authorName.trimmed().toLower();
+    return !name.isEmpty() && name == target.authorName.trimmed().toLower();
+}
+
+QList<PullEvent> PullStore::foldCommentChanges(const QList<PullEvent> &events,
+                                               QSet<QString> *edited)
+{
+    QHash<QString, int> indexById;
+    for (int i = 0; i < events.size(); ++i)
+        if (!events.at(i).id.isEmpty() && !isCommentChangeEvent(events.at(i)))
+            indexById.insert(events.at(i).id, i);
+    QHash<QString, PullEvent> edits;
+    QSet<QString> deleted;
+    for (const PullEvent &ev : events) {
+        if (!isCommentChangeEvent(ev) || !indexById.contains(ev.target))
+            continue;
+        if (!commentChangeApplies(ev, events.at(indexById.value(ev.target))))
+            continue;
+        if (ev.type == QLatin1String("comment-delete"))
+            deleted.insert(ev.target);
+        else if (!edits.contains(ev.target) || edits.value(ev.target).ts <= ev.ts)
+            edits.insert(ev.target, ev);
+    }
+    QList<PullEvent> out;
+    out.reserve(events.size());
+    for (const PullEvent &ev : events) {
+        if (isCommentChangeEvent(ev) || (!ev.id.isEmpty() && deleted.contains(ev.id)))
+            continue;
+        PullEvent shown = ev;
+        const auto edit = edits.constFind(ev.id);
+        if (!ev.id.isEmpty() && edit != edits.constEnd()) {
+            shown.body = edit->body;
+            if (edited)
+                edited->insert(ev.id);
+        }
+        out.append(shown);
+    }
+    return out;
+}
+
+bool PullStore::authoredByThisNode(const PullEvent &ev) const
+{
+    if (m_identity && !ev.author.isEmpty() && ev.author == m_identity->publicKey())
+        return true;
+    const QString name = m_authorName.trimmed().toLower();
+    return !name.isEmpty() && name == ev.authorName.trimmed().toLower();
 }
 
 QString PullStore::branchReviewKey(const QString &branch)
@@ -2721,6 +2839,8 @@ bool PullStore::writePull(const PullRequest &pr, QString *error) const
         lines << "creationBaseOid: " + pr.creationBaseOid;
     if (!pr.creationHeadOid.isEmpty())
         lines << "creationHeadOid: " + pr.creationHeadOid;
+    if (pr.revision > 1)
+        lines << "revision: " + QString::number(pr.revision);
     if (!pr.headBaseOid.isEmpty())
         lines << "headBaseOid: " + pr.headBaseOid;
     if (!pr.headOid.isEmpty())
@@ -2746,6 +2866,8 @@ bool PullStore::writePull(const PullRequest &pr, QString *error) const
         lines << "client: " + pr.client;
     if (!pr.clientSig.isEmpty())
         lines << "clientSig: " + pr.clientSig;
+    if (!pr.aiModel.simplified().isEmpty())
+        lines << "aiModel: " + pr.aiModel.simplified();
     if (pr.rewardEstimateLamports > 0)
         lines << "rewardEstimateLamports: "
                      + QString::number(pr.rewardEstimateLamports);
@@ -2795,6 +2917,7 @@ bool PullStore::readPull(int number, PullRequest &out) const
     out.branchBacked = fm.get("derive") == QLatin1String("branch");
     out.creationBaseOid = fm.get("creationBaseOid");
     out.creationHeadOid = fm.get("creationHeadOid");
+    out.revision = int(fm.num("revision"));
     out.headBaseOid = fm.get("headBaseOid");
     out.headOid = fm.get("headOid");
     out.mergeBase = fm.get("mergeBase");
@@ -2804,6 +2927,7 @@ bool PullStore::readPull(int number, PullRequest &out) const
     out.coAuthors = fm.get("coAuthors");
     out.client = fm.get("client");
     out.clientSig = fm.get("clientSig");
+    out.aiModel = fm.get("aiModel");
     out.rewardEstimateLamports = fm.num("rewardEstimateLamports");
     out.rewardRecipient = fm.get("rewardRecipient");
     out.rewardId = fm.get("rewardId");
@@ -5370,8 +5494,11 @@ QString PullStore::baseTip() const
     return QString::fromUtf8(out).trimmed();
 }
 
-bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error)
+bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error,
+                                bool *opened)
 {
+    if (opened)
+        *opened = false;
     if (!canWrite())
         return false;
     PullRequest pr = incoming;
@@ -5406,9 +5533,78 @@ bool PullStore::applyRemotePull(const PullRequest &incoming, QString *error)
                 error))
         return false;
     materializePullRef(pr, nullptr);
+    if (opened)
+        *opened = true;
     return true;
 }
 
+
+bool PullStore::applyRemoteRevision(int number, const PullRequest &revision,
+                                    const QString &revisionSig, QString *error)
+{
+    if (!canWrite())
+        return false;
+    PullRequest current;
+    if (number <= 0 || !readPull(number, current))
+        return false;
+    if (revision.sig.isEmpty() || current.sig == revision.sig)
+        return true;
+    if (current.status != QLatin1String("open") || current.branchBacked ||
+        revision.author != current.author || revision.ts <= current.ts)
+        return true;
+    const int previous = qMax(1, current.revision);
+    const QString archive =
+        pullDir(number) + QStringLiteral("/revisions/%1").arg(previous);
+    QDir().mkpath(archive);
+    for (const QString &name : {QStringLiteral("pull.md"), QStringLiteral("changes.patch"),
+                                QStringLiteral("commits.mbox")}) {
+        QFile source(pullDir(number) + "/" + name);
+        if (!source.exists())
+            continue;
+        if (!source.open(QIODevice::ReadOnly) ||
+            !writeTextFile(archive + "/" + name, QString::fromUtf8(source.readAll()), error))
+            return false;
+    }
+    PullRequest next = current;
+    if (!revision.title.trimmed().isEmpty())
+        next.title = revision.title;
+    if (!revision.description.trimmed().isEmpty())
+        next.description = revision.description;
+    next.base = revision.base;
+    next.head = revision.head;
+    next.patch = revision.patch;
+    next.commits = revision.commits;
+    next.ts = revision.ts;
+    next.sig = revision.sig;
+    next.creationBaseOid = revision.creationBaseOid;
+    next.creationHeadOid = revision.creationHeadOid;
+    next.headBaseOid.clear();
+    next.headOid.clear();
+    next.revision = previous + 1;
+    if (next.commits.isEmpty())
+        QFile::remove(pullDir(number) + "/commits.mbox");
+    if (!writePull(next, error))
+        return false;
+    PullEvent ev;
+    ev.type = QStringLiteral("revision");
+    ev.id = QStringLiteral("revision-%1").arg(revision.sig.left(16));
+    ev.author = revision.author;
+    ev.authorName = revision.authorName;
+    ev.ts = revision.ts;
+    ev.state = QString::number(next.revision);
+    ev.sig = revisionSig;
+    if (!writeEventFile(number, nextEventIndex(number), ev, error))
+        return false;
+    if (!commit(QStringLiteral("pull #%1: revision %2 (from %3)")
+                    .arg(number)
+                    .arg(next.revision)
+                    .arg(revision.authorName.isEmpty() ? revision.author.left(8)
+                                                       : revision.authorName),
+                error))
+        return false;
+    materializePullRef(next, nullptr);
+    return true;
+}
 
 QString PullStore::missingPullMessage(int number)
 {

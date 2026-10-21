@@ -284,14 +284,23 @@ icon). Run it after changing `logo.svg` (needs pycairo and Pillow);
 
 The same run writes the Android launcher icons (`mipmap-*/ic_launcher.png`,
 `drawable-nodpi/fm_logo.png`) and the Android adaptive icon layers
-(`mipmap-*/ic_launcher_{background,foreground,monochrome}.png`, used by
+(`mipmap-*/ic_launcher_{foreground,monochrome}.png`, used by
 `mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml`);
-`--android` writes only those. The background is the iOS tile gradient and
-glow, the foreground is the cube at 70% of the 72 dp visible area (the iOS
-tile uses 78% of a squircle; a round mask needs a little more room), and the
-monochrome layer keeps only the white strokes for themed icons. Until
-2026-10-20 Android had only the square PNG, which launchers shrink into a
-white circle with a border; the adaptive icon makes it look like the iOS one. To check the committed icons are current, run
+`--android` writes only those. The adaptive background is
+`@android:color/transparent` and the legacy `ic_launcher.png` is a transparent
+cutout, so the launcher shows the hexagon itself rather than a rounded tile
+behind it. The foreground is the cube at 86% of the 72 dp visible area, which
+keeps the hexagon inside the 66 dp safe circle every launcher mask leaves
+uncut; the monochrome layer keeps only the white strokes for themed icons
+(the system draws the themed backing). Until 2026-10-20 Android had only the
+square PNG, which launchers shrink into a white circle with a border; from
+then until 2026-10-21 the adaptive icon carried the iOS tile gradient as its
+background. The iOS and watch icons keep the tile: Apple rejects an app icon
+with an alpha channel and masks every icon to its own shape, so the hexagon
+cannot stand alone there. The fediverse avatar
+(`www/public/assets/fediverse-avatar.png`) is a transparent cutout too; the
+`apple-touch-icon.png` keeps the tile because iOS fills a transparent one
+with black. To check the committed icons are current, run
 the script and confirm `git status` shows no change. The phone and watch
 targets are the only app icon sets (`ASSETCATALOG_COMPILER_APPICON_NAME =
 AppIcon`); widgets, extensions and `codemagic.yaml` set no icon of their own,

@@ -15,7 +15,7 @@
     }
   });
 
-  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents"];
+  const SETTINGS_SECTIONS = ["public-profile", "account", "ssh-keys", "appearance", "instance-theme", "notifications", "payout", "nodes", "organizations", "danger", "apps", "agents"];
 
   function normalizeSettingsSection(section) {
     return SETTINGS_SECTIONS.includes(section) ? section : "public-profile";
@@ -64,6 +64,8 @@
     if (activeSection === "ssh-keys") loadSshKeys();
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
+    if (activeSection === "instance-theme") initInstanceThemeSection();
+    else leaveInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
@@ -853,6 +855,179 @@
     }
   }
 
+  const INSTANCE_THEME_ERRORS = {
+    invalid_credentials: "That password is not right.",
+    too_many_attempts: "Too many wrong passwords. Wait a minute and try again.",
+    not_admin: "Only an admin of this instance can change its theme.",
+    password_not_set: "Your account has no password to confirm with. Set one under Account first.",
+    invalid_theme: "That theme is not available yet.",
+  };
+  const instanceThemeState = { themes: [], current: "default", previewing: "", bound: false };
+
+  function renderInstanceThemeAccess(session) {
+    const nav = $("[data-instance-theme-nav]");
+    nav?.classList.toggle("hidden", !(session?.isAdmin === true && dashboardOnInstance()));
+  }
+
+  function instanceThemeLink() {
+    let link = document.querySelector("link[data-instance-theme]");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "/instance-theme.css";
+      link.setAttribute("data-instance-theme", "");
+      document.head.append(link);
+    }
+    return link;
+  }
+
+  function setInstanceThemeStatus(text, tone = "") {
+    const status = $("[data-instance-theme-status]");
+    if (!status) return;
+    status.textContent = text || "";
+    status.classList.toggle("text-destructive", tone === "bad");
+    status.classList.toggle("text-success", tone === "good");
+    status.classList.toggle("text-muted-foreground", tone !== "bad" && tone !== "good");
+  }
+
+  function instanceThemeName(id) {
+    return instanceThemeState.themes.find((theme) => theme.id === id)?.name || id;
+  }
+
+  function instanceThemeCard(theme) {
+    const palette = (theme.palette || []).map((colour) => escapeHtml(colour));
+    const ready = theme.status === "ready";
+    const current = theme.id === instanceThemeState.current;
+    const selected = theme.id === (instanceThemeState.previewing || instanceThemeState.current);
+    const badge = current
+      ? '<span class="fm-label fm-label-accent">Current</span>'
+      : ready ? (selected ? '<span class="fm-label fm-label-attention">Previewing</span>' : "") : '<span class="fm-label">Coming soon</span>';
+    const swatches = palette.map((colour, index) =>
+      `<span class="h-full" style="background:${colour};flex:${index === 0 ? 3 : 1}"></span>`).join("");
+    return `<button type="button" role="radio" data-instance-theme-card="${escapeHtml(theme.id)}" aria-checked="${selected}"${ready ? "" : ' disabled aria-disabled="true"'} class="grid content-start gap-3 rounded-lg border p-3 text-left transition-colors ${selected ? "border-primary bg-primary/5" : "border-border bg-card"} ${ready ? "hover:border-primary/60" : "cursor-not-allowed opacity-60"}">
+      <span class="flex h-16 overflow-hidden rounded-md border border-border" aria-hidden="true">${swatches}</span>
+      <span class="flex items-center justify-between gap-2"><span class="text-sm font-semibold text-foreground">${escapeHtml(theme.name)}</span>${badge}</span>
+      <span class="text-xs leading-5 text-muted-foreground">${escapeHtml(theme.description)}</span>
+    </button>`;
+  }
+
+  function renderInstanceThemeCards() {
+    const box = $("[data-instance-theme-cards]");
+    if (!box) return;
+    box.innerHTML = instanceThemeState.themes.map(instanceThemeCard).join("");
+    const confirm = $("[data-instance-theme-confirm]");
+    const previewing = instanceThemeState.previewing;
+    if (confirm) confirm.hidden = !previewing;
+    const name = $("[data-instance-theme-preview-name]");
+    if (name) name.textContent = previewing ? instanceThemeName(previewing) : "";
+  }
+
+  function previewInstanceTheme(id) {
+    const previewing = id === instanceThemeState.current ? "" : id;
+    instanceThemeState.previewing = previewing;
+    instanceThemeLink().href = previewing
+      ? `/instance-theme.css?preset=${encodeURIComponent(previewing)}`
+      : `/instance-theme.css?v=${Date.now()}`;
+    renderInstanceThemeCards();
+    setInstanceThemeStatus(previewing ? "" : `${instanceThemeName(instanceThemeState.current)} is the current theme.`);
+    if (previewing) $("[data-instance-theme-password]")?.focus({ preventScroll: true });
+  }
+
+  async function applyInstanceTheme() {
+    const id = instanceThemeState.previewing;
+    const field = $("[data-instance-theme-password]");
+    const password = field?.value || "";
+    if (!id) return;
+    if (!password) {
+      setInstanceThemeStatus("Enter your current password to change the instance theme.", "bad");
+      field?.focus();
+      return;
+    }
+    const button = $("[data-instance-theme-apply]");
+    if (button) { button.disabled = true; button.textContent = "Applying…"; }
+    setInstanceThemeStatus("Applying the theme…");
+    try {
+      const token = state.session?.sessionToken || "";
+      const response = await fetch("/api/instance/theme", {
+        method: "PUT",
+        credentials: "same-origin",
+        cache: "no-store",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          ...(token ? { authorization: "Bearer " + token } : {}),
+        },
+        body: JSON.stringify({ theme: id, password }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok || body.ok !== true) throw new Error(body.error || `http_${response.status}`);
+      if (field) field.value = "";
+      instanceThemeState.current = body.theme?.preset || "default";
+      const info = await instanceInfo();
+      if (info && typeof info === "object") {
+        info.theme = { ...(info.theme && typeof info.theme === "object" ? info.theme : {}), preset: instanceThemeState.current };
+      }
+      instanceThemeState.previewing = "";
+      instanceThemeLink().href = `/instance-theme.css?v=${Date.now()}`;
+      renderInstanceThemeCards();
+      setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is now the theme for everyone on this instance.`, "good");
+    } catch (error) {
+      if (field) field.value = "";
+      setInstanceThemeStatus(INSTANCE_THEME_ERRORS[error.message] || "Could not change the theme. Try again.", "bad");
+    } finally {
+      if (button) { button.disabled = false; button.textContent = "Apply to instance"; }
+    }
+  }
+
+  function clearInstanceThemePassword() {
+    const field = $("[data-instance-theme-password]");
+    if (field) field.value = "";
+  }
+
+  function leaveInstanceThemeSection() {
+    clearInstanceThemePassword();
+    if (instanceThemeState.previewing) previewInstanceTheme(instanceThemeState.current);
+  }
+
+  function bindInstanceThemeControls() {
+    if (instanceThemeState.bound) return;
+    instanceThemeState.bound = true;
+    $("[data-instance-theme-cards]")?.addEventListener("click", (event) => {
+      const card = event.target.closest("[data-instance-theme-card]");
+      if (card && !card.disabled) previewInstanceTheme(card.dataset.instanceThemeCard);
+    });
+    $("[data-instance-theme-cancel]")?.addEventListener("click", () => {
+      clearInstanceThemePassword();
+      previewInstanceTheme(instanceThemeState.current);
+    });
+    window.addEventListener("pagehide", clearInstanceThemePassword);
+    $("[data-instance-theme-apply]")?.addEventListener("click", () => applyInstanceTheme());
+    $("[data-instance-theme-password]")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      applyInstanceTheme();
+    });
+  }
+
+  async function initInstanceThemeSection() {
+    bindInstanceThemeControls();
+    const username = $("[data-instance-theme-username]");
+    if (username) username.value = state.session?.nodeName || "";
+    const allowed = state.session?.isAdmin === true && dashboardOnInstance();
+    const denied = $("[data-instance-theme-denied]");
+    if (denied) denied.hidden = allowed;
+    if (!allowed) {
+      $("[data-instance-theme-cards]")?.replaceChildren();
+      return;
+    }
+    const info = await instanceInfo();
+    instanceThemeState.themes = Array.isArray(info?.themes) ? info.themes : [];
+    if (!instanceThemeState.previewing) instanceThemeState.current = info?.theme?.preset || "default";
+    renderInstanceThemeCards();
+    if (!instanceThemeState.themes.length) setInstanceThemeStatus("Could not load the themes. Refresh to try again.", "bad");
+    else if (!instanceThemeState.previewing) setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is the current theme.`);
+  }
+
   // ---- Nodes & devices (account_devices registry) ----------------------------
   // The web dashboard is the source of truth for every node key bound to the
   // account (desktop and mobile). Listing is session-gated like sessions; the
@@ -1226,8 +1401,8 @@
       ${field("Username", push?.username, "data-git-push-username")}
       ${field("Password (shown once; copy it now)", push?.password, "data-git-push-password")}
       <p class="text-xs text-muted-foreground">${contributor
-        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>. Pushes are fast-forward only: add commits instead of force-pushing, or push a new branch name. Then open a pull request from that branch on the repository's Pull requests tab.`
-        : "You have write access to this repository; its branch protection still applies."}
+        ? `You can push only branches named <span class="font-mono">${escapeHtml(push.branchPrefix || "")}…</span>, and you may force-push them after a rebase or amend (use <span class="font-mono">git push --force-with-lease</span>; the previous tip is kept). Then open a pull request from that branch on the repository's Pull requests tab.`
+        : "You have write access to this repository. You may force-push any branch except the default and protected ones (use git push --force-with-lease; the previous tip is kept); branch protection still applies."}
         ${expires ? ` Expires ${escapeHtml(formatDate(expires))}.` : ""}</p>
       <pre class="overflow-x-auto rounded-md border border-border bg-secondary p-3 font-mono text-xs text-foreground">${escapeHtml(commands)}</pre>`;
     target.classList.remove("hidden");
@@ -2841,7 +3016,7 @@
         <a href="${escapeHtml(groupLinkUrl(group))}" class="min-w-0 truncate text-sm font-semibold text-accent hover:underline">${escapeHtml(repo.name || "repository")}</a>
         <span class="inline-flex shrink-0 items-center rounded-full border border-border px-[7px] text-xs font-medium leading-[18px] text-muted-foreground">${repo.isPrivate ? "Private" : "Public"}</span>
       </div>
-      <p class="mb-4 mt-2 flex-1 break-words text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</p>
+      <p data-user-content class="mb-4 mt-2 flex-1 break-words text-xs leading-5 text-muted-foreground">${escapeHtml(description)}</p>
       <p class="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         ${language ? `<span class="inline-flex items-center gap-1"><span data-repo-language-dot class="inline-block h-3 w-3 shrink-0 rounded-full border border-black/10" style="background-color:${escapeHtml(color)}"></span><span>${escapeHtml(language)}</span></span>` : ""}
         <span data-org-popular-star data-repo-key="${escapeHtml(repoKey(repo))}" class="hidden inline-flex items-center gap-1"><i data-lucide="star" class="h-4 w-4"></i><span data-org-popular-star-count>0</span></span>
@@ -3060,10 +3235,10 @@
         .filter(Boolean).join(" · ");
     }
     if (statusItem) {
-      statusItem.textContent = label ? "Edit status: " + label : "Set a status…";
+      (statusItem.querySelector("[data-account-menu-label]") || statusItem).textContent = label ? "Edit status: " + label : "Set a status…";
     }
     if (awayItem) {
-      awayItem.textContent = own.away ? "Set yourself active" : "Set yourself away";
+      (awayItem.querySelector("[data-account-menu-label]") || awayItem).textContent = own.away ? "Set yourself active" : "Set yourself away";
     }
   }
 
@@ -3264,6 +3439,7 @@
   }
 
   function setProfileModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-profile-modal]");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -4137,6 +4313,7 @@
   }
 
   function setProfileAboutModalOpen(open) {
+    if (open) ensureDeferredMarkup("dialogs");
     const modal = $("[data-profile-about-modal]");
     if (!modal) return;
     modal.classList.toggle("hidden", !open);
@@ -4236,6 +4413,7 @@
     { key: "conversations", label: "Conversations", kinds: [
       { kind: "mention", label: "Mentions", email: true },
       { kind: "subscribed", label: "Activity on things you follow", email: true },
+      { kind: "reaction", label: "Reactions to your comments", email: false },
       { kind: "chat_webhook", label: "Chat webhook posts", email: false },
       { kind: "channel_unread", label: "Unread channel messages", email: true },
       { kind: "direct_unread", label: "Unread direct messages", email: true },
@@ -5113,6 +5291,7 @@
     if (payoutStatus) payoutStatus.textContent = session?.hasPayoutAddress ? "Configured" : "Not configured";
     if (adminStatus) adminStatus.textContent = session?.isAdmin ? "Yes" : "No";
     $("[data-admin-test-email-row]")?.classList.toggle("hidden", session?.isAdmin !== true);
+    renderInstanceThemeAccess(session);
     if (emailStatus) {
       emailStatus.textContent = session?.emailVerified
         ? `${email} is verified.`

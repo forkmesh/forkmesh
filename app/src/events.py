@@ -336,7 +336,16 @@ def discussion_event_content(ev):
         return ev.get("body", "")
     if t == "answer":
         return ev.get("target", "")
+    if t == "status":
+        return ev.get("status", "")
+    if t == "delete":
+        return ev.get("target", "")
     return ""
+
+
+DISCUSSION_OWNER_EVENT_TYPES = ("status", "delete")
+DISCUSSION_EVENT_TYPES = ("open", "comment", "answer") + DISCUSSION_OWNER_EVENT_TYPES
+DISCUSSION_STATUSES = ("open", "closed", "archived")
 
 
 async def verify_discussion_event(number, ev, repo_keys=(), allow_v1=None):
@@ -347,14 +356,28 @@ async def verify_discussion_event(number, ev, repo_keys=(), allow_v1=None):
     author = ev.get("author", "")
     signature = ev.get("sig", "")
     event_type = ev.get("type", "")
-    if not author or not signature or event_type not in (
-            "open", "comment", "answer"):
+    if not author or not signature or event_type not in DISCUSSION_EVENT_TYPES:
         return False
-    if event_type == "answer" and int(number or 0) <= 0:
+    try:
+        number = int(number or 0)
+    except (TypeError, ValueError):
+        return False
+    if event_type == "open":
+        if number != 0:
+            return False
+    elif number <= 0:
         return False
     if event_type == "open" and not normalized_discussion_category(
             ev.get("category", "")):
         return False
+    if event_type == "open" and not str(ev.get("title", "") or "").strip():
+        return False
+    if event_type == "status" and ev.get("status") not in DISCUSSION_STATUSES:
+        return False
+    if event_type == "delete":
+        target = ev.get("target")
+        if not isinstance(target, str) or not target.strip():
+            return False
     try:
         ts = int(ev.get("ts", 0))
     except (TypeError, ValueError):
@@ -400,6 +423,27 @@ async def verify_pull_event(pr, repo_keys=(), allow_v1=None):
                 author, signature, "pull-event", body, repo_keys, allow_v1):
             return True
     return False
+
+
+def pull_revision_binding_body(number, ev):
+    try:
+        ts = int(ev.get("ts", 0))
+    except (TypeError, ValueError):
+        ts = 0
+    return "%d\n%s\n%d\n%s" % (
+        int(number), ev.get("author", ""), ts, ev.get("sig", ""))
+
+
+async def verify_pull_revision(number, ev, repo_keys=(), allow_v1=None):
+    author = ev.get("author", "")
+    binding = ev.get("revisionSig", "")
+    if not author or not binding or int(number or 0) <= 0:
+        return False
+    if not await verify_pull_event(ev, repo_keys, allow_v1):
+        return False
+    return await _verify_event_messages(
+        author, binding, "pull-revision",
+        pull_revision_binding_body(number, ev), repo_keys, False)
 
 
 def pull_comment_anchor_fields(ev):
@@ -459,7 +503,14 @@ def pull_comment_content(ev):
         return "\x00".join([ev.get("state", ""), ev.get("body", "")])
     if t == "delete":
         return ev.get("body", "")
+    if t == "comment-edit":
+        return "\x00".join([ev.get("target", ""), ev.get("body", "")])
+    if t == "comment-delete":
+        return ev.get("target", "")
     return ""
+
+
+PULL_COMMENT_TARGET_EVENT_TYPES = frozenset({"comment-edit", "comment-delete"})
 
 
 async def verify_pull_comment_event(number, ev, repo_keys=(), allow_v1=None):
@@ -471,10 +522,14 @@ async def verify_pull_comment_event(number, ev, repo_keys=(), allow_v1=None):
     allowed_types = (
         "comment", "review", "line-comment", "thread-comment", "thread-reply",
         "thread-state", "suggestion-state", "status", "delete",
+        "comment-edit", "comment-delete",
     )
     if not author or not signature or event_type not in allowed_types:
         return False
     if event_type == "status" and ev.get("state") != "closed":
+        return False
+    if event_type in PULL_COMMENT_TARGET_EVENT_TYPES and not str(
+            ev.get("target", "") or "").strip():
         return False
     try:
         ts = int(ev.get("ts", 0))

@@ -264,7 +264,7 @@ def test_worker_route_auth_idempotency_and_no_failover_contracts():
     ] + "\n\n\n" + MERGE_HANDLER_TEXT
     for required in (
         "_account_session_record",
-        "_organization_owner_can_merge_repo",
+        "_repository_owner_can_merge_repo",
         "repo_merge_jobs",
         "request_id_reused",
         "selected_node",
@@ -317,7 +317,7 @@ def test_merge_selection_asks_for_the_mirror_that_runs_the_executor():
 def test_mirror_merge_authorization_is_org_owner_only():
     helper = ENTRY_TEXT[
         ENTRY_TEXT.index("async def _organization_owner_can_merge_repo"):
-        ENTRY_TEXT.index("\n\ndef _https_mirror_merge_response")
+        ENTRY_TEXT.index("async def _repository_owner_can_merge_repo")
     ]
     assert "_org_role(env, org_bi, actor) == \"owner\"" in helper
     assert "FROM org_repos" in helper
@@ -658,9 +658,9 @@ def test_update_is_audited_under_its_own_action_name():
 def test_update_is_owner_authorized_through_the_same_gate_as_merge():
     # The shared handler authorizes once, before the mutation is selected, so
     # the update path cannot be reached with a weaker check than merge.
-    assert "_organization_owner_can_merge_repo" in MERGE_HANDLER_TEXT
-    assert MERGE_HANDLER_TEXT.count("_organization_owner_can_merge_repo") == 1
-    assert MERGE_HANDLER_TEXT.index("_organization_owner_can_merge_repo") < (
+    assert "_repository_owner_can_merge_repo" in MERGE_HANDLER_TEXT
+    assert MERGE_HANDLER_TEXT.count("_repository_owner_can_merge_repo") == 1
+    assert MERGE_HANDLER_TEXT.index("_repository_owner_can_merge_repo") < (
         MERGE_HANDLER_TEXT.index('profile["operation"]'))
 
 
@@ -823,3 +823,58 @@ def test_the_job_node_answers_through_its_own_signed_refs_lag():
         verdict.update(broken)
         assert run() == (0, None)
     assert len(fetched) == 1
+
+
+def _owner_merge_namespace(linked=False, owns=("alice",)):
+    import types
+    from urllib.parse import urlparse
+    ns = _entry_functions("_repository_owner_can_merge_repo", constants=())
+
+    async def org_owner(_env, _request, _owner, _repo, _actor):
+        return False
+
+    async def d1_first(_env, sql, *args):
+        assert "FROM org_repos WHERE repo=? AND node_owner=?" in sql
+        return {"ok": 1} if linked else None
+
+    async def owns_node(_env, actor, node):
+        return actor in owns and node == "alice"
+
+    ns.update({
+        "_organization_owner_can_merge_repo": org_owner,
+        "d1_first": d1_first,
+        "_account_owns_node": owns_node,
+        "urlparse": urlparse,
+        "REPO_API_PREFIX_RE": re.compile(r"^/api/repo/([^/]+)/([^/]+)"),
+        "safe_segment": lambda value: value,
+    })
+    return ns, types.SimpleNamespace
+
+
+def _merge_request(path):
+    import types
+    return types.SimpleNamespace(url="https://forge.test" + path)
+
+
+def test_a_personal_repository_owner_may_merge_on_the_web():
+    ns, _ = _owner_merge_namespace()
+    check = ns["_repository_owner_can_merge_repo"]
+    request = _merge_request("/api/repo/alice/garden/pulls/3/merge")
+    assert asyncio.run(check(None, request, "alice", "garden", "alice")) is True
+    assert asyncio.run(check(None, request, "alice", "garden", "bob")) is False
+    assert asyncio.run(check(None, request, "alice", "garden", "")) is False
+    other = _merge_request("/api/repo/alice/other/pulls/3/merge")
+    assert asyncio.run(check(None, other, "alice", "garden", "alice")) is False
+
+
+def test_an_organization_linked_repository_keeps_the_organization_rule():
+    ns, _ = _owner_merge_namespace(linked=True)
+    check = ns["_repository_owner_can_merge_repo"]
+    request = _merge_request("/api/repo/alice/garden/pulls/3/merge")
+    assert asyncio.run(check(None, request, "alice", "garden", "alice")) is False
+
+
+def test_rules_protection_and_checks_still_run_after_owner_authorization():
+    authorize = MERGE_HANDLER_TEXT.index("_repository_owner_can_merge_repo")
+    for gate in ("_pull_rules.merge_gate(", "_branch_protection.merge_refusal("):
+        assert authorize < MERGE_HANDLER_TEXT.index(gate)

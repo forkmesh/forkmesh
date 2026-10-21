@@ -349,7 +349,7 @@ void styleNextDocument(QTextBrowser *view)
         for (int row = 0; row < table->rows(); ++row) {
             for (int column = 0; column < table->columns(); ++column) {
                 QTextTableCell cell = table->cellAt(row, column);
-                QTextTableCellFormat cellFormat = cell.format().toTableCellFormat();
+                QTextTableCellFormat cellFormat;
                 cellFormat.setBottomBorder(1);
                 cellFormat.setBottomBorderStyle(QTextFrameFormat::BorderStyle_Solid);
                 cellFormat.setBottomBorderBrush(hairline);
@@ -670,7 +670,7 @@ void DocsFeature::renderDocument(const DocsPage &page)
     const QString directory =
         QFileInfo(DocsLibrary::bundledRoot() + QLatin1Char('/') + page.path).path();
     m_view->setSearchPaths({directory});
-    m_view->setMarkdown(MarkdownRender::withHtmlFlattened(page.markdown));
+    m_view->setMarkdown(MarkdownRender::forPreview(page.markdown));
     forkmesh::ui::anchorReadmeHeadings(m_view->document());
     const int inset = m_next ? 2 * kDocumentMargin : 8;
     forkmesh::ui::fitReadmeImages(m_view, qMax(1, m_view->viewport()->width() - inset));

@@ -29,6 +29,7 @@ class MirrorImportTest {
             "https://github.com/owner/repository",
             "https://gitlab.com/owner/repository",
             "https://codeberg.org/owner/repository",
+            "https://gitea.com/owner/repository",
             "https://gitlab.com/group/subgroup/repository",
         )) {
             assertEq(null, MirrorImport.validateSourceUrl(url), url)
@@ -59,7 +60,7 @@ class MirrorImportTest {
     }
 
     fun testAdvertisesExactlyTheThreeProviders() {
-        assertEq(listOf("github.com", "gitlab.com", "codeberg.org"), MirrorImport.providers)
+        assertEq(listOf("github.com", "gitlab.com", "codeberg.org", "gitea.com"), MirrorImport.providers)
     }
 
     fun testPostsTheDocumentedBody() {
@@ -78,7 +79,7 @@ class MirrorImportTest {
     }
 
     fun testPostsGitlabAndCodebergUnchanged() {
-        for (url in listOf("https://gitlab.com/owner/repository", "https://codeberg.org/owner/repository")) {
+        for (url in listOf("https://gitlab.com/owner/repository", "https://codeberg.org/owner/repository", "https://gitea.com/owner/repository")) {
             val h = harness()
             h.submit(url)
             assertEq(url, h.transport.requests.single().bodyJson()["sourceUrl"], url)
@@ -148,6 +149,6 @@ class MirrorImportTest {
     fun testSaysTheEntryIsMetadataOnly() {
         expect(MirrorImport.DISCLAIMER.contains("Imports metadata only"))
         expect(MirrorImport.DISCLAIMER.contains("does not own or control the source repository"))
-        assertEq("Mirror from GitHub/GitLab/Codeberg", MirrorImport.TITLE)
+        assertEq("Mirror from GitHub/GitLab/Codeberg/Gitea", MirrorImport.TITLE)
     }
 }

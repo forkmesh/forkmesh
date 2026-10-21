@@ -373,9 +373,12 @@ def _render_alias_card(counts):
         counts_token = staticmethod(real_card.counts_token)
 
         @staticmethod
-        def render_repo_card(info, _now):
-            rendered.append(info)
+        def render_repo_card(info, _now, logo=None):
+            rendered.append(dict(info, logo=logo))
             return b"png"
+
+    async def public_path(_env, owner, repo):
+        return "/%s/%s" % (owner, repo)
 
     handler = _load_function("repo_card_handler", {
         "method_name": lambda request: request.method,
@@ -407,6 +410,9 @@ def _render_alias_card(counts):
         "repo_mirror_same_group": lambda *_args: False,
         "time": time,
         "og_card": Card,
+        "unquote": unquote,
+        "_repo_public_path": public_path,
+        "_repo_card_logo": lambda *_args: _async_value(None),
         "instance_name": lambda _env: "ForkMesh",
         "JsResponse": _BinaryResponse,
         "Uint8Array": _Uint8Array,
@@ -437,6 +443,7 @@ def test_alias_card_renders_public_identity_after_internal_route_rewrite():
     assert rendered[0]["owner"] == "forkmesh"
     assert rendered[0]["repo"] == "forkmesh"
     assert rendered[0]["description"] == "Catalog from mirror2"
+    assert rendered[0]["path"] == "/forkmesh/forkmesh"
     assert cache_puts[0][0] == (
         "https://forkmesh.com/api/repo/forkmesh/forkmesh/card.png"
         "?v=test-rev&n=i-.b-.c-")
@@ -704,9 +711,9 @@ def test_a_canonical_short_page_titles_the_repository_without_its_owner():
         "repo_short_urls": repo_short_urls,
     })
 
-    def page(setting):
+    def page(setting, name=""):
         subject = page_class()
-        subject.env = SimpleNamespace(ASSETS=_Assets())
+        subject.env = SimpleNamespace(ASSETS=_Assets(), INSTANCE_NAME=name)
 
         async def short_setting():
             return setting
@@ -722,6 +729,20 @@ def test_a_canonical_short_page_titles_the_repository_without_its_owner():
     assert '<meta name="twitter:title" content="Bolt - ForkMesh">' in body
     assert 'content="Bolt on ForkMesh' in body
     assert '<link rel="canonical" href="https://git.example.org/Bolt">' in body
+    assert '<meta property="og:url" content="https://git.example.org/Bolt">' in body
+    assert ('<meta property="og:image" content="https://git.example.org/api/'
+            'repo/acme-bolt/Bolt/card.png?v=' + "a" * 64 + '.3">') in body
+    assert '<meta property="og:image:type" content="image/png">' in body
+    assert '<meta property="og:image:alt" content="Bolt - ForkMesh">' in body
+    assert '<meta name="twitter:image:alt" content="Bolt - ForkMesh">' in body
+    branded = page({"short": True, "owner": "acme-bolt", "canonical": True},
+                   "Acme <Code>")
+    assert ('<meta property="og:site_name" content="Acme &lt;Code&gt;">'
+            in branded)
+    assert ('<meta property="og:title" content="Bolt - Acme &lt;Code&gt;">'
+            in branded)
+    assert 'ForkMesh' not in branded.split("</head>", 1)[0].split(
+        '<link rel="canonical"', 1)[1]
     body = page({"short": True, "owner": "acme-bolt", "canonical": False})
     assert ('<meta property="og:title" content="acme-bolt/Bolt - ForkMesh">'
             in body)

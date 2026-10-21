@@ -56,6 +56,8 @@ import hmac
 import time
 from urllib.parse import parse_qs, quote, urlparse
 
+from hidden_unicode import clean_query as clean_hidden_query
+
 
 def _bind_runtime(runtime):
     """Supply the entrypoint primitives used by this domain."""
@@ -525,8 +527,8 @@ async def _handle_post(env, request, credentials, now, theme="system"):
         raw = await request.text()
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or "")[:PRODUCT_ANALYSIS_MAX_FORM_BYTES],
-                    keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or "")[:PRODUCT_ANALYSIS_MAX_FORM_BYTES],
+                    keep_blank_values=True))
     action = (form.get("action") or [""])[0]
     if action == "logout":
         return _redirect(clear_session_cookie())

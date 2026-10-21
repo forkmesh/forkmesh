@@ -434,8 +434,9 @@ PullReviewSnapshot buildPullReviewSnapshot(const PullRequest &pr)
     snapshot.reviewSummary = pr.reviewSummary();
 
     QHash<QString, int> indexById;
-    for (int i = 0; i < pr.events.size(); ++i) {
-        const PullEvent &ev = pr.events.at(i);
+    const QList<PullEvent> events = PullStore::foldCommentChanges(pr.events);
+    for (int i = 0; i < events.size(); ++i) {
+        const PullEvent &ev = events.at(i);
         if (ev.type == QLatin1String("comment") ||
             ev.type == QLatin1String("review")) {
             ++snapshot.topLevelItems;

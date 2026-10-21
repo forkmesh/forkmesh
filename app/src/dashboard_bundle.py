@@ -44,6 +44,7 @@ FRAGMENTS = (
     "09-bounties.js",
     "09-calendar.js",
     "09-challenges.js",
+    "09-comment-reactions.js",
     "09-daily-interface.js",
     "09-docs.js",
     "09-feedback.js",
@@ -52,7 +53,9 @@ FRAGMENTS = (
     "09-microjobs.js",
     "09-notes.js",
     "09-plugin-menu.js",
+    "09-recent-pushes.js",
     "09-referrals.js",
+    "09-repo-activity.js",
     "09-runners.js",
     "09-tasks.js",
     "09-update-notice.js",
@@ -95,6 +98,8 @@ def compose_from_reader(read):
 LAZY_CHUNKS = {
     "achievements": "09-achievements.js",
     "agents": "09-agents.js",
+    # Settings > Agents only (04-account.js initSettingsAgents).
+    "agent-profiles": "09-agent-profiles.js",
     "apps": "09-apps.js",
     "bounties": "09-bounties.js",
     "calendar": "09-calendar.js",
@@ -104,6 +109,7 @@ LAZY_CHUNKS = {
     "links": "09-links.js",
     "notes": "09-notes.js",
     "referrals": "09-referrals.js",
+    "repo-activity": "09-repo-activity.js",
     "tasks": "09-tasks.js",
     "workflows": "09-workflows.js",
 }
@@ -271,6 +277,41 @@ def _core_stub(chunk, exports):
         for name in exports)
 
 
+# -- deferred dialog markup ---------------------------------------------------
+# Dialogs no page shows on load stay out of the page documents: their partial
+# is embedded in dashboard.js (cached across pages) and added to the document
+# the first time one of them is opened (02-helpers.js ensureDeferredMarkup).
+# ``marker`` is an element of the partial that tells it is already there;
+# ``after`` is where it goes (after that element), else the end of <body>.
+DEFERRED_MARKUP = {
+    # Profile, about, pings, provider sign-in and feedback dialogs.
+    "dialogs": {"partial": "modals", "marker": "#notificationModal",
+                "after": None},
+    # The header's "Start an agent" popover, positioned under its toggle.
+    "agent": {"partial": "agent-modal", "marker": "#agentModal",
+              "after": "#agentModalToggle"},
+}
+
+
+def deferred_markup_path(name):
+    return "dashboard/partials/%s.html" % DEFERRED_MARKUP[name]["partial"]
+
+
+def _deferred_markup(read):
+    entries = "".join(
+        "      %s: { marker: %s, after: %s, html: %s },\n" % (
+            json.dumps(name), json.dumps(spec["marker"]),
+            json.dumps(spec["after"]),
+            json.dumps(read(deferred_markup_path(name))))
+        for name, spec in DEFERRED_MARKUP.items())
+    return (
+        "  // Dialog markup the page documents leave out (dashboard_bundle.py\n"
+        "  // DEFERRED_MARKUP); ensureDeferredMarkup adds it on first use.\n"
+        "  function deferredMarkup(name) {\n"
+        "    return {\n%s    }[name] || null;\n"
+        "  }\n\n" % entries)
+
+
 def compose_split_from_reader(read, version=None):
     """(core dashboard.js, {asset: chunk script}) from the fragments.
 
@@ -290,6 +331,7 @@ def compose_split_from_reader(read, version=None):
     for name in FRAGMENTS:
         if name == "10-boot.js":
             parts.append(_core_loader(plans, versions))
+            parts.append(_deferred_markup(read))
         if name in by_fragment:
             chunk = by_fragment[name]
             parts.append(_core_stub(chunk, plans[chunk][2]))

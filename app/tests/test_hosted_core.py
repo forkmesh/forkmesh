@@ -754,6 +754,41 @@ def test_a_push_makes_the_others_fetch_but_not_the_pusher():
     assert [tuple(r) for r in rows] == [(pusher, 10), (other, 10)]
 
 
+def test_a_forced_push_names_the_forced_tips_for_every_replica():
+    world = World()
+    module = install(world)
+    repo_id = _created(world, module, {"readme": False})
+    pusher, other = CORES[1], CORES[2]
+    runtime = module._ReplicaRuntime(Env())
+    forced = [
+        {"ref": "refs/heads/feature", "old": "a" * 40, "new": "b" * 40},
+        {"ref": "refs/heads/forkmesh/pull/1", "old": "a" * 40,
+         "new": "c" * 40},
+        {"ref": "refs/heads/bad name", "old": "a" * 40, "new": "c" * 40},
+    ]
+    asyncio.run(hosted_repos.note_push(runtime, repo_id, pusher, NOW, forced))
+    row = world.db.execute(
+        "SELECT pushed_at,pushed_by FROM hosted_repos WHERE id=?",
+        (repo_id,)).fetchone()
+    assert tuple(row) == (NOW, pusher)
+    state = {repo_id: {"pushedAt": 5, "empty": False,
+                       "routingDigest": "b" * 64, "sizeBytes": 10}}
+    item = signed_replicas(module, other, state).data["repositories"][0]
+    assert item["forced"] == {"refs/heads/feature": "b" * 40}
+    assert item["sources"][0]["node"] == pusher
+
+
+def test_forced_tips_expire_and_stay_bounded():
+    keep = hosted_repos.FORCED_KEEP_MS
+    updates = [{"ref": "refs/heads/b%02d" % index, "old": "a" * 40,
+                "new": "%040x" % (index + 1)} for index in range(40)]
+    merged = hosted_repos.merge_forced({}, updates, NOW)
+    assert len(merged) == hosted_repos.FORCED_MAX
+    assert hosted_repos.forced_tips({"forced": merged}, NOW + keep) == {}
+    later = hosted_repos.merge_forced(merged, [updates[0]], NOW + 1)
+    assert later["refs/heads/b00"]["at"] == NOW + 1
+
+
 def _stats(commit, count, weeks=None):
     return {"commit": commit, "commitCount": count,
             "mergeCount": 2, "activityWeeks": weeks or [0] * 51 + [5],
@@ -961,6 +996,29 @@ def test_private_reads_need_a_reader_and_use_a_capability():
     _created(world2, module2)
     assert asyncio.run(module2.hosted_private_read(
         Env(), Request(method="GET"), "alice", "app", "git-info-refs")) is None
+
+
+def test_private_pulse_reads_answer_exactly_like_the_other_reads():
+    world = World()
+    module = install(world)
+    _created(world, module, {"visibility": "private"})
+
+    def read(operation):
+        return asyncio.run(module.hosted_private_read(
+            Env(), Request(method="GET", url=(
+                "https://app.next.test/api/repo/alice/app/%s?period=1w"
+                % operation)), "alice", "app", operation))
+    for account in ("", "mallory"):
+        world.account = account
+        pulse, stats = read("pulse"), read("stats")
+        assert pulse.status == stats.status == 404
+        assert pulse.data == stats.data == {"error": "not_found"}
+    world.account = "alice"
+    world.fetches.clear()
+    response = read("pulse")
+    assert response.status == 200
+    assert response.headers["cache-control"] == "private, no-store"
+    assert "/v1/repositories/alice/app/pulse" in world.fetches[0][0]
 
 
 def test_org_readers_can_read_a_private_org_repository():

@@ -459,7 +459,8 @@ async def contributor_push_allowed(env, owner, repo, account, alias=""):
 
 
 async def record_hosted_push_state(env, owner, repo, endpoint=None,
-                                   pusher="", state="", notify=True):
+                                   pusher="", state="", notify=True,
+                                   forced=None):
     """Pin the refs digest the hosting node signs after a hosted push.
 
     A public read is routed only against an authenticated refs attestation
@@ -494,7 +495,8 @@ async def record_hosted_push_state(env, owner, repo, endpoint=None,
         # routing digest (default branch + tags) alone: the other cores fetch
         # when their copy is behind it (hosted_repos.replicas).
         try:
-            await _note_core_push(env, key_bi, endpoint.get("node", ""))
+            await _note_core_push(env, key_bi, endpoint.get("node", ""),
+                                  forced)
         except Exception:
             pass
     digest = clean_string(state, 64).strip().lower()
@@ -1015,6 +1017,10 @@ async def hosted_repository_handler(env, request, path):
         if method_name(request) == "GET":
             return await _hosted_settings(env, request)
         return await _create_empty_repository(env, request)
+    if route == "/api/hosted-repositories/visibility":
+        if method_name(request) != "POST":
+            return json_response({"error": "method_not_allowed"}, status=405)
+        return await _change_visibility(env, request)
     if route == "/api/hosted-repositories/push-credential":
         return await _mint_push_credential(env, request)
     if route == _hosted_repos.REPLICAS_PATH:
@@ -1044,7 +1050,7 @@ def hosted_core_owners(env):
     return _hosted_repos.core_owners(env)
 HOSTED_API_READ_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "commit", "compare",
-    "merge-preview", "branches", "search", "stats", "sizes",
+    "merge-preview", "branches", "search", "stats", "sizes", "pulse",
 })
 
 
@@ -1106,6 +1112,12 @@ class _ReplicaRuntime:
 
     async def open(self, value):
         return await decrypt_row(self.env, value)
+
+    async def fork_parent(self, owner, name):
+        return await _public_node_parent(self.env, owner, name)
+
+    async def seal(self, record):
+        return await encrypt_row(self.env, record)
 
     async def pin_initial(self, owner, name, digest):
         """Pin the first content a core reports (initial commit or import)."""
@@ -1251,13 +1263,14 @@ async def _notify_cores(env, owner, name):
             pass
 
 
-async def _note_core_push(env, key_bi, node):
+async def _note_core_push(env, key_bi, node, forced=None):
     runtime = _ReplicaRuntime(env)
     await _hosted_repos.ensure_tables(runtime)
     row = await _hosted_repos.find_by_key(runtime, key_bi)
     if not row:
         return
-    await _hosted_repos.note_push(runtime, row["id"], node, int(Date.now()))
+    await _hosted_repos.note_push(runtime, row["id"], node, int(Date.now()),
+                                  forced)
     record = await decrypt_row(env, row.get("data"))
     if isinstance(record, dict):
         await _notify_cores(env, record.get("owner", ""), record.get("name", ""))
@@ -1269,6 +1282,10 @@ async def _hosted_read_allowed(env, owner, repo, account):
         return False
     try:
         if await _account_owns_node(env, account, owner):
+            return True
+        shared_with = globals().get("_repo_shared_with")
+        if callable(shared_with) and await shared_with(
+                env, owner, repo, account):
             return True
         rows = await d1_all(
             env, "SELECT org_bi FROM org_repos WHERE node_owner=? AND repo=?",
@@ -1337,6 +1354,78 @@ async def _hosted_settings(env, request):
             runtime, await blind_index(env, actor))
         body["organizations"] = await _creatable_organizations(env, actor)
     return json_response(body, cache_control="no-store")
+
+
+async def _change_visibility(env, request):
+    try:
+        data = await bounded_json_request(request)
+    except Exception:
+        return _error("invalid_json", 400)
+    if not isinstance(data, dict):
+        return _error("invalid_json", 400)
+    actor = await _authed_account_name(env, request, data)
+    if not actor:
+        return _session_required_response()
+    owner = clean_string(data.get("owner", ""), MAX_NODE_NAME).strip().lower()
+    name = clean_string(data.get("name", ""), 100).strip()
+    visibility = str(data.get("visibility") or "").strip().lower()
+    if visibility not in ("public", "private") or not owner or not name:
+        return _error("invalid_request", 400)
+    if not _hosted_repos.enabled(env):
+        return _error("core_hosting_required", 409,
+                      "Visibility changes on the web need core hosting.")
+    runtime = _ReplicaRuntime(env, request)
+    await ensure_schema(env)
+    await _hosted_repos.ensure_tables(runtime)
+    key_bi = await blind_index(env, owner + "/" + name)
+    row = await _hosted_repos.find_by_key(runtime, key_bi)
+    if not row:
+        return _error("node_held", 409,
+                      "This repository is held by its owner's node; change "
+                      "its visibility there.")
+    hosted = await decrypt_row(env, row.get("data")) or {}
+    allowed = await _account_owns_node(env, actor, owner)
+    organization = str(hosted.get("organization") or "")
+    if not allowed and organization:
+        org_bi, org_row = await _org_row(env, organization)
+        allowed = bool(org_row) and team_permission_rank(
+            await _org_permission(env, org_bi, actor)
+        ) >= team_permission_rank("admin")
+    if not allowed:
+        await _audit_sensitive_action(
+            env, actor, "repository.visibility", "repository",
+            owner + "/" + name, "denied", {"visibility": visibility})
+        return _error("forbidden", 403)
+    catalog = await d1_first(
+        env, "SELECT data FROM repositories WHERE key_bi=?", key_bi)
+    record = await decrypt_row(env, (catalog or {}).get("data"))
+    if not isinstance(record, dict):
+        return _error("not_found", 404)
+    previous = "private" if record.get("visibility") == "private" else "public"
+    if previous != visibility:
+        now = int(Date.now())
+        record = safe_catalog_record({
+            **record, "visibility": visibility, "updatedAt": str(now)})
+        owner_bi = await blind_index(env, owner)
+        _unused, owner_rec = await _account_row(env, owner)
+        await _contribution_write_catalog_state(
+            env, record, owner_bi, owner_rec or {}, key_bi,
+            await encrypt_row(env, record))
+        await _hosted_repos.set_visibility(runtime, row["id"], visibility)
+        forget_closed = globals().get("_forget_repo_closed")
+        if callable(forget_closed):
+            forget_closed(owner, name)
+        _https_mirror_public_context_cache_clear()
+        await edge_cache_delete(CATALOG_CACHE_KEY)
+        await _bump_catalog_rev(env)
+        await schedule_public_catalog_republish(env, owner, name)
+        await _notify_cores(env, owner, name)
+    await _audit_sensitive_action(
+        env, actor, "repository.visibility", "repository", owner + "/" + name,
+        "success", {"from": previous, "to": visibility})
+    return json_response(
+        {"ok": True, "owner": owner, "name": name, "visibility": visibility,
+         "changed": previous != visibility}, cache_control="no-store")
 
 
 def _error(code, status, message="", **extra):
@@ -1462,7 +1551,8 @@ async def store_core_repository(env, runtime, target, record, *, actor,
         {"source": HOSTED_SOURCE, "hostedNode": endpoint.get("node", ""),
          "visibility": visibility, "organization": organization,
          "import": bool(imported), "initialized": bool(init),
-         **({"forkOf": fork.get("of", "")} if fork else {})})
+         **({"forkOf": _hosted_repos.fork_parent_key({"fork": fork})}
+            if fork else {})})
     await _notify_cores(env, owner, name)
 
 
@@ -1590,10 +1680,37 @@ def _fork_response(owner, name, parent_owner, parent_name, now, status=201,
     }, status=status, cache_control="no-store")
 
 
+async def _public_node_parent(env, owner, repo):
+    if not _hosted_repos.enabled(env):
+        return None
+    owner = safe_segment(str(owner or "").lower())
+    repo = safe_segment(repo)
+    if not owner or not repo:
+        return None
+    try:
+        row = await d1_first(
+            env, "SELECT is_private,data FROM repositories WHERE key_bi=?",
+            await blind_index(env, owner + "/" + repo))
+        record = await decrypt_row(env, row.get("data")) if row else None
+        if (not isinstance(record, dict)
+                or int(row.get("is_private") or 0)
+                or record.get("visibility") != "public"
+                or record.get("source") == HOSTED_SOURCE
+                or not _hosted_repos.fork_clone_url(record.get("cloneUrl"))
+                or await _repo_is_private(env, owner, repo)):
+            return None
+    except Exception:
+        return None
+    return record
+
+
 async def hosted_fork_create(env, request, node, public_owner, repo):
     parent_row = await _hosted_row(env, node, repo)
+    upstream = None
     if not parent_row:
-        return None
+        upstream = await _public_node_parent(env, node, repo)
+        if upstream is None:
+            return None
     try:
         data = await bounded_json_request(request)
     except Exception:
@@ -1612,25 +1729,52 @@ async def hosted_fork_create(env, request, node, public_owner, repo):
         return _error(
             "email_verification_required", 403,
             "Verify your email address under Settings, Account, to fork.")
+    if upstream is not None:
+        mirrors = globals().get("_web_fork_eligible_nodes")
+        managed = globals().get("_web_fork_create")
+        if callable(managed) and (
+                data.get("targetNode") or (callable(mirrors) and await mirrors(
+                    env, actor, account))):
+            return await managed(env, request, public_owner, repo, data)
     runtime = _ReplicaRuntime(env, request)
     await _hosted_repos.ensure_tables(runtime)
-    parent = await decrypt_row(env, parent_row.get("data"))
-    parent_id = str(parent_row.get("id") or "")
-    if (not isinstance(parent, dict)
-            or not _hosted_repos.ID_RE.fullmatch(parent_id)
-            or parent_row.get("visibility") != "public"
-            or await _repo_is_private(env, node, repo)):
-        return _error("fork_unavailable", 403,
-                      "Only public repositories can be forked here.")
-    parent_name = str(parent.get("name") or repo)
-    parent_fork = _hosted_repos.fork_of(dict(parent, id=parent_id))
-    network = parent_fork[1] if parent_fork else parent_id
+    if upstream is None:
+        parent = await decrypt_row(env, parent_row.get("data"))
+        parent_id = str(parent_row.get("id") or "")
+        if (not isinstance(parent, dict)
+                or not _hosted_repos.ID_RE.fullmatch(parent_id)
+                or parent_row.get("visibility") != "public"
+                or await _repo_is_private(env, node, repo)):
+            return _error("fork_unavailable", 403,
+                          "Only public repositories can be forked here.")
+        parent_name = str(parent.get("name") or repo)
+        parent_fork = _hosted_repos.fork_of(dict(parent, id=parent_id))
+        parent_upstream = _hosted_repos.fork_upstream(parent)
+        network = (parent_fork[1] if parent_fork else parent_upstream[1]
+                   if parent_upstream else parent_id)
+        fork_spec = {"of": parent_id, "network": network}
+    else:
+        parent = upstream
+        parent_name = str(parent.get("name") or repo)
+        parent_owner = str(parent.get("owner") or node).lower()
+        fork_spec = {
+            "upstream": {
+                "owner": parent_owner, "name": parent_name,
+                "cloneUrl": _hosted_repos.fork_clone_url(
+                    parent.get("cloneUrl")),
+            },
+            "network": _hosted_repos.upstream_network(
+                parent_owner, parent_name),
+        }
+        if not _hosted_repos.fork_upstream({"fork": fork_spec}):
+            return _error("fork_unavailable", 403,
+                          "Only public repositories can be forked here.")
+    parent_key = _hosted_repos.fork_parent_key({"fork": fork_spec})
     now = int(Date.now())
     creator_bi = await blind_index(env, actor)
     for row in await _hosted_repos.rows_for_creator(runtime, creator_bi):
         record = await decrypt_row(env, row.get("data"))
-        fork = _hosted_repos.fork_of(record)
-        if fork and fork[0] == parent_id:
+        if _hosted_repos.fork_parent_key(record) == parent_key:
             return _fork_response(
                 str(record.get("owner") or actor),
                 str(record.get("name") or parent_name),
@@ -1682,7 +1826,7 @@ async def hosted_fork_create(env, request, node, public_owner, repo):
     await store_core_repository(
         env, runtime, target, record, actor=actor, repo_id=repo_id,
         visibility="public", init=None, endpoint=endpoint, now=now,
-        fork={"of": parent_id, "network": network})
+        fork=fork_spec)
     index_edge = globals().get("_index_repo_fork_edge")
     if callable(index_edge):
         await index_edge(env, record, None, target["owner_bi"],

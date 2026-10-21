@@ -258,6 +258,12 @@ event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
   `CacheLabel` estimates heights only from its on-screen width.
 - Sending a follow-up jumps to the tail; a resume keeps the rendered rows; a
   cloud follow-up is drawn at once until the relay history replaces it.
+- Cloud runs and external Claude Code sessions redraw the whole transcript when
+  the relay history or the `.jsonl` grows. Redrawing the session already on
+  screen goes through the same held frame and keeps the reader's place. It
+  used to end in `jumpToBottom()`, which pulled anyone reading earlier turns
+  back down on every update (2026-10-21). Only opening a session, or a reader
+  already at the tail, lands at the end.
 
 ### Composer
 
@@ -298,6 +304,17 @@ The prompt box (`src/PromptDraftStore.*`, `src/PromptSpellCheckHighlighter.*`,
   `assigneeKind: user` and that member, or unassigned to General. Members
   come from the task catalog (`organizationTaskMemberNames`); picking Task
   before the catalog was read starts the launch read.
+- **Review with AI** on a pull request (`reviewCurrentPullWithAi`) runs with
+  the agent and model the composer has selected (2026-10-20), so the review
+  uses the same agent you are already working with. Claude API and OpenAI
+  with a saved key send one request straight to the API; every other agent
+  runs its own command from `agentConfigForProvider` once, read-only, in the
+  repository's checkout (`aiReviewRunAgentCli`). The review only falls back
+  to choosing for itself (Claude key, then OpenAI key, then Claude Code) when
+  the composer is on Manual, ActivityPub, Note or Task. Some CLIs, such as
+  Codex, print the prompt back before their answer, so
+  `parseAiReviewFindings` tries again from each earlier `[` before the
+  reply's last `]` until it finds a JSON array.
 - The dropdown's last row, **Edit models…**, opens the Models board
   (`openComposerModelsPage`), whose **Show** column ticks which models the
   dropdown lists (`agents/composerHiddenModels`, same list as Settings →

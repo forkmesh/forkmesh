@@ -3385,27 +3385,43 @@ QFrame *MainWindow::buildTeammateRosterEmptyState(const QString &directory,
     empty->setObjectName(QStringLiteral("teammateEmpty"));
     empty->setProperty("fullRow", true);
     auto *layout = new QVBoxLayout(empty);
+    const bool noRepository = directory.isEmpty();
+    const QString title =
+        noRepository
+            ? QStringLiteral("Choose a repository")
+        : noEntries ? QStringLiteral("Build your AI special agents")
+                    : QStringLiteral("No special agents match");
+    const QString body =
+        noRepository
+            ? m_teammatesSummaryText
+        : noEntries
+            ? QStringLiteral("Start with a specialty, choose the intelligence, "
+                             "then add skills and a schedule.")
+            : QStringLiteral("Try a different top-bar search or status button.");
+    if (Theme::isNext()) {
+        layout->setContentsMargins(0, 8, 0, 8);
+        layout->setSpacing(0);
+        auto *state = new kit::EmptyState(QStringLiteral("people"), title, body, empty);
+        layout->addWidget(state);
+        if (noEntries && !noRepository) {
+            QPushButton *qa = state->addAction(QStringLiteral("Start with Quality Assurance"));
+            qa->setObjectName(QStringLiteral("primaryButton"));
+            setOcticon(qa, QStringLiteral("shield-check"), 15);
+            connect(qa, &QPushButton::clicked, this,
+                    [this] { openTeammateEditor(QStringLiteral("quality-template")); });
+        }
+        return empty;
+    }
     layout->setContentsMargins(28, 44, 28, 44);
     layout->setAlignment(Qt::AlignCenter);
     auto *icon = new QLabel;
     icon->setAlignment(Qt::AlignCenter);
     icon->setPixmap(themedOcticon(QStringLiteral("people"), Theme::remapColor(QColor("#8b949e")), 28)
                         .pixmap(28, 28));
-    const bool noRepository = directory.isEmpty();
-    auto *heading = new QLabel(
-        noRepository
-            ? QStringLiteral("Choose a repository")
-        : noEntries ? QStringLiteral("Build your AI special agents")
-                            : QStringLiteral("No special agents match"));
+    auto *heading = new QLabel(title);
     heading->setObjectName(QStringLiteral("teammateEmptyTitle"));
     heading->setAlignment(Qt::AlignCenter);
-    auto *copy = new QLabel(
-        noRepository
-            ? m_teammatesSummaryText
-        : noEntries
-            ? QStringLiteral("Start with a specialty, choose the intelligence, "
-                             "then add skills and a schedule.")
-            : QStringLiteral("Try a different top-bar search or status button."));
+    auto *copy = new QLabel(body);
     copy->setObjectName(QStringLiteral("statusLine"));
     copy->setWordWrap(true);
     copy->setAlignment(Qt::AlignCenter);

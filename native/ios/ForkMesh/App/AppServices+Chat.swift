@@ -32,11 +32,19 @@ struct ChatInstaller: AppServicesInstaller {
                 },
                 formerScopes: { ChatHistoryCodec.formerScopes(serverUrl: settings.serverUrl, room: settings.room) })
         }
-        if let prefs = Services.get(KeyValueStore.self), let settings = settings {
-            Services.put(
-                ChannelGroupsStore(
-                    prefs: prefs, projectId: settings.relays.activeId, serverUrl: settings.serverUrl, room: settings.room))
-            hub.workspace = ChatWorkspace(store: prefs, scope: settings.relays.activeId)
+        if let workspace = ChatInstaller.bindProject() { hub.workspace = workspace }
+        if let switcher = Services.get(RelaySwitchController.self) {
+            let suspend: (@MainActor () async throws -> Void)? = switcher.onSuspend
+            let resume: (@MainActor () async throws -> Void)? = switcher.onResume
+            switcher.onSuspend = {
+                try await suspend?()
+                await hub.leaveProject()
+                DirectLiveMotionFeed.shared.stop()
+            }
+            switcher.onResume = {
+                if hub.projectSuspended { hub.enterProject(workspace: ChatInstaller.bindProject() ?? ChatWorkspace()) }
+                try await resume?()
+            }
         }
         if let api = api, let sockets = Services.get(WebSocketConnector.self), let secure = Services.get(SecureStore.self) {
             let office: OfficeChannelService = OfficeChannelService(
@@ -163,6 +171,14 @@ struct ChatInstaller: AppServicesInstaller {
         if let prefs = Services.get(KeyValueStore.self), let auth = auth {
             ChatWelcome.schedule(hub: hub, auth: auth, announcer: ChatWelcomeAnnouncer(prefs: prefs))
         }
+    }
+
+    static func bindProject() -> ChatWorkspace? {
+        guard let prefs = Services.get(KeyValueStore.self), let settings = Services.get(SettingsService.self) else { return nil }
+        Services.put(
+            ChannelGroupsStore(
+                prefs: prefs, projectId: settings.relays.activeId, serverUrl: settings.serverUrl, room: settings.room))
+        return ChatWorkspace(store: prefs, scope: settings.relays.activeId)
     }
 
     private func installCalls(hub: ChatHub, direct: DirectMessageService, relay: RelayService, auth: AuthService?) {

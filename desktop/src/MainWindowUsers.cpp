@@ -409,6 +409,7 @@ QWidget *MainWindow::buildUsersSection()
     m_usersTable = new QTableWidget(0, kUsersColCount);
     installColumnHeaderMenu(m_usersTable);
     m_usersTable->setObjectName(QStringLiteral("usersTable"));
+    m_usersTable->setProperty("dataTable", true);
     m_usersTable->setHorizontalHeaderLabels(usersTableHeaders());
     m_usersTable->verticalHeader()->setVisible(false);
     m_usersTable->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -445,6 +446,7 @@ QWidget *MainWindow::buildUsersSection()
     installColumnHeaderMenu(m_usersQuarantineTable);
     m_usersQuarantineTable->setObjectName(
         QStringLiteral("usersQuarantineTable"));
+    m_usersQuarantineTable->setProperty("dataTable", true);
     m_usersQuarantineTable->setHorizontalHeaderLabels(
         usersQuarantineTableHeaders());
     m_usersQuarantineTable->verticalHeader()->setVisible(false);

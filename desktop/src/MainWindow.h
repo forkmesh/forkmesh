@@ -609,6 +609,7 @@ public:
     static void applyTheme(
         forkmesh::market::PackageRegistry *registry = nullptr);
     void refreshThemedIcons();
+    void refreshComposerIcons();
 
     static QString autolinkReferences(
         const QString &markdown,
@@ -1387,6 +1388,7 @@ public:
     void testSetOrganizations(const QJsonArray &organizations)
     {
         m_organizations = organizations;
+        m_organizationsKnown = true;
     }
     void testShowNewRepositoryDialog() { createNewRepository(); }
     void testShowHomeSection() { showSection(0); }
@@ -4461,6 +4463,9 @@ private:
     bool projectInstancePending() const;
     void promptChooseProjectInstance();
     void connectProjectInstance(const QString &url, const QString &name);
+    QString otherProjectForInstance(const QString &url, QString *slug = nullptr) const;
+    bool refuseInstanceOfAnotherProject(const QString &url);
+    void recordProjectInstances();
     void adoptInstanceLogo(const QString &serverUrl);
     void saveInstanceLogo(const QString &projectDir, QList<QUrl> candidates);
     void openProject(const QString &slug, bool keepThisOneOpen);
@@ -6571,10 +6576,13 @@ private:
                            const WorkflowScan &scan);
     void drainDeferredActionWorkflowScans();
     void submitPullComment();                       // post a comment on the PR
+    void editPullComment(int number, const QString &target, const QString &original);
+    void deletePullComment(int number, const QString &target);
     void sendPullRevisionToAgent();                 // re-queue the linked agent with revision feedback
     void submitPullReview(const QString &state);    // approve / request changes
     bool currentAccountOwnsPullRepository();
     bool accountOwnsPullRepositoryAt(int index);
+    void whenPullOwnershipKnown(int index, std::function<void()> next);
     void promptNewPull();
     void importPatchAsPull(); // read a .patch/.diff file and open it as a PR
     void promptNewPullFromDirectory();
@@ -6671,6 +6679,10 @@ private:
         const QStringList &skipped, bool switchToTab);
     void handleLocalControlPullsRequest(int connectionId, int requestId,
                                         const QString &method, const QJsonObject &params);
+    void answerLocalControlPullsRequest(int connectionId, int requestId,
+                                        const QString &method, const QString &owner,
+                                        const QString &name, const QString &action,
+                                        const QString &token);
     void runLocalControlPullsMergeAll(int connectionId, int requestId, int index);
     void finishPullMergeAllRun(int sessionId);
     void loadPullMergeAllRuns();
@@ -6965,7 +6977,7 @@ private:
     void deleteAllRecycledAgentsInOpenRepo();
     void deleteWorktreeBranchAndAgentInBackground(
         const QString &worktreePath, const QString &branch,
-        std::function<void(bool)> onDone = {});
+        std::function<void(bool)> onDone = {}, bool announce = true);
     void deleteWorktreeBranchAndAgent(const QString &worktreePath,
                                       const QString &branch, bool confirm = true,
                                       bool deferRefresh = false,
@@ -7304,6 +7316,10 @@ private:
     void notifyActionEvent(forkmesh::ui::ActionPingEvent event,
                            const QString &title, const QString &body,
                            bool warning, int runId = -1);
+    void notifyHeldActionRuns(const QString &owner, const QString &name,
+                              const QString &commit,
+                              const ActionPullContext &pull,
+                              const QList<QPair<QString, int>> &held);
     struct AppNotification;
     void addNotification(const QString &title, const QString &body,
                          bool warning = false, int runId = -1);
@@ -10302,6 +10318,14 @@ private:
                          const char *sourceFile = FORKMESH_LOG_SOURCE_FILE,
                          int sourceLine = FORKMESH_LOG_SOURCE_LINE);
     enum class NoticeRoute { Page, Local, Ping };
+    struct PingThreadScope {
+        PingThreadScope(MainWindow *window, const QString &key);
+        ~PingThreadScope();
+        MainWindow *window;
+        QString previous;
+    };
+    static QString mergePingThread(const QString &dir, const QString &branch);
+    qint64 refileThreadPing(const QString &key, const AppNotification &replacement);
     void flashMessageImpl(const QString &text, bool error,
                           const QString &clickHref, const QString &kind,
                           int actionRunId, NoticeRoute route,
@@ -11196,6 +11220,8 @@ private:
     QString m_organizationPendingSelection;
     bool m_organizationsLoading = false;
     bool m_organizationsLoaded = false;
+    bool m_organizationsKnown = false;
+    QList<std::function<void()>> m_organizationsWaiters;
     int m_organizationsSettingsTabIndex = -1;
     QPushButton *m_agentsNavButton = nullptr;
     AgentDotMatrix *m_agentDotMatrix = nullptr;
@@ -13725,6 +13751,30 @@ private:
     // pulls-tab refresh timer cannot stack git fetches.
     QHash<QString, qint64> m_pullLedgerSweepAtMs;
     bool m_pullLedgerSweepInProgress = false;
+    struct PullsInboxApplyRequest {
+        RepositoryRecord repo;
+        QJsonArray pending;
+        bool interactive = false;
+    };
+    struct PullsInboxOutcome {
+        int merged = 0;
+        int opened = 0;
+        QStringList drainedIds;
+        QString lastAuthor;
+        QString lastTitle;
+    };
+    QSet<QString> m_pullsInboxApplyInFlight;
+    QHash<QString, PullsInboxApplyRequest> m_pullsInboxApplyQueued;
+    static QString pullsInboxKey(const RepositoryRecord &repo);
+    static PullsInboxOutcome applyPullsInboxEntries(PullStore store,
+                                                    const QJsonArray &pending);
+    static void mergePullsInboxPending(QJsonArray &into,
+                                       const QJsonArray &more);
+    void queuePullsInboxApply(PullsInboxApplyRequest request);
+    void startQueuedPullsInboxApplies();
+    void finishPullsInboxApply(const RepositoryRecord &repo,
+                               const PullsInboxOutcome &outcome,
+                               bool interactive);
     // Digest of the pull rendered in the detail pane; a background reload
     // whose digest differs re-renders the open detail in place.
     QString m_pullDetailRenderedDigest;
@@ -13820,6 +13870,8 @@ private:
     int m_desktopNotificationWaiters = 0; // live `notify-send --wait` processes
     qint64 m_nextNotificationId = 1;
     qint64 m_announcingPingId = 0;
+    QString m_pingThreadKey;
+    QHash<QString, qint64> m_pingThreadIds;
     QTimer *m_notificationJournalTimer = nullptr; // debounced journal write
     QSet<QString> m_flashedWebAlertIds;
     QSet<QString> m_celebratedWebAlertIds;
@@ -13970,7 +14022,7 @@ private:
         int number = 0;       // PR number (PR mode)
         int repoIndex = -1;
         int sessionId = 0;    // backing agent session
-        QString provider;     // "claude" | "openai" | "claude-code"
+        QString provider;     // the composer's agent, or "claude" | "openai" | "claude-code"
         QString model;
         QString apiKey;
         QString workTree;
@@ -14011,18 +14063,18 @@ private:
         int number = 0;       // PR under review
         int repoIndex = -1;
         int sessionId = 0;    // backing agent session (Agents-tab visibility)
-        QString provider;     // "claude" | "openai" | "claude-code"
+        QString provider;     // the composer's agent, or "claude" | "openai" | "claude-code"
         QString model;
         double costUsd = 0.0;
         qint64 inTokens = 0;
         qint64 outTokens = 0;
-        QProcess *process = nullptr; // running CLI (claude-code mode), else null
-        QString output;              // accumulated CLI stdout (claude-code mode)
+        QProcess *process = nullptr; // running agent CLI, else null
+        QString output;              // accumulated agent CLI stdout
         QString promptFile;          // prompt handed to the CLI; removed on finish
     };
     AiPullReview *m_aiReview = nullptr;
     void reviewCurrentPullWithAi();        // "Review with AI" on the PR header
-    void aiReviewRunClaudeCode(const QString &prompt); // CLI fallback (no API key)
+    void aiReviewRunAgentCli(const QString &prompt); // composer agent's CLI
     void aiReviewHandleReply(const QString &text); // parse findings + post threads
     void aiReviewFail(const QString &message);
     void aiReviewLog(const QString &text);

@@ -68,7 +68,7 @@ var (
 	hostedBranchPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$`)
 	hostedFilePattern   = regexp.MustCompile(`^(README\.md|\.gitignore|LICENSE)$`)
 	hostedGrantPattern  = regexp.MustCompile(`^[A-Za-z0-9_-]{16,1000}\.[A-Za-z0-9_-]{86}$`)
-	hostedDefaultImport = []string{"github.com", "gitlab.com", "codeberg.org"}
+	hostedDefaultImport = []string{"github.com", "gitlab.com", "codeberg.org", "gitea.com"}
 )
 
 // HostedConfig turns the replicator on (core role only).
@@ -77,7 +77,7 @@ type HostedConfig struct {
 	// Absolute, owner-only directory holding <id>.git and .trash/.
 	Root string `json:"root,omitempty"`
 	// Hosts an importUrl may name (https only). Default github.com,
-	// gitlab.com, codeberg.org.
+	// gitlab.com, codeberg.org, gitea.com.
 	ImportHosts []string `json:"importHosts,omitempty"`
 	PushHosts   []string `json:"pushHosts,omitempty"`
 	// Largest repository a fetch may produce (bytes); default 256 MiB.
@@ -184,10 +184,18 @@ type hostedDesired struct {
 	Init       *hostedInit    `json:"init,omitempty"`
 	Sources    []hostedSource `json:"sources,omitempty"`
 	// Organization names the repository is also served under (org_repos).
-	Aliases    []string          `json:"aliases,omitempty"`
-	PushMirror *hostedPushMirror `json:"pushMirror,omitempty"`
-	ForkOf     string            `json:"forkOf,omitempty"`
-	Network    string            `json:"network,omitempty"`
+	Aliases      []string            `json:"aliases,omitempty"`
+	PushMirror   *hostedPushMirror   `json:"pushMirror,omitempty"`
+	ForkOf       string              `json:"forkOf,omitempty"`
+	ForkUpstream *hostedForkUpstream `json:"forkUpstream,omitempty"`
+	Network      string              `json:"network,omitempty"`
+	Forced       map[string]string   `json:"forced,omitempty"`
+}
+
+type hostedForkUpstream struct {
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	CloneURL string `json:"cloneUrl"`
 }
 
 type hostedRemoved struct {
@@ -386,7 +394,10 @@ func validHostedDesired(item hostedDesired) bool {
 		(item.Visibility == "public" || item.Visibility == "private") && item.PushedAt >= 0 &&
 		(item.ForkOf == "" || (hostedIDPattern.MatchString(item.ForkOf) && item.ForkOf != item.ID &&
 			item.Visibility == "public")) &&
-		(item.Network == "" || (item.ForkOf != "" && hostedIDPattern.MatchString(item.Network)))
+		(item.ForkUpstream == nil || (item.ForkOf == "" && item.Visibility == "public" &&
+			item.Network != "" && validHostedForkUpstream(*item.ForkUpstream))) &&
+		(item.Network == "" || ((item.ForkOf != "" || item.ForkUpstream != nil) &&
+			hostedIDPattern.MatchString(item.Network)))
 }
 
 // apply makes local state match one response. It reports whether anything a
@@ -456,8 +467,12 @@ func (r *hostedReplicator) apply(ctx context.Context, response hostedReplicaResp
 		changed = changed || created
 		empty := len(gitLines(ctx, gitDir, "for-each-ref", "--count=1",
 			"--format=%(refname)", "refs/heads", "refs/tags")) == 0
-		if empty && item.ForkOf != "" {
-			if filled, err := r.forkFromLocal(ctx, item, gitDir, publicIDs[item.ForkOf]); err != nil {
+		if empty && (item.ForkOf != "" || item.ForkUpstream != nil) {
+			fill := func() (bool, error) { return r.forkFromLocal(ctx, item, gitDir, publicIDs[item.ForkOf]) }
+			if item.ForkUpstream != nil {
+				fill = func() (bool, error) { return r.forkFromUpstream(ctx, item, gitDir) }
+			}
+			if filled, err := fill(); err != nil {
 				failures = append(failures, "hosted "+key+" fork: "+err.Error())
 			} else if filled {
 				empty = false
@@ -472,7 +487,7 @@ func (r *hostedReplicator) apply(ctx context.Context, response hostedReplicaResp
 			}
 		}
 		if len(item.Sources) > 0 {
-			if err := r.fetchFromPeers(ctx, gitDir, item.Sources); err != nil {
+			if err := r.fetchFromPeers(ctx, gitDir, item.Sources, item.Forced); err != nil {
 				failures = append(failures, "hosted "+key+" replicate: "+err.Error())
 			} else {
 				r.fetchedAt[item.ID] = item.PushedAt
@@ -673,7 +688,7 @@ func (r *hostedReplicator) importRepository(ctx context.Context, gitDir, source 
 
 // fetchFromPeers pulls every head and tag from the first peer that answers,
 // then fast-forwards local refs only (reconcileUpstreamRefs).
-func (r *hostedReplicator) fetchFromPeers(ctx context.Context, gitDir string, sources []hostedSource) error {
+func (r *hostedReplicator) fetchFromPeers(ctx context.Context, gitDir string, sources []hostedSource, forced map[string]string) error {
 	var failures []string
 	for _, source := range sources {
 		if !nodePattern.MatchString(source.Node) || !hostedGrantPattern.MatchString(source.Grant) ||
@@ -698,6 +713,7 @@ func (r *hostedReplicator) fetchFromPeers(ctx context.Context, gitDir string, so
 			clearRefNamespace(context.Background(), gitDir, "refs/forkmesh/upstream")
 			continue
 		}
+		adoptForcedBranches(ctx, gitDir, forced)
 		if err := reconcileUpstreamRefs(ctx, gitDir); err != nil {
 			failures = append(failures, source.Node+": "+err.Error())
 			continue

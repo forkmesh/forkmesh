@@ -41,7 +41,7 @@ ANDROID_RES = ROOT / "native/android/app/src/main/res"
 ANDROID_LAUNCHER = {"mdpi": 48, "hdpi": 72, "xhdpi": 96, "xxhdpi": 144, "xxxhdpi": 192}
 ANDROID_ADAPTIVE = {"mdpi": 108, "hdpi": 162, "xhdpi": 216, "xxhdpi": 324, "xxxhdpi": 432}
 ADAPTIVE_VISIBLE = 72 / 108
-ADAPTIVE_FIT = 0.70
+ADAPTIVE_FIT = 0.86
 
 CUTOUTS = [
     ("logo.png", "cutout", 975, 1116),
@@ -54,7 +54,7 @@ CUTOUTS = [
     ("www/public/favicon/android-chrome-512x512.png", "square", 512, 512),
     ("www/public/favicon/apple-touch-icon.png", "tile", 180, 180),
     ("www/public/favicon/favicon.ico", "ico", 48, 48),
-    ("www/public/assets/fediverse-avatar.png", "tile", 400, 400),
+    ("www/public/assets/fediverse-avatar.png", "padded", 400, 400),
     ("desktop/resources/icons/forkmesh.png", "square", 1024, 1024),
     ("desktop/resources/icons/forkmesh-256.png", "square", 256, 256),
     ("native/android/app/src/main/res/drawable-nodpi/fm_logo.png", "padded", 1024, 1024),
@@ -237,13 +237,6 @@ def render(root: ET.Element, kind: str, width: int, height: int) -> cairo.ImageS
 
 
 def adaptive_layer(root: ET.Element, layer: str, size: int) -> bytes:
-    if layer == "background":
-        surface = cairo.ImageSurface(cairo.FORMAT_RGB24, size, size)
-        ctx = cairo.Context(surface)
-        ctx.set_antialias(cairo.ANTIALIAS_BEST)
-        draw_tile_background(ctx, size)
-        surface.flush()
-        return png_bytes(surface)
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
     ctx = cairo.Context(surface)
     ctx.set_antialias(cairo.ANTIALIAS_BEST)
@@ -268,9 +261,9 @@ def adaptive_layer(root: ET.Element, layer: str, size: int) -> bytes:
 def write_android_launcher(root: ET.Element) -> None:
     for density, size in ANDROID_LAUNCHER.items():
         (ANDROID_RES / f"mipmap-{density}" / "ic_launcher.png").write_bytes(
-            png_bytes(render(root, "tile", size, size)))
+            png_bytes(render(root, "padded", size, size)))
     for density, size in ANDROID_ADAPTIVE.items():
-        for layer in ("background", "foreground", "monochrome"):
+        for layer in ("foreground", "monochrome"):
             (ANDROID_RES / f"mipmap-{density}" / f"ic_launcher_{layer}.png").write_bytes(adaptive_layer(root, layer, size))
 
 

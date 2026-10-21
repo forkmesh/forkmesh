@@ -16,7 +16,8 @@ Hidden files and `__MACOSX` folders are skipped.
 Every key is optional; missing keys keep the form's value. Keys starting with
 `_` or `$` are notes; unknown keys are listed and skipped.
 
-`theme` is empty for the ForkMesh colours, a preset name (`crimson`), or an
+`theme` is empty (or `default`) for the ForkMesh colours, the id of a ready
+theme from the page's theme cards, a colour preset name (`crimson`), or an
 object of `#rrggbb` colours per mode, as the page's colour editor builds it:
 `{"dark": {"primary": "#f97316"}, "light": {"primary": "#ea580c"}}`.
 Tokens you leave out keep the ForkMesh colour.

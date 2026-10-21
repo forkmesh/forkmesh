@@ -64,6 +64,13 @@ class ProjectDirectory private constructor(
 
     fun contains(id: String): Boolean = byId(id) != null
 
+    fun ownerOfInstance(instanceId: String): Project? {
+        val key = ProjectDefaults.instanceKey(instanceId)
+        return list.firstOrNull { it.instanceId == key }
+    }
+
+    fun ownerOf(instance: Project): Project? = instance.instanceId?.let(::ownerOfInstance)
+
     @Synchronized
     private fun restore(legacyInstall: Boolean) {
         val raw = prefs.getString(LIST_KEY) ?: ""
@@ -172,7 +179,7 @@ class ProjectDirectory private constructor(
 
     @Synchronized
     fun add(project: Project): Project {
-        val existing = byId(project.id)
+        val existing = byId(project.id) ?: ownerOf(project)
         if (existing != null) {
             val updated = existing.copy(verifiedAt = project.verifiedAt, verifiedRev = project.verifiedRev)
             replace(updated)
@@ -197,6 +204,7 @@ class ProjectDirectory private constructor(
     fun attach(id: String, instance: Project): Project? {
         val project = byId(id) ?: return null
         if (project.hasInstance || !instance.hasInstance || instance.serverUrl.isEmpty()) return null
+        if (ownerOf(instance) != null) return null
         val attached = project.attach(instance)
         replace(attached)
         return attached
@@ -212,6 +220,13 @@ class ProjectDirectory private constructor(
         val clean = canonicalize(url.trim())
         if (clean.isEmpty()) return null
         val id = Project.normalizeOrigin(clean) ?: return null
+        val owner = ownerOfInstance(id)
+        if (owner != null && owner.id != id) {
+            activeIdValue = owner.id
+            persist()
+            notifyListeners()
+            return owner
+        }
         val existing = byId(id)
         val project = existing?.copy(serverUrl = clean) ?: Project(
             id = id,

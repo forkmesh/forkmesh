@@ -44,6 +44,18 @@ PUBLIC_RUN_FIELDS = ("id", "workflow", "workflowPath", "event", "commit", "ref",
 _ACTIVE_SQL = "('leased','running','cancelling')"
 
 
+# refs/heads/pr/<account>/ is written by contributors without write access
+# (the SSH gateway's pull-request grant, contributor pushes). A run on such a
+# branch executes that branch's workflow files, so it is never trusted: no
+# secrets, job token or push grant, whoever queued or re-ran it.
+CONTRIBUTOR_BRANCH_PREFIX = "pr/"
+ISSUE_EVENTS = ("issues", "issue_comment")
+
+
+def untrusted_branch(branch):
+    return str(branch or "").startswith(CONTRIBUTOR_BRANCH_PREFIX)
+
+
 def valid_branch(branch):
     branch = str(branch or "")
     return bool(
@@ -195,6 +207,8 @@ async def enqueue(runtime, owner, repo, branch, commit="", node="",
     if not NAME_RE.fullmatch(node):
         node = ""
     ref = str(ref or "") or "refs/heads/" + branch
+    if untrusted_branch(branch):
+        trusted = False
     actor = _text(pusher, 64)
     now = runtime.now()
     sealed = ""
@@ -374,7 +388,7 @@ async def lease(runtime, runner, requested, maximum):
             continue
         trusted = bool(
             _int(row.get("trusted")) and runner.get("actionsTrusted")
-            and event != "pull_request")
+            and event != "pull_request" and not untrusted_branch(branch))
         lease_id = runtime.new_id()
         expires_at = now + JOB_TIMEOUT_MS
         read_grant = await runner_leases._grant(
@@ -390,7 +404,15 @@ async def lease(runtime, runner, requested, maximum):
                 runtime, target, repo, "actions-push", "refs/heads/" + branch,
                 runner["name"], runtime.new_id(), now, expires_at,
                 owner=public_owner)
-        if trusted:
+        # An issue or comment event by someone without write access runs
+        # untrusted, yet the default branch's issue workflows (triage,
+        # /assign) still need the job API, which only reads and writes this
+        # repository's issues. Such a job gets a job token, but never
+        # secrets, a push grant or the bot's commit identity.
+        issue_scoped = bool(
+            not trusted and runner.get("actionsTrusted")
+            and event in ISSUE_EVENTS and not untrusted_branch(branch))
+        if trusted or issue_scoped:
             token = runtime.new_id() + runtime.new_id()
         await runtime.d1_run(
             "UPDATE repo_action_jobs SET status='leased',lease_id=?,runner=?,"
@@ -451,6 +473,8 @@ async def lease(runtime, runner, requested, maximum):
             if push_grant:
                 job["pushGrant"] = push_grant
                 job["pushRef"] = "refs/heads/" + branch
+        elif token:
+            job.update({"jobToken": token, "apiUrl": runtime.public_origin()})
         jobs.append(job)
     return jobs
 

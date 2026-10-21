@@ -534,10 +534,6 @@ void MainWindow::promptAddProject()
         request.name = nameEdit->text();
         request.description = descriptionEdit->text();
         request.logoSource = *logoPath;
-        for (const ServerConfig &server : std::as_const(m_servers))
-            request.instances.append({server.name.trimmed().isEmpty() ? serverHost(server.url)
-                                                                      : server.name.trimmed(),
-                                      canonicalServerUrl(server.url)});
         request.shareIdentity = identityCheck->isChecked();
         request.removedPackages = defaultInstalled;
         for (int i = 0; i < pluginList->count(); ++i) {
@@ -756,6 +752,8 @@ void MainWindow::promptInviteToProject()
         }
         const QString text = invite::directMessageText(invitation);
         const QString conversation = forkmesh::office::conversationForDirect(who);
+        if (!m_officeChannelMirror || !m_officeChannelMirror->isActive())
+            startOfficeChannelMirror();
         if (!m_officeChannelMirror || !m_officeChannelMirror->isActive() ||
             conversation.isEmpty()) {
             QApplication::clipboard()->setText(text);
@@ -799,6 +797,11 @@ void MainWindow::promptChooseProjectInstance()
             QSettings().value(forkmesh::projects::kInstanceChoicesSetting).toString());
     if (choices.isEmpty())
         choices.append({serverHost(kDefaultServerUrl), kDefaultServerUrl});
+    choices.erase(std::remove_if(choices.begin(), choices.end(),
+                                 [this](const forkmesh::projects::InstanceChoice &choice) {
+                                     return !otherProjectForInstance(choice.url).isEmpty();
+                                 }),
+                  choices.end());
 
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Choose an instance"));
@@ -878,6 +881,14 @@ void MainWindow::promptChooseProjectInstance()
             errorLabel->show();
             return;
         }
+        const QString owner = otherProjectForInstance(chosenUrl);
+        if (!owner.isEmpty()) {
+            errorLabel->setText(QStringLiteral("%1 already belongs to the project %2. An "
+                                               "instance can only be in one project.")
+                                    .arg(serverHost(chosenUrl), owner));
+            errorLabel->show();
+            return;
+        }
         dialog.accept();
     });
     connect(list, &QListWidget::itemDoubleClicked, &dialog,
@@ -895,8 +906,55 @@ void MainWindow::promptChooseProjectInstance()
     connectProjectInstance(chosenUrl, chosenName);
 }
 
+QString MainWindow::otherProjectForInstance(const QString &url, QString *slug) const
+{
+    const QVector<forkmesh::projects::Project> projects = forkmesh::projects::list(
+        forkmesh::paths::projectsRoot(), forkmesh::paths::homeDir());
+    const forkmesh::projects::Project *owner =
+        forkmesh::projects::instanceOwner(projects, url, forkmesh::paths::projectDir());
+    if (!owner)
+        return {};
+    if (slug)
+        *slug = owner->slug;
+    return owner->name;
+}
+
+bool MainWindow::refuseInstanceOfAnotherProject(const QString &url)
+{
+    QString slug;
+    const QString owner = otherProjectForInstance(url, &slug);
+    if (owner.isEmpty())
+        return false;
+    QMessageBox box(QMessageBox::Information, QStringLiteral("Instance already in a project"),
+                    QStringLiteral("%1 already belongs to the project %2. An instance can only "
+                                   "be in one project.")
+                        .arg(serverHost(canonicalServerUrl(url)), owner),
+                    QMessageBox::Cancel, this);
+    QPushButton *open =
+        box.addButton(QStringLiteral("Open %1").arg(owner), QMessageBox::AcceptRole);
+    box.exec();
+    if (box.clickedButton() == open)
+        openProject(slug, /*keepThisOneOpen=*/false);
+    return true;
+}
+
+void MainWindow::recordProjectInstances()
+{
+    if (!forkmesh::paths::isActive() || !forkmesh::paths::layout().organized ||
+        projectInstancePending())
+        return;
+    QStringList urls;
+    for (const ServerConfig &server : std::as_const(m_servers))
+        urls.append(server.url);
+    QString error;
+    if (!forkmesh::projects::recordInstances(forkmesh::paths::projectDir(), urls, &error))
+        qWarning().noquote() << "projects:" << error;
+}
+
 void MainWindow::connectProjectInstance(const QString &url, const QString &name)
 {
+    if (refuseInstanceOfAnotherProject(url))
+        return;
     const QString canonical = canonicalServerUrl(url);
     QSettings settings;
     settings.remove(forkmesh::projects::kInstancePendingSetting);

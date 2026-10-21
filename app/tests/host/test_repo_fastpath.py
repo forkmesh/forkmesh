@@ -231,6 +231,9 @@ def entry(staged_src):
     ("merge-preview", "base=" + COMMIT + "&head=feature%2Fx&ref="),
     ("search", "q=needle&ref=main"),
     ("stats", "ref=main"),
+    ("pulse", "period=1m&person=alice&ref=main&fmv=3"),
+    ("pulse", "period=all&viewer="),
+    ("pulse", "view=people&ref=main"),
     ("sizes", ""),
     ("branches", "ref=main"),
 ])

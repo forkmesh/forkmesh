@@ -74,6 +74,7 @@ import com.forkmesh.nativeapp.securedrive.Point
 import com.forkmesh.nativeapp.securedrive.Sheet
 import com.forkmesh.nativeapp.securedrive.Stroke
 import com.forkmesh.nativeapp.ui.kit.FmIconButton
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.FmTextButton
 import com.forkmesh.nativeapp.ui.kit.FmTextField
 import com.forkmesh.nativeapp.ui.theme.Fm
@@ -238,6 +239,7 @@ internal fun SdDocumentEditor(bytes: ByteArray, editor: SdEditorState, readOnly:
                     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE or InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
                     setPadding(48, 32, 48, 32)
                     setText(SdHtml.fromHtml(String(bytes, Charsets.UTF_8)), android.widget.TextView.BufferType.SPANNABLE)
+                    filters = filters + FmSafeInput.Filter
                     if (readOnly) {
                         keyListener = null
                         setTextIsSelectable(true)

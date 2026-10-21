@@ -10,6 +10,8 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLockFile>
 #include <QSettings>
 #include <QTemporaryDir>
@@ -687,6 +689,65 @@ void testProjectRegistry()
           "returning home is explicit, so an inherited environment cannot win");
 }
 
+void testAnInstanceBelongsToOneProject()
+{
+    namespace projects = forkmesh::projects;
+    check(projects::instanceKey("wss://Relay.Example.com:443/api/repo/x/ws") == "relay.example.com" &&
+              projects::instanceKey("relay.example.com") == "relay.example.com" &&
+              projects::instanceKey("http://192.168.1.20:8787") == "192.168.1.20:8787" &&
+              projects::instanceKey("forkmesh.com") == "app.forkmesh.com" &&
+              projects::instanceKey("wss://app.next.forkmesh.com/ws") == "app.forkmesh.com" &&
+              projects::instanceKey("").isEmpty(),
+          "an instance key is the origin, with production aliases folded");
+
+    QTemporaryDir tmp;
+    const QString home = tmp.path();
+    const Layout layout = resolve(environmentIn(home));
+    QString error;
+    projects::CreateRequest request;
+    request.shareIdentity = false;
+    projects::Project tea;
+    projects::Project coffee;
+    request.name = "Tea";
+    check(projects::create(layout, request, &tea, &error), "create Tea");
+    request.name = "Coffee";
+    check(projects::create(layout, request, &coffee, &error), "create Coffee");
+
+    QVector<projects::Project> all = projects::list(layout.projectsRoot, layout.homeDir);
+    check(!projects::instanceOwner(all, "wss://relay.example.com/ws", coffee.dir),
+          "a pending project owns no instance yet");
+
+    check(projects::recordInstances(tea.dir, {"wss://relay.example.com/api/repo/x/ws"}, &error),
+          "instances are recorded in project.json");
+    all = projects::list(layout.projectsRoot, layout.homeDir);
+    const projects::Project *owner =
+        projects::instanceOwner(all, "https://RELAY.example.com/", coffee.dir);
+    check(owner && owner->slug == "tea", "another project's instance is found by its origin");
+    check(!projects::instanceOwner(all, "relay.example.com", tea.dir),
+          "a project never conflicts with itself");
+    check(!projects::instanceOwner(all, "other.example.com", coffee.dir),
+          "an unused instance has no owner");
+
+    QSettings coffeeSettings(projects::settingsFilePath(coffee.dir), QSettings::IniFormat);
+    coffeeSettings.remove(projects::kInstancePendingSetting);
+    coffeeSettings.setValue("servers/items",
+                            "[{\"url\":\"wss://lab.example.com/api/repo/x/ws\"}]");
+    coffeeSettings.sync();
+    all = projects::list(layout.projectsRoot, layout.homeDir);
+    owner = projects::instanceOwner(all, "lab.example.com", tea.dir);
+    check(owner && owner->slug == "coffee",
+          "a project that has not recorded its instances is read from its settings");
+
+    check(projects::recordInstances(tea.dir, {}, &error), "clearing the instances");
+    all = projects::list(layout.projectsRoot, layout.homeDir);
+    check(!projects::instanceOwner(all, "relay.example.com", coffee.dir),
+          "a removed instance is free again");
+    QFile file(QDir(tea.dir).filePath("project.json"));
+    check(file.open(QIODevice::ReadOnly) &&
+              QJsonDocument::fromJson(file.readAll()).object().value("name").toString() == "Tea",
+          "recording instances keeps the rest of project.json");
+}
+
 // The build knows its sources only as the desktop/ CMake directory inside the
 // checkout. Crash and error-log repairs keep their checkpoint under the
 // repository that directory belongs to; an exact-path match never found it,
@@ -774,6 +835,7 @@ int main(int argc, char **argv)
     testOtherProjectIsIsolated();
     testStorageMap();
     testProjectRegistry();
+    testAnInstanceBelongsToOneProject();
     testCheckoutContaining();
     testRegistrySettingsNameIsNotAFolder();
     std::printf("%d checks, %d failed\n", g_checks, g_failures);

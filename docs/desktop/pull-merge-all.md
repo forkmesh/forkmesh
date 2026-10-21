@@ -88,6 +88,19 @@ desktop through the `pulls.` local control family
    (`PullMergeAllRemote` in `FMCode` and in Android `core`) turn each code
    into a sentence.
 
+An organization-owned repository such as `forkmesh/forkmesh` belongs to the
+account only through its organization role. The desktop fetches that role
+list (`/api/orgs`) lazily: when Settings opens or a pull request is shown.
+A phone request usually arrives before either has happened. It used to fail
+the owner check with `not_repo_owner` while that check started the fetch in
+the background, so the organization's owner was refused (2026-10-21).
+Both `pulls.` methods now go through `whenPullOwnershipKnown`. When the
+account does not own the repository directly and the role list has not loaded
+yet, the request waits for one `/api/orgs` fetch (15 s timeout, inside the
+phone's 20 s call timeout) before it checks the blockers. A failed fetch
+still answers `not_repo_owner`, and the next phone request tries the fetch
+again.
+
 The confirmation happens on the phone, as it does for `mergequeue.`. The
 desktop shows no second dialog, because the person is not at it. A desktop
 without the family answers `unknown_method`, and the phone asks for an update.

@@ -3078,13 +3078,17 @@ void MainWindow::fetchRoomPassphrase()
 void MainWindow::startOfficeChannelMirror()
 {
     const QString node = accountOwner();
-    if (node.isEmpty() || !hasOwnerSigningCapability(node) ||
-        !m_profileIdentity.isValid())
+    if (node.isEmpty() || !m_profileIdentity.isValid() ||
+        (!hasOwnerSigningCapability(node) &&
+         accountSessionTokenForUrl(catalogApiUrl()).isEmpty()))
         return;
     if (!m_officeChannelMirror) {
         m_officeChannelMirror = new OfficeChannelMirror(m_networkAccess, this);
         m_officeChannelMirror->setSigner([this](const QByteArray &canonical) {
             return m_profileIdentity.signData(canonical);
+        });
+        m_officeChannelMirror->setSessionProvider([this](const QUrl &url) {
+            return accountSessionTokenForUrl(url);
         });
         m_officeChannelMirror->setConnectionAuthorizer(
             [this](const QUrl &endpoint) {
@@ -5128,6 +5132,7 @@ void MainWindow::activateAccountSession(const QJsonObject &payload,
     m_accountPackagesReadMs = 0;
     QTimer::singleShot(0, this, [this] { refreshAccountPackages(true); });
     QTimer::singleShot(0, this, [this] { preparePackagePages(); });
+    QTimer::singleShot(0, this, [this] { startOfficeChannelMirror(); });
 }
 
 bool MainWindow::verifyTotpLogin(const QString &email,

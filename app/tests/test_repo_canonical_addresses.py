@@ -67,6 +67,8 @@ def test_the_setting_carries_the_canonical_switch_only_with_short_on():
      "/Bolt/blob/main/README.md?ref=main"),
     ("/acme/Bolt/compare/main...dev", "", "/Bolt/compare/main...dev"),
     ("/acme/Bolt/pulls/3/files", "", "/Bolt/pulls/3/files"),
+    ("/acme/Bolt/pull/3/files", "", "/Bolt/pull/3/files"),
+    ("/acme/Bolt/pull/3", "w=1", "/Bolt/pull/3?w=1"),
 ])
 def test_full_page_addresses_redirect_to_the_short_form(path, query, target):
     assert repo_short_urls.canonical_redirect(path, query, ON)[0] == target
@@ -645,7 +647,7 @@ def run_helpers(script, metas=None, store=None, path="/"):
              "parseCloneUrlIdentity"]
     consts = ["REPO_ADDRESSES_STORE", "REPO_ADDRESSES_SAVED_STORE",
               "REPO_ADDRESSES_TTL_MS", "REPO_CORE_HOSTS", "REPO_SHORT_NAME_RE",
-              "REPO_SHORT_FILE_RE", "REPO_TAB_ROUTES"]
+              "REPO_SHORT_FILE_RE", "REPO_TAB_ROUTES", "REPO_ROUTE_SEGMENTS"]
     source = (HARNESS % {"metas": json.dumps(metas or {}),
                          "store": json.dumps(list((store or {}).items())),
                          "path": json.dumps(path)}
@@ -704,6 +706,7 @@ console.log(JSON.stringify({
   logical: repoPathUrl({ owner: "drew", logicalOwner: "acme", name: "Private" }),
   href: repoPublicHref("/drew/Bolt/issues/3?x=1#c"),
   orgHref: repoPublicHref("/acme/Bolt/pulls/2"),
+  pullHref: repoPublicHref("/acme/Bolt/pull/2/files"),
   deepHref: repoPublicHref("/drew/Bolt/src/x"),
   otherHref: repoPublicHref("/bob/Bolt/issues/1"),
   dashHref: repoPublicHref("/dashboard/settings"),
@@ -720,6 +723,7 @@ console.log(JSON.stringify({
     assert out["logical"] == "/Private"
     assert out["href"] == "/Bolt/issues/3?x=1#c"
     assert out["orgHref"] == "/Bolt/pulls/2"
+    assert out["pullHref"] == "/Bolt/pull/2/files"
     assert out["deepHref"] == "/drew/Bolt/src/x"
     assert out["otherHref"] == "/bob/Bolt/issues/1"
     assert out["dashHref"] == "/dashboard/settings"
@@ -770,9 +774,68 @@ console.log(JSON.stringify({ before, after, prefixed, other }));
     assert out["other"] == ["bob", "tools"]
 
 
+def test_a_pull_request_address_routes_to_the_pull_record():
+    out = run_helpers("""
+applyRepoAddresses(%s);
+const short = repoRouteParts();
+location.pathname = "/acme/widgets/pull/7";
+const long = repoRouteParts();
+location.pathname = "/dashboard/acme/widgets/pull/7/commits";
+const prefixed = repoRouteParts();
+location.pathname = "/acme/widgets/pulls";
+const list = repoRouteParts();
+location.pathname = "/acme/widgets/tree/pull/7";
+const folder = repoRouteParts();
+console.log(JSON.stringify({ short, long, prefixed, list, folder }));
+""" % json.dumps(DOC), metas={"forkmesh-repo-short": "Bolt",
+                               "forkmesh-repo-owner": "acme"},
+        path="/Bolt/pull/4/files")
+    assert out["short"] == ["acme", "Bolt", "pulls", "4", "files"]
+    assert out["long"] == ["acme", "widgets", "pulls", "7"]
+    assert out["prefixed"] == ["acme", "widgets", "pulls", "7", "commits"]
+    assert out["list"] == ["acme", "widgets", "pulls"]
+    assert out["folder"] == ["acme", "widgets", "tree", "pull", "7"]
+
+
+def test_pull_request_links_use_the_singular_route():
+    record_url = js_function(HELPERS, "repoRecordUrl")
+    section = js_function(HELPERS, "normalizeRepoRecordSection")
+    out = run_helpers("""
+const REPO_RECORD_SECTIONS = ["conversation", "commits", "checks", "files", "badge"];
+%s
+%s
+applyRepoAddresses(%s);
+console.log(JSON.stringify({
+  pull: repoRecordUrl({ owner: "bob", name: "tools" }, "pulls", 7),
+  files: repoRecordUrl({ owner: "bob", name: "tools" }, "pulls", 7, "files"),
+  short: repoRecordUrl({ owner: "acme", name: "Bolt" }, "pulls", 3, "commits"),
+  issue: repoRecordUrl({ owner: "bob", name: "tools" }, "issues", 7, "files"),
+  discussion: repoRecordUrl({ owner: "bob", name: "tools" }, "discussions", 2),
+}));
+""" % (section, record_url, json.dumps(DOC)))
+    assert out == {"pull": "/bob/tools/pull/7", "files": "/bob/tools/pull/7/files",
+                   "short": "/Bolt/pull/3/commits", "issue": "/bob/tools/issues/7",
+                   "discussion": "/bob/tools/discussions/2"}
+
+
+def test_short_pull_addresses_are_served_and_the_plural_redirects():
+    assert repo_short_urls.rewrite("/Bolt/pull/3/files", "acme") == (
+        "/acme/Bolt/pull/3/files", "Bolt")
+    assert repo_short_urls.alias_redirect("/Bolt/pull/3/files", "", "acme") is None
+    assert repo_short_urls.alias_redirect("/Bolt/pulls/3/files", "w=1", "acme") == (
+        "/Bolt/pull/3/files?w=1")
+    assert repo_short_urls.alias_redirect("/Bolt/pulls/3", "", "acme") == "/Bolt/pull/3"
+    assert repo_short_urls.alias_redirect("/Bolt/pulls", "", "acme") is None
+    assert repo_short_urls.alias_redirect("/Bolt/pull", "", "acme") == "/Bolt/pulls"
+    assert repo_short_urls.alias_redirect("/Bolt/pulls/0", "", "acme") != "/Bolt/pull/0"
+    assert repo_short_urls.alias_redirect("/Bolt/pulls/03", "", "acme") != "/Bolt/pull/03"
+
+
 def test_the_dashboard_loads_the_setting_before_the_first_render():
     loader = js_function(HELPERS, "loadRepoAddresses")
-    assert 'fetch("/api/instance"' in loader
+    # The page's one shared /api/instance read (test_dashboard_shared_reads).
+    assert "await sharedInstanceDocument()" in loader
+    assert 'fetch("/api/instance"' in js_function(HELPERS, "sharedInstanceDocument")
     assert "REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())" in loader
     assert BOOT.index("const repoAddressesLoaded = loadRepoAddresses();") < \
         BOOT.index("(PAGE_INITS[currentPage()] || initHomePage)();")

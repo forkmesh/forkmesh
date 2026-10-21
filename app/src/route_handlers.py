@@ -4367,7 +4367,7 @@ async def repository_pull_merge_handler(
     if not actor:
         return json_response({"error": "invalid_session"}, status=401)
     try:
-        authorized = await _organization_owner_can_merge_repo(
+        authorized = await _repository_owner_can_merge_repo(
             env, request, context["owner"], context["repo"], actor)
     except Exception:
         authorized = False
@@ -4645,6 +4645,12 @@ async def repository_pull_merge_handler(
                                      actor_bi, override_review)
                 except Exception:
                     pass
+            try:
+                await _self_update.on_merge(
+                    env, context["owner"], context["repo"], int(pull_number),
+                    actor, result)
+            except Exception:
+                pass
             await queue_repo_webhook_event(
                 env, context["owner"], context["repo"], "pull.merged",
                 {
@@ -5542,6 +5548,10 @@ async def _branch_delete_create(env, request, owner, repo, repo_bi, data,
             status=409, cache_control="no-store")
     wanted, refused = _branch_delete_wanted(
         items, agent_branches.git_branch_name)
+    try:
+        await recent_push_forget(env, repo_bi, [name for name, _ in wanted])
+    except Exception:
+        pass
     now = int(Date.now())
     job = {"owner": owner, "repo": repo, "repoBi": repo_bi, "actor": actor,
            "state": "running", "items": list(refused), "createdAt": now,

@@ -143,11 +143,21 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S068 | 2026-10-20 | Projects | feature | New project loads the checked instance's logo and can quick-add from the ForkMesh directory | 73d80cbfb6 | pending |  |
 | S069 | 2026-10-19 | Router | fix | Router network sharing creates a missing share config so a new share shows up | 3330f9588b be89626f7f | synced | be89626f7f |
 | S070 | 2026-10-20 | Chat | feature | Usernames and @mentions in chat, issues, pull requests and discussions open that person's ForkMesh profile when tapped | 079280627a | synced | 079280627a |
-| S071 | 2026-10-21 | Chat | fix | A call now rings the other phone even when it is not on that chat or the app is in the background | 320fe7221a | synced | 320fe7221a |
-| S072 | 2026-10-21 | Chat | feature | Incoming calls show on the iPhone's own call screen, also on the lock screen and when the app was closed | 5533f4d47f | n/a | Android has no CallKit or PushKit; its call notification already uses CallStyle |
-| S073 | 2026-10-21 | Chat | feature | Private chats can hold encrypted group audio and video calls, like Google Meet or Discord, from a Call button in the chat header | 042d1ed488 | pending |  |
-| S074 | 2026-10-21 | Chat | feature | Phone calls run on the native call engine with the voice changer and call backgrounds, instead of the web view | d5ab476f9e | pending |  |
-| S075 | 2026-10-21 | Chat | feature | The face changer works in native calls: a chosen stand-in or custom face is drawn over the caller's face live | 28b18d33b9 | pending |  |
-| S076 | 2026-10-21 | Chat | feature | Face changer in calls tracks the face in 3D on Face ID iPhones, keeps real hair around the new face and has cleaner edges than the browser | 9b199aef1b | pending |  |
-| S077 | 2026-10-21 | Chat | fix | Calls still ring an iPhone that has notifications turned off, and calling again right after a decline rings straight away. | 5f0db42ebf | pending |  |
+| S071 | 2026-10-21 | Kit | fix | Every text field strips hidden Unicode (zero-width, bidi override, tag and smuggling characters) as you type or paste; passwords stay exact | 1c703806a7 | synced | 1c703806a7 |
+| S072 | 2026-10-21 | Projects | fix | Switching projects no longer shows another project's chat channels, private rooms or direct messages | 2b6c130a28 | n/a | Android rebuilds its chat services per project (ProjectLifecycle.close, Features.install), so it never had this leak |
+| S073 | 2026-10-21 | Projects | fix | Adding an instance that another project already uses opens that project instead of creating a second one | 4beeb217c2 | synced | 68c7fcc9e7 |
+| S074 | 2026-10-21 | Agents | fix | The first action on an agent's page is no longer cut off at the left of the top bar. | d070b14226 | pending |  |
+| S075 | 2026-10-21 | Agents | feature | Scrolling up in an agent's transcript keeps your place while it works, and an arrow above the composer takes you back to the latest output. | 74c29b740e | synced | 74c29b740e |
+| S076 | 2026-10-20 | Notifications | fix | Notification links to a pull request open it at its new /pull/<number> address. | 8d87f5e467 | synced | 8d87f5e467 |
+| S077 | 2026-10-21 | Notifications | feature | Pings say when someone reacted to your comment, with a reaction icon. | 8b43090ad3 | synced | 8b43090ad3 |
+| S078 | 2026-10-21 | Pings | ui | Ping banners lead with who acted and where, with what they wrote straight under it, instead of a generic event label | 26a6431321 | pending |  |
+| S079 | 2026-10-21 | Agents | feature | Every agent page pins the last thing you wrote to the agent above its transcript; pull the card down to flip back through earlier prompts. | cd58bc31c2 | pending |  |
+| S080 | 2026-10-21 | Code | feature | Mirror import accepts gitea.com repositories alongside GitHub, GitLab and Codeberg. | c8852efb65 | synced | c8852efb65 |
+| S081 | 2026-10-21 | Chat | fix | A call now rings the other phone even when it is not on that chat or the app is in the background | 320fe7221a | synced | 320fe7221a |
+| S082 | 2026-10-21 | Chat | feature | Incoming calls show on the iPhone's own call screen, also on the lock screen and when the app was closed | 5533f4d47f | n/a | Android has no CallKit or PushKit; its call notification already uses CallStyle |
+| S083 | 2026-10-21 | Chat | feature | Private chats can hold encrypted group audio and video calls, like Google Meet or Discord, from a Call button in the chat header | 042d1ed488 | pending |  |
+| S084 | 2026-10-21 | Chat | feature | Phone calls run on the native call engine with the voice changer and call backgrounds, instead of the web view | d5ab476f9e | pending |  |
+| S085 | 2026-10-21 | Chat | feature | The face changer works in native calls: a chosen stand-in or custom face is drawn over the caller's face live | 28b18d33b9 | pending |  |
+| S086 | 2026-10-21 | Chat | feature | Face changer in calls tracks the face in 3D on Face ID iPhones, keeps real hair around the new face and has cleaner edges than the browser | 9b199aef1b | pending |  |
+| S087 | 2026-10-21 | Chat | fix | Calls still ring an iPhone that has notifications turned off, and calling again right after a decline rings straight away. | 5f0db42ebf | pending |  |
 <!-- ledger:end -->

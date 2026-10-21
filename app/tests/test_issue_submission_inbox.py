@@ -170,6 +170,8 @@ def _issue_handler_namespace(inserted, wakes, queued_rows=(), session=""):
         "decrypt_row": decrypt_row,
         "d1_run": d1_run,
         "_record_contributor": record_contributor,
+        "_record_public_contributor": (
+            lambda env, _owner, _repo, *args: record_contributor(env, *args)),
         "valid_node_pubkey": lambda value: value == SIGNER_KEY,
         "_git_push_account_for_pubkey": account_for_pubkey,
         "_account_session_record": session_record,

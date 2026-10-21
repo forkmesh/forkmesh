@@ -46,7 +46,7 @@ import urllib.parse
 API_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/([^/]+)$")
 READ_OPERATIONS = frozenset({
     "tree", "blob", "blobs", "raw", "history", "commit", "compare",
-    "merge-preview", "branches", "search", "stats", "sizes",
+    "merge-preview", "branches", "search", "stats", "sizes", "pulse",
 })
 # entry.HTTPS_MIRROR_REF_OPERATIONS
 REF_OPERATIONS = frozenset({
@@ -107,6 +107,10 @@ def gateway_query(operation, query_string):
     elif operation in ("tree", "blob", "raw", "commit", "history"):
         if params.get("path"):
             out.append(("path", repository_read_path(params["path"][0])))
+    elif operation == "pulse":
+        for key in ("period", "person", "view"):
+            if params.get(key):
+                out.append((key, params[key][0]))
     if params.get("ref") and operation in REF_OPERATIONS:
         out.append(("ref", params["ref"][0]))
     return out

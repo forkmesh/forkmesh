@@ -3,6 +3,8 @@ import apps_api as _api
 import apps_core as _core
 import apps_events as _events
 
+from hidden_unicode import clean_pairs as clean_hidden_pairs
+
 _GATED = {}
 _GATE_TTL_MS = 30 * 1000
 
@@ -37,7 +39,7 @@ class _AppsMixin:
             return None, "invalid_body"
         if len(str(raw or "").encode("utf-8")) > int(limit):
             return None, "payload_too_large"
-        pairs = parse_qsl(str(raw or ""), keep_blank_values=True)  # noqa: F821
+        pairs = clean_hidden_pairs(parse_qsl(str(raw or ""), keep_blank_values=True))  # noqa: F821
         out = {}
         for key, value in pairs:
             if key in out:

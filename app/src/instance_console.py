@@ -1,9 +1,11 @@
 import json
 import secrets
 from urllib.parse import parse_qs, quote, urlparse
+from hidden_unicode import clean_query as clean_hidden_query
 
 import instance_features
 import instance_registry
+import instance_world
 
 
 def _bind_runtime(runtime):
@@ -15,8 +17,9 @@ def _bind_runtime(runtime):
 
 PLUGINS_VIEW = "plugins"
 DIRECTORY_VIEW = "federation"
-VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW)
-MAX_FORM_BYTES = 8 * 1024
+WORLD_VIEW = "world-territory"
+VIEWS = (PLUGINS_VIEW, DIRECTORY_VIEW, WORLD_VIEW)
+MAX_FORM_BYTES = 32 * 1024
 POST_TIMEOUT_SECONDS = 20
 NOTICES = {
     "directory_listed": ("Saved and announced: forkmesh.com lists this "
@@ -34,11 +37,17 @@ NOTICES = {
                       "minute.", "ok"),
     "plugins_core": ("Plugins are chosen on self-hosted instances only.",
                      "bad"),
+    "world_saved": ("World saved. Visitors see it on their next visit.",
+                    "ok"),
+    "world_invalid": ("Not saved: the World settings did not pass the "
+                      "checks listed below.", "bad"),
+    "world_core": ("The ForkMesh World is configured by forkmesh.com.",
+                   "bad"),
     "csrf": ("Action blocked: reload the page and try again.", "bad"),
     "invalid": ("Action failed: unknown action.", "bad"),
 }
 ACTIONS = {"save_plugins": PLUGINS_VIEW, "save_directory": DIRECTORY_VIEW,
-           "announce_directory": DIRECTORY_VIEW}
+           "announce_directory": DIRECTORY_VIEW, "save_world": WORLD_VIEW}
 STATE_PILLS = {
     "listed": ("Listed", "ok"),
     "removed": ("Not listed", ""),
@@ -351,6 +360,75 @@ async def _announce(runtime, setting):
     return notice, dict(details, announced=True, state=state)
 
 
+WORLD_EXAMPLE = {
+    "style": "security",
+    "accent": "#e74c3c",
+    "objects": [{"type": "house", "label": "Hacker House",
+                 "url": "https://hackerhouse.example.org/",
+                 "position": [-60, -10]}],
+    "bugs": {"repo": "acme/website", "ref": "main",
+             "path": ".forkmesh/world/bugs.json", "title": "Bug terrarium",
+             "limit": 60, "position": [60, -10]},
+}
+
+
+async def render_world(env, csrf_field, admin_query):
+    shell = _admin_shell  # noqa: F821
+    head = shell.page_head(
+        "World",
+        "This instance's own hexagon in the World: its style, buildings "
+        "that link to a website, and the bug terrarium.", crumb="Platform")
+    if not instance_branded(env):  # noqa: F821
+        return head + shell.card(
+            title="This server is the ForkMesh World",
+            description="Self-hosted instances configure their own "
+            "hexagon here.")
+    setting = instance_world.parse(
+        await settings_doc(env, instance_world.SETTING_KEY))
+    form = (
+        '<form method="post" action="%s" class="stack">%s'
+        '<input type="hidden" name="action" value="save_world">'
+        '<textarea name="world" rows="22" spellcheck="false" '
+        'style="width:100%%;font-family:ui-monospace,monospace;'
+        'font-size:12px">%s</textarea>'
+        '<div><button type="submit" class="btn btn-primary">Save World'
+        '</button></div></form>' % (
+            _admin_href(admin_query, view=WORLD_VIEW),  # noqa: F821
+            csrf_field, _esc(instance_world.pretty(setting))))
+    rules = (
+        "<p>style: %s. accent: a #rrggbb colour (empty uses the instance "
+        "theme). objects: up to %d buildings, each {type: \"house\", label, "
+        "url (https), position [x, z] from the plaza, within %d and inside "
+        "the hexagon}; clicking one leaves the World for its url. bugs: the "
+        "terrarium reads a JSON "
+        "list of {domain, name, url, favicon} from a file in one of this "
+        "instance's repositories (repo owner/name, ref, path); favicon is a "
+        "png, ico, gif, jpg or webp path next to that file; at most %d "
+        "bugs are shown. Set bugs to null to remove the terrarium.</p>"
+        "<p>Example:</p><pre style=\"font-size:12px\">%s</pre>" % (
+            _esc(", ".join(instance_world.STYLES)),
+            instance_world.MAX_OBJECTS, instance_world.REACH,
+            instance_world.MAX_BUGS,
+            _esc(instance_world.pretty(WORLD_EXAMPLE))))
+    return head + shell.card(
+        title="World settings", description="Saved as JSON.",
+        body=form) + shell.card(title="What each setting does", body=rules)
+
+
+async def save_world(env, form):
+    if not instance_branded(env):  # noqa: F821
+        return "world_core", None
+    try:
+        setting = instance_world.from_text(_first(form, "world"))
+        doc = instance_world.dump(setting)
+    except instance_world.SettingError as error:
+        return "world_invalid", {"error": str(error)[:200]}
+    await save_setting(env, instance_world.SETTING_KEY, doc)
+    return "world_saved", {
+        "style": setting["style"], "objects": len(setting["objects"]),
+        "bugs": bool(setting["bugs"])}
+
+
 async def admin_handler(env, request, params, csrf_field="", admin_query="",
                         account=""):
     view = _first(params, "view")
@@ -362,6 +440,9 @@ async def admin_handler(env, request, params, csrf_field="", admin_query="",
     if view == DIRECTORY_VIEW:
         title = "ForkMesh directory"
         content = await render_directory(env, csrf_field, admin_query)
+    elif view == WORLD_VIEW:
+        title = "World"
+        content = await render_world(env, csrf_field, admin_query)
     else:
         title = "Plugins"
         content = await render_plugins(env, csrf_field, admin_query)
@@ -380,7 +461,7 @@ async def _handle_post(env, request, view, admin_query, account):
         raw = await request.text()
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or "")[:MAX_FORM_BYTES], keep_blank_values=True))
     action = _first(form, "action")
     target = ACTIONS.get(action) or (view if view in VIEWS else PLUGINS_VIEW)
 
@@ -396,6 +477,8 @@ async def _handle_post(env, request, view, admin_query, account):
         notice, details = await save_plugins(env, form)
     elif action == "save_directory":
         notice, details = await save_directory(env, form)
+    elif action == "save_world":
+        notice, details = await save_world(env, form)
     else:
         notice, details = await announce_directory(env)
     await _audit_sensitive_action(  # noqa: F821

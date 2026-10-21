@@ -222,6 +222,7 @@ public final class OfficeChannelService {
     @ObservationIgnored private var pendingOrder: [String] = []
     @ObservationIgnored private var ackedCounts: [String: Int] = [:]
     @ObservationIgnored private var sequence = 0
+    @ObservationIgnored private var generation = 0
     @ObservationIgnored public var isExpired: ChatExpiry?
     @ObservationIgnored public var onFrame: (@MainActor (JSONObject, String) -> Void)?
     @ObservationIgnored public var onMessage: (@MainActor (ChatMessage) -> Void)?
@@ -289,8 +290,10 @@ public final class OfficeChannelService {
     public func refresh() async {
         loading = true
         defer { loading = false }
+        let started = generation
         do {
             let payload = try await api.accountApiCall("GET", "/api/chat/channels", nil)
+            if generation != started { return }
             let next = OfficeFrames.rooms(from: payload)
             let live = Set(next.map(\.id))
             for (id, socket) in sockets where !live.contains(id) {
@@ -343,6 +346,7 @@ public final class OfficeChannelService {
 
     public func loadHistory(_ conversation: String) async {
         guard let room = room(for: conversation) else { return }
+        let started = generation
         do {
             let since = lastTs[room.id] ?? 0
             let payload = try await api.accountApiCall("GET", "/api/chat/channels/\(room.id)/history?since=\(since)", nil)
@@ -351,6 +355,7 @@ public final class OfficeChannelService {
             if roomName.isEmpty || passphrase.isEmpty { return }
             let crypto = await derive(roomName, passphrase)
             let seal = try await seal(for: roomName)
+            if generation != started { return }
             PerformanceMonitorService.section("chat.office.history") {
                 for entry in payload["messages"]?.objects ?? [] {
                     let ts = entry["ts"]?.int64Value ?? 0
@@ -507,6 +512,7 @@ public final class OfficeChannelService {
         guard let room = room(for: conversation) else { return false }
         if sockets[room.id] != nil { return true }
         guard let base = origin() else { return false }
+        let started = generation
         do {
             let access = try await api.accountApiCall("GET", "/api/chat/channels/\(room.id)/room-access", nil)
             let roomName = access["room"]?.text ?? ""
@@ -521,6 +527,10 @@ public final class OfficeChannelService {
             let seal = try await seal(for: roomName)
             let connection = try await connector.connect(
                 url: url, options: WebSocketOptions(connectTimeout: RelayService.connectTimeout, pingInterval: RelayService.pingInterval))
+            guard generation == started, rooms.contains(where: { $0.id == room.id }) else {
+                await connection.close(code: WebSocketStatus.normalClosure, reason: "")
+                return false
+            }
             let socket = OfficeRoomSocket(roomId: room.id, crypto: crypto, seal: seal, connection: connection)
             sockets[room.id] = socket
             connected.insert(room.id)
@@ -618,6 +628,27 @@ public final class OfficeChannelService {
 
     public func closeAll() async {
         for socket in Array(sockets.values) { await close(socket) }
+    }
+
+    public func clear() async {
+        generation &+= 1
+        await closeAll()
+        sockets = [:]
+        connected = []
+        rooms = []
+        history = [:]
+        receipts = [:]
+        cryptos = [:]
+        lastTs = [:]
+        seen = [:]
+        pendingRefs = [:]
+        pendingOrder = []
+        ackedCounts = [:]
+        pendingDeletes = [:]
+        pendingDeleteOrder = []
+        removedIds = []
+        lastError = nil
+        seals.removeAll()
     }
 
     func frame(_ room: OfficeRoom, text: String, bot: Bool) -> JSONObject {

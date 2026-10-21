@@ -504,6 +504,13 @@ public final class RelayService: OwnStatusAnnouncer {
     /// relay. Called by RelaySwitchController while the socket is already down.
     public func resetForRelaySwitch() {
         history.removeAll()
+        channels = ["#general"]
+        currentConversation = "#general"
+        unread.removeAll()
+        unseenBadge.removeAll()
+        seenIds.removeAll()
+        liveAtTick.removeAll()
+        ownStatusValue = nil
         seenNotificationIds.removeAll()
         forgetPeers()
         log.removeAll()

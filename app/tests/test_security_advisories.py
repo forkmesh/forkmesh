@@ -402,7 +402,7 @@ def test_publish_records_a_signed_ledger_entry_and_valid_osv(world):
     assert osv["aliases"] == ["CVE-2026-12345"]
     assert osv["affected"][0]["ranges"][0]["events"] == [
         {"introduced": "1.0"}, {"fixed": "1.4.2"}]
-    assert {"type": "FIX", "url": ORIGIN + "/acme/widget/pulls/42"} in \
+    assert {"type": "FIX", "url": ORIGIN + "/acme/widget/pull/42"} in \
         osv["references"]
     assert osv == public(world, "GET", "/advisories/%s.json" % advisory_id).data
     assert osv["credits"] == [{"name": "bob", "contact": [ORIGIN + "/bob"],
@@ -683,3 +683,66 @@ def test_a_lone_surrogate_is_refused_not_a_server_error(world):
     response = api(world, "POST", "/advisories", "bob",
                    dict(REPORT, description="bad \ud800 text"))
     assert response.status == 400 and response.data["error"] == "invalid_json"
+
+
+def test_reports_are_capped_per_reporter_across_repositories(world, monkeypatch):
+    monkeypatch.setattr(sa, "MAX_REPORTS_PER_REPORTER_PER_DAY", 2)
+    report(world, "bob")
+    report(world, "bob", title="Second")
+    refused = api(world, "POST", "/advisories", "bob", REPORT)
+    assert refused.status == 429 and refused.data["error"] == "too_many_reports"
+    assert api(world, "POST", "/advisories", "carol", REPORT).status == 201
+    # Maintainers drafting their own advisories are not reports.
+    for _ in range(3):
+        assert api(world, "POST", "/advisories", "alice", REPORT).status == 201
+
+
+def test_reporters_cannot_set_the_fix_or_cve(world):
+    advisory_id = report(world, "bob", cve="CVE-2026-11111",
+                         fix={"pull": 7})
+    shown = api(world, "GET", "/advisories/" + advisory_id, "bob").data
+    assert not shown["advisory"].get("cve")
+    assert not shown["advisory"].get("fix")
+    edited = api(world, "POST", "/advisories/" + advisory_id, "bob", {
+        "action": "edit", "fields": {"cve": "CVE-2026-22222",
+                                     "title": "Reworded"}})
+    assert edited.status == 200, edited.data
+    shown = api(world, "GET", "/advisories/" + advisory_id, "alice").data
+    assert not shown["advisory"].get("cve")
+    api(world, "POST", "/advisories/" + advisory_id, "alice", {
+        "action": "edit", "fields": {"cve": "CVE-2026-33333"}})
+    shown = api(world, "GET", "/advisories/" + advisory_id, "alice").data
+    assert shown["advisory"]["cve"] == "CVE-2026-33333"
+
+
+def test_ledger_retry_refuses_once_recorded(world):
+    key = Key()
+    advisory_id = report(world, "alice")
+    assert publish(world, advisory_id, key).status == 200
+    commits = len(world.commits)
+    again = api(world, "POST", "/advisories/" + advisory_id, "alice",
+                {"action": "ledger-retry"})
+    assert again.status == 409 and again.data["error"] == "already_recorded"
+    assert len(world.commits) == commits
+
+
+def test_hall_of_fame_drops_credits_of_a_repository_gone_private(world):
+    key = Key()
+    advisory_id = report(world, "alice")
+    api(world, "POST", "/advisories/" + advisory_id, "alice",
+        {"action": "credit", "user": "alice", "type": "finder"})
+    assert publish(world, advisory_id, key).status == 200
+    assert [item["user"] for item in
+            asyncio.run(sa.hall_of_fame(world.env))] == ["alice"]
+    world.repos[("acme", "widget")] = "private"
+    sa._hall_cache["value"] = None
+    assert asyncio.run(sa.hall_of_fame(world.env)) == []
+    assert 'href="/alice"' not in public(
+        world, "GET", "/security-researchers").body
+    # A removed repository takes them off as well.
+    world.repos[("acme", "widget")] = "public"
+    sa._hall_cache["value"] = None
+    assert asyncio.run(sa.hall_of_fame(world.env))
+    del world.repos[("acme", "widget")]
+    sa._hall_cache["value"] = None
+    assert asyncio.run(sa.hall_of_fame(world.env)) == []

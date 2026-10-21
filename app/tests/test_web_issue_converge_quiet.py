@@ -91,10 +91,14 @@ const parseIssueJson = () => ({});
 const loadRepoIssueMutationAuthorization = async () => false;
 const loadWebIssueSubscription = async () => false;
 const loadFederatedReplies = () => {};
+const refreshRepoRecordDevelopment = async () => {};
 const setRepoIssueRecordOpen = () => {};
 const setRepoRecordOpen = () => {};
 const mountIssueStickyHeader = () => {};
 const primeRepoViewReads = async () => {};
+const loadRepoCollabSettings = async () => ({});
+const prepareCommentReactions = () => "";
+const loadCommentReactions = async () => null;
 
 __LOADER__
 

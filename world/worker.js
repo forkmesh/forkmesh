@@ -14,6 +14,7 @@ const APP_ASSET_PATHS = new Set([
   "/member-welcome.js",
   "/membership-prompt.js",
   "/analytics.js",
+  "/safe-input.js",
   "/analytics-sdk.js",
   "/start",
 ]);

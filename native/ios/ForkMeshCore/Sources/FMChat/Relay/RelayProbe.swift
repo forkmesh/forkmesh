@@ -79,6 +79,9 @@ public struct RelayProbeResult: Equatable, Sendable {
             return "That does not look like a host. Enter something like “relay.example.com” or “192.168.1.20:8787”."
         case .duplicate:
             if let knownAs {
+                if knownAs.id != knownAs.instanceId {
+                    return "That instance already belongs to the project \(knownAs.label). An instance can only be in one project."
+                }
                 return "That address is \(knownAs.label) (\(knownAs.id)), which is already in your list."
             }
             return "This relay is already in your list."
@@ -124,6 +127,11 @@ public struct RelayProbe: Sendable {
         self.clock = clock
     }
 
+    static func owner(of candidate: RelayProfile, in existing: [RelayProfile]) -> RelayProfile? {
+        guard let instanceId = candidate.instanceId else { return nil }
+        return existing.first { $0.instanceId == instanceId }
+    }
+
     /// Probe `input`, rejecting anything already present in `existing`.
     public func check(_ input: String, existing: [RelayProfile] = [], label: String = "") async -> RelayProbeResult {
         guard let candidate = RelayProfile.tryParse(input, label: label, now: clock.nowMillis) else {
@@ -132,6 +140,9 @@ public struct RelayProbe: Sendable {
         if let known = existing.first(where: { $0.id == candidate.id }) {
             let typed = RelayProfile.hostOrigin(input) ?? candidate.id
             return RelayProbeResult(status: .duplicate, knownAs: typed == candidate.id ? nil : known)
+        }
+        if let owner = RelayProbe.owner(of: candidate, in: existing) {
+            return RelayProbeResult(status: .duplicate, knownAs: owner)
         }
         return await verify(candidate, existing: existing)
     }
@@ -184,7 +195,7 @@ public struct RelayProbe: Sendable {
         if RelayProbe.permanentRedirects.contains(response.status), hops < RelayProbe.maxRedirects,
             let target = redirectTarget(response, from: url), target.id != candidate.id
         {
-            if let known = existing.first(where: { $0.id == target.id }) {
+            if let known = existing.first(where: { $0.id == target.id }) ?? RelayProbe.owner(of: target, in: existing) {
                 return RelayProbeResult(status: .duplicate, statusCode: response.status, knownAs: known)
             }
             let label = candidate.label == candidate.id ? "" : candidate.label

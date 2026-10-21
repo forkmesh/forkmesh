@@ -4,6 +4,7 @@ const path = require("node:path");
 const PUBLIC = path.resolve(__dirname, "..", "..", "public");
 const REPO_PAGE_PATH = path.join(PUBLIC, "dashboard", "repo.html");
 const DASHBOARD_JS_PATH = path.join(PUBLIC, "dashboard.js");
+const ACTIVITY_JS_PATH = path.join(PUBLIC, "dashboard-page-repo-activity.js");
 const DASHBOARD_CSS_PATH = path.join(PUBLIC, "dashboard", "tailwind.css");
 
 // Contributor rows in Insights name a ForkMesh account whenever the git author
@@ -27,7 +28,7 @@ test("Insights links resolvable contributors to their ForkMesh profiles", async 
         body: "window.lucide = { createIcons() {} };",
       }),
   );
-  await page.route("**/acme/space/insights", (route) =>
+  await page.route("**/acme/space/insights*", (route) =>
     route.fulfill({
       path: REPO_PAGE_PATH,
       contentType: "text/html; charset=utf-8",
@@ -36,6 +37,12 @@ test("Insights links resolvable contributors to their ForkMesh profiles", async 
   await page.route("**/dashboard.js*", (route) =>
     route.fulfill({
       path: DASHBOARD_JS_PATH,
+      contentType: "text/javascript; charset=utf-8",
+    }),
+  );
+  await page.route("**/dashboard-page-repo-activity.js*", (route) =>
+    route.fulfill({
+      path: ACTIVITY_JS_PATH,
       contentType: "text/javascript; charset=utf-8",
     }),
   );
@@ -156,7 +163,8 @@ test("Insights links resolvable contributors to their ForkMesh profiles", async 
     });
   });
 
-  await page.goto("/acme/space/insights");
+  await page.goto("/acme/space/insights?view=contributors");
+  await expect(page.locator('[data-activity-view="contributors"][aria-current="page"]')).toBeVisible();
 
   const insights = page.locator("[data-repo-insights]");
   // Every contributor is listed; the rows resolve in order, so mirror23's link

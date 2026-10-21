@@ -80,7 +80,16 @@ would stay on screen. With the display under `:where`, `hidden`, responsive
   into one column with row-style tiles.
 - Pings dropdown, account menu and the header's **Start an agent** composer:
   `fm-popover` with menu rows; the account menu's log-out rows use
-  `fm-menu-item-danger`.
+  `fm-menu-item-danger`. Every account menu row leads with a Lucide icon
+  and keeps its text in a `span`; the status and away rows mark theirs
+  `data-account-menu-label`, which is what `04-account.js` rewrites, so the
+  icon survives a status change. Instance themes restyle the rows (the Google
+  theme draws 40 px full-bleed rows with 20 px icons, as in Drive's menus).
+- Profile and network page tabs: the active underline is
+  `border-[var(--dashboard-tab-underline)]`, not a fixed `#f78166`, so
+  instance themes recolour it like the repository tabs. `tailwind.css` is not
+  rebuilt by any step, so that one rule was added to it by hand; a full
+  regeneration from the current config drops classes still in use.
 - Profile settings, about, pings, feedback, agent sign-in terminal and new
   repository dialogs: `fm-dialog`. The new repository source picker is an
   `fm-segmented` grid, and its desktop hand-off and migration progress are

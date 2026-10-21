@@ -157,6 +157,8 @@ else
 fi
 BIN="$PREFIX/usr/local/bin/forkmesh-mirror-node"
 NFT="$ETC_ROOT/jobs.nft"
+NFT_LOCAL="$ETC_ROOT/jobs.d"
+NFT_BASE="$ETC_ROOT/jobs-base.nft"
 PF_RULES="$ETC_ROOT/jobs.pf"
 PF_ANCHOR="com.apple/forkmesh-runner"
 FIREWALL_LABEL="com.forkmesh.runner-firewall"
@@ -870,8 +872,14 @@ write_firewall_linux() {
     done
     printf '\t}\n'
     printf '}\n'
+  } >"$NFT_BASE.new"
+  {
+    cat "$NFT_BASE.new"
+    printf 'include "%s/*.nft"\n' "$(live_path "$NFT_LOCAL")"
   } >"$NFT.new"
-  chmod 0600 "$NFT.new"
+  install -d -m 0700 "$NFT_LOCAL"
+  chmod 0600 "$NFT_BASE.new" "$NFT.new"
+  mv "$NFT_BASE.new" "$NFT_BASE"
   mv "$NFT.new" "$NFT"
 }
 
@@ -1004,7 +1012,7 @@ Before=forkmesh-runner.service
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/sbin/nft -f /etc/forkmesh-runner/jobs.nft
+ExecStart=/bin/sh -c '/usr/sbin/nft -c -f /etc/forkmesh-runner/jobs.nft && exec /usr/sbin/nft -f /etc/forkmesh-runner/jobs.nft; echo "forkmesh-runner: a rule file in /etc/forkmesh-runner/jobs.d does not parse; loading the built-in rules only" >&2; exec /usr/sbin/nft -f /etc/forkmesh-runner/jobs-base.nft'
 ExecStop=/usr/sbin/nft delete table inet forkmesh_runner
 
 [Install]
@@ -1087,8 +1095,14 @@ start_firewall_linux() {
   fi
   systemctl enable forkmesh-runner-firewall.service >/dev/null 2>&1 || true
   if systemctl is-active --quiet forkmesh-runner-firewall.service; then
-    nft -f "$(live_path "$NFT")" ||
-      warn "The job firewall did not reload; agent jobs can reach this machine's private network."
+    if nft -c -f "$(live_path "$NFT")" >/dev/null 2>&1; then
+      nft -f "$(live_path "$NFT")" ||
+        warn "The job firewall did not reload; agent jobs can reach this machine's private network."
+    else
+      warn "A rule file in $(live_path "$NFT_LOCAL") does not parse; the job firewall loads its built-in rules only."
+      nft -f "$(live_path "$NFT_BASE")" ||
+        warn "The job firewall did not reload; agent jobs can reach this machine's private network."
+    fi
   else
     systemctl start forkmesh-runner-firewall.service ||
       warn "The job firewall did not load; agent jobs can reach this machine's private network."

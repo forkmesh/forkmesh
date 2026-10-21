@@ -156,8 +156,10 @@ QJsonObject DiscussionEvent::toJson() const
         obj.insert("title", title);
         obj.insert("category", category);
     }
-    if (type == "answer")
+    if (type == "answer" || type == "delete")
         obj.insert("target", target);
+    if (type == "status")
+        obj.insert("status", status);
     return obj;
 }
 
@@ -172,6 +174,7 @@ DiscussionEvent DiscussionEvent::fromJson(const QJsonObject &obj)
     ev.title = obj.value("title").toString();
     ev.category = obj.value("category").toString();
     ev.target = obj.value("target").toString();
+    ev.status = obj.value("status").toString();
     ev.body = obj.value("body").toString();
     ev.sig = obj.value("sig").toString();
     return ev;
@@ -275,6 +278,10 @@ QString DiscussionStore::contentForSigning(const DiscussionEvent &ev)
     if (ev.type == "comment")
         return ev.body;
     if (ev.type == "answer")
+        return ev.target;
+    if (ev.type == "status")
+        return ev.status;
+    if (ev.type == "delete")
         return ev.target;
     return QString();
 }
@@ -773,6 +780,33 @@ bool DiscussionStore::applyRemoteEvent(int number, const DiscussionEvent &ev,
         return applyAnswer(discussion, ev, error);
     }
 
+    if (ev.type == "status" || ev.type == "delete") {
+        if (!ownerApproved) {
+            if (error)
+                *error = QStringLiteral("Only the repository owner can moderate a discussion.");
+            return false;
+        }
+        Discussion discussion;
+        const bool wholeDiscussion =
+            ev.type == "delete" && ev.target == QLatin1String("#discussion");
+        if (!readDiscussionFile(number, discussion)) {
+            if (wholeDiscussion)
+                return true; // already deleted: consume the redelivery
+            if (error)
+                *error = QStringLiteral("Discussion #%1 not found.").arg(number);
+            return false;
+        }
+        if (wholeDiscussion)
+            return deleteDiscussion(number, error);
+        if (ev.type == "status")
+            return setStatus(number, ev.status, error);
+        for (int i = 1; i < discussion.events.size(); ++i)
+            if (discussion.events.at(i).type == "comment" &&
+                discussion.events.at(i).id == ev.target)
+                return deleteComment(number, ev.target, error);
+        return true; // already removed: consume the redelivery
+    }
+
     if (ev.type != "comment") {
         if (error)
             *error = QStringLiteral("Unsupported discussion event type.");
@@ -781,6 +815,9 @@ bool DiscussionStore::applyRemoteEvent(int number, const DiscussionEvent &ev,
 
     Discussion discussion;
     const bool exists = readDiscussionFile(number, discussion);
+    if (exists && discussion.status != QLatin1String("open")) {
+        return true;
+    }
     if (!exists) {
         discussion.number = number;
         discussion.title = titleIfNew;

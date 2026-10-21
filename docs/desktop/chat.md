@@ -54,6 +54,21 @@ sits in the data folder, so the configuration backup, its restore and the
 complete-system bundle carry it with the rest of the data. Tests reset both
 stores with `clearStoredState()` and read through `storedSetting()`
 (`testStoredStateLeavesSettingsFile`).
+Since report #8 (2026-10-20) each of those keys is its own file beside
+`state.ini`: `chat-seal/<trustV3|ratchetV4|seenV3>/<b64u(name)>`
+(`storedStateKeyFile()`), written with `QSaveFile` (fsync, owner-only
+permissions). `state.ini` had grown to 748 KB (three direct-room trust
+scopes with held frames at about 140 KB each, one 91 KB ratchet), and the
+synchronous ratchet save after every v4 seal rewrote and fsynced all of it on
+the GUI thread (`ChatDevice::saveRatchets`, eight stalls in report #8). On the
+same loaded box a 91 KB ratchet save went from 122 ms to 33 ms.
+`migrateStoredState()` moves every `state.ini` key into its file, reads the
+file back, and only then drops the key from `state.ini`, at every start, so a
+key that an older build wrote back into `state.ini` replaces the file. An
+older build therefore finds no ratchet in `state.ini` and starts a new session
+instead of reusing message keys. Reads take the file, then `state.ini`, then
+`ForkMesh.conf`; a write that cannot reach the file removes the file and goes
+to `state.ini` as before (`testStoredStateKeysHaveTheirOwnFiles`).
 Held frames are capped per room at 64 frames and 128 KB (`kMaxHeldBytes`),
 newest first, and a scope saved before the byte cap is trimmed when it loads:
 on 2026-10-19 three direct rooms held 64 frames of about 8 KB each from
@@ -91,6 +106,33 @@ The old `chat/e2ee/x25519PrivateV2` value is left in place and unused.
 `ServerNode::setDirectRoom(true)` derives the scope from the room name
 (`chat-direct:<id>:vN` → `direct:<id>`); the mirror passes the account
 (`setChatAccount`) and the DM's two members (`setDirectParticipants`).
+
+## Who can open a direct message
+
+Server DMs and private rooms go through `OfficeChannelMirror`. It used to start
+only from a successful signed heartbeat (or offline mode) and only when this
+desktop holds the account's own key, so two signed-in users still saw "Sign in
+with your account key": anyone right after sign-in, before the next heartbeat,
+and anyone who signed in with email and password on a desktop whose key is not
+the account's (`ownsDesktopKey` false in `activateAccountSession`).
+
+- `startOfficeChannelMirror()` now also accepts an active account session that
+  has a token for the relay (`accountSessionTokenForUrl(catalogApiUrl())`).
+  The mirror sends that token as `Authorization: Bearer` on every relay request
+  (`OfficeChannelMirror::apiRequest`, through `setSessionProvider`, which only
+  hands the token to the session's own instance). The relay's
+  `_ChatDirectMessagesRuntime.session` tries the session first and falls back
+  to the node signature, so key-holding desktops behave as before.
+- The mirror starts right after a sign-in (`activateAccountSession`) and on
+  demand when a DM, a private room or a project invitation is started, instead
+  of waiting for the heartbeat.
+- When it still cannot start, the alert says why: signed out offers a "Sign in"
+  button (`showSignInMenu()`); signed in but unreachable says the relay could
+  not be reached.
+- Signing out (`logout`) and switching to another server
+  (`isolateAccountForServerSwitch`) stop the mirror, so a password session on
+  a shared machine does not leave room WebSockets open and decrypted DMs
+  arriving after the account has gone.
 
 ## Direct messages: v4
 

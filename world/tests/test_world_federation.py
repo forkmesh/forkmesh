@@ -128,6 +128,25 @@ def test_only_listed_world_endpoints_and_neighbour_pages_get_cors():
     assert not world_mesh.federated_path("/api/world/visa")
 
 
+def test_neighbour_town_reads_get_cors_for_reading_only():
+    ns = route_functions("world_federation_cors")
+
+    def cors(method, path, requested=""):
+        sent = request(method, "https://code.example.org")
+        if requested:
+            sent.headers["access-control-request-method"] = requested
+        return asyncio.run(ns["world_federation_cors"](HUB_ENV, sent, path))
+
+    assert cors("GET", "/api/accounts/users")[
+        "access-control-allow-origin"] == "https://code.example.org"
+    assert cors("POST", "/api/accounts/users") == {}
+    assert cors("OPTIONS", "/api/accounts/users", "POST") == {}
+    assert cors("OPTIONS", "/api/accounts/users", "GET")[
+        "access-control-allow-methods"] == "GET, OPTIONS"
+    assert cors("OPTIONS", "/api/world/office/general/entry", "POST")[
+        "access-control-allow-methods"] == "GET, POST, OPTIONS"
+
+
 def test_a_visa_is_exchanged_once_for_a_visitor_token():
     async def visitor(_env, _request, visa, arrival=False):
         assert arrival is True

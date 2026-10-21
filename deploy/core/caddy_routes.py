@@ -59,6 +59,7 @@ WORLD_APP_ASSET_PATHS = (
     "/member-welcome.js",
     "/membership-prompt.js",
     "/analytics.js",
+    "/safe-input.js",
     "/analytics-sdk.js",
     "/start",
 )

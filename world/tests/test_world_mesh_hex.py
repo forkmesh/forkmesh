@@ -206,8 +206,8 @@ def test_arrivals_are_sanitized_and_land_outside_the_crossed_edge(result):
 def test_the_world_draws_and_crosses_single_hexagons():
     assert "WORLD_MESH_HEX_SHAPE" in HEXES
     assert 'single ? "world-mesh-hex-road" : "world-mesh-flower-road"' in HEXES
-    assert "this.worldMeshLinks()?.setNeighbors(placed);" in APP
-    assert ('const visit = owner?.shape === "hex" && !owner.onLand ? "" : '
+    assert "this.worldMeshLinks()?.setNeighbors(this.meshLinkWorlds(placed));" in APP
+    assert ('const ownerId = owner?.shape === "hex" && !owner.onLand ? "" : '
             'owner?.id || "";') in APP
     assert "this.meshLinks.update(x, z, visit);" in APP
     assert "crossIntoWorldMeshHex" not in APP

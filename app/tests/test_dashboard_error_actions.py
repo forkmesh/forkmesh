@@ -32,7 +32,9 @@ def test_agent_modal_has_attach_controls_in_every_shell():
         path for path in (ROOT / "public").rglob("*.html")
         if "data-repo-agent-new-form" in path.read_text(encoding="utf-8")
     ]
-    assert ROOT / "public/dashboard/partials/header.html" in shells
+    # The popover is added under the header's toggle on first open
+    # (dashboard_bundle.DEFERRED_MARKUP).
+    assert ROOT / "public/dashboard/partials/agent-modal.html" in shells
     for path in shells:
         html = path.read_text(encoding="utf-8")
         for marker in (

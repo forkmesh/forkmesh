@@ -370,11 +370,54 @@ must not collide.
   `agents.markRead`. iOS `AgentReadTracker`, `AgentUnreadDot`; Android
   `AgentReadState`, `AgentReadMarks`.
 
+### Transcript scrolling (2026-10-21)
+
+A run's transcript follows its newest line until the reader scrolls up; then
+new output no longer pulls them back down. A round arrow button appears at the
+bottom centre, just above the composer, and takes them back to the end (a dot
+on it means something new arrived below). Sending a prompt also goes back to
+the end.
+
+- iOS: `TranscriptFollowScroll` (`ForkMesh/Kit`) wraps `AgentRunScreen` and
+  `AgentTranscriptList`. iOS 17 has no scroll-phase API, so it reads the
+  content frame from a preference: at the end (within 24 pt) it follows again;
+  the top edge moving down (the reader scrolling up) stops it; content growing
+  with the offset unchanged keeps following.
+- Android: `TranscriptFollowBox` (`feature/agents/TranscriptFollow.kt`) wraps
+  the `LazyColumn` of `UnifiedAgentScreen` and `AgentScreen`. A drag while
+  `canScrollForward` stops following; reaching the end restarts it. The lists
+  end in a 1 dp `transcriptEnd()` item so scrolling to the last item lands at
+  the true end, even below a reply taller than the screen.
+
 ### Navigation stability
 
 Rows are plain buttons that set `AgentsScreen.opened`; one
 `navigationDestination(item:)` pushes the page, decided at tap time, so list
 rebuilds never close an open agent.
+
+### Your last prompt, pinned (iOS)
+
+Every agent detail screen pins what you last wrote to the agent above its
+transcript, so the instruction stays in view while the reply scrolls (asked for
+on 2026-10-21): `AgentRunScreen` (desktop, node and runner runs),
+`AgentSessionDetailScreen` (a desktop-pushed session), `LaunchedAgentSessionScreen`
+(a queued run) and `AgentScreen` (the phone's own agent).
+
+- `PromptDeck` (FMControl) holds your prompts newest first: `.prompt` blocks and
+  steers whose sender is you (`TranscriptBlock.steerFromYou`), the user turns
+  of a queued run's history, or `AgentEvent.userMessage`. A prompt still
+  being sent counts as soon as it shows.
+- `AgentPromptDeck` draws it as one compact line, a stack of cards with up to
+  two edges peeking out below for earlier prompts, and `3/5` when there is more
+  than one. Pull the card down to flip back to an earlier prompt (it slides off
+  and the one beneath rises); push it up to come forward. The card tilts as it
+  is dragged and resists past either end. Tap to read the whole prompt, long
+  press to copy it or jump back to the latest.
+- A new prompt drops in on top, and the deck returns to it even when you were
+  reading back. Cards are keyed by the prompt's position from the first, so
+  this animates instead of swapping text.
+- VoiceOver reads it as one adjustable element (swipe up for newer, down for
+  older). Reduce Motion fades between cards without the tilt.
 
 ## Actions on one desktop agent
 

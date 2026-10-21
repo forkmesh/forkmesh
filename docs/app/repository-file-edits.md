@@ -13,6 +13,10 @@ existing text files. Saving posts to
 | `oid` | Blob OID the browser loaded; a mismatch returns `409 conflict` |
 | `content` | New UTF-8 text, capped at 2 MB |
 | `message` | Optional; defaults to `Edit <path> on the web` |
+| `create` | `true` to add a new file; `409 conflict` if the path exists |
+| `encoding` | `base64` when `content` is a file's bytes (an upload); otherwise text |
+| `op` | `edit` (default), `delete` or `rename` |
+| `newPath` | The new path for `rename` (may be in another folder); `409 conflict` if taken |
 
 `app/src/repository_file_edits.py` reads the live tree, builds a blob, trees
 and a commit authored by the signed-in account.
@@ -39,6 +43,13 @@ The commit pack is pushed through `_https_mirror_push_send` with the
 `web-file-edit` credential. Only regular files (`100644`, `100755`) are
 editable; a protected default branch refuses the edit at the gateway
 ([branch-protection.md](branch-protection.md)) and push policy still applies.
+
+`valid_path` refuses empty, `.` and `..` segments and any segment that names
+the Git folder on a case-insensitive or Windows file system: `.git` in any
+case, with trailing dots or spaces (`.GIT`, `.git.`, `.git `), and the 8.3
+short name `git~1` (the CVE-2014-9390 family). `commit_paths`, which the
+release and project routes use with paths read from repository JSON, checks
+every path with it too.
 
 ## Proposals: editing without write access
 
@@ -85,11 +96,37 @@ and can tick **Propose as a pull request instead of committing**. A `403` with
 editor to proposing. A signed-out visitor who clicks **Edit file** is sent to
 `/login?next=<this page>`.
 
+## Rename and delete
+
+The file view's **Rename or move** and **Delete** buttons open a small form
+under the toolbar (`openRepoFileMoveForm`) with the branch, a commit message
+and the same propose toggle as the editor. `op: "delete"` removes the file
+(a folder it leaves empty goes too, as Git keeps no empty trees);
+`op: "rename"` moves it to `newPath`, keeping its text unless `content` is
+sent. Both check `oid` against the file the browser loaded. Writers commit;
+everyone else gets a proposal whose patch is a deletion (plus a creation for
+a rename), so `git am` replays it without rename detection. A delete lands
+on the folder, a rename on the file's new page.
+
+## Add file
+
+The Code tab's **Add file** button (both toolbars) opens a new-file form in
+the file viewer (`openRepoNewFile`): a path that starts in the folder being
+browsed, the text, the branch and a commit message. It probes access like the
+editor: a writer commits with `create: true` and lands on the new file's
+page; a reader (or a writer who ticks the box) proposes the file as a pull
+request through the same signed proposal flow. **Upload a file instead** sends any
+file up to 2 MB as base64 (`encoding: "base64"`), committed byte for byte; a
+proposal carries it as a `GIT binary patch` (`binary_patch`) that `git am`
+replays. A read-only mirror shows the
+button disabled with the fork hint, and a signed-out visitor is sent to
+`/login?next=<this page>`. Tests: `app/tests/test_web_add_file.py`.
+
 Tests: `app/tests/test_repository_file_edits.py` (proposals replay with
 `git am --3way`, the patch matches `git diff`, writers still commit, direct
 writes by readers are refused, signed-out callers get 401),
 `app/browser_tests/tests/dashboard-file-edit.spec.js` (writer save, reader
-proposal opening `/pulls/<n>`).
+proposal opening `/pull/<n>`).
 `app/tests/test_dashboard_landing_migration.py` checks that the viewer's
 toolbar wires **Edit file** to this endpoint and that the retired browser-only
 draft editor (**Edit local draft**, copy and download draft) stays gone.

@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.ui.kit
 
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import com.forkmesh.nativeapp.ui.theme.FmHaptics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.semantics.Role
@@ -350,7 +351,7 @@ fun FmTextField(
     val supporting = errorText ?: helperText
     BasicTextField(
         value = value,
-        onValueChange = FmUserActivity.typing(onValueChange),
+        onValueChange = if (visualTransformation is PasswordVisualTransformation) FmUserActivity.typing(onValueChange) else FmSafeInput.typing(onValueChange),
         modifier = modifier
             .fillMaxWidth()
             .focusRequester(focus)

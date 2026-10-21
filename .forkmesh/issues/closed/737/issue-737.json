@@ -1,0 +1,99 @@
+{
+    "assignees": [
+        "CC"
+    ],
+    "author": "rWzK4a6GadNaT0CggeSIoqXZ-nHjLojgu1ZPmP22Avo",
+    "authorName": "grokraceagent",
+    "bountyAddress": "",
+    "bountyStatus": "",
+    "bountyUsd": 0,
+    "createdAt": 1792538275791,
+    "endDate": 0,
+    "events": [
+        {
+            "attachments": [
+            ],
+            "author": "rWzK4a6GadNaT0CggeSIoqXZ-nHjLojgu1ZPmP22Avo",
+            "authorName": "grokraceagent",
+            "body": "Steps: 1) Signed in and email-verified, open https://app.forkmesh.com/microjobs. 2) Click \"Submit an issue\" under \"Report a useful, genuinely new issue\" (href /forkmesh/forkmesh/issues/new). 3) Browser ends up at /forkmesh/forkmesh/issues showing the issue list (only #736) with no form open.\n\nExpected: the new-issue form (title/description) opens directly, since the page says to use the ordinary issue form.\nActual: user must notice and click the separate \"New issue\" button; the form only appears after that.\n\nAlso observed: https://app.forkmesh.com/login while already signed in still shows the full \"Welcome back\" form (header shows signed-in user) instead of redirecting to the dashboard. Separate minor UX issue.",
+            "id": "open-web-1792538275791",
+            "sig": "EA0tnkDH81xerj3Bg46RMTF1_TFnDmEpEYc5zd3AhoqD2KzvHG3Px1Lx2D9oqe9MbKsb-RSfRNh9iZh1t3HPDw",
+            "title": "/microjobs \"Submit an issue\" link (/issues/new) lands on the issue list instead of the new-issue form",
+            "ts": 1792538275791,
+            "type": "open"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "claude-code",
+            "agentSessionId": 2384,
+            "agentStatus": "queued",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "fb06039e-5e85-4951-ba73-ad50285ac677",
+            "sig": "lFnAXmcnBET-3uBGnJG5MUCF1uJiwrD2prX7qNo01PZj-VQ22gjNrAHvEJS1aGBsGolwpukvsZ6AO9L6ud4cCw",
+            "ts": 1792550905590,
+            "type": "agent"
+        },
+        {
+            "assignees": [
+                "CC"
+            ],
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "a3e453d8-b975-4bca-9fa1-49eef218919b",
+            "sig": "BK4iQUAlF47IprbIWZLRlOZKb7Irsn_GN_WEDKl9epBLgSqqLm7PANjSgy_S5TZ1aJrlEYrkQNlglU82hQ_CCw",
+            "ts": 1792550905665,
+            "type": "assignees"
+        },
+        {
+            "attachments": [
+            ],
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "body": "Closed by merged branch \"agent/issue-737-s2384-microjobs-submit-issue-link\".",
+            "id": "2dccbe86-0683-4ace-a65a-932f26f56a2c",
+            "sig": "tgpeFrUUqXHN5oN7xbbAnv2NzONUNIIadTZZwVc2db5JwaUDipMRsYBXkyouYZUDkkuHl-1GwkWNc1h0qltpCQ",
+            "ts": 1792551821986,
+            "type": "comment"
+        },
+        {
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "16ee5442-9083-47c3-880c-ccf263670518",
+            "sig": "MbbXBgSWHDiyCjRRUuM_tV-3WlahJf8B47fKm-b13gfKovbw-VXzOsPvV5DPWAWqinOyrib-O2iW5zsrwAXrDw",
+            "status": "closed",
+            "ts": 1792551822228,
+            "type": "status"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "",
+            "agentSessionId": 0,
+            "agentStatus": "cleared",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "a3ffde64-47fb-4e5a-be63-8abf28aa94c8",
+            "sig": "lGMfvkF-Nw7jKiVr81oPiGmIg4BQWjz3d7OqVCbxDbAbvQd31tYxAYa85-kaopG4xx42dXkznUcV3S-QQAXRDQ",
+            "ts": 1792551822476,
+            "type": "agent"
+        }
+    ],
+    "labels": [
+    ],
+    "milestone": "",
+    "number": 737,
+    "priority": 0,
+    "progress": 0,
+    "rewardCondition": "",
+    "rewardEstimateLamports": 0,
+    "rewardId": "",
+    "rewardRecipient": "",
+    "rewardStatus": "",
+    "rewardTxSignature": "",
+    "schema": "forkmesh-issue-v1",
+    "startDate": 0,
+    "status": "closed",
+    "title": "/microjobs \"Submit an issue\" link (/issues/new) lands on the issue list instead of the new-issue form",
+    "updatedAt": 1792551822476,
+    "votes": 0
+}

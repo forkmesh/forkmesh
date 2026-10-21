@@ -47,7 +47,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | [Cloudflare Workers, D1, KV, Durable Objects, Queues, Workers AI, DNS, and TLS edge](#cloudflare) | hosting, dns, certificates, cdn-edge, ai-provider, telemetry | Mandatory for the hosted service | app-worker, app-browser, www-browser, world-worker, world-browser, mirror-node, desktop, operator-tools | Every request to forkmesh.com, app.forkmesh.com, and world.forkmesh.com terminates here: client IP address, TLS SNI, headers including User-Agent, request path, and timing. D1, KV, Durable Objects, and Queues hold the hosted service's account, catalog, collaboration, presence, and health data; sensitive fields are encrypted under DATA_KEY before storage. Workers AI receives ForkBot prompts, bug-report text, and usernames sent for moderation. Cloudflare DNS-over-HTTPS receives mirror hostnames and profile domains being verified. The content security policy also allows the Cloudflare Web Analytics beacon, which is a zone setting rather than repository code. |
 | [ACME certificate authorities for direct-HTTPS mirrors](#acme-certificate-authority) | certificates | Degrades one feature | mirror-node | The mirror's public hostname and the host's IP address during certificate issuance and renewal. Issued certificates are published in public Certificate Transparency logs. |
 | [GitHub source and release downloads](#github-downloads) | forge-api, package-registry | Degrades one feature | desktop, installer, mirror-node, operator-tools, ci | The downloading host's IP address and the release or repository requested: desktop self-update clones of forkmesh/forkmesh when no source checkout exists, the age binary for the macOS installer, the pinned cloudflared release, and build toolchains. |
-| [GitHub, GitLab, and Codeberg APIs for imports, GitHub sync and repository mirrors](#forge-apis) | forge-api | Optional, off unless enabled | app-worker, desktop, operator-tools, ci | The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. |
+| [GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors](#forge-apis) | forge-api | Optional, off unless enabled | app-worker, desktop, operator-tools, ci | The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases. |
 | [GitHub Actions hosted runners](#github-actions) | hosted-runner | Build and release only | ci | The full public repository source, test output, and uploaded evidence artifacts for every run on ubuntu-latest, macos-latest, and windows-latest. Workflows check out with persist-credentials: false. |
 | [Package registries and distribution mirrors](#package-registries) | package-registry | Build and release only | ci, operator-tools | The build host's IP address and the exact package names and versions requested. |
 | [Code-signing timestamp authorities](#code-signing-timestamps) | certificates | Build and release only | ci | A hash of the Windows installer being signed and the release host's IP address. |
@@ -80,7 +80,7 @@ proves this for clone. Every optional service stays off until its secret is set.
 | Cloudflare Workers, D1, KV, Durable Objects, Queues, Workers AI, DNS, and TLS edge | The hosted website, dashboard, API, accounts, chat, catalog, and clone routing through app.forkmesh.com stop. Direct mirror URLs keep serving Git clone, fetch, and SSH push; desktops keep local Git, signed records, and direct mirror access; the Go mirror node keeps publishing signed health locally. | Clone from any independent mirror node's direct HTTPS or SSH URL. A self-host deploys its own app Worker on its own Cloudflare account; no non-Cloudflare runtime for the app Worker exists yet. | tested |
 | ACME certificate authorities for direct-HTTPS mirrors | Existing certificates keep serving until they expire, so clones continue. New direct-HTTPS mirrors cannot obtain a certificate, and a mirror whose renewal keeps failing stops serving HTTPS at expiry; its SSH gateway and other mirrors are unaffected. | Self-host operators may point Caddy at any ACME issuer or their own certificate, or run the mirror node in Cloudflare Tunnel mode. | **gap** |
 | GitHub source and release downloads | Desktop self-update without a local checkout, first-time macOS installs that need age, cloudflared installation, and toolchain bootstraps fail with a download error. Running desktops, mirrors, and the hosted service are unaffected. | Update from a local source checkout or a ForkMesh mirror clone; self-host operators can preinstall age and cloudflared from their distribution. | **gap** |
-| GitHub, GitLab, and Codeberg APIs for imports, GitHub sync and repository mirrors | New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. Imported repositories, clones, and collaboration keep working. | Push the repository directly to a ForkMesh mirror with stock Git; no forge API is needed. | tested |
+| GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors | New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. Imported repositories, clones, and collaboration keep working. | Push the repository directly to a ForkMesh mirror with stock Git; no forge API is needed. | tested |
 | GitHub Actions hosted runners | GitHub-hosted conformance evidence stops. Deploys are gated by .forkmesh workflows on the ForkMesh Actions runner, which runs with network egress disabled. | Run tools/quality_gate.py run --profile core locally or on the self-hosted ForkMesh Actions runner. | tested |
 | Package registries and distribution mirrors | Fresh builds that need to download packages fail. Deployed services never contact registries, and the ForkMesh Actions critical suites use preinstalled packages. | Self-host builds may use a local package mirror or cache; the app Worker and mirror node need no third-party packages at runtime. | tested |
 | Code-signing timestamp authorities | Windows release signing falls through to the next timestamp server, and fails only if all three are down. Existing releases are unaffected. | Release without a timestamp and re-sign later, or use another RFC 3161 authority. | **gap** |
@@ -166,15 +166,15 @@ proves this for clone. Every optional service stays off until its secret is set.
 
 <a id="forge-apis"></a>
 
-### GitHub, GitLab, and Codeberg APIs for imports, GitHub sync and repository mirrors
+### GitHub, GitLab, Codeberg, and Gitea APIs for imports, GitHub sync and repository mirrors
 
 - **Needed:** Optional, off unless enabled
 - **Kind:** forge-api
 - **Components:** app-worker, desktop, operator-tools, ci
-- **Hosts:** `api.github.com`, `gitlab.com`, `codeberg.org`
+- **Hosts:** `api.github.com`, `gitlab.com`, `codeberg.org`, `gitea.com`
 - **Observes:** The owner and repository being imported, the Worker's egress IP, and a user-supplied access token when the user provides one. The GitHub sync workflow reads and writes issues, discussions, and pull requests of the connected repository. A repository mirror set up in repository settings sends the owner's stored access token with every API call and Git push, and the forge sees the mirrored branches, tags, issues, comments, discussions and releases.
 - **Retention:** Set by each forge's API log terms. ForkMesh never stores user-supplied import tokens. A mirror's access token is stored encrypted until the owner disconnects the mirror.
-- **Jurisdiction:** GitHub, Inc. (United States); GitLab Inc. (United States); Codeberg e.V. (Germany).
+- **Jurisdiction:** GitHub, Inc. (United States); GitLab Inc. (United States); Codeberg e.V. (Germany); CommitGo, Inc. (United States) for gitea.com.
 - **Canonical data:** The forge is canonical for its own repository until import; after import the ForkMesh repository and its signed records are canonical, and the stored external id only links the two.
 - **When it is gone:** New imports, scheduled GitHub sync and repository mirrors fail with a named provider error; mirror items stay queued and retry. Imported repositories, clones, and collaboration keep working.
 - **Recovery:** Retry the import; the sync workflow resumes on its next schedule and is idempotent.
@@ -680,10 +680,13 @@ These appear in source as navigation links, share targets, schema namespaces, or
 | `about.gitlab.com` | documentation | Import provider description. |
 | `docs.gitlab.com` | documentation | Import token guidance. |
 | `docs.codeberg.org` | documentation | Import token guidance. |
+| `about.gitea.com` | documentation | Import provider terms. |
+| `docs.gitea.com` | documentation | Import API usage guidance. |
 | `modelcontextprotocol.io` | documentation | MCP server docstring. |
 | `forkmesh.your-domain` | documentation | Self-host placeholder in the docs landing page. |
 | `www.w3.org` | namespace | XML, SVG, and ActivityStreams namespace identifiers. |
 | `schema.org` | namespace | JSON-LD structured data vocabulary. |
+| `www.ietf.org` | namespace | RTP transport-wide congestion control header-extension URI named in call SDP. |
 | `purl.org` | namespace | RSS content module namespace. |
 | `search.yahoo.com` | namespace | Media RSS namespace. |
 | `w3id.org` | namespace | ActivityPub security vocabulary. |

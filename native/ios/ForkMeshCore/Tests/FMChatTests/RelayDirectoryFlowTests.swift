@@ -832,6 +832,51 @@ final class AddProjectModelTests: XCTestCase {
     }
 
     @MainActor
+    func testAnInstanceAlreadyInAProjectOffersThatProjectInsteadOfASecond() async throws {
+        let relays = directory()
+        let tea = try XCTUnwrap(relays.addNamed("Tea"))
+        XCTAssertNotNil(relays.attach(tea.id, to: try XCTUnwrap(RelayProfile.tryParse("relay.acme.dev"))))
+        let seen = Counter()
+        let model = AddProjectModel(relays: relays, probe: probe { request in
+            seen.hit(request.url)
+            return versionResponse()
+        })
+        model.name = "Coffee"
+        model.host = "https://relay.acme.dev/"
+        await model.check()
+        XCTAssertEqual(seen.count, 0)
+        XCTAssertEqual(model.result?.status, .duplicate)
+        XCTAssertEqual(
+            model.result?.message, "That instance already belongs to the project Tea. An instance can only be in one project.")
+        XCTAssertEqual(model.known?.id, tea.id)
+        XCTAssertEqual(model.createLabel, "Open Tea")
+        let count = relays.relays.count
+        XCTAssertEqual(model.create()?.id, tea.id)
+        XCTAssertEqual(relays.relays.count, count)
+        XCTAssertEqual(directoryModel(relays).added(InstanceDirectoryEntry(id: "relay.acme.dev", name: "Acme"))?.id, tea.id)
+    }
+
+    @MainActor
+    func testAttachingAnInstanceOwnedByAnotherProjectIsRefused() async throws {
+        let device = ChatDevice()
+        let relays = device.settings.relays
+        let tea = try XCTUnwrap(relays.addNamed("Tea"))
+        let coffee = try XCTUnwrap(relays.addNamed("Coffee"))
+        let instance = try XCTUnwrap(RelayProfile.tryParse("relay.acme.dev"))
+        XCTAssertNotNil(relays.attach(tea.id, to: instance))
+        let api = TracingApi()
+        let switcher = RelaySwitchController(
+            settings: device.settings,
+            auth: AuthService.create(settings: device.settings, identity: device.identity, http: FakeHTTPClient { _ in HTTPResponse(status: 500) }),
+            api: api, relay: FakeRelaySocket(api, connects: true))
+        let result = await switcher.attach(coffee.id, to: instance)
+        XCTAssertFalse(result.ok)
+        XCTAssertEqual(result.error, "relay.acme.dev already belongs to the project Tea. An instance can only be in one project.")
+        XCTAssertFalse(try XCTUnwrap(relays.byId(coffee.id)).hasInstance)
+        XCTAssertTrue(api.trace.isEmpty)
+    }
+
+    @MainActor
     func testAnInstanceIsCheckedBeforeTheProjectIsCreated() async throws {
         let relays = directory()
         let model = AddProjectModel(relays: relays, probe: probe { _ in versionResponse() })

@@ -101,6 +101,7 @@ internal class AgentScreen(
     private var prBusy by mutableStateOf(false)
     private var moving by mutableStateOf(false)
     private var movedBranch by mutableStateOf<String?>(null)
+    private var sent by mutableIntStateOf(0)
     private val status = FmStatus()
     private var autoStarted = false
     private val prOpenedFor = HashSet<String>()
@@ -151,6 +152,7 @@ internal class AgentScreen(
                 return
             }
             val task = sessions.submit(record.name, text, images = images)
+            sent++
             prompt = ""
             attachments = emptyList()
             if (task == null) return
@@ -352,14 +354,16 @@ internal class AgentScreen(
     @Composable
     private fun Transcript(events: List<AgentEvent>) {
         val list = rememberLazyListState()
-        LaunchedEffect(events.size) { if (events.isNotEmpty()) list.animateScrollToItem(events.size - 1) }
-        LazyColumn(
-            Modifier.fillMaxSize(),
-            state = list,
-            contentPadding = PaddingValues(FmSpace.x4),
-            verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
-        ) {
-            itemsIndexed(events) { _, event -> EventTile(event) }
+        TranscriptFollowBox(list, tail = events.size, modifier = Modifier.fillMaxSize(), pin = sent, tag = "agent-transcript") {
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                state = list,
+                contentPadding = PaddingValues(FmSpace.x4),
+                verticalArrangement = Arrangement.spacedBy(FmSpace.x2),
+            ) {
+                itemsIndexed(events) { _, event -> EventTile(event) }
+                transcriptEnd()
+            }
         }
     }
 }

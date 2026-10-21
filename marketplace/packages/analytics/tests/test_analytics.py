@@ -171,6 +171,33 @@ def test_allowed_origins_and_daily_quota_bound_a_public_key():
     assert usage["data"]["project"]["usage"]["events"] == 3
 
 
+def test_wildcard_origins_allow_subdomains_only():
+    runtime = Runtime()
+    item = project(runtime, allowedOrigins=[
+        "https://*.example.org", "https://example.org", "https://*.com", "http://*.x"])
+    key = item["writeKey"]
+    assert item["settings"]["allowedOrigins"] == ["https://*.example.org", "https://example.org"]
+    for origin in ("https://www.example.org", "https://a.b.example.org", "https://example.org"):
+        assert capture(runtime, key, [pageview("/")], origin=origin)["status"] == 200, origin
+    for origin in ("https://evilexample.org", "http://www.example.org",
+                   "https://www.example.org:8443", "https://example.org.evil.test"):
+        assert capture(runtime, key, [pageview("/")], origin=origin)["status"] == 403, origin
+
+
+def test_wildcards_over_shared_hosting_and_public_suffixes_are_refused():
+    runtime = Runtime()
+    refused = ["https://*.co.uk", "https://*.com.au", "https://*.github.io",
+               "https://*.pages.dev", "https://*.vercel.app", "https://*.herokuapp.com"]
+    item = project(runtime, allowedOrigins=refused + [
+        "https://*.example.co.uk", "https://*.me.github.io", "https://*.example.org:8443"])
+    assert item["settings"]["allowedOrigins"] == [
+        "https://*.example.co.uk", "https://*.me.github.io", "https://*.example.org:8443"]
+    key = item["writeKey"]
+    assert capture(runtime, key, [pageview("/")], origin="https://a.example.org:8443")["status"] == 200
+    assert capture(runtime, key, [pageview("/")], origin="https://a.example.org")["status"] == 403
+    assert capture(runtime, key, [pageview("/")], origin="https://evil.github.io")["status"] == 403
+
+
 def test_identify_merges_the_anonymous_history_into_one_person():
     runtime = Runtime()
     item = project(runtime)

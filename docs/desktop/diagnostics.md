@@ -66,6 +66,16 @@ The desktop has no toasts or floating cards; information is shown inline.
   until cleared, at most three per page (`kPageNoticesPerPage`), 60 in all.
   Rows have Copy, clear, **View output** for failed runs and an **Open**
   action (`noticeDestination`); text over 600 characters is shortened.
+- One operation, one Pings row: notices raised inside a `PingThreadScope`
+  share a key (`m_pingThreadKey`) and `refileThreadPing` rewrites that row in
+  place instead of filing another. A branch merge (`mergePingThread(dir,
+  branch)`) used to file four rows: "Merging…", "Merged… cleaning up in the
+  background", "Agent session deleted…" (the cleanup's own notice, which also
+  replaced the merge line in the strip) and the final outcome. Now its start
+  opens a fresh thread, every merge outcome or refusal updates that one row,
+  and the merge path calls `deleteWorktreeBranchAndAgentInBackground` with
+  `announce=false`. Only the notice calls themselves sit inside the scope, so
+  unrelated notices raised by work the merge triggers keep their own rows.
 - `showLocalNotice(label, text, error, kind)` prefers the status label of the
   originating panel or dialog, falling back to the strip. `fileMessage` only
   does the bookkeeping.
@@ -266,6 +276,25 @@ returned, so summed frame totals overstate a function's own cost.
   append in batched edit blocks.
 - **Rate-limit background passes**: the agent diff/worktree pass waits three
   times its last duration (1 s to 15 s) and re-measures only changed sessions.
+- **Pull inbox and ledger writes run on a worker.** `applyPullsInboxPayload`
+  queues the payload (`queuePullsInboxApply`); `applyPullsInboxEntries` runs
+  every `applyRemotePull`/`applyRemoteEvent` on a `runOffThread` worker and
+  `finishPullsInboxApply` acks, notifies and reloads the list in the
+  background on the GUI thread. `reconcilePullLedgerFor` adopts and flips in
+  its worker phase too. The two never write one repository at once: an
+  inbox payload that arrives during a ledger sweep or another apply for the
+  same repository waits in `m_pullsInboxApplyQueued` (merged by entry), and
+  the sweep skips a repository whose inbox apply is running. Report #8
+  traced most of its stalls (11 `PullStore::readPull`, the 12-34 s
+  `loadAll`, `commit` and `materializePullRef` waits, and frames nested in
+  their pumped git waits such as `logSystemFrom`) to `drainPullsInboxFor`
+  running `PullStore::applyRemotePull` on the GUI thread, two
+  `loadAllIncludingArchived` passes and a commit per pull.
+- **Compile `on.push.paths` once per match.**
+  `ActionWorkflow::matchesPushChangedPaths` used to build a
+  `QRegularExpression` for every changed path and pattern pair; a 20,000-path
+  push against 4 patterns took 1,979 ms, compiled once it takes 21.5 ms
+  (report #8, `applyWorkflowScan`).
 
 ### Background file writes
 

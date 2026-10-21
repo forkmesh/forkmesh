@@ -67,14 +67,26 @@ def test_route_dispatch_uses_the_shared_action_set():
     assert "_https_mirror_proxy" in block
 
 
+CARRIED = {
+    mirror_gateway.PULSE_OPERATION: mirror_gateway.PULSE_CARRIER_OPERATION,
+}
+
+
 def test_every_served_action_is_routable_to_a_node():
+    advertised = (SERVED - set(CARRIED)) | set(CARRIED.values())
     assert SERVED <= edge_routing.PUBLIC_OPERATIONS
-    assert SERVED <= mirror_gateway.DEFAULT_PUBLIC_OPERATIONS
+    assert advertised <= mirror_gateway.DEFAULT_PUBLIC_OPERATIONS
     assert SERVED <= mirror_gateway.DIRECT_PUBLIC_READ_OPERATIONS
     go = (ROOT / "server" / "merge.go").read_text(encoding="utf-8")
     block = go.split("defaultGatewayOperations = []string{", 1)[1].split(
         "}", 1)[0]
-    assert SERVED <= frozenset(re.findall(r'"([a-z-]+)"', block))
+    assert advertised <= frozenset(re.findall(r'"([a-z-]+)"', block))
+
+
+def test_carried_reads_are_never_advertised_on_their_own():
+    for carried in CARRIED:
+        assert carried not in mirror_gateway.PUBLIC_OPERATIONS
+        assert carried not in mirror_gateway.DEFAULT_PUBLIC_OPERATIONS
 
 
 def test_private_hosted_and_host_fast_path_cover_the_same_reads():

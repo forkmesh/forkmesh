@@ -24,6 +24,8 @@
 #include <QRegularExpression>
 #include <QTableWidget>
 
+#include <utility>
+
 using namespace forkmesh::ui;
 
 namespace {
@@ -494,9 +496,11 @@ void MainWindow::populateNewRepositoryOrganizationChoices(QComboBox *choices,
                 return;
             const QString selected =
                 guardedChoices->currentData().toString();
-            if (ok)
+            if (ok) {
                 m_organizations =
                     payload.value(QStringLiteral("orgs")).toArray();
+                m_organizationsKnown = true;
+            }
             fillNewRepositoryOrganizationChoices(
                 guardedChoices, m_organizations, accountOwner(), selected);
             const QStringList manageable =
@@ -869,13 +873,20 @@ void MainWindow::refreshOrganizations()
         [this, keep](bool ok, const QJsonObject &payload,
                      const QString &error) {
             m_organizationsLoading = false;
+            const QList<std::function<void()>> waiters =
+                std::exchange(m_organizationsWaiters, {});
             if (!ok) {
                 setOrganizationStatus(
                     QStringLiteral("Organizations unavailable: %1").arg(error),
                     true);
+                for (const auto &waiter : waiters)
+                    waiter();
                 return;
             }
             m_organizations = payload.value(QStringLiteral("orgs")).toArray();
+            m_organizationsKnown = true;
+            for (const auto &waiter : waiters)
+                waiter();
             renderOrganizations(keep);
             // Pull details can request this roster before the Settings tab is
             // opened. Re-evaluate the peer gate now that an organization owner

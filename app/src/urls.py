@@ -230,7 +230,7 @@ PRIVATE_REPLICA_ACCESS_RE = re.compile(
 # already rejected at the edge with 426). The other actions are live: Default
 # routes those authorized reads through direct HTTPS.
 REPO_HOST_RE = re.compile(
-    r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes)$")
+    r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes|pulse)$")
 # Stable content-addressed release URL. Default streams it from an attested
 # direct-HTTPS endpoint; the host control socket rejects this path.
 RELEASE_BLOB_RE = re.compile(
@@ -406,6 +406,7 @@ REPO_CARD_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/card\.png$")
 # state when a session is supplied); POST/DELETE toggle it for the logged-in
 # account (session-token authenticated, same as ACCOUNT_FOLLOW_RE).
 REPO_STAR_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/star$")
+REPO_REACTIONS_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/reactions$")
 REPO_VIEW_RE = re.compile(r"^/api/repo/([^/]+)/([^/]+)/view$")
 REPO_VIEWS_RE = re.compile(r"^/api/repo-views/?$")
 # Forks for this repo: GET returns the public list of repositories that publish

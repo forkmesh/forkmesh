@@ -36,6 +36,7 @@ REV_RE = re.compile(r"^[0-9a-f]{7,40}$")
 DEBOUNCE_SECONDS = 3
 SETTLE_SECONDS = 2
 MAX_WAIT_SECONDS = 600
+DEPLOY_COOLDOWN_SECONDS = 300
 POLL_SECONDS = 3
 LOCK_WAIT_SECONDS = 3600
 VERIFY_SECONDS = 120
@@ -45,6 +46,15 @@ HISTORY_LIMIT = 4000
 UNIT_NAME = "forkmesh-node-deploy.service"
 INSTALLED_FILES = ("next_autodeploy.py", "next_common.py", "forkmesh_paths.py")
 INSTALLED_DEPLOY_FILES = ("render.py", "caddy_routes.py")
+PREVIOUS_DIR_NAME = "node-deploy.previous"
+SELF_CHECK_MARK = "next_autodeploy self-check ok"
+SELF_CHECK_TIMEOUT = 120
+SELF_INSTALL_TIMEOUT = 300
+SELF_UPDATE_CONFIRM_SECONDS = 180
+SELF_UPDATE_RETRY_SECONDS = 60
+WATCH_UNIT_PREFIX = "forkmesh-node-deploy-watch-"
+WATCH_ENV = ("FMNEXT_CONFIG_DIR", "FMNEXT_LOGS_DIR", "FORKMESH_HOME",
+             "FORKMESH_PROJECTS_DIR")
 ALERT_PATH = "/api/accounts/admin-operator-alert"
 ALERT_PROOF = "forkmesh-admin-operator-alert-v1"
 
@@ -1201,7 +1211,8 @@ class Pipeline:
         if tests_error is not None:
             raise tests_error
         self.say("gate 2: passed")
-        self.say("gate 4: next_deploy migrate, restart (one core first, chosen per release, then the rest)")
+        result["tested"] = not self.skip_tests
+        self.say("gate 4: next_deploy migrate, restart (one core at a time, the first chosen per release)")
         self.tool(worktree, lock, ["migrate", "--execute"], DEPLOY_TIMEOUT)
         result["deployed"] = True
         self.tool(worktree, lock, ["restart", "--rev", rev, "--execute"], DEPLOY_TIMEOUT)
@@ -1222,6 +1233,9 @@ def record_outcome(result, notifier, say, state_dir=None, mode="auto"):
         if result.get("deployed"):
             state["last"] = {"rev": rev, "commit": result.get("target"), "mode": mode,
                              "at": time.time()}
+        if result.get("tested") and mode != "rollback" and result.get("target"):
+            state["tested"] = {"rev": rev, "commit": result["target"], "mode": mode,
+                               "at": time.time()}
     else:
         state["failures"] = int(state.get("failures") or 0) + 1
         state["lastFailure"] = {"rev": rev, "message": result.get("message", ""),
@@ -1359,7 +1373,8 @@ def run_pipeline(repo, target, mode, log, skip_tests=False, notifier=None,
 
 class Agent:
     def __init__(self, repo, root, layout=None, clock=time.time, notifier=None,
-                 state_dir=None, pipeline=run_pipeline, logs=None):
+                 state_dir=None, pipeline=run_pipeline, logs=None, run=subprocess.run,
+                 self_updater=None):
         self.git = Git(repo)
         self.repo = Path(repo)
         self.root = Path(root)
@@ -1376,11 +1391,17 @@ class Agent:
         self.last_request_at = None
         self.main_tip = ""
         self.main_changed_at = clock()
+        self.quiet_until = None
         self.worker = None
         self.current = None
         self.idle_log = Log(echo=True, clock=clock)
         self.runner_worker = None
         self.runner_retry_at = clock() + RUNNER_ROLL_RETRY_SECONDS
+        self.run = run
+        self.self_updater = self_updater or self_update
+        self.self_update_seen = ""
+        self.self_update_retry_at = 0.0
+        self.restarting = False
 
     def say(self, message):
         (self.current["log"] if self.current else self.idle_log).say(message)
@@ -1415,8 +1436,12 @@ class Agent:
             sink.write("a deploy of %s is in progress; following it\n" % self.current["rev"])
             self.current["log"].attach(sink)
         else:
-            sink.write("queued: waiting for main to settle (%d s debounce)%s\n" % (
-                DEBOUNCE_SECONDS, "" if state == "armed" else
+            quiet = (self.quiet_until or 0) - now
+            sink.write("queued: waiting for main to settle (%d s debounce)%s%s\n" % (
+                DEBOUNCE_SECONDS,
+                "; %d s left of the pause after the last deploy" % quiet
+                if quiet > 0 else "",
+                "" if state == "armed" else
                 "; auto-deploy is %s (%s)" % (state, reason)))
 
     def finish_run(self, run_id, ok, message):
@@ -1427,6 +1452,8 @@ class Agent:
             sink.finish(ok, message)
 
     def tick(self):
+        if self.restarting:
+            return
         tip = self.git.rev(MAIN_REF)
         if tip and tip != self.main_tip:
             self.main_tip = tip
@@ -1450,6 +1477,7 @@ class Agent:
             self.complete()
         if not self.pending:
             self.maybe_retry_runner_roll()
+            self.maybe_self_update()
             return
         state, reason = switch_state(self.state_dir)
         if state != "armed":
@@ -1459,6 +1487,8 @@ class Agent:
                                     state, reason))
             self.pending.clear()
             self.first_request_at = self.last_request_at = None
+            return
+        if self.quiet_until is not None and self.clock() < self.quiet_until:
             return
         if ready_to_start(self.clock(), self.first_request_at, self.last_request_at,
                           self.main_changed_at):
@@ -1497,6 +1527,8 @@ class Agent:
                                 "%s (covers %s)" % (result["message"], commit[:12]))
                 del self.pending[run_id]
         current["log"].close()
+        if result.get("deployed"):
+            self.quiet_until = self.clock() + DEPLOY_COOLDOWN_SECONDS
         if self.pending:
             self.first_request_at = self.last_request_at = self.clock()
         else:
@@ -1520,9 +1552,47 @@ class Agent:
         self.runner_worker = threading.Thread(target=work, name="runner-roll", daemon=True)
         self.runner_worker.start()
 
+    def maybe_self_update(self):
+        if self.layout is None or self.worker is not None:
+            return
+        if self.runner_worker is not None and self.runner_worker.is_alive():
+            return
+        if self.clock() < self.self_update_retry_at:
+            return
+        candidate = (load_state(self.state_dir).get("tested") or {}).get("commit") or ""
+        if not SHA_RE.match(candidate) or candidate == self.self_update_seen:
+            return
+        if switch_state(self.state_dir)[0] != "armed":
+            return
+        self.self_update_seen = candidate
+        try:
+            outcome = self.self_updater(self.repo, candidate, self.layout, self.idle_log,
+                                        state_dir=self.state_dir, notifier=self.notifier,
+                                        run=self.run)
+        except (ToolError, OSError, subprocess.SubprocessError) as error:
+            self.idle_log.say("self-update: check of %s failed: %s" % (candidate[:12], error))
+            outcome = {"status": "busy"}
+        if outcome.get("status") == "busy":
+            self.self_update_seen = ""
+            self.self_update_retry_at = self.clock() + SELF_UPDATE_RETRY_SECONDS
+        elif outcome.get("status") == "restarting":
+            self.restarting = True
+
+    def confirm_self_update(self):
+        if self.layout is None:
+            return None
+        try:
+            return confirm_self_update(self.repo, self.layout, self.idle_log.say,
+                                       state_dir=self.state_dir, notifier=self.notifier,
+                                       run=self.run)
+        except (ToolError, OSError, subprocess.SubprocessError) as error:
+            self.idle_log.say("self-update: confirmation failed: %s" % error)
+            return None
+
     def serve(self, sleep=time.sleep, once=False):
         self.idle_log.say("node deploy agent: watching %s for %s runs" % (
             self.root, WORKFLOW_PATH))
+        self.confirm_self_update()
         while True:
             try:
                 self.tick()
@@ -1531,6 +1601,273 @@ class Agent:
             if once:
                 return
             sleep(POLL_SECONDS)
+
+
+def installed_sources() -> list:
+    return ([("tools/" + name, name) for name in INSTALLED_FILES]
+            + [("deploy/core/" + name, name) for name in INSTALLED_DEPLOY_FILES])
+
+
+def installed_mode(name) -> int:
+    return 0o755 if name == "next_autodeploy.py" else 0o644
+
+
+def copy_atomic(source: Path, destination: Path, mode: int):
+    temporary = destination.with_name(destination.name + ".new")
+    shutil.copyfile(source, temporary)
+    os.chmod(temporary, mode)
+    os.replace(temporary, destination)
+
+
+def revision_blobs(git, commit) -> dict:
+    blobs = {}
+    for source, name in installed_sources():
+        blobs[name] = git.call("rev-parse", "--verify", "-q",
+                               "%s:%s" % (commit, source)).stdout.strip()
+    return blobs
+
+
+def installed_blobs(git, directory: Path) -> dict:
+    names = [name for _source, name in installed_sources()]
+    present = [name for name in names if (Path(directory) / name).is_file()]
+    blobs = dict.fromkeys(names, "")
+    if present:
+        completed = git.call("hash-object", "--no-filters", "--",
+                             *[str(Path(directory) / name) for name in present], check=True)
+        blobs.update(zip(present, completed.stdout.split()))
+    return blobs
+
+
+def blobs_digest(blobs) -> str:
+    text = "\n".join("%s %s" % item for item in sorted(blobs.items()))
+    return hashlib.sha256(text.encode()).hexdigest()
+
+
+def previous_dir(layout) -> Path:
+    return Path(layout.node_deploy_bin).with_name(PREVIOUS_DIR_NAME)
+
+
+def snapshot_installed(layout) -> list:
+    previous = previous_dir(layout)
+    previous.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for _source, name in installed_sources():
+        path = Path(layout.node_deploy_bin) / name
+        if path.is_file():
+            copy_atomic(path, previous / name, installed_mode(name))
+            saved.append(name)
+    unit = Path(layout.systemd_units) / UNIT_NAME
+    if unit.is_file():
+        copy_atomic(unit, previous / UNIT_NAME, 0o644)
+        saved.append(UNIT_NAME)
+    return saved
+
+
+def restore_installed(layout, source: Path) -> list:
+    source = Path(source)
+    restored = []
+    for _source, name in installed_sources():
+        if (source / name).is_file():
+            copy_atomic(source / name, Path(layout.node_deploy_bin) / name, installed_mode(name))
+            restored.append(name)
+    if (source / UNIT_NAME).is_file():
+        copy_atomic(source / UNIT_NAME, Path(layout.systemd_units) / UNIT_NAME, 0o644)
+        restored.append(UNIT_NAME)
+    return restored
+
+
+def _call(run, command, cwd=None, timeout=60):
+    try:
+        completed = run(command, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+                        check=False)
+    except (OSError, subprocess.SubprocessError) as error:
+        return 1, str(error)
+    output = ((completed.stdout or "") + (completed.stderr or "")).strip()
+    return completed.returncode, output
+
+
+def watch_command(layout, digest) -> list:
+    command = ["systemd-run", "--user", "--unit", WATCH_UNIT_PREFIX + digest[:12],
+               "--on-active=%d" % SELF_UPDATE_CONFIRM_SECONDS,
+               "--timer-property=AccuracySec=5s", "--setenv=PYTHONDONTWRITEBYTECODE=1"]
+    command += ["--setenv=%s=%s" % (name, os.environ[name]) for name in WATCH_ENV
+                if os.environ.get(name)]
+    return command + [sys.executable, str(previous_dir(layout) / "next_autodeploy.py"),
+                      "self-update-watch", "--digest", digest]
+
+
+def self_update(repo, commit, layout, log, state_dir=None, notifier=None,
+                run=subprocess.run):
+    say = log.say
+    git = Git(repo, run=run)
+    rev = commit[:12]
+    wanted = revision_blobs(git, commit)
+    missing = sorted(name for name, blob in wanted.items() if not blob)
+    if missing:
+        say("self-update: %s has no %s; the agent stays as installed" % (
+            rev, ", ".join(missing)))
+        return {"status": "skipped"}
+    have = installed_blobs(git, layout.node_deploy_bin)
+    changed = sorted(name for name, blob in wanted.items() if have.get(name) != blob)
+    if not changed:
+        return {"status": "current"}
+    digest = blobs_digest(wanted)
+    tried = load_state(state_dir).get("selfUpdate") or {}
+    if tried.get("digest") == digest:
+        say("self-update: the agent files of %s were already tried (%s, %s); not again. "
+            "Fix them on main or run python3 tools/next_autodeploy.py install by hand" % (
+                rev, tried.get("rev"), tried.get("status")))
+        return {"status": "tried"}
+    lock = common.DeployLock(what="next_autodeploy self-update %s" % rev)
+    try:
+        lock.acquire(wait=0)
+    except common.LockBusy:
+        return {"status": "busy"}
+    record = {"commit": commit, "rev": rev, "digest": digest, "files": changed,
+              "at": time.time(), "status": "checking", "message": ""}
+    touched = []
+
+    def keep(status, message=""):
+        record.update(status=status, message=message)
+        state = load_state(state_dir)
+        state["selfUpdate"] = dict(record)
+        save_state(state, state_dir)
+
+    def fail(message, restore=False):
+        if restore:
+            restored = restore_installed(layout, previous_dir(layout))
+            _call(run, ["systemctl", "--user", "daemon-reload"])
+            message += "; the previous agent files are back (%s)" % ", ".join(restored)
+        keep("failed", message)
+        say("self-update: FAILED for %s: %s" % (rev, message))
+        if notifier is not None:
+            notifier.send("Node deploy agent update to %s failed" % rev,
+                          "The deploy agent did not update itself to %s: %s\n\nIt keeps "
+                          "running its installed copy and will not try these files again. "
+                          "Fix them on main or run python3 tools/next_autodeploy.py install "
+                          "(docs/deploy/auto-deploy.md)." % (rev, message),
+                          "agent-update-failed:%s" % rev, email=True)
+        return {"status": "failed", "message": message}
+
+    try:
+        keep("checking")
+        say("self-update: %s changes the installed agent (%s); updating it" % (
+            rev, ", ".join(changed)))
+        worktree = Pipeline(repo, log, run=run, layout=layout,
+                            state_dir=state_dir).runner_worktree(commit)
+        script = str(Path(worktree) / "tools" / "next_autodeploy.py")
+        stage = Path(layout.cache) / "node-deploy" / "agent-stage"
+        code, output = _call(run, [sys.executable, script, "install", "--stage", str(stage)],
+                             cwd=worktree, timeout=SELF_INSTALL_TIMEOUT)
+        if code != 0:
+            return fail("staging the agent of %s exited %d: %s" % (rev, code, output[-400:]))
+        code, output = _call(run, [sys.executable, str(stage / "next_autodeploy.py"),
+                                   "self-check"], cwd=stage, timeout=SELF_CHECK_TIMEOUT)
+        if code != 0 or SELF_CHECK_MARK not in output:
+            return fail("the agent of %s failed its start-up check (exit %d): %s" % (
+                rev, code, output[-400:]))
+        say("self-update: the staged agent of %s starts" % rev)
+        snapshot_installed(layout)
+        touched.append(True)
+        code, output = _call(run, [sys.executable, script, "install", "--no-restart"],
+                             cwd=worktree, timeout=SELF_INSTALL_TIMEOUT)
+        if code != 0:
+            return fail("install --no-restart of %s exited %d: %s" % (
+                rev, code, output[-400:]), restore=True)
+        now = installed_blobs(git, layout.node_deploy_bin)
+        if any(now.get(name) != blob for name, blob in wanted.items()):
+            return fail("the installed files do not match %s after install" % rev,
+                        restore=True)
+        keep("restarting")
+        code, output = _call(run, watch_command(layout, digest))
+        if code != 0:
+            return fail("systemd-run could not arm the start-up watch: %s" % output[-400:],
+                        restore=True)
+        say("self-update: installed %s; restarting %s (a watch restores the previous "
+            "agent if the new one has not confirmed in %d s)" % (
+                rev, UNIT_NAME, SELF_UPDATE_CONFIRM_SECONDS))
+    except (ToolError, OSError, subprocess.SubprocessError) as error:
+        return fail(str(error), restore=bool(touched))
+    finally:
+        lock.release()
+    code, output = _call(run, ["systemctl", "--user", "restart", "--no-block", UNIT_NAME])
+    if code != 0:
+        _call(run, ["systemctl", "--user", "stop", WATCH_UNIT_PREFIX + digest[:12] + ".timer"])
+        return fail("systemctl restart exited %d: %s" % (code, output[-400:]), restore=True)
+    return {"status": "restarting", "digest": digest}
+
+
+def confirm_self_update(repo, layout, say, state_dir=None, notifier=None,
+                        run=subprocess.run):
+    state = load_state(state_dir)
+    record = state.get("selfUpdate") or {}
+    if record.get("status") != "restarting":
+        return None
+    have = blobs_digest(installed_blobs(Git(repo, run=run), layout.node_deploy_bin))
+    if have != record.get("digest"):
+        record.update(status="replaced", message="the installed files changed again "
+                      "before the new agent started")
+        state["selfUpdate"] = record
+        save_state(state, state_dir)
+        say("self-update: %s" % record["message"])
+        return record
+    record.update(status="ok", confirmedAt=time.time())
+    state["selfUpdate"] = record
+    state["agent"] = {"commit": record.get("commit"), "rev": record.get("rev"),
+                      "digest": have, "at": time.time()}
+    save_state(state, state_dir)
+    say("self-update: the agent now runs the files of %s (%s)" % (
+        record.get("rev"), ", ".join(record.get("files") or [])))
+    if notifier is not None:
+        notifier.send("Node deploy agent updated to %s" % record.get("rev"),
+                      "The deploy agent installed and restarted itself with the files of "
+                      "%s: %s." % (record.get("rev"), ", ".join(record.get("files") or [])),
+                      "agent-updated:%s" % record.get("rev"))
+    return record
+
+
+def watch_self_update(digest, layout, state_dir=None, notifier=None, run=subprocess.run,
+                      say=print, source=None):
+    state = load_state(state_dir)
+    record = state.get("selfUpdate") or {}
+    if record.get("digest") != digest or record.get("status") != "restarting":
+        return 0
+    source = Path(source or Path(__file__).resolve().parent)
+    message = "the agent of %s did not start and confirm within %d s" % (
+        record.get("rev"), SELF_UPDATE_CONFIRM_SECONDS)
+    if source.resolve() == Path(layout.node_deploy_bin).resolve():
+        message += "; no previous copy to restore, it is left as installed"
+    else:
+        restored = restore_installed(layout, source)
+        message += "; the previous agent is back (%s)" % ", ".join(restored)
+        for command in (["systemctl", "--user", "daemon-reload"],
+                        ["systemctl", "--user", "restart", UNIT_NAME]):
+            code, output = _call(run, command)
+            if code != 0:
+                message += "; %s exited %d: %s" % (" ".join(command), code, output[-200:])
+    record.update(status="failed", message=message)
+    state["selfUpdate"] = record
+    save_state(state, state_dir)
+    say("self-update: FAILED: %s" % message)
+    if notifier is not None:
+        notifier.send("Node deploy agent update to %s failed" % record.get("rev"),
+                      "%s. These files are not tried again; fix them on main or run "
+                      "python3 tools/next_autodeploy.py install (docs/deploy/auto-deploy.md)."
+                      % message, "agent-update-failed:%s" % record.get("rev"), email=True)
+    return 1
+
+
+def self_check(layout=None) -> int:
+    layout = layout or forkmesh_paths.resolve()
+    import caddy_routes  # noqa: F401
+    import render  # noqa: F401
+    agent = Agent(layout.source, actions_root(layout), layout=layout,
+                  notifier=notifier_for(layout.source, print, layout))
+    load_state(agent.state_dir)
+    switch_state(agent.state_dir)
+    render_unit(Path(__file__).resolve().parent)
+    print(SELF_CHECK_MARK)
+    return 0
 
 
 def render_unit(bin_dir: Path, python="/usr/bin/python3") -> str:
@@ -1550,18 +1887,17 @@ def render_unit(bin_dir: Path, python="/usr/bin/python3") -> str:
             "WantedBy=default.target\n" % (python, bin_dir / "next_autodeploy.py"))
 
 
-def install(layout=None, run=subprocess.run, user_units=None, enable=True, say=print) -> int:
+def install(layout=None, run=subprocess.run, user_units=None, enable=True, say=print,
+            stage=None, restart=True) -> int:
     layout = layout or forkmesh_paths.resolve()
-    here = Path(__file__).resolve().parent
-    target = layout.node_deploy_bin
+    root = Path(__file__).resolve().parent.parent
+    target = Path(stage) if stage else layout.node_deploy_bin
     target.mkdir(parents=True, exist_ok=True)
-    sources = [(here / name, name) for name in INSTALLED_FILES]
-    sources += [(here.parent / "deploy" / "core" / name, name) for name in INSTALLED_DEPLOY_FILES]
-    for source, name in sources:
-        temporary = target / (name + ".new")
-        shutil.copyfile(source, temporary)
-        os.chmod(temporary, 0o755 if name == "next_autodeploy.py" else 0o644)
-        os.replace(temporary, target / name)
+    for source, name in installed_sources():
+        copy_atomic(root / source, target / name, installed_mode(name))
+    if stage:
+        say("staged the agent in %s" % target)
+        return 0
     units = layout.systemd_units
     units.mkdir(parents=True, exist_ok=True)
     unit = units / UNIT_NAME
@@ -1578,15 +1914,17 @@ def install(layout=None, run=subprocess.run, user_units=None, enable=True, say=p
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     if not enable:
         return 0
-    for command in (["systemctl", "--user", "daemon-reload"],
-                    ["systemctl", "--user", "enable", UNIT_NAME],
-                    ["systemctl", "--user", "restart", UNIT_NAME]):
+    commands = [["systemctl", "--user", "daemon-reload"],
+                ["systemctl", "--user", "enable", UNIT_NAME]]
+    if restart:
+        commands.append(["systemctl", "--user", "restart", UNIT_NAME])
+    for command in commands:
         completed = run(command, capture_output=True, text=True, timeout=60, check=False)
         if completed.returncode != 0:
             say("%s: %s" % (" ".join(command), completed.stderr.strip()))
             return 1
-    say("installed %s and %s (auto-deploy is %s)" % (
-        target, UNIT_NAME, switch_state()[0]))
+    say("installed %s and %s (auto-deploy is %s%s)" % (
+        target, UNIT_NAME, switch_state()[0], "" if restart else "; not restarted"))
     return 0
 
 
@@ -1645,6 +1983,11 @@ def main(argv=None) -> int:
     sub.add_parser("workflow-paths")
     p = sub.add_parser("install")
     p.add_argument("--no-enable", action="store_true")
+    p.add_argument("--no-restart", action="store_true")
+    p.add_argument("--stage")
+    sub.add_parser("self-check")
+    p = sub.add_parser("self-update-watch")
+    p.add_argument("--digest", required=True)
     args = parser.parse_args(argv)
     layout = forkmesh_paths.resolve()
     repo = layout.source
@@ -1678,7 +2021,13 @@ def main(argv=None) -> int:
             print(json.dumps(status_report(repo, layout), indent=2, sort_keys=True))
             return 0
         if args.command == "install":
-            return install(layout, enable=not args.no_enable)
+            return install(layout, enable=not args.no_enable, stage=args.stage,
+                           restart=not args.no_restart)
+        if args.command == "self-check":
+            return self_check(layout)
+        if args.command == "self-update-watch":
+            return watch_self_update(args.digest, layout,
+                                     notifier=notifier_for(repo, print, layout))
         if args.command == "serve":
             agent = Agent(repo, actions_root(layout), layout=layout,
                           notifier=notifier_for(repo, print, layout))

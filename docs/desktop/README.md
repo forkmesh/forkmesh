@@ -27,6 +27,7 @@ Topic pages in this folder:
 - [lifecycle.md](lifecycle.md): what a quit stops (agent and Actions scopes, escaped children), what it leaves running, and running without a window (including keeping the computer from sleeping)
 - [genie.md](genie.md): the Genie spider pet, its health from code and marketing velocity, and the marketing coach
 - [notes.md](notes.md): the Notes page: local and cloud notes, versions, signed requests
+- [markdown-preview.md](markdown-preview.md): one render path for every Markdown preview, hard-break handling, the GitHub-style document styling and painted decorations
 - [shortcuts.md](shortcuts.md): Shortcuts page, one-tap runs from every list, and the per-repository shortcut queue
 - Agent runs across desktop, mirrors, web and phone: [../agents/README.md](../agents/README.md)
 
@@ -59,7 +60,7 @@ Everything is in `desktop/`.
 | `src/StallWatchdog.*`, `src/CrashHandler.*`, `src/CrashLogScan.*` | UI stall sampling, crash records, crash-repair dispatch |
 | `src/CodeHealth.*`, `src/ComponentHealthBoard.*`, `src/StatsDashboard.*`, `src/HomeBoard.*` | Health, Stats and Home pages |
 | `src/NativePackageExtension.*`, `src/ForkMeshPackageRegistry.*`, `src/*HostFeed.*` | Market packages hosted in the desktop and the host sockets they use |
-| `src/MarkdownRender.h`, `src/MarkdownDocument.h` | Markdown rendering shared by README views and packages |
+| `src/MarkdownRender.h`, `src/MarkdownDocument.h`, `src/MarkdownPreviewStyle.h` | Markdown rendering shared by README views, file previews, composers and packages ([markdown-preview](markdown-preview.md)) |
 | `src/Tooltips.h` | The app-drawn tooltip window |
 | `tests/` | Qt Test programs (`test_*.cpp`) and Python source validators (`validate_*.py`) |
 
@@ -93,6 +94,19 @@ Everything is in `desktop/`.
   project with no logo saves the instance's logo as `logo.png`: the `logo`
   path from `GET /api/instance`, else its favicon. Project settings is a page
   of the main window.
+- **An instance belongs to one project (2026-10-21).** A project may hold
+  several instances (rarely), but two projects never share one, so their
+  accounts, chat and data cannot mix. Each project records the origins of its
+  instances (`host[:port]`, production aliases folded to `app.forkmesh.com`)
+  as `instances` in its `project.json` whenever its server list changes
+  (`MainWindow::recordProjectInstances`); a project that has not recorded them
+  yet is read from its settings file. Choosing an instance for a new project,
+  "Add mainnode server", signing in to another instance, connecting a deployed
+  relay and editing the relay address all refuse an instance another project
+  uses (`ProjectRegistry::instanceOwner`) and offer to open that project. The
+  new-project dialog no longer offers the current project's instances, which
+  belong to it. Projects that already shared an instance before this rule are
+  left as they are.
 - **Project menu.** The instance, account and repository live as rows in the
   project picker's menu rather than in the top bar. When no account is signed
   in, the account row is the "Log in / Sign up" entry; the top bar has no
@@ -419,6 +433,24 @@ requests in the repository up to this one, merged, closed and open alike
 none merged yet"; only a real first one reads "First pull request needs your
 approval". Test: `desktop/tests/test_crypto.cpp`.
 
+One ping per pull request, not per workflow: `applyWorkflowScan` used to ping
+inside its workflow loop, so a held pull request in a repository with two pull
+request workflows ("CI tests", "Desktop client CI tests") filed two identical
+rows. The held runs are now collected and `notifyHeldActionRuns` files one row
+naming every held workflow, linked to the first held run.
+
+### New pull request pings count new pull requests only
+
+`applyPullsInboxEntries` counted every inbox entry it accepted. Two kinds of
+entry are not new pull requests: review and lifecycle events, and a replayed
+delivery that `PullStore::applyRemotePull` recognises as already stored (it
+returns true so the entry is acknowledged). Inbox drains overlap when a GET
+lands before the previous drain's acknowledging DELETE, so on 2026-10-21 three
+new pull requests filed five pings ("2 new pull requests", "3 new pull
+requests" and three single ones). `applyRemotePull` now reports through
+`opened` whether it wrote a pull request, `PullsInboxOutcome::opened` counts
+those, and only they ping and name the author and title.
+
 ## Change process
 
 - Source files hold code only; the reason for a change goes in the matching
@@ -528,7 +560,9 @@ approval". Test: `desktop/tests/test_crypto.cpp`.
 - **`on.push.paths` is matched over the whole pushed range.**
   `forkmesh::actions::pushRangeChangedPaths` diffs `<old> <new>` when the old
   value is an ancestor, and otherwise the union of the tip's diffs against
-  every parent. Every push source must carry the ref's old value.
+  every parent. Every push source must carry the ref's old value. Each
+  pattern is compiled once per match, not once per changed path
+  ([diagnostics.md](diagnostics.md#keeping-the-gui-thread-free)).
 - **A push to an old branch runs that branch's copy of a workflow.** When the
   default branch's copy of the same workflow has no `push` trigger, a push to
   any other branch skips it (`ActionFile::defaultBranchRetiresPush`).

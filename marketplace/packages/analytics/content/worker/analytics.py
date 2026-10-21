@@ -89,6 +89,20 @@ PUBLIC_PAGE_PREFIXES = ("/docs",)
 FLAG_KEY_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 SESSION_RE = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 ORIGIN_RE = re.compile(r"^https?://[a-z0-9.-]{1,253}(?::[0-9]{1,5})?$")
+WILDCARD_ORIGIN_RE = re.compile(
+    r"^(https?)://\*\.((?:[a-z0-9-]{1,63}\.)+[a-z0-9-]{1,63})(?::([0-9]{1,5}))?$")
+SHARED_SUFFIXES = frozenset({
+    "github.io", "gitlab.io", "pages.dev", "workers.dev", "vercel.app",
+    "netlify.app", "netlify.com", "herokuapp.com", "web.app", "firebaseapp.com",
+    "appspot.com", "azurewebsites.net", "cloudfront.net", "amazonaws.com",
+    "blogspot.com", "wordpress.com", "glitch.me", "repl.co", "replit.app",
+    "onrender.com", "fly.dev", "railway.app", "surge.sh", "neocities.org",
+    "ngrok.io", "ngrok-free.app", "codeberg.page", "forkmesh.app",
+})
+SECOND_LEVEL_LABELS = frozenset({
+    "ac", "co", "com", "edu", "gov", "ltd", "mil", "net", "nhs", "or", "org",
+    "plc", "sch",
+})
 MAX_GOALS = 20
 
 PLAYBOOK_VERSION = 1
@@ -484,7 +498,8 @@ def _origins(value):
     result = []
     for item in (value if isinstance(value, list) else [])[:40]:
         origin = _text(item, 300).strip().lower().rstrip("/")
-        if ORIGIN_RE.fullmatch(origin) and origin not in result:
+        if ((ORIGIN_RE.fullmatch(origin) or _wildcard_rule(origin))
+                and origin not in result):
             result.append(origin)
     return result
 
@@ -626,7 +641,33 @@ def _origin_allowed(runtime, settings):
     origin = _request_origin(runtime)
     # Server-side callers send no Origin header; the write key is their only
     # credential, as it is for every analytics ingestion API.
-    return not origin or origin in allowed
+    return not origin or origin in allowed or any(
+        _wildcard_origin_matches(entry, origin) for entry in allowed)
+
+
+def _wildcard_rule(entry):
+    rule = WILDCARD_ORIGIN_RE.fullmatch(entry or "")
+    if not rule:
+        return None
+    domain = rule.group(2)
+    labels = domain.split(".")
+    if domain in SHARED_SUFFIXES or (
+            len(labels) == 2 and len(labels[1]) == 2
+            and labels[0] in SECOND_LEVEL_LABELS):
+        return None
+    return rule
+
+
+def _wildcard_origin_matches(entry, origin):
+    rule = _wildcard_rule(entry)
+    if not rule:
+        return False
+    match = re.fullmatch(r"(https?)://([a-z0-9.-]{1,253})(?::([0-9]{1,5}))?", origin or "")
+    if not match:
+        return False
+    scheme, domain, port = rule.groups()
+    return (match.group(1) == scheme and (match.group(3) or "") == (port or "")
+            and match.group(2).endswith("." + domain))
 
 
 # --------------------------------------------------------------------------

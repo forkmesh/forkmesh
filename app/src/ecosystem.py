@@ -4,6 +4,7 @@ import html
 import json
 import re
 from urllib.parse import parse_qs, urlparse
+from hidden_unicode import clean_query as clean_hidden_query
 
 
 def _bind_runtime(runtime):
@@ -775,7 +776,7 @@ async def _handle_post(env, request, params, csrf_field, admin_query, account,
                 "smaller batches."], status=413)
     except Exception:
         raw = ""
-    form = parse_qs(str(raw or ""), keep_blank_values=True)
+    form = clean_hidden_query(parse_qs(str(raw or ""), keep_blank_values=True))
     if not _admin_csrf_ok(env, form):
         return _redirect(_location(env, admin_query, notice="csrf"))
     action = _first(form, "action")

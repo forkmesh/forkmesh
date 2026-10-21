@@ -217,6 +217,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
     private var creatingPull by mutableStateOf(false)
     private var refreshing by mutableStateOf(false)
     private var pulls by mutableIntStateOf(0)
+    private var sent by mutableIntStateOf(0)
     @Volatile private var liveStream: DesktopTranscriptStream? = null
     private val status = FmStatus()
     private val sendStatus = FmStatus()
@@ -497,7 +498,6 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                     }
                 }
                 val list = rememberLazyListState()
-                LaunchedEffect(blocks.size) { if (blocks.isNotEmpty()) list.scrollToItem(blocks.lastIndex) }
                 FmPullToRefreshBox(
                     isRefreshing = refreshing,
                     onRefresh = {
@@ -517,19 +517,22 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                     },
                     modifier = Modifier.weight(1f).fillMaxWidth(),
                 ) {
-                    LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(horizontal = FmSpace.x3, vertical = FmSpace.x2)) {
-                        if (blocks.isEmpty()) {
-                            item {
-                                SelectionContainer {
-                                    Text(text.ifEmpty { "Nothing in the transcript yet." }, style = Fm.text.bodyMedium.copy(color = c.textSecondary))
+                    TranscriptFollowBox(list, tail = text.length to blocks.size, modifier = Modifier.fillMaxSize(), pin = sent, tag = "agent-run-transcript") {
+                        LazyColumn(Modifier.fillMaxSize(), state = list, contentPadding = PaddingValues(horizontal = FmSpace.x3, vertical = FmSpace.x2)) {
+                            if (blocks.isEmpty()) {
+                                item {
+                                    SelectionContainer {
+                                        Text(text.ifEmpty { "Nothing in the transcript yet." }, style = Fm.text.bodyMedium.copy(color = c.textSecondary))
+                                    }
                                 }
+                            } else {
+                                transcriptBlocks(blocks, if (row.repoOwner.isEmpty() || row.repoName.isEmpty()) null else RepoRef(row.repoOwner, row.repoName))
                             }
-                        } else {
-                            transcriptBlocks(blocks, if (row.repoOwner.isEmpty() || row.repoName.isEmpty()) null else RepoRef(row.repoOwner, row.repoName))
-                        }
-                        if (attachments.isNotEmpty()) item {
-                            Spacer(Modifier.height(FmSpace.x3))
-                            AgentAttachmentStrip(attachments)
+                            if (attachments.isNotEmpty()) item {
+                                Spacer(Modifier.height(FmSpace.x3))
+                                AgentAttachmentStrip(attachments)
+                            }
+                            transcriptEnd()
                         }
                     }
                 }
@@ -546,6 +549,7 @@ internal class UnifiedAgentScreen(initial: UnifiedAgentRow) : Screen() {
                             val next = message.trim()
                             val sending = photos
                             if (next.isNotEmpty() || sending.isNotEmpty()) {
+                                sent++
                                 message = ""
                                 photos = emptyList()
                                 act("Sent.", sendStatus, onFailure = {

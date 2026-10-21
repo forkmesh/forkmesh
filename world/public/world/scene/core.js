@@ -116,6 +116,7 @@ import * as avatarSelectionRuntime from "./runtime/avatar-selection.js";
 import * as remotePlayersRuntime from "./runtime/remote-players.js";
 import * as networkRuntime from "./runtime/network.js";
 import { instanceHexArrival } from "./instance-hexes.js";
+import * as territoryRuntime from "./instance-territory.js";
 import * as repositoryCatalogRuntime from "./runtime/repository-catalog.js";
 import * as repositoryRecordsRuntime from "./runtime/repository-records.js";
 import * as effectsRuntime from "./runtime/effects.js";
@@ -210,6 +211,11 @@ export async function createWorldScene({
   onJetpackChange = () => {},
   onGymState = () => {},
   onStartHereSelect = () => {},
+  territory = null,
+  onTerritoryCross = () => {},
+  onTerritoryLinkSelect = () => {},
+  onTerritoryBugSelect = () => {},
+  onTerritoryNotice = () => {},
 }) {
   const fns = {};
   const ctx = new (class WorldSceneContext {
@@ -969,8 +975,22 @@ export async function createWorldScene({
       onWorldBulletinSelect,
       onWorldDiscordBoardSelect,
       onWorldGeneralChatSelect,
+      onTerritoryLinkSelect,
+      onTerritoryBugSelect,
       ctx,
       fns,
+    }),
+  );
+  Object.assign(
+    fns,
+    territoryRuntime.functions({
+      THREE,
+      ctx,
+      fns,
+      territory,
+      onTerritoryCross,
+      onTerritoryLinkSelect,
+      onTerritoryNotice,
     }),
   );
   Object.assign(
@@ -1151,6 +1171,7 @@ export async function createWorldScene({
     setTouchMovement,
     setTriangleView,
     setWorldElementEnabled,
+    shiftPlayer,
     showAgentTaskBubble,
     showChatBubble,
     showMemberChatBubble,
@@ -2487,6 +2508,7 @@ export async function createWorldScene({
   const geometryDeduper = createGeometryDeduper(THREE);
 
   await sceneSlice("scene-systems", "Scene systems & input");
+  fns.installInstanceTerritory();
   setTheme("world");
   // Every district is in the scene now, so the walkable surfaces the ground
   // probe reads are complete and worth holding on to.
@@ -2616,7 +2638,12 @@ export async function createWorldScene({
     setTouchMovement,
     setTouchInteractionActive,
     setSpawn,
+    shiftPlayer,
     instanceHexArrival,
+    territoryArrival: fns.territoryArrival,
+    updateTerritoryBugs: fns.updateTerritoryBugs,
+    territoryForkmeshShift: fns.territoryForkmeshShift,
+    territoryOwnerAt: fns.territoryOwnerAt,
     travelToRegion,
     visitNeighborhoodHome,
     campfireSeatsReady,

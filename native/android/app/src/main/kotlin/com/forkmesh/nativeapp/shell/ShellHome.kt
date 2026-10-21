@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.shell
 
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.theme.FmRadius
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -635,7 +636,7 @@ private fun ShellHomeSearchField(
                 if (query.isEmpty()) Text("Search", style = Fm.text.bodySmall, color = c.textTertiary)
                 androidx.compose.foundation.text.BasicTextField(
                     query,
-                    onQuery,
+                    FmSafeInput.text(onQuery),
                     Modifier
                         .fillMaxWidth()
                         .focusRequester(focus)

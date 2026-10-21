@@ -10,8 +10,9 @@
     "enabled": true,
     "focus": "Observe, Simplify & Repair",
     "id": "ux",
-    "improvementCycles": 6,
+    "improvementCycles": 7,
     "improvementNotes": [
+        "When a keyboard action triggers an asynchronous rerender, assert focus after the final saved state rather than immediately after the control closes.",
         "For dynamically created native dialogs, test the computed accessible name and real Escape focus return, not just that `showModal()` is called.",
         "Audit every newly introduced modal for its accessible name, focus containment, return focus, and live updates as one keyboard journey.",
         "Exercise keyboard activation on representative search-result types, not merely result visibility and counts.",
@@ -61,7 +62,7 @@
         "Usability Regression Testing"
     ],
     "specialty": "User Experience",
-    "updatedAtMs": 1792420129324,
+    "updatedAtMs": 1792591647355,
     "version": 2,
     "workflow": ""
 }

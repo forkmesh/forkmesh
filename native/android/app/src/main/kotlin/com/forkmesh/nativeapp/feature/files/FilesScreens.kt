@@ -1,5 +1,6 @@
 package com.forkmesh.nativeapp.feature.files
 
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.FmSwitch
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -130,7 +131,7 @@ private fun Line(text: String, error: Boolean = false) {
 private fun Field(label: String, value: String, onChange: (String) -> Unit, secret: Boolean = false, hint: String = "") {
     OutlinedTextField(
         value = value,
-        onValueChange = onChange,
+        onValueChange = if (secret) onChange else FmSafeInput.text(onChange),
         label = { Text(label) },
         placeholder = if (hint.isEmpty()) null else ({ Text(hint) }),
         singleLine = true,
@@ -160,7 +161,7 @@ private fun NamePrompt(title: String, initial: String, action: String, onConfirm
         title = { Text(title) },
         text = {
             Column {
-                OutlinedTextField(value = value, onValueChange = { value = it }, singleLine = true, label = { Text("Name") })
+                OutlinedTextField(value = value, onValueChange = FmSafeInput.text<String> { value = it }, singleLine = true, label = { Text("Name") })
                 if (problem != null && value.isNotEmpty()) Text(problem, style = Fm.text.bodySmall, color = Fm.colors.danger, modifier = Modifier.padding(top = FmSpace.x1))
             }
         },
@@ -665,7 +666,7 @@ class FolderScreen(val source: FileSource, val path: String, private val share: 
                 }
             }
             if (searching) {
-                OutlinedTextField(filter, { filter = it }, singleLine = true, placeholder = { Text("Filter this folder") },
+                OutlinedTextField(filter, FmSafeInput.text<String> { filter = it }, singleLine = true, placeholder = { Text("Filter this folder") },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = FmSpace.x4, vertical = FmSpace.x1))
             }
             if (busy.isNotEmpty()) {

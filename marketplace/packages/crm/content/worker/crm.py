@@ -24,7 +24,7 @@ PREFIX = "/api/crm"
 # matching kCrmRequestProof constant; both must stay byte-for-byte identical.
 REQUEST_PROOF = "forkmesh-crm-request-v1"
 MAX_BODY_BYTES = 2 * 1024 * 1024
-MAX_CONTACTS = 2000
+MAX_CONTACTS = 5000
 MAX_EMAILS = 1000
 MAX_MAIL_MESSAGES = 2000
 MAX_ZOHO_IMPORT = 200
@@ -70,6 +70,7 @@ CSV_IMPORT_PING_ERRORS = 3
 CSV_IMPORT_ROW_MESSAGES = {
     "name_or_email_required": "needs a name, an email or a company",
     "invalid_email": "has an email address that is not valid",
+    "crm_full": "was not added because the CRM already holds %d contacts" % MAX_CONTACTS,
 }
 # How many data rows an import preview reads to guess each column's field and
 # show the member a few sample values before they confirm the mapping.
@@ -507,9 +508,10 @@ DATA_SCHEMA_UP = [
     "ON crm_contacts(org_bi,updated_at DESC,contact_id)",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_contacts_org_email "
     "ON crm_contacts(org_bi,email_bi) WHERE email_bi<>''",
-    """CREATE TRIGGER IF NOT EXISTS trg_crm_contact_limit
+    "DROP TRIGGER IF EXISTS trg_crm_contact_limit",
+    """CREATE TRIGGER IF NOT EXISTS trg_crm_contact_limit_5000
         BEFORE INSERT ON crm_contacts
-        WHEN (SELECT COUNT(*) FROM crm_contacts WHERE org_bi=NEW.org_bi)>=2000
+        WHEN (SELECT COUNT(*) FROM crm_contacts WHERE org_bi=NEW.org_bi)>=5000
         BEGIN SELECT RAISE(ABORT,'crm_contact_catalog_full'); END""",
     """CREATE TABLE IF NOT EXISTS crm_email_sends (
         send_id TEXT PRIMARY KEY,
@@ -1960,7 +1962,7 @@ async def email_channel_report(runtime, org_bi, since):
     closed = 0
     closed_value = 0
     contacts = await runtime.d1_all(
-        "SELECT data FROM crm_contacts WHERE org_bi=? LIMIT 2000", org_bi)
+        "SELECT data FROM crm_contacts WHERE org_bi=? LIMIT ?", org_bi, MAX_CONTACTS)
     for row in contacts or []:
         data = await runtime.open(row.get("data"))
         data = data if isinstance(data, dict) else {}
@@ -2036,8 +2038,8 @@ async def email_suggestions(runtime, org_bi, now, limit=EMAIL_SUGGESTION_LIMIT):
         else:
             outbound[contact_id] = max(outbound.get(contact_id, 0), at)
     contacts = await runtime.d1_all(
-        "SELECT contact_id,created_at,data FROM crm_contacts WHERE org_bi=? LIMIT 2000",
-        org_bi)
+        "SELECT contact_id,created_at,data FROM crm_contacts WHERE org_bi=? LIMIT ?",
+        org_bi, MAX_CONTACTS)
     ranked = []
     for row in contacts or []:
         contact_id = str(row.get("contact_id") or "")
@@ -2386,6 +2388,23 @@ async def _unique_email_bi(runtime, org_bi, email):
     return await runtime.blind("crm-contact-v1\n" + org_bi + "\n" + email)
 
 
+async def _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
+                          account_bi, actor, now, contact):
+    try:
+        await runtime.d1_run(
+            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
+            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
+            "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            contact_id, org_bi, org_name, email_bi, account_bi, actor,
+            account_bi, actor, now, now, await runtime.seal(contact),
+        )
+    except Exception as error:
+        if "crm_contact_catalog_full" in str(error):
+            return False
+        raise
+    return True
+
+
 async def _create_contact(runtime, org_bi, org_name, account_bi, actor, data):
     contact = _flow_placement(_contact_data(data), await _org_flows(runtime, org_bi))
     if not contact.get("name") and not contact.get("email"):
@@ -2399,13 +2418,9 @@ async def _create_contact(runtime, org_bi, org_name, account_bi, actor, data):
         return _response(runtime, {"error": "contact_email_exists"}, 409)
     contact_id = runtime.new_id()
     now = runtime.now()
-    await runtime.d1_run(
-        "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-        "created_by_bi,created_by_name,updated_by_bi,updated_by_name,created_at,"
-        "updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        contact_id, org_bi, org_name, email_bi, account_bi, actor, account_bi,
-        actor, now, now, await runtime.seal(contact),
-    )
+    if not await _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
+                                 account_bi, actor, now, contact):
+        return _response(runtime, {"error": "crm_full"}, 409)
     await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
     await _record_contact_changes(runtime, org_bi, account_bi, actor,
                                   [(None, contact)])
@@ -4228,13 +4243,9 @@ async def _upsert_contact(runtime, org_bi, org_name, account_bi, actor, supplied
         )
         return "updated", ""
     contact_id = runtime.new_id()
-    await runtime.d1_run(
-        "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-        "created_by_bi,created_by_name,updated_by_bi,updated_by_name,created_at,"
-        "updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-        contact_id, org_bi, org_name, email_bi, account_bi, actor,
-        account_bi, actor, now, now, await runtime.seal(contact),
-    )
+    if not await _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
+                                 account_bi, actor, now, contact):
+        return "skipped", "crm_full"
     if handle:
         handles["index"][handle] = contact_id
     return "created", ""
@@ -4394,13 +4405,9 @@ async def _shared_contact_write(runtime, account_bi, actor, view_id, contact_id,
                 org_bi, email_bi):
             return _response(runtime, {"error": "contact_exists"}, 409)
         contact_id = runtime.new_id()
-        await runtime.d1_run(
-            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,created_at,"
-            "updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            contact_id, org_bi, org_name, email_bi, account_bi, actor, account_bi,
-            actor, now, now, await runtime.seal(contact),
-        )
+        if not await _insert_contact(runtime, contact_id, org_bi, org_name,
+                                     email_bi, account_bi, actor, now, contact):
+            return _response(runtime, {"error": "crm_full"}, 409)
         await runtime.audit(actor, "crm.shared.contact.create", "crm_contact",
                             contact_id, details={"view": view_id})
         await _record_contact_changes(runtime, org_bi, account_bi, actor,
@@ -4960,14 +4967,11 @@ async def _link_message(runtime, org_bi, org_name, account_bi, actor, data,
             **({"flow": flow_id, "stage": stage} if flow_id else {}),
         })
         contact_id = runtime.new_id()
-        await runtime.d1_run(
-            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
-            "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            contact_id, org_bi, org_name,
-            await _unique_email_bi(runtime, org_bi, counterpart), account_bi,
-            actor, account_bi, actor, now, now, await runtime.seal(contact),
-        )
+        if not await _insert_contact(
+                runtime, contact_id, org_bi, org_name,
+                await _unique_email_bi(runtime, org_bi, counterpart), account_bi,
+                actor, now, contact):
+            return ({"error": "crm_full"}, 409)
         await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
         row = await _contact_row(runtime, org_bi, contact_id)
         contact_created = True
@@ -7643,18 +7647,9 @@ async def record_lead(runtime, org_name, lead):
         return {"ok": True, "status": "exists", "contactId": prior["contact_id"]}
     contact_id = runtime.new_id()
     now = runtime.now()
-    try:
-        await runtime.d1_run(
-            "INSERT INTO crm_contacts(contact_id,org_bi,org_name,email_bi,"
-            "created_by_bi,created_by_name,updated_by_bi,updated_by_name,"
-            "created_at,updated_at,data) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            contact_id, org_bi, org_name, email_bi, "", actor, "", actor, now,
-            now, await runtime.seal(contact),
-        )
-    except Exception as error:
-        if "crm_contact_catalog_full" in str(error):
-            return {"ok": False, "status": "crm_full"}
-        raise
+    if not await _insert_contact(runtime, contact_id, org_bi, org_name, email_bi,
+                                 "", actor, now, contact):
+        return {"ok": False, "status": "crm_full"}
     await runtime.audit(actor, "crm.contact.create", "crm_contact", contact_id)
     await _record_contact_changes(runtime, org_bi, "", actor, [(None, contact)])
     return {"ok": True, "status": "created", "contactId": contact_id}

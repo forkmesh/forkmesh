@@ -768,6 +768,13 @@
 
   const ISSUE_PERSON_HANDLE_RE = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/;
 
+  function recordAuthorName(values) {
+    const name = String(values?.authorName || "").trim();
+    if (name) return name;
+    const claimed = String(values?.authorClaimedName || "").trim().toLowerCase();
+    return validNodeName(claimed) ? `${claimed} (unverified)` : "";
+  }
+
   function issuePersonHandle(name) {
     const text = String(name || "").trim().replace(/^@/, "");
     return ISSUE_PERSON_HANDLE_RE.test(text) && !text.includes("--") ? text.toLowerCase() : "";
@@ -1568,14 +1575,45 @@
     });
   }
 
+  // Dialogs no page shows on load are not in the page documents
+  // (dashboard_bundle.py DEFERRED_MARKUP): the first open adds their markup,
+  // then the caller finds and opens the dialog as before.
+  function ensureDeferredMarkup(name) {
+    const spec = deferredMarkup(name);
+    if (!spec || !document.body || document.querySelector(spec.marker)) return;
+    const template = document.createElement("template");
+    template.innerHTML = spec.html;
+    const added = [...template.content.children];
+    const anchor = spec.after ? document.querySelector(spec.after) : null;
+    if (anchor) anchor.after(template.content);
+    else document.body.append(template.content);
+    added.forEach((element) => applyPlatformName(element));
+    window.lucide?.createIcons();
+  }
+
   let instanceInfoRequest = null;
   let instanceGitNode = "";
+
+  // GET /api/instance is the same public document for every visitor. One
+  // request per page serves every reader: an instance page starts it from
+  // the first inline script (tools/apply_instance_brand.py), and
+  // instance-brand.js and genie-spider.js share the same window promise, so
+  // whichever asks first sends it and the rest wait on that answer.
+  function sharedInstanceDocument() {
+    let pending = window.__forkmeshInstanceInfo;
+    if (!pending || typeof pending.then !== "function") {
+      pending = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
+        .then((response) => (response.ok ? response.json() : null))
+        .catch(() => null);
+      window.__forkmeshInstanceInfo = pending;
+    }
+    return pending;
+  }
 
   function instanceInfo() {
     if (!dashboardOnInstance()) return Promise.resolve(null);
     if (!instanceInfoRequest) {
-      instanceInfoRequest = fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } })
-        .then((response) => (response.ok ? response.json() : null))
+      instanceInfoRequest = sharedInstanceDocument()
         .then((info) => {
           instanceGitNode = String(info?.gitNode || "").toLowerCase();
           return info;
@@ -1755,8 +1793,7 @@
   async function loadRepoAddresses() {
     if (REPO_CORE_HOSTS.includes(location.hostname.toLowerCase())) return null;
     try {
-      const response = await fetch("/api/instance", { credentials: "omit", headers: { accept: "application/json" } });
-      const data = response.ok ? await response.json() : null;
+      const data = await sharedInstanceDocument();
       if (data && typeof data === "object" && data.ok !== false) return applyRepoAddresses(data.repoAddresses || null);
     } catch (_) {}
     return repoAddresses();
@@ -1825,6 +1862,7 @@
   // Feature-tab route segments (mirrors 404.html's `featureTabs` list) - tells
   // a tab route (e.g. /owner/repo/issues) apart from a tree/blob code deep link.
   const REPO_TAB_ROUTES = ["branches", "commits", "insights", "sizemap", "releases", "issues", "projects", "pulls", "discussions", "mirrors", "actions", "security"];
+  const REPO_ROUTE_SEGMENTS = [...REPO_TAB_ROUTES, "pull", "agents", "settings", "tree", "blob", "compare"];
 
   // Owner/admin Agents and owner-only Settings are only recognized for an
   // account that can actually see them. A non-owner deep link falls through
@@ -1850,7 +1888,7 @@
     const owner = safeDecodeURIComponent(parts[0]);
     const name = safeDecodeURIComponent(parts[1]);
     const rest = parts.slice(2);
-    if (rest.length && ![...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0])) return value;
+    if (rest.length && !REPO_ROUTE_SEGMENTS.includes(rest[0])) return value;
     if (!repoShortName(owner, name)) return value;
     return [repoPathUrl({ owner, name }), ...rest].join("/") + tail.join("");
   }
@@ -1964,10 +2002,10 @@
     const short = prefixed ? null : repoShortRoute(first);
     if (short && parts.length && first.toLowerCase() === short.name.toLowerCase()) {
       const rest = parts.slice(1);
-      const routed = !rest.length || [...REPO_TAB_ROUTES, "agents", "settings", "tree", "blob", "compare"].includes(rest[0]);
-      return [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
+      const routed = !rest.length || REPO_ROUTE_SEGMENTS.includes(rest[0]);
+      parts = [encodeURIComponent(short.owner), encodeURIComponent(short.name), ...(routed ? rest : ["tree", ...rest])];
     }
-    return parts;
+    return parts[2] === "pull" ? [...parts.slice(0, 2), "pulls", ...parts.slice(3)] : parts;
   }
 
   function requestedRepoKey() {
@@ -1982,7 +2020,7 @@
   }
 
   // Pull-detail sections are addressable in their own right
-  // (/owner/repo/pulls/93/files) so a link to the Files changed review opens
+  // (/owner/repo/pull/93/files) so a link to the Files changed review opens
   // there for whoever it is sent to. Conversation is the default and stays on
   // the bare record URL.
   const REPO_RECORD_SECTIONS = [
@@ -2001,7 +2039,7 @@
   }
 
   function repoRecordUrl(repo, kind, number, section) {
-    const url = `${repoLinkUrl(repo)}/${kind}/${number}`;
+    const url = `${repoLinkUrl(repo)}/${kind === "pulls" ? "pull" : kind}/${number}`;
     // Only pulls have sections; an issue/discussion URL never grows a suffix.
     const suffix = kind === "pulls" ? normalizeRepoRecordSection(section) : "conversation";
     return suffix === "conversation" ? url : `${url}/${suffix}`;
@@ -2030,6 +2068,23 @@
     const head = spec.slice(separator + 3).trim();
     if (!base || !head || base.length > 250 || head.length > 250) return null;
     return { base, head };
+  }
+
+  function splitRepoCodeRef(kind, parts, refs) {
+    const names = new Set((refs || []).map((ref) => String(ref || "").trim()).filter(Boolean));
+    const segments = (parts || []).map((part) => String(part || "")).filter(Boolean);
+    const longest = segments.length - (kind === "blob" ? 1 : 0);
+    for (let size = longest; size > 0; size -= 1) {
+      const ref = segments.slice(0, size).join("/");
+      if (names.has(ref)) return { ref, path: segments.slice(size).join("/") };
+    }
+    return null;
+  }
+
+  function repoCompareRouteOptions(search) {
+    const params = new URLSearchParams(String(search || ""));
+    const title = String(params.get("title") || "").replace(/\s+/g, " ").trim().slice(0, 240);
+    return { expand: params.get("expand") === "1", title };
   }
 
   // Pushes a new history entry for real in-app navigations (opening a repo,
@@ -2101,6 +2156,19 @@
     return data && typeof data === "object" && data.ok !== false ? data : null;
   }
 
+  // One-shot: a JSON read the repository page started before this script ran
+  // (partials/repo-early-reads.html early.json), taken over by exact path. It
+  // was sent with the page's cookies and no bearer token, so it only stands in
+  // for a request that would carry the same identity.
+  async function takeEarlyJsonRead(path) {
+    const early = globalThis.__forkmeshEarly;
+    const pending = early?.json?.[path];
+    if (!pending) return null;
+    delete early.json[path];
+    const data = await pending;
+    return data && typeof data === "object" && data.ok !== false ? data : null;
+  }
+
   async function fetchJson(path, options = {}) {
     const fresh = options.fresh === true;
     const cacheBust = options.cacheBust !== false;
@@ -2142,6 +2210,9 @@
       // (partials/views/repo.html); take that answer over instead of asking
       // again.
       let data = anonymousPublicRead && !noStore ? await takeEarlyPublicRead() : null;
+      if (!data && !noStore && !anonymousPublicRead && (!token || token === "cookie")) {
+        data = await takeEarlyJsonRead(path);
+      }
       if (!data) for (let attempt = 0; ; attempt += 1) {
         const last = attempt >= FETCH_JSON_RETRY_DELAYS_MS.length;
         let response;

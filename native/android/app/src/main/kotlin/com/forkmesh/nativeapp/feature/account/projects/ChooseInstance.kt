@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.forkmesh.nativeapp.account.projects.ProbeResult
+import com.forkmesh.nativeapp.account.projects.ProbeStatus
 import com.forkmesh.nativeapp.account.projects.Project
 import com.forkmesh.nativeapp.core.Services
 import com.forkmesh.nativeapp.feature.account.AccountFilledButton
@@ -129,6 +130,7 @@ fun ChooseInstance(projects: ProjectsService, project: Project, onClose: () -> U
         scope.launch {
             val attached = projects.attachInstance(project.id, instance)
             if (attached != null) projects.adoptInstanceLogo(project.id, result?.logoUrl.orEmpty(), result?.branded == true)
+            if (attached == null) result = ProbeResult(ProbeStatus.duplicate, knownAs = projects.instanceOwner(instance))
             checking = false
             if (attached != null) onClose()
         }

@@ -819,6 +819,11 @@ def cores_hold(source: Path, pushed: str, cores: str) -> bool:
         source, ["merge-base", "--is-ancestor", pushed, cores]).returncode == 0
 
 
+def cores_lag(source: Path, pushed: str, outcome: dict) -> bool:
+    return outcome.get("reason") == "already contained" and not cores_hold(
+        source, pushed, outcome.get("cores", ""))
+
+
 def cores_ref_contained(source: Path, fetch_url: str, ref: str,
                         pushed: str = "") -> bool:
     local_ref = "refs/remotes/forkmesh-cores/" + ref[len("refs/heads/"):]
@@ -1040,11 +1045,13 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
                             paths.fanout_gateways, paths.identity_key)]
             for gateway in gateways:
                 if "refs/heads/main" in gateway.get("diverged", []):
+                    pushed = rev(paths.bare_mirror, "refs/heads/main")
                     outcome = absorb_cores(paths.source, gateway["url"])
+                    if cores_lag(paths.source, pushed, outcome):
+                        sleep(GATEWAY_RETRY_SECONDS)
+                        outcome = absorb_cores(paths.source, gateway["url"])
                     gateway["absorb"] = outcome
-                    if outcome.get("reason") == "already contained" and not cores_hold(
-                            paths.source, rev(paths.bare_mirror, "refs/heads/main"),
-                            outcome.get("cores", "")):
+                    if cores_lag(paths.source, pushed, outcome):
                         outcome.update(behind=True, reason="the cores are behind and "
                                        "refused main: %s" % refusal(gateway, "refs/heads/main"))
                     if outcome.get("reason") == "already contained":
@@ -1057,8 +1064,13 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
                             if item.get("ref") != "refs/heads/main"]
                 for ref in [ref for ref in gateway.get("diverged", [])
                             if ref != "refs/heads/main"]:
-                    if cores_ref_contained(paths.source, gateway["url"], ref,
-                                           rev(paths.bare_mirror, ref)):
+                    pushed = rev(paths.bare_mirror, ref)
+                    contained = cores_ref_contained(paths.source, gateway["url"], ref, pushed)
+                    if not contained:
+                        sleep(GATEWAY_RETRY_SECONDS)
+                        contained = cores_ref_contained(
+                            paths.source, gateway["url"], ref, pushed)
+                    if contained:
                         gateway["outrun"] = True
                         gateway.setdefault("outrunRefs", []).append(ref)
                         gateway["diverged"] = [
@@ -1124,13 +1136,24 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
     return exit_code
 
 
+def gateway_failure_cause(gateway: dict) -> str:
+    refused = [item for item in gateway.get("rejected", []) if not stale_branch(item)]
+    if not refused:
+        return gateway.get("error") or "gateway push failed"
+    absorb = (gateway.get("absorb") or {}).get("reason")
+    return "the cores refused %s%s" % (
+        ", ".join("%s (%s)" % (item["ref"], item.get("reason") or "no reason given")
+                  for item in refused),
+        "; %s" % absorb if absorb else "")
+
+
 def notify_publish_failure(paths, status, log=print, opener=None, clock=time.time):
     alert_path = paths.publisher_state / "publish-alert.json"
     if status.get("ok"):
         write_json(alert_path, {})
         return
     failed = [item for item in status.get("gateways", []) if not item.get("ok")]
-    cause = "; ".join(item.get("error") or "gateway push failed" for item in failed)
+    cause = "; ".join(gateway_failure_cause(item) for item in failed)
     cause = cause or status.get("sync", {}).get("error") or "mirror fan-out failed"
     fix = ("Allow local TCP to 127.0.0.1, ::1 or 127.0.0.2 in OpenSnitch or "
            "the local firewall; reinstall with python3 tools/source_publisher.py install. "

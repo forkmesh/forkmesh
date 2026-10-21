@@ -660,6 +660,33 @@ public final class ChatExtras {
         changed()
     }
 
+    public func resetForProjectSwitch() {
+        pendingEdits = [:]
+        pendingEditOrder = []
+        removedOrder = []
+        lastTypingSent = [:]
+        privateChannels = []
+        hiddenChannels = []
+        inviteNotice = nil
+        replies = [:]
+        replyRoot = [:]
+        rootChannel = [:]
+        reactionState = [:]
+        reactionOrder = [:]
+        stickerState = [:]
+        editedText = [:]
+        typingState = [:]
+        files = [:]
+        fileOrder = []
+        fileBytes = 0
+        hiddenMessageSet = []
+        removedSet = []
+        looks = [:]
+        lookEventLists = [:]
+        hiddenMessageOrder = []
+        revision &+= 1
+    }
+
     public func restoreChannels(privateChannels: [String], hiddenChannels: [String]) {
         self.hiddenChannels.formUnion(hiddenChannels)
         for channel in privateChannels where !self.hiddenChannels.contains(channel) {

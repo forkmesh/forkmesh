@@ -79,6 +79,9 @@ per-page colours:
 - The branch merge dialog uses `fm-dialog` inside the native `<dialog>`; the
   `fm-dialog` class sits on the inner form because its `display: flex` would
   otherwise override the closed dialog's `display: none`.
+- The issue and pull-request metadata pickers are non-modal popovers: opening
+  one moves focus to its first field, and closing it with Escape or Close
+  returns focus to the settings button that opened it.
 - Empty and error states are `fm-blankslate`: an empty or missing path, an
   unreachable tree, a file that will not load, empty issue and pull-request
   lists, discussions with no mirror, the Actions empty states and the
@@ -128,6 +131,11 @@ border, on every tab:
   every icon grey, so `setRepoStarButtonState` also sets the colour inline.
   Stars have no list (they are blind-indexed), so the button has no ▾.
 
+`renderRepoDetail` draws the Fork button in the Code toolbar too, so it
+declares its own `websiteForkAvailable`. Until 2026-10-21 only
+`renderRepoTitleRow` declared it, and every repository page stopped with a
+ReferenceError before its tabs loaded.
+
 Watch stays in the About rail. The forks menu is anchored to the actions
 container, which `ml-auto` keeps at the right edge even when it wraps under
 the name on a phone, so the menu always opens on screen. The server-rendered
@@ -149,6 +157,15 @@ title row above (see the section above). Watchers opens its popover to the
 right, Mirrors opens the Mirrors tab, Release opens Releases, and Size opens
 the Size map tab beside a tiny sunburst. Rows stay hidden until their data
 loads.
+
+Every `http(s)://` address in the description is a link (accent colour, new
+tab, `nofollow ugc`), found and trimmed the way the README renderer finds bare
+URLs (`MD_BARE_URL`, `mdTrimAutolink`, `mdLinkHtml`); the rest of the text
+stays escaped. A read-only mirror without its own description links the
+upstream path in "Read-only mirror of …" to the upstream URL. Long addresses
+wrap instead of widening the rail. The first render and a saved edit both go
+through `repoAboutDescriptionHtml` in `06-repo-content.js`; tests in
+`app/tests/test_dashboard_repo_mirror_label.py`.
 
 The rail has no banner or logo header: the user asked for the fediverse banner,
 repository logo, handle and follower avatars to be removed from it. The
@@ -208,6 +225,13 @@ fediverse posts sit at the bottom as collapsibles.
 
 These three tabs follow GitHub's layouts (October 2026, from the user's
 GitHub reference screenshots).
+
+The issue list's label filter lives in the address bar (`?label=…`), so a
+filtered list can be linked and survives a refresh. Only the list route is
+rewritten; an open issue keeps its own address. A label's swatch is its
+colour dot, except Hacktoberfest, which gets a small pumpkin that wiggles a
+few times when the list first paints (and stays still for viewers who ask for
+reduced motion).
 
 - **Issues and Pull requests lists** share one layout
   (`data-repo-collection-layout`). On wide screens the views sidebar sits
@@ -274,13 +298,47 @@ GitHub reference screenshots).
   roster. Editing a comment opens an inline editor in its card
   (`openIssueCommentEditor`, replacing the browser prompt, which could not
   offer suggestions); a quiet refresh waits while it is open.
+- **Development links** (October 2026; the user asked for GitHub's
+  Development section on both pages, with a picker and links made from
+  "fixes #71" style comments). There is no link event type: a new signed
+  event would need every client and the gateway to learn it. Links are read
+  from signed text instead, the way issue relationships are:
+  - A pull links issue #N when its title or body names `#N`, or when one of
+    its comments or commit messages says `close`, `fix` or `resolve` (any
+    tense) `#N`. Code spans and fenced blocks don't count.
+  - An issue's own description or comments link pull #N with
+    `Linked pull request #N`, `fixed by #N`, `resolved in PR #N` and similar
+    lines, and unlink it with `Unlinked pull request #N`. The last line about
+    a pull wins, so an unlink also hides a link that comes from the pull's
+    text. A plain `fixes #N` on an issue is not a link, because issues and
+    pulls are numbered separately and `#N` there means an issue.
+  - The settings button on Development (any signed-in visitor, since the
+    write is an ordinary comment) opens the sidebar picker. On an issue it
+    searches the pull list; on a pull it searches the open issues
+    (`loadRepoIssueRelationIndex`). Typing a number links one that isn't
+    listed. Closing the picker writes one signed issue comment with a
+    `Linked/Unlinked pull request #N` line per change. From a pull page that
+    comment goes on each issue, because an issue page reads only the pull
+    list, not pull comments. For the same reason a web pull comment that says
+    `fixes #N` also writes `Linked pull request #P` on issue #N
+    (`linkPullCommentIssues`). A comment made only of those lines shows on
+    the issue timeline as a "linked pull request #P" rail line.
+  - The issue page reads the pull list in the background
+    (`loadRepoDevelopmentPulls`, cached for a minute) when the Pull requests
+    tab hasn't loaded it. The rules are `pullOwnIssueNumbers`,
+    `issueDevelopmentPullStates`, `issueLinkedPullNumbers` and
+    `pullLinkedIssueNumbers` in `06-repo-content.js`, ported to
+    `development_pull_states` in `repo_ssr_issue.py` for the first view. The
+    desktop and phone apps don't show these links yet. Tests:
+    `app/tests/test_development_links_frontend.py` and
+    `app/browser_tests/tests/dashboard-development-links.spec.js`.
 - **Discussions** have a search box (`is:open category:…`), Sort by (latest
   activity, date created, oldest), Filter (open, closed, all) and New
   discussion, with Categories on the left and the list on the right. Each row
   shows the category's emoji, the title, who started it, when, and in which
   category. There are no vote or reply counts because the list reads only
-  `discussion.md`. New discussion explains that discussions are created from
-  the desktop app, since they are signed by the author's node.
+  `discussion.md`. New discussion (and the empty list's Start a discussion)
+  opens the web composer; see [web-discussions.md](web-discussions.md).
 
 ## Issue page first view
 
@@ -306,8 +364,8 @@ now draws the issue into the first HTML (`app/host/forkmesh_host/repo_ssr_issue.
   `app/tests/host/test_repo_ssr_issue.py` run the dashboard's own functions
   under node and compare the two renders (add any new helper the issue view
   calls to the test's `FUNCTIONS`/`CONSTANTS`).
-- **Viewer-dependent parts.** The comment box and the sub-issue Add button
-  depend on who is looking, so both the guest and the member variants are
+- **Viewer-dependent parts.** The comment box, the sub-issue Add button and
+  the Development settings button depend on who is looking, so both the guest and the member variants are
   drawn and the page's head script picks one before the first paint
   (`html[data-guest]`, `VIEWER_STYLE`). A member's comment-box avatar is
   drawn blank: the node does not know who is signed in.
@@ -364,6 +422,17 @@ reads on the near-black terminal) and faint scanlines.
   `?`. Trailing blanks only advance the pen, so they never paint over what lies
   past the text. `CARD_REVISION` is bumped when the card's look changes, so
   link-preview caches that key on the `og:image` URL fetch the new card.
+- **Address and logo.** The card names the repository by the address its
+  page has (`/<name>` on an instance with short addresses, not
+  `/<owner>/<name>`) and carries the owner-uploaded repository logo, else
+  the instance's PNG logo (the raster copy `tools/apply_instance_brand.py`
+  writes, since crawlers and the card renderer cannot draw SVG); only
+  forkmesh.com itself draws the ForkMesh mark. A repository whose only
+  artwork is a committed `logo.svg` shows its instance's logo. Only 8-bit,
+  non-interlaced PNGs of at most 512 x 512 pixels are read: decoding is pure
+  Python on the request's event loop, so a larger upload falls back rather
+  than block it for seconds, and the scaled result is remembered per logo.
+  `CARD_REVISION` went to 4 with this change.
 - **Font.** Text is Geist Mono (SIL OFL 1.1, licence in
   `desktop/resources/fonts/Geist-OFL.txt`). The Pyodide worker cannot
   rasterise a TrueType font, so `app/tools/embed_og_mono_font.py` (needs
@@ -449,3 +518,59 @@ than `src`, `alt`, `width`, `height` and `href`, event handlers, `style`,
 addresses, `<svg>`, `<iframe>`, `<source srcset>`. External images get
 `referrerpolicy="no-referrer"`; instance pages already allow `https:` images in
 their CSP `img-src`, and there is no image proxy.
+
+## Code addresses with a branch, tag or commit
+
+The app's own code addresses are `/<owner>/<repo>/blob/<path>` and
+`/<owner>/<repo>/tree/<path>` (or `/<repo>/...` at a short address) for the
+default branch, with `?ref=<ref>` added for any other ref. The address bar
+now carries that `?ref=` while a non-default branch is browsed, so a copied
+link reopens the same branch; Back and Forward restore the ref of the entry.
+
+Links copied from GitHub put the ref in the path instead:
+`/alice/tools/blob/main/README.md`, `/alice/tools/tree/feature/x/src`. They
+used to read `main/README.md` from the default branch and show "File
+unavailable". They now open the right file and settle on the app's address.
+
+How a path after `tree/` or `blob/` is read when the address has no `?ref=`:
+
+1. If a leading run of segments names a known branch, that is the ref and the
+   rest is the path. The longest match wins, so `feature/x` beats `feature`.
+   A `blob/` address keeps at least one segment for the file. The default
+   branch is matched from the catalog without a listing; other names need
+   the branch listing (`branches`), read once and cached.
+2. Otherwise it is a path on the default branch, exactly as before, so
+   `/blob/README.md` and `/tree/docs` behave as they always have.
+3. If that path does not exist and the first segment resolves as a ref on a
+   mirror (a tag such as `v1.0`, a full or short commit SHA, a branch the
+   listing missed), the rest is read at that ref.
+
+So a real folder named like a branch (`main/`) loses to the branch, just as
+it does on GitHub. A folder named like a tag or commit wins, because tags and
+commits are not listed and are only tried when the path is missing.
+
+Once resolved, the address is replaced (`history.replaceState`, no new
+history entry) with `/blob/<path>` for the default branch or
+`/blob/<path>?ref=<ref>` for any other ref.
+
+On a node that reads the repository locally (repo_fastpath), the host answers
+a plain GET of a GitHub-style address with a `308` to the same canonical
+address before the page loads (`app/host/forkmesh_host/repo_code_ref.py`). It
+reads the gateway's branch listing (cached 30 s, waited for at most 150 ms)
+and redirects only on a listed branch, so tags and commits are left to the
+page. A short address is redirected once the Worker's page names its owner.
+The redirect is `no-store` because branches come and go. A path that names no
+branch, or an address that already has a query, is served as before.
+A failed listing (a private or missing repository) is cached for the same
+30 s, so repeated GitHub-style hits on it do not each wait on the gateway.
+An address with a `.` or `..` segment (decoded, so `%2E%2E` and `a%2F..`
+count) is never redirected, so the `Location` header never carries a dot
+segment.
+
+One known cost: the app still writes its own default-branch addresses as
+`/tree/<path>`, so on a repository that also has a branch named like that
+path's first folder (a `docs` branch and a `docs/` folder), such a link opens
+the branch. A shared link that must survive this can carry `?ref=`.
+
+There is no `raw/<ref>/<path>` page route; raw bytes come from
+`/api/repo/<owner>/<repo>/raw?path=&ref=`.

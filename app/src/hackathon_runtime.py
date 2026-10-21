@@ -26,6 +26,7 @@ import json
 import re
 
 import hackathon as policy
+from hidden_unicode import clean_query as clean_hidden_query
 
 
 def _bind_runtime(runtime):
@@ -2288,8 +2289,8 @@ async def admin_page_handler(env, request):
             raw = await bounded_request_text(request, ADMIN_FORM_MAX_BYTES)
         except Exception:
             raw = ""
-        fields = {key: values[-1] for key, values in parse_qs(
-            str(raw or ""), keep_blank_values=True).items()}
+        fields = {key: values[-1] for key, values in clean_hidden_query(parse_qs(
+            str(raw or ""), keep_blank_values=True)).items()}
         slug = str(fields.get("slug") or "").strip().lower()
         form = str(fields.get("form") or "")
         notice_key = ""

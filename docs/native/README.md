@@ -91,7 +91,11 @@ Shortcuts (`.forkmesh/shortcuts/`):
   (session, node key, owner key, vault copy, local repositories, agent records,
   settings), usually attached to one ForkMesh instance whose origin is its id.
   The original project owns the unprefixed namespace; every other project uses
-  `p/<projectId>/`. A project made from a name alone has `hasInstance` false, a
+  `p/<projectId>/`. An instance belongs to one project (2026-10-21): adding or
+  attaching an instance another project already uses (compared by
+  `instanceId`, the instance's origin) opens that project or is
+  refused with "That instance already belongs to the project …", on iOS and
+  Android alike. A project made from a name alone has `hasInstance` false, a
   `local-<slug>-<random>` id and no server URL; it works on the device alone,
   and choosing an instance is offered, never required. A project row may name a
   `logo` file. The instance check also reads `GET /api/instance`: its `name`

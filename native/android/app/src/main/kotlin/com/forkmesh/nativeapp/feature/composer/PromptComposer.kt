@@ -2,6 +2,7 @@
 
 package com.forkmesh.nativeapp.feature.composer
 
+import com.forkmesh.nativeapp.ui.kit.FmSafeInput
 import com.forkmesh.nativeapp.ui.kit.fmGlass
 import com.forkmesh.nativeapp.ui.theme.FmType
 import android.graphics.Bitmap
@@ -23,7 +24,6 @@ import com.forkmesh.nativeapp.composer.PromptPaste
 import com.forkmesh.nativeapp.composer.PromptPasteRules
 import com.forkmesh.nativeapp.ui.SoundCue
 import com.forkmesh.nativeapp.ui.kit.FmSoundCues
-import com.forkmesh.nativeapp.ui.kit.FmUserActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.Image
@@ -608,7 +608,7 @@ fun PromptComposer(
                 CompositionLocalProvider(LocalTextToolbar provides pasteToolbar) {
                 BasicTextField(
                     value = field,
-                    onValueChange = FmUserActivity.typing { next ->
+                    onValueChange = FmSafeInput.typing { next ->
                         if (next.text.length <= maxLength) {
                             if (next.text.length != field.text.length && !dictation.listening) FmSoundCues.play(SoundCue.KEYSTROKE)
                             field = next

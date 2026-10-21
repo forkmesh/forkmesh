@@ -18,7 +18,6 @@ void MainWindow::handleLocalControlPullsRequest(int connectionId, int requestId,
     LocalControlServer *server = m_localControl;
     if (!server)
         return;
-    const LocalControlServer::Device device = server->deviceFor(connectionId);
     const QString owner = params.value(QStringLiteral("owner")).toString().trimmed();
     const QString name = params.value(QStringLiteral("name")).toString().trimmed();
     const QString action = params.value(QStringLiteral("action")).toString();
@@ -35,6 +34,30 @@ void MainWindow::handleLocalControlPullsRequest(int connectionId, int requestId,
         server->respondError(connectionId, requestId, QStringLiteral("unknown_repo"));
         return;
     }
+    const QString token = params.value(QStringLiteral("token")).toString();
+    whenPullOwnershipKnown(index, [this, connectionId, requestId, method, owner, name,
+                                   action, token] {
+        answerLocalControlPullsRequest(connectionId, requestId, method, owner, name,
+                                       action, token);
+    });
+}
+
+void MainWindow::answerLocalControlPullsRequest(int connectionId, int requestId,
+                                                const QString &method,
+                                                const QString &owner,
+                                                const QString &name,
+                                                const QString &action,
+                                                const QString &token)
+{
+    LocalControlServer *server = m_localControl;
+    if (!server)
+        return;
+    const int index = repoIndexFor(owner, name);
+    if (index < 0 || index >= m_repositories.size()) {
+        server->respondError(connectionId, requestId, QStringLiteral("unknown_repo"));
+        return;
+    }
+    const LocalControlServer::Device device = server->deviceFor(connectionId);
     const QString target = pullsctl::confirmationTarget(owner, name, action);
 
     if (method == QLatin1String("pulls.prepare")) {
@@ -43,10 +66,10 @@ void MainWindow::handleLocalControlPullsRequest(int connectionId, int requestId,
             server->respondError(connectionId, requestId, blocker);
             return;
         }
-        const QString token = m_pullsConfirmations.issue(
+        const QString issued = m_pullsConfirmations.issue(
             device.key, action, target, QDateTime::currentMSecsSinceEpoch());
         server->respond(connectionId, requestId,
-                        {{QStringLiteral("token"), token},
+                        {{QStringLiteral("token"), issued},
                          {QStringLiteral("action"), action},
                          {QStringLiteral("summary"),
                           pullsctl::actionSummary(owner, name, action)},
@@ -56,8 +79,7 @@ void MainWindow::handleLocalControlPullsRequest(int connectionId, int requestId,
     }
 
     const hostctl::ConfirmationStore::Result verdict = m_pullsConfirmations.consume(
-        params.value(QStringLiteral("token")).toString(), device.key, action, target,
-        QDateTime::currentMSecsSinceEpoch());
+        token, device.key, action, target, QDateTime::currentMSecsSinceEpoch());
     if (verdict != hostctl::ConfirmationStore::Result::Ok) {
         logSystem(QStringLiteral("Refused a pull request %1 on %2/%3 from %4: %5.")
                       .arg(action, owner, name, localControlDeviceLabel(connectionId),

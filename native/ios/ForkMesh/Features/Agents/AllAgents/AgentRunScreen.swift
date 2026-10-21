@@ -16,6 +16,7 @@ struct AgentRunScreen: View {
     @State private var follower = TranscriptFollower()
     @State private var blocks: [TranscriptBlock] = []
     @State private var pending = PendingPrompts()
+    @State private var sent = 0
     @State private var questions: [AgentQuestion] = []
     @State private var blockCache = TranscriptBlockCache()
     @State private var status = ""
@@ -88,36 +89,31 @@ struct AgentRunScreen: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
             }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    if !follower.attachments.isEmpty {
-                        AgentAttachmentStrip(refs: follower.attachments, loader: AgentAttachmentsSupport.loader(hub: center.hub))
-                            .padding(.horizontal, 12)
-                            .padding(.top, 12)
-                    }
-                    if !questions.isEmpty {
-                        AgentQuestionCards(questions: questions, busy: busy) { question, answer in
-                            Task { await self.answer(question, answer) }
-                        }
+            AgentPromptDeck(deck: PromptDeck(blocks: shownBlocks), accessibilityPrefix: "agent-run-prompt-deck")
+                .padding(.horizontal, 12)
+                .padding(.bottom, 4)
+            TranscriptFollowScroll(tail: [follower.next, shownBlocks.count], pin: sent, accessibilityPrefix: "agent-run-transcript") {
+                if !follower.attachments.isEmpty {
+                    AgentAttachmentStrip(refs: follower.attachments, loader: AgentAttachmentsSupport.loader(hub: center.hub))
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
-                    }
-                    if shownBlocks.isEmpty {
-                        Text("No transcript yet.")
-                            .fmText(.bodyMedium, color: fm.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                    } else {
-                        AgentTranscriptBlocksView(blocks: shownBlocks, repo: row.repoOwner.isEmpty || row.repoName.isEmpty ? nil : RepoRef(owner: row.repoOwner, name: row.repoName))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, FmSpace.x2)
-                    }
                 }
-                .onChange(of: follower.next) { _, _ in
-                    scrollToEnd(proxy)
+                if !questions.isEmpty {
+                    AgentQuestionCards(questions: questions, busy: busy) { question, answer in
+                        Task { await self.answer(question, answer) }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
                 }
-                .onChange(of: pending) { _, _ in
-                    scrollToEnd(proxy)
+                if shownBlocks.isEmpty {
+                    Text("No transcript yet.")
+                        .fmText(.bodyMedium, color: fm.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                } else {
+                    AgentTranscriptBlocksView(blocks: shownBlocks, repo: row.repoOwner.isEmpty || row.repoName.isEmpty ? nil : RepoRef(owner: row.repoOwner, name: row.repoName))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, FmSpace.x2)
                 }
             }
             if !error.isEmpty {
@@ -309,7 +305,6 @@ struct AgentRunScreen: View {
                 }
             }
             .buttonStyle(AgentRunActionButtonStyle())
-            .modifier(AgentRunActionsCap())
         } changes: {
             changesLink
         })
@@ -414,12 +409,6 @@ struct AgentRunScreen: View {
     private var followsCloudLive: Bool { isRunnerRun && active && !liveRefused }
 
     private var shownBlocks: [TranscriptBlock] { pending.isEmpty ? blocks : blocks + pending.blocks }
-
-    private func scrollToEnd(_ proxy: ScrollViewProxy) {
-        let last = shownBlocks.count - 1
-        if last < 0 { return }
-        DispatchQueue.main.async { proxy.scrollTo(last, anchor: .bottom) }
-    }
 
     @ViewBuilder private var changesLink: some View {
         if row.isDesktop, row.localId > 0, let client = AgentOpsFeature.client {
@@ -731,6 +720,7 @@ struct AgentRunScreen: View {
         let text = prompt
         let images = photos
         if text.dartTrimmed.isEmpty && images.isEmpty { return }
+        sent += 1
         prompt = ""
         photos = []
         notice = ""
@@ -808,8 +798,12 @@ private struct AgentRunActionChip: View {
 }
 
 private struct AgentRunActionsCap: ViewModifier {
-    static let maxWidth: CGFloat = 184
+    static let minRoom: CGFloat = 184
+    static let reserved: CGFloat = 144
+    let pageWidth: CGFloat
     @State private var width: CGFloat = 0
+
+    private var maxWidth: CGFloat { max(AgentRunActionsCap.minRoom, pageWidth - AgentRunActionsCap.reserved) }
 
     func body(content: Content) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -821,15 +815,23 @@ private struct AgentRunActionsCap: ViewModifier {
         }
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .defaultScrollAnchor(.trailing)
-        .frame(width: min(max(width, 1), AgentRunActionsCap.maxWidth), height: 44)
+        .frame(width: min(max(width, 1), maxWidth), height: 44)
     }
 }
 
 private struct AgentRunToolbar<Actions: View, Changes: View>: ViewModifier {
     @ViewBuilder let actions: () -> Actions
     @ViewBuilder let changes: () -> Changes
+    @State private var pageWidth: CGFloat = 0
 
     func body(content: Content) -> some View {
+        bar(content.onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { (next: CGFloat) in
+            pageWidth = next
+        })
+    }
+
+    @ViewBuilder
+    private func bar(_ content: some View) -> some View {
         #if compiler(>=6.2)
         if #available(iOS 26.0, *) {
             content.toolbar {
@@ -853,6 +855,7 @@ private struct AgentRunToolbar<Actions: View, Changes: View>: ViewModifier {
     private var actionsItem: some ToolbarContent {
         ToolbarItem(placement: .primaryAction) {
             actions()
+                .modifier(AgentRunActionsCap(pageWidth: pageWidth))
         }
     }
 

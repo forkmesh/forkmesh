@@ -5,6 +5,9 @@ Split out of entry.py so Cloudflare's startup-memory validation (error
 through a _LazyModule proxy on the first request that needs it.
 """
 
+from hidden_unicode import clean_query as clean_hidden_query
+
+
 
 async def _org_office_resync(env, request, org, response):
     if method_name(request) in ("GET", "HEAD", "OPTIONS"):
@@ -29,6 +32,7 @@ def _bind_runtime(runtime):
 REPO_HOST_READ_ACTIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "commit",
     "compare", "merge-preview", "branches", "search", "stats", "sizes",
+    "pulse",
 })
 SITE_DOCUMENT_PROXY_TIMEOUT_SECONDS = 8
 SITE_DOCUMENT_PROXY_MAX_BYTES = 1024 * 1024
@@ -1297,7 +1301,7 @@ class Default:
                 account_cookie_name)
         if method_name(request) == "POST":
             try:
-                form = parse_qs(await request.text(), keep_blank_values=True)
+                form = clean_hidden_query(parse_qs(await request.text(), keep_blank_values=True))
             except Exception:
                 form = {}
             if not _admin_csrf_ok(self.env, form):
@@ -1874,6 +1878,74 @@ class Default:
             headers={"content-type": "text/html; charset=utf-8",
                      "cache-control": "public, max-age=60"}))
 
+    async def _instance_world_public(self):
+        if not instance_branded(self.env):
+            return None
+        try:
+            row = await d1_first(
+                self.env, "SELECT doc FROM instance_settings WHERE k=?",
+                instance_world.SETTING_KEY)
+        except Exception:
+            row = None
+        return instance_world.public(
+            instance_world.parse((row or {}).get("doc") or ""),
+            getattr(self.env, "INSTANCE_LOGO", "") or "")
+
+    async def _instance_world_saved(self):
+        try:
+            row = await d1_first(
+                self.env, "SELECT 1 AS saved FROM instance_settings WHERE k=?",
+                instance_world.SETTING_KEY)
+        except Exception:
+            row = None
+        return bool(row)
+
+    async def _instance_world_scene(self, request, url):
+        origin = str(getattr(self.env, "PUBLIC_BASE_URL", "") or "").strip() \
+            .rstrip("/")
+        if not origin:
+            return json_response({"error": "not_found"}, status=404)
+        if not await self._instance_world_saved():
+            return None
+        cache_key = origin + instance_world_scene.PATH
+        headers = {
+            "access-control-allow-origin": "*",
+            "x-content-type-options": "nosniff",
+        }
+        cached = await edge_cache_match(cache_key)
+        if cached is not None:
+            return self._without_head_body(request, cached)
+        world = await self._instance_world_public() or {}
+        theme = await self._instance_theme()
+        accent = str(((theme or {}).get("dark") or {}).get("primary") or "")
+        listing = None
+        bugs = world.get("bugs") if isinstance(world.get("bugs"), dict) \
+            else None
+        if bugs:
+            try:
+                resp = await js_fetch_with_timeout(
+                    instance_world_scene.raw_url(origin, bugs, bugs["path"]),
+                    {"method": "GET",
+                     "headers": {"accept": "application/json"},
+                     "redirect": "error"},
+                    6)
+                if int(getattr(resp, "status", 0)) == 200:
+                    listing = json.loads(str(await resp.text())[:262144])
+            except Exception:
+                listing = None
+        scene = instance_world_scene.build(
+            instance_name(self.env), world, origin, accent, listing)
+        response = json_response(
+            scene, cache_seconds=instance_world_scene.CACHE_SECONDS,
+            extra_headers=headers)
+        if listing is not None or not bugs:
+            await edge_cache_put(cache_key, response)
+        else:
+            await edge_cache_put(cache_key, json_response(
+                scene, cache_seconds=instance_world_scene.FAILED_CACHE_SECONDS,
+                extra_headers=headers))
+        return self._without_head_body(request, response)
+
     async def _instance_theme(self):
         if not instance_branded(self.env):
             return {}
@@ -1893,10 +1965,9 @@ class Default:
                                  cache_control="no-store")
         if not isinstance(data, dict):
             data = {}
-        token, cookie_auth = _request_account_session_token(request, data)
-        if cookie_auth and not _request_origin_allowed(self.env, request):
-            token = ""
-        actor = await _account_session_token_name(self.env, token)
+        account_bi, rec = await _account_session_record(
+            self.env, request, data)
+        actor = str((rec or {}).get("name") or "").strip().lower()
         if not actor or not await _is_admin(self.env, actor):
             return json_response({"error": "not_admin"}, status=403,
                                  cache_control="no-store")
@@ -1907,12 +1978,35 @@ class Default:
             return json_response(
                 {"error": "invalid_theme", "detail": str(error)},
                 status=400, cache_control="no-store")
+        if not rec.get("pass_hash"):
+            return json_response({"error": "password_not_set"}, status=403,
+                                 cache_control="no-store")
+        attempt_key = await blind_index(
+            self.env, "instance-theme-v1\n" + str(account_bi or ""))
+        locked_until = await _login_locked_until(self.env, attempt_key)
+        if locked_until:
+            retry_ms = max(1000, locked_until - int(Date.now()))
+            return json_response(
+                {"error": "too_many_attempts", "retryAfterMs": retry_ms},
+                status=429, cache_control="no-store")
+        password = str(data.get("password") or "")[:256]
+        if not password or not await verify_password(
+                password, rec.get("pass_salt", ""), rec.get("pass_hash", "")):
+            await _audit_sensitive_action(
+                self.env, actor, "instance.theme", "instance", "theme",
+                "denied", {"reason": "invalid_credentials"})
+            return await _login_failure_response(
+                self.env, [attempt_key], "invalid_credentials")
+        await _login_clear(self.env, attempt_key)
         await d1_run(
             self.env,
             "INSERT INTO instance_settings (k, doc, updated_at) "
             "VALUES ('theme', ?, ?) ON CONFLICT(k) DO UPDATE SET "
             "doc=excluded.doc, updated_at=excluded.updated_at",
             doc, int(Date.now()))
+        await _audit_sensitive_action(
+            self.env, actor, "instance.theme", "instance", "theme", "success",
+            {"preset": theme.get("preset") or ""})
         return json_response({"ok": True, "theme": theme},
                              cache_control="no-store")
 
@@ -1941,19 +2035,36 @@ class Default:
                 "plugins": instance_features.describe(self.env),
                 "offsiteHosts": list(instance_features.OFFSITE_HOSTS),
                 "theme": await self._instance_theme(),
+                "themes": instance_theme.catalogue(),
                 "legal": instance_legal.links(
                     await self._instance_legal_setting(),
                     instance_branded(self.env)),
                 "repoAddresses": await self._repo_addresses_doc(),
                 "directory": await self._instance_directory_links(),
+                "world": await self._instance_world_public(),
             }, cache_control="public, max-age=60")
+        if instance_branded(self.env) and url.path.rstrip("/") == \
+                "/api/world/neighbour-scene" and \
+                method_name(request) in ("GET", "HEAD"):
+            scene = await self._instance_world_scene(request, url)
+            if scene is not None:
+                return scene
         if url.path == "/api/instance/theme" and instance_branded(self.env) \
                 and method_name(request) in ("PUT", "POST"):
             return await self._instance_theme_write(request)
         if url.path == "/instance-theme.css" and instance_branded(self.env) \
                 and method_name(request) in ("GET", "HEAD"):
+            preview = (parse_qs(urlparse(request.url).query).get("preset")
+                       or [""])[0]
+            sheet = instance_theme.preview_css(preview) if preview else None
+            if preview and sheet is None:
+                return Response("", status=404, headers={
+                    "content-type": "text/css; charset=utf-8",
+                    "cache-control": "no-store"})
+            if sheet is None:
+                sheet = instance_theme.css(await self._instance_theme())
             return self._without_head_body(request, Response(
-                instance_theme.css(await self._instance_theme()), status=200,
+                sheet + instance_features.chrome_css(self.env), status=200,
                 headers={"content-type": "text/css; charset=utf-8",
                          "cache-control": "public, max-age=60"}))
         if instance_branded(self.env) and \
@@ -2022,6 +2133,16 @@ class Default:
                 security_advisories._bind_runtime(globals())
                 return await security_advisories.repo_route(
                     self.env, request, owner, repo)
+            if action == "project-edit":
+                import repository_projects
+                repository_projects._bind_runtime(globals())
+                return await repository_projects.route(
+                    self.env, request, owner, repo, action)
+            if action == "release-edit":
+                import repository_releases
+                repository_releases._bind_runtime(globals())
+                return await repository_releases.route(
+                    self.env, request, owner, repo, action)
             if action == "file-edit":
                 import repository_file_edits
                 repository_file_edits._bind_runtime(globals())
@@ -2982,6 +3103,9 @@ class Default:
         if url.path in ("/api/notifications", "/api/notifications/"):
             return await notifications_handler(self.env, request)
 
+        if url.path in ("/api/me/recent-pushes", "/api/me/recent-pushes/"):
+            return await recent_pushes_handler(self.env, request)
+
         # A countdown or alarm ran out on the desktop's clock; the ping it
         # raises is what reaches the phone over APNs.
         if url.path in ("/api/notifications/timer",
@@ -3049,6 +3173,10 @@ class Default:
         if url.path in ("/api/chat/activity", "/api/chat/activity/"):
             return await chat_activity_handler(self.env, request)
 
+        if url.path in ("/api/chat/member-stats", "/api/chat/member-stats/"):
+            return await _chat_member_stats.member_stats_route(
+                self.env, request)
+
         # Public AI-agent guestbook. The self-describing GET advertises one
         # narrow query-string GET capability; accepted notes become ordinary
         # encrypted messages in public World #general, never arbitrary room
@@ -3091,6 +3219,9 @@ class Default:
         if chat_direct_media_api.matches(url.path):
             return await chat_direct_media_api.handle(
                 _ChatDirectMessagesRuntime(self.env, request), url.path)
+        if repo_media_api.matches(url.path):
+            return await repo_media_api.handle(
+                _RepoMediaRuntime(self.env, request), url.path)
         if (
             CHAT_DIRECT_MESSAGES_RE.match(url.path)
             or CHAT_DIRECT_MESSAGE_USERS_RE.match(url.path)
@@ -3471,9 +3602,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await issues_handler(self.env, request, owner, repo)
 
@@ -3579,9 +3709,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await pulls_handler(self.env, request, owner, repo)
 
@@ -3592,9 +3721,8 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             if (await _repo_is_private(self.env, owner, repo)
-                    and not (method_name(request) in ("GET", "DELETE")
-                             and await _authorize_owner(
-                                 self.env, request, owner))):
+                    and not await _private_collaboration_allowed(
+                        self.env, request, owner, repo)):
                 return json_response({"error": "not_found"}, status=404)
             return await discussions_handler(self.env, request, owner, repo)
 
@@ -3693,6 +3821,15 @@ class Default:
             if not owner or not repo:
                 return json_response({"error": "not_found"}, status=404)
             return await repo_star_handler(self.env, request, owner, repo)
+
+        reactions_match = REPO_REACTIONS_RE.match(url.path)
+        if reactions_match:
+            owner = safe_segment(reactions_match.group(1))
+            repo = safe_segment(reactions_match.group(2))
+            if not owner or not repo:
+                return json_response({"error": "not_found"}, status=404)
+            return await comment_reactions_handler(
+                self.env, request, owner, repo)
 
         forks_match = REPO_FORKS_RE.match(url.path)
         if forks_match:
@@ -4801,15 +4938,18 @@ class Default:
                 "<meta property=\"og:image\" content=\"%s\">"
                 "<meta property=\"og:image:width\" content=\"%d\">"
                 "<meta property=\"og:image:height\" content=\"%d\">"
+                "<meta property=\"og:image:type\" content=\"image/png\">"
+                "<meta property=\"og:image:alt\" content=\"%s\">"
                 "<meta name=\"twitter:card\" content=\"summary_large_image\">"
                 "<meta name=\"twitter:title\" content=\"%s\">"
                 "<meta name=\"twitter:description\" content=\"%s\">"
                 "<meta name=\"twitter:image\" content=\"%s\">"
+                "<meta name=\"twitter:image:alt\" content=\"%s\">"
                 % (canonical, fedi_profile,
                    fediverse_origin, quote(owner), quote(repo),
                    site_name, canonical, title, _html_escape(og_description), og_image,
-                   og_card.CARD_W, og_card.CARD_H,
-                   title, _html_escape(og_description), og_image))
+                   og_card.CARD_W, og_card.CARD_H, title,
+                   title, _html_escape(og_description), og_image, title))
             body = body.replace("</head>", tags + "</head>", 1)
         if short_name and owner and "</head>" in body:
             short_metas = (
