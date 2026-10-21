@@ -43,7 +43,7 @@ func TestThePersistentHomeKeepsOnlyCredentialsAndIsLockedBetweenSessions(t *test
 		return nil
 	})
 	want := []string{".claude", filepath.Join(".claude", ".credentials.json"),
-		".codex", filepath.Join(".codex", "auth.json")}
+		".claude.json", ".codex", filepath.Join(".codex", "auth.json")}
 	if len(names) != len(want) {
 		t.Fatalf("home holds %v, want %v", names, want)
 	}
@@ -54,6 +54,9 @@ func TestThePersistentHomeKeepsOnlyCredentialsAndIsLockedBetweenSessions(t *test
 	}
 	if data, err := os.ReadFile(filepath.Join(outside, "keep.txt")); err != nil || string(data) != "outside" {
 		t.Fatal("a symlink in the home was followed")
+	}
+	if data, err := os.ReadFile(filepath.Join(home, ".claude.json")); err != nil || string(data) != "{}" {
+		t.Fatalf("the Claude config kept %q, %v", data, err)
 	}
 	if info, err := os.Stat(home); err != nil || info.Mode().Perm() != 0o700 {
 		t.Fatalf("the locked home is %v, %v", info.Mode(), err)
@@ -66,7 +69,8 @@ func TestThePersistentHomeKeepsOnlyCredentialsAndIsLockedBetweenSessions(t *test
 	if err := box.openPersistentHome(); err != nil {
 		t.Fatal(err)
 	}
-	writeTestFile(t, filepath.Join(home, ".claude.json"), `{"oauthAccount":{}}`)
+	writeTestFile(t, filepath.Join(home, ".claude.json"),
+		`{"oauthAccount":{"emailAddress":"a@example.test"},"hasCompletedOnboarding":true,"mcpServers":{"x":{}},"projects":{}}`)
 	box.closePersistentHome()
 	if box.homeGate.open != 1 {
 		t.Fatalf("open sessions = %d", box.homeGate.open)
@@ -86,10 +90,33 @@ func TestThePersistentHomeKeepsOnlyCredentialsAndIsLockedBetweenSessions(t *test
 	if err := box.openPersistentHome(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".claude.json")); !os.IsNotExist(err) {
-		t.Fatal("a new session did not start from a scrubbed home")
+	data, err := os.ReadFile(filepath.Join(home, ".claude.json"))
+	if err != nil || string(data) != `{"hasCompletedOnboarding":true,"oauthAccount":{"emailAddress":"a@example.test"}}` {
+		t.Fatalf("a new session did not start from a scrubbed Claude config: %q, %v", data, err)
 	}
 	box.closePersistentHome()
+}
+
+func TestAnUnparsableClaudeConfigIsRemoved(t *testing.T) {
+	home := t.TempDir()
+	writeTestFile(t, filepath.Join(home, ".claude.json"), "not json")
+	if err := scrubPersistentHome(home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(filepath.Join(home, ".claude.json")); !os.IsNotExist(err) {
+		t.Fatal("an unparsable Claude config survived the scrub")
+	}
+}
+
+func TestOnlyARunnerJobAccountHasItsHomeGated(t *testing.T) {
+	if !isRunnerJobAccount("ForkMesh runner jobs for alice") {
+		t.Fatal("the installer's job account was not recognised")
+	}
+	for _, comment := range []string{"", "Ubuntu", "alice", "runner jobs"} {
+		if isRunnerJobAccount(comment) {
+			t.Fatalf("%q was taken for a runner job account", comment)
+		}
+	}
 }
 
 func TestAHomeWithoutAGateIsLeftAlone(t *testing.T) {

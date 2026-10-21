@@ -227,6 +227,8 @@ func (b jobSandbox) pruneSessionHomes(homes, keep string) {
 // session first scrubs it down to the credential files, then hands it to
 // the job user until the last such session ends.
 
+const runnerJobAccountComment = "ForkMesh runner jobs"
+
 type persistentHomeGate struct {
 	mu   sync.Mutex
 	open int
@@ -272,11 +274,73 @@ func scrubPersistentHome(home string) error {
 			}
 			continue
 		}
+		if err == nil && entry.Name() == claudeConfigFile && info.Mode().IsRegular() &&
+			trimClaudeConfig(path, info) == nil {
+			continue
+		}
 		if err := removeTreeUnder(home, path); err != nil {
 			failed = err
 		}
 	}
 	return failed
+}
+
+const claudeConfigFile = ".claude.json"
+
+var claudeConfigKeys = []string{"oauthAccount", "userID", "hasCompletedOnboarding", "lastOnboardingVersion"}
+
+func trimClaudeConfig(path string, info os.FileInfo) error {
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || info.Size() > runnerClaudeConfigLimit {
+		return errors.New("not a trimmable config")
+	}
+	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW, 0)
+	if err != nil {
+		return err
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, runnerClaudeConfigLimit+1))
+	file.Close()
+	if err != nil {
+		return err
+	}
+	var config map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &config); err != nil {
+		return err
+	}
+	kept := map[string]json.RawMessage{}
+	for _, key := range claudeConfigKeys {
+		if value, ok := config[key]; ok {
+			kept[key] = value
+		}
+	}
+	out, err := json.Marshal(kept)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".trim"
+	_ = os.Remove(tmp)
+	next, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := next.Write(out); err != nil {
+		next.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := next.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Lchown(tmp, int(stat.Uid), int(stat.Gid)); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
+}
+
+func isRunnerJobAccount(comment string) bool {
+	return strings.HasPrefix(comment, runnerJobAccountComment)
 }
 
 func (b jobSandbox) setPersistentHomeOwner(uid, gid int) error {
