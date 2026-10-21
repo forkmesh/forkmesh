@@ -31,6 +31,8 @@ FANOUT_UNIT = "forkmesh-mirror-fanout.service"
 BRANCH_DELETE_UNIT = "forkmesh-mirror-branch-deletes.service"
 SYNC_REFSPECS = ("refs/heads/*:refs/heads/*", "refs/tags/*:refs/tags/*")
 GATEWAY_REFSPECS = ("refs/heads/*:refs/heads/*", "refs/tags/*:refs/tags/*")
+GITHUB_REFSPECS = ("refs/heads/main:refs/heads/main", "refs/tags/*:refs/tags/*")
+GITHUB_HOST = "github.com"
 PROTECTED_REFS = ("refs/heads/main", "refs/heads/forkmesh/pulls")
 PUSH_SIGNATURE_PREFIX = "forkmesh-git-push-v1"
 TAG_MOVE_PREFIX = "forkmesh-tag-move-v1"
@@ -798,6 +800,57 @@ def push_gateway(bare: Path, gateway: dict, run=subprocess.run, opener=None,
     return result
 
 
+def read_github_mirrors(path: Path) -> list[dict]:
+    mirrors = []
+    try:
+        text = path.read_text("utf-8")
+    except OSError:
+        return mirrors
+    for raw in text.splitlines():
+        fields = raw.split()
+        if len(fields) < 2 or fields[0].startswith("#"):
+            continue
+        parsed = urlsplit(fields[1])
+        if parsed.scheme != "https" or parsed.hostname != GITHUB_HOST:
+            continue
+        key = (Path(os.path.expanduser(fields[2])) if len(fields) > 2
+               else path.parent / "github-token")
+        mirrors.append({"name": fields[0], "url": fields[1], "key": key})
+    return mirrors
+
+
+def push_github(bare: Path, mirror: dict, run=subprocess.run) -> dict:
+    result = {"name": mirror["name"], "url": mirror["url"], "ok": False,
+              "updated": [], "rejected": [], "error": ""}
+    try:
+        token = mirror["key"].read_text("utf-8").strip()
+    except OSError as error:
+        result["error"] = "token: %s" % error
+        return result
+    if not token or any(char.isspace() for char in token):
+        result["error"] = "token: %s is empty or malformed" % mirror["key"]
+        return result
+    credential = base64.b64encode(("x-access-token:" + token).encode()).decode()
+    env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="true",
+               GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="http.extraHeader",
+               GIT_CONFIG_VALUE_0="Authorization: Basic " + credential)
+    command = ["git", "--git-dir", str(bare), "-c", "credential.helper=",
+               "push", "--porcelain", mirror["url"], *GITHUB_REFSPECS]
+    try:
+        completed = run(command, capture_output=True, text=True, env=env,
+                        timeout=GATEWAY_TIMEOUT_SECONDS, check=False)
+    except subprocess.TimeoutExpired:
+        result["error"] = "push timed out after %ds" % GATEWAY_TIMEOUT_SECONDS
+        return result
+    parsed = parse_push_porcelain(completed.stdout)
+    ok = completed.returncode == 0 and not parsed["rejected"] and not parsed["other"]
+    result.update({
+        "ok": ok, "updated": parsed["updated"], "rejected": parsed["rejected"],
+        "error": "" if ok else (completed.stderr or "").replace(token, "***").strip()[-600:],
+    })
+    return result
+
+
 def _checkout_git(source, args, timeout=900):
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0", GIT_ASKPASS="true")
     return git(args, cwd=source, env=env, timeout=timeout)
@@ -1032,7 +1085,8 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
             if attempt > 0 and digest == status.get("digest"):
                 break
             if attempt == 0 and if_changed and digest == status.get("digest") \
-                    and status.get("ok"):
+                    and status.get("ok") \
+                    and all(item.get("ok") for item in status.get("github") or []):
                 log("up to date: %s" % digest[:12])
                 break
             wait = MIN_PASS_SPACING_SECONDS - (clock() - float(status.get("startedAt", 0)))
@@ -1121,12 +1175,21 @@ def publish(paths, if_changed=False, run=subprocess.run, sleep=time.sleep,
                     log("gateway %s DIVERGED: %s rejected as non-fast-forward; the "
                         "cores hold commits the source lacks" % (
                             gateway["name"], ", ".join(gateway["diverged"])))
+            github = [push_github(paths.bare_mirror, mirror, run=run)
+                      for mirror in read_github_mirrors(paths.fanout_github)]
+            for mirror in github:
+                log("github %s: %s, %d ref(s) updated, %d rejected%s" % (
+                    mirror["name"], "ok" if mirror["ok"] else "FAILED",
+                    len(mirror["updated"]), len(mirror["rejected"]),
+                    (" (" + mirror["error"].splitlines()[-1] + ")")
+                    if mirror["error"] else ""))
             ok = (fanout["ok"] and all(gateway["ok"] for gateway in gateways)
                   and (synced["ok"] or bool(synced["rejected"])))
             status = {
                 "digest": digest, "ok": ok, "startedAt": started,
                 "finishedAt": clock(), "sourceMain": rev(paths.bare_mirror, "refs/heads/main"),
                 "sync": synced, "fanout": fanout, "gateways": gateways,
+                "github": github,
                 "flagshipActive": unit_state(SOURCE_UNIT, run=run) not in INACTIVE_STATES,
             }
             write_json(status_path, status)
@@ -1309,6 +1372,9 @@ def status_report(paths, run=subprocess.run) -> dict:
         "gateways": [{"name": item.get("name"), "ok": item.get("ok"),
                       "diverged": item.get("diverged")}
                      for item in last.get("gateways") or []],
+        "github": [{"name": item.get("name"), "ok": item.get("ok"),
+                    "rejected": [entry.get("ref") for entry in item.get("rejected") or []]}
+                   for item in last.get("github") or []],
         "fanout": read_json(paths.home_root("state") / "fanout" / "status.json"),
         "flagship": unit_state(SOURCE_UNIT, run=run),
         "hold": active_hold(paths.publisher_state / "source-hold.json"),

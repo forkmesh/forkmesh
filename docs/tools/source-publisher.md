@@ -34,6 +34,7 @@ publish, holding state/publisher/publish.lock:
   1. sync: fast-forward-only fetch checkout → data/mirrors/forkmesh-forkmesh.git
   2. SSH fan-out to config/fanout/hosts (no targets on the served stack)
   3. each line of config/fanout/gateways: signed HTTPS push through the app
+  3b. each line of config/fanout/github: main and tags to the GitHub mirror
   4. state/publisher/status.json; repeat (up to 3 passes) if the checkout moved meanwhile
 then, with publish.lock released:
   5. systemctl --user start --no-block forkmesh-mirror-branch-deletes.service
@@ -134,6 +135,31 @@ and wakes the other cores.
   Those were mostly the cores' `receive.denyCurrentBranch` warning, cut off
   mid-word. Stale branches left at the cores' value are not counted as
   causes.
+
+## GitHub mirror
+
+`github.com/forkmesh/forkmesh` is a public, read-only copy of the flagship:
+every pass pushes `main` and the tags from the bare mirror to each line of
+`config/fanout/github` (`<name> https://github.com/<owner>/<repo>.git
+[token-file]`). The token file defaults to `config/fanout/github-token` (one
+GitHub token with `repo` scope, mode 600). The token goes to git through
+`GIT_CONFIG_VALUE_0`, never the command line, and is masked in errors.
+
+- Only `main` and tags go to GitHub. Agent and feature branches stay local
+  and on the forge.
+- The push is fast-forward only. A GitHub `main` with commits ours lacks (a
+  pull request merged on GitHub) is reported as `github <name>: FAILED, …
+  rejected` and left as is; take the change into the checkout instead.
+- A failed GitHub push does not fail the pass or send the publishing Ping, but
+  `--if-changed` passes keep retrying until it succeeds. `status` lists each
+  mirror's result under `github`.
+- Contributions land on the forge, not GitHub. Pull requests opened on GitHub
+  are reviewed and reapplied by hand.
+- On 2026-10-21 GitHub `main` (`eb1db58be1`, history from before the
+  2026-10-08 rewrite) was replaced by ours with a one-time force push. The
+  old commits stay reachable through GitHub's `refs/pull/1-3`; only deleting
+  the repository or GitHub support removes them. A bundle of the old `main`
+  is kept in `~/projects/forkmesh-owasp-backup-2026-10-08/`.
 
 ## Merges made on the cores
 
