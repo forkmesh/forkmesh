@@ -179,7 +179,8 @@ if [ "$PRINT_CONFIG" = 1 ]; then
     echo "# $ETC/$name"
     cat "$preview/$name"
   done
-  rm -rf "$preview"
+  rm -f "$preview/ssh-gateway.json" "$preview/ssh-authorization-broker.json"
+  rmdir "$preview"
   exit 0
 fi
 
