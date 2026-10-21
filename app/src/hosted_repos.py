@@ -25,6 +25,7 @@ drive it with fakes.
 """
 
 import hashlib
+import ipaddress
 import json
 import re
 import time
@@ -374,7 +375,7 @@ async def count_for_creator(runtime, creator_bi, forks=False):
             record = await runtime.open(row.get("data"))
         except Exception:
             record = None
-        if bool(fork_of(record)) == bool(forks):
+        if bool(fork_parent_key(record)) == bool(forks):
             count += 1
     return count
 
@@ -445,6 +446,66 @@ def fork_of(record):
             or parent == str(record.get("id") or "")):
         return None
     return parent, network
+
+
+UPSTREAM_NETWORK_DOMAIN = "forkmesh-fork-network-v1\n"
+OWNER_RE = re.compile(r"^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+def fork_clone_url(value):
+    raw = str(value or "").strip()
+    if not raw or len(raw) > 500:
+        return ""
+    parsed = urlparse(raw)
+    try:
+        parsed.port
+    except ValueError:
+        return ""
+    host = (parsed.hostname or "").lower()
+    path = parsed.path or ""
+    try:
+        ipaddress.ip_address(host)
+        return ""
+    except ValueError:
+        pass
+    if (parsed.scheme != "https" or not host or "@" in parsed.netloc
+            or host == "localhost" or host.endswith(".localhost")
+            or parsed.query or parsed.fragment or "?" in raw or "#" in raw
+            or not re.fullmatch(r"(/[A-Za-z0-9._~-]+){1,8}/?", path)
+            or any(part in (".", "..") for part in path.split("/"))):
+        return ""
+    return "https://" + parsed.netloc.lower() + path.rstrip("/")
+
+
+def upstream_network(owner, name):
+    digest = hashlib.sha256((
+        UPSTREAM_NETWORK_DOMAIN + str(owner or "").lower() + "/"
+        + str(name or "").lower()).encode()).hexdigest()
+    return "hr" + digest[:24]
+
+
+def fork_upstream(record):
+    fork = record.get("fork") if isinstance(record, dict) else None
+    upstream = fork.get("upstream") if isinstance(fork, dict) else None
+    if not isinstance(upstream, dict):
+        return None
+    owner = str(upstream.get("owner") or "").lower()
+    name = str(upstream.get("name") or "")
+    clone_url = fork_clone_url(upstream.get("cloneUrl"))
+    if not OWNER_RE.fullmatch(owner) or not valid_name(name) or not clone_url:
+        return None
+    return ({"owner": owner, "name": name, "cloneUrl": clone_url},
+            upstream_network(owner, name))
+
+
+def fork_parent_key(record):
+    fork = fork_of(record)
+    if fork:
+        return fork[0]
+    upstream = fork_upstream(record)
+    if upstream:
+        return (upstream[0]["owner"] + "/" + upstream[0]["name"]).lower()
+    return ""
 
 
 async def rows_for_creator(runtime, creator_bi):
@@ -586,6 +647,7 @@ async def replicas(runtime, raw):
                   and row.get("visibility") != "private"}
     repositories = []
     removed = []
+    upstream_urls = {}
     for row in rows or []:
         repo_id = str(row.get("id") or "")
         record = await runtime.open(row.get("data"))
@@ -645,8 +707,15 @@ async def replicas(runtime, raw):
         if caller == primary and isinstance(record.get("init"), dict):
             item["init"] = record["init"]
         fork = fork_of(record)
+        upstream = None if fork else fork_upstream(record)
         if fork and item["visibility"] == "public" and fork[0] in public_ids:
             item["forkOf"], item["network"] = fork
+        elif upstream and item["visibility"] == "public":
+            clone_url = await _upstream_clone_url(
+                runtime, upstream[0], upstream_urls)
+            if clone_url:
+                item["forkUpstream"] = dict(upstream[0], cloneUrl=clone_url)
+                item["network"] = upstream[1]
         push_report = push_reports.get(repo_id)
         if isinstance(push_report, dict) and hasattr(
                 runtime, "record_push_mirror"):
@@ -685,6 +754,23 @@ async def replicas(runtime, raw):
     return runtime.response({"ok": True, "node": caller,
                              "repositories": repositories,
                              "removed": removed})
+
+
+async def _upstream_clone_url(runtime, upstream, cache):
+    key = (upstream["owner"] + "/" + upstream["name"]).lower()
+    if key not in cache:
+        parent = None
+        if hasattr(runtime, "fork_parent"):
+            try:
+                parent = await runtime.fork_parent(
+                    upstream["owner"], upstream["name"])
+            except Exception:
+                parent = None
+        cache[key] = ""
+        if isinstance(parent, dict):
+            cache[key] = (fork_clone_url(parent.get("cloneUrl"))
+                          or upstream["cloneUrl"])
+    return cache[key]
 
 
 async def _read_grant(runtime, node, owner, name, caller, now):

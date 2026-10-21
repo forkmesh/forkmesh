@@ -64,8 +64,10 @@ request from the link git prints. See
 
 ## Good to know
 
-- You can fork public repositories hosted on ForkMesh's servers. A repository
-  published from someone's own node cannot be forked from the website yet.
+- You can fork any public repository, whether it is hosted on ForkMesh's
+  servers or published from someone's own node (like `forkmesh/forkmesh`). If
+  you have a linked managed mirror, a fork of a node-published repository is
+  made on your mirror instead.
 - Pushes are fast-forward only: you cannot force-push or delete a branch over
   git. Delete branches on the fork's **Branches** page.
 - Forks have their own per-account limit, separate from the repositories you
