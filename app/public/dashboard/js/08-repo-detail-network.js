@@ -2065,6 +2065,12 @@
       void handleDiscussionStatusClick(state.selectedRepo, discussionStatusButton);
       return;
     }
+    const discussionRemoveButton = event.target.closest("[data-repo-discussion-remove]");
+    if (discussionRemoveButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionRemoveClick(state.selectedRepo, discussionRemoveButton);
+      return;
+    }
     const discussionDeleteButton = event.target.closest("[data-repo-discussion-delete]");
     if (discussionDeleteButton && state.selectedRepo) {
       event.preventDefault();

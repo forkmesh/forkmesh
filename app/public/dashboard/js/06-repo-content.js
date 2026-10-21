@@ -4813,8 +4813,9 @@
           : button("closed", "circle-check", "Close discussion"),
         button("archived", "archive", "Archive discussion"),
       ].join("");
+    const remove = `<button type="button" data-repo-discussion-remove="${escapeHtml(number)}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-destructive transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete discussion</button>`;
     return `<div data-repo-discussion-moderation class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <span data-repo-discussion-moderation-hint class="mr-auto text-[12px] text-muted-foreground">Owner tools</span>${buttons}
+        <span data-repo-discussion-moderation-hint class="mr-auto text-[12px] text-muted-foreground">Owner tools</span>${buttons}${remove}
       </div>`;
   }
 

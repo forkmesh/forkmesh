@@ -160,3 +160,24 @@ func TestDiscussionInboxMaterializesWebEventsAndAcknowledgesLockedReplies(t *tes
 		t.Fatalf("discussion.md:\n%s", opened)
 	}
 }
+
+func TestOwnerDeletesAWholeDiscussion(t *testing.T) {
+	root := answerFixture(t, "Q&A")
+	dir := filepath.Join(root, ".forkmesh", "discussions", "3")
+	whole := map[string]any{"target": discussionDeleteTarget}
+	if wrote, _, _ := writeDiscussionItem(root, moderationItem("delete", whole, false)); wrote {
+		t.Fatal("an unapproved discussion delete was consumed")
+	}
+	if !fileExists(filepath.Join(dir, "discussion.md")) {
+		t.Fatal("an unapproved delete removed the discussion")
+	}
+	if wrote, number, err := writeDiscussionItem(root, moderationItem("delete", whole, true)); !wrote || number != 3 || err != nil {
+		t.Fatalf("the owner's delete was refused: %v %v %v", wrote, number, err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatal("the discussion folder is still there")
+	}
+	if wrote, _, err := writeDiscussionItem(root, moderationItem("delete", whole, true)); !wrote || err != nil {
+		t.Fatalf("a redelivered delete was not consumed: %v %v", wrote, err)
+	}
+}

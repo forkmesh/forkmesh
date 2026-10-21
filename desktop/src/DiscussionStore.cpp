@@ -793,11 +793,17 @@ bool DiscussionStore::applyRemoteEvent(int number, const DiscussionEvent &ev,
             return false;
         }
         Discussion discussion;
+        const bool wholeDiscussion =
+            ev.type == "delete" && ev.target == QLatin1String("#discussion");
         if (!readDiscussionFile(number, discussion)) {
+            if (wholeDiscussion)
+                return true; // already deleted: consume the redelivery
             if (error)
                 *error = QStringLiteral("Discussion #%1 not found.").arg(number);
             return false;
         }
+        if (wholeDiscussion)
+            return deleteDiscussion(number, error);
         if (ev.type == "status")
             return setStatus(number, ev.status, error);
         for (int i = 1; i < discussion.events.size(); ++i)

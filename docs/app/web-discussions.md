@@ -3,7 +3,7 @@
 Everything the desktop does with a repository's discussions works in a
 browser, with nothing installed: start a discussion, reply, mark a Q&A answer,
 and, for the repository owner, close, reopen, archive and delete replies.
-Deleting a whole discussion stays on the desktop.
+and deleting a whole discussion.
 
 ## Who may do what
 
@@ -13,7 +13,7 @@ Deleting a whole discussion stays on the desktop.
 | Reply | any signed-in account, while the discussion is open | the signature |
 | Mark or clear the answer (Q&A only) | the opener's browser key, or the owner | the signature; the owner's session for `ownerApproved` ([discussion-answers.md](discussion-answers.md)) |
 | Close, reopen, archive, unarchive | the repository owner, or an owner of the organization the repository is linked to | the signature and the owner's account session |
-| Delete a reply | the same | the same |
+| Delete a reply, or the whole discussion | the same | the same |
 
 The browser hides the controls a visitor cannot use: the New discussion button
 sends a signed-out visitor to the login page, the reply box is replaced by a
@@ -37,7 +37,7 @@ key web issue events use). The canonical string is
 | `comment` | the discussion | `body` | `body` |
 | `answer` | the discussion | `target` | `target` |
 | `status` | the discussion | `status` | `status`: `open`, `closed` or `archived` |
-| `delete` | the discussion | `target` | `target`: the reply's event id |
+| `delete` | the discussion | `target` | `target`: the reply's event id, or `#discussion` for the whole discussion |
 
 `status` and `delete` are new with the web flow; the desktop, mirror gateway,
 relay and Go mirror all know them. Event ids carry a random suffix
@@ -72,11 +72,12 @@ and Android read web-made discussions unchanged:
   submission) and acknowledged without writing when it comes from the inbox,
   so it cannot block the queue.
 - `status` rewrites `status:` in `discussion.md` (only with `ownerApproved`).
-- `delete` removes the reply file whose `id` is the target (only with
-  `ownerApproved`; a repeat is consumed).
+- `delete` removes the reply file whose `id` is the target, or the whole
+  discussion folder for `#discussion` (only with `ownerApproved`; a repeat
+  is consumed).
 
 On the desktop `DiscussionStore::applyRemoteEvent` applies the same rules
-through `setStatus` and `deleteComment`.
+through `setStatus`, `deleteComment` and `deleteDiscussion`.
 
 ## Abuse limits
 
@@ -104,7 +105,7 @@ Moderation events notify no one but the owner's pending-inbox badge.
   list, unlike issue events.
 - Thread: replies with Mark as answer (Q&A) and, for the owner, Delete; below
   them the reply box or the closed/archived notice, then Owner tools (Close /
-  Reopen / Archive / Unarchive).
+  Reopen / Archive / Unarchive, Delete discussion).
 - First view: the node renders a discussion page (`/<owner>/<repo>/discussions/<n>`)
   into the first HTML (`repo_views.py`), with a Closed or Archived pill.
 

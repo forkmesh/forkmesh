@@ -3856,6 +3856,7 @@
     if (type === "status" && !["open", "closed", "archived"].includes(value)) {
       throw new Error("unsupported_discussion_action");
     }
+    // "delete" takes a reply id, or "#discussion" for the whole discussion.
     if (type !== "status" && (type !== "delete" || !String(value || ""))) {
       throw new Error("unsupported_discussion_action");
     }
@@ -5272,6 +5273,34 @@
       const items = state.repoCollectionItems.discussions;
       const row = Array.isArray(items) ? items.find((item) => Number(item.number) === number) : null;
       if (row) row.state = status;
+    } catch (error) {
+      bar?.querySelectorAll("button").forEach((control) => { control.disabled = false; });
+      if (hint) {
+        hint.className = "mr-auto text-[12px] text-destructive";
+        hint.textContent = webDiscussionSubmitErrorText(error);
+      }
+    }
+  }
+
+  // The owner deletes the whole discussion, as on the desktop: its folder
+  // leaves the repository once a mirror (or the owner's node) applies it.
+  async function handleDiscussionRemoveClick(repo, button) {
+    if (!repo || !button) return;
+    const number = Number(button.dataset.repoDiscussionRemove || 0);
+    if (!number) return;
+    if (!window.confirm(`Delete discussion #${number} and all its replies? This cannot be undone.`)) return;
+    const bar = button.closest("[data-repo-discussion-moderation]");
+    const hint = bar?.querySelector("[data-repo-discussion-moderation-hint]");
+    bar?.querySelectorAll("button").forEach((control) => { control.disabled = true; });
+    try {
+      await submitWebDiscussionModeration(repo, number, "delete", "#discussion");
+      forgetOptimisticRepoRecord(repo, "discussions", number);
+      const items = state.repoCollectionItems.discussions;
+      if (Array.isArray(items)) {
+        state.repoCollectionItems.discussions = items.filter((item) => Number(item.number) !== number);
+      }
+      navigateHistory(`${repoLinkUrl(repo)}/discussions`);
+      renderRepoDiscussions();
     } catch (error) {
       bar?.querySelectorAll("button").forEach((control) => { control.disabled = false; });
       if (hint) {
@@ -21894,8 +21923,9 @@
           : button("closed", "circle-check", "Close discussion"),
         button("archived", "archive", "Archive discussion"),
       ].join("");
+    const remove = `<button type="button" data-repo-discussion-remove="${escapeHtml(number)}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-destructive transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete discussion</button>`;
     return `<div data-repo-discussion-moderation class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
-        <span data-repo-discussion-moderation-hint class="mr-auto text-[12px] text-muted-foreground">Owner tools</span>${buttons}
+        <span data-repo-discussion-moderation-hint class="mr-auto text-[12px] text-muted-foreground">Owner tools</span>${buttons}${remove}
       </div>`;
   }
 
@@ -42007,6 +42037,12 @@
     if (discussionStatusButton && state.selectedRepo) {
       event.preventDefault();
       void handleDiscussionStatusClick(state.selectedRepo, discussionStatusButton);
+      return;
+    }
+    const discussionRemoveButton = event.target.closest("[data-repo-discussion-remove]");
+    if (discussionRemoveButton && state.selectedRepo) {
+      event.preventDefault();
+      void handleDiscussionRemoveClick(state.selectedRepo, discussionRemoveButton);
       return;
     }
     const discussionDeleteButton = event.target.closest("[data-repo-discussion-delete]");

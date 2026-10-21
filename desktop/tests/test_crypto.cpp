@@ -6383,6 +6383,23 @@ int main(int argc, char *argv[])
               "an owner-approved remote delete removes that reply");
         check(discussions.applyRemoteEvent(dn, webDelete, QString(), &err, true),
               "a redelivered delete is consumed");
+        {
+            const int doomed = discussions.createDiscussion("Doomed", "bye", "Ideas", &err);
+            DiscussionEvent wholeDelete;
+            wholeDelete.type = "delete";
+            wholeDelete.target = "#discussion";
+            wholeDelete = discussions.makeSignedEvent(doomed, wholeDelete);
+            check(!discussions.applyRemoteEvent(doomed, wholeDelete, QString(), &err),
+                  "an unapproved remote discussion delete is refused");
+            const bool applied =
+                discussions.applyRemoteEvent(doomed, wholeDelete, QString(), &err, true);
+            const QList<Discussion> remaining = discussions.loadAll();
+            check(applied && std::none_of(remaining.begin(), remaining.end(),
+                                          [&](const Discussion &d) { return d.number == doomed; }),
+                  "an owner-approved remote delete removes the whole discussion");
+            check(discussions.applyRemoteEvent(doomed, wholeDelete, QString(), &err, true),
+                  "a redelivered discussion delete is consumed");
+        }
         const int qn = discussions.createDiscussion(
             "How?", "question", "Q&A", &err);
         check(discussions.addComment(qn, "an answer", &err),

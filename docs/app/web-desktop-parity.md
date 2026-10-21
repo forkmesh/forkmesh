@@ -9,7 +9,7 @@ inventory; each row says why the dependency exists and how it could go.
 
 | Feature | Notes |
 |---|---|
-| Discussions: start, reply, mark answer, close/reopen, archive, delete a reply | [web-discussions.md](web-discussions.md) |
+| Discussions: start, reply, mark answer, close/reopen, archive, delete a reply or the whole discussion | [web-discussions.md](web-discussions.md) |
 | Merging pull requests on personal repositories (same rules, protection, checks and mergeability as organization repositories) | [branch-protection.md](branch-protection.md) |
 | Rename, move and delete files (commit, or propose as a pull request) | [repository-file-edits.md](repository-file-edits.md#rename-and-delete) |
 | Releases (draft, edit, delete; notes; creating their tags) | [web-releases.md](web-releases.md) |
@@ -23,7 +23,6 @@ existing route, L = a new route, event type or storage, XL = architectural.
 
 | Feature | Where | Why | Proposed design | Effort |
 |---|---|---|---|---|
-| Deleting a whole discussion | DiscussionStore::deleteDiscussion | Destructive, owner-only, needs the working tree | An owner-only signed `delete` with target `discussion`, removed by the mirror intake and the desktop | M |
 | Volunteering a node to mirror an external listing | `volunteerForExternalMirror` (05-repo-list-explorer.js) | The point is to lend a node; the browser is not one | Offer "Import and host here" beside it for supported forges, through the hosted-repository import | M |
 | New repository from a local folder | new-repo view | Reads the local file system | Inherent; the web offers empty repositories and imports instead | n/a |
 | Private repositories on a forge without core hosting | `hosted_git.py` (`private_hosted_unsupported`) | Private content is sealed with the owner's key, which the relay never holds | Core-hosted private repositories already work; elsewhere this needs key escrow or a browser-held key | XL |

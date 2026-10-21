@@ -1513,6 +1513,10 @@ func writeDiscussionItem(root string, item collaborationItem) (bool, int, error)
 // answered 409 discussion_locked.
 var errDiscussionLocked = errors.New("discussion is closed to new replies")
 
+// discussionDeleteTarget: a "delete" event whose target is this removes the
+// whole discussion rather than one reply (reply ids never start with "#").
+const discussionDeleteTarget = "#discussion"
+
 var discussionStatuses = map[string]bool{"open": true, "closed": true, "archived": true}
 
 // discussionStatus reads discussion.md's status the way the desktop does:
@@ -1541,6 +1545,12 @@ func discussionStatus(dir string) string {
 func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, error) {
 	number := item.Number
 	approved, _ := item.Meta["ownerApproved"].(bool)
+	if approved && stringValue(item.Event["type"]) == "delete" &&
+		safeHeader(stringValue(item.Event["target"])) == discussionDeleteTarget &&
+		!fileExists(filepath.Join(dir, "discussion.md")) {
+		// Already gone: consume the redelivery.
+		return true, number, nil
+	}
 	if !approved || !fileExists(filepath.Join(dir, "discussion.md")) {
 		return false, number, nil
 	}
@@ -1548,6 +1558,11 @@ func writeDiscussionModeration(dir string, item collaborationItem) (bool, int, e
 		target := safeHeader(stringValue(item.Event["target"]))
 		if target == "" {
 			return false, number, nil
+		}
+		if target == discussionDeleteTarget {
+			// The whole discussion: its folder leaves the tree, like the
+			// desktop's DiscussionStore::deleteDiscussion.
+			return true, number, os.RemoveAll(dir)
 		}
 		entries, _ := os.ReadDir(dir)
 		for _, entry := range entries {

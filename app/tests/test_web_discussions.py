@@ -524,3 +524,24 @@ def test_compose_handler_links_a_numbered_discussion_and_explains_a_queued_one()
     assert 'navigateHistory(repoRecordUrl(repo, "discussions", number, "conversation"))' in handler
     assert "data-repo-discussion-pending" in handler
     assert "Your draft is still here." in handler
+
+
+def test_the_owner_can_delete_a_whole_discussion():
+    bar = _js_function("renderDiscussionModerationBar")
+    assert "data-repo-discussion-remove" in bar and "Delete discussion" in bar
+    handler = _js_function("handleDiscussionRemoveClick")
+    assert 'submitWebDiscussionModeration(repo, number, "delete", "#discussion")' in handler
+    assert "window.confirm(" in handler
+    assert 'navigateHistory(`${repoLinkUrl(repo)}/discussions`)' in handler
+    assert 'event.target.closest("[data-repo-discussion-remove]")' in DASHBOARD_JS
+
+
+def test_a_whole_discussion_delete_is_owner_only_at_the_relay():
+    signer = _Signer()
+    whole = _sign(signer, {"type": "delete", "id": "delete-web-9",
+                           "ts": 1790000000, "target": "#discussion"}, 4)
+    assert _verify(4, whole) is True
+    assert _Relay(owner=False).post({"number": 4, "event": whole})["status"] == 403
+    owner = _Relay(owner=True, session="alice")
+    assert owner.post({"number": 4, "event": whole})["status"] == 201
+    assert owner.inserted[0]["meta"] == {"ownerApproved": True}
