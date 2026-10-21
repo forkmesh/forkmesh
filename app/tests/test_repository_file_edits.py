@@ -118,8 +118,14 @@ def harness(bare, owner_write=True, org_write=False, access=True,
                           check=False)
             if content.returncode != 0:
                 return FakeResponse(404, {"ok": False})
-            return FakeResponse(200, {
-                "ok": True, "content": content.stdout.decode()})
+            try:
+                return FakeResponse(200, {
+                    "ok": True, "content": content.stdout.decode()})
+            except UnicodeDecodeError:
+                import base64
+                return FakeResponse(200, {
+                    "ok": True, "encoding": "base64",
+                    "content": base64.b64encode(content.stdout).decode()})
         return FakeResponse(404, {"ok": False})
 
     async def push_send(env, request, owner, repo, account, method, body,
@@ -565,3 +571,56 @@ def test_a_rename_proposal_replays_with_git_am(bare_repo, tmp_path):
     assert (work / "manual" / "guide.md").read_text() == "# Guide\n"
     assert git_out(work, "log", "-1", "--format=%s").strip() == (
         "Rename docs/guide.md on the web")
+
+
+PNG = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000154a24f5d00000000"
+    "49454e44ae426082") + bytes(range(256))
+
+
+def test_an_uploaded_binary_file_is_committed_byte_for_byte(bare_repo):
+    import base64
+    harness(bare_repo)
+    result = run("alice", "project", FakeRequest(body={
+        "path": "docs/logo.png", "branch": "main", "create": True,
+        "encoding": "base64", "content": base64.b64encode(PNG).decode(),
+    }))
+    assert result["status"] == 200, result
+    stored = git(bare_repo, "show", "main:docs/logo.png").stdout
+    assert stored == PNG
+    git(bare_repo, "fsck", "--strict", "--no-dangling")
+    replaced = run("alice", "project", FakeRequest(body={
+        "path": "docs/logo.png", "branch": "main", "encoding": "base64",
+        "content": base64.b64encode(PNG[::-1]).decode(),
+    }))
+    assert replaced["status"] == 200, replaced
+    assert git(bare_repo, "show", "main:docs/logo.png").stdout == PNG[::-1]
+    bad = run("alice", "project", FakeRequest(body={
+        "path": "x.bin", "branch": "main", "create": True,
+        "encoding": "base64", "content": "not base64!"}))
+    assert bad["status"] == 400
+
+
+def test_binary_proposals_replay_with_git_am(bare_repo, tmp_path):
+    import base64
+    harness(bare_repo)
+    run("alice", "project", FakeRequest(body={
+        "path": "art/logo.png", "branch": "main", "create": True,
+        "encoding": "base64", "content": base64.b64encode(PNG).decode()}))
+    harness(bare_repo, owner_write=False)
+    added = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "path": "art/new.bin", "branch": "main",
+        "create": True, "encoding": "base64",
+        "content": base64.b64encode(bytes(range(256)) * 3).decode()}))
+    assert added["status"] == 200, added
+    assert "GIT binary patch" in added["data"]["patch"]
+    work = apply_proposal(tmp_path, bare_repo, added["data"])
+    assert (work / "art" / "new.bin").read_bytes() == bytes(range(256)) * 3
+    changed = run("alice", "project", FakeRequest(body={
+        "mode": "propose", "path": "art/logo.png", "branch": "main",
+        "encoding": "base64", "content": base64.b64encode(PNG[::-1]).decode()}))
+    assert changed["status"] == 200, changed
+    work = apply_proposal(tmp_path / "second", bare_repo, changed["data"]) \
+        if (tmp_path / "second").mkdir() is None else None
+    assert (work / "art" / "logo.png").read_bytes() == PNG[::-1]

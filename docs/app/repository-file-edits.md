@@ -14,6 +14,7 @@ existing text files. Saving posts to
 | `content` | New UTF-8 text, capped at 2 MB |
 | `message` | Optional; defaults to `Edit <path> on the web` |
 | `create` | `true` to add a new file; `409 conflict` if the path exists |
+| `encoding` | `base64` when `content` is a file's bytes (an upload); otherwise text |
 | `op` | `edit` (default), `delete` or `rename` |
 | `newPath` | The new path for `rename` (may be in another folder); `409 conflict` if taken |
 
@@ -107,7 +108,10 @@ the file viewer (`openRepoNewFile`): a path that starts in the folder being
 browsed, the text, the branch and a commit message. It probes access like the
 editor: a writer commits with `create: true` and lands on the new file's
 page; a reader (or a writer who ticks the box) proposes the file as a pull
-request through the same signed proposal flow. A read-only mirror shows the
+request through the same signed proposal flow. **Upload a file instead** sends any
+file up to 2 MB as base64 (`encoding: "base64"`), committed byte for byte; a
+proposal carries it as a `GIT binary patch` (`binary_patch`) that `git am`
+replays. A read-only mirror shows the
 button disabled with the fork hint, and a signed-out visitor is sent to
 `/login?next=<this page>`. Tests: `app/tests/test_web_add_file.py`.
 

@@ -1,5 +1,8 @@
+import base64
+import binascii
 import difflib
 import hashlib
+import zlib
 import re
 import time
 from email.header import Header
@@ -190,7 +193,8 @@ def rebuilt_trees(listings, path, blob_oid, create=False):
 
 def build_commit(listings, parent, path, content, name, email, seconds,
                  message, create=False):
-    blob = content.encode("utf-8")
+    blob = content.encode("utf-8") if isinstance(content, str) else bytes(
+        content)
     blob_oid = object_id("blob", blob)
     root, trees = rebuilt_trees(listings, path, blob_oid, create)
     commit = commit_payload(root, parent, name, email, seconds, message)
@@ -256,6 +260,58 @@ def apply_tree_changes(listings, changes):
         results[directory] = object_id("tree", payload)
         objects.append(("tree", payload))
     return results[""], objects
+
+
+def _binary_literal(data):
+    """One "literal" hunk of a Git binary patch: the zlib-deflated bytes in
+    base85 lines of up to 52 bytes, each prefixed with its length
+    (A-Z = 1-26, a-z = 27-52), as `git diff --binary` writes them."""
+    packed = zlib.compress(data, 9)
+    lines = ["literal %d\n" % len(data)]
+    for start in range(0, len(packed), 52):
+        chunk = packed[start:start + 52]
+        size = len(chunk)
+        prefix = chr(ord("A") + size - 1) if size <= 26 else chr(
+            ord("a") + size - 27)
+        lines.append(prefix + base64.b85encode(chunk, pad=True).decode(
+            "ascii") + "\n")
+    lines.append("\n")
+    return "".join(lines)
+
+
+def binary_patch(path, old_bytes, new_bytes, old_oid, new_oid, mode,
+                 created=False):
+    """A `git diff --binary`-style patch that `git am` replays exactly."""
+    out = ["diff --git %s %s\n" % (_side("a/", path), _side("b/", path))]
+    if created:
+        out.append("new file mode %s\n" % mode)
+        out.append("index %s..%s\n" % (ZERO_OID, new_oid))
+    else:
+        out.append("index %s..%s %s\n" % (old_oid, new_oid, mode))
+    out.append("GIT binary patch\n")
+    out.append(_binary_literal(new_bytes))
+    out.append(_binary_literal(old_bytes))
+    return "".join(out)
+
+
+async def _old_bytes(env, owner, repo, path, parent, current):
+    data = await _blob(env, owner, repo, path, parent)
+    raw = None
+    if isinstance(data, dict) and not data.get("truncated"):
+        content = data.get("content")
+        encoding = str(data.get("encoding") or "utf8")
+        try:
+            if encoding == "base64" and isinstance(content, str):
+                raw = base64.b64decode(content, validate=True)
+            elif isinstance(content, str):
+                raw = content.encode("utf-8")
+        except (binascii.Error, ValueError):
+            raw = None
+    if raw is None or object_id("blob", raw) != current:
+        raise FileEditError(
+            "base_unavailable",
+            "The current file could not be read to build the proposal.", 503)
+    return raw
 
 
 def deleted_patch(path, old_text, old_oid, mode):
@@ -480,8 +536,20 @@ async def _save(env, request, owner, repo):
         return _error("invalid_base", "Choose a valid base branch.", 400)
     if not isinstance(content, str):
         return _error("invalid_content", "The new text is missing.", 400)
-    content = content.replace("\r\n", "\n").replace("\r", "\n")
-    if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+    # An uploaded file (an image, an archive) arrives as base64 bytes and is
+    # stored exactly; text keeps its newline normalisation.
+    binary = str(data.get("encoding") or "") == "base64"
+    if binary:
+        try:
+            content = base64.b64decode(content, validate=True)
+        except (binascii.Error, ValueError):
+            return _error("invalid_content", "The uploaded file is not valid "
+                          "base64.", 400)
+        size = len(content)
+    else:
+        content = content.replace("\r\n", "\n").replace("\r", "\n")
+        size = len(content.encode("utf-8"))
+    if size > MAX_CONTENT_BYTES:
         return _error("too_large", "The file is larger than 2 MB.", 413)
     try:
         parent, listings, create = await _listings(
@@ -510,7 +578,8 @@ async def _save(env, request, owner, repo):
                 "conflict",
                 "Someone changed this file since you opened it; reload to "
                 "see their version.", 409)
-        new_blob = object_id("blob", content.encode("utf-8"))
+        new_blob = object_id(
+            "blob", content if binary else content.encode("utf-8"))
         if current == new_blob:
             return json_response({
                 "ok": True, "unchanged": True, "path": path, "oid": current,
@@ -523,7 +592,16 @@ async def _save(env, request, owner, repo):
         commit_oid, blob_oid, pack_bytes = build_commit(
             listings, parent, path, content, actor, email, seconds, message,
             create=new_file)
-        if propose:
+        if propose and binary:
+            old_bytes = b"" if new_file else await _old_bytes(
+                env, owner, repo, path, parent, current)
+            patch = binary_patch(
+                path, old_bytes, content, current, blob_oid, file_mode,
+                created=new_file)
+            commits = patch_mbox(
+                commit_oid, actor, email, seconds, message, patch)
+            head = proposal_branch(actor, path, commit_oid)
+        elif propose:
             old_text = await _old_text(
                 env, owner, repo, path, parent, current, new_file)
             patch = file_patch(

@@ -75,3 +75,11 @@ def test_rename_and_delete_commit_or_propose_through_file_edit():
     # A delete lands on the folder, a rename on the file's new address.
     assert 'navigateHistory(repoLinkUrl(repo, "tree", folder))' in form
     assert 'navigateHistory(repoLinkUrl(repo, "blob", newPath))' in form
+
+
+def test_add_file_can_upload_any_file_as_bytes():
+    form = _function("openRepoNewFile")
+    assert "data-repo-new-file-upload" in form and "reader.readAsDataURL(file)" in form
+    assert 'const encoding = upload ? { encoding: "base64" } : {};' in form
+    assert "create: true, ...encoding," in form
+    assert "file.size > 2 * 1024 * 1024" in form

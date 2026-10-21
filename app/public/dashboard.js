@@ -15917,6 +15917,10 @@
             <input data-repo-new-file-path required autocomplete="off" spellcheck="false" value="${escapeHtml(prefix)}" placeholder="docs/notes.md" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
           </label>
           <p data-repo-file-editor-notice hidden class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-file-editor-notice-text>${escapeHtml(REPO_FILE_PROPOSE_NOTICE)}</span></p>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <label class="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-border px-3 font-medium text-foreground hover:bg-secondary"><i data-lucide="upload" class="h-3.5 w-3.5"></i>Upload a file instead<input type="file" data-repo-new-file-upload class="sr-only" /></label>
+            <span data-repo-new-file-upload-name></span>
+          </div>
           <textarea data-repo-file-editor-content spellcheck="false" placeholder="Enter file contents here" class="min-h-[24rem] w-full resize-y rounded-md border border-border bg-black/20 p-3 font-mono text-xs leading-5 text-foreground outline-none focus:border-primary/70"></textarea>
           <div class="grid gap-2 md:grid-cols-[minmax(12rem,18rem)_1fr_auto]">
             <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -15950,6 +15954,34 @@
       controller.abort();
       void loadRepositoryTree(repo, folder);
     };
+    // An uploaded file (an image, an archive, any bytes) goes up as base64
+    // and is committed exactly; the text box is set aside meanwhile.
+    let upload = null;
+    const uploadInput = editor.querySelector("[data-repo-new-file-upload]");
+    const uploadName = editor.querySelector("[data-repo-new-file-upload-name]");
+    uploadInput?.addEventListener("change", () => {
+      const file = uploadInput.files?.[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        updateRepoFileStatus(viewer, "Files up to 2 MB can be uploaded here.", "bad");
+        uploadInput.value = "";
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || "");
+        upload = { name: file.name, size: file.size, base64: text.slice(text.indexOf(",") + 1) };
+        if (uploadName) uploadName.textContent = `${file.name} · ${formatSize(file.size)}`;
+        if (textarea) textarea.hidden = true;
+        const current = normalizedNewFilePath(pathInput?.value);
+        if (pathInput && (!current || current.endsWith("/") || current === prefix.replace(/\/$/, ""))) {
+          pathInput.value = `${prefix}${file.name}`;
+        }
+        updateRepoFileStatus(viewer, `Ready to upload ${file.name}.`, "good");
+      };
+      reader.onerror = () => updateRepoFileStatus(viewer, "Could not read that file.", "bad");
+      reader.readAsDataURL(file);
+    }, { signal: controller.signal });
     editor.querySelector("[data-repo-file-editor-cancel]")?.addEventListener("click", cancel, { signal: controller.signal });
     editor.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
@@ -15972,8 +16004,9 @@
         pathInput?.focus();
         return;
       }
-      const content = textarea?.value || "";
-      const message = String(messageInput?.value || "").trim() || `Create ${repoFileName(path)}`;
+      const content = upload ? upload.base64 : (textarea?.value || "");
+      const encoding = upload ? { encoding: "base64" } : {};
+      const message = String(messageInput?.value || "").trim() || `${upload ? "Upload" : "Create"} ${repoFileName(path)}`;
       const proposing = editor.dataset.repoFileEditorMode === "propose";
       const branch = proposing ? currentBranch : String(branchInput?.value || "").trim();
       saveButton.disabled = true;
@@ -15982,14 +16015,14 @@
         if (proposing) {
           updateRepoFileStatus(viewer, "Preparing your proposed file...", "good");
           proposal = await repoFileEditRequest(repo, {
-            mode: "propose", path, branch, content, message, create: true,
+            mode: "propose", path, branch, content, message, create: true, ...encoding,
           });
           await proposeRepoFileEdit(viewer, repo, proposal);
           return;
         }
         updateRepoFileStatus(viewer, "Creating the file...", "good");
         const payload = await repoFileEditRequest(repo, {
-          mode: "commit", path, branch, baseRef: currentBranch, content, message, create: true,
+          mode: "commit", path, branch, baseRef: currentBranch, content, message, create: true, ...encoding,
         });
         controller.abort();
         if (payload.branch) state.selectedBranches[repoKey(repo)] = payload.branch;

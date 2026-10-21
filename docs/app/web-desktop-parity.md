@@ -16,7 +16,7 @@ inventory; each row says why the dependency exists and how it could go.
 | Issues, pull requests and discussions on private repositories, for accounts that can read them, with public side effects off | [web-discussions.md](web-discussions.md#who-may-do-what) |
 | Collaborators on private repositories; visibility of core-hosted repositories | [web-repo-access.md](web-repo-access.md) |
 | Projects (create, edit, close, delete) | [web-projects.md](web-projects.md) |
-| Add file (create a file, or propose one as a pull request) | [repository-file-edits.md](repository-file-edits.md#add-file) |
+| Add file (create or upload a file, or propose it as a pull request) | [repository-file-edits.md](repository-file-edits.md#add-file) |
 | Issues and pull requests (browser-signed events), file edits and proposals, forks, repository deletion, branch operations on core-hosted repositories, webhooks, Actions secrets, security advisories, notes, tasks, calendar, docs, organizations, accounts and SSH keys | already had web paths |
 
 ## Still desktop-dependent
@@ -31,7 +31,6 @@ existing route, L = a new route, event type or storage, XL = architectural.
 | Private repositories on a forge without core hosting | `hosted_git.py` (`private_hosted_unsupported`) | Private content is sealed with the owner's key, which the relay never holds | Core-hosted private repositories already work; elsewhere this needs key escrow or a browser-held key | XL |
 | Release assets (binaries) | Releases tab | Bytes live in the mirrors' content-addressed store, seeded by a release publisher | An upload route into the store for core-held repositories, recorded in `release.json` | L |
 | Deleting or moving tags | mirror push policy | Mirrors keep tags immutable without an owner's tag-move grant | Offer the existing tag-move grant from the web for core-held repositories; keep tags immutable elsewhere | M |
-| Uploading binary files (images, archives) | file editor | `/file-edit` takes UTF-8 text only | Accept base64 `content` with a size cap and build the blob from the bytes | M |
 | Renaming and transferring a repository | repository settings | The name is the repository's identity everywhere: catalog key, blind indexes, inbox keys, core storage paths, mirror routing pins, organization links | A rename record that keeps the old key as an alias (like organization aliases) while cores move the bare repository and mirrors re-pin; transfer is a rename to another owner plus a catalog re-key | XL |
 | Visibility of repositories held by a personal node | repository settings | The node signs its own catalog record | Queue the change for the node like branch operations | L |
 | Repository settings only stored on the desktop (peer approval, secret-scanning push protection, Actions auto-approve, agent guardrails) | repository settings | Kept in the desktop's local record | Store them in `.forkmesh/settings.json` through `/file-edit` and read them from there on every client | L |
