@@ -74,3 +74,6 @@ voice code is.
 
 Status lives in the commits of each phase; this table changes only when the
 plan does.
+
+The engine core's wire format, algorithms and measurements are in
+[fmm-protocol.md](fmm-protocol.md).
