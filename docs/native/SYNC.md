@@ -145,4 +145,7 @@ Design tokens both apps share are in [THEMES.md](THEMES.md) and
 | S070 | 2026-10-20 | Chat | feature | Usernames and @mentions in chat, issues, pull requests and discussions open that person's ForkMesh profile when tapped | 079280627a | synced | 079280627a |
 | S071 | 2026-10-21 | Chat | fix | A call now rings the other phone even when it is not on that chat or the app is in the background | 320fe7221a | synced | 320fe7221a |
 | S072 | 2026-10-21 | Chat | feature | Incoming calls show on the iPhone's own call screen, also on the lock screen and when the app was closed | 5533f4d47f | n/a | Android has no CallKit or PushKit; its call notification already uses CallStyle |
+| S073 | 2026-10-21 | Chat | feature | Private chats can hold encrypted group audio and video calls, like Google Meet or Discord, from a Call button in the chat header | 042d1ed488 | pending |  |
+| S074 | 2026-10-21 | Chat | feature | Phone calls run on the native call engine with the voice changer and call backgrounds, instead of the web view | d5ab476f9e | pending |  |
+| S075 | 2026-10-21 | Chat | feature | The face changer works in native calls: a chosen stand-in or custom face is drawn over the caller's face live | 28b18d33b9 | pending |  |
 <!-- ledger:end -->
