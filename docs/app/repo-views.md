@@ -271,6 +271,15 @@ reduced motion).
   beside the name on phones, where the column is hidden. The roster is read
   once per repository and branch (`repoContributorRosterCached`), shared with
   the About rail. Tests: `app/tests/test_issue_timeline_people.py`.
+- **Code map text vs binary** (`createLoader` in `app/public/assets/codemap/codemap.js`,
+  glue `openRepoCodeMap`): a file is drawn as a binary card only when the host
+  answered it as base64 (not UTF-8) or its text holds a NUL byte. A path the
+  `/blobs` batch left out (`null`: an upstream timeout or the batch byte
+  budget) or a batch that failed is retried on its own up to three times, then
+  left blank, never carded. Before this, large `.forkmesh/issues` JSON records
+  in a batch showed as "binary" at random. The gateway also cuts a blob over
+  `MAX_JSON_BLOB` at a UTF-8 character boundary (`_utf8_prefix`), so a cut
+  text file stays text.
 - **HTML entities in markdown** (`MD_ESCAPED_ENTITY` in `renderMarkdownInline`):
   text is escaped first, so `&rlm;` used to show as the literal "&rlm;" (the
   net4people/bbs README marks its Persian and Arabic headings with `&rlm;` and

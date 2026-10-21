@@ -14890,7 +14890,7 @@
   // file text and folded directories arrive through the batched /blobs and
   // /tree reads below, so mirror routing and ref pinning stay in one place.
   // Bump the version when codemap.js changes: /assets/ is long-cached.
-  const REPO_CODEMAP_SCRIPT = "/assets/codemap/codemap.js?v=3";
+  const REPO_CODEMAP_SCRIPT = "/assets/codemap/codemap.js?v=4";
   let repoCodeMapModuleLoader = null;
   function loadRepoCodeMapModule() {
     if (window.ForkMeshCodeMap?.open) return Promise.resolve(true);
@@ -14959,10 +14959,9 @@
           const out = {};
           paths.forEach((path) => {
             const blob = blobs[path];
-            // base64 is how a host returns bytes that are not UTF-8 text.
-            out[path] = blob && String(blob.encoding || "").toLowerCase() !== "base64"
-              ? { text: blobText(blob), truncated: Boolean(blob.truncated) }
-              : null;
+            if (!blob) out[path] = { missing: true };
+            else if (String(blob.encoding || "").toLowerCase() === "base64") out[path] = { binary: true };
+            else out[path] = { text: blobText(blob), truncated: Boolean(blob.truncated) };
           });
           return out;
         },
