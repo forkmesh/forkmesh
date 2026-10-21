@@ -64,6 +64,18 @@
             "status": "closed",
             "ts": 1792551822228,
             "type": "status"
+        },
+        {
+            "agentCreatePr": false,
+            "agentProvider": "",
+            "agentSessionId": 0,
+            "agentStatus": "cleared",
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "a3ffde64-47fb-4e5a-be63-8abf28aa94c8",
+            "sig": "lGMfvkF-Nw7jKiVr81oPiGmIg4BQWjz3d7OqVCbxDbAbvQd31tYxAYa85-kaopG4xx42dXkznUcV3S-QQAXRDQ",
+            "ts": 1792551822476,
+            "type": "agent"
         }
     ],
     "labels": [
@@ -82,6 +94,6 @@
     "startDate": 0,
     "status": "closed",
     "title": "/microjobs \"Submit an issue\" link (/issues/new) lands on the issue list instead of the new-issue form",
-    "updatedAt": 1792551822228,
+    "updatedAt": 1792551822476,
     "votes": 0
 }
