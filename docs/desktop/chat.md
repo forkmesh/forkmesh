@@ -54,6 +54,21 @@ sits in the data folder, so the configuration backup, its restore and the
 complete-system bundle carry it with the rest of the data. Tests reset both
 stores with `clearStoredState()` and read through `storedSetting()`
 (`testStoredStateLeavesSettingsFile`).
+Since report #8 (2026-10-20) each of those keys is its own file beside
+`state.ini`: `chat-seal/<trustV3|ratchetV4|seenV3>/<b64u(name)>`
+(`storedStateKeyFile()`), written with `QSaveFile` (fsync, owner-only
+permissions). `state.ini` had grown to 748 KB (three direct-room trust
+scopes with held frames at about 140 KB each, one 91 KB ratchet), and the
+synchronous ratchet save after every v4 seal rewrote and fsynced all of it on
+the GUI thread (`ChatDevice::saveRatchets`, eight stalls in report #8). On the
+same loaded box a 91 KB ratchet save went from 122 ms to 33 ms.
+`migrateStoredState()` moves every `state.ini` key into its file, reads the
+file back, and only then drops the key from `state.ini`, at every start, so a
+key that an older build wrote back into `state.ini` replaces the file. An
+older build therefore finds no ratchet in `state.ini` and starts a new session
+instead of reusing message keys. Reads take the file, then `state.ini`, then
+`ForkMesh.conf`; a write that cannot reach the file removes the file and goes
+to `state.ini` as before (`testStoredStateKeysHaveTheirOwnFiles`).
 Held frames are capped per room at 64 frames and 128 KB (`kMaxHeldBytes`),
 newest first, and a scope saved before the byte cap is trimmed when it loads:
 on 2026-10-19 three direct rooms held 64 frames of about 8 KB each from

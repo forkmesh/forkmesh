@@ -9,6 +9,7 @@ auth stylesheet `www/public/auth-page-theme.css` and the map backdrop from
 | `app/public/login.html` | Markup, inline styles, per-theme palette |
 | `app/public/login.js` | Validation, password toggle, sign-in, localhost demo login |
 | `app/tests/test_auth_pages_frontend.py` | Static contracts for the login and signup pages |
+| `app/tests/test_web_issue_new_route.py` | Signed-in `/login` redirect |
 
 ## Styling rules
 
@@ -29,3 +30,9 @@ The "Local demo login" box renders only on `localhost` and `127.0.0.1`
 After a confirmed login, an explicit local `next` path takes priority, followed
 by a same-origin referrer. Without either, the browser opens `/dashboard`
 directly rather than loading the homepage first.
+
+Opening `/login` while already signed in goes to `/dashboard` instead of
+showing the form (issue #737). `leaveIfSignedIn()` checks the stored session
+with `GET /api/accounts/sessions` first, so a stale local marker still gets the
+form. A `?next=` address keeps the form: gated pages bounce here with one and
+a redirect could loop.

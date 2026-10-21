@@ -1,5 +1,23 @@
   // `parentNumber` files a sub-issue: the description starts with the same
   // portable "Parent issue: #N" line a converted checklist row gets.
+  function issueComposeRouteActive(repo) {
+    const parts = repoRouteParts();
+    return Boolean(repo && state.session?.nodeName) && parts[2] === "issues" && parts[3] === "new";
+  }
+
+  function issueComposeUrl(repo) {
+    return `${repoLinkUrl(repo)}/issues/new`;
+  }
+
+  function showRepoIssueList(repo) {
+    if (state.issuesView.repo || state.issuesView.items.length) {
+      renderRepoIssues();
+      return;
+    }
+    $("[data-repo-issues] [data-repo-issue-form]")?.remove();
+    loadRepoIssues(repo);
+  }
+
   function openIssueCompose(repo, { parentNumber = 0 } = {}) {
     const container = $("[data-repo-issues]");
     if (!container || !repo) return;
@@ -2523,6 +2541,8 @@
       // issue's detail straight away; Back re-fetches the list lazily.
       if (recordRoute && recordRoute.kind === "issues" && recordRoute.number) {
         loadRepoRecordDetail(repo, "issues", recordRoute.number);
+      } else if (issueComposeRouteActive(repo) && !$("[data-repo-issues] [data-repo-issue-form]")) {
+        openIssueCompose(repo);
       } else {
         loadRepoIssues(repo);
       }

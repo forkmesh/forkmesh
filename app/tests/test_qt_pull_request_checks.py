@@ -182,8 +182,28 @@ def test_every_pull_reload_and_the_relay_sweep_queue_checks():
     assert "m_pullChecksSweepAtMs.insert(key, nowMs);" in sweep
     assert "queueChecksForOpenPulls(writable, std::move(pulls));" in sweep
     # A submission that just arrived from another node is not left for a timer.
-    inbox = _function(PULLS, "void MainWindow::applyPullsInboxPayload(")
+    inbox = _function(PULLS, "void MainWindow::finishPullsInboxApply(")
     assert "sweepPullChecksFor(repo);" in inbox
+
+
+def test_pull_inbox_entries_apply_on_a_worker():
+    payload = _function(PULLS, "void MainWindow::applyPullsInboxPayload(")
+    queue = _function(PULLS, "void MainWindow::queuePullsInboxApply(")
+    finish = _function(PULLS, "void MainWindow::finishPullsInboxApply(")
+    entries = _function(PULLS, "MainWindow::applyPullsInboxEntries(")
+    assert "store.applyRemotePull(pr)" in entries
+    for gui in (payload, queue, finish):
+        assert "applyRemotePull" not in gui
+        assert "applyRemoteEvent" not in gui
+        assert "reloadPulls();" not in gui
+    assert "runOffThread<PullsInboxOutcome>(" in queue
+    worker = queue.split("runOffThread<PullsInboxOutcome>(", 1)[1]
+    assert worker.index("applyPullsInboxEntries(store, pending)") < worker.index(
+        "finishPullsInboxApply(")
+    assert "m_pullLedgerSweepInProgress" in queue
+    sweep = _function(PULLS, "void MainWindow::reconcilePullLedgerFor(")
+    assert "m_pullsInboxApplyInFlight.contains(pullsInboxKey(repo))" in sweep
+    assert "startQueuedPullsInboxApplies();" in sweep
 
 
 def test_running_pull_checks_are_visible_without_opening_the_pull():
