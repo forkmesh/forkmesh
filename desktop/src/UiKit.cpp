@@ -8,14 +8,20 @@
 #include <QChildEvent>
 #include <QComboBox>
 #include <QFontMetrics>
+#include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHash>
 #include <QHeaderView>
+#include <QLabel>
 #include <QMenu>
+#include <QMessageBox>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPointer>
 #include <QPushButton>
 #include <QSet>
 #include <QStyle>
+#include <QStyleOption>
 #include <QStyledItemDelegate>
 #include <QSvgRenderer>
 #include <QTableView>
@@ -779,6 +785,112 @@ void syncStockWidget(QWidget *widget, bool next)
     }
 }
 
+const char kMessageCard[] = "nextMessageCard";
+const char kMessageCardDressed[] = "nextMessageCardDressed";
+const char kMessageHeading[] = "nextMessageHeading";
+
+QHash<QWidget *, QPointer<QWidget>> &messageScrims()
+{
+    static QHash<QWidget *, QPointer<QWidget>> scrims;
+    return scrims;
+}
+
+QMessageBox *messageCard(QObject *watched)
+{
+    if (!watched->isWidgetType() || !static_cast<QWidget *>(watched)->isWindow())
+        return nullptr;
+    auto *box = qobject_cast<QMessageBox *>(watched);
+    return box && box->property(kMessageCard).toBool() ? box : nullptr;
+}
+
+void prepareMessageCard(QObject *watched)
+{
+    if (!watched->isWidgetType() || !static_cast<QWidget *>(watched)->isWindow())
+        return;
+    auto *box = qobject_cast<QMessageBox *>(watched);
+    if (!box || box->testAttribute(Qt::WA_WState_Created) ||
+        box->property(kMessageCard).isValid())
+        return;
+    box->setProperty(kMessageCard, true);
+    box->setAttribute(Qt::WA_TranslucentBackground, true);
+    box->setAttribute(Qt::WA_StyledBackground, true);
+    Qt::WindowFlags flags = box->windowFlags();
+    flags.setFlag(Qt::FramelessWindowHint, true);
+#ifndef Q_OS_MACOS
+    flags.setFlag(Qt::NoDropShadowWindowHint, true);
+#endif
+    box->overrideWindowFlags(flags);
+}
+
+void dressMessageCard(QMessageBox *box)
+{
+    if (box->property(kMessageCardDressed).toBool())
+        return;
+    box->setProperty(kMessageCardDressed, true);
+    const QString title = box->windowTitle().trimmed();
+    if (!title.isEmpty() && box->informativeText().isEmpty() &&
+        title != box->text().trimmed() &&
+        title != QApplication::applicationDisplayName()) {
+        const Qt::TextFormat format = box->textFormat();
+        box->setInformativeText(box->text());
+        box->setText(format == Qt::RichText ? title.toHtmlEscaped() : title);
+        if (auto *info = box->findChild<QLabel *>(
+                QStringLiteral("qt_msgbox_informativelabel")))
+            info->setTextFormat(format);
+    }
+    box->setProperty(kMessageHeading, !box->informativeText().isEmpty());
+}
+
+void hideMessageScrim(QWidget *box)
+{
+    if (QPointer<QWidget> scrim = messageScrims().take(box))
+        scrim->deleteLater();
+}
+
+void showMessageScrim(QMessageBox *box)
+{
+    QWidget *host = box->parentWidget() ? box->parentWidget()->window() : nullptr;
+    if (!host || host == box || !host->isVisible() ||
+        messageScrims().contains(box))
+        return;
+    auto *scrim = new QWidget(host);
+    scrim->setObjectName(QStringLiteral("messageCardScrim"));
+    scrim->setAttribute(Qt::WA_StyledBackground, true);
+    scrim->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    scrim->setGeometry(host->rect());
+    scrim->show();
+    scrim->raise();
+    messageScrims().insert(box, scrim);
+    QObject::connect(box, &QObject::destroyed, scrim,
+                     [box] { hideMessageScrim(box); });
+}
+
+void layoutMessageCard(QMessageBox *box)
+{
+    if (!box->iconPixmap().isNull())
+        box->setIconPixmap(QPixmap());
+    box->setContentsMargins(0, 0, 0, 0);
+    if (auto *grid = qobject_cast<QGridLayout *>(box->layout())) {
+        grid->setContentsMargins(24, 22, 24, 20);
+        grid->setHorizontalSpacing(0);
+        grid->setVerticalSpacing(8);
+        for (int index = 0; index < grid->count(); ++index) {
+            if (QSpacerItem *spacer = grid->itemAt(index)->spacerItem())
+                spacer->changeSize(0, 0, QSizePolicy::Fixed, QSizePolicy::Fixed);
+        }
+        grid->invalidate();
+    }
+    showMessageScrim(box);
+}
+
+void paintMessageCard(QMessageBox *box)
+{
+    QStyleOption option;
+    option.initFrom(box);
+    QPainter painter(box);
+    box->style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, box);
+}
+
 class StockPolish final : public QObject
 {
 public:
@@ -791,8 +903,24 @@ protected:
         case QEvent::Polish:
             if (watched->isWidgetType())
                 syncStockWidget(static_cast<QWidget *>(watched), Theme::isNext());
+            if (QMessageBox *box = messageCard(watched))
+                dressMessageCard(box);
+            break;
+        case QEvent::Show:
+            if (QMessageBox *box = messageCard(watched))
+                layoutMessageCard(box);
+            break;
+        case QEvent::Hide:
+            if (messageCard(watched))
+                hideMessageScrim(static_cast<QWidget *>(watched));
+            break;
+        case QEvent::Paint:
+            if (QMessageBox *box = messageCard(watched))
+                paintMessageCard(box);
             break;
         case QEvent::ChildAdded:
+            if (Theme::isNext())
+                prepareMessageCard(watched);
             if (Theme::isNext() && qobject_cast<QComboBox *>(watched)) {
                 QObject *child = static_cast<QChildEvent *>(event)->child();
                 if (child && child->isWidgetType()) {

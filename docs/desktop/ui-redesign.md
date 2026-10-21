@@ -165,6 +165,22 @@ helpers `groupHeading`, `pageTitle`, `pageLede`, `labeledField`, `tintedIcon`.
   default): the coloured left stripe on inline notices and conversation cards.
 - **Notices** are inline `kit::InlineNotice` rows in `#pageNoticeArea`, not
   floating cards.
+- **Alerts** (`QMessageBox`, every call site) are restyled centrally in Next by
+  `kit::installStockPolish()` and `13-message-card.qss`: a frameless rounded
+  card on `surface` with a hairline border, no icon, the default button in the
+  accent, and a dim `#messageCardScrim` over the parent window while it is
+  open. The box is marked on its first `ChildAdded` (during construction,
+  before its native window exists, which `Polish` is too late for); its
+  translucent window skips the stylesheet background, so the filter paints
+  `PE_Widget` on `Paint`. The window title becomes a bold heading and the
+  message the body when the box has no informative text. macOS discards
+  `QMessageBox` window titles (`QMessageBox::setWindowTitle` is a no-op there),
+  so on macOS only boxes that set the heading as `text` and the body as
+  `informativeText` get a heading; the rest show the message alone. Qt's macOS
+  box adds a 24 px widget margin and re-inserts the icon on a style change, so
+  the layout is fixed on `Show`, just before `QMessageBox::showEvent` sizes it.
+  Frameless alerts cannot be dragged. Classic is unchanged.
+
 
 ## Must not break
 
