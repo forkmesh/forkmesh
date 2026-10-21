@@ -14781,7 +14781,9 @@
       rows.push(`<div data-repo-explorer-current-path="${escapeHtml(path)}" class="${repoExplorerRowClass(true)}"><i data-lucide="folder-open" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="min-w-0 truncate">${escapeHtml(currentName)}</span></div>`);
     }
 
-    if (entries.length) {
+    if (entries === null) {
+      // Still reading the folder: no "empty" claim, and no rows to grow from.
+    } else if (entries.length) {
       rows.push(entries.map((entry) => {
         const isTree = entry.type === "tree";
         const childPath = repoChildPath(path, entry.name);
@@ -17855,7 +17857,14 @@
     if (!background) setRepoTab("code");
     treePanel?.classList.remove("hidden");
     viewer?.classList.add("hidden");
-    readmePanel?.classList.toggle("hidden", Boolean(path));
+    // The README box sits under the file table, which grows from the skeleton
+    // to the real row count; it stays out of the layout until the rows are in
+    // so it never jumps down the page (it only opens at the repository root).
+    readmePanel?.classList.add("hidden");
+    // On a narrow screen the About rail stacks under the file table and the
+    // README; it joins the page once both have their final height (shell.html).
+    const contentGrid = detail.querySelector("[data-repo-content-grid]");
+    if (!background) contentGrid?.setAttribute("data-repo-tree-pending", "");
     setRepoExplorerFocusMode(Boolean(path));
     // The root/README view keeps the two-column layout: the About rail is a
     // permanent right-hand column (the old full-width README override that
@@ -17864,7 +17873,7 @@
     if (!background) resetRepoDirAbout();
 
     treeBody.innerHTML = repoTreeSkeletonHtml();
-    renderRepoExplorer(repo, path, []);
+    renderRepoExplorer(repo, path, null);
     try {
       const requestedAt = performance.now();
       // A live-mirror read: fetch fresh (fetchRepoJson, no-store) like every
@@ -17898,6 +17907,7 @@
       if (!background) navigateHistory(repoCodeLinkUrl(repo, "tree", path));
       window.lucide?.createIcons();
       if (!path) {
+        readmePanel?.classList.remove("hidden");
         const readmeEntry = entries.find((e) => e.type === "blob" && /^readme(\.md|\.txt|\.rst)?$/i.test(String(e.name || "")));
         const readmeBody = detail.querySelector("[data-repo-readme-body]");
         const readmeFilename = detail.querySelector("[data-repo-readme-filename]");
@@ -17942,12 +17952,15 @@
         ? `<div class="fm-blankslate"><i data-lucide="${path ? "file-question" : "folder-open"}"></i><p class="fm-blankslate-title">${path ? "Path not found" : "No files yet"}</p><p class="fm-blankslate-desc">${escapeHtml(path ? `${path} is not in this repository at this revision.` : "This repository has no files at this revision.")}</p></div>`
         : '<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Repository unavailable</p><p class="fm-blankslate-desc">No reachable mirror host is serving this repository tree right now.</p></div>';
       if (!path) {
+        readmePanel?.classList.remove("hidden");
         const readmeBody = detail.querySelector("[data-repo-readme-body]");
         if (readmeBody) {
           readmeBody.className = "p-4 text-sm leading-6 text-muted-foreground";
           readmeBody.innerHTML = `<p class="mt-1">${escapeHtml(repo.description || "This repository has not published a README preview yet.")}</p>`;
         }
       }
+    } finally {
+      contentGrid?.removeAttribute("data-repo-tree-pending");
     }
   }
 
@@ -29124,10 +29137,42 @@
     return base.toLowerCase() === repoApiBase(repo).toLowerCase() ? seed : null;
   }
 
+  // The About rail's reads the node made while rendering the page (stats, the
+  // .forkmesh listing, the contributor roster; repo_ssr_about.py). Handed to
+  // the read seeds, they answer the rail's loaders without a request, so
+  // loadRepoAboutRail can draw the rail in the frame the dashboard takes the
+  // page over (scheduleRepoAboutRail) instead of after an idle callback.
+  let repoFirstViewReadsTaken = false;
+  let repoFirstViewReadsSeeded = false;
+  function seedRepoFirstViewReads(repo) {
+    if (repoFirstViewReadsTaken) return false;
+    const seed = repoFirstViewSeed(repo);
+    if (!seed || !seed.reads || typeof seed.reads !== "object") return false;
+    if (seed.tree?.commit !== seed.commit) return false;
+    // Once per page load: a later redraw must not bring back answers the
+    // rail already used.
+    repoFirstViewReadsTaken = true;
+    mergeRepoReadSeeds({
+      base: repoApiBase(repo).toLowerCase(),
+      reads: seed.reads,
+      servedBy: seed.servedBy || "",
+      view: "first-view",
+      number: 0,
+    });
+    repoFirstViewReadsSeeded = true;
+    return true;
+  }
+
   function applyRepoFirstViewAbout(repo) {
     const seed = repoFirstViewSeed(repo);
     if (!seed) return;
     applyRepoFeatures(seed.features);
+    seedRepoFirstViewReads(repo);
+    const size = Number(seed.sizeBytes) || 0;
+    const sizeMeta = $("[data-repo-about-sizemap-meta]");
+    if (size > 0 && sizeMeta) sizeMeta.textContent = formatSize(size);
+    const watchers = $("[data-repo-watch-count]");
+    if (Number.isInteger(seed.followers) && watchers) watchers.textContent = formatCount(seed.followers);
     const about = String(seed.info?.about || "").trim();
     if (about) applyRepoAboutDescription(repo, about);
     if (seed.info) applyRepoAboutWebsite(String(seed.info.website || ""));
@@ -30248,6 +30293,14 @@
     } catch (_) { /* no releases — section stays hidden */ }
   }
 
+  // A refresh that brings the same rail must not rebuild it: replacing equal
+  // markup re-requests its avatars and flickers them.
+  function setHtmlIfChanged(element, markup) {
+    if (element.dataset?.renderedHtml === markup) return;
+    element.innerHTML = markup;
+    if (element.dataset) element.dataset.renderedHtml = markup;
+  }
+
   function renderRepoAboutFileCount(count, partial) {
     const section = $("[data-repo-about-files]");
     const label = $("[data-repo-about-files-count]");
@@ -30264,16 +30317,16 @@
     const legend = $("[data-repo-about-langs-legend]");
     const section = $("[data-repo-about-langs]");
     if (!bar || !legend || !section) return;
-    bar.innerHTML = ranked.map(([language, weight]) => {
+    setHtmlIfChanged(bar, ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = (weight / total) * 100;
       return `<span title="${escapeHtml(language)}" class="h-full shrink-0 first:rounded-l-full last:rounded-r-full" style="width:${pct.toFixed(1)}%;min-width:2px;background-color:${color}"></span>`;
-    }).join("");
-    legend.innerHTML = ranked.map(([language, weight]) => {
+    }).join(""));
+    setHtmlIfChanged(legend, ranked.map(([language, weight]) => {
       const color = REPO_LANGUAGE_COLORS[language] || "#8a8a8a";
       const pct = ((weight / total) * 100).toFixed(1);
       return `<span class="flex min-w-0 items-center gap-1.5"><span class="h-2 w-2 shrink-0 rounded-full" style="background-color:${color}"></span><span class="min-w-0 truncate text-foreground">${escapeHtml(language)}</span><span class="ml-auto shrink-0 font-mono">${pct}%</span></span>`;
-    }).join("");
+    }).join(""));
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
   }
@@ -30492,10 +30545,10 @@
     const shown = rows.slice(0, REPO_CONTRIBUTOR_ROSTER_SHOWN);
     const more = total - shown.length;
     const everyone = repoLinkUrl(repo, "blob", REPO_CONTRIBUTOR_ROSTER_PATH);
-    list.innerHTML = shown.map((row) => repoRosterContributorAvatar(repo, row)).join("") +
+    setHtmlIfChanged(list, shown.map((row) => repoRosterContributorAvatar(repo, row)).join("") +
       (more > 0
         ? `<a href="${escapeHtml(everyone)}" title="All ${escapeHtml(formatCount(total))} contributors" class="!ml-2 text-[11px] text-muted-foreground hover:text-foreground hover:underline">+${formatCount(more)}</a>`
-        : "");
+        : ""));
     dropBrokenContributorAvatars(list);
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
@@ -30525,8 +30578,8 @@
     count.textContent = String(Number(total) || rows.length);
     const shown = rows.slice(0, 8);
     const more = (Number(total) || rows.length) - shown.length;
-    list.innerHTML = shown.map(repoContributorAvatar).join("") +
-      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : "");
+    setHtmlIfChanged(list, shown.map(repoContributorAvatar).join("") +
+      (more > 0 ? `<span class="!ml-2 text-[11px] text-muted-foreground">+${formatCount(more)}</span>` : ""));
     dropBrokenContributorAvatars(list);
     section.removeAttribute("data-repo-about-pending");
     section.classList.remove("hidden");
@@ -31089,6 +31142,11 @@
   function scheduleRepoAboutRail(repo) {
     if (!repo || state.repoAboutLoaded) return;
     state.repoAboutLoaded = true;
+    if (repoFirstViewReadsSeeded && state.activeRepoTab === "code") {
+      repoFirstViewReadsSeeded = false;
+      loadRepoAboutRail(repo);
+      return;
+    }
     const load = () => {
       if (
         state.activeRepoTab !== "code"
@@ -41877,7 +41935,7 @@
               // routed in-app by the document click handler.
               const tabHref = tab === "code" ? repoLinkUrl(repo) : `${repoLinkUrl(repo)}/${tab}`;
               const pluginEntry = { code: "code", issues: "issues", pulls: "pull-requests", discussions: "discussions", actions: "actions", agents: "agents" }[tab];
-              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span>${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" class="min-w-[20px] rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground${hideDiscussionsBadge ? " hidden" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
+              return `<a href="${escapeHtml(tabHref)}" role="tab" data-dashboard-repo-tab="${tab}"${pluginEntry ? ` data-plugin-entry="${pluginEntry}"` : ""} aria-selected="${tab === "code" ? "true" : "false"}" class="group relative inline-flex h-12 shrink-0 items-center px-1 text-[14px] font-normal text-foreground"><span class="inline-flex h-8 items-center gap-2 rounded-md px-2 transition-colors group-hover:bg-secondary"><i ${iconAttr} class="h-4 w-4 text-muted-foreground"></i><span>${meta.label}</span>${showTabCount ? `<span data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full bg-[var(--dashboard-counter)] px-1.5 text-center text-[12px] font-medium leading-[18px] text-foreground${hideDiscussionsBadge ? " hidden" : ""}">${tabCountLabel(meta.count)}</span>` : ""}</span></a>`;
             }).join("")}
           </div>
         </div>
@@ -41930,7 +41988,7 @@
 	                    <div data-repo-tree></div>
 	                  </div>
 	                  <div data-repo-blob class="hidden"></div>
-	                  <section data-repo-readme class="mt-4 overflow-hidden rounded-lg border border-border bg-background">
+	                  <section data-repo-readme class="hidden mt-4 overflow-hidden rounded-lg border border-border bg-background">
 	                    <div data-repo-readme-filename class="flex items-center gap-2 border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="book-open" class="h-3.5 w-3.5 text-muted-foreground"></i>README.md</div>
 	                    <div data-repo-readme-body class="p-4 text-sm leading-6 text-muted-foreground">
 	                      <p class="mt-1">${loadingHtml("Loading README...")}</p>

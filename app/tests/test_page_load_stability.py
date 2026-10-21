@@ -117,6 +117,10 @@ function repoApiBase(repo) { return `/api/repo/${repo.owner}/${repo.name}`; }
 function applyRepoFeatures(value) { calls.push(["features", value]); }
 function applyRepoAboutDescription(repo, value) { calls.push(["about", value]); }
 function applyRepoAboutWebsite(value) { calls.push(["website", value]); }
+function seedRepoFirstViewReads(repo) { calls.push(["reads", repo.name]); }
+function $() { return null; }
+function formatSize(value) { return String(value); }
+function formatCount(value) { return String(value); }
 %s
 %s
 applyRepoFirstViewAbout({ owner: "Acme", name: "Tool" });
@@ -131,7 +135,72 @@ console.log(JSON.stringify({ first, other, broken: calls }));
                                "info": {"about": "Hello", "website": "https://e.test"}})),
        _function(CONTENT, "repoFirstViewSeed"), _function(CONTENT, "applyRepoFirstViewAbout"))
     out = _node(script)
-    assert out["first"] == [["features", {"issues": False}], ["about", "Hello"],
+    assert out["first"] == [["features", {"issues": False}], ["reads", "Tool"], ["about", "Hello"],
                             ["website", "https://e.test"]]
     assert out["other"] == [] and out["broken"] == []
 
+
+def test_scrollbar_and_mono_font_do_not_move_the_first_paint():
+    style = SHELL.split("<style>", 1)[1]
+    assert ".view.overflow-y-auto {\n        scrollbar-gutter: stable;" in style
+    head = SHELL.split("</head>", 1)[0]
+    for name in ("DejaVuSansMono-latin.woff2", "DejaVuSansMono-Bold-latin.woff2"):
+        assert ('<link rel="preload" href="/assets/fonts/%s" as="font" type="font/woff2" crossorigin />'
+                % name) in head
+        assert head.index(name) < head.index("@font-face")
+
+
+def test_readme_and_stacked_about_wait_for_the_file_table():
+    markup = DETAIL.split("detail.innerHTML = `", 1)[1]
+    assert '<section data-repo-readme class="hidden mt-4' in markup
+    tree = CONTENT.split("  async function loadRepositoryTree(", 1)[1].split(
+        "\n  async function loadRepositoryBlob(", 1)[0]
+    hide = tree.index('readmePanel?.classList.add("hidden");')
+    fetch = tree.index("await fetchRepoJson(")
+    assert hide < fetch
+    assert tree.index('contentGrid?.setAttribute("data-repo-tree-pending", "")') < fetch
+    assert tree.count('readmePanel?.classList.remove("hidden");') == 2
+    assert tree.rstrip().endswith(
+        '} finally {\n      contentGrid?.removeAttribute("data-repo-tree-pending");\n    }\n  }')
+    style = SHELL.split("<style>", 1)[1]
+    assert "[data-repo-tree-pending] > [data-repo-about-rail]" in style
+
+
+def test_tab_counters_keep_one_width_from_placeholder_to_count():
+    ssr = (ROOT / "host" / "forkmesh_host" / "repo_ssr.py").read_text(encoding="utf-8")
+    assert 'data-dashboard-repo-tab-count="${tab}" style="min-width:1.75rem" class="rounded-full' in DETAIL
+    assert """COUNT = ('<span style="min-width:1.75rem" class="rounded-full""" in ssr
+
+
+def test_first_view_reads_answer_the_rail_in_the_takeover_frame():
+    seed = CONTENT.split("  function seedRepoFirstViewReads(repo) {", 1)[1].split("\n  }\n", 1)[0]
+    assert "if (repoFirstViewReadsTaken) return false;" in seed
+    assert "if (seed.tree?.commit !== seed.commit) return false;" in seed
+    assert "mergeRepoReadSeeds({" in seed and "base: repoApiBase(repo).toLowerCase()," in seed
+    schedule = CONTENT.split("  function scheduleRepoAboutRail(repo) {", 1)[1].split("\n  }\n", 1)[0]
+    assert schedule.index("loadRepoAboutRail(repo);") < schedule.index("requestIdleCallback")
+    assert 'if (repoFirstViewReadsSeeded && state.activeRepoTab === "code") {' in schedule
+    # A refresh with the same answer leaves the rail's markup (and images) alone.
+    for name in ("renderRepoAboutLanguages", "renderRepoAboutRoster", "renderRepoAboutContributors"):
+        body = _function(CONTENT, name)
+        assert "setHtmlIfChanged(" in body and ".innerHTML =" not in body, name
+    script = """
+%s
+const element = { dataset: {}, writes: 0, set innerHTML(value) { this.writes += 1; this.html = value; } };
+setHtmlIfChanged(element, "<b>a</b>");
+setHtmlIfChanged(element, "<b>a</b>");
+setHtmlIfChanged(element, "<b>b</b>");
+console.log(JSON.stringify({ writes: element.writes, html: element.html }));
+""" % _function(CONTENT, "setHtmlIfChanged")
+    assert _node(script) == {"writes": 2, "html": "<b>b</b>"}
+
+
+def test_folder_list_does_not_claim_empty_while_loading():
+    explorer = (DASHBOARD / "js" / "05-repo-list-explorer.js").read_text(encoding="utf-8")
+    body = _function(explorer, "renderRepoExplorer")
+    assert body.index("if (entries === null) {") < body.index("No files in this folder.")
+    tree = CONTENT.split("  async function loadRepositoryTree(", 1)[1].split(
+        "\n  async function loadRepositoryBlob(", 1)[0]
+    assert "renderRepoExplorer(repo, path, null);" in tree
+    style = SHELL.split("<style>", 1)[1]
+    assert "[data-repo-tree-pending] [data-repo-code-explorer]:not(.hidden) ~ [data-repo-code-main]" in style
