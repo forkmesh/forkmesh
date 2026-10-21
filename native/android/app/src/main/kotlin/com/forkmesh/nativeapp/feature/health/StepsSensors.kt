@@ -103,6 +103,7 @@ object StepsSensors {
         prefs?.remove(SleepRestLog.LAST_KEY)
     }
 
+    @Synchronized
     fun refresh() {
         val sensors = manager ?: return
         val store = prefs

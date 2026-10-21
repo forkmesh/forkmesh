@@ -184,8 +184,10 @@ object VaultTransfer {
 
     fun readCsv(data: ByteArray): VaultCsvImport {
         if (data.size > MAX_FILE_BYTES) throw VaultException("csv_too_large")
-        if (VaultZip.isZip(data)) return readCsv(VaultZip.firstCsv(data, MAX_FILE_BYTES))
-        return readCsv(decode(data))
+        if (!VaultZip.isZip(data)) return readCsv(decode(data))
+        val inner = VaultZip.firstCsv(data, MAX_FILE_BYTES)
+        if (VaultZip.isZip(inner)) throw VaultException("zip_unreadable")
+        return readCsv(decode(inner))
     }
 
     private fun decode(data: ByteArray): String = try {

@@ -10,7 +10,6 @@ import com.forkmesh.nativeapp.navigation.RepoRef
 import com.forkmesh.nativeapp.platform.AppLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -56,14 +55,6 @@ object ShellPullsWatch {
             val again = end()
             if (pulls != null && CodeFeature.currentRepo.value == repo) adopt(repo, pulls)
             if (!again) return
-        }
-    }
-
-    suspend fun poll(heat: () -> DeviceHeat, lowPower: () -> Boolean) {
-        while (true) {
-            val every = NewPullsMarker.pollEvery(heat(), lowPower())
-            delay(every ?: NewPullsMarker.WARM_POLL_MS)
-            if (every != null && AppLifecycle.foreground.value) refresh()
         }
     }
 

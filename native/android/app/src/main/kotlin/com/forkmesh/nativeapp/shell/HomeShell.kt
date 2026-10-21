@@ -120,9 +120,6 @@ import com.forkmesh.nativeapp.feature.code.CodeFeature
 import com.forkmesh.nativeapp.feature.composer.ComposerFeature
 import com.forkmesh.nativeapp.code.RepoHubSection
 import com.forkmesh.nativeapp.platform.AppLifecycle
-import androidx.compose.ui.platform.LocalContext
-import android.os.Build
-import android.os.PowerManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.forkmesh.nativeapp.feature.composer.PromptButton
 import com.forkmesh.nativeapp.feature.composer.PromptVoiceHold
@@ -416,7 +413,6 @@ class HomeShell : Screen() {
         val hideBarIcons by SettingsArea.homeHidesBarIcons.collectAsState()
         val guest = Services.get<AuthService>()?.isGuest?.collectAsState()?.value == true
         val shellScope = rememberCoroutineScope()
-        val context = LocalContext.current
         val currentRepo by CodeFeature.currentRepo.collectAsState()
         val shellPulls by ShellPullsWatch.state.collectAsState()
         val repoCounts by ShellBadges.repoCounts.collectAsState()
@@ -439,20 +435,6 @@ class HomeShell : Screen() {
             if (!foreground) return@LaunchedEffect
             ShellPullsWatch.refresh()
             ShellBadges.refreshHome(rssShown)
-        }
-        LaunchedEffect(Unit) {
-            val power = context.applicationContext.getSystemService(PowerManager::class.java)
-            ShellPullsWatch.poll(
-                heat = {
-                    val status = if (Build.VERSION.SDK_INT >= 29) power?.currentThermalStatus ?: 0 else 0
-                    when {
-                        status >= 4 -> DeviceHeat.Critical
-                        status == 3 -> DeviceHeat.Warm
-                        else -> DeviceHeat.Calm
-                    }
-                },
-                lowPower = { power?.isPowerSaveMode == true },
-            )
         }
         LaunchedEffect(navigator) {
             snapshotFlow { pushScreen(navigator) }.collect { PushScreens.publish(it) }
@@ -785,7 +767,6 @@ private fun TopBar(
             Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) { AccountFeature.ProjectSlot(onLongPress = onHome) }
             Spacer(Modifier.width(FmSpace.x3))
             Row(horizontalArrangement = Arrangement.spacedBy(FmSpace.x2), verticalAlignment = Alignment.CenterVertically) {
-                com.forkmesh.nativeapp.feature.djstudio.DjNowPlayingChip()
                 if (PackageGateFeature.surfaces.collectAsState().value.shows("glasses-alert")) GlassesRadarChip()
                 com.forkmesh.nativeapp.feature.health.StepsWalkChip()
                 com.forkmesh.nativeapp.feature.genie.ShellMailChip()

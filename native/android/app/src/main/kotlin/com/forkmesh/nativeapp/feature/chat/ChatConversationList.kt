@@ -9,6 +9,9 @@ import com.forkmesh.nativeapp.chat.ChatConversationItem
 import com.forkmesh.nativeapp.chat.ChatMessageInfo
 import com.forkmesh.nativeapp.chat.ChatRow
 import com.forkmesh.nativeapp.model.ChatReceiptTimes
+import com.forkmesh.nativeapp.platform.AppLifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 internal fun LazyListScope.conversationItems(
     items: List<ChatConversationItem>,
@@ -64,6 +67,9 @@ internal fun LazyListScope.conversationItems(
                             onDoubleTap = tapback,
                             onTapback = tapback,
                             onThread = { onThread(message.id) },
+                            onSticker = if (pressable) ({ slug ->
+                                AppLifecycle.scope.launch(Dispatchers.IO) { hub?.toggleSticker(message, slug) }
+                            }) else null,
                         ),
                         viewOnce = if (viewOnce != null) ({ ViewOnceBubble(viewOnce) }) else null,
                     )
