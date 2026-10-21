@@ -18,6 +18,22 @@ def pkt_line(payload):
     return ("%04x" % (len(payload) + 4)).encode() + payload
 
 
+def with_sideband_message(body, message):
+    data = bytes(body or b"")
+    if len(data) < 9 or not data.endswith(b"0000"):
+        return None
+    try:
+        first = int(data[:4], 16)
+    except ValueError:
+        return None
+    if first < 5 or data[4:5] not in (b"\x01", b"\x02", b"\x03"):
+        return None
+    payload = str(message or "").encode("utf-8")[:65000]
+    if not payload:
+        return None
+    return data[:-4] + pkt_line(b"\x02" + payload) + b"0000"
+
+
 def advertised_refs_canonical(data):
     # Canonical, hashable fingerprint of the served branches + tags, derived from
     # a `git upload-pack --advertise-refs` body (the bytes a host streams back for

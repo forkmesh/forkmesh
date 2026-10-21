@@ -62,6 +62,28 @@ tests after it in `app/tests/test_hosted_repositories.py`.
 `hosted_repos.core_owners` backs `_core_push_nodes`, so repositories owned by a
 retired core's account stay core-held while pushes go only to live cores.
 
+**"Open a pull request" after a push to a fork** (`_fork_push_notice`,
+`git_http.with_sideband_message`). A contributor who pushed a branch to their
+fork had to find the compare page themselves. After an accepted receive-pack
+(`POST`, 200) whose `X-ForkMesh-Ref-Updates` name a new or moved branch other
+than the default, on a repository whose catalog record has `forkedFrom` (or
+a contributor's `pr/<account>/` branch on the repository itself, see
+[HOSTED_REPOS.md](HOSTED_REPOS.md)), the proxy reads the result and adds one
+side-band 2 packet before the final flush:
+
+```
+remote: Open a pull request for 'fix' by visiting:
+remote:      https://app.forkmesh.com/<you>/<repo>/compare/main...fix
+```
+
+On a fork that page targets the parent (`pullRequestParent`); for a `pr/`
+branch it opens a pull request on the repository itself. Results without side-band
+(`docs_book.py`'s report-status push) and non-fork pushes are passed through
+untouched, and the body is only read when the line applies. Up to five
+branches are listed. `_https_mirror_push_send` is unchanged. Tests:
+`app/tests/test_fork_push_notice.py`, including a stock `git push` against
+`git http-backend` that prints the lines.
+
 ## Ref rules
 
 | Ref | Rule |
