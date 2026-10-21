@@ -185,9 +185,9 @@ def test_stat_grid_aligns_columns_and_narrows_to_fit():
 
 def test_accent_comes_from_the_theme_else_the_logo():
     side = 40
-    red = (side, side, b"\xe7\x4c\x3c\xff" * (side * side))
+    red = og_card.card_logo(_png(side, side, 2, [(0, b"\xe7\x4c\x3c" * side)] * side))
     assert og_card.logo_accent(red) == (0xe7, 0x4c, 0x3c)
-    grey = (side, side, b"\x80\x80\x80\xff" * (side * side))
+    grey = og_card.card_logo(_png(side, side, 2, [(0, b"\x80\x80\x80" * side)] * side))
     assert og_card.logo_accent(grey) is None
     assert og_card.parse_color("#10b981") == (16, 185, 129)
     assert og_card.parse_color("nope") is None
@@ -368,12 +368,100 @@ def test_binary_response_bodies_are_copied_into_js_owned_buffers():
     assert "JsResponse.new(_to_js(bytes(" not in ENTRY_SRC
     for site in ("bytes(data)", "bytes(raw)", "bytes(png)"):
         assert "Uint8Array.new(_to_js(%s))" % site in ENTRY_SRC
+
+
+def _png(width, height, color, rows, palette=b"", trns=b""):
+    """A minimal PNG whose rows are (filter byte, raw bytes) pairs."""
+    def chunk(tag, body):
+        return (struct.pack(">I", len(body)) + tag + body
+                + struct.pack(">I", zlib.crc32(tag + body) & 0xFFFFFFFF))
+    data = b"".join(bytes((kind,)) + raw for kind, raw in rows)
+    out = b"\x89PNG\r\n\x1a\n" + chunk(
+        b"IHDR", struct.pack(">IIBBBBB", width, height, 8, color, 0, 0, 0))
+    if palette:
+        out += chunk(b"PLTE", palette)
+    if trns:
+        out += chunk(b"tRNS", trns)
+    return out + chunk(b"IDAT", zlib.compress(data)) + chunk(b"IEND", b"")
+
+
+def test_decode_png_reads_the_cards_own_output():
+    png = og_card.render_referral_card(REFERRAL_SAMPLE, NOW_S)
+    width, height, rgba = og_card.decode_png(png)
+    assert (width, height) == (og_card.CARD_W, og_card.CARD_H)
+    assert len(rgba) == width * height * 4
+    assert rgba[:4] == bytes(og_card._BG) + b"\xff"
+
+
+def test_decode_png_undoes_every_filter_and_color_type():
+    # Sub, Up, Average and Paeth rows over one RGBA image.
+    rows = [(1, bytes([10, 20, 30, 255, 5, 5, 5, 0])),
+            (2, bytes([1, 1, 1, 0, 1, 1, 1, 0])),
+            (3, bytes([2, 2, 2, 0, 2, 2, 2, 0])),
+            (4, bytes([3, 3, 3, 0, 3, 3, 3, 0]))]
+    width, height, rgba = og_card.decode_png(_png(2, 4, 6, rows))
+    assert (width, height) == (2, 4)
+    assert rgba[:8] == bytes([10, 20, 30, 255, 15, 25, 35, 255])
+    assert rgba[8:16] == bytes([11, 21, 31, 255, 16, 26, 36, 255])
+    # Average: (left 0 + up 11) // 2 + 2 = 7, then (7 + 16) // 2 + 2 = 13.
+    assert rgba[16:24] == bytes([7, 12, 17, 127, 13, 21, 28, 191])
+    # Paeth: the first pixel predicts from up, the second from left/up/corner.
+    assert rgba[24:28] == bytes([10, 15, 20, 127])
+    gray = og_card.decode_png(_png(1, 1, 0, [(0, b"\x80")]))
+    assert gray == (1, 1, b"\x80\x80\x80\xff")
+    indexed = og_card.decode_png(_png(2, 1, 3, [(0, b"\x00\x01")],
+                                      palette=b"\xff\x00\x00\x00\x00\xff",
+                                      trns=b"\x00"))
+    assert indexed == (2, 1, b"\xff\x00\x00\x00\x00\x00\xff\xff")
+
+
+def test_decode_png_refuses_what_it_cannot_draw():
+    assert og_card.decode_png(b"<svg/>") is None
+    assert og_card.decode_png(b"\x89PNG\r\n\x1a\n") is None
+    huge = _png(2048, 1024, 6, [])
+    assert og_card.decode_png(huge) is None
+    truncated = _png(4, 4, 6, [(0, b"\x00" * 16)])
+    assert og_card.decode_png(truncated) is None
+
+
+def test_logo_is_scaled_into_the_corner_box_and_replaces_the_mark():
+    side = 300
+    opaque = _png(side, side, 2, [(0, b"\xe7\x4c\x3c" * side)] * side)
+    logo = og_card.card_logo(opaque)
+    assert logo[:2] == (og_card.LOGO_BOX, og_card.LOGO_BOX)
+    assert logo[2][:4] == b"\xe7\x4c\x3c\xff"
+    assert og_card.card_logo(opaque) is logo  # remembered
+    assert og_card.card_logo(b"not a png") is None
+    plain = og_card.render_repo_card(SAMPLE, NOW_S)
+    branded = og_card.render_repo_card(SAMPLE, NOW_S, logo)
+    _, _, a = og_card.decode_png(plain)
+    _, _, b = og_card.decode_png(branded)
+    corner = lambda rgba, x, y: rgba[(y * og_card.CARD_W + x) * 4:(y * og_card.CARD_W + x) * 4 + 3]
+    # The mark sits in the body's top-right corner, neofetch-style.
+    x = og_card.CARD_W - WIN - og_card.TERM_PAD - og_card.LOGO_BOX // 2
+    y = _unscanned(BODY_TOP + 4 + og_card.LOGO_BOX // 2)
+    assert corner(b, x, y) == b"\xe7\x4c\x3c"
+    assert corner(a, x, y) != b"\xe7\x4c\x3c"
+
+
 def test_card_titles_the_public_address():
     short = og_card.render_repo_card(dict(SAMPLE, path="/forkmesh"), NOW_S)
     full = og_card.render_repo_card(SAMPLE, NOW_S)
     explicit = og_card.render_repo_card(
         dict(SAMPLE, path="/forkmesh/forkmesh"), NOW_S)
     assert explicit == full and short != full
+
+
+def test_card_handler_uses_the_short_address_and_instance_logo():
+    handler = ENTRY_SRC.split("async def repo_card_handler", 1)[1]
+    handler = handler.split("\nasync def ", 1)[0]
+    assert "await _repo_public_path(\n            env, display_owner, display_repo)" in handler
+    assert "og_card.render_repo_card(info, time.time(), logo)" in handler
+    picker = ENTRY_SRC.split("async def _repo_card_logo", 1)[1].split("\nasync def ", 1)[0]
+    assert "FROM repo_media WHERE repo_bi=? AND kind='logo'" in picker
+    assert picker.index("repo_media") < picker.index("instance_branded(env)")
+    assert "INSTANCE_RASTER_LOGO" in picker
+    assert 'INSTANCE_RASTER_LOGO = "/instance-logo.png"' in ENTRY_SRC
 
 
 # --- Live counts: the sources the repository page uses ----------------------

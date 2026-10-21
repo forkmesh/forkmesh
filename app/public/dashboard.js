@@ -50557,7 +50557,7 @@
     "referrals": "/dashboard-page-referrals.js?v=9e46b4b9d5e8",
     "repo-activity": "/dashboard-page-repo-activity.js?v=b3986bf8501f",
     "tasks": "/dashboard-page-tasks.js?v=3737caeb0a46",
-    "workflows": "/dashboard-page-workflows.js?v=9cec7cd9e87f",
+    "workflows": "/dashboard-page-workflows.js?v=37375cef53b2",
   };
   const dashboardChunkScope = {
     $,

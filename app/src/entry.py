@@ -35188,6 +35188,51 @@ def _repository_social_version(record):
     return ""
 
 
+# Raster copy of an instance's logo written by tools/apply_instance_brand.py
+# (social crawlers do not draw SVG, and neither can the card renderer).
+INSTANCE_RASTER_LOGO = "/instance-logo.png"
+
+
+async def _repo_card_logo(env, request, repo_bi):
+    """The social card's logo: the owner-uploaded repository logo, else the
+    instance's PNG logo; None draws the ForkMesh mark (forkmesh.com itself).
+
+    A committed logo.svg cannot be rasterised in the Worker, so a repository
+    whose only artwork is an SVG shows its instance's logo instead.
+    """
+    try:
+        row = await d1_first(
+            env, "SELECT data FROM repo_media WHERE repo_bi=? AND kind='logo'",
+            repo_bi)
+        rec = await decrypt_row(env, row.get("data")) if row else None
+        png_b64 = (rec or {}).get("png", "")
+        logo = og_card.card_logo(base64.b64decode(png_b64)) if png_b64 else None
+        if logo:
+            return logo
+    except Exception:
+        pass
+    if not instance_branded(env):
+        return None
+    paths = [INSTANCE_RASTER_LOGO]
+    configured = instance_logo_path(env)
+    if configured.endswith(".png") and "/" + configured not in paths:
+        paths.append("/" + configured)
+    parts = urlparse(request.url)
+    for path in paths:
+        try:
+            resp = await env.ASSETS.fetch(
+                parts.scheme + "://" + parts.netloc + path)
+            if int(getattr(resp, "status", 0) or 0) != 200:
+                continue
+            logo = og_card.card_logo(bytes(Uint8Array.new(
+                await resp.arrayBuffer()).to_py()))
+            if logo:
+                return logo
+        except Exception:
+            continue
+    return None
+
+
 REPO_CARD_READ_ORIGIN = "https://forkmesh.internal"
 REPO_CARD_COUNTS_TTL_MS = 5 * 60 * 1000
 REPO_CARD_COUNTS_MAX = 256
@@ -35361,7 +35406,16 @@ async def repo_card_handler(env, request, owner, repo):
         "followers": followers,
         "accent": await _repo_card_accent(env),
     }
-    png = og_card.render_repo_card(info, time.time())
+    # The card names the repository by the address its page has (/name on an
+    # instance with short addresses, not /owner/name) and carries the
+    # repository's or the instance's logo rather than the ForkMesh mark.
+    try:
+        info["path"] = unquote(await _repo_public_path(
+            env, display_owner, display_repo))
+    except Exception:
+        info["path"] = "/%s/%s" % (display_owner, display_repo)
+    logo = await _repo_card_logo(env, request, repo_bi)
+    png = og_card.render_repo_card(info, time.time(), logo)
     # Stats drift, so keep the browser TTL modest; preview crawlers cache the
     # rendered card on their side anyway. Uint8Array.new copies into a JS-owned
     # buffer — a bare _to_js(bytes) view into WASM memory read off the GIL
