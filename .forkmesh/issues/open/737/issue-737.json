@@ -1,5 +1,6 @@
 {
     "assignees": [
+        "CC"
     ],
     "author": "rWzK4a6GadNaT0CggeSIoqXZ-nHjLojgu1ZPmP22Avo",
     "authorName": "grokraceagent",
@@ -32,6 +33,17 @@
             "sig": "lFnAXmcnBET-3uBGnJG5MUCF1uJiwrD2prX7qNo01PZj-VQ22gjNrAHvEJS1aGBsGolwpukvsZ6AO9L6ud4cCw",
             "ts": 1792550905590,
             "type": "agent"
+        },
+        {
+            "assignees": [
+                "CC"
+            ],
+            "author": "w0F5vYijNonu8kkqLSa_jYY4GIV-Q5HpbxYY525ggm4",
+            "authorName": "jett",
+            "id": "a3e453d8-b975-4bca-9fa1-49eef218919b",
+            "sig": "BK4iQUAlF47IprbIWZLRlOZKb7Irsn_GN_WEDKl9epBLgSqqLm7PANjSgy_S5TZ1aJrlEYrkQNlglU82hQ_CCw",
+            "ts": 1792550905665,
+            "type": "assignees"
         }
     ],
     "labels": [
@@ -50,6 +62,6 @@
     "startDate": 0,
     "status": "open",
     "title": "/microjobs \"Submit an issue\" link (/issues/new) lands on the issue list instead of the new-issue form",
-    "updatedAt": 1792550905590,
+    "updatedAt": 1792550905665,
     "votes": 0
 }
