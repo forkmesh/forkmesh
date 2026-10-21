@@ -441,15 +441,17 @@ test("the branch diff link opens the compare page, which feeds the new-pull form
   // one code column behind two line-number gutters.
   const splitRows = files.locator(".grid-cols-\\[3\\.5rem_minmax\\(0\\,1fr\\)_3\\.5rem_minmax\\(0\\,1fr\\)\\]");
   await expect(splitRows).toHaveCount(0);
+  await files.locator("[data-repo-diff-settings] > summary").click();
   await files.locator('[data-repo-pull-diff-mode="split"]').click();
   await expect(splitRows.first()).toBeVisible();
   await expect(files.locator('[data-repo-pull-diff-mode="split"]')).toHaveAttribute("aria-pressed", "true");
+  await files.locator("[data-repo-diff-settings] > summary").click();
   await files.locator('[data-repo-pull-diff-mode="unified"]').click();
   await expect(splitRows).toHaveCount(0);
   await expect(files.locator('[data-repo-pull-diff-mode="unified"]')).toHaveAttribute("aria-pressed", "true");
   await files.locator('[data-repo-pull-viewed="README.md"]').click();
   await expect(files.locator('[data-repo-pull-diff-file="README.md"]')).toHaveAttribute("data-viewed", "true");
-  await expect(files.locator("[data-repo-pull-viewed-summary]")).toHaveText("1 of 1 viewed");
+  await expect(files.locator("[data-repo-pull-viewed-summary]")).toHaveText("All 1 viewed");
   // The mark is keyed by the compared commits and survives a reload.
   await page.reload();
   await expect(page.locator('[data-repo-compare] [data-repo-pull-diff-file="README.md"]'))

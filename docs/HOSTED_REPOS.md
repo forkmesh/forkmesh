@@ -216,7 +216,8 @@ same session-bound credential an owner uses.
 
 ## Forks
 
-**Forks → Fork this repository** on a public hosted repository creates
+**Forks → Fork this repository** on a public hosted repository (or one
+published from a node, below) creates
 `<you>/<name>`, a hosted repository you own, marked `forkedFrom` the parent
 and listed on its forks (`repo_forks`). Code: `hosted_git.hosted_fork_create`
 (reached from `POST /api/repo/<owner>/<repo>/forks` before the managed-mirror
@@ -263,6 +264,53 @@ path), `hosted_repos.fork_of`, `server/hosted_forks.go`.
 - **Pull requests.** The composer on a fork targets the parent
   (`forkedFrom`) and sends a patch-backed pull request (patch and commits),
   so merging into the parent needs no fetch from the fork.
+- **Repositories published from a node.** A public repository published from
+  someone's own node (such as `forkmesh/forkmesh`) has no `hosted_repos` row,
+  so `hosted_fork_create` reads its catalog record instead. It must be public,
+  not `hosted-web`, and carry a `cloneUrl` that is plain `https` with a host
+  name (no IP address or `localhost`), no credentials, query or fragment
+  (`hosted_repos.fork_clone_url`). An account that has a linked headless
+  managed mirror, or names a `targetNode`, keeps the managed-mirror fork
+  (`_web_fork_create` gets the already-read body); everyone else gets a
+  hosted fork instead of `409 headless_mirror_required`.
+  - The fork's record carries `fork: {upstream: {owner, name, cloneUrl},
+    network}`. The network id is `hr` plus the first 24 hex digits of
+    `sha256("forkmesh-fork-network-v1\n<owner>/<name>")`, so every fork of the
+    same parent, and every fork of those forks, shares one pool on each core.
+  - The exchange sends `forkUpstream` and `network` only while the parent's
+    catalog record is still public and node-published (re-read once per
+    exchange, `_ReplicaRuntime.fork_parent`), with that record's current
+    `cloneUrl`.
+  - On each core (`forkFromUpstream`), the local copy is the gateway
+    repository served as `<owner>/<name>` (the upstream mirrors the cores
+    already serve), only when it is enabled, public, not a hosted copy and
+    has a branch. The pool is a `git clone --local` of it and is refreshed
+    from it into `refs/pools/<network>/…`, as for hosted parents. Gateway
+    copies have no maintenance lock; when one has the lock file the build
+    holds it shared, and no lock file is ever created in a gateway copy (the
+    gateway would then start marking it for maintenance). A new pool still
+    has to pass `fsck --connectivity-only`.
+  - With no local copy, only the primary fetches the `cloneUrl` into the
+    pool (`git init --bare`, then `+refs/heads/*` and `+refs/tags/*` into
+    `refs/pools/<network>/…`). The fetch allows only `https` (plain `http`
+    only to loopback, for tests), clears credential helpers and is held to
+    the hosted size limit and fetch timeout like an import (`boundedGit`).
+    The `cloneUrl` comes from the publishing node's catalog record, so the
+    core only fetches it from the network's own git origin (the host of
+    `catalogUrl`) or a forge on `hosted.importHosts`, on the default port,
+    and never follows a redirect (`http.followRedirects=false`); anything
+    else would let a publisher point a core at an internal address
+    (`forkFetchHostAllowed`).
+    Replicas with no local copy fetch nothing from the parent: they borrow
+    from the pool if it already exists and take the fork's refs from their
+    peers.
+  - The primary copies the fork's heads and tags from the pool namespace and
+    points `HEAD` at the local copy's `HEAD` (or `main`, then `master`).
+  - Tests: `test_a_node_published_repository_forks_onto_the_cores`,
+    `test_an_account_with_a_managed_mirror_keeps_the_mirror_fork`,
+    `TestHostedForkOfANodePublishedRepositoryBorrowsTheGatewayCopy`,
+    `TestHostedForkOfANodePublishedRepositoryFetchesItsCloneURL`,
+    `TestHostedForkOfANodePublishedRepositoryStaysWithinTheSizeLimit`.
 - Contributors who would rather not fork can push `pr/<account>/` branches
   where `HOSTED_GIT_CONTRIBUTOR_PUSH` allows it.
 

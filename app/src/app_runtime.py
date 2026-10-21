@@ -1965,10 +1965,9 @@ class Default:
                                  cache_control="no-store")
         if not isinstance(data, dict):
             data = {}
-        token, cookie_auth = _request_account_session_token(request, data)
-        if cookie_auth and not _request_origin_allowed(self.env, request):
-            token = ""
-        actor = await _account_session_token_name(self.env, token)
+        account_bi, rec = await _account_session_record(
+            self.env, request, data)
+        actor = str((rec or {}).get("name") or "").strip().lower()
         if not actor or not await _is_admin(self.env, actor):
             return json_response({"error": "not_admin"}, status=403,
                                  cache_control="no-store")
@@ -1979,12 +1978,35 @@ class Default:
             return json_response(
                 {"error": "invalid_theme", "detail": str(error)},
                 status=400, cache_control="no-store")
+        if not rec.get("pass_hash"):
+            return json_response({"error": "password_not_set"}, status=403,
+                                 cache_control="no-store")
+        attempt_key = await blind_index(
+            self.env, "instance-theme-v1\n" + str(account_bi or ""))
+        locked_until = await _login_locked_until(self.env, attempt_key)
+        if locked_until:
+            retry_ms = max(1000, locked_until - int(Date.now()))
+            return json_response(
+                {"error": "too_many_attempts", "retryAfterMs": retry_ms},
+                status=429, cache_control="no-store")
+        password = str(data.get("password") or "")[:256]
+        if not password or not await verify_password(
+                password, rec.get("pass_salt", ""), rec.get("pass_hash", "")):
+            await _audit_sensitive_action(
+                self.env, actor, "instance.theme", "instance", "theme",
+                "denied", {"reason": "invalid_credentials"})
+            return await _login_failure_response(
+                self.env, [attempt_key], "invalid_credentials")
+        await _login_clear(self.env, attempt_key)
         await d1_run(
             self.env,
             "INSERT INTO instance_settings (k, doc, updated_at) "
             "VALUES ('theme', ?, ?) ON CONFLICT(k) DO UPDATE SET "
             "doc=excluded.doc, updated_at=excluded.updated_at",
             doc, int(Date.now()))
+        await _audit_sensitive_action(
+            self.env, actor, "instance.theme", "instance", "theme", "success",
+            {"preset": theme.get("preset") or ""})
         return json_response({"ok": True, "theme": theme},
                              cache_control="no-store")
 
@@ -2013,6 +2035,7 @@ class Default:
                 "plugins": instance_features.describe(self.env),
                 "offsiteHosts": list(instance_features.OFFSITE_HOSTS),
                 "theme": await self._instance_theme(),
+                "themes": instance_theme.catalogue(),
                 "legal": instance_legal.links(
                     await self._instance_legal_setting(),
                     instance_branded(self.env)),
@@ -2031,8 +2054,17 @@ class Default:
             return await self._instance_theme_write(request)
         if url.path == "/instance-theme.css" and instance_branded(self.env) \
                 and method_name(request) in ("GET", "HEAD"):
+            preview = (parse_qs(urlparse(request.url).query).get("preset")
+                       or [""])[0]
+            sheet = instance_theme.preview_css(preview) if preview else None
+            if preview and sheet is None:
+                return Response("", status=404, headers={
+                    "content-type": "text/css; charset=utf-8",
+                    "cache-control": "no-store"})
+            if sheet is None:
+                sheet = instance_theme.css(await self._instance_theme())
             return self._without_head_body(request, Response(
-                instance_theme.css(await self._instance_theme()), status=200,
+                sheet + instance_features.chrome_css(self.env), status=200,
                 headers={"content-type": "text/css; charset=utf-8",
                          "cache-control": "public, max-age=60"}))
         if instance_branded(self.env) and \
@@ -3187,6 +3219,9 @@ class Default:
         if chat_direct_media_api.matches(url.path):
             return await chat_direct_media_api.handle(
                 _ChatDirectMessagesRuntime(self.env, request), url.path)
+        if repo_media_api.matches(url.path):
+            return await repo_media_api.handle(
+                _RepoMediaRuntime(self.env, request), url.path)
         if (
             CHAT_DIRECT_MESSAGES_RE.match(url.path)
             or CHAT_DIRECT_MESSAGE_USERS_RE.match(url.path)

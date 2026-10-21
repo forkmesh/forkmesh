@@ -104,4 +104,65 @@ def test_routes_serve_the_theme_only_on_a_branded_instance():
     writer = APP_RUNTIME.split("    async def _instance_theme_write(self, request):", 1)[1]
     writer = writer.split("    async def _route(", 1)[0]
     assert writer.index("_is_admin(self.env, actor)") < writer.index("INSERT INTO instance_settings")
-    assert "_request_origin_allowed(self.env, request)" in writer
+    assert "_account_session_record(" in writer
+    assert writer.index("verify_password(") < writer.index("INSERT INTO instance_settings")
+    assert writer.index("_login_locked_until(") < writer.index("verify_password(")
+
+
+def test_named_themes_load_from_the_catalogue():
+    ids = [entry["id"] for entry in instance_theme.catalogue()]
+    assert ids[:2] == ["default", "blt"]
+    assert {"cloudflare", "google"} <= set(ids)
+    assert all(instance_theme.theme_ready(name) for name in ("blt", "cloudflare", "google"))
+    raw = json.loads((PUBLIC / "instance-themes" / "themes.json").read_text(encoding="utf-8"))
+    for entry in raw["themes"]:
+        assert 0 < len(entry["palette"]) <= 8, entry["id"]
+    for entry in instance_theme.catalogue():
+        assert entry["palette"], entry["id"]
+    assert instance_theme.theme_ready("blt")
+    for theme in instance_theme.THEMES.values():
+        if theme["status"] != "ready" or theme["id"] == instance_theme.DEFAULT_THEME:
+            continue
+        assert theme["stylesheet"], theme["id"]
+        for mode in instance_theme.MODES:
+            assert set(theme["colors"][mode]) == set(instance_theme.THEME_TOKENS), theme["id"]
+    for name in instance_theme.THEME_RGB_TOKENS:
+        assert set(THEME["colors"].get(name, {})) >= {"dark", "light"}, name
+
+
+def test_a_ready_theme_is_stored_by_name_and_rendered_with_its_stylesheet():
+    assert instance_theme.clean("blt") == {"preset": "blt"}
+    assert instance_theme.clean("default") == {}
+    assert instance_theme.clean({"preset": "default"}) == {}
+    theme = instance_theme.clean({"preset": "BLT", "dark": {"primary": "#AA0000"}})
+    assert theme == {"preset": "blt", "dark": {"primary": "#aa0000"}}
+    assert instance_theme.parse(instance_theme.dump(theme)) == theme
+    css = instance_theme.css(theme)
+    assert "--dashboard-cta-rgb:220 38 38" in css
+    assert "border-radius" in css
+    assert css.rindex("--dashboard-primary-rgb:170 0 0") > css.index("--dashboard-primary-rgb:220 38 38")
+    assert instance_theme.preview_css("blt") == instance_theme.css({"preset": "blt"})
+    assert instance_theme.preview_css("default") == ""
+    assert instance_theme.preview_css("nope") is None
+
+
+@pytest.mark.parametrize("value", ["soon", "nope", {"preset": "nope"}, {"preset": "soon"}])
+def test_planned_or_unknown_themes_are_refused(value, monkeypatch):
+    monkeypatch.setitem(instance_theme.THEMES, "soon", {
+        "id": "soon", "name": "Soon", "description": "", "status": "planned",
+        "palette": [], "colors": {}, "stylesheet": ""})
+    with pytest.raises(instance_theme.ThemeError):
+        instance_theme.clean(value)
+    assert instance_theme.preview_css("soon") is None
+
+
+def test_a_missing_catalogue_leaves_only_colour_themes(tmp_path):
+    assert instance_theme._load_themes(tmp_path) == {}
+    (tmp_path / "themes.json").write_text(json.dumps({"themes": [
+        {"id": "x", "status": "ready", "stylesheet": "../secret.css",
+         "colors": {"dark": {"primary": "red", "border": "#ABCDEF"}}},
+        {"id": "Bad Id"}]}))
+    themes = instance_theme._load_themes(tmp_path)
+    assert list(themes) == ["x"]
+    assert themes["x"]["stylesheet"] == ""
+    assert themes["x"]["colors"] == {"dark": {"border": "#abcdef"}}

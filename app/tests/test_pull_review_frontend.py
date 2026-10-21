@@ -65,9 +65,9 @@ def test_diff_pane_supports_unified_and_split_layouts():
     assert "function pairDiffRows(rows)" in CONTENT
     assert 'data-repo-pull-diff-mode' in CONTENT
     assert "setRepoPullDiffMode(" in NETWORK
-    assert "data-repo-diff-current" in CONTENT
+    assert "data-repo-pull-diff-head" in CONTENT
     assert "data-repo-pull-diff-body" in CONTENT
-    assert "setRepoPullDiffBlockCollapsed(block, selected)" in CONTENT
+    assert "foldRepoDiffBlock(block, true)" in CONTENT
     assert "content-visibility:auto" in CONTENT
 
 
@@ -81,7 +81,8 @@ def test_folding_a_file_keeps_its_header_in_place_both_ways():
     assert "scroller.scrollTop += shift" in body
     assert 'block.style.contentVisibility = "auto"' in body[edit:]
     assert "scroller.style.overflowAnchor = anchor" in body[edit:]
-    assert "keepPullDiffHeaderInPlace(pullViewedButton" in NETWORK
+    assert "keepPullDiffHeaderInPlace(block.firstElementChild" in CONTENT
+    assert "toggleRepoPullViewed(state.selectedRepo" in NETWORK
     assert "keepPullDiffHeaderInPlace(pullDiffCollapseButton" in NETWORK
 
 def test_diff_lines_support_inline_range_comments_and_review_batches():
@@ -145,18 +146,15 @@ def test_pull_review_approval_and_owner_only_mirror_merge_are_available():
 
 
 def test_an_unmet_peer_gate_warns_the_owner_instead_of_locking_them_out():
-    # The merge panel renders only for an organization owner, and that owner
-    # can already merge unreviewed from the desktop, so an unmet gate is a
-    # warning plus a distinctly worded button, never a dead control.
     assert "Merge locked" not in CONTENT
-    assert "const waiveReview = !reviewPolicy.ready && !merged;" in CONTENT
-    assert '"Merge without review"' in CONTENT
-    assert "Independent review recommended." in CONTENT
-    # The waiver is derived from the same policy the panel rendered, not read
-    # back off the button, and it is confirmed once before the first attempt.
-    assert "...(waiveReview ? { overrideReview: true } : {})" in CONTENT
+    assert "canOverride: canAct && reviewMissing && !busy," in CONTENT
+    assert "data-repo-pull-merge-override" in CONTENT
+    assert '>Merge without review</button>' in CONTENT
+    assert "Independent review required" in CONTENT
+    assert "...(waive ? { overrideReview: true } : {})" in CONTENT
+    assert "overrideReview === true && !pullReviewPolicy(" in CONTENT
     assert "window.confirm(" in CONTENT
-    assert "&& !existing.requestId" in CONTENT
+    assert "handleRepoPullMergeOverride(state.selectedRepo)" in NETWORK
 
 
 def test_pull_sections_are_addressable_urls():
@@ -185,7 +183,7 @@ def test_pull_header_names_the_source_and_target_repositories():
     # pull.md has no head-repository field: the record lives in the target
     # repo, and a cross-node pull only carries "<contributor>:" on head.
     assert "const branchChip = (repoLabel, branch) =>" in CONTENT
-    assert 'const baseRepoLabel = `${repo.owner || "owner"}/${repo.name || "repo"}`;' in CONTENT
+    assert 'const baseRepoLabel = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`);' in CONTENT
     assert 'headRef.slice(0, headRef.lastIndexOf(":")).trim()' in CONTENT
     assert "branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}" in CONTENT
     assert '<span class="opacity-75">${escapeHtml(repoLabel)}:</span>${escapeHtml(branch)}' in CONTENT
@@ -232,7 +230,7 @@ def test_web_merge_waits_out_transient_refusals_with_the_same_request():
     import subprocess
 
     start = CONTENT.index("  const PULL_MUTATION_RETRY_ERRORS = new Set([")
-    end = CONTENT.index("  function renderRepoPullReadiness(")
+    end = CONTENT.index("  const PULL_MERGE_REPIN_ERRORS")
     script = CONTENT[start:end] + r"""
       let clock = 0;
       const sent = [];
@@ -285,5 +283,5 @@ def test_web_merge_waits_out_transient_refusals_with_the_same_request():
 
 
 def test_the_merge_panel_says_no_mirror_has_taken_the_job_yet():
-    assert "merge.queued\n          ? \"Waiting for an online mirror to take this merge." in CONTENT
-    assert "parsed.pullMerge = { state: \"processing\", requestId, queued: !accepted };" in CONTENT
+    assert "? \"Waiting for an online mirror to take this merge. No mirror has accepted it yet.\"" in CONTENT
+    assert "parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };" in CONTENT

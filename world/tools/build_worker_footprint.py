@@ -160,6 +160,7 @@ LAZY_MODULES = {
     "chat_member_stats.py",
     "chat_direct_messages_api.py",
     "chat_direct_media_api.py",
+    "repo_media_api.py",
     "chat_reads_api.py",
     "direct_reminders.py",
     "community_ads_api.py",

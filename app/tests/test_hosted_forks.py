@@ -9,6 +9,7 @@ test_hosted_core.
 """
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -17,8 +18,8 @@ if str(ROOT / "tests") not in sys.path:
     sys.path.insert(0, str(ROOT / "tests"))
 
 from test_hosted_core import (  # noqa: E402
-    CORES, NOW, SESSION_TOKEN, Env, Request, World, _async, create, install,
-    signed_replicas,
+    CORES, NOW, SESSION_TOKEN, Env, Request, World, _async, create,
+    hosted_repos, install, signed_replicas,
 )
 
 ENTRY = (ROOT / "src" / "entry.py").read_text(encoding="utf-8")
@@ -75,6 +76,8 @@ def _world(**accounts):
     module._repo_is_private = _repo_is_private
     module._index_repo_fork_edge = _index_repo_fork_edge
     module.bounded_json_request = lambda request: _async(dict(request.body))
+    for name in ("_web_fork_create", "_web_fork_eligible_nodes"):
+        module.__dict__.pop(name, None)
     return world, module
 
 
@@ -188,6 +191,152 @@ def test_only_verified_active_users_fork_public_hosted_repositories():
     # request body unread.
     assert asyncio.run(module.hosted_fork_create(
         ForkEnv(), Request({}), "alice", "alice", "missing")) is None
+
+
+CLONE_URL = "https://app.forkmesh.test/forkmesh/forkmesh"
+
+
+def _node_repo(world, owner="forkmesh", name="forkmesh", clone_url=CLONE_URL,
+               visibility="public", source="local-node"):
+    record = {"owner": owner, "name": name, "visibility": visibility,
+              "cloneUrl": clone_url, "source": source,
+              "description": "Published from a node"}
+    world.db.execute(
+        "INSERT INTO repositories VALUES (?,?,?,?)",
+        ("bi:%s/%s" % (owner, name), "bi:" + owner, json.dumps(record),
+         0 if visibility == "public" else 1))
+
+
+def test_a_node_published_repository_forks_onto_the_cores():
+    world, module = _world()
+    _node_repo(world)
+    response = _fork(module, world, "bob", "forkmesh", "forkmesh")
+    assert response.status == 201, response.data
+    assert response.data["fork"]["forkedFrom"] == "forkmesh/forkmesh"
+    assert response.data["fork"]["url"] == "/bob/forkmesh"
+    hosted = world.hosted("bob", "forkmesh")
+    network = hosted_repos.upstream_network("forkmesh", "forkmesh")
+    assert hosted["data"]["fork"] == {
+        "upstream": {"owner": "forkmesh", "name": "forkmesh",
+                     "cloneUrl": CLONE_URL},
+        "network": network}
+    assert hosted["data"]["init"] is None
+    record, private = world.catalog("bob", "forkmesh")
+    assert record["forkedFrom"] == "forkmesh/forkmesh" and not private
+    assert world.edges == [("forkmesh/forkmesh", "bob", "forkmesh",
+                            "bi:bob", "bi:bob/forkmesh")]
+    again = _fork(module, world, "bob", "forkmesh", "forkmesh",
+                  {"name": "other"})
+    assert again.status == 200 and again.data["existing"] is True
+    assert world.hosted("bob", "other") is None
+
+
+def test_every_core_is_told_where_the_node_published_parent_lives():
+    world, module = _world()
+    _node_repo(world)
+    _fork(module, world, "bob", "forkmesh", "forkmesh")
+    fork_id = world.hosted("bob", "forkmesh")["id"]
+    _fork(module, world, "carol", "bob", "forkmesh")
+    second_id = world.hosted("carol", "forkmesh")["id"]
+    network = hosted_repos.upstream_network("forkmesh", "forkmesh")
+    for index, node in enumerate(CORES):
+        items = {item["id"]: item for item in signed_replicas(
+            module, node, {},
+            request_id="request_upstream_%02d" % index).data["repositories"]}
+        assert items[fork_id]["forkUpstream"] == {
+            "owner": "forkmesh", "name": "forkmesh", "cloneUrl": CLONE_URL}
+        assert items[fork_id]["network"] == network
+        assert "forkOf" not in items[fork_id] and "init" not in items[fork_id]
+        assert (items[second_id]["forkOf"], items[second_id]["network"]) == (
+            fork_id, network)
+
+
+def test_a_node_published_parent_made_private_is_not_named():
+    world, module = _world()
+    _node_repo(world)
+    _fork(module, world, "bob", "forkmesh", "forkmesh")
+    fork_id = world.hosted("bob", "forkmesh")["id"]
+    world.private.add("forkmesh/forkmesh")
+    items = {item["id"]: item for item in signed_replicas(
+        module, CORES[0], {},
+        request_id="request_upstream_private").data["repositories"]}
+    assert "forkUpstream" not in items[fork_id]
+    assert "network" not in items[fork_id]
+
+
+def test_only_public_node_repositories_with_a_clean_clone_url_fork():
+    for clone_url in ("http://app.forkmesh.test/forkmesh/forkmesh",
+                      "https://user:pw@app.forkmesh.test/forkmesh/forkmesh",
+                      "https://app.forkmesh.test/forkmesh/forkmesh?x=1",
+                      "https://app.forkmesh.test/forkmesh/forkmesh#main",
+                      "https://app.forkmesh.test/../forkmesh",
+                      "https://127.0.0.1/forkmesh/forkmesh",
+                      "https://[::1]/forkmesh/forkmesh",
+                      "https://localhost/forkmesh/forkmesh", ""):
+        world, module = _world()
+        _node_repo(world, clone_url=clone_url)
+        world.account = "bob"
+        assert asyncio.run(module.hosted_fork_create(
+            ForkEnv(), Request({}), "forkmesh", "forkmesh",
+            "forkmesh")) is None, clone_url
+    world, module = _world()
+    _node_repo(world, visibility="private")
+    assert asyncio.run(module.hosted_fork_create(
+        ForkEnv(), Request({}), "forkmesh", "forkmesh", "forkmesh")) is None
+    world, module = _world()
+    _node_repo(world)
+    world.private.add("forkmesh/forkmesh")
+    assert asyncio.run(module.hosted_fork_create(
+        ForkEnv(), Request({}), "forkmesh", "forkmesh", "forkmesh")) is None
+    world, module = _world(forkmesh={"name": "forkmesh", "status": "active",
+                                     "kind": "user", "email_verified": True})
+    _node_repo(world)
+    own = _fork(module, world, "forkmesh", "forkmesh", "forkmesh")
+    assert own.status == 409 and own.data["error"] == "fork_of_own_repository"
+
+
+def test_an_account_with_a_managed_mirror_keeps_the_mirror_fork():
+    world, module = _world()
+    _node_repo(world)
+    calls = []
+
+    async def _web_fork_eligible_nodes(_env, actor, _account):
+        return ["bob-mirror"] if actor == "bob" else []
+
+    async def _web_fork_create(_env, _request, owner, repo, data=None):
+        calls.append((owner, repo, dict(data or {})))
+        return "managed"
+
+    module._web_fork_eligible_nodes = _web_fork_eligible_nodes
+    module._web_fork_create = _web_fork_create
+    assert _fork(module, world, "bob", "forkmesh", "forkmesh") == "managed"
+    assert calls == [("forkmesh", "forkmesh",
+                      {"sessionToken": SESSION_TOKEN})]
+    assert world.hosted("bob", "forkmesh") is None
+    chosen = _fork(module, world, "carol", "forkmesh", "forkmesh",
+                   {"targetNode": "carol-mirror"})
+    assert chosen == "managed" and calls[-1][2]["targetNode"] == "carol-mirror"
+    assert _fork(module, world, "carol", "forkmesh", "forkmesh").status == 201
+
+
+def test_upstream_forks_count_against_the_fork_quota():
+    world, module = _world()
+    _node_repo(world, name="one")
+    _node_repo(world, name="two")
+    _node_repo(world, name="three")
+    assert _fork(module, world, "bob", "forkmesh", "one").status == 201
+    assert _fork(module, world, "bob", "forkmesh", "two").status == 201
+    over = _fork(module, world, "bob", "forkmesh", "three")
+    assert over.status == 429 and over.data["error"] == "fork_quota_exceeded"
+
+
+def test_fork_clone_url_and_network_are_stable():
+    assert hosted_repos.fork_clone_url(
+        "https://App.ForkMesh.test:8443/forkmesh/forkmesh.git/") == (
+        "https://app.forkmesh.test:8443/forkmesh/forkmesh.git")
+    network = hosted_repos.upstream_network("ForkMesh", "ForkMesh")
+    assert network == hosted_repos.upstream_network("forkmesh", "forkmesh")
+    assert hosted_repos.ID_RE.fullmatch(network)
 
 
 def test_fork_quota_and_name_collisions():

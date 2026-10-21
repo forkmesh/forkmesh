@@ -1624,6 +1624,7 @@ async def agent_notes_handler(env, request):
 # therefore use a separate pure API module instead of channel admin semantics.
 chat_direct_messages_api = _LazyModule("chat_direct_messages_api")
 chat_direct_media_api = _LazyModule("chat_direct_media_api")
+repo_media_api = _LazyModule("repo_media_api")
 chat_reads_api = _LazyModule("chat_reads_api")
 # Pull-request badge generation is deferred until a federated PR needs it.
 _pull_badge = _LazyModule("pull_badge")
@@ -11315,6 +11316,28 @@ class _ChatDirectMessagesRuntime(_WorldCommunityRuntime):
             state)
 
 
+class _RepoMediaRuntime(_WorldCommunityRuntime):
+    def segment(self, value):
+        return safe_segment(value) or ""
+
+    def header(self, name):
+        if self.request is None:
+            return ""
+        return str(self.request.headers.get(name) or "")
+
+    async def public_repository(self, owner, repo):
+        owner = safe_segment(owner or "")
+        repo = safe_segment(repo or "")
+        if not owner or not repo or await _repo_is_private(self.env, owner, repo):
+            return ""
+        return await blind_index(self.env, owner.lower() + "/" + repo.lower())
+
+    def binary(self, body, status, headers):
+        return JsResponse.new(
+            Uint8Array.new(_to_js(bytes(body or b""))) if body else None,
+            to_js({"status": int(status), "headers": dict(headers)}))
+
+
 async def organization_tasks_handler(env, request, path):
     bot_context = None
     authorization = str(
@@ -13538,7 +13561,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "3b8bc5e5cb64ddbaf9109154e323fe92b056c032d93415799bae6afe28a8ecbc"
+    "af3db7532a65ca75fe044f52c5b7bdf51c22bc662cfb4c1d196eb6f93dec24c9"
 )
 
 
@@ -18905,6 +18928,9 @@ def _repo_scoped_state_statements(repo_bi):
         ("DELETE FROM repo_security_scan_reviews WHERE repo_bi=?",
          (repo_bi,)),
         ("DELETE FROM agent_prompts WHERE repo_bi=?", (repo_bi,)),
+        ("DELETE FROM repo_upload_parts WHERE media_id IN "
+         "(SELECT media_id FROM repo_uploads WHERE repo_bi=?)", (repo_bi,)),
+        ("DELETE FROM repo_uploads WHERE repo_bi=?", (repo_bi,)),
     ]
     for table, column in _REPO_SCOPED_TABLES:
         # Table and column are literals from the tuple above, never input.
@@ -35189,18 +35215,10 @@ def _repository_social_version(record):
     return ""
 
 
-# Raster copy of an instance's logo written by tools/apply_instance_brand.py
-# (social crawlers do not draw SVG, and neither can the card renderer).
 INSTANCE_RASTER_LOGO = "/instance-logo.png"
 
 
 async def _repo_card_logo(env, request, repo_bi):
-    """The social card's logo: the owner-uploaded repository logo, else the
-    instance's PNG logo; None draws the ForkMesh mark (forkmesh.com itself).
-
-    A committed logo.svg cannot be rasterised in the Worker, so a repository
-    whose only artwork is an SVG shows its instance's logo instead.
-    """
     try:
         row = await d1_first(
             env, "SELECT data FROM repo_media WHERE repo_bi=? AND kind='logo'",
@@ -35309,7 +35327,10 @@ async def _repo_card_accent(env):
         theme = instance_theme.parse((row or {}).get("doc") or "")
     except Exception:
         return ""
-    tokens = theme.get("dark") or theme.get("light") or {}
+    preset = instance_theme.THEMES.get(theme.get("preset") or "") or {}
+    colors = preset.get("colors") or {}
+    tokens = theme.get("dark") or theme.get("light") or colors.get("dark") \
+        or colors.get("light") or {}
     return str(tokens.get("accent") or tokens.get("primary") or "")
 
 
@@ -35407,9 +35428,6 @@ async def repo_card_handler(env, request, owner, repo):
         "followers": followers,
         "accent": await _repo_card_accent(env),
     }
-    # The card names the repository by the address its page has (/name on an
-    # instance with short addresses, not /owner/name) and carries the
-    # repository's or the instance's logo rather than the ForkMesh mark.
     try:
         info["path"] = unquote(await _repo_public_path(
             env, display_owner, display_repo))
@@ -35608,11 +35626,13 @@ async def _web_fork_eligible_nodes(env, actor, account):
     return [node for node in active if node in headless]
 
 
-async def _web_fork_create(env, request, source_owner, source_name):
-    try:
-        data = await bounded_json_request(request)
-    except Exception:
-        return json_response({"error": "invalid_json"}, status=400)
+async def _web_fork_create(env, request, source_owner, source_name,
+                           data=None):
+    if data is None:
+        try:
+            data = await bounded_json_request(request)
+        except Exception:
+            return json_response({"error": "invalid_json"}, status=400)
     actor_bi, account = await _account_session_record(env, request, data)
     actor = safe_segment(clean_string(
         (account or {}).get("name", ""), MAX_NODE_NAME).lower())
@@ -40966,6 +40986,11 @@ async def _bind_session_author(env, request, data, record, session=None):
     if session and bound and bound != session:
         return json_response({"error": "author_mismatch"}, status=403)
     name = session or bound
+    claimed = clean_string(
+        record.get("authorName", "") or "", MAX_NODE_NAME).strip().lower()
+    record.pop("authorClaimedName", None)
+    if not name and valid_node_name(claimed):
+        record["authorClaimedName"] = claimed
     record["authorName"] = name
     record["authorVerified"] = bool(name)
     return None
@@ -53130,6 +53155,7 @@ async def _run_cron_phase(env, phase, minute_slot):
         return await _instance_console.announce_cron(env)
     if phase == "chat-prune":
         await chat_history_prune_expired(env)
+        await repo_media_api.sweep(_RepoMediaRuntime(env))
         return await chat_direct_media_api.sweep(
             _ChatDirectMessagesRuntime(env))
     if phase == "account-device-prune":

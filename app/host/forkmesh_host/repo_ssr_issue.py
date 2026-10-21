@@ -397,7 +397,17 @@ def image_source(url, ctx):
     return esc(ctx.raw_url(source))
 
 
+MD_VIDEO_URL = re.compile(
+    r"^(?:https://[a-z0-9.-]+(?::\d{1,5})?)?/api/repo/[^\s/?#\"'<>]+/[^\s/?#\"'<>]+"
+    r"/media/[0-9a-f]{32}\.(?:mp4|m4v|webm|mov)$", re.I)
+VIDEO_CLASS = "my-2 block max-h-[34rem] w-full max-w-3xl rounded-md border border-border bg-black"
+
+
 def image_html(alt, url, ctx):
+    if MD_VIDEO_URL.match(str(url or "").strip()):
+        return ('<video src="%s" controls preload="metadata" playsinline '
+                'aria-label="%s" class="%s"></video>' % (
+                    str(url).strip(), alt, VIDEO_CLASS))
     hint = re.search(r"#w=(\d{1,4})(?:x(\d{1,4}))?$", url)
     target = url[:hint.start()] if hint else url
     source = image_source(target, ctx)
@@ -1482,9 +1492,14 @@ def member_comment_box(number):
         '            <div class="flex flex-wrap items-center justify-between gap-2 border-t '
         'border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground">\n'
         '              <span class="inline-flex items-center gap-1.5">%sSigned in this browser '
-        '· Markdown is supported</span>\n              <span data-repo-issue-comment-hint '
+        '· Markdown is supported</span>\n              <span class="inline-flex '
+        'items-center gap-2"><button type="button" data-markdown-video-attach '
+        'class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border '
+        'px-2 text-control text-foreground hover:bg-secondary"><i data-lucide="video" '
+        'class="h-3.5 w-3.5 text-muted-foreground"></i>Attach video</button>'
+        '<span data-repo-issue-comment-hint '
         'class="text-[11px] text-muted-foreground">Sent to the maintainer\'s inbox for review.'
-        '</span>\n            </div>\n          </div>\n          <div class="flex flex-wrap '
+        '</span></span>\n            </div>\n          </div>\n          <div class="flex flex-wrap '
         'items-center justify-end gap-2">\n            \n            <button type="submit" '
         'data-repo-issue-comment-submit data-repo-issue-comment-action="comment" '
         'class="inline-flex h-8 items-center gap-2 rounded-md bg-cta px-3 text-[14px] '

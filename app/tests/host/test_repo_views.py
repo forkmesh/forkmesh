@@ -299,6 +299,15 @@ def test_person_links_accounts_and_leaves_bots_and_git_names_plain():
     assert repo_views._person(None) == ""
 
 
+def test_unverified_author_shows_the_claimed_name_marked():
+    author = repo_views._record_author
+    assert author({"authorName": "bob", "authorClaimedName": "eve"}) == "bob"
+    assert author({"author": "KEY", "authorClaimedName": "Eve"}) == "eve (unverified)"
+    assert author({"author": "KEY", "authorClaimedName": "not a name"}) == "KEY"
+    assert author({}) == "unknown"
+    assert repo_views._person("eve (unverified)") == "eve (unverified)"
+
+
 def test_a_closed_discussion_first_view_says_so():
     detail, _fast = build("discussion", 2)
     html = repo_views.render(detail)
