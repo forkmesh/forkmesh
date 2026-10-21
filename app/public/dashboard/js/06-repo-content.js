@@ -4891,7 +4891,7 @@
             <textarea data-repo-issue-comment-body data-mention-input="record" rows="5" aria-label="Comment body" placeholder="Use Markdown to format your comment" class="block min-h-[6.5rem] w-full resize-y border-0 bg-background px-3 py-2 text-[14px] text-foreground outline-none placeholder:text-muted-foreground"></textarea>
             <div data-repo-issue-comment-preview hidden class="min-h-[6.5rem] px-4 py-3 ${MD_BODY_CLASS}"></div>
             <div class="flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground">
-              <span class="inline-flex items-center gap-1.5"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Signed with your node key · Markdown is supported</span>
+              <span class="inline-flex items-center gap-1.5"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Signed in this browser · Markdown is supported</span>
               <span data-repo-issue-comment-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
             </div>
           </div>
