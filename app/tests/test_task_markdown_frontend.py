@@ -28,6 +28,7 @@ def _task_markdown_source():
     start = text.index("  const TASK_MENTION_SOURCE")
     mention = text[start:text.index("\n", start)]
     return mention + "\n" + _function_source(
+        text, "  function taskMentionLinkHtml(name)") + "\n" + _function_source(
         text, "  function taskMarkdownHtml(value)")
 
 
@@ -104,8 +105,14 @@ def test_task_mentions_highlight_outside_code_and_links():
         "Ping @bob and @carol.\n\n`@bob in code`\n\n"
         "[see @bob](https://example.test/@bob)"
     )
-    assert '<span class="task-mention" data-me="true">@bob</span>' in html
-    assert '<span class="task-mention">@carol</span>' in html
+    assert (
+        '<a class="task-mention" href="https://code.example.test/@bob" '
+        'data-issue-person="bob" data-me="true">@bob</a>'
+    ) in html
+    assert (
+        '<a class="task-mention" href="https://code.example.test/@carol" '
+        'data-issue-person="carol">@carol</a>'
+    ) in html
     assert ">@bob in code</code>" in html
     assert 'href="https://example.test/@bob"' in html
     assert html.count("task-mention") == 2

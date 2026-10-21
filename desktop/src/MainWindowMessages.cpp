@@ -508,17 +508,8 @@ MessageRow *MainWindow::createMessageRow(const ChatMessage &message,
                     QString account = id.mid(QStringLiteral("user:").size()).trimmed();
                     if (account.isEmpty())
                         account = name.trimmed().toLower();
-                    if (m_chatDirectoryUsers.contains(account.toLower())) {
-                        showChatSenderProfile(id, name);
+                    if (openUserProfile(account, name))
                         return;
-                    }
-                    const QUrl url = chatMentionProfileUrl(
-                        m_serverUrlEdit ? m_serverUrlEdit->text() : QString(),
-                        account);
-                    if (url.isValid() && !url.host().isEmpty()) {
-                        QDesktopServices::openUrl(url);
-                        return;
-                    }
                 }
                 showSection(0);
                 showNodeProfile(id, name);
@@ -2922,6 +2913,24 @@ void MainWindow::refreshChatMembers()
 
         m_chatMembersLayout->insertWidget(m_chatMembersLayout->count() - 1, card);
     }
+}
+
+bool MainWindow::openUserProfile(const QString &account, const QString &name)
+{
+    const QString key = account.trimmed().toLower();
+    if (key.isEmpty())
+        return false;
+    if (m_chatDirectoryUsers.contains(key)) {
+        showChatSenderProfile(QStringLiteral("user:") + key,
+                              name.isEmpty() ? account.trimmed() : name);
+        return true;
+    }
+    const QUrl url = chatMentionProfileUrl(
+        m_serverUrlEdit ? m_serverUrlEdit->text() : QString(), key);
+    if (!url.isValid() || url.host().isEmpty())
+        return false;
+    QDesktopServices::openUrl(url);
+    return true;
 }
 
 void MainWindow::showChatSenderProfile(const QString &senderId,

@@ -10739,6 +10739,10 @@ void MainWindow::openBodyReference(const QString &href)
         openOrganizationTask(href.mid(kTaskLinkScheme.size()));
         return;
     }
+    if (href.startsWith(kUserLinkScheme)) {
+        openUserProfile(href.mid(kUserLinkScheme.size()));
+        return;
+    }
     if (href.startsWith(QStringLiteral("forkmesh-commit:"))) {
         const QString sha = href.mid(16);
         if (sha.isEmpty())

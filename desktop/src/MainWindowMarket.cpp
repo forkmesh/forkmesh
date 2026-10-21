@@ -553,9 +553,17 @@ QWidget *MainWindow::buildPackageSettingsPage(
     layout->addWidget(summary);
 
     auto *metadata = new QLabel(
-        QStringLiteral("Creator: @%1  ·  Type: %2  ·  License: %3  ·  Settings: %4")
-            .arg(manifest.creatorHandle, manifest.type, manifest.licenseSpdx,
-                 manifest.settingsEntrypoint));
+        QStringLiteral("Creator: %1 &nbsp;·&nbsp; Type: %2 &nbsp;·&nbsp; License: %3 "
+                       "&nbsp;·&nbsp; Settings: %4")
+            .arg(forkmesh::ui::userProfileLinkHtml(
+                     manifest.creatorHandle, QStringLiteral("@") + manifest.creatorHandle),
+                 manifest.type.toHtmlEscaped(), manifest.licenseSpdx.toHtmlEscaped(),
+                 manifest.settingsEntrypoint.toHtmlEscaped()));
+    metadata->setTextFormat(Qt::RichText);
+    metadata->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    metadata->setOpenExternalLinks(false);
+    connect(metadata, &QLabel::linkActivated, this,
+            [this](const QString &href) { openBodyReference(href); });
     metadata->setObjectName(QStringLiteral("mutedLabel"));
     metadata->setWordWrap(true);
     layout->addWidget(metadata);

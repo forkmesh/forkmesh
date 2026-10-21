@@ -245,6 +245,6 @@ fun linkChatReferences(segments: List<ChatTextSegment>, repo: RepoRef? = Referen
         if (segment.isLink) {
             listOf(segment)
         } else {
-            ReferenceLinks.runs(segment.text, repo, commits = false).map { ChatTextSegment(it.text, it.url) }
+            ReferenceLinks.runs(segment.text, repo, commits = false, mentions = false).map { ChatTextSegment(it.text, it.url) }
         }
     }

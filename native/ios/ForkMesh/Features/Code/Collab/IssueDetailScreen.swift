@@ -239,7 +239,8 @@ struct IssueDetailScreen: View {
                 title: IssueTimeline.title(event),
                 author: event.displayAuthor,
                 text: event.body,
-                repo: RepoRef(owner: repo.owner, name: repo.name))
+                repo: RepoRef(owner: repo.owner, name: repo.name),
+                profile: event.authorName)
         case .mention(let mention):
             mentionTile(mention)
         }
@@ -251,22 +252,23 @@ struct IssueDetailScreen: View {
                 IssueDetailScreen(repo: repo, issue: source)
                     .shellPageClearance()
             } label: {
-                mentionFace(mention)
+                mentionFace(mention, linked: false)
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("issue-mention-\(mention.sourceNumber)")
         } else {
-            mentionFace(mention)
+            mentionFace(mention, linked: true)
         }
     }
 
-    private func mentionFace(_ mention: IssueMention) -> CollabTimelineTile {
+    private func mentionFace(_ mention: IssueMention, linked: Bool) -> CollabTimelineTile {
         CollabTimelineTile(
             icon: "link",
             tone: .tertiary,
             title: IssueTimeline.mentionTitle(mention),
             author: mention.authorName,
-            text: "")
+            text: "",
+            profile: linked ? mention.authorName : nil)
     }
 
     private func quickActions(_ issue: Issue) -> some View {

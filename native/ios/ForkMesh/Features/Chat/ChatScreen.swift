@@ -1075,6 +1075,8 @@ struct ChatMessageRow: View {
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(fm.textPrimary)
                 .lineLimit(1)
+                .onTapGesture { actions.onProfile?() }
+                .accessibilityAddTraits(actions.onProfile == nil ? [] : .isButton)
             if row.visitor {
                 Text(" visitor").fmText(.labelSmall, color: fm.textTertiary)
             }

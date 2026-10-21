@@ -428,7 +428,7 @@
         <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Your team · ${escapeHtml(team.name)}</h2>
         ${data.teamsOpen ? '<button type="button" data-hackathon-team-leave class="text-xs font-semibold text-muted-foreground hover:text-foreground underline">Leave team</button>' : ""}
       </div>
-      <p class="mt-2 text-xs text-muted-foreground">${escapeHtml(`${team.members.length} of 5: ${team.members.join(", ")}`)}${team.full ? "" : ` · Invite code <button type="button" data-hackathon-copy-code="${escapeHtml(team.code)}" class="font-mono font-semibold text-foreground underline">${escapeHtml(team.code)}</button>`}</p>
+      <p class="mt-2 text-xs text-muted-foreground">${escapeHtml(`${team.members.length} of 5: `)}${team.members.map((name) => issuePersonNameHtml(name, "")).join(", ")}${team.full ? "" : ` · Invite code <button type="button" data-hackathon-copy-code="${escapeHtml(team.code)}" class="font-mono font-semibold text-foreground underline">${escapeHtml(team.code)}</button>`}</p>
       <div class="mt-3 grid gap-2">${perTrack || '<p class="text-xs text-muted-foreground">Submissions are closed.</p>'}</div>
       <p data-hackathon-team-status class="mt-2 text-xs text-muted-foreground"></p>
     </div>`;
@@ -596,7 +596,7 @@
     const goal = squad.goal;
     return `<div class="px-4 sm:px-5 py-4 border-b border-border">
       <div class="flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">${escapeHtml(squad.yours ? "Your squad" : `${squad.owner}'s squad`)}</h2>
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">${squad.yours ? "Your squad" : `${issuePersonNameHtml(squad.owner, "")}${escapeHtml("'s squad")}`}</h2>
         <a class="text-xs text-accent underline" href="/hackathon/squad/${escapeHtml(squad.code || "")}">Open squad page</a>
       </div>
       <p class="mt-2 text-sm text-foreground">${escapeHtml(`${squad.members} builder${squad.members === 1 ? "" : "s"} · ${Number(squad.points || 0).toLocaleString()} squad points`)}</p>

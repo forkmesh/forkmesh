@@ -748,7 +748,7 @@ def test_invite_page_shows_the_inviter_and_escapes_everything(harness):
         harness.env, harness.request("/hackathon/join/alice"), "alice"))
     assert page.status == 200
     assert "text/html" in page.headers["content-type"]
-    assert "alice invited you to build" in page.body
+    assert '<a href="/@alice">alice</a> invited you to build' in page.body
     assert 'property="og:image"' in page.body
     assert "/api/hackathon/cards/invite/alice.png" in page.body
     # Accepting goes through the ordinary counted referral link, so the
@@ -845,6 +845,8 @@ def test_squad_page_and_card_render_for_a_real_squad(harness):
         harness.env, harness.request("/hackathon/squad/" + code), code))
     assert page.status == 200
     assert "alice&#x27;s squad" in page.body or "alice's squad" in page.body
+    assert '<h1><a href="/@alice">alice</a>\'s squad</h1>' in page.body
+    assert '<h2><a href="/@bob">bob</a></h2>' in page.body
     assert "<script" not in page.body
 
     data = body_of(run(module.squad_handler(
@@ -1180,7 +1182,9 @@ def test_landing_script_degrades_to_truthful_static_copy():
     assert LANDING_JS.count("applyJoinTargets(null, true)") == 1
     # Other people's usernames are rendered as text, never as markup.
     assert "innerHTML" not in code_only(LANDING_JS)
-    assert "textContent = who" in LANDING_JS
+    assert "link.textContent = who" in LANDING_JS
+    assert "link.href = `/@${encodeURIComponent(handle)}`" in LANDING_JS
+    assert "whoCell.append(profileLink(who), suffix)" in LANDING_JS
     assert 'credentials: "omit"' in LANDING_JS
 
 

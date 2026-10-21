@@ -749,7 +749,9 @@ QWidget *MainWindow::buildPullsTab()
     m_pullMeta->setTextInteractionFlags(Qt::TextSelectableByMouse |
                                         Qt::LinksAccessibleByMouse);
     connect(m_pullMeta, &QLabel::linkActivated, this, [this](const QString &href) {
-        if (href.startsWith(kAgentLinkScheme))
+        if (href.startsWith(kUserLinkScheme))
+            openBodyReference(href);
+        else if (href.startsWith(kAgentLinkScheme))
             switchToAgentsTab(href.mid(kAgentLinkScheme.size()).toInt());
         else if (href.startsWith(kBranchLinkScheme)) {
             const QString branch = QUrl::fromPercentEncoding(
@@ -3073,9 +3075,10 @@ void MainWindow::showPull(int number)
             .arg(branchLinkHtml(found->base), branchLinkHtml(found->head),
                  pullListStatusLabel(displayStatus), formatCount(found->filesChanged),
                  formatCount(found->additions), formatCount(found->deletions),
-                 (found->authorName.isEmpty() ? found->author.left(10)
-                                              : found->authorName)
-                     .toHtmlEscaped()));
+                 userProfileLinkHtml(found->authorName,
+                                     found->authorName.isEmpty()
+                                         ? found->author.left(10)
+                                         : found->authorName)));
     if (found->archivedOnCodeBranch) {
         m_pullMeta->setText(
             m_pullMeta->text() +
@@ -5214,6 +5217,10 @@ void MainWindow::addConversationCard(QVBoxLayout *layout, const QString &author,
     headerRow->setSpacing(8);
     auto *header = new QLabel(headerHtml);
     header->setTextFormat(Qt::RichText);
+    header->setTextInteractionFlags(Qt::LinksAccessibleByMouse);
+    header->setOpenExternalLinks(false);
+    connect(header, &QLabel::linkActivated, this,
+            [this](const QString &href) { openBodyReference(href); });
     headerRow->addWidget(header);
     headerRow->addStretch();
     if (!copyLink.isEmpty() || !body.trimmed().isEmpty() || bool(onDelete) ||
@@ -5395,7 +5402,8 @@ void MainWindow::renderPullThread(const PullRequest &pr)
                  m_pullThreadLayout, opener,
                  QStringLiteral("<b>%1</b> <span style='color:#8b949e'>opened this "
                                 "pull request %2</span>")
-                     .arg(opener.toHtmlEscaped(), formatIssueRelativeTime(pr.ts)),
+                     .arg(userProfileLinkHtml(pr.authorName, opener),
+                          formatIssueRelativeTime(pr.ts)),
                  pr.description, QString(), pullLink + QStringLiteral("#open"),
                  pr.author);
          }});
@@ -5511,12 +5519,13 @@ void MainWindow::renderPullThread(const PullRequest &pr)
                            .arg(ev.id.isEmpty() ? QString::number(ev.ts) : ev.id);
         entries.append(
             {ev.ts, entryOrder++,
-             [this, who, verb, when, body, accent, anchor, author = ev.author] {
+             [this, who, verb, when, body, accent, anchor, author = ev.author,
+              authorName = ev.authorName] {
                  addConversationCard(
                      m_pullThreadLayout, who,
                      QStringLiteral("<b>%1</b> %2 <span style='color:#8b949e'>%3"
                                     "</span>")
-                         .arg(who.toHtmlEscaped(), verb, when),
+                         .arg(userProfileLinkHtml(authorName, who), verb, when),
                      body, accent, anchor, author);
              }});
     }

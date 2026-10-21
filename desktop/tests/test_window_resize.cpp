@@ -33714,6 +33714,17 @@ else:
                   QStringLiteral("see forkmesh://pull/o/r/7.")) ==
                   QStringLiteral("see <forkmesh://pull/o/r/7>."),
               QStringLiteral("autolink leaves trailing punctuation out of a permalink"));
+        check(MainWindow::autolinkReferences(
+                  QStringLiteral("thanks @AliceSmith, ask @bob.")) ==
+                  QStringLiteral("thanks [@AliceSmith](forkmesh-user:alicesmith), "
+                                 "ask [@bob](forkmesh-user:bob)."),
+              QStringLiteral("autolink turns an @mention into a profile link"));
+        check(MainWindow::autolinkReferences(
+                  QStringLiteral("mail bob@example.com, see https://x.social/@bob, "
+                                 "`@bob` and @claude[bot]")) ==
+                  QStringLiteral("mail bob@example.com, see https://x.social/@bob, "
+                                 "`@bob` and @claude[bot]"),
+              QStringLiteral("autolink leaves emails, URLs, code and bots unlinked"));
 
         check(ClaudeTranscriptView::linkifyReferences(
                   QStringLiteral("review feat/clickable-agent-transcripts")) ==

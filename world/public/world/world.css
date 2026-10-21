@@ -10985,6 +10985,17 @@ html[data-dashboard-theme] .world-dashboard-embed .world-topbar {
   margin-left: 0;
 }
 
+.world-error-actor-stack a,
+#world-detail-title a {
+  color: inherit;
+  text-decoration: none;
+}
+
+#world-detail-title a:hover,
+#world-detail-title a:focus-visible {
+  text-decoration: underline;
+}
+
 .world-error-table-header,
 .world-error-row {
   display: grid !important;
@@ -11363,6 +11374,17 @@ html[data-dashboard-theme] .world-dashboard-embed .world-topbar {
 .world-task-mention[data-self="true"] {
   background: rgb(210 168 255 / 0.22);
   color: #6810c6;
+}
+
+.world-task-profile-link,
+.world-task-mention-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.world-task-profile-link:hover,
+.world-task-mention-link:hover .world-task-mention {
+  text-decoration: underline;
 }
 
 .world-office-task-checkin textarea {

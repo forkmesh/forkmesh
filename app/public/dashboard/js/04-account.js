@@ -1842,7 +1842,7 @@
         : orgRoleBadge(member.role);
       return '<div class="rounded-md border border-border bg-card px-3 py-2">' +
         '<div class="flex items-center gap-2">' +
-          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") + "</span>" +
+          '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + issuePersonNameHtml(member.name || "", "") + "</span>" +
           controls +
         "</div>" +
         orgMemberFloorGroups(member, canManage) +
@@ -2443,7 +2443,7 @@
     const rows = teamMembers.map((member) => {
       const memberName = escapeHtml(member.name || "");
       return '<div class="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2">' +
-        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + userNameHtml(member.name || "") +
+        '<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">' + issuePersonNameHtml(member.name || "", "") +
           (member.external
             ? ' <small class="ml-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">outside collaborator</small>'
             : "") + "</span>" +

@@ -38995,7 +38995,7 @@ def _notification_stored_tail(it, stored_repo, number=0):
     return tail if NOTIFICATION_HREF_RE.match(tail) else ""
 
 
-def _notification_actor_html(actor, avatar_b64=""):
+def _notification_actor_html(actor, avatar_b64="", base_url=""):
     """Actor byline: portrait when one is available, name either way.
 
     The name is never replaced by the image — an email client that blocks or
@@ -39005,7 +39005,14 @@ def _notification_actor_html(actor, avatar_b64=""):
     actor = clean_string(actor or "", MAX_NODE_NAME)
     if not actor:
         return ""
-    name_html = "by <strong>" + _html_escape(actor) + "</strong>"
+    name_html = "<strong>" + _html_escape(actor) + "</strong>"
+    handle = actor.strip().lower()
+    if NODE_NAME_RE.match(handle):
+        name_html = (
+            "<a href=\"" + _html_escape(_notification_item_url(
+                base_url, "/@" + quote(handle, safe=""))) + "\" "
+            "style=\"color:#0969da;text-decoration:none\">" + name_html + "</a>")
+    name_html = "by " + name_html
     # Rejected, never truncated: half a base64 blob is a broken image, and
     # the byline reads correctly without one.
     avatar = clean_string(avatar_b64 or "", MAX_AVATAR_B64).strip()
@@ -39069,7 +39076,7 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
     record = _notification_record_label(repo, segment, number)
     meta_html = " &middot; ".join(filter(None, [
         _html_escape("#" + str(number)) if number > 0 else "",
-        _notification_actor_html(actor, avatars.get(actor.lower(), "")),
+        _notification_actor_html(actor, avatars.get(actor.lower(), ""), base_url),
         _html_escape(when) if when else "",
     ]))
     # The number rides the meta line below in HTML, so the heading keeps
@@ -39088,7 +39095,8 @@ def _notification_email_item(it, aliases=None, avatars=None, base_url=""):
         ("<p class=\"fm-muted\" style=\"margin:4px 0 0;color:#8a8a93;font-size:12px\">" +
          meta_html + "</p>" if meta_html else "") +
         ("<div class=\"fm-item-body\" style=\"margin:6px 0 0;color:#a3a3a3;font-size:13px;"
-         "line-height:1.45\">" + _chat_format.to_html(body) + "</div>"
+         "line-height:1.45\">" + _chat_format.to_html(
+             body, _notification_item_url(base_url, "/")) + "</div>"
          if body else "") + "</div>")
     return {
         "headline": headline,

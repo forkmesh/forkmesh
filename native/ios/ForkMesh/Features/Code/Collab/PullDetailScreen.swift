@@ -181,7 +181,8 @@ struct PullDetailScreen: View {
             title: event.displayTitle,
             author: event.displayAuthor,
             text: event.body,
-            repo: RepoRef(owner: repo.owner, name: repo.name))
+            repo: RepoRef(owner: repo.owner, name: repo.name),
+            profile: event.authorName)
     }
 
     private func shipControls(_ pull: PublishedPull) -> some View {

@@ -234,6 +234,7 @@ def test_the_project_page_escapes_what_a_submitter_wrote(harness):
     assert "<script>alert" not in page.body
     assert "&lt;script&gt;" in page.body
     assert 'href="/alice/keepalive"' in page.body
+    assert 'Built by Keepers: <a href="/@alice">alice</a>' in page.body
 
 
 def test_community_choice_opens_with_its_milestone_and_counts_one_vote(harness):

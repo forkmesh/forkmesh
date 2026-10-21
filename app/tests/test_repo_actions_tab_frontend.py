@@ -197,12 +197,12 @@ def test_public_runs_hint_at_signing_in_for_logs():
     public = function("renderRepoActionsPublicDetail")
     assert "Sign in to see logs" in public
     assert "escapeHtml(repoActionsSignInHref())" in public
-    assert "userNameHtml(run.actor)" in public
+    assert "issuePersonNameHtml(run.actor," in public
     assert "logTail" not in public and "loadRepoActionsRunLog" not in public
     assert "/login?next=${encodeURIComponent(location.pathname + location.search)}" in function(
         "repoActionsSignInHref")
     assert "actor: repoActionsCleanLine(run?.actor, 64)," in FRAGMENT
-    assert "${userNameHtml(run.actor)}" in function("renderRepoActionsRuns")
+    assert '${issuePersonNameHtml(run.actor, "")}' in function("renderRepoActionsRuns")
     assert "Sign in to see runs" in FRAGMENT
 
 

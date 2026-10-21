@@ -105,6 +105,29 @@ final class CollabReferenceLinkTests: XCTestCase {
         ])
         XCTAssertEqual(ReferenceLinks.runs("plain words", repo: nil), [ReferenceRun(text: "plain words", url: nil)])
     }
+
+    func testRunsLinkMentionsToProfiles() {
+        XCTAssertEqual(ReferenceLinks.runs("Thanks @Alice, cc (@bob-2). See #4", repo: repo), [
+            ReferenceRun(text: "Thanks ", url: nil),
+            ReferenceRun(text: "@Alice", url: "forkmesh://profile/@alice"),
+            ReferenceRun(text: ", cc (", url: nil),
+            ReferenceRun(text: "@bob-2", url: "forkmesh://profile/@bob-2"),
+            ReferenceRun(text: "). See ", url: nil),
+            ReferenceRun(text: "#4", url: "forkmesh://forkmesh/app/issues/4"),
+        ])
+        XCTAssertEqual(ReferenceLinks.runs("ping @carol", repo: nil), [
+            ReferenceRun(text: "ping ", url: nil),
+            ReferenceRun(text: "@carol", url: "forkmesh://profile/@carol"),
+        ])
+        let plain = "mail a@b.com, `@dan`, https://x.test/@erin, @fred[bot], @gil@mastodon.social, @types/node, @example.com, @9lives, @here, @forkbot, @x_y"
+        XCTAssertEqual(ReferenceLinks.runs(plain, repo: nil).filter { $0.url != nil }.map(\.text), ["https://x.test/@erin"])
+        XCTAssertEqual(ReferenceLinks.runs("hi @alice", repo: nil, mentions: false), [ReferenceRun(text: "hi @alice", url: nil)])
+        let mention = ReferenceLinks.references("hey @Alice.")[0]
+        XCTAssertEqual(mention.kind, .mention)
+        XCTAssertEqual(mention.label, "@Alice")
+        XCTAssertEqual(mention.route(in: repo), .profile(name: "alice"))
+        XCTAssertEqual(ReferenceLinks.markdown("hey @alice", repo: repo), "hey [@alice](forkmesh://profile/@alice)")
+    }
 }
 
 final class CollabCodeMapTests: XCTestCase {

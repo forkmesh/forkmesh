@@ -2,7 +2,7 @@
 (() => {
   const chunks = window.__forkmeshDashboardChunks = window.__forkmeshDashboardChunks || {};
   chunks["challenges"] = (core) => {
-  const { $, copyTextToClipboard, escapeHtml, fetchJson, formatCount, loadingHtml, publicProfileUrl, state } = core;
+  const { $, copyTextToClipboard, escapeHtml, fetchJson, formatCount, issuePersonNameHtml, loadingHtml, publicProfileUrl, state } = core;
   const CHALLENGE_ERROR_TEXT = {
     unauthorized: "Log in with a user account to take part in challenges.",
     not_found: "That challenge no longer exists.",
@@ -224,7 +224,7 @@
     }
     const next = encodeURIComponent(`${location.pathname}${location.search}`);
     const people = Array.isArray(item.memberNames) && item.memberNames.length
-      ? `<p class="mt-1 text-xs text-muted-foreground">In it so far: ${escapeHtml(item.memberNames.join(", "))}</p>`
+      ? `<p class="mt-1 text-xs text-muted-foreground">In it so far: ${item.memberNames.map((name) => issuePersonNameHtml(name, "")).join(", ")}</p>`
       : "";
     const button = item.phase === "finished"
       ? '<span class="text-xs text-muted-foreground">This challenge has finished.</span>'
@@ -232,7 +232,7 @@
         ? `<button data-challenges-join="${escapeHtml(item.id)}" type="button" class="fm-btn fm-btn-sm fm-btn-cta"${view.busy ? " disabled" : ""}><i data-lucide="swords" class="w-3.5 h-3.5"></i>Accept challenge</button>`
         : `<a class="fm-btn fm-btn-sm fm-btn-cta" href="/login?next=${next}">Log in to accept</a>`;
     root.innerHTML = `<div class="px-4 sm:px-5 py-3 border-b border-border">${challengeFlashHtml("", "swords", `
-      <span class="fm-flash-title">${escapeHtml(item.ownerName)} challenged you to ${escapeHtml(item.name)}</span>
+      <span class="fm-flash-title">${issuePersonNameHtml(item.ownerName, "")} challenged you to ${escapeHtml(item.name)}</span>
       <p class="text-xs">${escapeHtml(challengeWhenText(item))}</p>
       <p class="text-xs">${escapeHtml(challengeRulesText(item))}</p>
       ${people}`, button)}</div>`;

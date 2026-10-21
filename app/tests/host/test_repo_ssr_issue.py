@@ -259,6 +259,16 @@ def test_untrusted_text_is_escaped():
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
 
 
+def test_assignee_names_link_to_their_profiles():
+    issue = issue27()
+    issue["assignees"] = ["riley", "tasks[bot]"]
+    html = py_render(issue, 27, index_rows(), viewer="both")
+    assert ('<a href="/@riley" data-issue-person="riley" class="truncate font-semibold '
+            'hover:text-[var(--dashboard-link)] hover:underline"><span data-user-name="riley">'
+            'riley</span></a></span>') in html
+    assert '<span class="truncate font-semibold">tasks[bot]</span>' in html
+
+
 def test_both_viewers_are_drawn_and_picked_by_the_guest_flag():
     html = py_render(issue27(), 27, index_rows(), viewer="both")
     assert re.search(r"<div data-ssr-guest [^>]*>.*Sign in</a> to join", html, re.S)

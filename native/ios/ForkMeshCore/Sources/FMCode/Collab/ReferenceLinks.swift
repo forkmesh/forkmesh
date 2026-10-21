@@ -3,7 +3,7 @@ import FMBase
 import Foundation
 
 public enum ReferenceKind: String, Equatable, Sendable {
-    case issue, pull, commit, url
+    case issue, pull, commit, url, mention
 }
 
 public struct Reference: Equatable, Sendable {
@@ -21,6 +21,7 @@ public struct Reference: Equatable, Sendable {
         case .pull: return .pull(target, number: number, tab: .conversation)
         case .commit: return .commit(target, sha: sha)
         case .url: return nil
+        case .mention: return ProfileLinks.account(label).map { .profile(name: $0) }
         }
     }
 
@@ -30,7 +31,7 @@ public struct Reference: Equatable, Sendable {
         case .issue: return "forkmesh://\(target.owner)/\(target.name)/issues/\(number)"
         case .pull: return "forkmesh://\(target.owner)/\(target.name)/pulls/\(number)"
         case .commit: return "forkmesh://\(target.owner)/\(target.name)/commit/\(sha)"
-        case .url: return url
+        case .url, .mention: return url
         }
     }
 }
@@ -98,7 +99,35 @@ public enum ReferenceLinks {
         return (ref, start)
     }
 
-    public static func segments(_ text: String, local: Bool = true, commits: Bool = true) -> [ReferenceSegment] {
+    static func isMentionName(_ c: Character) -> Bool { c.isASCII && (c.isLetter || c.isNumber || c == "-") }
+
+    static func opensMention(_ chars: [Character], _ at: Int) -> Bool {
+        guard chars[at] == "@" else { return false }
+        guard at > 0 else { return true }
+        let before = chars[at - 1]
+        return !(before.isLetter || before.isNumber) && !"_@/.-+".contains(before)
+    }
+
+    static func mention(_ chars: [Character], at: Int) -> (Reference, Int)? {
+        guard opensMention(chars, at) else { return nil }
+        var end = at + 1
+        while end < chars.count && isMentionName(chars[end]) { end += 1 }
+        while end > at + 1 && chars[end - 1] == "-" { end -= 1 }
+        guard end > at + 1 else { return nil }
+        if end < chars.count {
+            let next = chars[end]
+            if next == "_" || next == "@" || next == "/" { return nil }
+            if next == "." && end + 1 < chars.count && (chars[end + 1].isLetter || chars[end + 1].isNumber) { return nil }
+            if hasPrefix(chars, end, "[bot]", caseInsensitive: true) { return nil }
+        }
+        let label = String(chars[at..<end])
+        guard let link = ProfileLinks.link(label) else { return nil }
+        return (Reference(kind: .mention, label: label, repo: nil, number: 0, sha: "", url: link), end)
+    }
+
+    public static func segments(
+        _ text: String, local: Bool = true, commits: Bool = true, mentions: Bool = true
+    ) -> [ReferenceSegment] {
         let chars = Array(text)
         var out: [ReferenceSegment] = []
         var plain = ""
@@ -161,6 +190,11 @@ public enum ReferenceLinks {
                 i = end
                 continue
             }
+            if mentions && c == "@", let (reference, end) = mention(chars, at: i) {
+                emit(reference)
+                i = end
+                continue
+            }
             if local && isBoundary(chars, i - 1) {
                 var matched = false
                 for (prefix, kind) in [("pull request #", ReferenceKind.pull), ("pull #", .pull), ("PR #", .pull), ("issue #", .issue)] {
@@ -213,7 +247,7 @@ public enum ReferenceLinks {
         segments(text).compactMap { if case .reference(let r) = $0 { return r } else { return nil } }
     }
 
-    public static func runs(_ text: String, repo: RepoRef?, commits: Bool = true) -> [ReferenceRun] {
+    public static func runs(_ text: String, repo: RepoRef?, commits: Bool = true, mentions: Bool = true) -> [ReferenceRun] {
         var out: [ReferenceRun] = []
         func add(_ text: String, _ url: String?) {
             if url == nil, let last = out.last, last.url == nil {
@@ -222,11 +256,11 @@ public enum ReferenceLinks {
                 out.append(ReferenceRun(text: text, url: url))
             }
         }
-        for segment in segments(text, local: repo != nil, commits: commits) {
+        for segment in segments(text, local: repo != nil, commits: commits, mentions: mentions) {
             switch segment {
             case .text(let plain): add(plain, nil)
             case .reference(let ref):
-                if ref.kind == .url {
+                if ref.kind == .url || ref.kind == .mention {
                     add(ref.label, ref.url)
                 } else if let target = ref.repo ?? repo {
                     add(ref.label, ref.link(in: target))

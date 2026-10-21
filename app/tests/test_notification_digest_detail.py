@@ -44,6 +44,7 @@ FUNCS = {
 # cannot drift away from what these tests assert.
 CONSTANTS = {
     "MAX_NODE_NAME",
+    "NODE_NAME_RE",
     "MAX_REPO_SEGMENT",
     "FORKMESH_SITE_URL",
     "AVATAR_B64_RE",
@@ -54,6 +55,10 @@ CONSTANTS = {
     "NOTIFICATION_ITEM_NOUNS",
     "NOTIFICATION_EMAIL_AVATAR_MAX_B64",
 }
+
+
+BOB_BYLINE = ('by <a href="https://forkmesh.com/@bob" '
+              'style="color:#0969da;text-decoration:none"><strong>bob</strong></a>')
 
 
 def _chat_format_module():
@@ -127,7 +132,7 @@ def test_digest_item_shows_number_actor_and_time():
     assert "    Search box is broken on mobile" in text
     # HTML body: same three facts, escaped, in a small muted meta line.
     assert "#42" in html
-    assert "by <strong>bob</strong>" in html
+    assert BOB_BYLINE in html
     assert "2026-07-09 14:32 UTC" in html
 
 
@@ -282,10 +287,10 @@ def test_actor_avatar_renders_with_the_name_and_falls_back_to_text():
     rendered = actor_html("bob", png)
     assert 'src="data:image/png;base64,' + png + '"' in rendered
     assert 'alt="bob"' in rendered
-    assert "by <strong>bob</strong>" in rendered
+    assert BOB_BYLINE in rendered
     # No avatar stored, an oversized one, and a malformed one all degrade to
     # exactly the text byline the digest showed before avatars existed.
-    text_only = "by <strong>bob</strong>"
+    text_only = BOB_BYLINE
     assert actor_html("bob", "") == text_only
     assert actor_html("bob", None) == text_only
     assert actor_html(
@@ -294,6 +299,10 @@ def test_actor_avatar_renders_with_the_name_and_falls_back_to_text():
     # No actor at all (a host/release ping) contributes nothing to the meta
     # line rather than a dangling "by".
     assert actor_html("", png) == ""
+    assert actor_html("bob", "", "https://next.example/") == (
+        'by <a href="https://next.example/@bob" '
+        'style="color:#0969da;text-decoration:none"><strong>bob</strong></a>')
+    assert actor_html("Bob Smith", "") == "by <strong>Bob Smith</strong>"
 
 
 def test_digest_shows_the_actor_avatar_next_to_the_public_username():
@@ -313,7 +322,7 @@ def test_digest_shows_the_actor_avatar_next_to_the_public_username():
         identity={"repos": {}, "avatars": {"bob": png}},
         base_url="https://forkmesh.com")
     assert 'src="data:image/png;base64,' + png + '"' in html
-    assert "by <strong>bob</strong>" in html
+    assert BOB_BYLINE in html
     # The plain-text alternative still names the submitter.
     assert "    by bob \xb7 " in text
 
@@ -687,3 +696,16 @@ def test_item_body_keeps_chat_formatting():
     assert "<li><code style=" in html
     assert ">status</a>" in html
     assert "*Deploy*" not in html
+
+
+def test_item_body_mentions_link_to_the_absolute_profile():
+    ns = _load()
+    _subject, _text, html = ns["_notification_digest_email"]("alice", [{
+        "kind": "mention", "title": "bob mentioned you",
+        "body": "thanks @Alice see [@carol](https://x.test/c)",
+        "actor": "bob", "ts": 1783607520000,
+    }], base_url="https://next.example")
+    assert ('<a href="https://next.example/@alice" style="color:#0969da;'
+            'text-decoration:underline">@Alice</a>') in html
+    assert "<strong>@carol</strong></a>" in html
+    assert 'href="https://next.example/@bob"' in html

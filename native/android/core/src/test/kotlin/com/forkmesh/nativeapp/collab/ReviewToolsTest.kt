@@ -545,6 +545,32 @@ class ReviewToolsTest {
         expect(ReferenceLinks.references("abc#4 cafe12").isEmpty())
     }
 
+    fun testReferenceRunsLinkMentionsToProfiles() {
+        val repo = RepoRef("alice", "tool")
+        assertEq(
+            listOf(
+                ReferenceRun("Thanks ", null),
+                ReferenceRun("@Alice", "forkmesh://profile/@alice"),
+                ReferenceRun(", cc (", null),
+                ReferenceRun("@bob-2", "forkmesh://profile/@bob-2"),
+                ReferenceRun("). See ", null),
+                ReferenceRun("#4", "forkmesh://alice/tool/issues/4"),
+            ),
+            ReferenceLinks.runs("Thanks @Alice, cc (@bob-2). See #4", repo),
+        )
+        assertEq(
+            listOf(ReferenceRun("ping ", null), ReferenceRun("@carol", "forkmesh://profile/@carol")),
+            ReferenceLinks.runs("ping @carol", null),
+        )
+        val plain = "mail a@b.com, `@dan`, https://x.test/@erin, @fred[bot], @gil@mastodon.social, @types/node, @example.com, @9lives, @here, @forkbot, @x_y"
+        assertEq(listOf("https://x.test/@erin"), ReferenceLinks.runs(plain, null).filter { it.url != null }.map { it.text })
+        assertEq(listOf(ReferenceRun("hi @alice", null)), ReferenceLinks.runs("hi @alice", null, mentions = false))
+        val mention = ReferenceLinks.references("hey @Alice.").single()
+        assertEq(ReferenceKind.Mention, mention.kind)
+        assertEq("@Alice", mention.label)
+        assertEq("hey [@alice](forkmesh://profile/@alice)", ReferenceLinks.markdown("hey @alice", repo))
+    }
+
     fun testReferenceRuns() {
         val repo = RepoRef("alice", "tool")
         assertEq(
