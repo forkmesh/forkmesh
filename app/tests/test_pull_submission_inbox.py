@@ -572,3 +572,24 @@ def test_a_signed_title_with_hidden_characters_gets_a_clear_error():
     response = asyncio.run(handler(object(), _Request(pull), "alice", "project"))
     assert response == {"status": 400, "data": {"error": "hidden_unicode", "fields": ["title"]}}
     assert inserted == []
+
+
+def test_a_lone_surrogate_in_signed_code_is_refused_not_a_crash():
+    inserted = []
+    handler = _load_pulls_handler(_runtime(inserted, [], []))
+    pull = {"title": "Bad", "base": "main", "head": "x", "patch": "+\ud800\n", "commits": "",
+            "author": "web-author", "ts": 1, "sig": "s"}
+    response = asyncio.run(handler(object(), _Request(pull), "alice", "project"))
+    assert response == {"status": 400, "data": {"error": "pull_invalid"}}
+    assert inserted == []
+
+
+def test_the_size_cap_counts_the_hidden_characters_kept_in_signed_code():
+    inserted = []
+    runtime = _runtime(inserted, [], [])
+    runtime["MAX_PULL_BYTES"] = 10
+    handler = _load_pulls_handler(runtime)
+    pull = {"title": "Big", "base": "main", "head": "x", "patch": "+a" + chr(0x200B) * 5,
+            "commits": "", "author": "web-author", "ts": 1, "sig": "s"}
+    response = asyncio.run(handler(object(), _Request(pull), "alice", "project"))
+    assert response["status"] == 413 and inserted == []

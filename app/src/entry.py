@@ -41388,15 +41388,18 @@ async def pulls_handler(env, request, owner, repo):
         # sender drains into the same lossless PullRequest representation.
         pull["description"] = description
         pull.pop("body", None)
-        pull_bytes = len((pull.get("patch", "") or "").encode("utf-8")) + len(
-            (pull.get("commits", "") or "").encode("utf-8"))
-        if pull_bytes > MAX_PULL_BYTES:
-            return json_response({"error": "pull_too_large"}, status=413)
         raw_pull = raw_data.get("pull") if isinstance(raw_data, dict) else None
         raw_pull = raw_pull if isinstance(raw_pull, dict) else {}
+        pull_bytes = 0
         for field in ("patch", "commits"):
             if isinstance(raw_pull.get(field), str):
                 pull[field] = raw_pull[field]
+            try:
+                pull_bytes += len((pull.get(field, "") or "").encode("utf-8"))
+            except UnicodeEncodeError:
+                return json_response({"error": "pull_invalid"}, status=400)
+        if pull_bytes > MAX_PULL_BYTES:
+            return json_response({"error": "pull_too_large"}, status=413)
         pull["hiddenUnicode"] = any(
             has_hidden_unicode(pull.get(field) or "") for field in ("patch", "commits"))
         if not await verify_pull_event(

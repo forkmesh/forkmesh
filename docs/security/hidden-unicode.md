@@ -154,4 +154,9 @@ an agent can be warned instead of the bytes being changed. Prose stays clean:
 when the signature only verifies over a title, base or head that cleaning
 changed, the server answers 400 `hidden_unicode` with the field names instead
 of `bad_signature`.
+The `MAX_PULL_BYTES` cap counts the exact `patch` and `commits`, kept
+characters included, and code holding a lone surrogate (valid JSON, not
+UTF-8) is refused with 400 `pull_invalid`, since it cannot be hashed for the
+signature check. Nothing reads `hiddenUnicode` yet: the review pages do not
+show the warning.
 
