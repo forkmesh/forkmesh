@@ -56,6 +56,14 @@ replaces its row. Every recorded push deletes rows older than a day, so the
 table holds at most a day of pushes. Repository and account deletion remove
 their rows (`_REPO_SCOPED_TABLES`, `_delete_account_namespace`).
 
+A `DATA_KEY` rotation (`tools/next_rekey.py`, `docs/REKEY.md`) empties the
+table: `branch_bi` and `pull_bi` are blind indexes of prefixed strings, and
+`pull_bi` has the target's `repo_bi` inside it, so there is no plaintext to
+rebuild them from. Banners come back with the next push. A new `*_bi` table
+must be registered there too, or the deploy's
+`app/tests/host/test_next_rekey.py` gate fails, as it did for the 0279
+migration on 2026-10-21.
+
 Writing happens on a push only: one catalog read for the repository (plus one
 for the parent of a fork, and its read-only check), one upsert per branch (at
 most ten per push) and the pruning delete.
