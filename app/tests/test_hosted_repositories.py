@@ -401,6 +401,179 @@ def test_a_basic_header_is_recognized_before_the_body_is_read():
         _basic("alice", _credential(module))) is True
 
 
+ALICE_PASSWORD = "correct horse battery"
+
+
+def _with_password_login(module, *, totp=False, admin=False, status="active",
+                         kind="user"):
+    attempts = {"fails": [], "cleared": []}
+    record = {"name": "alice", "status": status, "totp_enrolled": totp,
+              "kind": kind}
+
+    async def _account_password_record(_env, data):
+        identifier = data.get("identifier", "")
+        if identifier not in ("alice", "alice@example.test"):
+            return "", None, "invalid_credentials"
+        if data.get("password") != ALICE_PASSWORD:
+            return "", None, "invalid_credentials"
+        if record["status"] != "active":
+            return "", None, "invalid_credentials"
+        if record["kind"] != "user":
+            return "", None, "not_a_user"
+        return "bi:alice", dict(record), ""
+
+    async def _login_attempt_keys(_env, _request, identifier):
+        return ["source:" + identifier]
+
+    async def _login_record_fail(_env, key):
+        attempts["fails"].append(key)
+        return {"fails": len(attempts["fails"]), "lockedUntil": 0}
+
+    async def _login_clear(_env, key):
+        attempts["cleared"].append(key)
+
+    async def _is_admin_flag(_env, name):
+        return admin and name == "alice"
+
+    async def d1_first(_env, sql, *args):
+        if "FROM users WHERE email_bi=?" in sql:
+            if args[0] == "bi:alice@example.test":
+                return {"data": "alice-user"}
+            return None
+        return None
+
+    async def decrypt_row(_env, stored):
+        if stored == "alice-user":
+            return {"name": "alice", "status": "active"}
+        return None
+
+    for name, value in {
+        "_account_password_record": _account_password_record,
+        "_login_attempt_keys": _login_attempt_keys,
+        "_login_record_fail": _login_record_fail,
+        "_login_clear": _login_clear,
+        "_is_admin_flag": _is_admin_flag,
+        "d1_first": d1_first,
+        "decrypt_row": decrypt_row,
+    }.items():
+        setattr(module, name, value)
+    return attempts
+
+
+@pytest.mark.parametrize("username", ["alice", "alice@example.test",
+                                      "Alice@Example.test"])
+def test_account_name_or_email_and_password_push(username):
+    recorder = _Recorder()
+    module = _install(recorder=recorder)
+    attempts = _with_password_login(module)
+    account = asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "alice", "app", _basic(username, ALICE_PASSWORD), "POST",
+        request=_Request()))
+    assert account == "alice"
+    assert recorder.audits[-1] == (
+        "alice", "git.push_authorize", "repository", "alice/app", "success",
+        {"operation": "git-receive-pack", "method": "POST",
+         "credential": "password"})
+    assert attempts["fails"] == []
+    assert attempts["cleared"] == ["source:" + username.lower()]
+
+
+def test_a_password_keeps_the_accounts_push_permission():
+    recorder = _Recorder()
+    module = _install(recorder=recorder, owner_of=())
+    _with_password_login(module)
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "bob", "app", _basic("alice", ALICE_PASSWORD), "POST",
+        request=_Request())) == ""
+    assert recorder.audits[-1][4] == "denied"
+
+    recorder = _Recorder()
+    module = _install(recorder=recorder, owner_of=(), org_write=True)
+    _with_password_login(module)
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "bob", "app", _basic("alice", ALICE_PASSWORD), "POST",
+        request=_Request())) == "alice"
+
+
+def test_a_wrong_password_counts_toward_the_login_lockout():
+    recorder = _Recorder()
+    module = _install(recorder=recorder)
+    attempts = _with_password_login(module)
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "alice", "app", _basic("alice", "wrong"), "POST",
+        request=_Request())) == ""
+    assert attempts["fails"] == ["source:alice"]
+    assert recorder.audits == []
+
+
+def test_an_admin_account_pushes_with_the_password():
+    recorder = _Recorder()
+    module = _install(recorder=recorder)
+    _with_password_login(module, admin=True)
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "alice", "app", _basic("alice", ALICE_PASSWORD), "POST",
+        request=_Request())) == "alice"
+
+
+def test_a_two_factor_account_cannot_push_with_its_password():
+    recorder = _Recorder()
+    module = _install(recorder=recorder)
+    attempts = _with_password_login(module, totp=True)
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "alice", "app", _basic("alice", ALICE_PASSWORD), "POST",
+        request=_Request())) == ""
+    assert attempts == {"fails": [], "cleared": []}
+
+
+@pytest.mark.parametrize("kwargs", [{"status": "disabled"}, {"kind": "node"}])
+def test_password_push_is_refused_for_disabled_or_node_accounts(kwargs):
+    recorder = _Recorder()
+    module = _install(recorder=recorder)
+    _with_password_login(module, **kwargs)
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "alice", "app", _basic("alice", ALICE_PASSWORD), "POST",
+        request=_Request())) == ""
+
+
+def test_an_operator_can_turn_password_pushes_off():
+    class _Off(_Env):
+        GIT_PASSWORD_AUTH = "0"
+
+    recorder = _Recorder()
+    module = _install(recorder=recorder)
+    attempts = _with_password_login(module)
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Off(), "alice", "app", _basic("alice", ALICE_PASSWORD), "POST",
+        request=_Request())) == ""
+    assert attempts == {"fails": [], "cleared": []}
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Off(), "alice", "app", _basic("alice", _credential(module)),
+        "POST")) == "alice"
+
+
+def test_a_push_credential_works_with_the_account_email():
+    recorder = _Recorder()
+    module = _install(recorder=recorder)
+    _with_password_login(module)
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "alice", "app",
+        _basic("alice@example.test", _credential(module)), "POST")) == "alice"
+
+
+def test_a_private_clone_accepts_the_account_password():
+    recorder = _Recorder()
+    module = _install(recorder=recorder)
+    _with_password_login(module)
+
+    async def _hosted_read_allowed(_env, owner, repo, account):
+        return (owner, repo, account) == ("alice", "app", "alice")
+
+    module._hosted_read_allowed = _hosted_read_allowed
+    assert asyncio.run(module.verify_hosted_push_credential(
+        _Env(), "alice", "app", _basic("alice@example.test", ALICE_PASSWORD),
+        "GET", access="read", request=_Request())) == "alice"
+
+
 # ---------------------------------------------------------------------------
 # Creating the empty repository
 # ---------------------------------------------------------------------------

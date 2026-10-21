@@ -25,12 +25,36 @@ moves, branch deletes and trash listing, audit, hooks),
 Anyone else gets `403 push_forbidden` before any core is contacted, audited
 as `git.push_authorize`. Anonymous requests get a `401` Basic challenge.
 
-Credentials: the session-bound Basic credential (`fmp1.…`, from
-`POST /api/hosted-repositories/push-credential`) or signed requests
-(`forkmesh-git-push-v1`, `X-ForkMesh-Pubkey/-Ts/-Sig`) with the account's
-primary or an enabled device key. Admins may also commit one edited
-`docs/**/*.md` file through the developer docs page, under the same ref rules.
-There are no SSH pushes and no personal access tokens.
+Credentials:
+
+- Basic with the account name or email as the username and either the
+  session-bound push credential (`fmp1.…`, from
+  `POST /api/hosted-repositories/push-credential`) or the account password.
+- Signed requests (`forkmesh-git-push-v1`, `X-ForkMesh-Pubkey/-Ts/-Sig`) with
+  the account's primary or an enabled device key.
+
+Admins may also commit one edited `docs/**/*.md` file through the developer
+docs page, under the same ref rules. There are no SSH pushes and no personal
+access tokens.
+
+**Account password over git** (`hosted_git._password_git_account`). People
+typed their sign-in email and password into `git push` and got
+`Authentication failed`: only the account name and an `fmp1` credential were
+accepted, and the credential had to be minted on the website first and
+lasts seven days.
+The password path checks exactly what the website login checks
+(`_account_password_record`: active user account, PBKDF2 password) and spends
+the same `login_attempts` budgets (`_login_attempt_keys`, `_login_record_fail`,
+`_login_clear`), so git cannot be used to guess passwords faster than the
+sign-in page. It does not ask for the two-factor code, because git cannot
+send one: the maintainer chose (2026-10-21) to let every account, admins and
+two-factor accounts included, push with its password, so two-factor sign-in
+does not protect git pushes. Push
+permission is re-checked the same way for both credentials, and the audit row's
+`credential` says `password` or `session-mac`. An instance turns the password
+path off with `GIT_PASSWORD_AUTH=0`. Private hosted clones accept the same
+credentials. Tests: `test_account_name_or_email_and_password_push` and the
+tests after it in `app/tests/test_hosted_repositories.py`.
 
 **Retired cores.** A core removed from the fleet is listed in
 `[hosted] retired_cores`; `deploy/core/render.py` writes

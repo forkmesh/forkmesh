@@ -1,8 +1,10 @@
 # Empty repositories created from the web
 
 Create an empty repository from **Repositories → New** and push with plain
-`git` to `https://app.forkmesh.com/<owner>/<name>`, using your account name and
-the push credential shown. The credential is a keyed MAC over account,
+`git` to `https://app.forkmesh.com/<owner>/<name>`. When git asks, enter your
+account name or email and your account password, or the push credential shown.
+The credential is a
+keyed MAC over account,
 repository, session and a seven-day expiry; it is not stored, dies with the
 session, and every push re-checks permissions. After each push ForkMesh records
 the attestation (the signed list of branch and tag commits) that reads route
@@ -29,7 +31,8 @@ a fork:
    choose **Create push credential**.
 2. Push a branch named `pr/<your-account>/<topic>`:
    `git push https://<host>/<owner>/<name>.git pr/<your-account>/<topic>`.
-   Use your account name and the credential when Git asks.
+   When Git asks, use your account name or email with your account password,
+   or the credential.
 3. Open the pull request from that branch on the repository's **Pull
    requests** tab.
 
