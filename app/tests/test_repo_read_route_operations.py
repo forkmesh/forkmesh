@@ -69,6 +69,8 @@ def test_route_dispatch_uses_the_shared_action_set():
 
 CARRIED = {
     mirror_gateway.PULSE_OPERATION: mirror_gateway.PULSE_CARRIER_OPERATION,
+    mirror_gateway.ISSUE_INDEX_OPERATION:
+        mirror_gateway.ISSUE_INDEX_CARRIER_OPERATION,
 }
 
 

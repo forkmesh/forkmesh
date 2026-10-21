@@ -230,7 +230,7 @@ PRIVATE_REPLICA_ACCESS_RE = re.compile(
 # already rejected at the edge with 426). The other actions are live: Default
 # routes those authorized reads through direct HTTPS.
 REPO_HOST_RE = re.compile(
-    r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes|pulse)$")
+    r"^/api/repo/([^/]+)/([^/]+)/(host|tree|blobs|blob|raw|history|commit|compare|merge-preview|branches|search|stats|sizes|pulse|issue-index)$")
 # Stable content-addressed release URL. Default streams it from an attested
 # direct-HTTPS endpoint; the host control socket rejects this path.
 RELEASE_BLOB_RE = re.compile(

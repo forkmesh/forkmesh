@@ -34,7 +34,7 @@ PUBLIC_OPERATIONS = frozenset({
     "commit", "compare", "branches", "search", "stats", "sizes", "release-blob",
     "merge-pull", "merge-preview", "update-pull-branch", "actions-status",
     "actions-control", "merge-agent-branch", "delete-agent-branch",
-    "branch-trash", "pulse",
+    "branch-trash", "pulse", "issue-index",
 })
 # The owner-authorized pull mutations. A mirror only serves these with an
 # operator-configured merge executor, and a read-only node advertises neither,

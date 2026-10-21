@@ -49953,6 +49953,7 @@ async def _https_mirror_route_advance(env, context, served_node, operation):
 # receives no `ref`, which is exactly what its gateway route accepts.
 HTTPS_MIRROR_REF_OPERATIONS = frozenset({
     "tree", "blobs", "blob", "raw", "history", "search", "stats", "sizes",
+    "issue-index",
 })
 
 
