@@ -2337,6 +2337,20 @@ def repo_web_href(owner, repo):
     return "/" + quote(owner) + "/" + quote(repo)
 
 
+def repo_record_href(owner, repo, section, number=0):
+    """Link to the thing a notification is about: one issue or pull request
+    (section "issues" or "pull") when its number is known, otherwise a repo
+    section such as "releases" or "commits", otherwise the repository."""
+    base = repo_web_href(owner, repo)
+    try:
+        number = int(number or 0)
+    except (TypeError, ValueError):
+        number = 0
+    if section in ("issues", "pull"):
+        return base + "/" + section + "/" + str(number) if number > 0 else base
+    return base + "/" + section if section else base
+
+
 # The signed-event crypto + canonical-content helpers (b64url_decode,
 # ed25519_verify, sha256_hex, the verify_* verifiers and *_content
 # canonicalizers) were extracted into events.py (adhoc #279); imported above.
@@ -37230,7 +37244,7 @@ async def notify_issue_assignees(env, owner, repo, assignees, actor, title, numb
             "Issue assigned in " + owner + "/" + repo,
             body=title or "You were assigned to an issue.",
             repo=owner + "/" + repo,
-            href=repo_web_href(owner, repo),
+            href=repo_record_href(owner, repo, "issues", number),
             actor=actor, source="issue_assigned",
             dedupe="issue-assigned:" + owner + "/" + repo + ":" + str(number) +
                    ":" + assignee,
@@ -37250,7 +37264,7 @@ async def notify_bounty_event(env, rec, kind):
         body=("Issue #" + str(number) + " bounty is " +
               ("funded." if kind == "bounty_funded" else "paid.")),
         repo=owner + "/" + repo,
-        href=repo_web_href(owner, repo),
+        href=repo_record_href(owner, repo, "issues", number),
         source="bounty", dedupe=kind + ":" + owner + "/" + repo + ":" + str(number),
         meta={"number": number, "status": rec.get("status", "")},
     )
@@ -37291,7 +37305,9 @@ async def notify_repo_activity(env, owner, repo, event, body="", actor="",
     slug = owner + "/" + repo
     title = label[0] + " in " + slug
     text = clean_string(body, NOTIFICATION_BODY_MAX) or label[1]
-    href = repo_web_href(owner, repo)
+    href = (repo_record_href(owner, repo, "pull", (meta or {}).get("number"))
+            if event == "pull.merged"
+            else repo_record_href(owner, repo, "commits"))
     dedupe = ("repo-activity:" + slug + ":" + event + ":" +
               clean_string(key, 80))
     payload_meta = dict(meta or {})
@@ -37567,7 +37583,7 @@ async def notify_release_published(env, owner, repo, release):
             env, recipient, "release_published", title,
             body=body,
             repo=owner + "/" + repo,
-            href=repo_web_href(owner, repo),
+            href=repo_record_href(owner, repo, "releases"),
             actor=actor, source="release",
             dedupe=dedupe,
             ts=ts,
