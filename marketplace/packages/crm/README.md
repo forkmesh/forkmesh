@@ -70,6 +70,12 @@ generic package sockets and generated registries.
 - **CSV import**: up to 2000 rows per file; contacts are matched by email, so
   re-importing updates them; columns the CRM has no field for become custom
   columns.
+- An organization holds up to 5000 contacts (1.42.0; 2000 before, raised when
+  the forkmesh org filled up mid-import). The cap is the D1 trigger
+  `trg_crm_contact_limit_5000`; the schema replay drops the old
+  `trg_crm_contact_limit`. An import that reaches the cap skips the rows that
+  do not fit with `crm_full` ("Row N was not added because the CRM already
+  holds 5000 contacts.") instead of failing the request with a 503.
 - A file whose every row names the same pipeline in its **Flow** or
   **Pipeline** column opens its new list bound to that pipeline. When an owner
   or admin imports such a file for a starter pipeline the organization does
