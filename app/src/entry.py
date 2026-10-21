@@ -3219,8 +3219,8 @@ ACCOUNT_EVENT_PUSH_MEMO_MAX = 512
 # "re-read your inbox", so one frame answers any number of rows; a banner is
 # the notification itself, and a second ping inside the window that produced
 # no banner is a ping the phone never heard about.
-ACCOUNT_EVENT_PUSH_EVERY_TOPICS = ("pings", "direct-messages")
-ACCOUNT_EVENT_SOCKET_EVERY_TOPICS = ("chat-read", "direct-messages")
+ACCOUNT_EVENT_PUSH_EVERY_TOPICS = ("pings", "direct-messages", "calls")
+ACCOUNT_EVENT_SOCKET_EVERY_TOPICS = ("chat-read", "direct-messages", "calls")
 ACCOUNT_EVENT_CONVERSATION_TOPICS = ("direct-messages", "calls")
 
 
@@ -10293,6 +10293,9 @@ async def _chat_direct_call_ring(env, conversation_id, caller_bi, call_id=""):
 _CHAT_DIRECT_RING_MEMO = {}
 CHAT_DIRECT_RING_EVERY_MS = 20 * 1000
 CHAT_DIRECT_RING_MEMO_MAX = 256
+_CHAT_DIRECT_RING_BUDGET = {}
+CHAT_DIRECT_RINGS_PER_WINDOW = 8
+CHAT_DIRECT_RING_WINDOW_MS = 60 * 1000
 
 
 # conversation_id -> {sender account_bi: (peer name, sender name)}. A direct
@@ -56115,18 +56118,28 @@ class ForkMeshRoom(DurableObject):
         if not account_bi:
             return
         direct_id = str(_ws_attr(ws, "direct_id", "") or "")
+        call_id = str(call_id or "")[:64]
         now = int(Date.now())
-        memo_key = direct_id + "\n" + account_bi + "\n" + str(call_id or "")
+        memo_key = direct_id + "\n" + account_bi + "\n" + call_id
         last = _CHAT_DIRECT_RING_MEMO.get(memo_key, 0)
         if last and now - last < CHAT_DIRECT_RING_EVERY_MS:
             return
+        budget_key = direct_id + "\n" + account_bi
+        recent = [
+            stamp for stamp in _CHAT_DIRECT_RING_BUDGET.get(budget_key, ())
+            if now - stamp < CHAT_DIRECT_RING_WINDOW_MS]
+        if len(recent) >= CHAT_DIRECT_RINGS_PER_WINDOW:
+            _CHAT_DIRECT_RING_BUDGET[budget_key] = recent
+            return
+        if len(_CHAT_DIRECT_RING_BUDGET) >= CHAT_DIRECT_RING_MEMO_MAX:
+            _CHAT_DIRECT_RING_BUDGET.clear()
+        _CHAT_DIRECT_RING_BUDGET[budget_key] = recent + [now]
         if len(_CHAT_DIRECT_RING_MEMO) >= CHAT_DIRECT_RING_MEMO_MAX:
             _CHAT_DIRECT_RING_MEMO.clear()
         _CHAT_DIRECT_RING_MEMO[memo_key] = now
         try:
             await _chat_direct_call_ring(
-                self.env, direct_id, account_bi,
-                call_id=str(call_id or "")[:64])
+                self.env, direct_id, account_bi, call_id=call_id)
         except Exception:
             pass
 

@@ -969,6 +969,9 @@ def _ring_harness():
         "_CHAT_DIRECT_RING_MEMO": {},
         "CHAT_DIRECT_RING_EVERY_MS": 20_000,
         "CHAT_DIRECT_RING_MEMO_MAX": 256,
+        "_CHAT_DIRECT_RING_BUDGET": {},
+        "CHAT_DIRECT_RINGS_PER_WINDOW": 8,
+        "CHAT_DIRECT_RING_WINDOW_MS": 60_000,
         "Date": _Clock,
     })
     return room_type, stored, rings, clock
@@ -1010,6 +1013,40 @@ def test_resent_invites_ring_at_most_every_twenty_seconds():
     _relay(room_type, [alice], alice, _call_frame(
         call="1b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"))
     assert len(rings) == 3
+
+
+def test_a_redial_rings_straight_away():
+    room_type, _stored, rings, clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+
+    _relay(room_type, [alice], alice, _call_frame())
+    clock["now"] = NOW + 500
+    _relay(room_type, [alice], alice, _call_frame(
+        call="1b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"))
+    assert [ring[2] for ring in rings] == [
+        CALL, "1b6c1d2e-3f40-4a5b-8c6d-7e8f90a1b2c3"]
+
+
+def test_fresh_call_ids_cannot_ring_a_phone_more_than_eight_times_a_minute():
+    room_type, _stored, rings, clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+
+    for step in range(30):
+        clock["now"] = NOW + step * 1_000
+        _relay(room_type, [alice], alice, _call_frame(
+            call="%08x-3f40-4a5b-8c6d-7e8f90a1b2c3" % step))
+    assert len(rings) == 8
+    clock["now"] = NOW + 60_000
+    _relay(room_type, [alice], alice, _call_frame())
+    assert len(rings) == 9
+
+
+def test_a_long_call_id_is_cut_before_it_rings():
+    room_type, _stored, rings, _clock = _ring_harness()
+    alice = _Socket("s1", ALICE, direct_id=DIRECT)
+
+    _relay(room_type, [alice], alice, _call_frame(call="c" * 5_000))
+    assert rings == [(DIRECT, ALICE, "c" * 64)]
 
 
 def test_only_live_direct_room_frames_ring():

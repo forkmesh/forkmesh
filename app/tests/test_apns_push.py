@@ -1251,6 +1251,16 @@ def test_the_event_socket_relays_the_direct_message_handles():
     assert "_account_event_direct_fields(query)" in notify
 
 
+def test_a_second_call_inside_the_window_still_rings_the_phone():
+    runtime = _account_event_runtime()
+    first = {"title": "t", "conversation": "direct:" + "a" * 32}
+    runtime.notify("alice", "calls", first)
+    runtime.notify("alice", "calls", first)
+    assert runtime.pushes == [("alice", "calls")] * 2
+    assert runtime.frames == [
+        "calls&conversation=direct:" + "a" * 32] * 2
+
+
 def test_every_chat_read_rings_the_socket_and_never_the_phone():
     runtime = _account_event_runtime()
     runtime.notify("alice", "chat-read")

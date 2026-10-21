@@ -52,11 +52,13 @@ public protocol PushPlatform: AnyObject {
     /// under its own app's apns-topic (`apns_device_tokens.bundle_id`); "" leaves the relay on the
     /// App Store app's id (com.forkmesh.forkmesh), which is wrong for any other build.
     func appBundleId() -> String
+    func registerForCalls() async throws
 }
 
 extension PushPlatform {
     public func clearCredentials(origin: String) async throws { try await clearCredentials() }
     public func appBundleId() -> String { "" }
+    public func registerForCalls() async throws {}
 }
 
 @MainActor
@@ -219,15 +221,12 @@ public final class PushNotificationService {
                 let granted = try await platform.requestPermission() ?? false
                 permission = granted ? "authorized" : "denied"
                 if !granted {
-                    log("permission declined at the system prompt")
-                    notify()
-                    return
+                    log("permission declined at the system prompt; registering for calls only")
+                    try await platform.registerForCalls()
                 }
             } else if status == "denied" {
-                // Nothing to do until the user turns it back on in Settings.
-                log("permission denied in iOS Settings; not registering")
-                notify()
-                return
+                log("permission denied in iOS Settings; registering for calls only")
+                try await platform.registerForCalls()
             } else {
                 // Already authorized: registering again makes iOS hand back the token.
                 _ = try await platform.requestPermission()

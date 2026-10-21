@@ -58,6 +58,10 @@ final class ApplePushBridge: NSObject, PushPlatform {
         return granted
     }
 
+    func registerForCalls() async throws {
+        UIApplication.shared.registerForRemoteNotifications()
+    }
+
     func environment() async throws -> String? {
         return ApplePushBridge.apsEnvironment()
     }

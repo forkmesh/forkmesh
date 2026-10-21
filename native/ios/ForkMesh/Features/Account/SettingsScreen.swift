@@ -196,7 +196,7 @@ struct SettingsScreen: View {
             projectName: settings.project.label.isEmpty ? settings.project.id : settings.project.label,
             desktopsPaired: Services.get(LocalControlService.self)?.paired.count ?? 0,
             identityBackedUp: !IdentityBackupStore(prefs: settings.prefs).state.needsBackup(currentKey: key),
-            pushEnabled: push?.registered ?? false)
+            pushEnabled: push.map { $0.registered && $0.permission != "denied" } ?? false)
     }
 
     private func page(settings: SettingsService, form: SettingsFormModel) -> some View {

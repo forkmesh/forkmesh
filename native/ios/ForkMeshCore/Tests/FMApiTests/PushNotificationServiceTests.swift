@@ -71,6 +71,8 @@ private final class RecordingPlatform: PushPlatform {
     /// "" is a platform that does not say (the protocol default).
     var bundleIdAnswer = ""
     func appBundleId() -> String { bundleIdAnswer }
+
+    func registerForCalls() async throws { record("registerForCalls") }
 }
 
 /// A PlatformException from the bridge (Kotlin's IllegalStateException("bridge missing")).
@@ -154,29 +156,35 @@ final class PushNotificationServiceTests: XCTestCase {
         XCTAssertEqual(registrations(relay), [["token": tokenA, "environment": "development"]])
     }
 
-    func testADeniedPhoneNeverRegistersAndNeverRePrompts() async {
+    func testADeniedPhoneNeverRePromptsButStillRegistersForCalls() async {
         let relay = PushRelay()
         let platform = RecordingPlatform()
         platform.permission = "denied"
+        platform.cachedToken = tokenA
         let push = build(api(relay), platform)
         await push.start(accountKey: "alice")
 
-        XCTAssertEqual(platform.calls, ["permissionStatus"])
+        XCTAssertEqual(platform.calls.prefix(2), ["permissionStatus", "registerForCalls"])
         XCTAssertFalse(platform.calls.contains("requestPermission"))
-        XCTAssertTrue(registrations(relay).isEmpty)
+        XCTAssertEqual(registrations(relay), [["token": tokenA, "environment": "development"]])
         XCTAssertEqual(push.permission, "denied")
-        XCTAssertEqual(push.token, "")
+        XCTAssertTrue(push.registered)
     }
 
-    func testDecliningTheSystemPromptRegistersNothing() async {
+    func testDecliningTheSystemPromptStillRegistersForCalls() async {
         let relay = PushRelay()
         let platform = RecordingPlatform()
         platform.granted = false
         let push = build(api(relay), platform)
+        push.accountKeyProvider = { "alice" }
         await push.start(accountKey: "alice")
 
+        XCTAssertTrue(platform.calls.contains("registerForCalls"))
         XCTAssertTrue(registrations(relay).isEmpty)
         XCTAssertEqual(push.permission, "denied")
+
+        await push.didReceiveToken(tokenA)
+        XCTAssertEqual(registrations(relay), [["token": tokenA, "environment": "development"]])
     }
 
     func testARotatedTokenFromAPNsReRegistersOnItsOwn() async {

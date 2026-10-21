@@ -53,7 +53,15 @@ not copied: it is end-to-end encrypted to the original two participants.
   a direct room with `notify_account_event(<other participant>, "calls", …)`,
   at most once every 20 s per conversation and caller
   (`CHAT_DIRECT_RING_EVERY_MS`), so the invite resent every 3 s rings twice
-  over a 45 s ring. The event goes two ways:
+  over a 45 s ring. A new call id rings straight away. Each conversation and
+  caller gets at most 8 rings a minute (`CHAT_DIRECT_RINGS_PER_WINDOW`), so
+  sending invites with ever-new call ids cannot keep the other phone ringing.
+  `calls` is in `ACCOUNT_EVENT_PUSH_EVERY_TOPICS` and
+  `ACCOUNT_EVENT_SOCKET_EVERY_TOPICS` (2026-10-21): before, it shared the
+  account event's 2 s coalescing window, so calling again right after a
+  decline or hang-up sent neither the socket frame nor the push, and the
+  second call never showed. The call id is cut to 64 characters before it is
+  remembered. The event goes two ways:
   - the account event socket gets `{"type":"event","topic":"calls",
     "conversation":"direct:<id>"}`; a client that sees it opens that DM's
     room socket, the next resent invite arrives, and the normal incoming-call
@@ -82,6 +90,16 @@ not copied: it is end-to-end encrypted to the original two participants.
     whose VoIP push fails, gets the alert push as before; a VoIP token Apple
     calls dead is dropped from the row and the alert token kept. iOS shows the
     VoIP push as a CallKit call (`native/ios/docs/FMChat.md`).
+  - **Notifications turned off on the iPhone** (2026-10-21). A VoIP push
+    needs no notification permission, but the phone used to register nothing
+    when the system prompt was declined or notifications were off in
+    Settings, so the relay had no VoIP token and the call never rang.
+    `PushNotificationService.start` now calls `PushPlatform.registerForCalls`
+    (`registerForRemoteNotifications`, which iOS answers with a device token
+    whatever the permission) and registers both tokens as usual, without
+    prompting again. iOS drops the alert pushes that phone gets, and calls
+    ring through CallKit. Settings' quick setup still counts notifications as
+    off.
 
   The relay learns that a call is ringing in that conversation and when, and
   the call's random id, which it could already infer from the traffic; it

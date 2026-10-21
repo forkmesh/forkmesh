@@ -208,6 +208,9 @@ change to `ChatHub.applyRetention`.
 
 The APNs side is a protocol the app implements (`PushPlatform`): permission status and request,
 environment, token, pending open, badge, and shared-keychain credentials for the extension.
+`registerForCalls` asks APNs for a token without asking permission: `start` uses it when the prompt
+is declined or notifications are off in Settings, so the phone still registers its device and VoIP
+tokens and calls ring through CallKit (`docs/app/chat-direct-calls.md`).
 
 ```swift
 let push = PushNotificationService(api: api, platform: applePushBridge)   // platform nil = unsupported
