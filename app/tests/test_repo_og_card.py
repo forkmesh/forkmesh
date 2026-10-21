@@ -371,7 +371,6 @@ def test_binary_response_bodies_are_copied_into_js_owned_buffers():
 
 
 def _png(width, height, color, rows, palette=b"", trns=b""):
-    """A minimal PNG whose rows are (filter byte, raw bytes) pairs."""
     def chunk(tag, body):
         return (struct.pack(">I", len(body)) + tag + body
                 + struct.pack(">I", zlib.crc32(tag + body) & 0xFFFFFFFF))
@@ -394,7 +393,6 @@ def test_decode_png_reads_the_cards_own_output():
 
 
 def test_decode_png_undoes_every_filter_and_color_type():
-    # Sub, Up, Average and Paeth rows over one RGBA image.
     rows = [(1, bytes([10, 20, 30, 255, 5, 5, 5, 0])),
             (2, bytes([1, 1, 1, 0, 1, 1, 1, 0])),
             (3, bytes([2, 2, 2, 0, 2, 2, 2, 0])),
@@ -403,9 +401,7 @@ def test_decode_png_undoes_every_filter_and_color_type():
     assert (width, height) == (2, 4)
     assert rgba[:8] == bytes([10, 20, 30, 255, 15, 25, 35, 255])
     assert rgba[8:16] == bytes([11, 21, 31, 255, 16, 26, 36, 255])
-    # Average: (left 0 + up 11) // 2 + 2 = 7, then (7 + 16) // 2 + 2 = 13.
     assert rgba[16:24] == bytes([7, 12, 17, 127, 13, 21, 28, 191])
-    # Paeth: the first pixel predicts from up, the second from left/up/corner.
     assert rgba[24:28] == bytes([10, 15, 20, 127])
     gray = og_card.decode_png(_png(1, 1, 0, [(0, b"\x80")]))
     assert gray == (1, 1, b"\x80\x80\x80\xff")
@@ -420,6 +416,7 @@ def test_decode_png_refuses_what_it_cannot_draw():
     assert og_card.decode_png(b"\x89PNG\r\n\x1a\n") is None
     huge = _png(2048, 1024, 6, [])
     assert og_card.decode_png(huge) is None
+    assert og_card.card_logo(_png(600, 600, 6, [])) is None
     truncated = _png(4, 4, 6, [(0, b"\x00" * 16)])
     assert og_card.decode_png(truncated) is None
 
@@ -437,7 +434,6 @@ def test_logo_is_scaled_into_the_corner_box_and_replaces_the_mark():
     _, _, a = og_card.decode_png(plain)
     _, _, b = og_card.decode_png(branded)
     corner = lambda rgba, x, y: rgba[(y * og_card.CARD_W + x) * 4:(y * og_card.CARD_W + x) * 4 + 3]
-    # The mark sits in the body's top-right corner, neofetch-style.
     x = og_card.CARD_W - WIN - og_card.TERM_PAD - og_card.LOGO_BOX // 2
     y = _unscanned(BODY_TOP + 4 + og_card.LOGO_BOX // 2)
     assert corner(b, x, y) == b"\xe7\x4c\x3c"
@@ -518,8 +514,8 @@ def test_counts_token_changes_with_every_count():
     assert og_card.counts_token({}) == "i-.b-.c-"
 
 
-def test_card_revision_is_bumped_for_the_terminal_card():
-    assert og_card.CARD_REVISION == "3"
+def test_card_revision_is_bumped_for_the_instance_logo_card():
+    assert og_card.CARD_REVISION == "4"
 
 
 def _load_entry_function(name, namespace):

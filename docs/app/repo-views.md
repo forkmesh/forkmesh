@@ -413,6 +413,17 @@ reads on the near-black terminal) and faint scanlines.
   `?`. Trailing blanks only advance the pen, so they never paint over what lies
   past the text. `CARD_REVISION` is bumped when the card's look changes, so
   link-preview caches that key on the `og:image` URL fetch the new card.
+- **Address and logo.** The card names the repository by the address its
+  page has (`/<name>` on an instance with short addresses, not
+  `/<owner>/<name>`) and carries the owner-uploaded repository logo, else
+  the instance's PNG logo (the raster copy `tools/apply_instance_brand.py`
+  writes, since crawlers and the card renderer cannot draw SVG); only
+  forkmesh.com itself draws the ForkMesh mark. A repository whose only
+  artwork is a committed `logo.svg` shows its instance's logo. Only 8-bit,
+  non-interlaced PNGs of at most 512 x 512 pixels are read: decoding is pure
+  Python on the request's event loop, so a larger upload falls back rather
+  than block it for seconds, and the scaled result is remembered per logo.
+  `CARD_REVISION` went to 4 with this change.
 - **Font.** Text is Geist Mono (SIL OFL 1.1, licence in
   `desktop/resources/fonts/Geist-OFL.txt`). The Pyodide worker cannot
   rasterise a TrueType font, so `app/tools/embed_og_mono_font.py` (needs
