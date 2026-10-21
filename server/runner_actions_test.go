@@ -785,3 +785,28 @@ func TestRunnerActionsLogCapsAndMasks(t *testing.T) {
 		t.Fatalf("flush %q", out.String())
 	}
 }
+
+func TestRunnerStepsReceiveTheirEnvironmentOnStdinNotArgv(t *testing.T) {
+	secret := "s3cr3t 'quoted' $HOME `x`\nsecond line"
+	env := []string{"PATH=/usr/bin:/bin", "API_TOKEN=" + secret, "EMPTY=",
+		"bad-name=ignored", "HOME=/tmp"}
+	args, stdin := runnerStepInvocation("/bin/sh", env,
+		"printf '%s|%s|%s' \"$API_TOKEN\" \"${EMPTY-unset}\" \"$PATH\"\n")
+	for _, arg := range args {
+		if strings.Contains(arg, "s3cr3t") || strings.Contains(arg, "=") {
+			t.Fatalf("argv carries the environment: %q", args)
+		}
+	}
+	if want := []string{"-i", "/bin/sh", "-e", "-s"}; strings.Join(args, " ") != strings.Join(want, " ") {
+		t.Fatalf("args = %q", args)
+	}
+	command := exec.Command("/usr/bin/env", args...)
+	command.Stdin = strings.NewReader(stdin)
+	out, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("step failed: %v\n%s", err, out)
+	}
+	if got := string(out); got != secret+"||/usr/bin:/bin" {
+		t.Fatalf("step saw %q", got)
+	}
+}
