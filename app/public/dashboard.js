@@ -22452,6 +22452,10 @@
 
   async function loadRepoPullMergeAuthorization(repo) {
     if (!repo || !state.session?.sessionToken) return false;
+    // A personal repository's owner merges from the web too; the relay
+    // refuses one that is linked to an organization, where only that
+    // organization's owners merge (_repository_owner_can_merge_repo).
+    if (sessionOwnsRepo(repo)) return true;
     try {
       const profile = await orgApiRequest(
         "GET",
@@ -22921,7 +22925,7 @@
   }
 
   const PULL_UPDATE_MESSAGES = {
-    forbidden: "Only an organization owner can update this branch through a mirror.",
+    forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can update this branch.",
     already_current: "This branch already contains the base branch.",
     merge_conflict: "The base branch conflicts with this branch; resolve it locally and push.",
     stale_base: "The base branch moved again; reload to review the new state.",
@@ -23189,8 +23193,8 @@
         : failed
           ? escapeHtml(merge.message || "The mirror could not confirm the merge. Retrying reuses the same idempotent request.")
           : waiveReview
-            ? `<strong class="text-foreground">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As an organization owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
-            : `As an organization owner you can merge this pull request into ${escapeHtml(baseBranch)} now. An online mirror lands the exact reviewed commits, the relay pins that state, and the rest of the mirrors — and the source of truth when it reconnects — sync to it.`;
+            ? `<strong class="text-foreground">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As the owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
+            : `As the owner you can merge this pull request into ${escapeHtml(baseBranch)} now. An online mirror lands the exact reviewed commits, the relay pins that state, and the rest of the mirrors — and the source of truth when it reconnects — sync to it.`;
     const frame = failed
       ? "fm-flash-danger"
       : merged
@@ -23298,7 +23302,7 @@
       parsed.pullMerge = { state: "merged", requestId };
     } else {
       const messages = {
-        forbidden: "Only an organization owner can merge this pull request on the web.",
+        forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can merge this pull request.",
         merge_conflict: "The exact reviewed commits do not apply cleanly to the base branch.",
         stale_base: "The base branch changed; reload and review the new state.",
         stale_head: "The pull-request head changed; reload and review it again.",

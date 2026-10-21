@@ -4367,7 +4367,7 @@ async def repository_pull_merge_handler(
     if not actor:
         return json_response({"error": "invalid_session"}, status=401)
     try:
-        authorized = await _organization_owner_can_merge_repo(
+        authorized = await _repository_owner_can_merge_repo(
             env, request, context["owner"], context["repo"], actor)
     except Exception:
         authorized = False

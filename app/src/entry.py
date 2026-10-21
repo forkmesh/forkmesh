@@ -51089,6 +51089,45 @@ async def _organization_owner_can_merge_repo(
     return await _org_role(env, org_bi, actor) == "owner"
 
 
+async def _repository_owner_can_merge_repo(
+        env, request, canonical_owner, repo, actor):
+    """Who may merge (or update) a pull request through a mirror.
+
+    An organization-linked repository keeps the narrow rule above: only an
+    owner of the organization, through the organization's address. A personal
+    repository, linked to no organization, is merged by its owner: the
+    account that is, or owns, the node the repository belongs to (the same
+    _account_owns_node rule every other owner action on the web uses). The
+    caller still passes the pull-request rules, branch protection, required
+    checks and the executor's exact-commit mergeability check afterwards.
+    """
+    if await _organization_owner_can_merge_repo(
+            env, request, canonical_owner, repo, actor):
+        return True
+    if not actor:
+        return False
+    canonical_owner = str(canonical_owner or "").strip().lower()
+    repo = str(repo or "").strip().lower()
+    try:
+        original = urlparse(request.url)
+        match = REPO_API_PREFIX_RE.match(original.path)
+    except Exception:
+        return False
+    if not match:
+        return False
+    if ((safe_segment(match.group(1)) or "").strip().lower() != canonical_owner
+            or (safe_segment(match.group(2)) or "").strip().lower() != repo):
+        return False
+    linked = await d1_first(
+        env,
+        "SELECT 1 AS ok FROM org_repos WHERE repo=? AND node_owner=? LIMIT 1",
+        repo, canonical_owner,
+    )
+    if linked:
+        return False
+    return bool(await _account_owns_node(env, actor, canonical_owner))
+
+
 async def _admit_owner_merge_state(env, context, endpoint, result):
     """Pin the refs state a mirror serves after an owner-authorized mutation.
 

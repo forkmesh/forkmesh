@@ -10,6 +10,7 @@ inventory; each row says why the dependency exists and how it could go.
 | Feature | Notes |
 |---|---|
 | Discussions: start, reply, mark answer, close/reopen, archive, delete a reply | [web-discussions.md](web-discussions.md) |
+| Merging pull requests on personal repositories (same rules, protection, checks and mergeability as organization repositories) | [branch-protection.md](branch-protection.md) |
 | Add file (create a file, or propose one as a pull request) | [repository-file-edits.md](repository-file-edits.md#add-file) |
 | Issues and pull requests (browser-signed events), file edits and proposals, forks, repository deletion, branch operations on core-hosted repositories, webhooks, Actions secrets, security advisories, notes, tasks, calendar, docs, organizations, accounts and SSH keys | already had web paths |
 
@@ -20,7 +21,6 @@ existing route, L = a new route, event type or storage, XL = architectural.
 
 | Feature | Where | Why | Proposed design | Effort |
 |---|---|---|---|---|
-| Merging pull requests on personal (non-organization) repositories | `loadRepoPullMergeAuthorization` (06-repo-content.js); `_organization_owner_can_merge_repo` (entry.py) | Deliberately closed: the web merge executor is only enabled for organization owners until a merge policy for personal repositories is agreed | Accept the personal owner when `_account_owns_node(actor, owner)` and the branch rules gate passes; keep the audit entry; the dashboard check adds `isRepoOwner(repo)` | S-M (policy decision first) |
 | Deleting a whole discussion | DiscussionStore::deleteDiscussion | Destructive, owner-only, needs the working tree | An owner-only signed `delete` with target `discussion`, removed by the mirror intake and the desktop | M |
 | Volunteering a node to mirror an external listing | `volunteerForExternalMirror` (05-repo-list-explorer.js) | The point is to lend a node; the browser is not one | Offer "Import and host here" beside it for supported forges, through the hosted-repository import | M |
 | New repository from a local folder | new-repo view | Reads the local file system | Inherent; the web offers empty repositories and imports instead | n/a |
