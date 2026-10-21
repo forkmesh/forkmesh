@@ -18927,6 +18927,9 @@ def _repo_scoped_state_statements(repo_bi):
         ("DELETE FROM repo_security_scan_reviews WHERE repo_bi=?",
          (repo_bi,)),
         ("DELETE FROM agent_prompts WHERE repo_bi=?", (repo_bi,)),
+        ("DELETE FROM repo_upload_parts WHERE media_id IN "
+         "(SELECT media_id FROM repo_uploads WHERE repo_bi=?)", (repo_bi,)),
+        ("DELETE FROM repo_uploads WHERE repo_bi=?", (repo_bi,)),
     ]
     for table, column in _REPO_SCOPED_TABLES:
         # Table and column are literals from the tuple above, never input.

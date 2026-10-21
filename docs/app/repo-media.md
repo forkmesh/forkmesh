@@ -53,16 +53,25 @@ is sealed like every other row.
   first bytes (`ftyp`, the EBML header, or a QuickTime atom), so an HTML or
   script file cannot be stored as a video.
 - Limits: 25 MiB per video; per account 20 uploads and 200 MiB in any 24
-  hours (`media_quota_count` / `media_quota_bytes`). An upload not finished
+  hours (`media_quota_count` / `media_quota_bytes`), and 2 GiB across every
+  account in any 24 hours (`media_quota_instance`), because every byte is
+  replicated to every core's database and per-account caps alone do not
+  bound what many accounts store. An upload not finished
   within an hour is removed by the hourly `chat-prune` phase and by the next
   create.
 - Serving: one `bytes=` range per request (206, `Content-Range`), open-ended
   ranges capped at 4 MiB, `416` past the end, `Accept-Ranges: bytes`. Headers
   `nosniff`, `Content-Disposition: inline`, `Content-Security-Policy:
   default-src 'none'; sandbox`, `Cross-Origin-Resource-Policy: same-site`,
-  `Cache-Control: public, max-age=31536000, immutable`. A repository made
-  private stops serving its media (`public_repository` is checked on every
-  read).
+  `Cache-Control: public, max-age=31536000, immutable`. A video is served
+  only under the address of the repository it was uploaded to: the path's
+  repository must be public and its blind index must equal the row's
+  `repo_bi`, so a repository made private stops serving its media and an id
+  cannot be replayed under another repository's address.
+- Deletes and keys: a repository delete purges its `repo_uploads` rows and
+  their parts (`_repo_scoped_state_statements`); `repo_uploads` is in the
+  rekey inventory ([../REKEY.md](../REKEY.md)) for its two blind indexes and
+  its sealed `data`.
 
 ## Web
 

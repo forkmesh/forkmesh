@@ -11,6 +11,7 @@ MEDIA_RANGE_MAX_BYTES = 4 * 1024 * 1024
 MEDIA_DAY_MS = 24 * 60 * 60 * 1000
 MEDIA_DAILY_MAX_COUNT = 20
 MEDIA_DAILY_MAX_BYTES = 200 * 1024 * 1024
+MEDIA_INSTANCE_DAILY_MAX_BYTES = 2 * 1024 * 1024 * 1024
 MEDIA_UPLOAD_TTL_MS = 60 * 60 * 1000
 MEDIA_SWEEP_BATCH = 200
 MEDIA_NAME_MAX = 120
@@ -144,6 +145,15 @@ async def _daily_usage(runtime, uploader_bi, now):
     return int((row or {}).get("n") or 0), int((row or {}).get("bytes") or 0)
 
 
+async def _instance_usage(runtime, now):
+    row = await runtime.d1_first(
+        "SELECT COALESCE(SUM(size),0) AS bytes FROM repo_uploads "
+        "WHERE created_at>?",
+        now - MEDIA_DAY_MS,
+    )
+    return int((row or {}).get("bytes") or 0)
+
+
 async def _create(runtime, account_bi, record, owner, repo, data):
     mime = str((data or {}).get("mime") or "").strip().lower()
     if mime not in MEDIA_TYPES:
@@ -166,6 +176,8 @@ async def _create(runtime, account_bi, record, owner, repo, data):
         return _error(runtime, "media_quota_count", 429)
     if used + size > MEDIA_DAILY_MAX_BYTES:
         return _error(runtime, "media_quota_bytes", 429)
+    if await _instance_usage(runtime, now) + size > MEDIA_INSTANCE_DAILY_MAX_BYTES:
+        return _error(runtime, "media_quota_instance", 429)
     media_id = runtime.new_id()
     sealed = await runtime.seal({
         "owner": owner,
@@ -313,12 +325,11 @@ def _media_headers(row, media_id, extension):
     }
 
 
-async def _serve(runtime, row):
+async def _serve(runtime, row, owner, repo):
     if str(row.get("state") or "") != "ready":
         return _error(runtime, "not_found", 404)
-    opened = await runtime.open(row.get("data")) or {}
-    if not await runtime.public_repository(
-            str(opened.get("owner") or ""), str(opened.get("repo") or "")):
+    repo_bi = await runtime.public_repository(owner, repo)
+    if not repo_bi or repo_bi != str(row.get("repo_bi") or ""):
         return _error(runtime, "not_found", 404)
     media_id = str(row.get("media_id"))
     size = int(row.get("size") or 0)
@@ -387,7 +398,7 @@ async def handle(runtime, path):
         row = await _row(runtime, match.group(3))
         if not row:
             return _error(runtime, "not_found", 404)
-        return await _serve(runtime, row)
+        return await _serve(runtime, row, owner, repo)
 
     data = None
     if method in ("POST", "PUT"):

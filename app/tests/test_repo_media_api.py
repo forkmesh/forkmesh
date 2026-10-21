@@ -243,6 +243,27 @@ def test_only_the_uploader_writes_and_unfinished_media_is_not_served():
     assert call(runtime, "POST", "alice", "/api/repo/alice/demo/media/%s/finish" % mid)["data"]["error"] == "upload_incomplete"
 
 
+def test_media_is_served_only_under_its_own_repository():
+    runtime = FakeRuntime()
+    mid, body, info = uploaded(runtime, size=200)
+    runtime.public.add("mallory/lookalike")
+    elsewhere = call(runtime, "GET", None, "/api/repo/mallory/lookalike/media/%s.mp4" % mid)
+    assert elsewhere["status"] == 404
+    assert call(runtime, "GET", None, info["url"])["body"] == body
+
+
+def test_an_instance_wide_daily_byte_cap_bounds_what_all_accounts_store(monkeypatch):
+    monkeypatch.setattr(media, "MEDIA_INSTANCE_DAILY_MAX_BYTES", 25)
+    runtime = FakeRuntime()
+    for actor in ("alice", "bob"):
+        assert call(runtime, "POST", actor, "/api/repo/alice/demo/media", {
+            "mime": "video/mp4", "size": 10, "parts": 1})["status"] == 201
+    runtime.accounts["carol"] = {"name": "carol", "email_verified": True}
+    refused = call(runtime, "POST", "carol", "/api/repo/alice/demo/media", {
+        "mime": "video/mp4", "size": 10, "parts": 1})
+    assert refused["status"] == 429 and refused["data"]["error"] == "media_quota_instance"
+
+
 def test_media_of_a_repository_made_private_stops_being_served():
     runtime = FakeRuntime()
     _mid, _body, info = uploaded(runtime, size=200)
@@ -304,7 +325,10 @@ def test_route_is_dispatched_and_swept():
 
 
 def test_upload_tables_do_not_reuse_an_existing_table_name():
-    import schema
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("app_schema_for_media", SRC / "schema.py")
+    schema = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(schema)
     names = [match.group(1) for statement in schema.SCHEMA_STATEMENTS
              for match in [re.match(r"\s*CREATE TABLE IF NOT EXISTS (\w+)", statement)] if match]
     assert names.count("repo_uploads") == 1 and names.count("repo_upload_parts") == 1
