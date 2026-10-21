@@ -31,6 +31,14 @@ extra organization owners); optional mail provider; listing choices
   page sends `theme: ""` so the instance keeps the ForkMesh colours; a preset
   loaded from a settings file is sent by name until edited; anything else is
   sent as the full `{"dark": {...}, "light": {...}}` object (about 1.2 KB).
+  Above the toolbar, theme cards drawn from
+  `app/public/instance-themes/themes.json` (see [Named themes](#named-themes))
+  offer Default and every ready theme, with planned ones shown as "Coming
+  soon". Picking a named theme hides the colour toolbar and "Customize every
+  colour", paints the preview with that theme's colours and sends its id
+  (`"blt"`); Default brings the toolbar back. A settings file may name a
+  ready theme the same way. If the catalogue cannot be fetched, the page
+  shows only the colour toolbar, as before.
   The browser only builds the colours: the launch API cleans them with
   `instance_theme.clean`, the installer checks their shape, and
   `instance-bootstrap` writes the `instance_settings` row on the server, so
@@ -278,6 +286,83 @@ into it any other way. The console refuses to turn automatic updates on, and
 a merge files no update, while the source branch is not protected.
 The operator's `instance-repo` stays a root-only bypass and never triggers
 an update.
+
+## Named themes
+
+Customers wanted more than an accent colour and a radius, so an instance can
+also wear a whole named theme: its own colours for both modes plus a
+stylesheet that changes shape and weight (radius, headings, labels, the active
+navigation row). The themes are hard-coded and ship with the code; nobody can
+upload CSS.
+
+- **Catalogue:** `app/public/instance-themes/themes.json`, one entry per
+  theme: `id`, `name`, `description`, `status` (`ready` or `planned`),
+  `palette`, and for a ready theme `colors` (`dark` and `light`, any
+  `instance_theme.THEME_TOKENS` name to `#rrggbb`, which adds `cta`,
+  `cta-foreground`, `success` and `attention` to the custom-colour tokens)
+  and `stylesheet`, a file beside it (`blt.css`). `palette` is read in a fixed
+  order: primary, background, surface, second accent, text, then any extra
+  swatches, eight at most (the loader drops the rest). The cards on
+  Settings and the start page draw only the palette,
+  as one colour block with primary three times as wide as the rest (a mock
+  screen was tried first and read as clutter). Planned themes show as "Coming soon" cards
+  and are refused by the API. Today all four are ready: `default` (the
+  ForkMesh colours), `blt`, `cloudflare` and `google`.
+- **Storage:** choosing a theme stores `{"preset": "<id>"}` in the
+  `instance_settings` theme row (optionally with `dark`/`light` colour
+  overrides on top), not a copy of its colours, so polishing a theme in the
+  catalogue reaches every instance that uses it on its next update.
+  `"default"` stores `{}`. `instance_theme.clean` accepts the id as a string
+  anywhere a preset name was accepted before (start settings file, launch
+  API, installer, bootstrap).
+- **Rendering:** `/instance-theme.css` writes the theme's colour tokens, then
+  its stylesheet, then any overrides. `/instance-theme.css?preset=<id>`
+  renders a ready theme without saving it, for the settings preview; an
+  unknown or planned id answers 404. The catalogue is loaded once from disk
+  when `instance_theme` is imported; a missing or broken file leaves only
+  the colour presets. A stylesheet over 64 KB or containing `</` is ignored.
+- **Who can change it:** Settings → Instance theme shows only to an admin on
+  a branded instance (`session.isAdmin` and the instance brand script). The
+  cards come from `GET /api/instance` (`themes`, and `theme.preset` for the
+  current one). Clicking a ready card previews it on that page only by
+  pointing the page's `link[data-instance-theme]` at the preview URL;
+  "Apply to instance" sends `PUT /api/instance/theme` with `{theme, password}`.
+  The route checks the session is an admin, then the account password with
+  its own attempt budget (`instance-theme-v1` blind index, the login lockout
+  rules), and records `instance.theme` in the sensitive-action audit log
+  either way.
+- **BLT:** modelled on the OWASP BLT API explorer: charcoal surfaces
+  (`#141414`/`#1c1c1e`) in dark and white in light, signal red (`#dc2626`)
+  for primary, links, focus and the create button, green kept for success,
+  8/12/16 px radii, 800-weight headings, filled status labels and a
+  red-tinted active navigation row.
+- **Cloudflare:** modelled on the Cloudflare dashboard: true-black flat
+  surfaces (`#000000`/`#0a0a0a`) with `#262626` hairlines in dark, white in
+  light; Cloudflare orange (`#f38020`) for primary, selection, checkboxes and
+  the tab underline; blue (`#4693ff` dark, `#0051c3` light) for links, focus
+  and the create button, as on "Add record"; 6/8/10 px radii, 600-weight
+  headings, transparent secondary buttons and a grey-filled active
+  navigation row.
+- **Google:** modelled on Drive, Gmail and Gemini (Material 3): tonal
+  surfaces (`#131314`, `#1e1f20`, `#2d2f31` in dark; `#f8fafd` and white in
+  light), Google's dark-mode blue `#8ab4f8` (light `#0b57d0`) for primary,
+  links and filled create buttons, and Google's own green, yellow and red
+  for status, drawn as tonal labels. A first version used the pastel
+  `#a8c7fa` and the light "Compose" container for buttons and read as dull.
+  Pill buttons and a pill active row in the secondary container colour
+  (`#004a77` / `#c2e7ff`) for list navigation; the workspace tiles and plugin
+  icons keep their corners and only take the colour. Menus follow Drive's:
+  no border, a soft shadow, 40 px full-bleed rows, 20 px icons and
+  edge-to-edge dividers. Letter avatars (profile, header, settings,
+  organisation) are filled Google blue `#1a73e8` with white initials, as in
+  Gmail, and profile badges are tinted blue, red, yellow and green in turn.
+  12/16/24 px radii, regular-weight headings and
+  Google Sans when the visitor has it installed (Roboto or the system font
+  otherwise; no font is downloaded).
+- **Adding a theme:** add its entry and stylesheet, set `status` to `ready`
+  when it is finished, and check it on Settings → Instance theme before
+  shipping. `app/tests/test_instance_theme.py` requires every ready theme to
+  define every theme token in both modes.
 
 ## Private admin console path
 
@@ -704,6 +789,7 @@ It prints one JSON line: `ok`, `owner`, `organization`, `name`, `id`,
   object (the start page's picker), or later with `PUT /api/instance/theme`
   by an admin. The installer passes an object to `instance-bootstrap` as
   JSON and refuses one with other modes, odd token names or non-hex values.
+  See [Named themes](#named-themes) for whole-look themes such as BLT.
 - **Plugins** (`app/src/instance_features.py`): ForkMesh-company features
   (world, hackathon, ads, rewards, blog, status, developer docs, website
   pages and others) are off on an instance unless turned on. A disabled

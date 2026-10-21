@@ -1,5 +1,6 @@
 import json
 import re
+from pathlib import Path
 
 MODES = ("dark", "light")
 SELECTORS = {
@@ -15,6 +16,12 @@ RGB_TOKENS = (
 )
 HEX_TOKENS = ("link", "link-hover", "tab-underline", "open")
 TOKENS = RGB_TOKENS + HEX_TOKENS
+THEME_RGB_TOKENS = RGB_TOKENS + (
+    "cta", "cta-foreground", "success", "attention")
+THEME_TOKENS = THEME_RGB_TOKENS + HEX_TOKENS
+DEFAULT_THEME = "default"
+THEMES_DIR = Path(__file__).resolve().parents[1] / "public" / "instance-themes"
+MAX_STYLESHEET_BYTES = 64 * 1024
 ALIASES = (
     ("background", "background"), ("foreground", "foreground"),
     ("card", "card"), ("primary", "primary"),
@@ -63,18 +70,97 @@ class ThemeError(Exception):
     pass
 
 
+def _theme_colours(value):
+    colours = {}
+    for mode in MODES:
+        tokens = (value or {}).get(mode) or {}
+        cleaned = {name: str(tokens[name]).strip().lower()
+                   for name in THEME_TOKENS
+                   if name in tokens and _HEX_RE.fullmatch(
+                       str(tokens[name]).strip().lower())}
+        if cleaned:
+            colours[mode] = cleaned
+    return colours
+
+
+def _theme_stylesheet(name):
+    if not name or not re.fullmatch(r"[a-z][a-z0-9-]{0,40}\.css", name):
+        return ""
+    try:
+        text = (THEMES_DIR / name).read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    if len(text.encode("utf-8")) > MAX_STYLESHEET_BYTES or "</" in text:
+        return ""
+    return text.strip()
+
+
+def _load_themes(directory=None):
+    try:
+        data = json.loads(((directory or THEMES_DIR) / "themes.json")
+                          .read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    themes = {}
+    for entry in (data or {}).get("themes") or []:
+        if not isinstance(entry, dict):
+            continue
+        theme_id = str(entry.get("id") or "")
+        if not _PRESET_RE.fullmatch(theme_id) or theme_id in themes:
+            continue
+        themes[theme_id] = {
+            "id": theme_id,
+            "name": str(entry.get("name") or theme_id)[:40],
+            "description": str(entry.get("description") or "")[:200],
+            "status": "ready" if entry.get("status") == "ready"
+            else "planned",
+            "palette": [colour for colour in entry.get("palette") or []
+                        if isinstance(colour, str)
+                        and _HEX_RE.fullmatch(colour.lower())][:8],
+            "colors": _theme_colours(entry.get("colors")),
+            "stylesheet": _theme_stylesheet(entry.get("stylesheet")),
+        }
+    return themes
+
+
+THEMES = _load_themes()
+
+
+def theme_ready(name):
+    entry = THEMES.get(name)
+    return bool(entry) and entry["status"] == "ready"
+
+
+def catalogue():
+    return [{key: entry[key] for key in
+             ("id", "name", "description", "status", "palette")}
+            for entry in THEMES.values()]
+
+
 def clean(value):
     if isinstance(value, str):
         name = value.strip().lower()
+        if name == DEFAULT_THEME:
+            return {}
+        if _PRESET_RE.fullmatch(name) and theme_ready(name):
+            return {"preset": name}
         if not _PRESET_RE.fullmatch(name) or name not in PRESETS:
             raise ThemeError("unknown theme preset")
         value = PRESETS[name]
     if not isinstance(value, dict):
         raise ThemeError("the theme is not an object")
-    unknown = sorted(set(value) - set(MODES))
+    unknown = sorted(set(value) - set(MODES) - {"preset"})
     if unknown:
         raise ThemeError("unknown theme mode: " + str(unknown[0])[:40])
     theme = {}
+    if "preset" in value:
+        name = str(value.get("preset") or "").strip().lower()
+        if name == DEFAULT_THEME or not name:
+            pass
+        elif _PRESET_RE.fullmatch(name) and theme_ready(name):
+            theme["preset"] = name
+        else:
+            raise ThemeError("unknown theme preset")
     for mode in MODES:
         tokens = value.get(mode)
         if tokens is None:
@@ -116,11 +202,29 @@ def _rgb(colour):
 
 
 def css(theme):
+    preset = THEMES.get(theme.get("preset") or "")
+    if not preset:
+        return _token_css(theme, RGB_TOKENS)
+    blocks = [_token_css(preset["colors"], THEME_RGB_TOKENS),
+              preset["stylesheet"], _token_css(theme, RGB_TOKENS)]
+    return "".join(block.rstrip("\n") + "\n" for block in blocks if block)
+
+
+def preview_css(name):
+    name = str(name or "").strip().lower()
+    if name == DEFAULT_THEME:
+        return ""
+    if not theme_ready(name):
+        return None
+    return css({"preset": name})
+
+
+def _token_css(theme, rgb_tokens):
     blocks = []
     for mode in MODES:
         tokens = theme.get(mode) or {}
         lines = []
-        for name in RGB_TOKENS:
+        for name in rgb_tokens:
             if name in tokens:
                 lines.append("--dashboard-%s-rgb:%s" % (
                     name, _rgb(tokens[name])))
