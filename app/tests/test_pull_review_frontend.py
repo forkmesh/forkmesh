@@ -36,7 +36,7 @@ def test_pull_collection_is_sorted_by_most_recent_activity():
 def test_changed_files_use_left_navigation_and_persistent_viewed_state():
     assert "data-repo-pull-file-list" in CONTENT
     assert "data-repo-pull-file-tree" in CONTENT
-    assert "lg:grid-cols-[20rem_minmax(0,1fr)]" in CONTENT
+    assert "data-repo-diff-explorer-toggle" in CONTENT
     assert "data-lucide=\"folder\"" in CONTENT
     assert "pullViewedStorageKey" in CONTENT
     assert "localStorage.setItem(key" in CONTENT
@@ -65,9 +65,7 @@ def test_diff_pane_supports_unified_and_split_layouts():
     assert "function pairDiffRows(rows)" in CONTENT
     assert 'data-repo-pull-diff-mode' in CONTENT
     assert "setRepoPullDiffMode(" in NETWORK
-    # A file header rides along with its own diff, and marking a file viewed
-    # folds it away the way the desktop review pane does.
-    assert "sticky top-0 z-10" in CONTENT
+    assert "data-repo-diff-current" in CONTENT
     assert "data-repo-pull-diff-body" in CONTENT
     assert "setRepoPullDiffBlockCollapsed(block, selected)" in CONTENT
     assert "content-visibility:auto" in CONTENT

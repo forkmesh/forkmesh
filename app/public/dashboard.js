@@ -19233,6 +19233,40 @@
     } catch (_) {}
   }
 
+  function commitViewedStorageKey(commit) {
+    const hash = immutableGitCommit(commit?.data?.commit?.hash || "");
+    const owner = String(commit?.repo?.owner || "").trim().toLowerCase();
+    const name = String(commit?.repo?.name || "").trim().toLowerCase();
+    return owner && name && hash ? `forkmesh.commit-viewed.v1:${owner}/${name}@${hash}` : "";
+  }
+
+  function loadRepoCommitViewed(commit) {
+    if (commit?.viewed instanceof Set) return commit.viewed;
+    const key = commitViewedStorageKey(commit);
+    let viewed = new Set();
+    if (key) {
+      try {
+        const value = JSON.parse(localStorage.getItem(key) || "[]");
+        viewed = new Set(
+          (Array.isArray(value) ? value : [])
+            .filter((path) => typeof path === "string" && path.length <= 500)
+            .slice(0, 1000),
+        );
+      } catch (_) {}
+    }
+    if (commit) commit.viewed = viewed;
+    return viewed;
+  }
+
+  function saveRepoCommitViewed(commit, viewed) {
+    if (commit) commit.viewed = viewed;
+    const key = commitViewedStorageKey(commit);
+    if (!key) return;
+    try {
+      localStorage.setItem(key, JSON.stringify([...viewed].slice(0, 1000)));
+    } catch (_) {}
+  }
+
   // How the review surface is laid out (hierarchy vs flat explorer, unified vs
   // side-by-side diff) is a reader preference rather than repository data, so
   // it rides in localStorage next to the per-pull viewed set.
@@ -19244,9 +19278,11 @@
       return {
         explorer: stored?.explorer === "list" ? "list" : "tree",
         diff: stored?.diff === "split" ? "split" : "unified",
+        explorerOpen: stored?.explorerOpen === true,
+        wrap: ["on", "off"].includes(stored?.wrap) ? stored.wrap : "auto",
       };
     } catch (_) {
-      return { explorer: "tree", diff: "unified" };
+      return { explorer: "tree", diff: "unified", explorerOpen: false, wrap: "auto" };
     }
   }
 
@@ -19280,8 +19316,10 @@
     });
     const summary = section.querySelector("[data-repo-pull-viewed-summary]");
     if (summary) {
-      summary.textContent = `${formatCount(viewed.size)} of ${formatCount(context.files.length)} viewed`;
+      summary.textContent = `${formatCount(viewed.size)}/${formatCount(context.files.length)}`;
     }
+    const checkbox = section.querySelector("[data-repo-diff-current-viewed]");
+    if (checkbox?.dataset.repoDiffCurrentViewed === path) checkbox.checked = selected;
     window.lucide?.createIcons();
   }
 
@@ -20026,9 +20064,19 @@
   // the review pane's gutters, padding and (on wide screens) the explorer
   // column come off first, and split mode halves what is left. text-xs
   // monospace is ~7.2px a character.
+  function pullDiffWraps(mode) {
+    if (mode === "split") return true;
+    const wrap = pullLayoutPrefs().wrap;
+    if (wrap === "on") return true;
+    if (wrap === "off") return false;
+    return Boolean(window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.matches);
+  }
+
   function diffWrapColumns(mode) {
+    if (!pullDiffWraps(mode)) return 0;
     const viewport = Math.max(320, Number(window.innerWidth) || 1280);
-    let code = viewport >= 1024 ? viewport - 720 : viewport - 150;
+    const explorer = viewport >= 1024 && pullLayoutPrefs().explorerOpen ? 288 : 0;
+    let code = viewport - 130 - explorer;
     if (mode === "split") code = code / 2 - 60;
     return Math.max(24, Math.floor(code / 7.2));
   }
@@ -20046,29 +20094,22 @@
   function renderDiffFileBlock(file, image, viewed = new Set(), mode = "unified", reviewable = false, wrapColumns = 0) {
     const path = file.newPath || file.oldPath || "file";
     const isViewed = viewed.has(path);
-    // `content-visibility: auto` implies paint containment, which makes the block
-    // its own sticky boundary: the header rides along while its file is on screen
-    // and is pushed off by the next one, exactly like the GitHub review pane.
     return `
-      <div data-repo-pull-diff-file="${escapeHtml(path)}" data-viewed="${isViewed ? "true" : "false"}" data-collapsed="${isViewed ? "true" : "false"}" class="scroll-mt-3 rounded-lg border ${isViewed ? "border-border" : "border-border"}" style="content-visibility:auto;contain-intrinsic-height:auto ${diffFileBlockIntrinsicSize(file, wrapColumns)}">
-        <div class="sticky top-0 z-10 flex items-center justify-between gap-2 rounded-t-lg border-b border-border bg-secondary px-2 py-2">
-          <span class="inline-flex min-w-0 flex-1 items-center gap-2">
-            <button type="button" data-repo-pull-diff-collapse="${escapeHtml(path)}" aria-expanded="${isViewed ? "false" : "true"}" title="Collapse or expand this file" class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"><span data-repo-pull-diff-collapse-icon class="inline-flex"><i data-lucide="${isViewed ? "chevron-right" : "chevron-down"}" class="h-3.5 w-3.5"></i></span></button>
-            <span class="min-w-0 truncate font-mono text-xs font-medium text-foreground" title="${escapeHtml(path)}">${diffFileHeaderPath(file)}</span>
-            ${diffFileStatusBadge(file)}
-          </span>
-          <span class="inline-flex shrink-0 items-center gap-2.5">
-            <span class="font-mono text-[10px] tabular-nums"><span class="text-success">+${formatCount(file.adds)}</span><span class="ml-1 text-destructive">-${formatCount(file.dels)}</span></span>
-            ${renderDiffStatBar(file.adds, file.dels)}
-            <button type="button" data-repo-pull-viewed="${escapeHtml(path)}" aria-pressed="${isViewed ? "true" : "false"}" class="inline-flex h-7 items-center gap-1.5 rounded-md border ${isViewed ? "border-border" : "border-border"} bg-background px-2 text-[10px] font-semibold ${isViewed ? "text-foreground" : "text-muted-foreground"} hover:bg-secondary"><span data-repo-pull-viewed-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : "circle"}" class="h-3.5 w-3.5"></i></span>Viewed</button>
-          </span>
+      <div data-repo-pull-diff-file="${escapeHtml(path)}" data-viewed="${isViewed ? "true" : "false"}" data-collapsed="${isViewed ? "true" : "false"}" class="fm-diff-file" style="content-visibility:auto;contain-intrinsic-height:auto ${diffFileBlockIntrinsicSize(file, wrapColumns)}">
+        <div data-repo-pull-diff-head class="fm-diff-file-head">
+          <button type="button" data-repo-pull-diff-collapse="${escapeHtml(path)}" aria-expanded="${isViewed ? "false" : "true"}" title="Collapse or expand this file" class="fm-diff-icon"><span data-repo-pull-diff-collapse-icon class="inline-flex"><i data-lucide="${isViewed ? "chevron-right" : "chevron-down"}" class="h-3.5 w-3.5"></i></span></button>
+          <span class="fm-diff-file-path" title="${escapeHtml(path)}">${diffFileHeaderPath(file)}</span>
+          ${diffFileStatusBadge(file)}
+          <span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(file.adds)}</span> <span class="fm-diff-stat-del">-${formatCount(file.dels)}</span></span>
+          ${renderDiffStatBar(file.adds, file.dels)}
+          <button type="button" data-repo-pull-viewed="${escapeHtml(path)}" aria-pressed="${isViewed ? "true" : "false"}" class="fm-diff-viewed ${isViewed ? "text-foreground" : "text-muted-foreground"}"><span data-repo-pull-viewed-icon class="inline-flex"><i data-lucide="${isViewed ? "check-circle-2" : "circle"}" class="h-3.5 w-3.5"></i></span><span class="fm-diff-viewed-label">Viewed</span></button>
         </div>
-        <div data-repo-pull-diff-body class="${isViewed ? "hidden " : ""}overflow-x-auto rounded-b-lg">
+        <div data-repo-pull-diff-body class="${isViewed ? "hidden " : ""}overflow-x-auto">
           ${image ? renderDiffImagePreview(image) : ""}
           ${reviewable ? renderPullOutdatedThreads(path, groupPullInlineComments(path).get(pullOutdatedThreadKey(path))) : ""}
           ${file.binary
-            ? (image ? "" : '<div class="px-3 py-3 text-xs text-muted-foreground">Binary file not shown.</div>')
-            : `<div class="text-xs leading-5">${renderDiffFileRows(file.rows, mode, { path, reviewable })}</div>`}
+            ? (image ? "" : '<div class="px-3 py-2 text-xs text-muted-foreground">Binary file not shown.</div>')
+            : `<div class="fm-diff-code text-xs leading-5">${renderDiffFileRows(file.rows, mode, { path, reviewable })}</div>`}
         </div>
       </div>`;
   }
@@ -20408,41 +20449,177 @@
     const reviewable = options.reviewable !== false;
     const files = pullPatch.files || [];
     const layout = pullLayoutPrefs();
+    const mode = effectivePullDiffMode(layout.diff);
     const adds = files.reduce((sum, file) => sum + (file.adds || 0), 0);
     const dels = files.reduce((sum, file) => sum + (file.dels || 0), 0);
+    const first = files[0]?.path || "";
     const html = `
-        <section data-repo-pull-files class="rounded-lg border border-border">
-          <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-t-lg border-b border-border bg-secondary/50 px-3 py-2.5">
-            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground">
-              <i data-lucide="files" class="h-3.5 w-3.5 text-muted-foreground"></i>${formatCount(files.length)} files changed
-              <span class="font-mono text-[10px] tabular-nums"><span class="text-success">+${formatCount(adds)}</span> <span class="text-destructive">-${formatCount(dels)}</span></span>
-            </span>
-            <span class="flex flex-wrap items-center gap-2">
-              <span class="relative inline-flex items-center">
-                <i data-lucide="search" class="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground"></i>
-                <input data-repo-pull-file-filter type="search" autocomplete="off" placeholder="Filter changed files" aria-label="Filter changed files" class="h-7 w-48 rounded-md border border-border bg-background pl-7 pr-2 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-accent" />
+        <section data-repo-pull-files data-repo-diff-fullscreen data-active-file="${escapeHtml(first)}" data-explorer-open="${layout.explorerOpen ? "true" : "false"}" data-diff-wrap="${pullDiffWraps(mode) ? "true" : "false"}" class="fm-diff">
+          <div data-repo-diff-head class="fm-diff-head">
+            <div data-repo-diff-bar="checks" class="fm-diff-row fm-diff-checks">
+              <button type="button" data-repo-diff-explorer-toggle aria-pressed="${layout.explorerOpen ? "true" : "false"}" aria-label="Show changed files" title="Changed files" class="fm-diff-icon"><i data-lucide="panel-left"></i></button>
+              <span class="fm-diff-total" title="${escapeHtml(`${formatCount(files.length)} files changed`)}"><i data-lucide="file-diff"></i>${formatCount(files.length)}<span class="fm-diff-total-label">${files.length === 1 ? "file" : "files"}</span><span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(adds)}</span> <span class="fm-diff-stat-del">-${formatCount(dels)}</span></span></span>
+              <span class="fm-diff-pills">
+                <span data-repo-diff-ci class="fm-diff-pill-group">${renderRepoDiffCiPills(options.checks, reviewable)}</span>
+                <span data-repo-diff-quality class="fm-diff-pill-group">${renderRepoDiffQualityPills(diffQualityFlags(pullPatch.patch))}</span>
               </span>
-              ${pullToolbarToggle("data-repo-pull-explorer-mode", layout.explorer, [
-                ["tree", "folder-tree", "Tree"],
-                ["list", "list", "List"],
-              ], "Changed file explorer layout")}
-              <span data-repo-pull-diff-mode-group class="inline-flex">${pullToolbarToggle("data-repo-pull-diff-mode", layout.diff, [
-                ["unified", "align-justify", "Unified"],
-                ["split", "columns-2", "Split"],
-              ], "Diff layout")}</span>
-              <span data-repo-pull-viewed-summary class="font-mono text-[10px] text-muted-foreground">${formatCount(viewed.size)} of ${formatCount(files.length)} viewed</span>
-            </span>
+              <span class="fm-diff-tools">
+                <span data-repo-pull-diff-mode-group class="fm-diff-seg" role="group" aria-label="Diff layout">
+                  <button type="button" data-repo-pull-diff-mode="unified" aria-pressed="${layout.diff === "unified" ? "true" : "false"}" aria-label="Unified" title="Unified" class="fm-diff-icon"><i data-lucide="align-justify"></i></button>
+                  <button type="button" data-repo-pull-diff-mode="split" aria-pressed="${layout.diff === "split" ? "true" : "false"}" aria-label="Split" title="Split" class="fm-diff-icon"><i data-lucide="columns-2"></i></button>
+                </span>
+                <span data-repo-pull-viewed-summary class="fm-diff-viewed-count" title="Files marked viewed">${formatCount(viewed.size)}/${formatCount(files.length)}</span>
+                <button type="button" data-repo-diff-collapse-all aria-label="Collapse or expand every file" title="Collapse or expand every file" class="fm-diff-icon"><i data-lucide="chevrons-down-up"></i></button>
+                <details data-repo-diff-settings class="fm-diff-menu">
+                  <summary aria-label="Diff settings" title="Diff settings" class="fm-diff-icon"><i data-lucide="settings-2"></i></summary>
+                  <div class="fm-popover fm-menu fm-diff-menu-panel">
+                    <div class="fm-menu-heading">Changed files</div>
+                    <button type="button" data-repo-pull-explorer-mode="tree" aria-pressed="${layout.explorer === "tree" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="folder-tree"></i>Tree</button>
+                    <button type="button" data-repo-pull-explorer-mode="list" aria-pressed="${layout.explorer === "list" ? "true" : "false"}" class="fm-menu-item"><i data-lucide="list"></i>List</button>
+                    <div class="fm-menu-divider"></div>
+                    <button type="button" data-repo-diff-wrap aria-pressed="${pullDiffWraps(mode) ? "true" : "false"}" class="fm-menu-item"><i data-lucide="wrap-text"></i>Wrap long lines</button>
+                    <div class="fm-menu-divider"></div>
+                    <div class="fm-menu-heading">Keys: j / k next or previous file</div>
+                  </div>
+                </details>
+              </span>
+            </div>
+            <div data-repo-diff-current class="fm-diff-row fm-diff-current">${renderRepoDiffCurrent(files, first, viewed)}</div>
           </div>
           <div data-repo-pull-review-batch>${renderPullReviewBatchBar()}</div>
-          <div class="grid min-w-0 lg:grid-cols-[20rem_minmax(0,1fr)]">
-            <nav data-repo-pull-file-list aria-label="Changed files" class="max-h-72 overflow-auto rounded-bl-lg border-b border-border bg-secondary/20 lg:sticky lg:top-3 lg:max-h-[80vh] lg:self-start lg:border-b-0 lg:border-r">${renderRepoPullFiles(files, viewed, { mode: layout.explorer })}</nav>
-            <div data-repo-pull-diff-list data-diff-mode="${effectivePullDiffMode(layout.diff)}" class="min-w-0">${reviewable
-              ? renderRepoPullPatch(pullPatch.patch, viewed, effectivePullDiffMode(layout.diff))
-              : renderRepoComparePatch(pullPatch.patch, viewed, effectivePullDiffMode(layout.diff))}</div>
+          <div class="fm-diff-body">
+            <aside data-repo-diff-explorer class="fm-diff-explorer" aria-label="Changed files">
+              <div class="fm-diff-filter">
+                <i data-lucide="search"></i>
+                <input data-repo-pull-file-filter type="search" autocomplete="off" placeholder="Filter changed files" aria-label="Filter changed files" />
+              </div>
+              <nav data-repo-pull-file-list aria-label="Changed files">${renderRepoPullFiles(files, viewed, { mode: layout.explorer })}</nav>
+            </aside>
+            <div data-repo-pull-diff-list data-diff-mode="${mode}" class="min-w-0">${reviewable
+              ? renderRepoPullPatch(pullPatch.patch, viewed, mode)
+              : renderRepoComparePatch(pullPatch.patch, viewed, mode, pullPatch.imageDiffs)}</div>
           </div>
         </section>`;
     recordInterfaceMetric("diff", startedAt);
     return html;
+  }
+
+  function diffPathParts(path) {
+    const text = String(path || "");
+    const slash = text.lastIndexOf("/");
+    return slash < 0 ? { dir: "", name: text } : { dir: text.slice(0, slash + 1), name: text.slice(slash + 1) };
+  }
+
+  function renderRepoDiffCurrent(files, path, viewed) {
+    const list = Array.isArray(files) ? files : [];
+    const index = list.findIndex((file) => file.path === path);
+    const file = index >= 0 ? list[index] : null;
+    if (!file) return '<span class="fm-diff-path text-muted-foreground">No changed files</span>';
+    const parts = diffPathParts(file.path);
+    const isViewed = viewed?.has?.(file.path) || false;
+    return `
+      <button type="button" data-repo-diff-current-collapse aria-label="Collapse or expand this file" title="Collapse or expand this file" class="fm-diff-icon"><i data-lucide="fold-vertical"></i></button>
+      <button type="button" data-repo-diff-current-jump class="fm-diff-path" title="${escapeHtml(file.path)}">${parts.dir ? `<span class="fm-diff-dir"><span dir="ltr">${escapeHtml(parts.dir)}</span></span>` : ""}<span class="fm-diff-name">${escapeHtml(parts.name)}</span></button>
+      <span class="fm-diff-stat"><span class="fm-diff-stat-add">+${formatCount(file.adds)}</span> <span class="fm-diff-stat-del">-${formatCount(file.dels)}</span></span>
+      <label class="fm-diff-check" title="Mark this file viewed"><input type="checkbox" data-repo-diff-current-viewed="${escapeHtml(file.path)}"${isViewed ? " checked" : ""} /><span class="fm-diff-check-label">Viewed</span></label>
+      <button type="button" data-repo-diff-step="-1" aria-label="Previous file (k)" title="Previous file (k)" class="fm-diff-icon"${index <= 0 ? " disabled" : ""}><i data-lucide="chevron-up"></i></button>
+      <span data-repo-diff-position class="fm-diff-position">${formatCount(index + 1)}/${formatCount(list.length)}</span>
+      <button type="button" data-repo-diff-step="1" aria-label="Next file (j)" title="Next file (j)" class="fm-diff-icon"${index >= list.length - 1 ? " disabled" : ""}><i data-lucide="chevron-down"></i></button>`;
+  }
+
+  function updateRepoDiffCurrent(section, path) {
+    const row = section?.querySelector("[data-repo-diff-current]");
+    const context = repoPullFilesContext();
+    if (!row || !context || context.section !== section) return;
+    row.innerHTML = renderRepoDiffCurrent(context.files, path, context.viewed);
+    window.lucide?.createIcons();
+  }
+
+  function pullCheckPill(tone, icon, count, title) {
+    return `<span class="fm-diff-pill fm-diff-pill-${tone}" title="${escapeHtml(title)}"><i data-lucide="${icon}"></i>${count}</span>`;
+  }
+
+  function renderRepoDiffCiPills(checks, linkToTab = false) {
+    if (!checks?.available) return "";
+    const runs = checks.runs || [];
+    let pills;
+    if (!runs.length) {
+      pills = pullCheckPill("muted", "circle-dashed", "No checks", "No workflow run is pinned to this head commit.");
+    } else {
+      const failed = pullCheckOutcomeCount(runs, "failed");
+      const pending = pullCheckOutcomeCount(runs, "pending");
+      const passed = pullCheckOutcomeCount(runs, "passed");
+      const other = runs.length - failed - pending - passed;
+      pills = [
+        passed ? pullCheckPill("success", "check-circle-2", formatCount(passed), `${formatCount(passed)} checks passed`) : "",
+        failed ? pullCheckPill("danger", "x-circle", formatCount(failed), `${formatCount(failed)} checks failed`) : "",
+        pending ? pullCheckPill("attention", "clock", formatCount(pending), `${formatCount(pending)} checks running or queued`) : "",
+        other ? pullCheckPill("muted", "circle-dashed", formatCount(other), `${formatCount(other)} checks did not run to a verdict`) : "",
+      ].join("");
+    }
+    return linkToTab
+      ? `<button type="button" data-repo-diff-open-checks aria-label="Open the checks tab" class="fm-diff-pill-group">${pills}</button>`
+      : pills;
+  }
+
+  const DIFF_QUALITY_RULES = [
+    ["security", /\b(?:eval|Function)\s*\(|\bexec\s*\(|\bsystem\s*\(|child_process\s*\.\s*exec|shell\s*=\s*True|dangerouslySetInnerHTML|verify\s*=\s*(?:[Ff]alse|0)\b|rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0|Access-Control-Allow-Origin[^\n]*['"]\*['"]|\bchmod\s+(?:-R\s+)?777\b|\bgh[pousr]_[A-Za-z0-9_]{36,}|\bgithub_pat_[A-Za-z0-9_]{22,}|\bAKIA[0-9A-Z]{16,}|\bxox[baprs]-[A-Za-z0-9-]{20,}|\bsk-ant-[A-Za-z0-9_-]{20,}|\bsk_live_[A-Za-z0-9]{24,}|\bAIza[A-Za-z0-9_-]{35,}|-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP |)PRIVATE KEY/],
+    ["conflict", /^(?:<{7}|={7}|>{7})(?:\s|$)/],
+    ["debug", /\bconsole\.(?:log|debug|trace)\s*\(|\bdebugger\s*;|System\.out\.print|\bvar_dump\s*\(/],
+    ["todo", /\b(?:TODO|FIXME|HACK|XXX)\b/],
+  ];
+
+  const DIFF_QUALITY_MAX_LINES = 200000;
+
+  function diffQualityFlags(patch) {
+    const flags = Object.fromEntries(DIFF_QUALITY_RULES.map(([key]) => [key, { count: 0, path: "" }]));
+    const text = String(patch || "");
+    if (!text) return flags;
+    let path = "";
+    let seen = 0;
+    for (const line of text.split("\n")) {
+      if (seen > DIFF_QUALITY_MAX_LINES) break;
+      seen += 1;
+      if (line.startsWith("+++ ")) {
+        const target = line.slice(4).trim();
+        if (target !== "/dev/null") path = target.replace(/^b\//, "");
+        continue;
+      }
+      if (line.startsWith("diff --git ")) {
+        const match = line.match(/ b\/(.+)$/);
+        if (match) path = match[1];
+        continue;
+      }
+      if (line[0] !== "+") continue;
+      const added = line.slice(1);
+      for (const [key, rule] of DIFF_QUALITY_RULES) {
+        if (!rule.test(added)) continue;
+        flags[key].count += 1;
+        if (!flags[key].path) flags[key].path = path;
+      }
+    }
+    return flags;
+  }
+
+  function renderRepoDiffQualityPills(flags) {
+    const meta = {
+      security: ["shield-alert", "Security", "danger", "risky calls, TLS bypasses, open CORS or secrets in added lines"],
+      conflict: ["git-merge", "Conflict", "danger", "merge-conflict markers in added lines"],
+      debug: ["bug", "Debug", "attention", "leftover debug output in added lines"],
+      todo: ["list-todo", "TODO", "attention", "TODO, FIXME or HACK markers in added lines"],
+    };
+    return DIFF_QUALITY_RULES.map(([key]) => {
+      const flag = flags?.[key] || { count: 0, path: "" };
+      if (key === "conflict" && !flag.count) return "";
+      const [icon, label, tone, what] = meta[key];
+      const title = flag.count
+        ? `${label}: ${formatCount(flag.count)} ${flag.count === 1 ? "line" : "lines"} with ${what}. Jump to the first.`
+        : `${label}: no ${what}.`;
+      const body = `<i data-lucide="${icon}"></i><span class="fm-diff-pill-label">${label}</span>${formatCount(flag.count)}`;
+      return flag.count
+        ? `<button type="button" data-repo-diff-flag="${escapeHtml(flag.path)}" title="${escapeHtml(title)}" class="fm-diff-pill fm-diff-pill-${tone}">${body}</button>`
+        : `<span title="${escapeHtml(title)}" class="fm-diff-pill fm-diff-pill-success">${body}</span>`;
+    }).join("");
   }
 
   // The review surface on the page and the data behind it. An open pull's
@@ -20450,11 +20627,19 @@
   // (openRepoCompare) that painted the same pane, which is not reviewable -
   // its viewed marks and layout toggles work, its line gutters do not open a
   // comment composer.
+  function repoPullFilesSection() {
+    const sections = document.querySelectorAll("[data-repo-pull-files]");
+    for (const section of sections) {
+      if (section.offsetParent) return section;
+    }
+    return sections[0] || null;
+  }
+
   function repoPullFilesContext() {
-    const section = document.querySelector("[data-repo-pull-files]");
+    const section = repoPullFilesSection();
     if (!section) return null;
     const detail = state.repoRecordDetail;
-    if (detail?.kind === "pulls") {
+    if (detail?.kind === "pulls" && section.closest("[data-repo-record-detail]")) {
       const repo = detail.repo || state.selectedRepo;
       const metadataCommit = detail.parsed?.pullMetadataCommit || "";
       return {
@@ -20478,6 +20663,20 @@
         saveViewed: (viewed) => saveRepoCompareViewed(repo, compare, viewed),
       };
     }
+    const commit = state.repoCommitDetail;
+    if (commit?.data && section.closest("[data-repo-commit-detail]")) {
+      const patch = String(commit.data.diff || "");
+      if (!commit.files) commit.files = parsePatchStats(patch);
+      return {
+        section,
+        reviewable: false,
+        files: commit.files,
+        patch,
+        imageDiffs: commit.data.imageDiffs || [],
+        viewed: loadRepoCommitViewed(commit),
+        saveViewed: (viewed) => saveRepoCommitViewed(commit, viewed),
+      };
+    }
     return null;
   }
 
@@ -20497,7 +20696,7 @@
   function setRepoPullExplorerMode(mode) {
     const next = mode === "list" ? "list" : "tree";
     setPullLayoutPref("explorer", next);
-    const section = document.querySelector("[data-repo-pull-files]");
+    const section = repoPullFilesSection();
     section?.querySelectorAll("[data-repo-pull-explorer-mode]").forEach((button) => {
       setPullToolbarToggleState(button, button.dataset.repoPullExplorerMode === next);
     });
@@ -20524,8 +20723,11 @@
       const mode = effectivePullDiffMode(pullLayoutPrefs().diff);
       list.innerHTML = context.reviewable
         ? renderRepoPullPatch(context.patch, context.viewed, mode)
-        : renderRepoComparePatch(context.patch, context.viewed, mode);
+        : renderRepoComparePatch(context.patch, context.viewed, mode, context.imageDiffs);
       list.dataset.diffMode = mode;
+      const wraps = pullDiffWraps(mode);
+      context.section.dataset.diffWrap = wraps ? "true" : "false";
+      context.section.querySelector("[data-repo-diff-wrap]")?.setAttribute("aria-pressed", wraps ? "true" : "false");
     }
     updatePullReviewBatchBar();
     window.lucide?.createIcons();
@@ -20533,18 +20735,86 @@
 
   function setPullToolbarToggleState(button, active) {
     button.setAttribute("aria-pressed", active ? "true" : "false");
-    button.classList.toggle("bg-secondary", active);
-    button.classList.toggle("text-foreground", active);
-    button.classList.toggle("text-muted-foreground", !active);
-    button.classList.toggle("hover:bg-secondary/60", !active);
+  }
+
+  function setRepoDiffExplorerOpen(open) {
+    const next = Boolean(open);
+    setPullLayoutPref("explorerOpen", next);
+    const section = repoPullFilesSection();
+    if (!section) return;
+    section.dataset.explorerOpen = next ? "true" : "false";
+    section.querySelector("[data-repo-diff-explorer-toggle]")?.setAttribute("aria-pressed", next ? "true" : "false");
+    if (next) setRepoPullActiveFile(section.dataset.activeFile || "", { revealRow: true });
+  }
+
+  function setRepoDiffWrap(wrap) {
+    setPullLayoutPref("wrap", wrap ? "on" : "off");
+    refreshRepoPullDiff();
+  }
+
+  function repoDiffBlocks(section) {
+    return Array.from(section?.querySelector("[data-repo-pull-diff-blocks]")?.children || []);
+  }
+
+  function jumpToRepoDiffFile(path) {
+    const section = repoPullFilesSection();
+    if (!section || !path) return false;
+    section.dataset.activeFile = path;
+    setRepoPullActiveFile(path, { revealDiff: true, revealRow: true });
+    return true;
+  }
+
+  function stepRepoDiffFile(step) {
+    const section = repoPullFilesSection();
+    if (!section?.offsetParent) return false;
+    const blocks = repoDiffBlocks(section);
+    if (!blocks.length) return false;
+    const index = blocks.findIndex((block) => block.dataset.repoPullDiffFile === section.dataset.activeFile);
+    const next = blocks[Math.min(blocks.length - 1, Math.max(0, (index < 0 ? 0 : index) + step))];
+    return jumpToRepoDiffFile(next?.dataset.repoPullDiffFile || "");
+  }
+
+  function setRepoDiffBlockCollapsedFromHeader(block, collapsed) {
+    setRepoPullDiffBlockCollapsed(block, collapsed);
+    block.querySelector("[data-repo-pull-diff-collapse]")?.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  }
+
+  function toggleRepoDiffCollapseAll() {
+    const section = repoPullFilesSection();
+    const blocks = repoDiffBlocks(section);
+    if (!blocks.length) return;
+    const collapse = blocks.some((block) => block.dataset.collapsed !== "true");
+    blocks.forEach((block) => setRepoDiffBlockCollapsedFromHeader(block, collapse));
+    window.lucide?.createIcons();
+    const current = blocks.find((block) => block.dataset.repoPullDiffFile === section.dataset.activeFile);
+    if (current) current.scrollIntoView({ block: "start" });
+  }
+
+  function toggleRepoDiffCurrentCollapse() {
+    const section = repoPullFilesSection();
+    const block = repoDiffBlocks(section).find((item) => item.dataset.repoPullDiffFile === section?.dataset.activeFile);
+    if (!block) return;
+    setRepoDiffBlockCollapsedFromHeader(block, block.dataset.collapsed !== "true");
+    window.lucide?.createIcons();
+    block.scrollIntoView({ block: "start" });
+  }
+
+  function setRepoDiffCurrentViewed(repo, path) {
+    const section = repoPullFilesSection();
+    if (!section || !path) return;
+    toggleRepoPullViewed(repo, path);
+    const block = repoDiffBlocks(section).find((item) => item.dataset.repoPullDiffFile === path);
+    if (block) block.scrollIntoView({ block: "start" });
   }
 
   // Clicking a file in the explorer jumps the diff pane to it; scrolling the diff
   // pane pushes the highlight back the other way, so the two panes never disagree
   // about which file is being read.
   function setRepoPullActiveFile(path, options = {}) {
-    const section = document.querySelector("[data-repo-pull-files]");
+    const section = repoPullFilesSection();
     if (!section) return;
+    const current = section.querySelector("[data-repo-diff-current-viewed]");
+    if (current?.dataset.repoDiffCurrentViewed !== path) updateRepoDiffCurrent(section, path);
     let active = null;
     section.querySelectorAll("[data-repo-pull-file]").forEach((button) => {
       const current = button.dataset.repoPullFile === path;
@@ -20634,11 +20904,14 @@
   // selector walk over every diff row.
   function syncRepoPullActiveFileFromScroll() {
     if (state.repoPullDiffJump) return;
-    const section = document.querySelector("[data-repo-pull-files]");
+    const section = repoPullFilesSection();
     if (!section || !section.offsetParent) return;
     const blocks = section.querySelector("[data-repo-pull-diff-blocks]")?.children;
     if (!blocks?.length) return;
-    const edge = (section.closest("[data-view]")?.getBoundingClientRect().top || 0) + 24;
+    const head = section.querySelector("[data-repo-diff-head]");
+    const edge = head
+      ? head.getBoundingClientRect().bottom + 8
+      : (section.closest("[data-view]")?.getBoundingClientRect().top || 0) + 24;
     let low = 0;
     let high = blocks.length - 1;
     let index = 0;
@@ -20669,7 +20942,7 @@
     // line's min-content width, so an implicit auto track would let one file's
     // longest line push every block past the edge of the review pane.
     const wrapColumns = diffWrapColumns(mode);
-    return `<div data-repo-pull-diff-blocks class="grid grid-cols-[minmax(0,1fr)] gap-3 p-3">${files.map((file) => renderDiffFileBlock(file, images.get(file.newPath) || images.get(file.oldPath), viewed, mode, reviewable, wrapColumns)).join("")}</div>`;
+    return `<div data-repo-pull-diff-blocks class="grid grid-cols-[minmax(0,1fr)]">${files.map((file) => renderDiffFileBlock(file, images.get(file.newPath) || images.get(file.oldPath), viewed, mode, reviewable, wrapColumns)).join("")}</div>`;
   }
 
   function renderRepoPullPatch(patch, viewed = new Set(), mode = "unified") {
@@ -20679,9 +20952,9 @@
 
   // The branch comparison's diff: the pull review's file blocks (viewed
   // folds, unified or split rows, stat bars) without the review gutters.
-  function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified") {
+  function renderRepoComparePatch(patch, viewed = new Set(), mode = "unified", imageDiffs = []) {
     if (!String(patch || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this comparison.</div>';
-    return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), [], viewed, mode, false)}</div>`;
+    return `<div data-repo-pull-patch>${renderDiffFiles(parseDiffFiles(patch), imageDiffs, viewed, mode, false)}</div>`;
   }
 
   const repoPullFolderReads = new Map();
@@ -21284,6 +21557,8 @@
     if (rulesSlot) rulesSlot.innerHTML = renderRepoPullRules(parsed.pullRules);
     const checkList = $("[data-repo-pull-checks]");
     if (checkList) checkList.innerHTML = renderRepoPullChecks(parsed.pullChecks);
+    const diffCi = $("[data-repo-diff-ci]");
+    if (diffCi) diffCi.innerHTML = renderRepoDiffCiPills(parsed.pullChecks, true);
     const checkCount = $("[data-repo-pull-check-count]");
     if (checkCount) {
       checkCount.textContent = formatCount((parsed.pullChecks?.runs || []).length);
@@ -23363,7 +23638,7 @@
             ${renderPullReviewForm(repo, number, parsed)}
           </section>` : "";
     const pullFilesSection = isPulls
-      ? renderRepoPullFilesSection(pullPatch, pullViewed)
+      ? renderRepoPullFilesSection(pullPatch, pullViewed, { checks: parsed.pullChecks })
       : "";
     const discussionConversation = parsed.discussionConversation || [];
     const discussionConversationSection = isDiscussions ? `
@@ -34239,21 +34514,19 @@
 
   function repoCompareHeaderHtml(repo, base, head) {
     return `
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <button type="button" data-repo-compare-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to pull requests</button>
-        <div class="flex flex-wrap items-center gap-2">
-          <button type="button" data-repo-compare-refresh class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-2.5 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="refresh-cw" class="h-3.5 w-3.5"></i>Refresh</button>
-          <button type="button" data-repo-compare-pull class="${repoReadOnlyMirror(repo) ? "hidden " : ""}inline-flex h-8 items-center gap-1.5 rounded-md bg-cta px-3 text-xs font-semibold text-cta-foreground hover:bg-cta/90"><i data-lucide="git-pull-request" class="h-3.5 w-3.5"></i>Create pull request</button>
-        </div>
-      </div>
-      <header class="grid gap-1 rounded-lg border border-border bg-secondary/30 p-4">
-        <h3 class="flex flex-wrap items-center gap-2 text-base font-semibold text-foreground"><i data-lucide="git-compare-arrows" class="h-4 w-4 text-muted-foreground"></i>Comparing changes</h3>
-        <p class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span class="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-foreground" title="base">${escapeHtml(base)}</span>
-          <i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>
-          <span class="rounded-md border border-border bg-background px-2 py-0.5 font-mono text-foreground" title="head">${escapeHtml(head)}</span>
-          <span data-repo-compare-summary class="min-w-0"></span>
-        </p>
+      <header data-repo-compare-head class="flex min-w-0 flex-wrap items-center gap-2">
+        <button type="button" data-repo-compare-back aria-label="Back to pull requests" title="Back to pull requests" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="arrow-left"></i></button>
+        <h3 class="inline-flex min-w-0 items-center gap-1.5 text-xs font-semibold text-foreground"><i data-lucide="git-compare-arrows" class="h-3.5 w-3.5 text-muted-foreground"></i>Comparing</h3>
+        <span class="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs text-muted-foreground">
+          <span class="min-w-0 truncate rounded-md border border-border bg-background px-1.5 font-mono text-foreground" title="base">${escapeHtml(base)}</span>
+          <i data-lucide="arrow-left" class="h-3 w-3 shrink-0"></i>
+          <span class="min-w-0 truncate rounded-md border border-border bg-background px-1.5 font-mono text-foreground" title="head">${escapeHtml(head)}</span>
+        </span>
+        <span data-repo-compare-summary class="min-w-0 text-xs text-muted-foreground"></span>
+        <span class="ml-auto flex items-center gap-2">
+          <button type="button" data-repo-compare-refresh aria-label="Refresh" title="Refresh" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="refresh-cw"></i></button>
+          <button type="button" data-repo-compare-pull class="${repoReadOnlyMirror(repo) ? "hidden " : ""}fm-btn fm-btn-sm fm-btn-cta"><i data-lucide="git-pull-request"></i>Create pull request</button>
+        </span>
       </header>`;
   }
 
@@ -34288,15 +34561,18 @@
     setRepoTab("pulls");
     setRepoRecordOpen("pulls", true);
     if (navigate) navigateHistory(repoCompareUrl(repo, base, head));
-    const paint = (bodyHtml) => {
+    const paint = (bodyHtml, diffHtml = "") => {
       // A read that lands after the reader left for the list, a record, or
       // another comparison must not paint over what replaced it.
       if (state.repoCompare !== compare) return false;
       container.innerHTML = `
-        <article data-repo-compare="${escapeHtml(`${base}...${head}`)}" class="grid gap-4 border-t border-border bg-background p-4">
-          ${repoCompareHeaderHtml(repo, base, head)}
-          <section data-repo-compare-merge hidden></section>
-          ${bodyHtml}
+        <article data-repo-compare="${escapeHtml(`${base}...${head}`)}" class="min-w-0 border-t border-border bg-background">
+          <div class="grid min-w-0 gap-2 px-3 py-2 sm:px-5">
+            ${repoCompareHeaderHtml(repo, base, head)}
+            <section data-repo-compare-merge hidden></section>
+            ${bodyHtml}
+          </div>
+          ${diffHtml}
         </article>`;
       renderRepoCompareMergePanel(repo);
       window.lucide?.createIcons();
@@ -34346,16 +34622,16 @@
     };
     const viewed = loadRepoCompareViewed(repo, compare);
     const painted = paint(`
-      <section class="overflow-hidden rounded-lg border border-border">
-        <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-          <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits</span>
-          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(formatCount(commitCount))} ${commitCount === 1 ? "commit" : "commits"}</span>
-        </div>
-        <div data-repo-compare-commits class="divide-y divide-border">${renderRepoPullCommits(commits)}</div>
-      </section>
-      <div data-repo-compare-diff>${patch.trim()
+      <details data-repo-compare-commits-box class="group min-w-0 rounded-md border border-border">
+        <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5 text-xs font-medium text-foreground">
+          <i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits
+          <span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(formatCount(commitCount))}</span>
+          <i data-lucide="chevron-down" class="ml-auto h-3.5 w-3.5 text-muted-foreground transition-transform group-open:rotate-180"></i>
+        </summary>
+        <div data-repo-compare-commits class="divide-y divide-border border-t border-border">${renderRepoPullCommits(commits)}</div>
+      </details>`, `<div data-repo-compare-diff>${patch.trim()
         ? renderRepoPullFilesSection({ patch, files }, viewed, { reviewable: false })
-        : '<section class="rounded-lg border border-border"><div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this comparison.</div></section>'}</div>`);
+        : '<div class="border-t border-border px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this comparison.</div>'}</div>`);
     if (!painted) return;
     const summary = container.querySelector("[data-repo-compare-summary]");
     if (summary) {
@@ -34368,6 +34644,17 @@
       navigateHistory(`${repoLinkUrl(repo)}/pulls`);
       openPullCompose(repo, { base, head, title: title || compare.result.title });
     }
+    fillRepoDiffCiPills(repo, compare.result.headOid, () => state.repoCompare === compare);
+  }
+
+  async function fillRepoDiffCiPills(repo, headOid, stillCurrent) {
+    if (!immutableGitCommit(headOid)) return;
+    const checks = await loadRepoPullChecks(repo, {}, { headOid });
+    if (!stillCurrent()) return;
+    const slot = repoPullFilesSection()?.querySelector("[data-repo-diff-ci]");
+    if (!slot) return;
+    slot.innerHTML = renderRepoDiffCiPills(checks);
+    window.lucide?.createIcons();
   }
 
   async function handleRemotePullSubmit(repo, remote, { title, body, base, head, submit, setHint, titleInput, bodyInput }) {
@@ -34575,45 +34862,37 @@
       </div>`).join("");
   }
 
-  // The section holding this carries no overflow-hidden: that would make it the
-  // scroll container for the file headers' position:sticky, so they would never
-  // stick while the page scrolls past a long file.
   function renderRepoCommitDiff(diff, imageDiffs) {
-    if (!String(diff || "").trim()) return '<div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this commit.</div>';
-    return `<div data-repo-commit-diff>${renderDiffFiles(parseDiffFiles(diff), imageDiffs)}</div>`;
+    if (!String(diff || "").trim()) return "";
+    const commit = state.repoCommitDetail;
+    const viewed = commit?.data?.diff === diff ? loadRepoCommitViewed(commit) : new Set();
+    return `<div data-repo-commit-diff>${renderRepoPullFilesSection({ patch: diff, files: parsePatchStats(diff), imageDiffs }, viewed, { reviewable: false })}</div>`;
   }
 
   function renderRepoCommitDetail(repo, data) {
     const commit = data.commit || {};
     const hash = String(commit.hash || "");
     const parents = String(commit.parents || "").split(/\s+/).filter(Boolean);
+    const diffHtml = renderRepoCommitDiff(data.diff, data.imageDiffs);
     return `
-      <article data-repo-commit-detail class="grid gap-4 border-t border-border bg-background p-4">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <button type="button" data-repo-commit-back class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to commits</button>
-          <span class="font-mono text-xs text-muted-foreground">${escapeHtml(hash)}</span>
-        </div>
-        <header class="rounded-lg border border-border bg-secondary/30 p-4">
-          <h3 class="text-base font-semibold text-foreground">${escapeHtml(commit.subject || "Commit")}</h3>
-          ${commit.body ? `<p class="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(commit.body)}</p>` : ""}
-          <dl class="mt-4 grid gap-2 text-xs text-muted-foreground sm:grid-cols-2">
-            <div><dt class="font-semibold text-foreground">Author</dt><dd>${escapeHtml(shownAccountName(commit.author) || "unknown")}</dd></div>
-            <div><dt class="font-semibold text-foreground">Date</dt><dd>${escapeHtml(commit.date || "unknown")}</dd></div>
-            <div><dt class="font-semibold text-foreground">Parents</dt><dd class="font-mono">${parents.length ? parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ") : "root commit"}</dd></div>
-            <div><dt class="font-semibold text-foreground">Repository</dt><dd class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</dd></div>
-          </dl>
-        </header>
-        <section class="overflow-hidden rounded-lg border border-border">
-          <div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3">
-            <span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="files" class="h-3.5 w-3.5 text-muted-foreground"></i>Files changed</span>
-            <span class="font-mono text-[10px] text-muted-foreground">${formatCount(Array.isArray(data.files) ? data.files.length : 0)} files</span>
+      <article data-repo-commit-detail class="min-w-0 bg-background">
+        <header class="grid min-w-0 gap-1 px-3 py-2 sm:px-5">
+          <div class="flex min-w-0 items-center gap-2">
+            <button type="button" data-repo-commit-back aria-label="Back to commits" title="Back to commits" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="arrow-left"></i></button>
+            <h3 class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground" title="${escapeHtml(commit.subject || "Commit")}">${escapeHtml(commit.subject || "Commit")}</h3>
+            <span class="hidden font-mono text-xs text-muted-foreground sm:inline">${escapeHtml(hash.slice(0, 12))}</span>
           </div>
+          <p class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+            <span><span class="font-semibold text-foreground">${escapeHtml(shownAccountName(commit.author) || "unknown")}</span> committed ${escapeHtml(commit.date || "")}</span>
+            <span class="font-mono">${parents.length ? `parent ${parents.map((parent) => escapeHtml(parent.slice(0, 12))).join(", ")}` : "root commit"}</span>
+            <span class="font-mono">${escapeHtml(repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`))}</span>
+          </p>
+          ${commit.body ? `<details class="min-w-0 text-xs"><summary class="cursor-pointer text-muted-foreground">Message</summary><p class="mt-1 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">${escapeHtml(commit.body)}</p></details>` : ""}
+        </header>
+        ${diffHtml || `<section class="border-t border-border">
+          <div class="px-4 py-3 text-sm text-muted-foreground">No textual diff is available for this commit.</div>
           <div data-repo-commit-files>${renderRepoCommitFiles(data.files)}</div>
-        </section>
-        <section class="rounded-lg border border-border">
-          <div class="flex items-center gap-2 rounded-t-lg border-b border-border bg-secondary/50 px-4 py-3 text-xs font-medium text-foreground"><i data-lucide="git-compare-arrows" class="h-3.5 w-3.5 text-muted-foreground"></i>Diff</div>
-          ${renderRepoCommitDiff(data.diff, data.imageDiffs)}
-        </section>
+        </section>`}
       </article>`;
   }
 
@@ -34623,8 +34902,12 @@
     container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading commit from the live mirror...")}</div>`;
     try {
       const data = await fetchRepoJson(repoLiveUrl(repo, "commit", { path: hash }));
-      state.repoCommitDetail = { repo, data };
+      const detail = { repo, data };
+      state.repoCommitDetail = detail;
       container.innerHTML = renderRepoCommitDetail(repo, data);
+      const first = repoPullFilesSection()?.dataset.activeFile || "";
+      if (first) setRepoPullActiveFile(first, { revealRow: true });
+      fillRepoDiffCiPills(repo, data.commit?.hash, () => state.repoCommitDetail === detail);
     } catch (_) {
       container.innerHTML = '<div class="px-4 py-3 text-sm text-muted-foreground">Commit detail is unavailable until a reachable mirror host serves this commit.</div>';
     } finally {
@@ -42930,6 +43213,56 @@
         return;
       }
 
+      const diffExplorerToggle = event.target.closest("[data-repo-diff-explorer-toggle]");
+      if (diffExplorerToggle) {
+        setRepoDiffExplorerOpen(diffExplorerToggle.getAttribute("aria-pressed") !== "true");
+        return;
+      }
+
+      const diffWrapButton = event.target.closest("[data-repo-diff-wrap]");
+      if (diffWrapButton) {
+        setRepoDiffWrap(diffWrapButton.getAttribute("aria-pressed") !== "true");
+        return;
+      }
+
+      const diffStepButton = event.target.closest("[data-repo-diff-step]");
+      if (diffStepButton) {
+        stepRepoDiffFile(Number(diffStepButton.dataset.repoDiffStep) || 1);
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-current-jump]")) {
+        jumpToRepoDiffFile(repoPullFilesSection()?.dataset.activeFile || "");
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-current-collapse]")) {
+        toggleRepoDiffCurrentCollapse();
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-collapse-all]")) {
+        toggleRepoDiffCollapseAll();
+        return;
+      }
+
+      const diffCurrentViewed = event.target.closest("[data-repo-diff-current-viewed]");
+      if (diffCurrentViewed && state.selectedRepo) {
+        setRepoDiffCurrentViewed(state.selectedRepo, diffCurrentViewed.dataset.repoDiffCurrentViewed || "");
+        return;
+      }
+
+      const diffFlagButton = event.target.closest("[data-repo-diff-flag]");
+      if (diffFlagButton) {
+        jumpToRepoDiffFile(diffFlagButton.dataset.repoDiffFlag || "");
+        return;
+      }
+
+      if (event.target.closest("[data-repo-diff-open-checks]")) {
+        event.target.closest("[data-repo-record-detail]")?.querySelector('[data-repo-record-tab="checks"]')?.click();
+        return;
+      }
+
       const pullExplorerModeButton = event.target.closest("[data-repo-pull-explorer-mode]");
       if (pullExplorerModeButton) {
         setRepoPullExplorerMode(pullExplorerModeButton.dataset.repoPullExplorerMode || "tree");
@@ -42949,6 +43282,7 @@
         // Scroll-spy would otherwise fight the jump it just triggered.
         if (section) section.dataset.activeFile = path;
         setRepoPullActiveFile(path, { revealDiff: true });
+        if (window.matchMedia?.("(max-width: 1023px)")?.matches) setRepoDiffExplorerOpen(false);
         return;
       }
 
@@ -43466,10 +43800,19 @@
   // Rotating a phone (or resizing a window) across the split breakpoint
   // re-lays the diff in the layout that fits.
   window.matchMedia?.(PULL_DIFF_NARROW_QUERY)?.addEventListener?.("change", () => {
-    const list = document.querySelector("[data-repo-pull-diff-list]");
-    if (list && list.dataset.diffMode !== effectivePullDiffMode(pullLayoutPrefs().diff)) {
+    const section = repoPullFilesSection();
+    const list = section?.querySelector("[data-repo-pull-diff-list]");
+    const mode = effectivePullDiffMode(pullLayoutPrefs().diff);
+    if (list && (list.dataset.diffMode !== mode
+        || section.dataset.diffWrap !== (pullDiffWraps(mode) ? "true" : "false"))) {
       refreshRepoPullDiff();
     }
+  });
+
+  document.addEventListener("click", (event) => {
+    document.querySelectorAll("[data-repo-diff-settings][open]").forEach((menu) => {
+      if (!menu.contains(event.target) || event.target.closest(".fm-menu-item")) menu.open = false;
+    });
   });
 
   $("#repoSearch")?.addEventListener("input", () => {
@@ -43775,6 +44118,12 @@
         selectRepoFileFinderResult();
         return;
       }
+    }
+    if (!typingTarget && !event.metaKey && !event.ctrlKey && !event.altKey
+        && (event.key === "j" || event.key === "k")
+        && stepRepoDiffFile(event.key === "j" ? 1 : -1)) {
+      event.preventDefault();
+      return;
     }
     if (!typingTarget && event.key.toLowerCase() === "t" && state.selectedRepo) {
       event.preventDefault();

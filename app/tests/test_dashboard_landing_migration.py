@@ -2080,7 +2080,7 @@ def test_dashboard_pull_detail_reads_committed_patch_for_files_changed():
         "ref: commit,",
         "loadRepoPullPatch(repo, number, pullMetadataCommit, values),",
         "renderRepoPullFiles(files, viewed, { mode: layout.explorer })",
-        "renderRepoPullPatch(pullPatch.patch, viewed, effectivePullDiffMode(layout.diff))",
+        "renderRepoPullPatch(pullPatch.patch, viewed, mode)",
     ):
         assert marker in dashboard_js
 
