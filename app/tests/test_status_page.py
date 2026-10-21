@@ -5026,6 +5026,27 @@ def test_recorded_core_appears_as_a_full_status_system():
     assert all(s["id"] != "core:n8" for s in out["systems"])
 
 
+def test_new_fleet_node_uptime_starts_at_its_first_sample():
+    cur_day = (_Clock.value // DAY_MS) * DAY_MS
+    rows = [
+        {"day_ts": cur_day - offset * DAY_MS, "system": system,
+         "checks": 1440, "failures": 0}
+        for offset in (1, 2)
+        for system in ("core:n4", "website")
+    ]
+    rows.append({"day_ts": cur_day - 5 * DAY_MS, "system": "website",
+                 "checks": 0, "failures": 0})
+    out = _run_history(rows, core_rows=[_core_row("n4")])
+    by_id = {s["id"]: s for s in out["systems"]}
+    core = by_id["core:n4"]
+    today_expected = core["days"][-1]["expectedChecks"]
+    sampled = round(2880 / (2880 + today_expected) * 100, 2)
+    assert core["uptimePct"] == sampled
+    assert core["coveragePct"] == sampled
+    assert [d["uptimePct"] for d in core["days"]][:3] == [None, None, None]
+    assert by_id["website"]["coveragePct"] < 100.0
+
+
 def test_status_only_release_reads_release_their_bodies():
     cancelled = []
     (ok, reason), issued = _release_platform_probe(cancelled=cancelled)

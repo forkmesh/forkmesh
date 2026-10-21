@@ -2983,6 +2983,8 @@ async def status_history(env, view="full"):
         # failures, but they must keep a history containing non-green buckets
         # from displaying 100%. See _status_effective_hour.
         days = []
+        fleet_row = system_id.startswith((
+            STATUS_CORE_PREFIX, STATUS_RUNNER_PREFIX, STATUS_MIRROR_PREFIX))
         total_checks = total_failures = total_expected = 0
         checks_24h = failures_24h = expected_24h = 0
         for i in range(STATUS_HISTORY_DAYS):
@@ -3023,7 +3025,8 @@ async def status_history(env, view="full"):
                     checks_24h += hour["checks"]
                     failures_24h += hour["failures"]
                     hour_ts += STATUS_HOUR_MS
-            total_expected += day_expected
+            if day_checks or total_checks or not fleet_row:
+                total_expected += day_expected
             total_checks += day_checks
             total_failures += day_failures
             uptime = (
