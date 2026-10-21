@@ -73,6 +73,14 @@ IMMUTABLE_CACHE_ENTRY_MAX = 4 * 1024 * 1024
 # The host-side view bundles (repo_views): the pull/issue/discussion reads a
 # page needs, in one response.
 VIEW_OPERATION = "page-reads"
+STALE_OPERATIONS = frozenset({
+    "tree", "blob", "blobs", "history", "commit", "branches", "stats",
+})
+STALE_STATUSES = frozenset({502, 503, 504})
+STALE_CACHE_ENTRIES = 256
+STALE_CACHE_BYTES = 16 * 1024 * 1024
+STALE_CACHE_ENTRY_MAX = 1024 * 1024
+STALE_MAX_AGE_SECONDS = 900.0
 
 
 def repository_read_path(value):
@@ -202,6 +210,49 @@ class ImmutableCache:
             self.bytes -= len(old[1])
 
 
+class StaleCache:
+    def __init__(self, max_entries=STALE_CACHE_ENTRIES,
+                 max_bytes=STALE_CACHE_BYTES,
+                 entry_max=STALE_CACHE_ENTRY_MAX,
+                 max_age=STALE_MAX_AGE_SECONDS, clock=time.monotonic):
+        self.max_entries = max_entries
+        self.max_bytes = max_bytes
+        self.entry_max = entry_max
+        self.max_age = max_age
+        self.clock = clock
+        self.bytes = 0
+        self.served = 0
+        self._entries = collections.OrderedDict()
+
+    def put(self, key, content_type, body):
+        self.discard(key)
+        if not body or len(body) > self.entry_max:
+            return
+        self._entries[key] = (self.clock(), content_type, body)
+        self.bytes += len(body)
+        while self._entries and (len(self._entries) > self.max_entries
+                                 or self.bytes > self.max_bytes):
+            _key, old = self._entries.popitem(last=False)
+            self.bytes -= len(old[2])
+
+    def discard(self, key):
+        old = self._entries.pop(key, None)
+        if old is not None:
+            self.bytes -= len(old[2])
+
+    def get(self, key):
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        if self.clock() - entry[0] > self.max_age:
+            self.discard(key)
+            return None
+        return entry[1], entry[2]
+
+    def __len__(self):
+        return len(self._entries)
+
+
 def etag_for(body):
     return '"fm-%s"' % hashlib.sha256(body).hexdigest()[:32]
 
@@ -257,7 +308,8 @@ def with_cors(scope, send, environ=None):
             if allowed:
                 headers += [(b"access-control-allow-origin", origin.encode("latin-1")),
                             (b"access-control-expose-headers",
-                             b"etag, x-forkmesh-ref, x-forkmesh-served-by")]
+                             b"etag, x-forkmesh-ref, x-forkmesh-served-by, "
+                             b"x-forkmesh-stale")]
             message = dict(message, headers=headers)
         await send(message)
     return wrapped
@@ -273,9 +325,10 @@ class RepoFastPath:
         self._node_checked = 0.0
         self._default_ref = {}
         self.immutable = ImmutableCache()
+        self.stale = StaleCache()
         self._inflight = {}
         self.stats = {"served": 0, "fallthrough": 0, "not_modified": 0,
-                      "memory": 0}
+                      "memory": 0, "stale": 0}
 
     @classmethod
     def from_environ(cls, environ=None):
@@ -458,6 +511,8 @@ class RepoFastPath:
             # Unknown/private repository (404), gateway error or timeout:
             # the Worker gives the canonical answer.
             if upstream is not None:
+                if upstream.status_code == 404:
+                    self.stale.discard(url)
                 await upstream.aclose()
             self.stats["fallthrough"] += 1
             return False
@@ -466,12 +521,47 @@ class RepoFastPath:
         if body is not None and policy == IMMUTABLE and operation != "raw":
             self.immutable.put(url, upstream.headers.get(
                 "content-type", "application/json"), body)
+        elif body is not None and operation in STALE_OPERATIONS:
+            self.stale.put(url, upstream.headers.get(
+                "content-type", "application/json"), body)
         try:
             await self._send(scope, send, owner, repo, operation, pairs,
                              upstream, body, length)
         finally:
             await upstream.aclose()
         return True
+
+    def stale_answer(self, scope, status):
+        if int(status) not in STALE_STATUSES:
+            return None
+        target = self.match(scope)
+        if target is None or target[2] not in STALE_OPERATIONS:
+            return None
+        owner, repo, operation = target
+        pairs = gateway_query(
+            operation, (scope.get("query_string") or b"").decode("latin-1"))
+        if pairs is None:
+            return None
+        return self.stale.get(self.gateway_url(owner, repo, operation, pairs))
+
+    async def send_stale(self, scope, send, answer):
+        content_type, body = answer
+        send = with_cors(scope, send)
+        headers = [(b"x-content-type-options", b"nosniff"),
+                   (b"x-forkmesh-local-reads", b"1"),
+                   (b"x-forkmesh-stale", b"1"),
+                   (b"content-type", content_type.encode("latin-1")),
+                   (b"cache-control", b"no-store"),
+                   (b"content-length", str(len(body)).encode())]
+        if self._node:
+            headers.append((b"x-forkmesh-served-by", self._node.encode()))
+        await send({"type": "http.response.start", "status": 200,
+                    "headers": headers})
+        method = scope.get("method", "GET").upper()
+        await send({"type": "http.response.body",
+                    "body": b"" if method == "HEAD" else body})
+        self.stats["stale"] += 1
+        self.stale.served += 1
 
     async def _send_memory(self, scope, send, entry):
         """A commit-pinned answer from host memory (ImmutableCache)."""
