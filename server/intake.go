@@ -1361,7 +1361,7 @@ func pullMarkdown(number int, pull map[string]any) string {
 		"authorName: " + safeHeader(stringValue(pull["authorName"])),
 		"sig: " + safeHeader(stringValue(pull["sig"])),
 	}
-	for _, key := range []string{"creationBaseOid", "creationHeadOid", "client", "clientSig"} {
+	for _, key := range []string{"creationBaseOid", "creationHeadOid", "client", "clientSig", "aiModel"} {
 		if value := safeHeader(stringValue(pull[key])); value != "" {
 			lines = append(lines, key+": "+value)
 		}

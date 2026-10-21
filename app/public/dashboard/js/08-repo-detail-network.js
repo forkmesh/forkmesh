@@ -3047,7 +3047,7 @@
         }
         const { base, head } = state.repoCompare;
         navigateHistory(`${repoLinkUrl(state.selectedRepo)}/pulls`);
-        openPullCompose(state.selectedRepo, { base, head });
+        openPullCompose(state.selectedRepo, { base, head, aiModel: state.repoCompare.result?.aiModel || "" });
         return;
       }
 

@@ -218,7 +218,7 @@ def test_any_origin_may_post_a_signed_pull_without_credentials():
 
 
 def test_dashboard_sends_a_pull_to_a_saved_fork_on_another_instance():
-    assert "async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = \"\")" in DASHBOARD
+    assert "async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = \"\", aiModel = \"\")" in DASHBOARD
     assert 'credentials: "omit"' in DASHBOARD.split("async function submitRemotePullOpen", 1)[1].split("async function signWebPull", 1)[0]
     assert "const signedHead = `${location.host}/${repoDisplayKey(repo)}:${head}`;" in DASHBOARD
     assert 'webEventSigningPrefix("pull-event", signingRepo)' in DASHBOARD

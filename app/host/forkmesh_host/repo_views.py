@@ -45,6 +45,8 @@ PULLS_DIR = ".forkmesh/pulls"
 PULL_LEDGER = "forkmesh/pulls"
 PULL_BRANCH_PREFIX = "forkmesh/pull/"
 ISSUES_DIR = ".forkmesh/issues"
+COLLAB_SETTINGS_PATHS = (".forkmesh/issues.json", ".forkmesh/pulls.json",
+                         "AI_POLICY.md")
 DISCUSSIONS_DIR = ".forkmesh/discussions"
 BLOB_BATCH = 50           # 06-repo-content.js batches /blobs by 50
 GENERIC_LIST_LIMIT = 50   # loadRepoRecordsFromMirror: non-pull collections
@@ -392,13 +394,18 @@ async def plan_issue(reader, branch, number):
         return await _blobs(reader, [issue_path(n, "open") for n in numbers],
                             commit if is_commit(commit) else "")
     index = asyncio.ensure_future(relation_index())
+    settings = asyncio.ensure_future(reader.get(
+        "blobs", [("path", path) for path in COLLAB_SETTINGS_PATHS]
+        + [("ref", branch)]))
     paths = [issue_path(number, subdir) for subdir in ("open", "closed", "")]
     blobs = await _blobs(reader, paths, branch)
     found = next((path for path in paths if blobs.get(path)), "")
     issue = issue_summary(blob_text(blobs[found]), number) if found else None
-    _root_done, open_issues = await asyncio.gather(root, index)
+    _root_done, open_issues, settings_data = await asyncio.gather(
+        root, index, settings)
     return {"issue": issue, "issueJson": blob_text(blobs[found]) if found else "",
-            "index": open_issues or {}}
+            "index": open_issues or {},
+            "settings": (settings_data or {}).get("blobs") or {}}
 
 
 async def _pull_conversation(reader, number, commit):

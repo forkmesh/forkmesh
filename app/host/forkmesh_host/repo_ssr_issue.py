@@ -339,12 +339,13 @@ LONE_IMAGE_RE = re.compile(
 class Context:
 
     def __init__(self, link_base, api_base, ref="main", issue_tasks=None,
-                 figures=True):
+                 figures=True, origin=""):
         self.link_base = link_base      # repoLinkUrl(repo): "/name" or "/o/r"
         self.api_base = api_base        # repoApiBase(repo)
         self.ref = ref
         self.issue_tasks = issue_tasks  # None or {"editable": bool}
         self.figures = figures
+        self.origin = origin
 
     def record_url(self, kind, number):
         return "%s/%s/%d" % (self.link_base, kind, int(number))
@@ -1355,7 +1356,63 @@ def member_comment_box(number):
             icon("shield-check", "h-3.5 w-3.5")))
 
 
-def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
+AI_PROMPT_DEFAULT = ("Fix {url}: read the issue, make the change with tests, and open a pull "
+                     "request on {host} following the repository's AI policy.")
+AI_PROMPT_MAX = 500
+AI_PROMPT_FIELD_RE = re.compile(r"\{(url|number|title|repo|host)\}")
+AI_PROMPT_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]")
+OFFICIAL_SERVICE_HOSTS = ("app.forkmesh.com", "forkmesh.com", "world.forkmesh.com")
+COLLAB_SETTINGS_PATHS = (".forkmesh/issues.json", ".forkmesh/pulls.json", "AI_POLICY.md")
+
+
+def public_site_origin(origin):
+    origin = str(origin or "").rstrip("/")
+    host = urllib.parse.urlsplit(origin).hostname or ""
+    return "https://forkmesh.com" if host.lower() in OFFICIAL_SERVICE_HOSTS else origin
+
+
+def prompt_template(blobs):
+    blob = (blobs or {}).get(".forkmesh/issues.json")
+    if not isinstance(blob, dict) or blob.get("encoding") == "base64":
+        return ""
+    try:
+        value = json.loads(str(blob.get("content") or blob.get("text") or ""))
+    except ValueError:
+        return ""
+    template = value.get("aiPromptTemplate") if isinstance(value, dict) else None
+    if not isinstance(template, str):
+        return ""
+    return " ".join(AI_PROMPT_CONTROL_RE.sub(" ", template).split())[:AI_PROMPT_MAX]
+
+
+def ai_prompt_text(ctx, number, title, repo, template=""):
+    origin = ctx.origin
+    fields = {"url": origin + ctx.record_url("issues", number), "number": str(number),
+              "title": str(title or ""), "repo": str(repo or ""),
+              "host": re.sub(r"/.*$", "", re.sub(r"^[a-z][a-z0-9+.-]*://", "", origin, flags=re.I))}
+    text = AI_PROMPT_FIELD_RE.sub(lambda match: fields[match.group(1)],
+                                  str(template or "") or AI_PROMPT_DEFAULT)
+    return re.sub(r"\s+", " ", AI_PROMPT_CONTROL_RE.sub(" ", text)).strip()
+
+
+def ai_prompt_html(ctx, number, title, repo, template=""):
+    prompt = esc(ai_prompt_text(ctx, number, title, repo, template))
+    return (
+        '<div data-repo-issue-ai-prompt class="mt-3 flex min-w-0 items-center gap-2 rounded-md '
+        'border border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1 pl-3 pr-1 text-[12px] '
+        'text-muted-foreground">\n            %s\n            <code '
+        'data-repo-issue-ai-prompt-text title="%s" class="min-w-0 flex-1 truncate font-mono '
+        'text-foreground">%s</code>\n            <button type="button" data-dashboard-copy="%s" '
+        'aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" '
+        'class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 '
+        'font-medium text-foreground hover:bg-secondary">%s%s<span class="copy-icon">Copy prompt'
+        '</span><span class="copy-check">Copied</span></button>\n          </div>' % (
+            icon("bot", "h-4 w-4", "shrink-0"), prompt, prompt, prompt,
+            icon("copy", "copy-icon h-3.5 w-3.5"), icon("check", "copy-check h-3.5 w-3.5")))
+
+
+def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both",
+                 repo="", prompt=""):
     now = time.time() if now is None else now
     number = issue["number"]
     title = issue["title"] or "Issue #%d" % number
@@ -1540,7 +1597,7 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
         '            <span data-repo-record-state class="inline-flex h-8 items-center gap-1.5 '
         'rounded-full %s px-3 font-medium text-white">%s%s</span>\n            <span>%s %s'
         '</span>\n            <span aria-hidden="true">·</span>\n            <span>%s %s</span>\n'
-        '          </p>\n        </header>\n        <div data-repo-record-layout class="mt-6 '
+        '          </p>\n          %s\n        </header>\n        <div data-repo-record-layout class="mt-6 '
         'grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">\n          <div class="grid min-w-0 '
         'gap-4 self-start">\n            <section data-repo-record-conversation class="grid '
         'min-w-0 gap-4">\n              %s\n              %s\n              <div '
@@ -1562,11 +1619,12 @@ def render_issue(issue, ctx, owner, path, index=None, now=None, viewer="both"):
         '      </article>' % (
             number, pill_class, icon(pill_icon, "h-3.5 w-3.5"), state_label, esc(title),
             record_label, esc(title), record_label,
-            esc(ctx.record_url("issues", number)),
+            esc(ctx.origin + ctx.record_url("issues", number)),
             icon("link", "copy-icon h-4 w-4"), icon("check", "copy-check h-4 w-4"),
             parents_html(ctx, parents), pill_class, icon(pill_icon, "h-4 w-4"), state_label,
             format_count(comments), "comment" if comments == 1 else "comments",
             format_count(len(people)), plural,
+            "" if closed else ai_prompt_html(ctx, number, title, repo, prompt),
             opening, sub_issues, "false" if timeline else "true", timeline, comment_box,
             icon("radio", "h-4 w-4"), icon("chevron-down",
                  "ml-auto h-4 w-4 transition-transform group-open:rotate-180"),

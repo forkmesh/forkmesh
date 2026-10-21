@@ -3867,13 +3867,13 @@
   // resulting portable binary patch + commit series. For a fork, comparison
   // happens on the fork's mirror while the signed, self-contained proposal is
   // delivered to the parent's durable inbox; the parent node can be offline.
-  async function submitWebPullOpen(repo, title, body, base, head) {
+  async function submitWebPullOpen(repo, title, body, base, head, aiModel = "") {
     const targetRepo = pullRequestTargetRepo(repo);
     const parent = pullRequestParent(repo);
     const signedHead = parent
       ? `${repoDisplayOwner(repo) || repo.owner}:${head}`
       : head;
-    const pull = await signWebPull(repo, targetRepo, title, body, base, head, signedHead);
+    const pull = withPullAiModel(await signWebPull(repo, targetRepo, title, body, base, head, signedHead), aiModel);
     const payload = { owner: targetRepo.owner, repo: targetRepo.name, pull };
     try {
       const data = await fetchRepoMutation(targetRepo, "pulls", payload);
@@ -3881,14 +3881,19 @@
     } catch (error) {
       if (targetRepo === repo || String(error?.code || error?.message || "") !== "read_only_mirror") throw error;
     }
-    const ownPull = await signWebPull(repo, repo, title, body, base, head, head);
+    const ownPull = withPullAiModel(await signWebPull(repo, repo, title, body, base, head, head), aiModel);
     const data = await fetchRepoMutation(repo, "pulls", { owner: repo.owner, repo: repo.name, pull: ownPull });
     return { ...data, pull: ownPull, targetRepo: repo };
   }
 
   const REMOTE_FORK_ORIGIN = /^https:\/\/[a-z0-9.-]+(?::\d{1,5})?$/;
 
-  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "") {
+  function withPullAiModel(pull, aiModel) {
+    const model = cleanAiModel(String(aiModel || ""));
+    return model ? { ...pull, aiModel: model } : pull;
+  }
+
+  async function submitRemotePullOpen(repo, remote, title, body, base, head, compareBase = "", aiModel = "") {
     const origin = String(remote?.origin || "").toLowerCase();
     const owner = String(remote?.owner || "");
     const name = String(remote?.name || "");
@@ -3896,7 +3901,7 @@
       throw new Error("invalid_remote_fork");
     }
     const signedHead = `${location.host}/${repoDisplayKey(repo)}:${head}`;
-    const pull = await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase);
+    const pull = withPullAiModel(await signWebPull(repo, { owner, name }, title, body, base, head, signedHead, compareBase), aiModel);
     let response;
     try {
       response = await fetch(`${origin}/api/repo/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/pulls`, {
@@ -23237,6 +23242,7 @@
             <span class="min-w-0">${isPulls
               ? `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> wants to merge <span data-repo-pull-commit-phrase>${pullCommitPhrase(pullCommitCount)}</span> into ${branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}<button type="button" data-dashboard-copy="${escapeHtml(headBranch)}" aria-label="Copy head branch name" title="Copy head branch name" class="copy-button ml-1 inline-flex h-6 w-6 items-center justify-center rounded-md align-middle text-muted-foreground hover:bg-secondary hover:text-foreground"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i></button>`
               : `<span class="font-semibold text-foreground">${userNameHtml(author)}</span> started this conversation in <span class="font-semibold text-foreground">${escapeHtml(discussionCategory)}</span> <time datetime="${escapeHtml(fullDate.iso)}" title="${escapeHtml(fullDate.label)}">${escapeHtml(date)}</time> · ${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}`}</span>
+            ${isPulls ? renderPullAiModelChip(values, body, parsed.repoCollabSettings) : ""}
           </div>
           ${recordTabs}
         </header>
@@ -23320,6 +23326,122 @@
   // opening comment as the first card of the conversation (the only place the
   // author is named, issue #651), the composer at the foot of the thread, and
   // metadata in the sidebar. Rare actions live at the bottom of the sidebar.
+  const REPO_COLLAB_SETTINGS_PATHS = [".forkmesh/issues.json", ".forkmesh/pulls.json", "AI_POLICY.md"];
+  const AI_MODEL_MAX = 80;
+  const AI_MODEL_SUGGESTIONS = ["Claude Opus 5.5", "Claude Sonnet 5.5", "GPT-5", "Gemini", "GitHub Copilot", "OpenAI Codex", "Cursor", "A local model", "None"];
+  const ISSUE_AI_PROMPT_DEFAULT = "Fix {url}: read the issue, make the change with tests, and open a pull request on {host} following the repository's AI policy.";
+  const ISSUE_AI_PROMPT_MAX = 500;
+
+  function repoCollabSettingsFromBlobs(blobs) {
+    const json = (path) => {
+      const blob = blobs?.[path];
+      if (!blob) return {};
+      try {
+        const value = JSON.parse(blobText(blob));
+        return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+      } catch (_) {
+        return {};
+      }
+    };
+    const issues = json(".forkmesh/issues.json");
+    const pulls = json(".forkmesh/pulls.json");
+    const template = typeof issues.aiPromptTemplate === "string"
+      ? issues.aiPromptTemplate.replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim().slice(0, ISSUE_AI_PROMPT_MAX)
+      : "";
+    return {
+      aiPromptTemplate: template,
+      requireAiDisclosure: pulls.requireAiDisclosure === true,
+      aiPolicy: Boolean(blobs?.["AI_POLICY.md"]),
+    };
+  }
+
+  async function loadRepoCollabSettings(repo) {
+    if (!repo) return repoCollabSettingsFromBlobs({});
+    state.repoCollabSettings = state.repoCollabSettings || {};
+    const key = repoKey(repo).toLowerCase();
+    const cached = state.repoCollabSettings[key];
+    if (cached && Date.now() - cached.at < 60000) return cached.settings;
+    try {
+      const settings = repoCollabSettingsFromBlobs(
+        await fetchRepoBlobs(repo, REPO_COLLAB_SETTINGS_PATHS, { ref: repoDefaultBranch(repo) }));
+      state.repoCollabSettings[key] = { at: Date.now(), settings };
+      return settings;
+    } catch (_) {
+      return cached?.settings || repoCollabSettingsFromBlobs({});
+    }
+  }
+
+  function cleanAiModel(value) {
+    if (typeof value !== "string") return "";
+    return value.replace(/[*`]/g, "").replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ")
+      .replace(/\s+/g, " ").trim().slice(0, AI_MODEL_MAX).trim();
+  }
+
+  function aiModelIsNone(value) {
+    return /^(?:none|no|no ai|no ai used|not used|n\/?a|nothing|human|human only|no model|-)$/i.test(cleanAiModel(value));
+  }
+
+  function aiModelFromBody(body) {
+    for (const line of String(body || "").split(/\r\n|[\r\n\u2028\u2029]/)) {
+      const match = /^\s*(?:[-*+>]\s+)?AI[ -]?models?(?:\(s\))?(?:\s+used)?\s*:\s*(.+?)\s*$/i.exec(line.replace(/\*/g, ""));
+      const value = match ? cleanAiModel(match[1]) : "";
+      if (value) return value;
+    }
+    return "";
+  }
+
+  function aiModelFromCommits(mbox) {
+    const messages = String(mbox || "").split(/(?=^From [0-9a-f]{7,64} )/mi).filter((part) => part.trim());
+    for (const message of messages.reverse()) {
+      const attested = /^\s*ForkMesh-Agent:\s*([A-Za-z0-9._-]{1,40})\/([A-Za-z0-9._:-]{1,64})\s*$/mi.exec(message);
+      if (attested) return cleanAiModel(attested[2]);
+      for (const match of message.matchAll(/^\s*Co-authored-by:\s*([^<\n]+?)\s*(?:<[^>\n]*>)?\s*$/gmi)) {
+        const name = cleanAiModel(match[1]);
+        if (name && /\b(?:claude|opus|sonnet|haiku|gpt|chatgpt|openai|o[1-9]|gemini|copilot|codex|cursor|llama|mistral|mixtral|deepseek|qwen|grok|devin|aider|windsurf|jules|kimi|phi|glm)\b/i.test(name)) return name;
+      }
+    }
+    return "";
+  }
+
+  function pullAiModel(values, body) {
+    return cleanAiModel(values?.aiModel) || aiModelFromBody(body);
+  }
+
+  function renderPullAiModelChip(values, body, settings) {
+    const model = pullAiModel(values, body);
+    const chip = "inline-flex h-6 max-w-full items-center gap-1 rounded-full border px-2 text-[12px] font-medium";
+    if (model) {
+      const none = aiModelIsNone(model);
+      const label = none ? "No AI" : `AI: ${model}`;
+      return `<span data-repo-pull-ai-model="${none ? "none" : "stated"}" title="${escapeHtml(none ? "The author says no AI model was used." : `AI model(s) used, as stated by the author: ${model}`)}" class="${chip} min-w-0 border-border text-muted-foreground"><i data-lucide="${none ? "user" : "bot"}" class="h-3.5 w-3.5 shrink-0"></i><span class="truncate">${escapeHtml(label)}</span></span>`;
+    }
+    if (!settings?.requireAiDisclosure) return "";
+    return `<span data-repo-pull-ai-model="missing" title="This repository asks every pull request to say which AI model was used, and this one does not." class="${chip} border-attention/40 text-attention"><i data-lucide="triangle-alert" class="h-3.5 w-3.5 shrink-0"></i>AI model: not stated</span>`;
+  }
+
+  function issueAiPromptText(repo, number, title, template = "") {
+    const origin = publicSiteOrigin();
+    const fields = {
+      url: `${origin}${repoRecordUrl(repo, "issues", number)}`,
+      number: String(number),
+      title: String(title || ""),
+      repo: String(repo?.name || ""),
+      host: origin.replace(/^[a-z][a-z0-9+.-]*:\/\//i, "").replace(/\/.*$/, ""),
+    };
+    return String(template || ISSUE_AI_PROMPT_DEFAULT)
+      .replace(/\{(url|number|title|repo|host)\}/g, (_, name) => fields[name])
+      .replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  function renderIssueAiPrompt(repo, number, title, template = "") {
+    const prompt = issueAiPromptText(repo, number, title, template);
+    return `<div data-repo-issue-ai-prompt class="mt-3 flex min-w-0 items-center gap-2 rounded-md border border-border bg-[rgb(var(--dashboard-subtle-rgb))] py-1 pl-3 pr-1 text-[12px] text-muted-foreground">
+            <i data-lucide="bot" class="h-4 w-4 shrink-0"></i>
+            <code data-repo-issue-ai-prompt-text title="${escapeHtml(prompt)}" class="min-w-0 flex-1 truncate font-mono text-foreground">${escapeHtml(prompt)}</code>
+            <button type="button" data-dashboard-copy="${escapeHtml(prompt)}" aria-label="AI prompt for this issue" title="Copy this prompt into your coding agent" class="copy-button inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 font-medium text-foreground hover:bg-secondary"><i data-lucide="copy" class="copy-icon h-3.5 w-3.5"></i><i data-lucide="check" class="copy-check h-3.5 w-3.5"></i><span class="copy-icon">Copy prompt</span><span class="copy-check">Copied</span></button>
+          </div>`;
+  }
+
   function renderRepoIssueDetail(repo, number, parsed) {
     const values = parsed.values || {};
     const title = values.title || `Issue #${number}`;
@@ -23481,6 +23603,7 @@
             <span aria-hidden="true">·</span>
             <span>${formatCount(participants.length)} ${participants.length === 1 ? "participant" : "participants"}</span>
           </p>
+          ${closed ? "" : renderIssueAiPrompt(repo, number, title, parsed.repoCollabSettings?.aiPromptTemplate || "")}
         </header>
         <div data-repo-record-layout class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -23538,6 +23661,7 @@
       </div>`;
     const labels = Array.isArray(item?.labels) ? item.labels : [];
     const assignees = Array.isArray(item?.assignees) ? item.assignees : [];
+    const cachedSettings = state.repoCollabSettings?.[repoKey(repo).toLowerCase()]?.settings;
     return `
       <article data-repo-issue-skeleton="${escapeHtml(number)}" aria-busy="true" aria-label="Loading issue #${escapeHtml(number)}" class="min-w-0">
         <header class="border-b border-border pb-4">
@@ -23554,6 +23678,7 @@
               ? `<span class="inline-flex h-8 items-center gap-1.5 rounded-full ${closed ? "bg-[#6e7681]" : "bg-success"} px-3 font-medium text-white"><i data-lucide="${closed ? "circle-check" : "circle-dot"}" class="h-4 w-4"></i>${closed ? "Closed" : "Open"}</span><span>${formatCount(Number(item.commentCount) || 0)} ${Number(item.commentCount) === 1 ? "comment" : "comments"}</span>`
               : `${bar("w-20", "h-8 rounded-full")}${bar("w-24")}`}
           </p>
+          ${item && !closed ? renderIssueAiPrompt(repo, number, item.title, cachedSettings?.aiPromptTemplate || "") : ""}
         </header>
         <div class="mt-6 grid gap-8 lg:grid-cols-[minmax(0,1fr)_18.5rem]">
           <div class="grid min-w-0 gap-4 self-start">
@@ -24227,6 +24352,7 @@
         ])
         : null;
       issueAccess?.catch(() => {});
+      const collabSettings = kind === "discussions" ? null : loadRepoCollabSettings(repo);
       let blob;
       if (kind === "issues") {
         blob = await fetchRepoIssueBlob(repo, Number(number));
@@ -24260,6 +24386,7 @@
         parsed.issueSubIssues = subIssues;
         parsed.issueMentions = issueMentionsOf(relationIndex, number);
       }
+      if (collabSettings) parsed.repoCollabSettings = await collabSettings;
       if (kind === "pulls") {
         parsed.pullMetadataCommit = pullMetadataCommit;
         const values = parsed.values || {};
@@ -30548,7 +30675,8 @@
     const title = String(session?.title || branchFacts.branch).trim().slice(0, 160) || branchFacts.branch;
     let opened;
     try {
-      opened = await submitWebPullOpen(repo, title, orgAgentPullDescription(session, branchFacts), base, branchFacts.branch);
+      opened = await submitWebPullOpen(repo, title, orgAgentPullDescription(session, branchFacts), base, branchFacts.branch,
+        String(session?.model || "").trim() || orgAgentProviderLabel(session));
     } catch (error) {
       const code = String(error?.message || "");
       throw new Error(code === "no_changes"
@@ -33218,6 +33346,9 @@
     if (code === "no_changes") return "Those branches do not contain any changes to propose.";
     if (code === "invalid_comparison") return "The mirror returned an invalid branch comparison.";
     if (code === "bad_signature") return "Could not verify the pull request's signature.";
+    if (code === "ai_disclosure_required") {
+      return `${target || "This repository"} asks every pull request to say which AI model(s) helped write it. Fill in "AI model(s) used" (or None) and send it again.`;
+    }
     // The delivery route answers 404 for a repository it has no public record
     // of - a private or unpublished address, or a fork parent this catalog
     // cannot resolve. "Try again" is the one thing that cannot help there.
@@ -33634,6 +33765,12 @@
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">Description
           <textarea data-repo-pull-body data-mention-input="repo" rows="6" placeholder="Describe the change. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
         </label>
+        <div data-repo-pull-ai class="grid gap-1 text-xs font-medium text-muted-foreground">
+          <label for="repo-pull-ai-model" class="inline-flex items-center gap-1.5"><i data-lucide="bot" class="h-3.5 w-3.5"></i>AI model(s) used<span data-repo-pull-ai-required hidden class="font-normal text-destructive">required</span></label>
+          <input id="repo-pull-ai-model" data-repo-pull-ai-model type="text" list="repo-pull-ai-models" maxlength="${AI_MODEL_MAX}" autocomplete="off" spellcheck="false" placeholder="e.g. Claude Opus 5.5, or None" value="${escapeHtml(cleanAiModel(String(preset?.aiModel || "")))}" aria-describedby="repo-pull-ai-hint" class="h-9 min-w-0 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent" />
+          <datalist id="repo-pull-ai-models">${AI_MODEL_SUGGESTIONS.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist>
+          <span id="repo-pull-ai-hint" data-repo-pull-ai-hint class="text-[11px] font-normal">${preset?.aiModel ? "Filled in from the head commit's trailer; change it if it is wrong. " : ""}Name every AI model or agent that helped write this change, or None.<span data-repo-pull-ai-policy hidden> Read the <a data-repo-pull-ai-policy-link href="#" class="font-medium text-accent hover:underline">AI policy</a>.</span></span>
+        </div>
         <div class="rounded-md border border-dashed border-border bg-secondary/20 px-3 py-2 text-[11px] text-muted-foreground">${parent
           ? `The diff is resolved on <span class="font-mono text-foreground">${escapeHtml(sourceLabel)}</span>, signed in this browser, and submitted to <span class="font-mono text-foreground">${escapeHtml(targetLabel)}</span>. The portable patch remains deliverable while the parent node is offline.`
           : "The diff is resolved from the selected branches, signed in this browser, and delivered directly to an eligible online mirror."}</div>
@@ -33653,6 +33790,23 @@
     if (headSelect) headSelect.value = headDefault;
     container.querySelector("[data-repo-pull-title]")?.focus();
     void fillPullComposeTargets(repo, container.querySelector("[data-repo-pull-new-form]"));
+    void fillPullComposeAiDisclosure(targetRepo, container.querySelector("[data-repo-pull-new-form]"));
+  }
+
+  async function fillPullComposeAiDisclosure(targetRepo, form) {
+    const settings = await loadRepoCollabSettings(targetRepo);
+    if (!form?.isConnected) return;
+    const input = form.querySelector("[data-repo-pull-ai-model]");
+    if (input) input.required = settings.requireAiDisclosure;
+    form.dataset.repoPullAiRequired = settings.requireAiDisclosure ? "true" : "false";
+    const required = form.querySelector("[data-repo-pull-ai-required]");
+    if (required) required.hidden = !settings.requireAiDisclosure;
+    const policy = form.querySelector("[data-repo-pull-ai-policy]");
+    const link = form.querySelector("[data-repo-pull-ai-policy-link]");
+    if (policy && link && settings.aiPolicy) {
+      link.href = repoLinkUrl(targetRepo, "blob", "AI_POLICY.md");
+      policy.hidden = false;
+    }
   }
 
   async function fillPullComposeTargets(repo, form) {
@@ -33790,6 +33944,7 @@
       baseOid: String(comparison?.baseOid || ""),
       headOid: String(comparison?.headOid || ""),
       mergeBaseOid: String(comparison?.mergeBaseOid || ""),
+      aiModel: aiModelFromCommits(String(comparison?.commits || "")),
     };
     const viewed = loadRepoCompareViewed(repo, compare);
     const painted = paint(`
@@ -33813,12 +33968,12 @@
     if (first) setRepoPullActiveFile(first, { revealRow: true });
   }
 
-  async function handleRemotePullSubmit(repo, remote, { title, body, base, head, submit, setHint, titleInput, bodyInput }) {
+  async function handleRemotePullSubmit(repo, remote, { title, body, base, head, aiModel, submit, setHint, titleInput, bodyInput }) {
     const where = `${remote.owner}/${remote.name} on ${remote.host}`;
     setSubmitBusy(submit, true, "Creating pull request…");
     setHint(`Signing and sending to ${where}…`);
     try {
-      const result = await submitRemotePullOpen(repo, remote, title, body, base, head);
+      const result = await submitRemotePullOpen(repo, remote, title, body, base, head, "", aiModel);
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
       if (titleInput) titleInput.value = "";
@@ -33865,15 +34020,22 @@
       return;
     }
     const body = String(bodyInput?.value || "");
+    const aiInput = form.querySelector("[data-repo-pull-ai-model]");
+    const aiModel = cleanAiModel(String(aiInput?.value || ""));
+    if (!aiModel && form.dataset.repoPullAiRequired === "true") {
+      setHint("This repository asks which AI model(s) helped write the change. Name them, or enter None.", "bad");
+      aiInput?.focus();
+      return;
+    }
     const remote = pullComposeRemoteTarget(form);
     if (remote) {
-      await handleRemotePullSubmit(repo, remote, { title, body, base, head, submit, setHint, titleInput, bodyInput });
+      await handleRemotePullSubmit(repo, remote, { title, body, base, head, aiModel, submit, setHint, titleInput, bodyInput });
       return;
     }
     setSubmitBusy(submit, true, "Creating pull request…");
     setHint("Signing and sending…");
     try {
-      const result = await submitWebPullOpen(repo, title, body, base, head);
+      const result = await submitWebPullOpen(repo, title, body, base, head, aiModel);
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) {
         throw new Error("number_unavailable");
@@ -33913,6 +34075,7 @@
           author: result.pull.author,
           authorName: result.pull.authorName || item.author,
           ts: result.pull.ts,
+          ...(result.pull.aiModel ? { aiModel: result.pull.aiModel } : {}),
         },
         body,
         pullPatch: {
@@ -37428,6 +37591,12 @@
     return out;
   }
 
+  function pullBatchAiModel(value) {
+    return typeof value === "string"
+      ? value.replace(/[*`]/g, "").replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80).trim()
+      : "";
+  }
+
   function parsePullBatchFile(text, defaultBranch = "main") {
     let data;
     try {
@@ -37438,6 +37607,7 @@
     const list = Array.isArray(data) ? data : Array.isArray(data?.pulls) ? data.pulls : null;
     if (!list) return { entries: [], error: `${PULL_BATCH_FILE} must be a list of pull requests.`, compareBase: "" };
     const sharedCompareBase = Array.isArray(data) ? "" : pullBatchBranchName(data?.compareBase);
+    const sharedAiModel = Array.isArray(data) ? "" : pullBatchAiModel(data?.aiModel);
     const entries = [];
     const seen = new Set();
     for (const item of list.slice(0, PULL_BATCH_MAX_ROWS)) {
@@ -37445,6 +37615,7 @@
       const branch = pullBatchBranchName(item.branch || item.head);
       if (!branch || seen.has(branch)) continue;
       seen.add(branch);
+      const aiModel = pullBatchAiModel(item.aiModel) || sharedAiModel;
       entries.push({
         branch,
         base: pullBatchBranchName(item.base) || defaultBranch,
@@ -37453,6 +37624,7 @@
         dependsOn: pullBatchDependencyList(item.dependsOn ?? item.depends_on).filter((name) => name !== branch),
         compareBase: pullBatchBranchName(item.compareBase),
         sharedCompareBase,
+        ...(aiModel ? { aiModel } : {}),
       });
     }
     return { entries, error: "", compareBase: sharedCompareBase };
@@ -37769,7 +37941,7 @@
         batch.sending = row.branch;
         onChange(batch);
         try {
-          const result = await send(repo, remote, row.title, pullBatchBody(row.body, step.numbers), row.base, row.branch, pullBatchCompareBase(row));
+          const result = await send(repo, remote, row.title, pullBatchBody(row.body, step.numbers), row.base, row.branch, pullBatchCompareBase(row), row.aiModel || "");
           const number = Number(result?.number || 0);
           if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
           batch.sent = { ...batch.sent, [row.branch]: { number, at: Date.now() } };
@@ -41925,7 +42097,7 @@
         }
         const { base, head } = state.repoCompare;
         navigateHistory(`${repoLinkUrl(state.selectedRepo)}/pulls`);
-        openPullCompose(state.selectedRepo, { base, head });
+        openPullCompose(state.selectedRepo, { base, head, aiModel: state.repoCompare.result?.aiModel || "" });
         return;
       }
 

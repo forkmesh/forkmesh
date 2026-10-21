@@ -331,6 +331,9 @@
     if (code === "no_changes") return "Those branches do not contain any changes to propose.";
     if (code === "invalid_comparison") return "The mirror returned an invalid branch comparison.";
     if (code === "bad_signature") return "Could not verify the pull request's signature.";
+    if (code === "ai_disclosure_required") {
+      return `${target || "This repository"} asks every pull request to say which AI model(s) helped write it. Fill in "AI model(s) used" (or None) and send it again.`;
+    }
     // The delivery route answers 404 for a repository it has no public record
     // of - a private or unpublished address, or a fork parent this catalog
     // cannot resolve. "Try again" is the one thing that cannot help there.
@@ -747,6 +750,12 @@
         <label class="grid gap-1 text-xs font-medium text-muted-foreground">Description
           <textarea data-repo-pull-body data-mention-input="repo" rows="6" placeholder="Describe the change. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
         </label>
+        <div data-repo-pull-ai class="grid gap-1 text-xs font-medium text-muted-foreground">
+          <label for="repo-pull-ai-model" class="inline-flex items-center gap-1.5"><i data-lucide="bot" class="h-3.5 w-3.5"></i>AI model(s) used<span data-repo-pull-ai-required hidden class="font-normal text-destructive">required</span></label>
+          <input id="repo-pull-ai-model" data-repo-pull-ai-model type="text" list="repo-pull-ai-models" maxlength="${AI_MODEL_MAX}" autocomplete="off" spellcheck="false" placeholder="e.g. Claude Opus 5.5, or None" value="${escapeHtml(cleanAiModel(String(preset?.aiModel || "")))}" aria-describedby="repo-pull-ai-hint" class="h-9 min-w-0 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent" />
+          <datalist id="repo-pull-ai-models">${AI_MODEL_SUGGESTIONS.map((name) => `<option value="${escapeHtml(name)}"></option>`).join("")}</datalist>
+          <span id="repo-pull-ai-hint" data-repo-pull-ai-hint class="text-[11px] font-normal">${preset?.aiModel ? "Filled in from the head commit's trailer; change it if it is wrong. " : ""}Name every AI model or agent that helped write this change, or None.<span data-repo-pull-ai-policy hidden> Read the <a data-repo-pull-ai-policy-link href="#" class="font-medium text-accent hover:underline">AI policy</a>.</span></span>
+        </div>
         <div class="rounded-md border border-dashed border-border bg-secondary/20 px-3 py-2 text-[11px] text-muted-foreground">${parent
           ? `The diff is resolved on <span class="font-mono text-foreground">${escapeHtml(sourceLabel)}</span>, signed in this browser, and submitted to <span class="font-mono text-foreground">${escapeHtml(targetLabel)}</span>. The portable patch remains deliverable while the parent node is offline.`
           : "The diff is resolved from the selected branches, signed in this browser, and delivered directly to an eligible online mirror."}</div>
@@ -766,6 +775,23 @@
     if (headSelect) headSelect.value = headDefault;
     container.querySelector("[data-repo-pull-title]")?.focus();
     void fillPullComposeTargets(repo, container.querySelector("[data-repo-pull-new-form]"));
+    void fillPullComposeAiDisclosure(targetRepo, container.querySelector("[data-repo-pull-new-form]"));
+  }
+
+  async function fillPullComposeAiDisclosure(targetRepo, form) {
+    const settings = await loadRepoCollabSettings(targetRepo);
+    if (!form?.isConnected) return;
+    const input = form.querySelector("[data-repo-pull-ai-model]");
+    if (input) input.required = settings.requireAiDisclosure;
+    form.dataset.repoPullAiRequired = settings.requireAiDisclosure ? "true" : "false";
+    const required = form.querySelector("[data-repo-pull-ai-required]");
+    if (required) required.hidden = !settings.requireAiDisclosure;
+    const policy = form.querySelector("[data-repo-pull-ai-policy]");
+    const link = form.querySelector("[data-repo-pull-ai-policy-link]");
+    if (policy && link && settings.aiPolicy) {
+      link.href = repoLinkUrl(targetRepo, "blob", "AI_POLICY.md");
+      policy.hidden = false;
+    }
   }
 
   async function fillPullComposeTargets(repo, form) {
@@ -903,6 +929,7 @@
       baseOid: String(comparison?.baseOid || ""),
       headOid: String(comparison?.headOid || ""),
       mergeBaseOid: String(comparison?.mergeBaseOid || ""),
+      aiModel: aiModelFromCommits(String(comparison?.commits || "")),
     };
     const viewed = loadRepoCompareViewed(repo, compare);
     const painted = paint(`
@@ -926,12 +953,12 @@
     if (first) setRepoPullActiveFile(first, { revealRow: true });
   }
 
-  async function handleRemotePullSubmit(repo, remote, { title, body, base, head, submit, setHint, titleInput, bodyInput }) {
+  async function handleRemotePullSubmit(repo, remote, { title, body, base, head, aiModel, submit, setHint, titleInput, bodyInput }) {
     const where = `${remote.owner}/${remote.name} on ${remote.host}`;
     setSubmitBusy(submit, true, "Creating pull request…");
     setHint(`Signing and sending to ${where}…`);
     try {
-      const result = await submitRemotePullOpen(repo, remote, title, body, base, head);
+      const result = await submitRemotePullOpen(repo, remote, title, body, base, head, "", aiModel);
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
       if (titleInput) titleInput.value = "";
@@ -978,15 +1005,22 @@
       return;
     }
     const body = String(bodyInput?.value || "");
+    const aiInput = form.querySelector("[data-repo-pull-ai-model]");
+    const aiModel = cleanAiModel(String(aiInput?.value || ""));
+    if (!aiModel && form.dataset.repoPullAiRequired === "true") {
+      setHint("This repository asks which AI model(s) helped write the change. Name them, or enter None.", "bad");
+      aiInput?.focus();
+      return;
+    }
     const remote = pullComposeRemoteTarget(form);
     if (remote) {
-      await handleRemotePullSubmit(repo, remote, { title, body, base, head, submit, setHint, titleInput, bodyInput });
+      await handleRemotePullSubmit(repo, remote, { title, body, base, head, aiModel, submit, setHint, titleInput, bodyInput });
       return;
     }
     setSubmitBusy(submit, true, "Creating pull request…");
     setHint("Signing and sending…");
     try {
-      const result = await submitWebPullOpen(repo, title, body, base, head);
+      const result = await submitWebPullOpen(repo, title, body, base, head, aiModel);
       const number = Number(result.number || 0);
       if (!Number.isInteger(number) || number <= 0) {
         throw new Error("number_unavailable");
@@ -1026,6 +1060,7 @@
           author: result.pull.author,
           authorName: result.pull.authorName || item.author,
           ts: result.pull.ts,
+          ...(result.pull.aiModel ? { aiModel: result.pull.aiModel } : {}),
         },
         body,
         pullPatch: {

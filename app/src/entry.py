@@ -40901,6 +40901,11 @@ async def pulls_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, pull)
         if refused is not None:
             return refused
+        disclosure_check = globals().get("pull_ai_disclosure_check")
+        if disclosure_check is not None:
+            refusal = await disclosure_check(env, owner, repo, pull)
+            if refusal is not None:
+                return json_response(refusal, status=422)
         submission_bi = await blind_index(
             env, "pull-submission:" + pull.get("author", "") + ":" +
             pull.get("sig", ""))
@@ -51183,6 +51188,8 @@ repository_pull_merge_handler = _route_handlers.export("repository_pull_merge_ha
 _pull_rules = _LazyModule("pull_rules")
 _branch_protection = _LazyModule("branch_protection")
 repo_pull_rules_handler = _pull_rules.export("repo_pull_rules_handler")
+_ai_disclosure = _LazyModule("ai_disclosure")
+pull_ai_disclosure_check = _ai_disclosure.export("pull_ai_disclosure_check")
 org_pull_rules_handler = _pull_rules.export("org_pull_rules_handler")
 repository_branch_ops_handler = _route_handlers.export("repository_branch_ops_handler")
 repository_branch_op_results_handler = _route_handlers.export(

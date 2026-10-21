@@ -47,6 +47,12 @@
     return out;
   }
 
+  function pullBatchAiModel(value) {
+    return typeof value === "string"
+      ? value.replace(/[*`]/g, "").replace(/[\u0000-\u001f\u007f\u2028\u2029]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80).trim()
+      : "";
+  }
+
   function parsePullBatchFile(text, defaultBranch = "main") {
     let data;
     try {
@@ -57,6 +63,7 @@
     const list = Array.isArray(data) ? data : Array.isArray(data?.pulls) ? data.pulls : null;
     if (!list) return { entries: [], error: `${PULL_BATCH_FILE} must be a list of pull requests.`, compareBase: "" };
     const sharedCompareBase = Array.isArray(data) ? "" : pullBatchBranchName(data?.compareBase);
+    const sharedAiModel = Array.isArray(data) ? "" : pullBatchAiModel(data?.aiModel);
     const entries = [];
     const seen = new Set();
     for (const item of list.slice(0, PULL_BATCH_MAX_ROWS)) {
@@ -64,6 +71,7 @@
       const branch = pullBatchBranchName(item.branch || item.head);
       if (!branch || seen.has(branch)) continue;
       seen.add(branch);
+      const aiModel = pullBatchAiModel(item.aiModel) || sharedAiModel;
       entries.push({
         branch,
         base: pullBatchBranchName(item.base) || defaultBranch,
@@ -72,6 +80,7 @@
         dependsOn: pullBatchDependencyList(item.dependsOn ?? item.depends_on).filter((name) => name !== branch),
         compareBase: pullBatchBranchName(item.compareBase),
         sharedCompareBase,
+        ...(aiModel ? { aiModel } : {}),
       });
     }
     return { entries, error: "", compareBase: sharedCompareBase };
@@ -388,7 +397,7 @@
         batch.sending = row.branch;
         onChange(batch);
         try {
-          const result = await send(repo, remote, row.title, pullBatchBody(row.body, step.numbers), row.base, row.branch, pullBatchCompareBase(row));
+          const result = await send(repo, remote, row.title, pullBatchBody(row.body, step.numbers), row.base, row.branch, pullBatchCompareBase(row), row.aiModel || "");
           const number = Number(result?.number || 0);
           if (!Number.isInteger(number) || number <= 0) throw new Error("number_unavailable");
           batch.sent = { ...batch.sent, [row.branch]: { number, at: Date.now() } };
