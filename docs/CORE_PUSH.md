@@ -14,6 +14,8 @@ Code: `app/src/entry.py` (`_https_mirror_push_proxy`, `_core_push_permitted`,
 moves, branch deletes and trash listing, audit, hooks),
 `tools/mirror_gateway.py` (`enforce_push_ref_policy`, `X-ForkMesh-Ref-Updates`),
 `server/gateway.go` (`adoptAdmittedTagMoves`), migration `0205_git_tag_moves`.
+Each accepted branch push is also recorded for the pusher's "recent pushes"
+bar ([app/recent-push-banner.md](app/recent-push-banner.md)).
 
 ## Who can push
 

@@ -2032,6 +2032,12 @@
     return { base, head };
   }
 
+  function repoCompareRouteOptions(search) {
+    const params = new URLSearchParams(String(search || ""));
+    const title = String(params.get("title") || "").replace(/\s+/g, " ").trim().slice(0, 240);
+    return { expand: params.get("expand") === "1", title };
+  }
+
   // Pushes a new history entry for real in-app navigations (opening a repo,
   // browsing into a folder/file, leaving a repo for another section) so the
   // browser Back/Forward buttons step through them one at a time instead of

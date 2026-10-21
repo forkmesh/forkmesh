@@ -209,6 +209,7 @@
       initDashboardFeedback();
       initPluginMenu();
       initDashboardUpdateNotice();
+      initRecentPushes();
       (PAGE_INITS[currentPage()] || initHomePage)();
       initPageHistory();
       if (state.repoAddressesChanged) refreshRepoAddressViews();

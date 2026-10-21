@@ -13505,7 +13505,7 @@ SCHEMA_ALTER_STATEMENTS = [
 # idempotent applier below. test_local_migrations pins this literal to both the
 # runtime statement lists and the latest migration whenever either changes.
 _SCHEMA_FINGERPRINT = (
-    "c42d16ef4a1708560657263b86ef151172e3f35dae0b14f9f8ae36fcc7562e21"
+    "ae5ccde69093183bf1d26cb21efc06c5dd8cd7c814cd41b05e1451d9b9451688"
 )
 
 
@@ -16190,6 +16190,11 @@ queue_runner_actions = _core_push.export("queue_runner_actions")
 core_push_tag_moves_handler = _core_push.export("tag_moves_handler")
 core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
+_recent_pushes = _LazyModule("recent_pushes")
+recent_push_remember = _recent_pushes.export("remember")
+recent_push_forget = _recent_pushes.export("forget_branches")
+recent_push_mark_pulled = _recent_pushes.export("mark_pulled")
+recent_pushes_handler = _recent_pushes.export("handler")
 
 
 def _repo_identity_from_clone_url(value):
@@ -18786,6 +18791,7 @@ _REPO_SCOPED_TABLES = (
     ("private_mirror_routes", "repo_bi"),
     ("pull_batch_sent", "repo_bi"),
     ("pull_submission_receipts", "repo_bi"),
+    ("recent_pushes", "repo_bi"),
     ("release_downloads", "repo_bi"),
     ("repo_media", "repo_bi"),
     ("repo_merge_jobs", "repo_bi"),
@@ -18980,6 +18986,7 @@ async def _delete_account_namespace(env, name_bi, rec):
         env, "DELETE FROM referral_click_seen WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM referral_stats WHERE referrer_bi=?", name_bi)
     await d1_run(env, "DELETE FROM notifications WHERE recipient_bi=?", name_bi)
+    await d1_run(env, "DELETE FROM recent_pushes WHERE account_bi=?", name_bi)
     await d1_run(env, "DELETE FROM profile_follows WHERE follower_bi=? OR target_bi=?", name_bi, name_bi)
     await d1_run(env, "DELETE FROM login_attempts WHERE id_bi=?", name_bi)
     await d1_run(
@@ -40993,6 +41000,11 @@ async def pulls_handler(env, request, owner, repo):
         await _record_contributor(
             env, pull.get("author", ""), "pulls",
             pull.get("authorName", ""))
+        try:
+            await recent_push_mark_pulled(
+                env, repo_bi, clean_string(pull.get("head", ""), 260))
+        except Exception:
+            pass
         actor = clean_string(pull.get("authorName", "") or pull.get("author", ""), MAX_NODE_NAME).lower()
         title = clean_string(pull.get("title", "") or pull.get("subject", ""), 240)
         await notify_pending_inbox(
@@ -52457,7 +52469,8 @@ async def _https_mirror_push_send(
                     env, owner, repo, endpoint, account,
                     _ref_updates_from(upstream), core=core_push,
                     state=state, tag_moves=tag_moves,
-                    credential=credential, contributor=bool(push_prefix))
+                    credential=credential, contributor=bool(push_prefix),
+                    alias=alias_owner)
             except Exception:
                 pass
         return upstream, endpoint

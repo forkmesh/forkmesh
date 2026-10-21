@@ -5538,6 +5538,10 @@ async def _branch_delete_create(env, request, owner, repo, repo_bi, data,
             status=409, cache_control="no-store")
     wanted, refused = _branch_delete_wanted(
         items, agent_branches.git_branch_name)
+    try:
+        await recent_push_forget(env, repo_bi, [name for name, _ in wanted])
+    except Exception:
+        pass
     now = int(Date.now())
     job = {"owner": owner, "repo": repo, "repoBi": repo_bi, "actor": actor,
            "state": "running", "items": list(refused), "createdAt": now,

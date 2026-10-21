@@ -65,6 +65,7 @@ Start with [architecture.md](architecture.md), then [PLAN.md](PLAN.md) and
 - [app/instance-legal-pages.md](app/instance-legal-pages.md): Terms, Privacy and Security pages on self-hosted instances.
 - [app/instance-federation.md](app/instance-federation.md): self-hosted instances joining the forkmesh.com directory and the ForkMesh World.
 - [app/security-advisories.md](app/security-advisories.md): private vulnerability reporting, security advisories (OSV export, signed repository ledger) and researcher credits.
+- [app/recent-push-banner.md](app/recent-push-banner.md): the "had recent pushes · Compare & pull request" bar for branches the signed-in account just pushed.
 - [app/branch-protection.md](app/branch-protection.md): protected default branches (merge only an owner- or admin-approved pull request) and the per-repository Actions switch.
 - [PERF_PAGES.md](PERF_PAGES.md): page performance techniques.
 - [GIT_ERROR_MESSAGES.md](GIT_ERROR_MESSAGES.md): what failing Git commands show.

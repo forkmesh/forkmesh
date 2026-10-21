@@ -10028,6 +10028,7 @@
       state.repoCollectionItems[kind] = items;
       renderRepoCollection(kind);
       if (kind === "pulls") {
+        noteRecentPushOpenPulls(repo, items);
         const openPulls = items.filter(pullIsOpen).length;
         setRepoTabCount("pulls", openPulls);
         setRepoCollectionCounts("pulls", openPulls, items.length - openPulls);

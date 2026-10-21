@@ -4956,6 +4956,23 @@ SCHEMA_STATEMENTS = [
         number INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
         PRIMARY KEY (repo_bi, target_bi, branch, head))""",
+    """CREATE TABLE IF NOT EXISTS recent_pushes (
+        account_bi TEXT NOT NULL,
+        repo_bi TEXT NOT NULL,
+        branch_bi TEXT NOT NULL,
+        pull_bi TEXT NOT NULL,
+        pushed_at INTEGER NOT NULL,
+        pulled INTEGER NOT NULL DEFAULT 0,
+        data TEXT NOT NULL,
+        PRIMARY KEY (account_bi, repo_bi, branch_bi))""",
+    "CREATE INDEX IF NOT EXISTS idx_recent_pushes_account "
+    "ON recent_pushes(account_bi, pushed_at)",
+    "CREATE INDEX IF NOT EXISTS idx_recent_pushes_branch "
+    "ON recent_pushes(repo_bi, branch_bi)",
+    "CREATE INDEX IF NOT EXISTS idx_recent_pushes_pull "
+    "ON recent_pushes(pull_bi)",
+    "CREATE INDEX IF NOT EXISTS idx_recent_pushes_age "
+    "ON recent_pushes(pushed_at)",
     """CREATE TABLE IF NOT EXISTS instance_settings (
         k TEXT PRIMARY KEY,
         doc TEXT NOT NULL,
