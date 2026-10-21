@@ -183,7 +183,7 @@ def test_pull_header_names_the_source_and_target_repositories():
     # pull.md has no head-repository field: the record lives in the target
     # repo, and a cross-node pull only carries "<contributor>:" on head.
     assert "const branchChip = (repoLabel, branch) =>" in CONTENT
-    assert 'const baseRepoLabel = `${repo.owner || "owner"}/${repo.name || "repo"}`;' in CONTENT
+    assert 'const baseRepoLabel = repoDisplayName(repo, `${repo.owner || "owner"}/${repo.name || "repo"}`);' in CONTENT
     assert 'headRef.slice(0, headRef.lastIndexOf(":")).trim()' in CONTENT
     assert "branchChip(baseRepoLabel, baseBranch)} from ${branchChip(headRepoLabel, headBranch)}" in CONTENT
     assert '<span class="opacity-75">${escapeHtml(repoLabel)}:</span>${escapeHtml(branch)}' in CONTENT
