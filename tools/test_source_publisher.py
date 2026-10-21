@@ -1398,3 +1398,88 @@ def test_a_second_branch_delete_run_leaves_the_first_alone(box, monkeypatch):
     assert inline == [] and len(logs) == 1
     assert sp.delete_branches(box, log=logs.append) == 0
     assert len(inline) == 1
+
+
+def github_fake(outcomes, calls):
+    def run(command, **kwargs):
+        if command[0] == "git" and "push" in command and "https://github.com/" in command[-3]:
+            calls.append((command, kwargs["env"]))
+            code, stdout, stderr = outcomes.pop(0) if outcomes else (0, "", "")
+            return subprocess.CompletedProcess(command, code, stdout, stderr)
+        return systemctl_fake()(command, **kwargs)
+    return run
+
+
+def test_github_mirrors_read_only_github_https_lines(box):
+    box.fanout_github.parent.mkdir(parents=True, exist_ok=True)
+    box.fanout_github.write_text(
+        "# mirrors\n"
+        "github https://github.com/forkmesh/forkmesh.git\n"
+        "plain http://github.com/forkmesh/forkmesh.git\n"
+        "other https://gitlab.com/forkmesh/forkmesh.git\n"
+        "named https://github.com/forkmesh/other.git ~/token\n")
+    mirrors = sp.read_github_mirrors(box.fanout_github)
+    assert [item["name"] for item in mirrors] == ["github", "named"]
+    assert mirrors[0]["key"] == box.fanout_github.parent / "github-token"
+    assert mirrors[1]["key"] == Path(os.path.expanduser("~/token"))
+
+
+def test_github_push_sends_main_and_tags_with_the_token_out_of_argv(box):
+    token = box.home_dir / "github-token"
+    token.write_text("ghp_secret\n")
+    calls = []
+    run = github_fake([(0, "To github\n*\trefs/heads/main:refs/heads/main\t[new branch]\nDone\n",
+                        "")], calls)
+    result = sp.push_github(box.bare_mirror, {
+        "name": "github", "url": "https://github.com/forkmesh/forkmesh.git",
+        "key": token}, run=run)
+    assert result["ok"] and result["updated"] == ["refs/heads/main"]
+    command, env = calls[0]
+    assert command[-2:] == list(sp.GITHUB_REFSPECS)
+    assert not any(arg.startswith("+") or arg in ("--force", "--mirror") for arg in command)
+    assert "ghp_secret" not in " ".join(command)
+    assert env["GIT_CONFIG_KEY_0"] == "http.extraHeader"
+    assert env["GIT_CONFIG_VALUE_0"] == "Authorization: Basic " + base64.b64encode(
+        b"x-access-token:ghp_secret").decode()
+
+
+def test_github_push_reports_a_rejection_without_the_token(box):
+    token = box.home_dir / "github-token"
+    token.write_text("ghp_secret")
+    run = github_fake([(1, "!\trefs/heads/main:refs/heads/main\t[rejected] (fetch first)\n",
+                        "error: failed to push to https://ghp_secret@github.com\n")], [])
+    result = sp.push_github(box.bare_mirror, {
+        "name": "github", "url": "https://github.com/forkmesh/forkmesh.git",
+        "key": token}, run=run)
+    assert not result["ok"]
+    assert result["rejected"][0]["ref"] == "refs/heads/main"
+    assert "ghp_secret" not in result["error"]
+
+
+def test_github_push_without_a_token_does_not_run_git(box):
+    calls = []
+    result = sp.push_github(box.bare_mirror, {
+        "name": "github", "url": "https://github.com/forkmesh/forkmesh.git",
+        "key": box.home_dir / "missing"}, run=github_fake([], calls))
+    assert not result["ok"] and result["error"].startswith("token:")
+    assert calls == []
+
+
+def test_publish_retries_a_failed_github_push_on_the_next_pass(box):
+    box.fanout_github.parent.mkdir(parents=True, exist_ok=True)
+    box.fanout_github.write_text("github https://github.com/forkmesh/forkmesh.git\n")
+    (box.fanout_github.parent / "github-token").write_text("ghp_secret")
+    calls, logs = [], []
+    run = github_fake([(128, "", "fatal: unable to access\n"), (0, "", "")], calls)
+    assert sp.publish(box, run=run, sleep=lambda s: None, log=logs.append) == 0
+    status = json.loads((box.publisher_state / "status.json").read_text())
+    assert status["github"][0]["ok"] is False
+    assert any(line.startswith("github github: FAILED") for line in logs)
+    sp.publish(box, if_changed=True, run=run, sleep=lambda s: None, log=logs.append)
+    assert len(calls) == 2
+    status = json.loads((box.publisher_state / "status.json").read_text())
+    assert status["github"][0]["ok"] is True
+    sp.publish(box, if_changed=True, run=run, sleep=lambda s: None, log=logs.append)
+    assert len(calls) == 2
+    assert sp.status_report(box, run=run)["github"] == [
+        {"name": "github", "ok": True, "rejected": []}]
