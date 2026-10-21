@@ -145,18 +145,19 @@ def test_pull_review_approval_and_owner_only_mirror_merge_are_available():
 
 
 def test_an_unmet_peer_gate_warns_the_owner_instead_of_locking_them_out():
-    # The merge panel renders only for an organization owner, and that owner
-    # can already merge unreviewed from the desktop, so an unmet gate is a
-    # warning plus a distinctly worded button, never a dead control.
+    # The merge box renders the override only for an owner, as a separate,
+    # distinctly worded control behind a confirmation, never a dead button.
     assert "Merge locked" not in CONTENT
-    assert "const waiveReview = !reviewPolicy.ready && !merged;" in CONTENT
-    assert '"Merge without review"' in CONTENT
-    assert "Independent review recommended." in CONTENT
-    # The waiver is derived from the same policy the panel rendered, not read
-    # back off the button, and it is confirmed once before the first attempt.
-    assert "...(waiveReview ? { overrideReview: true } : {})" in CONTENT
+    assert "canOverride: canAct && reviewMissing && !busy," in CONTENT
+    assert "data-repo-pull-merge-override" in CONTENT
+    assert '>Merge without review</button>' in CONTENT
+    assert "Independent review required" in CONTENT
+    # A request asks for the waiver only when the owner chose it and the
+    # gate is actually unmet; the same request id never changes meaning.
+    assert "...(waive ? { overrideReview: true } : {})" in CONTENT
+    assert "overrideReview === true && !pullReviewPolicy(" in CONTENT
     assert "window.confirm(" in CONTENT
-    assert "&& !existing.requestId" in CONTENT
+    assert "handleRepoPullMergeOverride(state.selectedRepo)" in NETWORK
 
 
 def test_pull_sections_are_addressable_urls():
@@ -232,7 +233,7 @@ def test_web_merge_waits_out_transient_refusals_with_the_same_request():
     import subprocess
 
     start = CONTENT.index("  const PULL_MUTATION_RETRY_ERRORS = new Set([")
-    end = CONTENT.index("  function renderRepoPullReadiness(")
+    end = CONTENT.index("  const PULL_MERGE_REPIN_ERRORS")
     script = CONTENT[start:end] + r"""
       let clock = 0;
       const sent = [];
@@ -285,5 +286,5 @@ def test_web_merge_waits_out_transient_refusals_with_the_same_request():
 
 
 def test_the_merge_panel_says_no_mirror_has_taken_the_job_yet():
-    assert "merge.queued\n          ? \"Waiting for an online mirror to take this merge." in CONTENT
-    assert "parsed.pullMerge = { state: \"processing\", requestId, queued: !accepted };" in CONTENT
+    assert "? \"Waiting for an online mirror to take this merge. No mirror has accepted it yet.\"" in CONTENT
+    assert "parsed.pullMerge = { ...parsed.pullMerge, queued: !accepted };" in CONTENT
