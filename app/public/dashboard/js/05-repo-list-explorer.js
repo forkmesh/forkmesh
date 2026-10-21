@@ -2804,7 +2804,9 @@
       rows.push(`<div data-repo-explorer-current-path="${escapeHtml(path)}" class="${repoExplorerRowClass(true)}"><i data-lucide="folder-open" class="h-3.5 w-3.5 shrink-0 text-muted-foreground"></i><span class="min-w-0 truncate">${escapeHtml(currentName)}</span></div>`);
     }
 
-    if (entries.length) {
+    if (entries === null) {
+      // Still reading the folder: no "empty" claim, and no rows to grow from.
+    } else if (entries.length) {
       rows.push(entries.map((entry) => {
         const isTree = entry.type === "tree";
         const childPath = repoChildPath(path, entry.name);
