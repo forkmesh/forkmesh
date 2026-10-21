@@ -337,6 +337,7 @@ func TestHostedRejectsBadGrantsAndSources(t *testing.T) {
 	for raw, want := range map[string]bool{
 		"https://github.com/owner/repo.git":      true,
 		"https://codeberg.org/owner/repo":        true,
+		"https://gitea.com/owner/repo":           true,
 		"http://github.com/owner/repo.git":       false,
 		"https://evil.example/owner/repo.git":    false,
 		"https://github.com:8443/owner/repo.git": false,

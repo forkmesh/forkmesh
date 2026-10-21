@@ -54,7 +54,7 @@ MAX_COMMIT_COUNT = 10 ** 9
 BRANCH = "main"
 DEFAULT_MAX_PER_ACCOUNT = 10
 DEFAULT_MAX_BYTES = 200 * 1024 * 1024
-DEFAULT_IMPORT_HOSTS = ("github.com", "gitlab.com", "codeberg.org")
+DEFAULT_IMPORT_HOSTS = ("github.com", "gitlab.com", "codeberg.org", "gitea.com")
 REMOVED_KEEP_MS = 30 * 24 * 60 * 60 * 1000
 # Replica read grants: long enough for a slow fetch of a full-size repository.
 GRANT_TTL_MS = 60 * 60 * 1000

@@ -90,6 +90,8 @@ class ProviderFixture:
             return "https://gitlab.com/acme/project-%d" % self.repository_number
         if self.provider == "codeberg":
             return "https://codeberg.org/acme/project-%d" % self.repository_number
+        if self.provider == "gitea":
+            return "https://gitea.com/acme/project-%d" % self.repository_number
         return "https://github.com/acme/project-%d" % self.repository_number
 
     def root(self):
@@ -198,7 +200,7 @@ class ProviderFixture:
             return [self._item(802, action_name="pushed to", target_id=11)]
         raise AssertionError("unhandled GitLab path " + path)
 
-    def _codeberg(self, path):
+    def _gitea_api(self, path):
         if "/branches" in path:
             return [{"name": "main", "protected": True,
                      "commit": {"id": "a" * 40}}]
@@ -226,7 +228,7 @@ class ProviderFixture:
             return [{"id": 9, "login": "maintainer", "permissions": {
                 "admin": True, "push": True,
             }}]
-        raise AssertionError("unhandled Codeberg path " + path)
+        raise AssertionError("unhandled Gitea API path " + path)
 
     async def fetch(self, env, provider, path, token):
         assert provider == self.provider
@@ -237,6 +239,7 @@ class ProviderFixture:
             "github": "/repos/acme/project-%d" % self.repository_number,
             "gitlab": f"/projects/acme%2Fproject-{self.repository_number}",
             "codeberg": "/repos/acme/project-%d" % self.repository_number,
+            "gitea": "/repos/acme/project-%d" % self.repository_number,
         }
         if clean_path == root_paths[self.provider] or (
                 self.provider == "gitlab" and clean_path == root_paths[self.provider] + "?license=true"):
@@ -253,8 +256,8 @@ class ProviderFixture:
                 return {"status": 200, "data": [], "headers": {}}
         if self.provider == "gitlab":
             data = self._gitlab(path)
-        elif self.provider == "codeberg":
-            data = self._codeberg(path)
+        elif self.provider in ("codeberg", "gitea"):
+            data = self._gitea_api(path)
         else:
             data = self._github(path)
         return {"status": 200, "data": data, "headers": {
@@ -397,7 +400,7 @@ class Harness:
 
 
 def test_adapter_contract_covers_every_requested_object_type_for_each_provider():
-    for provider in ("github", "gitlab", "codeberg"):
+    for provider in ("github", "gitlab", "codeberg", "gitea"):
         fixture = ProviderFixture(provider)
         source = imports.parse_provider_source(fixture.source_url())
         adapter = migration.provider_adapter(
@@ -461,7 +464,7 @@ def test_release_coverage_never_confuses_provider_metadata_with_retained_bytes()
 
 
 def test_all_provider_fixtures_round_trip_every_supported_type_without_duplicates():
-    for provider in ("github", "gitlab", "codeberg"):
+    for provider in ("github", "gitlab", "codeberg", "gitea"):
         harness = Harness(provider)
         started = harness.start(setup_ms=75_000)
         assert started["status"] == 202
@@ -630,7 +633,7 @@ def test_setup_p50_and_p95_are_reported_separately_from_transfer():
     connection = sqlite3.connect(":memory:")
     connection.row_factory = sqlite3.Row
     durations = (60_000, 120_000, 240_000)
-    for provider_index, provider in enumerate(("github", "gitlab", "codeberg")):
+    for provider_index, provider in enumerate(("github", "gitlab", "codeberg", "gitea")):
         for index, duration in enumerate(durations, 1):
             harness = Harness(
                 provider, connection=connection,
@@ -646,8 +649,8 @@ def test_setup_p50_and_p95_are_reported_separately_from_transfer():
     assert all_metrics["setupMedianWithinThreeMinutes"] is True
     assert all_metrics["transferP50Ms"] is not None
     assert all_metrics["completionRate"] == 1.0
-    assert all_metrics["runs"] == 9
-    for provider in ("github", "gitlab", "codeberg"):
+    assert all_metrics["runs"] == 12
+    for provider in ("github", "gitlab", "codeberg", "gitea"):
         provider_metrics = metrics["data"]["providers"][provider]
         assert provider_metrics["runs"] == 3
         assert provider_metrics["setupP50Ms"] == 120_000

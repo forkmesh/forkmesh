@@ -247,7 +247,7 @@ internal fun LocalReposSectionContent(store: LocalRepoStore, navigator: Navigato
             }
             FmToneButton(label = "New repository", onPressed = if (busy) null else ({ create() }), icon = "add", tone = FmTone.Accent)
             FmToneButton(label = "Import from Files", onPressed = if (busy) null else ({ import() }), icon = "drive_folder_upload_outlined")
-            FmToneButton(label = "Mirror from GitHub/GitLab/Codeberg", onPressed = if (busy) null else mirrorFromProvider, icon = "cloud_sync_outlined")
+            FmToneButton(label = "Mirror from GitHub/GitLab/Codeberg/Gitea", onPressed = if (busy) null else mirrorFromProvider, icon = "cloud_sync_outlined")
         }
         HorizontalDivider(thickness = 1.dp, color = c.border)
         FmSectionHeader(

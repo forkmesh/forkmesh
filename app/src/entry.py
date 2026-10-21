@@ -32326,7 +32326,7 @@ def _account_email_activity(rec):
     }
 
 
-# --- External GitHub/GitLab/Codeberg metadata imports -----------------------
+# --- External GitHub/GitLab/Codeberg/Gitea metadata imports -----------------
 #
 # Provider imports live in a separate D1 namespace from the mirror catalog.
 # repository_imports.py owns the provider-neutral policy/service layer; these
@@ -32350,8 +32350,8 @@ async def _repository_provider_fetch(env, provider, path, token=""):
         headers["x-github-api-version"] = "2026-03-10"
         if token:
             headers["authorization"] = "Bearer " + token
-    elif provider == "codeberg":
-        # Codeberg runs Forgejo's Gitea-compatible API. Its access token is
+    elif provider in repository_import.GITEA_API_PROVIDERS:
+        # Codeberg (Forgejo) and gitea.com share Gitea's API. Its access token is
         # request-scoped exactly like the other provider credentials and is
         # never persisted or forwarded across a redirect.
         if token:
@@ -37007,7 +37007,8 @@ async def _promote_hosted_repository_import(env, catalog_record):
     rows = await d1_all(
         env,
         "SELECT id, data FROM repository_imports "
-        "WHERE provider IN ('github','gitlab','codeberg') AND is_private=0 "
+        "WHERE provider IN ('github','gitlab','codeberg','gitea') "
+        "AND is_private=0 "
         "AND status NOT IN ('actively_mirrored','archived') "
         "ORDER BY updated_at DESC LIMIT ?",
         repository_import.MAX_PUBLIC_IMPORTS,
@@ -37040,11 +37041,8 @@ async def _promote_hosted_repository_import(env, catalog_record):
         return 1
 
     for row, record, target_owner in sorted(candidates, key=branch_rank):
-        provider_label = {
-            "github": "GitHub",
-            "gitlab": "GitLab",
-            "codeberg": "Codeberg",
-        }.get(clean_string(record.get("provider"), 40).lower(), "provider")
+        provider_label = repository_import.PROVIDER_LABELS.get(
+            clean_string(record.get("provider"), 40).lower(), "provider")
         now = int(Date.now())
         record["status"] = "actively_mirrored"
         record["statusLabel"] = "Actively mirrored"
