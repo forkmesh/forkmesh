@@ -622,7 +622,11 @@
   function renderRepoCodeButton(repo, compact = false) {
     const url = cloneUrl(repo);
     const gitCmd = `git clone ${url}`;
-    const sshUrl = String(repo?.sshUrl || "").trim();
+    const sshFullUrl = String(repo?.sshUrl || "").trim();
+    // ssh://git@host/owner/repo.git on the standard port reads as the
+    // familiar git@host:owner/repo.git; both address the same repository.
+    const scpMatch = /^ssh:\/\/git@([^/:\[\]]+)\/(.+)$/.exec(sshFullUrl);
+    const sshUrl = scpMatch ? `git@${scpMatch[1]}:${scpMatch[2]}` : sshFullUrl;
     const sshCloneCmd = sshUrl ? `git clone ${sshUrl}` : "";
     const sshPushCmd = sshUrl ? `git remote set-url --push origin ${sshUrl}` : "";
     const btnHeight = compact ? "h-8" : "h-9";
@@ -661,6 +665,7 @@
                 <input data-repo-ssh-url type="text" readonly value="${escapeHtml(sshUrl)}" aria-label="SSH clone and push URL" class="min-w-0 flex-1 rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground outline-none focus:border-accent" />
                 ${copyBtn(sshUrl, "Copy SSH URL")}
               </div>
+              ${sshFullUrl !== sshUrl ? `<p class="mt-1 truncate text-[11px] leading-4 text-muted-foreground" title="${escapeHtml(sshFullUrl)}">Also: <span class="font-mono">${escapeHtml(sshFullUrl)}</span></p>` : ""}
               <div class="mt-2 flex items-center gap-2">
                 <code class="min-w-0 flex-1 truncate rounded-md border border-border bg-secondary px-2 py-1 font-mono text-[11px] text-foreground">${escapeHtml(sshCloneCmd)}</code>
                 ${copyBtn(sshCloneCmd, "Copy SSH clone command")}
