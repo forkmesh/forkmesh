@@ -1,7 +1,3 @@
-"""The repository page's Fork split button is built inside renderRepoDetail,
-so the flag it reads must be declared there too (a reference to a const from
-another function throws and blanks the whole repository page)."""
-
 from pathlib import Path
 
 SOURCE = (Path(__file__).resolve().parents[1] / "public" / "dashboard" / "js"
