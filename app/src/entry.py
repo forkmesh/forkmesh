@@ -16181,6 +16181,9 @@ record_hosted_branch_count = _hosted_git.export(
 # with a short-lived credential minted by /api/ssh/authorize.
 ssh_git_password = _hosted_git.export("ssh_git_password")
 contributor_push_allowed = _hosted_git.export("contributor_push_allowed")
+# Capability-signed people view of a public core-hosted repository, with
+# commit addresses for server-side matching (chat member activity sweep).
+hosted_people_with_emails = _hosted_git.export("hosted_people_with_emails")
 # Repositories the Next core nodes host (HOSTED_GIT_CORE_NODES,
 # docs/HOSTED_REPOS.md): push routing, the per-repository size limit, and the
 # private (capability-only) read path.

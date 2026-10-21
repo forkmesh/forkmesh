@@ -70,6 +70,9 @@ request, `activeDays`, `dayMask` (hex, bit 0 is `dayStart`, one bit per UTC
 day) and `lastAt`, plus `peopleTotal` and `truncated`. It is computed from the
 same ledger as the leaderboard, cached per hour, and is what the chat member
 list totals across repositories ([chat-member-stats.md](chat-member-stats.md)).
+With `emails=1`, answered only to a router capability and never cached or
+forwarded from a visitor's request, each person also carries up to five commit
+author addresses, for matching to verified account emails on the server.
 
 ### Where the data comes from
 

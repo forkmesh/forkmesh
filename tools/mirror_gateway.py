@@ -457,7 +457,7 @@ OPERATION_QUERY_FIELDS = {
     "branches": frozenset(),
     "search": frozenset({"path", "ref"}),
     "stats": frozenset({"ref"}),
-    "pulse": frozenset({"period", "person", "view"}),
+    "pulse": frozenset({"period", "person", "view", "emails"}),
     "sizes": frozenset({"ref"}),
     "release-blob": frozenset({"sha256", "path"}),
     "merge-pull": frozenset(),
@@ -3738,6 +3738,12 @@ PULSE_PEOPLE_SECONDS = 365 * 86400
 PULSE_PEOPLE_BUCKET = 3600
 PULSE_PEOPLE_LIMIT = 1000
 PULSE_PEOPLE_KINDS = {"pull": "pulls", "issue": "issues", "review": "reviews"}
+# ``emails=1`` adds each person's commit author addresses (at most this many)
+# so the app can match them to verified account emails. Only a router
+# capability gets it; every public spelling of the read refuses it, and the
+# app never forwards the parameter from a visitor's request.
+PULSE_PEOPLE_EMAILS = 5
+PULSE_EMAILS_FIELD = "emails"
 
 
 def pulse_view(query: Mapping[str, str]) -> str:
@@ -3745,6 +3751,10 @@ def pulse_view(query: Mapping[str, str]) -> str:
     if "view" in query and view != PULSE_PEOPLE_VIEW:
         raise GatewayError("invalid pulse view")
     if view and ("period" in query or "person" in query):
+        raise GatewayError("invalid pulse view")
+    if PULSE_EMAILS_FIELD in query and (
+            view != PULSE_PEOPLE_VIEW
+            or str(query.get(PULSE_EMAILS_FIELD)) != "1"):
         raise GatewayError("invalid pulse view")
     return view
 
@@ -3766,7 +3776,7 @@ def _pulse_day_mask(days: Iterable[int], first: int, count: int) -> str:
 
 
 def _pulse_people(
-    ledger: Mapping[str, Any], start: int, end: int
+    ledger: Mapping[str, Any], start: int, end: int, emails: bool = False
 ) -> tuple[list[dict[str, Any]], int]:
     """Per-person counts in [start, end): commits on the default branch
     (merges excluded), pull requests and issues opened, reviews of someone
@@ -3809,8 +3819,9 @@ def _pulse_people(
               + item[1]["reviews"]),
             item[0]))
     people = []
+    addresses = ledger.get("emails") or {}
     for key, row in ordered[:PULSE_PEOPLE_LIMIT]:
-        people.append({
+        person = {
             "key": key,
             "name": ledger["names"].get(key, key),
             "commits": row["commits"],
@@ -3820,7 +3831,10 @@ def _pulse_people(
             "activeDays": len(row["days"]),
             "dayMask": _pulse_day_mask(row["days"], first, count),
             "lastAt": row["last"] * 1000,
-        })
+        }
+        if emails:
+            person[PULSE_EMAILS_FIELD] = sorted(addresses.get(key, ()))
+        people.append(person)
     return people, len(figures)
 
 
@@ -6059,6 +6073,7 @@ class GitRepository:
             return state
         people: dict[str, tuple[str, str]] = {}
         times: dict[str, list[int]] = {}
+        emails: dict[str, set[str]] = {}
         revision = main
         if state.get("commit") and state.get("rules") == rules:
             code, _output = _run_git_status(
@@ -6071,6 +6086,9 @@ class GitRepository:
                 revision = state["commit"] + ".." + main
                 people = dict(state["people"])
                 times = dict(state["times"])
+                emails = {
+                    key: set(values)
+                    for key, values in state.get("emails", {}).items()}
         output = _run_git(
             self.git_dir,
             ["log", "--no-merges", "-n", str(PULSE_HISTORY_COMMITS),
@@ -6091,10 +6109,16 @@ class GitRepository:
                 continue
             added.setdefault(key, []).append(int(fields[2]))
             people.setdefault(key, (name or email, email))
+            address = email.casefold()
+            if "@" in address:
+                known = emails.setdefault(key, set())
+                if len(known) < PULSE_PEOPLE_EMAILS:
+                    known.add(address)
         for key, values in added.items():
             times[key] = sorted(times.get(key, []) + values)
         state = {
-            "commit": main, "rules": rules, "people": people, "times": times}
+            "commit": main, "rules": rules, "people": people, "times": times,
+            "emails": emails}
         self._pulse_commits = state
         return state
 
@@ -6348,6 +6372,7 @@ class GitRepository:
             "main": main,
             "names": names,
             "avatars": avatars,
+            "emails": commits.get("emails", {}),
             "commits": commits["times"],
             "events": events,
             "byPerson": by_person,
@@ -6519,7 +6544,9 @@ class GitRepository:
         rules: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         if pulse_view(query) == PULSE_PEOPLE_VIEW:
-            return self.pulse_people(now_seconds, rules)
+            return self.pulse_people(
+                now_seconds, rules,
+                emails=query.get(PULSE_EMAILS_FIELD) == "1")
         period = pulse_period(query)
         person = pulse_person(query)
         spec = PULSE_PERIODS[period]
@@ -6652,14 +6679,15 @@ class GitRepository:
         return response
 
     def pulse_people(
-        self, now_seconds: int, rules: tuple[str, ...] = ()
+        self, now_seconds: int, rules: tuple[str, ...] = (),
+        emails: bool = False,
     ) -> dict[str, Any]:
         now_seconds = max(0, int(now_seconds))
         end = -(-now_seconds // PULSE_PEOPLE_BUCKET) * PULSE_PEOPLE_BUCKET
         start = max(0, end - PULSE_PEOPLE_SECONDS)
         with self._pulse_lock:
             ledger = self._pulse_index(tuple(rules))
-        people, total = _pulse_people(ledger, start, end)
+        people, total = _pulse_people(ledger, start, end, emails)
         return {
             "ok": True,
             "commit": ledger["main"],
@@ -11769,6 +11797,10 @@ class GatewayApplication:
                 cache_key = self._repository_response_cache_key(
                     repository, operation, query, git_protocol)
             elif method in ("GET", "HEAD") and operation == PULSE_OPERATION:
+                if PULSE_EMAILS_FIELD in query and public_read:
+                    # Commit addresses go to a router capability only; the
+                    # public spellings answer exactly like an unknown read.
+                    raise GatewayError("repository route was not found")
                 cache_key = self._repository_response_cache_key(
                     repository, operation, query, "until:%d" % pulse_cache_end(
                         query, int(self.clock_ms()) // 1000))
@@ -11956,12 +11988,15 @@ class GatewayApplication:
             if operation == PULSE_OPERATION:
                 assert cache_key is not None
                 now_seconds = int(self.clock_ms()) // 1000
-                return self._single_flight(
+                response = self._single_flight(
                     cache_key,
                     lambda: _pulse_response(repository.pulse(
                         query, now_seconds,
                         pulse_exclusion_rules(self.config.node))),
                 )
+                if PULSE_EMAILS_FIELD in query:
+                    response.headers["Cache-Control"] = "private, no-store"
+                return response
             function = {
                 "tree": repository.tree,
                 "blob": repository.blob,

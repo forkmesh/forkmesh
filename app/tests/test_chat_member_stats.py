@@ -49,7 +49,9 @@ def _load():
     spec.loader.exec_module(module)
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
-    db.execute("CREATE TABLE users (user_bi TEXT PRIMARY KEY, data TEXT)")
+    db.execute(
+        "CREATE TABLE users (user_bi TEXT PRIMARY KEY, data TEXT, "
+        "email_bi TEXT)")
     db.execute(
         "CREATE TABLE repositories (key_bi TEXT PRIMARY KEY, "
         "is_private INTEGER NOT NULL DEFAULT 0)")
@@ -58,7 +60,7 @@ def _load():
     state = {
         "now": NOW, "queries": [], "cache": {}, "generation": {
             "contributions": 0}, "catalog": [], "people": {}, "fetches": [],
-        "writes": []}
+        "writes": [], "signed": [], "signed_people": {}}
 
     class _Date:
         @staticmethod
@@ -77,6 +79,10 @@ def _load():
         state["writes"].append("batch")
         for sql, params in statements:
             db.execute(sql, params)
+
+    async def hosted_people_with_emails(env, owner, name):
+        state["signed"].append(owner + "/" + name)
+        return state["signed_people"].get(owner + "/" + name)
 
     async def decrypted_public_catalog(env, now):
         return state["catalog"]
@@ -135,6 +141,7 @@ def _load():
         "_decrypted_public_catalog": decrypted_public_catalog,
         "_public_base_url": public_base_url,
         "js_fetch_with_timeout": js_fetch_with_timeout,
+        "hosted_people_with_emails": hosted_people_with_emails,
         "decrypt_row": decrypt_row,
         "blind_index": blind_index,
         "ensure_schema": ensure_schema,
@@ -148,11 +155,15 @@ def _load():
     return module, db, state
 
 
-def _user(db, name, **fields):
+def _user(db, name, email=None, **fields):
     record = {"name": name, "kind": "user", "status": "active", **fields}
+    if email:
+        record.setdefault("email", email)
+        record.setdefault("email_verified", True)
     db.execute(
-        "INSERT INTO users (user_bi, data) VALUES (?, ?)",
-        ("bi:" + name, json.dumps(record)))
+        "INSERT INTO users (user_bi, data, email_bi) VALUES (?, ?, ?)",
+        ("bi:" + name, json.dumps(record),
+         ("bi:" + email) if email else None))
 
 
 def _repo(db, key, private=False, public_project=True,
@@ -668,3 +679,82 @@ def test_the_member_activity_phase_is_scheduled_and_dispatched():
             "env)") in ENTRY
     assert '("member_repo_activity", "repo_bi"),' in ENTRY
     assert "DELETE FROM member_repo_activity WHERE user_bi=?" in ENTRY
+
+
+def test_commit_addresses_map_to_verified_account_emails():
+    module, db, state = _load()
+    _user(db, "jane", email="jane@example.test")
+    _user(db, "omar", email="omar@example.test", email_verified=False)
+    _user(db, "lee", email="lee@example.test")
+    _user(db, "kim", email="kim@example.test")
+    _user(db, "release-bot", email="ci@example.test")
+    _user(db, "pat")
+    db.execute("INSERT INTO repositories (key_bi) VALUES ('k-a')")
+    state["catalog"] = [_catalog_row("k-a", "ann", "app")]
+    day = _mask((YESTERDAY,))
+    state["signed_people"]["ann/app"] = _people(
+        # A full-name commit identity whose address is jane's verified one,
+        # and jane's own ledger identity: one person, figures added.
+        {"key": "jane doe", "commits": 30, "dayMask": day,
+         "lastAt": NOW - 86400000, "emails": ["Jane@Example.test"]},
+        {"key": "jane", "pulls": 2, "dayMask": _mask(("2026-12-01",)),
+         "lastAt": NOW - 40 * 86400000},
+        # Unverified address: no email match, and no account named so.
+        {"key": "omar s", "commits": 9, "emails": ["omar@example.test"]},
+        # Addresses of two different accounts: ambiguous, the name decides.
+        {"key": "pat", "commits": 4,
+         "emails": ["lee@example.test", "kim@example.test"]},
+        # An address that belongs to an automated account name never counts.
+        {"key": "build runner", "commits": 50, "emails": ["ci@example.test"]},
+        # The address wins over a different account's spelling.
+        {"key": "kim", "reviews": 1, "emails": ["lee@example.test"]},
+    )
+    state["catalog"][0]["data"]["source"] = "hosted-web"
+    _sweep(module, state)
+    assert state["signed"] == ["ann/app"] and state["fetches"] == []
+    stored = {row[0]: tuple(row[1:]) for row in db.execute(
+        "SELECT user_bi, commits, pulls, reviews, last_day "
+        "FROM member_repo_activity")}
+    assert stored == {
+        "bi:jane": (30, 2, 0, YESTERDAY),
+        "bi:pat": (4, 0, 0, ""),
+        "bi:lee": (0, 0, 1, "")}
+    jane = _members(_payload(module, ["jane"]))["jane"]
+    assert (jane["commits"], jane["pulls"], jane["activeDays"]) == (30, 2, 2)
+    # Addresses are only compared, never stored.
+    dump = "\n".join(str(tuple(row)) for row in db.execute(
+        "SELECT * FROM member_repo_activity"))
+    assert "@" not in dump
+
+
+def test_the_mapping_is_one_users_query_per_repository():
+    module, db, state = _load()
+    for index in range(40):
+        _user(db, "user%d" % index, email="u%d@example.test" % index)
+    db.execute("INSERT INTO repositories (key_bi) VALUES ('k-a')")
+    state["catalog"] = [_catalog_row("k-a", "ann", "app")]
+    state["signed_people"]["ann/app"] = _people(*[
+        {"key": "person %d" % index, "commits": 1,
+         "emails": ["u%d@example.test" % index]} for index in range(40)
+    ] + [{"key": "user%d" % index, "pulls": 1} for index in range(40)])
+    _sweep(module, state)
+    users = [sql for sql in state["queries"] if "FROM users" in sql]
+    assert len(users) == 1
+    assert tuple(db.execute(
+        "SELECT COUNT(*), SUM(commits), SUM(pulls) FROM member_repo_activity"
+    ).fetchone()) == (40, 40, 40)
+
+
+def test_without_a_core_read_the_public_answer_maps_names_only():
+    module, db, state = _load()
+    _user(db, "jane", email="jane@example.test")
+    db.execute("INSERT INTO repositories (key_bi) VALUES ('k-a')")
+    state["catalog"] = [_catalog_row("k-a", "ann", "app")]
+    state["people"]["ann/app"] = _people(
+        {"key": "jane doe", "commits": 30},
+        {"key": "jane", "pulls": 2})
+    _sweep(module, state)
+    assert state["signed"] == ["ann/app"] and len(state["fetches"]) == 1
+    assert [tuple(row) for row in db.execute(
+        "SELECT user_bi, commits, pulls FROM member_repo_activity")] == [
+        ("bi:jane", 0, 2)]

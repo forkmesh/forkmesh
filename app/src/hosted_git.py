@@ -1778,6 +1778,77 @@ async def hosted_private_read(env, request, owner, repo, operation):
     return await _core_proxy(env, request, owner, repo, operation, candidates)
 
 
+async def _core_capability_headers(env, endpoint, method, target,
+                                   body_digest):
+    """Router-capability headers for one request to one core, or None."""
+    router_public_key = _https_mirror_router_public_key(env)
+    router_seed = _https_mirror_router_seed(env)
+    if not router_public_key or not router_seed:
+        return None
+    parsed = urlparse(target)
+    signed_path = parsed.path + (("?" + parsed.query) if parsed.query else "")
+    request_id = _b64url_encode(_random_bytes(18))
+    issued_at = int(Date.now())
+    message = https_routing.request_message(
+        endpoint["node"], method, signed_path, body_digest, request_id,
+        issued_at)
+    signature = await ed25519_sign(
+        router_public_key, router_seed, message.encode("utf-8"))
+    if not message or not signature:
+        return None
+    return {
+        "X-ForkMesh-Node": endpoint["node"],
+        "X-ForkMesh-Request-Id": request_id,
+        "X-ForkMesh-Issued-At": str(issued_at),
+        "X-ForkMesh-Body-Sha256": body_digest,
+        "X-ForkMesh-Signature": signature,
+    }
+
+
+HOSTED_PEOPLE_TIMEOUT_SECONDS = 15
+
+
+async def hosted_people_with_emails(env, owner, repo):
+    """``pulse?view=people&emails=1`` of one public core-hosted repository.
+
+    The commit addresses in this answer are for server-side matching against
+    verified account emails only: the read is capability-signed straight to
+    a core, never cached, and nothing here returns it to a visitor. None when
+    the repository is not core-hosted and public, or no core answers.
+    """
+    row = await _hosted_row(env, owner, repo)
+    if not row or row.get("visibility") != "public":
+        return None
+    candidates = await _core_candidates(
+        env, str(row.get("id") or ""), str(row.get("pushed_by") or ""))
+    body_digest = hashlib.sha256(b"").hexdigest()
+    for endpoint in candidates:
+        target = https_routing.masked_target_url(
+            endpoint["baseUrl"], owner, repo, "pulse", {"view": "people"})
+        if not target:
+            continue
+        target += "&emails=1"
+        headers = await _core_capability_headers(
+            env, endpoint, "GET", target, body_digest)
+        if not headers:
+            continue
+        try:
+            upstream = await js_fetch_until_response(
+                target, {"method": "GET", "headers": headers,
+                         "redirect": "manual"},
+                HOSTED_PEOPLE_TIMEOUT_SECONDS)
+            if int(getattr(upstream, "status", 0) or 0) != 200:
+                continue
+            data = await upstream.json()
+            if hasattr(data, "to_py"):
+                data = data.to_py()
+        except Exception:
+            continue
+        if isinstance(data, dict) and data.get("view") == "people":
+            return data
+    return None
+
+
 async def _core_proxy(env, request, owner, repo, operation, candidates):
     """One capability-signed read against the first core that answers."""
     method = method_name(request)
@@ -1817,24 +1888,10 @@ async def _core_proxy(env, request, owner, repo, operation, candidates):
             endpoint["baseUrl"], owner, repo, operation, query)
         if not target:
             continue
-        parsed = urlparse(target)
-        signed_path = parsed.path + (("?" + parsed.query) if parsed.query else "")
-        request_id = _b64url_encode(_random_bytes(18))
-        issued_at = int(Date.now())
-        message = https_routing.request_message(
-            endpoint["node"], method, signed_path, body_digest, request_id,
-            issued_at)
-        signature = await ed25519_sign(
-            router_public_key, router_seed, message.encode("utf-8"))
-        if not message or not signature:
+        headers = await _core_capability_headers(
+            env, endpoint, method, target, body_digest)
+        if not headers:
             continue
-        headers = {
-            "X-ForkMesh-Node": endpoint["node"],
-            "X-ForkMesh-Request-Id": request_id,
-            "X-ForkMesh-Issued-At": str(issued_at),
-            "X-ForkMesh-Body-Sha256": body_digest,
-            "X-ForkMesh-Signature": signature,
-        }
         if git_protocol:
             headers["Git-Protocol"] = git_protocol
         if operation == "git-upload-pack":
