@@ -39,6 +39,12 @@ All checks are on the server.
   consent, and a public HTTPS URL; each account is limited to 20 links and the
   server never fetches the URL. Unpaid rewards with a Solana address show a
   `solana:` pay link and a copy button.
+- **Microjobs** "Submit an issue" links to `/forkmesh/forkmesh/issues/new`.
+  For a signed-in visitor the repo page keeps that address and opens the New
+  issue form straight away instead of the list (issue #737;
+  `issueComposeRouteActive` in `07-repo-compose-branch.js`). "Back to issues"
+  returns to `/issues` and loads the list if it was never read. Signed out,
+  the route shows the list, whose New issue button asks for a login.
 
 ## Styling
 
@@ -54,6 +60,7 @@ npx tailwindcss@3.4.17 -c tailwind.dashboard.config.js -i tailwind.input.css \
 ## Tests
 
 `app/tests/test_dashboard_bounties_links_feedback.py`,
+`app/tests/test_web_issue_new_route.py`,
 `app/tests/test_feedback.py`, `test_feedback_email.py`,
 `app/browser_tests/tests/dashboard-bounties-links-feedback.spec.js`.
 

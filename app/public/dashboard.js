@@ -32891,6 +32891,24 @@
   }
   // `parentNumber` files a sub-issue: the description starts with the same
   // portable "Parent issue: #N" line a converted checklist row gets.
+  function issueComposeRouteActive(repo) {
+    const parts = repoRouteParts();
+    return Boolean(repo && state.session?.nodeName) && parts[2] === "issues" && parts[3] === "new";
+  }
+
+  function issueComposeUrl(repo) {
+    return `${repoLinkUrl(repo)}/issues/new`;
+  }
+
+  function showRepoIssueList(repo) {
+    if (state.issuesView.repo || state.issuesView.items.length) {
+      renderRepoIssues();
+      return;
+    }
+    $("[data-repo-issues] [data-repo-issue-form]")?.remove();
+    loadRepoIssues(repo);
+  }
+
   function openIssueCompose(repo, { parentNumber = 0 } = {}) {
     const container = $("[data-repo-issues]");
     if (!container || !repo) return;
@@ -35414,6 +35432,8 @@
       // issue's detail straight away; Back re-fetches the list lazily.
       if (recordRoute && recordRoute.kind === "issues" && recordRoute.number) {
         loadRepoRecordDetail(repo, "issues", recordRoute.number);
+      } else if (issueComposeRouteActive(repo) && !$("[data-repo-issues] [data-repo-issue-form]")) {
+        openIssueCompose(repo);
       } else {
         loadRepoIssues(repo);
       }
@@ -39023,6 +39043,8 @@
           ? `${repoLinkUrl(repo)}/actions/runs/${actionsRunId}`
           : routeKind === "pulls" && routeParts[3] === "send"
             ? pullBatchUrl(repo)
+          : routeKind === "issues" && routeParts[3] === "new" && state.session?.nodeName
+            ? issueComposeUrl(repo)
           : routeKind === "security"
             ? `${repoLinkUrl(repo)}/security${routeParts.slice(3).map((part) => `/${part}`).join("")}`
             : repoTabRoutesFor(repo).includes(routeKind)
@@ -42022,7 +42044,8 @@
 
       const issueCancelButton = event.target.closest("[data-repo-issue-cancel]");
       if (issueCancelButton && state.selectedRepo) {
-        renderRepoIssues();
+        if (issueComposeRouteActive(state.selectedRepo)) navigateHistory(`${repoLinkUrl(state.selectedRepo)}/issues`);
+        showRepoIssueList(state.selectedRepo);
         return;
       }
 
@@ -43235,6 +43258,9 @@
             const recordNumber = parts[3] ? safeDecodeURIComponent(parts[3]) : "";
             if (kind === "pulls" && recordNumber === "send") {
               void openPullBatch(repo, { navigate: false });
+            } else if (kind === "issues" && issueComposeRouteActive(repo)) {
+              state.repoRecordDetail = null;
+              openIssueCompose(repo);
             } else if (/^\d+$/.test(recordNumber)) {
               const section = kind === "pulls"
                 ? normalizeRepoRecordSection(parts[4])
@@ -43247,6 +43273,7 @@
               if (sameRecord) setRepoRecordSection(section);
               else loadRepoRecordDetail(repo, kind, recordNumber);
             } else if (state.repoRecordDetail?.kind === kind
+                || (kind === "issues" && document.querySelector("[data-repo-issues] [data-repo-issue-form]"))
                 || (kind === "pulls" && (state.repoCompare || document.querySelector("[data-pull-batch], [data-pull-batch-message]")))) {
               if (kind === "pulls") stopRepoPullActivityRefresh();
               state.repoRecordDetail = null;
@@ -43256,8 +43283,7 @@
               // would leak closed issues into the default Open view); fetch it
               // if a deep-link landing never populated the list.
               if (kind === "issues") {
-                if (state.issuesView.items.length) renderRepoIssues();
-                else loadRepoIssues(repo);
+                showRepoIssueList(repo);
               } else {
                 loadRepoCollection(repo, kind, `[data-repo-${kind}]`);
               }
