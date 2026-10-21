@@ -3910,6 +3910,24 @@ int main(int argc, char *argv[])
               "tombstoning a project succeeds");
         check(projects.loadAll().isEmpty(),
               "a tombstoned project disappears from loadAll");
+        {
+            // A project written by the website (app/src/repository_projects.py,
+            // json.dumps(indent=4, sort_keys=True)) loads like a desktop one.
+            QDir().mkpath(dir + "/.forkmesh/projects/2");
+            QFile webProject(dir + "/.forkmesh/projects/2/project-2.json");
+            check(webProject.open(QIODevice::WriteOnly) &&
+                      webProject.write(QByteArray("{\n    \"author\": \"WEBPUB\",\n    \"authorName\": \"alice\",\n    \"body\": \"From the browser\",\n    \"createdAt\": 1790000000000,\n    \"endDate\": 0,\n    \"events\": [\n        {\n            \"author\": \"WEBPUB\",\n            \"authorName\": \"alice\",\n            \"body\": \"From the browser\",\n            \"id\": \"open-web-1790000000000\",\n            \"sig\": \"s\",\n            \"title\": \"Web roadmap\",\n            \"ts\": 1790000000000,\n            \"type\": \"open\"\n        },\n        {\n            \"author\": \"WEBPUB\",\n            \"authorName\": \"alice\",\n            \"id\": \"issues-web-1790000000001\",\n            \"issues\": [\n                3,\n                9\n            ],\n            \"sig\": \"s\",\n            \"ts\": 1790000000001,\n            \"type\": \"issues\"\n        },\n        {\n            \"author\": \"WEBPUB\",\n            \"authorName\": \"alice\",\n            \"id\": \"status-web-1790000000002\",\n            \"sig\": \"s\",\n            \"status\": \"closed\",\n            \"ts\": 1790000000002,\n            \"type\": \"status\"\n        }\n    ],\n    \"issues\": [\n        3,\n        9\n    ],\n    \"milestone\": \"\",\n    \"number\": 2,\n    \"schema\": \"forkmesh-project-v1\",\n    \"startDate\": 0,\n    \"status\": \"closed\",\n    \"title\": \"Web roadmap\",\n    \"updatedAt\": 1790000000002\n}\n")) > 0,
+                  "write a web-made project file");
+            webProject.close();
+            const QList<Project> web = projects.loadAll(&err);
+            check(web.size() == 1 && web.first().number == 2 &&
+                      web.first().title == "Web roadmap" &&
+                      web.first().body == "From the browser" &&
+                      web.first().status == "closed" &&
+                      web.first().issues == (QList<int>{3, 9}) &&
+                      web.first().events.size() == 3,
+                  "a web-made project loads with its metadata and events");
+        }
 
         IssueStore issues(dir, QString(), &identity, "tester");
         const int issueNumber =

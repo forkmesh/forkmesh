@@ -6,7 +6,7 @@ MIRROR_OF_RE = re.compile(
 COMMIT_RE = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 MILLIS_RE = re.compile(r"[1-9][0-9]{0,15}")
 WRITE_PATH_RE = re.compile(
-    r"/api/repo/[^/]+/[^/]+/(?:file-edit|release-edit|branches/(?:ops|delete)|pulls"
+    r"/api/repo/[^/]+/[^/]+/(?:file-edit|release-edit|project-edit|branches/(?:ops|delete)|pulls"
     r"|pulls/[1-9][0-9]{0,8}/(?:merge|update))/?")
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 PLATFORM_REPOSITORY = "forkmesh"

@@ -1041,6 +1041,68 @@
     return fetchRepoMutation(repo, "discussions", payload);
   }
 
+  // Mirrors ProjectStore::contentForSigning/canonicalString on the desktop
+  // (forkmesh-project-event-v1, no repository binding). Each spec is
+  // {type, ...fields}; the relay's project-edit route verifies, appends and
+  // commits them in one go.
+  function webProjectEventContent(ev) {
+    const NUL = String.fromCharCode(0);
+    if (ev.type === "open") return `${ev.title}${NUL}${ev.body}`;
+    if (ev.type === "title") return ev.title;
+    if (ev.type === "edit") return ev.body;
+    if (ev.type === "status") return ev.status;
+    if (ev.type === "dates") return `${Number(ev.startDate) || 0}${NUL}${Number(ev.endDate) || 0}`;
+    if (ev.type === "milestone") return ev.milestone;
+    if (ev.type === "issues") return [...new Set(ev.issues)].sort((a, b) => a - b).join(",");
+    if (ev.type === "delete") return ev.target;
+    throw new Error("unsupported_project_event");
+  }
+
+  async function signWebProjectEvents(number, specs) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const base = Date.now();
+    const events = [];
+    for (let index = 0; index < specs.length; index += 1) {
+      const ts = base + index;
+      const ev = {
+        ...specs[index],
+        id: webDiscussionEventId(specs[index].type, ts),
+        author: pub,
+        authorName: state.session?.nodeName || "",
+        ts,
+      };
+      if (ev.type === "issues") ev.issues = [...new Set(ev.issues.map(Number))].sort((a, b) => a - b);
+      const hash = await sha256HexLower(webProjectEventContent(ev));
+      const canonical = `forkmesh-project-event-v1\n${ev.type}\n${Number(number)}\n${pub}\n${ts}\n${hash}`;
+      ev.sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+      events.push(ev);
+    }
+    return events;
+  }
+
+  async function submitWebProjectEvents(repo, number, specs) {
+    const events = await signWebProjectEvents(number, specs);
+    const headers = { accept: "application/json", "content-type": "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const response = await fetch(`${repoApiBase(repo)}/project-edit`, {
+      method: "POST", credentials: "same-origin", cache: "no-store", headers,
+      body: JSON.stringify({
+        branch: repoDefaultBranch(repo) || "main", number: Number(number), events,
+        ...(token && token !== "cookie" ? { sessionToken: token } : {}),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      const error = new Error(data?.message || data?.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = data?.error || "";
+      error.next = Number(data?.next || 0);
+      throw error;
+    }
+    return data;
+  }
+
   function webIssueKeyPublic() {
     try {
       return String(JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null")?.pub || "");

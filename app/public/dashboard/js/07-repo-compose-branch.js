@@ -2882,6 +2882,11 @@
     } else if (active === "releases") {
       state.loadedRepoTabs.releases = true;
       loadRepoReleases(repo);
+    } else if (active === "projects") {
+      // /owner/repo/projects opened directly (or refreshed) used to leave the
+      // tab empty: only a click on the tab loaded it.
+      state.loadedRepoTabs.projects = true;
+      void loadRepoProjects(repo);
     } else if (active === "insights") {
       state.loadedRepoTabs.insights = true;
       loadRepoInsights(repo);

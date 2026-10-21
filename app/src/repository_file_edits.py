@@ -584,6 +584,49 @@ async def _save(env, request, owner, repo):
     }, cache_control="no-store")
 
 
+async def commit_paths(env, request, owner, repo, actor, branch, files,
+                       message, listings=None, parent=None):
+    """Commit whole-file writes ({path: bytes}) and removals ({path: None})
+    to an existing branch and push it; returns the new commit id.
+
+    Used by the routes that keep structured records in the repository
+    (releases, projects). ``listings``/``parent`` may come from a caller that
+    already read the trees; otherwise every folder on the way is read."""
+    if listings is None:
+        listings, parent = {}, None
+        for path in files:
+            commit, found, _create = await _listings(
+                env, owner, repo, branch, path, "", allow_missing=True)
+            if parent is not None and commit != parent:
+                raise FileEditError(
+                    "conflict", "The branch moved; reload and try again.", 409)
+            parent = commit
+            for directory, entries in found.items():
+                listings.setdefault(directory, entries)
+    objects = []
+    changes = {}
+    for path, blob in files.items():
+        if blob is None:
+            if _current(listings, path) is None:
+                raise FileEditError(
+                    "not_found", "The file is no longer in the repository.",
+                    404)
+            changes[path] = None
+            continue
+        oid = object_id("blob", blob)
+        objects.append(("blob", blob))
+        changes[path] = ("100644", oid)
+    root, trees = apply_tree_changes(listings, changes)
+    email = noreply_email(actor, _public_base_url(env))
+    commit = commit_payload(root, parent, actor, email, int(time.time()),
+                            message)
+    commit_oid = object_id("commit", commit)
+    body = receive_pack_body(parent, commit_oid, "refs/heads/" + branch,
+                             pack(objects + trees + [("commit", commit)]))
+    await _push(env, request, owner, repo, actor, branch, body, "")
+    return commit_oid
+
+
 async def _save_move(env, request, owner, repo, data, actor, propose, op):
     """Delete or rename one file: a commit (writers) or a proposal (anyone).
 

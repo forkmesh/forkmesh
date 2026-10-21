@@ -2023,6 +2023,11 @@ class Default:
                 security_advisories._bind_runtime(globals())
                 return await security_advisories.repo_route(
                     self.env, request, owner, repo)
+            if action == "project-edit":
+                import repository_projects
+                repository_projects._bind_runtime(globals())
+                return await repository_projects.route(
+                    self.env, request, owner, repo, action)
             if action == "release-edit":
                 import repository_releases
                 repository_releases._bind_runtime(globals())

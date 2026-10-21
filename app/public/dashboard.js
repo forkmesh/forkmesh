@@ -3913,6 +3913,68 @@
     return fetchRepoMutation(repo, "discussions", payload);
   }
 
+  // Mirrors ProjectStore::contentForSigning/canonicalString on the desktop
+  // (forkmesh-project-event-v1, no repository binding). Each spec is
+  // {type, ...fields}; the relay's project-edit route verifies, appends and
+  // commits them in one go.
+  function webProjectEventContent(ev) {
+    const NUL = String.fromCharCode(0);
+    if (ev.type === "open") return `${ev.title}${NUL}${ev.body}`;
+    if (ev.type === "title") return ev.title;
+    if (ev.type === "edit") return ev.body;
+    if (ev.type === "status") return ev.status;
+    if (ev.type === "dates") return `${Number(ev.startDate) || 0}${NUL}${Number(ev.endDate) || 0}`;
+    if (ev.type === "milestone") return ev.milestone;
+    if (ev.type === "issues") return [...new Set(ev.issues)].sort((a, b) => a - b).join(",");
+    if (ev.type === "delete") return ev.target;
+    throw new Error("unsupported_project_event");
+  }
+
+  async function signWebProjectEvents(number, specs) {
+    const { privateKey, pub } = await getWebIssueKey();
+    const base = Date.now();
+    const events = [];
+    for (let index = 0; index < specs.length; index += 1) {
+      const ts = base + index;
+      const ev = {
+        ...specs[index],
+        id: webDiscussionEventId(specs[index].type, ts),
+        author: pub,
+        authorName: state.session?.nodeName || "",
+        ts,
+      };
+      if (ev.type === "issues") ev.issues = [...new Set(ev.issues.map(Number))].sort((a, b) => a - b);
+      const hash = await sha256HexLower(webProjectEventContent(ev));
+      const canonical = `forkmesh-project-event-v1\n${ev.type}\n${Number(number)}\n${pub}\n${ts}\n${hash}`;
+      ev.sig = bytesToB64url(await crypto.subtle.sign({ name: "Ed25519" }, privateKey, ISSUE_TEXT_ENCODER.encode(canonical)));
+      events.push(ev);
+    }
+    return events;
+  }
+
+  async function submitWebProjectEvents(repo, number, specs) {
+    const events = await signWebProjectEvents(number, specs);
+    const headers = { accept: "application/json", "content-type": "application/json" };
+    const token = String(state.session?.sessionToken || "");
+    if (token && token !== "cookie") headers.authorization = `Bearer ${token}`;
+    const response = await fetch(`${repoApiBase(repo)}/project-edit`, {
+      method: "POST", credentials: "same-origin", cache: "no-store", headers,
+      body: JSON.stringify({
+        branch: repoDefaultBranch(repo) || "main", number: Number(number), events,
+        ...(token && token !== "cookie" ? { sessionToken: token } : {}),
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data?.ok === false) {
+      const error = new Error(data?.message || data?.error || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.code = data?.error || "";
+      error.next = Number(data?.next || 0);
+      throw error;
+    }
+    return data;
+  }
+
   function webIssueKeyPublic() {
     try {
       return String(JSON.parse(localStorage.getItem(WEB_ISSUE_KEY_STORAGE) || "null")?.pub || "");
@@ -18666,6 +18728,9 @@
       startDate: Number(project.startDate || 0) || 0,
       endDate: Number(project.endDate || 0) || 0,
       createdAtMs: Number(project.createdAt || 0) || 0,
+      // ProjectStore::isDeleted: a "delete" of "self" tombstones it.
+      deleted: (Array.isArray(project.events) ? project.events : [])
+        .some((event) => event?.type === "delete" && event?.target === "self"),
     };
   }
 
@@ -26537,6 +26602,13 @@
   async function loadRepoProjects(repo) {
     const container = $("[data-repo-projects]");
     if (!container) return;
+    state.projectsView.manageable = false;
+    void repoReleasesManageable(repo).then((manageable) => {
+      state.projectsView.manageable = manageable;
+      const button = $("[data-repo-project-new]");
+      if (button) button.hidden = !manageable;
+      if (manageable && !container.querySelector("[data-repo-project-form]") && Array.isArray(state.projectsView.items)) renderRepoProjects();
+    });
     container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading projects from the live mirror...")}</div>`;
     try {
       let tree;
@@ -26544,6 +26616,7 @@
         tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/projects" }));
       } catch (error) {
         if (isMissingMirrorFolder(error)) {
+          state.projectsView.nextNumber = 1;
           state.projectsView.items = [];
           state.projectsView.issues = [];
           renderRepoProjects();
@@ -26569,7 +26642,8 @@
         const blob = blobs[projectJsonPath(number)];
         if (!blob) return null;
         return parseProjectJson(blobText(blob), number);
-      }).filter(Boolean);
+      }).filter((project) => project && !project.deleted);
+      state.projectsView.nextNumber = dirs.reduce((max, entry) => Math.max(max, Number(entry.name) || 0), 0) + 1;
       // The gantt rows and progress bars need the linked issues' dates and
       // states, so read exactly those issue files in one batched request.
       const linkedNumbers = [...new Set(projects.flatMap((project) => project.issues))]
@@ -26622,13 +26696,166 @@
     </div>`;
     const emptyLabel = items.length
       ? `No ${view.filter === "all" ? "" : view.filter + " "}projects.`
-      : "No projects have been committed to this mirror yet. Create them from the desktop client's Projects tab.";
+      : "No projects yet. A project groups issues on a timeline with dates and a milestone.";
     container.innerHTML = filterBar + (filtered.length
       ? (view.mode === "gantt"
         ? renderRepoProjectsGantt(filtered, view.issues || [])
         : renderRepoProjectsList(filtered, view.issues || []))
       : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`);
     window.lucide?.createIcons();
+  }
+
+  function projectDateInput(ms) {
+    const value = Number(ms) || 0;
+    return value ? new Date(value).toISOString().slice(0, 10) : "";
+  }
+
+  function projectDateMs(text) {
+    const value = String(text || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return 0;
+    const ms = Date.parse(`${value}T00:00:00Z`);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function projectIssueList(text) {
+    return [...new Set(String(text || "").split(/[\s,]+/)
+      .map((part) => Number(part.replace(/^#/, "")))
+      .filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
+  }
+
+  // New / Edit project, in place of the list. Saved as signed project events
+  // through project-edit (submitWebProjectEvents).
+  function renderProjectForm(project = null) {
+    const field = "h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent";
+    return `
+      <form data-repo-project-form${project ? ` data-repo-project-editing="${project.number}"` : ""} class="grid gap-3 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="inline-flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="chart-gantt" class="h-4 w-4 text-muted-foreground"></i>${project ? `Edit project #${project.number}` : "New project"}</h3>
+          <button type="button" data-repo-project-cancel class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to projects</button>
+        </div>
+        <label class="grid gap-1 text-xs font-medium text-muted-foreground">Title
+          <input data-repo-project-title required maxlength="240" value="${escapeHtml(project?.title || "")}" class="${field}" />
+        </label>
+        <label class="grid gap-1 text-xs font-medium text-muted-foreground">Description
+          <textarea data-repo-project-body rows="4" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent">${escapeHtml(project?.body || "")}</textarea>
+        </label>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">Start
+            <input data-repo-project-start type="date" value="${projectDateInput(project?.startDate)}" class="${field}" />
+          </label>
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">End
+            <input data-repo-project-end type="date" value="${projectDateInput(project?.endDate)}" class="${field}" />
+          </label>
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">Milestone
+            <input data-repo-project-milestone maxlength="120" value="${escapeHtml(project?.milestone || "")}" placeholder="Optional (e.g. v1.0)" class="${field}" />
+          </label>
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">Linked issues
+            <input data-repo-project-issues value="${escapeHtml((project?.issues || []).map((n) => `#${n}`).join(", "))}" placeholder="#12, #15" class="${field}" />
+          </label>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <span data-repo-project-hint role="status" class="text-[11px] text-muted-foreground">Signed in this browser and committed to .forkmesh/projects/.</span>
+          <button type="submit" data-repo-project-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-60"><i data-lucide="save" class="h-4 w-4"></i>${project ? "Save project" : "Create project"}</button>
+        </div>
+      </form>`;
+  }
+
+  function openProjectForm(number = 0) {
+    const container = $("[data-repo-projects]");
+    if (!container) return;
+    const project = number ? (state.projectsView.items || []).find((item) => item.number === Number(number)) || null : null;
+    container.innerHTML = renderProjectForm(project);
+    window.lucide?.createIcons();
+    container.querySelector("[data-repo-project-title]")?.focus();
+  }
+
+  // The events that turn `before` (null for a new project) into the form's
+  // values: only what changed, in ProjectStore's vocabulary.
+  function projectFormEvents(before, values) {
+    const specs = [];
+    if (!before) {
+      specs.push({ type: "open", title: values.title, body: values.body });
+    } else {
+      if (values.title !== before.title) specs.push({ type: "title", title: values.title });
+      if (values.body !== before.body) specs.push({ type: "edit", body: values.body });
+    }
+    if ((values.startDate || values.endDate || before) && (values.startDate !== (before?.startDate || 0) || values.endDate !== (before?.endDate || 0))) {
+      specs.push({ type: "dates", startDate: values.startDate, endDate: values.endDate });
+    }
+    if (values.milestone !== (before?.milestone || "")) specs.push({ type: "milestone", milestone: values.milestone });
+    if (values.issues.join(",") !== (before?.issues || []).join(",")) specs.push({ type: "issues", issues: values.issues });
+    return specs;
+  }
+
+  function projectErrorText(error) {
+    return ({
+      forbidden: "You need write access to edit projects.",
+      bad_signature: "The project's signature was rejected. Reload the page and try again.",
+      invalid_event: "Check the project's title and fields.",
+      not_found: "That project is no longer in the repository.",
+      too_large: "This project's history is too large.",
+    })[error?.code] || (error?.status === 401 ? "Sign in to edit projects." : repoFileEditError(error));
+  }
+
+  async function handleProjectFormSubmit(repo, form) {
+    const hint = form.querySelector("[data-repo-project-hint]");
+    const submit = form.querySelector("[data-repo-project-submit]");
+    const number = Number(form.dataset.repoProjectEditing || 0);
+    const before = number ? (state.projectsView.items || []).find((item) => item.number === number) || null : null;
+    const values = {
+      title: String(form.querySelector("[data-repo-project-title]")?.value || "").trim(),
+      body: String(form.querySelector("[data-repo-project-body]")?.value || "").replace(/\s+$/, ""),
+      startDate: projectDateMs(form.querySelector("[data-repo-project-start]")?.value),
+      endDate: projectDateMs(form.querySelector("[data-repo-project-end]")?.value),
+      milestone: String(form.querySelector("[data-repo-project-milestone]")?.value || "").trim(),
+      issues: projectIssueList(form.querySelector("[data-repo-project-issues]")?.value),
+    };
+    const setHint = (text, bad) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (!values.title) {
+      setHint("Enter a title for the project.", true);
+      return;
+    }
+    const specs = projectFormEvents(before, values);
+    if (!specs.length) {
+      await loadRepoProjects(repo);
+      return;
+    }
+    if (submit) submit.disabled = true;
+    setHint("Saving…");
+    let target = number || Number(state.projectsView.nextNumber || 1);
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await submitWebProjectEvents(repo, target, specs);
+          break;
+        } catch (error) {
+          // Someone created a project meanwhile: sign again for the next number.
+          if (!number && error.code === "number_taken" && error.next && attempt < 2) {
+            target = error.next;
+            continue;
+          }
+          throw error;
+        }
+      }
+      await loadRepoProjects(repo);
+    } catch (error) {
+      if (submit) submit.disabled = false;
+      setHint(projectErrorText(error), true);
+    }
+  }
+
+  async function handleProjectQuickAction(repo, number, specs, confirmText = "") {
+    if (!number || (confirmText && !window.confirm(confirmText))) return;
+    try {
+      await submitWebProjectEvents(repo, number, specs);
+      await loadRepoProjects(repo);
+    } catch (error) {
+      window.alert(projectErrorText(error));
+    }
   }
 
   function setProjectFilter(filter) {
@@ -26653,6 +26880,12 @@
         const closed = issue && issue.status !== "open";
         return `<button type="button" data-repo-record-kind="issues" data-repo-record-number="${number}" title="${escapeHtml(issue ? issue.title : `issue #${number}`)}" class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] transition-colors hover:bg-secondary ${closed ? "text-muted-foreground line-through" : "text-foreground"}">#${number}</button>`;
       }).join("");
+      const manage = state.projectsView.manageable === true ? `
+            <span class="ml-auto inline-flex items-center gap-1">
+              <button type="button" data-repo-project-edit="${project.number}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="pencil" class="h-3 w-3"></i>Edit</button>
+              <button type="button" data-repo-project-status="${project.status === "open" ? "closed" : "open"}" data-repo-project-number="${project.number}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="${project.status === "open" ? "circle-check" : "rotate-ccw"}" class="h-3 w-3"></i>${project.status === "open" ? "Close" : "Reopen"}</button>
+              <button type="button" data-repo-project-delete="${project.number}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-destructive hover:bg-secondary"><i data-lucide="trash-2" class="h-3 w-3"></i>Delete</button>
+            </span>` : "";
       return `
         <div class="border-t border-border px-4 py-3">
           <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -26660,7 +26893,7 @@
             <span class="min-w-0 truncate text-sm font-semibold text-foreground">${escapeHtml(project.title)}</span>
             <span data-repo-record-state class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-[10px] font-mono text-foreground">${escapeHtml(project.status)}</span>
             ${dates ? `<span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(dates)}</span>` : ""}
-            ${project.milestone ? `<span class="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"><i data-lucide="milestone" class="h-3 w-3"></i>${escapeHtml(project.milestone)}</span>` : ""}
+            ${project.milestone ? `<span class="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"><i data-lucide="milestone" class="h-3 w-3"></i>${escapeHtml(project.milestone)}</span>` : ""}${manage}
           </div>
           ${project.body ? `<p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(project.body).slice(0, 200)}</p>` : ""}
           <div class="mt-2 flex items-center gap-3">
@@ -36786,6 +37019,11 @@
     } else if (active === "releases") {
       state.loadedRepoTabs.releases = true;
       loadRepoReleases(repo);
+    } else if (active === "projects") {
+      // /owner/repo/projects opened directly (or refreshed) used to leave the
+      // tab empty: only a click on the tab loaded it.
+      state.loadedRepoTabs.projects = true;
+      void loadRepoProjects(repo);
     } else if (active === "insights") {
       state.loadedRepoTabs.insights = true;
       loadRepoInsights(repo);
@@ -40682,7 +40920,7 @@
             <section data-dashboard-repo-tab-panel="commits" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits</span><span class="font-mono text-[10px] text-muted-foreground">live mirror history</span></div><div data-repo-commits></div></div></section>
             <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><button type="button" data-repo-release-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>Draft a new release</button></div><div data-repo-releases></div></div></section>
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
-            <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><span class="font-mono text-[10px] text-muted-foreground">linked issues · milestones · gantt</span></div><div data-repo-projects></div></div></section>
+            <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><button type="button" data-repo-project-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New project</button></div><div data-repo-projects></div></div></section>
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
@@ -42244,6 +42482,32 @@
     if (discussionAnswerButton && state.selectedRepo) {
       event.preventDefault();
       void handleDiscussionAnswerClick(state.selectedRepo, discussionAnswerButton);
+      return;
+    }
+    const projectNew = event.target.closest("[data-repo-project-new], [data-repo-project-edit]");
+    if (projectNew && state.selectedRepo) {
+      event.preventDefault();
+      openProjectForm(Number(projectNew.dataset.repoProjectEdit || 0));
+      return;
+    }
+    if (event.target.closest("[data-repo-project-cancel]") && state.selectedRepo) {
+      event.preventDefault();
+      void loadRepoProjects(state.selectedRepo);
+      return;
+    }
+    const projectStatus = event.target.closest("[data-repo-project-status]");
+    if (projectStatus && state.selectedRepo) {
+      event.preventDefault();
+      void handleProjectQuickAction(state.selectedRepo, Number(projectStatus.dataset.repoProjectNumber || 0),
+        [{ type: "status", status: projectStatus.dataset.repoProjectStatus === "closed" ? "closed" : "open" }]);
+      return;
+    }
+    const projectDelete = event.target.closest("[data-repo-project-delete]");
+    if (projectDelete && state.selectedRepo) {
+      event.preventDefault();
+      const number = Number(projectDelete.dataset.repoProjectDelete || 0);
+      void handleProjectQuickAction(state.selectedRepo, number, [{ type: "delete", target: "self" }],
+        `Delete project #${number}? It disappears for everyone; its history stays in the repository.`);
       return;
     }
     const releaseNewButton = event.target.closest("[data-repo-release-new], [data-repo-release-edit]");
@@ -44211,6 +44475,12 @@
       } finally {
         if (submit) submit.disabled = false;
       }
+      return;
+    }
+    const projectForm = event.target.closest("[data-repo-project-form]");
+    if (projectForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleProjectFormSubmit(state.selectedRepo, projectForm);
       return;
     }
     const releaseForm = event.target.closest("[data-repo-release-form]");

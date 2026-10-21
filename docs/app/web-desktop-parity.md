@@ -15,6 +15,7 @@ inventory; each row says why the dependency exists and how it could go.
 | Releases (draft, edit, delete; notes; creating their tags) | [web-releases.md](web-releases.md) |
 | Issues, pull requests and discussions on private repositories, for accounts that can read them, with public side effects off | [web-discussions.md](web-discussions.md#who-may-do-what) |
 | Collaborators on private repositories; visibility of core-hosted repositories | [web-repo-access.md](web-repo-access.md) |
+| Projects (create, edit, close, delete) | [web-projects.md](web-projects.md) |
 | Add file (create a file, or propose one as a pull request) | [repository-file-edits.md](repository-file-edits.md#add-file) |
 | Issues and pull requests (browser-signed events), file edits and proposals, forks, repository deletion, branch operations on core-hosted repositories, webhooks, Actions secrets, security advisories, notes, tasks, calendar, docs, organizations, accounts and SSH keys | already had web paths |
 
@@ -28,7 +29,6 @@ existing route, L = a new route, event type or storage, XL = architectural.
 | Volunteering a node to mirror an external listing | `volunteerForExternalMirror` (05-repo-list-explorer.js) | The point is to lend a node; the browser is not one | Offer "Import and host here" beside it for supported forges, through the hosted-repository import | M |
 | New repository from a local folder | new-repo view | Reads the local file system | Inherent; the web offers empty repositories and imports instead | n/a |
 | Private repositories on a forge without core hosting | `hosted_git.py` (`private_hosted_unsupported`) | Private content is sealed with the owner's key, which the relay never holds | Core-hosted private repositories already work; elsewhere this needs key escrow or a browser-held key | XL |
-| Projects (create and edit boards) | Projects tab | Events are signed with the node identity and committed locally (ProjectStore) | Browser-signed project events through `fetchRepoMutation`, materialized by the mirror intake like issues | L |
 | Release assets (binaries) | Releases tab | Bytes live in the mirrors' content-addressed store, seeded by a release publisher | An upload route into the store for core-held repositories, recorded in `release.json` | L |
 | Deleting or moving tags | mirror push policy | Mirrors keep tags immutable without an owner's tag-move grant | Offer the existing tag-move grant from the web for core-held repositories; keep tags immutable elsewhere | M |
 | Uploading binary files (images, archives) | file editor | `/file-edit` takes UTF-8 text only | Accept base64 `content` with a size cap and build the blob from the bytes | M |

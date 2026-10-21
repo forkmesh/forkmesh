@@ -448,7 +448,7 @@
             <section data-dashboard-repo-tab-panel="commits" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="git-commit-horizontal" class="h-3.5 w-3.5 text-muted-foreground"></i>Commits</span><span class="font-mono text-[10px] text-muted-foreground">live mirror history</span></div><div data-repo-commits></div></div></section>
             <section data-dashboard-repo-tab-panel="releases" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="tag" class="h-3.5 w-3.5 text-muted-foreground"></i>Releases</span><button type="button" data-repo-release-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>Draft a new release</button></div><div data-repo-releases></div></div></section>
             ${renderRepoCollectionPanel("issues", repo, issuesCount, repoCount(repo, ["closedIssues", "closedIssueCount"]))}
-            <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><span class="font-mono text-[10px] text-muted-foreground">linked issues · milestones · gantt</span></div><div data-repo-projects></div></div></section>
+            <section data-dashboard-repo-tab-panel="projects" class="hidden"><div class="mt-4 overflow-hidden rounded-lg border border-border bg-background"><div class="flex items-center justify-between gap-3 border-b border-border bg-secondary/50 px-4 py-3"><span class="inline-flex items-center gap-2 text-xs font-medium text-foreground"><i data-lucide="chart-gantt" class="h-3.5 w-3.5 text-muted-foreground"></i>Projects</span><button type="button" data-repo-project-new hidden class="inline-flex h-7 items-center gap-1.5 rounded-md bg-cta px-2.5 text-[11px] font-medium text-cta-foreground hover:bg-cta/90"><i data-lucide="plus" class="h-3.5 w-3.5"></i>New project</button></div><div data-repo-projects></div></div></section>
             <section data-dashboard-repo-tab-panel="security" class="hidden"><div data-repo-security class="min-w-0"></div></section>
             ${renderRepoCollectionPanel("pulls", repo, pullsCount, repoCount(repo, ["closedPulls", "closedPullCount"]))}
             ${renderRepoDiscussionsPanel(repo)}
@@ -2010,6 +2010,32 @@
     if (discussionAnswerButton && state.selectedRepo) {
       event.preventDefault();
       void handleDiscussionAnswerClick(state.selectedRepo, discussionAnswerButton);
+      return;
+    }
+    const projectNew = event.target.closest("[data-repo-project-new], [data-repo-project-edit]");
+    if (projectNew && state.selectedRepo) {
+      event.preventDefault();
+      openProjectForm(Number(projectNew.dataset.repoProjectEdit || 0));
+      return;
+    }
+    if (event.target.closest("[data-repo-project-cancel]") && state.selectedRepo) {
+      event.preventDefault();
+      void loadRepoProjects(state.selectedRepo);
+      return;
+    }
+    const projectStatus = event.target.closest("[data-repo-project-status]");
+    if (projectStatus && state.selectedRepo) {
+      event.preventDefault();
+      void handleProjectQuickAction(state.selectedRepo, Number(projectStatus.dataset.repoProjectNumber || 0),
+        [{ type: "status", status: projectStatus.dataset.repoProjectStatus === "closed" ? "closed" : "open" }]);
+      return;
+    }
+    const projectDelete = event.target.closest("[data-repo-project-delete]");
+    if (projectDelete && state.selectedRepo) {
+      event.preventDefault();
+      const number = Number(projectDelete.dataset.repoProjectDelete || 0);
+      void handleProjectQuickAction(state.selectedRepo, number, [{ type: "delete", target: "self" }],
+        `Delete project #${number}? It disappears for everyone; its history stays in the repository.`);
       return;
     }
     const releaseNewButton = event.target.closest("[data-repo-release-new], [data-repo-release-edit]");
@@ -3977,6 +4003,12 @@
       } finally {
         if (submit) submit.disabled = false;
       }
+      return;
+    }
+    const projectForm = event.target.closest("[data-repo-project-form]");
+    if (projectForm && state.selectedRepo) {
+      event.preventDefault();
+      void handleProjectFormSubmit(state.selectedRepo, projectForm);
       return;
     }
     const releaseForm = event.target.closest("[data-repo-release-form]");
