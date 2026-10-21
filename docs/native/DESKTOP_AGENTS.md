@@ -370,6 +370,25 @@ must not collide.
   `agents.markRead`. iOS `AgentReadTracker`, `AgentUnreadDot`; Android
   `AgentReadState`, `AgentReadMarks`.
 
+### Transcript scrolling (2026-10-21)
+
+A run's transcript follows its newest line until the reader scrolls up; then
+new output no longer pulls them back down. A round arrow button appears at the
+bottom centre, just above the composer, and takes them back to the end (a dot
+on it means something new arrived below). Sending a prompt also goes back to
+the end.
+
+- iOS: `TranscriptFollowScroll` (`ForkMesh/Kit`) wraps `AgentRunScreen` and
+  `AgentTranscriptList`. iOS 17 has no scroll-phase API, so it reads the
+  content frame from a preference: at the end (within 24 pt) it follows again;
+  the top edge moving down (the reader scrolling up) stops it; content growing
+  with the offset unchanged keeps following.
+- Android: `TranscriptFollowBox` (`feature/agents/TranscriptFollow.kt`) wraps
+  the `LazyColumn` of `UnifiedAgentScreen` and `AgentScreen`. A drag while
+  `canScrollForward` stops following; reaching the end restarts it. The lists
+  end in a 1 dp `transcriptEnd()` item so scrolling to the last item lands at
+  the true end, even below a reply taller than the screen.
+
 ### Navigation stability
 
 Rows are plain buttons that set `AgentsScreen.opened`; one

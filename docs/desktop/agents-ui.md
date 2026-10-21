@@ -258,6 +258,12 @@ event that drew it (`m_rowSource`, `transcripttools::rawLogLineStart()`).
   `CacheLabel` estimates heights only from its on-screen width.
 - Sending a follow-up jumps to the tail; a resume keeps the rendered rows; a
   cloud follow-up is drawn at once until the relay history replaces it.
+- Cloud runs and external Claude Code sessions redraw the whole transcript when
+  the relay history or the `.jsonl` grows. Redrawing the session already on
+  screen goes through the same held frame and keeps the reader's place. It
+  used to end in `jumpToBottom()`, which pulled anyone reading earlier turns
+  back down on every update (2026-10-21). Only opening a session, or a reader
+  already at the tail, lands at the end.
 
 ### Composer
 

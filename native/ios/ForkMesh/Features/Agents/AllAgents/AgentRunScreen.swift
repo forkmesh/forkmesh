@@ -16,6 +16,7 @@ struct AgentRunScreen: View {
     @State private var follower = TranscriptFollower()
     @State private var blocks: [TranscriptBlock] = []
     @State private var pending = PendingPrompts()
+    @State private var sent = 0
     @State private var questions: [AgentQuestion] = []
     @State private var blockCache = TranscriptBlockCache()
     @State private var status = ""
@@ -88,36 +89,28 @@ struct AgentRunScreen: View {
                     .padding(.horizontal, 12)
                     .padding(.bottom, 4)
             }
-            ScrollViewReader { proxy in
-                ScrollView {
-                    if !follower.attachments.isEmpty {
-                        AgentAttachmentStrip(refs: follower.attachments, loader: AgentAttachmentsSupport.loader(hub: center.hub))
-                            .padding(.horizontal, 12)
-                            .padding(.top, 12)
-                    }
-                    if !questions.isEmpty {
-                        AgentQuestionCards(questions: questions, busy: busy) { question, answer in
-                            Task { await self.answer(question, answer) }
-                        }
+            TranscriptFollowScroll(tail: [follower.next, shownBlocks.count], pin: sent, accessibilityPrefix: "agent-run-transcript") {
+                if !follower.attachments.isEmpty {
+                    AgentAttachmentStrip(refs: follower.attachments, loader: AgentAttachmentsSupport.loader(hub: center.hub))
                         .padding(.horizontal, 12)
                         .padding(.top, 12)
-                    }
-                    if shownBlocks.isEmpty {
-                        Text("No transcript yet.")
-                            .fmText(.bodyMedium, color: fm.textSecondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                    } else {
-                        AgentTranscriptBlocksView(blocks: shownBlocks, repo: row.repoOwner.isEmpty || row.repoName.isEmpty ? nil : RepoRef(owner: row.repoOwner, name: row.repoName))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, FmSpace.x2)
-                    }
                 }
-                .onChange(of: follower.next) { _, _ in
-                    scrollToEnd(proxy)
+                if !questions.isEmpty {
+                    AgentQuestionCards(questions: questions, busy: busy) { question, answer in
+                        Task { await self.answer(question, answer) }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
                 }
-                .onChange(of: pending) { _, _ in
-                    scrollToEnd(proxy)
+                if shownBlocks.isEmpty {
+                    Text("No transcript yet.")
+                        .fmText(.bodyMedium, color: fm.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                } else {
+                    AgentTranscriptBlocksView(blocks: shownBlocks, repo: row.repoOwner.isEmpty || row.repoName.isEmpty ? nil : RepoRef(owner: row.repoOwner, name: row.repoName))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, FmSpace.x2)
                 }
             }
             if !error.isEmpty {
@@ -413,12 +406,6 @@ struct AgentRunScreen: View {
     private var followsCloudLive: Bool { isRunnerRun && active && !liveRefused }
 
     private var shownBlocks: [TranscriptBlock] { pending.isEmpty ? blocks : blocks + pending.blocks }
-
-    private func scrollToEnd(_ proxy: ScrollViewProxy) {
-        let last = shownBlocks.count - 1
-        if last < 0 { return }
-        DispatchQueue.main.async { proxy.scrollTo(last, anchor: .bottom) }
-    }
 
     @ViewBuilder private var changesLink: some View {
         if row.isDesktop, row.localId > 0, let client = AgentOpsFeature.client {
@@ -730,6 +717,7 @@ struct AgentRunScreen: View {
         let text = prompt
         let images = photos
         if text.dartTrimmed.isEmpty && images.isEmpty { return }
+        sent += 1
         prompt = ""
         photos = []
         notice = ""

@@ -72,6 +72,7 @@ const QString kExternalClaudeMemberPrefix = QStringLiteral("claude:");
 
 struct ExternalTranscriptRead {
     bool full = false;
+    bool redraw = false;
     qint64 newOffset = 0;
     qint64 addedTokens = 0;
     QList<QJsonObject> events;
@@ -2248,6 +2249,8 @@ void MainWindow::renderExternalTranscript(int sessionId, bool full)
         return;
     }
 
+    const bool redraw = full && m_renderedExternalSession == sessionId &&
+                        m_renderedCloudSession != sessionId;
     if (full) {
         ++m_agentTranscriptRenderGeneration;
         m_agentTranscriptRenderSession = -1;
@@ -2255,10 +2258,12 @@ void MainWindow::renderExternalTranscript(int sessionId, bool full)
         ++m_externalTranscriptRenderGeneration;
         m_externalTranscriptRenderSession = -1;
         m_externalTranscriptRenderEvents.clear();
-        m_agentTranscript->clear();
+        if (!redraw) {
+            m_agentTranscript->clear();
+            m_agentTranscript->setBulkPopulate(false);
+        }
         m_renderedTranscriptSession = -1;
         m_renderedExternalSession = sessionId;
-        m_agentTranscript->setBulkPopulate(false);
     }
 
     const qint64 offset = full ? -1 : m_externalReadOffset.value(sessionId, 0);
@@ -2267,13 +2272,14 @@ void MainWindow::renderExternalTranscript(int sessionId, bool full)
     m_externalTranscriptReads.insert(sessionId);
     m_externalTranscriptReadFull.insert(sessionId, full);
     runOffThread<ExternalTranscriptRead>(
-        [ext, offset, full, providerCredentialValues] {
+        [ext, offset, full, redraw, providerCredentialValues] {
             const forkmesh::BackgroundScope activity(
                 QStringLiteral("agents"),
                 QStringLiteral("read external agent transcript"),
                 forkmesh::ActionTelemetry::Execution::Worker);
             ExternalTranscriptRead result;
             result.full = full;
+            result.redraw = redraw;
             const qint64 start =
                 full ? ClaudeSessionScan::tailStartOffset(ext.path, 400 * 1024)
                      : offset;
@@ -2333,8 +2339,12 @@ void MainWindow::renderExternalTranscript(int sessionId, bool full)
             m_externalTranscriptRenderFull = result.full;
             m_externalTranscriptRenderTokens = result.addedTokens;
             m_externalTranscriptRenderRaw = std::move(result.raw);
-            m_agentTranscript->setBulkPopulate(result.full);
             if (result.full)
+                m_agentTranscript->setBatchHoldsFrame(result.redraw, false);
+            m_agentTranscript->setBulkPopulate(result.full);
+            if (result.redraw)
+                m_agentTranscript->clear();
+            else if (result.full)
                 m_agentTranscript->jumpToBottom();
             renderExternalTranscriptSlice(generation);
         });
