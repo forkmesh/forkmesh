@@ -31,6 +31,8 @@ pinned toolchain). Paths are relative to `server/`.
 | Path | Responsibility |
 | --- | --- |
 | `cmd/forkmesh-calls/main.go`, `rtc/` | The group-call server (SFU) and our own standard-library WebRTC stack: [rtc.md](rtc.md); the engine replacing WebRTC: [fm-media.md](fm-media.md) |
+| `rtc/quic/`, `rtc/h3/`, `rtc/webtransport/` | Our own QUIC v1, minimal HTTP/3 and WebTransport, standard library only: [quic.md](quic.md) |
+| `rtc/fmm/` | FM Media engine core: [fmm-protocol.md](fmm-protocol.md) |
 | `rtc/netsim/`, `rtc/bench/`, `../tools/call_bench.py` | Network impairment relay and the call-quality bench: [call-bench.md](call-bench.md) |
 | `cmd/forkmesh-mirror-node/main.go` | Flags and one-shot modes (`--init`, `--check`, `--preflight`, `--backup`, `--restore`, `--restore-drill`, `--export-identity`, `--import-identity`, `--register-link-code`, helper modes), then `Daemon.Run` |
 | `config.go` | `mirror-node.json` schema, defaults, strict validation; `role`, `runner`, `runnerPool` |
