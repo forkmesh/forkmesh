@@ -497,17 +497,24 @@ class StaticAssets:
         stat = value.stat()
         headers = self._headers(value, stat)
         source = value
+        if redirects:
+            self.apply_header_rules(path, headers)
         if status == 200 and accept_encoding is not None:
             coding, copy, varies = precompressed_variant(value,
                                                          accept_encoding)
             if varies:
-                headers["vary"] = "accept-encoding"
+                vary = [item.strip() for item in
+                        str(headers.get("vary") or "").split(",")
+                        if item.strip()]
+                if "accept-encoding" not in [item.lower() for item in vary]:
+                    vary.append("accept-encoding")
+                headers["vary"] = ", ".join(vary)
             if coding:
                 source = copy
                 headers["content-encoding"] = coding
                 headers["etag"] = headers["etag"][:-1] + "-%s\"" % coding
-        if redirects:
-            self.apply_header_rules(path, headers)
+            else:
+                headers.pop("content-encoding", None)
         if status == 200 and if_none_match and \
                 headers["etag"] in if_none_match:
             return _js.Response(None, 304, "", _js.Headers(headers))

@@ -110,6 +110,21 @@ def test_gzip_when_brotli_is_refused_or_absent(tmp_path):
         assert headers["etag"].endswith('-gzip"')
 
 
+def test_headers_rules_cannot_break_the_encoding(tmp_path):
+    assets = _tree(tmp_path)
+    (tmp_path / "_headers").write_text(
+        "/app.js\n  Vary: Origin\n  Content-Encoding: identity\n")
+    status, headers, body = _get(assets, "/app.js",
+                                 [(b"accept-encoding", b"br")])
+    assert status == 200 and _encoding(headers) == "br"
+    assert body == b"BROTLI-COPY"
+    assert headers["vary"] == "Origin, accept-encoding"
+    status, headers, body = _get(assets, "/app.js",
+                                 [(b"accept-encoding", b"identity")])
+    assert status == 200 and _encoding(headers) is None
+    assert body == SCRIPT
+
+
 def test_identity_fallback_still_varies(tmp_path):
     assets = _tree(tmp_path)
     for headers_in in ([], [(b"accept-encoding", b"identity")],
