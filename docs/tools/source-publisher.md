@@ -142,8 +142,10 @@ and wakes the other cores.
 every pass pushes `main` and the tags from the bare mirror to each line of
 `config/fanout/github` (`<name> https://github.com/<owner>/<repo>.git
 [token-file]`). The token file defaults to `config/fanout/github-token` (one
-GitHub token with `repo` scope, mode 600). The token goes to git through
-`GIT_CONFIG_VALUE_0`, never the command line, and is masked in errors.
+GitHub classic token with `repo` and `workflow` scopes, mode 600; without
+`workflow` GitHub refuses any `main` that touches `.github/workflows/`).
+The token goes to git through `GIT_CONFIG_VALUE_0`, never the command line,
+and is masked in errors.
 
 - Only `main` and tags go to GitHub. Agent and feature branches stay local
   and on the forge.
@@ -155,11 +157,13 @@ GitHub token with `repo` scope, mode 600). The token goes to git through
   mirror's result under `github`.
 - Contributions land on the forge, not GitHub. Pull requests opened on GitHub
   are reviewed and reapplied by hand.
-- On 2026-10-21 GitHub `main` (`eb1db58be1`, history from before the
-  2026-10-08 rewrite) was replaced by ours with a one-time force push. The
-  old commits stay reachable through GitHub's `refs/pull/1-3`; only deleting
-  the repository or GitHub support removes them. A bundle of the old `main`
-  is kept in `~/projects/forkmesh-owasp-backup-2026-10-08/`.
+- GitHub `main` (`eb1db58be1`, 2026-07-29) predates the 2026-10-08 history
+  rewrite and shares no history with ours, so the first sync replaces it with
+  a one-time `--force-with-lease=refs/heads/main:eb1db58be1…` push; after that
+  the publisher's fast-forward pushes keep it current. The old commits stay
+  reachable through GitHub's `refs/pull/1-3` until the repository is deleted
+  or GitHub support purges them. A bundle of the old `main` and PR heads is in
+  `data/core/state/github-mirror/github-forkmesh-before-2026-10-21.bundle`.
 
 ## Merges made on the cores
 
