@@ -4645,6 +4645,12 @@ async def repository_pull_merge_handler(
                                      actor_bi, override_review)
                 except Exception:
                     pass
+            try:
+                await _self_update.on_merge(
+                    env, context["owner"], context["repo"], int(pull_number),
+                    actor, result)
+            except Exception:
+                pass
             await queue_repo_webhook_event(
                 env, context["owner"], context["repo"], "pull.merged",
                 {
