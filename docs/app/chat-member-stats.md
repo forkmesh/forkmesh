@@ -53,43 +53,13 @@ issues opened, and reviews of someone else's pull request, over the trailing
 365 days. Each repository answers `GET /api/repo/<owner>/<repo>/pulse?view=people`
 with every human's figures, an activity-day bitmap and the time of their last
 activity (`view=people` takes no `period` or `person`; the gateway caches it
-per hour).
-
-Pulse identifies a person by the case-folded name on their commits and ledger
-records. The sweep maps those identities to accounts in two ways:
-
-- **Verified email.** For a repository hosted on the instance's core nodes,
-  the sweep asks a core for `pulse?view=people&emails=1` with a router
-  capability (`hosted_git.hosted_people_with_emails`). That answer adds up to
-  five commit author addresses per identity. The gateway refuses `emails` on
-  every public spelling of the read (404, before its answer cache), marks the
-  answer `private, no-store`, and neither the Worker router
-  (`_https_mirror_request_query`, `edge_routing.masked_target_url`) nor the
-  host fast path forwards the parameter from a visitor. The sweep blind-indexes
-  each address and finds accounts by `users.email_bi`, then decrypts each
-  match and accepts it only when that account's email is verified, equal to
-  the address, and the account is an active person. Addresses are only
-  compared; nothing about them is stored.
-- **Account name.** Otherwise the identity counts for the account spelled the
-  same (`AliceW` and `alicew` match, `Jane Doe` and `jane` do not).
-
-A verified email wins over the spelling. An identity whose addresses belong
-to two different accounts is ambiguous, so only its spelling counts. Several
-identities of one person, such as a full-name commit identity and the
-account-name pull request identity, describe different work: their figures
-add up and their days merge. One `users` query per repository covers both
-kinds of match. A repository whose core does not answer is read through the
-public `pulse?view=people` instead, and only names are matched.
-
+per hour). People are identified exactly as Pulse identifies them: by the
+case-folded name on their commits and ledger records, so a git author or
+record author counts for an account only when the name is spelled the same as
+the account name (`AliceW` and `alicew` match, `Jane Doe` and `jane` do not).
 Pulse's humans-only rules apply first (bots, AI agents, the platform's service
 identities, mirror nodes, `ACTIVITY_EXCLUDE_AUTHORS`), and the member line's
-own account-name rule applies again to the matched account.
-
-The repository Insights leaderboard keeps matching by name only. It is
-computed by the gateway from public data for any reader, and matching
-addresses needs the instance's account emails, which only the app holds;
-doing it there would mean sending account data to the gateway or publishing
-an address-to-account map.
+own account-name rule applies again on top.
 
 Which repositories count:
 
@@ -172,8 +142,7 @@ Rows grew from a fixed 40px to a 40px minimum with 4px padding. Colours are the
 | Path | Responsibility |
 | --- | --- |
 | `app/src/chat_member_stats.py` | Route, membership filter, batched reads, memo, repository sweep |
-| `tools/mirror_gateway.py` | `pulse?view=people` (`GitRepository.pulse_people`), `emails=1` for a capability |
-| `app/src/hosted_git.py` | `hosted_people_with_emails`: the capability-signed core read |
+| `tools/mirror_gateway.py` | `pulse?view=people` (`GitRepository.pulse_people`) |
 | `app/src/entry.py` | `member-activity` cron phase |
 | `app/migrations/0281_member_repo_activity.sql` | `member_repo_activity`, `member_activity_repos` |
 | `app/src/app_runtime.py` | Routes `/api/chat/member-stats` |

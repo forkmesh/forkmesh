@@ -4989,10 +4989,6 @@ SCHEMA_STATEMENTS = [
         account_bi TEXT PRIMARY KEY,
         window_start INTEGER NOT NULL,
         count INTEGER NOT NULL)""",
-    # Chat member activity line, repository source (docs/app/
-    # chat-member-stats.md): one row per counted public repository and
-    # account with that person's Pulse figures for the trailing year, rebuilt
-    # by the member-activity cron phase. A derived cache: emptied on rekey.
     """CREATE TABLE IF NOT EXISTS member_repo_activity (
         repo_bi TEXT NOT NULL,
         user_bi TEXT NOT NULL,
