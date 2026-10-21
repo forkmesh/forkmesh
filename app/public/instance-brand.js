@@ -267,8 +267,16 @@
     (document.head || document.documentElement).append(style);
   };
 
+  const pluginsStyled = () => {
+    try {
+      return getComputedStyle(document.documentElement).getPropertyValue("--instance-plugins").trim() === "ready";
+    } catch {
+      return false;
+    }
+  };
+
   const start = () => {
-    hidePlugins(null);
+    if (!pluginsStyled()) hidePlugins(null);
     legalStyle();
     if (document.title.indexOf("ForkMesh") !== -1) document.title = swap(document.title);
     walk(document);

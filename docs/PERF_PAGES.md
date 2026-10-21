@@ -35,8 +35,10 @@ server-rendered first view was a narrow, differently styled table (blue
 `name/` links, no tabs, no About rail) that dashboard.js swapped for the full
 interface 300-800 ms later (several seconds on a slow device); the header was
 drawn with signed-in controls and blank icon boxes that became "Sign Up / Log
-In" and icons after the session check. Layout-shift scores missed most of it
-because a replaced block is not a shift. What each page now paints first:
+In" and icons after the session check; the instance name beside the logo and
+the hiding of switched-off plugin links came from `instance-brand.js` after
+the first paint. Layout-shift scores missed most of it because a replaced
+block is not a shift. What each page now paints first:
 
 | Piece | Now |
 |---|---|

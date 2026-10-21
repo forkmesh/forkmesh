@@ -293,3 +293,37 @@ def rename_error_body(env, body):
         return body
     text = json.dumps(payload, separators=(",", ":"))
     return text.encode("utf-8") if isinstance(body, bytes) else text
+
+
+CHROME = ":is(header, nav, aside, footer)"
+PLUGIN_ELEMENTS = {"genie": ".fm-genie, .fm-genie-bubble, .fm-genie-fx, genie-spider"}
+OFFSITE_PAGES = {"/world": "https://world.forkmesh.com"}
+
+
+def _css_string(value):
+    return '"%s"' % value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def chrome_css(env):
+    on = enabled_ids(env)
+    rules = [":root{--instance-plugins:ready}"]
+    for feature in FEATURES:
+        if feature[0] in on:
+            continue
+        selectors = ['[data-instance-plugin~=%s]' % _css_string(feature[0])]
+        items = []
+        if feature[0] in PLUGIN_ELEMENTS:
+            selectors.append(PLUGIN_ELEMENTS[feature[0]])
+        for path in feature[3]:
+            if path.startswith("/api/") or not path.startswith("/"):
+                continue
+            exact, below = _css_string(path), _css_string(path.rstrip("/") + "/")
+            items.append("%s li:has(> a[href=%s])" % (CHROME, exact))
+            selectors.append("%s a[href=%s]" % (CHROME, exact))
+            selectors.append("%s a[href^=%s]" % (CHROME, below))
+            if path in OFFSITE_PAGES:
+                selectors.append("%s a[href^=%s]" % (CHROME, _css_string(OFFSITE_PAGES[path])))
+        rules.append("%s{display:none !important}" % ",".join(selectors))
+        if items:
+            rules.append("%s{display:none !important}" % ",".join(items))
+    return "\n".join(rules) + "\n"

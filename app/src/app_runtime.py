@@ -1957,7 +1957,8 @@ class Default:
         if url.path == "/instance-theme.css" and instance_branded(self.env) \
                 and method_name(request) in ("GET", "HEAD"):
             return self._without_head_body(request, Response(
-                instance_theme.css(await self._instance_theme()), status=200,
+                instance_theme.css(await self._instance_theme())
+                + instance_features.chrome_css(self.env), status=200,
                 headers={"content-type": "text/css; charset=utf-8",
                          "cache-control": "public, max-age=60"}))
         if instance_branded(self.env) and \
