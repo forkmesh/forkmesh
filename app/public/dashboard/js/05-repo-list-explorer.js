@@ -1730,6 +1730,22 @@
     }
     const node = externalMirrorNodeName();
     if (!node) {
+      // No node to lend, but this forge's core nodes can host a copy: import
+      // it here instead of sending the visitor to install the desktop app.
+      if (!hostedSettings) await loadHostedSettings();
+      const original = String(repository?.originalUrl || "").trim();
+      if (hostedImportAllowed(original)) {
+        const name = String(repository?.name || "").trim();
+        if (!window.confirm(`Import a public copy of ${original} into your account on ${platformName()}? The core nodes host it; you can push to it afterwards.`)) return;
+        setNewRepoModalOpen(true);
+        await createHostedRepository({
+          name,
+          visibility: "public",
+          description: String(repository?.description || "").slice(0, 300),
+          importUrl: original,
+        });
+        return;
+      }
       // Nothing to volunteer with yet: explain the desktop handoff instead of
       // silently doing nothing (issue #680).
       if (!openExternalMirrorHandoff(repository)) {
@@ -2703,6 +2719,7 @@
     if (tab === "settings") {
       loadRepoFediverse(state.selectedRepo);
       void loadRepoSettingsLogo(state.selectedRepo);
+      void loadRepoCollaborators(state.selectedRepo);
       loadRepoDigestPreview(state.selectedRepo);
       void loadRepoWebhooks(state.selectedRepo);
       void loadRepoProviderMirror(state.selectedRepo);
@@ -3568,7 +3585,7 @@
     const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
     if (branchInput) branchInput.readOnly = proposing;
     const saveLabel = editor.querySelector("[data-repo-file-editor-save-label]");
-    if (saveLabel) saveLabel.textContent = proposing ? "Propose changes" : "Save";
+    if (saveLabel) saveLabel.textContent = proposing ? "Propose changes" : (editor.dataset.repoFileDoneLabel || "Save");
   }
 
   async function probeRepoFileEditAccess(viewer, editor, repo, signal) {
@@ -3798,6 +3815,314 @@
     if (mode !== viewer.dataset.repoFileCurrentMode) viewer.dataset.repoFileCurrentMode = mode;
   }
 
+  // Rename/move or delete the open file, from the browser: a commit for a
+  // writer, or a signed pull request that proposes it for everyone else,
+  // through /file-edit's "rename" and "delete" operations.
+  function openRepoFileMoveForm(viewer, repo, path, content, lines, meta, op) {
+    const shell = viewer?.querySelector("[data-repo-file-shell]");
+    const fileContent = viewer?.querySelector("[data-repo-file-content]");
+    if (!shell || !fileContent) return;
+    viewer.querySelector("[data-repo-file-editor]")?.remove();
+    viewer._repoFileEditorAbort?.abort();
+    const controller = new AbortController();
+    viewer._repoFileEditorAbort = controller;
+    const deleting = op === "delete";
+    const currentBranch = repoSelectedBranch(repo) || repoDefaultBranch(repo) || "main";
+    const branchListId = `repo-file-move-branches-${Date.now().toString(36)}`;
+    const options = repoFileEditorBranchOptions(repo, currentBranch)
+      .map((branch) => `<option value="${escapeHtml(branch)}"></option>`).join("");
+    const editor = document.createElement("form");
+    editor.dataset.repoFileEditor = "true";
+    editor.dataset.repoFileMove = op;
+    editor.className = "grid gap-3 border-t border-border bg-background p-3";
+    editor.innerHTML = `
+      <p data-repo-file-editor-notice hidden class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-file-editor-notice-text>${escapeHtml(REPO_FILE_PROPOSE_NOTICE)}</span></p>
+      ${deleting
+        ? `<p class="flex items-start gap-2 text-sm text-foreground"><i data-lucide="trash-2" class="mt-0.5 h-4 w-4 shrink-0 text-destructive"></i><span>Delete <code class="font-mono text-xs">${escapeHtml(path)}</code>? The file's history stays in the repository.</span></p>`
+        : `<label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span>New path</span>
+            <input data-repo-file-move-path required autocomplete="off" spellcheck="false" value="${escapeHtml(path)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+          </label>`}
+      <div class="grid gap-2 md:grid-cols-[minmax(12rem,18rem)_1fr_auto]">
+        <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span data-repo-file-editor-branch-label>Branch</span>
+          <input data-repo-file-editor-branch list="${escapeHtml(branchListId)}" value="${escapeHtml(currentBranch)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+          <datalist id="${escapeHtml(branchListId)}">${options}</datalist>
+        </label>
+        <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+          <span>Commit message</span>
+          <input data-repo-file-editor-message value="${escapeHtml(`${deleting ? "Delete" : "Rename"} ${repoFileName(path)}`)}" class="h-9 rounded-md border border-border bg-background px-3 text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+        </label>
+        <div class="flex items-end gap-2">
+          <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
+          <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-xs font-medium transition-colors ${deleting ? "border-destructive/50 bg-destructive text-white" : "border-primary/50 bg-cta text-cta-foreground hover:bg-cta/90"}"><i data-lucide="${deleting ? "trash-2" : "file-pen"}" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>${deleting ? "Delete file" : "Rename"}</span></button>
+        </div>
+      </div>
+      <label data-repo-file-editor-propose-wrap class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+        <input type="checkbox" data-repo-file-editor-propose class="h-3.5 w-3.5 rounded border-border accent-primary">
+        <span>Propose as a pull request instead of committing</span>
+      </label>`;
+    fileContent.classList.add("hidden");
+    viewer.querySelector("[data-repo-file-modes]")?.classList.add("hidden");
+    shell.appendChild(editor);
+    window.lucide?.createIcons();
+    const pathInput = editor.querySelector("[data-repo-file-move-path]");
+    const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+    const messageInput = editor.querySelector("[data-repo-file-editor-message]");
+    const saveButton = editor.querySelector("[data-repo-file-editor-save]");
+    const doneLabel = deleting ? "Delete file" : "Rename";
+    const cancel = () => closeRepoFileEditor(viewer, repo, path, content, lines, { ...meta });
+    editor.querySelector("[data-repo-file-editor-cancel]")?.addEventListener("click", cancel, { signal: controller.signal });
+    editor.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+      }
+    }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-propose]")?.addEventListener("change", (event) => {
+      setRepoFileEditorProposing(editor, Boolean(event.target.checked));
+      if (event.target.checked && branchInput) branchInput.value = currentBranch;
+    }, { signal: controller.signal });
+    editor.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const newPath = deleting ? "" : normalizedNewFilePath(pathInput?.value);
+      if (!deleting && (!newPath || newPath.endsWith("/") || newPath === path)) {
+        updateRepoFileStatus(viewer, "Enter a different path for the file.", "bad");
+        pathInput?.focus();
+        return;
+      }
+      const message = String(messageInput?.value || "").trim();
+      const proposing = editor.dataset.repoFileEditorMode === "propose";
+      const branch = proposing ? currentBranch : String(branchInput?.value || "").trim();
+      const request = { op, path, branch, oid: String(meta?.oid || ""), message };
+      if (!deleting) request.newPath = newPath;
+      saveButton.disabled = true;
+      let proposal = null;
+      try {
+        if (proposing) {
+          updateRepoFileStatus(viewer, "Preparing your proposed change...", "good");
+          proposal = await repoFileEditRequest(repo, { ...request, mode: "propose" });
+          await proposeRepoFileEdit(viewer, repo, proposal);
+          return;
+        }
+        updateRepoFileStatus(viewer, deleting ? "Deleting the file..." : "Renaming the file...", "good");
+        const payload = await repoFileEditRequest(repo, { ...request, mode: "commit", baseRef: currentBranch });
+        controller.abort();
+        if (payload.branch) state.selectedBranches[repoKey(repo)] = payload.branch;
+        if (deleting) {
+          const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+          navigateHistory(repoLinkUrl(repo, "tree", folder));
+          await loadRepositoryTree(repo, folder);
+        } else {
+          navigateHistory(repoLinkUrl(repo, "blob", newPath));
+          await loadRepositoryBlob(repo, newPath);
+          updateRepoFileStatus(viewer, `Renamed from ${path}.`, "good");
+        }
+      } catch (error) {
+        saveButton.disabled = false;
+        if (!proposal && error?.status === 401) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        if (error?.status === 403 && error?.data?.canPropose) {
+          setRepoFileEditorProposing(editor, true, { access: "propose" });
+          if (branchInput) branchInput.value = currentBranch;
+        }
+        updateRepoFileStatus(viewer, proposal
+          ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayName(repo))
+          : error?.code === "conflict" && !deleting && /already has that name/.test(error?.message || "")
+            ? "A file or folder already has that name."
+            : repoFileEditError(error), "bad");
+      }
+    }, { signal: controller.signal });
+    editor.dataset.repoFileEditorBase = currentBranch;
+    editor.dataset.repoFileDoneLabel = doneLabel;
+    setRepoFileEditorProposing(editor, false);
+    void probeRepoFileEditAccess(viewer, editor, repo, controller.signal);
+    (pathInput || saveButton)?.focus();
+    updateRepoFileStatus(viewer, deleting ? "Confirm to delete this file." : "Choose the new path.", "good");
+  }
+
+  // The folder the Code tab is showing (the breadcrumb's last folder; a file
+  // view counts as its folder), so Add file starts there like on GitHub.
+  function currentRepoBrowseFolder() {
+    const crumb = $("[data-repo-detail] [data-repo-breadcrumb]");
+    const folders = [...(crumb?.querySelectorAll("[data-dashboard-tree-path]") || [])];
+    return String(folders.at(-1)?.dataset.dashboardTreePath || "");
+  }
+
+  function normalizedNewFilePath(value) {
+    return String(value || "").trim().replace(/\\/g, "/").replace(/^\/+/, "").replace(/\/{2,}/g, "/");
+  }
+
+  // Add file > Create new file, in the browser: a path, the text, and either
+  // a commit to a branch (repository writers) or a signed pull request that
+  // proposes the file (everyone else). Both go through /file-edit with
+  // create: true, the same route that edits an existing file.
+  function openRepoNewFile(repo, folder = currentRepoBrowseFolder()) {
+    const detail = $("[data-repo-detail]");
+    const viewer = detail?.querySelector("[data-repo-blob]");
+    if (!viewer || !repo) return;
+    setRepoTab("code");
+    detail.querySelector("[data-repo-tree-panel]")?.classList.add("hidden");
+    detail.querySelector("[data-repo-readme]")?.classList.add("hidden");
+    viewer.classList.remove("hidden");
+    viewer._repoFileEditorAbort?.abort();
+    const controller = new AbortController();
+    viewer._repoFileEditorAbort = controller;
+    const currentBranch = repoSelectedBranch(repo) || repoDefaultBranch(repo) || "main";
+    const branchListId = `repo-new-file-branches-${Date.now().toString(36)}`;
+    const options = repoFileEditorBranchOptions(repo, currentBranch)
+      .map((branch) => `<option value="${escapeHtml(branch)}"></option>`).join("");
+    const prefix = folder ? `${folder.replace(/\/+$/, "")}/` : "";
+    viewer.innerHTML = `
+      <div data-repo-file-shell class="overflow-hidden rounded-lg border border-border bg-background">
+        <div class="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-border bg-secondary/40 px-3 py-2">
+          <span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="file-plus" class="h-4 w-4 text-muted-foreground"></i>New file</span>
+          <span data-repo-file-status role="status" class="min-w-0 font-mono text-[10px] text-muted-foreground">Name the file and write its contents.</span>
+        </div>
+        <form data-repo-file-editor="true" data-repo-new-file-form class="grid gap-3 p-3">
+          <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span>File path</span>
+            <input data-repo-new-file-path required autocomplete="off" spellcheck="false" value="${escapeHtml(prefix)}" placeholder="docs/notes.md" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+          </label>
+          <p data-repo-file-editor-notice hidden class="flex items-center gap-2 text-xs text-muted-foreground"><i data-lucide="git-pull-request" class="h-3.5 w-3.5 text-muted-foreground"></i><span data-repo-file-editor-notice-text>${escapeHtml(REPO_FILE_PROPOSE_NOTICE)}</span></p>
+          <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <label class="inline-flex h-8 cursor-pointer items-center gap-2 rounded-md border border-border px-3 font-medium text-foreground hover:bg-secondary"><i data-lucide="upload" class="h-3.5 w-3.5"></i>Upload a file instead<input type="file" data-repo-new-file-upload class="sr-only" /></label>
+            <span data-repo-new-file-upload-name></span>
+          </div>
+          <textarea data-repo-file-editor-content spellcheck="false" placeholder="Enter file contents here" class="min-h-[24rem] w-full resize-y rounded-md border border-border bg-black/20 p-3 font-mono text-xs leading-5 text-foreground outline-none focus:border-primary/70"></textarea>
+          <div class="grid gap-2 md:grid-cols-[minmax(12rem,18rem)_1fr_auto]">
+            <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span data-repo-file-editor-branch-label>Branch</span>
+              <input data-repo-file-editor-branch list="${escapeHtml(branchListId)}" value="${escapeHtml(currentBranch)}" class="h-9 rounded-md border border-border bg-background px-3 font-mono text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+              <datalist id="${escapeHtml(branchListId)}">${options}</datalist>
+            </label>
+            <label class="grid gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span>Commit message</span>
+              <input data-repo-file-editor-message placeholder="Create a file on the web" class="h-9 rounded-md border border-border bg-background px-3 text-xs normal-case tracking-normal text-foreground outline-none focus:border-primary/70">
+            </label>
+            <div class="flex items-end gap-2">
+              <button type="button" data-repo-file-editor-cancel class="inline-flex h-9 items-center rounded-md border border-border px-3 text-xs font-medium text-muted-foreground hover:bg-secondary hover:text-foreground transition-colors">Cancel</button>
+              <button type="submit" data-repo-file-editor-save class="inline-flex h-9 items-center gap-1.5 rounded-md border border-primary/50 bg-cta px-3 text-xs font-medium text-cta-foreground hover:bg-cta/90 transition-colors"><i data-lucide="save" class="h-3.5 w-3.5"></i><span data-repo-file-editor-save-label>Save</span></button>
+            </div>
+          </div>
+          <label data-repo-file-editor-propose-wrap class="inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <input type="checkbox" data-repo-file-editor-propose class="h-3.5 w-3.5 rounded border-border accent-primary">
+            <span>Propose as a pull request instead of committing</span>
+          </label>
+        </form>
+      </div>`;
+    window.lucide?.createIcons();
+    const editor = viewer.querySelector("[data-repo-new-file-form]");
+    const pathInput = editor.querySelector("[data-repo-new-file-path]");
+    const textarea = editor.querySelector("[data-repo-file-editor-content]");
+    const branchInput = editor.querySelector("[data-repo-file-editor-branch]");
+    const messageInput = editor.querySelector("[data-repo-file-editor-message]");
+    const saveButton = editor.querySelector("[data-repo-file-editor-save]");
+    const cancel = () => {
+      controller.abort();
+      void loadRepositoryTree(repo, folder);
+    };
+    // An uploaded file (an image, an archive, any bytes) goes up as base64
+    // and is committed exactly; the text box is set aside meanwhile.
+    let upload = null;
+    const uploadInput = editor.querySelector("[data-repo-new-file-upload]");
+    const uploadName = editor.querySelector("[data-repo-new-file-upload-name]");
+    uploadInput?.addEventListener("change", () => {
+      const file = uploadInput.files?.[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        updateRepoFileStatus(viewer, "Files up to 2 MB can be uploaded here.", "bad");
+        uploadInput.value = "";
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = String(reader.result || "");
+        upload = { name: file.name, size: file.size, base64: text.slice(text.indexOf(",") + 1) };
+        if (uploadName) uploadName.textContent = `${file.name} · ${formatSize(file.size)}`;
+        if (textarea) textarea.hidden = true;
+        const current = normalizedNewFilePath(pathInput?.value);
+        if (pathInput && (!current || current.endsWith("/") || current === prefix.replace(/\/$/, ""))) {
+          pathInput.value = `${prefix}${file.name}`;
+        }
+        updateRepoFileStatus(viewer, `Ready to upload ${file.name}.`, "good");
+      };
+      reader.onerror = () => updateRepoFileStatus(viewer, "Could not read that file.", "bad");
+      reader.readAsDataURL(file);
+    }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-cancel]")?.addEventListener("click", cancel, { signal: controller.signal });
+    editor.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        editor.requestSubmit();
+      }
+    }, { signal: controller.signal });
+    editor.querySelector("[data-repo-file-editor-propose]")?.addEventListener("change", (event) => {
+      setRepoFileEditorProposing(editor, Boolean(event.target.checked));
+      if (event.target.checked && branchInput) branchInput.value = currentBranch;
+    }, { signal: controller.signal });
+    editor.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const path = normalizedNewFilePath(pathInput?.value);
+      if (!path || path.endsWith("/")) {
+        updateRepoFileStatus(viewer, "Name the new file.", "bad");
+        pathInput?.focus();
+        return;
+      }
+      const content = upload ? upload.base64 : (textarea?.value || "");
+      const encoding = upload ? { encoding: "base64" } : {};
+      const message = String(messageInput?.value || "").trim() || `${upload ? "Upload" : "Create"} ${repoFileName(path)}`;
+      const proposing = editor.dataset.repoFileEditorMode === "propose";
+      const branch = proposing ? currentBranch : String(branchInput?.value || "").trim();
+      saveButton.disabled = true;
+      let proposal = null;
+      try {
+        if (proposing) {
+          updateRepoFileStatus(viewer, "Preparing your proposed file...", "good");
+          proposal = await repoFileEditRequest(repo, {
+            mode: "propose", path, branch, content, message, create: true, ...encoding,
+          });
+          await proposeRepoFileEdit(viewer, repo, proposal);
+          return;
+        }
+        updateRepoFileStatus(viewer, "Creating the file...", "good");
+        const payload = await repoFileEditRequest(repo, {
+          mode: "commit", path, branch, baseRef: currentBranch, content, message, create: true, ...encoding,
+        });
+        controller.abort();
+        if (payload.branch) state.selectedBranches[repoKey(repo)] = payload.branch;
+        navigateHistory(repoLinkUrl(repo, "blob", path));
+        await loadRepositoryBlob(repo, path);
+        const shortCommit = String(payload.commit || "").slice(0, 10);
+        updateRepoFileStatus(viewer, `Created on ${payload.branch || branch}${shortCommit ? ` at ${shortCommit}` : ""}.`, "good");
+      } catch (error) {
+        saveButton.disabled = false;
+        if (!proposal && error?.status === 401) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        if (error?.status === 403 && error?.data?.canPropose) {
+          setRepoFileEditorProposing(editor, true, { access: "propose" });
+          if (branchInput) branchInput.value = currentBranch;
+        }
+        updateRepoFileStatus(viewer, proposal
+          ? webPullSubmitErrorText(error, branch, proposal.head, repoDisplayName(repo))
+          : error?.code === "conflict" ? "A file with that name already exists. Choose another name or edit that file."
+          : repoFileEditError(error), "bad");
+      }
+    }, { signal: controller.signal });
+    editor.dataset.repoFileEditorBase = currentBranch;
+    setRepoFileEditorProposing(editor, false);
+    void probeRepoFileEditAccess(viewer, editor, repo, controller.signal);
+    pathInput?.focus();
+    pathInput?.setSelectionRange(prefix.length, prefix.length);
+  }
+
   function setRepoFileFullscreenFallback(shell, active) {
     if (!shell) return;
     shell.classList.toggle("fixed", active);
@@ -3859,6 +4184,16 @@
           return;
         }
         openRepoFileEditor(viewer, repo, path, content, lines, meta);
+      } else if (action === "rename" || action === "delete") {
+        if (repoReadOnlyMirror(repo)) {
+          updateRepoFileStatus(viewer, REPO_READ_ONLY_MIRROR_HINT, "bad");
+          return;
+        }
+        if (!state.session?.nodeName) {
+          location.href = repoFileSignInUrl();
+          return;
+        }
+        openRepoFileMoveForm(viewer, repo, path, content, lines, meta, action);
       } else if (action === "copy") {
         const copied = await copyTextToClipboard(content);
         if (copied) {

@@ -795,6 +795,8 @@
             </div>
             <div class="flex items-center gap-1.5">
               <button type="button" data-repo-file-action="edit" aria-label="Edit file" title="${repoReadOnlyMirror(repo) ? escapeHtml(REPO_READ_ONLY_MIRROR_HINT) : "Edit file"}"${repoReadOnlyMirror(repo) ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="pencil" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="rename" aria-label="Rename or move file" title="${repoReadOnlyMirror(repo) ? escapeHtml(REPO_READ_ONLY_MIRROR_HINT) : "Rename or move file"}"${repoReadOnlyMirror(repo) ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="file-pen" class="h-3.5 w-3.5"></i></button>
+              <button type="button" data-repo-file-action="delete" aria-label="Delete file" title="${repoReadOnlyMirror(repo) ? escapeHtml(REPO_READ_ONLY_MIRROR_HINT) : "Delete file"}"${repoReadOnlyMirror(repo) ? " disabled" : ""} class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>
               <button type="button" data-repo-file-action="raw" class="fm-btn fm-btn-sm">Raw</button>
               <button type="button" data-repo-file-action="copy" aria-label="Copy file contents" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="copy" class="h-3.5 w-3.5"></i></button>
               <button type="button" data-repo-file-action="download" aria-label="Download file" class="fm-btn fm-btn-sm fm-btn-icon"><i data-lucide="download" class="h-3.5 w-3.5"></i></button>
@@ -1742,6 +1744,9 @@
       startDate: Number(project.startDate || 0) || 0,
       endDate: Number(project.endDate || 0) || 0,
       createdAtMs: Number(project.createdAt || 0) || 0,
+      // ProjectStore::isDeleted: a "delete" of "self" tombstones it.
+      deleted: (Array.isArray(project.events) ? project.events : [])
+        .some((event) => event?.type === "delete" && event?.target === "self"),
     };
   }
 
@@ -5216,8 +5221,12 @@
       const action = options.canMark && ev.id
         ? `<button type="button" data-repo-discussion-answer="${escapeHtml(isAnswer ? "" : ev.id)}" data-repo-discussion-answer-number="${escapeHtml(options.number)}" class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-foreground hover:bg-secondary disabled:opacity-50"><i data-lucide="${isAnswer ? "circle-x" : "circle-check"}" class="h-3.5 w-3.5 text-muted-foreground"></i>${isAnswer ? "Clear answer" : "Mark as answer"}</button>`
         : "";
-      const footer = badge || action
-        ? `<div class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3 px-4 pb-3"><span aria-hidden="true"></span><div class="flex flex-wrap items-center gap-2">${badge}${action}</div></div>`
+      // The owner's moderation, like the desktop's Delete on a reply card.
+      const remove = options.canModerate && ev.id
+        ? `<button type="button" data-repo-discussion-delete="${escapeHtml(ev.id)}" data-repo-discussion-delete-number="${escapeHtml(options.number)}" aria-label="Delete this reply" class="inline-flex h-control-sm items-center gap-1.5 rounded-md border border-border px-2 text-control text-destructive hover:bg-secondary disabled:opacity-50"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i>Delete</button>`
+        : "";
+      const footer = badge || action || remove
+        ? `<div class="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3 px-4 pb-3"><span aria-hidden="true"></span><div class="flex flex-wrap items-center gap-2">${badge}${action}${remove}</div></div>`
         : "";
       return `<div data-repo-discussion-reply data-answer="${isAnswer ? "true" : "false"}" class="border-t border-border first:border-t-0">${renderPullConversationEvent(ev)}${footer}</div>`;
     }).join("");
@@ -5241,6 +5250,54 @@
     } catch (_) {
       return false;
     }
+  }
+
+  // Closing, archiving and deleting replies are the repository owner's, as on
+  // the desktop (its buttons need the owner's working tree). On the web the
+  // owner's or an organization owner's account session is the proof the relay
+  // checks, so the controls follow the same rule.
+  async function loadRepoDiscussionModeration(repo) {
+    if (!repo || !state.session?.sessionToken) return false;
+    if (isRepoOwner(repo)) return true;
+    try {
+      const profile = await orgApiRequest(
+        "GET",
+        `/api/orgs/${encodeURIComponent(repo.owner || "")}`,
+      );
+      return String(profile?.viewerRole || "") === "owner";
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // discussion.md's status the way DiscussionStore reads it: anything but
+  // closed or archived is open.
+  function discussionStatus(value) {
+    const status = String(value || "").trim().toLowerCase();
+    return status === "closed" || status === "archived" ? status : "open";
+  }
+
+  // Closed and archived discussions are read-only for everyone (the desktop's
+  // addComment refuses, and mirrors drop late replies).
+  function renderDiscussionLockedNotice(status) {
+    const archived = status === "archived";
+    return `<div data-repo-discussion-locked="${escapeHtml(status)}" class="flex items-start gap-2 border-t border-border bg-secondary/20 px-4 py-3 text-[14px] text-muted-foreground"><i data-lucide="${archived ? "archive" : "lock"}" class="mt-0.5 h-4 w-4 shrink-0"></i><span>${archived ? "This discussion is archived. It is read-only." : "This discussion is closed. New replies are turned off."}</span></div>`;
+  }
+
+  function renderDiscussionModerationBar(number, status) {
+    const button = (target, icon, label) => `<button type="button" data-repo-discussion-status="${target}" data-repo-discussion-status-number="${escapeHtml(number)}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-foreground transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="${icon}" class="h-4 w-4 text-muted-foreground"></i>${label}</button>`;
+    const buttons = status === "archived"
+      ? button("open", "archive-restore", "Unarchive discussion")
+      : [
+        status === "closed"
+          ? button("open", "rotate-ccw", "Reopen discussion")
+          : button("closed", "circle-check", "Close discussion"),
+        button("archived", "archive", "Archive discussion"),
+      ].join("");
+    const remove = `<button type="button" data-repo-discussion-remove="${escapeHtml(number)}" class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-secondary px-3 text-[14px] font-medium text-destructive transition-colors hover:bg-secondary/70 disabled:opacity-50"><i data-lucide="trash-2" class="h-4 w-4"></i>Delete discussion</button>`;
+    return `<div data-repo-discussion-moderation class="flex flex-wrap items-center justify-end gap-2 border-t border-border px-4 py-3">
+        <span data-repo-discussion-moderation-hint class="mr-auto text-[12px] text-muted-foreground">Owner tools</span>${buttons}${remove}
+      </div>`;
   }
 
   async function loadRepoDiscussionConversation(repo, number) {
@@ -5318,7 +5375,7 @@
             <textarea data-repo-issue-comment-body data-mention-input="record" rows="5" aria-label="Comment body" placeholder="Use Markdown to format your comment" class="block min-h-[6.5rem] w-full resize-y border-0 bg-background px-3 py-2 text-[14px] text-foreground outline-none placeholder:text-muted-foreground"></textarea>
             <div data-repo-issue-comment-preview hidden class="min-h-[6.5rem] px-4 py-3 ${MD_BODY_CLASS}"></div>
             <div class="flex flex-wrap items-center justify-between gap-2 border-t border-dashed border-border px-3 py-1.5 text-[12px] text-muted-foreground">
-              <span class="inline-flex items-center gap-1.5"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Signed with your node key · Markdown is supported</span>
+              <span class="inline-flex items-center gap-1.5"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Signed in this browser · Markdown is supported</span>
               <span data-repo-issue-comment-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
             </div>
           </div>
@@ -5393,7 +5450,7 @@
           <textarea data-repo-discussion-reply-body data-mention-input="record" rows="3" placeholder="Write a reply. Markdown is supported." class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent"></textarea>
         </label>
         <div class="flex flex-wrap items-center justify-between gap-3">
-          <span data-repo-discussion-reply-hint class="text-[11px] text-muted-foreground">Sent to the maintainer's inbox for review.</span>
+          <span data-repo-discussion-reply-hint class="text-[11px] text-muted-foreground">Signed in this browser and sent to the repository's mirrors.</span>
           <button type="submit" data-repo-discussion-reply-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-50"><i data-lucide="send" class="h-4 w-4"></i>Reply</button>
         </div>
       </form>`;
@@ -5938,6 +5995,10 @@
 
   async function loadRepoPullMergeAuthorization(repo) {
     if (!repo || !state.session?.sessionToken) return false;
+    // A personal repository's owner merges from the web too; the relay
+    // refuses one that is linked to an organization, where only that
+    // organization's owners merge (_repository_owner_can_merge_repo).
+    if (sessionOwnsRepo(repo)) return true;
     try {
       const profile = await orgApiRequest(
         "GET",
@@ -6407,7 +6468,7 @@
   }
 
   const PULL_UPDATE_MESSAGES = {
-    forbidden: "Only an organization owner can update this branch through a mirror.",
+    forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can update this branch.",
     already_current: "This branch already contains the base branch.",
     merge_conflict: "The base branch conflicts with this branch; resolve it locally and push.",
     stale_base: "The base branch moved again; reload to review the new state.",
@@ -6675,8 +6736,8 @@
         : failed
           ? escapeHtml(merge.message || "The mirror could not confirm the merge. Retrying reuses the same idempotent request.")
           : waiveReview
-            ? `<strong class="text-foreground">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As an organization owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
-            : `As an organization owner you can merge this pull request into ${escapeHtml(baseBranch)} now. An online mirror lands the exact reviewed commits, the relay pins that state, and the rest of the mirrors — and the source of truth when it reconnects — sync to it.`;
+            ? `<strong class="text-foreground">Independent review recommended.</strong> ${escapeHtml(reviewReason)} Additional distinct approvals strengthen the review signal. As the owner you can merge into ${escapeHtml(baseBranch)} without them; the waiver is recorded in the audit log and in the pull-request ledger.`
+            : `As the owner you can merge this pull request into ${escapeHtml(baseBranch)} now. An online mirror lands the exact reviewed commits, the relay pins that state, and the rest of the mirrors — and the source of truth when it reconnects — sync to it.`;
     const frame = failed
       ? "fm-flash-danger"
       : merged
@@ -6784,7 +6845,7 @@
       parsed.pullMerge = { state: "merged", requestId };
     } else {
       const messages = {
-        forbidden: "Only an organization owner can merge this pull request on the web.",
+        forbidden: "Only the repository's owner (or, for an organization's repository, an owner of the organization) can merge this pull request.",
         merge_conflict: "The exact reviewed commits do not apply cleanly to the base branch.",
         stale_base: "The base branch changed; reload and review the new state.",
         stale_head: "The pull-request head changed; reload and review it again.",
@@ -7216,13 +7277,15 @@
       ? renderRepoPullFilesSection(pullPatch, pullViewed, { checks: parsed.pullChecks })
       : "";
     const discussionConversation = parsed.discussionConversation || [];
+    const discussionState = isDiscussions ? discussionStatus(values.status) : "";
     const discussionConversationSection = isDiscussions ? `
         <section class="overflow-hidden rounded-md border border-border sm:ml-14">
           <div class="flex items-center gap-2 border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))] px-4 py-2 text-[14px] font-semibold text-foreground">
             <i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>${formatCount(discussionConversation.length)} ${discussionConversation.length === 1 ? "reply" : "replies"}
           </div>
-          <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation, { answer: parsed.discussionAnswer, canMark: parsed.discussionAnswerAuthorized, number })}</div>
-          ${renderDiscussionReplyForm(number)}
+          <div data-repo-discussion-conversation data-empty="${discussionConversation.length ? "false" : "true"}">${renderRepoDiscussionConversation(discussionConversation, { answer: parsed.discussionAnswer, canMark: parsed.discussionAnswerAuthorized, canModerate: parsed.discussionModerationAuthorized, number })}</div>
+          ${discussionState === "open" ? renderDiscussionReplyForm(number) : renderDiscussionLockedNotice(discussionState)}
+          ${parsed.discussionModerationAuthorized ? renderDiscussionModerationBar(number, discussionState) : ""}
         </section>` : "";
     // The open section comes from the URL (/owner/repo/pull/93/files), so a
     // shared link and a re-render both land on the same tab the sender saw.
@@ -8355,6 +8418,107 @@
   // is therefore kept per browser and laid over what the mirror serves until
   // the mirror carries that event, or a newer status change from anywhere
   // supersedes it.
+  // Discussions get the same treatment for the owner's Close/Reopen/Archive
+  // and Delete discussion (issue #715's problem in another tab): sent through
+  // the relay they wait for a drain, so the next mirror read would undo them on
+  // screen. The signed event is kept per browser and laid over what mirrors
+  // serve until they serve the same state, or OPTIMISTIC_RECORD_TTL_MS passes.
+  const PENDING_DISCUSSION_STATE_STORAGE = "forkmesh.repoPendingDiscussionState";
+  const PENDING_DISCUSSION_STATE_LIMIT = 100;
+  let pendingDiscussionStateHydrated = false;
+
+  function pendingDiscussionStates() {
+    if (!pendingDiscussionStateHydrated) {
+      pendingDiscussionStateHydrated = true;
+      let stored = null;
+      try {
+        stored = JSON.parse(localStorage.getItem(PENDING_DISCUSSION_STATE_STORAGE) || "null");
+      } catch (_) { stored = null; }
+      const cutoff = Date.now() - OPTIMISTIC_RECORD_TTL_MS;
+      const restored = {};
+      Object.entries(stored && typeof stored === "object" ? stored : {})
+        .forEach(([key, entry]) => {
+          if (entry && typeof entry === "object" && ["status", "delete"].includes(entry.type)
+              && Number(entry.savedAt) > cutoff) {
+            restored[key] = entry;
+          }
+        });
+      state.repoPendingDiscussionState = {
+        ...restored,
+        ...(state.repoPendingDiscussionState || {}),
+      };
+    }
+    return state.repoPendingDiscussionState;
+  }
+
+  function persistPendingDiscussionStates() {
+    const pending = pendingDiscussionStates();
+    Object.keys(pending)
+      .sort((a, b) => Number(pending[b]?.savedAt || 0) - Number(pending[a]?.savedAt || 0))
+      .slice(PENDING_DISCUSSION_STATE_LIMIT)
+      .forEach((key) => { delete pending[key]; });
+    try {
+      localStorage.setItem(PENDING_DISCUSSION_STATE_STORAGE, JSON.stringify(pending));
+    } catch (_) { /* private mode or a full quota: the page copy still works */ }
+  }
+
+  // event: the signed "status" event, or a "delete" of the whole discussion.
+  function rememberPendingDiscussionState(repo, number, event) {
+    if (!["status", "delete"].includes(event?.type)) return;
+    pendingDiscussionStates()[optimisticRepoRecordKey(repo, "discussions", number)] = {
+      type: event.type, status: String(event.status || ""), id: String(event.id || ""), savedAt: Date.now(),
+    };
+    persistPendingDiscussionStates();
+  }
+
+  // The pending change for this discussion, or null once mirrors serve it:
+  // the same status for a status change, no discussion at all for a delete.
+  function pendingDiscussionStateFor(repo, number, servedStatus, served = true) {
+    const pending = pendingDiscussionStates();
+    const key = optimisticRepoRecordKey(repo, "discussions", number);
+    const entry = pending[key];
+    if (!entry) return null;
+    const settled = Number(entry.savedAt) <= Date.now() - OPTIMISTIC_RECORD_TTL_MS
+      || (entry.type === "status" && served
+        && String(servedStatus || "open").toLowerCase() === entry.status)
+      || (entry.type === "delete" && !served);
+    if (settled) {
+      delete pending[key];
+      persistPendingDiscussionStates();
+      return null;
+    }
+    return entry;
+  }
+
+  // Lay pending changes over a served discussion list: statuses move, deleted
+  // discussions are hidden.
+  function applyPendingDiscussionStates(repo, items) {
+    const rows = Array.isArray(items) ? items : [];
+    const served = new Set(rows.map((item) => String(item.number)));
+    const prefix = optimisticRepoRecordKey(repo, "discussions", "");
+    Object.keys(pendingDiscussionStates()).forEach((key) => {
+      if (key.startsWith(prefix) && !served.has(key.slice(prefix.length))) {
+        pendingDiscussionStateFor(repo, key.slice(prefix.length), "", false);
+      }
+    });
+    return rows.filter((item) => {
+      const entry = pendingDiscussionStateFor(repo, item.number, item.state, true);
+      if (!entry) return true;
+      if (entry.type === "delete") return false;
+      item.state = entry.status;
+      return true;
+    });
+  }
+
+  // The same for a served discussion page (parseFrontMatter shape).
+  function withPendingDiscussionState(repo, number, parsed) {
+    const entry = pendingDiscussionStateFor(repo, number, parsed?.values?.status, true);
+    if (entry?.type === "status") {
+      parsed.values = { ...(parsed.values || {}), status: entry.status };
+    }
+    return parsed;
+  }
+
   const PENDING_ISSUE_STATUS_STORAGE = "forkmesh.repoPendingIssueStatus";
   const PENDING_ISSUE_STATUS_LIMIT = 100;
   let pendingIssueStatusHydrated = false;
@@ -8707,9 +8871,13 @@
       }
       if (kind === "discussions") {
         const thread = await discussionConversation;
+        withPendingDiscussionState(repo, number, parsed);
         parsed.discussionConversation = thread.events;
         parsed.discussionAnswer = thread.answer;
-        parsed.discussionAnswerAuthorized = await loadRepoDiscussionAnswerAuthorization(repo, parsed.values || {});
+        [parsed.discussionAnswerAuthorized, parsed.discussionModerationAuthorized] = await Promise.all([
+          loadRepoDiscussionAnswerAuthorization(repo, parsed.values || {}),
+          loadRepoDiscussionModeration(repo),
+        ]);
       }
       if (optimistic) forgetOptimisticRepoRecord(repo, kind, number);
       // The reader may have left the optimistic detail while this poll ran.
@@ -10128,6 +10296,13 @@
   async function loadRepoProjects(repo) {
     const container = $("[data-repo-projects]");
     if (!container) return;
+    state.projectsView.manageable = false;
+    void repoReleasesManageable(repo).then((manageable) => {
+      state.projectsView.manageable = manageable;
+      const button = $("[data-repo-project-new]");
+      if (button) button.hidden = !manageable;
+      if (manageable && !container.querySelector("[data-repo-project-form]") && Array.isArray(state.projectsView.items)) renderRepoProjects();
+    });
     container.innerHTML = `<div class="px-4 py-3 text-sm text-muted-foreground">${loadingHtml("Loading projects from the live mirror...")}</div>`;
     try {
       let tree;
@@ -10135,6 +10310,7 @@
         tree = await fetchRepoJson(repoLiveUrl(repo, "tree", { path: ".forkmesh/projects" }));
       } catch (error) {
         if (isMissingMirrorFolder(error)) {
+          state.projectsView.nextNumber = 1;
           state.projectsView.items = [];
           state.projectsView.issues = [];
           renderRepoProjects();
@@ -10160,7 +10336,8 @@
         const blob = blobs[projectJsonPath(number)];
         if (!blob) return null;
         return parseProjectJson(blobText(blob), number);
-      }).filter(Boolean);
+      }).filter((project) => project && !project.deleted);
+      state.projectsView.nextNumber = dirs.reduce((max, entry) => Math.max(max, Number(entry.name) || 0), 0) + 1;
       // The gantt rows and progress bars need the linked issues' dates and
       // states, so read exactly those issue files in one batched request.
       const linkedNumbers = [...new Set(projects.flatMap((project) => project.issues))]
@@ -10213,13 +10390,166 @@
     </div>`;
     const emptyLabel = items.length
       ? `No ${view.filter === "all" ? "" : view.filter + " "}projects.`
-      : "No projects have been committed to this mirror yet. Create them from the desktop client's Projects tab.";
+      : "No projects yet. A project groups issues on a timeline with dates and a milestone.";
     container.innerHTML = filterBar + (filtered.length
       ? (view.mode === "gantt"
         ? renderRepoProjectsGantt(filtered, view.issues || [])
         : renderRepoProjectsList(filtered, view.issues || []))
       : `<div class="px-4 py-3 text-sm text-muted-foreground">${emptyLabel}</div>`);
     window.lucide?.createIcons();
+  }
+
+  function projectDateInput(ms) {
+    const value = Number(ms) || 0;
+    return value ? new Date(value).toISOString().slice(0, 10) : "";
+  }
+
+  function projectDateMs(text) {
+    const value = String(text || "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return 0;
+    const ms = Date.parse(`${value}T00:00:00Z`);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+
+  function projectIssueList(text) {
+    return [...new Set(String(text || "").split(/[\s,]+/)
+      .map((part) => Number(part.replace(/^#/, "")))
+      .filter((value) => Number.isInteger(value) && value > 0))].sort((a, b) => a - b);
+  }
+
+  // New / Edit project, in place of the list. Saved as signed project events
+  // through project-edit (submitWebProjectEvents).
+  function renderProjectForm(project = null) {
+    const field = "h-9 rounded-md border border-border bg-background px-3 text-sm text-foreground outline-none focus:border-accent";
+    return `
+      <form data-repo-project-form${project ? ` data-repo-project-editing="${project.number}"` : ""} class="grid gap-3 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="inline-flex items-center gap-2 text-sm font-semibold text-foreground"><i data-lucide="chart-gantt" class="h-4 w-4 text-muted-foreground"></i>${project ? `Edit project #${project.number}` : "New project"}</h3>
+          <button type="button" data-repo-project-cancel class="inline-flex h-8 items-center gap-1.5 rounded-md border border-border px-3 text-xs font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to projects</button>
+        </div>
+        <label class="grid gap-1 text-xs font-medium text-muted-foreground">Title
+          <input data-repo-project-title required maxlength="240" value="${escapeHtml(project?.title || "")}" class="${field}" />
+        </label>
+        <label class="grid gap-1 text-xs font-medium text-muted-foreground">Description
+          <textarea data-repo-project-body rows="4" class="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:border-accent">${escapeHtml(project?.body || "")}</textarea>
+        </label>
+        <div class="grid gap-2 sm:grid-cols-2">
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">Start
+            <input data-repo-project-start type="date" value="${projectDateInput(project?.startDate)}" class="${field}" />
+          </label>
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">End
+            <input data-repo-project-end type="date" value="${projectDateInput(project?.endDate)}" class="${field}" />
+          </label>
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">Milestone
+            <input data-repo-project-milestone maxlength="120" value="${escapeHtml(project?.milestone || "")}" placeholder="Optional (e.g. v1.0)" class="${field}" />
+          </label>
+          <label class="grid gap-1 text-xs font-medium text-muted-foreground">Linked issues
+            <input data-repo-project-issues value="${escapeHtml((project?.issues || []).map((n) => `#${n}`).join(", "))}" placeholder="#12, #15" class="${field}" />
+          </label>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <span data-repo-project-hint role="status" class="text-[11px] text-muted-foreground">Signed in this browser and committed to .forkmesh/projects/.</span>
+          <button type="submit" data-repo-project-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-60"><i data-lucide="save" class="h-4 w-4"></i>${project ? "Save project" : "Create project"}</button>
+        </div>
+      </form>`;
+  }
+
+  function openProjectForm(number = 0) {
+    const container = $("[data-repo-projects]");
+    if (!container) return;
+    const project = number ? (state.projectsView.items || []).find((item) => item.number === Number(number)) || null : null;
+    container.innerHTML = renderProjectForm(project);
+    window.lucide?.createIcons();
+    container.querySelector("[data-repo-project-title]")?.focus();
+  }
+
+  // The events that turn `before` (null for a new project) into the form's
+  // values: only what changed, in ProjectStore's vocabulary.
+  function projectFormEvents(before, values) {
+    const specs = [];
+    if (!before) {
+      specs.push({ type: "open", title: values.title, body: values.body });
+    } else {
+      if (values.title !== before.title) specs.push({ type: "title", title: values.title });
+      if (values.body !== before.body) specs.push({ type: "edit", body: values.body });
+    }
+    if ((values.startDate || values.endDate || before) && (values.startDate !== (before?.startDate || 0) || values.endDate !== (before?.endDate || 0))) {
+      specs.push({ type: "dates", startDate: values.startDate, endDate: values.endDate });
+    }
+    if (values.milestone !== (before?.milestone || "")) specs.push({ type: "milestone", milestone: values.milestone });
+    if (values.issues.join(",") !== (before?.issues || []).join(",")) specs.push({ type: "issues", issues: values.issues });
+    return specs;
+  }
+
+  function projectErrorText(error) {
+    return ({
+      forbidden: "You need write access to edit projects.",
+      bad_signature: "The project's signature was rejected. Reload the page and try again.",
+      invalid_event: "Check the project's title and fields.",
+      not_found: "That project is no longer in the repository.",
+      too_large: "This project's history is too large.",
+    })[error?.code] || (error?.status === 401 ? "Sign in to edit projects." : repoFileEditError(error));
+  }
+
+  async function handleProjectFormSubmit(repo, form) {
+    const hint = form.querySelector("[data-repo-project-hint]");
+    const submit = form.querySelector("[data-repo-project-submit]");
+    const number = Number(form.dataset.repoProjectEditing || 0);
+    const before = number ? (state.projectsView.items || []).find((item) => item.number === number) || null : null;
+    const values = {
+      title: String(form.querySelector("[data-repo-project-title]")?.value || "").trim(),
+      body: String(form.querySelector("[data-repo-project-body]")?.value || "").replace(/\s+$/, ""),
+      startDate: projectDateMs(form.querySelector("[data-repo-project-start]")?.value),
+      endDate: projectDateMs(form.querySelector("[data-repo-project-end]")?.value),
+      milestone: String(form.querySelector("[data-repo-project-milestone]")?.value || "").trim(),
+      issues: projectIssueList(form.querySelector("[data-repo-project-issues]")?.value),
+    };
+    const setHint = (text, bad) => {
+      if (!hint) return;
+      hint.className = `text-[11px] ${bad ? "text-destructive" : "text-muted-foreground"}`;
+      hint.textContent = text;
+    };
+    if (!values.title) {
+      setHint("Enter a title for the project.", true);
+      return;
+    }
+    const specs = projectFormEvents(before, values);
+    if (!specs.length) {
+      await loadRepoProjects(repo);
+      return;
+    }
+    if (submit) submit.disabled = true;
+    setHint("Saving…");
+    let target = number || Number(state.projectsView.nextNumber || 1);
+    try {
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          await submitWebProjectEvents(repo, target, specs);
+          break;
+        } catch (error) {
+          // Someone created a project meanwhile: sign again for the next number.
+          if (!number && error.code === "number_taken" && error.next && attempt < 2) {
+            target = error.next;
+            continue;
+          }
+          throw error;
+        }
+      }
+      await loadRepoProjects(repo);
+    } catch (error) {
+      if (submit) submit.disabled = false;
+      setHint(projectErrorText(error), true);
+    }
+  }
+
+  async function handleProjectQuickAction(repo, number, specs, confirmText = "") {
+    if (!number || (confirmText && !window.confirm(confirmText))) return;
+    try {
+      await submitWebProjectEvents(repo, number, specs);
+      await loadRepoProjects(repo);
+    } catch (error) {
+      window.alert(projectErrorText(error));
+    }
   }
 
   function setProjectFilter(filter) {
@@ -10244,6 +10574,12 @@
         const closed = issue && issue.status !== "open";
         return `<button type="button" data-repo-record-kind="issues" data-repo-record-number="${number}" title="${escapeHtml(issue ? issue.title : `issue #${number}`)}" class="rounded-full border border-border px-2 py-0.5 font-mono text-[10px] transition-colors hover:bg-secondary ${closed ? "text-muted-foreground line-through" : "text-foreground"}">#${number}</button>`;
       }).join("");
+      const manage = state.projectsView.manageable === true ? `
+            <span class="ml-auto inline-flex items-center gap-1">
+              <button type="button" data-repo-project-edit="${project.number}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="pencil" class="h-3 w-3"></i>Edit</button>
+              <button type="button" data-repo-project-status="${project.status === "open" ? "closed" : "open"}" data-repo-project-number="${project.number}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-foreground hover:bg-secondary"><i data-lucide="${project.status === "open" ? "circle-check" : "rotate-ccw"}" class="h-3 w-3"></i>${project.status === "open" ? "Close" : "Reopen"}</button>
+              <button type="button" data-repo-project-delete="${project.number}" class="inline-flex h-7 items-center gap-1 rounded-md border border-border px-2 text-[11px] font-medium text-destructive hover:bg-secondary"><i data-lucide="trash-2" class="h-3 w-3"></i>Delete</button>
+            </span>` : "";
       return `
         <div class="border-t border-border px-4 py-3">
           <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -10251,7 +10587,7 @@
             <span class="min-w-0 truncate text-sm font-semibold text-foreground">${escapeHtml(project.title)}</span>
             <span data-repo-record-state class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-[10px] font-mono text-foreground">${escapeHtml(project.status)}</span>
             ${dates ? `<span class="font-mono text-[10px] text-muted-foreground">${escapeHtml(dates)}</span>` : ""}
-            ${project.milestone ? `<span class="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"><i data-lucide="milestone" class="h-3 w-3"></i>${escapeHtml(project.milestone)}</span>` : ""}
+            ${project.milestone ? `<span class="inline-flex items-center gap-1 rounded-full border border-border bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"><i data-lucide="milestone" class="h-3 w-3"></i>${escapeHtml(project.milestone)}</span>` : ""}${manage}
           </div>
           ${project.body ? `<p class="mt-1 truncate text-xs text-muted-foreground">${escapeHtml(project.body).slice(0, 200)}</p>` : ""}
           <div class="mt-2 flex items-center gap-3">
@@ -10807,13 +11143,7 @@
             </label>
             ${select("sort", DISCUSSION_SORTS, "Sort by:")}
             ${select("status", DISCUSSION_STATUSES, "Filter:")}
-            <details data-repo-discussion-new class="relative">
-              <summary class="inline-flex h-8 cursor-pointer list-none items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</summary>
-              <div class="fm-popover absolute right-0 top-full z-30 mt-1 w-72 p-3 text-[12px] leading-5 text-muted-foreground">
-                <p class="font-semibold text-foreground">Start it from the desktop app</p>
-                <p class="mt-1">Discussions are signed by your node before they reach the mirrors, so new ones are created from the ${desktopBrand()}desktop app.</p>
-              </div>
-            </details>
+            <button type="button" data-repo-discussion-new class="inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">New discussion</button>
           </div>
           <div data-repo-discussions-columns class="grid min-w-0 gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
             <aside data-repo-collection-chrome class="grid min-w-0 content-start gap-4">
@@ -10823,7 +11153,7 @@
               </div>
               <div class="rounded-md border border-border p-4">
                 <h3 class="text-[16px] font-semibold text-foreground">Signed conversations</h3>
-                <p class="mt-2 text-[12px] leading-5 text-muted-foreground">Every discussion and reply here is signed by its author's node and served by the repository's mirrors.</p>
+                <p class="mt-2 text-[12px] leading-5 text-muted-foreground">Every discussion and reply is signed by its author, from this website or the apps, and served by the repository's mirrors.</p>
               </div>
               <a href="${escapeHtml(repoLinkUrl(repo, "blob", "CONTRIBUTING.md"))}" class="inline-flex items-center gap-2 px-2 text-[14px] text-muted-foreground hover:text-[var(--dashboard-link)]"><i data-lucide="heart-handshake" class="h-4 w-4"></i>Contributing guide</a>
             </aside>
@@ -10863,8 +11193,10 @@
 
   function renderRepoDiscussions({ syncQuery = false } = {}) {
     const container = $("[data-repo-discussions]");
-    const loadedItems = state.repoCollectionItems.discussions;
-    if (!container || !Array.isArray(loadedItems)) return;
+    if (!container || !Array.isArray(state.repoCollectionItems.discussions)) return;
+    const loadedItems = state.selectedRepo
+      ? applyPendingDiscussionStates(state.selectedRepo, state.repoCollectionItems.discussions)
+      : state.repoCollectionItems.discussions;
     setRepoRecordOpen("discussions", false);
     const view = discussionView();
     const filtered = loadedItems.filter((item) => {
@@ -10881,7 +11213,9 @@
       : repoCollectionConfig.discussions.empty;
     container.innerHTML = visible.length
       ? renderDiscussionRows(visible)
-      : `<div class="fm-blankslate"><i data-lucide="messages-square"></i><p class="fm-blankslate-desc">${emptyListHtml(fallback, view.query, queries)}</p></div>`;
+      : loadedItems.length
+        ? `<div class="fm-blankslate"><i data-lucide="messages-square"></i><p class="fm-blankslate-desc">${emptyListHtml(fallback, view.query, queries)}</p></div>`
+        : renderDiscussionsEmptyState();
     const nav = $("[data-repo-discussion-categories]");
     if (nav) nav.innerHTML = renderDiscussionCategoriesNav();
     const heading = $("[data-repo-discussions-heading]");
@@ -10898,18 +11232,100 @@
     window.lucide?.createIcons();
   }
 
+  // A repository with no discussions yet invites the first one.
+  function renderDiscussionsEmptyState() {
+    return `<div data-repo-discussions-empty class="fm-blankslate"><i data-lucide="messages-square"></i><p class="fm-blankslate-title">Welcome to Discussions</p><p class="fm-blankslate-desc">Ask a question, share an idea or show what you built. Discussions are signed by their author and kept in the repository.</p><button type="button" data-repo-discussion-new class="mt-3 inline-flex h-8 items-center rounded-md bg-cta px-3 text-[14px] font-medium text-cta-foreground hover:bg-cta/90">Start a discussion</button></div>`;
+  }
+
+  // The New discussion form, drawn in place of the list like the New issue
+  // form. Title, category and a Markdown body with a preview tab; signed by
+  // this browser's key when it is sent (submitWebDiscussion).
+  function renderDiscussionComposeForm() {
+    const categories = WEB_DISCUSSION_CATEGORIES;
+    const preset = categories.find((name) => name.toLowerCase() === String(discussionView().category || "").toLowerCase()) || "Ideas";
+    const tabClass = "h-10 border-r border-border px-4 text-[14px] text-muted-foreground aria-selected:-mb-px aria-selected:bg-background aria-selected:font-medium aria-selected:text-foreground";
+    return `
+      <form data-repo-discussion-form class="grid gap-4 p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h2 class="inline-flex items-center gap-2 text-[16px] font-semibold text-foreground"><i data-lucide="messages-square" class="h-4 w-4 text-muted-foreground"></i>Start a new discussion</h2>
+          <button type="button" data-repo-discussion-compose-cancel class="inline-flex h-8 items-center gap-2 rounded-md border border-border px-3 text-[12px] font-medium text-foreground hover:bg-secondary"><i data-lucide="arrow-left" class="h-3.5 w-3.5"></i>Back to discussions</button>
+        </div>
+        <fieldset class="grid min-w-0 gap-2">
+          <legend class="mb-2 text-[14px] font-semibold text-foreground">Category</legend>
+          <div class="grid min-w-0 grid-cols-2 gap-2 lg:grid-cols-3">
+            ${categories.map((name) => `<label class="flex min-h-11 cursor-pointer items-center gap-2 rounded-md border border-border px-3 py-2 text-[14px] text-foreground"><input type="radio" name="discussion-category" data-repo-discussion-category-input value="${escapeHtml(name)}"${name === preset ? " checked" : ""} class="h-4 w-4 shrink-0 accent-primary" /><span aria-hidden="true">${discussionCategoryEmoji(name)}</span><span class="min-w-0 truncate">${escapeHtml(name)}</span></label>`).join("")}
+          </div>
+        </fieldset>
+        <label class="grid gap-1 text-[14px] font-semibold text-foreground">Title
+          <input data-repo-discussion-title type="text" required maxlength="240" autocomplete="off" placeholder="Title" class="h-9 rounded-md border border-border bg-background px-3 text-[14px] font-normal text-foreground outline-none focus:border-[var(--dashboard-link)] focus:ring-1 focus:ring-[var(--dashboard-link)]" />
+        </label>
+        <div class="grid gap-1">
+          <span class="text-[14px] font-semibold text-foreground">Body</span>
+          <div class="overflow-hidden rounded-md border border-border focus-within:border-[var(--dashboard-link)] focus-within:ring-1 focus-within:ring-[var(--dashboard-link)]">
+            <div role="tablist" aria-label="Discussion editor" class="flex border-b border-border bg-[rgb(var(--dashboard-subtle-rgb))]">
+              <button type="button" role="tab" data-repo-discussion-compose-tab="write" aria-selected="true" class="${tabClass}">Write</button>
+              <button type="button" role="tab" data-repo-discussion-compose-tab="preview" aria-selected="false" class="${tabClass}">Preview</button>
+            </div>
+            <textarea data-repo-discussion-body data-mention-input="repo" rows="8" aria-label="Discussion body" placeholder="Ask a question, start a conversation or share an idea. Markdown is supported." class="block min-h-[18rem] w-full resize-y border-0 bg-background px-3 py-2 text-[14px] text-foreground outline-none placeholder:text-muted-foreground"></textarea>
+            <div data-repo-discussion-preview hidden class="min-h-[18rem] px-4 py-3 ${MD_BODY_CLASS}"></div>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex min-w-0 flex-col gap-1">
+            ${composeIdentityHtml(state.session, "Posting")}
+            <span data-repo-discussion-hint role="status" class="text-[12px] text-muted-foreground">Signed in this browser and sent to the repository's mirrors.</span>
+          </div>
+          <button type="submit" data-repo-discussion-submit title="Start discussion (Ctrl+Enter / ⌘+Enter)" aria-keyshortcuts="Control+Enter Meta+Enter" class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-[14px] font-medium text-cta-foreground transition-colors hover:bg-cta/90 disabled:opacity-60"><span data-repo-discussion-spinner hidden class="fm-spinner" aria-hidden="true"></span>Start discussion</button>
+        </div>
+      </form>`;
+  }
+
+  function openDiscussionCompose(repo) {
+    const container = $("[data-repo-discussions]");
+    if (!container || !repo) return;
+    setRepoRecordOpen("discussions", false);
+    const heading = $("[data-repo-discussions-heading]");
+    if (heading) heading.textContent = "New discussion";
+    container.innerHTML = renderDiscussionComposeForm();
+    window.lucide?.createIcons();
+    container.querySelector("[data-repo-discussion-title]")?.focus();
+  }
+
+  function setDiscussionComposeTab(form, tab) {
+    if (!form) return;
+    const preview = tab === "preview";
+    form.querySelectorAll("[data-repo-discussion-compose-tab]").forEach((button) => {
+      button.setAttribute("aria-selected", button.dataset.repoDiscussionComposeTab === tab ? "true" : "false");
+    });
+    const body = form.querySelector("[data-repo-discussion-body]");
+    const pane = form.querySelector("[data-repo-discussion-preview]");
+    if (pane) {
+      pane.innerHTML = preview
+        ? renderRecordMarkdown(String(body?.value || ""), state.selectedRepo) || '<p class="text-muted-foreground">Nothing to preview</p>'
+        : "";
+      pane.hidden = !preview;
+    }
+    if (body) body.hidden = preview;
+    if (!preview) body?.focus();
+  }
+
   function discussionsUnavailableHtml(repo) {
     const count = repoCount(repo, ["discussions", "discussionCount"]);
     const catalogNote = Number.isFinite(count) && count > 0
       ? `The catalog reports ${formatCount(count)} discussion${count === 1 ? "" : "s"}, but ${count === 1 ? "it" : "they"} cannot be fetched because no mirror is reachable right now.`
       : "Discussions cannot be fetched because no mirror is reachable right now.";
-    return `<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Discussions unavailable</p><p class="fm-blankslate-desc">${catalogNote}</p></div>`;
+    // Starting one still works: it is signed here and queued for the
+    // repository, which writes it once a mirror or the owner's node is back.
+    return `<div class="fm-blankslate"><i data-lucide="cloud-off"></i><p class="fm-blankslate-title">Discussions unavailable</p><p class="fm-blankslate-desc">${catalogNote}</p><button type="button" data-repo-discussion-new class="mt-3 inline-flex h-8 items-center rounded-md border border-border px-3 text-[14px] font-medium text-foreground hover:bg-secondary">Start a discussion anyway</button></div>`;
   }
 
   async function loadRepoCollection(repo, kind, containerSelector) {
     const container = $(containerSelector);
     const config = repoCollectionConfig[kind];
     if (!container || !config) return;
+    // A background refresh must not wipe a New discussion draft, the same
+    // rule loadRepoIssues keeps for the New issue form.
+    if (kind === "discussions" && container.querySelector?.("[data-repo-discussion-form]")) return;
     // The pull ledger advances independently from the selected source branch.
     // A commit cached while this repository page was open would otherwise keep
     // a newly opened pull invisible even when the list is explicitly reloaded.

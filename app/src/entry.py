@@ -625,6 +625,9 @@ MAX_PULL_BYTES = 100 * 1024 * 1024
 MAX_PENDING_PULLS = 200
 # Discussion inbox: signed open/comment events for read-only contributors.
 MAX_DISCUSSION_BYTES = 64 * 1024
+# Discussion events only the repository owner (or an owner of the organization
+# the repository is linked to) may queue: see discussions_handler.
+DISCUSSION_OWNER_EVENT_TYPES = frozenset({"status", "delete"})
 MAX_PENDING_DISCUSSIONS = 500
 # One inbox read hands back a bounded PAGE, never the whole backlog. The caps
 # above bound a single submission, not the queue: MAX_PENDING_PULLS rows of
@@ -16211,6 +16214,7 @@ core_push_pending_tag_moves = _core_push.export("pending_tag_moves")
 record_accepted_push = _core_push.export("record_accepted_push")
 queue_runner_actions = _core_push.export("queue_runner_actions")
 core_push_tag_moves_handler = _core_push.export("tag_moves_handler")
+core_push_grant_tag_move = _core_push.export("grant_tag_move")
 core_push_branch_deletes_handler = _core_push.export("branch_deletes_handler")
 core_push_branch_trash_handler = _core_push.export("branch_trash_handler")
 _recent_pushes = _LazyModule("recent_pushes")
@@ -27739,6 +27743,16 @@ async def _active_public_recipient_bundles(env, account_bis):
     return bundles
 
 
+async def _shares_session_owner(env, request, data, owner):
+    """True when the request's account session belongs to the repository's
+    owner, so the web can manage collaborators without a node signature."""
+    try:
+        actor = await _authed_account_name(env, request, data or {})
+    except Exception:
+        return False
+    return bool(actor) and bool(await _account_owns_node(env, actor, owner))
+
+
 async def shares_handler(env, request, owner, repo):
     # Private-repo collaborator ACL (issue #9). Every operation is authorized by
     # the OWNER account's key — only the owner may grant/revoke/list who a private
@@ -27764,7 +27778,11 @@ async def shares_handler(env, request, owner, repo):
         sig = clean_string(params.get("sig", [""])[0], 200)
         canonical = ("forkmesh-shares-list-v1\n" + owner + "\n" + repo + "\n" +
                      str(ts)).encode()
-        if not (_ts_ok(ts) and await ed25519_verify(owner_pub, sig, canonical)):
+        signed = bool(ts and sig) and _ts_ok(ts) and await ed25519_verify(
+            owner_pub, sig, canonical)
+        session_owner = globals().get("_shares_session_owner")
+        if not signed and not (callable(session_owner) and await session_owner(
+                env, request, {}, owner)):
             return json_response({"error": "unauthorized"}, status=401)
         rows = await d1_all(
             env,
@@ -27834,8 +27852,13 @@ async def shares_handler(env, request, owner, repo):
                      grantee + "\n" + action + "\n" + str(ts)).encode()
         try:
             authorized = (
-                _ts_ok(ts)
+                bool(ts and sig) and _ts_ok(ts)
                 and await ed25519_verify(owner_pub, sig, canonical))
+            # The web: the owner's own account session (the account that is,
+            # or owns, the repository's node) instead of a node signature.
+            session_owner = globals().get("_shares_session_owner")
+            if not authorized and callable(session_owner):
+                authorized = await session_owner(env, request, data, owner)
         except Exception:
             await _audit_sensitive_action(
                 env, owner, audit_action, "repository_collaborator",
@@ -27877,7 +27900,17 @@ async def shares_handler(env, request, owner, repo):
             recipient_bundles = await _active_public_recipient_bundles(
                 env, [grantee_bi])
             recipient = recipient_bundles.get(grantee_bi)
-            if not recipient:
+            # A repository the core nodes host is read through them, not
+            # sealed to each reader's key, so its collaborators need none.
+            core_hosted = False
+            try:
+                core_hosted = bool(await d1_first(
+                    env,
+                    "SELECT 1 AS one FROM hosted_repos "
+                    "WHERE key_bi=? AND deleted_at=0", repo_bi))
+            except Exception:
+                core_hosted = False
+            if not recipient and not core_hosted:
                 # Do not create an ACL that the owner cannot immediately turn
                 # into an exact encrypted recipient set.
                 await _audit_sensitive_action(
@@ -36921,13 +36954,71 @@ async def _promote_hosted_repository_import(env, catalog_record):
     return False
 
 
+async def _private_collaboration_allowed(env, request, owner, repo):
+    """May this request use a private repository's issue, pull-request or
+    discussion inbox?
+
+    Reads of the queue (GET) and acknowledgements (DELETE) stay with the
+    owner's node, as before. A submission (POST) is accepted from any account
+    that can read the repository (its owner, or an account it is shared
+    with); everyone else gets the same 404 as for a repository that does not
+    exist. Submissions to a private repository skip every public side
+    effect: federation, provider mirrors, public contribution tallies, and
+    mentions or follower pings to accounts that cannot read it.
+    """
+    method = method_name(request)
+    if method in ("GET", "DELETE"):
+        return bool(await _authorize_owner(env, request, owner))
+    if method != "POST":
+        return False
+    try:
+        return await _repository_access_context(
+            env, request, owner, repo) is not None
+    except Exception:
+        return False
+
+
+async def _private_repo_reader_filter(env, owner, repo):
+    """None for a public repository; for a private one, an async predicate
+    telling whether an account may read it (its owner, or an account it is
+    shared with). Mentions and thread followers of a private repository are
+    only told about it when they can open it."""
+    privacy_reader = globals().get("_repo_is_private")
+    try:
+        private = callable(privacy_reader) and await privacy_reader(
+            env, owner, repo)
+    except Exception:
+        private = True
+    if not private:
+        return None
+
+    async def can_read(name):
+        name = str(name or "").strip().lower()
+        if not name:
+            return False
+        try:
+            return bool(
+                await _account_owns_node(env, name, owner)
+                or await _repo_shared_with(env, owner, repo, name))
+        except Exception:
+            return False
+    return can_read
+
+
 async def notify_mentions(env, owner, repo, actor, title, body, href, source,
                           number=0):
     # number is optional (0 = not a numbered item, e.g. a brand-new PR before
     # the owner assigns it) so every existing call site keeps working
     # unchanged; callers that DO know the number pass it as a keyword so the
     # digest email can show "#N" instead of just a bare title.
+    # Resolved through globals() so harnesses that lift this function alone
+    # (with no privacy machinery) keep their public-repository behaviour.
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     for name in notification_mentions(title, body):
+        if readers is not None and not await readers(name):
+            continue
         await enqueue_notification(
             env, name, "mention", "You were mentioned in " + owner + "/" + repo,
             body=(title or body or "Open the repository item to read the mention."),
@@ -37008,6 +37099,11 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
     if not rows:
         return
     mentioned = set(notification_mentions(title, body))
+    # Resolved through globals() so harnesses that lift this function alone
+    # (with no privacy machinery) keep their public-repository behaviour.
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     snippet = clean_string(body or title, 80)
     # Say what was actually written. The ping (and the phone banner built from
     # it) used to read "New activity in owner/repo" over the issue title, so
@@ -37027,6 +37123,8 @@ async def notify_subscribers(env, owner, repo, source, number, actor, title,
             continue
         name = clean_string(rec.get("node", ""), MAX_NODE_NAME).lower()
         if not valid_node_name(name) or name == actor or name in mentioned:
+            continue
+        if readers is not None and not await readers(name):
             continue
         await enqueue_notification(
             env, name, "subscribed", headline + " in " + owner + "/" + repo,
@@ -37238,8 +37336,15 @@ async def notify_catalog_issues_opened(env, owner, repo, repo_bi, prior,
 
 
 async def notify_issue_assignees(env, owner, repo, assignees, actor, title, number=0):
+    # Resolved through globals() so harnesses that lift this function alone
+    # (with no privacy machinery) keep their public-repository behaviour.
+    reader_filter = globals().get("_private_repo_reader_filter")
+    readers = (await reader_filter(env, owner, repo)
+               if callable(reader_filter) else None)
     for assignee in sorted({clean_string(a, MAX_NODE_NAME).lower() for a in (assignees or [])}):
         if not valid_node_name(assignee):
+            continue
+        if readers is not None and not await readers(assignee):
             continue
         await enqueue_notification(
             env, assignee, "issue_assigned",
@@ -40388,20 +40493,25 @@ async def _confirm_fediverse_issue_materializations(env, request):
     return confirmed
 
 
-async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event):
+async def _queued_issue_inbox_event(env, repo_bi, submitter_bi, event,
+                                    table="issue_inbox"):
     """The pending inbox item already holding this exact signed event, if any.
 
     Only the submitter's own rows can match, and _inbox_author_over_quota caps
     those at MAX_PENDING_PER_AUTHOR, so the scan stays small. A lookup failure
     answers None: the submission proceeds exactly as it did before the check.
+    ``table`` is one of the fixed inbox table names (issue_inbox,
+    discussion_inbox), never caller input.
     """
     sig = str(event.get("sig", "") or "")
     if not submitter_bi or not sig:
         return None
+    if table not in ("issue_inbox", "discussion_inbox"):
+        return None
     try:
         rows = await d1_all(
             env,
-            "SELECT data FROM issue_inbox WHERE repo_bi=? AND submitter_bi=? "
+            "SELECT data FROM " + table + " WHERE repo_bi=? AND submitter_bi=? "
             "ORDER BY id DESC LIMIT ?",
             repo_bi, submitter_bi, MAX_PENDING_PER_AUTHOR,
         )
@@ -41276,7 +41386,8 @@ async def discussions_handler(env, request, owner, repo):
             number = int(data.get("number", 0))
         except (TypeError, ValueError):
             number = 0
-        if event.get("type", "") == "open":
+        event_type = clean_string(event.get("type", ""), 32)
+        if event_type == "open":
             number = 0
         if len(discussion_event_content(event).encode("utf-8")) > MAX_DISCUSSION_BYTES:
             return json_response({"error": "discussion_too_large"}, status=413)
@@ -41287,24 +41398,43 @@ async def discussions_handler(env, request, owner, repo):
         refused = await _bind_session_author(env, request, data, event)
         if refused is not None:
             return refused
+        # Status changes and reply removal move repository-owned state, the
+        # way the desktop's Close/Archive/Delete buttons do on the owner's
+        # working tree. A browser signature proves integrity, not authority,
+        # so they also need the owner's (or a linked organization owner's)
+        # account session; materializers refuse them without ownerApproved.
+        owner_approved = False
+        if event_type in DISCUSSION_OWNER_EVENT_TYPES or event_type == "answer":
+            owner_approved = await _discussion_answer_by_owner(
+                env, request, data, owner, repo)
+            if event_type in DISCUSSION_OWNER_EVENT_TYPES and not owner_approved:
+                return json_response({"error": "not_authorized"}, status=403)
+        submitter_bi = await blind_index(env, event.get("author", ""))
+        # A browser replays the SAME signed event when a response was lost;
+        # answer it as accepted instead of queuing (and notifying) twice.
+        queued = await _queued_issue_inbox_event(
+            env, repo_bi, submitter_bi, event, table="discussion_inbox")
+        if queued is not None:
+            return json_response(
+                {"ok": True, "number": queued.get("number", number)},
+                status=201)
         count = await d1_first(
             env, "SELECT COUNT(*) AS c FROM discussion_inbox WHERE repo_bi=?", repo_bi
         )
         if count and count.get("c", 0) >= MAX_PENDING_DISCUSSIONS:
             return json_response({"error": "inbox_full"}, status=429)
-        submitter_bi = await blind_index(env, event.get("author", ""))
         if await _inbox_author_over_quota(
                 env, "discussion_inbox", repo_bi, submitter_bi):
             return json_response({"error": "author_quota"}, status=429)
         item = {
             "number": number,
-            "titleIfNew": clean_string(data.get("titleIfNew", ""), 240),
+            "titleIfNew": clean_string(
+                data.get("titleIfNew", "") or event.get("title", ""), 240),
             "event": event,
             "submitter": clean_string(event.get("author", ""), 120),
             "submittedAt": int(Date.now()),
         }
-        if event.get("type") == "answer" and await _discussion_answer_by_owner(
-                env, request, data, owner, repo):
+        if owner_approved:
             item["meta"] = {"ownerApproved": True}
         await d1_run(
             env,
@@ -41314,26 +41444,49 @@ async def discussions_handler(env, request, owner, repo):
         )
         actor = clean_string(event.get("authorName", "") or event.get("author", ""), MAX_NODE_NAME).lower()
         title = item.get("titleIfNew", "") or "Discussion update"
-        await notify_pending_inbox(env, owner, repo, "discussion", actor, title, number)
-        await notify_mentions(env, owner, repo, actor, title, event.get("body", ""),
-                              repo_web_href(owner, repo), "discussion", number=number)
+        content_event = event_type in ("open", "comment")
+        # The inbox row is the durable boundary: notification fan-out must not
+        # turn an accepted submission into a 500 the browser would retry.
+        await _best_effort_inbox_side_effect(notify_pending_inbox(
+            env, owner, repo, "discussion", actor, title, number,
+            opened=event_type == "open",
+            text=event.get("body", "") if content_event else ""))
+        if content_event:
+            await _best_effort_inbox_side_effect(notify_mentions(
+                env, owner, repo, actor, title, event.get("body", ""),
+                repo_web_href(owner, repo), "discussion", number=number))
+        if event_type == "comment":
+            # Followers of the thread hear about the reply, and the replier
+            # follows it from now on (the same thread keys issues use).
+            await _best_effort_inbox_side_effect(notify_subscribers(
+                env, owner, repo, "discussion", number, actor, title,
+                event.get("body", ""), repo_web_href(owner, repo)))
+            await _best_effort_inbox_side_effect(subscribe_thread(
+                env, owner, repo, "discussion", number, actor))
         await notify_repo_host(env, owner, repo, "discussions")
         await notify_repo_mirrors(env, owner, repo, "discussions")
-        if event.get("type") == "open":
-            await provider_mirror_note_event(
+        # A private repository's discussions never leave it: no provider
+        # mirror copy, and no public contribution tally (federation already
+        # skips private repositories in _ap_publish_repo_event).
+        try:
+            private_repo = await _repo_is_private(env, owner, repo)
+        except Exception:
+            private_repo = True
+        if event_type == "open" and not private_repo:
+            await _best_effort_inbox_side_effect(provider_mirror_note_event(
                 env, owner, repo, "discussion.opened",
                 {"number": 0, "title": item.get("titleIfNew", ""),
-                 "author": actor, "body": str(event.get("body", ""))})
-        if event.get("type") in ("open", "comment"):
+                 "author": actor, "body": str(event.get("body", ""))}))
+        if content_event:
             await _best_effort_inbox_side_effect(_ap_publish_repo_event(
-                env, request, owner, repo, "discussion", event.get("type"),
+                env, request, owner, repo, "discussion", event_type,
                 number, item.get("titleIfNew", ""), event.get("body", ""),
                 event.get("authorName", "")))
-        if event.get("type") in ("open", "comment"):
-            await _record_contributor(
-                env, event.get("author", ""), "discussions",
-                event.get("authorName", ""))
-        return json_response({"ok": True}, status=201)
+            if not private_repo:
+                await _best_effort_inbox_side_effect(_record_contributor(
+                    env, event.get("author", ""), "discussions",
+                    event.get("authorName", "")))
+        return json_response({"ok": True, "number": number}, status=201)
 
     if method == "GET":
         mirror_intake = (
@@ -51089,6 +51242,45 @@ async def _organization_owner_can_merge_repo(
     if not linked:
         return False
     return await _org_role(env, org_bi, actor) == "owner"
+
+
+async def _repository_owner_can_merge_repo(
+        env, request, canonical_owner, repo, actor):
+    """Who may merge (or update) a pull request through a mirror.
+
+    An organization-linked repository keeps the narrow rule above: only an
+    owner of the organization, through the organization's address. A personal
+    repository, linked to no organization, is merged by its owner: the
+    account that is, or owns, the node the repository belongs to (the same
+    _account_owns_node rule every other owner action on the web uses). The
+    caller still passes the pull-request rules, branch protection, required
+    checks and the executor's exact-commit mergeability check afterwards.
+    """
+    if await _organization_owner_can_merge_repo(
+            env, request, canonical_owner, repo, actor):
+        return True
+    if not actor:
+        return False
+    canonical_owner = str(canonical_owner or "").strip().lower()
+    repo = str(repo or "").strip().lower()
+    try:
+        original = urlparse(request.url)
+        match = REPO_API_PREFIX_RE.match(original.path)
+    except Exception:
+        return False
+    if not match:
+        return False
+    if ((safe_segment(match.group(1)) or "").strip().lower() != canonical_owner
+            or (safe_segment(match.group(2)) or "").strip().lower() != repo):
+        return False
+    linked = await d1_first(
+        env,
+        "SELECT 1 AS ok FROM org_repos WHERE repo=? AND node_owner=? LIMIT 1",
+        repo, canonical_owner,
+    )
+    if linked:
+        return False
+    return bool(await _account_owns_node(env, actor, canonical_owner))
 
 
 async def _admit_owner_merge_state(env, context, endpoint, result):

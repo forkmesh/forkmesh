@@ -1,0 +1,43 @@
+# Web and desktop parity
+
+What a signed-in person can do in the browser, with nothing installed, and
+what still depends on the desktop app (or another node the person runs). Links
+to download the apps are not dependencies and are not listed. This page is the
+inventory; each row says why the dependency exists and how it could go.
+
+## Done on the web
+
+| Feature | Notes |
+|---|---|
+| Discussions: start, reply, mark answer, close/reopen, archive, delete a reply or the whole discussion | [web-discussions.md](web-discussions.md) |
+| Merging pull requests on personal repositories (same rules, protection, checks and mergeability as organization repositories) | [branch-protection.md](branch-protection.md) |
+| Rename, move and delete files (commit, or propose as a pull request) | [repository-file-edits.md](repository-file-edits.md#rename-and-delete) |
+| Releases (draft, edit, delete; notes; attached files; creating their tags) | [web-releases.md](web-releases.md) |
+| Issues, pull requests and discussions on private repositories, for accounts that can read them, with public side effects off | [web-discussions.md](web-discussions.md#who-may-do-what) |
+| Collaborators on private repositories; visibility of core-hosted repositories | [web-repo-access.md](web-repo-access.md) |
+| Projects (create, edit, close, delete) | [web-projects.md](web-projects.md) |
+| Add file (create or upload a file, or propose it as a pull request) | [repository-file-edits.md](repository-file-edits.md#add-file) |
+| Issues and pull requests (browser-signed events), file edits and proposals, forks, repository deletion, branch operations on core-hosted repositories, webhooks, Actions secrets, security advisories, notes, tasks, calendar, docs, organizations, accounts and SSH keys | already had web paths |
+
+## Still desktop-dependent
+
+Effort: S = copy or wiring over an existing route, M = a new web flow over an
+existing route, L = a new route, event type or storage, XL = architectural.
+
+| Feature | Where | Why | Proposed design | Effort |
+|---|---|---|---|---|
+| Volunteering a node to mirror an external listing | `volunteerForExternalMirror` (05-repo-list-explorer.js) | The point is to lend a node; the browser is not one | Done for accounts without a node: a listing on a supported forge is imported and hosted on the core nodes instead (`volunteerForExternalMirror`) | n/a |
+| New repository from a local folder | new-repo view | Reads the local file system | Inherent; the web offers empty repositories and imports instead | n/a |
+| Private repositories on a forge without core hosting | `hosted_git.py` (`private_hosted_unsupported`) | Private content is sealed with the owner's key, which the relay never holds | Core-hosted private repositories already work; elsewhere this needs key escrow or a browser-held key | XL |
+| Release assets in the mirrors' content store (installer channels) | Releases tab | Bytes in that store are seeded by a release publisher; web releases attach files (up to 2 MB) in the repository instead | An upload route into the store for core-held repositories | L |
+| Deleting tags, and moving tags on node-held repositories | mirror push policy | Mirrors keep tags immutable without an owner's grant; grants exist only for core-held repositories (moving those is on the web: [web-releases.md](web-releases.md)) | A grant path for node-held repositories through the owner node's inbox | M |
+| Renaming and transferring a repository | repository settings | The name is the repository's identity everywhere: catalog key, blind indexes, inbox keys, core storage paths, mirror routing pins, organization links | A rename record that keeps the old key as an alias (like organization aliases) while cores move the bare repository and mirrors re-pin; transfer is a rename to another owner plus a catalog re-key | XL |
+| Visibility of repositories held by a personal node | repository settings | The node signs its own catalog record | Queue the change for the node like branch operations | L |
+| Settings that only the owner's desktop stores: running Actions on its own machine on push, auto-approving runs there, its peer-approval merge gate, its pre-push secret scan | desktop repository settings | They govern what that machine runs and merges; the web already switches a repository's Actions on and off (Settings > Features), enables and disables workflows, approves runs, and merges under the relay's rules and branch protection; mirrors never hold runs for approval | Keep them per machine; mirror them into `.forkmesh/` only if another executor starts honouring them | n/a |
+| Branch operations and issue/pull state on repositories held only by a personal node | branch queue, inbox drains | The owner's node applies them when it next syncs | Already immediate on core-hosted and mirrored repositories; otherwise inherent to node-held repositories | XL |
+| Agent transcripts and prompts | Agents tab | Encrypted to a key in the owner's desktop vault | Use the live desktop link when it is online; offline reading needs a web-held key | S (online) / XL |
+| Actions runs that ran on the owner's machine | Actions tab | The runs stay on that machine | Read them through the live desktop link when it is online | M |
+| Microjob reward payouts | microjobs view | Uses the owner's local wallet | Out of scope for the web (financial) | n/a |
+
+When one of these moves to the web, move its row to "Done on the web" and
+link the page that describes it.

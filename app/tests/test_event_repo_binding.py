@@ -252,12 +252,13 @@ def test_discussion_answers_record_owner_approval_but_no_contribution():
     entry = (ROOT / "src" / "entry.py").read_text(encoding="utf-8")
     handler = entry[entry.index("async def discussions_handler"):]
     handler = handler[:handler.index('    if method == "GET":')]
-    assert ('event.get("type") == "answer" and await '
-            '_discussion_answer_by_owner(') in handler
+    assert ('if event_type in DISCUSSION_OWNER_EVENT_TYPES or '
+            'event_type == "answer":') in handler
+    assert "owner_approved = await _discussion_answer_by_owner(" in handler
     assert 'item["meta"] = {"ownerApproved": True}' in handler
-    tally = handler.index("await _record_contributor(")
-    assert 'if event.get("type") in ("open", "comment"):' in handler[
-        tally - 120:tally]
+    tally = handler.index("_record_contributor(")
+    assert "if content_event:" in handler[tally - 600:tally]
+    assert 'content_event = event_type in ("open", "comment")' in handler
     helper = entry[entry.index("async def _discussion_answer_by_owner"):]
     helper = helper[:helper.index("\nasync def ")]
     assert "allow_admin=False" in helper

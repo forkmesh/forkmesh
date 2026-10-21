@@ -528,6 +528,9 @@ async def plan_discussion(reader, branch, number):
     return {"discussion": {
         "number": number, "title": values.get("title")
         or "discussion #%d" % number, "category": values.get("category", ""),
+        # DiscussionStore's reading: anything but closed/archived is open.
+        "status": values.get("status") if values.get("status") in (
+            "closed", "archived") else "open",
         "author": values.get("authorName") or values.get("author")
         or "unknown", "ts": values.get("ts") or values.get("createdAt") or "",
         "body": body, "replies": replies}}
@@ -1049,10 +1052,13 @@ def _render(bundle, section="", reactions=None):
         return _frame(bundle, "issues", head + body)
     if bundle.view == "discussion" and model.get("discussion"):
         item = model["discussion"]
+        status = item.get("status") or "open"
         head = ('<h2 class="fm-ssr-h1">%s <span>#%d</span></h2>'
-                '<p class="fm-ssr-sub"><b>%s</b> started this discussion '
+                '<p class="fm-ssr-sub">%s<b>%s</b> started this discussion '
                 '&middot; %s%s</p>' % (
-                    _esc(item["title"]), item["number"], _person(item["author"]),
+                    _esc(item["title"]), item["number"],
+                    _pill(status) if status != "open" else "",
+                    _person(item["author"]),
                     _date(item["ts"]), (" &middot; " + _esc(item["category"]))
                     if item.get("category") else ""))
         body = ('<div class="fm-ssr-event"><div><b>%s</b></div>'
