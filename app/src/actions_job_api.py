@@ -68,7 +68,7 @@ async def _job(env, request):
         return None
     row = await d1_first(
         env, "SELECT id,owner,repo,branch,commit_oid,event,workflow,ref,actor,"
-        "before_oid,payload FROM repo_action_jobs WHERE token_hash=? "
+        "before_oid,payload,trusted FROM repo_action_jobs WHERE token_hash=? "
         "AND token_hash!='' AND status IN ('leased','running','cancelling') "
         "LIMIT 1", runner_actions.token_hash(token))
     return dict(row) if row else None
@@ -437,6 +437,24 @@ async def _event(env, job):
         job, record if isinstance(record, dict) else {}, full_name)
 
 
+async def _untrusted_scope(env, job):
+    event = await _event(env, job)
+    issue = event.get("issue") if isinstance(event, dict) else None
+    sender = event.get("sender") if isinstance(event, dict) else None
+    try:
+        number = int((issue or {}).get("number") or 0)
+    except (TypeError, ValueError):
+        number = 0
+    login = ""
+    if isinstance(sender, dict) and sender.get("verified") is True:
+        login = str(sender.get("login") or "").strip().lower()
+    return number, login
+
+
+def _untrusted_refusal(message):
+    return _error("forbidden", 403, message)
+
+
 async def route(env, request, path):
     await ensure_schema(env)
     job = await _job(env, request)
@@ -445,6 +463,20 @@ async def route(env, request, path):
                       "The job token is missing, wrong or expired.")
     action = str(path or "")[len(PREFIX):].strip("/")
     method = method_name(request)
+    scope_login = None
+    if str(job.get("trusted") or "0") in ("0", "") and action != "event":
+        scope_number, scope_login = await _untrusted_scope(env, job)
+        match = ISSUE_ROUTE_RE.fullmatch(action)
+        if not match or int(match.group(1)) != scope_number \
+                or scope_number <= 0:
+            return _untrusted_refusal(
+                "A job started by someone without write access may only "
+                "read and act on the issue that started it.")
+        sub = match.group(2) or ""
+        if sub not in ("", "comments", "labels", "assignees"):
+            return _untrusted_refusal(
+                "A job started by someone without write access cannot "
+                "close or reopen issues.")
     if action == "event":
         if method != "GET":
             return _error("method_not_allowed", 405)
@@ -491,6 +523,14 @@ async def route(env, request, path):
                              {"type": "comment", "body": body,
                               "attachments": []})
     if sub == "assignees":
+        if scope_login is not None:
+            add, _ = _assignee_names(data.get("add"))
+            remove, _ = _assignee_names(data.get("remove"))
+            names = set(add or []) | set(remove or [])
+            if not scope_login or names - {scope_login}:
+                return _untrusted_refusal(
+                    "A job started by someone without write access may only "
+                    "assign or unassign that person.")
         return await change_assignees(env, request, job, number, data)
     if sub == "state":
         state = data.get("state")

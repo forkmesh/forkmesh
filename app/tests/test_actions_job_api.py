@@ -165,14 +165,14 @@ class World:
             raise ValueError("bad")
         return request.body
 
-    def add_job(self, status="running", token=TOKEN, payload=""):
+    def add_job(self, status="running", token=TOKEN, payload="", trusted=1):
         self.db.execute(
             "INSERT INTO repo_action_jobs (owner,repo,branch,commit_oid,status,"
             "created_at,updated_at,event,workflow,ref,actor,payload,"
-            "token_hash) VALUES ('forkmesh','site','main',?,?,1,1,"
+            "token_hash,trusted) VALUES ('forkmesh','site','main',?,?,1,1,"
             "'workflow_dispatch','.forkmesh/a.yml','refs/heads/main','ada',?,"
-            "?)", ("c" * 40, status, payload,
-                   hashlib.sha256(token.encode()).hexdigest()))
+            "?,?)", ("c" * 40, status, payload,
+                     hashlib.sha256(token.encode()).hexdigest(), trusted))
         self.db.commit()
 
     def call(self, path, request):
@@ -533,3 +533,42 @@ def test_only_issue_events_by_repository_writers_queue_trusted_jobs():
     queue(world, dict(comment, authorName="ada", authorVerified=True))
     queue(world, dict(comment, author="key-of-wes", authorName="wes"))
     assert _trusted_flags(world) == [0, 0, 0, 1, 1]
+
+
+def _outside_job(world, verified=True):
+    world.add_job(trusted=0, payload=json.dumps({"event": {
+        "action": "created", "sender": {"login": "bob", "verified": verified},
+        "issue": {"number": 3}, "comment": {"body": "/assign"}}}))
+
+
+def test_an_outside_issue_job_acts_only_on_its_own_issue():
+    world = assign_world()
+    world.db.execute("DELETE FROM repo_action_jobs")
+    _outside_job(world)
+    assert world.call("/api/actions/job/event", Request())["status"] == 200
+    assert world.call("/api/actions/job/issues/3", Request())["status"] == 200
+    for path, body in (
+            ("/api/actions/job/issues/4", None),
+            ("/api/actions/job/issues/4/comments", {"body": "hi"}),
+            ("/api/actions/job/issues", {"title": "spam"}),
+            ("/api/actions/job/issues/3/state", {"state": "closed"})):
+        method = "GET" if body is None else "POST"
+        answer = world.call(path, Request(method, body))
+        assert answer["status"] == 403, path
+    assert world.submitted == []
+    answer = world.call(ASSIGN, Request("POST", {"add": ["carol"]}))
+    assert answer["status"] == 403
+    answer = world.call(ASSIGN, Request("POST", {"add": ["bob"]}))
+    assert answer["status"] == 200
+    assert answer["data"]["assigned"] == ["bob"]
+    answer = world.call("/api/actions/job/issues/3/comments",
+                        Request("POST", {"body": "Assigned to you."}))
+    assert answer["status"] in (200, 201)
+
+
+def test_an_unverified_outside_sender_cannot_be_assigned():
+    world = assign_world()
+    world.db.execute("DELETE FROM repo_action_jobs")
+    _outside_job(world, verified=False)
+    answer = world.call(ASSIGN, Request("POST", {"add": ["bob"]}))
+    assert answer["status"] == 403
