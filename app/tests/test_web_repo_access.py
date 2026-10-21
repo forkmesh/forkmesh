@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Settings > Access on the web: collaborators and visibility."""
 
 import ast
 import asyncio
@@ -157,7 +156,6 @@ def test_collaborators_are_managed_with_the_owners_session():
     assert _run(check(None, None, {"who": "alice"}, "alice")) is True
     assert _run(check(None, None, {"who": "bob"}, "alice")) is False
     assert _run(check(None, None, {}, "alice")) is False
-    # Core-hosted repositories need no sealing key for a collaborator.
     assert "FROM hosted_repos " in handler and "not recipient and not core_hosted" in handler
 
 

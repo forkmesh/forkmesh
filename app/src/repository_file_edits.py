@@ -22,7 +22,6 @@ LINE_RE = re.compile(r"[^\n]*\n|[^\n]+\Z")
 QUOTE_RE = re.compile(r'[\x00-\x1f"\\\x7f]')
 QUOTE_ESCAPES = {"\t": "\\t", "\n": "\\n", '"': '\\"', "\\": "\\\\"}
 MODES = frozenset({"", "commit", "probe", "propose"})
-# edit (and create) one file's text, delete a file, or rename/move one.
 OPS = frozenset({"edit", "delete", "rename"})
 CONTEXT_LINES = 3
 
@@ -55,8 +54,12 @@ def valid_path(path):
     if path.startswith("/") or "\\" in path or "\0" in path:
         return False
     return not any(
-        part in ("", ".", "..", ".git")
+        part in ("", ".", "..") or _git_dir_alias(part)
         for part in path.split("/"))
+
+
+def _git_dir_alias(part):
+    return part.rstrip(". ").lower() in (".git", "git~1")
 
 
 def valid_branch(branch):
@@ -218,13 +221,6 @@ def _entry_rows(entries):
 
 
 def apply_tree_changes(listings, changes):
-    """Rebuild every tree above ``changes`` ({path: (mode, oid) or None}).
-
-    None removes the entry; a folder left empty is removed from its parent,
-    as Git stores no empty trees. ``listings`` must hold each touched folder
-    (a folder that does not exist yet is an empty list). Returns the new root
-    tree id and the tree objects to send.
-    """
     directories = {""}
     for path in changes:
         parts = path.split("/")
@@ -263,9 +259,6 @@ def apply_tree_changes(listings, changes):
 
 
 def _binary_literal(data):
-    """One "literal" hunk of a Git binary patch: the zlib-deflated bytes in
-    base85 lines of up to 52 bytes, each prefixed with its length
-    (A-Z = 1-26, a-z = 27-52), as `git diff --binary` writes them."""
     packed = zlib.compress(data, 9)
     lines = ["literal %d\n" % len(data)]
     for start in range(0, len(packed), 52):
@@ -281,7 +274,6 @@ def _binary_literal(data):
 
 def binary_patch(path, old_bytes, new_bytes, old_oid, new_oid, mode,
                  created=False):
-    """A `git diff --binary`-style patch that `git am` replays exactly."""
     out = ["diff --git %s %s\n" % (_side("a/", path), _side("b/", path))]
     if created:
         out.append("new file mode %s\n" % mode)
@@ -536,8 +528,6 @@ async def _save(env, request, owner, repo):
         return _error("invalid_base", "Choose a valid base branch.", 400)
     if not isinstance(content, str):
         return _error("invalid_content", "The new text is missing.", 400)
-    # An uploaded file (an image, an archive) arrives as base64 bytes and is
-    # stored exactly; text keeps its newline normalisation.
     binary = str(data.get("encoding") or "") == "base64"
     if binary:
         try:
@@ -664,12 +654,9 @@ async def _save(env, request, owner, repo):
 
 async def commit_paths(env, request, owner, repo, actor, branch, files,
                        message, listings=None, parent=None):
-    """Commit whole-file writes ({path: bytes}) and removals ({path: None})
-    to an existing branch and push it; returns the new commit id.
-
-    Used by the routes that keep structured records in the repository
-    (releases, projects). ``listings``/``parent`` may come from a caller that
-    already read the trees; otherwise every folder on the way is read."""
+    if any(not valid_path(path) for path in files):
+        raise FileEditError("invalid_path", "That file path is not allowed.",
+                            400)
     if listings is None:
         listings, parent = {}, None
         for path in files:
@@ -706,12 +693,6 @@ async def commit_paths(env, request, owner, repo, actor, branch, files,
 
 
 async def _save_move(env, request, owner, repo, data, actor, propose, op):
-    """Delete or rename one file: a commit (writers) or a proposal (anyone).
-
-    A rename may also change the text (``content``); without it the blob is
-    kept as is. A proposal is a deletion patch, plus a creation patch for a
-    rename, so ``git am`` replays it without rename detection.
-    """
     path = str(data.get("path") or "")
     new_path = str(data.get("newPath") or "") if op == "rename" else ""
     content = data.get("content")

@@ -30,6 +30,13 @@ push path as web file edits (`commit_paths`). Read-only mirrors refuse it.
 `delete` with target `self` tombstones the project, as on the desktop; the
 list hides tombstoned projects.
 
+`authorName` is not part of the signed string, so the route does not trust
+the one the browser sends: every event goes through `_bind_session_author`
+with the signed-in account, which sets `authorName` to that account and
+refuses (403 `author_mismatch`) a key bound to a different account. A writer
+can no longer sign with a fresh key and file events under someone else's
+name.
+
 ## Interface
 
 **New project** in the tab header (writers): title, description, start and

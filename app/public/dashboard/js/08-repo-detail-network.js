@@ -192,8 +192,6 @@
     const forkSplitButton = (compact) => websiteForkAvailable
       ? `<div data-repo-fork-split class="flex ${compact ? "h-8" : "h-9"} min-w-0 shrink-0 items-stretch overflow-hidden rounded-md border border-border bg-secondary text-xs font-semibold text-foreground"><button type="button" data-repo-fork-create data-repo-fork-go title="Fork this repository: your own copy, linked to this one" class="inline-flex min-w-0 flex-1 items-center justify-center gap-2 px-3 hover:bg-background disabled:cursor-wait"><i data-lucide="git-fork" class="h-3.5 w-3.5 text-muted-foreground"></i><span>Fork</span></button><button type="button" data-repo-fork-split-count aria-label="See who forked this repository" title="See who forked this repository" style="min-width:2.25rem" class="inline-flex items-center justify-center border-l border-border px-2 font-mono text-[12px] font-medium hover:bg-background"><span data-repo-fork-count>–</span></button></div>`
       : "";
-    // Add file creates a file in the browser (openRepoNewFile); a read-only
-    // mirror cannot take one, and says why instead.
     const readOnlyMirror = repoReadOnlyMirror(repo);
     const addFileButton = (height) => `<button type="button" data-repo-file-new${readOnlyMirror ? ` disabled title="${escapeHtml(REPO_READ_ONLY_MIRROR_HINT)}"` : ' title="Create a new file"'} class="inline-flex ${height} items-center justify-center gap-2 rounded-md border border-border bg-secondary px-3 text-xs font-semibold text-foreground hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"><i data-lucide="plus" class="h-3.5 w-3.5 text-muted-foreground"></i>Add file</button>`;
     const settingsPanel = canSeeSettingsTab ? `

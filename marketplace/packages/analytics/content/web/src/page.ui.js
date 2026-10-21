@@ -2781,8 +2781,8 @@ window.ForkMeshDashboard.registerPage("analytics", ({
       retentionDays: Number(get("retention").value) || 1, replayRetentionDays: Number(get("replay-retention").value) || 1,
       testAccountFilters: cleanFilters(state.settingsFilters),
     };
-    const bad = body.allowedOrigins.find((origin) => !/^https?:\/\/[a-z0-9.-]+(?::\d{1,5})?$/i.test(origin));
-    if (bad) return setMessage("error", `“${bad}” is not an origin. Use the scheme and host only, like https://example.com.`);
+    const bad = body.allowedOrigins.find((origin) => !/^https?:\/\/(?:\*\.(?:[a-z0-9-]+\.)+[a-z0-9-]+|[a-z0-9.-]+)(?::\d{1,5})?$/i.test(origin));
+    if (bad) return setMessage("error", `“${bad}” is not an origin. Use the scheme and host only, like https://example.com, or https://*.example.com for every subdomain.`);
     if (state.org?.instanceAdmin && get("site-default").checked !== Boolean(state.project?.siteDefault)) body.siteDefault = get("site-default").checked;
     const button = $(`[data-analytics-settings-save]`); button.disabled = true;
     try {

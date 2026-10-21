@@ -135,7 +135,6 @@ def test_pull_review_approval_and_owner_only_mirror_merge_are_available():
     assert 'data-repo-pull-review-action="approved"' in CONTENT
     assert "loadRepoPullMergeAuthorization" in CONTENT
     assert 'profile?.viewerRole === "owner"' in CONTENT
-    # A personal repository's owner gets the merge control as well.
     merge_auth = CONTENT[CONTENT.index("async function loadRepoPullMergeAuthorization"):]
     assert "if (sessionOwnsRepo(repo)) return true;" in merge_auth[:600]
     assert "data-repo-pull-merge" in CONTENT

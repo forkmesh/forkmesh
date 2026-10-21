@@ -2171,8 +2171,6 @@
     const title = String(release.name || "");
     const assets = Array.isArray(release.assets) ? release.assets : [];
     const isLatest = channel === "latest";
-    // Web releases (release.json without a publisher signature) can be edited
-    // and deleted by writers from here; signed channels never are.
     const editable = state.repoReleasesManageable === true && release.source === "web";
     const assetRows = assets.length
       ? assets.map((asset) => {
@@ -2180,8 +2178,6 @@
           const sha = String(asset.blob_sha256 || "").toLowerCase();
           const count = Number(downloads[sha]);
           const platform = [asset.os, asset.arch].filter(Boolean).join("/");
-          // A file attached on the web lives in the repository next to the
-          // notes; publisher assets come from the mirrors' content store.
           const href = asset.path
             ? repoLiveUrl(repo, "raw", { path: String(asset.path) })
             : sha
@@ -2230,10 +2226,6 @@
       </article>`;
   }
 
-  // Settings > Access: who can read a private repository, and (for a
-  // repository the core nodes host) whether it is public. Both used to need
-  // the desktop: collaborators were granted with the node's signature, and
-  // visibility lived in the node's signed catalog record.
   function repoIsCoreHosted(repo) {
     return String(repo?.source || "") === "hosted-web";
   }
@@ -2383,8 +2375,6 @@
     }
   }
 
-  // Writers (the repository's owner, or an organization member with write)
-  // draft, edit and delete releases on the web; the relay checks the same.
   async function repoReleasesManageable(repo) {
     if (!repo || !state.session?.nodeName || repoReadOnlyMirror(repo)) return false;
     if (sessionOwnsRepo(repo)) return true;
@@ -2447,7 +2437,7 @@
         <label class="inline-flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" data-repo-release-prerelease ${release?.prerelease ? "checked" : ""} class="h-3.5 w-3.5 rounded border-border accent-primary" />This is a pre-release</label>
         <div class="flex flex-wrap items-center justify-between gap-3">
           <span data-repo-release-hint role="status" class="text-[11px] text-muted-foreground">${editing ? "The tag stays where it is; only the title and notes change." : "Creates the tag if it does not exist yet, then commits the notes to .forkmesh/releases/."} Binary assets are attached by a release publisher.</span>
-          <button type="submit" data-repo-release-submit class="inline-flex h-9 items-center gap-2 rounded-md bg-cta px-4 text-sm font-medium text-cta-foreground hover:bg-cta/90 disabled:opacity-60"><i data-lucide="send" class="h-4 w-4"></i>${editing ? "Update release" : "Publish release"}</button>
+          <button type="submit" data-repo-release-submit class="inline-flex h-9 items-center gap-2 rounded-md px-4 text-sm font-medium disabled:opacity-60 ${editing ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-cta text-cta-foreground hover:bg-cta/90"}"><i data-lucide="send" class="h-4 w-4"></i>${editing ? "Update release" : "Publish release"}</button>
         </div>
       </form>`;
   }
@@ -2982,8 +2972,6 @@
       state.loadedRepoTabs.releases = true;
       loadRepoReleases(repo);
     } else if (active === "projects") {
-      // /owner/repo/projects opened directly (or refreshed) used to leave the
-      // tab empty: only a click on the tab loaded it.
       state.loadedRepoTabs.projects = true;
       void loadRepoProjects(repo);
     } else if (active === "insights") {

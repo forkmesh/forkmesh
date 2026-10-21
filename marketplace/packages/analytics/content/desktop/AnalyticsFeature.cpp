@@ -813,7 +813,8 @@ void AnalyticsFeature::loadCampaigns(int serial)
     QString host;
     for (const QJsonValue &origin : projectRecord().value(QStringLiteral("settings")).toObject()
                                         .value(QStringLiteral("allowedOrigins")).toArray()) {
-        host = QUrl(origin.toString()).host();
+        // A "https://*.example.org" entry names a domain, not a host.
+        host = QUrl(QString(origin.toString()).replace(QStringLiteral("://*."), QStringLiteral("://"))).host();
         if (!host.isEmpty())
             break;
     }

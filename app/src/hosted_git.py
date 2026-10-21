@@ -1274,8 +1274,6 @@ async def _hosted_read_allowed(env, owner, repo, account):
     try:
         if await _account_owns_node(env, account, owner):
             return True
-        # A collaborator the owner shared the repository with reads it too,
-        # as on node-held private repositories (_repo_shared_with).
         shared_with = globals().get("_repo_shared_with")
         if callable(shared_with) and await shared_with(
                 env, owner, repo, account):
@@ -1350,16 +1348,6 @@ async def _hosted_settings(env, request):
 
 
 async def _change_visibility(env, request):
-    """POST /api/hosted-repositories/visibility {owner, name, visibility}.
-
-    Makes a repository the core nodes host public or private from the web.
-    Only its owner (the account that is or owns its node) or an admin of the
-    organization it belongs to may. The catalog record, its plaintext privacy
-    flag and the hosted row change together; the cores serve the new
-    visibility from their next replica sync, and the public catalog is
-    republished. Repositories held by a personal node change visibility from
-    that node, which signs its own catalog record.
-    """
     try:
         data = await bounded_json_request(request)
     except Exception:

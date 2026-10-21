@@ -3911,8 +3911,6 @@ int main(int argc, char *argv[])
         check(projects.loadAll().isEmpty(),
               "a tombstoned project disappears from loadAll");
         {
-            // A project written by the website (app/src/repository_projects.py,
-            // json.dumps(indent=4, sort_keys=True)) loads like a desktop one.
             QDir().mkpath(dir + "/.forkmesh/projects/2");
             QFile webProject(dir + "/.forkmesh/projects/2/project-2.json");
             check(webProject.open(QIODevice::WriteOnly) &&
@@ -6363,8 +6361,6 @@ int main(int argc, char *argv[])
               "discussion archive succeeds");
         check(discussions.setStatus(dn, "open", &err),
               "archived discussion can be reopened");
-        // Owner moderation from the website: the relay marks these
-        // ownerApproved; without it nothing changes.
         DiscussionEvent webClose;
         webClose.type = "status";
         webClose.status = "closed";

@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Projects tab: create, edit, close and delete projects in the browser."""
 
 import json
 import re
@@ -83,5 +82,4 @@ def test_writers_get_project_controls_and_tombstones_are_hidden():
     for selector in ('"[data-repo-project-form]"', '"[data-repo-project-new], [data-repo-project-edit]"',
                      '"[data-repo-project-status]"', '"[data-repo-project-delete]"'):
         assert "event.target.closest(%s)" % selector in DASHBOARD_JS
-    # /owner/repo/projects opened directly loads the tab.
     assert 'active === "projects"' in _function("loadRepoFeaturePanels")

@@ -536,7 +536,6 @@ async def plan_discussion(reader, branch, number):
     return {"discussion": {
         "number": number, "title": values.get("title")
         or "discussion #%d" % number, "category": values.get("category", ""),
-        # DiscussionStore's reading: anything but closed/archived is open.
         "status": values.get("status") if values.get("status") in (
             "closed", "archived") else "open",
         "author": values.get("authorName") or values.get("author")

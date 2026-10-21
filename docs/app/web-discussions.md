@@ -29,7 +29,11 @@ public side effect: federation (`_ap_publish_repo_event` already skips
 private repositories), provider mirrors, public contribution tallies, and
 mentions, follower and assignee pings to accounts that cannot read it
 (`_private_repo_reader_filter` in `notify_mentions`, `notify_subscribers`
-and `notify_issue_assignees`).
+and `notify_issue_assignees`). Issues and pull requests reach the tally
+through `_record_public_contributor`, which checks the repository is public
+(failing closed) before `_record_contributor`; until 2026-10-21 only
+discussions checked, so a private repository's issues and pull requests
+counted toward public profiles.
 
 ## Events
 
@@ -48,8 +52,9 @@ key web issue events use). The canonical string is
 
 `status` and `delete` are new with the web flow; the desktop, mirror gateway,
 relay and Go mirror all know them. The Go mirror removes a whole discussion's
-folder with `removeTreeUnder`, bounded to the discussions folder, as
-`docs/engineering/destructive-actions.md` requires. Event ids carry a random suffix
+folder with `removeDiscussionFolder` in `server/intake.go`. It deletes plain
+files one by one and refuses a folder holding anything else, so there is no
+recursive delete. Event ids carry a random suffix
 (`comment-web-<ts>-<rand>`) because materializers skip an id they already hold.
 The opening event's `ts` is in milliseconds, like the desktop's; replies keep
 seconds, as before.

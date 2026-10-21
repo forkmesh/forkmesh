@@ -53,7 +53,6 @@ func TestDiscussionStatusNeedsTheOwnersApproval(t *testing.T) {
 		if !strings.Contains(text, "status: "+status+"\n") || strings.Count(text, "status:") != 1 {
 			t.Fatalf("status %s not recorded once:\n%s", status, text)
 		}
-		// Everything else about the opening post is untouched.
 		for _, keep := range []string{"title: How?\n", "author: opener-key\n", "sig: s\n", "\nquestion\n"} {
 			if !strings.Contains(text, keep) {
 				t.Fatalf("status change lost %q:\n%s", keep, text)
@@ -101,7 +100,6 @@ func TestOwnerDeletesOneReply(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "discussion.md")); err != nil {
 		t.Fatal("deleting a reply removed the discussion")
 	}
-	// A replayed delete is consumed (acknowledged), not retried forever.
 	if wrote, _, err := writeDiscussionItem(root, moderationItem("delete", map[string]any{"target": "reply-1"}, true)); !wrote || err != nil {
 		t.Fatalf("a repeated delete was not consumed: %v %v", wrote, err)
 	}
@@ -146,8 +144,6 @@ func TestDiscussionInboxMaterializesWebEventsAndAcknowledgesLockedReplies(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Row 6 (a status change nobody approved) stays queued; the locked reply
-	// (row 4) is acknowledged because it can never be written.
 	if fmt.Sprint(ids) != "[1 2 3 4 5]" {
 		t.Fatalf("acknowledged %v", ids)
 	}
