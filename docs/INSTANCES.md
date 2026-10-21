@@ -303,7 +303,7 @@ upload CSS.
   and `stylesheet`, a file beside it (`blt.css`). `palette` is read in a fixed
   order: primary, background, surface, second accent, text, then any extra
   swatches, eight at most (the loader drops the rest). The cards on the
-  start page draw only the palette,
+  start page and in Settings draw only the palette,
   as one colour block with primary three times as wide as the rest (a mock
   screen was tried first and read as clutter). Planned themes show as "Coming soon" cards
   and are refused by the API. Today all four are ready: `default` (the
@@ -327,10 +327,18 @@ upload CSS.
 - **Who can change it:** the start page picks a theme at launch (its cards
   come from `themes.json`; a settings file naming a theme waits for that
   read, so the name is not skipped as unknown while it loads). After that
-  an admin changes it with `PUT /api/instance/theme` and `{theme, password}`;
-  there is no Settings screen for it yet. `GET /api/instance` lists the
-  catalogue (`themes`) and the current `theme.preset` for one to use. The
-  route checks the session is an admin, then the account password with its
+  an admin changes it in Settings → Instance theme, shown only to an admin
+  on a branded instance. Its cards come from `GET /api/instance` (`themes`,
+  and `theme.preset` for the current one). Clicking a ready card previews it
+  on that page only, by pointing `link[data-instance-theme]` at
+  `/instance-theme.css?preset=<id>`; leaving the section or "Cancel preview"
+  puts the instance's own sheet back. "Apply to instance" sends
+  `PUT /api/instance/theme` with `{theme, password}` and updates the page's
+  cached instance document, so re-entering the section shows the new
+  current theme. The password field is cleared on success, failure, cancel,
+  leaving the section and `pagehide`, and the form carries a hidden
+  `autocomplete="username"` field so a browser does not save a password
+  without an account name. The route checks the session is an admin, then the account password with its
   own attempt budget (`instance-theme-v1` blind index, the login lockout
   rules), and records `instance.theme` in the sensitive-action audit log
   either way. Repository share cards take their accent from the stored

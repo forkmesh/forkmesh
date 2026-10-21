@@ -5947,6 +5947,7 @@
     if (activeSection === "notifications") loadPingSettings();
     if (activeSection === "agents") initSettingsAgents();
     if (activeSection === "instance-theme") initInstanceThemeSection();
+    else leaveInstanceThemeSection();
     // Session state changes on other devices, so re-entering this tab always
     // performs a fresh no-store read instead of keeping a page-lifetime copy.
     if (activeSection === "account") {
@@ -6844,15 +6845,30 @@
       if (!response.ok || body.ok !== true) throw new Error(body.error || `http_${response.status}`);
       if (field) field.value = "";
       instanceThemeState.current = body.theme?.preset || "default";
+      const info = await instanceInfo();
+      if (info && typeof info === "object") {
+        info.theme = { ...(info.theme && typeof info.theme === "object" ? info.theme : {}), preset: instanceThemeState.current };
+      }
       instanceThemeState.previewing = "";
       instanceThemeLink().href = `/instance-theme.css?v=${Date.now()}`;
       renderInstanceThemeCards();
       setInstanceThemeStatus(`${instanceThemeName(instanceThemeState.current)} is now the theme for everyone on this instance.`, "good");
     } catch (error) {
+      if (field) field.value = "";
       setInstanceThemeStatus(INSTANCE_THEME_ERRORS[error.message] || "Could not change the theme. Try again.", "bad");
     } finally {
       if (button) { button.disabled = false; button.textContent = "Apply to instance"; }
     }
+  }
+
+  function clearInstanceThemePassword() {
+    const field = $("[data-instance-theme-password]");
+    if (field) field.value = "";
+  }
+
+  function leaveInstanceThemeSection() {
+    clearInstanceThemePassword();
+    if (instanceThemeState.previewing) previewInstanceTheme(instanceThemeState.current);
   }
 
   function bindInstanceThemeControls() {
@@ -6862,7 +6878,11 @@
       const card = event.target.closest("[data-instance-theme-card]");
       if (card && !card.disabled) previewInstanceTheme(card.dataset.instanceThemeCard);
     });
-    $("[data-instance-theme-cancel]")?.addEventListener("click", () => previewInstanceTheme(instanceThemeState.current));
+    $("[data-instance-theme-cancel]")?.addEventListener("click", () => {
+      clearInstanceThemePassword();
+      previewInstanceTheme(instanceThemeState.current);
+    });
+    window.addEventListener("pagehide", clearInstanceThemePassword);
     $("[data-instance-theme-apply]")?.addEventListener("click", () => applyInstanceTheme());
     $("[data-instance-theme-password]")?.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
@@ -6873,6 +6893,8 @@
 
   async function initInstanceThemeSection() {
     bindInstanceThemeControls();
+    const username = $("[data-instance-theme-username]");
+    if (username) username.value = state.session?.nodeName || "";
     const allowed = state.session?.isAdmin === true && dashboardOnInstance();
     const denied = $("[data-instance-theme-denied]");
     if (denied) denied.hidden = allowed;
