@@ -1871,7 +1871,9 @@ export function createWorldOfficeTasksController({
   async function refresh({ quiet = false, force = false } = {}) {
     if ((!monitoring && !force) || typeof fetchJSON !== "function") return false;
     if (refreshPromise && !force) return refreshPromise;
-    if (!getSession()?.sessionToken) {
+    const session = getSession();
+    const visitor = session?.visitor === true;
+    if (!session?.sessionToken || visitor) {
       tasks = [];
       actor = "";
       canManage = false;
@@ -1882,8 +1884,17 @@ export function createWorldOfficeTasksController({
       proofs = [];
       initiatives = [];
       loading = false;
-      if (!quiet) setStatus("Sign in to access organization marketing tasks.");
-      physicalState("locked", "Organization access required");
+      if (!quiet) {
+        setStatus(
+          visitor
+            ? "This Office's task wall belongs to its own World's members. Visitors can look around."
+            : "Sign in to access organization marketing tasks.",
+        );
+      }
+      physicalState(
+        "locked",
+        visitor ? "Members of this World only" : "Organization access required",
+      );
       render();
       if (!officeActive) stopMonitoring();
       return false;
@@ -2771,7 +2782,7 @@ export function createWorldOfficeTasksController({
   function stopActiveForDeparture() {
     if (!ownActiveTasks().length) return false;
     const sessionToken = String(getSession()?.sessionToken || "");
-    if (!sessionToken) return false;
+    if (!sessionToken || getSession()?.visitor === true) return false;
     // Leaving and re-entering the Office fires this again each time, so a
     // failing stop is backed off rather than re-posted on every departure.
     const key = "POST:/api/tasks/stop-active";

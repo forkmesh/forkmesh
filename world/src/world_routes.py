@@ -3466,12 +3466,22 @@ async def world_federation_cors(env, request, path):
         origin = ""
     if not origin:
         return {}
+    try:
+        requested = str(
+            request.headers.get("access-control-request-method") or "")
+    except Exception:
+        requested = ""
+    if not world_mesh.federated_method_allowed(
+            path, method_name(request), requested):
+        return {}
     worlds = await world_mesh_directory(env)
     neighbour = world_mesh.neighbour_world_origin(env, worlds, origin)
     if not neighbour:
         return {}
     return world_mesh.federation_cors_headers(
-        neighbour["world"], preflight=method_name(request) == "OPTIONS")
+        neighbour["world"], preflight=method_name(request) == "OPTIONS",
+        read_only=str(path or "").rstrip("/")
+        in world_mesh.FEDERATED_READ_ONLY_PATHS)
 
 
 def world_visitor_claim(env, token, home_host):

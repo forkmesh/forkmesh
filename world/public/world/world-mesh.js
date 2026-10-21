@@ -134,7 +134,7 @@ export class WorldMeshLinks {
   update(x, z, ownerId = "") {
     if (this.destroyed) return;
     const located = Number.isFinite(x) && Number.isFinite(z);
-    const visit = located && this.neighbors.has(ownerId) ? ownerId : "";
+    const visit = this.neighbors.has(ownerId) ? ownerId : "";
     const wanted = new Map();
     if (visit) wanted.set(visit, "visit");
     if (located) {

@@ -596,10 +596,10 @@ them without changing page.
   petal 5; petal 0 keeps the beach. That petal's sand, cacti and sign step
   aside (`replacePetals` in `desert-plots.js`), the roads stay as they are,
   and the town no longer claims the ground (`worldMeshOwnerAt`). Stepping
-  off the road onto its land is a visit, like walking into a flower (see
-  Visits below): the page does not reload, the hexagon and its published
-  scene stay drawn where they are, and the home World stays loaded around
-  it. On the shared road strip the walker is still home. The page used to
+  off the road onto its land puts the page in that World, like walking into
+  a flower (see Standing in another World below): the page does not reload.
+  On the shared road strip the walker stays in the World they came from. The
+  page used to
   load `<world>/world/?from=forkmesh&slot=n&pos=x,z` instead, which reloaded
   the whole World on every crossing; `worldMeshCrossingURL()` still builds
   that URL for a neighbour's own page. Arriving from such a page,
@@ -661,10 +661,18 @@ them without changing page.
   its logo, landmark and label, six sand hexes and one road net, all as
   shared geometry. The neighbour's roads sit 0.02 below the home roads so the
   shared border strip does not z-fight. Clicking the landmark explains how to
-  walk in; it opens no tab.
+  walk in; it opens no tab. When the World the page stands in is itself a
+  single hexagon, every neighbour is drawn as a single hexagon too
+  (`updateInstanceHexes`): from an instance on hub slot 0 (petal 1) the hub
+  is one hexagon on the instance's petal 4, mirroring how the hub draws the
+  instance. Drawing the hub as a whole flower there laid its sand petals over
+  the instance's own town.
 - **Ownership.** `worldMeshOwnerAt()` decides whose ground the player stands
   on. The home hexes win the shared road strip; past it, the neighbour's
-  flower owns the point.
+  flower owns the point. The page decides with a margin of 8
+  (`WORLD_MESH_SWITCH_MARGIN`), so a walker on the strip's midline does not
+  switch Worlds back and forth; a single hexagon needs the walker on its land
+  (`onLand`), which already leaves the strip between.
 - **Watch sockets.** `WorldMeshLinks` (`world-mesh.js`) opens
   `wss://<api>/api/world/ws?watch=1` to up to four neighbours whose centre is
   within 1700 units (released at 1900). The relay accepts a watcher only from
@@ -684,6 +692,42 @@ them without changing page.
   hide `visiting` peers and see the visitor through their own watch socket
   instead, so nobody is drawn twice. Walking back reverses the swap. A notice
   says which world you entered or returned to.
+- **Standing in another World.** Every World runs the same town, so a
+  neighbour's real town is this page's town with that World's data. Before,
+  stepping onto a neighbour kept the page in the home World, and the
+  neighbour stayed a placeholder: a meadow with a logo, or its published
+  scene, with nobody but passers-by from the watch socket. Now
+  `enterMeshWorld()` (`world.js`) moves the page into the World whose ground
+  the walker steps onto:
+  - The scene recentres on it. `shiftPlayer(dx, dz)` (`scene/runtime/camera.js`)
+    moves the walker and camera by minus that World's offset, keeping their
+    heading, and `placeWorldMesh()` lays the mesh out from that World's
+    slot, so the full town stands where its hexagon was and the World left
+    behind becomes the neighbour hexagon. The switch is refused inside a
+    building, a package district or on a ride; the walker then visits as
+    before.
+  - The town's content is read from that World (`fetchMeshRootJSON`): the
+    reads in `MESH_ROOT_READS` (`world-federation.js`: member directory,
+    inactive members, arrival stats, organizations, events, fediverse boards,
+    network overview, repositories, leaderboards) go to its API through the
+    federation client without credentials, and `reloadMeshRootData()` reloads
+    them on every switch. Reads in `MESH_ROOT_HIDDEN` (repository imports and
+    `/api/repo/...` details, ads, the reward fund, the security board, media
+    spaces) answer `not_in_this_world` there, so another World's town never
+    shows home's data. Everything else (session, chat, notifications,
+    rewards, any write) stays with home. A read that started before a switch
+    is dropped (`world_changed`).
+  - The visit socket to that World is the page's presence there, and its
+    residents are drawn with their activity and status like home peers.
+    Home's own socket stays open with presence `visiting`; its peers outdoors
+    are drawn shifted onto home's hexagon (`homeFramePlayer`), so people on
+    both sides of the border stay visible.
+  - The Office in that town is its owner's (`setOfficeOwner`), entered as a
+    visitor ([federation.md](federation.md)).
+  - The saved position is kept in home's frame, so a reload puts the walker
+    back on the same ground and the page switches again.
+  A notice names the World entered (`Entering <name> · <host>`) or returned
+  to.
 - **Visas (the session trick).** A signed-in user's account lives on their
   home world only. Before a visit the client asks home for a visa:
   `POST /api/world/visa {destination}`. It needs a session and an allowed

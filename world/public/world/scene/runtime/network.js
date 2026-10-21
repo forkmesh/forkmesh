@@ -552,6 +552,7 @@ export function functions({
 
   function updateInstanceHexes(worlds = [], selfSlot = -1, selfShape = "flower") {
     const self = worldMeshSlotOffset(selfSlot, selfShape);
+    const selfHex = selfShape === WORLD_MESH_HEX_SHAPE;
     const placed = [];
     (self && Array.isArray(worlds) ? worlds : []).forEach((world) => {
       const offset = worldMeshSlotOffset(world?.slot, world?.shape);
@@ -561,6 +562,7 @@ export function functions({
       if (Math.hypot(dx, dz) < 1) return;
       placed.push({
         ...world,
+        shape: selfHex ? WORLD_MESH_HEX_SHAPE : world.shape,
         dx,
         dz,
         x: WORLD_BIKE_LANE_CENTER_X + dx,
@@ -592,8 +594,8 @@ export function functions({
     return placed;
   }
 
-  function worldMeshOwner(x, z) {
-    const flower = worldMeshOwnerAt(x, z);
+  function worldMeshOwner(x, z, radius = 0) {
+    const flower = worldMeshOwnerAt(x, z, radius);
     if (!flower) return null;
     const owner = { id: flower.id, dx: flower.dx, dz: flower.dz };
     if (flower.shape !== WORLD_MESH_HEX_SHAPE) return owner;
