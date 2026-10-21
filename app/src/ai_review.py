@@ -957,7 +957,10 @@ async def call_provider(env, config, messages):
         return (answer, "") if answer.strip() else ("", "empty_answer")
     if config.get("binding"):
         try:
-            result = await env.AI.run(model, to_js(payload))  # noqa: F821
+            # getattr keeps the optional binding off the host's required
+            # env surface (tests/host/test_host_js_surface.py).
+            binding = getattr(env, "AI", None)
+            result = await binding.run(model, to_js(payload))  # noqa: F821
             if hasattr(result, "to_py"):
                 result = result.to_py()
         except Exception as error:
